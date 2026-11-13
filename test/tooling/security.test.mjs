@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 import {
   applySecurityExceptions,
   enumerateLockDependencies,
@@ -22,6 +23,7 @@ import {
   loadReviewedExceptions,
   parseGitleaksReport,
   parseSemgrepReport,
+  semgrepTimeoutMs,
   validateGitleaksExecution,
   validateSecurityExceptions,
   verifySyntheticProvenance,
@@ -991,5 +993,21 @@ describe("公开输出白名单与敏感哨兵", () => {
         allowed: [{ path: "link.json", kind: "json" }],
       }),
     ).rejects.toThrow("PUBLIC_ARTIFACT_SYMLINK_OR_NOT_FILE");
+  });
+});
+
+describe("semgrep scan time limit", () => {
+  it("leaves room for a full scan on a slower runner and still ends before the job limit", () => {
+    const measuredX64ScanMs = 99_000;
+    const armSlowdownAllowed = 1.5;
+    const workflow = parse(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), "../../.github/workflows/ci.yml"),
+        "utf8",
+      ),
+    );
+    const jobLimitMs = workflow.jobs.security["timeout-minutes"] * 60_000;
+    expect(semgrepTimeoutMs).toBeGreaterThan(measuredX64ScanMs * armSlowdownAllowed * 2);
+    expect(semgrepTimeoutMs).toBeLessThan(jobLimitMs / 2);
   });
 });

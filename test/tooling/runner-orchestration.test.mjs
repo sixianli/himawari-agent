@@ -12,7 +12,6 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -31,6 +30,12 @@ const state = vi.hoisted(() => ({
   verified: [],
   parallel: undefined,
 }));
+
+import { withHost } from "./artifact-host.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("node:fs", async (original) => {
   const actual = await original();
   return {
@@ -304,8 +309,6 @@ const run = (checkId, extra = {}) =>
     ...extra,
   });
 
-useArtifactCapableHost();
-
 describe("共享runner的调度、来源和失败传播", () => {
   it("passes an explicit test root and its temporary directory to child processes", async () => {
     vi.stubEnv("HIMAWARI_TEST_TEMP_ROOT", state.root);
@@ -382,25 +385,13 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
   it("rejects build, browser and coverage on linux-arm64 before creating output or executing anything", async () => {
-    const original = {
-      platform: Object.getOwnPropertyDescriptor(process, "platform"),
-      arch: Object.getOwnPropertyDescriptor(process, "arch"),
-    };
-    for (const [key, value] of [
-      ["platform", "linux"],
-      ["arch", "arm64"],
-    ])
-      Object.defineProperty(process, key, { value, configurable: true, enumerable: true });
-    try {
+    await withHost("linux", "arm64", async () => {
       for (const checkId of ["build", "browser", "coverage"]) {
         await expect(run(checkId)).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
         expect(existsSync(path.join(state.root, `.ci-output/${checkId}`))).toBe(false);
       }
       expect(state.calls).toEqual([]);
-    } finally {
-      Object.defineProperty(process, "platform", original.platform);
-      Object.defineProperty(process, "arch", original.arch);
-    }
+    });
   });
 
   it("coverage 在归档身份不符时失败，不开始快照或测试", async () => {

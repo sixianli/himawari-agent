@@ -26,6 +26,7 @@ public final class AppModel {
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
+    @ObservationIgnored private let kind: DeviceKind
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
@@ -35,11 +36,12 @@ public final class AppModel {
 
     private static let recordAccount = "pairing-record"
 
-    public convenience init(bundle: Bundle = .main) {
-        self.init(bundle: bundle, restoring: true)
+    public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        self.init(bundle: bundle, kind: kind, restoring: true)
     }
 
-    init(bundle: Bundle = .main, restoring: Bool) {
+    init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
+        self.kind = kind
         let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
         keys = SecureEnclaveKeyStore(service: service + ".keys")
         keychain = KeychainValueStore(service: service)
@@ -118,8 +120,8 @@ public final class AppModel {
     }
 
     #if DEBUG
-    static func demo(_ phase: AppPhase, host: String? = nil) -> AppModel {
-        let model = AppModel(restoring: false)
+    public static func demo(_ phase: AppPhase, host: String? = nil, kind: DeviceKind = .iphone) -> AppModel {
+        let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
         return model
@@ -148,7 +150,7 @@ public final class AppModel {
                 let confirmKey = keys.signer(.confirm)
                 let device = try await api.pair(
                     invitation: invitation,
-                    kind: .iphone,
+                    kind: kind,
                     name: Self.deviceName,
                     releaseChannel: releaseChannel,
                     deviceKey: deviceKey,

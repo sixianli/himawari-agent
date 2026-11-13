@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const mocks = vi.hoisted(() => ({
   execute: vi.fn(),
@@ -18,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   config: vi.fn(),
   context: vi.fn(),
 }));
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/context.mjs", () => ({
   verifyContext: mocks.context,
   outputPath: (output, root) => path.resolve(root, output),
@@ -168,8 +170,6 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   for (const root of directories.splice(0)) await rm(root, { recursive: true, force: true });
 });
-
-useArtifactCapableHost();
 
 describe("build process contract", () => {
   it.each([

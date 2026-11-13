@@ -2,13 +2,18 @@ import HimawariCore
 import HimawariDesign
 import SwiftUI
 
-struct ProcessRowView: View {
+public struct ProcessRowView: View {
     let line: ProcessLine
     let failed: Bool
     @State private var showingSteps = false
     @Environment(\.processStepsOpenAfter) private var openAfter
 
-    var body: some View {
+    public init(line: ProcessLine, failed: Bool) {
+        self.line = line
+        self.failed = failed
+    }
+
+    public var body: some View {
         content
             .onChange(of: line) { old, new in
                 Self.reportHaptic(from: old, to: new, failed: failed)

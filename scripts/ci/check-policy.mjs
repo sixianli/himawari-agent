@@ -6,9 +6,10 @@ import ts from "typescript";
 import { parseDocument } from "yaml";
 import {
   activeMembers,
+  armChecks,
   fileSha256,
-  githubExpression,
   gateRunnerLabel,
+  githubExpression,
   linuxRunnerLabel,
   parseArguments,
   readJson,
@@ -190,6 +191,32 @@ export function upgradeRetiredTestChecks(policy) {
 
 const runnerLabelFor = (checkId) => (checkId === "required" ? gateRunnerLabel : linuxRunnerLabel);
 
+export function upgradeArmRunnerPolicy(policy) {
+  const checks = policy?.checks ?? [];
+  const onSharedRunner = (id) => {
+    const members = checks.find((check) => check.id === id)?.members;
+    return (
+      members?.length === 1 &&
+      members[0].runner === linuxRunnerLabel &&
+      members[0].os === "linux" &&
+      members[0].arch === "x64" &&
+      !Object.hasOwn(members[0], "alternateArch")
+    );
+  };
+  if (
+    !sameSet(
+      checks.map((check) => check.id),
+      jobIds,
+    ) ||
+    !armChecks.every(onSharedRunner)
+  )
+    return policy;
+  const upgraded = structuredClone(policy);
+  for (const check of upgraded.checks)
+    if (armChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
+  return upgraded;
+}
+
 export function upgradeGateRunnerPolicy(policy) {
   const checks = policy?.checks ?? [];
   const required = checks.find((check) => check.id === "required");
@@ -336,9 +363,11 @@ export function validatePolicy(
     assert(activeMembers(check).length > 0, `Every member is paused: ${check.id}`);
     for (const member of check.members) {
       const mac = member.key === "macos-arm64";
+      const arm = armChecks.includes(check.id);
       assert(
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
+          member.alternateArch === (arm ? "arm64" : undefined) &&
           member.runner === (mac ? "macos-15" : runnerLabelFor(check.id)),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
@@ -1206,9 +1235,13 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeGateRunnerPolicy(
-      upgradeRetiredTestChecks(
-        upgradeArtifactRetention(upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes)))),
+    upgradeArmRunnerPolicy(
+      upgradeGateRunnerPolicy(
+        upgradeRetiredTestChecks(
+          upgradeArtifactRetention(
+            upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+          ),
+        ),
       ),
     ),
     {

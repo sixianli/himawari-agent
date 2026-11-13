@@ -16,7 +16,12 @@ import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.ts";
 import { memoryChain } from "../src/memory-history.ts";
-import { guessCategory, parseMemoryExport, parseMemoryText } from "../src/memory-import.ts";
+import {
+  applyImportClassifications,
+  type ImportClassification,
+  parseMemoryExport,
+  parseMemoryText,
+} from "../src/memory-import.ts";
 
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner",
@@ -28,6 +33,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
   csrfToken: "csrf-fixture",
   installedGatewayV2Operations: [
     "memory.overview.read",
+    "memory.classify.read",
     "memory.approval.respond",
     "memory.mutate",
   ],
@@ -39,6 +45,14 @@ const query = vi.fn(),
   mutate = vi.fn(),
   protectText = vi.fn();
 const client = { query, mutate, protectText } as unknown as GatewayClient;
+type Classified = ImportClassification;
+let classifyAnswers: Classified[] = [];
+let classifyFails = false;
+const classified = (
+  category: ImportClassification["category"],
+  classification: "private" | "sensitive" = "private",
+  topic: ImportClassification["topic"] = null,
+): Classified => ({ category, classification, topic, failed: false });
 let container: HTMLDivElement, root: Root, overview: MemoryOverview;
 const opened = vi.fn();
 
@@ -246,12 +260,30 @@ beforeEach(() => {
     manualAddReady: true,
     generatedAt: "2026-10-25T12:00:00.000Z",
   };
-  query.mockImplementation(async (request) => ({
-    ...request,
-    kind: "snapshot",
-    type: "memory.overview.snapshot",
-    payload: overview,
-  }));
+  classifyAnswers = [];
+  classifyFails = false;
+  query.mockImplementation(async (request) => {
+    if (request.type === "memory.classify.read") {
+      if (classifyFails) throw new Error("offline");
+      return {
+        ...request,
+        kind: "snapshot",
+        type: "memory.classify.snapshot",
+        payload: {
+          items: request.payload.contentRefs.map((contentRef: string) => ({
+            contentRef,
+            ...(classifyAnswers.shift() ?? classified("other", "sensitive", "other")),
+          })),
+        },
+      };
+    }
+    return {
+      ...request,
+      kind: "snapshot",
+      type: "memory.overview.snapshot",
+      payload: overview,
+    };
+  });
   mutate.mockResolvedValue({ resultRef: "result", replayed: false, status: "accepted" });
   protectText.mockResolvedValue("payload-edit");
   container = document.createElement("div");
@@ -1481,7 +1513,7 @@ describe("memory approval and management", () => {
     );
     expect(lastCommand()).toMatchObject({
       type: "memory.create",
-      payload: { category: "goal", pinned: false },
+      payload: { category: "goal", topic: "other", pinned: false },
     });
     expect(text("#settings .memory-notice")).not.toContain("以后每次对话都会带上");
     const reminderAdd = "#reminders-page .memory-card[data-kind=add]";
@@ -1513,8 +1545,8 @@ describe("memory approval and management", () => {
     await click("#settings .memory-search-row", "添加");
     const add = "#settings .memory-card[data-kind=add]";
     await type(`${add} textarea`, "每天早上吃一片降压药");
-    expect(document.querySelector<HTMLSelectElement>(`${add} select`)?.value).toBe("health");
-    expect(document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.disabled).toBe(true);
+    expect(document.querySelector<HTMLSelectElement>(`${add} select`)?.value).toBe("");
+    classifyAnswers = [classified("health", "sensitive", "health")];
     await click(add, "保存");
     expect(protectText).toHaveBeenLastCalledWith("每天早上吃一片降压药", "sensitive");
     expect(lastCommand()).toMatchObject({
@@ -1523,6 +1555,7 @@ describe("memory approval and management", () => {
         contentRef: "payload-edit",
         category: "health",
         subCategory: null,
+        topic: "health",
         pinned: false,
       },
     });
@@ -1538,11 +1571,12 @@ describe("memory approval and management", () => {
     await act(async () =>
       document.querySelector<HTMLInputElement>(`${add} [role=switch]`)?.click(),
     );
+    classifyAnswers = [classified("event")];
     await click(add, "保存");
     expect(protectText).toHaveBeenLastCalledWith("今年想跑完一次半马", "private");
     expect(lastCommand()).toMatchObject({
       type: "memory.create",
-      payload: { category: "goal", pinned: true },
+      payload: { category: "goal", topic: null, pinned: true },
     });
     expect(text("#settings .memory-notice")).toContain("归到“目标”，以后每次对话都会带上");
     await click("#settings .memory-footer", "导入记忆");
@@ -1559,11 +1593,17 @@ describe("memory approval and management", () => {
       );
       fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    classifyAnswers = [
+      classified("rule"),
+      classified("other", "sensitive", "other"),
+      classified("health", "sensitive", "health"),
+    ];
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
     expect(preview).toContain("找到 4 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
+    expect(preview).not.toContain("分类中");
     expect(preview).not.toContain("已直接丢掉");
     const boxes = document.querySelectorAll<HTMLInputElement>(
       "#settings .memory-preview input[type=checkbox]",
@@ -1572,15 +1612,14 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-import")).toContain("找到 4 条，已勾 2 条");
     protectText.mockClear();
     await click("#settings .memory-import", "导入勾选的 2 条");
-    expect(protectText).toHaveBeenCalledWith("回答不要用表情符号", "private");
-    expect(protectText).toHaveBeenCalledWith("我的密码是 hunter2", "sensitive");
+    expect(protectText).not.toHaveBeenCalled();
     expect(lastCommand()).toMatchObject({
       type: "memory.import.commit",
       payload: {
         source: "assistant",
         items: [
-          { contentRef: "payload-edit", category: "rule", subCategory: null },
-          { contentRef: "payload-edit" },
+          { contentRef: "payload-edit", category: "rule", subCategory: null, topic: null },
+          { contentRef: "payload-edit", category: "other", topic: "other" },
         ],
       },
     });
@@ -1685,6 +1724,46 @@ describe("memory approval and management", () => {
     clicked.mockRestore();
   });
 
+  it("[MP-8][T5] keeps the import closed while the server is still sorting the entries", async () => {
+    await render();
+    let answer: (() => void) | undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const plain = query.getMockImplementation();
+    query.mockImplementation(async (request) => {
+      if (request.type === "memory.classify.read") await answered;
+      return plain?.(request);
+    });
+    await click("#settings .memory-footer", "导入记忆");
+    await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
+    const fields = document.querySelectorAll<HTMLTextAreaElement>(
+      "#settings .memory-import textarea",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        fields[1],
+        "- 我喜欢早上跑步\n- 回答不要太长",
+      );
+      fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("#settings .memory-import", "拆成一条条");
+    expect(text("#settings .memory-import")).toContain("分类中");
+    expect(button("#settings .memory-import", "导入勾选").disabled).toBe(true);
+    const boxes = [
+      ...document.querySelectorAll<HTMLInputElement>(
+        "#settings .memory-preview input[type=checkbox]",
+      ),
+    ];
+    expect(boxes.length).toBe(2);
+    expect(boxes.every(({ disabled }) => disabled)).toBe(true);
+    classifyAnswers = [classified("preference"), classified("rule")];
+    await act(async () => answer?.());
+    await act(async () => {});
+    expect(text("#settings .memory-import")).not.toContain("分类中");
+    expect(button("#settings .memory-import", "导入勾选").disabled).toBe(false);
+  });
+
   it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {
     overview = { ...overview, manualAddReady: false };
     await render();
@@ -1782,12 +1861,7 @@ describe("memory approval and management", () => {
 });
 
 describe("memory import parsing", () => {
-  it("[MEM-PIN] files a hand-written memory that matches no keyword under other, not identity", () => {
-    expect(guessCategory("我每天必须喝咖啡")).toEqual({ category: "other", sensitive: false });
-    expect(guessCategory("我喜欢喝咖啡").category).toBe("preference");
-  });
-
-  it("[MP-8] reads Codex memory files, marks secrets, skips duplicates and keeps coding notes off", () => {
+  it("[MP-8] reads Codex memory files, waits for the server to sort them, skips duplicates and keeps coding notes off", () => {
     const summary = [
       "v1",
       "## User Profile",
@@ -1802,30 +1876,52 @@ describe("memory import parsing", () => {
       "- 自研记忆 desc: 记忆引擎",
     ].join("\n");
     const parsed = parseMemoryText("memory_summary.md", summary, ["回答一律用简体中文"]);
-    expect(parsed.items.map((item) => [item.text, item.category, item.checked])).toEqual([
-      ["Andy 在做个人 Agent 项目 Himawari", "project", true],
-      ["在准备 AI 应用工程师岗位的面试", "goal", true],
-      ["回答一律用简体中文", "rule", false],
-      ["先给结论，再讲过程", "rule", true],
-      ["提交前先跑文档严格校验", "project", false],
+    expect(parsed.items.map((item) => [item.text, item.status, item.checked])).toEqual([
+      ["Andy 在做个人 Agent 项目 Himawari", "classifying", false],
+      ["在准备 AI 应用工程师岗位的面试", "classifying", false],
+      ["回答一律用简体中文", "ready", false],
+      ["先给结论，再讲过程", "classifying", false],
+      ["提交前先跑文档严格校验", "classifying", false],
     ]);
     expect(parsed.items[2]?.duplicate).toBe(true);
     expect(parsed.items[4]).toMatchObject({ coding: true, subCategory: "Codex" });
-    const agents = parseMemoryText("AGENTS.md", "# Global\n- 推送后不要强推\n- token 是 ghp_x", []);
-    expect(agents.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
-      ["推送后不要强推", false, true],
-      ["token 是 ghp_x", true, false],
+    const sorted = applyImportClassifications(parsed.items, [
+      classified("project"),
+      classified("goal"),
+      classified("rule"),
+      classified("health", "sensitive", "health"),
     ]);
-    const forms = parseMemoryText(
-      "answer.md",
-      "- pwd: hunter2abc\n- PIN码是 1234\n- 我最喜欢的颜色是蓝色",
-      [],
-    );
-    expect(forms.items.map((item) => [item.text, item.sensitive, item.checked])).toEqual([
-      ["pwd: hunter2abc", true, false],
-      ["PIN码是 1234", true, false],
-      ["我最喜欢的颜色是蓝色", false, true],
+    expect(
+      sorted.map((item) => [item.category, item.sensitive, item.checked, item.status]),
+    ).toEqual([
+      ["project", false, true, "ready"],
+      ["goal", false, true, "ready"],
+      ["other", false, false, "ready"],
+      ["rule", false, true, "ready"],
+      ["project", true, false, "ready"],
     ]);
+    expect(sorted[4]?.topic).toBe("health");
+  });
+
+  it("[MP-8][T5] keeps an entry the server could not sort private and unchecked, and never guesses from words", () => {
+    const parsed = parseMemoryText("answer.md", "- 我对青霉素过敏\n- 我最喜欢的颜色是蓝色", []);
+    expect(parsed.items.map((item) => [item.category, item.sensitive])).toEqual([
+      ["other", false],
+      ["other", false],
+    ]);
+    const sorted = applyImportClassifications(parsed.items, [
+      { category: "other", classification: "sensitive", topic: "other", failed: true },
+      classified("preference"),
+    ]);
+    expect(sorted.map((item) => [item.status, item.sensitive, item.topic, item.checked])).toEqual([
+      ["unclassified", true, "other", false],
+      ["ready", false, null, true],
+    ]);
+    expect(applyImportClassifications(parsed.items, [])[1]).toMatchObject({
+      status: "unclassified",
+      sensitive: true,
+      checked: false,
+    });
   });
 
   it("[MP-8] reads a Himawari export and keeps only memories that were in use", () => {
@@ -1841,11 +1937,32 @@ describe("memory import parsing", () => {
         { text: "喜欢蓝色", category: "preference", status: "archived" },
         { text: "对青霉素过敏", category: "health", sensitive: true, status: "active" },
         { text: "旧说法", category: "unknown", status: "superseded" },
+        {
+          text: "每周日去教堂",
+          category: "other",
+          sensitive: true,
+          sensitiveTopic: "beliefs",
+          status: "active",
+        },
+        {
+          text: "常去的那家店",
+          category: "other",
+          sensitive: true,
+          sensitiveTopic: "made-up",
+          status: "active",
+        },
       ],
     });
     expect(parseMemoryExport("himawari-memories.json", exported, []).items).toEqual([
-      expect.objectContaining({ text: "不吃香菜", subCategory: "饮食", checked: true }),
+      expect.objectContaining({
+        text: "不吃香菜",
+        subCategory: "饮食",
+        checked: true,
+        topic: null,
+      }),
       expect.objectContaining({ text: "对青霉素过敏", category: "health", checked: false }),
+      expect.objectContaining({ text: "每周日去教堂", topic: "beliefs", sensitive: true }),
+      expect.objectContaining({ text: "常去的那家店", topic: null, sensitive: true }),
     ]);
     expect(() => parseMemoryExport("x.json", "{}", [])).toThrow("MEMORY_EXPORT_INVALID");
   });

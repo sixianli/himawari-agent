@@ -713,6 +713,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its review or its Memory record",
   ),
   entry(
+    "memory_review_items",
+    "MemoryReviewStorePort",
+    "one row per Memory and upstream Memory whose change put it up for review, with the reason, chain depth, the Memory it was reached through, whether the chain was cut short and how the owner answered; the upstream id carries no foreign key so a deleted upstream still explains the row",
+    "metadata_only",
+    "cascade with its Memory record or with Owner or Agent deletion",
+  ),
+  entry(
     "memory_settings",
     "MemoryBookStorePort",
     "one row per Agent; the Owner pauses or resumes new memories",

@@ -19,6 +19,7 @@ import {
   REQUIRED_GATE_COMMAND,
   resolvePolicySource,
   resolveTestHygieneBaseline,
+  upgradeArmRunnerPolicy,
   upgradeGateRunnerPolicy,
   upgradeHostedRunnerPolicy,
   upgradeRetiredTestChecks,
@@ -33,6 +34,7 @@ import {
 } from "../../scripts/ci/check-policy.mjs";
 import {
   activeMembers,
+  armChecks,
   expectedMembers,
   githubExpression,
   linuxRunnerLabel,
@@ -45,6 +47,13 @@ import { testWorkerCount } from "../../scripts/ci/test-concurrency.mjs";
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const clone = () => structuredClone(policy);
+const armOnSharedRunner = (value) => {
+  for (const check of value.checks)
+    if (armChecks.includes(check.id)) {
+      delete check.members[0].alternateArch;
+    }
+  return value;
+};
 const checkout = {
   repository: "actions/checkout",
   version: "v4",
@@ -893,7 +902,7 @@ describe("CI policy contract", () => {
   });
   it("把已接受的托管 runner 政策升级成 ci-vps 加暂停 macOS 一次", () => {
     const { root, git } = fixtureRepository();
-    const hosted = clone();
+    const hosted = armOnSharedRunner(clone());
     for (const check of hosted.checks) {
       check.timeoutMinutes =
         check.id === "required"
@@ -940,7 +949,7 @@ describe("CI policy contract", () => {
     expect(upgradeHostedRunnerPolicy(unpausedMac)).toBe(unpausedMac);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(mixed))).toThrow();
     const hostedWithTimeouts = (timeoutFor) => {
-      const value = clone();
+      const value = armOnSharedRunner(clone());
       for (const check of value.checks) {
         check.timeoutMinutes = timeoutFor(check.id);
         for (const member of check.members)
@@ -954,14 +963,16 @@ describe("CI policy contract", () => {
     const legacy = hostedWithTimeouts(legacyTimeout);
     expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
     expect(() =>
-      validatePolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+      validatePolicy(
+        upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+      ),
     ).not.toThrow();
     const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
     expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
   });
   const hermesPolicy = () => {
-    const value = clone();
+    const value = armOnSharedRunner(clone());
     for (const check of value.checks)
       for (const member of check.members)
         if (member.key !== "macos-arm64") member.runner = "hermes-home";
@@ -1198,6 +1209,95 @@ describe("CI policy contract", () => {
     const checkOnGate = workflow();
     checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
     expect(() => validateWorkflow(policy, stringify(checkOnGate), lock)).toThrow();
+  });
+  it("[ADR-0260] 基准上三项检查没有 alternateArch 的策略升级成允许 arm64 试跑，摘要仍按原始字节算", () => {
+    expect(armChecks).toEqual(["policy", "static", "security"]);
+    const { root, git } = fixtureRepository();
+    const accepted = armOnSharedRunner(clone());
+    expect(() => validatePolicy(accepted)).toThrow("Incorrect platform: policy/default");
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted checks without alternateArch");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    for (const id of armChecks)
+      expect(selected.policy.checks.find((check) => check.id === id).members).toEqual([
+        {
+          key: "default",
+          runner: linuxRunnerLabel,
+          os: "linux",
+          arch: "x64",
+          alternateArch: "arm64",
+          node: "22.22.3",
+        },
+      ]);
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 7,
+      members: 10,
+    });
+  });
+  it("[ADR-0260] 只升级三项检查都没有 alternateArch 的写法，现行策略原样返回，混写照样被拒", () => {
+    expect(upgradeArmRunnerPolicy(policy)).toBe(policy);
+    expect(upgradeArmRunnerPolicy(armOnSharedRunner(clone()))).toEqual(policy);
+    const mixed = armOnSharedRunner(clone());
+    mixed.checks.find((check) => check.id === "static").members[0].alternateArch = "arm64";
+    expect(upgradeArmRunnerPolicy(mixed)).toBe(mixed);
+    expect(() => validatePolicy(mixed)).toThrow("Incorrect platform: policy/default");
+    const onArm = armOnSharedRunner(clone());
+    onArm.checks.find((check) => check.id === "security").members[0].runner = "ci-arm";
+    expect(upgradeArmRunnerPolicy(onArm)).toBe(onArm);
+  });
+  it.each([
+    ["build 允许 arm64", "build", { alternateArch: "arm64" }],
+    ["coverage 写成 arm64", "coverage", { arch: "arm64" }],
+    ["browser 允许 arm64", "browser", { alternateArch: "arm64" }],
+    ["static 没有 arm64 试跑", "static", { alternateArch: undefined }],
+    ["security 放到汇总 runner", "security", { runner: "ci-vps-gate" }],
+    ["policy 写成 arm64", "policy", { arch: "arm64" }],
+  ])("[ADR-0260] 策略里%s就被拒", (_label, id, change) => {
+    const value = clone();
+    const member = value.checks.find((check) => check.id === id).members[0];
+    for (const [key, entry] of Object.entries(change))
+      if (entry === undefined) delete member[key];
+      else member[key] = entry;
+    expect(() => validatePolicy(value)).toThrow(`Incorrect platform: ${id}/`);
+  });
+  it.each(["static", "security", "coverage"])(
+    "[ADR-0260] ci.yml 里 %s 搬到 ci-arm 就被拒",
+    (id) => {
+      const value = workflow();
+      value.jobs[id]["runs-on"] = "ci-arm";
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+    },
+  );
+  it("[ADR-0260] 试跑工作流只在 ci-arm 上跑三项检查，命令和 ci.yml 相同，不交报告也不进必过结论", () => {
+    const read = (name) =>
+      readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
+    const trial = parse(read("ci-arm-trial.yml"));
+    const ci = parse(read("ci.yml"));
+    expect(Object.keys(trial.jobs)).toEqual(armChecks);
+    expect(trial.on).toEqual({ pull_request: ci.on.pull_request });
+    expect(trial.permissions).toEqual({ contents: "read", "pull-requests": "read" });
+    for (const id of armChecks) {
+      const job = trial.jobs[id];
+      expect(job["runs-on"]).toBe("ci-arm");
+      expect(job.needs).toBeUndefined();
+      const command = (value) => value.steps.find((step) => step.name === "执行共享检查").run;
+      expect(command(job)).toBe(command(ci.jobs[id]));
+      expect(job.steps.some((step) => step.run?.includes("run-share.mjs"))).toBe(false);
+      expect(job.if).toBeUndefined();
+      expect(job.permissions).toBeUndefined();
+      for (const step of job.steps.filter((entry) => entry.uses))
+        expect(step.uses).toMatch(/@[0-9a-f]{40}$/u);
+      expect(job.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with).toEqual({
+        "fetch-depth": 0,
+        "persist-credentials": false,
+      });
+    }
+    expect(read("ci.yml")).not.toContain("ci-arm-trial");
+    expect(read("main.yml")).not.toContain("ci-arm-trial");
   });
   it.each(["test", "node-floor"])("工作流里多出 %s 作业就被拒", (id) => {
     const value = workflow();

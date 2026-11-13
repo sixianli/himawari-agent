@@ -152,8 +152,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const insertRule = database.prepare(
       `INSERT INTO rule_book_rules (
         owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
-        updated_at
-      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', ?, ?)`,
+        updated_at, review_after
+      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', ?, ?, ?)`,
     );
     const ruleSources: [string, DataClassification][] = [];
     for (const [ruleId, status, updatedAt, parameters] of [
@@ -235,6 +235,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         status,
         sourceMemoryId,
         updatedAt,
+        status === "needs_review" ? updatedAt : null,
       );
     }
     database.close();
@@ -921,6 +922,28 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(row).toMatchObject({ reasonCode: "find_memories_failed", outcome: "read" });
     expect(row?.costMicros).toBeGreaterThan(0);
     expect(f.failures.length).toBeGreaterThan(0);
+  });
+
+  it("[T6] tells the caller how to fix a date that is not on the calendar and records the read as failed", async () => {
+    const f = await setup();
+    const client = await f.connect("modern");
+    const fixed = await f.call(client, "find_memories", {
+      query: "牙医",
+      from: "2026-02-30",
+      to: "2026-03-02",
+    });
+    expect(fixed.result.isError).toBe(true);
+    expect(fixed.text).toContain("MEMORY_RECALL_INPUT_INVALID");
+    expect(fixed.text).toContain("改正后再查一次");
+    expect((await f.ledger()).map(({ reasonCode, outcome }) => [reasonCode, outcome])).toEqual([
+      ["find_memories_failed", "read"],
+    ]);
+    const history = await f.call(client, "find_memories", { query: "牙医", includeHistory: true });
+    expect(history.result.isError).not.toBe(true);
+    expect((await f.ledger()).map(({ reasonCode }) => reasonCode).sort()).toEqual([
+      "find_memories",
+      "find_memories_failed",
+    ]);
   });
 
   it("withholds the result when the read cannot be recorded", async () => {

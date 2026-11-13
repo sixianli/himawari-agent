@@ -16,7 +16,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
 
 const state = vi.hoisted(() => ({
   root: "",
@@ -34,6 +33,9 @@ const write = (filename, value) => {
   return filename;
 };
 const count = () => ({ files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 });
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {
@@ -316,8 +318,6 @@ function gateFixture(event = "workflow_dispatch") {
   };
   return { reports, gate, needs, identity, metadata };
 }
-
-useArtifactCapableHost();
 
 describe("publication admission is atomic and workflow-bound", { timeout: 30000 }, () => {
   it("keeps rejected binary reports private and removes every staging directory", async () => {

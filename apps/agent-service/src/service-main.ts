@@ -29,6 +29,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  RuleReviewService,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -101,6 +102,7 @@ import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
@@ -119,7 +121,7 @@ import {
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
-import { findSourceMessageIds } from "./production-memory-control.js";
+import { expandMemoryReviews, findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -140,6 +142,7 @@ import { ProductionPayloadBrokerHandler } from "./production-payload-broker-hand
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
+  RULE_REVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
   proactiveCostEstimator,
@@ -153,6 +156,12 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import {
+  MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
+  MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
+  memoryClassificationFailureCode,
+  ProductionMemoryClassifier,
+} from "./production-memory-classification.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -672,6 +681,7 @@ export async function startTenantRuntime(
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let memoryClassifier: ProductionMemoryClassifier | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1495,6 +1505,7 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),
@@ -1614,34 +1625,12 @@ export async function startTenantRuntime(
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
       const episodeProtector = protector;
       if (episodeProtector) {
-        const titleRepository = repository;
-        approvalThreadTitle = async (threadId) => {
-          const thread = await titleRepository
-            .threadRepository()
-            .read(
-              configuration.ownerId,
-              configuration.agentId,
-              threadId as Parameters<
-                ReturnType<typeof titleRepository.threadRepository>["read"]
-              >[2],
-            );
-          if (!thread?.titleRef) return null;
-          const payload = await episodePayloads.get(thread.titleRef);
-          if (
-            !payload ||
-            payload.contentType !== "text/plain" ||
-            !["public", "private"].includes(payload.dataClassification)
-          )
-            return null;
-          const title = new TextDecoder("utf-8", { fatal: true }).decode(
-            await episodeProtector.unprotect({
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              payload,
-            }),
-          );
-          return title.trim() || null;
-        };
+        approvalThreadTitle = classifiedThreadTitleReader({
+          configuration,
+          threads: repository.threadRepository(),
+          payloads: episodePayloads,
+          protector: episodeProtector,
+        });
       }
       const memoryEpisodes =
         memoryComposition && episodeProtector
@@ -1853,6 +1842,34 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      const classifierModels = modelComposition;
+      if (proactiveConfiguration && proactiveDescriptor && classifierModels)
+        memoryClassifier = new ProductionMemoryClassifier({
+          model: createRealEvalModel({
+            modelRef: proactiveConfiguration.modelRef,
+            invoker: (maxOutputTokens) =>
+              classifierModels.composition.proactiveModel(proactiveConfiguration.modelRef, {
+                maxOutputTokens,
+                requestTimeoutMs: proactiveConfiguration.perCheckMs,
+                purpose: "memory-capture",
+              }),
+            cost: proactiveDescriptor.cost,
+            requestTimeoutMs: proactiveConfiguration.perCheckMs,
+            now: () => clock.now(),
+          }),
+          dailyLimitMicros: proactiveConfiguration.dailyCostMicros,
+          batchCharacters: MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
+          outputTokensPerItem: MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
+          timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          now: () => clock.now(),
+          newId: () => ids.next("memory-classify"),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory.classify_failed",
+              code: memoryClassificationFailureCode(error),
+            }),
+        });
       if (
         proactiveConfiguration &&
         (proactiveSecret || proactiveConfiguration.demoInbox) &&
@@ -2050,6 +2067,39 @@ export async function startTenantRuntime(
               PREREVIEW_MAX_OUTPUT_TOKENS,
             ),
           },
+          ruleReview: ((service, reviews) => ({
+            run: async () => {
+              await expandMemoryReviews(reviews, proactiveScope, () => clock.now());
+              return service.run();
+            },
+          }))(
+            new RuleReviewService({
+              scope: proactiveScope,
+              clock,
+              store: repository.ruleReviews(),
+              memories: proactiveMemoryState,
+              readMemoryText: async (record) => {
+                const text = await readReviewText(record.contentRef);
+                if (text === undefined) throw new Error("RULE_REVIEW_MEMORY_UNREADABLE");
+                return text;
+              },
+              model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+                maxOutputTokens: RULE_REVIEW_MAX_OUTPUT_TOKENS,
+                requestTimeoutMs: proactiveConfiguration.perCheckMs,
+                purpose: "rule-review",
+              }),
+              nextInvocationId: () => ids.next("rule-review"),
+            }),
+            repository.memoryReviews(),
+          ),
+          onRuleReview: (reports) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "rule.reviewed",
+              reviewed: reports.length,
+              suspended: reports.filter(({ outcome }) => outcome === "suspended").length,
+              cleared: reports.filter(({ outcome }) => outcome === "cleared").length,
+            }),
           onPrereview: (result) => {
             if (result.attempted > 0 || result.failures.length > 0)
               writeServiceDiagnostic(errorOutput, {
@@ -2555,6 +2605,10 @@ export async function startTenantRuntime(
           perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
         },
         serviceRevision: readServiceRevision(),
+        correction: (
+          (reviews) => () =>
+            reviews.agreement({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+        )(repository.memoryReviews()),
         ...(configuration.runPolicy?.proactive
           ? ((settings, modelRef) => ({
               prereview: {
@@ -2876,6 +2930,7 @@ export async function startTenantRuntime(
         memory: {
           service: activeDurableMemory,
           externalProposals,
+          ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

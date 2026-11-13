@@ -2,6 +2,7 @@ import {
   ApplicationPortError,
   type ClockPort,
   classificationRank,
+  type DataClassification,
   type DecisionLedgerPort,
   type DurableMemoryService,
   isModelVisible,
@@ -14,6 +15,9 @@ import {
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
+  type MemoryReviewStorePort,
+  MEMORY_REVIEW_EXPAND_BATCH,
+  MEMORY_REVIEW_LIST_LIMIT,
   type MemorySourceMessage,
   modelVisibleCeiling,
   type OwnerProfileService,
@@ -23,6 +27,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  type RuleReviewOwnerStorePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
   type UnitOfWorkPort,
@@ -34,9 +39,17 @@ import {
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
+import {
+  DETERMINISTIC_SENSITIVE,
+  deterministicallySensitive,
+  type MemoryClassification,
+  type ProductionMemoryClassifier,
+  UNCLASSIFIED,
+} from "./production-memory-classification.js";
 import {
   externalProposalBatchId,
   type ProductionMcpMemoryWriter,
@@ -52,12 +65,14 @@ type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
+type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
 const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
 export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
+  "memory.classify.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
@@ -67,6 +82,9 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rule.respond",
+  "memory.review.read",
+  "memory.review.respond",
+  "memory.review.reportMissed",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -77,6 +95,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.external.respond",
   "memory.external.undo",
 ] as const);
+const SENSITIVE_JUDGMENTS_KEPT = 5000;
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
   "identity",
   "preference",
@@ -163,6 +182,27 @@ export async function findSourceMessageIds(
   );
 }
 
+const MEMORY_REVIEW_EXPAND_ROUNDS = 10;
+
+export async function expandMemoryReviews(
+  store: Pick<MemoryReviewStorePort, "expand">,
+  scope: Pick<ProductConfiguration, "ownerId" | "agentId">,
+  now: () => string,
+): Promise<number> {
+  let expanded = 0;
+  for (let round = 0; round < MEMORY_REVIEW_EXPAND_ROUNDS; round += 1) {
+    const batch = await store.expand({
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      now: now(),
+      limit: MEMORY_REVIEW_EXPAND_BATCH,
+    });
+    expanded += batch;
+    if (batch < MEMORY_REVIEW_EXPAND_BATCH) break;
+  }
+  return expanded;
+}
+
 export type OwnerRuleControl = Pick<
   ProductionOwnerRuleWriter,
   "list" | "undo" | "confirm" | "reconfirm"
@@ -205,6 +245,10 @@ export class ProductionMemoryControl {
       "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly reviews?: {
+      readonly memories: MemoryReviewStorePort;
+      readonly rules: RuleReviewOwnerStorePort;
+    };
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -213,8 +257,11 @@ export class ProductionMemoryControl {
       ProductionMcpMemoryWriter,
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
+    readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+
+  readonly #sensitiveJudgments = new Map<string, MemoryClassification>();
 
   constructor(options: ProductionMemoryControl["options"]) {
     this.options = options;
@@ -848,6 +895,98 @@ export class ProductionMemoryControl {
     };
   }
 
+  #reviews() {
+    const reviews = this.options.reviews;
+    const control = this.options.ownerRules;
+    if (!reviews || !control)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    return { reviews, control };
+  }
+
+  async #review(
+    query: Extract<GatewayV2Query, { type: "memory.review.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const { reviews, control } = this.#reviews();
+    const scope = this.#scope();
+    await expandMemoryReviews(reviews.memories, scope, () => this.options.clock.now());
+    const items = await reviews.memories.listOpen({ ...scope, limit: MEMORY_REVIEW_LIST_LIMIT });
+    const records = new Map(
+      (
+        await this.options.state.readMany({
+          ...scope,
+          memoryIds: [
+            ...new Set(items.flatMap((item) => [item.memoryId, item.upstreamMemoryId as MemoryId])),
+          ],
+        })
+      ).map((record) => [record.id as string, record]),
+    );
+    const textOf = async (memoryId: string) => {
+      const record = records.get(memoryId);
+      if (!record) return null;
+      const text = singleLine(await this.readText(record.contentRef).catch(() => ""));
+      return text ? Array.from(text).slice(0, 200).join("") : null;
+    };
+    const memories = [];
+    for (const item of items) {
+      memories.push({
+        memoryId: item.memoryId,
+        text: await textOf(item.memoryId),
+        upstreamMemoryId: item.upstreamMemoryId,
+        upstreamText: await textOf(item.upstreamMemoryId),
+        reason: item.reason,
+        depth: item.depth,
+        truncated: item.truncated,
+        flaggedAt: item.flaggedAt,
+      });
+    }
+    const summaries = new Map(
+      (await control.list()).map((rule) => [rule.ruleId, rule.summary] as const),
+    );
+    const clip = (text: string) => Array.from(text).slice(0, 200).join("");
+    const rules = (await reviews.rules.listOpen({ ...scope, limit: MEMORY_REVIEW_LIST_LIMIT })).map(
+      (rule) => ({
+        ruleId: rule.ruleId,
+        revision: rule.revision,
+        status: rule.status,
+        summary: clip(summaries.get(rule.ruleId) ?? ""),
+        suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
+        suggestionConditions: rule.suggestion
+          ? RULE_CONDITION_FIELDS.flatMap((field) => {
+              const values = rule.suggestion?.params[field] ?? [];
+              return values.length ? [{ field, values: values.map(clip) }] : [];
+            })
+          : [],
+        suspendReason: rule.suspendReason,
+        rechecking: rule.rechecking,
+        sourceMemoryId: rule.sourceMemoryId,
+        updatedAt: rule.updatedAt,
+      }),
+    );
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.review.snapshot",
+      payload: {
+        memories,
+        rules,
+        agreement: await reviews.memories.agreement(scope),
+        generatedAt: this.options.clock.now(),
+      },
+    };
+  }
+
+  async #resolveMemoryReview(memoryId: MemoryId): Promise<void> {
+    await this.options.reviews?.memories.resolve({
+      ...this.#scope(),
+      memoryId,
+      resolution: "owner_edited",
+      now: this.options.clock.now(),
+    });
+  }
+
   async #memoryViews(
     records: readonly ProductMemoryRecord[],
     keepUnreadable: boolean,
@@ -1011,8 +1150,10 @@ export class ProductionMemoryControl {
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
+    if (query.type === "memory.classify.read") return this.#classify(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
+    if (query.type === "memory.review.read") return this.#review(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();
@@ -1137,20 +1278,104 @@ export class ProductionMemoryControl {
     } as GatewayV2Snapshot;
   }
 
+  async #classify(
+    query: Extract<GatewayV2Query, { type: "memory.classify.read" }>,
+  ): Promise<ClassifySnapshot> {
+    const results: MemoryClassification[] = [];
+    const pending: { index: number; text: string }[] = [];
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+        results[index] = DETERMINISTIC_SENSITIVE;
+      else pending.push({ index, text: await this.readText(ref) });
+    }
+    const judged = this.options.classifier
+      ? await this.options.classifier.classify(pending.map(({ text }) => text))
+      : pending.map(() => UNCLASSIFIED);
+    for (const [position, { index }] of pending.entries())
+      results[index] = judged[position] ?? UNCLASSIFIED;
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const result = results[index] ?? UNCLASSIFIED;
+      if (result.classification !== "sensitive") continue;
+      this.#sensitiveJudgments.delete(ref);
+      this.#sensitiveJudgments.set(ref, result);
+      for (const oldest of this.#sensitiveJudgments.keys()) {
+        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
+        this.#sensitiveJudgments.delete(oldest);
+      }
+    }
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.classify.snapshot",
+      payload: {
+        items: query.payload.contentRefs.map((contentRef, index) => {
+          const result = results[index] ?? UNCLASSIFIED;
+          return {
+            contentRef,
+            category: result.category,
+            classification: result.classification,
+            topic: result.topic,
+            failed: result.failed,
+          };
+        }),
+      },
+    } as ClassifySnapshot;
+  }
+
+  async #storedAtLeast(
+    contentRef: string,
+    text: string,
+    dataClassification: DataClassification,
+  ): Promise<string> {
+    const { ownerId, agentId } = this.options.configuration;
+    const copy = await this.options.protector.protect({
+      ownerId,
+      agentId,
+      ref: `memory-raised:${dataClassification}:${contentRef}`,
+      dataClassification,
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: this.options.clock.now(),
+    });
+    try {
+      await this.options.payloads.put(copy);
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
+        throw error;
+    }
+    return copy.ref;
+  }
+
   async #createMemory(input: {
     readonly id: MemoryId;
     readonly contentRef: string;
     readonly category: MemoryCategory;
     readonly subCategory: string | null;
+    readonly topic: SensitiveMemoryTopic | null;
     readonly policyVersion: string;
     readonly importBatchId: string | null;
   }): Promise<ProductMemoryRecord> {
     const payload = await this.options.payloads.get(input.contentRef);
     if (!payload)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_PAYLOAD_MISSING");
-    this.assertStorable(await this.readText(input.contentRef));
+    const text = await this.readText(input.contentRef);
+    this.assertStorable(text);
     if (payload.dataClassification === "restricted")
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+    const judged = this.#sensitiveJudgments.get(input.contentRef);
+    const raised =
+      classificationRank(payload.dataClassification) < classificationRank("sensitive") &&
+      (sensitiveCategory(input.category) ||
+        input.topic !== null ||
+        judged !== undefined ||
+        deterministicallySensitive(text));
+    const dataClassification: DataClassification = raised
+      ? "sensitive"
+      : payload.dataClassification;
+    const contentRef = raised
+      ? await this.#storedAtLeast(input.contentRef, text, "sensitive")
+      : input.contentRef;
     const { ownerId, agentId } = this.options.configuration;
     const subCategory = input.subCategory?.trim() || null;
     return this.options.memory.applyProposal(
@@ -1160,10 +1385,10 @@ export class ProductionMemoryControl {
           id: input.id,
           ownerId,
           agentId,
-          contentRef: input.contentRef,
-          dataClassification: payload.dataClassification,
+          contentRef,
+          dataClassification,
           sourceThreadId: null,
-          sourceRefs: [input.contentRef],
+          sourceRefs: [contentRef],
           inference: false,
           confidencePermille: 1000,
           policyVersion: input.policyVersion,
@@ -1176,8 +1401,10 @@ export class ProductionMemoryControl {
             validTo: null,
             supersededBy: null,
             evidenceVerified: false,
-            ...(payload.dataClassification === "sensitive"
-              ? { sensitiveTopic: sensitiveTopicFor(input.category) }
+            ...(dataClassification === "sensitive"
+              ? {
+                  sensitiveTopic: input.topic ?? judged?.topic ?? sensitiveTopicFor(input.category),
+                }
               : {}),
             ...(subCategory ? { subCategory } : {}),
             ...(input.importBatchId ? { importBatchId: input.importBatchId } : {}),
@@ -1189,12 +1416,13 @@ export class ProductionMemoryControl {
   }
 
   async #create(command: Command<"memory.create">) {
-    const { contentRef, category, subCategory, pinned } = command.payload;
+    const { contentRef, category, subCategory, topic, pinned } = command.payload;
     const saved = await this.#createMemory({
       id: `memory:owner:${command.idempotencyKey}` as MemoryId,
       contentRef,
       category,
       subCategory,
+      topic: topic ?? null,
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
@@ -1258,6 +1486,7 @@ export class ProductionMemoryControl {
         contentRef: item.contentRef,
         category: item.category,
         subCategory: item.subCategory,
+        topic: item.topic ?? null,
         policyVersion: IMPORT_POLICY_VERSION,
         importBatchId: batchId,
       });
@@ -1421,6 +1650,49 @@ export class ProductionMemoryControl {
         throw error;
       }
     }
+    if (command.type === "memory.review.respond") {
+      const { reviews } = this.#reviews();
+      const { target, action, expectedRevision } = command.payload;
+      const now = this.options.clock.now();
+      if (action === "dismiss") {
+        const resolved = await reviews.memories.resolve({
+          ...this.#scope(),
+          memoryId: target as MemoryId,
+          resolution: "owner_dismissed",
+          now,
+        });
+        if (resolved === 0)
+          throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_REVIEW_NOT_FOUND");
+        return { resultRef: target, replayed: false };
+      }
+      if (expectedRevision === null)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "RULE_REVIEW_REVISION_REQUIRED",
+        );
+      const acted = await reviews.rules.act({
+        ...this.#scope(),
+        ruleId: target,
+        expectedRevision,
+        action,
+        now,
+      });
+      if (!acted) throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "RULE_REVIEW_CHANGED");
+      return { resultRef: target, replayed: false };
+    }
+    if (command.type === "memory.review.reportMissed") {
+      const { reviews } = this.#reviews();
+      const { memoryId, upstreamMemoryId } = command.payload;
+      if (memoryId === upstreamMemoryId)
+        throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_REVIEW_SELF");
+      const recorded = await reviews.memories.reportMissed({
+        ...this.#scope(),
+        memoryId: memoryId as MemoryId,
+        upstreamMemoryId: upstreamMemoryId as MemoryId,
+        now: this.options.clock.now(),
+      });
+      return { resultRef: memoryId, replayed: !recorded };
+    }
     if (command.type === "memory.rule.respond") {
       const control = this.options.ownerRules;
       if (!control)
@@ -1554,6 +1826,7 @@ export class ProductionMemoryControl {
           sourceRef: contentRef,
           generationId,
         });
+        await this.#resolveMemoryReview(current.id);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "confirm") {
@@ -1574,6 +1847,7 @@ export class ProductionMemoryControl {
             stance: restored.stance,
             generationId,
           });
+          await this.#resolveMemoryReview(current.id);
           return { resultRef: saved.id, replayed: false };
         } catch (error) {
           if (restored.copied)
@@ -1583,6 +1857,7 @@ export class ProductionMemoryControl {
       }
       if (action === "delete") {
         const saved = await this.options.memory.trash(current.id, generationId);
+        await this.#resolveMemoryReview(current.id);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "recover") {

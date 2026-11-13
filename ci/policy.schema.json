@@ -72,6 +72,9 @@
                 "arch": {
                   "enum": ["x64", "arm64"]
                 },
+                "alternateArch": {
+                  "const": "arm64"
+                },
                 "node": {
                   "type": "string",
                   "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"

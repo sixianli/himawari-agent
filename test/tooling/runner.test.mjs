@@ -11,15 +11,18 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
 import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.mjs";
 import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
-import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
-import { useArtifactCapableHost } from "./artifact-host.mjs";
+import { memberRunsOnHost, reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 
 const directories = [];
 const directory = () => {
@@ -55,8 +58,6 @@ const fixture = () => {
 afterEach(() => {
   for (const root of directories.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-
-useArtifactCapableHost();
 
 describe("JSON公开报告的原始字节与脱敏", () => {
   it.each([
@@ -181,6 +182,27 @@ describe("受控子进程与真实报告", () => {
         timeoutMs: 50,
       }),
     ).toMatchObject({ termination: "timeout", exitCode: 128 });
+  });
+  it("子进程环境带上 runner 的进程追踪号，runner 结束作业时能认出它", async () => {
+    const root = directory();
+    const log = path.join(root, "tracking.log");
+    const previous = process.env.RUNNER_TRACKING_ID;
+    process.env.RUNNER_TRACKING_ID = "github_tracking_fixture";
+    try {
+      await execute(
+        process.execPath,
+        ["-e", "process.stdout.write(['id', process.env.RUNNER_TRACKING_ID].join('='))"],
+        {
+          cwd: root,
+          env: { PATH: process.env.PATH },
+          log,
+        },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.RUNNER_TRACKING_ID;
+      else process.env.RUNNER_TRACKING_ID = previous;
+    }
+    expect(readFileSync(log, "utf8")).toContain("id=github_tracking_fixture");
   });
   it("输出过大不能吞掉资源失败", async () => {
     const root = directory();
@@ -355,4 +377,19 @@ describe("required 失败证据和平台 artifact ID", () => {
     ])
       expect(() => validateQualityPolicy(value)).toThrow();
   });
+});
+
+it("[ADR-0260] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
+  const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
+  const member = (id) => policy.checks.find((check) => check.id === id).members[0];
+  for (const id of ["policy", "static", "security"]) {
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "darwin", "arm64")).toBe(false);
+    expect(memberRunsOnHost(member(id), "linux", "ia32")).toBe(false);
+  }
+  for (const id of ["build", "coverage", "required"]) {
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(false);
+  }
 });

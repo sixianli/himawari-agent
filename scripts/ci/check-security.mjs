@@ -38,11 +38,13 @@ export {
   validateSecurityExceptions,
 } from "./security-exceptions.mjs";
 
+import { runnerTracking } from "./runner-tracking.mjs";
 import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const syntheticMarker = "HIMAWARISYNTHETICONLY";
+export const semgrepTimeoutMs = 15 * 60_000;
 
 function exactPath(path) {
   return safeRelativePath(path) && !/[*?[\]{}]/.test(path);
@@ -75,6 +77,7 @@ function git(root, args) {
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_PAGER: "cat",
+      ...runnerTracking(),
     },
   });
   assert(result.exitCode === 0, "SECURITY_GIT_COMMAND_FAILED");
@@ -530,7 +533,7 @@ function scanSemgrep({ executable, snapshot, env, files, ruleIds, config }) {
       "--json",
       ...targets,
     ],
-    { root: snapshot, env },
+    { root: snapshot, env, timeout: semgrepTimeoutMs },
   );
   return {
     scannedCount: targets.length,
