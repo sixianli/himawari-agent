@@ -1,5 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import type { Server, Socket } from "node:net";
+import path from "node:path";
+import { answerJobHostControlFrame, jobHostControlFailure } from "./job-host-gateway-control.ts";
 import { readGatewayFrames, writeGatewayFrame } from "./job-host-gateway-frames.ts";
 import { forkJobHost } from "./job-host-messages.ts";
 import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts";
@@ -7,6 +9,7 @@ import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts
 export interface JobHostGatewayOptions {
   readonly idleExitMs: number;
   readonly onIdle: () => void;
+  readonly controlRoot?: string;
   readonly fork?: (request: JobHostRequest) => ChildProcess;
 }
 
@@ -28,6 +31,12 @@ export function serveJobHostGateway(
 ): JobHostGateway {
   if (!Number.isSafeInteger(options.idleExitMs) || options.idleExitMs <= 0)
     throw new Error("JOB_HOST_GATEWAY_IDLE_EXIT_INVALID");
+  if (
+    options.controlRoot !== undefined &&
+    (!path.isAbsolute(options.controlRoot) ||
+      path.resolve(options.controlRoot) !== options.controlRoot)
+  )
+    throw new Error("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
   const fork = options.fork ?? forkJobHost;
   const children = new Set<ChildProcess>();
   const connections = new Set<Socket>();
@@ -46,6 +55,7 @@ export function serveJobHostGateway(
     let child: ChildProcess | undefined;
     let cleanupTimeoutMs = 0;
     let launched = false;
+    let controlling = false;
     const reject = () => {
       if (child) killGroup(child);
       socket.destroy();
@@ -111,14 +121,38 @@ export function serveJobHostGateway(
         finish(exitCode, signal),
       );
     };
+    const answerControl = (frame: Record<string, unknown>) => {
+      const aborted = new AbortController();
+      socket.once("close", () => aborted.abort());
+      const root = options.controlRoot;
+      void (
+        root === undefined
+          ? Promise.reject(new Error("JOB_HOST_GATEWAY_CONTROL_UNAVAILABLE"))
+          : answerJobHostControlFrame(root, frame, aborted.signal)
+      ).then(
+        (value) => {
+          writeGatewayFrame(socket, { ...value, type: "result", ok: true });
+          socket.end();
+        },
+        (error: unknown) => {
+          writeGatewayFrame(socket, jobHostControlFailure(error));
+          socket.end();
+        },
+      );
+    };
     readGatewayFrames(
       socket,
       (frame) => {
         if (!launched) {
-          if (frame["type"] !== "launch") return reject();
           launched = true;
+          if (frame["type"] === "control") {
+            controlling = true;
+            return answerControl(frame);
+          }
+          if (frame["type"] !== "launch") return reject();
           return launch(frame["request"]);
         }
+        if (controlling) return reject();
         const current = child;
         if (!current) return;
         if (frame["type"] === "kill") return killGroup(current);
@@ -160,24 +194,41 @@ export function parseJobHostGatewayArgs(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   pid: number,
-): { readonly idleExitMs: number; readonly listen: { fd: number } | { path: string } } {
+): {
+  readonly idleExitMs: number;
+  readonly controlRoot: string;
+  readonly listen: { fd: number } | { path: string };
+} {
   const values = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index];
     const value = argv[index + 1];
-    if ((key !== "--idle-exit-ms" && key !== "--socket") || value === undefined || values.has(key))
+    if (
+      !["--idle-exit-ms", "--socket", "--control-root"].includes(String(key)) ||
+      key === undefined ||
+      value === undefined ||
+      values.has(key)
+    )
       throw new Error("JOB_HOST_GATEWAY_ARGS_INVALID");
     values.set(key, value);
   }
   const idle = values.get("--idle-exit-ms");
   if (idle === undefined || !/^[1-9][0-9]{0,8}$/.test(idle))
     throw new Error("JOB_HOST_GATEWAY_IDLE_EXIT_INVALID");
+  const controlRoot = values.get("--control-root");
+  if (
+    controlRoot === undefined ||
+    !path.isAbsolute(controlRoot) ||
+    path.resolve(controlRoot) !== controlRoot
+  )
+    throw new Error("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
   const socket = values.get("--socket");
   const activated = env["LISTEN_PID"] === String(pid) && env["LISTEN_FDS"] === "1";
   if (socket !== undefined && activated) throw new Error("JOB_HOST_GATEWAY_ARGS_INVALID");
   if (socket === undefined && !activated) throw new Error("JOB_HOST_GATEWAY_SOCKET_MISSING");
   return Object.freeze({
     idleExitMs: Number(idle),
+    controlRoot,
     listen: socket === undefined ? { fd: 3 } : { path: socket },
   });
 }
