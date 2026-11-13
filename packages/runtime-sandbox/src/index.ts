@@ -6,6 +6,13 @@ export * from "./job-host.ts";
 export type { JobHostControlBinding, JobHostControlObservation } from "./job-host-control.js";
 export { queryJobHostControl, readJobHostFinalEvidence } from "./job-host-control.js";
 export {
+  gatewayJobHostControlAccess,
+  type JobHostControlAccess,
+  type JobHostControlDirectory,
+  type JobHostRiskControl,
+  localJobHostControlAccess,
+} from "./job-host-control-access.ts";
+export {
   type JobHostGateway,
   type JobHostGatewayOptions,
   parseJobHostGatewayArgs,

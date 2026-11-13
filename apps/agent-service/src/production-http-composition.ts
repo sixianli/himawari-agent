@@ -1131,6 +1131,7 @@ export async function createProductionHttpComposition(
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          reviews: repository.ruleReviews(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
           book: repository.memoryBook(),
@@ -1142,6 +1143,7 @@ export async function createProductionHttpComposition(
             ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
             : {}),
         }),
+        reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         payloads: memoryPayloads,

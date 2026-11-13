@@ -5,8 +5,6 @@ import { createConnection, createServer } from "node:net";
 import path from "node:path";
 import type { LinuxNamespaceIdentity } from "./linux-namespace.ts";
 
-/** Private per-environment control credential. It is never task input, a Worker
- * boot credential, or permission to execute. Persist only through protected storage. */
 export interface JobHostControlBinding {
   readonly directory: string;
   readonly token: string;
@@ -78,7 +76,10 @@ export async function validateJobHostControlBinding(binding: JobHostControlBindi
   if (Buffer.byteLength(path.join(binding.directory, "control.sock")) > 100)
     throw new Error("JOB_HOST_CONTROL_PATH_TOO_LONG");
 }
-function verify(binding: JobHostControlBinding, encoded: string): JobHostControlObservation {
+export function verifyJobHostControlEnvelope(
+  binding: JobHostControlBinding,
+  encoded: string,
+): JobHostControlObservation {
   if (Buffer.byteLength(encoded) > maximumBytes) throw new Error("JOB_HOST_CONTROL_TOO_LARGE");
   const envelope = JSON.parse(encoded) as { body?: unknown; signature?: unknown };
   if (
@@ -141,13 +142,15 @@ function verify(binding: JobHostControlBinding, encoded: string): JobHostControl
   return Object.freeze(value);
 }
 
-async function readSignedFile(
+export type JobHostControlEvidenceName = "final.json" | "started.json";
+
+export async function readJobHostControlEvidenceBytes(
   binding: JobHostControlBinding,
-  name: "final.json" | "started.json",
-): Promise<JobHostControlObservation> {
+  name: JobHostControlEvidenceName,
+): Promise<string> {
   await validateJobHostControlBinding(binding);
   const file = path.join(binding.directory, name);
-  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile() || metadata.size > maximumBytes || (metadata.mode & 0o077) !== 0)
@@ -155,29 +158,25 @@ async function readSignedFile(
     const buffer = Buffer.alloc(maximumBytes + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     if (bytesRead > maximumBytes) throw new Error("JOB_HOST_CONTROL_TOO_LARGE");
-    return verify(binding, buffer.subarray(0, bytesRead).toString("utf8"));
+    return buffer.subarray(0, bytesRead).toString("utf8");
   } finally {
     await handle.close();
   }
 }
 
-/** Only read the original signed exit fact. Absence/tampering is unknown, never
- * an instruction to relaunch or kill the PID found in an old receipt. */
-export async function readJobHostFinalEvidence(
-  binding: JobHostControlBinding,
-): Promise<JobHostControlObservation> {
-  const observation = await readSignedFile(binding, "final.json");
+export type JobHostStartObservation = JobHostControlObservation &
+  Required<Pick<JobHostControlObservation, "processStartToken" | "taskProcessGroup">>;
+
+export function finalJobHostObservation(
+  observation: JobHostControlObservation,
+): JobHostControlObservation {
   if (observation.phase !== "finished") throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
   return observation;
 }
 
-export async function readJobHostStartEvidence(
-  binding: JobHostControlBinding,
-): Promise<
-  JobHostControlObservation &
-    Required<Pick<JobHostControlObservation, "processStartToken" | "taskProcessGroup">>
-> {
-  const observation = await readSignedFile(binding, "started.json");
+export function startedJobHostObservation(
+  observation: JobHostControlObservation,
+): JobHostStartObservation {
   if (!observation.taskStarted || !observation.processStartToken || !observation.taskProcessGroup)
     throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
   return {
@@ -187,20 +186,61 @@ export async function readJobHostStartEvidence(
   };
 }
 
+export async function readJobHostFinalEvidence(
+  binding: JobHostControlBinding,
+): Promise<JobHostControlObservation> {
+  return finalJobHostObservation(
+    verifyJobHostControlEnvelope(
+      binding,
+      await readJobHostControlEvidenceBytes(binding, "final.json"),
+    ),
+  );
+}
+
+export async function readJobHostStartEvidence(
+  binding: JobHostControlBinding,
+): Promise<JobHostStartObservation> {
+  return startedJobHostObservation(
+    verifyJobHostControlEnvelope(
+      binding,
+      await readJobHostControlEvidenceBytes(binding, "started.json"),
+    ),
+  );
+}
+
+export function validateJobHostControlQuery(
+  command: unknown,
+  timeoutMs: unknown,
+): asserts command is "inspect" | "stop" {
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    (timeoutMs as number) < 1 ||
+    (timeoutMs as number) > 30000 ||
+    !["inspect", "stop"].includes(String(command))
+  )
+    throw new Error("JOB_HOST_CONTROL_REQUEST_INVALID");
+}
+
 export async function queryJobHostControl(
   binding: JobHostControlBinding,
   command: "inspect" | "stop",
   timeoutMs = 1000,
   signal?: AbortSignal,
 ): Promise<JobHostControlObservation> {
+  return verifyJobHostControlEnvelope(
+    binding,
+    await queryJobHostControlBytes(binding, command, timeoutMs, signal),
+  );
+}
+
+export async function queryJobHostControlBytes(
+  binding: JobHostControlBinding,
+  command: "inspect" | "stop",
+  timeoutMs = 1000,
+  signal?: AbortSignal,
+): Promise<string> {
   await validateJobHostControlBinding(binding);
-  if (
-    !Number.isSafeInteger(timeoutMs) ||
-    timeoutMs < 1 ||
-    timeoutMs > 30000 ||
-    !["inspect", "stop"].includes(command)
-  )
-    throw new Error("JOB_HOST_CONTROL_REQUEST_INVALID");
+  validateJobHostControlQuery(command, timeoutMs);
   if (signal?.aborted) throw new Error("JOB_HOST_CONTROL_ABORTED");
   return new Promise((resolve, reject) => {
     const socket = createConnection(path.join(binding.directory, "control.sock"));
@@ -226,18 +266,10 @@ export async function queryJobHostControl(
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
     });
-    socket.on("end", () => {
-      try {
-        resolve(verify(binding, bytes));
-      } catch (error) {
-        reject(error);
-      }
-    });
+    socket.on("end", () => resolve(bytes));
   });
 }
 
-/** The server only observes or reduces risk in this already owned environment.
- * No argv, paths, PID, credentials for other jobs, or start command are accepted. */
 export async function openJobHostControl(
   binding: JobHostControlBinding,
   observe: () => JobHostControlObservation,

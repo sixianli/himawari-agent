@@ -328,6 +328,21 @@ export const governanceMessages = [
         otherVersions: 0,
         groups: [],
       },
+      correction: {
+        handled: 3,
+        agreed: 2,
+        missed: 1,
+        openMemories: 2,
+        openRules: 0,
+        agreement: {
+          successes: 2,
+          samples: 3,
+          enough: false,
+          value: null,
+          low: null,
+          high: null,
+        },
+      },
     },
     generatedAt: "2026-11-04T01:00:00.000Z",
   }),
@@ -957,6 +972,46 @@ export const governanceMessages = [
   fixture("command", "memory.rule.respond", {
     target: "owner:0123456789abcdef01234567",
     action: "undo",
+  }),
+  fixture("query", "memory.review.read", {}),
+  fixture("snapshot", "memory.review.snapshot", {
+    memories: [
+      {
+        memoryId: "memory-02",
+        text: "每周一早上提醒 Andy 看日本入管局的邮件",
+        upstreamMemoryId: "memory-01",
+        upstreamText: "Andy 在办日本签证续签",
+        reason: "memory_edited",
+        depth: 1,
+        truncated: false,
+        flaggedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    rules: [
+      {
+        ruleId: "owner:0123456789abcdef01234567",
+        revision: 3,
+        status: "suspended",
+        summary: "日本入管局相关的邮件一律提醒",
+        suggestion: "日本和韩国入管局相关的邮件一律提醒",
+        suggestionConditions: [{ field: "senderDomains", values: ["moj.go.jp", "moj.go.kr"] }],
+        suspendReason: "parameters_changed",
+        rechecking: false,
+        sourceMemoryId: "memory-01",
+        updatedAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    agreement: { handled: 4, agreed: 3, missed: 1, openMemories: 1, openRules: 1 },
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.review.respond", {
+    target: "owner:0123456789abcdef01234567",
+    action: "adopt",
+    expectedRevision: 3,
+  }),
+  fixture("command", "memory.review.reportMissed", {
+    memoryId: "memory-03",
+    upstreamMemoryId: "memory-01",
   }),
   fixture("command", "memory.create", {
     contentRef: "payload-03",
