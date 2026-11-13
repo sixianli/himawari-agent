@@ -12,7 +12,7 @@ import {
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import { type MemoryEpisodeService, parseTimeScope } from "@himawari-agent/memory-engine";
+import { type MemoryEpisodeService, requestedTimeScope } from "@himawari-agent/memory-engine";
 import {
   TOOL_RECALL,
   TOOL_RESULT_RECALL_EMPTY,
@@ -60,33 +60,6 @@ export interface ProductionMemoryRecallOptions {
   readonly now: () => string;
   readonly timeZone?: string;
   readonly dedupeSameSource?: boolean;
-}
-
-function startOfDay(day: string, timeZone: string): string {
-  const guess = Date.parse(`${day}T00:00:00.000Z`);
-  const local = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-  })
-    .formatToParts(new Date(guess))
-    .reduce<Record<string, number>>((parts, { type, value }) => {
-      parts[type] = Number(value);
-      return parts;
-    }, {});
-  const offset =
-    Date.UTC(
-      local["year"] ?? 1970,
-      (local["month"] ?? 1) - 1,
-      local["day"] ?? 1,
-      local["hour"] ?? 0,
-      local["minute"] ?? 0,
-    ) - guess;
-  return new Date(guess - offset).toISOString();
 }
 
 function argumentsOf(args: RuntimeToolInvocation["arguments"]) {
@@ -156,39 +129,15 @@ export class ProductionMemoryRecall {
     const input = argumentsOf(args);
     const timeZone = this.#options.timeZone ?? "UTC";
     const now = this.#options.now();
-    const parsed = parseTimeScope(input.query, now, timeZone);
-    const explicit = input.from !== undefined || input.to !== undefined;
-    const from = input.from ?? input.to;
-    const to = input.to ?? input.from;
-    const scope: MemoryTimeScope = explicit
-      ? {
-          includeHistory: true,
-          from: from ? startOfDay(from, timeZone) : null,
-          to: to
-            ? new Date(
-                Date.parse(
-                  startOfDay(
-                    new Date(Date.parse(`${to}T00:00:00.000Z`) + 86_400_000)
-                      .toISOString()
-                      .slice(0, 10),
-                    timeZone,
-                  ),
-                ) - 1,
-              ).toISOString()
-            : null,
-        }
-      : {
-          includeHistory: input.includeHistory || parsed?.includeHistory === true,
-          from: parsed?.from ?? null,
-          to: parsed?.to ?? null,
-        };
+    let scope: MemoryTimeScope;
+    try {
+      scope = requestedTimeScope(input, timeZone);
+    } catch {
+      throw new Error("MEMORY_RECALL_INPUT_INVALID");
+    }
     const allowed = modelVisibleClassifications();
     const shown: DataClassification[] = [];
     const shownIds: string[] = [];
-    const searchScope = {
-      ...scope,
-      includeHistory: scope.includeHistory || input.includeHistory,
-    };
     const tentativeLimit = Math.floor(input.limit / 2);
     const [confirmed, tentativeHits] = await Promise.all([
       within("memory-recall", () =>
@@ -197,7 +146,7 @@ export class ProductionMemoryRecall {
           agentId: this.#options.agentId,
           query: input.query,
           limit: input.limit * 3,
-          scope: searchScope,
+          scope,
           relevanceCutoff: true,
         }),
       ).then(
@@ -212,7 +161,7 @@ export class ProductionMemoryRecall {
               agentId: this.#options.agentId,
               query: input.query,
               limit: input.limit * 3,
-              scope: searchScope,
+              scope,
               relevanceCutoff: true,
               includeTentative: true,
               tentativeOnly: true,

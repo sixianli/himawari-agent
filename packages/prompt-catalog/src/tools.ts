@@ -33,7 +33,7 @@ export const TOOL_RECALL = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-memory-recall.ts"],
   layer: "tools",
   output: "free-text",
-  text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况时 includeHistory 填 true。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
+  text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
 });
 
 export const TOOL_TASK_STATUS = fixedPrompt({
@@ -309,7 +309,7 @@ export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用，你正在处理的问题可能涉及主人的个人情况时先查一次。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。auto 填 true 时是随手查一下：最多返回 3 条，和问题不够相关就什么都不返回（memories 和 conversations 都是空的），这时不要说主人没有相关记忆。只读，不会改动任何记忆。",
+  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用，你正在处理的问题可能涉及主人的个人情况时先查一次。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。auto 填 true 时是随手查一下：最多返回 3 条，和问题不够相关就什么都不返回（memories 和 conversations 都是空的），这时不要说主人没有相关记忆。只读，不会改动任何记忆。",
 });
 
 export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({

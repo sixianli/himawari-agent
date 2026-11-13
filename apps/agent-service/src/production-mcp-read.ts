@@ -500,6 +500,7 @@ export class ProductionMcpRead {
           query: { type: "string", minLength: 1, maxLength: 500 },
           from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
           to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+          includeHistory: { type: "boolean" },
           limit: { type: "integer", minimum: 1, maximum: 10 },
           auto: { type: "boolean" },
         },
