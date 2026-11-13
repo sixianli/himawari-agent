@@ -72,7 +72,6 @@
     "scripts/delivery-mode/test_make_packet.py": 5,
     "scripts/disk-hygiene/test_prune_rebuildable.py": 2,
     "scripts/model-review/opencode-lock/package-lock.json": 16,
-    "scripts/operations/ci-runner/install-runner.sh": 1,
     "scripts/operations/ci-runner/prepare-vps.sh": 2,
     "test/integration/qualification/evidence/s1-task16-mem0-compatibility.json": 4,
     "test/integration/qualification/evidence/s1-task2-dependency-matrix.json": 1,
@@ -90,6 +89,7 @@
     "test/tooling/policy.test.mjs": 3,
     "test/tooling/quality-local.test.mjs": 2,
     "test/tooling/quality-policy.test.mjs": 2,
+    "test/tooling/remote-share.test.mjs": 2,
     "test/tooling/run-share.test.mjs": 14,
     "test/tooling/runner-orchestration.test.mjs": 5,
     "test/tooling/toolchain-platforms.test.mjs": 16,
@@ -122,6 +122,7 @@
     "test/integration/qualification/evidence/s1-task2-dependency-preflight.json": 1,
     "test/integration/qualification/evidence/s1-task28-scale.json": 3,
     "test/integration/qualification/evidence/s4-tasks9-10-capability-runtime-update.json": 2,
+    "test/tooling/ci-runner-scripts.test.mjs": 1,
     "test/tooling/toolchain-platforms.test.mjs": 1
   },
   "amd64": {
@@ -148,7 +149,7 @@
     "scripts/delivery-mode/packet-template/signing/prepare-__PKT_LABEL__-snapshot.sh": 1,
     "scripts/delivery-mode/packet-template/signing/sign-__PKT_LABEL__.sh": 1,
     "scripts/delivery-mode/packet-template/steps/verify-steps.py": 1,
-    "scripts/operations/ci-runner/runners.sh": 1,
+    "scripts/operations/ci-runner/runners.sh": 2,
     "scripts/operations/e2e-readonly-observer.py": 1,
     "scripts/operations/hermes-e2e-fixes-cutover.py": 1,
     "scripts/operations/hermes-e2e-fixes-observer.py": 1,
@@ -204,7 +205,7 @@
     "test/qualification/evidence/runtime-history/hermes-history-rehearsal.py": 1,
     "test/qualification/evidence/runtime-history/legacy-history-audit.py": 1,
     "test/qualification/evidence/runtime-history/prepare-legacy-candidate.py": 1,
-    "test/tooling/ci-runner-scripts.test.mjs": 1
+    "test/tooling/ci-runner-scripts.test.mjs": 2
   },
   "python-3.12.10-archive": {
     "scripts/delivery-mode/hermes/build-candidate.sh": 1,

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b0cb15a835a3cdc46e1652d484bfdfe7fe6694fe460126cb369229edf40f9562"
+contract_sha256: "sha256:a9493fb09fc3e4858df56a8ad8e3939bd6d29cc5d3efe286e17c902a7963fd0e"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -14,7 +14,7 @@ date: "2026-11-07"
 - scripts/operations/ci-runner
 -->
 
-本手册说明 CI VPS（Andy 在 OVH 租的云服务器，Ubuntu 24.04，8 个 vCPU，22 GB 内存，公网地址 `158.69.191.249`，主机名 `ci-vps`）上那三个 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序；两个跑检查，一个只跑汇总作业）怎么准备机器、安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md)；第 3 个 runner 的理由见 [ADR 0256](../adr/0256-gate-job-gets-its-own-runner.md)。这台机器只跑 CI，不用来跑 Himawari 的开发测试。
+本手册说明 CI VPS（Andy 在 OVH 租的云服务器，Ubuntu 24.04，8 个 vCPU，22 GB 内存，公网地址 `158.69.191.249`，主机名 `ci-vps`）上的 GitHub 自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序；原来两个跑检查、一个只跑汇总作业，2026-11-13 起可再加第 3 个检查 runner `ci-vps-3`，见[安装](#install)第 6 条）怎么准备机器、安装、注册、日常维护、暂停、排错和卸载。为什么这样做见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md)；第 3 个 runner 的理由见 [ADR 0256](../adr/0256-gate-job-gets-its-own-runner.md)。这台机器只跑 CI，不用来跑 Himawari 的开发测试。
 
 <a id="contents"></a>
 
@@ -24,7 +24,7 @@ date: "2026-11-07"
 - [Authoritative Sources](#authoritative-sources)
 - [Safety and Preconditions](#safety-and-preconditions)：权限、令牌、Docker
 - [Live-State Preflight](#live-state-preflight)：动手前的只读检查
-- [Procedure](#procedure)：准备机器、安装、注册、暂停和恢复、第 3 个 runner 坏了时的应急、日常维护、注销 Hermes 上的旧 runner
+- [Procedure](#procedure)：准备机器、安装、注册、暂停和恢复、第 3 个 runner 坏了时的应急、[Oracle 的 ARM 机器上的两个 runner](#arm-site)、日常维护、注销 Hermes 上的旧 runner
 - [Verification](#verification)
 - [Evidence](#evidence)
 - [Rollback](#rollback)：只卸第 2 个或第 3 个 runner，或全部卸载
@@ -134,6 +134,7 @@ date: "2026-11-07"
 3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和三个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner`、`gh-runner-2`、`gh-runner-gate` 三个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root；组不存在而目录已存在时以退出码 71 拒绝，不接管别人建的目录），建三个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、两个 slice 和服务（三个服务文件每次都重新生成，所以已经装了两个 runner 的机器加第 3 个时，前两个的服务文件也会换成新的），按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
 5. 在已经有两个 runner 的机器上加第 3 个：第 2 步暂停，第 1 步上传，第 3 步安装（看到 `INSTALL_OK`，`runner_uids` 里有三个 uid），按[注册](#register)注册第 3 个（`register-runner.sh 3`），再运行 `resume-runners.sh`，最后按 [Live-State Preflight](#live-state-preflight) 第 4、5、7、8 项核对。恢复脚本只给已注册的 runner 加标签，所以第 3 个要先注册再恢复。
+6. 加第 3 个检查 runner `ci-vps-3`（编号 6，账号 `gh-runner-3`，目录 `/srv/gh-runner-3/`，服务 `gh-runner-3.service`，标签 `ci-vps`，和前两个检查 runner 共用 `gh-runners.slice` 的 18 GB 内存池）：做法同第 5 条，注册时用 `register-runner.sh 6`。2026-11-13 量过：两个检查 runner 都在跑作业时，CPU 平均空着 37%，内存实际只用了 4 GB（其余是可回收的文件缓存），所以加第 3 个。三个检查作业同时吃满内存时，内存池上限会让其中一个作业被系统杀掉、作业失败，这时按 [Rollback](#rollback) 里“只卸第 3 个检查 runner”卸掉它。
 
 <a id="register"></a>
 
@@ -171,6 +172,33 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 - 这个脚本只改 GitHub 上的标签，不连 VPS，和暂停、恢复共用同一把锁。读不到 GitHub、标签没加上或没去掉时打印 `GATE_FALLBACK_FAILED` 和原因，以退出码 1 结束。
 - 应急期间运行过 `pause-runners.sh` 的话，应急标签会被一起去掉；`resume-runners.sh` 之后如果第 3 个 runner 还没修好，再运行一次 `gate-fallback.sh on`。
 - 应急期间汇总作业和检查作业又在同一个队里，排队会回到加第 3 个 runner 之前的样子，所以只是临时办法。
+
+<a id="arm-site"></a>
+
+### Oracle 的 ARM 机器上的两个 runner
+
+第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。工作流里还没有任务写 `runs-on: ci-arm`，在改工作流的 PR 合并之前，这两个 runner 在线但没有任务。
+
+**安装（Andy 在 Mac 上，仓库根目录，一条命令）**：`scripts/operations/ci-runner/install-arm-runners.sh`。它依次做 8 步，每步打印一行 `ARM_INSTALL_STEP n/8`，全部成功时打印 `ARM_INSTALL_OK`：
+
+1. 确认两台机器都连得上、`sudo` 不要密码。
+2. 把脚本传到两台机器的 `/home/ubuntu/ci-runner/`。
+3. 在 ARM 机器上运行 `prepare-arm.sh`：打印机器的实际情况（主机名、系统版本、内存、磁盘、`/home` 下各目录的权限、`/srv` 和 `/opt` 下的目录、在监听的端口，每行以 `CI_ARM_PROBE` 开头），不是 Ubuntu 24.04 的 aarch64、根分区剩余不到 40 GiB、内存不到 20 GB，或 `/home` 下有目录对所有账号可读时拒绝（`CI_ARM_PREPARE_FAILED` 加原因）；然后装 `nftables`、编译工具和 runner 需要的系统库。
+4. 在 CI VPS 上运行 `install-gate-remote.sh key`：生成汇总 runner 取报告用的钥匙（已有就沿用），放在 `/etc/gh-runner/remote-share/`，只有 root 和汇总 runner 的账号读得到，两个检查 runner 读不到。
+5. 在 ARM 机器上运行 `install-runner.sh`：建两个 runner 账号、systemd 服务、防火墙规则和内存分组，另建一个只用来交报告的账号 `gh-ci-send`。这个账号的 `authorized_keys` 只放第 4 步的公钥，并写明只接受来自 CI VPS 地址的连接、只能执行 `/usr/local/lib/gh-runner/send-reports` 这一个脚本。失败时把改过的东西放回去。已经有 runner 服务在跑时跳过这一步。
+6. 把 ARM 机器的主机密钥和地址交给 CI VPS（`install-gate-remote.sh trust`），再用 `install-gate-remote.sh check` 以汇总 runner 的身份取一份不存在的报告，对方回答“没有这份报告”才算通（`GATE_REMOTE_OK`）。
+7. 向 GitHub 要注册令牌，经 ssh 的标准输入交给 ARM 机器上的 `register-runner.sh 4` 和 `5`；令牌不出现在任何命令行里。已经注册并在跑的 runner 跳过。
+8. 等 GitHub 显示两个 runner 都在线并带 `ci-arm` 标签，最多等 3 分钟。
+
+任何一步失败都打印 `ARM_INSTALL_FAILED step=<第几步>` 和原因，以退出码 1 结束；修好原因后重新运行同一条命令，做完的步骤可以安全地重复。两台机器的地址可以用 `CI_VPS_SSH`、`CI_ARM_SSH` 换掉，`CI_VPS_SSH` 必须以 CI VPS 的 IPv4 地址结尾。
+
+**报告怎样回到汇总作业**：ARM 上的检查把报告写在那台机器自己的 `/srv/gh-runner-share/<运行号>-<重试号>/`。汇总作业在 CI VPS 上发现本机共享目录里没有某份报告、而命令行的 `--remote-jobs` 名单里有这个作业时，用上面那把钥匙连 ARM 机器，请求名只能是“运行号-重试号/报告名”，对方把那个目录里的普通文件打成一段 JSON 交回来（符号链接、硬链接、超过 500 个文件、单个文件超过 16 MiB、合计超过 64 MiB 都拒绝）。取回的内容写进本机共享目录后照旧按摘要核对；连不上、超时（总时限 2 分钟）、主机密钥不对、内容对不上，都记成缺这份报告，汇总判失败。ARM 机器上不放任何能连别处的钥匙。
+
+**暂停和恢复**：在 Mac 上运行 `RUNNER_SITE=arm scripts/operations/ci-runner/pause-runners.sh` 和 `RUNNER_SITE=arm scripts/operations/ci-runner/resume-runners.sh`，行为和上面[暂停和恢复](#pause-and-resume)一节相同，只是对象换成 ARM 机器上的两个 runner 和 `ci-arm` 标签。两处各有各的锁，暂停一处不影响另一处。
+
+**ARM 机器不在时的应急**：`ci-arm` 的任务会一直排队，不会被当成通过。在 Mac 上运行 `scripts/operations/ci-runner/arm-fallback.sh on`，把 `ci-arm` 标签加到 `ci-vps-1` 和 `ci-vps-2` 上，这些任务改由 CI VPS 接（`ARM_FALLBACK_ON`）；ARM 机器恢复后运行 `arm-fallback.sh off`（`ARM_FALLBACK_OFF`）。两个检查 runner 都不带 `ci-vps` 标签（暂停中）或都不在线时拒绝。应急开着的时候，两处的 `pause-runners.sh` 都会拒绝运行并提示先 `arm-fallback.sh off`：否则 GitHub 会继续把 `ci-arm` 的任务派给正要停的 runner。
+
+**卸载**：在 ARM 机器上 `sudo RUNNER_SITE=arm bash /home/ubuntu/ci-runner/uninstall-runner.sh all`（先在 Mac 上暂停），它删掉两个 runner、交报告的账号和脚本、防火墙规则和共享目录；`5` 只删第 2 个。CI VPS 上取报告的钥匙用 `sudo bash /home/ubuntu/ci-runner/install-gate-remote.sh remove` 删。GitHub 上的 runner 记录照[全部卸载](#rollback)一节的做法另删。
 
 <a id="routine-maintenance"></a>
 
@@ -230,6 +258,11 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 2. 在 Mac 上运行 `resume-runners.sh` 加回第 1 个 runner 的标签并启动它。
 3. 在 Mac 上从 GitHub 删除 `ci-vps-2`：先用 `gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name}'` 查到编号，再运行 `gh api -X DELETE repos/sixianli/himawari-agent/actions/runners/<编号>`。
 4. 验证：`id gh-runner-2` 报用户不存在，`/srv/gh-runner-2` 不存在，`sudo -n nft list table inet gh_runner` 的规则里只剩 `gh-runner` 的 uid，`ci-vps-1` 仍为 `online`。
+
+**只卸第 3 个检查 runner**：
+
+1. 先在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 6`。做法和“只卸第 2 个 runner”相同，删的是 `gh-runner-3.service`、`/srv/gh-runner-3/` 和 `gh-runner-3` 用户和组。
+2. 在 Mac 上运行 `resume-runners.sh`，再按“只卸第 2 个 runner”的第 3 步从 GitHub 删除 `ci-vps-3`。
 
 **只卸第 3 个 runner**：
 
