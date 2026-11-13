@@ -445,7 +445,7 @@ export const governanceMessages = [
     finishedAt: "2026-11-12T00:00:02.000Z",
     failureCode: null,
     result: {
-      downloadPath: "/api/data-export/v1/archive?exportId=data-export%3AAAAAAAAAAAAAAAAAAAAAAA",
+      downloadPath: `/api/data-export/v1/archive?exportId=${encodeURIComponent("data-export:AAAAAAAAAAAAAAAAAAAAAA")}`,
       fileName: "himawari-export-2026-11-12.zip",
       sizeBytes: 2048,
       sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",

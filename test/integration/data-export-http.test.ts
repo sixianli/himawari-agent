@@ -463,4 +463,49 @@ describe("[P1-6] 网页导出接口", () => {
     expect((await settled(second.resultRef)).state).toBe("ready");
     expect((await settled(first.resultRef)).state).toBe("expired");
   });
+
+  it("[iOS] 生成中另一个确认键拿到同一个编号，之后用这个键重发仍是它；失败或过期后同一个键能重新生成", async () => {
+    const side = await openSide("gateway-keys");
+    await seedEverything(side);
+    let now = "2026-11-02T00:00:00.000Z";
+    let release = () => {};
+    let gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let failures = 0;
+    const held = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            await gate;
+            if (failures > 0) {
+              failures -= 1;
+              throw new Error("DATA_EXPORT_PAYLOAD_UNAVAILABLE");
+            }
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { startWith, settled, status } = await gateway(side, held, () => now);
+    const first = await startWith("key-a");
+    expect(await startWith("key-b")).toEqual({ resultRef: first.resultRef, replayed: false });
+    release();
+    expect((await settled(first.resultRef)).state).toBe("ready");
+    expect(await startWith("key-b")).toEqual({ resultRef: first.resultRef, replayed: true });
+    now = "2026-11-02T00:10:00.000Z";
+    expect((await status(first.resultRef)).state).toBe("expired");
+    const afterExpiry = await startWith("key-a");
+    expect(afterExpiry.replayed).toBe(false);
+    expect(afterExpiry.resultRef).not.toBe(first.resultRef);
+    expect((await settled(afterExpiry.resultRef)).state).toBe("ready");
+    failures = 1;
+    gate = Promise.resolve();
+    const failing = await startWith("key-c");
+    expect((await settled(failing.resultRef)).state).toBe("failed");
+    const retried = await startWith("key-c");
+    expect(retried.replayed).toBe(false);
+    expect(retried.resultRef).not.toBe(failing.resultRef);
+    expect((await settled(retried.resultRef)).state).toBe("ready");
+  });
 });

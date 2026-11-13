@@ -142,7 +142,7 @@ export interface DataExportJobsOptions {
 
 interface DataExportJob {
   readonly exportId: string;
-  readonly idempotencyKey: string;
+  readonly idempotencyKeys: Set<string>;
   state: "running" | "ready" | "failed";
   readonly startedAt: string;
   finishedAt: string | null;
@@ -188,12 +188,23 @@ export class DataExportJobs {
   }
 
   start(idempotencyKey: string): { readonly exportId: string; readonly replayed: boolean } {
-    if (this.#job?.idempotencyKey === idempotencyKey)
-      return { exportId: this.#job.exportId, replayed: true };
-    if (this.#job?.state === "running") return { exportId: this.#job.exportId, replayed: false };
+    const current = this.#job;
+    if (
+      current &&
+      current.state !== "failed" &&
+      (current.expiresAt === null ||
+        Date.parse(this.#options.now()) < Date.parse(current.expiresAt))
+    ) {
+      if (current.idempotencyKeys.has(idempotencyKey))
+        return { exportId: current.exportId, replayed: true };
+      if (current.state === "running") {
+        current.idempotencyKeys.add(idempotencyKey);
+        return { exportId: current.exportId, replayed: false };
+      }
+    }
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
     const job: DataExportJob = {
-      idempotencyKey,
+      idempotencyKeys: new Set([idempotencyKey]),
       exportId: `data-export:${randomBytes(16).toString("base64url")}`,
       state: "running",
       startedAt: this.#options.now(),
@@ -241,7 +252,7 @@ export class DataExportJobs {
         expiresAt: null,
         built: null,
       };
-    const { idempotencyKey: _idempotencyKey, ...view } = job;
+    const { idempotencyKeys: _idempotencyKeys, ...view } = job;
     return view;
   }
 
