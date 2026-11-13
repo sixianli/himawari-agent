@@ -55,6 +55,21 @@ describe("login devices gateway messages", () => {
     rejects(fixture("command", "login.device.revoke", payload));
   });
 
+  it("accepts revoking every other device with or without recent authentication", () => {
+    for (const recentAuthenticationRef of ["auth-ref-01", null])
+      gatewayV2MessageSchema.parse(
+        fixture("command", "login.devices.revoke_others", { recentAuthenticationRef }),
+      );
+  });
+
+  it.each([
+    ["no recent authentication field", {}],
+    ["a device id", { deviceId: "device-01", recentAuthenticationRef: null }],
+    ["a ref with spaces", { recentAuthenticationRef: "auth ref" }],
+  ])("rejects revoking every other device with %s", (_name, payload) => {
+    rejects(fixture("command", "login.devices.revoke_others", payload));
+  });
+
   it("rejects a query with a payload", () => {
     rejects(fixture("query", "login.devices.read", { all: true }));
   });

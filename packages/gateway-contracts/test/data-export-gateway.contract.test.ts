@@ -15,6 +15,8 @@ const result = {
   expiresAt: "2026-11-12T00:10:00.000Z",
 };
 
+const progress = { textsRead: 2, textsTotal: 5 };
+
 function rejects(message: Record<string, unknown>) {
   expect(() => gatewayV2MessageSchema.parse(message)).toThrow(ContractValidationError);
 }
@@ -26,6 +28,7 @@ const snapshot = (overrides: Record<string, unknown>) =>
     startedAt: "2026-11-12T00:00:00.000Z",
     finishedAt: "2026-11-12T00:00:01.000Z",
     failureCode: null,
+    progress: null,
     result,
     generatedAt: "2026-11-12T00:00:02.000Z",
     ...overrides,
@@ -33,9 +36,46 @@ const snapshot = (overrides: Record<string, unknown>) =>
 
 describe("data export gateway messages", () => {
   it("accepts every state, with and without a result", () => {
-    for (const state of ["running", "ready", "failed", "expired"])
+    for (const state of ["running", "ready", "failed", "cancelled", "expired"])
       gatewayV2MessageSchema.parse(snapshot({ state, result: null }));
     expect(gatewayV2MessageSchema.parse(snapshot({})).type).toBe("data.export.status.snapshot");
+  });
+
+  it("accepts real progress while running", () => {
+    gatewayV2MessageSchema.parse(snapshot({ state: "running", result: null, progress }));
+    gatewayV2MessageSchema.parse(
+      snapshot({
+        state: "running",
+        result: null,
+        progress: { textsRead: 5, textsTotal: 5 },
+      }),
+    );
+  });
+
+  it.each([
+    ["progress after the export is ready", { progress }],
+    ["progress on a cancelled export", { state: "cancelled", result: null, progress }],
+    [
+      "more texts read than the total",
+      { state: "running", result: null, progress: { ...progress, textsRead: 6 } },
+    ],
+    [
+      "an unknown total",
+      { state: "running", result: null, progress: { ...progress, textsTotal: null } },
+    ],
+    [
+      "a percentage instead of counts",
+      { state: "running", result: null, progress: { ...progress, percent: 40 } },
+    ],
+  ])("rejects a snapshot with %s", (_name, overrides) => {
+    rejects(snapshot(overrides));
+  });
+
+  it("accepts a cancel command for one export and rejects it without a valid id", () => {
+    gatewayV2MessageSchema.parse(fixture("command", "data.export.cancel", { exportId }));
+    rejects(fixture("command", "data.export.cancel", {}));
+    rejects(fixture("command", "data.export.cancel", { exportId: "not-an-id" }));
+    rejects(fixture("command", "data.export.cancel", { exportId, reason: "slow" }));
   });
 
   it.each([
