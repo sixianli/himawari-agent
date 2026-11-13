@@ -105,6 +105,17 @@ final class ScriptedSender: MessageSender, @unchecked Sendable {
         #expect(await outbox.pending.map(\.state) == [.failed, .waiting])
     }
 
+    @Test func theUnsentCountIsExactWhenReadableAndUnknownWhenNot() async {
+        let store = MemoryLocalStore()
+        #expect(Outbox.unsentCount(in: store) == 0)
+        let outbox = Outbox(store: store)
+        await outbox.enqueue(message("一"))
+        await outbox.enqueue(message("二"))
+        #expect(Outbox.unsentCount(in: store) == 2)
+        try? store.write("outbox.json", Data("not json".utf8))
+        #expect(Outbox.unsentCount(in: store) == nil)
+    }
+
     @Test func onlyARevokedDeviceEndsTheSessionNotANetworkFailure() async {
         let revoked = Outbox(store: MemoryLocalStore())
         await revoked.enqueue(message())

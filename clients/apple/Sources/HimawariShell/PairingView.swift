@@ -22,7 +22,7 @@ struct PairingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { PairingGlow() }
             .animation(.easeInOut(duration: 0.25), value: model.phase)
-            .confirmationDialog(L.text("pairing.startOver.confirm"), isPresented: $confirmingStartOver, titleVisibility: .visible) {
+            .confirmationDialog(startOverWarning, isPresented: $confirmingStartOver, titleVisibility: .visible) {
                 Button(L.text("pairing.startOver"), role: .destructive) { model.startOver() }
                 Button(L.text("pairing.cancel"), role: .cancel) {}
             }
@@ -250,6 +250,14 @@ struct PairingView: View {
             ? L.format("pairing.problem.expired.ttlMinutes", ttl / 60)
             : L.format("pairing.problem.expired.ttlSeconds", ttl)
         return limit + plain
+    }
+
+    private var startOverWarning: String {
+        switch model.unsentMessages {
+        case 0?: L.text("pairing.startOver.confirm")
+        case let count?: L.format("pairing.startOver.confirmUnsent", count)
+        case nil: L.text("pairing.startOver.confirmUnknown")
+        }
     }
 
     static func key(_ problem: PairingProblem) -> String {

@@ -188,6 +188,11 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public var unsentMessages: Int? {
+        guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
+        return Outbox.unsentCount(in: local)
+    }
+
     public func startOver() {
         guard emptyStore() else {
             phase = .unpaired(.storageUnavailable)
