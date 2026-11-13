@@ -13,6 +13,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectArtifactFiles } from "./artifact-files.mjs";
 import { parseArguments, sha256 } from "./contracts.mjs";
+import { pullRemoteReport, remoteShareConfig } from "./remote-share.mjs";
 
 const NAME = /^[a-z][a-z0-9-]{0,63}$/u;
 const DIGEST = /^[0-9a-f]{64}$/u;
@@ -117,22 +118,29 @@ export function publishedMembers(needs) {
     for (const [member, digest] of Object.entries(entry?.outputs ?? {}).sort(([a], [b]) =>
       a.localeCompare(b),
     ))
-      if (DIGEST.test(digest)) members.push({ name: checkedName(`${job}-${member}`), digest });
+      if (DIGEST.test(digest)) members.push({ job, name: checkedName(`${job}-${member}`), digest });
   return members;
 }
 
-export async function collect({ root, run, needs, to }) {
+export async function collect({ root, run, needs, to, remote }) {
   const members = publishedMembers(needs);
   const missing = [];
-  for (const { name, digest } of members) {
+  let pulled = 0;
+  for (const { job, name, digest } of members) {
     try {
+      if (remote?.jobs.includes(job) && !existsSync(path.join(root, run, name))) {
+        if (!remote.config) fail(`REMOTE_NOT_CONFIGURED:${name}`);
+        sharedDirectory(path.join(root, run));
+        await (remote.pull ?? pullRemoteReport)({ config: remote.config, root, run, name });
+        pulled += 1;
+      }
       await get({ root, run, name, digest, to: path.join(to, name) });
     } catch (error) {
       missing.push(error.message);
     }
   }
   mkdirSync(to, { recursive: true });
-  return { collected: members.length - missing.length, missing };
+  return { collected: members.length - missing.length, pulled, missing };
 }
 
 export function remove({ root, run }) {
@@ -141,7 +149,14 @@ export function remove({ root, run }) {
 
 async function dispatch(argv, env) {
   const [command, ...rest] = argv;
-  const args = parseArguments(rest, ["--name", "--from", "--to", "--digest", "--output-key"]);
+  const args = parseArguments(rest, [
+    "--name",
+    "--from",
+    "--to",
+    "--digest",
+    "--output-key",
+    "--remote-jobs",
+  ]);
   const root = shareRoot(env);
   const run = runName(env);
   if (command === "put") {
@@ -159,10 +174,24 @@ async function dispatch(argv, env) {
   }
   if (command === "collect") {
     if (!args["--to"] || !env.CI_NEEDS) fail("COLLECT_INPUT_REQUIRED");
-    const result = await collect({ root, run, needs: JSON.parse(env.CI_NEEDS), to: args["--to"] });
+    const remoteJobs = args["--remote-jobs"];
+    if (remoteJobs !== undefined && !/^[a-z][a-z0-9-]*(,[a-z][a-z0-9-]*)*$/u.test(remoteJobs))
+      fail("REMOTE_JOBS_INVALID");
+    const result = await collect({
+      root,
+      run,
+      needs: JSON.parse(env.CI_NEEDS),
+      to: args["--to"],
+      remote: remoteJobs
+        ? { jobs: remoteJobs.split(","), config: remoteShareConfig(env) }
+        : undefined,
+    });
     for (const reason of result.missing)
       process.stderr.write(`CI_SHARE_COLLECT_MISSING ${reason}\n`);
-    return [`CI_SHARE_COLLECT ${result.collected}`, ...result.missing].join("\n");
+    return [
+      `CI_SHARE_COLLECT ${result.collected}${result.pulled ? ` pulled=${result.pulled}` : ""}`,
+      ...result.missing,
+    ].join("\n");
   }
   if (command === "remove") {
     remove({ root, run });

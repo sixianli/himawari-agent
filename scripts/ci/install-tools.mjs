@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { supportedPlatforms } from "./platforms.mjs";
+import { hostPlatform, supportedPlatforms } from "./platforms.mjs";
 import {
   cacheEnvironmentKey,
   downloadVerified,
@@ -380,7 +380,7 @@ export function verifyInstalledTools({ directory, root = repositoryRoot }) {
   const prefix = realpathSync(directory);
   const installation = JSON.parse(readFileSync(join(prefix, "installation.json"), "utf8"));
   const lock = loadToolchainLock(root);
-  assert(installation.platform === `${process.platform}-${process.arch}`, "已安装工具平台不匹配");
+  assert(installation.platform === hostPlatform(), "已安装工具平台不匹配");
   assert(installation.node === lock.node.baseline, "已安装 Node 不受支持");
   const version = installation.node;
   const platform = installation.platform;
@@ -516,7 +516,7 @@ export async function installTools({
   const lock = loadToolchainLock(root);
   const version = nodeVersion ?? lock.node.baseline;
   assert(version === lock.node.baseline, "不支持的 Node 版本");
-  const platform = `${process.platform}-${process.arch}`;
+  const platform = hostPlatform();
   assert(platforms.includes(platform), `不支持的平台: ${platform}`);
   mkdirSync(prefix, { recursive: true });
   const downloads = join(prefix, "downloads");

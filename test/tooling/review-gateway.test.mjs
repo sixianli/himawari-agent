@@ -1021,9 +1021,13 @@ describe("review gateway usage gaps", () => {
   it("[gateway] reports a Magpie binary that cannot start instead of crashing", async () => {
     const root = mkdtempSync(join(tmpdir(), "gateway-spawn-"));
     try {
-      const real = install();
       const live = await startGateway({
-        install: { ...real, binary: join(root, "no-such-magpie") },
+        install: {
+          binary: join(root, "no-such-magpie"),
+          pluginDir: join(root, "plugin"),
+          cacheDir: join(root, "cache"),
+          version: readGatewayLock().magpie.version,
+        },
         config,
         root: join(root, "run"),
         models: [],

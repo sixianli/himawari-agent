@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { runBrowser } from "./browser.mjs";
 import { runSecurityChecks } from "./check-security.mjs";
 import { createContext, outputPath } from "./context.mjs";
@@ -14,10 +15,10 @@ import {
   isolatedEnvironment,
   verifyInstalledTools,
 } from "./install-tools.mjs";
+import { hostArch, hostOs, hostPlatform } from "./platforms.mjs";
 import { validateQualityPolicy } from "./quality-policy.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 export async function quality({
   check,
@@ -53,8 +54,8 @@ export async function quality({
     commands: [],
     observations: [],
     hardware: {
-      platform: process.platform,
-      arch: process.arch,
+      platform: hostOs(),
+      arch: hostArch(),
       cpus: os.cpus().length,
       cpuModel: os.cpus()[0]?.model ?? "unavailable",
       memoryBytes: os.totalmem(),
@@ -173,7 +174,7 @@ export async function quality({
       }
     } else {
       const observation = policy.nodeObservation;
-      const platform = `${process.platform}-${process.arch}`;
+      const platform = hostPlatform();
       const distribution = observation.artifacts[platform];
       if (!distribution) throw new Error("CI_OBSERVATION_PLATFORM_UNAVAILABLE");
       const downloads = path.join(directory, "downloads");
