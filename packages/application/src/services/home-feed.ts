@@ -129,7 +129,7 @@ export interface HomeFeedServiceOptions {
     readonly now: string;
     readonly until: string;
     readonly limit: number;
-  }) => Promise<readonly HomeUpcoming[]>;
+  }) => Promise<{ readonly items: readonly HomeUpcoming[]; readonly incomplete: boolean }>;
   readonly settings: HomeFeedConfiguration;
   readonly clock: { now(): string };
   readonly digest: (text: string) => string;
@@ -327,11 +327,13 @@ export class HomeFeedService {
     let upcoming: readonly HomeUpcoming[] = [];
     if (this.#options.upcoming)
       try {
-        upcoming = await this.#options.upcoming({
+        const result = await this.#options.upcoming({
           now,
           until: new Date(Date.parse(now) + settings.upcomingDays * 86_400_000).toISOString(),
           limit: settings.upcomingLimit,
         });
+        upcoming = result.items;
+        if (result.incomplete) incomplete.push("upcoming");
       } catch (error) {
         incomplete.push("upcoming");
         this.#options.onSourceFailure("upcoming", error);

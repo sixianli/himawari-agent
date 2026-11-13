@@ -215,6 +215,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     });
     const failures: unknown[] = [];
     const sourceFailures: string[] = [];
+    const failureNames: string[] = [];
     const titled = async (threadId: string) => {
       const thread = await threads.read(OWNER_ID, AGENT_ID, createThreadId(threadId));
       if (!thread || thread.status !== "active") return null;
@@ -252,7 +253,10 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       runs: repository.runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY),
       threadTitle: titled,
       clock,
-      onSourceFailure: (source) => sourceFailures.push(source),
+      onSourceFailure: (source, error) => {
+        sourceFailures.push(source);
+        failureNames.push((error as Error).name);
+      },
     });
 
     const read = async (locale: "zh-CN" | "en" | "ja" = "zh-CN"): Promise<HomeSnapshot> => {
@@ -636,6 +640,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       read,
       propose,
       tidy,
+      failureNames,
       sql,
       put,
       seedRun,
@@ -1116,6 +1121,44 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     expect(snapshot.upcoming.map(({ reminderId }) => reminderId)).toEqual(["reminder-later"]);
   });
 
+  it("leaves out a reminder whose id is longer than the contract carries, due or upcoming, and says so", async () => {
+    const f = await fixture();
+    const long = (prefix: string) => `${prefix}${"x".repeat(160 - prefix.length)}`;
+    await f.remember("memory-long-due", "到点的提醒");
+    await f.remember("memory-long-later", "以后的提醒");
+    for (const [id, memoryId, remindAt, dueAt] of [
+      [long("due-"), "memory-long-due", at(-10), at(120)],
+      [long("later-"), "memory-long-later", at(1440), at(2 * 1440)],
+    ] as const)
+      await f.repository.memoryReminders().schedule({
+        id,
+        ...scope,
+        memoryId: createMemoryId(memoryId),
+        dueAt,
+        remindAt,
+        repeat: "none",
+        status: "scheduled",
+        dismissedAt: null,
+        createdAt: START,
+        updatedAt: START,
+      });
+    await f.remind("reminder-ok", "正常的提醒", at(-5), at(60));
+    const snapshot = await f.read();
+    expect(keys(snapshot)).toEqual(["reminder:reminder-ok"]);
+    expect(snapshot.upcoming).toEqual([]);
+    expect([...snapshot.incompleteSources].sort()).toEqual(["reminders", "upcoming"]);
+    expect(new Set(f.failureNames)).toEqual(new Set(["HOME_ITEM_ID_NOT_SHOWABLE"]));
+    expect(await f.home.awaitingCount()).toBeUndefined();
+  });
+
+  it("still lists a later reminder as upcoming when due ones alone would fill the upcoming limit", async () => {
+    const f = await fixture({ ...DEFAULT_HOME_FEED, upcomingLimit: 1 });
+    await f.remind("reminder-a", "提醒 A", at(-20), at(600));
+    await f.remind("reminder-later", "以后的提醒", at(1440), at(2 * 1440));
+    const { upcoming } = await f.read();
+    expect(upcoming.map(({ reminderId }) => reminderId)).toEqual(["reminder-later"]);
+  });
+
   it("cuts overlong text and control characters to what the contract accepts", async () => {
     const f = await fixture();
     await f.remind("reminder-long", `开头\u0007\n${"长".repeat(5000)}`, at(-10), at(120));
@@ -1143,9 +1186,27 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
         )
         .run(PROACTIVE_INSIGHT_LIST_MAXIMUM - 1),
     );
-    const snapshot = await f.read();
-    expect(snapshot.incompleteSources).toEqual(["mail"]);
-    expect(snapshot.items.map(({ key }) => key)).toEqual(["insight:insight-first"]);
+    const full = await f.read();
+    expect(full.incompleteSources).toEqual([]);
+    expect(full.items.map(({ key }) => key)).toEqual(["insight:insight-first"]);
+    expect(await f.home.awaitingCount()).toBe(1);
+    f.sql((handle) =>
+      handle
+        .prepare(
+          `INSERT INTO source_insights (
+            id, owner_id, agent_id, source, thread_id, last_message_id, result, floor_raised,
+            content_ref, due_at, priority, status, decision_id, owner_rating, push_source_key,
+            created_at, updated_at, push_class
+          ) SELECT 'insight-another', owner_id, agent_id, source, 'gmail-thread-another',
+            last_message_id, result, floor_raised, content_ref, due_at, priority, 'open',
+            decision_id, owner_rating, push_source_key, created_at, updated_at, push_class
+          FROM source_insights WHERE id = 'insight-first'`,
+        )
+        .run(),
+    );
+    const cut = await f.read();
+    expect(cut.incompleteSources).toEqual(["mail"]);
+    expect(cut.items).toHaveLength(1);
     expect(await f.home.awaitingCount()).toBeUndefined();
   });
 

@@ -150,6 +150,13 @@ export async function readProactiveOverview(options: {
   const insights: ProactiveOverviewInsight[] = [];
   const filteredInsights: ProactiveOverviewAuditItem[] = [];
   const storedInsights = await store.listInsights({ ...scope, statuses: ["open", "replied"] });
+  let insightsCapped = false;
+  if (storedInsights.length >= PROACTIVE_INSIGHT_LIST_MAXIMUM) {
+    const openCount = (await store.listInsights({ ...scope, statuses: ["open"] })).length;
+    insightsCapped =
+      openCount >= PROACTIVE_INSIGHT_LIST_MAXIMUM ||
+      openCount > storedInsights.filter(({ status }) => status === "open").length;
+  }
   for (const insight of storedInsights) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
     const floor =
@@ -306,7 +313,7 @@ export async function readProactiveOverview(options: {
         ),
     ),
     insights: Object.freeze(insights),
-    insightsCapped: storedInsights.length >= PROACTIVE_INSIGHT_LIST_MAXIMUM,
+    insightsCapped,
     audit: Object.freeze({
       active: auditActive,
       since: auditSince,
