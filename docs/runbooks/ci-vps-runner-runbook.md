@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7b1a65a4bcd3cb89394cc7a42091502f1dc6d1cad52a8c5f0e8e2828cd8d4a2d"
+contract_sha256: "sha256:5cd6abb8c37d59802836edf400f3850d0c2478f652ff0697b47626e8021076de"
 supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
 superseded_by: ""
 date: "2026-11-07"
@@ -177,7 +177,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 ### Oracle 的 ARM 机器上的两个 runner
 
-第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。工作流里还没有任务写 `runs-on: ci-arm`，在改工作流的 PR 合并之前，这两个 runner 在线但没有任务。
+第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里还没有任务写 `runs-on: ci-arm`。这两个 runner 只跑试跑工作流 `.github/workflows/ci-arm-trial.yml`：每个非草稿 PR 把 policy、static、security 用和 `ci.yml` 相同的命令在 ARM 上再跑一遍，结论不进 `ci/required`，也不往共享目录交报告，只用来和 CI VPS 上同一提交的结论、时长逐次对比。按 CI 第二阶段方案的要求，连续 20 次结论一致、ARM 上的时长不超过 CI VPS 的 1.5 倍，才另开 PR 把这三项检查切到 `ci-arm`。
 
 **安装（Andy 在 Mac 上，仓库根目录，一条命令）**：`scripts/operations/ci-runner/install-arm-runners.sh`。它依次做 8 步，每步打印一行 `ARM_INSTALL_STEP n/8`，全部成功时打印 `ARM_INSTALL_OK`：
 

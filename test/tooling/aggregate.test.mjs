@@ -398,6 +398,22 @@ describe("complete-attempt gate", () => {
     expect(result.status).toBe("failed");
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
+  it("[ADR-0260] 三项检查在 ARM 上或应急退回 x64 时都通过，别的架构和别的检查在 ARM 上被拒", () => {
+    for (const id of ["policy", "static", "security"])
+      for (const arch of ["arm64", "x64"]) {
+        const input = positive();
+        selected(input, id).result.toolchain.arch = arch;
+        expect(aggregate(input).status).toBe("passed");
+      }
+    const other = positive();
+    selected(other, "static").result.toolchain.arch = "ia32";
+    expect(aggregate(other).status).toBe("failed");
+    const build = positive();
+    selected(build, "build", "linux-x64").result.toolchain.arch = "arm64";
+    const failed = aggregate(build);
+    expect(failed.status).toBe("failed");
+    expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
+  });
   it("requires a complete rerun and rejects mixed attempts", () => {
     const input = positive();
     input.context.attempt = 3;

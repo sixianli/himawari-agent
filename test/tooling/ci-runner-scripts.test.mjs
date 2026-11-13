@@ -17,7 +17,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { gateRunnerLabel, linuxRunnerLabel } from "../../scripts/ci/contracts.mjs";
+import {
+  armChecks,
+  armRunnerLabel,
+  gateRunnerLabel,
+  linuxRunnerLabel,
+} from "../../scripts/ci/contracts.mjs";
 
 const scripts = path.resolve(import.meta.dirname, "../../scripts/operations/ci-runner");
 const asRootInPrivateMounts = (script) => [
@@ -1633,22 +1638,22 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     expect(shell("runner_label_for_name ci-vps-9").status).not.toBe(0);
   });
 
-  it("only the required job runs on the gate label, and ci/policy.json, ci.yml, actionlint, the schema and runners.sh all name the same two labels", () => {
+  it("only the required job runs on the gate label, the ARM trial jobs on the ARM label, and ci/policy.json, ci.yml, the trial workflow, actionlint, the schema and runners.sh agree on the labels", () => {
     const gateLabel = shell('printf "%s" "$RUNNER_GATE_LABEL"').stdout;
     expect(gateLabel).toBe(gateRunnerLabel);
     expect(shell('printf "%s" "$RUNNER_CHECK_LABEL"').stdout).toBe(linuxRunnerLabel);
+    expect(shell('printf "%s" "$RUNNER_ARM_LABEL"').stdout).toBe(armRunnerLabel);
+    const labelFor = (id) => (id === "required" ? gateRunnerLabel : linuxRunnerLabel);
     const policy = JSON.parse(read("ci/policy.json"));
     for (const check of policy.checks)
       for (const member of check.members) {
         if (member.os !== "linux") continue;
-        expect([check.id, member.runner]).toEqual([
-          check.id,
-          check.id === "required" ? gateRunnerLabel : linuxRunnerLabel,
-        ]);
+        expect([check.id, member.runner]).toEqual([check.id, labelFor(check.id)]);
       }
     const actionlint = read(".github/actionlint.yaml");
     expect(actionlint).toContain(`- ${linuxRunnerLabel}\n`);
     expect(actionlint).toContain(`- ${gateRunnerLabel}\n`);
+    expect(actionlint).toContain(`- ${armRunnerLabel}\n`);
     const schema = read("ci/policy.schema.json");
     expect(schema).toContain(`"${linuxRunnerLabel}"`);
     expect(schema).toContain(`"${gateRunnerLabel}"`);
@@ -1657,9 +1662,11 @@ describe("[HR-11] the gate runner keeps its own label", () => {
       .filter(([, job]) => !String(job["runs-on"]).startsWith("$"))
       .map(([id, job]) => [id, job["runs-on"]]);
     expect(fixed.length).toBeGreaterThan(1);
-    for (const [id, label] of fixed)
-      expect([id, label]).toEqual([id, id === "required" ? gateRunnerLabel : linuxRunnerLabel]);
+    for (const [id, label] of fixed) expect([id, label]).toEqual([id, labelFor(id)]);
     expect(Object.fromEntries(fixed).required).toBe(gateRunnerLabel);
+    const trial = parse(read(".github/workflows/ci-arm-trial.yml"));
+    expect(Object.keys(trial.jobs)).toEqual(armChecks);
+    for (const job of Object.values(trial.jobs)) expect(job["runs-on"]).toBe(armRunnerLabel);
     const matrixRunners = Object.values(workflow.jobs).flatMap((job) =>
       (job.strategy?.matrix?.include ?? []).map((entry) => entry.runner),
     );

@@ -77,7 +77,7 @@
     "test/integration/qualification/evidence/s1-task2-dependency-matrix.json": 1,
     "test/integration/qualification/evidence/s1-task2-dependency-preflight.json": 2,
     "test/qualification/evidence/hermes-web-2026-09-11/installation.json": 1,
-    "test/tooling/aggregate.test.mjs": 3,
+    "test/tooling/aggregate.test.mjs": 4,
     "test/tooling/check-gitleaks.test.mjs": 3,
     "test/tooling/ci-runner-scripts.test.mjs": 1,
     "test/tooling/ci-summary.test.mjs": 5,
@@ -100,13 +100,13 @@
     "packages/runtime-sandbox/src/srt-runtime-identity.ts": 1,
     "packages/runtime-sandbox/test/job-host-main.unit.test.ts": 1,
     "packages/runtime-sandbox/test/qualification.unit.test.ts": 2,
-    "scripts/ci/check-policy.mjs": 3,
+    "scripts/ci/check-policy.mjs": 4,
     "scripts/delivery-mode/hermes/capture-build-source-inputs.template.mjs": 1,
     "scripts/delivery-mode/packet-template/acceptance/helpers/collect-installer-dependencies.mjs": 1,
     "scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs": 1,
     "scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs": 1,
     "test/tooling/gate-lifecycle.test.mjs": 1,
-    "test/tooling/policy.test.mjs": 2
+    "test/tooling/policy.test.mjs": 3
   },
   "x86_64": {
     "apps/agent-service/test/sandbox-command-inventory.unit.test.ts": 1,

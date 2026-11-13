@@ -93,7 +93,7 @@ it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物
     expect(usesGitHubCache({ uses })).toBe(true);
   for (const uses of ["actions/checkout@x", "actions/cachet@x", undefined])
     expect(usesGitHubCache({ uses })).toBe(false);
-  for (const name of ["ci.yml", "main.yml", "quality.yml"]) {
+  for (const name of ["ci.yml", "main.yml", "quality.yml", "ci-arm-trial.yml"]) {
     const workflow = parse(readFileSync(`.github/workflows/${name}`, "utf8"));
     const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
     expect(steps.filter(usesGitHubCache)).toEqual([]);

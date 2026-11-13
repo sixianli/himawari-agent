@@ -67,6 +67,9 @@ export function reportEntry(filename, kind, output) {
   };
 }
 
+export const memberRunsOnHost = (member, platform = process.platform, arch = process.arch) =>
+  member.os === platform && [member.arch, member.alternateArch].includes(arch);
+
 export async function runCheck({
   root = repositoryRoot,
   checkId,
@@ -130,8 +133,7 @@ export async function runCheck({
   const temporaryDirectory = mkdtempSync(`${testTemporaryRoot()}/hci-`);
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
-    if (hosted && (member.os !== process.platform || member.arch !== process.arch))
-      throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
+    if (hosted && !memberRunsOnHost(member)) throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
     const installation = await verifyInstalledTools({ directory: toolsDirectory, root });
     const tools = installation.executables;
     const env = {
@@ -249,6 +251,7 @@ export async function runCheck({
         ".github/workflows/ci.yml",
         ".github/workflows/quality.yml",
         ".github/workflows/main.yml",
+        ".github/workflows/ci-arm-trial.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };

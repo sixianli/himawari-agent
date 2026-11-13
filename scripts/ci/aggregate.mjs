@@ -96,9 +96,11 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
       fail(checkId, matrixKey, source, `Command exit code is ${result.exitCode}`);
     for (const reason of countsProblems(result.counts)) fail(checkId, matrixKey, source, reason);
     const { check, member } = expectation;
-    for (const field of ["node", "os", "arch"])
+    for (const field of ["node", "os"])
       if (result.toolchain[field] !== member[field])
         fail(checkId, matrixKey, source, `Actual toolchain differs from matrix: ${field}`);
+    if (![member.arch, member.alternateArch].includes(result.toolchain.arch))
+      fail(checkId, matrixKey, source, "Actual toolchain differs from matrix: arch");
     if (result.toolchain.npm !== toolchainLock.npm.version)
       fail(checkId, matrixKey, source, "Actual npm differs from toolchain lock");
     if (result.toolchain.abi !== "127")
