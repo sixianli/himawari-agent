@@ -78,6 +78,7 @@ export interface DeviceActionRegistration {
   readonly usage?: string;
   readonly title: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
+  readonly declineLabel: DeviceActionDetail;
   readonly detail: (
     args: DeviceActionArguments,
     context: DeviceActionContext,
@@ -209,7 +210,8 @@ export class DeviceActionRegistry {
         DEVICE_ACTION_LOCALES.some(
           (locale) =>
             (registration.confirmLabel?.[locale] ?? "").trim().length === 0 ||
-            (registration.title?.[locale] ?? "").trim().length === 0,
+            (registration.title?.[locale] ?? "").trim().length === 0 ||
+            (registration.declineLabel?.[locale] ?? "").trim().length === 0,
         ) ||
         byName.has(registration.name)
       )
@@ -392,6 +394,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: true,
     title: label("设闹钟", "Set alarms", "アラームを設定"),
     confirmLabel: label("设闹钟", "Set alarm", "アラームを設定"),
+    declineLabel: label("不设", "Don't set", "設定しない"),
     detail: (args) =>
       detail((locale) => {
         const at = shownTime(String(args["time"]));
@@ -426,6 +429,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: false,
     title: label("新建日程", "Create events", "予定を作成"),
     confirmLabel: label("加进日历", "Add", "追加"),
+    declineLabel: label("不加", "Don't add", "追加しない"),
     detail: (args) =>
       detail((locale) => {
         const when = period(shownTime(String(args["start"])), shownTime(String(args["end"])));
@@ -451,6 +455,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: false,
     title: label("删除日程", "Delete events", "予定を削除"),
     confirmLabel: label("删掉", "Delete", "削除"),
+    declineLabel: label("不删", "Don't delete", "削除しない"),
     detail: (args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -485,6 +490,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: false,
     title: label("修改日程", "Change events", "予定を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
+    declineLabel: label("不改", "Don't change", "変更しない"),
     detail: (args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -521,6 +527,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: false,
     title: label("修改联系人", "Change contacts", "連絡先を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
+    declineLabel: label("不改", "Don't change", "変更しない"),
     detail: (args, context) =>
       detail((locale) => {
         const name = named(context, "name");
@@ -552,6 +559,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
       "「リマインダー」で完了にする",
     ),
     confirmLabel: label("标成完成", "Mark done", "完了にする"),
+    declineLabel: label("先不标", "Not yet", "まだしない"),
     detail: (_args, context) =>
       detail((locale) => {
         const title = named(context, "title");
@@ -583,6 +591,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
     title: label("在“提醒事项”里新建", "Create in Reminders", "「リマインダー」に作成"),
     confirmLabel: label("新建", "Create", "作成"),
+    declineLabel: label("不建", "Don't create", "作成しない"),
     detail: (args) =>
       detail((locale) => {
         const rest = changes(args, REMINDER_LABELS, locale);
@@ -615,6 +624,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: false,
     title: label("控制家居", "Control home accessories", "家の機器を操作"),
     confirmLabel: label("照做", "Do it", "実行"),
+    declineLabel: label("不做", "Don't", "しない"),
     detail: (args, context) =>
       detail((locale) => {
         const name = joined([named(context, "room"), named(context, "name")], " ");
@@ -641,6 +651,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     untrustedOriginAllowed: true,
     title: label("读取家居状态", "Read home state", "家の状態を読む"),
     confirmLabel: label("读取", "Read", "読み取る"),
+    declineLabel: label("不读", "Don't read", "読まない"),
     detail: (args, context) =>
       detail((locale) => {
         const where = named(context, "name") || ((args["room"] as string | undefined) ?? "");

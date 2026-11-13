@@ -310,6 +310,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
           untrustedOriginAllowed: true,
           title: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           confirmLabel: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
+          declineLabel: { "zh-CN": "不用", en: "No", ja: "いいえ" },
           detail: (args) => ({
             "zh-CN": `回声：${args["word"]}`,
             en: `Echo: ${args["word"]}`,
@@ -994,6 +995,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         ownerPresence: true,
         detail: { "zh-CN": "删除日程“牙医复诊”：2026-11-13 15:00–16:00" },
         confirmLabel: { "zh-CN": "删掉", en: "Delete", ja: "削除" },
+        declineLabel: { "zh-CN": "不删", en: "Don't delete", ja: "削除しない" },
       },
     ]);
     h.clock.advance(121_000);
@@ -1071,6 +1073,13 @@ describe("[iOS-9A] every action carries the words for its confirm button", () =>
       expect(() => new DeviceActionRegistry([{ ...base, confirmLabel } as typeof base])).toThrow(
         "DEVICE_ACTION_REGISTRATION_INVALID",
       );
+    for (const declineLabel of [undefined, { "zh-CN": "不删", en: "Don't delete" }])
+      expect(() => new DeviceActionRegistry([{ ...base, declineLabel } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
+    for (const registration of DEVICE_ACTION_REGISTRATIONS)
+      for (const words of [registration.confirmLabel, registration.declineLabel])
+        expect(Object.keys(words).sort()).toEqual(["en", "ja", "zh-CN"]);
     for (const title of [undefined, { "zh-CN": "删除日程", en: "", ja: "予定を削除" }])
       expect(() => new DeviceActionRegistry([{ ...base, title } as typeof base])).toThrow(
         "DEVICE_ACTION_REGISTRATION_INVALID",

@@ -140,6 +140,7 @@ export interface DeviceActionDelivery {
   readonly expiresAt: string;
   readonly detail: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
+  readonly declineLabel: DeviceActionDetail;
 }
 
 export interface DeviceActionView {
@@ -151,6 +152,7 @@ export interface DeviceActionView {
   readonly state: DeviceActionRecordState;
   readonly detail: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
+  readonly declineLabel: DeviceActionDetail;
   readonly risk: ActionRiskLevel;
   readonly ownerPresence: boolean;
   readonly reversible: boolean;
@@ -540,6 +542,7 @@ export class DeviceActionService {
       expiresAt: record.expiresAt,
       detail,
       confirmLabel: registration.confirmLabel,
+      declineLabel: registration.declineLabel,
     });
   }
 
@@ -792,6 +795,7 @@ export class DeviceActionService {
           threadId: record.threadId ?? null,
           detail: outcome.detail,
           confirmLabel: this.#options.registry.get(record.action)?.confirmLabel ?? EMPTY_DETAIL,
+          declineLabel: this.#options.registry.get(record.action)?.declineLabel ?? EMPTY_DETAIL,
           risk: record.risk,
           ownerPresence: record.ownerPresence,
           reversible: this.#options.registry.get(record.action)?.reversible ?? false,
