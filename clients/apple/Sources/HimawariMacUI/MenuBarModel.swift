@@ -33,11 +33,14 @@ final class MenuBarModel {
     private(set) var home: HomeSnapshot?
     private(set) var running: [RunningWork] = []
     private(set) var acting: String?
+    private(set) var failedItem: String?
     private(set) var shortcutState: GlobalShortcut.State?
     @ObservationIgnored weak var work: MacWorkControl?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var serverActions: [DeviceActionSummary] = []
     @ObservationIgnored private var localProgress: [String: DeviceProgress] = [:]
+    @ObservationIgnored private var actionRequestIds: [String: String] = [:]
+    @ObservationIgnored private var demoShowsStop = false
 
     init(app: AppModel, settings: MacSettingsStore) {
         self.app = app
@@ -50,6 +53,7 @@ final class MenuBarModel {
         self.home = home
         self.running = running
         shortcutState = shortcut
+        demoShowsStop = true
     }
 
     var awaitingCount: Int { home?.awaitingCount ?? 0 }
@@ -107,6 +111,8 @@ final class MenuBarModel {
         }
     }
 
+    var canStop: Bool { work != nil || demoShowsStop }
+
     func stop(_ workId: String) {
         Task { await work?.stop(workId) }
     }
@@ -114,9 +120,18 @@ final class MenuBarModel {
     func respond(_ item: HomeItem, with action: HomeAction) {
         guard acting == nil else { return }
         acting = item.key
+        failedItem = nil
+        let key = [item.key, action.action, action.binding ?? ""].joined(separator: "\n")
+        let requestId = actionRequestIds[key] ?? OutgoingMessage.newId()
+        actionRequestIds[key] = requestId
         Task {
-            defer { acting = nil }
-            try? await app.api.act(on: item, action: action, requestId: OutgoingMessage.newId())
+            do {
+                try await app.api.act(on: item, action: action, requestId: requestId)
+                actionRequestIds[key] = nil
+            } catch {
+                failedItem = item.key
+            }
+            acting = nil
             await refresh()
         }
     }

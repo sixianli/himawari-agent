@@ -49,8 +49,10 @@ struct PanelView: View {
                 .hmType(DesignTokens.TypeScale.macRowStrong)
                 .foregroundStyle(Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button(L.text("panel.stop")) { model.stop(work.id) }
-                .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
+            if model.canStop {
+                Button(L.text("panel.stop")) { model.stop(work.id) }
+                    .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
+            }
         }
         if let progress = work.progress {
             GeometryReader { proxy in
@@ -86,6 +88,11 @@ struct PanelView: View {
                     .disabled(model.acting == item.key)
                 }
             }
+        }
+        if model.failedItem == item.key {
+            Text(L.text("panel.actionFailed"))
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
         }
     }
 

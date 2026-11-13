@@ -15,6 +15,7 @@
 "panel.stop" = "停下";
 "panel.progress" = "%1$d / %2$d";
 "panel.awaiting" = "等你定";
+"panel.actionFailed" = "没办成，再点一次";
 "panel.talk" = "跟 Himawari 说";
 "panel.notPaired" = "还没和你的 Himawari 连上";
 "panel.pair" = "去连接";

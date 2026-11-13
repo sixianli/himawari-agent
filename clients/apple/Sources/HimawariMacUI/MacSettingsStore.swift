@@ -103,18 +103,16 @@ final class MacSettingsStore {
     }
 
     func setSeesMessages(_ on: Bool) {
-        settings.seesMessages = on
-        if !on {
-            settings.messagesAfterRow = nil
-            messagesProblem = nil
-        }
+        settings.setSeesMessages(on)
+        if !on { messagesProblem = nil }
         save()
     }
 
-    func setMessagesAfterRow(_ row: Int64?) {
-        guard settings.seesMessages else { return }
-        settings.messagesAfterRow = row
+    @discardableResult
+    func moveMessagesCursor(from expected: Int64?, to row: Int64) -> Bool {
+        guard settings.moveMessagesCursor(from: expected, to: row) else { return false }
         save()
+        return true
     }
 
     func setShortcut(_ shortcut: KeyShortcut) {

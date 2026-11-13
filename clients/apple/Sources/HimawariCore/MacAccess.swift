@@ -81,6 +81,18 @@ public struct MacAccessSettings: Codable, Sendable, Equatable {
         self.shortcut = shortcut
     }
 
+    public mutating func setSeesMessages(_ on: Bool) {
+        seesMessages = on
+        if !on { messagesAfterRow = nil }
+    }
+
+    @discardableResult
+    public mutating func moveMessagesCursor(from expected: Int64?, to row: Int64) -> Bool {
+        guard seesMessages, messagesAfterRow == expected else { return false }
+        messagesAfterRow = row
+        return true
+    }
+
     public mutating func add(_ grant: FolderGrant) {
         let path = PathPolicy.realPath(grant.path)
         folders.removeAll { PathPolicy.realPath($0.path) == path }
@@ -113,20 +125,33 @@ public enum PathDecision: Sendable, Equatable {
 
 public enum PathPolicy {
     public static func realPath(_ path: String) -> String {
-        let url = URL(fileURLWithPath: path).standardizedFileURL
-        var resolved = url.resolvingSymlinksInPath()
-        if resolved.path != url.path || FileManager.default.fileExists(atPath: url.path) {
-            return resolved.standardizedFileURL.path
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        var existing = components.count
+        while existing > 0 {
+            if let resolved = systemRealPath("/" + components.prefix(existing).joined(separator: "/")) {
+                return appending(components.suffix(from: existing), to: resolved)
+            }
+            existing -= 1
         }
-        var missing: [String] = []
-        var existing = url
-        while !FileManager.default.fileExists(atPath: existing.path), existing.pathComponents.count > 1 {
-            missing.insert(existing.lastPathComponent, at: 0)
-            existing.deleteLastPathComponent()
+        return appending(components[...], to: "/")
+    }
+
+    private static func systemRealPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    private static func appending(_ rest: ArraySlice<String>, to base: String) -> String {
+        var parts = base.split(separator: "/").map(String.init)
+        for part in rest {
+            switch part {
+            case ".": continue
+            case "..": if !parts.isEmpty { parts.removeLast() }
+            default: parts.append(part)
+            }
         }
-        resolved = existing.resolvingSymlinksInPath()
-        for component in missing { resolved.appendPathComponent(component) }
-        return resolved.standardizedFileURL.path
+        return "/" + parts.joined(separator: "/")
     }
 
     public static func contains(_ folder: String, _ path: String) -> Bool {

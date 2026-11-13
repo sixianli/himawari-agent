@@ -24,6 +24,7 @@ final class InputBarModel {
     @ObservationIgnored private let chat: () -> ChatStore?
     @ObservationIgnored private let limits: () -> AttachmentLimits?
     @ObservationIgnored private var pendingRequestId: String?
+    @ObservationIgnored private var session = 0
 
     init(api: DeviceAPI, chat: @escaping () -> ChatStore?, limits: @escaping () -> AttachmentLimits?) {
         self.api = api
@@ -37,6 +38,8 @@ final class InputBarModel {
     )
 
     func begin(with snapshot: ContextSnapshot, seesFrontmost: Bool) {
+        session += 1
+        sending = false
         draft = ""
         problem = nil
         threadId = nil
@@ -45,18 +48,33 @@ final class InputBarModel {
     }
 
     func add(files urls: [URL]) {
-        let added = urls.filter(\.isFileURL).map { ContextGathering.filePiece($0, source: .droppedFile, reading: ContextReader.read($0)) }
-        pieces = ContextGathering.merge(pieces, adding: added)
-        problem = nil
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return }
+        let started = session
+        Task {
+            let added = await Task.detached(priority: .userInitiated) {
+                files.map { ContextGathering.filePiece($0, source: .droppedFile, reading: ContextReader.read($0)) }
+            }.value
+            guard started == session else { return }
+            add(pieces: added)
+        }
+    }
+
+    func add(pieces added: [ContextPiece]) {
+        let merged = ContextGathering.merge(pieces, adding: added, limit: limits()?.perMessage)
+        if merged.pieces != pieces { pendingRequestId = nil }
+        pieces = merged.pieces
+        problem = merged.overflowed ? .tooMany : nil
     }
 
     func remove(_ pieceId: String) {
         pieces.removeAll { $0.id == pieceId }
+        pendingRequestId = nil
         if problem == .tooMany { problem = nil }
     }
 
     var canSend: Bool {
-        !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !sending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pieces.isEmpty)
     }
 
     func send() {
@@ -78,45 +96,58 @@ final class InputBarModel {
         let requestId = pendingRequestId ?? OutgoingMessage.newId()
         pendingRequestId = requestId
         let carried = pieces
+        let started = session
         Task {
-            defer { sending = false }
-            var attachments: [MessageAttachment] = []
-            if let limits, !carried.isEmpty {
-                do {
-                    attachments = try await api.attach(carried, requestId: requestId, limits: limits)
-                } catch {
-                    problem = .uploadFailed
-                    return
-                }
-                guard MessageAttachments.fits(text: text, attachments: attachments, limits: limits) else {
-                    problem = .tooMany
-                    return
-                }
-            }
-            guard let chat = chat() else {
-                problem = .sendFailed
-                return
-            }
-            do {
-                let thread: String
-                if let threadId {
-                    thread = threadId
-                } else {
-                    thread = try await chat.newThread(requestId: requestId)
-                    threadId = thread
-                    chat.watch(thread)
-                }
-                await chat.send(MessageAttachments.compose(text: text, attachments: attachments), in: thread)
+            let outcome = await deliver(text: text, carried: carried, requestId: requestId, limits: limits, session: started)
+            guard started == session else { return }
+            sending = false
+            switch outcome {
+            case .sent:
                 draft = ""
                 pieces = []
                 pendingRequestId = nil
-            } catch {
-                problem = .sendFailed
+            case let .failed(failure):
+                problem = failure
             }
         }
     }
 
+    private enum Delivery {
+        case sent
+        case failed(Problem)
+    }
+
+    private func deliver(text: String, carried: [ContextPiece], requestId: String, limits: AttachmentLimits?, session started: Int) async -> Delivery {
+        var attachments: [MessageAttachment] = []
+        if let limits, !carried.isEmpty {
+            do {
+                attachments = try await api.attach(carried, requestId: requestId, limits: limits)
+            } catch {
+                return .failed(.uploadFailed)
+            }
+            guard MessageAttachments.fits(text: text, attachments: attachments, limits: limits) else { return .failed(.tooMany) }
+        }
+        guard started == session, let chat = chat() else { return .failed(.sendFailed) }
+        do {
+            let thread: String
+            if let threadId {
+                thread = threadId
+            } else {
+                thread = try await chat.newThread(requestId: requestId)
+                guard started == session else { return .failed(.sendFailed) }
+                threadId = thread
+                chat.watch(thread)
+            }
+            await chat.send(MessageAttachments.compose(text: text, attachments: attachments), in: thread)
+            return .sent
+        } catch {
+            return .failed(.sendFailed)
+        }
+    }
+
     func close() {
+        session += 1
+        sending = false
         if threadId != nil { chat()?.unwatch() }
     }
 

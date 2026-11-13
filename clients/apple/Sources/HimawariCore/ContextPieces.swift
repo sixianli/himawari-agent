@@ -95,11 +95,20 @@ public enum ContextGathering {
     }
 
     public static func merge(_ current: [ContextPiece], adding new: [ContextPiece]) -> [ContextPiece] {
+        merge(current, adding: new, limit: nil).pieces
+    }
+
+    public static func merge(_ current: [ContextPiece], adding new: [ContextPiece], limit: Int?) -> (pieces: [ContextPiece], overflowed: Bool) {
         var result = current
+        var overflowed = false
         for piece in new where !result.contains(where: { $0.fileURL != nil && $0.fileURL == piece.fileURL }) {
+            if let limit, result.count >= limit {
+                overflowed = true
+                continue
+            }
             result.append(piece)
         }
-        return result
+        return (result, overflowed)
     }
 }
 

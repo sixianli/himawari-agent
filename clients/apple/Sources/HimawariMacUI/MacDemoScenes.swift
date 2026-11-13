@@ -100,7 +100,7 @@ enum MacDemo {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("报价单 11 月.xlsx")
             try? Data([0x50, 0x4b, 0x03, 0x04]).write(to: file)
             input.begin(with: ContextSnapshot(), seesFrontmost: true)
-            input.add(files: [file])
+            input.add(pieces: [ContextGathering.filePiece(file, source: .droppedFile, reading: ContextReader.read(file))])
             input.draft = "和上个月的差在哪"
             return AnyView(InputBarView(model: input, shortcutLabel: nil, submit: {}))
         case .checklist, .checklistOpen:

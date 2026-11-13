@@ -56,7 +56,7 @@ public enum MessageSensing {
     }
 
     public static func date(_ appleDate: Int64) -> Date {
-        let seconds = abs(appleDate) >= 1_000_000_000_000 ? Double(appleDate) / 1_000_000_000 : Double(appleDate)
+        let seconds = appleDate.magnitude >= 1_000_000_000_000 ? Double(appleDate) / 1_000_000_000 : Double(appleDate)
         return Date(timeIntervalSinceReferenceDate: seconds)
     }
 
@@ -75,7 +75,7 @@ public enum MessageSensing {
         guard !row.guid.isEmpty, let service = service(row.service) else { return nil }
         guard let text = row.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         var evidence = ["service": service, "direction": row.fromMe ? "outgoing" : "incoming"]
-        if let sender = row.sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
+        if !row.fromMe, let sender = row.sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
             evidence["sender"] = utf16Prefix(sender, limit: senderLimit)
         }
         return PerceptionRecordBody(
@@ -101,11 +101,10 @@ public enum MessageSensing {
         }
         return result
     }
+}
 
-    public static func startingRow(enabled: Bool, saved: Int64?, newest: Int64) -> Int64? {
-        guard enabled else { return nil }
-        return saved ?? newest
-    }
+public enum PerceptionUploadError: Error, Sendable, Equatable {
+    case allRejected(ids: [String])
 }
 
 extension DeviceAPI {
@@ -123,15 +122,18 @@ extension DeviceAPI {
                     skipped.append(record.id)
                 }
             }
+            guard skipped.count < records.count else { throw PerceptionUploadError.allRejected(ids: skipped) }
             return skipped
         } catch DeviceAPIError.server(status: 400, _, _) {
-            return records.map(\.id)
+            throw PerceptionUploadError.allRejected(ids: records.map(\.id))
         }
     }
 
     public func perceive(_ records: [PerceptionRecordBody]) async throws -> PerceptionIngestReply {
         struct Body: Encodable { let records: [PerceptionRecordBody] }
-        let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try JSONEncoder().encode(Body(records: records))))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try encoder.encode(Body(records: records))))
         return try decode(PerceptionIngestReply.self, data)
     }
 }

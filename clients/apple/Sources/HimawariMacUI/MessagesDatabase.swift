@@ -21,6 +21,21 @@ final class MessagesDatabase {
         return (try? handle.read(upToCount: 16))?.isEmpty == false
     }
 
+    struct Batch: Sendable {
+        let missing: [String]
+        let newest: Int64
+        let rows: [MessageRow]
+    }
+
+    static func batch(after row: Int64?, limit: Int) throws -> Batch {
+        let database = try MessagesDatabase()
+        let schema = try database.schema()
+        guard schema.missing.isEmpty else { return Batch(missing: schema.missing, newest: 0, rows: []) }
+        let newest = try database.newestRow(schema)
+        guard let row else { return Batch(missing: [], newest: newest, rows: []) }
+        return Batch(missing: [], newest: newest, rows: try database.rows(after: row, limit: limit, schema: schema))
+    }
+
     private let handle: OpaquePointer
 
     init(file: URL = defaultFile) throws {
@@ -77,7 +92,7 @@ final class MessagesDatabase {
             rows.append(MessageRow(
                 rowId: sqlite3_column_int64(statement, 0),
                 guid: string(statement, 1) ?? "",
-                text: string(statement, 2).flatMap { $0.isEmpty ? nil : $0 } ?? Self.attributedText(blob(statement, 3)),
+                text: string(statement, 2).flatMap { $0.isEmpty ? nil : $0 } ?? blob(statement, 3).flatMap(TypedStreamText.string),
                 appleDate: sqlite3_column_int64(statement, 4),
                 fromMe: sqlite3_column_int64(statement, 5) != 0,
                 service: string(statement, 6),
@@ -85,11 +100,6 @@ final class MessagesDatabase {
             ))
         }
         return rows
-    }
-
-    static func attributedText(_ data: Data?) -> String? {
-        guard let data, !data.isEmpty else { return nil }
-        return (NSUnarchiver.unarchiveObject(with: data) as? NSAttributedString)?.string
     }
 
     private var lastError: String { String(cString: sqlite3_errmsg(handle)) }
@@ -145,57 +155,42 @@ final class MessagesSensor {
         guard settings.settings.seesMessages, app.phase == .active else { return }
         settings.refreshPermissions()
         guard settings.messagesReadable else { return }
-        guard let batch = app.configuration?.limit(MessageSensing.batchLimitKey), batch > 0 else {
+        guard let limit = app.configuration?.limit(MessageSensing.batchLimitKey), limit > 0 else {
             settings.reportMessages(.serverNotReady)
             return
         }
-        let database: MessagesDatabase
-        let schema: MessagesSchema
-        do {
-            database = try MessagesDatabase()
-            schema = try database.schema()
-        } catch {
-            settings.reportMessages(.cannotRead)
-            return
-        }
-        guard schema.missing.isEmpty else {
-            settings.reportMessages(.unknownLayout(schema.missing))
-            return
-        }
-        guard let newest = try? database.newestRow(schema),
-              let start = MessageSensing.startingRow(enabled: true, saved: settings.settings.messagesAfterRow, newest: newest)
-        else {
-            settings.reportMessages(.cannotRead)
-            return
-        }
-        if settings.settings.messagesAfterRow == nil {
-            settings.setMessagesAfterRow(start)
-            settings.reportMessages(nil)
-            return
-        }
-        var after = start
         while settings.settings.seesMessages, !Task.isCancelled {
-            let rows: [MessageRow]
+            let saved = settings.settings.messagesAfterRow
+            let batch: MessagesDatabase.Batch
             do {
-                rows = try database.rows(after: after, limit: Int(batch), schema: schema)
+                batch = try await Task.detached(priority: .utility) { try MessagesDatabase.batch(after: saved, limit: Int(limit)) }.value
             } catch {
                 settings.reportMessages(.cannotRead)
                 return
             }
-            guard let last = rows.last else {
+            guard batch.missing.isEmpty else {
+                settings.reportMessages(.unknownLayout(batch.missing))
+                return
+            }
+            guard let saved else {
+                settings.moveMessagesCursor(from: nil, to: batch.newest)
                 settings.reportMessages(nil)
                 return
             }
-            let records = rows.compactMap(MessageSensing.record)
+            guard let last = batch.rows.last else {
+                settings.reportMessages(nil)
+                return
+            }
+            let records = batch.rows.compactMap(MessageSensing.record)
             if !records.isEmpty {
-                guard (try? await app.api.perceiveSkippingInvalid(records)) != nil else {
+                do {
+                    _ = try await app.api.perceiveSkippingInvalid(records)
+                } catch {
                     settings.reportMessages(.cannotSend)
                     return
                 }
             }
-            guard settings.settings.seesMessages else { return }
-            after = last.rowId
-            settings.setMessagesAfterRow(after)
+            guard settings.moveMessagesCursor(from: saved, to: last.rowId) else { return }
         }
     }
 }

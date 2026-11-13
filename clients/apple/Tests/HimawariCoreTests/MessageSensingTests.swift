@@ -46,19 +46,55 @@ import Testing
         #expect(record.evidence["sender"]?.utf16.count == MessageSensing.senderLimit)
     }
 
-    @Test func turningItOnStartsAtTheNewestMessageAndNeverReadsOlderOnes() {
-        #expect(MessageSensing.startingRow(enabled: true, saved: nil, newest: 5000) == 5000)
-        #expect(MessageSensing.startingRow(enabled: true, saved: 4800, newest: 5000) == 4800)
-        #expect(MessageSensing.startingRow(enabled: false, saved: 4800, newest: 5000) == nil)
-    }
-
     @Test func turningItOffForgetsWhereItWasSoTurningItBackOnSkipsTheGap() {
         var settings = MacAccessSettings(seesMessages: true)
-        settings.messagesAfterRow = 4800
+        let first = settings.moveMessagesCursor(from: nil, to: 4800)
+        #expect(first)
+        settings.setSeesMessages(false)
+        #expect(settings.messagesAfterRow == nil)
+        let whileOff = settings.moveMessagesCursor(from: nil, to: 4900)
+        #expect(!whileOff)
+        settings.setSeesMessages(true)
+        #expect(settings.messagesAfterRow == nil)
+    }
+
+    @Test func anUploadThatFinishesAfterTheSwitchWasFlippedOffAndOnCannotWriteItsOldPlace() {
+        var settings = MacAccessSettings(seesMessages: true)
+        settings.moveMessagesCursor(from: nil, to: 4800)
+        let startedFrom = settings.messagesAfterRow
+        settings.setSeesMessages(false)
+        settings.setSeesMessages(true)
+        settings.moveMessagesCursor(from: nil, to: 5000)
+        let stale = settings.moveMessagesCursor(from: startedFrom, to: 4850)
+        #expect(!stale)
+        #expect(settings.messagesAfterRow == 5000)
+        let fresh = settings.moveMessagesCursor(from: 5000, to: 5010)
+        #expect(fresh)
+    }
+
+    @Test func theSavedPlaceSurvivesARestartAndOldSettingsFilesStillLoad() {
+        var settings = MacAccessSettings(seesMessages: true)
+        settings.moveMessagesCursor(from: nil, to: 4800)
         let decoded = try? JSONDecoder().decode(MacAccessSettings.self, from: JSONEncoder().encode(settings))
         #expect(decoded?.messagesAfterRow == 4800)
         let old = try? JSONDecoder().decode(MacAccessSettings.self, from: Data(#"{"folders":[],"apps":[],"seesFrontmost":true,"seesMessages":false,"shortcut":{"keyCode":49,"modifiers":2048,"key":"space"}}"#.utf8))
         #expect(old?.messagesAfterRow == nil)
+    }
+
+    @Test func whenTheServerRejectsEveryRecordNothingIsSkippedAndTheErrorComesBack() async throws {
+        let records = try [row, MessageRow(rowId: 42, guid: "b", text: "ok", appleDate: 0, fromMe: true, service: "SMS", sender: nil)].map { try #require(MessageSensing.record($0)) }
+        let rejected = HTTPExchangeResponse(status: 400, body: Data(#"{"error":{"code":"PERCEPTION_INVALID"}}"#.utf8))
+        let exchange = RecordingExchange([rejected, rejected, rejected])
+        let api = DeviceAPI(http: try uploadClient(exchange))
+        await #expect(throws: PerceptionUploadError.allRejected(ids: records.map(\.id))) { try await api.perceiveSkippingInvalid(records) }
+        let single = RecordingExchange([rejected])
+        await #expect(throws: PerceptionUploadError.allRejected(ids: [records[0].id])) { try await DeviceAPI(http: try uploadClient(single)).perceiveSkippingInvalid([records[0]]) }
+    }
+
+    @Test func anOutgoingMessageDoesNotCallTheOtherPersonTheSender() throws {
+        let outgoing = try #require(MessageSensing.record(MessageRow(rowId: 1, guid: "a", text: "hi", appleDate: 0, fromMe: true, service: "iMessage", sender: "+81 90-1234-5678")))
+        #expect(outgoing.evidence == ["service": "imessage", "direction": "outgoing"])
+        #expect(MessageSensing.date(Int64.min) < Date(timeIntervalSinceReferenceDate: 0))
     }
 
     @Test func aBatchTheServerRejectsIsRetriedOneByOneAndOnlyTheBadRecordIsSkipped() async throws {

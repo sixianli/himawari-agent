@@ -15,7 +15,7 @@ import Testing
     struct Vectors: Decodable { let vectors: [Vector] }
 
     @Test func composesExactlyWhatTheWebComposerProduces() throws {
-        let url = try #require(Bundle.module.url(forResource: "Fixtures/attachment-vectors", withExtension: "json"))
+        let url = try #require(Bundle.module.url(forResource: "attachment-vectors", withExtension: "json", subdirectory: "Fixtures"))
         let vectors = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url)).vectors
         #expect(vectors.count == 3)
         for vector in vectors {
@@ -97,6 +97,16 @@ import Testing
         #expect(piece.bytes == 6)
     }
 
+    @Test func droppingMoreFilesThanAMessageCanCarryKeepsTheFirstOnesAndSaysSo() {
+        let files = (0 ..< 5).map { ContextPiece(source: .droppedFile, name: "\($0).txt", content: "x", fileURL: URL(fileURLWithPath: "/tmp/\($0).txt")) }
+        let merged = ContextGathering.merge(Array(files.prefix(1)), adding: Array(files.dropFirst()), limit: 3)
+        #expect(merged.pieces.map(\.name) == ["0.txt", "1.txt", "2.txt"])
+        #expect(merged.overflowed)
+        let fits = ContextGathering.merge([], adding: Array(files.prefix(3)), limit: 3)
+        #expect(fits.pieces.count == 3 && !fits.overflowed)
+        #expect(ContextGathering.merge([], adding: files, limit: nil).pieces.count == 5)
+    }
+
     @Test func droppingTheSameFileTwiceKeepsOneChip() {
         let url = URL(fileURLWithPath: "/tmp/a.txt")
         let a = ContextPiece(source: .droppedFile, name: "a.txt", content: "x", fileURL: url)
@@ -138,6 +148,21 @@ import Testing
         let grants = [FolderGrant(id: "d", path: downloads.path, access: .readWrite)]
         let decision = PathPolicy.decide(downloads.path + "/link/keys.txt", use: .read, grants: grants)
         #expect(decision == .outsideAllowedFolders(realPath: PathPolicy.realPath(private_.path) + "/keys.txt"))
+    }
+
+    @Test func dotDotAfterASymlinkClimbsFromWhereTheLinkPointsNotFromTheGrantedFolder() throws {
+        let root = try TemporaryFolder()
+        let downloads = root.url.appendingPathComponent("Downloads")
+        let outside = root.url.appendingPathComponent("Outside/dir")
+        try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "secret".write(to: root.url.appendingPathComponent("Outside/secret.txt"), atomically: true, encoding: .utf8)
+        try "mine".write(to: downloads.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: downloads.appendingPathComponent("link"), withDestinationURL: outside)
+        let grants = [FolderGrant(id: "d", path: downloads.path, access: .readWrite)]
+        let decision = PathPolicy.decide(downloads.path + "/link/../secret.txt", use: .read, grants: grants)
+        #expect(decision == .outsideAllowedFolders(realPath: PathPolicy.realPath(root.url.path) + "/Outside/secret.txt"))
+        #expect(PathPolicy.decide(downloads.path + "/link/../new.txt", use: .write, grants: grants) == .outsideAllowedFolders(realPath: PathPolicy.realPath(root.url.path) + "/Outside/new.txt"))
     }
 
     @Test func aFolderWhoseNameStartsLikeAGrantedOneIsNotInsideIt() throws {
