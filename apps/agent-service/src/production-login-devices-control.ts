@@ -8,7 +8,6 @@ import {
   type RecentAuthenticationGuardPort,
   type SessionDeviceStatePort,
 } from "@himawari-agent/application";
-import { createDeviceId, createOwnerId } from "@himawari-agent/domain";
 import type {
   GatewayV2Command,
   GatewayV2Query,
@@ -50,7 +49,7 @@ export class ProductionLoginDevicesControl {
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "LOGIN_DEVICES_OWNER_REQUIRED",
       );
-    return createOwnerId(ownerId);
+    return ownerId;
   }
 
   async query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot> {
@@ -94,9 +93,8 @@ export class ProductionLoginDevicesControl {
       authentication,
       expectedAuthenticationRef: command.payload.recentAuthenticationRef,
     });
-    const deviceId = createDeviceId(command.payload.deviceId);
     const all = await this.#options.state.listDevices(ownerId, true);
-    const device = all.find((entry) => entry.id === deviceId);
+    const device = all.find((entry) => entry.id === command.payload.deviceId);
     if (!device)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "LOGIN_DEVICE_NOT_FOUND");
     if (device.status === "revoked") return { resultRef: device.id, replayed: true };

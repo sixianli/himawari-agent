@@ -5,7 +5,6 @@ import {
   type ProductConfiguration,
   type ThreadArtifactStorePort,
 } from "@himawari-agent/application";
-import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 
 export const PRODUCTION_FILES_OPERATIONS = Object.freeze(["files.list.read"] as const);
@@ -40,8 +39,8 @@ export class ProductionFilesControl {
     if (query.scope.ownerId !== ownerId || query.scope.agentId !== agentId)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "FILES_SCOPE_MISMATCH");
     const page = await this.#options.store.list({
-      ownerId: createOwnerId(ownerId),
-      agentId: createAgentId(agentId),
+      ownerId,
+      agentId,
       threadId: null,
       kind: query.payload.kind,
       origin: query.payload.origin,
