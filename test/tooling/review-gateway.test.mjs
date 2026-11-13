@@ -1370,9 +1370,17 @@ describe("review gateway timing and price", () => {
       );
       expect(readGatewayRests(root)).toEqual(["go_[31m a_b_c 429 -"]);
       writeFileSync(join(root, "config", "magpie", "rests.json"), '{"half');
-      expect(readGatewayRests(root)).toEqual(["unreadable bad-json"]);
+      expect(readGatewayRests(root)).toEqual(["- unreadable:bad-json - -"]);
       writeFileSync(join(root, "config", "magpie", "rests.json"), "[]");
-      expect(readGatewayRests(root)).toEqual(["unreadable not-a-map"]);
+      expect(readGatewayRests(root)).toEqual(["- unreadable:not-a-map - -"]);
+      writeFileSync(
+        join(root, "config", "magpie", "rests.json"),
+        JSON.stringify({ go: { why: "😀".repeat(81), status: 429 } }),
+      );
+      expect(readGatewayRests(root)).toEqual([`go ${"😀".repeat(80)} 429 -`]);
+      rmSync(join(root, "config", "magpie", "rests.json"));
+      mkdirSync(join(root, "config", "magpie", "rests.json"));
+      expect(readGatewayRests(root)).toEqual(["- unreadable:EISDIR - -"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
