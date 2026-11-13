@@ -67,13 +67,13 @@ import Testing
         }
         flow.begin(.heard, at: t0.addingTimeInterval(3), utteranceId: "utt-3")
         #expect(flow.isCommandCandidate)
-        #expect(flow.partial("几点了", at: t0.addingTimeInterval(3)) == [.prepare(utteranceId: "utt-3", text: "几点了")])
+        #expect(flow.partial("几点了", at: t0.addingTimeInterval(3)) == [.prepare(utteranceId: "utt-3", text: "向日葵\n几点了")])
         guard case let .command(request, _, _, heardName) = flow.finish(speech("几点了"), mode: .full, at: t0.addingTimeInterval(4)) else {
             Issue.record("expected a command")
             return
         }
-        #expect(request == "几点了")
-        #expect(heardName == nil)
+        #expect(request == "向日葵\n几点了")
+        #expect(heardName == "向日葵")
     }
 
     @Test func forgetsTheNameWhenTheNextSentenceComesTooLate() {

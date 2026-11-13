@@ -76,11 +76,13 @@ public struct ListenEvalCall: Codable, Sendable, Equatable {
     public let nameHeard: Bool
     public let request: String?
     public let prepared: [String]
+    public let heardName: String?
 
-    public init(nameHeard: Bool, request: String?, prepared: [String]) {
+    public init(nameHeard: Bool, request: String?, prepared: [String], heardName: String? = nil) {
         self.nameHeard = nameHeard
         self.request = request
         self.prepared = prepared
+        self.heardName = heardName
     }
 }
 
@@ -128,8 +130,8 @@ public enum ListenEvalReplay {
             open = false
             let speech = HeardSpeech(text: piece.text, startedAt: origin.addingTimeInterval(piece.start), duration: max(0, piece.at - piece.start), language: nil, confidence: 0, source: .deviceMicrophone, ownerScore: nil)
             switch flow.finish(speech, mode: .nameOnly, at: now) {
-            case let .command(request, _, _, _):
-                return ListenEvalCall(nameHeard: true, request: request, prepared: prepared)
+            case let .command(request, _, _, heardName):
+                return ListenEvalCall(nameHeard: true, request: request, prepared: prepared, heardName: heardName)
             case .calledOnly:
                 nameHeard = true
             case .record, .nothing:

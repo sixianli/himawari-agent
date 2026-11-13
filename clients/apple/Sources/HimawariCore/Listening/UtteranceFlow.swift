@@ -51,6 +51,11 @@ public enum UtteranceResult: Sendable, Equatable {
     case nothing
 }
 
+private struct CalledName: Sendable, Equatable {
+    let name: String
+    let text: String
+}
+
 public struct UtteranceFlow: Sendable, Equatable {
     public let names: NameCall
     public let policy: SpokenRequestPolicy
@@ -61,6 +66,7 @@ public struct UtteranceFlow: Sendable, Equatable {
     private var lastSent: String?
     private var lastSentAt: Date?
     private var awaitingRequestUntil: Date?
+    private var calledName: CalledName?
 
     public init(names: NameCall, policy: SpokenRequestPolicy = .designed) {
         self.names = names
@@ -71,6 +77,7 @@ public struct UtteranceFlow: Sendable, Equatable {
         self.utteranceId = utteranceId
         self.start = start
         followsName = start == .heard && (awaitingRequestUntil.map { now <= $0 } ?? false)
+        if !followsName { calledName = nil }
         awaitingRequestUntil = nil
         nameAnnounced = followsName
         lastSent = nil
@@ -114,6 +121,7 @@ public struct UtteranceFlow: Sendable, Equatable {
             }
             if start == .heard && !followsName {
                 awaitingRequestUntil = now.addingTimeInterval(policy.followUpSeconds)
+                calledName = request.name.map { CalledName(name: $0, text: speech.text.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 return .calledOnly(heard)
             }
         }
@@ -124,6 +132,9 @@ public struct UtteranceFlow: Sendable, Equatable {
     private func request(in text: String) -> (text: String, name: String?, saysMore: Bool)? {
         if start == .ownerTouched || followsName {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if start == .heard, let calledName {
+                return ("\(calledName.text)\n\(trimmed)", calledName.name, !trimmed.isEmpty)
+            }
             return (trimmed, nil, !trimmed.isEmpty)
         }
         return names.match(text).map { ($0.text, $0.name, $0.saysMoreThanTheName) }

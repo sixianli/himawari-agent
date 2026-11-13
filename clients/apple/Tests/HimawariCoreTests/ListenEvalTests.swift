@@ -85,7 +85,7 @@ struct ListenEvalTests {
             ListenEvalPiece(at: 1.9, start: 0, text: "Himawari 帮我看天气", isFinal: true),
         ]
         let call = ListenEvalReplay.call(names: Self.names, pieces: pieces)
-        #expect(call == ListenEvalCall(nameHeard: true, request: "Himawari 帮我看天气", prepared: ["Himawari 帮我", "Himawari 帮我看天气"]))
+        #expect(call == ListenEvalCall(nameHeard: true, request: "Himawari 帮我看天气", prepared: ["Himawari 帮我", "Himawari 帮我看天气"], heardName: "Himawari"))
 
         var changed = pieces
         changed[3] = ListenEvalPiece(at: 1.9, start: 0, text: "Himawari，帮我看天气。", isFinal: true)
@@ -101,7 +101,7 @@ struct ListenEvalTests {
             ListenEvalPiece(at: 2.6, start: 1.2, text: "明日の天気", isFinal: true),
         ]
         let call = ListenEvalReplay.call(names: Self.names, pieces: pieces)
-        #expect(call == ListenEvalCall(nameHeard: true, request: "明日の天気", prepared: ["明日の天気"]))
+        #expect(call == ListenEvalCall(nameHeard: true, request: "ひまわり\n明日の天気", prepared: ["ひまわり\n明日の天気"], heardName: "ひまわり"))
     }
 
     @Test func replayReportsNothingWhenTheNameIsNotCalled() {
