@@ -23,7 +23,7 @@ CREATE TABLE decision_ledger (
   kind TEXT NOT NULL CHECK (
     kind IN (
       'proactive', 'memory_candidate', 'consolidation', 'context_truncation',
-      'retrieval_degrade', 'external_read', 'rule_review',
+      'retrieval_degrade', 'external_read', 'rule_review', 'memory_review',
       'limit_change', 'delivery_timing', 'proposal', 'device_action'
     )
   ),
@@ -74,7 +74,13 @@ CREATE TABLE decision_ledger (
     (kind = 'context_truncation' AND outcome = 'truncated') OR
     (kind = 'retrieval_degrade' AND outcome = 'degraded') OR
     (kind = 'external_read' AND outcome = 'read') OR
-    (kind = 'rule_review' AND outcome = 'needs_review') OR
+    (kind = 'rule_review' AND outcome IN (
+      'needs_review', 'suspended', 'cleared', 'recheck_failed', 'owner_adopted',
+      'owner_confirmed', 'owner_restored'
+    )) OR
+    (kind = 'memory_review' AND outcome IN (
+      'flagged', 'owner_edited', 'owner_dismissed', 'owner_reported_missed'
+    )) OR
     (kind = 'limit_change' AND outcome = 'changed') OR
     (kind = 'delivery_timing' AND outcome IN (
       'delivered', 'deferred', 'deadline_reached', 'shown_in_app'
