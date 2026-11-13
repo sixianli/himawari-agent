@@ -756,6 +756,6 @@ date: "2026-10-13"
   - 2026-11-13：PR 460 第 3 轮传账本提交 `01debf3f`，该传 `4456a13c`，第 4 轮重跑。
 - 为什么要紧：每轮复核都花 Andy 的钱，而且要到合并前检查才发现，后面接着它的轮次也一起作废。
 - 硬约束（2026-11-13，[I-98](incidents-and-gates.md#incidents)）：代码复核传了 `--previous` 时，脚本开跑前用本地账本算复核链（`previousProblem`，判断逻辑和合并前检查共用 `walkChain` 和 `lowFixChecker`），接不上就以 `REVIEW_PREVIOUS_REFUSED` 退出、不花钱，并写出该传的提交。测试在 `test/tooling/opencode-review-merge-gate.test.mjs` 的 `[I-98]` 用例。
-- 同一轮补跑（`--round <n>`）时，`--previous` 还必须和这一轮已有结果用的相同；账本里的 low-fix 记录按合并前检查同样的规则重新核对，不合格就判链已断。
+- 同一轮补跑（`--round <n>`）时，`--previous` 还必须和这一轮已有结果用的相同（这一轮已有结果本身接不上链时提示 `use=new-round`：不带 `--round`、`--previous` 新开一轮）；账本里的 low-fix 记录按合并前检查同样的规则重新核对，不合格就判链已断。
 
 [回到目录](#编码代理反复犯的错误)
