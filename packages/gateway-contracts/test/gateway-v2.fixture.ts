@@ -802,6 +802,13 @@ export const governanceMessages = [
         status: "active",
         enforced: true,
         updatedAt: "2026-11-11T00:00:00.000Z",
+        quote: "以后日本入管局的邮件一律提醒我",
+        changes: 2,
+        lastUsed: {
+          at: "2026-11-11T08:00:00.000Z",
+          kind: "proactive",
+          decisionId: "decision-01",
+        },
       },
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
@@ -898,6 +905,7 @@ export const governanceMessages = [
     expiresAt: "2026-08-26T01:00:00.000Z",
     decidedAt: null,
     grantId: null,
+    display: null,
     intent: {
       intentId: "intent-01",
       threadId: "thread-01",
