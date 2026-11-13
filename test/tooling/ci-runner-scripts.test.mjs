@@ -300,14 +300,17 @@ const macBox = ({
       `awk -F'\\t' -v OFS='\\t' -v n=$n -v b=$b -v o=$o '{ $4 = (n < b) ? "true" : "false"; $3 = (n >= o) ? "online" : "offline"; print }' "${R}/runners.tsv"`,
     ].join("\n"),
   );
-  box.fake("scp", `printf 'upload %s\\n' "$*" >> "${R}/calls"`);
+  box.fake(
+    "scp",
+    `printf 'upload %s\\n' "$*" >> "${R}/calls"\n[ -e "${R}/scp-fail" ] && exit 1\nexit 0`,
+  );
   box.fake(
     "ssh",
     [
       "for command; do :; done",
       `printf 'ssh %s\\n' "$command" >> "${R}/calls"`,
       'case "$command" in',
-      `  *--list) cat "${R}/vps-names" ;;`,
+      `  *--list) [ -e "${R}/list-fail" ] && exit 1; cat "${R}/vps-names" ;;`,
       `  *--status) cat "${R}/service-states" 2> /dev/null || printf 'gh-runner.service=active\\ngh-runner-2.service=active\\n' ;;`,
       "  *--labels-removed*)",
       `    code=$(head -1 "${R}/pause-results" 2> /dev/null || echo 0)`,
@@ -2411,8 +2414,42 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
     const on = stale.mac("arm-fallback.sh", ["on"]);
     expect(on.status).toBe(1);
     expect(on.stdout).toContain(
-      "ARM_FALLBACK_FAILED ci-arm is on: ci-vps-1 ci-vps-2 ci-vps-3 but should be on: ci-vps-1 ci-vps-2",
+      "ARM_FALLBACK_FAILED ci-vps-3 carries ci-arm but is not installed on ci-vps; run arm-fallback.sh off first; labels untouched",
     );
+    expect(stale.lines().some((line) => line.includes("/labels"))).toBe(false);
+    const allGone = fiveRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-arm"]],
+        [13, "ci-vps-gate"],
+        [14, "ci-arm-1"],
+        [15, "ci-arm-2"],
+      ],
+      vpsNames: ["ci-vps-gate"],
+    });
+    const cleared = allGone.mac("arm-fallback.sh", ["off"]);
+    expect(cleared.status).toBe(0);
+    expect(cleared.stdout).toContain(
+      "not installed on ci-vps, left out: ci-vps-1 ci-vps-2 ci-vps-3",
+    );
+    expect(allGone.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+  });
+
+  it.each([
+    ["scp-fail", "ARM_FALLBACK_FAILED labels untouched"],
+    [
+      "list-fail",
+      "ARM_FALLBACK_FAILED could not list the runners installed on ci-vps; labels untouched",
+    ],
+  ])("arm-fallback.sh stops before touching any label when %s", (fault, message) => {
+    for (const mode of ["on", "off"]) {
+      const box = fiveRunners();
+      box.set("online-from", 1);
+      box.set(fault, "");
+      const result = box.mac("arm-fallback.sh", [mode]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(message);
+      expect(box.lines().some((line) => line.includes("/labels"))).toBe(false);
+    }
   });
 
   it("arm-fallback.sh asks for on or off, refuses RUNNER_SITE=arm, and touches nothing in either case", () => {

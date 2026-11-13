@@ -33,7 +33,6 @@ for id in $RUNNER_IDS; do
   [ "$COUNT" = 1 ] || { echo "ARM_FALLBACK_FAILED GitHub has $COUNT runners named $RUNNER_NAME, $RUNNER_HOST has it installed; labels untouched"; exit 1; }
   FALLBACKS="$FALLBACKS $RUNNER_NAME"
 done
-[ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_HOST has no check runner installed; labels untouched"; exit 1; }
 [ -z "$NOT_INSTALLED" ] || echo "not installed on $RUNNER_HOST, left out:$NOT_INSTALLED"
 
 carrying() {
@@ -45,6 +44,15 @@ carrying() {
 }
 
 if [ "$WANTED" = on ]; then
+  [ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_HOST has no check runner installed; labels untouched"; exit 1; }
+  STRAY=""
+  for name in $(carrying "$TABLE"); do
+    case " $(echo $FALLBACKS) " in
+      *" $name "*) ;;
+      *) STRAY="$STRAY $name" ;;
+    esac
+  done
+  [ -z "$STRAY" ] || { echo "ARM_FALLBACK_FAILED$STRAY carries $RUNNER_ARM_LABEL but is not installed on $RUNNER_HOST; run arm-fallback.sh off first; labels untouched"; exit 1; }
   for name in $FALLBACKS; do
     has_label "$(runner_field "$TABLE" "$name" 5)" "$RUNNER_CHECK_LABEL" || {
       echo "ARM_FALLBACK_FAILED $name does not carry $RUNNER_CHECK_LABEL, so the CI VPS runners are paused; run resume-runners.sh first; labels untouched"
