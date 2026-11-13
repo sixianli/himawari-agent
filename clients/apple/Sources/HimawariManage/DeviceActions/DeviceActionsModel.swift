@@ -1,5 +1,6 @@
 import Foundation
 import HimawariCore
+import HimawariDesign
 import Observation
 
 public struct PermissionState: Identifiable, Equatable, Sendable {
