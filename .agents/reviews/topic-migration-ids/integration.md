@@ -36,3 +36,13 @@
 | 17 | 合并前检查有空档 | 成立 | 打包时在目标提交上再跑，作为硬门槛 |
 | 18 | 缺反向用例 | 成立 | 列进冲突检查一节 |
 | 19 | 要加进 check:steps | 成立 | 已核对 run-all-checks.mjs:31 |
+
+## 第 3 轮：核对代码说法（62 句，一致 55，有问题 7）
+
+| 序号 | 结果 | 线程判断 | 处理 |
+|---|---|---|---|
+| 3 | 找不到 | 排队名单来自协调者转述，仓库里没有 | ADR 改成注明来源 |
+| 30 | 不一致 | 模型对，我数错了：材料里的“9 次”是 `CREATE TABLE decision_ledger` 出现的次数（含 0069 建表和每次重建的临时表），实际整表重建是 4 次（`grep -c "DROP TABLE decision_ledger;"` 在 0087、0088、0089、0095 各 1 句）。brief 里的 9 次保留原样，作记录 | ADR 改成 4 次并列出文件 |
+| 34、35、36 | 找不到 | 内容在远程分支，不在 HEAD；已用 `git show` 实测：`0095_perception_records.sql` 里 `memory_review` 出现 0 次，且第 17 行有 `DROP TABLE decision_ledger;`，该分支没有 `0095_correction_propagation.sql` | ADR 注明来源是远程分支；脚本读不到，等 Andy 决定跳过这一项 |
+| 61 | 找不到 | 是 DeepSeek 的搜索结论 | ADR 改成注明这是模型结论 |
+| 62 | 找不到 | 远程分支内容 | ADR 注明来源 |

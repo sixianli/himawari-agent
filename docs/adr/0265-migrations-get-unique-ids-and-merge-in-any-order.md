@@ -32,7 +32,7 @@ date: "2026-11-14"
 
 迁移（migration）是一段改数据库结构的 SQL，例如建一张新表、给表加一列。Himawari 的产品库是一个 SQLite 文件（单机文件数据库），每个迁移是 `packages/persistence-sqlite/src/migrations/` 下的一个文件，文件名开头是四位连续编号，例如 `0095_correction_propagation.sql`。
 
-几十个线程并行开发，凡是改表的 PR 都会在自己的分支上取“下一个号”。两个 PR 同时取到 0096，必然撞号；所以现在由协调者给每个 PR 分配“正式号”，前一个合进 main 之后，下一个才能改号、重跑 CI（持续集成，每次推送后自动跑的检查）、再合并。2026-11-14 排队的有 PR 414、404、436、444、443、449、479、451、455、454、486 等十几个，每个都要等前一个合完，成了全项目的开发瓶颈。Andy 要求根治。
+几十个线程并行开发，凡是改表的 PR 都会在自己的分支上取“下一个号”。两个 PR 同时取到 0096，必然撞号；所以现在由协调者给每个 PR 分配“正式号”，前一个合进 main 之后，下一个才能改号、重跑 CI（持续集成，每次推送后自动跑的检查）、再合并。协调者 2026-11-14 报的排队名单有 PR 414、404、436、444、443、449、479、451、455、454、486 等十几个（来自协调者的转述，不是仓库里的文件），每个都要等前一个合完，成了全项目的开发瓶颈。Andy 要求根治。
 
 改迁移机制本身不改任何业务表，但它决定生产库每次上线跑哪些 SQL，属于“数据存储结构”这一类大改动（[Andy 定的长期规则](../../.claude/rules/owner-standing-rules.md#fixing-bugs-and-new-features)），所以本 ADR 只是方案，Andy 同意后才动代码。
 
@@ -60,8 +60,8 @@ date: "2026-11-14"
 
 以下是本线程 2026-11-14 在仓库里实测的数（命令和输出见 PR 描述）：
 
-- 已合并的 95 个迁移里，`decision_ledger` 被整表重建过 9 次（连同引用它的子表 `decision_signals`、`decision_ledger_payloads`、`source_insights` 等一起重建，单个迁移 600 多行）。
-- 远程分支上排队的 10 个迁移里，有 4 个又在重建 `decision_ledger`（`0096_web_push_gate`、`0095_perception_records`、`0097_proactive_source_registry`、`0097_device_actions`），都只是为了在 `kind` 里加一个值。
+- 已合并的 95 个迁移里，`decision_ledger` 被整表重建过 4 次（`0087_rule_book_memory_link.sql`、`0088_memory_capture_backlog.sql`、`0089_consolidation_hold.sql`、`0095_correction_propagation.sql` 各有一句 `DROP TABLE decision_ledger;`，用 `grep -c` 数出；连同引用它的子表 `decision_signals`、`decision_ledger_payloads`、`source_insights` 等一起重建，单个迁移 600 多行）。
+- 以下三条是本线程用 `git show origin/claude/project-thread-*:<迁移文件>` 在远程分支上读到的，不在 main 的文件里，所以代码说法核对读不到，命令和输出见 PR 描述。排队分支里的迁移有 4 个又在重建 `decision_ledger`（`0096_web_push_gate`、`0095_perception_records`、`0097_proactive_source_registry`、`0097_device_actions`），都只是为了在 `kind` 里加一个值。
 - 其中 `0095_perception_records` 是在 `memory_review` 种类合进 main（`0095_correction_propagation.sql`）之前写的，它重建的表里没有 `memory_review`。照现在的样子合进去，生产库里已有的 `memory_review` 行在搬数据时会违反新约束，上线时迁移失败。这就是下文说的“真冲突”，目前完全靠人发现。
 
 [返回阅读导航](#contents)
@@ -198,7 +198,7 @@ date: "2026-11-14"
 2. 重建 `decision_ledger` 只为加种类的（web_push_gate、perception_records、proactive_source_registry、device_actions），等参照表 PR 合并后，把 600 多行的重建换成几行 `INSERT`。
 3. 跑 `npm run check:migration-conflicts`。通过就按平常流程合并，不用再找协调者要号；失败就按提示处理，这时只有真正碰同一处的 PR 需要先后处理。
 
-叠在别的 PR 上的分支（例如 `paired_devices` 出现在 6 个分支里）不受影响：编号在写的时候就定下，叠多少层都不会变。
+叠在别的 PR 上的分支不受影响：编号在写的时候就定下，叠多少层都不会变（例如本线程在远程分支上看到 `paired_devices` 迁移同时出现在多个分支里，同样是远程分支读到的，不在 main）。
 
 [返回阅读导航](#contents)
 
@@ -229,7 +229,7 @@ date: "2026-11-14"
 - 新迁移多了一道约束：改动已有结构要写 `.meta.json`。这是有意的：这类迁移正是会出事的那类，值得多写两行。
 - 改动面不小：引擎、`readSchemaIdentity` 的十几个使用方、打包和生产机脚本及其测试数据、审计脚本、管理命令、导出导入、冲突检查和反向用例，都在引擎 PR 里一次改完，由现有的打包检查（`run-packet-checks.py`、`make-packet.py` 的拒绝）和新加的测试覆盖。
 - 合并前本地检查依赖 `origin/main` 是最新的；检查开头自动 `git fetch origin main`，拿不到就失败，不默默放行。
-- 与发给模型的内容无关：迁移编号、指纹都不进模型请求，不影响 KV 缓存（DeepSeek 审核已核对 `packages/prompt-catalog` 和 Pi 适配器不读这些值）。
+- 与发给模型的内容无关：迁移编号、指纹都不进模型请求，不影响 KV 缓存（DeepSeek 审核在全仓搜索后说没有发现 `packages/prompt-catalog` 和 Pi 适配器读这些值；这是模型的搜索结论，不是本线程亲自核对的）。
 
 [返回阅读导航](#contents)
 
