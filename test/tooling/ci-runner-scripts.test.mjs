@@ -2328,7 +2328,7 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
     expect(existsSync(path.join(box.root, "lock"))).toBe(false);
   });
 
-  it("arm-fallback.sh leaves out a check runner that is not registered yet and refuses when none is", () => {
+  it("arm-fallback.sh leaves out a check runner that is not installed yet and refuses when none is", () => {
     const twoChecks = [
       [11, "ci-vps-1"],
       [12, "ci-vps-2"],
@@ -2342,7 +2342,7 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
     });
     box.set("online-from", 1);
     const on = box.mac("arm-fallback.sh", ["on"]);
-    expect(on.stdout).toContain("not registered on GitHub, left out: ci-vps-3");
+    expect(on.stdout).toContain("not installed on ci-vps, left out: ci-vps-3");
     expect(on.stdout).toContain("ARM_FALLBACK_ON ci-vps-1 ci-vps-2 now also take ci-arm jobs");
     expect(on.status).toBe(0);
     expect(box.managedLabels()["ci-vps-1"]).toEqual(["ci-vps", "ci-arm"]);
@@ -2357,10 +2357,62 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
     none.set("online-from", 1);
     const refused = none.mac("arm-fallback.sh", ["on"]);
     expect(refused.status).toBe(1);
-    expect(refused.stdout).toContain(
-      "ARM_FALLBACK_FAILED none of the CI VPS check runners is registered on GitHub",
-    );
+    expect(refused.stdout).toContain("ARM_FALLBACK_FAILED ci-vps has no check runner installed");
     expect(none.lines().some((line) => line.includes("/labels"))).toBe(false);
+  });
+
+  it("arm-fallback.sh refuses when an installed check runner is missing on GitHub, and off also clears a runner that is no longer installed", () => {
+    const missing = fiveRunners({
+      runners: [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+        [14, "ci-arm-1"],
+        [15, "ci-arm-2"],
+      ],
+    });
+    missing.set("online-from", 1);
+    for (const mode of ["on", "off"]) {
+      const result = missing.mac("arm-fallback.sh", [mode]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        "ARM_FALLBACK_FAILED GitHub has 0 runners named ci-vps-3, ci-vps has it installed; labels untouched",
+      );
+    }
+    expect(missing.lines().some((line) => line.includes("/labels"))).toBe(false);
+    const leftover = fiveRunners({
+      runners: [
+        [11, "ci-vps-1", ["ci-vps", "ci-arm"]],
+        [12, "ci-vps-2", ["ci-vps", "ci-arm"]],
+        [13, "ci-vps-gate"],
+        [14, "ci-arm-1"],
+        [15, "ci-arm-2"],
+        [16, "ci-vps-3", ["ci-vps", "ci-arm"]],
+      ],
+      vpsNames: ["ci-vps-1", "ci-vps-2", "ci-vps-gate"],
+    });
+    const off = leftover.mac("arm-fallback.sh", ["off"]);
+    expect(off.status).toBe(0);
+    expect(off.stdout).toContain("not installed on ci-vps, left out: ci-vps-3");
+    expect(leftover.managedLabels()["ci-vps-3"]).toEqual(["ci-vps"]);
+    expect(leftover.managedLabels()["ci-vps-1"]).toEqual(["ci-vps"]);
+    const stale = fiveRunners({
+      runners: [
+        [11, "ci-vps-1"],
+        [12, "ci-vps-2"],
+        [13, "ci-vps-gate"],
+        [14, "ci-arm-1"],
+        [15, "ci-arm-2"],
+        [16, "ci-vps-3", ["ci-vps", "ci-arm"]],
+      ],
+      vpsNames: ["ci-vps-1", "ci-vps-2", "ci-vps-gate"],
+    });
+    stale.set("online-from", 1);
+    const on = stale.mac("arm-fallback.sh", ["on"]);
+    expect(on.status).toBe(1);
+    expect(on.stdout).toContain(
+      "ARM_FALLBACK_FAILED ci-arm is on: ci-vps-1 ci-vps-2 ci-vps-3 but should be on: ci-vps-1 ci-vps-2",
+    );
   });
 
   it("arm-fallback.sh asks for on or off, refuses RUNNER_SITE=arm, and touches nothing in either case", () => {
@@ -2570,9 +2622,7 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
       expect(result.stderr).toContain("GATE_REMOTE_FAILED status=");
       expect(result.stderr).toContain("ssh said: ssh: refused by fake");
       expect(result.stdout).not.toContain("GATE_REMOTE_OK");
-      expect(readdirSync(bad.root).filter((name) => name.startsWith("gate-remote-check"))).toEqual(
-        [],
-      );
+      expect(readdirSync(bad.root).filter((name) => name.startsWith("tmp."))).toEqual([]);
     }
   });
 

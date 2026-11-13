@@ -8,32 +8,37 @@ source "$HERE/mac-runners.sh"
 case "${1:-}" in
   on | off) WANTED=$1 ;;
   *)
-    echo "usage: bash arm-fallback.sh <on|off>   (on lets the two check runners on the CI VPS take $RUNNER_ARM_LABEL jobs while the ARM machine is down; off undoes it)"
+    echo "usage: bash arm-fallback.sh <on|off>   (on lets the check runners installed on the CI VPS take $RUNNER_ARM_LABEL jobs while the ARM machine is down; off undoes it)"
     exit 64
     ;;
 esac
 [ "$RUNNER_SITE" = vps ] || { echo "ARM_FALLBACK_FAILED run it without RUNNER_SITE: it changes the labels of the CI VPS runners"; exit 64; }
 
 take_lock
+upload_runner_scripts || { echo "ARM_FALLBACK_FAILED labels untouched"; exit 1; }
+NAMES=$(vps "bash $REMOTE/runner-pause.sh --list") || { echo "ARM_FALLBACK_FAILED could not list the runners installed on $RUNNER_HOST; labels untouched"; exit 1; }
 TABLE=$(github_runners) || { echo "ARM_FALLBACK_FAILED could not list runners on GitHub; labels untouched"; exit 1; }
+CHECKS=""
 FALLBACKS=""
-UNREGISTERED=""
+NOT_INSTALLED=""
 for id in $RUNNER_IDS; do
   runner_select "$id"
   [ "$RUNNER_LABEL" = "$RUNNER_CHECK_LABEL" ] || continue
-  COUNT=$(runner_field "$TABLE" "$RUNNER_NAME" 1 | grep -c .)
-  case $COUNT in
-    0) UNREGISTERED="$UNREGISTERED $RUNNER_NAME" ;;
-    1) FALLBACKS="$FALLBACKS $RUNNER_NAME" ;;
-    *) echo "ARM_FALLBACK_FAILED GitHub has $COUNT runners named $RUNNER_NAME; labels untouched"; exit 1 ;;
+  CHECKS="$CHECKS $RUNNER_NAME"
+  case " $(echo $NAMES) " in
+    *" $RUNNER_NAME "*) ;;
+    *) NOT_INSTALLED="$NOT_INSTALLED $RUNNER_NAME"; continue ;;
   esac
+  COUNT=$(runner_field "$TABLE" "$RUNNER_NAME" 1 | grep -c .)
+  [ "$COUNT" = 1 ] || { echo "ARM_FALLBACK_FAILED GitHub has $COUNT runners named $RUNNER_NAME, $RUNNER_HOST has it installed; labels untouched"; exit 1; }
+  FALLBACKS="$FALLBACKS $RUNNER_NAME"
 done
-[ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED none of the CI VPS check runners is registered on GitHub; labels untouched"; exit 1; }
-[ -z "$UNREGISTERED" ] || echo "not registered on GitHub, left out:$UNREGISTERED"
+[ -n "$FALLBACKS" ] || { echo "ARM_FALLBACK_FAILED $RUNNER_HOST has no check runner installed; labels untouched"; exit 1; }
+[ -z "$NOT_INSTALLED" ] || echo "not installed on $RUNNER_HOST, left out:$NOT_INSTALLED"
 
 carrying() {
   local name found=""
-  for name in $FALLBACKS; do
+  for name in $CHECKS; do
     has_label "$(runner_field "$1" "$name" 5)" "$RUNNER_ARM_LABEL" && found="$found $name"
   done
   echo $found
