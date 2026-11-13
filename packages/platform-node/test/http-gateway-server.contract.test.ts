@@ -456,8 +456,8 @@ describe("HTTP Gateway contract and security boundary", () => {
     }
   });
 
-  it("passes a machine reason through as reasonCode and keeps free text private", async () => {
-    const reasons = ["LOGIN_DEVICES_STILL_CHANGING", "disk headroom"];
+  it("passes only listed reason codes through as reasonCode", async () => {
+    const reasons = ["LOGIN_DEVICES_STILL_CHANGING", "EMBEDDING_LOCAL_NOT_READY", "disk headroom"];
     const { app } = createFixture({
       async request() {
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, reasons.shift() ?? "", {
@@ -486,9 +486,10 @@ describe("HTTP Gateway contract and security boundary", () => {
       expect(machine.json()).toEqual({
         error: { code: "PORT_CONFLICT", reasonCode: "LOGIN_DEVICES_STILL_CHANGING" },
       });
-      const text = await query();
-      expect(text.statusCode).toBe(409);
-      expect(text.json()).toEqual({ error: { code: "PORT_CONFLICT" } });
+      for (const unlisted of [await query(), await query()]) {
+        expect(unlisted.statusCode).toBe(409);
+        expect(unlisted.json()).toEqual({ error: { code: "PORT_CONFLICT" } });
+      }
     } finally {
       await app.close();
     }

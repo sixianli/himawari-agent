@@ -28,6 +28,7 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
+  isGatewayErrorReasonCode,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -201,7 +202,6 @@ const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
-const MACHINE_REASON = /^[A-Z][A-Z0-9_]{2,63}$/;
 
 class HttpGatewayError extends Error {
   readonly code: string;
@@ -893,7 +893,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, statusCode, {
         error: {
           code: error.code,
-          ...(MACHINE_REASON.test(error.message) ? { reasonCode: error.message } : {}),
+          ...(isGatewayErrorReasonCode(error.message) ? { reasonCode: error.message } : {}),
         },
       });
       return;
