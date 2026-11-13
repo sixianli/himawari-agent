@@ -1,0 +1,8 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：失败请求会被算成“缓存未命中”，并清掉同一会话的基线", "valid": true, "class": "error", "severity": "medium-high", "trigger": "Magpie 用量行里本模型同一会话出现非 2xx 的失败请求", "consequence": "cacheMisses 多记一次，并把会话基线清零，下一次真正的缓存没命中漏记", "modelSeverity": "中"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中低：`session` 缺失或不是字符串时，所有请求会被合并成同一个会话", "valid": true, "class": "error", "severity": "low", "trigger": "用量行没有 session 字段", "consequence": "不同会话被放在一起比较，缓存没命中次数不准；只影响诊断数字", "modelSeverity": "中低", "reason": "只影响打印的诊断数，不影响计价和合并门；真实 Magpie 行都带 session"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：`readGatewayRests` 把所有读取/解析错误都吞成空列表", "valid": true, "class": "error", "severity": "low", "trigger": "rests.json 写到一半或无权限", "consequence": "不打印服务方被停用的原因，看起来像没有停用", "modelSeverity": "低"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：`GATEWAY_REST` 只清理空白字符，没有清理其他控制字符", "valid": true, "class": "error", "severity": "low", "trigger": "Magpie 记的停用原因里带终端控制字符", "consequence": "日志里混入控制序列", "modelSeverity": "低"}
+{"id": "5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低：委托复核的最终汇报没有带上新增的 `REVIEW_TIMING` / `GATEWAY_REST`", "valid": true, "class": "better"}
+{"id": "A", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### A. 中（未核实）：标题请求的识别完全依赖 `effort === \"low\"`", "valid": false, "class": "error"}
+{"id": "B", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### B. 中（未核实）：计价改动的外部前提没有自动验证", "valid": false, "class": "error"}
+{"id": "C", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### C. 低（未核实）：`rests.json` 的真实 schema", "valid": false, "class": "error"}

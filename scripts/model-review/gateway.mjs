@@ -550,6 +550,8 @@ export function gatewayTiming(lines, model) {
   let missTokens = 0;
   const previousContext = new Map();
   for (const line of own) {
+    const answered = Number.isInteger(line.status) && line.status >= 200 && line.status < 300;
+    if (!answered || typeof line.session !== "string" || line.session === "") continue;
     const context = number(line.in) + number(line.cache_read);
     const before = previousContext.get(line.session) ?? 0;
     if (before > 0 && number(line.cache_read) < before / 2) {
@@ -570,19 +572,32 @@ export function gatewayTiming(lines, model) {
 }
 
 export function readGatewayRests(root) {
+  let text;
   try {
-    const rests = JSON.parse(readFileSync(join(root, "config", "magpie", "rests.json"), "utf8"));
-    return Object.entries(rests ?? {})
-      .filter(([, rest]) => rest && typeof rest === "object")
-      .map(([provider, rest]) =>
-        [provider, rest.why ?? "unknown", rest.status ?? "-", rest.until ?? "-"]
-          .map((part) => String(part).replace(/\s+/g, "_"))
-          .join(" "),
-      )
-      .sort();
-  } catch {
-    return [];
+    text = readFileSync(join(root, "config", "magpie", "rests.json"), "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    return [`unreadable ${error?.code ?? "read-failed"}`];
   }
+  let rests;
+  try {
+    rests = JSON.parse(text);
+  } catch {
+    return ["unreadable bad-json"];
+  }
+  if (!rests || typeof rests !== "object" || Array.isArray(rests)) return ["unreadable not-a-map"];
+  return Object.entries(rests)
+    .filter(([, rest]) => rest && typeof rest === "object")
+    .map(([provider, rest]) =>
+      [provider, rest.why ?? "unknown", rest.status ?? "-", rest.until ?? "-"]
+        .map((part) =>
+          String(part)
+            .replace(/[\s\p{Cc}\p{Cf}]+/gu, "_")
+            .slice(0, 80),
+        )
+        .join(" "),
+    )
+    .sort();
 }
 
 export function readGatewayUsage(root) {

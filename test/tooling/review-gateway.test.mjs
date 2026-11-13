@@ -1313,6 +1313,25 @@ describe("review gateway timing and price", () => {
     expect(gatewayTiming(null, deepseek)).toBeNull();
   });
 
+  it("[gateway] [negative] a failed request or a line without a session is not a cache miss and keeps the baseline", () => {
+    const at = (fields) => ({ req, provider: "opencode-go", status: 200, ...fields });
+    const timing = gatewayTiming(
+      [
+        at({ session: "a", in: 4000, cache_read: 50000, ms: 1000 }),
+        at({ session: "a", status: 502, ms: 2000 }),
+        at({ session: "b", in: 3000, cache_read: 0, ms: 1000 }),
+        at({ in: 9000, cache_read: 0, ms: 1000 }),
+        at({ session: "a", in: 60000, cache_read: 1800, ms: 3000 }),
+        at({ session: "b", in: 1000, cache_read: 3000, ms: 1000 }),
+      ],
+      deepseek,
+    );
+    expect(timing.requests).toBe(6);
+    expect(timing.modelMs).toBe(9000);
+    expect(timing.cacheMisses).toBe(1);
+    expect(timing.missTokens).toBe(60000);
+  });
+
   it("[gateway] prints timing and the reasons Magpie rested a provider", () => {
     const record = {
       model: deepseek,
@@ -1345,6 +1364,15 @@ describe("review gateway timing and price", () => {
         }),
       );
       expect(readGatewayRests(root)).toEqual(["opendesign credit 402 2026-11-13T09:07:38Z"]);
+      writeFileSync(
+        join(root, "config", "magpie", "rests.json"),
+        JSON.stringify({ "go\u001b[31m": { why: "a\u0007b c", status: 429 } }),
+      );
+      expect(readGatewayRests(root)).toEqual(["go_[31m a_b_c 429 -"]);
+      writeFileSync(join(root, "config", "magpie", "rests.json"), '{"half');
+      expect(readGatewayRests(root)).toEqual(["unreadable bad-json"]);
+      writeFileSync(join(root, "config", "magpie", "rests.json"), "[]");
+      expect(readGatewayRests(root)).toEqual(["unreadable not-a-map"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
