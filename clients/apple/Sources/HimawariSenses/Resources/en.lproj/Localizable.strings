@@ -127,12 +127,6 @@
 "detail.range" = "Enter %d to %d.";
 "record.what" = "What happened";
 
-"handover.share.name" = "Share to Himawari";
-"handover.share.detail" = "Tap Share in another app";
-"handover.share.status" = "Always ready";
-"handover.safari.name" = "This page in Safari";
-"handover.safari.detail" = "Read only when you tap it";
-"handover.safari.status" = "Turn on";
 
 "demo.office" = "the office";
 "demo.lunch" = "near Osaka Station";

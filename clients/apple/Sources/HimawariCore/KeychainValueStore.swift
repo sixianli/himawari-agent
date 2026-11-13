@@ -4,9 +4,18 @@ import Security
 
 public struct KeychainValueStore: Sendable {
     public let service: String
+    public let accessGroup: String?
 
-    public init(service: String) {
+    public init(service: String, accessGroup: String? = nil) {
         self.service = service
+        self.accessGroup = accessGroup
+    }
+
+    private func scoped(_ query: [String: Any]) -> [String: Any] {
+        guard let accessGroup else { return query }
+        var query = query
+        query[kSecAttrAccessGroup as String] = accessGroup
+        return query
     }
 
     public func presence(_ account: String) -> KeychainPresence {
@@ -16,7 +25,7 @@ public struct KeychainValueStore: Sendable {
             kSecAttrAccount as String: account,
             kSecReturnData as String: false,
         ]
-        return KeychainPresence(SecItemCopyMatching(query as CFDictionary, nil))
+        return KeychainPresence(SecItemCopyMatching(scoped(query) as CFDictionary, nil))
     }
 
     public func read(_ account: String) -> Data? {
@@ -28,7 +37,7 @@ public struct KeychainValueStore: Sendable {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        guard SecItemCopyMatching(scoped(query) as CFDictionary, &item) == errSecSuccess else { return nil }
         return item as? Data
     }
 
@@ -38,13 +47,13 @@ public struct KeychainValueStore: Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        let deleted = SecItemDelete(query as CFDictionary)
+        let deleted = SecItemDelete(scoped(query) as CFDictionary)
         guard deleted == errSecSuccess || deleted == errSecItemNotFound else { throw DeviceKeyError.keychain(deleted) }
         guard let data else { return }
         var item = query
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         item[kSecValueData as String] = data
-        let status = SecItemAdd(item as CFDictionary, nil)
+        let status = SecItemAdd(scoped(item) as CFDictionary, nil)
         guard status == errSecSuccess else { throw DeviceKeyError.keychain(status) }
     }
 }

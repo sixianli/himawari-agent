@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="popup.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <main class="panel" data-phase="loading">
+      <header class="head">
+        <img class="mark" src="images/sunflower.svg" alt="" />
+        <h1 class="title" data-word="sheet.title"></h1>
+      </header>
+      <section class="card" hidden>
+        <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+          <path d="M3.6 9h16.8" />
+          <path d="M3.6 15h16.8" />
+          <path d="M11.5 3a17 17 0 0 0 0 18" />
+          <path d="M12.5 3a17 17 0 0 1 0 18" />
+        </svg>
+        <div class="card-text">
+          <div class="card-title"></div>
+          <div class="card-subtitle"></div>
+        </div>
+      </section>
+      <textarea class="field" rows="1" hidden></textarea>
+      <p class="note" hidden></p>
+      <button class="send" type="button" hidden></button>
+      <p class="sent-request" hidden></p>
+      <div class="outcome" hidden>
+        <div class="outcome-line">
+          <svg class="done" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M5 12l5 5l10 -10" /></svg>
+          <span class="outcome-text"></span>
+        </div>
+        <button class="follow-up" type="button" hidden></button>
+      </div>
+    </main>
+  </body>
+</html>

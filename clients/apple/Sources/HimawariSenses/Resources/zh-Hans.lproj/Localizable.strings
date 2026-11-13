@@ -127,12 +127,6 @@
 "detail.range" = "可以填 %d 到 %d。";
 "record.what" = "记下的事";
 
-"handover.share.name" = "分享给 Himawari";
-"handover.share.detail" = "在别的 App 里点分享";
-"handover.share.status" = "随时能用";
-"handover.safari.name" = "Safari 里的这一页";
-"handover.safari.detail" = "你点了它才读";
-"handover.safari.status" = "去打开";
 
 "demo.office" = "公司";
 "demo.lunch" = "大阪站附近";

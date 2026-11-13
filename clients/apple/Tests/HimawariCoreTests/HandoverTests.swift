@@ -181,4 +181,54 @@ import Testing
         #expect(results[second.id] == .queued)
         #expect(queue.pending().map(\.id) == [second.id])
     }
+
+    @Test func theDeskRefusesASwitchedOffEntryAndQueuesWhenTheServerIsUnreachable() async throws {
+        let store = MemoryLocalStore()
+        var settings = HandoverSettings()
+        settings.set(.share, on: false)
+        try settings.save(to: store)
+        let idle = RecordingExchange([])
+        let off = HandoverDesk(store: store, courier: try courier(idle), now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        let refused = await off.hand(handover(.text("x"), entry: .share))
+        #expect(refused == .entryOff(.share))
+        #expect(idle.requests.isEmpty)
+
+        #expect(HandoverSettings.load(from: store).state(.safari) == .notSetUp)
+        let down = RecordingExchange([HTTPExchangeResponse(status: 503, body: Data())])
+        let desk = HandoverDesk(store: store, courier: try courier(down), now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        let queued = await desk.hand(handover(.page(url: "https://a.example", title: nil, text: nil)))
+        #expect(queued == .queued)
+        #expect(desk.queue.pending().map(\.id) == ["AAAAAAAAAAAAAAAAAAAAAAAA"])
+        #expect(HandoverSettings.load(from: store).state(.safari) == .on)
+        #expect(HandoverSettings.load(from: store).state(.share) == .off)
+    }
+
+    struct HalvingFitter: ImageFitting {
+        func fit(_ data: Data, maxBytes: Int) -> (data: Data, mimeType: String)? {
+            (Data(data.prefix(maxBytes)), "image/jpeg")
+        }
+    }
+
+    @Test func aLargeImageIsShrunkToWhatTheServerAcceptsBeforePlanning() throws {
+        let item = handover(.image(data: Data(repeating: 7, count: 500), mimeType: "image/png", name: "截图"), request: "这是什么")
+        let config = configuration(attachments: AttachmentLimits(textCharacters: 40, imageCharacters: 123, perMessage: 10))
+        let http = DeviceHTTPClient(exchange: RecordingExchange([]))
+        let fitted = HandoverCourier(api: DeviceAPI(http: http), images: HalvingFitter()).fitted(item, configuration: config)
+        guard case let .image(data, mimeType, name) = fitted.content else { Issue.record("not an image"); return }
+        #expect(mimeType == "image/jpeg")
+        #expect(name == "截图")
+        #expect(data.count == (123 - "data:image/jpeg;base64,".count) / 4 * 3)
+        guard case let .conversation(url, kind, _, _) = try HandoverPlanner.plan(fitted, configuration: config) else { Issue.record("no plan"); return }
+        #expect(kind == .image)
+        #expect(url.utf16.count <= 123)
+    }
+
+    @Test func whatTheSafariPanelReadsBecomesAPageOnlyForWebAddresses() {
+        #expect(HandoverContent.page(from: ["url": "https://tabelog.com/a", "title": "午餐 10 选", "text": "正文"]) == .page(url: "https://tabelog.com/a", title: "午餐 10 选", text: "正文"))
+        #expect(HandoverContent.page(from: ["url": "http://a.example", "title": "", "text": ""]) == .page(url: "http://a.example", title: nil, text: nil))
+        #expect(HandoverContent.page(from: ["url": "about:blank", "title": "x"]) == nil)
+        #expect(HandoverContent.page(from: ["url": "file:///etc/passwd"]) == nil)
+        #expect(HandoverContent.page(from: ["title": "没有地址"]) == nil)
+        #expect(HandoverContent.page(from: ["url": 42]) == nil)
+    }
 }

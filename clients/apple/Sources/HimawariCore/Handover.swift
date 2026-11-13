@@ -127,6 +127,14 @@ public enum HandoverContent: Codable, Sendable, Equatable {
         case .text, .image: nil
         }
     }
+
+    public static func page(from results: [String: Any]) -> HandoverContent? {
+        guard let url = results["url"] as? String, let parsed = URL(string: url), let scheme = parsed.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else { return nil }
+        let title = (results["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let text = (results["text"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return .page(url: url, title: title, text: text)
+    }
 }
 
 public struct Handover: Codable, Sendable, Equatable, Identifiable {
@@ -367,16 +375,53 @@ public enum HandoverPlanError: Error, Sendable {
     }
 }
 
+public protocol ImageFitting: Sendable {
+    func fit(_ data: Data, maxBytes: Int) -> (data: Data, mimeType: String)?
+}
+
 public final class HandoverCourier: Sendable {
     private let api: DeviceAPI
+    private let images: ImageFitting?
 
-    public init(api: DeviceAPI) {
+    public init(api: DeviceAPI, images: ImageFitting? = nil) {
         self.api = api
+        self.images = images
     }
 
-    public func deliver(_ handover: Handover) async -> HandoverOutcome {
+    static let widestDataURLPrefix = "data:image/jpeg;base64,".utf16.count
+
+    static func imageBudget(_ handover: Handover, configuration: DeviceConfiguration) -> Int? {
+        if handover.request != nil {
+            guard let limits = configuration.attachments else { return nil }
+            let prefix = widestDataURLPrefix
+            return max(0, (limits.imageCharacters - prefix) / 4 * 3)
+        }
+        return configuration.limit("device.upload.file_bytes").map { Int(clamping: $0) }
+    }
+
+    func fitted(_ handover: Handover, configuration: DeviceConfiguration) -> Handover {
+        guard
+            case let .image(data, _, name) = handover.content,
+            let images,
+            let budget = Self.imageBudget(handover, configuration: configuration),
+            data.count > budget,
+            let fitted = images.fit(data, maxBytes: budget)
+        else { return handover }
+        return Handover(
+            id: handover.id,
+            entry: handover.entry,
+            content: .image(data: fitted.data, mimeType: fitted.mimeType, name: name),
+            request: handover.request,
+            sourceApp: handover.sourceApp,
+            createdAt: handover.createdAt,
+            answerLocale: handover.answerLocale
+        )
+    }
+
+    public func deliver(_ original: Handover) async -> HandoverOutcome {
         do {
             let configuration = try await api.configuration()
+            let handover = fitted(original, configuration: configuration)
             switch try HandoverPlanner.plan(handover, configuration: configuration) {
             case let .conversation(attachment, kind, name, truncated):
                 let ref = try await api.storeAttachment(requestId: handover.attachmentRequestId, content: attachment, as: kind)
@@ -403,6 +448,7 @@ public final class HandoverCourier: Sendable {
                 }
             case let .media(kind, contentType):
                 guard case let .image(data, _, _) = handover.content else { return .failed(.rejected) }
+                if let budget = configuration.limit("device.upload.file_bytes"), data.count > budget { return .failed(.tooLarge) }
                 try await api.uploadMedia(data, kind: kind, batchId: handover.id, contentType: contentType)
                 return .delivered(answered: false)
             }
@@ -478,5 +524,86 @@ public final class HandoverQueue: @unchecked Sendable {
             }
         }
         return results
+    }
+}
+
+public struct HandoverSettings: Codable, Sendable, Equatable {
+    public var shareOn: Bool
+    public var safariOn: Bool
+    public var safariUsedAt: Date?
+
+    public init(shareOn: Bool = true, safariOn: Bool = true, safariUsedAt: Date? = nil) {
+        self.shareOn = shareOn
+        self.safariOn = safariOn
+        self.safariUsedAt = safariUsedAt
+    }
+
+    public func isOn(_ entry: HandoverEntry) -> Bool {
+        switch entry {
+        case .share: shareOn
+        case .safari: safariOn
+        }
+    }
+
+    public mutating func set(_ entry: HandoverEntry, on: Bool) {
+        switch entry {
+        case .share: shareOn = on
+        case .safari: safariOn = on
+        }
+    }
+
+    static let name = "handover-settings"
+
+    public static func load(from store: LocalStore) -> HandoverSettings {
+        store.read(name).flatMap { try? JSONDecoder().decode(HandoverSettings.self, from: $0) } ?? HandoverSettings()
+    }
+
+    public func save(to store: LocalStore) throws {
+        try store.write(Self.name, try JSONEncoder().encode(self))
+    }
+}
+
+public enum HandoverEntryState: Sendable, Equatable {
+    case on
+    case off
+    case notSetUp
+}
+
+extension HandoverSettings {
+    public func state(_ entry: HandoverEntry) -> HandoverEntryState {
+        if !isOn(entry) { return .off }
+        if entry == .safari, safariUsedAt == nil { return .notSetUp }
+        return .on
+    }
+}
+
+public final class HandoverDesk: @unchecked Sendable {
+    public let store: LocalStore
+    public let queue: HandoverQueue
+    private let courier: HandoverCourier
+    private let now: @Sendable () -> Date
+
+    public init(store: LocalStore, courier: HandoverCourier, now: @escaping @Sendable () -> Date = Date.init) {
+        self.store = store
+        self.queue = HandoverQueue(store: store)
+        self.courier = courier
+        self.now = now
+    }
+
+    public var settings: HandoverSettings { HandoverSettings.load(from: store) }
+
+    public func hand(_ handover: Handover) async -> HandoverOutcome {
+        var settings = settings
+        guard settings.isOn(handover.entry) else { return .entryOff(handover.entry) }
+        if handover.entry == .safari, settings.safariUsedAt == nil {
+            settings.safariUsedAt = now()
+            try? settings.save(to: store)
+        }
+        _ = await queue.drain(using: courier)
+        let outcome = await courier.deliver(handover)
+        if outcome == .queued {
+            do { try queue.add(handover) } catch { return .failed(.rejected) }
+        }
+        return outcome
     }
 }

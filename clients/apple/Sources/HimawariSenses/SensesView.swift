@@ -112,36 +112,6 @@ public struct SenseRow: View {
     }
 }
 
-public enum HandoverEntry: String, CaseIterable, Sendable {
-    case share
-    case safari
-
-    var icon: IconName {
-        switch self {
-        case .share: .share2
-        case .safari: .compass
-        }
-    }
-}
-
-public struct HandoverPlaceholderRows: View {
-    public init() {}
-
-    public var body: some View {
-        ForEach(Array(HandoverEntry.allCases.enumerated()), id: \.element) { index, entry in
-            if index > 0 { RowSeparator() }
-            SenseRow(
-                icon: entry.icon,
-                title: L.text("handover.\(entry.rawValue).name"),
-                detail: L.text("handover.\(entry.rawValue).detail"),
-                status: L.text("handover.\(entry.rawValue).status"),
-                statusColor: Color.hmMuted,
-                showsChevron: false
-            )
-        }
-    }
-}
-
 struct SenseSheet<Content: View>: View {
     let title: String
     let back: () -> Void

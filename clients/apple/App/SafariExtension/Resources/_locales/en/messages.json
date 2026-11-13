@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "Himawari"
+  },
+  "extension_description": {
+    "message": "Give the page you tap it on to Himawari."
+  },
+  "action_title": {
+    "message": "Give to Himawari"
+  },
+  "unreachable": {
+    "message": "Couldn't send"
+  }
+}

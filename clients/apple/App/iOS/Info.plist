@@ -28,6 +28,21 @@
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Himawari</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>himawari</string>
+			</array>
+		</dict>
+	</array>
+	<key>HimawariAppGroup</key>
+	<string>$(HIMAWARI_APP_GROUP)</string>
+	<key>HimawariKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)$(HIMAWARI_KEYCHAIN_GROUP)</string>
 	<key>HimawariReleaseChannel</key>
 	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
 	<key>NSCameraUsageDescription</key>

@@ -127,12 +127,6 @@
 "detail.range" = "%d から %d まで入力できます。";
 "record.what" = "記録したこと";
 
-"handover.share.name" = "Himawari に共有";
-"handover.share.detail" = "ほかの App で共有をタップ";
-"handover.share.status" = "いつでも使えます";
-"handover.safari.name" = "Safari のこのページ";
-"handover.safari.detail" = "タップしたときだけ読みます";
-"handover.safari.status" = "オンにする";
 
 "demo.office" = "会社";
 "demo.lunch" = "大阪駅の近く";
