@@ -4,11 +4,13 @@ import { parsePortable, verifyIntegrity } from "@himawari-agent/persistence-sqli
 import Fastify from "fastify";
 import { unzipSync } from "fflate";
 import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
+import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStoredZip,
   DATA_EXPORT_ARCHIVE_ROOT,
+  DATA_EXPORT_KEY_LIMIT,
   DATA_EXPORT_PATH,
   DataExportJobs,
   ProductionDataExportControl,
@@ -331,7 +333,7 @@ describe("[P1-6] 网页导出接口", () => {
     expect(ready.result.memories).toBe(Number(direct.headers["x-himawari-export-memories"]));
     expect(ready.result.rules).toBe(Number(direct.headers["x-himawari-export-rules"]));
     expect(ready.result.withheld).toBe(Number(direct.headers["x-himawari-export-withheld"]));
-    expect((await status(exportId)).state).toBe("expired");
+    expect((await status(exportId)).state).toBe("ready");
   });
 
   it("[iOS] 反向：不认识的编号是 expired 且没有结果；没登录、编号不对、编号不合格都拿不到文件", async () => {
@@ -507,5 +509,78 @@ describe("[P1-6] 网页导出接口", () => {
     expect(retried.replayed).toBe(false);
     expect(retried.resultRef).not.toBe(failing.resultRef);
     expect((await settled(retried.resultRef)).state).toBe("ready");
+  });
+
+  it("[iOS] 网页直接下载正在生成时，经网关开始得到冲突；生成中确认键满了也得到冲突", async () => {
+    const side = await openSide("gateway-conflict");
+    await seedEverything(side);
+    let release = () => {};
+    let gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            await gate;
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { app, startWith, settled } = await gateway(side, held);
+    const direct = app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const conflict = await startWith("key-a").catch((error: unknown) => error);
+    expect(conflict).toBeInstanceOf(ApplicationPortError);
+    expect(conflict).toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+    release();
+    expect((await direct).statusCode).toBe(200);
+    gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = await startWith("key-0");
+    for (let index = 1; index < DATA_EXPORT_KEY_LIMIT; index += 1)
+      expect((await startWith(`key-${index}`)).resultRef).toBe(first.resultRef);
+    const full = await startWith("key-full").catch((error: unknown) => error);
+    expect(full).toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+    expect(await startWith("key-1")).toEqual({ resultRef: first.resultRef, replayed: true });
+    release();
+    expect((await settled(first.resultRef)).state).toBe("ready");
+  });
+
+  it("[iOS] 已生成的网关导出在保留期内不被网页直接下载作废：网页直接拿这一份，过期后才重新生成", async () => {
+    const side = await openSide("gateway-direct-keeps");
+    await seedEverything(side);
+    let now = "2026-11-02T00:00:00.000Z";
+    let failures = 0;
+    const flaky = new Proxy(side.protector, {
+      get(target, property, receiver) {
+        if (property === "unprotect")
+          return async (...arguments_: Parameters<Side["protector"]["unprotect"]>) => {
+            if (failures > 0) {
+              failures -= 1;
+              throw new Error("DATA_EXPORT_PAYLOAD_UNAVAILABLE");
+            }
+            return target.unprotect(...arguments_);
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const { app, startWith, settled, status } = await gateway(side, flaky, () => now);
+    const first = await startWith("key-a");
+    const ready = await settled(first.resultRef);
+    if (!ready.result) throw new Error("result");
+    failures = 1;
+    const direct = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(direct.statusCode).toBe(200);
+    expect(createHash("sha256").update(direct.rawPayload).digest("hex")).toBe(ready.result.sha256);
+    expect(await status(first.resultRef)).toMatchObject({ state: "ready" });
+    expect(await startWith("key-a")).toEqual({ resultRef: first.resultRef, replayed: true });
+    now = "2026-11-02T00:10:00.000Z";
+    const failed = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(failed.statusCode).toBe(500);
+    const fresh = await app.inject({ method: "GET", url: DATA_EXPORT_PATH, headers: asOwner });
+    expect(fresh.statusCode).toBe(200);
   });
 });

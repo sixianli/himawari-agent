@@ -32,6 +32,7 @@ export const DATA_EXPORT_ARCHIVE_ROOT = "himawari-export";
 export const DATA_EXPORT_TOO_LARGE = "DATA_EXPORT_TOO_LARGE";
 export const DATA_EXPORT_BUSY = "DATA_EXPORT_BUSY";
 export const DATA_EXPORT_RETENTION_MS = 10 * 60 * 1000;
+export const DATA_EXPORT_KEY_LIMIT = 64;
 const MAXIMUM_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -172,8 +173,16 @@ export class DataExportJobs {
 
   async buildNow(): Promise<DataExportArchive> {
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
+    const held = this.#job;
+    if (
+      held?.state === "ready" &&
+      held.built &&
+      held.expiresAt !== null &&
+      Date.parse(this.#options.now()) < Date.parse(held.expiresAt)
+    )
+      return held.built;
     this.#building = true;
-    if (this.#job && this.#job.state !== "running") this.#discard();
+    if (held && held.state !== "running") this.#discard();
     try {
       return await (this.#options.build ?? (() => this.#build()))();
     } finally {
@@ -198,6 +207,8 @@ export class DataExportJobs {
       if (current.idempotencyKeys.has(idempotencyKey))
         return { exportId: current.exportId, replayed: true };
       if (current.state === "running") {
+        if (current.idempotencyKeys.size >= DATA_EXPORT_KEY_LIMIT)
+          throw new Error(DATA_EXPORT_BUSY);
         current.idempotencyKeys.add(idempotencyKey);
         return { exportId: current.exportId, replayed: false };
       }

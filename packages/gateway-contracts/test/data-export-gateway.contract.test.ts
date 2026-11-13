@@ -5,7 +5,7 @@ import { fixture } from "./gateway-v2.fixture.ts";
 
 const exportId = "data-export:AAAAAAAAAAAAAAAAAAAAAA";
 const result = {
-  downloadPath: "/api/data-export/v1/archive?exportId=x",
+  downloadPath: `/api/data-export/v1/archive?exportId=${encodeURIComponent(exportId)}`,
   fileName: "himawari-export-2026-11-12.zip",
   sizeBytes: 22,
   sha256: "0".repeat(64),
@@ -55,6 +55,19 @@ describe("data export gateway messages", () => {
     ["a negative count", { result: { ...result, memories: -1 } }],
     ["a result without expiry", { result: { ...result, expiresAt: undefined } }],
     ["an extra field", { extra: true }],
+    [
+      "a download path for another export",
+      {
+        result: {
+          ...result,
+          downloadPath: `/api/data-export/v1/archive?exportId=${encodeURIComponent("data-export:BAAAAAAAAAAAAAAAAAAAAA")}`,
+        },
+      },
+    ],
+    [
+      "a download path without the export id",
+      { result: { ...result, downloadPath: "/api/data-export/v1/archive" } },
+    ],
   ])("rejects a snapshot with %s", (_name, overrides) => {
     rejects(snapshot(overrides));
   });

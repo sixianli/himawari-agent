@@ -680,7 +680,7 @@ const dataExportStatusQuerySchema = object({
   ...envelope("query", "data.export.status.read"),
   payload: object({ exportId: dataExportIdSchema }),
 });
-const dataExportStatusSnapshotSchema = object({
+const dataExportStatusSnapshotObjectSchema = object({
   ...envelope("snapshot", "data.export.status.snapshot"),
   payload: object({
     exportId: dataExportIdSchema,
@@ -703,6 +703,23 @@ const dataExportStatusSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+const dataExportStatusSnapshotSchema: Schema<
+  ReturnType<typeof dataExportStatusSnapshotObjectSchema.parse>
+> = {
+  parse(input, path = "$") {
+    const snapshot = dataExportStatusSnapshotObjectSchema.parse(input, path);
+    const result = snapshot.payload.result;
+    if (result) {
+      const query = result.downloadPath.split("?")[1] ?? "";
+      if (new URLSearchParams(query).getAll("exportId").join("\n") !== snapshot.payload.exportId)
+        throw new ContractValidationError(
+          `${path}.payload.result.downloadPath`,
+          "expected the download path of this export",
+        );
+    }
+    return snapshot;
+  },
+};
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
