@@ -130,3 +130,7 @@
 
 "demo.office" = "会社";
 "demo.lunch" = "大阪駅の近く";
+
+"duration.hm" = "%d 時間 %d 分";
+"duration.h" = "%d 時間";
+"duration.m" = "%d 分";

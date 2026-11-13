@@ -101,9 +101,10 @@ boot_device() {
   [ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
 }
 boot_device
-if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n()"' | cut -d, -f1)" != "zh-Hans" ]; then
+if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n()"' | cut -d, -f1)" != "zh-Hans" ] \
+  || [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLocale 2>/dev/null)" != "en_US" ]; then
   xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array zh-Hans
-  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string zh_CN
+  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string en_US
   xcrun simctl shutdown "$udid"
   boot_device
 fi

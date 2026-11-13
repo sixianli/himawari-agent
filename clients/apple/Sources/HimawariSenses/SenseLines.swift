@@ -80,9 +80,12 @@ enum SenseLines {
     }
 
     static func duration(_ seconds: Double) -> String {
-        let rounded = max(seconds, 60)
-        let units: Set<Duration.UnitsFormatStyle.Unit> = rounded >= 3600 ? [.hours, .minutes] : [.minutes]
-        return Duration.seconds(rounded).formatted(.units(allowed: units, width: .abbreviated, zeroValueUnits: .hide, fractionalPart: .hide))
+        let minutes = max(Int((seconds / 60).rounded()), 1)
+        let hours = minutes / 60
+        let rest = minutes % 60
+        if hours == 0 { return L.format("duration.m", rest) }
+        if rest == 0 { return L.format("duration.h", hours) }
+        return L.format("duration.hm", hours, rest)
     }
 
     static func time(_ date: Date) -> String {

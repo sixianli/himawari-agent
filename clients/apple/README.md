@@ -23,7 +23,7 @@
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
-| `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文，系统询问框才和原型一样是中文 | 第 6 批 |
+| `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文、地区格式设成美国，系统询问框才和原型一样是中文，状态栏时间才是原型里的“9:41”而不是“09:41”（App 自己仍按启动参数用中国大陆格式） | 第 6 批 |
 | `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |

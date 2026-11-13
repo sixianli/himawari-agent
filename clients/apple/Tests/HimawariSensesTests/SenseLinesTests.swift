@@ -56,4 +56,12 @@ struct SenseLinesTests {
         broken["record"] = record
         #expect(SenseLines.lines(try day([broken])).isEmpty)
     }
+
+    @Test func durationsKeepHoursAndMinutesAndRoundUpToAMinute() {
+        let both = SenseLines.duration(3 * 3600 + 53 * 60)
+        #expect(both.contains("3") && both.contains("53"))
+        #expect(SenseLines.duration(30 * 60).contains("30"))
+        #expect(!SenseLines.duration(2 * 3600).contains("0 "))
+        #expect(SenseLines.duration(10).contains("1"))
+    }
 }

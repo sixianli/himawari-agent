@@ -93,10 +93,10 @@
 "detail.retentionReason" = "改走过的路线保留多久";
 "detail.failed" = "没改成，过一会儿再试";
 
-"row.arrived" = "到 %@";
+"row.arrived" = "到%@";
 "row.stayed" = " · 停了 %@";
-"row.left" = "离开 %@";
-"row.entered" = "进入 %@";
+"row.left" = "离开%@";
+"row.entered" = "进入%@";
 "row.place" = "一个地方";
 "row.steps" = "走了 %@ 步";
 "row.sleep" = "睡了 %@";
@@ -130,3 +130,7 @@
 
 "demo.office" = "公司";
 "demo.lunch" = "大阪站附近";
+
+"duration.hm" = "%d 小时 %d 分钟";
+"duration.h" = "%d 小时";
+"duration.m" = "%d 分钟";

@@ -130,3 +130,7 @@
 
 "demo.office" = "the office";
 "demo.lunch" = "near Osaka Station";
+
+"duration.hm" = "%d h %d min";
+"duration.h" = "%d h";
+"duration.m" = "%d min";
