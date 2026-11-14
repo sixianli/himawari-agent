@@ -78,7 +78,18 @@ it("[ADR-0257] keeps at most the six most recent owner messages and cuts each at
     message(index + 1, `第 ${index + 1} 句，${"字".repeat(2500)}`),
   );
   const words = await collectOwnerWords(dependencies(messages), source(10));
-  expect(words).toHaveLength(6);
-  expect(words[0]).toContain("第 5 句");
+  expect(words.length).toBeLessThanOrEqual(6);
+  expect(words.at(-1)).toContain("第 10 句");
   expect(words.every((text) => [...text].length <= 2000)).toBe(true);
+});
+
+it("[ADR-0257] keeps the total owner words within the byte budget, dropping the oldest first", async () => {
+  const messages = Array.from({ length: 10 }, (_, index) =>
+    message(index + 1, `第 ${index + 1} 句，${"字".repeat(2500)}`),
+  );
+  const words = await collectOwnerWords(dependencies(messages), source(10));
+  const total = words.reduce((sum, text) => sum + Buffer.byteLength(text, "utf8"), 0);
+  expect(total).toBeLessThanOrEqual(20_000);
+  expect(words.at(-1)).toContain("第 10 句");
+  expect(words.join("")).not.toContain("第 5 句");
 });

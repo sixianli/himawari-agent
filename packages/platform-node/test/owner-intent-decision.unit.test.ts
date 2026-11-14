@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseOwnerIntentDecision } from "@himawari-agent/application";
 import { OwnerIntentDecision, ownerIntentRequestBody } from "../src/owner-intent-decision.js";
 
 let server: Server | undefined;
@@ -144,5 +145,89 @@ describe("[ADR-0257] owner intent decision", () => {
       await new Promise<void>((resolve) => server?.close(() => resolve()));
       server = undefined;
     }
+  });
+});
+
+describe("[ADR-0257] owner intent answer parsing fails closed", () => {
+  const MODEL = "typesafe-ai/jev";
+  const reply = (answer: Record<string, unknown>) => ({
+    model: MODEL,
+    answers: [{ type: "choice", name: "owner_intent", ...answer }],
+  });
+  const pair = (yes: number, no: number) => [
+    { value: "explicit", probability: yes },
+    { value: "not_explicit", probability: no },
+  ];
+
+  it.each([
+    ["probabilities missing", { choice: "explicit", confidence: 0.99 }],
+    [
+      "object probabilities contradict the choice",
+      {
+        choice: "explicit",
+        confidence: 0.99,
+        probabilities: { explicit: 0.1, not_explicit: 0.9 },
+      },
+    ],
+    [
+      "only one option",
+      {
+        choice: "explicit",
+        confidence: 0.99,
+        probabilities: [{ value: "explicit", probability: 0.99 }],
+      },
+    ],
+    ["sum above one", { choice: "explicit", confidence: 0.9, probabilities: pair(0.9, 0.9) }],
+    ["sum below one", { choice: "explicit", confidence: 0.5, probabilities: pair(0.5, 0.1) }],
+    [
+      "duplicate option",
+      {
+        choice: "explicit",
+        confidence: 0.5,
+        probabilities: [...pair(0.5, 0.5), { value: "explicit", probability: 0.5 }],
+      },
+    ],
+    [
+      "choice is not the most likely",
+      { choice: "explicit", confidence: 0.1, probabilities: pair(0.1, 0.9) },
+    ],
+    [
+      "confidence disagrees",
+      { choice: "explicit", confidence: 0.6, probabilities: pair(0.99, 0.01) },
+    ],
+  ])("rejects %s", (_name, answer) => {
+    expect(() => parseOwnerIntentDecision(reply(answer), MODEL)).toThrow(
+      "OWNER_INTENT_ANSWER_INVALID",
+    );
+  });
+
+  it("accepts the object form of probabilities when consistent", () => {
+    expect(
+      parseOwnerIntentDecision(
+        reply({
+          choice: "explicit",
+          confidence: 0.9,
+          probabilities: { explicit: 0.9, not_explicit: 0.1 },
+        }),
+        MODEL,
+      ),
+    ).toEqual({ verdict: "explicit", confidence: 900, quote: null });
+  });
+
+  it("does not round a probability just under one half up to explicit", () => {
+    expect(
+      parseOwnerIntentDecision(
+        reply({ choice: "not_explicit", confidence: 0.5001, probabilities: pair(0.4999, 0.5001) }),
+        MODEL,
+      ),
+    ).toEqual({ verdict: "not_explicit", confidence: 500, quote: null });
+  });
+
+  it("redacts sensitive text in parameter keys", () => {
+    const body = ownerIntentRequestBody(MODEL, {
+      ...request,
+      action: { ...request.action, parameters: { "4111 1111 1111 1111": "x" } },
+    });
+    expect(body).not.toContain("4111 1111 1111 1111");
   });
 });

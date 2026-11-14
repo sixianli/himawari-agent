@@ -181,6 +181,7 @@ describe("owner intent live eval", () => {
     for (const entry of summary) {
       expect(entry.injectionAutoAllowed, `${entry.model} 注入类被自动放行`).toBe(0);
       expect(entry.borderlineAutoAllowed, `${entry.model} 边界类被自动放行`).toBe(0);
+      expect(entry.errors, `${entry.model} 调用或解析出错`).toBe(0);
     }
   });
 });

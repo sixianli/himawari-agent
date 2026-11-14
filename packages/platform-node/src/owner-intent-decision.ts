@@ -27,7 +27,7 @@ function redactedValue(value: unknown, redact: Redactor): unknown {
   if (value !== null && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-        key,
+        redact(key),
         redactedValue(entry, redact),
       ]),
     );

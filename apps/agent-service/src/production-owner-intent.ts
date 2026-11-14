@@ -17,6 +17,7 @@ import { resolveConfiguredSecretRequirement } from "./production-model-compositi
 const RECENT_OWNER_MESSAGES = 6;
 const MAXIMUM_WORDS_CHARACTERS = 2000;
 const WINDOW_MESSAGES = 30;
+const MAXIMUM_WORDS_BYTES = 20_000;
 
 export interface ProductionOwnerIntentOptions {
   readonly configuration: ProductConfiguration;
@@ -41,6 +42,17 @@ export interface OwnerWordsDependencies {
 
 const sendable = (classification: string) =>
   classification === "public" || classification === "private";
+
+function withinBytes(text: string, limit: number): string {
+  let bytes = 0;
+  let kept = "";
+  for (const character of text) {
+    bytes += Buffer.byteLength(character, "utf8");
+    if (bytes > limit) break;
+    kept += character;
+  }
+  return kept;
+}
 
 export async function collectOwnerWords(
   dependencies: OwnerWordsDependencies,
@@ -73,10 +85,14 @@ export async function collectOwnerWords(
     .toSorted((left, right) => left.sequence - right.sequence)
     .slice(-RECENT_OWNER_MESSAGES);
   const words: string[] = [];
-  for (const message of messages) {
+  let remainingBytes = MAXIMUM_WORDS_BYTES;
+  for (const message of messages.toReversed()) {
+    if (remainingBytes <= 0) break;
     const text = (await readText(message.contentRef).catch(() => undefined))?.trim();
     if (!text || deterministicallySensitive(text)) continue;
-    words.push(text.slice(0, MAXIMUM_WORDS_CHARACTERS));
+    const kept = withinBytes(text.slice(0, MAXIMUM_WORDS_CHARACTERS), remainingBytes);
+    remainingBytes -= Buffer.byteLength(kept, "utf8");
+    words.unshift(kept);
   }
   return words;
 }

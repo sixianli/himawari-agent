@@ -71,7 +71,7 @@ export class OwnerIntentDecisionFailure extends Error {
   }
 }
 
-function permille(probability: unknown): number {
+function unitProbability(probability: unknown): number {
   if (
     typeof probability !== "number" ||
     !Number.isFinite(probability) ||
@@ -79,7 +79,26 @@ function permille(probability: unknown): number {
     probability > 1
   )
     throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-  return Math.round(probability * 1000);
+  return probability;
+}
+
+function invalidAnswer(): never {
+  throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
+}
+
+function probabilityTable(options: unknown): Map<string, number> {
+  const found = new Map<string, number>();
+  if (Array.isArray(options)) {
+    for (const option of options as readonly unknown[]) {
+      if (!isRecord(option) || typeof option["value"] !== "string") invalidAnswer();
+      if (found.has(option["value"])) invalidAnswer();
+      found.set(option["value"], unitProbability(option["probability"]));
+    }
+  } else if (isRecord(options)) {
+    for (const [value, probability] of Object.entries(options))
+      found.set(value, unitProbability(probability));
+  } else invalidAnswer();
+  return found;
 }
 
 export function parseOwnerIntentDecision(body: unknown, model: string): OwnerIntentAnswer {
@@ -96,33 +115,22 @@ export function parseOwnerIntentDecision(body: unknown, model: string): OwnerInt
     answer["name"] !== OWNER_INTENT_QUESTION_NAME
   )
     throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-  let explicit: number;
-  const options = answer["probabilities"];
-  if (Array.isArray(options)) {
-    const found = new Map<string, number>();
-    for (const option of options as readonly unknown[]) {
-      if (!isRecord(option) || typeof option["value"] !== "string")
-        throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-      if (
-        option["value"] !== OWNER_INTENT_CHOICE_EXPLICIT &&
-        option["value"] !== OWNER_INTENT_CHOICE_NOT_EXPLICIT
-      )
-        throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-      found.set(option["value"], permille(option["probability"]));
-    }
-    const yes = found.get(OWNER_INTENT_CHOICE_EXPLICIT);
-    if (yes === undefined) throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-    explicit = yes;
-  } else {
-    const choice = answer["choice"];
-    if (choice === OWNER_INTENT_CHOICE_NOT_EXPLICIT)
-      explicit = 1000 - permille(answer["confidence"]);
-    else if (choice === OWNER_INTENT_CHOICE_EXPLICIT) explicit = permille(answer["confidence"]);
-    else throw new OwnerIntentDecisionFailure("OWNER_INTENT_ANSWER_INVALID");
-  }
+  const choice = answer["choice"];
+  if (choice !== OWNER_INTENT_CHOICE_EXPLICIT && choice !== OWNER_INTENT_CHOICE_NOT_EXPLICIT)
+    invalidAnswer();
+  const confidence = unitProbability(answer["confidence"]);
+  const table = probabilityTable(answer["probabilities"]);
+  const yes = table.get(OWNER_INTENT_CHOICE_EXPLICIT);
+  const no = table.get(OWNER_INTENT_CHOICE_NOT_EXPLICIT);
+  if (table.size !== 2 || yes === undefined || no === undefined) invalidAnswer();
+  if (Math.abs(yes + no - 1) > 0.001) invalidAnswer();
+  if ((choice === OWNER_INTENT_CHOICE_EXPLICIT ? yes : no) < Math.max(yes, no)) invalidAnswer();
+  if (Math.abs(confidence - Math.max(yes, no)) > 0.001) invalidAnswer();
+  const isExplicit = yes > no;
+  const explicit = Math.round(yes * 1000);
   return Object.freeze({
-    verdict: explicit >= 500 ? "explicit" : "not_explicit",
-    confidence: explicit >= 500 ? explicit : 1000 - explicit,
+    verdict: isExplicit ? "explicit" : "not_explicit",
+    confidence: isExplicit ? explicit : 1000 - explicit,
     quote: null,
   });
 }
