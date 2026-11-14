@@ -1,0 +1,8 @@
+# PR 503 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1. 低 作者说“收紧也要挑战值和面容”，但代码和现有测试都明确收紧操作不取挑战值。PR 426 第 1 轮 ds-2 已判过：收紧类不要挑战值和面容是已批准设计（device-gateway.ts:154 只对 change 要确认，ManageGatewayTests 的暂停不收面容用例锁定）；材料措辞不准，不是代码缺陷，本轮代码没改这里
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低 文件分页只保护了“加载更多”，刷新与“加载更多”并发时仍会互相覆盖。SettingsStore.loadFiles 末尾无条件 shelves[origin]=shelf（原 144 行）。已加按来源的代号：刷新开始和每次写回都换代号，过期结果丢弃；补 testRefreshingWhileLoadingMoreKeepsTheRefreshedPage；触发：“加载更多”请求在途时主人下拉刷新同一来源的文件列表；后果：先完成的刷新结果被后回来的旧“加载更多”覆盖，列表回到旧页加旧第二页；判低理由：需要两个请求交叠才出现，后果是列表显示旧内容，下拉再刷一次即恢复，不丢数据
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低 服务端 `reasonCode` 的修复没有经过真实传输层 `SignedDeviceTransport` 的反向用例。DeviceTransport.swift:48 的修复代码正确（四层形状已逐层核对），缺的只是经 SignedDeviceTransport 的测试；现在不会出错，写在合并后补，本机无 Swift 工具链，不在没法编译时堆测试
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低 第 7 条只改了操作账本文案，ADR 0192 的检查范围说明仍与脚本不一致。第 1 轮第 7 条已说明：快速模式下文档改动延后，交回主线程；这是同一条的 ADR 部分，不影响运行行为；触发：有人读 ADR 0192 第 47、48 行；后果：文档说检查不扫 Swift 且名单 23 项，与脚本（check-operations.mjs:323 已扫 Swift）和当前 34 项不符，会误判检查范围；判低理由：只是说明文字过时，不影响任何运行行为
+- 5（deepseek-v4.1-flash）不成立：### 5. 低 修复提交自述“Swift 未编译、测试未运行”，与“Mac 上 169 个测试通过、iOS 和 Mac 都能编译”的说法冲突。这是提交说明和材料里验证说法的关系，不是代码缺陷：“169 个通过”是 Mac 上之前的结果，修复提交本机未编译已如实写明；最终要靠 Andy 的 Mac 编译和跑测试，已在交回里写明未编译
+- 6（deepseek-v4.1-flash）成立，可以更好：### 6. 低 记忆分级被做成可选并回退 `private`，服务端缺字段时会把敏感记忆降级上传。MemoryStore.swift:47 的回退只在服务端漏发契约必填字段时触发（memory.overview.snapshot 契约要求该字段，当前服务端必发）；改成必填解码是更保守的写法，不是现在会出错的输入

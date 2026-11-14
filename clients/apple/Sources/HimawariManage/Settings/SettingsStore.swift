@@ -26,6 +26,7 @@ public final class SettingsStore {
     public var capabilityCount: Int { waitingCapabilities.count + capabilitiesInUse.count + capabilitiesDisabled.count }
 
     @ObservationIgnored private var loadingMoreFiles: Set<FileOrigin> = []
+    @ObservationIgnored private var fileLoadGeneration: [FileOrigin: Int] = [:]
     @ObservationIgnored let gateway: ManageGateway
     @ObservationIgnored let identity: DeviceIdentity?
 
@@ -121,6 +122,8 @@ public final class SettingsStore {
         defer {
             if more { loadingMoreFiles.remove(origin) }
         }
+        if !more { fileLoadGeneration[origin, default: 0] += 1 }
+        let generation = fileLoadGeneration[origin, default: 0]
         do {
             let data = try await gateway.read(
                 .v2,
@@ -141,6 +144,8 @@ public final class SettingsStore {
             shelf.loaded = true
             shelf.failed = shelf.files.isEmpty
         }
+        guard fileLoadGeneration[origin, default: 0] == generation else { return }
+        fileLoadGeneration[origin] = generation + 1
         shelves[origin] = shelf
     }
 

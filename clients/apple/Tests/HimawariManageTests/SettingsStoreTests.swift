@@ -43,6 +43,32 @@ private actor ConflictTransport: DeviceTransport {
     }
 }
 
+private actor SlowSecondPageTransport: DeviceTransport {
+    private var firstPagesServed = 0
+
+    nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
+        var cursor: String?
+        if case .object(let payload)? = body["payload"], case .string(let value)? = payload["before"] { cursor = value }
+        if cursor != nil {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return Self.page(name: "旧第二页.pdf", next: "null")
+        }
+        let served = await nextFirstPage()
+        return Self.page(name: served == 1 ? "旧第一页.pdf" : "刷新后.pdf", next: served == 1 ? #""page2""# : "null")
+    }
+
+    private func nextFirstPage() -> Int {
+        firstPagesServed += 1
+        return firstPagesServed
+    }
+
+    private static func page(name: String, next: String) -> DeviceResponse {
+        let file = #"{"fileId":"\#(name)","threadId":"t1","name":"\#(name)","threadTitle":null,"kind":"pdf","origin":"generated","mediaType":"application/pdf","sizeBytes":10,"version":1,"createdAt":"2026-11-11T00:00:00Z","deleted":false,"contentPath":null}"#
+        return DeviceResponse(status: 200, body: Data(#"{"payload":{"files":[\#(file)],"nextCursor":\#(next),"generatedAt":"2026-11-12T00:00:00Z"}}"#.utf8))
+    }
+}
+
 private func payloadString(_ body: [String: JSONValue], _ key: String) -> String? {
     guard case .object(let payload)? = body["payload"], case .string(let value)? = payload[key] else { return nil }
     return value
@@ -235,6 +261,20 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.shelf(.uploaded).files.map(\.name), ["会议白板.jpg"])
         let reads = await transport.sent.filter { $0["type"] == "files.list.read" }
         XCTAssertEqual(reads.count, 3)
+    }
+
+    func testRefreshingWhileLoadingMoreKeepsTheRefreshedPage() async throws {
+        let settings = SettingsStore(
+            gateway: ManageGateway(transport: SlowSecondPageTransport(), makeIdentifier: { "0123456789abcdef0123" }),
+            identity: DeviceIdentity(deviceId: "dev_phone", origin: URL(string: "https://h.example")!, access: nil)
+        )
+        await settings.loadFiles(.generated)
+        XCTAssertEqual(settings.shelf(.generated).files.map(\.name), ["旧第一页.pdf"])
+        let more = Task { await settings.loadFiles(.generated, more: true) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await settings.loadFiles(.generated)
+        await more.value
+        XCTAssertEqual(settings.shelf(.generated).files.map(\.name), ["刷新后.pdf"])
     }
 
     func testSigningOutABrowserAsksForFaceIDAndTheCurrentOneSaysInUse() async throws {
