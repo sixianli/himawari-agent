@@ -133,21 +133,21 @@ describe("[A4] production import duplicate checker", () => {
 
   it("sends the first request alone and pairs the rest of the same chunk right after it", async () => {
     const order: string[] = [];
-    let active = 0;
-    let firstWasAlone = true;
+    let firstDone = false;
+    let startedDuringFirst = 0;
     const { checker: run } = checker(
       async (input: Input) => {
         order.push(input.existing.map(({ key }) => key).join(","));
-        if (order.length === 1) firstWasAlone = active === 0;
-        active += 1;
-        await Promise.resolve();
-        active -= 1;
+        if (order.length === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          firstDone = true;
+        } else if (!firstDone) startedDuringFirst += 1;
         return input.candidates.map(() => answer(null, 0));
       },
       { candidatesPerRequest: 1, existingPerRequest: 2 },
     );
     await run.check(["甲乙", "丙丁"], existing);
-    expect(firstWasAlone).toBe(true);
+    expect(startedDuringFirst).toBe(0);
     expect(order).toEqual(["m0,m1", "m0,m1", "m2", "m2"]);
   });
 

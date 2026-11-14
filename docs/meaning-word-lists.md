@@ -64,6 +64,7 @@ Andy 在 2026-11-12 定的原则（[ADR 0249](adr/0249-the-model-judges-meaning-
 ## 没有进来的地方
 
 - 脚本不扫 `scripts/`、`evals/`、测试和 `packages/prompt-catalog`（给模型的提示词）。开发工具里解析复核模型输出格式的几处（例如 `scripts/model-review/opencode-review.mjs` 的 `LOW_MODEL_SEVERITY`）和评测里的“关键词预筛”对照组（`scripts/evals/memory-capture-live.eval.ts` 的 `TRIGGERS`，用来证明预筛会漏）不判断主人的话。
+- 脚本也不扫 `apps/control-center/src/i18n/`（界面文案）。并列词正则只在里面有中日文字符，或有少数几个常见英文词时才算命中，所以只写英文单词的并列正则（例如 `always|never|sometimes`）抓不到（Andy 2026-11-14 定暂不补）。
 - 脚本是静态扫描，看不到运行时拼出来的词表，也看不到写在数据文件里的词。它拦的是最常见的写法，不是证明；评审时仍要问一句“这里是不是在猜用户的意思”。
 - 唤醒名（例如苹果端主人叫 Himawari 才唤醒）只比主人配置的名字，不是词表；设备常开监听不能每句话送模型。
 

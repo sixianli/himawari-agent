@@ -3839,7 +3839,7 @@ describe("production memory capture", () => {
     expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
-  it("[A4] reports skipped, and asks nothing, when every existing memory is sensitive", async () => {
+  it("[A4] reports skipped when every existing memory is sensitive, and never counts them against the limit", async () => {
     const context = await setup(
       "我月薪三万。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
@@ -3869,6 +3869,28 @@ describe("production memory capture", () => {
     if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
     expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
     expect(context.duplicateRequests).toHaveLength(0);
+    await context.protect("payload-s3", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-a-private",
+        source: "assistant",
+        items: [{ contentRef: "payload-s3", category: "other", subCategory: null, topic: null }],
+      },
+      "import-a-private",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const limited = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (limited.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(limited.payload.items.map(({ verdict }) => verdict)).toEqual(["different"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
   it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
