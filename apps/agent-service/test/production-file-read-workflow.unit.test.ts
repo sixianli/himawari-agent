@@ -6,6 +6,7 @@ import {
   type AutomaticActionReviewPort,
   type CapabilityManifest,
   type GovernedActionIntent,
+  type GovernedApprovalRequest,
   type GovernedGrantRecord,
   type HostDirectoryGrant,
   hostDirectoryGrantStateKey,
@@ -175,6 +176,7 @@ async function fixture(automaticReview?: AutomaticActionReviewPort, coding = fal
     authority: base.options.authority,
     clock,
     ids: base.options.ids,
+    threadTitle: async () => "周五去大阪",
     ...(automaticReview ? { automaticReview } : {}),
   });
   const approvals = new ApprovalService({ store, clock });
@@ -223,12 +225,12 @@ async function fixture(automaticReview?: AutomaticActionReviewPort, coding = fal
       response: { decision: "approved", grant: approved, recentAuthenticationRef: null },
     });
   };
-  services.authorize = async (intent, signal) => {
+  services.authorize = async (intent, signal, display) => {
     intents.push(intent);
-    let decision = await authorize(intent, signal);
+    let decision = await authorize(intent, signal, display);
     if (decision.decision === "ASK" && permitted.has(intent.operation)) {
       await respond(intent, decision.approvalRequest.id);
-      decision = await authorize(intent, signal);
+      decision = await authorize(intent, signal, display);
     }
     return decision;
   };
@@ -409,6 +411,19 @@ describe("production file read workflow through the Worker transport", () => {
       expect(f.executeRequests()).toHaveLength(2);
     },
   );
+
+  it("freezes the owner-readable display facts of the read approval", async () => {
+    const f = await fixture();
+    f.permitted.delete("read");
+    await (await f.open()).execute(f.call);
+    const [approval] = await f.approvals();
+    expect((approval as GovernedApprovalRequest).display).toEqual({
+      displayTitle: null,
+      bodyPreview: "note.txt",
+      askedBecause: { kind: "no_rule_allows" },
+      origin: { threadId: f.call.context?.threadId, threadTitle: "周五去大阪" },
+    });
+  });
 
   it.each(["../secret", "/outside/note.txt", "a/../note.txt", "~/note.txt", "note.txt\\escape"])(
     "rejects unsafe path %s before metadata dispatch",

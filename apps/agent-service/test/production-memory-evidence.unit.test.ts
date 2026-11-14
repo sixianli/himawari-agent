@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   parseMemoryCandidates,
+  parseSupportVerdict,
   quoteFromOwnerMessage,
-  quoteRelatesToMemory,
   reminderSchedule,
+  supportCheckKey,
 } from "../src/production-memory-capture.js";
 
 describe("memory evidence from the Owner's own words", () => {
@@ -99,6 +100,7 @@ describe("memory evidence from the Owner's own words", () => {
       quote: string,
       existing: string,
       ownerMessage = "好家里只喝明治的牛奶",
+      supports: boolean | null = true,
     ) =>
       parseMemoryCandidates({
         output: JSON.stringify({
@@ -120,6 +122,9 @@ describe("memory evidence from the Owner's own words", () => {
         tentativeMemories: new Map([
           ["memory-tentative", { text: "主人偏好明治乳制品", category: "preference" }],
         ]),
+        ...(supports === null
+          ? {}
+          : { supportVerdicts: new Map([[supportCheckKey("memory-tentative", quote), supports]]) }),
         ownerMessage,
       });
 
@@ -167,57 +172,53 @@ describe("memory evidence from the Owner's own words", () => {
       }
     });
 
-    it("REVERSE: rejects a real Owner quote that has nothing to do with the tentative memory", () => {
-      const coffee = parseMemoryCandidates({
-        output: JSON.stringify({
-          memories: [
-            {
-              kind: "durable_fact",
-              decision: "unchanged",
-              existingMemoryId: "memory-tentative",
-              classification: "private",
-              confidence: 950,
-              quote: "明天下午开会，顺便取一下快递",
-              text: "明天下午开会，顺便取一下快递",
-            },
-          ],
-        }),
-        sourceRef: "payload-owner",
-        sourceClassification: "private",
-        existingIds: new Set(["memory-tentative"]),
-        tentativeMemories: new Map([
-          ["memory-tentative", { text: "主人喜欢喝咖啡", category: "preference" }],
-        ]),
-        ownerMessage: "明天下午开会，顺便取一下快递",
-      });
-      expect(coffee.candidates).toEqual([]);
-      expect(coffee.rejectedCandidates).toHaveLength(1);
+    it("asks the judge about a verified quote instead of guessing by shared words", () => {
+      const pending = parse(
+        "unchanged",
+        "好家里只喝明治的牛奶",
+        "memory-tentative",
+        undefined,
+        null,
+      );
+      expect(pending.candidates).toEqual([]);
+      expect(pending.rejectedCandidates).toHaveLength(1);
+      expect(pending.supportChecks).toEqual([
+        {
+          key: supportCheckKey("memory-tentative", "好家里只喝明治的牛奶"),
+          memoryText: "主人偏好明治乳制品",
+          quote: "好家里只喝明治的牛奶",
+        },
+      ]);
+    });
+
+    it("REVERSE: does not ask the judge when the quote is not the Owner's own words, or the memory is confirmed", () => {
+      expect(parse("unchanged", "", "memory-tentative", undefined, null).supportChecks).toEqual([]);
       expect(
-        quoteFromOwnerMessage("明天下午开会，顺便取一下快递", "明天下午开会，顺便取一下快递"),
-      ).toBe(true);
+        parse("unchanged", "好家里只喝明治的牛奶", "memory-formal", undefined, null).supportChecks,
+      ).toEqual([]);
     });
 
-    it("accepts a related quote and relates quotes by shared words, not by generic ones", () => {
-      expect(quoteRelatesToMemory("我又买了明治的牛奶", ["主人偏好明治乳制品"])).toBe(true);
-      expect(quoteRelatesToMemory("明天下午开会", ["主人喜欢喝咖啡"])).toBe(false);
-      expect(quoteRelatesToMemory("我喜欢开会", ["主人喜欢喝咖啡"])).toBe(false);
-      expect(quoteRelatesToMemory("帮我顺便取一下快递", ["主人想先试一下再决定"])).toBe(false);
-      expect(quoteRelatesToMemory("I drink coffee daily", ["Owner likes coffee"])).toBe(true);
-    });
-
-    it.each(["update", "merge"])(
-      "REVERSE: rejects %s whose verified Owner quote is unrelated to the tentative memory",
+    it.each(["unchanged", "update", "merge"])(
+      "REVERSE: rejects %s whose verified Owner quote the judge says does not support the tentative memory",
       (decision) => {
         const parsed = parse(
           decision,
           "明天下午开会，顺便取一下快递",
           "memory-tentative",
           "明天下午开会，顺便取一下快递",
+          false,
         );
         expect(parsed.candidates).toEqual([]);
         expect(parsed.rejectedCandidates).toHaveLength(1);
       },
     );
+
+    it("reads the judge's answer strictly", () => {
+      expect(parseSupportVerdict('{"supports":true}')).toBe(true);
+      expect(parseSupportVerdict('```json\n{"supports":false}\n```')).toBe(false);
+      for (const bad of ['{"supports":"yes"}', "{}", "是", '{"support":true}', "[true]"])
+        expect(() => parseSupportVerdict(bad)).toThrow("MEMORY_CAPTURE_RESPONSE_INVALID");
+    });
 
     it("REVERSE: unchanged on a confirmed memory still needs no quote", () => {
       const parsed = parse("unchanged", "", "memory-formal");

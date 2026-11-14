@@ -29,7 +29,9 @@ import {
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
+import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
@@ -66,6 +68,9 @@ export function reportEntry(filename, kind, output) {
   };
 }
 
+export const memberRunsOnHost = (member, platform = hostOs(), arch = hostArch()) =>
+  member.os === platform && [member.arch, member.alternateArch].includes(arch);
+
 export async function runCheck({
   root = repositoryRoot,
   checkId,
@@ -75,14 +80,18 @@ export async function runCheck({
   context,
   artifact,
   baselineCandidate,
+  coverage,
   comparison,
   hosted = process.env.GITHUB_ACTIONS === "true",
 }) {
+  if (coverage !== undefined && (checkId !== "tests" || coverage !== "measure"))
+    throw new Error("CI_COVERAGE_OPTION_INVALID");
   if (
     baselineCandidate !== undefined &&
-    (checkId !== "coverage" || baselineCandidate !== "initial-only")
+    (checkId !== "tests" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
+  if (["build", "browser", "tests"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -90,8 +99,7 @@ export async function runCheck({
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");
-  if (["browser", "coverage"].includes(checkId) && !artifact)
-    throw new Error("CI_ARTIFACT_REQUIRED");
+  if (["browser", "tests"].includes(checkId) && !artifact) throw new Error("CI_ARTIFACT_REQUIRED");
   mkdirSync(directory, { recursive: true });
   json(path.join(directory, "context.json"), context);
   const started = performance.now();
@@ -103,8 +111,8 @@ export async function runCheck({
     toolchain: {
       node: process.versions.node,
       npm: "unavailable",
-      os: process.platform,
-      arch: process.arch,
+      os: hostOs(),
+      arch: hostArch(),
       abi: process.versions.modules,
       runnerImage: process.env.ImageVersion ?? "local",
     },
@@ -128,8 +136,7 @@ export async function runCheck({
   const temporaryDirectory = mkdtempSync(`${testTemporaryRoot()}/hci-`);
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
-    if (hosted && (member.os !== process.platform || member.arch !== process.arch))
-      throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
+    if (hosted && !memberRunsOnHost(member)) throw new Error("CI_RUNNER_PLATFORM_MISMATCH");
     const installation = await verifyInstalledTools({ directory: toolsDirectory, root });
     const tools = installation.executables;
     const env = {
@@ -239,6 +246,9 @@ export async function runCheck({
         context.baseSha,
       ]);
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
+      if (check.projects.length) await vitest(check.projects);
+      else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
+    } else if (checkId === "tooling") {
       await vitest(check.projects);
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
@@ -266,21 +276,28 @@ export async function runCheck({
         failed: security.checks.filter((entry) => entry.status !== "passed").length,
         skipped: 0,
       };
+      for (const entry of security.checks)
+        if (entry.status !== "passed")
+          process.stdout.write(
+            redactText(
+              `security scan ${entry.id}: ${entry.status}${/^[A-Z_]+$/.test(entry.error ?? "") ? ` ${entry.error}` : ""}\n`,
+            ),
+          );
       if (security.status !== "passed") {
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
       }
-    } else if (checkId === "coverage") {
+    } else if (checkId === "tests") {
       await verifyArtifact({ archive: artifact, root, context, python: tools.python });
       const retained = path.join(directory, path.basename(artifact));
       copyFileSync(artifact, retained);
       if (fileSha256(retained) !== fileSha256(artifact))
-        throw new Error("CI_COVERAGE_ARTIFACT_COPY_CHANGED");
+        throw new Error("CI_TESTS_ARTIFACT_COPY_CHANGED");
       const entry = reportEntry(retained, "artifact", directory);
       files.push({ path: retained, kind: "artifact" });
       result.artifacts.push({
         role: "consumed",
-        platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+        platform: artifactPlatformKey(),
         path: entry.path,
         sha256: entry.sha256,
       });
@@ -295,26 +312,30 @@ export async function runCheck({
           ? path.join(directory, "initial-coverage-baseline.json")
           : undefined;
       baselineCandidatePath = candidate;
-      files.push(
-        { path: filename, kind: "json" },
-        { path: snapshot, kind: "json" },
-        { path: coverageReport, kind: "json" },
-        { path: path.join(coverageDirectory, "coverage-final.json"), kind: "json" },
-        { path: path.join(coverageDirectory, "lcov.info"), kind: "lcov" },
-      );
-      await command("coverage-snapshot", tools.node, [
-        "scripts/ci/check-coverage.mjs",
-        "--mode",
-        "snapshot",
-        "--source-state",
-        hosted ? "commit" : "working-tree",
-        "--context",
-        path.join(directory, "context.json"),
-        "--output",
-        snapshot,
-      ]);
-      const measuredProjects = check.projects.filter((id) => coverageProjects.includes(id));
-      const plainProjects = check.projects.filter((id) => !coverageProjects.includes(id));
+      const measure = coverage === "measure" || candidate !== undefined;
+      if (measure)
+        files.push(
+          { path: filename, kind: "json" },
+          { path: snapshot, kind: "json" },
+          { path: coverageReport, kind: "json" },
+          { path: path.join(coverageDirectory, "coverage-final.json"), kind: "json" },
+          { path: path.join(coverageDirectory, "lcov.info"), kind: "lcov" },
+        );
+      if (measure)
+        await command("coverage-snapshot", tools.node, [
+          "scripts/ci/check-coverage.mjs",
+          "--mode",
+          "snapshot",
+          "--source-state",
+          hosted ? "commit" : "working-tree",
+          "--context",
+          path.join(directory, "context.json"),
+          "--output",
+          snapshot,
+        ]);
+      const measuredProjects = measure ? coverageProjects : [];
+      const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));
+      let measuredCounts;
       const collectCoverage = async () => {
         await reportedTestCommand(
           "coverage",
@@ -335,8 +356,8 @@ export async function runCheck({
           "coverage",
           () => {
             const testReport = readJson(filename);
-            vitestCounts(testReport);
-            for (const id of measuredProjects) {
+            measuredCounts = vitestCounts(testReport);
+            for (const id of measuredProjects.filter((entry) => check.projects.includes(entry))) {
               const project = source.policy.testProjects.find((entry) => entry.id === id);
               const subset = testReport.testResults.filter((entry) => {
                 const name = path.relative(root, entry.name).split(path.sep).join("/");
@@ -354,7 +375,7 @@ export async function runCheck({
             result.counts = sumCounts(result.projects);
           },
         );
-        if (result.counts.failed || result.counts.skipped)
+        if (!measuredCounts || measuredCounts.failed || measuredCounts.skipped)
           throw new Error("CI_TEST_INCOMPLETE:coverage");
       };
       const compareCoverage = async () => {
@@ -409,32 +430,33 @@ export async function runCheck({
         }
       };
       const measured = [
-        ...(await Promise.allSettled([collectCoverage(), compareCoverage()])),
+        ...(measure ? await Promise.allSettled([collectCoverage(), compareCoverage()]) : []),
         ...(await Promise.allSettled([runPlainProjects()])),
       ];
       const failures = measured.filter((outcome) => outcome.status === "rejected");
       if (failures.length)
         throw new AggregateError(
           failures.map((outcome) => outcome.reason),
-          "CI_COVERAGE_MEASUREMENT_FAILED",
+          measure ? "CI_COVERAGE_MEASUREMENT_FAILED" : "CI_TESTS_FAILED",
         );
-      await command("coverage-policy", tools.node, [
-        "scripts/ci/check-coverage.mjs",
-        ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
-        ...(comparison ? ["--comparison", comparison] : []),
-        "--context",
-        path.join(directory, "context.json"),
-        "--snapshot",
-        snapshot,
-        "--tests",
-        filename,
-        "--report",
-        path.join(coverageDirectory, "coverage-final.json"),
-        "--lcov",
-        path.join(coverageDirectory, "lcov.info"),
-        "--output",
-        coverageReport,
-      ]);
+      if (measure)
+        await command("coverage-policy", tools.node, [
+          "scripts/ci/check-coverage.mjs",
+          ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
+          ...(comparison ? ["--comparison", comparison] : []),
+          "--context",
+          path.join(directory, "context.json"),
+          "--snapshot",
+          snapshot,
+          "--tests",
+          filename,
+          "--report",
+          path.join(coverageDirectory, "coverage-final.json"),
+          "--lcov",
+          path.join(coverageDirectory, "lcov.info"),
+          "--output",
+          coverageReport,
+        ]);
       if (candidate) {
         const measured = validateCoveragePolicy(
           readJson(existingInside(directory, path.basename(candidate))),
@@ -474,7 +496,7 @@ export async function runCheck({
           files.push({ path: retained, kind: "artifact" });
           result.artifacts.push({
             role: checkId === "build" ? "produced" : "consumed",
-            platform: process.platform === "darwin" ? "macos-arm64" : "linux-x64",
+            platform: artifactPlatformKey(),
             path: entry.path,
             sha256: entry.sha256,
           });
@@ -547,6 +569,7 @@ export async function main(argv = process.argv.slice(2)) {
     "--artifact",
     "--input",
     "--baseline-candidate",
+    "--coverage",
     "--comparison",
   ]);
   for (const key of ["--check", "--output", "--tools"])
@@ -558,7 +581,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (args["--input"]) {
     if (artifact) throw new Error("CI_ARTIFACT_INPUT_AMBIGUOUS");
     const producer = validateRecord("CheckResult", readJson(args["--input"]));
-    const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+    const platform = artifactPlatformKey();
     if (
       producer.checkId !== "build" ||
       producer.matrixKey !== platform ||
@@ -572,16 +595,23 @@ export async function main(argv = process.argv.slice(2)) {
     if (fileSha256(artifact) !== producer.artifacts[0].sha256)
       throw new Error("CI_ARTIFACT_TRANSFER_DIGEST_MISMATCH");
   }
-  const result = await runCheck({
-    checkId: args["--check"],
-    matrixKey: args["--matrix"],
-    output: args["--output"],
-    toolsDirectory: path.resolve(args["--tools"]),
-    context,
-    artifact,
-    baselineCandidate: args["--baseline-candidate"],
-    comparison: args["--comparison"] && path.resolve(args["--comparison"]),
-  });
+  const stopHostLoad = startHostLoad();
+  let result;
+  try {
+    result = await runCheck({
+      checkId: args["--check"],
+      matrixKey: args["--matrix"],
+      output: args["--output"],
+      toolsDirectory: path.resolve(args["--tools"]),
+      context,
+      artifact,
+      baselineCandidate: args["--baseline-candidate"],
+      coverage: args["--coverage"],
+      comparison: args["--comparison"] && path.resolve(args["--comparison"]),
+    });
+  } finally {
+    process.stdout.write(`${stopHostLoad()}\n`);
+  }
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );

@@ -6,6 +6,7 @@ export {
   CONTRACT_ERROR_CODE,
   ContractValidationError,
   GMAIL_MESSAGE_ID_PATTERN,
+  machineString,
   modelRefString,
 } from "./validation.js";
 export * from "./memory-source.js";

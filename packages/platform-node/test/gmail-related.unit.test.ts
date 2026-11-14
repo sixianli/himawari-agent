@@ -2,7 +2,6 @@ import type { ProactiveSourceItem } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
   counterparts,
-  extractReferenceIds,
   findRelatedMail,
   type GmailRelatedTransport,
   normalizeSubject,
@@ -64,23 +63,6 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     expect(normalizeSubject("返信: 予約のお知らせ")).toBe("予約のお知らせ");
   });
 
-  it("extracts order, booking and case numbers only when a label precedes them and a digit is present", () => {
-    expect(extractReferenceIds("注文番号: 250-1234567-8901234 をご確認ください")).toEqual([
-      "250-1234567-8901234",
-    ]);
-    expect(extractReferenceIds("Booking number ABC123456 and case #CS-778899")).toEqual([
-      "ABC123456",
-      "CS-778899",
-    ]);
-    expect(extractReferenceIds("ID 123456 and No. 99887766 and # 12345678")).toEqual([]);
-    expect(extractReferenceIds("order 2026-11-07 shipped")).toEqual([]);
-    expect(extractReferenceIds("order number: ABCDEFGH")).toEqual([]);
-    expect(extractReferenceIds("お問い合わせ番号 12")).toEqual([]);
-    expect(
-      extractReferenceIds("注文 11111111 注文 22222222 注文 33333333 注文 44444444"),
-    ).toHaveLength(3);
-  });
-
   it("uses the other side as the counterpart for the owner's own mail", () => {
     expect(counterparts(item("a"))).toEqual(["shop@example.com"]);
     expect(
@@ -124,6 +106,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     });
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["250-1234567-8901234"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([
@@ -162,6 +145,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     const exact = item("exact", { subject: "別件2", body: "ご注文 12345678 を発送" });
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["12345678"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([current, longer, exact]),
@@ -170,6 +154,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     const dashed = item("dashed", { subject: "別件3", body: "ご注文 12345678-の件" });
     const again = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["12345678"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([current, dashed]),
@@ -188,6 +173,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     };
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["250-1234567-8901234"]]]),
       limits,
       signal: new AbortController().signal,
       transport,

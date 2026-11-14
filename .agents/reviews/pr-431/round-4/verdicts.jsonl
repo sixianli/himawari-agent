@@ -1,0 +1,5 @@
+{"id":"r4-1","model":"opencode-go/deepseek-v4.1-flash","quote":"开头、全大写的真实字面量会被当成环境变量引用放行","valid":true,"class":"error","severity":"low","trigger":"真实密钥恰好是 $ 加 12 个以上大写字母或下划线","consequence":"credential-literal 不报，格式类规则照样检查","modelSeverity":"低"}
+{"id":"r4-2","model":"opencode-go/deepseek-v4.1-flash","quote":"base 台账是坏 JSON 时仍抛原生 `SyntaxError`，不是受控错误码","valid":false,"class":"error"}
+{"id":"r4-3","model":"opencode-go/deepseek-v4.1-flash","quote":"候选无法用“撤掉”来清理已过期的 base 条目","valid":true,"class":"error","severity":"low","trigger":"base 里有过期条目而 PR 把它删掉","consequence":"仍报 SECURITY_EXCEPTION_EXPIRED_OR_INVALID，和文档原先的说法不符","modelSeverity":"低"}
+{"id":"r4-4","model":"opencode-go/deepseek-v4.1-flash","quote":"被删的 5 条真实台账条目没有被自动检查覆盖","valid":true,"class":"error","severity":"low","trigger":"以后扫描规则改动让这 5 个文件重新命中","consequence":"单元测试不报，要等产物扫描才失败","modelSeverity":"低"}
+{"id":"r4-5","model":"opencode-go/deepseek-v4.1-flash","quote":"文档说“不能新增或修改”，代码实际是“忽略而不是拒绝”","valid":true,"class":"better"}

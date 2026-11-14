@@ -116,6 +116,7 @@ date: "2026-10-26"
   89. [其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批](#case-external-memory-proposals)
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
   91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
+  92. [改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停](#case-correction-propagation)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -137,7 +138,7 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -5836,6 +5837,48 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 
 **面试 30 秒版**
 “我给个人 agent 开了 MCP 入口，想让别的 AI 都来读写同一份记忆，做完才发现入口不等于会被用：读和存都靠对方模型自觉，身份是自报的，敏感记忆也读得到。我重做了方案：读和推各一个动作，能跑钩子的客户端装一个只读的小助手，开场自动读、结束自动把它记的笔记推过来；每个接入由主人建、有自己的密钥和读取上限；不采集对话原文，所以不花模型的钱。方案让两个低价模型独立审了一遍，查出我原稿六处会出错，花了 0.26 美元。”
+
+[返回目录](#contents)
+
+<a id="case-correction-propagation"></a>
+
+## 案例 92：改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停
+
+**背景与现象**
+Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`），Andy 用一句话立的硬规则也指回一条规则类记忆（ADR 0211）。Andy 改了、删了一条记忆后，以前只有“来源记忆直接被改”的规则会被标成待重审，而且规则照常执行、没人核对；推出来的二级、三级记忆完全没人管，会继续被用。
+
+**根因**
+这不是 bug，而是缺一条“改了上游，下游跟着复查”的机制。难点有三：SQLite 触发器里不能写递归查询，没法在改记忆的同一个事务里一次标完整条链；一条推出的记忆可能有好几个上游，上游还可能被永久删除；规则“意思变没变”不能靠关键词判断（项目硬规则：理解用户意思一律交给模型）。
+
+**我们的方案**
+- 触发器只在同一事务里标直接下游（`memory_review_items` 一行是“哪条记忆、因为哪条上游”），程序在打开清单和后台查邮件前沿依据链展开，最多 8 层、200 条，超过的写明“已截断”。上游编号不设外键，上游被删后标记还在。
+- 规则多一个“已暂停”状态。待重审的规则在每次查邮件前由低价模型重读来源记忆，给出类型和参数，程序比较：一样就清掉标记，不一样就暂停并给出建议值，不再是长期要求就暂停。模型调用失败最多重试 3 次，失败不暂停，规则照常执行。每次写入都核对修订号，核对期间被改过就丢掉这次结果。
+- 记忆页一张清单：规则可以采用建议、确认停用、恢复原规则；记忆可以打开修改或标“看过没问题”。记忆文字一律不自动改。
+- Andy 每点一次都写决策记录，周报算“系统标了 N 条，你认可 M 条”，少于 5 条只显示“样本不足”；Andy 还能指出“还有哪条也该跟着改”，单独算漏标。
+
+**方案讨论与备选**
+- 触发器里递归一次标完：SQLite 不允许。
+- 单独的事件表加游标：多一张表，触发器直接写直接下游已经覆盖删除、多上游和截断。
+- 模型调用失败就停规则：失败不是规则错了的证据，停掉等于主人的要求悄悄失效，放弃。
+- 方案先由两个低价模型独立出方案、再审线程方案，查出触发器不能用 WITH、删除前写入的行会被外键级联删掉、只看“离开有效”会漏掉恢复等问题，讨论花了 0.48 美元。
+
+**业界主流做法**
+- ✅ [SQLite 文档：WITH 子句](https://sqlite.org/lang_with.html)：“The WITH clause cannot be used within a CREATE TRIGGER.”
+- ✅ [dbt 节点选择文档](https://docs.getdbt.com/reference/node-selection/methods)：“`state:modified`: All new nodes, plus any changes to existing nodes.”，CI 里用 `state:modified+`（“including downstreams”）把下游一起带上。
+
+**对比与取舍**
+和 dbt 一样，上游一变就沿依赖图把下游一起拿出来；不同的是 dbt 直接重算下游，我们只标记，因为记忆是主人的话，系统不能替他改；规则是程序执行的，所以自动核对，对不上就先停、等主人定。代价是多一次后台模型调用，只在来源记忆变了时发生。
+
+**结果数据**
+- 三级链 A→B→C 改 A 后 B、C 都进清单、无关记忆不受影响、规则被暂停后采用建议、过期修订号被拒：`test/integration/production-memory-capture.test.ts` 的 `[P4-1]` 用例和 `packages/persistence-sqlite/test/correction-propagation-migration.contract.test.ts`。
+- 生产上的一致率、漏标数：未测量（还没上线）。
+- 方案讨论费用 0.48 美元，出处是 `/mnt/project-files/p4-1-correction-propagation/integrated-plan.md` 开头。
+
+**相关 ADR/PR**
+[ADR 0232](adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
+
+**面试 30 秒版**
+“我的个人 agent 会从几条记忆推出新结论，主人的硬规则也挂在某条记忆上。主人改了一条记忆，下游的结论和规则还按旧的走。我让数据库触发器在同一事务里标直接下游，程序再沿依据链展开，因为 SQLite 触发器里不能递归；规则由模型重读来源后程序比参数，对不上就暂停、给建议值，模型挂了不停规则。主人每次处理都记进决策记录，周报算‘标了多少、认可多少’，样本不到 5 条不出比例。”
 
 [返回目录](#contents)
 

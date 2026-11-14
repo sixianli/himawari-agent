@@ -1,8 +1,7 @@
 import { type Unzipped, unzipSync } from "fflate";
 import { isImageFile } from "./attachment-image.js";
+import type { AttachmentKind } from "./draft-attachments.js";
 import { pdfDocumentFontOptions } from "./pdf-document-options.js";
-
-export type AttachmentKind = "text" | "pdf" | "word" | "excel" | "powerpoint" | "image";
 
 export const ATTACHMENT_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
 export const ATTACHMENT_TEXT_LIMIT = 256 * 1024;

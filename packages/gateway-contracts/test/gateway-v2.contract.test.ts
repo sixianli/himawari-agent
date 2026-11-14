@@ -227,3 +227,52 @@ describe("Gateway v2 fail-closed validation", () => {
     expect(() => gatewayV2MessageSchema.parse(input)).toThrow(ContractValidationError);
   });
 });
+
+describe("Gateway v2 approval display limits", () => {
+  const base = (
+    governanceMessages as unknown as readonly { type: string; payload?: object }[]
+  ).find((message) => message.type === "approval.snapshot");
+  const withDisplay = (display: Record<string, unknown>) => ({
+    ...base,
+    payload: { ...base?.payload, display },
+  });
+  const display = (overrides: Record<string, unknown>) => ({
+    displayTitle: null,
+    bodyPreview: null,
+    askedBecause: { kind: "no_rule_allows", ruleId: null, ruleText: null },
+    origin: null,
+    ...overrides,
+  });
+
+  it.each([
+    ["bodyPreview", (length: number) => ({ bodyPreview: "x".repeat(length) }), 2001],
+    ["displayTitle", (length: number) => ({ displayTitle: "x".repeat(length) }), 301],
+    [
+      "ruleText",
+      (length: number) => ({
+        askedBecause: { kind: "rule", ruleId: "rule-1", ruleText: "x".repeat(length) },
+      }),
+      2001,
+    ],
+    [
+      "threadTitle",
+      (length: number) => ({ origin: { threadId: "thread-1", threadTitle: "x".repeat(length) } }),
+      121,
+    ],
+  ])("accepts %s at its limit and rejects one character more", (_name, make, limit) => {
+    expect(() => gatewayV2MessageSchema.parse(withDisplay(display(make(limit))))).not.toThrow();
+    expect(() => gatewayV2MessageSchema.parse(withDisplay(display(make(limit + 1))))).toThrow(
+      ContractValidationError,
+    );
+  });
+
+  it("accepts tab, newline and carriage return but rejects other control characters", () => {
+    expect(() =>
+      gatewayV2MessageSchema.parse(withDisplay(display({ bodyPreview: "a\tb\nc\rd" }))),
+    ).not.toThrow();
+    for (const bad of ["a\u0000b", "a\u001bb", "a\u007fb"])
+      expect(() =>
+        gatewayV2MessageSchema.parse(withDisplay(display({ bodyPreview: bad }))),
+      ).toThrow(ContractValidationError);
+  });
+});

@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0169-pause-runners-by-removing-the-label.md"
+amended_by: "docs/adr/0256-gate-job-gets-its-own-runner.md"
 date: "2026-11-06"
 ---
 

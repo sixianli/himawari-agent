@@ -730,10 +730,24 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 94,
+    name: "memory_conversation_review",
+    changeSet: "memory-conversation-review",
+    phase: "expand" as const,
+    file: "0094_memory_conversation_review.sql",
+  },
+  {
+    sequence: 95,
+    name: "correction_propagation",
+    changeSet: "correction-propagation",
+    phase: "expand" as const,
+    file: "0095_correction_propagation.sql",
+  },
+  {
+    sequence: 96,
     name: "paired_devices",
     changeSet: "paired-devices",
     phase: "expand" as const,
-    file: "0094_paired_devices.sql",
+    file: "0096_paired_devices.sql",
   },
 ] as const;
 

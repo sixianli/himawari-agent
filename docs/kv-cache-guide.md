@@ -67,7 +67,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 12 | 压缩集中做、少做，用总输入费用判断是否值得 | S2、S8 | 压缩由 Pi 自动触发；没有按费用评估 |
 | 13 | 压缩请求沿用原对话的系统提示和工具 | S5、S6 | 做到（[ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md)：摘要请求用上一次普通请求的系统提示、工具和切点前的历史，末尾追加总结指令；拆分轮、溢出压缩、对不上或放不进窗口时退回 Pi 默认请求） |
 | 14 | 清理旧工具结果要成批、少做、能恢复 | S7、S8 | 没做；排在提示词第二步之后另出方案 |
-| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)），原来接在整段提示最后、排在当前时间之后；没有统一检查 |
+| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)），原来接在整段提示最后、排在当前时间之后；没有统一检查。回看对话（`memory.conversation-review`，[ADR 0231](adr/0231-review-past-conversations-to-fix-memory.md)）按固定指令、本段数据 JSON、最后一行当地日期的顺序排，提示渲染黄金文件 `apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt` 锁住固定部分 |
 | 16 | 分叉出去的辅助计算沿用父对话的开头 | S5 | 没做（对话标题、记忆捕获各自另起开头） |
 | 17 | 开头相同的并发请求，等第一个开始返回再发 | S1 | 同一对话一般不并发，未专门处理 |
 
@@ -106,6 +106,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 | 日期 | 改动 | 依据 |
 |---|---|---|
+| 2026-11-11 | 第 15 条现状：新增的回看对话后台调用按固定在前、日期在最后排（ADR 0231） | Andy 2026-11-11 对回看对话变更清单：“同意” |
 | 2026-11-10 | 第 13 条做到：压缩摘要请求沿用原对话的系统提示、工具和切点前的历史；已知差距第 1 条（压缩请求不共用开头）移到第 13 条的现状 | Andy 2026-11-09：写入待办“压缩请求吃不到缓存”；2026-11-10 要求主动推进所有事情 |
 | 2026-11-10 | 大窗口模型的压缩触发点封顶在 20 万 token（[ADR 0210](adr/0210-cap-compaction-trigger-at-200k-per-model.md)） | Andy 批准第三步方案，默认约 20 万 |
 | 2026-11-07 | 第 4 条加入第四种例外：开发用的模型复核经 Magpie 调 CodeBuddy 时，插件在 11128 拒绝后改写系统提示（ADR 0178，只影响复核脚本） | Andy 2026-11-07 对整合方案：“同意” |

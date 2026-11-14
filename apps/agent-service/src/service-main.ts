@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
+  CapabilityManifest,
   ModelInvocationAdmissionResolver,
   PayloadProtectorPort,
   ProductMemoryRecord,
@@ -28,6 +29,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  RuleReviewService,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -100,6 +102,7 @@ import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
@@ -117,7 +120,8 @@ import {
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
-import { findSourceMessageIds } from "./production-memory-control.js";
+import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
+import { expandMemoryReviews, findSourceMessageIds } from "./production-memory-control.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -138,6 +142,7 @@ import { ProductionPayloadBrokerHandler } from "./production-payload-broker-hand
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
+  RULE_REVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
   proactiveCostEstimator,
@@ -151,6 +156,12 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import {
+  MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
+  MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
+  memoryClassificationFailureCode,
+  ProductionMemoryClassifier,
+} from "./production-memory-classification.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -161,6 +172,8 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
+import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
@@ -467,6 +480,11 @@ function servesStaticFile(requestPath: string): boolean {
   );
 }
 
+function lossCode(error: unknown): string {
+  const code = stableErrorCode(error);
+  return code === SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED ? "AUTHORITY_LOSS_CODE_UNKNOWN" : code;
+}
+
 function failureReasonField(error: unknown): { reason?: string } {
   const reason = failureReason(error);
   return reason === undefined ? {} : { reason };
@@ -613,13 +631,20 @@ export async function runAgentService(
       dependencies,
     });
     handle = started;
-    const authorityLoss = new Promise<void>((resolve) => started.onAuthorityLost(() => resolve()));
+    let lossError: unknown;
+    const authorityLoss = new Promise<void>((resolve) =>
+      started.onAuthorityLost((error) => {
+        lossError = error;
+        resolve();
+      }),
+    );
     const termination = await waitForTerminationOrAuthorityLoss(authorityLoss);
     const signal = termination.kind === "signal" ? termination.signal : "AUTHORITY_LOST";
     writeServiceDiagnostic(output, {
       component: "agent-service",
       event: "service.draining",
       signal,
+      ...(termination.kind === "signal" ? {} : { code: lossCode(lossError) }),
     });
     await started.stop();
     writeServiceDiagnostic(output, {
@@ -668,6 +693,7 @@ export async function startTenantRuntime(
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
+  let memoryClassifier: ProductionMemoryClassifier | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -888,12 +914,24 @@ export async function startTenantRuntime(
         read: () => readAuthorityFile(layout),
         write: (deployment) => writeAuthorityFile(layout, deployment),
       },
-      onLost: (error) => {
+      onLost: (error, details) => {
         health?.setAuthorityActive(false);
         authorityLost = true;
         authorityLossError = error;
         resolveAuthorityLoss?.();
         void stopReverseServices();
+        try {
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "authority.lost",
+            code: lossCode(error),
+            ...(details?.msSinceLastRenewal == null
+              ? {}
+              : { msSinceLastRenewal: details.msSinceLastRenewal }),
+            leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
+            renewalIntervalMs: AUTHORITY_RENEWAL_INTERVAL_MS,
+          });
+        } catch {}
       },
     });
     await authorityLifecycle.start();
@@ -1052,8 +1090,10 @@ export async function startTenantRuntime(
     });
     const hostReadOnlyPort = new DescriptorRelativeReadOnly();
     let externalEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+    let approvalThreadTitle: ((threadId: string) => Promise<string | null>) | undefined;
     const fileReadServices = createProductionFileReadServices({
       configuration,
+      threadTitle: async (threadId) => (approvalThreadTitle ? approvalThreadTitle(threadId) : null),
       repository,
       authority: invocationAuthority,
       clock,
@@ -1489,6 +1529,7 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),
@@ -1500,10 +1541,38 @@ export async function startTenantRuntime(
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
       const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const toolActions = productionToolActionRegistry();
+      const installedCapabilities = repository.capabilityStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
+      const ownerScope = new OwnerScopeAuthorization({
+        configuration,
+        store: repository.authorizationStore(),
+        audit: repository.auditLedger(),
+        state: repository,
+        authority: () => invocationAuthority().lease,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        installedCapabilities: {
+          inspect: async (ref) => {
+            const record = await installedCapabilities.get(ref);
+            const manifest = record?.declaration as CapabilityManifest | undefined;
+            return record && manifest?.manifestVersion === "capability.v2"
+              ? { lifecycle: record.lifecycle, manifest }
+              : undefined;
+          },
+        },
+        registry: toolActions,
+        clock,
+        ids,
+        intentLifetimeMs: configuration.deadlines.workerRequestMs,
+      });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
+        toolActions,
+        ownerScope,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1579,6 +1648,14 @@ export async function startTenantRuntime(
       governedMemory = memory;
       const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
       const episodeProtector = protector;
+      if (episodeProtector) {
+        approvalThreadTitle = classifiedThreadTitleReader({
+          configuration,
+          threads: repository.threadRepository(),
+          payloads: episodePayloads,
+          protector: episodeProtector,
+        });
+      }
       const memoryEpisodes =
         memoryComposition && episodeProtector
           ? new MemoryEpisodeService({
@@ -1789,6 +1866,34 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      const classifierModels = modelComposition;
+      if (proactiveConfiguration && proactiveDescriptor && classifierModels)
+        memoryClassifier = new ProductionMemoryClassifier({
+          model: createRealEvalModel({
+            modelRef: proactiveConfiguration.modelRef,
+            invoker: (maxOutputTokens) =>
+              classifierModels.composition.proactiveModel(proactiveConfiguration.modelRef, {
+                maxOutputTokens,
+                requestTimeoutMs: proactiveConfiguration.perCheckMs,
+                purpose: "memory-capture",
+              }),
+            cost: proactiveDescriptor.cost,
+            requestTimeoutMs: proactiveConfiguration.perCheckMs,
+            now: () => clock.now(),
+          }),
+          dailyLimitMicros: proactiveConfiguration.dailyCostMicros,
+          batchCharacters: MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
+          outputTokensPerItem: MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
+          timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          now: () => clock.now(),
+          newId: () => ids.next("memory-classify"),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory.classify_failed",
+              code: memoryClassificationFailureCode(error),
+            }),
+        });
       if (
         proactiveConfiguration &&
         (proactiveSecret || proactiveConfiguration.demoInbox) &&
@@ -1986,6 +2091,39 @@ export async function startTenantRuntime(
               PREREVIEW_MAX_OUTPUT_TOKENS,
             ),
           },
+          ruleReview: ((service, reviews) => ({
+            run: async () => {
+              await expandMemoryReviews(reviews, proactiveScope, () => clock.now());
+              return service.run();
+            },
+          }))(
+            new RuleReviewService({
+              scope: proactiveScope,
+              clock,
+              store: repository.ruleReviews(),
+              memories: proactiveMemoryState,
+              readMemoryText: async (record) => {
+                const text = await readReviewText(record.contentRef);
+                if (text === undefined) throw new Error("RULE_REVIEW_MEMORY_UNREADABLE");
+                return text;
+              },
+              model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
+                maxOutputTokens: RULE_REVIEW_MAX_OUTPUT_TOKENS,
+                requestTimeoutMs: proactiveConfiguration.perCheckMs,
+                purpose: "rule-review",
+              }),
+              nextInvocationId: () => ids.next("rule-review"),
+            }),
+            repository.memoryReviews(),
+          ),
+          onRuleReview: (reports) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "rule.reviewed",
+              reviewed: reports.length,
+              suspended: reports.filter(({ outcome }) => outcome === "suspended").length,
+              cleared: reports.filter(({ outcome }) => outcome === "cleared").length,
+            }),
           onPrereview: (result) => {
             if (result.attempted > 0 || result.failures.length > 0)
               writeServiceDiagnostic(errorOutput, {
@@ -2252,7 +2390,7 @@ export async function startTenantRuntime(
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
-            recall: (args, within) => memoryRecall.recallOutsideRun(args, within),
+            recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),
             embedOutsideRun: (context, operation) =>
               memory.embedForExternalRead(context, operation),
             reminders: (windowMs, ceiling) => reminderWriter.list(windowMs, ceiling),
@@ -2297,6 +2435,18 @@ export async function startTenantRuntime(
                 agentId: configuration.agentId,
                 includeRetired: false,
               }),
+            memoryClassifications: async (memoryIds) =>
+              new Map(
+                (
+                  await profileState.readMany({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    memoryIds: memoryIds as Parameters<
+                      typeof profileState.readMany
+                    >[0]["memoryIds"],
+                  })
+                ).map((record) => [record.id as string, record.dataClassification]),
+              ),
             ...(memoryEpisodes
               ? {
                   summaries: async ({
@@ -2392,6 +2542,7 @@ export async function startTenantRuntime(
               .listApprovals(configuration.ownerId, configuration.agentId, {
                 status: "pending",
               }),
+          awaitingCount: async () => http?.home.awaitingCount(),
           ...(museIntake
             ? {
                 museChannel: createMuseChannelPushSource({
@@ -2478,6 +2629,10 @@ export async function startTenantRuntime(
           perCheckMs: configuration.runPolicy?.proactive?.perCheckMs ?? 0,
         },
         serviceRevision: readServiceRevision(),
+        correction: (
+          (reviews) => () =>
+            reviews.agreement({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+        )(repository.memoryReviews()),
         ...(configuration.runPolicy?.proactive
           ? ((settings, modelRef) => ({
               prereview: {
@@ -2536,6 +2691,16 @@ export async function startTenantRuntime(
             runId: request.runId,
             code: failure.code,
             ...(failure.reason === null ? {} : { reason: failure.reason }),
+          }),
+        onModelRequestRejected: (request, rejection) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "model.request_rejected",
+            runId: request.runId,
+            status: rejection.status,
+            ...(rejection.retryAfter === null ? {} : { retryAfter: rejection.retryAfter }),
+            ...(rejection.shouldRetry === null ? {} : { shouldRetry: rejection.shouldRetry }),
+            ...(rejection.host === null ? {} : { host: rejection.host }),
           }),
         onCompactionSummaryRequest: (request, summary) =>
           writeServiceDiagnostic(errorOutput, {
@@ -2637,6 +2802,44 @@ export async function startTenantRuntime(
                       },
                     }
                   : {}),
+                conversationReview: {
+                  settings: () => ({
+                    ...DEFAULT_CONVERSATION_REVIEW_SETTINGS,
+                    ...configuration.memory.conversationReview,
+                  }),
+                  search: (request, query, limit) =>
+                    embedWithin(
+                      request,
+                      `memory-conversation-review-search:${request.runId}`,
+                      () =>
+                        consolidationProjection.search({
+                          ownerId: request.ownerId,
+                          agentId: request.agentId,
+                          query,
+                          limit,
+                          includeTentative: true,
+                        }),
+                      request.dataClassification,
+                    ),
+                  onResult: (result) =>
+                    writeServiceDiagnostic(errorOutput, {
+                      component: "agent-service",
+                      event: "memory-conversation-review.completed",
+                      changes: result.changes.length,
+                      ...Object.fromEntries(
+                        Object.entries(result.skipped).map(([reason, count]) => [
+                          `skipped_${reason}`,
+                          count,
+                        ]),
+                      ),
+                    }),
+                  onFailure: (error) =>
+                    writeServiceDiagnostic(errorOutput, {
+                      component: "agent-service",
+                      event: "memory-conversation-review.failed",
+                      code: stableErrorCode(error),
+                    }),
+                },
                 generate: (request, prompt, gate, purpose = "memory-capture", call) => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
@@ -2644,7 +2847,7 @@ export async function startTenantRuntime(
                     purpose: modelUsagePurpose(purpose),
                     invocationId: call?.invocationId ?? `${purpose}:${request.runId}`,
                     ...(call ? { retryToolCall: call.retryToolCall } : {}),
-                    maxOutputTokens: 1024,
+                    maxOutputTokens: call?.maxOutputTokens ?? 1024,
                     reasoningOutputTokens: 4096,
                     disableThinking: true,
                     requestTimeoutMs: 45000,
@@ -2751,6 +2954,7 @@ export async function startTenantRuntime(
         memory: {
           service: activeDurableMemory,
           externalProposals,
+          ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -2791,6 +2995,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...warning,
+          }),
+        onHomeDiagnostic: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...diagnostic,
           }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");

@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import type {
   AttentionStatePort,
   AuditLedgerPort,
@@ -31,11 +33,13 @@ import type {
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
   MemoryConsolidationStorePort,
+  MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
   PairedDeviceStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -51,6 +55,8 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   ReviewPrereviewStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchPort,
   RunExecutionSourcePort,
@@ -99,6 +105,11 @@ import {
   openQualifiedDatabase,
 } from "./migration-engine.js";
 import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type UnitOfWorkPort,
+} from "@himawari-agent/application";
+import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
   type SqliteTimedOperation,
@@ -128,7 +139,14 @@ export interface SqliteProductStateRepositoryOptions {
   readonly qualification?: SqliteWorkerConfiguration["qualification"];
   readonly onSlowOperation?: (operation: SqliteSlowOperation) => void;
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
+  readonly transactionScopeTimeoutMs?: number;
   readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
+}
+
+export const DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS = 2000;
+
+interface TransactionScope {
+  ended: boolean;
 }
 
 export interface SqliteCheckpointResult {
@@ -170,6 +188,13 @@ function validMinimumFreeBytes(value: number): number {
 }
 
 const READ_WORKER_COUNT = 3;
+const SLOW_SCOPE_MILLISECONDS = 500;
+
+function validScopeTimeout(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 30_000)
+    throw new RangeError("transactionScopeTimeoutMs must be an integer between 1 and 30000");
+  return value;
+}
 
 export class SqliteProductStateRepository implements ProductStateRepositoryPort {
   readonly stateRoot: string;
@@ -185,6 +210,11 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   private readonly durable: SqliteDurableAdapters;
   private readonly githubHistory: DurableGitHubMonitorHistoryPolicyPort;
   private closed = false;
+  private readonly scopes = new AsyncLocalStorage<TransactionScope>();
+  private scopeGate: Promise<void> | undefined;
+  private scopeBroken = false;
+  private readonly scopeTimeoutMs: number;
+  private readonly onSlowScope: ((operation: SqliteSlowOperation) => void) | undefined;
   private queuedWriters = 0;
   private maxObservedQueuedWriters = 0;
 
@@ -196,8 +226,12 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     startReadContext: () => Promise<SqliteExecutionContext>;
     lock: StateRootLock;
     now: () => string;
+    scopeTimeoutMs: number;
+    onSlowScope: ((operation: SqliteSlowOperation) => void) | undefined;
     extraReadThreadBudget?: SqliteExtraReadThreadBudget;
   }) {
+    this.scopeTimeoutMs = input.scopeTimeoutMs;
+    this.onSlowScope = input.onSlowScope;
     this.stateRoot = input.stateRoot;
     this.databasePath = input.databasePath;
     this.context = input.context;
@@ -227,6 +261,9 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
       options.databasePath ?? path.join(stateRoot, "product.sqlite"),
     );
     const busyTimeoutMs = validBusyTimeout(options.busyTimeoutMs ?? 5000);
+    const scopeTimeoutMs = validScopeTimeout(
+      options.transactionScopeTimeoutMs ?? DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS,
+    );
     const minimumFreeBytes = validMinimumFreeBytes(options.minimumFreeBytes ?? 256 * 1024 * 1024);
     const warningFreeBytes = validMinimumFreeBytes(
       options.warningFreeBytes ?? Math.max(minimumFreeBytes, 1024 * 1024 * 1024),
@@ -286,6 +323,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
         startReadContext,
         lock,
         now: options.now ?? (() => new Date().toISOString()),
+        scopeTimeoutMs,
+        onSlowScope: options.onSlowOperation,
         ...(options.extraReadThreadBudget
           ? { extraReadThreadBudget: options.extraReadThreadBudget }
           : {}),
@@ -576,6 +615,18 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.memoryCaptureBacklog();
   }
 
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return this.durable.ruleReviews();
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return this.durable.memoryReviews();
+  }
+
+  memoryConversationReviews(): MemoryConversationReviewStorePort {
+    return this.durable.memoryConversationReviews();
+  }
+
   modelUsage(): ModelUsageStorePort {
     return this.durable.modelUsage();
   }
@@ -707,6 +758,8 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   async close(): Promise<void> {
     if (this.closed) return;
+    while (this.scopeGate) await this.scopeGate;
+    if (this.closed) return;
     this.closed = true;
     try {
       await Promise.all(this.readStarts);
@@ -731,6 +784,11 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
   }
 
   private readRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {
+    const scope = this.scopes.getStore();
+    if (scope) {
+      this.assertScopeOpen(scope);
+      return this.context.request<TResult>(operation, payload);
+    }
     let chosen = this.readContexts[0];
     for (const candidate of this.readContexts)
       if (chosen && candidate.pendingCount < chosen.pendingCount) chosen = candidate;
@@ -765,12 +823,113 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   private async writeRequest<TResult>(operation: string, payload: unknown): Promise<TResult> {
     this.assertOpen();
+    const scope = this.scopes.getStore();
+    if (scope) {
+      this.assertScopeOpen(scope);
+      return this.context.request<TResult>(operation, payload);
+    }
+    while (this.scopeGate) await this.scopeGate;
+    this.assertScopeUsable();
     this.queuedWriters += 1;
     this.maxObservedQueuedWriters = Math.max(this.maxObservedQueuedWriters, this.queuedWriters);
     try {
       return await this.context.request<TResult>(operation, payload);
     } finally {
       this.queuedWriters -= 1;
+    }
+  }
+
+  private assertScopeUsable(): void {
+    if (this.scopeBroken)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        "A transaction could not be rolled back; the write lane is closed",
+        { reason: "TRANSACTION_ROLLBACK_UNCONFIRMED" },
+      );
+  }
+
+  private assertScopeOpen(scope: TransactionScope): void {
+    if (scope.ended)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        "The transaction scope has ended; this call was refused",
+        { reason: "TRANSACTION_SCOPE_ENDED" },
+      );
+  }
+
+  unitOfWork(): UnitOfWorkPort {
+    return Object.freeze<UnitOfWorkPort>({ run: (work) => this.runInTransaction(work) });
+  }
+
+  async runInTransaction<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+    this.assertOpen();
+    const joined = this.scopes.getStore();
+    if (joined) {
+      this.assertScopeOpen(joined);
+      return work();
+    }
+    const requestedAt = performance.now();
+    while (this.scopeGate) await this.scopeGate;
+    this.assertScopeUsable();
+    let release: () => void = () => undefined;
+    this.scopeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const scope: TransactionScope = { ended: false };
+    const startedAt = performance.now();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await this.context.request("transaction.begin", {});
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          scope.ended = true;
+          reject(
+            new ApplicationPortError(
+              PORT_ERROR_CODES.CONFLICT,
+              `The transaction scope exceeded ${this.scopeTimeoutMs} ms`,
+              { reason: "TRANSACTION_SCOPE_TIMEOUT" },
+            ),
+          );
+        }, this.scopeTimeoutMs);
+      });
+      deadline.catch(() => undefined);
+      const running = this.scopes.run(scope, work);
+      running.catch(() => undefined);
+      const result = await Promise.race([running, deadline]);
+      if (scope.ended)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "The transaction scope ended", {
+          reason: "TRANSACTION_SCOPE_ENDED",
+        });
+      scope.ended = true;
+      await this.context.request("transaction.commit", {});
+      return result;
+    } catch (error) {
+      scope.ended = true;
+      try {
+        await this.context.request("transaction.rollback", {});
+      } catch {
+        this.scopeBroken = true;
+      }
+      throw error;
+    } finally {
+      scope.ended = true;
+      if (timer) clearTimeout(timer);
+      this.scopeGate = undefined;
+      release();
+      const totalMs = Math.round(performance.now() - requestedAt);
+      if (this.onSlowScope && totalMs >= SLOW_SCOPE_MILLISECONDS) {
+        const runMs = Math.round(performance.now() - startedAt);
+        try {
+          this.onSlowScope({
+            lane: "write",
+            operation: "transaction.scope",
+            totalMs,
+            queueWaitMs: totalMs - runMs,
+            runMs,
+            queuedBehind: 0,
+          });
+        } catch {}
+      }
     }
   }
 

@@ -33,6 +33,9 @@ const write = (filename, value) => {
   return filename;
 };
 const count = () => ({ files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 });
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {
@@ -143,6 +146,7 @@ import {
   githubExpression,
   readJson,
 } from "../../scripts/ci/contracts.mjs";
+import { decodeGate } from "../../scripts/ci/gate-log.mjs";
 import { publish, publishQuality } from "../../scripts/ci/publish.mjs";
 import { reportEntry } from "../../scripts/ci/run.mjs";
 
@@ -239,7 +243,7 @@ function gateFixture(event = "workflow_dispatch") {
     const output = path.join(reports, check.id, member.key),
       projects = check.projects.map((id) => ({ id, counts: count() })),
       total = Math.max(1, projects.length),
-      artifactPlatform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+      artifactPlatform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       const contents =
@@ -458,7 +462,7 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
     expect(process.exitCode).toBe(1);
     expect(existsSync(path.join(state.root, ".ci-output/bad-mode"))).toBe(false);
   });
-  it("every public upload in both workflows requires successful admission and explicit tool identity", () => {
+  it("every public job summary in both workflows requires successful admission and explicit tool identity", () => {
     for (const name of ["ci.yml", "quality.yml"]) {
       const workflow = parse(
         readFileSync(path.join(originalRoot, ".github/workflows", name), "utf8"),
@@ -470,14 +474,14 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
         publishers++;
         expect(publisher.id).toBe("publish");
         expect(publisher.run).toContain("--tools .ci-output/tools");
-        for (const step of job.steps.filter(
-          (step) =>
-            step.uses?.startsWith("actions/upload-artifact@") &&
-            step.with.path.startsWith(".ci-output/public/"),
-        ))
+        const summaries = job.steps.filter((step) =>
+          /scripts\/ci\/ci-summary\.mjs .*--from \.ci-output\/public\//u.test(step.run ?? ""),
+        );
+        expect(summaries.length).toBeGreaterThan(0);
+        for (const step of summaries)
           expect(step.if).toBe(githubExpression("always() && steps.publish.outcome == 'success'"));
       }
-      expect(publishers).toBe(6);
+      expect(publishers).toBe(name === "ci.yml" ? 7 : 6);
     }
   });
 });
@@ -711,6 +715,8 @@ describe(
     it("required CLI writes a complete successful gate and rejects missing needs or failed jobs", async () => {
       const f = gateFixture();
       vi.stubEnv("CI_NEEDS", JSON.stringify(f.needs));
+      const stepSummary = path.join(state.root, "step-summary.md");
+      vi.stubEnv("GITHUB_STEP_SUMMARY", stepSummary);
       await entry("required.mjs", [
         "--reports",
         f.reports,
@@ -721,12 +727,31 @@ describe(
       ]);
       expect(process.exitCode).toBe(0);
       expect(readJson(path.join(state.root, ".ci-output/gate/summary.json")).status).toBe("passed");
-      vi.stubEnv("CI_NEEDS", JSON.stringify({ ...f.needs, coverage: { result: "cancelled" } }));
+      const printed = process.stdout.write.mock.calls.map(([text]) => String(text)).join("");
+      expect(decodeGate(printed)).toEqual({
+        context: readJson(path.join(state.root, ".ci-output/gate/context.json")),
+        summary: readJson(path.join(state.root, ".ci-output/gate/summary.json")),
+      });
+      expect(readFileSync(stepSummary, "utf8")).toContain("### ci/required：通过");
+      process.stdout.write.mockClear();
+      const leaked = `ghp_${"C".repeat(36)}`;
+      vi.stubEnv(
+        "CI_NEEDS",
+        JSON.stringify({ ...f.needs, tests: { result: `cancelled ${leaked}` } }),
+      );
       await entry("required.mjs", ["--reports", f.reports, "--output", ".ci-output/cancelled"]);
       expect(process.exitCode).toBe(1);
+      const printedFailure = process.stdout.write.mock.calls.map(([text]) => String(text)).join("");
+      expect(JSON.stringify(decodeGate(printedFailure))).not.toContain(leaked);
+      expect(readFileSync(stepSummary, "utf8")).not.toContain(leaked);
       expect(readJson(path.join(state.root, ".ci-output/cancelled/summary.json")).status).toBe(
         "failed",
       );
+      expect(
+        decodeGate(process.stdout.write.mock.calls.map(([text]) => String(text)).join("")).summary
+          .status,
+      ).toBe("failed");
+      expect(readFileSync(stepSummary, "utf8")).toContain("### ci/required：失败");
       vi.stubEnv("CI_NEEDS", "");
       await entry("required.mjs", ["--reports", f.reports, "--output", ".ci-output/missing-needs"]);
       expect(process.exitCode).toBe(1);

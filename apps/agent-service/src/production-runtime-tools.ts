@@ -18,6 +18,7 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
+  type PermissionDecision,
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
@@ -28,7 +29,10 @@ import {
   type RuntimeToolInvocation,
   type RuntimeToolPort,
   type RuntimeToolSettledResult,
+  runtimeToolAuthorizationResult,
   type SandboxExecutionPreparationPort,
+  type ToolActionRegistry,
+  type ToolActionRow,
   WEB_FETCH_MAXIMUM_OFFSET,
   type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
@@ -46,6 +50,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
@@ -79,14 +84,9 @@ import {
   managedTaskDescriptors,
   type ProductionManagedTasks,
 } from "./production-managed-tasks.js";
-import {
-  MEMORY_RECALL_CAPABILITY_REF,
-  memoryRecallDescriptor,
-  type ProductionMemoryRecall,
-} from "./production-memory-recall.js";
+import { memoryRecallDescriptor, type ProductionMemoryRecall } from "./production-memory-recall.js";
 import {
   type ProductionReminderTools,
-  REMINDER_CAPABILITY_REFS,
   ReminderInputError,
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
@@ -94,7 +94,6 @@ import {
   OwnerRuleError,
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
-  RULE_CAPABILITY_REFS,
 } from "./production-owner-rules.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
@@ -113,6 +112,8 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
+import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
@@ -122,6 +123,14 @@ type WorkerToolCompletion = Pick<
   Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
   "outcome" | "outputRef" | "errorCode" | "externalActionId"
 > & { readonly processExitCode?: number; readonly resourceCeiling?: CapabilityResourceCeiling };
+type OwnerScopeGate = (() => Promise<RuntimeToolExecutionResult | undefined>) | undefined;
+const BUILTIN_PREFLIGHT: Readonly<
+  Record<string, { readonly prefix: string; readonly reasonCode: string }>
+> = Object.freeze({
+  "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
+  "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
+  "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
+});
 const EVENT_POLL_MS = 50;
 const AUTHORITY_STOP_WAIT_MS = 30_000;
 const RANK = ["public", "private", "sensitive", "restricted"] as const;
@@ -316,6 +325,8 @@ export interface ProductionRuntimeToolsOptions {
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
+  readonly toolActions?: ToolActionRegistry;
+  readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -347,6 +358,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   readonly #delegation: WorkerDelegationService;
   readonly #parents = new Map<string, ProductionExecutionAdmissionParentBinding>();
   readonly #exposed = new Map<string, ReadonlySet<string>>();
+  readonly #registry: ToolActionRegistry;
   readonly #inFlight = new Map<
     string,
     { fingerprint: string; result: Promise<RuntimeToolExecutionResult> }
@@ -354,6 +366,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   readonly #background: ProductionBackgroundCommands | undefined;
   constructor(options: ProductionRuntimeToolsOptions) {
     this.#options = options;
+    this.#registry = options.toolActions ?? productionToolActionRegistry();
     this.#delegation = this.#createDelegation();
     this.#background = options.backgroundCommands
       ? new ProductionBackgroundCommands({
@@ -562,7 +575,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
-    return descriptors;
+    return this.#registry.offer(descriptors);
   }
 
   async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {
@@ -594,23 +607,89 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
-  #isReminder(invocation: RuntimeToolInvocation) {
-    return (
-      invocation.capabilityHandleRef === null &&
-      REMINDER_CAPABILITY_REFS.includes(invocation.capabilityRef)
-    );
+  #builtinRow(invocation: RuntimeToolInvocation): ToolActionRow | undefined {
+    if (invocation.capabilityHandleRef !== null) return undefined;
+    const row = this.#registry.forCapability(invocation.capabilityRef);
+    return row?.family === "builtin" ? row : undefined;
   }
-  #isOwnerRule(invocation: RuntimeToolInvocation) {
-    return (
-      invocation.capabilityHandleRef === null &&
-      RULE_CAPABILITY_REFS.includes(invocation.capabilityRef)
-    );
+  #builtinExecutor(
+    row: ToolActionRow,
+  ):
+    | ((
+        invocation: RuntimeToolInvocation,
+        gate: OwnerScopeGate,
+      ) => Promise<RuntimeToolExecutionResult>)
+    | undefined {
+    if (row.executor !== "owner_scoped") return undefined;
+    if (row.targetType === "owner-memory" && this.#options.memoryRecall)
+      return (invocation, gate) => this.#recall(invocation, gate);
+    if (row.targetType === "owner-reminder" && this.#options.reminders)
+      return (invocation, gate) => this.#reminder(invocation, gate);
+    if (row.targetType === "owner-rule" && this.#options.ownerRules)
+      return (invocation, gate) => this.#ownerRule(invocation, gate);
+    return undefined;
   }
-  async #ownerRule(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  #ownerScopeGate(
+    invocation: RuntimeToolInvocation,
+    row: ToolActionRow,
+    signal: AbortSignal | undefined,
+  ): OwnerScopeGate {
+    if (row.authorization !== "owner_scope") return undefined;
+    const ownerScope = this.#options.ownerScope;
+    return async () => {
+      if (!ownerScope) reject();
+      let permission: PermissionDecision;
+      try {
+        permission = await ownerScope.authorize(
+          invocation,
+          row,
+          async (key, value) => {
+            const frozen = await this.#options.artifacts.lookup({
+              runId: invocation.runId,
+              purpose: "trace",
+              operationKey: key,
+            });
+            return this.#readJson(
+              frozen?.payloadRef ?? (await this.#writeJson(invocation, key, value)).ref,
+            );
+          },
+          signal,
+        );
+      } catch (error) {
+        await this.#options.assertRunActive(invocation.runId);
+        signal?.throwIfAborted();
+        const cause =
+          error instanceof ApplicationPortError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown";
+        await this.#writeJson(
+          invocation,
+          `runtime-tool-diagnostic:${digest([invocation.runId, invocation.toolCallId, "owner-scope", cause])}`,
+          { stage: "not_dispatched", reasonCode: "authorization_component_error", cause },
+        ).catch(() => undefined);
+        signal?.throwIfAborted();
+        permission = {
+          decision: "DENY",
+          reasonCode: "authorization_component_error",
+          alternativesAllowed: false,
+        };
+      }
+      if (permission.decision === "ALLOW") return undefined;
+      const result = runtimeToolAuthorizationResult(permission);
+      return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
+    };
+  }
+  async #ownerRule(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
     const rules = this.#options.ownerRules;
     return this.#ownerScoped(
       invocation,
       "rule",
+      gate,
       rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
       (error) => ({
         errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
@@ -621,40 +700,39 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }),
     );
   }
-  #isMemoryRecall(invocation: RuntimeToolInvocation) {
-    return (
-      invocation.capabilityHandleRef === null &&
-      invocation.capabilityRef === MEMORY_RECALL_CAPABILITY_REF
-    );
-  }
-  async #recall(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  async #recall(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
     const recall = this.#options.memoryRecall;
     return this.#ownerScoped(
       invocation,
       "recall",
+      gate,
       recall
         ? async (call) => {
             const { output, contentClassification } = await recall.recallWithClassification(call);
             return { value: output, contentClassification };
           }
         : undefined,
-      (error) => {
-        const errorCode =
-          error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
-            ? "MEMORY_RECALL_INPUT_INVALID"
-            : "MEMORY_RECALL_UNAVAILABLE";
-        return {
-          errorCode,
-          note: TOOL_RESULT_RECALL_UNAVAILABLE.text,
-        };
-      },
+      (error) =>
+        error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
+          ? {
+              errorCode: "MEMORY_RECALL_INPUT_INVALID",
+              note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+            }
+          : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
-  async #reminder(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+  async #reminder(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
     const reminders = this.#options.reminders;
     return this.#ownerScoped(
       invocation,
       "reminder",
+      gate,
       reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
       (error) => {
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
@@ -673,6 +751,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
     marker: "recall" | "reminder" | "rule",
+    gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
           readonly value: unknown;
@@ -683,6 +762,29 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   ): Promise<RuntimeToolExecutionResult> {
     await this.#options.assertRunActive(invocation.runId);
     if (!this.#exposed.has(invocation.runId) || !run) reject();
+    const flightKey = `owner-scoped:${digest([invocation.runId, invocation.toolCallId])}`;
+    const fingerprint = digest(executionIdentity(invocation));
+    const active = this.#inFlight.get(flightKey);
+    if (active) {
+      if (active.fingerprint !== fingerprint)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+      return active.result;
+    }
+    const result = this.#ownerScopedOnce(invocation, marker, gate, run, failure);
+    this.#inFlight.set(flightKey, { fingerprint, result });
+    void result.finally(() => this.#inFlight.delete(flightKey)).catch(() => undefined);
+    return result;
+  }
+  async #ownerScopedOnce(
+    invocation: RuntimeToolInvocation,
+    marker: "recall" | "reminder" | "rule",
+    gate: OwnerScopeGate,
+    run: (call: RuntimeToolInvocation) => Promise<{
+      readonly value: unknown;
+      readonly contentClassification?: DataClassification;
+    }>,
+    failure: (error: unknown) => { readonly errorCode: string; readonly note: string },
+  ): Promise<RuntimeToolExecutionResult> {
     const key = digest([invocation.runId, invocation.toolCallId]);
     const fingerprint = digest(executionIdentity(invocation));
     const claimed = await this.#writeJson(invocation, `runtime-tool-intent:${key}`, {
@@ -701,6 +803,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       operationKey: resultKey,
     });
     if (previous) return (await this.#readJson(previous.payloadRef)) as RuntimeToolExecutionResult;
+    const stopped = await gate?.();
+    if (stopped) return stopped;
     let result: RuntimeToolExecutionResult;
     let recorded = invocation.dataClassification;
     try {
@@ -768,28 +872,20 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
       };
     }
-    if (this.#isReminder(invocation)) {
+    const row = this.#builtinRow(invocation);
+    if (row) {
       await this.#options.assertRunActive(invocation.runId);
-      return {
-        allowed: this.#exposed.has(invocation.runId) && this.#options.reminders !== undefined,
-        permissionDecisionRef: `reminder:${digest([invocation.runId, invocation.toolCallId])}`,
-        reasonCode: "REMINDER_OWNER_SCOPE",
+      const legacy = BUILTIN_PREFLIGHT[row.targetType] ?? {
+        prefix: "owner-scope",
+        reasonCode: "OWNER_SCOPE",
       };
-    }
-    if (this.#isOwnerRule(invocation)) {
-      await this.#options.assertRunActive(invocation.runId);
       return {
-        allowed: this.#exposed.has(invocation.runId) && this.#options.ownerRules !== undefined,
-        permissionDecisionRef: `owner-rule:${digest([invocation.runId, invocation.toolCallId])}`,
-        reasonCode: "OWNER_RULE_OWNER_SCOPE",
-      };
-    }
-    if (this.#isMemoryRecall(invocation)) {
-      await this.#options.assertRunActive(invocation.runId);
-      return {
-        allowed: this.#exposed.has(invocation.runId) && this.#options.memoryRecall !== undefined,
-        permissionDecisionRef: `memory-recall:${digest([invocation.runId, invocation.toolCallId])}`,
-        reasonCode: "MEMORY_RECALL_OWNER_SCOPE",
+        allowed:
+          this.#exposed.has(invocation.runId) &&
+          this.#builtinExecutor(row) !== undefined &&
+          (row.authorization !== "owner_scope" || this.#options.ownerScope !== undefined),
+        permissionDecisionRef: `${legacy.prefix}:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: legacy.reasonCode,
       };
     }
     if (invocation.capabilityHandleRef === null) {
@@ -1113,9 +1209,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
       return this.#options.managedTasks.execute(invocation);
     }
-    if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
-    if (this.#isReminder(invocation)) return this.#reminder(invocation);
-    if (this.#isOwnerRule(invocation)) return this.#ownerRule(invocation);
+    const row = this.#builtinRow(invocation);
+    if (row) {
+      const run = this.#builtinExecutor(row);
+      if (!run) reject();
+      return run(invocation, this.#ownerScopeGate(invocation, row, signal));
+    }
     if (this.#background && this.#codingTool(invocation) === "bash") {
       const key = digest([invocation.runId, invocation.toolCallId]);
       const command = await this.#commandDeadline(invocation, true);

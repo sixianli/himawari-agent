@@ -39,3 +39,4 @@ export {
 } from "./chats.js";
 export { verifyChatExport } from "./chats-verify.js";
 export { CHAT_FORMAT_VERSION, CHAT_SEALED_FILE } from "./chat-schemas.js";
+export { normalizeProposalText, proposalTextDigest } from "../external-proposal-text.js";

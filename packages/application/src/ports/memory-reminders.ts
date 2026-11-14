@@ -25,12 +25,18 @@ export interface MemoryReminderStorePort {
     readonly now: string;
     readonly limit: number;
   }): Promise<readonly MemoryReminder[]>;
+  countDue(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly now: string;
+  }): Promise<number>;
   listUpcoming(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly from: string;
     readonly to: string;
     readonly limit: number;
+    readonly remindAfter?: string;
   }): Promise<readonly MemoryReminder[]>;
   read(id: string): Promise<MemoryReminder | undefined>;
   update(input: {

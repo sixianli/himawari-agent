@@ -2,16 +2,22 @@ import {
   ApplicationPortError,
   type ClockPort,
   classificationRank,
+  type DataClassification,
   type DecisionLedgerPort,
   type DurableMemoryService,
   isModelVisible,
+  isReviewChangeUndoable,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
+  type MemoryConversationReviewStorePort,
   type MemoryExtractionAuditRecord,
   type MemoryHistoryEvent,
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
+  type MemoryReviewStorePort,
+  MEMORY_REVIEW_EXPAND_BATCH,
+  MEMORY_REVIEW_LIST_LIMIT,
   type MemorySourceMessage,
   modelVisibleCeiling,
   type OwnerProfileService,
@@ -21,8 +27,10 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  type RuleReviewOwnerStorePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
+  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
@@ -31,9 +39,17 @@ import {
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
+import {
+  DETERMINISTIC_SENSITIVE,
+  deterministicallySensitive,
+  type MemoryClassification,
+  type ProductionMemoryClassifier,
+  UNCLASSIFIED,
+} from "./production-memory-classification.js";
 import {
   externalProposalBatchId,
   type ProductionMcpMemoryWriter,
@@ -49,20 +65,26 @@ type MemoryId = Parameters<ProductMemoryStatePort["read"]>[0];
 type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
+type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
 const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
 export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
+  "memory.classify.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
   "memory.tidy.undo",
+  "memory.conversationReview.undo",
   "memory.reminder.respond",
   "memory.reminder.create",
   "memory.rules.read",
   "memory.rule.respond",
+  "memory.review.read",
+  "memory.review.respond",
+  "memory.review.reportMissed",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -73,6 +95,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.external.respond",
   "memory.external.undo",
 ] as const);
+const SENSITIVE_JUDGMENTS_KEPT = 5000;
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
   "identity",
   "preference",
@@ -159,10 +182,33 @@ export async function findSourceMessageIds(
   );
 }
 
+const MEMORY_REVIEW_EXPAND_ROUNDS = 10;
+
+export async function expandMemoryReviews(
+  store: Pick<MemoryReviewStorePort, "expand">,
+  scope: Pick<ProductConfiguration, "ownerId" | "agentId">,
+  now: () => string,
+): Promise<number> {
+  let expanded = 0;
+  for (let round = 0; round < MEMORY_REVIEW_EXPAND_ROUNDS; round += 1) {
+    const batch = await store.expand({
+      ownerId: scope.ownerId,
+      agentId: scope.agentId,
+      now: now(),
+      limit: MEMORY_REVIEW_EXPAND_BATCH,
+    });
+    expanded += batch;
+    if (batch < MEMORY_REVIEW_EXPAND_BATCH) break;
+  }
+  return expanded;
+}
+
 export type OwnerRuleControl = Pick<
   ProductionOwnerRuleWriter,
   "list" | "undo" | "confirm" | "reconfirm"
 >;
+
+const RULE_QUOTE_CHAIN_MAX_DEPTH = 8;
 
 export class ProductionMemoryControl {
   private readonly options: {
@@ -170,6 +216,7 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
+    readonly unitOfWork: UnitOfWorkPort;
     readonly memory: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -189,11 +236,19 @@ export class ProductionMemoryControl {
       readonly store: Pick<MemoryConsolidationStorePort, "listChanges" | "readBasisChain">;
       readonly undo: (changeId: string) => Promise<unknown>;
     };
+    readonly conversationReviews?: {
+      readonly store: Pick<MemoryConversationReviewStorePort, "listWithChanges" | "listChanges">;
+      readonly undo: (reviewId: string) => Promise<unknown>;
+    };
     readonly reminders?: Pick<
       MemoryReminderStorePort,
-      "schedule" | "listDue" | "listUpcoming" | "read" | "update"
+      "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly reviews?: {
+      readonly memories: MemoryReviewStorePort;
+      readonly rules: RuleReviewOwnerStorePort;
+    };
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -202,8 +257,11 @@ export class ProductionMemoryControl {
       ProductionMcpMemoryWriter,
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
+    readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+
+  readonly #sensitiveJudgments = new Map<string, MemoryClassification>();
 
   constructor(options: ProductionMemoryControl["options"]) {
     this.options = options;
@@ -379,6 +437,12 @@ export class ProductionMemoryControl {
         agentId,
         limit: TIDY_UPS_SHOWN,
       })) ?? [];
+    const reviews =
+      (await this.options.conversationReviews?.store.listWithChanges({
+        ownerId,
+        agentId,
+        limit: TIDY_UPS_SHOWN,
+      })) ?? [];
     const due = await this.#dueReminders();
     const external = (await this.options.externalProposals?.pendingSummary(
       EXTERNAL_PROPOSALS_SHOWN,
@@ -389,6 +453,7 @@ export class ProductionMemoryControl {
       active.map(({ id, revision }) => [id, revision, historyCount.get(id) ?? 0]),
       pending.map(({ id }) => id),
       changes.map(({ id, undoneAt }) => [id, undoneAt]),
+      reviews.map(({ id, undoneAt }) => [id, undoneAt]),
       due.map(({ id, updatedAt }) => [id, updatedAt]),
       inactive.map(({ id, revision }) => [id, revision]),
       settings.updatedAt,
@@ -403,10 +468,244 @@ export class ProductionMemoryControl {
     ]);
   }
 
-  async #externalProposals() {
+  async externalProposalViews(limit: number) {
+    const { total, items } = await this.#externalProposals(limit);
+    return { total, items };
+  }
+
+  async rulesNeedingReview() {
+    return ((await this.options.ownerRules?.list()) ?? []).filter(
+      ({ status }) => status === "needs_review",
+    );
+  }
+
+  async pendingRequests() {
+    const { ownerId, agentId } = this.options.configuration;
+    const candidates = protectedMemoryCandidates(this.options);
+    const pending: (OverviewSnapshot["payload"]["pending"][number] & {
+      readonly dataClassification: ProductMemoryRecord["dataClassification"];
+    })[] = [];
+    for (const request of await this.options.approvals.listPending(ownerId, null)) {
+      if (request.agentId !== agentId) continue;
+      const candidate = await candidates.read(request).catch(() => undefined);
+      const text = candidate ? singleLine(candidate.text) : "";
+      if (!candidate || !text) continue;
+      pending.push({
+        requestId: request.id,
+        threadId: request.threadId,
+        sourceRef: request.sourceRef,
+        text,
+        topic: candidate.sensitiveTopic ?? "other",
+        requestedAt: request.requestedAt,
+        dataClassification: request.dataClassification,
+      });
+    }
+    return pending;
+  }
+
+  async dueReminderViews(limit: number) {
+    const { ownerId, agentId } = this.options.configuration;
+    const now = this.options.clock.now();
+    const rows = (await this.options.reminders?.listDue({ ownerId, agentId, now, limit })) ?? [];
+    const total =
+      rows.length < limit
+        ? rows.length
+        : ((await this.options.reminders?.countDue({ ownerId, agentId, now })) ?? rows.length);
+    const reminded = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: rows.map(({ memoryId }) => memoryId),
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const items: {
+      readonly reminderId: string;
+      readonly memoryId: string;
+      readonly text: string;
+      readonly dueAt: string;
+      readonly remindAt: string;
+      readonly sourceThreadId: string | null;
+      readonly dataClassification: ProductMemoryRecord["dataClassification"];
+    }[] = [];
+    for (const reminder of rows) {
+      const memory = reminded.get(reminder.memoryId);
+      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
+      if (!memory || !text) continue;
+      items.push({
+        reminderId: reminder.id,
+        memoryId: reminder.memoryId,
+        text,
+        dueAt: reminder.dueAt,
+        remindAt: reminder.remindAt,
+        sourceThreadId: memory.sourceThreadId ?? null,
+        dataClassification: memory.dataClassification,
+      });
+    }
+    return {
+      items,
+      rowIds: rows.map(({ id }) => id),
+      unread: Math.max(0, total - rows.length),
+    };
+  }
+
+  async upcomingViews(input: {
+    readonly now: string;
+    readonly until: string;
+    readonly limit: number;
+    readonly exclude: ReadonlySet<string>;
+    readonly notYetDue?: boolean;
+  }) {
+    const { ownerId, agentId } = this.options.configuration;
+    const { exclude } = input;
+    const coming = (
+      (await this.options.reminders?.listUpcoming({
+        ownerId,
+        agentId,
+        from: input.now,
+        to: input.until,
+        limit: input.limit,
+        ...(input.notYetDue ? { remindAfter: input.now } : {}),
+      })) ?? []
+    ).filter(({ id }) => !exclude.has(id));
+    const comingMemories = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: coming.map(({ memoryId }) => memoryId),
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const upcoming: (OverviewSnapshot["payload"]["upcoming"][number] & {
+      readonly dataClassification: ProductMemoryRecord["dataClassification"];
+    })[] = [];
+    for (const reminder of coming) {
+      const memory = comingMemories.get(reminder.memoryId);
+      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
+      if (!text) continue;
+      upcoming.push({
+        reminderId: reminder.id,
+        memoryId: reminder.memoryId,
+        text,
+        dueAt: reminder.dueAt,
+        repeat: reminder.repeat,
+        sourceThreadId: memory?.sourceThreadId ?? null,
+        dataClassification: memory?.dataClassification ?? "private",
+      });
+    }
+    return upcoming;
+  }
+
+  async tidyUpViews(limit: number) {
+    const { ownerId, agentId } = this.options.configuration;
+    const changes =
+      (await this.options.consolidation?.store.listChanges({ ownerId, agentId, limit })) ?? [];
+    const touched = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: [
+            ...new Set(
+              changes.flatMap(({ memoryId, relatedMemoryId }) =>
+                relatedMemoryId ? [memoryId, relatedMemoryId] : [memoryId],
+              ),
+            ),
+          ],
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const textOf = async (memoryId: string | null) => {
+      const memory = memoryId ? touched.get(memoryId as MemoryId) : undefined;
+      if (
+        !memory ||
+        memory.status === "deletion_pending" ||
+        memory.status === "deleted_verified" ||
+        memory.status === "trashed"
+      )
+        return null;
+      return singleLine(await this.readText(memory.contentRef).catch(() => "")) || null;
+    };
+    const tidyUps: (OverviewSnapshot["payload"]["tidyUps"][number] & {
+      readonly dataClassification: ProductMemoryRecord["dataClassification"];
+    })[] = [];
+    for (const change of changes) {
+      const text = await textOf(change.memoryId);
+      const memory = touched.get(change.memoryId);
+      if (!text || !memory) continue;
+      tidyUps.push({
+        changeId: change.id,
+        memoryId: change.memoryId,
+        action: change.action,
+        text,
+        relatedText: await textOf(change.relatedMemoryId),
+        createdAt: change.createdAt,
+        undone: change.undoneAt !== null,
+        undoable: isConsolidationUndoable(change, memory),
+        dataClassification: memory.dataClassification,
+      });
+    }
+    return tidyUps;
+  }
+
+  async conversationReviewViews(limit: number, options: { readonly lead: boolean }) {
+    const { ownerId, agentId } = this.options.configuration;
+    const conversationReviews: (OverviewSnapshot["payload"]["conversationReviews"][number] & {
+      readonly lead: {
+        readonly memoryId: string;
+        readonly text: string;
+        readonly dataClassification: ProductMemoryRecord["dataClassification"];
+      } | null;
+    })[] = [];
+    for (const review of (await this.options.conversationReviews?.store.listWithChanges({
+      ownerId,
+      agentId,
+      limit,
+    })) ?? []) {
+      const reviewChanges = (
+        (await this.options.conversationReviews?.store.listChanges(review.id)) ?? []
+      ).filter(({ afterRevision }) => afterRevision !== null);
+      if (reviewChanges.length === 0) continue;
+      const current = new Map(
+        (
+          await this.options.state.readMany({
+            ownerId,
+            agentId,
+            memoryIds: reviewChanges.map(({ memoryId }) => memoryId),
+          })
+        ).map((memory) => [memory.id as string, memory]),
+      );
+      let lead: (typeof conversationReviews)[number]["lead"] = null;
+      for (const { memoryId } of options.lead ? reviewChanges : []) {
+        const memory = current.get(memoryId);
+        if (!memory || memory.status !== "active") continue;
+        const text = singleLine(await this.readText(memory.contentRef).catch(() => ""));
+        if (!text) continue;
+        lead = { memoryId, text, dataClassification: memory.dataClassification };
+        break;
+      }
+      conversationReviews.push({
+        reviewId: review.id,
+        finishedAt: review.finishedAt ?? review.startedAt,
+        undone: review.undoneAt !== null,
+        undoable:
+          review.undoneAt === null &&
+          reviewChanges.every((change) =>
+            isReviewChangeUndoable(change, current.get(change.memoryId)),
+          ),
+        changes: reviewChanges.map(({ memoryId, action }) => ({ memoryId, action })),
+        lead,
+      });
+    }
+    return conversationReviews;
+  }
+
+  async #externalProposals(limit: number) {
     const writer = this.options.externalProposals;
     if (!writer) return { total: 0, items: [], batches: [] };
-    const { items, total } = await writer.listPending(EXTERNAL_PROPOSALS_SHOWN);
+    const { items, total } = await writer.listPending(limit);
     return {
       total,
       items: items.map(({ id, text, category, dataClassification, client, receivedAt }) => ({
@@ -484,6 +783,83 @@ export class ProductionMemoryControl {
     };
   }
 
+  async #ruleQuote(
+    sourceMemoryId: string | null,
+    summary: string,
+  ): Promise<{
+    readonly quote: string | null;
+    readonly quoteSuperseded: boolean;
+    readonly quoteLatestMemoryId: string | null;
+  }> {
+    const none = { quote: null, quoteSuperseded: false, quoteLatestMemoryId: null };
+    if (!sourceMemoryId) return none;
+    const record = await this.options.state.read(sourceMemoryId as MemoryId);
+    if (!record || !this.#quotable(record)) return none;
+    const text = await this.readText(record.contentRef).catch(() => null);
+    const suffix = `\n${summary}`;
+    if (text === null || !text.endsWith(suffix)) return none;
+    const quote = singleLine(text.slice(0, text.length - suffix.length));
+    if (quote.length === 0 || quote.length > 500) return none;
+    const supersededBy = record.attributes?.supersededBy ?? null;
+    if (record.status !== "active" || supersededBy === null)
+      return { quote, quoteSuperseded: false, quoteLatestMemoryId: null };
+    return {
+      quote,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: await this.#latestVersion(supersededBy as MemoryId, record.id),
+    };
+  }
+
+  #quotable(record: ProductMemoryRecord): boolean {
+    const { ownerId, agentId } = this.options.configuration;
+    return (
+      record.ownerId === ownerId &&
+      record.agentId === agentId &&
+      record.status !== "deletion_pending" &&
+      record.status !== "deleted_verified" &&
+      record.status !== "trashed" &&
+      reviewMemoryVisible(record.dataClassification)
+    );
+  }
+
+  async #latestVersion(first: MemoryId, sourceId: MemoryId): Promise<string | null> {
+    const seen = new Set<MemoryId>([sourceId]);
+    let next: MemoryId = first;
+    for (;;) {
+      if (seen.has(next) || seen.size > RULE_QUOTE_CHAIN_MAX_DEPTH) return null;
+      seen.add(next);
+      const record = await this.options.state.read(next);
+      if (!record || !this.#quotable(record)) return null;
+      const after = (record.attributes?.supersededBy ?? null) as MemoryId | null;
+      if (after === null) return record.status === "active" ? record.id : null;
+      next = after;
+    }
+  }
+
+  async #ruleLastUsed(
+    ruleIds: ReadonlySet<string>,
+  ): Promise<
+    Map<string, { readonly at: string; readonly kind: string; readonly decisionId: string }>
+  > {
+    const found = new Map<
+      string,
+      { readonly at: string; readonly kind: string; readonly decisionId: string }
+    >();
+    const ledger = this.options.ledger;
+    if (!ledger || ruleIds.size === 0) return found;
+    const { ownerId, agentId } = this.options.configuration;
+    const all = [...ruleIds];
+    for (let start = 0; start < all.length; start += 64)
+      for (const use of await ledger.lastRuleUses({
+        ownerId,
+        agentId,
+        ruleIds: all.slice(start, start + 64),
+      }))
+        if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(use.decisionId))
+          found.set(use.ruleId, { at: use.decidedAt, kind: use.kind, decisionId: use.decisionId });
+    return found;
+  }
+
   async #rules(
     query: Extract<GatewayV2Query, { type: "memory.rules.read" }>,
   ): Promise<GatewayV2Snapshot> {
@@ -493,19 +869,23 @@ export class ProductionMemoryControl {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "MEMORY_OPERATION_NOT_INSTALLED",
       );
-    const rules = (await control.list()).flatMap((rule) =>
-      rule.status === "retired"
-        ? []
-        : [
-            {
-              ruleId: rule.ruleId,
-              type: rule.type.slice(0, 64),
-              summary: Array.from(rule.summary).slice(0, 200).join(""),
-              status: rule.status,
-              enforced: rule.enforced,
-              updatedAt: rule.updatedAt,
-            },
-          ],
+    const listed = (await control.list()).filter((rule) => rule.status !== "retired");
+    const lastUsed = await this.#ruleLastUsed(new Set(listed.map(({ ruleId }) => ruleId)));
+    const rules = await Promise.all(
+      listed.map(async (rule) => {
+        const summary = Array.from(rule.summary).slice(0, 200).join("");
+        return {
+          ruleId: rule.ruleId,
+          type: rule.type.slice(0, 64),
+          summary,
+          status: rule.status as "active" | "needs_review",
+          enforced: rule.enforced,
+          updatedAt: rule.updatedAt,
+          ...(await this.#ruleQuote(rule.sourceMemoryId, rule.summary)),
+          changes: Math.max(0, rule.revision - 1),
+          lastUsed: lastUsed.get(rule.ruleId) ?? null,
+        };
+      }),
     );
     return {
       ...query,
@@ -513,6 +893,98 @@ export class ProductionMemoryControl {
       type: "memory.rules.snapshot",
       payload: { rules, generatedAt: this.options.clock.now() },
     };
+  }
+
+  #reviews() {
+    const reviews = this.options.reviews;
+    const control = this.options.ownerRules;
+    if (!reviews || !control)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    return { reviews, control };
+  }
+
+  async #review(
+    query: Extract<GatewayV2Query, { type: "memory.review.read" }>,
+  ): Promise<GatewayV2Snapshot> {
+    const { reviews, control } = this.#reviews();
+    const scope = this.#scope();
+    await expandMemoryReviews(reviews.memories, scope, () => this.options.clock.now());
+    const items = await reviews.memories.listOpen({ ...scope, limit: MEMORY_REVIEW_LIST_LIMIT });
+    const records = new Map(
+      (
+        await this.options.state.readMany({
+          ...scope,
+          memoryIds: [
+            ...new Set(items.flatMap((item) => [item.memoryId, item.upstreamMemoryId as MemoryId])),
+          ],
+        })
+      ).map((record) => [record.id as string, record]),
+    );
+    const textOf = async (memoryId: string) => {
+      const record = records.get(memoryId);
+      if (!record) return null;
+      const text = singleLine(await this.readText(record.contentRef).catch(() => ""));
+      return text ? Array.from(text).slice(0, 200).join("") : null;
+    };
+    const memories = [];
+    for (const item of items) {
+      memories.push({
+        memoryId: item.memoryId,
+        text: await textOf(item.memoryId),
+        upstreamMemoryId: item.upstreamMemoryId,
+        upstreamText: await textOf(item.upstreamMemoryId),
+        reason: item.reason,
+        depth: item.depth,
+        truncated: item.truncated,
+        flaggedAt: item.flaggedAt,
+      });
+    }
+    const summaries = new Map(
+      (await control.list()).map((rule) => [rule.ruleId, rule.summary] as const),
+    );
+    const clip = (text: string) => Array.from(text).slice(0, 200).join("");
+    const rules = (await reviews.rules.listOpen({ ...scope, limit: MEMORY_REVIEW_LIST_LIMIT })).map(
+      (rule) => ({
+        ruleId: rule.ruleId,
+        revision: rule.revision,
+        status: rule.status,
+        summary: clip(summaries.get(rule.ruleId) ?? ""),
+        suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
+        suggestionConditions: rule.suggestion
+          ? RULE_CONDITION_FIELDS.flatMap((field) => {
+              const values = rule.suggestion?.params[field] ?? [];
+              return values.length ? [{ field, values: values.map(clip) }] : [];
+            })
+          : [],
+        suspendReason: rule.suspendReason,
+        rechecking: rule.rechecking,
+        sourceMemoryId: rule.sourceMemoryId,
+        updatedAt: rule.updatedAt,
+      }),
+    );
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.review.snapshot",
+      payload: {
+        memories,
+        rules,
+        agreement: await reviews.memories.agreement(scope),
+        generatedAt: this.options.clock.now(),
+      },
+    };
+  }
+
+  async #resolveMemoryReview(memoryId: MemoryId): Promise<void> {
+    await this.options.reviews?.memories.resolve({
+      ...this.#scope(),
+      memoryId,
+      resolution: "owner_edited",
+      now: this.options.clock.now(),
+    });
   }
 
   async #memoryViews(
@@ -678,8 +1150,10 @@ export class ProductionMemoryControl {
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
+    if (query.type === "memory.classify.read") return this.#classify(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
+    if (query.type === "memory.review.read") return this.#review(query);
     if (query.type !== "memory.overview.read") throw new Error("MEMORY_OPERATION_NOT_INSTALLED");
     const { ownerId, agentId } = this.options.configuration;
     const scope = this.#scope();
@@ -691,53 +1165,12 @@ export class ProductionMemoryControl {
     const memories = (await this.#memoryViews(records, false)).flatMap(({ item }) =>
       item ? [item] : [],
     );
-    const changes =
-      (await this.options.consolidation?.store.listChanges({
-        ownerId,
-        agentId,
-        limit: TIDY_UPS_SHOWN,
-      })) ?? [];
-    const touched = new Map(
-      (
-        await this.options.state.readMany({
-          ownerId,
-          agentId,
-          memoryIds: [
-            ...new Set(
-              changes.flatMap(({ memoryId, relatedMemoryId }) =>
-                relatedMemoryId ? [memoryId, relatedMemoryId] : [memoryId],
-              ),
-            ),
-          ],
-        })
-      ).map((memory) => [memory.id, memory]),
+    const tidyUps = (await this.tidyUpViews(TIDY_UPS_SHOWN)).map(
+      ({ dataClassification: _dataClassification, ...change }) => change,
     );
-    const textOf = async (memoryId: string | null) => {
-      const memory = memoryId ? touched.get(memoryId as MemoryId) : undefined;
-      if (
-        !memory ||
-        memory.status === "deletion_pending" ||
-        memory.status === "deleted_verified" ||
-        memory.status === "trashed"
-      )
-        return null;
-      return singleLine(await this.readText(memory.contentRef).catch(() => "")) || null;
-    };
-    const tidyUps: OverviewSnapshot["payload"]["tidyUps"][number][] = [];
-    for (const change of changes) {
-      const text = await textOf(change.memoryId);
-      if (!text) continue;
-      tidyUps.push({
-        changeId: change.id,
-        memoryId: change.memoryId,
-        action: change.action,
-        text,
-        relatedText: await textOf(change.relatedMemoryId),
-        createdAt: change.createdAt,
-        undone: change.undoneAt !== null,
-        undoable: isConsolidationUndoable(change, touched.get(change.memoryId)),
-      });
-    }
+    const conversationReviews = (
+      await this.conversationReviewViews(TIDY_UPS_SHOWN, { lead: false })
+    ).map(({ lead: _lead, ...review }) => review);
     const outline = await this.options.profile?.outline({
       ownerId,
       agentId,
@@ -766,79 +1199,26 @@ export class ProductionMemoryControl {
           ),
         ]
       : [];
-    const candidates = protectedMemoryCandidates(this.options);
-    const pending: OverviewSnapshot["payload"]["pending"][number][] = [];
-    for (const request of await this.options.approvals.listPending(ownerId, null)) {
-      if (request.agentId !== agentId) continue;
-      const candidate = await candidates.read(request).catch(() => undefined);
-      const text = candidate ? singleLine(candidate.text) : "";
-      if (!candidate || !text) continue;
-      pending.push({
-        requestId: request.id,
-        threadId: request.threadId,
-        sourceRef: request.sourceRef,
-        text,
-        topic: candidate.sensitiveTopic ?? "other",
-        requestedAt: request.requestedAt,
-      });
-    }
-    const dueReminders = await this.#dueReminders();
-    const reminded = new Map(
-      (
-        await this.options.state.readMany({
-          ownerId,
-          agentId,
-          memoryIds: dueReminders.map(({ memoryId }) => memoryId),
-        })
-      ).map((memory) => [memory.id, memory]),
+    const pending = (await this.pendingRequests()).map(
+      ({ dataClassification: _dataClassification, ...request }) => request,
     );
-    const reminders: OverviewSnapshot["payload"]["reminders"][number][] = [];
-    for (const reminder of dueReminders) {
-      const memory = reminded.get(reminder.memoryId);
-      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
-      if (!text) continue;
-      reminders.push({
-        reminderId: reminder.id,
-        text,
-        dueAt: reminder.dueAt,
-        remindAt: reminder.remindAt,
-        sourceThreadId: memory?.sourceThreadId ?? null,
-      });
-    }
+    const due = await this.dueReminderViews(REMINDERS_SHOWN);
+    const reminders = due.items.map(({ reminderId, text, dueAt, remindAt, sourceThreadId }) => ({
+      reminderId,
+      text,
+      dueAt,
+      remindAt,
+      sourceThreadId,
+    }));
     const now = this.options.clock.now();
-    const due = new Set(dueReminders.map(({ id }) => id));
-    const coming = (
-      (await this.options.reminders?.listUpcoming({
-        ownerId,
-        agentId,
-        from: now,
-        to: new Date(Date.parse(now) + UPCOMING_WINDOW_MS).toISOString(),
+    const upcoming = (
+      await this.upcomingViews({
+        now,
+        until: new Date(Date.parse(now) + UPCOMING_WINDOW_MS).toISOString(),
         limit: UPCOMING_SHOWN,
-      })) ?? []
-    ).filter(({ id }) => !due.has(id));
-    const comingMemories = new Map(
-      (
-        await this.options.state.readMany({
-          ownerId,
-          agentId,
-          memoryIds: coming.map(({ memoryId }) => memoryId),
-        })
-      ).map((memory) => [memory.id, memory]),
-    );
-    const upcoming: OverviewSnapshot["payload"]["upcoming"][number][] = [];
-    for (const reminder of coming) {
-      const memory = comingMemories.get(reminder.memoryId);
-      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
-      if (!text) continue;
-      upcoming.push({
-        reminderId: reminder.id,
-        memoryId: reminder.memoryId,
-        text,
-        dueAt: reminder.dueAt,
-        repeat: reminder.repeat,
-        sourceThreadId: memory?.sourceThreadId ?? null,
-      });
-    }
+        exclude: new Set(due.rowIds),
+      })
+    ).map(({ dataClassification: _dataClassification, ...entry }) => entry);
     const people = (await this.options.book.listPeople(scope)).map((person) => ({
       personId: person.id,
       name: person.name,
@@ -865,7 +1245,7 @@ export class ProductionMemoryControl {
       createdAt,
       undone: undoneAt !== null,
     }));
-    const externalProposals = await this.#externalProposals();
+    const externalProposals = await this.#externalProposals(EXTERNAL_PROPOSALS_SHOWN);
     const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
     const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
@@ -878,6 +1258,7 @@ export class ProductionMemoryControl {
         pending,
         externalProposals,
         tidyUps,
+        conversationReviews,
         reminders,
         upcoming,
         people,
@@ -897,20 +1278,104 @@ export class ProductionMemoryControl {
     } as GatewayV2Snapshot;
   }
 
+  async #classify(
+    query: Extract<GatewayV2Query, { type: "memory.classify.read" }>,
+  ): Promise<ClassifySnapshot> {
+    const results: MemoryClassification[] = [];
+    const pending: { index: number; text: string }[] = [];
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (payload && classificationRank(payload.dataClassification) > classificationRank("private"))
+        results[index] = DETERMINISTIC_SENSITIVE;
+      else pending.push({ index, text: await this.readText(ref) });
+    }
+    const judged = this.options.classifier
+      ? await this.options.classifier.classify(pending.map(({ text }) => text))
+      : pending.map(() => UNCLASSIFIED);
+    for (const [position, { index }] of pending.entries())
+      results[index] = judged[position] ?? UNCLASSIFIED;
+    for (const [index, ref] of query.payload.contentRefs.entries()) {
+      const result = results[index] ?? UNCLASSIFIED;
+      if (result.classification !== "sensitive") continue;
+      this.#sensitiveJudgments.delete(ref);
+      this.#sensitiveJudgments.set(ref, result);
+      for (const oldest of this.#sensitiveJudgments.keys()) {
+        if (this.#sensitiveJudgments.size <= SENSITIVE_JUDGMENTS_KEPT) break;
+        this.#sensitiveJudgments.delete(oldest);
+      }
+    }
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.classify.snapshot",
+      payload: {
+        items: query.payload.contentRefs.map((contentRef, index) => {
+          const result = results[index] ?? UNCLASSIFIED;
+          return {
+            contentRef,
+            category: result.category,
+            classification: result.classification,
+            topic: result.topic,
+            failed: result.failed,
+          };
+        }),
+      },
+    } as ClassifySnapshot;
+  }
+
+  async #storedAtLeast(
+    contentRef: string,
+    text: string,
+    dataClassification: DataClassification,
+  ): Promise<string> {
+    const { ownerId, agentId } = this.options.configuration;
+    const copy = await this.options.protector.protect({
+      ownerId,
+      agentId,
+      ref: `memory-raised:${dataClassification}:${contentRef}`,
+      dataClassification,
+      contentType: "text/plain",
+      plaintext: new TextEncoder().encode(text),
+      createdAt: this.options.clock.now(),
+    });
+    try {
+      await this.options.payloads.put(copy);
+    } catch (error) {
+      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
+        throw error;
+    }
+    return copy.ref;
+  }
+
   async #createMemory(input: {
     readonly id: MemoryId;
     readonly contentRef: string;
     readonly category: MemoryCategory;
     readonly subCategory: string | null;
+    readonly topic: SensitiveMemoryTopic | null;
     readonly policyVersion: string;
     readonly importBatchId: string | null;
   }): Promise<ProductMemoryRecord> {
     const payload = await this.options.payloads.get(input.contentRef);
     if (!payload)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_PAYLOAD_MISSING");
-    this.assertStorable(await this.readText(input.contentRef));
+    const text = await this.readText(input.contentRef);
+    this.assertStorable(text);
     if (payload.dataClassification === "restricted")
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
+    const judged = this.#sensitiveJudgments.get(input.contentRef);
+    const raised =
+      classificationRank(payload.dataClassification) < classificationRank("sensitive") &&
+      (sensitiveCategory(input.category) ||
+        input.topic !== null ||
+        judged !== undefined ||
+        deterministicallySensitive(text));
+    const dataClassification: DataClassification = raised
+      ? "sensitive"
+      : payload.dataClassification;
+    const contentRef = raised
+      ? await this.#storedAtLeast(input.contentRef, text, "sensitive")
+      : input.contentRef;
     const { ownerId, agentId } = this.options.configuration;
     const subCategory = input.subCategory?.trim() || null;
     return this.options.memory.applyProposal(
@@ -920,10 +1385,10 @@ export class ProductionMemoryControl {
           id: input.id,
           ownerId,
           agentId,
-          contentRef: input.contentRef,
-          dataClassification: payload.dataClassification,
+          contentRef,
+          dataClassification,
           sourceThreadId: null,
-          sourceRefs: [input.contentRef],
+          sourceRefs: [contentRef],
           inference: false,
           confidencePermille: 1000,
           policyVersion: input.policyVersion,
@@ -936,8 +1401,10 @@ export class ProductionMemoryControl {
             validTo: null,
             supersededBy: null,
             evidenceVerified: false,
-            ...(payload.dataClassification === "sensitive"
-              ? { sensitiveTopic: sensitiveTopicFor(input.category) }
+            ...(dataClassification === "sensitive"
+              ? {
+                  sensitiveTopic: input.topic ?? judged?.topic ?? sensitiveTopicFor(input.category),
+                }
               : {}),
             ...(subCategory ? { subCategory } : {}),
             ...(input.importBatchId ? { importBatchId: input.importBatchId } : {}),
@@ -949,12 +1416,13 @@ export class ProductionMemoryControl {
   }
 
   async #create(command: Command<"memory.create">) {
-    const { contentRef, category, subCategory, pinned } = command.payload;
+    const { contentRef, category, subCategory, topic, pinned } = command.payload;
     const saved = await this.#createMemory({
       id: `memory:owner:${command.idempotencyKey}` as MemoryId,
       contentRef,
       category,
       subCategory,
+      topic: topic ?? null,
       policyVersion: OWNER_POLICY_VERSION,
       importBatchId: null,
     });
@@ -1018,6 +1486,7 @@ export class ProductionMemoryControl {
         contentRef: item.contentRef,
         category: item.category,
         subCategory: item.subCategory,
+        topic: item.topic ?? null,
         policyVersion: IMPORT_POLICY_VERSION,
         importBatchId: batchId,
       });
@@ -1121,6 +1590,7 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_TEXT_REFUSED");
         this.assertStorable(editedText);
       }
+      const buffered: MemoryExtractionAuditRecord[] = [];
       const resolver = createProductionAutomaticMemory({
         product: this.options.memory,
         approvals: this.options.approvals,
@@ -1132,13 +1602,21 @@ export class ProductionMemoryControl {
         ...(this.options.ledger ? { ledger: this.options.ledger } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
-        onAudit: this.options.onAudit,
+        onAudit: (record) => {
+          buffered.push(record);
+        },
       });
-      const committed = await resolver.resolveSensitive(
-        resolution === "edited"
-          ? { requestId, resolution, editedText: editedText ?? "" }
-          : { requestId, resolution },
+      const committed = await this.options.unitOfWork.run(() =>
+        resolver.resolveSensitive(
+          resolution === "edited"
+            ? { requestId, resolution, editedText: editedText ?? "" }
+            : { requestId, resolution },
+        ),
       );
+      for (const record of buffered)
+        try {
+          this.options.onAudit(record);
+        } catch {}
       return { resultRef: committed ?? requestId, replayed: false };
     }
     if (command.type === "memory.reminder.create") {
@@ -1171,6 +1649,49 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
+    }
+    if (command.type === "memory.review.respond") {
+      const { reviews } = this.#reviews();
+      const { target, action, expectedRevision } = command.payload;
+      const now = this.options.clock.now();
+      if (action === "dismiss") {
+        const resolved = await reviews.memories.resolve({
+          ...this.#scope(),
+          memoryId: target as MemoryId,
+          resolution: "owner_dismissed",
+          now,
+        });
+        if (resolved === 0)
+          throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_REVIEW_NOT_FOUND");
+        return { resultRef: target, replayed: false };
+      }
+      if (expectedRevision === null)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "RULE_REVIEW_REVISION_REQUIRED",
+        );
+      const acted = await reviews.rules.act({
+        ...this.#scope(),
+        ruleId: target,
+        expectedRevision,
+        action,
+        now,
+      });
+      if (!acted) throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "RULE_REVIEW_CHANGED");
+      return { resultRef: target, replayed: false };
+    }
+    if (command.type === "memory.review.reportMissed") {
+      const { reviews } = this.#reviews();
+      const { memoryId, upstreamMemoryId } = command.payload;
+      if (memoryId === upstreamMemoryId)
+        throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_REVIEW_SELF");
+      const recorded = await reviews.memories.reportMissed({
+        ...this.#scope(),
+        memoryId: memoryId as MemoryId,
+        upstreamMemoryId: upstreamMemoryId as MemoryId,
+        now: this.options.clock.now(),
+      });
+      return { resultRef: memoryId, replayed: !recorded };
     }
     if (command.type === "memory.rule.respond") {
       const control = this.options.ownerRules;
@@ -1265,6 +1786,29 @@ export class ProductionMemoryControl {
       await this.options.consolidation.undo(changeId);
       return { resultRef: changeId, replayed: false };
     }
+    if (command.type === "memory.conversationReview.undo") {
+      if (!this.options.conversationReviews)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const { reviewId } = command.payload;
+      const { ownerId, agentId } = this.options.configuration;
+      const owned = (
+        await this.options.conversationReviews.store.listWithChanges({
+          ownerId,
+          agentId,
+          limit: 200,
+        })
+      ).some(({ id }) => id === reviewId);
+      if (!owned)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_FOUND,
+          "MEMORY_CONVERSATION_REVIEW_NOT_FOUND",
+        );
+      await this.options.conversationReviews.undo(reviewId);
+      return { resultRef: reviewId, replayed: false };
+    }
     if (command.type === "memory.mutate") {
       const { memoryId, action, expectedRevision, contentRef, historyId } = command.payload;
       const current = await this.options.state.read(memoryId as MemoryId);
@@ -1282,6 +1826,7 @@ export class ProductionMemoryControl {
           sourceRef: contentRef,
           generationId,
         });
+        await this.#resolveMemoryReview(current.id);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "confirm") {
@@ -1302,6 +1847,7 @@ export class ProductionMemoryControl {
             stance: restored.stance,
             generationId,
           });
+          await this.#resolveMemoryReview(current.id);
           return { resultRef: saved.id, replayed: false };
         } catch (error) {
           if (restored.copied)
@@ -1311,6 +1857,7 @@ export class ProductionMemoryControl {
       }
       if (action === "delete") {
         const saved = await this.options.memory.trash(current.id, generationId);
+        await this.#resolveMemoryReview(current.id);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "recover") {

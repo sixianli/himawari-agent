@@ -35,6 +35,20 @@ afterEach(() => {
     rmSync(directory, { recursive: true, force: true });
 });
 
+function migratedDatabase() {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
+  directories.push(directory);
+  const file = path.join(directory, "product.sqlite");
+  const database = new DatabaseSync(file);
+  database.exec("PRAGMA synchronous = OFF; PRAGMA journal_mode = MEMORY");
+  for (const name of readdirSync(migrations)
+    .filter((entry) => entry.endsWith(".sql"))
+    .sort())
+    database.exec(readFileSync(path.join(migrations, name), "utf8"));
+  database.exec("PRAGMA foreign_keys = OFF");
+  return { file, database };
+}
+
 function run(...args) {
   const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-"));
   directories.push(directory);
@@ -205,24 +219,18 @@ describe("prod-read.sh", () => {
     expect(result.input).toContain("{ readOnly: true }");
     expect(result.input).toMatch(/LIMIT 500\b/);
     expect(result.input).toContain("ORDER BY recorded_at DESC, id");
-    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
-    directories.push(directory);
-    const file = path.join(directory, "product.sqlite");
-    const database = new DatabaseSync(file);
-    for (const name of readdirSync(migrations)
-      .filter((entry) => entry.endsWith(".sql"))
-      .sort())
-      database.exec(readFileSync(path.join(migrations, name), "utf8"));
-    database.exec("PRAGMA foreign_keys = OFF");
+    const { file, database } = migratedDatabase();
     const insert = database.prepare(
       "INSERT INTO memory_records (id, owner_id, agent_id, revision, status, content_ref, classification, inference, confidence_permille, policy_version, updated_at, category, importance_permille, recorded_at, tentative, use_count) VALUES (?, 'o', 'a', 1, ?, ?, 'private', 0, 900, 'p', ?, ?, 900, ?, 0, 2)",
     );
     insert.run("m1", "active", "secret-ref", "2026-11-01", "rule", "2026-11-01");
     insert.run("m2", "active", "other-ref", "2026-11-02", "preference", "2026-11-02");
+    database.exec("BEGIN");
     for (let index = 0; index < 501; index += 1) {
       const stamp = "2026-12-" + String(index).padStart(4, "0");
       insert.run("bulk" + index, "active", "r", stamp, "rule", stamp);
     }
+    database.exec("COMMIT");
     database.close();
     const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
     const child = spawnSync(process.execPath, ["--no-warnings", "-", "rule-memories"], {
@@ -243,15 +251,7 @@ describe("prod-read.sh", () => {
     expect(result.calls).toContain("--no-warnings - gmail-decisions");
     expect(result.input).toContain("{ readOnly: true }");
     expect(result.input).toMatch(/LIMIT 100\b/);
-    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
-    directories.push(directory);
-    const file = path.join(directory, "product.sqlite");
-    const database = new DatabaseSync(file);
-    for (const name of readdirSync(migrations)
-      .filter((entry) => entry.endsWith(".sql"))
-      .sort())
-      database.exec(readFileSync(path.join(migrations, name), "utf8"));
-    database.exec("PRAGMA foreign_keys = OFF");
+    const { file, database } = migratedDatabase();
     const inputs = JSON.stringify({
       floorHits: { "mail-a_1": ["rule-1", "rule-2"] },
       memoryByMail: { "mail-a_1": ["m1"] },

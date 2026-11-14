@@ -5,10 +5,12 @@ import {
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredConversationReview,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
@@ -22,6 +24,7 @@ import {
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
   isWebProviderId,
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
@@ -157,6 +160,29 @@ function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined 
   if (input["dedupeSameSource"] !== undefined)
     parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
   return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
+}
+
+const CONVERSATION_REVIEW_LIMITS = {
+  maximumSegmentsPerDay: [0, 50],
+  maximumSourceCharacters: [1000, 200000],
+  maximumRelatedMemories: [0, 200],
+  maximumNewMemoriesPerDay: [0, 100],
+  maximumOutputTokens: [256, 8192],
+} as const;
+
+function conversationReview(value: unknown): ConfiguredConversationReview | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.conversationReview";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", ...Object.keys(CONVERSATION_REVIEW_LIMITS)], field);
+  const parsed: Record<string, number | boolean> = {};
+  if (input["enabled"] !== undefined)
+    parsed["enabled"] = boolean(input["enabled"], `${field}.enabled`);
+  for (const [key, [minimum, maximum]] of Object.entries(CONVERSATION_REVIEW_LIMITS)) {
+    if (input[key] === undefined) continue;
+    parsed[key] = integer(input[key], `${field}.${key}`, minimum, maximum);
+  }
+  return Object.freeze(parsed) as ConfiguredConversationReview;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -1360,6 +1386,32 @@ function parseDevice(value: unknown): DeviceConfiguration {
   });
 }
 
+function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["homeFeed"]> {
+  const field = "configuration.runPolicy.homeFeed";
+  const input = record(value, field);
+  const bounds = {
+    awaitingLimit: [1, 1000],
+    otherLimit: [0, 200],
+    sourceReadLimit: [1, 200],
+    deadlineLeadMinutes: [0, 43_200],
+    recentHours: [1, 720],
+    upcomingLimit: [0, 200],
+    upcomingDays: [1, 366],
+  } as const satisfies Record<keyof typeof DEFAULT_HOME_FEED, readonly [number, number]>;
+  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
+  rejectUnknown(input, keys, field);
+  return Object.freeze(
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        input[key] === undefined
+          ? DEFAULT_HOME_FEED[key]
+          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
+      ]),
+    ) as Record<keyof typeof bounds, number>,
+  );
+}
+
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
   const field = "configuration.runPolicy.realEval";
   const input = record(value, field);
@@ -1392,6 +1444,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     [
       "version",
       "timeZone",
+      "approvalBodyPreviewCharacters",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1404,6 +1457,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "automaticReview",
       "webPush",
       "device",
+      "homeFeed",
       "proactive",
       "museIntake",
       "realEval",
@@ -1431,6 +1485,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   }
   return Object.freeze({
     ...(timeZone === undefined ? {} : { timeZone }),
+    ...(input["approvalBodyPreviewCharacters"] === undefined
+      ? {}
+      : {
+          approvalBodyPreviewCharacters: integer(
+            input["approvalBodyPreviewCharacters"],
+            "configuration.runPolicy.approvalBodyPreviewCharacters",
+            1,
+            APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+          ),
+        }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
@@ -1444,6 +1508,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
+    ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
@@ -1585,10 +1650,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
+    [
+      "adapter",
+      "version",
+      "storagePath",
+      "dimensions",
+      "minimumSimilarity",
+      "retrieval",
+      "conversationReview",
+    ],
     "configuration.memory",
   );
   const retrieval = memoryRetrieval(memory["retrieval"]);
+  const conversationReviewSettings = conversationReview(memory["conversationReview"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1827,6 +1901,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
       ...(retrieval === undefined ? {} : { retrieval }),
+      ...(conversationReviewSettings === undefined
+        ? {}
+        : { conversationReview: conversationReviewSettings }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

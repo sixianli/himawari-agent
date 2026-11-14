@@ -1,0 +1,4 @@
+{"id": "r3ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "缓存快路径绕过了 `hasBodyInRequest(input)` 这道检查", "valid": true, "class": "error", "severity": "low", "trigger": "同一交换里先用地址字符串加 init.body 建立缓存，再传一个自带请求体的请求对象", "consequence": "守卫被跳过；按 Fetch 规范 init.body 优先且 Pi 只传字符串地址，当前不可达，不会外泄", "modelSeverity": "低到中"}
+{"id": "r3ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "拒绝缓存与作者说法不完全一致，且缺少针对拒绝分支的反向用例", "valid": true, "class": "better"}
+{"id": "r3ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 的测试清单没有同步本轮新增的用例", "valid": true, "class": "better"}
+{"id": "r3ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "\"一个交换只服务一次模型调用\"只写在 ADR，代码没有注释或断言", "valid": true, "class": "better"}
