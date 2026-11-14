@@ -329,7 +329,7 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
       );
       expect(reading.value).toMatchObject({ done: true });
       expect(performed).toHaveLength(1);
-      expect(hookCalls.authorize).toBe(1);
+      expect(hookCalls.authorize).toBe(confirm === undefined ? 0 : 1);
     }
   });
 
@@ -379,7 +379,7 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
         }),
       ),
     ).rejects.toMatchObject({ code: "DEVICE_ACTION_UNAVAILABLE" });
-    expect(hookCalls.authorize).toBe(1);
+    expect(hookCalls.authorize).toBe(0);
     await expect(
       tools.run(call("run-owner", "device.action", { action: "describe", extra: 1 })),
     ).rejects.toMatchObject({ code: "DEVICE_ACTION_INPUT_INVALID" });

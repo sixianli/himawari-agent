@@ -327,7 +327,7 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     capabilityRef: PERCEPTION_READ_CAPABILITY_REF,
     operation: "read",
     targetType: "owner-perception",
-    resultOrigin: "external",
+    resultOrigin: "owner_data",
     authorization: "read",
     executor: "owner_scoped",
     deduplication: "run_and_tool_call",

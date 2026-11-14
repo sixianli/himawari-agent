@@ -1564,7 +1564,7 @@ it("[iOS-5] offers the two perception tools last, marks outside content on read 
       hooks: { authorize: () => Promise<void>; markExternalContent: () => Promise<void> },
     ) => {
       if (call.capabilityRef === "perception.read") {
-        await hooks.markExternalContent();
+        if (call.arguments["outside"] === true) await hooks.markExternalContent();
         return { value: { records: [] } };
       }
       if (call.arguments["action"] !== "describe") await hooks.authorize();
@@ -1599,6 +1599,11 @@ it("[iOS-5] offers the two perception tools last, marks outside content on read 
   const read = { ...base, toolCallId: "p-read", capabilityRef: "perception.read", arguments: {} };
   expect((await tools.preflight(read)).allowed).toBe(true);
   expect(await tools.execute(read)).toMatchObject({ outcome: "succeeded" });
+  expect(mark).not.toHaveBeenCalled();
+  expect(
+    await tools.execute({ ...read, toolCallId: "p-read-outside", arguments: { outside: true } }),
+  ).toMatchObject({ outcome: "succeeded" });
+  expect(mark).toHaveBeenCalledTimes(1);
   expect(mark).toHaveBeenCalledWith(invocation.runId, "perception_read");
   expect(authorize).not.toHaveBeenCalled();
   const act = (toolCallId: string, action: string) => ({

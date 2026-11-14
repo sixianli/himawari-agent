@@ -495,7 +495,6 @@ export class ProductionPerceptionTools {
               : TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED.text,
         },
       };
-    if (!definition.reads) await hooks.authorize();
     if (!this.#options.perform)
       throw new PerceptionToolError(
         "DEVICE_ACTION_UNAVAILABLE",
@@ -512,6 +511,7 @@ export class ProductionPerceptionTools {
         "DEVICE_ACTION_UNAVAILABLE",
         TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
       );
+    if (!definition.reads) await hooks.authorize();
     if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
       throw new PerceptionToolError(
         DEVICE_ACTION_UNCONFIRMED_CODE,
