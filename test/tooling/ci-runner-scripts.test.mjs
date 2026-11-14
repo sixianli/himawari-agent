@@ -1662,6 +1662,7 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     const schema = read("ci/policy.schema.json");
     expect(schema).toContain(`"${linuxRunnerLabel}"`);
     expect(schema).toContain(`"${gateRunnerLabel}"`);
+    expect(schema).toContain(`"${armRunnerLabel}"`);
     const workflow = parse(read(".github/workflows/ci.yml"));
     const fixed = Object.entries(workflow.jobs)
       .filter(([, job]) => !String(job["runs-on"]).startsWith("$"))
