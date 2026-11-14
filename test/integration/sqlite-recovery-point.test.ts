@@ -382,6 +382,7 @@ function adapterWith(
   options: {
     readonly keys?: InMemoryDevelopmentSecretSource;
     readonly expectedSchemaSequence?: number;
+    readonly expectedSchemaFingerprint?: string;
     readonly fault?: (
       stage: RecoveryPointFaultStage,
       context: Readonly<{ temporaryRoot: string | null }>,
@@ -402,6 +403,9 @@ function adapterWith(
     ...(options.expectedSchemaSequence === undefined
       ? {}
       : { expectedSchemaSequence: options.expectedSchemaSequence }),
+    ...(options.expectedSchemaFingerprint === undefined
+      ? {}
+      : { expectedSchemaFingerprint: options.expectedSchemaFingerprint }),
     ...(options.fault ? { fault: options.fault } : {}),
   });
 }
@@ -880,6 +884,10 @@ describe("encrypted same-host SQLite recovery points", () => {
     await schemaSource.adapter.create(recoveryState(schemaBackup));
     await expectRecoveryCode(
       adapterWith(schemaSource, { expectedSchemaSequence: 999 }).verify(schemaBackup),
+      RECOVERY_POINT_ERROR_CODES.SCHEMA_MISMATCH,
+    );
+    await expectRecoveryCode(
+      adapterWith(schemaSource, { expectedSchemaFingerprint: "0".repeat(64) }).verify(schemaBackup),
       RECOVERY_POINT_ERROR_CODES.SCHEMA_MISMATCH,
     );
 
