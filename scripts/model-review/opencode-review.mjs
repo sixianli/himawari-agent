@@ -1169,7 +1169,11 @@ const LOW_MODEL_SEVERITY = /^(?:低|low|minor|轻微|nit)/i;
 export function isTestFile(path) {
   if (/\.md$/i.test(path)) return false;
   return (
-    /(?:^|\/)(?:test|tests|__tests__)\//.test(path) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)
+    /(?:^|\/)(?:test|tests|__tests__)\//.test(path) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) ||
+    /(?:^|\/)test_[^/]*\.py$/.test(path) ||
+    /_test\.(?:py|go|rs)$/.test(path) ||
+    /(?:^|\/)[A-Z][A-Za-z0-9]*Tests?\.java$/.test(path)
   );
 }
 
@@ -1583,6 +1587,17 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     if (reasons.length > 0) {
       lines.push(`REVIEW_LOW_FIX_REFUSED ${reasons.join(" ")}`);
       lowFixRefused = true;
+      const refusalsFile = join(repo, ledgerPath, "low-fix-refusals.jsonl");
+      if (existsSync(dirname(refusalsFile)))
+        appendFileSync(
+          refusalsFile,
+          ledgerLine({
+            at: new Date().toISOString(),
+            round: acceptLow,
+            head,
+            reasons: reasons.map((reason) => reason.split(" ")[0]),
+          }),
+        );
     } else {
       appendFileSync(
         ledgerFile,

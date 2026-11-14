@@ -1411,6 +1411,22 @@ describe("opencode review merge gate", () => {
     ).toBe('REVIEW_LOW_FIX_REFUSED file-name-has-line-break "test/odd\\nname.test.mjs"');
   });
 
+  it("[low fix] records why a refused --accept-low was refused", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      const refused = f.check({ acceptLow: 1 }).lines.at(-1);
+      expect(refused).toBe("REVIEW_LOW_FIX_REFUSED no-test-change");
+      const record = JSON.parse(
+        readFileSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"), "utf8").trim(),
+      );
+      expect(record).toMatchObject({ round: 1, reasons: ["no-test-change"] });
+      expect(record.head).toBe(f.git("rev-parse", "HEAD"));
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] the report lists only low-fix records on the chain and marks the rest", () => {
     const f = lowFixFixture();
     try {
@@ -2455,6 +2471,12 @@ describe("opencode review spending", () => {
       "src/a.test.ts",
       "a.spec.mjs",
       "x/__tests__/b.js",
+      ".agents/test_opencode_models.py",
+      "scripts/delivery-mode/test_deploy.py",
+      "pkg/parse_test.py",
+      "pkg/parse_test.go",
+      "src/parse_test.rs",
+      "src/ParserTest.java",
     ])
       expect(isTestFile(path)).toBe(true);
     for (const path of [
@@ -2464,6 +2486,10 @@ describe("opencode review spending", () => {
       "latest/a.mjs",
       "test/README.md",
       "test/README.MD",
+      "src/contest.py",
+      "src/test_helper.ts",
+      "docs/test_notes.md",
+      "src/latest_test.md",
     ])
       expect(isTestFile(path)).toBe(false);
   });
