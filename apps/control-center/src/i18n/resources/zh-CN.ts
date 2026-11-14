@@ -877,9 +877,9 @@ export const messages = {
   "rules.builtIn.note":
     "这几条写在程序里，决定 Himawari 自己动手做事之前要不要先问你。每条都带该命中和不该命中的例子，每次构建都会逐条跑一遍。“直接做”的那几条可以改成每次都先问你；“先问你”和“不做”的是安全底线，不能放松。",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {改你自己的数据：直接做} action_preauthorize_own_task_cancel {停掉自己开的任务：直接做} action_ask_after_external_content {读过外来内容后要做事：先问你} action_refuse_background_after_external_content {后台读过外来内容后要做事：不做} other {其他内置规则}}",
+    "{id, select, action_preauthorize_owner_data {改你自己的数据：直接做} action_preauthorize_own_task_cancel {停掉自己开的任务：直接做} action_preauthorize_owner_intent_confirmed {读过外来内容后，你自己明说要做的事：直接做} action_ask_after_external_content {读过外来内容后要做事：先问你} action_refuse_background_after_external_content {后台读过外来内容后要做事：不做} other {其他内置规则}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {例如设提醒、记一条规则：能撤销、不发给别人、风险中等，而且这次对话里没读过网页、任务输出这类外来内容。} action_preauthorize_own_task_cancel {例如停掉 Himawari 自己开的后台任务。不是它开的任务不归这条管。} action_ask_after_external_content {例如读过网页或任务输出之后要设提醒、改规则，会弹出卡片等你点头。} action_refuse_background_after_external_content {例如定时任务或外部事件发起的一轮读过外来内容后想改规则：不做，也不弹卡片，只记下它想做什么。} other {}}",
+    "{id, select, action_preauthorize_owner_data {例如设提醒、记一条规则：能撤销、不发给别人、风险中等，而且这次对话里没读过网页、任务输出这类外来内容。} action_preauthorize_own_task_cancel {例如停掉 Himawari 自己开的后台任务。不是它开的任务不归这条管。} action_preauthorize_owner_intent_confirmed {例如读过网页之后，你用自己的话要求设的提醒。只有主人意图核对打开、而且把握够高时才直接做，否则弹卡片问你。} action_ask_after_external_content {例如读过网页或任务输出之后要设提醒、改规则，会弹出卡片等你点头。} action_refuse_background_after_external_content {例如定时任务或外部事件发起的一轮读过外来内容后想改规则：不做，也不弹卡片，只记下它想做什么。} other {}}",
   "rules.builtIn.examples": "例子：{hit} 个该命中，{miss} 个不该命中",
   "rules.builtIn.askFirst": "每次都先问我",
   "review.title": "改了记忆后待重审 · {count} 条",
