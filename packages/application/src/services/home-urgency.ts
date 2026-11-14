@@ -135,7 +135,12 @@ export function acceptsHomeAffirmLabel(input: {
   const limit = homeAffirmLabelMax(input.limits, input.locale);
   if (input.label === null || limit === undefined) return false;
   const label = input.label.trim();
-  if (label.length === 0 || label !== input.label || UNSAFE_LINE_CHARACTERS.test(label))
+  if (
+    label.length === 0 ||
+    label !== input.label ||
+    UNSAFE_LINE_CHARACTERS.test(label) ||
+    label.replace(/\p{Cf}/gu, "").trim().length === 0
+  )
     return false;
   if (graphemes(label) > limit) return false;
   return (

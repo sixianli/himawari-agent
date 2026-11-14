@@ -315,6 +315,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         locale,
       });
       const label = copy.affirmLabel?.trim() ?? "";
+      if (label.replace(/\p{Cf}/gu, "").trim() === "") return null;
       return label === "" ? null : label;
     } catch (error) {
       this.#options.onFailure(error);
