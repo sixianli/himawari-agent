@@ -1,7 +1,5 @@
 {
-  "alters": [
-    "decision_ledger"
-  ],
+  "alters": ["decision_ledger"],
   "removes": [
     "proactive",
     "memory_candidate",
