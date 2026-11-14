@@ -113,6 +113,23 @@ public struct DecisionRow: View {
         self.respond = respond
     }
 
+    private var statusText: some View {
+        Text(status)
+            .hmType(DesignTokens.TypeScale.caption)
+            .foregroundStyle(statusTint)
+            .multilineTextAlignment(.leading)
+    }
+
+    @ViewBuilder
+    private var pills: some View {
+        if let decline {
+            Button(decline) { respond(false) }
+                .buttonStyle(RowPillButtonStyle(filled: false))
+        }
+        Button(confirm) { respond(true) }
+            .buttonStyle(RowPillButtonStyle(filled: true))
+    }
+
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Icon(icon, size: DesignTokens.IconSize.todayRow)
@@ -132,17 +149,19 @@ public struct DecisionRow: View {
                             .multilineTextAlignment(.leading)
                     }
                 }
-                HStack(spacing: 6) {
-                    Text(status)
-                        .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(statusTint)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let decline {
-                        Button(decline) { respond(false) }
-                            .buttonStyle(RowPillButtonStyle(filled: false))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        statusText.fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 0)
+                        pills
                     }
-                    Button(confirm) { respond(true) }
-                        .buttonStyle(RowPillButtonStyle(filled: true))
+                    VStack(alignment: .leading, spacing: 6) {
+                        statusText.fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 6) {
+                            Spacer(minLength: 0)
+                            pills
+                        }
+                    }
                 }
                 .disabled(busy)
                 .opacity(busy ? 0.5 : 1)

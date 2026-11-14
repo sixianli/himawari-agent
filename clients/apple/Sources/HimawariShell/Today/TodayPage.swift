@@ -86,6 +86,7 @@ struct TodayPage: View {
                     LeadItemView(
                         item: lead,
                         approval: feed.approval(for: lead, in: actions),
+                        detail: feed.approval(for: lead, in: actions)?.display?.bodyPreview,
                         busy: feed.busy.contains(lead.key),
                         canAct: feed.canAct(lead, approvals: actions),
                         open: { open(lead) },
@@ -224,6 +225,7 @@ enum TodayWords {
 struct LeadItemView: View {
     let item: HomeItem
     let approval: PendingApproval?
+    let detail: String?
     let busy: Bool
     let canAct: Bool
     let open: () -> Void
@@ -250,6 +252,17 @@ struct LeadItemView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: open)
+            }
+            if let detail, !detail.isEmpty {
+                Text(detail)
+                    .hmType(DesignTokens.TypeScale.secondary)
+                    .foregroundStyle(Color.hmText)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, DesignTokens.Size.pillSmall / 2)
+                    .padding(.vertical, DesignTokens.Size.pillSmall / 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.offlineBanner, style: .continuous))
+                    .padding(.leading, DesignTokens.Home.leadIndent)
             }
             if canAct, let choice = item.choice {
                 HStack(spacing: DesignTokens.Size.composerGap) {
@@ -355,9 +368,16 @@ struct UpcomingCard: View {
 }
 
 enum UpcomingWords {
+    static func clock(_ due: Date, calendar: Calendar, locale: Locale = .autoupdatingCurrent) -> String {
+        let template = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? ""
+        if template.contains("a") { return due.formatted(.dateTime.hour().minute()) }
+        let parts = calendar.dateComponents([.hour, .minute], from: due)
+        return String(format: "%d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+
     static func when(_ entry: HomeUpcoming, now: Date, calendar: Calendar = .autoupdatingCurrent) -> String {
         guard let due = entry.due else { return "" }
-        let time = due.formatted(.dateTime.hour().minute())
+        let time = clock(due, calendar: calendar)
         switch UpcomingDay.of(due, now: now, calendar: calendar) {
         case .today: return L.format("today.upcoming.today", time)
         case .tonight: return L.format("today.upcoming.tonight", time)
