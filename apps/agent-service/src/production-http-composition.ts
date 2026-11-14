@@ -1371,6 +1371,7 @@ export async function createProductionHttpComposition(
     proposalControl: new ProductionProposalControl({
       configuration,
       box: proposalBox,
+      recentAuthentication,
       clock: { now: clock },
     }),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({

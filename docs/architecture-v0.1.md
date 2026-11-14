@@ -427,6 +427,9 @@ Himawari 想做、但要主人点头才做的事，统一存进一个“提议�
 - **上限**：待采纳数量上限（默认 20，必须在 1 到 200 之间）和过期天数（默认 30，1 到 3650）是可选配置 `runPolicy.ownerProposals.pendingLimit` 和 `runPolicy.ownerProposals.expiresAfterDays`，不写就用默认值，越界时服务启动就报错；两个值随列表响应一起返回，界面显示的就是它们。上限是为了不让主人被提议淹没，满了以后新提议被拒绝并告诉提议方。
 - **网关**：读操作 `proposals.read` 返回 `proposals.snapshot`（顺序固定，带已用条数、上限、过期天数，每条带版本号、指纹、依据和过期日）；命令 `proposal.respond` 的动作是 `adopt` 和 `reject`，未知动作报 `PROPOSAL_ACTION_UNKNOWN`，重复请求靠网关已有的幂等键去重。它们在自己的模块 `production-proposal-control.ts` 里，不挂在记忆操作下面。`memory.rule.respond` 仍只有 `undo`、`confirm`、`reconfirm`；对话里的规则卡片点“生效”走 `confirm`，点“不要”走 `proposal.respond`，只有这条提议还在待采纳列表里时才显示“不要”。
 - 外部 agent 经 MCP 提的规则当场确认，不写这张表。
+- **主人的决定和执行是两列状态（2026-11-14）**：`status`（主人的决定）取值待采纳、已采纳、已拒绝、已过期、被取代、被撤回；`exec_status`（执行）取值没开始、执行中、已执行待核实、成功、失败、结果不明、已撤销。每次只改一列。执行这一层只给“确定动作”类的处理方（`ProposalActionHandler`，登记时带 `kind: "action"`）：有 `verify`（采纳时重新核对前提，对不上就把决定标成被取代，什么都不执行）、`execute`（返回改之前的原样）、`readBack`（读回核实）、`undo`。采纳时先 `verify`，再用一条带版本号和指纹条件的更新同时把决定改成已采纳、执行改成执行中，并记下租约编号、租约到期时间和尝试次数（两台设备同时点，只有一个领得到）；执行后先记成“已执行待核实”并把原样存进加密载荷，再读回，一致记成功，不一致记失败，读回出错记结果不明。租约过期的执行在下次读列表、采纳或撤销时只读回核实，按结果记成功、失败或结果不明，不会再执行一遍。失败后不再重试，要提议方换内容重提。**撤销是终点**：成功的执行才能撤销，撤销后执行记成已撤销，同一编号再提议时不会重新打开（入箱结果 `closed`，不新建、不改动）。
+- **采纳时的两道凭据**：登记了要本人在场的类型（`requiresPresence`），采纳命令必须带 `recentAuthenticationRef`，由网关经 `RecentAuthenticationGuard` 核对，核对失败什么都不改；需要先看全文的提议（`requiresFullRead`），客户端打开全文时用 `proposals.read` 的 `open` 换一个服务器签发的短期凭据（绑编号、版本号、指纹，默认 10 分钟，只存在服务进程内存里，重启后要重新打开），采纳时带 `fullReadToken`，对不上或过期报 `PROPOSAL_FULL_READ_REQUIRED`，领取成功后凭据作废。
+- **来源标记由服务器定**：提议方传 `externalContentSeen` 为真时，来源标记一律记成“由外部内容引出”（`external_content`），不管它传的是什么；标记进指纹。外部内容引出的、没有登记成确定动作的提议默认要先看全文；确定动作不要求。入口表和对话外想一想要在后面的步骤里接上；这一步没有调模型。
 
 ### Model routing and trusted Provider boundary
 
