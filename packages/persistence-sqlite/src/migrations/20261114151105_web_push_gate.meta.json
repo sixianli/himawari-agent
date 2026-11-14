@@ -1,1 +1,3 @@
-{"alters":["web_push_outbox"]}
+{
+  "alters": ["web_push_outbox"]
+}
