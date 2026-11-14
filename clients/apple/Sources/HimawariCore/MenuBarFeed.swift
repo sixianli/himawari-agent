@@ -6,6 +6,14 @@ public struct HomeAction: Codable, Sendable, Equatable {
     public let polarity: String
     public let ownerPresence: Bool
     public let binding: String?
+
+    public init(action: String, label: String, polarity: String, ownerPresence: Bool, binding: String?) {
+        self.action = action
+        self.label = label
+        self.polarity = polarity
+        self.ownerPresence = ownerPresence
+        self.binding = binding
+    }
 }
 
 public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
@@ -16,7 +24,9 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
     public let actions: [HomeAction]
     public var id: String { key }
 
-    public var shownActions: [HomeAction] { Array(actions.prefix(2)) }
+    public static let shownActionLimit = 2
+
+    public var shownActions: [HomeAction] { Array(actions.prefix(Self.shownActionLimit)) }
 }
 
 public struct HomeSnapshot: Codable, Sendable, Equatable {
@@ -81,14 +91,23 @@ extension DeviceAPI {
         return try decode(HomeSnapshot.self, data)
     }
 
+    public func watchHome(locale: String) async throws -> WatchHome {
+        let data = try await http.send(DeviceRequest(method: "GET", path: "home", query: [URLQueryItem(name: "locale", value: locale)]))
+        return try decode(WatchHome.self, data)
+    }
+
     public func act(on item: HomeItem, action: HomeAction, requestId: String) async throws {
+        try await act(key: item.key, action: action, requestId: requestId)
+    }
+
+    public func act(key: String, action: HomeAction, requestId: String) async throws {
         struct Body: Encodable {
             let key: String
             let action: String
             let binding: String?
             let requestId: String
         }
-        let body = try JSONEncoder().encode(Body(key: item.key, action: action.action, binding: action.binding, requestId: requestId))
+        let body = try JSONEncoder().encode(Body(key: key, action: action.action, binding: action.binding, requestId: requestId))
         _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
     }
 }
