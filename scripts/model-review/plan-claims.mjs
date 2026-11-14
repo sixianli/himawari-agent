@@ -123,6 +123,7 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
+const MAX_EVIDENCE_PLACES = 8;
 const LINE_JOINS = /；|\\n|\s\/\s/u;
 
 function quoteFragments(quote, separator) {
@@ -140,7 +141,7 @@ function fragmentsInOrder(fragments, haystack) {
     if (at === -1) return false;
     from = at + fragment.length;
   }
-  return fragments.some((fragment) => fragment.length >= 8);
+  return fragments.some((fragment) => fragment.length >= EVIDENCE_MIN_CHARS);
 }
 
 export function quoteInText(quote, text) {
@@ -159,7 +160,7 @@ export function quoteInText(quote, text) {
     );
   }
   const whole = collapse(stripQuoteMarks(quote));
-  if (whole.length >= 8 && haystack.includes(whole)) return true;
+  if (whole.length >= EVIDENCE_MIN_CHARS && haystack.includes(whole)) return true;
   return fragmentsInOrder(quoteFragments(quote, LINE_JOINS), haystack);
 }
 
@@ -172,7 +173,7 @@ export function locationsOf(location) {
       continue;
     }
     const place = locationOf(part);
-    if (!place) return places.length > 0 ? places : [];
+    if (!place) return [];
     places.push(place);
   }
   return places;
@@ -182,6 +183,7 @@ function claimEvidenceProblem(repo, head, claim) {
   const places = locationsOf(claim.location);
   if (claim.verdict === "找不到" && places.length === 0) return null;
   if (places.length === 0) return "location-missing";
+  if (places.length > MAX_EVIDENCE_PLACES) return "too-many-places";
   const texts = new Map();
   for (const place of places) {
     if (!texts.has(place.path)) {
@@ -192,8 +194,11 @@ function claimEvidenceProblem(repo, head, claim) {
     const lines = texts.get(place.path).split("\n").length;
     if (place.line < 1 || place.line > lines) return "location-line-out-of-range";
   }
-  const text = [...texts.values()].join("\n");
-  if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
+  if (
+    claim.verdict !== "找不到" &&
+    ![...texts.values()].some((text) => quoteInText(claim.code, text))
+  )
+    return "code-quote-not-in-file";
   return null;
 }
 

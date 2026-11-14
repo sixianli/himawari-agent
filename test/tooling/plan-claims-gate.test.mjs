@@ -224,6 +224,8 @@ describe("plan claims check: reading the model's answer", () => {
     expect(locationsOf("-")).toEqual([]);
     expect(locationsOf("127,a.mjs:3")).toEqual([]);
     expect(locationsOf("/etc/passwd:1,a.mjs:3")).toEqual([]);
+    expect(locationsOf("a.mjs:3,/etc/passwd:1")).toEqual([]);
+    expect(locationsOf("a.mjs:3,../x.mjs:1")).toEqual([]);
   });
 
   it("[claims] accepts several quoted fragments joined by a full-width semicolon only when every fragment is in the file in that order", () => {
@@ -241,6 +243,7 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText('"--", /  ".github", / ]), / next();', code)).toBe(true);
     expect(quoteInText('"--", / ]), / ".github",', code)).toBe(false);
     expect(quoteInText("]), / ;", code)).toBe(false);
+    expect(quoteInText("foo();；bar();", "foo();\nbar();\n")).toBe(false);
     expect(quoteInText("；", text)).toBe(false);
     expect(quoteInText("MemoryMax=20G；MemoryHigh=19G", text)).toBe(false);
     expect(quoteInText("MemoryHigh=19G；MemoryHigh=19G", text)).toBe(false);
@@ -423,6 +426,32 @@ describe("plan claims check: the merge gate", () => {
         `claims-evidence ${ADR} deepseek-v4.1-flash 1 code-quote-not-in-file`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 2 location-file-missing`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-line-out-of-range`,
+      ]);
+    }));
+
+  it("[claims gate] a quote over several places must sit in one cited file, and every place must exist", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: [
+          claimLine(
+            "1",
+            "一致",
+            `${REDACTION}:1,3`,
+            RIGHT_SENTENCE,
+            "export function maskSensitiveTexts(texts) { / const masked = mask(texts);",
+          ),
+          claimLine("2", "一致", `${REDACTION}:3,code.txt:1`, "第二句", `${CODE_LINE} / feature`),
+          claimLine("3", "一致", `${REDACTION}:3,no/such/file.ts:1`, "第三句", CODE_LINE),
+          claimLine("4", "一致", `${REDACTION}:3,99`, "第四句", CODE_LINE),
+          claimLine("5", "一致", `${REDACTION}:1,2,3,4,1,2,3,4,1`, "第五句", CODE_LINE),
+          "",
+        ].join("\n"),
+      });
+      expect(f.check().problems).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 2 code-quote-not-in-file`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-file-missing`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 4 location-line-out-of-range`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 5 too-many-places`,
       ]);
     }));
 
