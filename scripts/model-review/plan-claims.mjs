@@ -210,6 +210,21 @@ export function commitInPullRequest(repo, commit, head, mainRef, runHead = head)
   return !isAncestor(repo, commit, baseCommit);
 }
 
+const MAX_MOVED_FILES = 400;
+
+function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
+  const listed = git(repo, ["diff", "--name-only", "-z", "--diff-filter=AMR", commit, head]);
+  if (listed.status !== 0) return false;
+  const paths = listed.stdout
+    .split("\0")
+    .filter((path) => path && validEvidencePath(path) && !skipPaths.has(path))
+    .slice(0, MAX_MOVED_FILES);
+  return paths.some((path) => {
+    const blob = blobAt(repo, head, path);
+    return blob !== null && !blob.includes(0) && quoteInText(quote, blob.toString("utf8"));
+  });
+}
+
 function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
   const places = locationsOf(claim.location);
   if (claim.verdict === "找不到" && places.length === 0) return null;
@@ -238,6 +253,11 @@ function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
     return "code-quote-not-in-file";
   if ([...headTexts.values()].some((text) => text !== null && quoteInText(claim.code, text)))
     return "commit-quote-still-in-head";
+  const sameFiles = new Set(places.map((place) => place.path));
+  const commits = new Set(places.map((place) => place.commit).filter((commit) => commit !== null));
+  for (const commit of commits)
+    if (quoteInChangedFiles(repo, commit, head, claim.code, sameFiles))
+      return "commit-quote-still-in-head";
   return null;
 }
 
@@ -311,6 +331,18 @@ export function carriedVerdicts(repo, head, ownRecords) {
     }
   }
   return carried;
+}
+
+function carriedEvidenceHolds(repo, head, item) {
+  const { verdict } = item;
+  if (!validEvidencePath(verdict.evidenceFile)) return false;
+  const blob = blobAt(repo, head, verdict.evidenceFile);
+  return (
+    blob !== null &&
+    collapse(verdict.evidence).length >= EVIDENCE_MIN_CHARS &&
+    collapse(blob.toString("utf8")).includes(collapse(verdict.evidence)) &&
+    collapse(item.answerText).includes(collapse(verdict.quote))
+  );
 }
 
 export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
@@ -411,13 +443,14 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
           const direct = verdicts.find(
             (item) => item.model === record.model && item.id === claim.id,
           );
+          const sameSentence = carried.filter(
+            (item) => item.model === record.model && item.sentence === collapse(claim.sentence),
+          );
           const earlier =
             direct?.outcome === "model-wrong"
               ? null
-              : carried.find(
-                  (item) =>
-                    item.model === record.model && item.sentence === collapse(claim.sentence),
-                );
+              : (sameSentence.find((item) => carriedEvidenceHolds(repo, head, item)) ??
+                sameSentence[0]);
           const verdict = direct?.outcome === "model-wrong" ? direct : earlier?.verdict;
           const verdictAnswer =
             direct?.outcome === "model-wrong" ? answerText : earlier?.answerText;

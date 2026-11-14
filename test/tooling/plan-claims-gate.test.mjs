@@ -551,6 +551,50 @@ describe("plan claims check: the merge gate", () => {
       ]);
     }));
 
+  it("[claims gate] when several earlier runs judged the same sentence, one whose evidence still holds is used even if an older one has gone stale", () =>
+    withFixture({}, (f) => {
+      const staleEvidence = "this evidence line only the old file has";
+      f.commit({ "old.txt": `${staleEvidence}\n` }, "old evidence file");
+      f.writeClaims({
+        answer: wrongAnswer(),
+        verdicts: modelWrongVerdict({ evidenceFile: "old.txt", evidence: staleEvidence }),
+        topic: "plan-a",
+      });
+      f.writeClaims({
+        answer: wrongAnswer(),
+        verdicts: modelWrongVerdict(),
+        record: f.claimsRecord({ at: "2026-11-12T02:00:00.000Z" }),
+        topic: "plan-b",
+      });
+      f.writeClaims({
+        answer: `${claimLine("7", "找不到", "-", WRONG_SENTENCE, "-")}\n`,
+        record: f.claimsRecord({ at: "2026-11-12T03:00:00.000Z" }),
+        topic: "plan-c",
+      });
+      f.commit({ "old.txt": "replaced\n" }, "old evidence goes away");
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-verdict-evidence ${ADR} deepseek-v4.1-flash 2`,
+      ]);
+      f.commit({ [REDACTION]: "export const replaced = true;\n" }, "newer evidence goes away too");
+      expect(claimsOnly(f.check())).toContain(
+        `claims-verdict-evidence ${ADR} deepseek-v4.1-flash 7`,
+      );
+    }));
+
+  it("[claims gate] code the PR moved to another file still counts as still in head", () =>
+    withFixture({}, (f) => {
+      f.commit(
+        { [REDACTION]: "export const removed = true;\n\n\n", "moved/masking.ts": `${CODE_LINE}\n` },
+        "move old code to another file",
+      );
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", `${REDACTION}:3@${f.main}`, "第一句", CODE_LINE)}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-still-in-head`,
+      ]);
+    }));
+
   it("[claims gate] a quote over several places must sit in one cited file, and every place must exist", () =>
     withFixture({}, (f) => {
       f.writeClaims({
