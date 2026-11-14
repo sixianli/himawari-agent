@@ -76,7 +76,7 @@ it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部�
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
-  expect(Object.keys(workflow.jobs)).toHaveLength(7);
+  expect(Object.keys(workflow.jobs)).toHaveLength(8);
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-gate-dependencies.mjs")),
   ).toBe(true);
@@ -93,7 +93,7 @@ it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物
     expect(usesGitHubCache({ uses })).toBe(true);
   for (const uses of ["actions/checkout@x", "actions/cachet@x", undefined])
     expect(usesGitHubCache({ uses })).toBe(false);
-  for (const name of ["ci.yml", "main.yml", "quality.yml", "ci-arm-trial.yml"]) {
+  for (const name of ["ci.yml", "main.yml", "quality.yml"]) {
     const workflow = parse(readFileSync(`.github/workflows/${name}`, "utf8"));
     const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
     expect(steps.filter(usesGitHubCache)).toEqual([]);
