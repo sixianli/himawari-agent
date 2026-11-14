@@ -24,7 +24,7 @@ date: "2026-11-14"
 
 ## 背景
 
-“提议箱”表 `owner_proposals` 存的是 Himawari 想做、要主人点头的事（规则提议、确定动作等），PR 436 建表，PR 520 加了执行层（决定和执行分两列、租约、撤销用的原样）。PR 527 把这张表加进了数据导出，本 ADR 补记那次的格式决定。[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 决定 4 把格式升到 v3 并写“v1、v2 的导出文件导入时整份拒绝”，本 ADR 沿用同一做法，格式升到 v4。
+“提议箱”表 `owner_proposals` 存的是 Himawari 想做、要主人点头的事（规则提议、确定动作等）。这张表已经进了数据导出，本 ADR 补记那次的格式决定。[ADR 0246](0246-external-proposals-join-the-data-export-and-web.md) 决定 4 把格式升到 v3 并写“v1、v2 的导出文件导入时整份拒绝”，本 ADR 沿用同一做法，格式升到 v4。
 
 <a id="decision"></a>
 
