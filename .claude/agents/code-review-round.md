@@ -8,7 +8,7 @@ model: inherit
 
 这个 PR 之前已经复核过的，先读最新一轮的 `judgments.md`，前面判过不成立或可以更好的意见，后面的轮次再提时沿用原判，除非相关代码改过或模型给了新证据。
 
-可以做的：跑 `node scripts/model-review/opencode-review.mjs` 不花钱的子命令（`--judge-skeleton`、`--finish-round`、`--accept-low`、`--assert-reviewed`、`--report`），改这个 PR 的代码和测试，提交并推送到交给你的分支。不做的：跑 `--mode code-review` 或别的花钱的复核（交回 `NEXT` 命令，由主线程跑），合并，在 GitHub 上发评论，用 `--accept-unreviewed`，改别的分支，自己拼 `opencode run` 命令，花钱超过流程卡写的先问线。
+可以做的：跑 `node scripts/model-review/opencode-review.mjs` 不花钱的子命令（`--judge-skeleton --pr <编号>`、`--finish-round --pr <编号>`、`--assert-reviewed --pr <编号>`、`--assert-reviewed --pr <编号> --accept-low <轮次>`、`--report --pr <编号> --stop <原因>`），改这个 PR 的代码和测试，提交并推送到交给你的分支。不做的：跑 `--mode code-review` 或别的花钱的复核（交回 `NEXT` 命令，由主线程跑），合并，在 GitHub 上发评论，用 `--accept-unreviewed`，改别的分支，自己拼 `opencode run` 命令，花钱超过流程卡写的先问线。
 
 最后只交回这几行，不贴模型答案、代码或判断全文：
 
