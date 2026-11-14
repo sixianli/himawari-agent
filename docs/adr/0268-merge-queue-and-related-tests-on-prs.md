@@ -75,7 +75,7 @@ date: "2026-11-14"
   4. 没有候选：按最近一次加标签的时间排序，取最多 5 个就绪的 PR（开着、不是草稿、来自本仓库、目标是 main、PR 头上 `ci/required` 成功、复核检查通过、没改 `.github`、`ci`、`scripts/ci`）。`ci/required` 还在跑或还没有的跳过，不移出；其余不满足的移出并留言。以当前 main 为底逐个 `git merge --no-ff`，冲突的移出；推到唯一的 `mq/<运行号>-<尝试次数>` 分支，手动触发 `ci.yml`（基线是当前 main），完整跑一遍。
 - 复核检查在 PR 头的临时检出上运行 main 上的 `opencode-review.mjs --assert-reviewed`，`--main-ref` 用 main 和 PR 头的共同祖先，这样批里前面的 PR 合入后，后面的 PR 不会因为 main 前进而被判 `main-not-merged`。合在一起是否出错由候选的完整 CI 判断。
 - 改了 `.github`、`ci`、`scripts/ci` 的 PR 不进队列：候选的完整 CI 会用到这些改动，不能自己证明自己。这类 PR 照原流程等 PR 上的 CI 后由线程手动合并，main 确认会跑全量。
-- 只在 `DELIVERY_MODE` 为 `fast` 时工作。完整模式的规则集要求分支保持最新，批里第二个 PR 合不进去，所以完整模式下队列什么都不做。
+- 只在 `DELIVERY_MODE` 为 `fast` 时工作。完整模式的规则集要求 PR 分支包含 main 的最新提交（`scripts/delivery-mode/github-ruleset.sh` 第 29 行 `"strict_required_status_checks_policy": true`），批里第一个 PR 合进去后，第二个 PR 的分支就不再包含最新的 main，合并会被拒绝，所以完整模式下队列什么都不做。
 - 合并用 `GITHUB_TOKEN`，由前提 2，队列合并后 `main.yml` 不会被触发；候选的完整 CI 测的就是合并后 main 的那棵树，合完核对树一致。
 
 <a id="options"></a>
@@ -95,10 +95,10 @@ date: "2026-11-14"
 
 ## 后果
 
-- PR 上的结果出得更快：改边缘文件时 integration 几乎不跑；改核心包时省得不多（前提 5）。tooling 在不改 `scripts/` 时通常只剩几个文件。
+- PR 上的结果出得更快：改边缘文件时 integration 几乎不跑；改核心包时省得不多（前提 5）。改了 `scripts/` 下的文件时，`test-scope.mjs` 的 `sourceFile` 只认 `apps`、`packages`、`test` 下的源码，这个 PR 会退回完整测试。
 - 单个 PR 从加标签到进 main 要再等一次完整 CI；线程加完标签就可以去做别的，不用守着合并。
 - 相关测试漏掉的问题（动态 import、子进程里用到的代码）会在候选的完整 CI 上被拦下，代价是整批要拆开重测。
-- 队列合入的提交不跑 `main.yml`，人手合并的仍然跑。
+- 队列合入的提交不跑 `main.yml`（前提 2），人手合并的仍然跑。
 - 队列合到一半停下时（合并后树不一致、main 被抢先改），main 上可能已经有批里前几个 PR，这几个是作为整批的一部分测过的，没有单独测过；下一个候选会在它上面完整测一次。
 - 队列停下后要人工看原因，确认没事后手动触发 “Merge queue” 工作流并把 `resume` 填成 true，队列才会继续。
 
