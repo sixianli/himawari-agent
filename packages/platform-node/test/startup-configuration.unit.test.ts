@@ -6,6 +6,9 @@ import {
   DEFAULT_HOME_FEED,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1462,6 +1465,31 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   }
   raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "web-push-vapid" } };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("[P3] parses every perception setting with its default and rejects unknown or out-of-range keys", () => {
+  const raw = config("/tmp/himawari-perception-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const parse = (perception: unknown) => {
+    raw["runPolicy"] = { ...policy, perception };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.perception;
+  };
+  expect(parse({})).toEqual(PERCEPTION_CONFIGURATION_DEFAULTS);
+  const keys = Object.keys(PERCEPTION_CONFIGURATION_DEFAULTS) as (keyof PerceptionConfiguration)[];
+  for (const key of keys) {
+    const [minimum, maximum] = PERCEPTION_CONFIGURATION_RANGES[key];
+    expect(() => parse({ [key]: minimum - 1 })).toThrow();
+    expect(() => parse({ [key]: maximum + 1 })).toThrow();
+    expect(() => parse({ [key]: "1" })).toThrow();
+  }
+  expect(parse({ previewCharacters: 40 })?.previewCharacters).toBe(40);
+  expect(() => parse({ unknownSetting: 5 })).toThrow();
+  expect(() => parse({ episodeSilenceSeconds: 600, episodeMaximumSeconds: 300 })).toThrow();
 });
 
 it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {

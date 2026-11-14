@@ -134,7 +134,7 @@ function seed(database: Database) {
     .run(OWNER, AGENT, T0, T0);
 }
 
-async function openMigrated() {
+async function openMigrated(options: { readonly allMigrations?: boolean } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "himawari-reference-tables-"));
   directories.push(directory);
   const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
@@ -148,7 +148,13 @@ async function openMigrated() {
     database,
     path.join(directory, "snapshot.sqlite"),
   );
-  applyMigrations(database, migrations.slice(0, sequence + 1), { snapshot });
+  applyMigrations(
+    database,
+    options.allMigrations ? migrations : migrations.slice(0, sequence + 1),
+    {
+      snapshot,
+    },
+  );
   return { database, before };
 }
 
@@ -183,7 +189,7 @@ describe("decision ledger reference tables migration", () => {
   });
 
   it("holds exactly the kinds and outcomes the code knows", async () => {
-    const { database } = await openMigrated();
+    const { database } = await openMigrated({ allMigrations: true });
     expect(
       database.prepare("SELECT kind FROM decision_ledger_kinds ORDER BY kind").pluck().all(),
     ).toEqual([...DECISION_KINDS].sort());
@@ -196,6 +202,37 @@ describe("decision ledger reference tables migration", () => {
         .pluck()
         .all(),
     ).toEqual(expected);
+    database.close();
+  });
+
+  it("keeps memory_review and rule_review rows when later migrations add kinds", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-reference-tables-"));
+    directories.push(directory);
+    const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+    const migrations = await loadBundledMigrations();
+    const sequence = migrations.findIndex(({ name }) => name === MIGRATION);
+    applyMigrations(database, migrations.slice(0, sequence + 1));
+    seed(database);
+    insertDecision(database, "d-memory-review", "memory_review", "flagged");
+    insertDecision(database, "d-rule-review", "rule_review", "cleared");
+    const snapshot = await createVerifiedMigrationSnapshot(
+      database,
+      path.join(directory, "snapshot.sqlite"),
+    );
+    applyMigrations(database, migrations, { snapshot });
+    expect(
+      database
+        .prepare(
+          "SELECT id, kind, outcome FROM decision_ledger WHERE id IN ('d-memory-review', 'd-rule-review') ORDER BY id",
+        )
+        .all(),
+    ).toEqual([
+      { id: "d-memory-review", kind: "memory_review", outcome: "flagged" },
+      { id: "d-rule-review", kind: "rule_review", outcome: "cleared" },
+    ]);
+    insertDecision(database, "d-limit", "limit_change", "changed");
+    insertDecision(database, "d-proposal", "proposal", "told");
+    expect(database.pragma("foreign_key_check")).toEqual([]);
     database.close();
   });
 
