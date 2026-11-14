@@ -677,6 +677,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   });
 
+  let unreadableOwnerProposalTexts = 0;
+  const ownerProposalText = (ref: string | null, key: string): Nullable<JsonValue> => {
+    if (ref === null) return null;
+    const value = exportedText(ref, key);
+    if (value === null) unreadableOwnerProposalTexts += 1;
+    return value;
+  };
   const ownerProposalLines: JsonValue[] = snapshot.ownerProposals.map((row) => {
     const id = str(row["id"]);
     const basisRef = optionalString(row["evidence_ref"]);
@@ -703,9 +710,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       executedAt: optionalString(row["executed_at"]),
       requiresFullRead: row["requires_full_read"] === 1,
       requiresPresence: row["requires_presence"] === 1,
-      basis: basisRef === null ? null : exportedText(basisRef, ownerProposalBasisKey(id)),
-      execution:
-        executionRef === null ? null : exportedText(executionRef, ownerProposalExecutionKey(id)),
+      basis: ownerProposalText(basisRef, ownerProposalBasisKey(id)),
+      execution: ownerProposalText(executionRef, ownerProposalExecutionKey(id)),
     };
   });
 
@@ -845,6 +851,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "评测用的派生数据：题目由模型从记忆和原话生成，导入后下一次评测会从导入的记忆重新出题；分数只是统计数字",
     },
   ];
+  if (unreadableOwnerProposalTexts > 0)
+    omitted.push({
+      what: "提给主人的提议里读不出来的依据或执行原样",
+      count: unreadableOwnerProposalTexts,
+      reason:
+        "库里的加密载荷已不可读（正在删除、已删除或损坏），导出里写成空；撤销用的原样丢了的提议导入后不能撤销",
+    });
   if (options.withEvidence !== true)
     omitted.push({
       what: "决策的模型输入输出原文、邮件检查结果、Muse 校准记录",
