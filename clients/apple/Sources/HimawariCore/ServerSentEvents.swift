@@ -24,12 +24,18 @@ public struct ServerSentEventParser: Sendable {
     public mutating func feed(_ chunk: String) -> [ServerSentEvent] {
         buffer += chunk
         var events: [ServerSentEvent] = []
-        while let range = buffer.range(of: "\n") {
-            var line = String(buffer[buffer.startIndex..<range.lowerBound])
-            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
-            if line.hasSuffix("\r") { line.removeLast() }
+        var scalars = buffer.unicodeScalars[...]
+        while let end = scalars.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
+            var rest = scalars.index(after: end)
+            if scalars[end] == "\r" {
+                if rest == scalars.endIndex { break }
+                if scalars[rest] == "\n" { rest = scalars.index(after: rest) }
+            }
+            let line = String(scalars[..<end])
+            scalars = scalars[rest...]
             if let event = consume(line: line) { events.append(event) }
         }
+        buffer = String(scalars)
         return events
     }
 
