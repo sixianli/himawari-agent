@@ -1,22 +1,30 @@
 import { createHash } from "node:crypto";
-import type {
-  ApprovalRequest,
-  MemoryReminder,
-  MemoryReminderStorePort,
-  ProductMemoryRecord,
-  ProductMemoryStatePort,
-  RuntimeRequest,
-  WebPushDue,
-  WebPushLocale,
-  WebPushOutboxItem,
-  WebPushSenderPort,
-  WebPushSendResult,
-  WebPushStorePort,
+import {
+  type ApprovalRequest,
+  type MemoryReminder,
+  type MemoryReminderStorePort,
+  type ProductMemoryRecord,
+  type ProductMemoryStatePort,
+  PUSH_RULE_PROTECTED_CLASSES,
+  PushGate,
+  type PushGateDecision,
+  pushClassOf,
+  type RuleRecord,
+  type RuntimeRequest,
+  type WebPushDue,
+  type WebPushLocale,
+  type WebPushOutboxItem,
+  type WebPushSenderPort,
+  type WebPushSendResult,
+  type WebPushStorePort,
 } from "@himawari-agent/application";
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
 const REMINDER_WINDOW_MS = 6 * 3_600_000;
+const PUSH_DEFER_EXTENSION_MS = 3_600_000;
+const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
+const DEFAULT_GATE = new PushGate();
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
@@ -166,6 +174,7 @@ export interface PushCompanionChannel {
     readonly accountLocale: WebPushLocale | null;
     readonly visible: boolean;
     readonly content: (item: WebPushOutboxItem) => Promise<PushContent>;
+    readonly deferred: (item: WebPushOutboxItem) => Promise<boolean>;
   }): Promise<void>;
   maintain(input: {
     readonly now: string;
@@ -195,6 +204,9 @@ export interface ProductionWebPushOptions {
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
   readonly publicOrigin: string;
   readonly timeZone?: string;
+  readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
+  readonly gate?: PushGate;
+  readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
@@ -439,6 +451,8 @@ export class ProductionWebPush {
     const accountLocale = (await this.#options.readLocale?.()) ?? null;
     const visible = this.#options.presence.anyVisible(now);
     const contents = new Map<string, Content>();
+    const gated = new Map<string, boolean>();
+    const decisions = new Map<string, PushGateDecision>();
     const contentOf = async (item: WebPushOutboxItem): Promise<Content> => {
       const cached = contents.get(item.sourceKey);
       if (cached) return cached;
@@ -460,6 +474,7 @@ export class ProductionWebPush {
         accountLocale,
         visible,
         content: contentOf,
+        deferred: (item) => this.#deferred(item, now, gated, decisions),
       })
       .catch(this.#options.onFailure);
     const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
@@ -478,6 +493,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
+      if (await this.#deferred(entry.item, now, gated, decisions)) continue;
       if (visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;
@@ -490,6 +506,65 @@ export class ProductionWebPush {
         accountLocale ?? entry.subscription.locale,
       );
     }
+  }
+
+  async #deferred(
+    item: WebPushOutboxItem,
+    now: string,
+    gated: Map<string, boolean>,
+    decisions: Map<string, PushGateDecision>,
+  ): Promise<boolean> {
+    const known = gated.get(item.sourceKey);
+    if (known !== undefined) return known;
+    const { ownerId, agentId, store } = this.#options;
+    const pushClass = pushClassOf(item);
+    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass) || !this.#options.readPushRules) {
+      gated.set(item.sourceKey, false);
+      return false;
+    }
+    let decision = decisions.get(pushClass);
+    if (decision === undefined) {
+      try {
+        const rules = await this.#options.readPushRules();
+        decision = (this.#options.gate ?? DEFAULT_GATE).decide({
+          pushClass,
+          now,
+          timeZone: this.#options.timeZone ?? "UTC",
+          rules,
+        });
+      } catch {
+        decision = { action: "deliver", failed: true };
+      }
+      decisions.set(pushClass, decision);
+    }
+    if (decision.action === "deliver") {
+      if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+      gated.set(item.sourceKey, false);
+      return false;
+    }
+    const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
+    const expiresAt = new Date(
+      Math.min(
+        Math.max(Date.parse(item.expiresAt), Date.parse(decision.until) + PUSH_DEFER_EXTENSION_MS),
+        lifeEnd,
+      ),
+    ).toISOString();
+    let stored = false;
+    try {
+      stored = await store.deferItem({
+        ownerId,
+        agentId,
+        sourceKey: item.sourceKey,
+        deferUntil: decision.until,
+        expiresAt,
+        ruleRefs: decision.ruleRefs,
+        now,
+      });
+    } catch {
+      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+    }
+    gated.set(item.sourceKey, stored);
+    return stored;
   }
 
   async #content(

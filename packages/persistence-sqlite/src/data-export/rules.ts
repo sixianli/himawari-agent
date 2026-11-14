@@ -57,6 +57,7 @@ const STORED_KINDS: readonly RuleKind[] = [
   "amount_threshold",
   "mail_must_notify",
   "mail_read_whole_thread",
+  "push_quiet_hours",
 ];
 
 const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
@@ -67,6 +68,7 @@ const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
   amount_threshold: "小额不推送：金额低于门槛的邮件不推送",
   mail_must_notify: "一定提醒：命中的邮件一定交给你看并推送",
   mail_read_whole_thread: "先读完整个邮件串：命中的邮件先读同一串的全部往来再判断",
+  push_quiet_hours: "静默延后：这段时间里指定类别的推送不发，等时段结束再发",
   unknown: "未识别的规则",
 });
 
@@ -157,6 +159,25 @@ function amountWording(parameters: Parameters): string {
   return `低于 ${(minor / 10 ** exponent).toFixed(exponent)} ${currency}`;
 }
 
+const PUSH_CLASS_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  scheduled_reminder: "你定的到点提醒",
+  run_result: "任务完成",
+  mail_reminder: "邮件提醒",
+});
+
+function pushQuietWording(parameters: Parameters): string {
+  const params =
+    parameters["params"] !== null &&
+    typeof parameters["params"] === "object" &&
+    !Array.isArray(parameters["params"])
+      ? (parameters["params"] as { readonly [key: string]: JsonValue })
+      : {};
+  const classes = strings(params["classes"])
+    .map((name) => PUSH_CLASS_LABELS[name] ?? name)
+    .join("、");
+  return `${String(parameters["summary"] ?? "")}（时段 ${quietWording(params["periods"])}；推送类别 ${classes}）`;
+}
+
 function ownerWording(parameters: Parameters): string {
   const params =
     parameters["params"] !== null &&
@@ -190,6 +211,8 @@ function wording(kind: RuleKind, parameters: Parameters): string {
     case "mail_must_notify":
     case "mail_read_whole_thread":
       return ownerWording(parameters);
+    case "push_quiet_hours":
+      return pushQuietWording(parameters);
     default:
       return canonicalJson(parameters);
   }

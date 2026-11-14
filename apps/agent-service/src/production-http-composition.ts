@@ -91,6 +91,7 @@ import {
   type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
 import {
@@ -239,7 +240,11 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
+    readonly importDuplicates?: NonNullable<
+      ConstructorParameters<typeof ProductionMemoryControl>[0]["importDuplicates"]
+    >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -1195,6 +1200,7 @@ export async function createProductionHttpComposition(
         reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
+        ...(options.memory.actionRules ? { actionRules: options.memory.actionRules } : {}),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
@@ -1205,6 +1211,9 @@ export async function createProductionHttpComposition(
           ? { externalProposals: options.memory.externalProposals }
           : {}),
         ...(options.memory.classifier ? { classifier: options.memory.classifier } : {}),
+        ...(options.memory.importDuplicates
+          ? { importDuplicates: options.memory.importDuplicates }
+          : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;

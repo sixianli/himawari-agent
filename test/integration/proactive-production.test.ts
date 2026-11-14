@@ -314,6 +314,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
           return scripted;
         },
         modelRef: MODEL_REF,
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt }) {
           (prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text) ? referencePrompts : prompts).push(
             prompt,

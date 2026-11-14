@@ -274,6 +274,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         await this.#record(entry, now, "expired", null);
         continue;
       }
+      if (await input.deferred(item)) continue;
       if (input.visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;

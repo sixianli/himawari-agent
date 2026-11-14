@@ -1242,6 +1242,7 @@ export class SqliteDurableAdapters {
       readCursor: (input) => this.context.read("webPush.readCursor", input),
       enqueue: (input) => this.context.write("webPush.enqueue", input),
       listDue: (input) => this.context.read("webPush.listDue", input),
+      deferItem: (input) => this.context.write("webPush.deferItem", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),

@@ -369,6 +369,7 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
           referenceCall = prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text);
           (referenceCall ? referencePrompts : prompts).push(prompt);

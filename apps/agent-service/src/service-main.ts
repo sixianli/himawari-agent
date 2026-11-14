@@ -16,6 +16,7 @@ import {
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
+  enforceableOwnerRule,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
@@ -30,6 +31,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  unreadablePushRule,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -94,9 +96,11 @@ import {
   createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
+import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
+import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
@@ -1557,8 +1561,16 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
+      const externalContent = new ContextExternalContent({
+        configuration,
+        state: repository,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        authority: () => invocationAuthority().lease,
+        clock,
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
+        externalContent,
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
         state: repository,
@@ -1584,6 +1596,7 @@ export async function startTenantRuntime(
         ownerRules: ownerRuleTools,
         toolActions,
         ownerScope,
+        externalContent,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2146,10 +2159,15 @@ export async function startTenantRuntime(
               cleared: reports.filter(({ outcome }) => outcome === "cleared").length,
             }),
           onPrereview: (result) => {
-            if (result.attempted > 0 || result.failures.length > 0)
+            if (
+              result.attempted > 0 ||
+              result.failures.length > 0 ||
+              result.skippedClassification > 0
+            )
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
                 event: "proactive.prereviewed",
+                skippedClassification: result.skippedClassification,
                 attempted: result.attempted,
                 recorded: result.recorded,
                 failed: result.failures.length,
@@ -2649,6 +2667,25 @@ export async function startTenantRuntime(
           ...(configuration.runPolicy?.timeZone
             ? { timeZone: configuration.runPolicy.timeZone }
             : {}),
+          readPushRules: async () =>
+            (
+              await pushRepository.ownerRules().list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
+              })
+            ).flatMap((row) => {
+              if (unreadablePushRule(row)) throw new Error("PUSH_RULE_UNREADABLE");
+              const rule = enforceableOwnerRule(row);
+              return rule?.gate === "push_delivery" ? [rule] : [];
+            }),
+          onGateFailure: ({ sourceKey }) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "web-push.gate-failed",
+              code: "WEB_PUSH_RULE_GATE_FAILED",
+              sourceKey,
+            }),
           now: () => clock.now(),
           onDelivery: (outcome) =>
             writeServiceDiagnostic(errorOutput, {
@@ -2725,6 +2762,10 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        externalContent,
+        ...(configuration.runPolicy?.toolRefusals
+          ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
+          : {}),
         egress: createProductionModelEgress(
           configuration,
           sources,
@@ -3021,6 +3062,12 @@ export async function startTenantRuntime(
         memory: {
           service: activeDurableMemory,
           externalProposals,
+          actionRules: new BuiltInActionRuleSwitches({
+            configuration,
+            state: repository,
+            authority: () => invocationAuthority().lease,
+            clock,
+          }),
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),
           onAudit: (record) => {

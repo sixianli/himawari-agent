@@ -348,6 +348,7 @@ export class SqliteApplePushOperations {
       .prepare(
         `SELECT o.source_key AS sourceKey, o.kind, o.source_ref AS sourceRef,
            o.thread_id AS threadId, o.created_at AS itemCreatedAt, o.expires_at AS expiresAt,
+           o.defer_until AS deferUntil,
            ${registrationColumns},
            a.status AS attemptStatus, a.attempts AS attemptCount,
            a.next_attempt_at AS nextAttemptAt, a.last_code AS lastCode,
@@ -358,12 +359,13 @@ export class SqliteApplePushOperations {
          LEFT JOIN web_push_attempts a ON a.owner_id = o.owner_id AND a.agent_id = o.agent_id
            AND a.source_key = o.source_key AND a.channel = 'apns' AND a.subscription_id = r.id
          WHERE o.owner_id = ? AND o.agent_id = ? AND o.channel = 'apns'
+           AND (o.defer_until IS NULL OR o.defer_until <= ?)
            AND (a.status IS NULL OR (a.status = 'pending'
              AND (a.next_attempt_at IS NULL OR a.next_attempt_at <= ?)))
          ORDER BY o.created_at, o.source_key, r.created_at, r.id
          LIMIT ?`,
       )
-      .all(input.ownerId, input.agentId, input.now, input.limit) as Array<
+      .all(input.ownerId, input.agentId, input.now, input.now, input.limit) as Array<
       ApplePushRegistration & {
         sourceKey: string;
         kind: WebPushOutboxItem["kind"];
@@ -371,6 +373,7 @@ export class SqliteApplePushOperations {
         threadId: string | null;
         itemCreatedAt: string;
         expiresAt: string;
+        deferUntil: string | null;
         attemptStatus: WebPushAttemptStatus | null;
         attemptCount: number | null;
         nextAttemptAt: string | null;
@@ -388,6 +391,7 @@ export class SqliteApplePushOperations {
         threadId: row.threadId,
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
+        deferUntil: row.deferUntil,
       },
       registration: {
         id: row.id,

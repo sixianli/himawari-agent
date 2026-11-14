@@ -23,10 +23,15 @@ export const RULE_KINDS = [
   "amount_threshold",
   "mail_must_notify",
   "mail_read_whole_thread",
+  "push_quiet_hours",
   "unknown",
 ] as const;
 
-const OWNER_RULE_KINDS: readonly RuleKind[] = ["mail_must_notify", "mail_read_whole_thread"];
+const OWNER_RULE_KINDS: readonly RuleKind[] = [
+  "mail_must_notify",
+  "mail_read_whole_thread",
+  "push_quiet_hours",
+];
 
 export type RuleKind = (typeof RULE_KINDS)[number];
 
@@ -132,9 +137,18 @@ function rebuild(
         parameters: stored.parameters,
       });
       const summary = stored.parameters["summary"];
+      const params = stored.parameters["params"];
+      const periods =
+        kind === "push_quiet_hours" && typeof params === "object" && params !== null
+          ? quietPeriods((params as Record<string, unknown>)["periods"])
+          : undefined;
       return {
         rule,
-        wording: { ...empty, values: typeof summary === "string" ? [summary] : [] },
+        wording: {
+          ...empty,
+          values: typeof summary === "string" ? [summary] : [],
+          quietHours: periods ?? [],
+        },
       };
     } catch {
       return undefined;

@@ -10,6 +10,7 @@ import {
   type ApprovalRequest,
   type MemoryReminder,
   type ProductMemoryRecord,
+  type PushGate,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -66,7 +67,10 @@ describe("[IOS-4] push channels", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup(overrides: Partial<ApplePushConfiguration> = {}) {
+  async function setup(
+    overrides: Partial<ApplePushConfiguration> = {},
+    pushOptions: Partial<ConstructorParameters<typeof ProductionWebPush>[0]> = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-push-channels-"));
     directories.push(stateRoot);
     const file = path.join(stateRoot, "product.sqlite");
@@ -251,6 +255,7 @@ describe("[IOS-4] push channels", () => {
       store,
       sender: webSender,
       presence,
+      ...pushOptions,
       awaitingCount: async () => {
         awaiting.calls += 1;
         return awaiting.value;
@@ -923,5 +928,47 @@ describe("[IOS-4] push channels", () => {
     context.setClock(T0);
     await context.push.tick();
     expect(context.awaiting.calls).toBe(0);
+  });
+  it("[IOS-4] holds a task result for the iPhone while the push gate defers it, and sends it once the hold ends", async () => {
+    let action: "defer" | "deliver" = "defer";
+    const gate = {
+      decide: () =>
+        action === "defer"
+          ? { action: "defer" as const, until: at(T0, 600), ruleRefs: ["owner:night"] }
+          : { action: "deliver" as const },
+    } as unknown as PushGate;
+    const context = await setup(
+      {},
+      { gate, readPushRules: async () => [], timeZone: "Asia/Tokyo" },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(at(T0, -100));
+    context.run("run-gated", "running", at(T0, -100));
+    context.setClock(T0);
+    context.setRunStatus("run-gated", "completed", T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toEqual([]);
+
+    action = "deliver";
+    context.setClock(at(T0, 601));
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+
+  it("[IOS-4] REVERSE: sends a task result to the iPhone at once when the push gate lets it through", async () => {
+    const gate = { decide: () => ({ action: "deliver" as const }) } as unknown as PushGate;
+    const context = await setup({}, { gate, readPushRules: async () => [] });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(at(T0, -100));
+    context.run("run-open", "running", at(T0, -100));
+    context.setClock(T0);
+    context.setRunStatus("run-open", "completed", T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
   });
 });
