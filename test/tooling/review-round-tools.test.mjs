@@ -263,4 +263,53 @@ describe("review card", () => {
     for (const [, path] of card.matchAll(/\]\((\.\.\/\.\.\/docs\/adr\/[^)#]+)\)/g))
       expect(readFileSync(join(".agents/instructions", path), "utf8").length).toBeGreaterThan(0);
   });
+
+  it("[review-cost] [negative] the card says how to fill every placeholder the next-round command prints", () => {
+    const card = readFileSync(".agents/instructions/model-review-card.md", "utf8");
+    const script = readFileSync("scripts/model-review/opencode-review.mjs", "utf8");
+    const nextLine = script.split("\n").find((line) => line.includes("NEXT fix-and-rereview"));
+    const placeholders = [...nextLine.matchAll(/<[^<>$]+>/g)].map((match) => match[0]);
+    expect(placeholders).toEqual(["<修改后的提交>", "<材料文件>"]);
+    const mainThread = card.slice(
+      card.indexOf('<a id="main-thread">'),
+      card.indexOf('<a id="each-round">'),
+    );
+    for (const placeholder of placeholders) expect(mainThread).toContain(`\`${placeholder}\` 换成`);
+  });
+
+  it("[review-cost] [negative] the main thread starts a subagent only after an ok review that exited 0", () => {
+    const card = readFileSync(".agents/instructions/model-review-card.md", "utf8");
+    const mainThread = card.slice(
+      card.indexOf('<a id="main-thread">'),
+      card.indexOf('<a id="each-round">'),
+    );
+    expect(mainThread).toContain("退出码是 0、输出里有 `outcome=ok` 的 `REVIEW_RESULT`");
+    expect(card).toContain("`ROUND_NOT_OK`");
+    for (const next of ["fix-and-rereview", "fix-low-then", "low-deferred", "done"])
+      expect(mainThread).toMatch(new RegExp(`[\`\\s]${next}\``));
+    expect(mainThread).toContain("`--approved-usd <他同意的总额>`");
+    expect(mainThread).toContain("这一轮该跑的每个模型都有 `outcome=ok`");
+    expect(card).not.toContain("每一轮复核交给");
+  });
+
+  it("[review-cost] [negative] every subcommand the subagent may run parses as written", () => {
+    const agent = readFileSync(".claude/agents/code-review-round.md", "utf8");
+    const allowed = agent.slice(agent.indexOf("不花钱的子命令"), agent.indexOf("不做的"));
+    const commands = [...allowed.matchAll(/`(--[^`]+)`/g)].map((match) => match[1]);
+    expect(commands.length).toBe(5);
+    const fill = { "<编号>": "7", "<轮次>": "2", "<原因>": "no-error" };
+    for (const command of commands)
+      expect(() => parseArgs(command.split(" ").map((part) => fill[part] ?? part))).not.toThrow();
+    expect(() => parseArgs(["--accept-low", "2", "--pr", "7"])).toThrow();
+  });
+
+  it("[review-cost] [negative] the card names every --stop reason the report accepts", () => {
+    const card = readFileSync(".agents/instructions/model-review-card.md", "utf8");
+    const script = readFileSync("scripts/model-review/opencode-review.mjs", "utf8");
+    expect(card).not.toContain("--stop no-error`");
+    for (const stop of ["no-error", "three-rounds", "andy-decision", "run-failed"]) {
+      expect(script).toContain(`"${stop}"`);
+      expect(card).toContain(`\`${stop}\``);
+    }
+  });
 });

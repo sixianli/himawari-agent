@@ -58,7 +58,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 - 写代码之前要出方案时（大改动一定要）：先 `--mode plan` 让模型独立出方案，再 `--mode plan-review` 审核线程自己的方案；线程逐条比较后，只把整合后的方案和真正要 Andy 拍板的几项交给他（[方案讨论](.agents/instructions/model-review.md#plan-discussion)）。
 - 方案交给 Andy 之前（凡是会写进新 ADR 的整合方案）：`--mode plan-claims` 把方案里关于代码和文档现状的每句话对着代码核一遍；PR 新增了 ADR 而没有这一步的记录，`--assert-reviewed` 不通过（[核对代码说法](.agents/instructions/model-review.md#plan-claims)）。
-- 合并 PR 之前：`--mode code-review`，每一轮交给子代理 `code-review-round`，复核到没有中、高的“会出错”意见为止。开始前先读一页的[代码复核流程卡](.agents/instructions/model-review-card.md)；意见怎么分级、几轮停下、低严重度怎么处理，见[代码复核](.agents/instructions/model-review.md#code-review)；Andy 说跳过、叫停或指定服务方时怎么做，见[Andy 怎样控制复核](.agents/instructions/model-review.md#owner-control)；Mac 本地线程不在本机跑复核，见[Mac 线程把复核交给云端线程](.agents/instructions/model-review.md#delegate)（[ADR 0263](docs/adr/0263-cheaper-claude-side-of-code-review.md)）。
+- 合并 PR 之前：`--mode code-review`，每一轮由主线程在后台跑 DeepSeek 复核，答案出来后交给子代理 `code-review-round` 在新的小上下文里判断和修改，复核到没有中、高的“会出错”意见为止。开始前先读一页的[代码复核流程卡](.agents/instructions/model-review-card.md)；意见怎么分级、几轮停下、低严重度怎么处理，见[代码复核](.agents/instructions/model-review.md#code-review)；Andy 说跳过、叫停或指定服务方时怎么做，见[Andy 怎样控制复核](.agents/instructions/model-review.md#owner-control)；Mac 本地线程不在本机跑复核，见[Mac 线程把复核交给云端线程](.agents/instructions/model-review.md#delegate)（[ADR 0263](docs/adr/0263-cheaper-claude-side-of-code-review.md)）。
 
 除 `plan-claims` 外，每次的提示里必须有[每次都要问的问题](.agents/instructions/model-review.md#checklist)，包括「这个改动会不会改变模型已经见过的请求开头」。
 
