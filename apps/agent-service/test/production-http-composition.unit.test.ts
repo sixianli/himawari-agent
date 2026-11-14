@@ -2233,3 +2233,22 @@ describe("[P1-1] device limit keys", () => {
     expect([...DEVICE_LIMIT_KEYS]).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
   });
 });
+
+describe("[I-73] memory import duplicates wiring", () => {
+  it("forwards the import duplicate checker from the composition options to the memory control", async () => {
+    const source = await readFile(
+      new URL("../src/production-http-composition.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toMatch(/readonly importDuplicates\?:/u);
+    expect(source).toMatch(
+      /options\.memory\.importDuplicates\s*\?\s*\{\s*importDuplicates:\s*options\.memory\.importDuplicates\s*\}/u,
+    );
+  });
+
+  it("is not satisfied by a composition that never forwards it", () => {
+    const withoutForwarding =
+      "new ProductionMemoryControl({ classifier: options.memory.classifier })";
+    expect(withoutForwarding).not.toMatch(/importDuplicates:\s*options\.memory\.importDuplicates/u);
+  });
+});
