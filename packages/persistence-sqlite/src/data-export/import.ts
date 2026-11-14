@@ -29,6 +29,7 @@ import {
   type PortableFiles,
   type PortableTextDependencies,
 } from "./types.js";
+import { isKnownMemorySourceType, PERCEPTION_MEMORY_SOURCE_ID } from "../memory-source-types.ts";
 import {
   type ParsedExternalProposal,
   type ParsedMemory,
@@ -384,6 +385,16 @@ export async function importPortableExport(
       evidenceNotImported: evidence === null && parsed.manifest.counts.sealedEvidenceRows > 0,
     },
   });
+  for (const { memory } of plans)
+    for (const source of memory.provenance)
+      if (
+        !isKnownMemorySourceType(source.sourceType) ||
+        (source.sourceType === "perception" && !PERCEPTION_MEMORY_SOURCE_ID.test(source.sourceId))
+      )
+        throw new DataExportError(
+          DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+          "记忆出处的类型或编号不合规",
+        );
   if (options.dryRun === true) return report(true);
 
   const { ownerId, agentId } = options.scope;
@@ -513,8 +524,14 @@ export async function importPortableExport(
             event.event.sourceDeleted ? 1 : 0,
             event.event.occurredAt,
           );
-        for (const source of item.provenance)
-          provenance.run(item.id, source.sourceType, source.sourceId, source.sourceDeleted ? 1 : 0);
+        for (const source of item.provenance) {
+          provenance.run(
+            item.id,
+            source.sourceType,
+            source.sourceId,
+            source.sourceDeleted || source.sourceType === "perception" ? 1 : 0,
+          );
+        }
         for (const name of item.entities) entity.run(item.id, name);
         for (const personId of item.personIds) mention.run(item.id, personId);
         if (item.pin)

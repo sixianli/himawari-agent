@@ -36,6 +36,7 @@ export type PerceptionRecordStatus = (typeof PERCEPTION_RECORD_STATUSES)[number]
 
 export const PERCEPTION_RECORD_ID_PATTERN = /^perception:[A-Za-z0-9_-]{16,64}$/u;
 export const PERCEPTION_EPISODE_ID_PATTERN = /^episode:[0-9a-f]{32}$/u;
+export const PERCEPTION_UTTERANCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
 export const PERCEPTION_TEXT_MAXIMUM = 32 * 1024;
 export const PERCEPTION_DEVICE_TIME_MAXIMUM = 64;
 export const PERCEPTION_CONFIDENCE_MAXIMUM = 1000;
@@ -337,6 +338,18 @@ export interface PerceptionConfiguration {
   readonly listPageRows: number;
   readonly previewCharacters: number;
   readonly mediaRetentionDays: number;
+  readonly readMaximumRecords: number;
+  readonly readMaximumCharacters: number;
+  readonly readMaximumDays: number;
+  readonly readMaximumScanned: number;
+  readonly extractIntervalSeconds: number;
+  readonly extractMaximumAttempts: number;
+  readonly extractRetrySeconds: number;
+  readonly extractRequestTimeoutSeconds: number;
+  readonly extractMaximumOutputTokens: number;
+  readonly extractCalendarDays: number;
+  readonly extractMaximumCandidates: number;
+  readonly extractBatchEpisodes: number;
 }
 
 export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object.freeze({
@@ -351,6 +364,18 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   listPageRows: 100,
   previewCharacters: 200,
   mediaRetentionDays: 7,
+  readMaximumRecords: 50,
+  readMaximumCharacters: 8000,
+  readMaximumDays: 31,
+  readMaximumScanned: 5000,
+  extractIntervalSeconds: 60,
+  extractMaximumAttempts: 5,
+  extractRetrySeconds: 300,
+  extractRequestTimeoutSeconds: 120,
+  extractMaximumOutputTokens: 2000,
+  extractCalendarDays: 21,
+  extractMaximumCandidates: 12,
+  extractBatchEpisodes: 4,
 });
 
 export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
@@ -367,6 +392,18 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   listPageRows: [1, 500],
   previewCharacters: [20, 2000],
   mediaRetentionDays: [1, 90],
+  readMaximumRecords: [1, 500],
+  readMaximumCharacters: [200, 200_000],
+  readMaximumDays: [1, 366],
+  readMaximumScanned: [500, 200_000],
+  extractIntervalSeconds: [5, 24 * 3600],
+  extractMaximumAttempts: [1, 20],
+  extractRetrySeconds: [10, 24 * 3600],
+  extractRequestTimeoutSeconds: [5, 600],
+  extractMaximumOutputTokens: [200, 16_000],
+  extractCalendarDays: [7, 62],
+  extractMaximumCandidates: [1, 50],
+  extractBatchEpisodes: [1, 50],
 });
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
@@ -530,7 +567,75 @@ export interface PerceptionMediaItem {
   readonly status: "pending" | "processed" | "deleted";
 }
 
+export const PERCEPTION_EXTRACTION_STATUSES = [
+  "running",
+  "done",
+  "retry",
+  "waiting_budget",
+  "failed",
+] as const;
+export type PerceptionExtractionStatus = (typeof PERCEPTION_EXTRACTION_STATUSES)[number];
+
+export interface PerceptionExtractionState {
+  readonly episodeId: string;
+  readonly status: PerceptionExtractionStatus;
+  readonly attempts: number;
+  readonly recordCount: number;
+  readonly nextAttemptAt: string | null;
+  readonly errorCode: string | null;
+  readonly costMicros: number;
+  readonly updatedAt: string;
+}
+
 export interface PerceptionStorePort {
+  listRecordsBetween(
+    input: PerceptionScope & {
+      readonly fromMs: number;
+      readonly toMs: number;
+      readonly types: readonly PerceptionRecordType[] | null;
+      readonly after: { readonly atMs: number; readonly id: string } | null;
+      readonly limit: number;
+    },
+  ): Promise<{ readonly records: readonly PerceptionRecord[]; readonly total: number }>;
+  readRecords(
+    input: PerceptionScope & { readonly ids: readonly string[] },
+  ): Promise<readonly PerceptionRecord[]>;
+  listEpisodesToExtract(
+    input: PerceptionScope & {
+      readonly endedBeforeMs: number;
+      readonly now: string;
+      readonly maximumAttempts: number;
+      readonly limit: number;
+    },
+  ): Promise<readonly PerceptionEpisode[]>;
+  readExtraction(
+    input: PerceptionScope & { readonly episodeId: string },
+  ): Promise<PerceptionExtractionState | undefined>;
+  beginExtraction(
+    input: PerceptionScope & {
+      readonly episodeId: string;
+      readonly recordCount: number;
+      readonly leaseUntil: string;
+      readonly now: string;
+    },
+  ): Promise<PerceptionExtractionState | undefined>;
+  settleExtraction(
+    input: PerceptionScope & {
+      readonly episodeId: string;
+      readonly status: Exclude<PerceptionExtractionStatus, "running">;
+      readonly nextAttemptAt: string | null;
+      readonly errorCode: string | null;
+      readonly costMicros: number;
+      readonly now: string;
+      readonly decisions: readonly DecisionLedgerWrite[];
+    },
+  ): Promise<PerceptionExtractionState>;
+  recordCommandUtterance(
+    input: PerceptionScope & { readonly utteranceId: string; readonly now: string },
+  ): Promise<void>;
+  commandUtterances(
+    input: PerceptionScope & { readonly utteranceIds: readonly string[] },
+  ): Promise<readonly string[]>;
   readSettings(input: PerceptionScope): Promise<PerceptionSettings>;
   writeSettings(
     input: PerceptionScope & {
