@@ -49,10 +49,11 @@ describe("[第11批] 客户端能力表", () => {
     for (const entry of CLIENT_CAPABILITY_TABLE) {
       if (entry.tier === "not_on_phone") expect(entry.reason?.length ?? 0).toBeGreaterThan(0);
       else expect(entry.reason).toBeUndefined();
-      if (entry.tightenPayload) {
+      if (entry.tightenPayload || entry.tightenEveryItem) {
         expect(entry.kind).toBe("command");
         expect(entry.tier).toBe("change");
       }
+      if (entry.tightenPayload && entry.tightenEveryItem) expect.fail(entry.type);
     }
   });
 
