@@ -14,15 +14,15 @@ struct ProposalsPage: View {
         SettingsPage(gap: SL.pageGap) {
             SheetHeader(title: M.proposalsTitle, leading: .back, action: back)
             if let list = store.proposals {
+                if let notice {
+                    Text(notice).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                        .padding(.horizontal, SL.groupLabelPadding)
+                }
                 if list.proposals.isEmpty {
                     EmptyStateView(Text(M.noProposals)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
                 } else {
                     Text(M.proposalsSubtitle).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
                         .padding(.horizontal, SL.groupLabelPadding)
-                    if let notice {
-                        Text(notice).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                            .padding(.horizontal, SL.groupLabelPadding)
-                    }
                     SettingsGroup(label: nil) {
                         ForEach(Array(list.proposals.enumerated()), id: \.element.id) { index, proposal in
                             ProposalRow(
@@ -118,7 +118,7 @@ struct ProposalRow: View {
                 if let text = item.text, !text.isEmpty {
                     Text(text).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmText)
                 }
-                ForEach(item.figures, id: \.name) { figure in
+                ForEach(Array(item.figures.enumerated()), id: \.offset) { _, figure in
                     VStack(alignment: .leading, spacing: 0) {
                         Text(M.proposalFigure(figure)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmText)
                         Text(figure.definition).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)

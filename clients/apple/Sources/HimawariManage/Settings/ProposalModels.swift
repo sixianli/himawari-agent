@@ -27,6 +27,8 @@ public struct Proposal: Decodable, Sendable, Identifiable, Hashable {
     public let effect: String
     public let origin: String
     public let adoptable: Bool
+    public let requiresFullRead: Bool
+    public let requiresPresence: Bool
     public let evidence: [ProposalEvidence]
     public let proposedAt: String
     public let expiresAt: String
@@ -39,11 +41,18 @@ public struct Proposal: Decodable, Sendable, Identifiable, Hashable {
     }
 }
 
+public struct ProposalOpened: Decodable, Sendable, Hashable {
+    public let proposalId: String
+    public let fullReadToken: String
+    public let expiresAt: String
+}
+
 public struct ProposalList: Decodable, Sendable, Equatable {
     public let proposals: [Proposal]
     public let pendingCount: Int
     public let limit: Int
     public let expiresAfterDays: Int
+    public let opened: ProposalOpened?
 }
 
 public enum ProposalAction: String, Sendable {

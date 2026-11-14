@@ -118,6 +118,10 @@ public final class SettingsStore {
 
     public func respond(_ proposal: Proposal, _ action: ProposalAction, reason: String) async throws -> ProposalOutcome {
         do {
+            var fullReadToken = JSONValue.null
+            if action == .adopt && proposal.requiresFullRead {
+                fullReadToken = .string(try await openFullText(proposal))
+            }
             _ = try await gateway.command(
                 .v2,
                 "proposal.respond",
@@ -126,6 +130,8 @@ public final class SettingsStore {
                     "expectedVersion": .number(Double(proposal.version)),
                     "fingerprint": .string(proposal.fingerprint),
                     "action": .string(action.rawValue),
+                    "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+                    "fullReadToken": fullReadToken,
                 ],
                 options: ManageCommandOptions(confirmReason: reason)
             )
@@ -133,15 +139,33 @@ public final class SettingsStore {
             return .done(action)
         } catch let error as ManageGatewayError {
             guard case .rejected(let status, _, _) = error, status != 401, status != 403 else { throw error }
-            await reloadProposals()
-            guard let latest = proposals?.proposals.first(where: { $0.proposalId == proposal.proposalId }) else { return .gone }
+            guard let listed = try? await loadProposals() else { throw error }
+            proposals = listed
+            guard let latest = listed.proposals.first(where: { $0.proposalId == proposal.proposalId }) else { return .gone }
             guard latest.version != proposal.version || latest.fingerprint != proposal.fingerprint else { throw error }
             return .changed(latest)
         }
     }
 
+    private func openFullText(_ proposal: Proposal) async throws -> String {
+        let data = try await gateway.read(
+            .v2,
+            "proposals.read",
+            payload: [
+                "open": .object([
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                ]),
+            ]
+        )
+        let list = try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+        guard let token = list.opened?.fullReadToken else { throw ManageGatewayError.malformedResponse }
+        return token
+    }
+
     private func loadProposals() async throws -> ProposalList {
-        let data = try await gateway.read(.v2, "proposals.read")
+        let data = try await gateway.read(.v2, "proposals.read", payload: ["open": .null])
         return try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
     }
 
