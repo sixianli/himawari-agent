@@ -167,18 +167,28 @@ interface ZonedParts {
 
 const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+const ZONED_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  const known = ZONED_FORMATTERS.get(timeZone);
+  if (known) return known;
+  const created = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+    hourCycle: "h23",
+  });
+  if (ZONED_FORMATTERS.size < 64) ZONED_FORMATTERS.set(timeZone, created);
+  return created;
+}
+
 export function zonedParts(at: string, timeZone: string): ZonedParts {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-      weekday: "short",
-      hourCycle: "h23",
-    })
+    zonedFormatter(timeZone)
       .formatToParts(new Date(at))
       .map(({ type, value }) => [type, value]),
   );
