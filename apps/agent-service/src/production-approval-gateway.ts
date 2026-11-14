@@ -343,6 +343,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.capabilityReactivation ? { reactivation: options.capabilityReactivation } : {}),
     }),
   });
+  const capabilityReactivationAvailable = options.capabilityReactivation !== undefined;
   return new AgentGatewayV2Service({
     installedOperations: [
       ...PRODUCTION_APPROVAL_OPERATIONS,
@@ -359,7 +360,7 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...PRODUCTION_CAPABILITY_OPERATIONS,
-      ...(options.capabilityReactivation ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
+      ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
       ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.searchControl ? PRODUCTION_SEARCH_OPERATIONS : []),
