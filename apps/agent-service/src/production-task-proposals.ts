@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import {
-  type ClockPort,
-  type PayloadProtectorPort,
-  type PayloadStorePort,
-  type ThreadCommandService,
-  type ThreadRepositoryPort,
+import type {
+  ClockPort,
+  PayloadProtectorPort,
+  PayloadStorePort,
+  ThreadCommandService,
+  ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import {
   type ProductionProposalBox,
