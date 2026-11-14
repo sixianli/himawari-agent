@@ -102,7 +102,7 @@ export function parseClaimVerdicts(text, path) {
 }
 
 function locationOf(location) {
-  const match = /^`?([^\s:`@]+):(\d+)(?:@([0-9a-f]+))?/.exec(location.trim());
+  const match = /^`?([^\s:`]+):(\d+)(?:@([0-9a-f]+))?/.exec(location.trim());
   if (!match) return null;
   const path = match[1];
   if (!validEvidencePath(path)) return null;
@@ -165,23 +165,34 @@ function isAncestor(repo, ancestor, descendant) {
   return git(repo, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
 }
 
-export function commitInPullRequest(repo, commit, head, mainRef) {
-  if (!COMMIT_PATTERN.test(commit)) return false;
-  const base = git(repo, ["merge-base", mainRef, head]);
-  if (base.status !== 0) return false;
-  const baseCommit = base.stdout.trim();
-  if (commit === baseCommit) return true;
-  return isAncestor(repo, commit, head) && !isAncestor(repo, commit, baseCommit);
+function mergeBase(repo, mainRef, tip) {
+  const base = git(repo, ["merge-base", mainRef, tip]);
+  return base.status === 0 ? base.stdout.trim() : null;
 }
 
-function claimEvidenceProblem(repo, head, claim, mainRef) {
+export function commitInPullRequest(repo, commit, head, mainRef, runHead = head) {
+  if (!COMMIT_PATTERN.test(commit)) return false;
+  const baseCommit = mergeBase(repo, mainRef, head);
+  if (baseCommit === null || !isAncestor(repo, commit, head)) return false;
+  if (commit === baseCommit) return true;
+  if (
+    runHead !== head &&
+    COMMIT_PATTERN.test(runHead ?? "") &&
+    isAncestor(repo, runHead, head) &&
+    commit === mergeBase(repo, mainRef, runHead)
+  )
+    return true;
+  return !isAncestor(repo, commit, baseCommit);
+}
+
+function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
   if (claim.verdict === "找不到" && !locationOf(claim.location)) return null;
   const place = locationOf(claim.location);
   if (!place) return "location-missing";
   const atHead = blobAt(repo, head, place.path);
   let blob = atHead;
   if (place.commit !== null) {
-    if (!commitInPullRequest(repo, place.commit, head, mainRef)) return "commit-not-in-pr";
+    if (!commitInPullRequest(repo, place.commit, head, mainRef, runHead)) return "commit-not-in-pr";
     blob = blobAt(repo, place.commit, place.path);
   }
   if (blob === null) return "location-file-missing";
@@ -347,7 +358,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
           continue;
         }
         for (const claim of claims) {
-          const why = claimEvidenceProblem(repo, head, claim, mainRef);
+          const why = claimEvidenceProblem(repo, head, claim, mainRef, record.head);
           if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
         }
         const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;

@@ -59,6 +59,7 @@ import {
   selfCheckCacheDir,
   selfCheckCacheHit,
   selfCheckCacheKey,
+  outsideImports,
   selfCheckCacheWrite,
   REVIEW_MODELS,
   REVIEW_PARENT_CANARY_ENV,
@@ -1384,6 +1385,18 @@ describe("opencode review installed guard", () => {
       expect(selfCheckCacheHit({ key, now: 1000 + SELF_CHECK_CACHE_MAX_AGE_MS, env })).toBe(false);
       expect(selfCheckCacheHit({ key, now: 500, env })).toBe(false);
       expect(selfCheckCacheKey({ binary, mode: "plan", gateway: null })).not.toBe(key);
+      const withEnv = (extra) =>
+        selfCheckCacheKey({
+          binary,
+          mode: "code-review",
+          gateway: null,
+          env: { ...process.env, ...extra },
+        });
+      expect(withEnv({})).toBe(key);
+      expect(withEnv({ HTTPS_PROXY: "http://127.0.0.1:9" })).not.toBe(withEnv({}));
+      expect(withEnv({ HOME: join(root, "elsewhere") })).not.toBe(withEnv({}));
+      expect(withEnv({ TZ: "Pacific/Apia" })).not.toBe(withEnv({}));
+      expect(withEnv({ LC_ALL: "C" })).not.toBe(withEnv({ LC_ALL: "zh_CN.UTF-8" }));
       writeFileSync(binary, "#!/bin/sh\necho two\n");
       const changed = selfCheckCacheKey({ binary, mode: "code-review", gateway: null });
       expect(changed).not.toBe(key);
@@ -1398,6 +1411,33 @@ describe("opencode review installed guard", () => {
         false,
       );
       expect(selfCheckCacheDir({})).toMatch(/himawari-review-selfcheck$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[self-check cache] scripts imported from outside the script folder are part of the key", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-imports-"));
+    try {
+      const dir = join(root, "model-review");
+      mkdirSync(dir);
+      mkdirSync(join(root, "ci"));
+      writeFileSync(
+        join(dir, "a.mjs"),
+        'import { x } from "../ci/helper.mjs";\nimport "./b.mjs";\n',
+      );
+      writeFileSync(join(dir, "b.mjs"), 'const y = await import("../shared/late.mjs");\n');
+      writeFileSync(join(root, "ci", "helper.mjs"), 'export { z } from "./deeper.mjs";\n');
+      expect(outsideImports(dir)).toEqual([
+        join(root, "ci", "deeper.mjs"),
+        join(root, "ci", "helper.mjs"),
+        join(root, "shared", "late.mjs"),
+      ]);
+      expect(
+        outsideImports(fileURLToPath(new URL("../../scripts/model-review", import.meta.url))),
+      ).toContain(
+        fileURLToPath(new URL("../../scripts/ci/verified-download.mjs", import.meta.url)),
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

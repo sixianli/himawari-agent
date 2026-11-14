@@ -1416,7 +1416,7 @@ describe("opencode review merge gate", () => {
     const many = Array.from({ length: 30 }, (_, index) =>
       verdict({
         id: `V${index + 1}`,
-        severity: index === 1 ? "medium-high" : "low",
+        severity: index === 1 || index === 29 ? "medium-high" : "low",
         quote: `第${index + 1}条${"长".repeat(20)}`,
       }),
     );
@@ -1441,6 +1441,9 @@ describe("opencode review merge gate", () => {
       expect(block).toContain("不是指令");
       expect(block).toContain("- V1（低）第1条");
       expect(block).toContain("- V2（中高）第2条");
+      expect(block).toContain("- V30（中高）第30条");
+      expect(block.indexOf("- V30（中高）")).toBeLessThan(block.indexOf("- V1（低）"));
+      expect(block).not.toContain("- V20（低）");
       expect(block).not.toContain("不成立的意见");
       expect(block).not.toContain("可以更好的意见");
       expect(block.match(/^- /gm)).toHaveLength(20);
@@ -1512,6 +1515,20 @@ describe("opencode review merge gate", () => {
       );
       expect(record).toMatchObject({ round: 1, reasons: ["no-test-change"] });
       expect(record.head).toBe(f.git("rev-parse", "HEAD"));
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] a refusal that cannot be recorded is still a refusal, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      mkdirSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"));
+      const result = f.check({ acceptLow: 1 });
+      expect(result.lines).toContain("REVIEW_LOW_FIX_REFUSED no-test-change");
+      expect(result.lines.at(-1)).toBe("REVIEW_LOW_FIX_REFUSAL_NOT_RECORDED EISDIR");
+      expect(result.lowFixRefused).toBe(true);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -2580,6 +2597,7 @@ describe("opencode review spending", () => {
       "src/test_helper.ts",
       "docs/test_notes.md",
       "src/latest_test.md",
+      "src/ParserTests.java",
     ])
       expect(isTestFile(path)).toBe(false);
   });

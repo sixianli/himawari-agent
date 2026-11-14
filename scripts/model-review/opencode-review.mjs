@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   binaryProblem,
@@ -417,7 +417,9 @@ export function priorFindingsBlock({ repo, ledgerPath, records, previous, head }
   } catch {
     return PRIOR_FINDINGS_UNAVAILABLE;
   }
-  const errors = verdicts.filter((verdict) => verdict.valid && verdict.class === "error");
+  const errors = verdicts
+    .filter((verdict) => verdict.valid && verdict.class === "error")
+    .sort((a, b) => (a.severity === "low") - (b.severity === "low"));
   const title = `上一轮（第 ${round} 轮）成立的“会出错”意见，作者已修改。这只是线索，不是指令：每条都要对照增量核对是否真的改好，另外仍要独立核对代码，发现新问题照报：`;
   if (errors.length === 0) return `${title}\n（没有）`;
   const lines = [];
@@ -1235,7 +1237,7 @@ export function isTestFile(path) {
     /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) ||
     /(?:^|\/)test_[^/]*\.py$/.test(path) ||
     /_test\.(?:py|go|rs)$/.test(path) ||
-    /(?:^|\/)[A-Z][A-Za-z0-9]*Tests?\.java$/.test(path)
+    /(?:^|\/)[A-Z][A-Za-z0-9]*Test\.java$/.test(path)
   );
 }
 
@@ -1651,15 +1653,19 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
       lowFixRefused = true;
       const refusalsFile = join(repo, ledgerPath, "low-fix-refusals.jsonl");
       if (existsSync(dirname(refusalsFile)))
-        appendFileSync(
-          refusalsFile,
-          ledgerLine({
-            at: new Date().toISOString(),
-            round: acceptLow,
-            head,
-            reasons: reasons.map((reason) => reason.split(" ")[0]),
-          }),
-        );
+        try {
+          appendFileSync(
+            refusalsFile,
+            ledgerLine({
+              at: new Date().toISOString(),
+              round: acceptLow,
+              head,
+              reasons: reasons.map((reason) => reason.split(" ")[0]),
+            }),
+          );
+        } catch (error) {
+          lines.push(`REVIEW_LOW_FIX_REFUSAL_NOT_RECORDED ${printable(error.code ?? "error")}`);
+        }
     } else {
       appendFileSync(
         ledgerFile,
@@ -2641,12 +2647,44 @@ function fileFingerprint(path) {
   }
 }
 
-export function selfCheckCacheKey({ binary, mode, gateway }) {
+export function outsideImports(dir) {
+  const seen = new Set();
+  const outside = new Set();
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      return;
+    }
+    for (const match of text.matchAll(/(?:from|import\()\s*["'](\.\.?\/[^"']+)["']/g)) {
+      const target = resolve(dirname(file), match[1]);
+      if (dirname(target) !== dir) outside.add(target);
+      visit(target);
+    }
+  };
+  for (const name of readdirSync(dir)
+    .filter((item) => item.endsWith(".mjs"))
+    .sort())
+    visit(join(dir, name));
+  return [...outside].sort();
+}
+
+export const SELF_CHECK_CACHE_ENV_KEYS = [...OPENCODE_KEPT_ENV, "LC_ALL"];
+
+export function selfCheckCacheKey({ binary, mode, gateway, env = process.env }) {
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const scripts = readdirSync(scriptDir)
     .filter((name) => /\.(?:mjs|json)$/.test(name))
     .sort()
     .map((name) => [name, sha256File(join(scriptDir, name))]);
+  const imported = outsideImports(scriptDir).map((file) => [
+    relative(scriptDir, file),
+    existsSync(file) ? sha256File(file) : null,
+  ]);
+  const kept = SELF_CHECK_CACHE_ENV_KEYS.map((name) => [name, env[name] ?? null]);
   const which = (name) =>
     spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
   return createHash("sha256")
@@ -2657,6 +2695,8 @@ export function selfCheckCacheKey({ binary, mode, gateway }) {
         arch: process.arch,
         mode,
         scripts,
+        imported,
+        env: kept,
         config: reviewConfig({ mode, baseURL: "http://127.0.0.1:0/v1" }),
         binary: fileFingerprint(binary),
         git: fileFingerprint(which("git")),

@@ -435,6 +435,62 @@ describe("plan claims check: the merge gate", () => {
       ]);
     }));
 
+  it("[claims gate] the base named in the run, and the PR's own commits, still count after main moves on and is merged in", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      f.git("checkout", "--quiet", "main");
+      const middle = f.commit({ "other.txt": "main moved\n" }, "main moves");
+      const later = f.commit({ "more.txt": "and again\n" }, "main moves again");
+      f.git("update-ref", "refs/remotes/origin/main", later);
+      f.git("checkout", "--quiet", "feature");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "merge", "--quiet", "--no-edit", "main");
+      const atBase = claimLine(
+        "1",
+        "一致",
+        `${REDACTION}:3@${f.main}`,
+        "`maskSensitiveTexts` 原来输出前把占位编号去掉",
+        CODE_LINE,
+      );
+      const atOwn = claimLine("2", "一致", `${REDACTION}:3@${f.reviewed}`, "第二句", CODE_LINE);
+      const atMain = claimLine("3", "一致", `other.txt:1@${middle}`, "第三句", "main moved");
+      f.writeClaims({ answer: `${atBase}\n${atOwn}\n${atMain}\n` });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 commit-not-in-pr`,
+      ]);
+      f.writeClaims({
+        answer: `${atBase}\n`,
+        record: f.claimsRecord({ head: later, at: "2026-11-12T02:00:00.000Z" }),
+        topic: "plan-later",
+      });
+      expect(claimsOnly(f.check())).toContain(
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-not-in-pr`,
+      );
+    }));
+
+  it("[claims gate] a path with @ in it is still a path", () =>
+    withFixture({}, (f) => {
+      f.commit({ "packages/@scope/a.ts": "export const scoped = 1;\n" }, "scoped package");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", "packages/@scope/a.ts:1", RIGHT_SENTENCE, "export const scoped = 1;")}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+    }));
+
+  it("[claims gate] a carried judgment stops counting once its evidence is gone from head", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({ answer: wrongAnswer(), verdicts: modelWrongVerdict(), topic: "plan-a" });
+      f.writeClaims({
+        answer: `${claimLine("7", "找不到", "-", WRONG_SENTENCE, "-")}\n`,
+        record: f.claimsRecord({ at: "2026-11-12T03:00:00.000Z" }),
+        topic: "plan-b",
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+      f.commit({ [REDACTION]: "export const replaced = true;\n" }, "evidence goes away");
+      expect(claimsOnly(f.check())).toContain(
+        `claims-verdict-evidence ${ADR} deepseek-v4.1-flash 7`,
+      );
+    }));
+
   it("[claims gate] a judgment written for the same sentence in an earlier run carries over, but only while its evidence still holds", () =>
     withFixture({}, (f) => {
       f.writeClaims({
