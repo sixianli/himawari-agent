@@ -163,6 +163,75 @@ it("never answers from a hidden, expired or tentative memory", async () => {
   expect(shown).not.toContain("虾");
 });
 
+function single(records: ProductMemoryRecord[], text: string, askLimit = 5) {
+  return new ProductionSearchControl({
+    ownerId,
+    agentId,
+    settings: { ...DEFAULT_SEARCH_ASK, askLimit },
+    provider: {
+      search: async () =>
+        records.map((memory) => ({
+          productMemoryId: memory.id,
+          providerRecordId: memory.providerRecordId as string,
+          score: 1,
+        })) as never,
+    },
+    state: { readMany: async () => records, listActive: async () => records },
+    readText: async () => text,
+    clock: { now: () => now },
+  });
+}
+
+async function only(service: ProductionSearchControl, query: string | null) {
+  const snapshot = await service.query(ask(query));
+  if (snapshot.type !== "search.ask.snapshot") throw new Error(snapshot.type);
+  return snapshot.payload;
+}
+
+it("answers not found when the only match is sensitive, and never suggests it", async () => {
+  const secret = record(
+    "secret",
+    { dataClassification: "sensitive" },
+    { entities: ["青霉素"], category: "identity" },
+  );
+  const service = single([secret], "我对青霉素过敏");
+  expect((await only(service, "青霉素过敏")).state).toBe("not_found");
+  expect((await only(service, null)).asks).toEqual([]);
+});
+
+it("hides a superseded memory from answers and an expired one from suggestions", async () => {
+  const replaced = record("replaced", {}, { supersededBy: "newer" as never, entities: ["旧住址"] });
+  const expired = record(
+    "old",
+    {},
+    { validTo: "2026-01-01T00:00:00.000Z", entities: ["旧工作"], category: "identity" },
+  );
+  expect((await only(single([replaced], "我住在旧住址"), "旧住址")).state).toBe("not_found");
+  expect((await only(single([expired], "我做旧工作"), null)).asks).toEqual([]);
+});
+
+it("keeps the answer inside the contract length and free of control characters", async () => {
+  const long = `我对花生过敏\u0000${"😀".repeat(1500)}`;
+  const answer = (await only(single([record("m")], long), "花生过敏")).answer ?? "";
+  expect(answer.length).toBeLessThanOrEqual(DEFAULT_SEARCH_ASK.answerCharacters);
+  expect(answer).not.toMatch(/\p{Cc}/u);
+});
+
+it("does not read any memory when no suggestions are wanted", async () => {
+  const listActive = vi.fn(async () => []);
+  const service = new ProductionSearchControl({
+    ownerId,
+    agentId,
+    settings: DEFAULT_SEARCH_ASK,
+    provider: { search: async () => [] },
+    state: { readMany: async () => [], listActive },
+    readText: async () => "",
+    clock: { now: () => now },
+  });
+  expect((await only(service, null)).asks).toEqual([]);
+  expect(listActive).not.toHaveBeenCalled();
+});
+
 it("reports not found in the owner's language when nothing matches literally", async () => {
   const f = control();
   const result = await payload(f, "我住在哪里");

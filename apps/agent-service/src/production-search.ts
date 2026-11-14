@@ -1,12 +1,10 @@
-import {
-  type DataClassification,
-  type MemoryProviderProjectionPort,
-  type MemoryTimeScope,
-  modelVisibleClassifications,
-  type ProductMemoryRecord,
-  type ProductMemoryStatePort,
-  reviewMemoryVisible,
-  type SearchAskConfiguration,
+import type {
+  DataClassification,
+  MemoryProviderProjectionPort,
+  MemoryTimeScope,
+  ProductMemoryRecord,
+  ProductMemoryStatePort,
+  SearchAskConfiguration,
 } from "@himawari-agent/application";
 import type {
   GatewayV2Query,
@@ -113,8 +111,22 @@ interface Candidate {
   readonly basis: Omit<Basis, "label">;
 }
 
+const SEARCH_VISIBLE: readonly DataClassification[] = Object.freeze(["public", "private"]);
+
+function searchVisible(classification: string): boolean {
+  return (SEARCH_VISIBLE as readonly string[]).includes(classification);
+}
+
+function currentlyShown(memory: ProductMemoryRecord, now: string): boolean {
+  const attributes = memory.attributes;
+  if ((attributes?.supersededBy ?? null) !== null || attributes?.tentative === true) return false;
+  const validTo = attributes?.validTo ?? null;
+  if (validTo !== null && validTo <= now) return false;
+  return searchVisible(memory.dataClassification);
+}
+
 function singleLine(text: string): string {
-  return text.replace(/\s+/gu, " ").trim();
+  return text.replace(/[\p{Cc}\s]+/gu, " ").trim();
 }
 
 function coverage(terms: readonly string[], text: string): number {
@@ -127,8 +139,13 @@ function coverage(terms: readonly string[], text: string): number {
 }
 
 function clip(text: string, limit: number): string {
-  const characters = [...text];
-  return characters.length <= limit ? text : `${characters.slice(0, limit - 1).join("")}…`;
+  if (text.length <= limit) return text;
+  let kept = "";
+  for (const character of text) {
+    if (kept.length + character.length > limit - 1) break;
+    kept += character;
+  }
+  return `${kept}…`;
 }
 
 export class ProductionSearchControl {
@@ -156,21 +173,29 @@ export class ProductionSearchControl {
 
   async #suggestions(): Promise<Omit<SearchSnapshot["payload"], "generatedAt">> {
     const { ownerId, agentId, settings } = this.#options;
+    const now = this.#options.clock.now();
+    const empty = {
+      state: "suggestions",
+      query: null,
+      answer: null,
+      notFoundText: null,
+      basis: [],
+      asks: [],
+    } as const;
+    if (settings.askLimit === 0) return empty;
     const active = await this.#options.state.listActive(ownerId, agentId);
     const counted = new Map<string, { uses: number; updatedAt: string }>();
     for (const record of active) {
       const attributes = record.attributes;
       if (
         !attributes ||
-        attributes.tentative === true ||
-        attributes.supersededBy !== null ||
         !SUGGESTION_CATEGORIES.has(attributes.category) ||
-        !reviewMemoryVisible(record.dataClassification)
+        !currentlyShown(record, now)
       )
         continue;
       for (const entity of attributes.entities) {
         const name = singleLine(entity);
-        if (name.length === 0 || [...name].length > ASK_MAXIMUM_CHARACTERS) continue;
+        if (name.length === 0 || name.length > ASK_MAXIMUM_CHARACTERS) continue;
         const current = counted.get(name);
         counted.set(name, {
           uses: (current?.uses ?? 0) + 1 + (record.useCount ?? 0),
@@ -188,14 +213,7 @@ export class ProductionSearchControl {
       )
       .slice(0, settings.askLimit)
       .map(([name]) => name);
-    return {
-      state: "suggestions",
-      query: null,
-      answer: null,
-      notFoundText: null,
-      basis: [],
-      asks,
-    };
+    return { ...empty, asks };
   }
 
   async #answer(
@@ -227,14 +245,11 @@ export class ProductionSearchControl {
       let order = 0;
       for (const hit of hits) {
         const memory = records.get(hit.productMemoryId);
-        const validTo = memory?.attributes?.validTo ?? null;
         if (
           !memory ||
           memory.status !== "active" ||
           memory.providerRecordId !== hit.providerRecordId ||
-          memory.attributes?.tentative === true ||
-          (validTo !== null && validTo <= now) ||
-          !reviewMemoryVisible(memory.dataClassification)
+          !currentlyShown(memory, now)
         )
           continue;
         const text = singleLine((await this.#options.readText(memory).catch(() => "")) ?? "");
@@ -259,7 +274,7 @@ export class ProductionSearchControl {
               agentId,
               query: asked,
               scope: null,
-              allowedClassifications: modelVisibleClassifications(),
+              allowedClassifications: SEARCH_VISIBLE,
               limit: settings.candidateLimit,
               lexicalOnly: true,
             })
@@ -268,11 +283,7 @@ export class ProductionSearchControl {
       for (const { episode, text } of episodes) {
         const line = singleLine(text);
         const matched = coverage(terms, line);
-        if (
-          line.length === 0 ||
-          matched < minimum ||
-          !reviewMemoryVisible(episode.dataClassification)
-        )
+        if (line.length === 0 || matched < minimum || !searchVisible(episode.dataClassification))
           continue;
         candidates.push({
           answer: line,
