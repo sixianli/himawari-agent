@@ -331,8 +331,10 @@ export class SqliteWebPushOperations {
          JOIN web_push_subscriptions s ON s.owner_id = o.owner_id AND s.agent_id = o.agent_id
            AND s.state = 'active'
          LEFT JOIN web_push_attempts a ON a.owner_id = o.owner_id AND a.agent_id = o.agent_id
-           AND a.source_key = o.source_key AND a.subscription_id = s.id
+           AND a.source_key = o.source_key AND a.channel = 'web_push'
+           AND a.subscription_id = s.id
          WHERE o.owner_id = ? AND o.agent_id = ?
+           AND (o.channel IS NULL OR o.channel = 'web_push')
            AND (o.defer_until IS NULL OR o.defer_until <= ?)
            AND (a.status IS NULL OR (a.status = 'pending'
              AND (a.next_attempt_at IS NULL OR a.next_attempt_at <= ?)))
@@ -483,12 +485,12 @@ export class SqliteWebPushOperations {
         this.database
           .prepare(
             `INSERT INTO web_push_attempts (
-              owner_id, agent_id, source_key, subscription_id, status, attempts, next_attempt_at,
-              last_code, updated_at
-            ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+              owner_id, agent_id, source_key, channel, push_type, subscription_id, status,
+              attempts, next_attempt_at, last_code, updated_at
+            ) SELECT ?, ?, ?, 'web_push', NULL, ?, ?, ?, ?, ?, ?
               WHERE EXISTS (SELECT 1 FROM web_push_outbox
                 WHERE owner_id = ? AND agent_id = ? AND source_key = ?)
-            ON CONFLICT (owner_id, agent_id, source_key, subscription_id) DO UPDATE SET
+            ON CONFLICT (owner_id, agent_id, source_key, channel, subscription_id) DO UPDATE SET
               status = excluded.status, attempts = excluded.attempts,
               next_attempt_at = excluded.next_attempt_at, last_code = excluded.last_code,
               updated_at = excluded.updated_at

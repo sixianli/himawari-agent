@@ -84,6 +84,7 @@ export interface PairedDeviceServiceOptions {
   readonly now?: () => Date;
   readonly randomBytes?: (size: number) => Buffer;
   readonly onWarning?: (warning: PairedDeviceWarning) => void;
+  readonly prepareRevoke?: (deviceId: string) => Promise<(() => Promise<void>) | undefined>;
 }
 
 export interface PairedDeviceWarning {
@@ -282,11 +283,13 @@ export class PairedDeviceService {
   async revoke(
     scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
   ): Promise<PairedDevice> {
+    const afterRevoke = await this.#options.prepareRevoke?.(scope.deviceId).catch(() => undefined);
     const device = await this.#options.store.revokeDevice({
       ...scope,
       now: this.#now().toISOString(),
     });
     this.#warnedAt.delete(device.id);
+    await afterRevoke?.().catch(() => undefined);
     return device;
   }
 
