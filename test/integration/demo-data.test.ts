@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { flatMailReader } from "@himawari-agent/application";
 import {
   type DemoLocale,
   DEMO_LOCALES,
@@ -198,7 +199,9 @@ describe("[P6-demo] fake inbox", () => {
     cursor: string | null,
     seen: ReadonlySet<string> = new Set(),
   ) => {
-    const reader = createDemoMailReader({ now: () => new Date(nowMs).toISOString() });
+    const reader = flatMailReader(
+      createDemoMailReader({ now: () => new Date(nowMs).toISOString() }),
+    );
     return reader.fetch({
       token: demoMailboxToken(locale, ANCHOR),
       cursor,
@@ -243,7 +246,7 @@ describe("[P6-demo] fake inbox", () => {
     expect(early.items.map(({ messageId }) => messageId)).not.toContain("demo-en-feedback");
     expect(early.items.map(({ messageId }) => messageId)).not.toContain("demo-en-dinner");
 
-    const reader = createDemoMailReader({ now: () => ANCHOR });
+    const reader = flatMailReader(createDemoMailReader({ now: () => ANCHOR }));
     for (const token of [
       "",
       "refresh-token-from-google",
@@ -276,9 +279,11 @@ describe("[P6-demo] fake inbox", () => {
   });
 
   it("[P6-demo] finds the earlier thread and the earlier mail that shares an order number, including mail from before the connection", async () => {
-    const reader = createDemoMailReader({
-      now: () => new Date(Date.parse(ANCHOR) + HOUR).toISOString(),
-    });
+    const reader = flatMailReader(
+      createDemoMailReader({
+        now: () => new Date(Date.parse(ANCHOR) + HOUR).toISOString(),
+      }),
+    );
     const fetched = await fetchOnce("en", Date.parse(ANCHOR) + HOUR, null);
     if (fetched.kind !== "items") throw new Error("expected items");
     const delivery = fetched.items.find(({ messageId }) => messageId === "demo-en-delivery");
@@ -333,7 +338,9 @@ describe("[P6-demo] review round 1 fixes", () => {
     expect(invoice("America/Los_Angeles")).toContain("Payment due: Nov 6");
     expect(invoice("Asia/Tokyo")).toContain("Payment due: Nov 6");
     expect(invoice("Pacific/Kiritimati")).toContain("Payment due: Nov 7");
-    const reader = createDemoMailReader({ now: () => anchor, timeZone: "Pacific/Kiritimati" });
+    const reader = flatMailReader(
+      createDemoMailReader({ now: () => anchor, timeZone: "Pacific/Kiritimati" }),
+    );
     expect(reader.source).toBe("gmail");
   });
 });

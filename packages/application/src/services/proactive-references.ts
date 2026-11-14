@@ -1,11 +1,11 @@
-import type { ProactiveSourceItem } from "../ports/proactive-checks.js";
+import type { ProactiveMail } from "../ports/proactive-sources.js";
 
 export const MAXIMUM_REFERENCES_PER_MAIL = 3;
 
 const REFERENCE_SHAPE = /^(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{7,39}$/u;
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/u;
 
-function mailText(item: Pick<ProactiveSourceItem, "subject" | "body" | "snippet">): string {
+function mailText(item: Pick<ProactiveMail, "subject" | "body" | "snippet">): string {
   return `${item.subject}\n${item.body ?? item.snippet}`.toUpperCase();
 }
 
@@ -24,7 +24,7 @@ function appearsAsWholeToken(haystack: string, reference: string): boolean {
 
 export function validMailReferences(
   proposed: unknown,
-  item: Pick<ProactiveSourceItem, "subject" | "body" | "snippet">,
+  item: Pick<ProactiveMail, "subject" | "body" | "snippet">,
 ): readonly string[] {
   if (!Array.isArray(proposed)) return [];
   const haystack = mailText(item);
@@ -42,7 +42,7 @@ export function validMailReferences(
 
 export function parseMailReferences(
   output: string,
-  items: readonly ProactiveSourceItem[],
+  items: readonly ProactiveMail[],
 ): ReadonlyMap<string, readonly string[]> {
   const trimmed = output
     .trim()

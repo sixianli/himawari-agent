@@ -1,4 +1,9 @@
 {
+  "authorization.owner-intent-question": {
+    "sha256": "afce65646dc2f8bdc9076fd00806baa60eaee67805e089047ea244da805af01c",
+    "changedIn": "ADR 0257",
+    "reason": "新增：读过外来内容之后要做有后果的小事时，让判断模型只凭主人亲口说过的话看主人是不是已经明说要做"
+  },
   "background.done.command": {
     "sha256": "6b2b940c870807839122907dea98ccb0c6fe05f65ade487ff2c620de3e86cb82",
     "changedIn": "ADR 0161",

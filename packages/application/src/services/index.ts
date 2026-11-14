@@ -57,6 +57,7 @@ export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
 export * from "./proactive-overview.js";
 export * from "./proactive-references.js";
+export * from "./proactive-source-runtime.js";
 export * from "./proactive-rules.js";
 export * from "./proactive-seal.js";
 export * from "./product-thread-gateway-adapter.js";

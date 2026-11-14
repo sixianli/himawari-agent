@@ -1,0 +1,11 @@
+{
+  "alters": [
+    "decision_ledger",
+    "decision_prereviews",
+    "proactive_connections",
+    "proactive_processed_messages",
+    "proactive_push_backoff",
+    "source_insights"
+  ],
+  "removes": ["gmail"]
+}

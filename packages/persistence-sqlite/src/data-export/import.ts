@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PayloadRecord } from "@himawari-agent/application";
+import { PROACTIVE_SOURCE_NAMES } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import { proposalTextDigest } from "../external-proposal-text.js";
 import type { JsonValue } from "./canonical.js";
@@ -45,6 +46,7 @@ export interface ImportOptions extends PortableTextDependencies {
   readonly passphrase?: string;
   readonly dryRun?: boolean;
   readonly newPayloadRef?: () => string;
+  readonly proactiveSources?: readonly string[];
 }
 
 export interface ImportReport {
@@ -124,6 +126,19 @@ export async function importPortableExport(
     )
       throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, "密封文件条数和清单不符");
   }
+  const proactiveSources: readonly string[] = options.proactiveSources ?? PROACTIVE_SOURCE_NAMES;
+  const registered = (value: unknown, where: string): void => {
+    if (value !== null && value !== undefined && !proactiveSources.includes(value as string))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `${where} 的来源 ${String(value)} 没有登记`,
+      );
+  };
+  for (const decision of parsed.decisions) registered(decision.scenario, "决策记录");
+  for (const row of sealed?.evidence?.sourceInsights ?? []) registered(row["source"], "提醒条目");
+  for (const row of sealed?.evidence?.processedMessages ?? [])
+    registered(row["source"], "已处理条目");
+  for (const row of sealed?.evidence?.prereviews ?? []) registered(row["mailSource"], "预审记录");
   assertEmptyTarget(options.database, options.scope);
 
   const sealedText = (key: string): string | null => {

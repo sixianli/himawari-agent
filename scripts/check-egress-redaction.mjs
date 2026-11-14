@@ -88,6 +88,7 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
       "packages/platform-node/src/memory-import-duplicate-decision.ts",
       ["AI Gateway decision request"],
     ],
+    ["packages/platform-node/src/owner-intent-decision.ts", ["AI Gateway decision request"]],
   ]),
 );
 
@@ -101,6 +102,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/voice-addressee-decision.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/memory-import-duplicate-decision.ts", ["redactForExternalText"]],
+    ["packages/platform-node/src/owner-intent-decision.ts", ["redactForExternalText"]],
     [
       "packages/platform-node/src/exa-public-search.ts",
       ["redactForExternalText", "redactForExternalUrl"],

@@ -61,6 +61,17 @@ export const machineString: Schema<string> = {
   },
 };
 
+export const PROACTIVE_SOURCE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+
+export const proactiveSourceName: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !PROACTIVE_SOURCE_NAME_PATTERN.test(input)) {
+      fail(path, "expected a registered proactive source name");
+    }
+    return input;
+  },
+};
+
 export const GMAIL_MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
 
 export const gmailMessageId: Schema<string> = {

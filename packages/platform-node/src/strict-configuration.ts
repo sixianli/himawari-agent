@@ -1714,12 +1714,13 @@ function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
 function parseOwnerIntentCheck(value: unknown): OwnerIntentCheckConfiguration {
   const field = "configuration.runPolicy.ownerIntentCheck";
   const input = record(value, field);
-  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "modelRef"], field);
+  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "model", "secretRef"], field);
   return Object.freeze({
     enabled: boolean(input["enabled"], `${field}.enabled`),
     minConfidence: integer(input["minConfidence"], `${field}.minConfidence`, 500, 1000),
     timeoutMs: integer(input["timeoutMs"], `${field}.timeoutMs`, 500, 30000),
-    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
   });
 }
 

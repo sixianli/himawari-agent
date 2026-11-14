@@ -2358,7 +2358,13 @@ it("[ADR-0257] reads the owner intent check settings and rejects values out of r
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
   ).toBeUndefined();
-  const valid = { enabled: true, minConfidence: 900, timeoutMs: 5000, modelRef: "typesafe/jev" };
+  const valid = {
+    enabled: true,
+    minConfidence: 900,
+    timeoutMs: 5000,
+    model: "typesafe-ai/jev",
+    secretRef: "secret:owner-intent",
+  };
   raw["runPolicy"] = { ...policy, ownerIntentCheck: valid };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
@@ -2367,8 +2373,9 @@ it("[ADR-0257] reads the owner intent check settings and rejects values out of r
     { ...valid, minConfidence: 499 },
     { ...valid, timeoutMs: 100 },
     { ...valid, enabled: "yes" },
-    { ...valid, modelRef: "bad ref" },
-    { enabled: true, minConfidence: 900, timeoutMs: 5000 },
+    { ...valid, model: "bad ref" },
+    { ...valid, secretRef: "bad ref" },
+    { enabled: true, minConfidence: 900, timeoutMs: 5000, model: "typesafe-ai/jev" },
     { ...valid, extra: 1 },
   ]) {
     raw["runPolicy"] = { ...policy, ownerIntentCheck };

@@ -391,7 +391,8 @@ export interface OwnerIntentCheckConfiguration {
   readonly enabled: boolean;
   readonly minConfidence: number;
   readonly timeoutMs: number;
-  readonly modelRef: string;
+  readonly model: string;
+  readonly secretRef: string;
 }
 
 export interface RunPolicyConfiguration {

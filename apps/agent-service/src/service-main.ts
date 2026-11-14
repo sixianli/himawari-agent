@@ -109,6 +109,7 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
@@ -1617,9 +1618,21 @@ export async function startTenantRuntime(
         authority: () => invocationAuthority().lease,
         clock,
       });
+      const ownerIntent = productionOwnerIntentGate({
+        configuration,
+        secretSource: hostModelSources(configuration).provider,
+        state: repository,
+        audit: repository.auditLedger(),
+        authority: () => invocationAuthority().lease,
+        clock,
+        threads: repository.threadRepository(),
+        payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+        protector: recallProtector,
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
         externalContent,
+        ...(ownerIntent ? { ownerIntent } : {}),
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
         state: repository,
@@ -2065,6 +2078,12 @@ export async function startTenantRuntime(
           : undefined;
         proactive = new ProductionProactive({
           ...(checkup ? { checkup } : {}),
+          onLimit: (hit) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.source_limit_reached",
+              ...hit,
+            }),
           onMasked: (sightings) =>
             void mailEgress.reportMasked(
               {
