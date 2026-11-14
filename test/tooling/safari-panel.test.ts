@@ -84,6 +84,14 @@ it("does not claim the full page was handed over when delivery failed", async ()
   await tab.close();
 });
 
+it("says the page was not sent when the extension cannot queue it", async () => {
+  const tab = await openPanel(context, scene("22-gaps-2j-safari-not-sent"), words, unreachable);
+  expect(await tab.locator(".outcome-text").textContent()).toBe(words["outcome.notSent"]);
+  expect(await tab.locator(".card-subtitle").textContent()).toBe("tabelog.com");
+  expect(await visible(tab, ".done")).toBe(false);
+  await tab.close();
+});
+
 it("offers exactly one follow-up that opens the matching page in the App", async () => {
   const tab = await openPanel(context, scene("22-gaps-2e-safari-entry-off"), words, unreachable);
   expect(await tab.locator("button:visible").allTextContents()).toEqual([

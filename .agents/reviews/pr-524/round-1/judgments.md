@@ -1,0 +1,6 @@
+# PR 524 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1、中、免费签名下 App 里的分享开关对扩展无效，README/PR 的说法与代码相反。RootView.swift:41 的 HandoverEntryRoute 只在 App 里；SharedVault.swift:58-63 无 App Group 时两边各用各的目录。已把 README 改成如实说明 App 的开关管不到扩展、Safari 引导页不前进；触发：免费签名下用户在 App 的设置页关掉分享或 Safari 开关，或只在扩展里用过 Safari；后果：扩展读不到 App 的存储，仍按默认开着继续传，Safari 引导页也不前进；README 却说开关在扩展里
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2、中、`notSent` 把“结果未知”说成“没传上”，重分享会产生重复投递和孤儿附件。Handover.swift:549 在 queuesOffline=false 时把所有 .queued 变成 notSent；.queued 含服务端可能已提交的情形（:415、:426）；触发：免费签名下已上传或已建线程后遇到 5xx/断连，随后用户按提示重新分享；后果：新分享用新 id，可能多出一份；原文案“没传上”说得比事实绝对；判低理由：只在免费签名、服务端已提交又丢回复时才触发，后果是重复一份而不是丢数据；没有共享存储就没有办法按原 id 重试，已把三种语言的文案改成“没能确认传上”并在 README 写明可能收到两份
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3、中、新增的权限变体测试可能跑不起来，也没有逐配置、逐目标校验。已改成逐行检查每个 CODE_SIGN_ENTITLEMENTS 都带后缀、用 fileURLToPath、去掉写死的 3 和 2，本机 vitest 3 条通过。HimawariMac 目标没有 entitlements 设置，不在“三个目标”范围内，也没有可检查的行；触发：某个目标的某个配置回退成不带后缀的路径，另一配置仍带；后果：测试按模板去重后仍通过，漏报；判低理由：测试本身不是产品行为；__dirname 在 vitest 下实际可用（本机运行通过），只是写法与其他测试不一致
+- 4（deepseek-v4.1-flash）不成立：### 4、中、新代码没有被任何 Swift 编译覆盖：`swift test` 会跳过 `SharedVault` 和 `ExtensionSupport`，作者也未在 Mac/iOS 上编译。不是已定位的代码缺陷：SharedVault.swift 与 ExtensionSupport.swift 是平台条件编译，Linux 的 swift test 本来编译不到，作者已在材料里写明 Mac 上尚未编译；免费账号能否签钥匙串分组是外部事实，仓库里无法验证，留给 Andy 明天在 Mac 上用免费签名实装检查
