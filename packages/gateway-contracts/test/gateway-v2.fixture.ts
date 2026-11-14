@@ -735,6 +735,15 @@ export const governanceMessages = [
       },
     ],
   }),
+  fixture("query", "memory.import.duplicates.read", {
+    contentRefs: ["payload-05", "payload-06"],
+  }),
+  fixture("snapshot", "memory.import.duplicates.snapshot", {
+    items: [
+      { contentRef: "payload-05", verdict: "same", memoryId: "memory-insight" },
+      { contentRef: "payload-06", verdict: "skipped", memoryId: null },
+    ],
+  }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),
   fixture("snapshot", "memory.basis.snapshot", {
     memoryId: "memory-insight",
