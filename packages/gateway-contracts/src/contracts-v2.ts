@@ -2013,7 +2013,18 @@ const memoryReminderCreateCommandSchema = object({
     repeat: enumeration(["none", "yearly"]),
   }),
 });
-export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+export const OWNER_RULE_ACTIONS = [
+  "undo",
+  "confirm",
+  "reconfirm",
+  "ask_first",
+  "allow_directly",
+] as const;
+export const BUILT_IN_ACTION_RULE_OUTCOMES = [
+  "allow_preauthorized",
+  "ask_owner",
+  "refuse",
+] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -2036,6 +2047,16 @@ const memoryRulesSnapshotSchema = object({
         lastUsed: nullable(
           object({ at: timestamp, kind: machineString, decisionId: machineString }),
         ),
+      }),
+    ),
+    builtIn: array(
+      object({
+        ruleId: machineString,
+        revision: integer(1),
+        outcome: enumeration(BUILT_IN_ACTION_RULE_OUTCOMES),
+        examplesHit: integer(0),
+        examplesMiss: integer(0),
+        askFirst: nullable(booleanValue),
       }),
     ),
     generatedAt: timestamp,
