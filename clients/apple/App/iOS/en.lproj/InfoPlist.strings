@@ -1,2 +1,5 @@
 "NSCameraUsageDescription" = "Scan the pairing code shown in Himawari settings on your computer.";
 "NSFaceIDUsageDescription" = "Confirm it is you before changing Himawari settings or memories.";
+"NSMicrophoneUsageDescription" = "After you tap Start listening, Himawari listens around you and turns speech into text on this iPhone. Audio is deleted once transcribed.";
+"NSSpeechRecognitionUsageDescription" = "Turn what Himawari hears into text on this iPhone.";
+"NSMotionUsageDescription" = "Check whether your AirPods are in your ears, to tell that it is you calling.";
