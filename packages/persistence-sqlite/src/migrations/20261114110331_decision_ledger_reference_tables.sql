@@ -374,8 +374,18 @@ BEGIN SELECT RAISE(ABORT, 'DECISION_LEDGER_UNKNOWN_KIND_OR_OUTCOME'); END;
 
 CREATE TRIGGER decision_ledger_kinds_in_use_no_delete BEFORE DELETE ON decision_ledger_kinds
 WHEN EXISTS (SELECT 1 FROM decision_ledger WHERE kind = OLD.kind)
+  OR EXISTS (SELECT 1 FROM decision_ledger_outcomes WHERE kind = OLD.kind)
 BEGIN SELECT RAISE(ABORT, 'DECISION_LEDGER_KIND_IN_USE'); END;
 
 CREATE TRIGGER decision_ledger_outcomes_in_use_no_delete BEFORE DELETE ON decision_ledger_outcomes
+WHEN EXISTS (SELECT 1 FROM decision_ledger WHERE kind = OLD.kind AND outcome = OLD.outcome)
+BEGIN SELECT RAISE(ABORT, 'DECISION_LEDGER_OUTCOME_IN_USE'); END;
+
+CREATE TRIGGER decision_ledger_kinds_in_use_no_update BEFORE UPDATE OF kind ON decision_ledger_kinds
+WHEN EXISTS (SELECT 1 FROM decision_ledger WHERE kind = OLD.kind)
+  OR EXISTS (SELECT 1 FROM decision_ledger_outcomes WHERE kind = OLD.kind)
+BEGIN SELECT RAISE(ABORT, 'DECISION_LEDGER_KIND_IN_USE'); END;
+
+CREATE TRIGGER decision_ledger_outcomes_in_use_no_update BEFORE UPDATE OF kind, outcome ON decision_ledger_outcomes
 WHEN EXISTS (SELECT 1 FROM decision_ledger WHERE kind = OLD.kind AND outcome = OLD.outcome)
 BEGIN SELECT RAISE(ABORT, 'DECISION_LEDGER_OUTCOME_IN_USE'); END;

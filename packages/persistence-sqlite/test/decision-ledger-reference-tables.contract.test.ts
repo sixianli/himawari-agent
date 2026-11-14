@@ -252,4 +252,25 @@ describe("decision ledger reference tables migration", () => {
     database.prepare("DELETE FROM decision_ledger_outcomes WHERE kind = 'external_read'").run();
     database.close();
   });
+
+  it("refuses to remove or rename reference rows that are still referenced, with foreign keys off", async () => {
+    const { database } = await openMigrated();
+    database.pragma("foreign_keys = OFF");
+    expect(() =>
+      database.prepare("DELETE FROM decision_ledger_kinds WHERE kind = 'memory_review'").run(),
+    ).toThrow(/DECISION_LEDGER_KIND_IN_USE/u);
+    expect(() =>
+      database
+        .prepare("UPDATE decision_ledger_kinds SET kind = 'renamed' WHERE kind = 'memory_review'")
+        .run(),
+    ).toThrow(/DECISION_LEDGER_KIND_IN_USE/u);
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE decision_ledger_outcomes SET outcome = 'renamed' WHERE kind = 'consolidation' AND outcome = 'supersede'",
+        )
+        .run(),
+    ).toThrow(/DECISION_LEDGER_OUTCOME_IN_USE/u);
+    database.close();
+  });
 });
