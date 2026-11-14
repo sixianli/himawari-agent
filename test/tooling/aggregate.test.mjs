@@ -398,14 +398,22 @@ describe("complete-attempt gate", () => {
     expect(result.status).toBe("failed");
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
-  it("[ADR-0260] 试跑期间必过汇总仍只认 x64：三项检查的 arm64 报告也被拒", () => {
-    for (const id of ["policy", "static", "security", "build"]) {
+  it("[ADR-0266] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
+    for (const id of ["policy", "static", "security"]) {
       const input = positive();
-      selected(input, id, id === "build" ? "linux-x64" : undefined).result.toolchain.arch = "arm64";
-      const failed = aggregate(input);
+      selected(input, id).result.toolchain.arch = "arm64";
+      expect(aggregate(input).status).toBe("passed");
+      const other = positive();
+      selected(other, id).result.toolchain.arch = "ppc64";
+      const failed = aggregate(other);
       expect(failed.status).toBe("failed");
       expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
     }
+    const build = positive();
+    selected(build, "build", "linux-x64").result.toolchain.arch = "arm64";
+    const failed = aggregate(build);
+    expect(failed.status).toBe("failed");
+    expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
   });
   it("requires a complete rerun and rejects mixed attempts", () => {
     const input = positive();

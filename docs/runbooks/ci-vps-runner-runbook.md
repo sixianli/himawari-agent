@@ -177,7 +177,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 ### Oracle 的 ARM 机器上的两个 runner
 
-第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里还没有任务写 `runs-on: ci-arm`。这两个 runner 只跑试跑工作流 `.github/workflows/ci-arm-trial.yml`：每个 PR（包括草稿）把 policy、static、security 用和 `ci.yml` 相同的命令在 ARM 上再跑一遍，结论不进 `ci/required`，也不往共享目录交报告，只用来和 CI VPS 上同一提交的结论、时长逐次对比。用 `arm-fallback.sh on` 应急期间，试跑任务也会落到 CI VPS 的检查 runner 上；只想保住必过检查时，可以在 GitHub 上暂时停用这个工作流。按 CI 第二阶段方案的要求，连续 20 次结论一致、ARM 上的时长不超过 CI VPS 的 1.5 倍，才另开 PR 把这三项检查切到 `ci-arm`。
+第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里 policy、static、security 三项检查写 `runs-on: ci-arm`，由这两个 runner 接（[ADR 0266](../adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md)）；build、browser、coverage 和汇总作业仍在 CI 服务器上。三项检查在 ARM 上把报告写进那台机器自己的共享目录，汇总作业用下面“报告怎样回到汇总作业”一节的办法取回。用 `arm-fallback.sh on` 应急期间，这三项检查改由 CI VPS 的检查 runner 接，汇总照样认可 x64 的报告。
 
 **安装（Andy 在 Mac 上，仓库根目录，一条命令）**：`scripts/operations/ci-runner/install-arm-runners.sh`。它依次做 8 步，每步打印一行 `ARM_INSTALL_STEP n/8`，全部成功时打印 `ARM_INSTALL_OK`：
 
@@ -192,7 +192,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 任何一步失败都打印 `ARM_INSTALL_FAILED step=<第几步>` 和原因，以退出码 1 结束；修好原因后重新运行同一条命令，做完的步骤可以安全地重复。两台机器的地址可以用 `CI_VPS_SSH`、`CI_ARM_SSH` 换掉，`CI_VPS_SSH` 必须以 CI VPS 的 IPv4 地址结尾。
 
-**报告怎样回到汇总作业（切换之后才用，现在没有工作流传 `--remote-jobs`）**：切到 ARM 之后，ARM 上的检查会把报告写在那台机器自己的 `/srv/gh-runner-share/<运行号>-<重试号>/`。汇总作业在 CI VPS 上发现本机共享目录里没有某份报告、而命令行的 `--remote-jobs` 名单里有这个作业时，用上面那把钥匙连 ARM 机器，请求名只能是“运行号-重试号/报告名”，对方把那个目录里的普通文件打成一段 JSON 交回来（符号链接、硬链接、超过 500 个文件、单个文件超过 16 MiB、合计超过 64 MiB 都拒绝）。取回的内容写进本机共享目录后照旧按摘要核对；连不上、超时（总时限 2 分钟）、主机密钥不对、内容对不上，都记成缺这份报告，汇总判失败。ARM 机器上不放任何能连别处的钥匙。
+**报告怎样回到汇总作业**：ARM 上的检查会把报告写在那台机器自己的 `/srv/gh-runner-share/<运行号>-<重试号>/`。汇总作业在 CI VPS 上发现本机共享目录里没有某份报告、而命令行的 `--remote-jobs` 名单里有这个作业时，用上面那把钥匙连 ARM 机器，请求名只能是“运行号-重试号/报告名”，对方把那个目录里的普通文件打成一段 JSON 交回来（符号链接、硬链接、超过 500 个文件、单个文件超过 16 MiB、合计超过 64 MiB 都拒绝）。取回的内容写进本机共享目录后照旧按摘要核对；连不上、超时（总时限 2 分钟）、主机密钥不对、内容对不上，都记成缺这份报告，汇总判失败。ARM 机器上不放任何能连别处的钥匙。
 
 **暂停和恢复**：在 Mac 上运行 `RUNNER_SITE=arm scripts/operations/ci-runner/pause-runners.sh` 和 `RUNNER_SITE=arm scripts/operations/ci-runner/resume-runners.sh`，行为和上面[暂停和恢复](#pause-and-resume)一节相同，只是对象换成 ARM 机器上的两个 runner 和 `ci-arm` 标签。两处各有各的锁，暂停一处不影响另一处。
 
