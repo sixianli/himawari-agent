@@ -177,7 +177,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 ### Oracle 的 ARM 机器上的两个 runner
 
-第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里 policy、static、security 三项检查写 `runs-on: ci-arm`，由这两个 runner 接（[ADR 0266](../adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md)）；build、browser、coverage 和汇总作业仍在 CI 服务器上。三项检查在 ARM 上把报告写进那台机器自己的共享目录，汇总作业用下面“报告怎样回到汇总作业”一节的办法取回。用 `arm-fallback.sh on` 应急期间，这三项检查改由 CI VPS 的检查 runner 接，汇总照样认可 x64 的报告。
+第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里 policy、static、tooling、security 四项检查写 `runs-on: ci-arm`，由这两个 runner 接（[ADR 0266](../adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md)）；build、browser、tests 和汇总作业仍在 CI 服务器上；tooling 测试也在 ARM 上单独跑（[ADR 0267](../adr/0267-ci-tests-without-coverage-on-prs.md)）。四项检查在 ARM 上把报告写进那台机器自己的共享目录，汇总作业用下面“报告怎样回到汇总作业”一节的办法取回。用 `arm-fallback.sh on` 应急期间，这四项检查改由 CI VPS 的检查 runner 接，汇总照样认可 x64 的报告。
 
 **安装（Andy 在 Mac 上，仓库根目录，一条命令）**：`scripts/operations/ci-runner/install-arm-runners.sh`。它依次做 8 步，每步打印一行 `ARM_INSTALL_STEP n/8`，全部成功时打印 `ARM_INSTALL_OK`：
 
