@@ -740,7 +740,7 @@ export const messages = {
   "memory.page.importAgain": "换个来源",
   "memory.page.importSummary": "找到 {all} 条，已勾 {on} 条",
   "memory.page.importFlag":
-    "{f, select, duplicate {已经记着，跳过} classifying {分类中…} unclassified {分类失败，已先保密，默认不导入} sensitive {敏感，默认不导入} other {写代码的经验，默认不导入}}",
+    "{f, select, duplicate {已经记着，跳过} classifying {分类中…} unclassified {分类失败，已先保密，默认不导入} sensitive {敏感，默认不导入} similar {可能已经记着，默认不导入} unchecked {没能核对是否重复，默认不导入} other {写代码的经验，默认不导入}}",
   "memory.page.importCommit": "导入勾选的 {count} 条",
   "memory.page.importDone": "已导入 {count} 条；在时间线里可以整批撤销",
   "memory.page.importEmpty": "没有找到可以导入的内容。确认选对了文件，或贴的是那个 AI 的回答。",
