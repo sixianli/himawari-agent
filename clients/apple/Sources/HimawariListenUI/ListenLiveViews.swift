@@ -362,3 +362,19 @@ public struct LockNotificationCard: View {
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 1))
     }
 }
+
+extension View {
+    public func listenIslandPreviewSurface() -> some View {
+        self
+            .frame(width: 198, height: 37)
+            .background(Color.black, in: Capsule())
+    }
+
+    public func listenBannerPreviewSurface() -> some View {
+        self
+            .background(Color.hmGlass, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(Color.hmGlassLine, lineWidth: 1))
+            .hmShadow(DesignTokens.Shadows.liftBig)
+            .frame(width: 366)
+    }
+}

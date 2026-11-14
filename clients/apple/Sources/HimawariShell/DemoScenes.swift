@@ -222,14 +222,10 @@ struct ListenDemoScene: View {
                 .padding(.top, 152)
             ListenIslandCompact(state: listening, now: Self.clock)
                 .padding(.horizontal, 12)
-                .frame(width: 198, height: 37)
-                .background(Color.black, in: Capsule())
+                .listenIslandPreviewSurface()
                 .offset(x: 96, y: 11)
             ListenLockBanner(state: listening, now: Self.clock) { label in label } stop: { label in label }
-                .background(Color.hmGlass, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(Color.hmGlassLine, lineWidth: 1))
-                .hmShadow(DesignTokens.Shadows.liftBig)
-                .frame(width: 366)
+                .listenBannerPreviewSurface()
                 .offset(x: 12, y: 62)
         }
         .ignoresSafeArea()
