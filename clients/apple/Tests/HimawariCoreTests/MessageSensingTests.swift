@@ -43,7 +43,7 @@ import Testing
         let text = String(repeating: "a", count: MessageSensing.textLimit - 1) + "😀"
         let record = try #require(MessageSensing.record(MessageRow(rowId: 1, guid: "a", text: text, appleDate: 0, fromMe: false, service: "iMessage", sender: String(repeating: "😀", count: 100))))
         #expect(record.text?.utf16.count == MessageSensing.textLimit - 1)
-        #expect(record.evidence["sender"]?.utf16.count == MessageSensing.senderLimit)
+        #expect(record.evidence["sender"]?.string?.utf16.count == MessageSensing.senderLimit)
     }
 
     @Test func turningItOffForgetsWhereItWasSoTurningItBackOnSkipsTheGap() {
