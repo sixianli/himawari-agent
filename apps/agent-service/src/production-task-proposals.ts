@@ -241,9 +241,7 @@ export async function proposeTaskRun(
   if (!taskData({ text, basis: input.basis })) return { refused: "TASK_BASIS_REQUIRED" };
   const basis = input.basis
     .map(({ kind, ref }) => ({ kind, ref }))
-    .sort((a, b) =>
-      a.kind === b.kind ? compareText(a.ref, b.ref) : compareText(a.kind, b.kind),
-    );
+    .sort((a, b) => (a.kind === b.kind ? compareText(a.ref, b.ref) : compareText(a.kind, b.kind)));
   const external = context.externalContentSeen === true || context.origin === "external_content";
   const proposalId = `task:${createHash("sha256")
     .update(JSON.stringify([text, basis.map(({ kind, ref }) => [kind, ref]), external]))
@@ -273,8 +271,7 @@ export async function proposeTaskRun(
       })),
     ],
     data: { text, basis },
-    requiresFullRead:
-      long || external,
+    requiresFullRead: long || external,
     ...(context.source ? { source: context.source } : {}),
     ...(context.externalContentSeen === true ? { externalContentSeen: true } : {}),
   });
