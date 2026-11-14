@@ -34,6 +34,8 @@ public struct SettingsRootView: View {
         removedThisDevice = {}
     }
 
+    static let exportDownloadAvailable = false
+
     public var body: some View {
         NavigationStack(path: $path) {
             SettingsPage(gap: SL.rootGap) {
