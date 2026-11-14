@@ -2808,6 +2808,7 @@ describe("opencode review spending", () => {
       "pkg/parse_test.go",
       "src/parse_test.rs",
       "src/ParserTest.java",
+      "clients/apple/Tests/HimawariCoreTests/ServerValueTests.swift",
     ])
       expect(isTestFile(path)).toBe(true);
     for (const path of [
@@ -2822,6 +2823,8 @@ describe("opencode review spending", () => {
       "docs/test_notes.md",
       "src/latest_test.md",
       "src/ParserTests.java",
+      "clients/apple/Tests/Snapshots/iPhone-390/03-chat-list-dark.png",
+      "clients/apple/Sources/HimawariCore/ServerValues.swift",
     ])
       expect(isTestFile(path)).toBe(false);
   });
