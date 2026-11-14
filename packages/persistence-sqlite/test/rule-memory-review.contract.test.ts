@@ -55,6 +55,7 @@ function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
         `SELECT type, name, tbl_name FROM sqlite_master
          WHERE tbl_name IN (${LEDGER_TABLES.map(() => "?").join(", ")})
            AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+           AND name NOT LIKE 'decision_ledger_known_kind%'
          ORDER BY name`,
       )
       .all(...LEDGER_TABLES),
@@ -340,7 +341,7 @@ describe("rule memory review", () => {
     database.close();
   });
 
-  it("[P2-2] puts a rule into review once and keeps it there when the memory comes back", async () => {
+  it("[P2-2][P4-1] records one review per episode but moves the rule to a new revision on every later change, including the memory coming back", async () => {
     const { database } = await openMigrated();
     addMemory(database, "m-rule", "rule");
     link(database, "r-edit", "m-rule");
@@ -359,8 +360,8 @@ describe("rule memory review", () => {
         "UPDATE memory_records SET status = 'active', revision = 4, updated_at = ? WHERE id = 'm-rule'",
       )
       .run(T2);
-    expect(rule(database, "r-edit")).toMatchObject({ revision: 2, status: "needs_review" });
-    expect(history(database, "r-edit")).toHaveLength(2);
+    expect(rule(database, "r-edit")).toMatchObject({ revision: 4, status: "needs_review" });
+    expect(history(database, "r-edit")).toHaveLength(4);
     expect(
       database
         .prepare("SELECT COUNT(*) FROM decision_ledger WHERE kind = 'rule_review'")
@@ -406,7 +407,7 @@ describe("rule memory review", () => {
     database.close();
   });
 
-  it("[P2-2] permanently deleting a rule memory whose rule already waits for review adds nothing", async () => {
+  it("[P2-2][P4-1] permanently deleting a rule memory whose rule already waits for review adds a revision but no second review", async () => {
     const { database } = await openMigrated();
     addMemory(database, "m-rule", "rule");
     link(database, "r-edit", "m-rule");
@@ -416,8 +417,8 @@ describe("rule memory review", () => {
       )
       .run(T1);
     database.prepare("DELETE FROM memory_records WHERE id = 'm-rule'").run();
-    expect(rule(database, "r-edit")).toMatchObject({ revision: 2, status: "needs_review" });
-    expect(history(database, "r-edit")).toHaveLength(2);
+    expect(rule(database, "r-edit")).toMatchObject({ revision: 3, status: "needs_review" });
+    expect(history(database, "r-edit")).toHaveLength(3);
     expect(
       database
         .prepare("SELECT reason_code FROM decision_ledger WHERE kind = 'rule_review'")

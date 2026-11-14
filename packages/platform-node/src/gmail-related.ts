@@ -8,26 +8,11 @@ import type {
 const SUBJECT_PREFIX =
   /^\s*(?:(?:re|fwd?|fw|aw|wg|sv|vs|tr|回复|回覆|答复|转发|返信|転送)\s*[:：]\s*)+/iu;
 const MIN_SUBJECT_CHARACTERS = 6;
-const MAX_REFERENCES_PER_MAIL = 3;
 const SEARCH_RESULTS = 5;
 const FETCH_PARALLEL = 5;
-const REFERENCE_CONTEXT =
-  /(?<![A-Za-z])(?:order|booking|reservation|ticket|case|claim|invoice|confirmation|tracking|注文|订单|訂單|予約|预约|預約|案件|受付|申込|申请|お問い合わせ|問い合わせ)\s*(?:number|no\.?|id|番号|編号|编号|号)?\s*[:：#＃]?\s*((?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{7,39})/giu;
 
 export function normalizeSubject(subject: string): string {
   return subject.replace(SUBJECT_PREFIX, "").replace(/\s+/gu, " ").trim().toLowerCase();
-}
-
-export function extractReferenceIds(text: string): readonly string[] {
-  const found: string[] = [];
-  for (const match of text.matchAll(REFERENCE_CONTEXT)) {
-    const value = match[1]?.replace(/-+$/u, "").toUpperCase();
-    if (value === undefined || value.length < 8 || !/\d/u.test(value)) continue;
-    if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) continue;
-    if (!found.includes(value)) found.push(value);
-    if (found.length >= MAX_REFERENCES_PER_MAIL) break;
-  }
-  return found;
 }
 
 export function counterparts(item: ProactiveMail): readonly string[] {
@@ -92,6 +77,7 @@ export async function findRelatedMail(input: {
   readonly items: readonly ProactiveMail[];
   readonly limits: ProactiveRelatedLimits;
   readonly wholeThread?: ReadonlySet<string>;
+  readonly references?: ReadonlyMap<string, readonly string[]>;
   readonly signal: AbortSignal;
   readonly transport: GmailRelatedTransport;
 }): Promise<FlatRelatedFetch> {
@@ -156,7 +142,7 @@ export async function findRelatedMail(input: {
             add(message);
       }
       step = "reference";
-      const references = extractReferenceIds(`${item.subject}\n${item.body ?? item.snippet}`);
+      const references = input.references?.get(item.messageId) ?? [];
       for (const reference of references) {
         const ids = await search(`"${reference}" -in:trash -in:spam`);
         for (const message of await fetchMany(ids.filter((id) => id !== item.messageId)))

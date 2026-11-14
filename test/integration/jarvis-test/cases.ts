@@ -4,7 +4,11 @@ import type { MemoryCategory } from "@himawari-agent/application";
 import type { AnswerSpec, CaseFile, EnvironmentSpec } from "./graders.ts";
 import type { CalibrationSample, JudgeRule } from "./judge.ts";
 
-export type Scenario = "memory_correction" | "state_discipline" | "failure_transparency";
+export type Scenario =
+  | "memory_correction"
+  | "state_discipline"
+  | "failure_transparency"
+  | "proactive_next_step";
 
 export interface CaseMemory {
   readonly id: string;
@@ -13,6 +17,7 @@ export interface CaseMemory {
   readonly importance: number;
   readonly entities?: readonly string[];
   readonly recordedAt: string;
+  readonly validFrom?: string;
   readonly supersedes?: string;
 }
 
@@ -22,6 +27,11 @@ export interface CaseFailure {
   readonly error?: string;
   readonly exitCode?: number;
   readonly output?: string;
+}
+
+export interface CaseToolResult {
+  readonly tool: string;
+  readonly outputs: readonly string[];
 }
 
 export interface CasePermissions {
@@ -43,6 +53,8 @@ export interface JarvisCase {
   readonly memories?: readonly CaseMemory[];
   readonly files?: readonly CaseFile[];
   readonly failures?: readonly CaseFailure[];
+  readonly toolResults?: readonly CaseToolResult[];
+  readonly shouldPropose?: boolean;
   readonly permissions?: CasePermissions;
   readonly realFailures?: readonly RealFailure[];
   readonly context?: { readonly present: readonly string[]; readonly absent: readonly string[] };

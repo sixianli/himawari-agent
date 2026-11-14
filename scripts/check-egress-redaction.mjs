@@ -75,6 +75,7 @@ export const EXTERNAL_EGRESS_PATTERNS = Object.freeze([
   { name: "TypeSafe review request", pattern: /\/v1\/systemone/u },
   { name: "Exa MCP request", pattern: /https:\/\/mcp\.exa\.ai\/mcp/u },
   { name: "DeepSeek web tool request", pattern: /\/v1\/tools\/(?:search|fetch)/u },
+  { name: "AI Gateway decision request", pattern: /\/decisions[`"']/u },
 ]);
 
 export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
@@ -82,6 +83,10 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["TypeSafe review request"]],
     ["packages/platform-node/src/exa-public-search.ts", ["Exa MCP request"]],
     ["packages/platform-node/src/deepseek-web-provider.ts", ["DeepSeek web tool request"]],
+    [
+      "packages/platform-node/src/memory-import-duplicate-decision.ts",
+      ["AI Gateway decision request"],
+    ],
   ]),
 );
 
@@ -93,6 +98,7 @@ export const EXTERNAL_REDACTION_FUNCTIONS = Object.freeze([
 export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
   new Map([
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["redactForExternalText"]],
+    ["packages/platform-node/src/memory-import-duplicate-decision.ts", ["redactForExternalText"]],
     [
       "packages/platform-node/src/exa-public-search.ts",
       ["redactForExternalText", "redactForExternalUrl"],

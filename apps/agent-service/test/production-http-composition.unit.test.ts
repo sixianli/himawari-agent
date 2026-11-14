@@ -42,6 +42,7 @@ import {
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
+import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
@@ -368,6 +369,8 @@ describe("production HTTP composition", () => {
           "push.feedback.record",
           "owner.preferences.read",
           "owner.preferences.set",
+          "proposals.read",
+          "proposal.respond",
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
@@ -376,6 +379,14 @@ describe("production HTTP composition", () => {
           "device.pairing.confirm",
           "device.rename",
           "device.revoke",
+          "home.read",
+          "data.export.start",
+          "data.export.cancel",
+          "data.export.status.read",
+          "files.list.read",
+          "login.devices.read",
+          "login.device.revoke",
+          "login.devices.revoke_others",
           "perception.status.read",
           "perception.day.read",
           "perception.episode.read",
@@ -1167,6 +1178,258 @@ describe("production HTTP composition", () => {
         },
       });
       expect(withoutSession.statusCode, withoutSession.body).toBe(401);
+      const homeQuery = (cookie: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "home.read"),
+            kind: "query",
+            payload: { locale: "zh-CN" },
+          },
+        });
+      const homeResponse = await homeQuery(second.cookie);
+      expect(homeResponse.statusCode, homeResponse.body).toBe(200);
+      const homeSnapshot = gatewayV2MessageSchema.parseJson(homeResponse.body);
+      if (homeSnapshot.type !== "home.snapshot") throw new Error(homeSnapshot.type);
+      expect(homeSnapshot.payload.incompleteSources).toEqual([]);
+      expect(homeSnapshot.payload.awaitingCount).toBe(
+        homeSnapshot.payload.items.filter(({ awaitsOwner }) => awaitsOwner).length,
+      );
+      expect(await running.composition.home.awaitingCount()).toBe(
+        homeSnapshot.payload.awaitingCount,
+      );
+      expect((await homeQuery("")).statusCode).toBe(401);
+      const exportStart = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: {
+          ...requestHeaders(token, second.cookie, second.csrf),
+          "idempotency-key": "data-export-settings-01",
+        },
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "data.export.start"),
+          kind: "command",
+          idempotencyKey: "data-export-settings-01",
+          payload: {},
+        },
+      });
+      expect(exportStart.statusCode, exportStart.body).toBe(200);
+      const exportId = (exportStart.json() as { resultRef: string }).resultRef;
+      expect(exportId).toMatch(/^data-export:[A-Za-z0-9_-]{22}$/u);
+      let exported: { state: string; result: { downloadPath: string; sizeBytes: number } | null } =
+        {
+          state: "running",
+          result: null,
+        };
+      for (let attempt = 0; attempt < 300 && exported.state === "running"; attempt += 1) {
+        const status = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, second.cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "data.export.status.read"),
+            kind: "query",
+            payload: { exportId },
+          },
+        });
+        expect(status.statusCode, status.body).toBe(200);
+        const parsed = gatewayV2MessageSchema.parseJson(status.body);
+        if (parsed.type !== "data.export.status.snapshot") throw new Error("snapshot");
+        exported = parsed.payload;
+        if (exported.state === "running") await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(exported.state).toBe("ready");
+      const archive = await running.composition.app.inject({
+        method: "GET",
+        url: exported.result?.downloadPath ?? "",
+        headers: requestHeaders(token, second.cookie),
+      });
+      expect(archive.statusCode).toBe(200);
+      expect(archive.rawPayload.byteLength).toBe(exported.result?.sizeBytes);
+      const cancelExport = (id: string, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, second.cookie, second.csrf), "idempotency-key": key },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "data.export.cancel"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { exportId: id },
+          },
+        });
+      expect(
+        (await cancelExport("data-export:AAAAAAAAAAAAAAAAAAAAAA", "data-export-cancel-unknown"))
+          .statusCode,
+      ).toBe(404);
+      const exportWithoutSession = await running.composition.app.inject({
+        method: "GET",
+        url: exported.result?.downloadPath ?? "",
+        headers: requestHeaders(token, "", undefined),
+      });
+      expect(exportWithoutSession.statusCode).toBe(401);
+      const cancelled = await cancelExport(exportId, "data-export-cancel-01");
+      expect(cancelled.statusCode, cancelled.body).toBe(200);
+      expect(cancelled.json()).toMatchObject({ resultRef: exportId, replayed: false });
+      expect(
+        (
+          await running.composition.app.inject({
+            method: "GET",
+            url: exported.result?.downloadPath ?? "",
+            headers: requestHeaders(token, second.cookie),
+          })
+        ).statusCode,
+      ).toBe(404);
+      const phoneFiles = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(phoneFiles.statusCode, phoneFiles.body).toBe(200);
+      expect(gatewayV2MessageSchema.parseJson(phoneFiles.body)).toMatchObject({
+        type: "files.list.snapshot",
+        payload: { files: [], nextCursor: null },
+      });
+      const filesWithoutSession = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, "", undefined),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: null, limit: 20 },
+        },
+      });
+      expect(filesWithoutSession.statusCode, filesWithoutSession.body).toBe(401);
+      const filesWithBadCursor = await running.composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, second.cookie),
+        payload: {
+          ...ownerEnvelope(second.authenticationRef, "files.list.read"),
+          kind: "query",
+          payload: { kind: null, origin: null, before: "bm90LWEtY3Vyc29y", limit: 20 },
+        },
+      });
+      expect(filesWithBadCursor.statusCode, filesWithBadCursor.body).toBe(400);
+      const loginDevices = async () => {
+        const response = await running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, second.cookie),
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.devices.read"),
+            kind: "query",
+            payload: {},
+          },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        const parsed = gatewayV2MessageSchema.parseJson(response.body);
+        if (parsed.type !== "login.devices.snapshot") throw new Error(parsed.type);
+        return parsed.payload.devices;
+      };
+      const deviceState = running.repository.sessionDeviceState();
+      const latest = [...(await deviceState.listDevices(OWNER_ID as never, false))]
+        .sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
+        .at(-1);
+      if (!latest) throw new Error("no device");
+      const { revision: latestRevision, ...latestDevice } = latest;
+      await deviceState.saveDevice(
+        { ...latestDevice, lastSeenAt: "2099-01-01T00:00:00.000Z" },
+        latestRevision,
+      );
+      const before = await loginDevices();
+      expect(before[0]?.deviceId).toBe(latest.id);
+      expect(before.length).toBeGreaterThanOrEqual(2);
+      expect(before.filter(({ current }) => current)).toHaveLength(1);
+      expect(before.map(({ deviceId }) => deviceId)).toEqual(
+        [...(await running.repository.sessionDeviceState().listDevices(OWNER_ID as never, false))]
+          .sort((left, right) =>
+            left.lastSeenAt === right.lastSeenAt
+              ? Number(left.id > right.id) - Number(left.id < right.id)
+              : Number(left.lastSeenAt < right.lastSeenAt) -
+                Number(left.lastSeenAt > right.lastSeenAt),
+          )
+          .map(({ id }) => id),
+      );
+      const current = before.find(({ current }) => current);
+      const other = before.find(({ current }) => !current);
+      const revoke = (deviceId: string, recentAuthenticationRef: string | null, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: {
+            ...requestHeaders(token, second.cookie, second.csrf),
+            "idempotency-key": key,
+          },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.device.revoke"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { deviceId, recentAuthenticationRef },
+          },
+        });
+      expect(
+        (await revoke(current?.deviceId ?? "", second.authenticationRef, "revoke-self")).statusCode,
+      ).toBe(409);
+      expect((await revoke(other?.deviceId ?? "", null, "revoke-no-recent")).statusCode).not.toBe(
+        200,
+      );
+      expect((await loginDevices()).length).toBe(before.length);
+      const revoked = await revoke(other?.deviceId ?? "", second.authenticationRef, "revoke-other");
+      expect(revoked.statusCode, revoked.body).toBe(200);
+      expect((await loginDevices()).map(({ deviceId }) => deviceId)).not.toContain(other?.deviceId);
+      const replayed = await revoke(other?.deviceId ?? "", null, "revoke-other-again");
+      expect(replayed.statusCode, replayed.body).toBe(200);
+      expect(replayed.json()).toMatchObject({ replayed: true });
+      expect((await revoke("device-missing", null, "revoke-missing")).statusCode).toBe(404);
+      expect((await loginDevices()).find(({ current }) => current)?.deviceId).toBe(
+        current?.deviceId,
+      );
+      for (const id of ["device-extra-1", "device-extra-2"])
+        await deviceState.saveDevice(
+          {
+            id: id as never,
+            ownerId: OWNER_ID as never,
+            label: id,
+            status: "active",
+            firstSeenAt: "2026-11-01T00:00:00.000Z",
+            lastSeenAt: "2026-11-01T00:00:00.000Z",
+          },
+          null,
+        );
+      const revokeOthers = (recentAuthenticationRef: string | null, key: string) =>
+        running.composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, second.cookie, second.csrf), "idempotency-key": key },
+          payload: {
+            ...ownerEnvelope(second.authenticationRef, "login.devices.revoke_others"),
+            kind: "command",
+            idempotencyKey: key,
+            payload: { recentAuthenticationRef },
+          },
+        });
+      const crowded = await loginDevices();
+      expect(crowded.length).toBeGreaterThanOrEqual(3);
+      expect((await revokeOthers(null, "revoke-others-no-recent")).statusCode).not.toBe(200);
+      expect((await loginDevices()).length).toBe(crowded.length);
+      const othersCleared = await revokeOthers(second.authenticationRef, "revoke-others");
+      expect(othersCleared.statusCode, othersCleared.body).toBe(200);
+      expect(othersCleared.json()).toMatchObject({ replayed: false });
+      expect(await loginDevices()).toEqual([
+        expect.objectContaining({ deviceId: current?.deviceId, current: true }),
+      ]);
+      const clearedAgain = await revokeOthers(null, "revoke-others-again");
+      expect(clearedAgain.statusCode, clearedAgain.body).toBe(200);
+      expect(clearedAgain.json()).toMatchObject({ replayed: true });
       const readInterceptions = async () => {
         const response = await running.composition.app.inject({
           method: "POST",
@@ -1942,6 +2205,97 @@ describe("[P1-1] device management through gateway v2", () => {
       expect(revokedStale.statusCode).not.toBe(200);
       expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
 
+      const secondCode = randomBytes(16).toString("base64url");
+      expect((await command("device.pairing.start", { pairingCode: secondCode })).statusCode).toBe(
+        200,
+      );
+      const second = {
+        device: generateDeviceTestKeyPair(),
+        confirm: generateDeviceTestKeyPair(),
+      };
+      const secondPaired = await app.inject({
+        method: "POST",
+        url: "/api/device/v1/pair",
+        headers: { host: "agent.example.test", "content-type": "application/json" },
+        payload: JSON.stringify({
+          pairingCode: secondCode,
+          kind: "iphone",
+          name: "Confirmed iPhone",
+          releaseChannel: "direct",
+          devicePublicKey: second.device.publicKeySpkiBase64,
+          confirmPublicKey: second.confirm.publicKeySpkiBase64,
+        }),
+      });
+      expect(secondPaired.statusCode, secondPaired.body).toBe(201);
+      const secondDevice = (secondPaired.json() as { device: { id: string } }).device.id;
+      expect(
+        (await command("device.pairing.confirm", { deviceId: secondDevice, expectedRevision: 0 }))
+          .statusCode,
+      ).toBe(200);
+      const webLogins = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: { ...message("login.devices.read"), kind: "query", payload: {} },
+      });
+      expect(webLogins.statusCode, webLogins.body).toBe(200);
+      const webLogin = (
+        webLogins.json() as { payload: { devices: { deviceId: string; current: boolean }[] } }
+      ).payload.devices.find((device) => device.current);
+      expect(webLogin).toBeDefined();
+      const signedGateway = (body: unknown, confirm?: string) =>
+        buildDeviceTestRequest({
+          method: "POST",
+          origin: ORIGIN,
+          path: "/api/device/v1/gateway",
+          body: JSON.stringify(body),
+          deviceId: secondDevice,
+          deviceKey: second.device.privateKey,
+          createdAtSeconds: Math.floor(NOW.valueOf() / 1000),
+          ...(confirm ? { confirmKey: second.confirm.privateKey, nonce: confirm } : {}),
+        });
+      const sendDevice = (request: ReturnType<typeof signedGateway>) =>
+        app.inject({
+          method: "POST",
+          url: new URL(request.url).pathname,
+          headers: request.headers,
+          ...(request.body ? { payload: request.body } : {}),
+        });
+      const signOutLogin = {
+        gateway: "v2",
+        type: "login.device.revoke",
+        messageId: "device-message-sign-out",
+        idempotencyKey: "device-idempotency-sign-out",
+        dataClassification: "private",
+        risk: "low",
+        payload: { deviceId: webLogin?.deviceId, recentAuthenticationRef: "device" },
+      };
+      const unconfirmed = await sendDevice(signedGateway(signOutLogin));
+      expect(unconfirmed.statusCode, unconfirmed.body).toBe(403);
+      const challengeRequest = buildDeviceTestRequest({
+        method: "POST",
+        origin: ORIGIN,
+        path: "/api/device/v1/approvals/challenge",
+        body: "{}",
+        deviceId: secondDevice,
+        deviceKey: second.device.privateKey,
+        createdAtSeconds: Math.floor(NOW.valueOf() / 1000),
+      });
+      const issued = await sendDevice(challengeRequest);
+      expect(issued.statusCode, issued.body).toBe(201);
+      const signedOut = await sendDevice(
+        signedGateway(signOutLogin, (issued.json() as { challenge: string }).challenge),
+      );
+      expect(signedOut.statusCode, signedOut.body).toBe(200);
+      others.push(unconfirmed.body, issued.body, signedOut.body);
+      const afterSignOut = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: { ...message("login.devices.read"), kind: "query", payload: {} },
+      });
+      expect(afterSignOut.statusCode).toBe(401);
+
       const printed = [...logged.mock.calls, ...errored.mock.calls].map(([chunk]) => String(chunk));
       for (const text of [...leaked, ...others, ...printed]) {
         expect(text).not.toContain(ACCESS_ID);
@@ -1976,5 +2330,24 @@ describe("[P1-1] device limit keys", () => {
     const pageKeys = [...listed.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
     expect(pageKeys).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
     expect([...DEVICE_LIMIT_KEYS]).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
+  });
+});
+
+describe("[I-73] memory import duplicates wiring", () => {
+  it("forwards the import duplicate checker from the composition options to the memory control", async () => {
+    const source = await readFile(
+      new URL("../src/production-http-composition.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toMatch(/readonly importDuplicates\?:/u);
+    expect(source).toMatch(
+      /options\.memory\.importDuplicates\s*\?\s*\{\s*importDuplicates:\s*options\.memory\.importDuplicates\s*\}/u,
+    );
+  });
+
+  it("is not satisfied by a composition that never forwards it", () => {
+    const withoutForwarding =
+      "new ProductionMemoryControl({ classifier: options.memory.classifier })";
+    expect(withoutForwarding).not.toMatch(/importDuplicates:\s*options\.memory\.importDuplicates/u);
   });
 });

@@ -40,66 +40,6 @@ function rows(database: Database) {
   );
 }
 
-const REVIEW_OUTCOMES = {
-  rule_review: [
-    "needs_review",
-    "suspended",
-    "cleared",
-    "recheck_failed",
-    "owner_adopted",
-    "owner_confirmed",
-    "owner_restored",
-  ],
-  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
-} as const;
-
-function withoutReviewOutcomes(sql: string | null): string | null {
-  const quoted = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
-  return (
-    sql
-      ?.replace(", 'memory_review'", "")
-      .replace(
-        `(kind = 'rule_review' AND outcome IN ( ${quoted(REVIEW_OUTCOMES.rule_review)} ))`,
-        "(kind = 'rule_review' AND outcome = 'needs_review')",
-      )
-      .replace(
-        ` OR (kind = 'memory_review' AND outcome IN ( ${quoted(REVIEW_OUTCOMES.memory_review)} ))`,
-        "",
-      ) ?? null
-  );
-}
-
-const LEDGER_OUTCOMES: Readonly<Record<string, readonly string[]>> = {
-  ...REVIEW_OUTCOMES,
-  memory_candidate: [
-    "kept",
-    "discarded",
-    "pending_approval",
-    "capture_retrying",
-    "capture_queued",
-    "capture_gave_up",
-  ],
-  consolidation: ["merge", "supersede", "archive", "reflect", "hold"],
-  context_truncation: ["truncated"],
-  retrieval_degrade: ["degraded"],
-  external_read: ["read"],
-  limit_change: ["changed"],
-  delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
-  proposal: [
-    "proposed",
-    "blocked",
-    "accepted",
-    "dismissed",
-    "expired",
-    "executed",
-    "failed",
-    "undone",
-    "not_proposed",
-    "superseded",
-    "told",
-  ],
-};
-
 function insertLedgerOutcome(
   database: Database,
   kind: string,
@@ -118,15 +58,10 @@ function insertLedgerOutcome(
 }
 
 function insertEveryAcceptedOutcome(database: Database): readonly string[] {
-  const inserted: string[] = [];
-  for (const [kind, outcomes] of Object.entries(LEDGER_OUTCOMES))
-    for (const outcome of outcomes)
-      try {
-        inserted.push(insertLedgerOutcome(database, kind, outcome));
-      } catch (error) {
-        if (!String(error).includes("CHECK constraint")) throw error;
-      }
-  return inserted;
+  const pairs = database
+    .prepare("SELECT kind, outcome FROM decision_ledger_outcomes ORDER BY kind, outcome")
+    .all() as { kind: string; outcome: string }[];
+  return pairs.map(({ kind, outcome }) => insertLedgerOutcome(database, kind, outcome));
 }
 
 function schema(database: Database) {
@@ -140,7 +75,7 @@ function schema(database: Database) {
     .all(...TABLES)
     .map((row) => {
       const entry = row as { name: string; sql: string | null };
-      return { ...entry, sql: withoutReviewOutcomes(entry.sql?.replace(/\s+/gu, " ") ?? null) };
+      return { ...entry, sql: entry.sql?.replace(/\s+/gu, " ") ?? null };
     });
 }
 
@@ -337,7 +272,7 @@ describe("[iOS-7] proactive source registry migration", () => {
         `${kind}/${outcome}`,
       ).not.toThrow();
     expect(() => insertLedgerOutcome(database, "memory_review", "owner_forgot", "after")).toThrow(
-      /CHECK constraint/u,
+      /DECISION_LEDGER_UNKNOWN_KIND_OR_OUTCOME/u,
     );
     database.close();
   });

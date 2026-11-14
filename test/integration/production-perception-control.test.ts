@@ -1,3 +1,4 @@
+import { PERCEPTION_CONFIGURATION_RANGES } from "@himawari-agent/application";
 import {
   type GatewayV2Command,
   type GatewayV2Query,
@@ -222,6 +223,8 @@ describe("perception gateway operations", () => {
     expect(status.retention.find(({ key }) => key === "track")).toMatchObject({
       days: 14,
       defaultDays: h.perceptionConfiguration.current.trackRetentionDays,
+      minDays: PERCEPTION_CONFIGURATION_RANGES.trackRetentionDays[0],
+      maxDays: PERCEPTION_CONFIGURATION_RANGES.trackRetentionDays[1],
     });
     await next({ kind: "resume" });
     expect((await read(h, "perception.status.read", "perception.status.snapshot")).state).toBe(
@@ -244,6 +247,11 @@ describe("perception gateway operations", () => {
       { kind: "pause" },
       { kind: "pause", until: atOffset(h, -60) },
       { kind: "retention", key: "speech", value: 3 },
+      {
+        kind: "retention",
+        key: "track",
+        value: PERCEPTION_CONFIGURATION_RANGES.trackRetentionDays[1] + 1,
+      },
       { kind: "limit", key: "device.battery.listening", value: 10 },
       { kind: "limit", key: "perception.images.daily", value: 100_001 },
       { kind: "limit" },

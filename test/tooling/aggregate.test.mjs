@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,6 +38,19 @@ const context = {
 };
 const count = () => ({ files: 1, executed: 2, passed: 2, failed: 0, skipped: 0 });
 const archive = (platform) => Buffer.from(`verified ${platform} archive`);
+function writeEnvelopeFiles(folder, envelope) {
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
+  for (const report of envelope.result.reports) {
+    const platform = ["browser", "tests"].includes(envelope.result.checkId)
+      ? "linux-x64"
+      : envelope.result.matrixKey;
+    writeFileSync(
+      path.join(folder, report.path),
+      report.kind === "artifact" ? archive(platform) : Buffer.from(`real ${report.kind} report`),
+    );
+  }
+}
 const directories = [];
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -47,12 +68,12 @@ function positive() {
           ]),
         )
       : count();
-    const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+    const platform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const outputs = check.outputs.map((kind) => {
       const bytes = kind === "artifact" ? archive(platform) : Buffer.from(`real ${kind} report`);
       return { path: `report.${kind}`, kind, bytes: bytes.length, sha256: sha256(bytes) };
     });
-    const artifacts = ["build", "browser", "coverage"].includes(check.id)
+    const artifacts = ["build", "browser", "tests"].includes(check.id)
       ? [
           {
             role: check.id === "build" ? "produced" : "consumed",
@@ -110,8 +131,66 @@ const run = (mutate) => {
   mutate(input);
   return aggregate(input);
 };
-const selected = (input, id = "coverage", key = "default") =>
+const selected = (input, id = "tests", key = "default") =>
   input.reports.find((entry) => entry.result.checkId === id && entry.result.matrixKey === key);
+
+describe("PR 上只跑相关测试时的汇总 [ADR-0268]", () => {
+  const zero = () => ({ files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 });
+  const relate = (input, id, projectIds) => {
+    const check = selected(input, id);
+    check.result.relatedProjects = projectIds;
+    for (const project of check.result.projects)
+      if (projectIds.includes(project.id)) project.counts = zero();
+    check.result.counts = Object.fromEntries(
+      Object.keys(zero()).map((key) => [
+        key,
+        check.result.projects.reduce((sum, project) => sum + project.counts[key], 0),
+      ]),
+    );
+  };
+  it("PR 上相关测试为零的项目和整个 tooling 检查算通过，汇总标成 related", () => {
+    const result = run((input) => {
+      relate(input, "tests", ["integration", "e2e", "pi-compat"]);
+      relate(input, "tooling", ["tooling"]);
+    });
+    expect(result.failures).toEqual([]);
+    expect(result.scope).toBe("related");
+    expect(validateRecord("GateSummary", result)).toBe(result);
+  });
+  it("没有相关范围的完整运行标成 full", () => {
+    expect(aggregate(positive()).scope).toBe("full");
+  });
+  it.each([
+    [
+      "不是 PR 的运行",
+      (input) => {
+        input.context.event = "workflow_dispatch";
+      },
+      "Related test scope outside pull_request",
+    ],
+    [
+      "unit 只跑相关测试",
+      (input) => relate(input, "tests", ["unit"]),
+      "Related test scope for unit is not allowed",
+    ],
+  ])("反向：%s带相关范围时被拒", (_name, mutate, reason) => {
+    const result = run((input) => {
+      for (const report of input.reports) report.result.event = input.context.event;
+      relate(input, "tests", ["integration"]);
+      mutate(input);
+      for (const report of input.reports) report.result.event = input.context.event;
+    });
+    expect(result.status).toBe("failed");
+    expect(result.failures.map((failure) => failure.reason)).toContain(reason);
+  });
+  it("反向：没声明相关范围的项目计数为零照样被拒", () => {
+    const result = run((input) => {
+      const check = selected(input);
+      check.result.projects.find((project) => project.id === "integration").counts = zero();
+    });
+    expect(result.status).toBe("failed");
+  });
+});
 
 describe("complete-attempt gate", () => {
   it("rejects a scheduled quality context even when all required results claim success", () => {
@@ -124,7 +203,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(8);
+    expect(result.expected).toHaveLength(9);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
@@ -328,9 +407,9 @@ describe("complete-attempt gate", () => {
     [
       "missing report kind",
       (input) => {
-        selected(input).result.reports = selected(input).result.reports.filter(
-          (report) => report.kind !== "lcov",
-        );
+        const check = selected(input);
+        check.result.reports = check.result.reports.filter((report) => report.kind !== "json");
+        check.artifacts = check.artifacts.filter((item) => item.path !== "report.json");
       },
     ],
     [
@@ -398,6 +477,23 @@ describe("complete-attempt gate", () => {
     expect(result.status).toBe("failed");
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
+  it("[ADR-0266] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
+    for (const id of ["policy", "static", "tooling", "security"]) {
+      const input = positive();
+      selected(input, id).result.toolchain.arch = "arm64";
+      expect(aggregate(input).status).toBe("passed");
+      const other = positive();
+      selected(other, id).result.toolchain.arch = "ppc64";
+      const failed = aggregate(other);
+      expect(failed.status).toBe("failed");
+      expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
+    }
+    const build = positive();
+    selected(build, "build", "linux-x64").result.toolchain.arch = "arm64";
+    const failed = aggregate(build);
+    expect(failed.status).toBe("failed");
+    expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
+  });
   it("requires a complete rerun and rejects mixed attempts", () => {
     const input = positive();
     input.context.attempt = 3;
@@ -430,24 +526,56 @@ describe("complete-attempt gate", () => {
     directories.push(directory);
     for (const envelope of input.reports) {
       const folder = path.join(directory, envelope.result.checkId, envelope.result.matrixKey);
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
-      for (const report of envelope.result.reports) {
-        const platform = ["browser", "coverage"].includes(envelope.result.checkId)
-          ? "linux-x64"
-          : envelope.result.matrixKey;
-        writeFileSync(
-          path.join(folder, report.path),
-          report.kind === "artifact"
-            ? archive(platform)
-            : Buffer.from(`real ${report.kind} report`),
-        );
-      }
+      writeEnvelopeFiles(folder, envelope);
     }
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("passed");
-    writeFileSync(path.join(directory, "coverage/default/report.json"), "tampered");
+    writeFileSync(path.join(directory, "tests/default/report.json"), "tampered");
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
+  });
+  it("浏览器证据目录里自带的 result.json 不当成检查结果，检查自己的 result.json 照常读", () => {
+    const input = positive();
+    const directory = mkdtempSync(path.join(os.tmpdir(), "ci-results-"));
+    directories.push(directory);
+    for (const envelope of input.reports) {
+      const folder = path.join(
+        directory,
+        `${envelope.result.checkId}-${envelope.result.matrixKey}`,
+      );
+      writeEnvelopeFiles(folder, envelope);
+    }
+    const browserFolder = readdirSync(directory).find((name) => name.startsWith("browser-"));
+    const evidence = path.join(directory, browserFolder, "browser/reports/execution-chain");
+    mkdirSync(evidence, { recursive: true });
+    writeFileSync(
+      path.join(evidence, "result.json"),
+      JSON.stringify({ cases: [], scope: "fixture" }),
+    );
+    const browserResultFile = path.join(directory, browserFolder, "result.json");
+    const browserResult = JSON.parse(readFileSync(browserResultFile, "utf8"));
+    const nested = "browser/reports/execution-chain/result.json";
+    const nestedBytes = readFileSync(path.join(evidence, "result.json"));
+    const nestedReport = {
+      path: nested,
+      sha256: sha256(nestedBytes),
+      bytes: nestedBytes.length,
+      kind: "json",
+    };
+    browserResult.reports.push(nestedReport);
+    writeFileSync(browserResultFile, JSON.stringify(browserResult));
+    const browserEnvelope = input.reports.find((envelope) => envelope.result.checkId === "browser");
+    browserEnvelope.result.reports.push(nestedReport);
+    input.reports = readReportEnvelopes(directory);
+    expect(
+      input.reports.find((envelope) => envelope.source === path.join(browserFolder, "result.json"))
+        .artifacts,
+    ).toContainEqual({ path: nested, sha256: sha256(nestedBytes), bytes: nestedBytes.length });
+    expect(input.reports.map((envelope) => envelope.source)).not.toContain(
+      path.join(browserFolder, "browser/reports/execution-chain/result.json"),
+    );
+    expect(aggregate(input).status).toBe("passed");
+    symlinkSync("/etc/hostname", path.join(evidence, "linked.txt"));
+    expect(() => readReportEnvelopes(directory)).toThrow("Symbolic link in reports");
   });
 });

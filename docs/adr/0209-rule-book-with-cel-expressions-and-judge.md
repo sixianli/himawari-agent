@@ -42,7 +42,7 @@ date: "2026-11-10"
 4. 现有的邮件检查在 `packages/application/src/services/proactive-rules.ts`（迁移前）里写死了三条“地板规则”（重要发件人、公共机构域名后缀、钱相关词）和静默时段计算；三条地板规则的 id（`floor_important_sender`、`floor_public_domain`、`floor_money_words`）已写进决策记录，所以保持不变。
 5. CEL 的安全性：cel-spec 说明 CEL “evaluates in linear time, is mutation free, and not Turing-complete”；cel.dev 说明 “CEL was designed specifically to be safe for executing user code”。
 6. 用户在界面看到的是试算例子，不是代码；模型只翻译，不写可执行代码（方案最终版“放弃了什么”）。
-7. 发给模型的内容只能往后追加：`.claude/rules/prompt-prefix.md`。本步没有给模型的请求加任何东西。
+7. 发给模型的内容只能往后追加：`.agents/instructions/prompt-prefix.md`。本步没有给模型的请求加任何东西。
 
 [返回阅读导航](#contents)
 
@@ -118,7 +118,7 @@ date: "2026-11-10"
 - [ADR 0134](0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)：规则是硬性设定。
 - [ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例（已被 [ADR 0234](0234-one-program-per-person-database-file.md) 取代，改为一个程序、每人一个数据库文件；每人各自一个主人这一点不变）。
 - [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
-- [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 - [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。
 
 [返回阅读导航](#contents)

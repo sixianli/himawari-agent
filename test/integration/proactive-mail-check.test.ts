@@ -32,6 +32,7 @@ import {
   ManualClock,
   ScriptedModelPort,
 } from "@himawari-agent/testing";
+import { MAIL_REFERENCE_EXTRACTION } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProactiveRecentSummaries } from "../../apps/agent-service/src/production-proactive-summaries.ts";
 import { applyBackoffWrites } from "../../packages/persistence-sqlite/src/proactive-push-backoff.ts";
@@ -67,6 +68,7 @@ interface Scripted {
   readonly reason?: string;
   readonly usedMemoryIds?: readonly string[];
   readonly amount?: unknown;
+  readonly money?: "yes" | "no";
 }
 
 function mail(messageId: string, overrides: Partial<ProactiveMail> = {}): ProactiveMail {
@@ -209,6 +211,46 @@ describe("proactive Gmail check acceptance", () => {
     const models: ScriptedModelPort[] = [];
     let scripted = new ScriptedModelPort([descriptor], []);
     const queued: ScriptedModelPort[] = [];
+    const referencePrompts: string[] = [];
+    const referenceQueue: ScriptedModelPort[] = [];
+    let referenceCall = false;
+    const referenceEvents = (text: string, cost: number): ModelInvocationEvent[] => {
+      const ref = `reference-output-${outputs.size + 1}`;
+      outputs.set(ref, text);
+      return [
+        { type: "model.started", invocationId: "scripted", occurredAt: clock.now() },
+        {
+          type: "model.output",
+          invocationId: "scripted",
+          sequence: 1,
+          payloadRef: ref,
+          occurredAt: clock.now(),
+        },
+        {
+          type: "model.completed",
+          invocationId: "scripted",
+          inputTokens: 100,
+          outputTokens: 50,
+          costMicros: cost,
+          latencyMs: 10,
+          occurredAt: clock.now(),
+        },
+      ];
+    };
+    const scriptReferences = (
+      entries: readonly { readonly id: string; readonly references: readonly string[] }[],
+      cost = 0,
+    ) => {
+      referenceQueue.push(
+        new ScriptedModelPort(
+          [descriptor],
+          referenceEvents(JSON.stringify({ items: entries }), cost),
+        ),
+      );
+    };
+    const scriptReferencesRaw = (text: string, cost = 0) => {
+      referenceQueue.push(new ScriptedModelPort([descriptor], referenceEvents(text, cost)));
+    };
     const script = (entries: readonly Scripted[], cost = options.cost ?? 300) => {
       const ref = `output-${outputs.size + 1}`;
       outputs.set(
@@ -317,11 +359,18 @@ describe("proactive Gmail check acceptance", () => {
       reader: mailReader(reader),
       model: {
         get model() {
+          if (referenceCall)
+            return (
+              referenceQueue.shift() ??
+              new ScriptedModelPort([descriptor], referenceEvents('{"items":[]}', 0))
+            );
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
-          prompts.push(prompt);
+          referenceCall = prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text);
+          (referenceCall ? referencePrompts : prompts).push(prompt);
           deadlines.push(deadlineAt);
           labels.push(dataClassification);
           const inputRef = `input-${invocationId}`;
@@ -384,6 +433,9 @@ describe("proactive Gmail check acceptance", () => {
       service,
       overview,
       prompts,
+      referencePrompts,
+      scriptReferences,
+      scriptReferencesRaw,
       deadlines,
       labels,
       invocations,
@@ -1273,9 +1325,9 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "points", result: "act", todo: "兑换积分", priority: "low" },
-      { id: "bill", result: "act", todo: "11/20 前付电费", priority: "low" },
+      { id: "bill", result: "act", todo: "11/20 前付电费", priority: "low", money: "yes" },
       { id: "ward", result: "act", todo: "办手续", priority: "low" },
-      { id: "tax", result: "act", todo: "缴税", priority: "medium" },
+      { id: "tax", result: "act", todo: "缴税", priority: "medium", money: "yes" },
     ]);
     const decision = await h.service.run();
     expect(decision?.counts).toMatchObject({ judged: 4, ignore: 1, know: 2, act: 1 });
@@ -1395,13 +1447,78 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "friend", result: "know", todo: "朋友约周六" },
-      { id: "bill", result: "know", todo: "电费账单已出" },
+      { id: "bill", result: "know", todo: "电费账单已出", money: "yes" },
     ]);
     const decision = await h.service.run();
     expect(decision?.counts).toMatchObject({ know: 1, ignore: 1 });
     const overview = await h.overview();
     expect(overview.insights.map(({ summary }) => summary)).toEqual(["电费账单已出"]);
     expect(overview.audit.items.map(({ messageId }) => messageId)).toEqual(["friend"]);
+  });
+
+  describe("[T7] the money floor follows the model's yes or no, not a word list", () => {
+    const deduction = () =>
+      mail("deduction", {
+        from: "カード <info@card.example.com>",
+        fromAddress: "info@card.example.com",
+        subject: "扣款成功通知",
+        snippet: "引落 payment invoice",
+      });
+
+    it("raises an ignored mail to worth-knowing when the model says it is about money", async () => {
+      const h = await harness();
+      h.reader.items = [mail("plain", { subject: "Lunch on Friday", snippet: "see you" })];
+      h.script([{ id: "plain", result: "ignore", money: "yes" }]);
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ know: 1 });
+      const [entry] = await h.ledger.list({
+        ...scope,
+        kind: "proactive",
+        since: "2026-11-01T00:00:00.000Z",
+        limit: 5,
+      });
+      expect(entry?.inputs.floorHits).toEqual({ plain: ["floor_money_words"] });
+    });
+
+    it.each([
+      ["says no", { money: "no" as const }],
+      ["leaves the field out", {}],
+    ])(
+      "REVERSE: a mail full of money words stays ignored when the model %s",
+      async (_name, extra) => {
+        const h = await harness();
+        h.reader.items = [deduction()];
+        h.script([{ id: "deduction", result: "ignore", ...extra }]);
+        const decision = await h.service.run();
+        expect(decision?.counts).toMatchObject({ ignore: 1, know: 0 });
+        const [entry] = await h.ledger.list({
+          ...scope,
+          kind: "proactive",
+          since: "2026-11-01T00:00:00.000Z",
+          limit: 5,
+        });
+        expect(entry?.inputs.floorHits).toEqual({});
+      },
+    );
+
+    it("REVERSE: a value that is not exactly yes or no counts as unknown and raises nothing", async () => {
+      const h = await harness();
+      h.reader.items = [deduction()];
+      h.scriptRaw(
+        "completed",
+        '{"items":[{"id":"deduction","result":"ignore","confidence":"sure","money":"maybe"}]}',
+      );
+      const decision = await h.service.run();
+      expect(decision?.counts).toMatchObject({ ignore: 1, know: 0 });
+    });
+
+    it("tells the model to write the money answer for every mail, including ignored ones", async () => {
+      const h = await harness();
+      h.reader.items = [deduction()];
+      h.script([{ id: "deduction", result: "ignore", money: "no" }]);
+      await h.service.run();
+      expect(h.prompts[0]).toContain('"money"');
+    });
   });
 
   it("[PG-18] re-judges already stored worth-knowing rows by the same rule when the page is read", async () => {
@@ -1417,7 +1534,7 @@ describe("proactive Gmail check acceptance", () => {
     ];
     h.script([
       { id: "friend", result: "act", todo: "回复朋友", priority: "medium" },
-      { id: "bill", result: "act", todo: "电费账单已出", priority: "medium" },
+      { id: "bill", result: "act", todo: "电费账单已出", priority: "medium", money: "yes" },
     ]);
     await h.service.run();
     const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
@@ -1451,7 +1568,7 @@ describe("proactive Gmail check acceptance", () => {
         snippet: "お支払い期限は 11/20 です",
       }),
     ];
-    h.script([{ id: "snippet-bill", result: "know", todo: "11/20 前要处理" }]);
+    h.script([{ id: "snippet-bill", result: "know", todo: "11/20 前要处理", money: "yes" }]);
     await h.service.run();
     const overview = await h.overview();
     expect(overview.insights.map(({ summary }) => summary)).toEqual(["11/20 前要处理"]);
@@ -1583,7 +1700,7 @@ describe("proactive Gmail check acceptance", () => {
         body: FULL_BODY,
         ...overrides,
       });
-    const act = (amount?: unknown) =>
+    const act = (amount?: unknown, money?: "yes") =>
       ({
         id: "due",
         result: "act",
@@ -1591,6 +1708,7 @@ describe("proactive Gmail check acceptance", () => {
         priority: "high",
         dueAt: "2026-11-05T14:59:00Z",
         ...(amount === undefined ? {} : { amount }),
+        ...(money === undefined ? {} : { money }),
       }) as const;
     const yen = (value: string, confidence = "sure", currency = "JPY") => ({
       value,
@@ -1639,7 +1757,7 @@ describe("proactive Gmail check acceptance", () => {
     it("REVERSE: never holds back a mail a floor rule hit, even with a small sure amount", async () => {
       const h = await harness({ ownerRules: smallYen() });
       h.reader.items = [due({ subject: "お支払い料金のお知らせ" })];
-      h.script([act(yen("500"))]);
+      h.script([act(yen("500"), "yes")]);
       expect(await h.service.run()).toMatchObject({ verdict: "pushed" });
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs.ruleHits).toEqual({});
@@ -1671,7 +1789,7 @@ describe("proactive Gmail check acceptance", () => {
       const h = await harness();
       h.reader.items = [moneyMail("bill"), mail("friend")];
       h.script([
-        { id: "bill", result: "know", todo: "电费", reason: "账单" },
+        { id: "bill", result: "know", todo: "电费", reason: "账单", money: "yes" },
         { id: "friend", result: "ignore" },
       ]);
       const decision = await h.service.run();
@@ -1685,7 +1803,7 @@ describe("proactive Gmail check acceptance", () => {
       const [entry] = await ledgerRows(h);
       expect(entry?.id).toBe(decision?.id);
       expect(entry?.inputs.sourceIds).toEqual(["bill", "friend"]);
-      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@1"]);
+      expect(entry?.inputs.ruleIds).toEqual(["floor_money_words@2"]);
       expect(entry?.inputs.floorHits).toEqual({ bill: ["floor_money_words"] });
       expect(entry?.inputs.memoryIds).toEqual([]);
       expect(entry?.inputs.memoryInjected).toBe(false);
@@ -1804,7 +1922,7 @@ describe("proactive Gmail check acceptance", () => {
     it("keeps the ledger row and its inputs but not the prompt and answers when Gmail is disconnected", async () => {
       const h = await harness();
       h.reader.items = [moneyMail("bill")];
-      h.script([{ id: "bill", result: "know", todo: "x", reason: "y" }]);
+      h.script([{ id: "bill", result: "know", todo: "x", reason: "y", money: "yes" }]);
       const decision = await h.service.run();
       const [first] = await h.store.readDecisionPayloads({
         ...scope,
@@ -2183,7 +2301,7 @@ describe("proactive Gmail check acceptance", () => {
       };
       const mine = await harness();
       mine.reader.items = [own("paid", text)];
-      mine.script([{ id: "paid", result: "ignore" }]);
+      mine.script([{ id: "paid", result: "ignore", money: "yes" }]);
       const sent = await mine.service.run();
       expect(sent?.counts).toMatchObject({ judged: 1, ignore: 1, floorRaised: 0 });
       expect((await mine.overview()).insights).toHaveLength(0);
@@ -2192,7 +2310,7 @@ describe("proactive Gmail check acceptance", () => {
       received.reader.items = [
         mail("bill", { subject: "請求書の件", snippet: "お支払いのお願い" }),
       ];
-      received.script([{ id: "bill", result: "ignore" }]);
+      received.script([{ id: "bill", result: "ignore", money: "yes" }]);
       const raised = await received.service.run();
       expect(raised?.counts).toMatchObject({ floorRaised: 1 });
     });
@@ -2475,8 +2593,11 @@ describe("proactive Gmail check acceptance", () => {
       const counter = { requests: 0 };
       h.reader.related = (input) => findRelatedMail({ ...input, transport: transport(counter) });
       h.reader.items = [today];
+      h.scriptReferences([{ id: "closing", references: [ORDER] }]);
       h.script([{ id: "closing", result: "act", todo: "补充破损照片", priority: "high" }]);
       await h.service.run();
+      expect(h.referencePrompts).toHaveLength(1);
+      expect(h.referencePrompts[0]).toContain(ORDER);
       const prompt = itemsPart(h.prompts[0] ?? "");
       expect(prompt).toContain('"related":[');
       expect(prompt).toContain("返金を申請します");
@@ -2498,6 +2619,109 @@ describe("proactive Gmail check acceptance", () => {
       });
       expect(entry?.inputs.relatedStats?.characters).toBeGreaterThan(0);
       expect(entry?.inputs.relatedFailedSteps).toEqual([]);
+    });
+
+    const searchedFor = async (
+      configure: (h: Awaited<ReturnType<typeof harness>>) => void,
+      item = today,
+    ) => {
+      const h = await harness();
+      const queries: string[] = [];
+      h.reader.related = (input) =>
+        findRelatedMail({
+          ...input,
+          transport: {
+            ...transport({ requests: 0 }),
+            async search(query: string) {
+              queries.push(query);
+              return [];
+            },
+          },
+        });
+      h.reader.items = [item];
+      configure(h);
+      h.script([{ id: item.messageId, result: "ignore" }]);
+      await h.service.run();
+      return { h, queries: queries.filter((query) => !query.startsWith("subject:")) };
+    };
+
+    it("searches only for the numbers the model found that really appear in the mail", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([{ id: "closing", references: [ORDER] }]),
+      );
+      expect(queries).toEqual([`"${ORDER}" -in:trash -in:spam`]);
+    });
+
+    it("REVERSE: a number the model invented, or one that is not in the mail word for word, is never searched", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([
+          {
+            id: "closing",
+            references: [
+              "999-0000000-1111111",
+              "03-1234-5678",
+              "2026-11-07",
+              "12345",
+              ORDER.slice(0, 5),
+            ],
+          },
+        ]),
+      );
+      expect(queries).toEqual([]);
+    });
+
+    it.each([
+      ["a made-up status", '{"items":[{"id":"closing","references":"maybe"}]}'],
+      ["plain text", "该邮件没有单号"],
+      ["an unknown mail id", `{"items":[{"id":"other","references":["${ORDER}"]}]}`],
+    ])("REVERSE: %s from the model means no number search at all", async (_name, raw) => {
+      const { queries } = await searchedFor((h) => h.scriptReferencesRaw(raw));
+      expect(queries).toEqual([]);
+    });
+
+    it("REVERSE: a plain label with a number in the mail is no longer searched when the model says there is none", async () => {
+      const { queries } = await searchedFor((h) =>
+        h.scriptReferences([{ id: "closing", references: [] }]),
+      );
+      expect(queries).toEqual([]);
+    });
+
+    it("skips the number extraction once the daily cap leaves no room for it", async () => {
+      const capped = await harness({ dailyCostMicros: 50 });
+      capped.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      capped.reader.items = [today];
+      await capped.service.run();
+      expect(capped.referencePrompts).toEqual([]);
+    });
+
+    it("REVERSE: the number extraction never takes the room the judgment needs", async () => {
+      const tight = await harness({ dailyCostMicros: 150 });
+      tight.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      tight.reader.items = [today];
+      tight.script([{ id: today.messageId, result: "ignore" }]);
+      await tight.service.run();
+      expect(tight.referencePrompts).toEqual([]);
+      expect(tight.prompts).toHaveLength(1);
+    });
+
+    it("REVERSE: the number extraction plans at most a tenth of the day's allowance", async () => {
+      const h = await harness({ dailyCostMicros: 1_000, batchSize: 1 });
+      h.reader.related = (input) =>
+        findRelatedMail({ ...input, transport: transport({ requests: 0 }) });
+      h.reader.items = [
+        today,
+        mail("second", { body: `ご注文番号 ${ORDER} の別件です。` }),
+        mail("third", { body: `ご注文番号 ${ORDER} のさらに別件です。` }),
+      ];
+      h.script([
+        { id: "closing", result: "ignore" },
+        { id: "second", result: "ignore" },
+        { id: "third", result: "ignore" },
+      ]);
+      await h.service.run();
+      expect(h.referencePrompts).toHaveLength(1);
     });
 
     it("negative: a mail that shares only the sender gets no history and no failure mark", async () => {
@@ -2882,7 +3106,7 @@ describe("proactive Gmail check acceptance", () => {
       h.reader.items = [
         mail("refund", { threadId: "thread-refund", subject: "返金完了のお知らせ", snippet: "" }),
       ];
-      h.script([{ id: "refund", result: "know" }]);
+      h.script([{ id: "refund", result: "know", money: "yes" }]);
       const decision = await h.service.run();
       expect(decision?.counts).toMatchObject({ know: 1, check: 0, pushed: 0 });
       const [entry] = await ledgerRows(h);
@@ -3391,6 +3615,21 @@ describe("proactive Gmail check acceptance", () => {
       expect(h.invocations()).toBe(1);
       expect(h.prompts[0]).not.toContain("暂停记忆时说的话");
       expect(h.query("SELECT COUNT(*) AS n FROM memory_episodes")[0]).toEqual({ n: 0 });
+      const [entry] = await ledgerRows(h);
+      expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
+    });
+
+    it("still judges and reads no summary when the summary limits switch them off (does not pin the reserve size)", async () => {
+      const world: { current?: World } = {};
+      const h = await harness({
+        recentSummaries: summariesFor(world),
+        summaryLimits: { characters: 0 },
+        dailyCostMicros: 250,
+      });
+      h.reader.items = [mail("plain")];
+      h.script([{ id: "plain", result: "ignore" }]);
+      await h.service.run();
+      expect(h.invocations()).toBe(1);
       const [entry] = await ledgerRows(h);
       expect(entry?.inputs).toMatchObject({ summaryGenerated: 0, summaryInjected: false });
     });

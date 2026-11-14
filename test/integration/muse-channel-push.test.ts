@@ -70,6 +70,7 @@ describe("Muse channel outage push", () => {
       memories: { readMany: async () => [] },
       readMemoryText: async () => undefined,
       listApprovals: async () => [],
+      awaitingCount: async () => 0,
       runThread: async () => null,
       threadTitle: async () => null,
       ...(options.feature === false

@@ -6,6 +6,7 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
@@ -29,11 +30,17 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
+  isGatewayErrorReasonCode,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
-import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
+import {
+  type DeviceHomePort,
+  type DevicePairingAccess,
+  registerDeviceApiRoutes,
+} from "./device-api-routes.js";
+import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -43,6 +50,7 @@ import {
 import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
   AUTHENTICATION_REQUIRED: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED",
@@ -123,8 +131,11 @@ export interface HttpGatewayServerOptions {
   readonly devices?: {
     readonly service: PairedDeviceService;
     readonly configuration: () => DeviceConfiguration;
+    readonly audit: AuditLedgerPort;
+    readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly home?: DeviceHomePort;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -904,6 +915,10 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
+    if (error instanceof DeviceGatewayError) {
+      sendJson(reply, error.statusCode, { error: { code: error.code } });
+      return;
+    }
     if (error instanceof DeviceSignatureError) {
       sendJson(reply, 401, {
         error: {
@@ -930,7 +945,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
               ? 501
               : 409;
-      sendJson(reply, statusCode, { error: { code: error.code } });
+      sendJson(reply, statusCode, {
+        error: {
+          code: error.code,
+          ...(isGatewayErrorReasonCode(error.message) ? { reasonCode: error.message } : {}),
+        },
+      });
       return;
     }
     const statusCode =
@@ -1281,6 +1301,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     const deviceWatchExecution = options.threadGateway.watchExecution?.bind(options.threadGateway);
     registerDeviceApiRoutes(app, {
       publicOrigin,
+      ...(options.devices.home ? { home: options.devices.home } : {}),
       devices: options.devices.service,
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
@@ -1292,13 +1313,20 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         fencingToken: browserConfiguration.fencingToken,
       },
       threadGateway: options.threadGateway,
+      gateways: {
+        ...(options.gateway ? { v1: options.gateway } : {}),
+        ...(options.gatewayV2 ? { v2: options.gatewayV2 } : {}),
+        "thread-v3": options.threadGateway,
+      },
+      audit: options.devices.audit,
+      ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({
             authentication: input.authentication,
             idempotencyKey: input.idempotencyKey,
             content: input.content,
-            dataClassification: "private",
+            dataClassification: input.dataClassification ?? "private",
             contentType: "text/plain",
           })
         ).payloadRef,
@@ -1386,39 +1414,24 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         }
-        const body = request.body as Readonly<{
-          content?: unknown;
-          dataClassification?: unknown;
-        }>;
-        if (
-          Object.keys(body).some((key) => !["content", "dataClassification"].includes(key)) ||
-          typeof body.content !== "string" ||
-          body.content.length === 0 ||
-          body.content.length > maximumCharacters ||
-          !accepts(body.content) ||
-          !["public", "private", "sensitive", "restricted"].includes(
-            body.dataClassification as string,
-          )
-        ) {
-          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-        }
+        const admitted = parseTextAdmission(
+          request.body as Readonly<Record<string, unknown>>,
+          maximumCharacters,
+          accepts,
+        );
+        if (!admitted) throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         return sendJson(
           reply,
           201,
           await payloadAdmission.protect({
             authentication,
             idempotencyKey,
-            content: body.content,
-            dataClassification: body.dataClassification as
-              | "public"
-              | "private"
-              | "sensitive"
-              | "restricted",
+            ...admitted,
             contentType,
           }),
         );
       };
-    app.post("/api/payload/v1/text", admitText(64 * 1024, "text/plain"));
+    app.post("/api/payload/v1/text", admitText(PLAIN_TEXT_MAXIMUM_CHARACTERS, "text/plain"));
     app.post(
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },

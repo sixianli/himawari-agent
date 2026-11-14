@@ -1,4 +1,4 @@
-import type { MailAmount } from "../rules/amount.js";
+import type { MailAmount, MoneyState } from "../rules/amount.js";
 import { RULE_IDS, type RuleRecord } from "../rules/rule-book.js";
 import { mailItemFacts } from "../rules/rule-book.js";
 import { RuleJudge } from "../rules/rule-judge.js";
@@ -28,8 +28,9 @@ export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 export function floorHitIds(
   item: ProactiveMail,
   rules: readonly RuleRecord[],
+  money: MoneyState = "unknown",
 ): readonly FloorRuleId[] {
-  return JUDGE.decide("mail_item", mailItemFacts(item), rules)
+  return JUDGE.decide("mail_item", mailItemFacts(item, undefined, money), rules)
     .hits.filter(({ outcome }) => outcome === "raise_floor")
     .map(({ id }) => id as FloorRuleId);
 }
@@ -166,18 +167,28 @@ interface ZonedParts {
 
 const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+const ZONED_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  const known = ZONED_FORMATTERS.get(timeZone);
+  if (known) return known;
+  const created = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+    hourCycle: "h23",
+  });
+  if (ZONED_FORMATTERS.size < 64) ZONED_FORMATTERS.set(timeZone, created);
+  return created;
+}
+
 export function zonedParts(at: string, timeZone: string): ZonedParts {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-      weekday: "short",
-      hourCycle: "h23",
-    })
+    zonedFormatter(timeZone)
       .formatToParts(new Date(at))
       .map(({ type, value }) => [type, value]),
   );

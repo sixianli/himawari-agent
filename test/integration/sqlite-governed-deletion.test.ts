@@ -1,16 +1,16 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
+  applyMigrations,
   GOVERNED_DELETION_ERROR_CODES,
   GovernedDeletionError,
-  SqliteGovernedDeletionAdapter,
-  applyMigrations,
+  type GovernedDeletionTarget,
   loadBundledMigrations,
   managedDeletionArtifactPath,
   openQualifiedDatabase,
-  type GovernedDeletionTarget,
+  SqliteGovernedDeletionAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -588,6 +588,110 @@ describe("SQLite governed deletion", () => {
         "SELECT status || '|' || coalesce(content_ref, '-') || '|' || coalesce(memory_id, '-') || '|' || coalesce(batch_id, '-') || '|' || text_sha256 FROM external_memory_proposals",
       ),
     ).toBe(`rejected|-|-|-|${"b".repeat(64)}`);
+  });
+
+  it("[P5-3] deleting a restricted Memory removes the proposals with its text, digest included", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    insertPayload(database, { ref: "payload-proposal-text" });
+    insertPayload(database, { ref: "payload-proposal-other" });
+    database
+      .prepare(
+        "UPDATE memory_records SET classification = 'restricted' WHERE id = 'memory-retained'",
+      )
+      .run();
+    const insert = database.prepare(
+      `INSERT INTO external_memory_proposals (
+        id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+        content_ref, category, classification, status, received_at, decided_at, batch_id,
+        memory_id
+      ) VALUES (?, ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1', ?, 'other', 'private', ?, ?, ?, ?, ?)`,
+    );
+    insert.run(
+      "proposal-linked",
+      OWNER_ID,
+      AGENT_ID,
+      "b".repeat(64),
+      "payload-proposal-text",
+      "committed",
+      T0,
+      T0,
+      "batch-one",
+      "memory-retained",
+    );
+    insert.run(
+      "proposal-copy",
+      OWNER_ID,
+      AGENT_ID,
+      "b".repeat(64),
+      null,
+      "superseded",
+      T0,
+      T0,
+      null,
+      null,
+    );
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, superseded_by
+        ) VALUES ('proposal-older', ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1', NULL,
+          'other', 'private', 'superseded', ?, ?, 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID, "d".repeat(64), T0, T0);
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+        VALUES (?, ?, 'muse', 'muse-key-linked', 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID);
+    insert.run(
+      "proposal-other",
+      OWNER_ID,
+      AGENT_ID,
+      "c".repeat(64),
+      "payload-proposal-other",
+      "pending",
+      T0,
+      null,
+      null,
+      null,
+    );
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposal_unkeyed (proposal_id, client)
+        VALUES ('proposal-linked', 'muse'), ('proposal-other', 'muse')`,
+      )
+      .run();
+    database.close();
+
+    const memory = await resource.adapter.deleteImmediately({
+      objectType: "memory",
+      objectId: "memory-retained",
+    });
+    expect(memory.lifecycle).toBe("deleted_verified");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT group_concat(id || '|' || text_sha256 || '|' || coalesce(superseded_by, '-'), ',') FROM (SELECT * FROM external_memory_proposals ORDER BY id)",
+      ),
+    ).toBe(`proposal-older|${"d".repeat(64)}|-,proposal-other|${"c".repeat(64)}|-`);
+    expect(
+      scalar(resource.databasePath, "SELECT COUNT(*) FROM external_memory_proposal_keys"),
+    ).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT group_concat(proposal_id) FROM external_memory_proposal_unkeyed",
+      ),
+    ).toBe("proposal-other");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM payloads WHERE ref IN ('payload-proposal-text', 'payload-proposal-other')",
+      ),
+    ).toBe(1);
   });
 
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {

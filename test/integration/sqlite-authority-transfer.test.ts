@@ -455,6 +455,30 @@ describe("SQLite offline authority transfer", () => {
     ).toBe(false);
   });
 
+  it("rejects a package whose applied migrations are a different set of the same size", async () => {
+    const setup = await fixture();
+    const sourceDatabase = openQualifiedDatabase(
+      path.join(setup.sourceRoot, "data", "product.sqlite"),
+    );
+    try {
+      sourceDatabase
+        .prepare("UPDATE schema_migration_ledger SET digest = ? WHERE sequence = 1")
+        .run("f".repeat(64));
+    } finally {
+      sourceDatabase.close();
+    }
+    const manifest = await setup.source.exportNamed({
+      transferId: TRANSFER_ID,
+      targetDeploymentId: TARGET_DEPLOYMENT_ID,
+    });
+    const target = await targetAdapter(setup);
+    await expectTransferCode(
+      target.adapter.importPackage(manifest.packageRef),
+      AUTHORITY_TRANSFER_ERROR_CODES.SCHEMA_INCOMPATIBLE,
+    );
+    await expect(readAuthorityFile(target.layout)).rejects.toBeDefined();
+  });
+
   it("rejects a tampered manifest before decrypting product state", async () => {
     const setup = await fixture();
     const manifest = await setup.source.exportNamed({

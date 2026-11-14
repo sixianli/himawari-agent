@@ -2,13 +2,10 @@ import {
   type DataClassification,
   highestClassification,
   isModelVisible,
-  type OriginGateDecision,
-  type OriginGatedEffect,
   type PairedDevice,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_SENSES,
   type PerceptionConfiguration,
-  type PerceptionOriginGate,
   type PerceptionRecord,
   type PerceptionRecordType,
   type PerceptionScope,
@@ -166,11 +163,10 @@ export interface DeviceActionOutcome {
 
 export interface ProductionPerceptionToolsOptions {
   readonly scope: PerceptionScope;
-  readonly store: Pick<PerceptionStorePort, "listRecordsBetween" | "markRunRead">;
+  readonly store: Pick<PerceptionStorePort, "listRecordsBetween">;
   readonly devices: (scope: PerceptionScope) => Promise<readonly PairedDevice[]>;
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly configuration: () => PerceptionConfiguration;
-  readonly gate: Pick<PerceptionOriginGate, "check">;
   readonly actions?: () => readonly DeviceActionDefinition[];
   readonly perform?: (request: DeviceActionRequest) => Promise<DeviceActionOutcome>;
   readonly confirm?: (request: DeviceActionRequest) => Promise<boolean>;
@@ -187,6 +183,11 @@ export class PerceptionToolError extends Error {
     this.code = code;
     this.note = note;
   }
+}
+
+export interface PerceptionToolHooks {
+  readonly authorize: () => Promise<void>;
+  readonly markExternalContent: () => Promise<void>;
 }
 
 export interface PerceptionToolResult {
@@ -243,22 +244,13 @@ export class ProductionPerceptionTools {
     this.#timeZone = options.timeZone ?? "UTC";
   }
 
-  gate(invocation: RuntimeToolInvocation, effect: OriginGatedEffect): Promise<OriginGateDecision> {
-    return this.#options.gate.check(
-      {
-        runId: invocation.runId,
-        toolCallId: invocation.toolCallId,
-        capabilityRef: invocation.capabilityRef,
-        arguments: invocation.arguments,
-      },
-      effect,
-    );
-  }
-
-  run(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  run(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     return invocation.capabilityRef === PERCEPTION_READ_CAPABILITY_REF
-      ? this.#read(invocation)
-      : this.#action(invocation);
+      ? this.#read(invocation, hooks)
+      : this.#action(invocation, hooks);
   }
 
   #kinds(raw: unknown): readonly PerceptionRecordType[] | null | undefined {
@@ -275,7 +267,10 @@ export class ProductionPerceptionTools {
     return PERCEPTION_RECORD_TYPE_NAMES.filter((type) => types.has(type));
   }
 
-  async #read(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  async #read(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     const args = invocation.arguments;
     const configuration = this.#options.configuration();
     const invalid = () =>
@@ -410,15 +405,7 @@ export class ProductionPerceptionTools {
       );
     if (hidden > 0)
       notes.push(renderPrompt(TOOL_RESULT_PERCEPTION_READ_HIDDEN, { hidden: String(hidden) }));
-    const outside = shown.filter((record) => record.origin === "other").map((record) => record.id);
-    if (outside.length > 0)
-      await this.#options.store.markRunRead({
-        ...this.#options.scope,
-        runId: invocation.runId,
-        recordIds: outside,
-        maximum: configuration.runReadMaximumRecords,
-        now: this.#options.now(),
-      });
+    if (shown.some((record) => record.origin === "other")) await hooks.markExternalContent();
     return {
       value: {
         ...(listed.length > 0 ? { notice: PERCEPTION_DATA_NOTICE.text } : {}),
@@ -433,7 +420,10 @@ export class ProductionPerceptionTools {
     };
   }
 
-  async #action(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  async #action(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     const args = invocation.arguments;
     const action = args["action"];
     const device = args["device"];
@@ -505,11 +495,6 @@ export class ProductionPerceptionTools {
               : TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED.text,
         },
       };
-    if (!definition.reads) {
-      const decision = await this.gate(invocation, "device_action");
-      if (decision.errorCode !== null)
-        throw new PerceptionToolError(decision.errorCode, decision.note ?? "");
-    }
     if (!this.#options.perform)
       throw new PerceptionToolError(
         "DEVICE_ACTION_UNAVAILABLE",
@@ -526,6 +511,7 @@ export class ProductionPerceptionTools {
         "DEVICE_ACTION_UNAVAILABLE",
         TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
       );
+    if (!definition.reads) await hooks.authorize();
     if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
       throw new PerceptionToolError(
         DEVICE_ACTION_UNCONFIRMED_CODE,

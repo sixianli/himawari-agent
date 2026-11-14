@@ -284,6 +284,7 @@ describe("[iOS-7] proactive source registry", () => {
             return queued.shift() ?? scripted;
           },
           modelRef: MODEL_REF,
+          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
           async prepare({ invocationId, prompt }) {
             prompts.push(prompt);
             const inputRef = `input-${invocationId}`;

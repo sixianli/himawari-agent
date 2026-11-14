@@ -56,7 +56,7 @@ export interface PairedDeviceStorePort {
       readonly now: string;
       readonly expiresAt: string;
     },
-  ): Promise<void>;
+  ): Promise<{ readonly expiresAt: string }>;
   redeemPairingCode(input: {
     readonly codeHash: string;
     readonly now: string;

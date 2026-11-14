@@ -123,15 +123,20 @@ describe("job 之间经 CI 服务器传文件", () => {
       policy: { result: "cancelled", outputs: {} },
     };
     expect(publishedMembers(needs)).toEqual([
-      { name: "browser-chromium", digest: "f".repeat(64) },
-      { name: "static-default", digest },
+      { job: "browser", name: "browser-chromium", digest: "f".repeat(64) },
+      { job: "static", name: "static-default", digest },
     ]);
     const to = path.join(base, "reports");
     const result = await collect({ root, run, needs, to });
-    expect(result).toEqual({ collected: 1, missing: ["CI_SHARE_MISSING:browser-chromium"] });
+    expect(result).toEqual({
+      collected: 1,
+      pulled: 0,
+      missing: ["CI_SHARE_MISSING:browser-chromium"],
+    });
     expect(readFileSync(path.join(to, "static-default/r"), "utf8")).toBe("1");
     expect(await collect({ root, run: "8-1", needs: {}, to: path.join(base, "none") })).toEqual({
       collected: 0,
+      pulled: 0,
       missing: [],
     });
   });

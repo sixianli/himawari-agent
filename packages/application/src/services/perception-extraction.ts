@@ -52,7 +52,6 @@ export const PERCEPTION_REASON_CODES = Object.freeze({
   restricted: "perception_restricted",
   proposed: "perception_proposed",
   doneProposed: "perception_done_proposed",
-  gateDeferred: "perception_gate_deferred",
 });
 
 const DAY_MS = 86_400_000;
@@ -336,7 +335,7 @@ export function quotedSource(
   return null;
 }
 
-export const PERCEPTION_PROPOSAL_SOURCE_KINDS = ["perception_episode", "gated_tool_call"] as const;
+export const PERCEPTION_PROPOSAL_SOURCE_KINDS = ["perception_episode"] as const;
 export type PerceptionProposalSourceKind = (typeof PERCEPTION_PROPOSAL_SOURCE_KINDS)[number];
 
 export const PERCEPTION_PROPOSAL_TRUST = ["owner", "external"] as const;
@@ -383,7 +382,7 @@ export interface VerifiedPerceptionProposal {
   readonly sourceKind: PerceptionProposalSourceKind;
   readonly sourceId: string;
   readonly sourceVersion: string;
-  readonly kind: "next_step" | "todo_done" | "gated_action";
+  readonly kind: "next_step" | "todo_done";
   readonly what: string | null;
   readonly todoId: string | null;
   readonly quote: string | null;

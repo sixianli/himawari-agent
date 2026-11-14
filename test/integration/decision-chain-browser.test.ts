@@ -135,8 +135,11 @@ describe("[P1-3] the basis drawer of a decision record in a real browser", () =>
       await basisButton(page, 0).click();
       const drawer = page.locator(".decision-chain");
       const money = drawer.locator('[data-rule-id="floor_money_words"]');
-      await uiExpect(money).toContainText("词表：账单、扣款、invoice");
-      await uiExpect(money).toContainText("出处：ADR 0106 第 4 条；ADR 0209 · 第 1 版");
+      await uiExpect(money).toContainText(
+        "模型逐封判断“是否涉及你要付出、被扣、可收回或已入账的钱款”",
+      );
+      await uiExpect(money).not.toContainText("词表");
+      await uiExpect(money).toContainText("出处：ADR 0106 第 4 条；ADR 0209；ADR 0248 · 第 2 版");
       await uiExpect(money.locator('[data-tests="passed"]')).toHaveText("测试：5 条例子全部通过");
       const sender = drawer.locator('[data-rule-id="floor_important_sender"]');
       await uiExpect(sender).toContainText("原话：银行来的信一律提醒我");

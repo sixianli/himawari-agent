@@ -1,0 +1,4 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "排序测试既不能稳定复现旧实现，也拦不住重复 id 的坏实现", "valid": true, "severity": "low", "trigger": "把审计 id 改回每条一个随机值，或漏掉结果后缀", "consequence": "单测只有一半概率失败或不失败，生产里第二条审计因主键重复被吞掉", "modelSeverity": "中", "class": "error", "reason": "只是测试或一致性缺口，运行行为不受影响，已补测试"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "声称“受理排在失败之前”，但没有自动检查失败路径的排序", "valid": true, "severity": "low", "trigger": "失败审计的 id 方案改坏", "consequence": "受理和失败的先后没有测试拦住", "modelSeverity": "中低", "class": "error", "reason": "只是测试或一致性缺口，运行行为不受影响，已补测试"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "完成/失败审计写入失败被静默吞掉，没有日志或指标", "valid": true, "class": "better"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "排序保证只存在于 SQLite 实现，且依赖英文结果名的字典序", "valid": true, "severity": "low", "trigger": "以后改结果名或新增结果", "consequence": "同一毫秒内受理可能不再排在最前", "modelSeverity": "低", "class": "error"}

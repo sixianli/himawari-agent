@@ -20,6 +20,8 @@ export interface PortableSnapshot {
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
+  readonly reviews: readonly Row[];
+  readonly reviewChanges: readonly Row[];
   readonly decisions: readonly Row[];
   readonly signals: readonly Row[];
   readonly decisionPayloads: readonly Row[];
@@ -32,7 +34,11 @@ export interface PortableSnapshot {
   readonly payloads: ReadonlyMap<string, PayloadRecord | { readonly unavailable: true }>;
   readonly omittedMemories: number;
   readonly restrictedMemories: number;
-  readonly externalProposals: number;
+  readonly restrictedMemoryTexts: readonly Row[];
+  readonly externalProposals: readonly Row[];
+  readonly externalProposalKeys: readonly Row[];
+  readonly externalProposalUnkeyed: readonly Row[];
+  readonly openMemoryReviews: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -69,9 +75,46 @@ export function readSnapshot(
         `SELECT COUNT(*) FROM memory_records WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status IN ${EXPORTABLE_STATUSES} AND classification = 'restricted'`,
       );
-      const externalProposals = count(
-        `SELECT COUNT(*) FROM external_memory_proposals
-          WHERE owner_id = @ownerId AND agent_id = @agentId AND status <> 'committed'`,
+      const restrictedMemoryTexts = all(
+        `SELECT content_ref FROM memory_records
+        WHERE owner_id = @ownerId AND agent_id = @agentId AND classification = 'restricted'
+          AND content_ref IS NOT NULL
+        UNION
+        SELECT history.content_ref FROM memory_history_events history
+        JOIN memory_records memory ON memory.id = history.memory_id
+        WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
+          AND memory.classification = 'restricted' AND history.content_ref IS NOT NULL
+        UNION
+        SELECT history.quote_ref FROM memory_history_events history
+        JOIN memory_records memory ON memory.id = history.memory_id
+        WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
+          AND memory.classification = 'restricted' AND history.quote_ref IS NOT NULL
+        ORDER BY content_ref`,
+      );
+      const externalProposals = all(
+        `SELECT id, subject_ref, client, source_key, text_sha256, normalization, content_ref,
+          category, classification, status, received_at, decided_at, batch_id, memory_id,
+          superseded_by, memory_id IN (SELECT id FROM memory_records
+            WHERE owner_id = @ownerId AND agent_id = @agentId AND classification = 'restricted')
+            AS restricted_link
+        FROM external_memory_proposals
+        WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY received_at, id`,
+      );
+      const externalProposalKeys = all(
+        `SELECT proposal_id, client, source_key FROM external_memory_proposal_keys
+        WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY proposal_id, client, source_key`,
+      );
+      const externalProposalUnkeyed = all(
+        `SELECT unkeyed.proposal_id, unkeyed.client FROM external_memory_proposal_unkeyed unkeyed
+        JOIN external_memory_proposals proposal ON proposal.id = unkeyed.proposal_id
+        WHERE proposal.owner_id = @ownerId AND proposal.agent_id = @agentId
+        ORDER BY unkeyed.proposal_id, unkeyed.client`,
+      );
+      const openMemoryReviews = count(
+        `SELECT COUNT(*) FROM memory_review_items
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'open'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -167,6 +210,19 @@ export function readSnapshot(
           WHERE owner_id = @ownerId AND agent_id = @agentId)
         ORDER BY change_id, position`,
       );
+      const reviews = all(
+        `SELECT id, day, status, attempts, error_code, started_at, finished_at, undone_at
+        FROM memory_conversation_reviews WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY started_at, id`,
+      );
+      const reviewChanges = all(
+        `SELECT review_id, memory_id, action, after_revision, before_superseded_by,
+          before_valid_to, created_at, undone_revision
+        FROM memory_conversation_review_changes WHERE after_revision IS NOT NULL AND review_id IN (
+          SELECT id FROM memory_conversation_reviews
+          WHERE owner_id = @ownerId AND agent_id = @agentId)
+        ORDER BY review_id, created_at, memory_id`,
+      );
       const decisions = all(
         `SELECT id, kind, scenario, checked_at, counts, verdict, outcome, reason_code,
           subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros,
@@ -213,7 +269,8 @@ export function readSnapshot(
           )
         : [];
       const rules = all(
-        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at,
+          suspend_reason, suggestion
         FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY rule_id`,
       );
@@ -241,6 +298,8 @@ export function readSnapshot(
         ...sourceInsights,
         ...processedMessages,
         ...museEntries,
+        ...externalProposals,
+        ...restrictedMemoryTexts,
         ...perception.perceptionRecords,
       ])
         for (const key of [
@@ -319,6 +378,8 @@ export function readSnapshot(
         runs,
         changes,
         basis,
+        reviews,
+        reviewChanges,
         decisions,
         signals,
         decisionPayloads,
@@ -331,7 +392,11 @@ export function readSnapshot(
         payloads,
         omittedMemories,
         restrictedMemories,
+        restrictedMemoryTexts,
         externalProposals,
+        externalProposalKeys,
+        externalProposalUnkeyed,
+        openMemoryReviews,
       };
     })
     .deferred();

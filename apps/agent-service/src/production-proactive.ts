@@ -42,6 +42,8 @@ import {
   readProactiveSourceSettings,
   parseReviewKey,
   ReviewPrereviewService,
+  type RuleReviewReport,
+  type RuleReviewService,
   type ReviewPrereviewStorePort,
   type RuleRecord,
   readDailyReview,
@@ -69,6 +71,7 @@ import type { ProactivePushSource } from "./production-web-push.js";
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.overview.read",
   "proactive.settings.set",
+  "proactive.pause",
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
@@ -86,6 +89,7 @@ export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
 export const PROACTIVE_GOOGLE_CALLBACK_PATH = "/api/proactive/v1/google/callback";
 export const PROACTIVE_MAX_OUTPUT_TOKENS = 4096;
 export const PREREVIEW_MAX_OUTPUT_TOKENS = 1024;
+export const RULE_REVIEW_MAX_OUTPUT_TOKENS = 2048;
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING_STATES = 20;
@@ -196,6 +200,8 @@ export interface ProductionProactiveOptions {
     readonly estimateCostMicros: (prompt: string) => number;
   };
   readonly onPrereview?: (result: PrereviewRunResult) => void;
+  readonly ruleReview?: Pick<RuleReviewService, "run">;
+  readonly onRuleReview?: (reports: readonly RuleReviewReport[]) => void;
   readonly checkup?: Pick<MemoryCheckupService, "week" | "act" | "undo">;
   readonly estimateCostMicros: (prompt: string) => number;
   readonly feedback: (sentFrom: string) => Promise<readonly WebPushFeedback[]>;
@@ -382,7 +388,11 @@ export class ProductionProactive {
 
   tick(): Promise<void> {
     this.#running ??= this.#checkable()
-      .then((checkable) => (checkable ? this.#runSources() : undefined))
+      .then(async (checkable) => {
+        if (!checkable) return;
+        await this.reviewRules();
+        await this.#runSources();
+      })
       .catch(this.#options.onFailure)
       .then(async () => {
         await this.prereview();
@@ -426,6 +436,18 @@ export class ProductionProactive {
       },
       entry,
     );
+  }
+
+  async reviewRules(): Promise<readonly RuleReviewReport[]> {
+    if (!this.#options.ruleReview) return [];
+    try {
+      const reports = await this.#options.ruleReview.run();
+      if (reports.length > 0) this.#options.onRuleReview?.(reports);
+      return reports;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return [];
+    }
   }
 
   async prereview(): Promise<PrereviewRunResult | undefined> {
@@ -754,6 +776,10 @@ export class ProductionProactive {
           importantSenders: [...new Set(command.payload.importantSenders.map(normalizeSender))],
           now,
         });
+        return { resultRef: "proactive-settings", replayed: false };
+      }
+      case "proactive.pause": {
+        await store.setEnabled({ ...scope, enabled: false, now });
         return { resultRef: "proactive-settings", replayed: false };
       }
       case "proactive.insight.respond": {

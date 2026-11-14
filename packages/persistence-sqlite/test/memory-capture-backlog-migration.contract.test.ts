@@ -56,6 +56,7 @@ function dumpLedgerTables(database: Database) {
         `SELECT type, name, tbl_name FROM sqlite_master
          WHERE tbl_name IN (${LEDGER_TABLES.map(() => "?").join(", ")})
            AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+           AND name NOT LIKE 'decision_ledger_known_kind%'
          ORDER BY name`,
       )
       .all(...LEDGER_TABLES),
@@ -195,7 +196,9 @@ describe("memory capture backlog migration", () => {
 
   it("[P3-5] still rejects an outcome the memory candidate kind does not have", async () => {
     const { database } = await openMigrated();
-    expect(() => insertCaptureDecision(database, "d-bad", "capture_lost")).toThrow(/CHECK/u);
+    expect(() => insertCaptureDecision(database, "d-bad", "capture_lost")).toThrow(
+      /DECISION_LEDGER_UNKNOWN_KIND_OR_OUTCOME/u,
+    );
     database.close();
   });
 

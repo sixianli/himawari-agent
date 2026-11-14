@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { lstat, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -55,11 +55,12 @@ import {
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import {
-  claimJobHostLaunch,
+  type JobHostControlAccess,
+  type JobHostLauncher,
   JobHostPreparationError,
+  localJobHostControlAccess,
   prepareJobPolicy,
   prepareSandboxJobHost,
-  readJobHostFinalEvidence,
   type SandboxJobHost,
 } from "@himawari-agent/runtime-sandbox";
 import { BrokerPollTolerance } from "./broker-poll-tolerance.js";
@@ -130,6 +131,10 @@ interface Options {
   containers?: SandboxContainerRoute;
   srtEnvironments?: Pick<SrtTaskEnvironmentBackend, "session">;
   secrets?: ProgramSecretSource;
+  jobHostAccount?: {
+    readonly launcher: JobHostLauncher;
+    readonly control: JobHostControlAccess;
+  };
 }
 const COMPLETION_RECORD_ATTEMPTS = 5;
 const RECOVERY_SETTLE_WAIT_MS = 35000;
@@ -413,11 +418,13 @@ export class ProductionSandboxExecutionV2 {
             : binding.protectedPaths,
         allowedDomains: resolved.allowedDomains,
       });
-      const controlDirectory = path.join(
-        binding.privateRoot,
-        `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
-      );
-      await mkdir(controlDirectory, { mode: 0o700 });
+      const controlAccess =
+        this.options.jobHostAccount?.control ?? localJobHostControlAccess(binding.privateRoot);
+      const controlName = `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`;
+      const preparedDirectory = await controlAccess.prepareDirectory(controlName);
+      if (preparedDirectory.directory !== path.join(binding.privateRoot, controlName))
+        throw new Error("SANDBOX_CONTROL_ROOT_MISMATCH");
+      const controlDirectory = preparedDirectory.directory;
       const stored = await this.options.payloads.readInput(entry.invocation);
       if (stored.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
       const input =
@@ -477,7 +484,6 @@ export class ProductionSandboxExecutionV2 {
         jobId: plan.identity.jobId,
         attemptId: plan.identity.attemptId,
       };
-      const controlMetadata = await lstat(controlDirectory);
       stage = "register_preparation_control";
       await this.rpc(entry, {
         kind: "register_preparation_control",
@@ -490,12 +496,12 @@ export class ProductionSandboxExecutionV2 {
       stage = "prepare";
       if (
         plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL &&
-        !(await claimJobHostLaunch({
+        !(await controlAccess.claimLaunch({
           plan,
           control: controlBinding,
           policyDigest: compiled.policyDigest,
-          directoryDevice: String(controlMetadata.dev),
-          directoryInode: String(controlMetadata.ino),
+          directoryDevice: preparedDirectory.device,
+          directoryInode: preparedDirectory.inode,
         }))
       )
         return this.unknown(entry);
@@ -531,6 +537,7 @@ export class ProductionSandboxExecutionV2 {
             throw new Error("SANDBOX_SCOPE_CHANGED");
         },
         controlBinding,
+        this.options.jobHostAccount?.launcher,
       );
       entry.host = host;
       await host.ready;
@@ -806,7 +813,7 @@ export class ProductionSandboxExecutionV2 {
         result.exitCode === null &&
         result.taskProcessExited
       ) {
-        const final = await readJobHostFinalEvidence(host.controlBinding);
+        const final = await controlAccess.readFinalEvidence(host.controlBinding);
         if (
           final.taskStarted &&
           final.taskProcessExited &&
@@ -831,9 +838,9 @@ export class ProductionSandboxExecutionV2 {
         result.exitCode === null &&
         latest.facts.result === null
       ) {
-        let final: Awaited<ReturnType<typeof readJobHostFinalEvidence>> | undefined;
+        let final: Awaited<ReturnType<JobHostControlAccess["readFinalEvidence"]>> | undefined;
         try {
-          final = await readJobHostFinalEvidence(host.controlBinding);
+          final = await controlAccess.readFinalEvidence(host.controlBinding);
         } catch {
           final = undefined;
         }

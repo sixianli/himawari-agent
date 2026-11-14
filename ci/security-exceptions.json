@@ -4,7 +4,7 @@
     "status": "proposed_owner_review_required",
     "proposedAt": "2026-11-04T00:00:00Z",
     "owner": "sixianli",
-    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。"
+    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 曾逐条查看这 52 条并要求全部续期（记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25），但该续期只提交在 claude/isolated-tool-execution 分支，main 上于 2026-10-03 过期。2026-10-24 主代理在 claude/isolated-tool-execution@44600517 上逐条复核：13 条合成字面量当前文件与历史仍被 gitleaks 8.30.0 命中（gateway-v2.contract.test.ts 一条仅剩历史命中，因 schema 要求 current 范围非空而保持原样），39 条依赖文件的锁路径、版本与 integrity 均未变化；Owner sixianli 在 Claude 项目对话中确认全部按复核建议续期。据此把提案日期改为 2026-10-24、全部到期日改为 2026-11-23，路径、摘要、数量和来源证明不变。 2026-11-04 Owner sixianli 在 Claude 项目对话中批准“51 条按现状续期 30 天”（消息 cmsg_01EE1hey9cboYNfwFnBv5dgrFc9SXu13zEM9rUxVEZ9B1R）；据此把提案日期改为 2026-11-04、已有 51 条的到期日改为 2026-12-04，路径、摘要、数量和来源证明不变。同日新增 13 条 synthetic-boot-token 例外，覆盖 gitleaks 8.30.0 在 main 上对同一合成 token（摘要 3eb1bd43…）的其余命中，每条逐行核对了 tokenValue 与 16 位十六进制重复的格式。2026-11-07：PR 248 新增的 13 条 synthetic-boot-token 例外里，有 10 条和 .github/security-review-manifest.json 重复登记，已从本文件删除，改由那份 Owner 复核清单覆盖。 2026-11-10 云端线程把 Pi 升级到 1.5.0（PR 338）后，在与 CI 相同的构建路径（tsc 编译加 packageNodeRuntime）生成运行时依赖闭包，用 findBuildSecrets 扫描，新增 42 个成员命中（来自 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@google/genai、openai、@aws-sdk/nested-clients），Pi 打包出的 pi-coding-main 分块文件无命中。逐条读了命中行：AWS 官方文档示例密钥、your-api-key 与 GEMINI_API_KEY 占位、$ACME_API_KEY 这类环境变量名引用、命令行帮助文本、bearer 认证说明文字，都不是真实凭据。每个成员对应的官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；此为提案，仍待 Owner 合入审阅，reviewReference 指向引入这些依赖版本的 PR 338。 2026-11-12 Owner sixianli 在项目线程里同意新增 8 条 published-synthetic-fixture：@modelcontextprotocol/server 的 6 个 dist 文件和它自带 zod 的 string.test.ts（PR 372 引入），以及 onnxruntime-node 的 libonnxruntime.so.1（PR 381 引入）；逐条读过命中内容，都是文档示例、测试用固定值或二进制里碰巧像密钥的字节，不是真实凭据。 2026-11-12 公开输出扫描（scripts/ci/security-source.mjs）改为：整个值只是环境变量名引用（$NAME 或 ${NAME}，名字只含大写字母和下划线，和 gitleaks 默认配置的全局放行规则一致）时不算 credential-literal。据此删除 5 条只登记了这类引用的 published-synthetic-fixture（@earendil-works/pi-coding-agent 的 docs/custom-provider.md、docs/extensions.md、docs/mcp.md 和两个 examples/extensions/*/index.ts），改后它们扫描结果为空；其余条目的命中不变，由 test/tooling/security-published.test.mjs 用真实台账和已安装的依赖文件逐条核对。"
   },
   "exceptions": [
     {
@@ -1201,96 +1201,6 @@
     {
       "kind": "published-synthetic-fixture",
       "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@earendil-works/pi-coding-agent/docs/custom-provider.md",
-      "package": "@earendil-works/pi-coding-agent",
-      "version": "1.5.0",
-      "packageLockPath": "node_modules/@earendil-works/pi-coding-agent",
-      "integrity": "sha512-xNDZ5kqowO6Z03FS2gwAkPEGk1ssxVcYKQ6qZId84mFEvwACvvyc2l0vAMOS+c5zvxLRMLBE9r4y44IGYkMJaQ==",
-      "sourceUrl": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.5.0.tgz",
-      "archiveMember": "package/docs/custom-provider.md",
-      "fileSha256": "78e01e866af7969e2d8e70937988bc0fb7b4a2a43bc25aab665c3549e169971f",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "8958506bd1e7932c5582c0f244d23845ee58cd1462f18fe10f868e342767a457",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "92b39fe14ae6137972b98e061ccadb44f33eacdc82a6dc3c78b7afe572865fcf",
-          "count": 1
-        }
-      ],
-      "reason": "文档或示例扩展里的 $ACME_API_KEY、$GITLAB_TOKEN 这类环境变量名引用，不是凭据值。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "5bfb66848a4c4b81c637ce8d2136be01945b70aac8e8556b091cb02241b385df",
-      "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md",
-      "package": "@earendil-works/pi-coding-agent",
-      "version": "1.5.0",
-      "packageLockPath": "node_modules/@earendil-works/pi-coding-agent",
-      "integrity": "sha512-xNDZ5kqowO6Z03FS2gwAkPEGk1ssxVcYKQ6qZId84mFEvwACvvyc2l0vAMOS+c5zvxLRMLBE9r4y44IGYkMJaQ==",
-      "sourceUrl": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.5.0.tgz",
-      "archiveMember": "package/docs/extensions.md",
-      "fileSha256": "bafa75db48ba334a64fc30f467baebc80e81ac5562fcdd5502af05537fb6c120",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "bf5a8b1adb54655020a16e3f361cb8d89cf077a1331b192e6f006af85cf6c015",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "138dd1d71c34e377e0d5221c826da3c47e40a1b55c8465f16b81b35bfa1076f8",
-          "count": 1
-        }
-      ],
-      "reason": "文档或示例扩展里的 $ACME_API_KEY、$GITLAB_TOKEN 这类环境变量名引用，不是凭据值。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "5bfb66848a4c4b81c637ce8d2136be01945b70aac8e8556b091cb02241b385df",
-      "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@earendil-works/pi-coding-agent/docs/mcp.md",
-      "package": "@earendil-works/pi-coding-agent",
-      "version": "1.5.0",
-      "packageLockPath": "node_modules/@earendil-works/pi-coding-agent",
-      "integrity": "sha512-xNDZ5kqowO6Z03FS2gwAkPEGk1ssxVcYKQ6qZId84mFEvwACvvyc2l0vAMOS+c5zvxLRMLBE9r4y44IGYkMJaQ==",
-      "sourceUrl": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.5.0.tgz",
-      "archiveMember": "package/docs/mcp.md",
-      "fileSha256": "c353a4cb49cfff85e5bf1839a7e702f58bfed9df2afcbeeb29cae2b5574cbe3b",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "d498a942ad83507bf12e98c0bb6b73437c04ac998c638a5cc1e62da29cd9d529",
-          "count": 1
-        },
-        {
-          "rule": "credential-literal",
-          "digest": "2c8163cd367189dabfcaf24429b80ed14cc44c5f3e0511ced4ca43b8b6a379cf",
-          "count": 1
-        }
-      ],
-      "reason": "文档示例里的 ${TOOLS_KEY}、${EXAMPLE_SECRET} 未求值环境变量插值。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "5bfb66848a4c4b81c637ce8d2136be01945b70aac8e8556b091cb02241b385df",
-      "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
       "path": "runtime/node_modules/@earendil-works/pi-coding-agent/docs/providers.md",
       "package": "@earendil-works/pi-coding-agent",
       "version": "1.5.0",
@@ -1307,56 +1217,6 @@
         }
       ],
       "reason": "文档里提到 ANTHROPIC_AUTH_TOKEN 等变量名和 bearer 认证方式的说明文字，不含具体凭据。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "5bfb66848a4c4b81c637ce8d2136be01945b70aac8e8556b091cb02241b385df",
-      "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@earendil-works/pi-coding-agent/examples/extensions/custom-provider-anthropic/index.ts",
-      "package": "@earendil-works/pi-coding-agent",
-      "version": "1.5.0",
-      "packageLockPath": "node_modules/@earendil-works/pi-coding-agent",
-      "integrity": "sha512-xNDZ5kqowO6Z03FS2gwAkPEGk1ssxVcYKQ6qZId84mFEvwACvvyc2l0vAMOS+c5zvxLRMLBE9r4y44IGYkMJaQ==",
-      "sourceUrl": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.5.0.tgz",
-      "archiveMember": "package/examples/extensions/custom-provider-anthropic/index.ts",
-      "fileSha256": "29ecf2cd22407868c024031465c9f4beaf0b6726249c5c20a0363091af664cb5",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "f563dcd8c7505c719ce75e80b098fac2a1ea228243a8ec8aa12f228a6d99ea72",
-          "count": 1
-        }
-      ],
-      "reason": "文档或示例扩展里的 $ACME_API_KEY、$GITLAB_TOKEN 这类环境变量名引用，不是凭据值。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
-      "expiresAt": "2026-12-04T00:00:00Z",
-      "sourceProofSha256": "5bfb66848a4c4b81c637ce8d2136be01945b70aac8e8556b091cb02241b385df",
-      "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/@earendil-works/pi-coding-agent/examples/extensions/custom-provider-gitlab-duo/index.ts",
-      "package": "@earendil-works/pi-coding-agent",
-      "version": "1.5.0",
-      "packageLockPath": "node_modules/@earendil-works/pi-coding-agent",
-      "integrity": "sha512-xNDZ5kqowO6Z03FS2gwAkPEGk1ssxVcYKQ6qZId84mFEvwACvvyc2l0vAMOS+c5zvxLRMLBE9r4y44IGYkMJaQ==",
-      "sourceUrl": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.5.0.tgz",
-      "archiveMember": "package/examples/extensions/custom-provider-gitlab-duo/index.ts",
-      "fileSha256": "0c4adac82eff25fef23223af77e11cd53535834fece9731009b125446e213158",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "04447928b410a70657a3b5e575de47ddb72f28cf574a3e4e62f097388304ab5a",
-          "count": 1
-        }
-      ],
-      "reason": "文档或示例扩展里的 $ACME_API_KEY、$GITLAB_TOKEN 这类环境变量名引用，不是凭据值。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/pull/338",
       "expiresAt": "2026-12-04T00:00:00Z",
@@ -2092,6 +1952,206 @@
       "expiresAt": "2026-12-04T00:00:00Z",
       "sourceProofSha256": "597532dcb9051ee8aa5edadedb57b798b42add68cc5aec1d67e994d0cfad07f1",
       "sourceReview": "2026-11-10 主代理核对：官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员 SHA256 等于构建出的成员摘要；sourceProofSha256 是该 tarball 的 SHA256；此为提案，仍待 Owner 合入审阅，reviewReference 仅标识引入该依赖版本的 PR。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.cjs",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.cjs",
+      "fileSha256": "c76c1228e92286e0a0d844ce8d5aaeef2185e50df62beb495a8f34139cc47248",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.cjs.map",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.cjs.map",
+      "fileSha256": "fd2b49163ab84dee43ef05e0b6ea5a2f9bada86f486d55d5120a19eb7dfe6878",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.d.cts",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.d.cts",
+      "fileSha256": "370cbd173f477e28091c1d2372b2e77f3b1f2783aa7af03f34c3a20f59274cff",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.d.mts",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.d.mts",
+      "fileSha256": "bd567330d48a7054d8f9752c4ac43025d1db463c7a02e4529f5fb5872c65f37d",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.mjs",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.mjs",
+      "fileSha256": "4494af7ea28b45d1655df5a67dcbd6079a50cbe382f811d82441ad2004bf4d60",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 2
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/dist/index.mjs.map",
+      "package": "@modelcontextprotocol/server",
+      "version": "2.0.0",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server",
+      "integrity": "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==",
+      "sourceUrl": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.0.0.tgz",
+      "archiveMember": "package/dist/index.mjs.map",
+      "fileSha256": "1706c5bca4728c3d63a685a86890d2e5e29fa918c4371d7a3dadcc6e23eef0df",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "MCP 服务端库的说明文字：命中的是函数说明里描述 HTTP 授权头认证方式的英文句子，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "b4f0dfda3b73b322f1091b86fabe568994eb2fedef873b12db2c54adc3cfe198",
+      "sourceReview": "2026-11-12 线程逐条读了命中行（解析 Authorization 头、构造认证失败回复的函数说明），都是说明文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 @modelcontextprotocol/server 的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/@modelcontextprotocol/server/node_modules/zod/src/v4/mini/tests/string.test.ts",
+      "package": "zod",
+      "version": "4.4.3",
+      "packageLockPath": "node_modules/@modelcontextprotocol/server/node_modules/zod",
+      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
+      "sourceUrl": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+      "archiveMember": "package/src/v4/mini/tests/string.test.ts",
+      "fileSha256": "efb9ef22f2179e700a2033edd4e1e03a6fe4f6b95fa4bc0bd29223065e1ec0a0",
+      "findings": [
+        {
+          "rule": "jwt-token",
+          "digest": "7f75367e7881255134e1375e723d1dea8ad5f6a4fdb79d938df1f1754a830606",
+          "count": 2
+        }
+      ],
+      "reason": "字符串解析测试：固定 JWT 输入及解析结果断言（与 @modelcontextprotocol/client 自带的同版本 zod 是同一个文件）。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/372",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "ee38f17f533fd500610685a483ae2f413c26f4eb33a51684314563c8d60f279c",
+      "sourceReview": "2026-11-12 线程核对：文件字节与已接受的 client 下 zod 4.4.3 同名文件相同，命中的是测试里的固定 JWT 示例。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入它的 PR 372。"
+    },
+    {
+      "kind": "published-synthetic-fixture",
+      "id": "published-synthetic-fixture",
+      "path": "runtime/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so.1",
+      "package": "onnxruntime-node",
+      "version": "1.30.0",
+      "packageLockPath": "node_modules/onnxruntime-node",
+      "integrity": "sha512-twhs1C2C/BFkz1yc5OY0KIU2GUq6DURO7hD4bx5Q2Qy3nAMJwRXW8xU3NVczE29VA9lolLOYepoD8fjTGOfIqw==",
+      "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
+      "archiveMember": "package/bin/napi-v6/linux/x64/libonnxruntime.so.1",
+      "fileSha256": "ffb75a925ba05e47b235bb66e3e3911714a80b328a9c9425539feb204aa32a23",
+      "findings": [
+        {
+          "rule": "bearer-token",
+          "digest": "fd5870803904313175576b9669f2f129a03143af27d87a830b1fc7848fb651da",
+          "count": 1
+        }
+      ],
+      "reason": "ONNX Runtime 动态库里拼 HTTP 授权请求头的格式字符串，令牌位置是运行时才填的 %s 占位，不是令牌。",
+      "owner": "sixianli",
+      "reviewReference": "https://github.com/sixianli/himawari-agent/pull/381",
+      "expiresAt": "2026-12-04T00:00:00Z",
+      "sourceProofSha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75",
+      "sourceReview": "2026-11-12 线程用 strings 读了命中位置，是 HTTP 请求头的格式模板和错误提示文字。官方 npm tarball 的 sha512 等于锁文件 integrity，tarball 成员字节等于构建出的成员；Owner sixianli 在项目线程里同意加入。reviewReference 指向引入 onnxruntime-node 的 PR 381。"
     }
   ]
 }

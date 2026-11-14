@@ -20,6 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { managedTaskDescriptors } from "../src/production-managed-tasks.js";
 import { memoryCapturePrompt } from "../src/production-memory-capture.js";
+import { conversationReviewPrompt } from "../src/production-memory-conversation-review.js";
 import { memoryRecallDescriptor } from "../src/production-memory-recall.js";
 import { reminderToolDescriptors } from "../src/production-reminder-writer.js";
 import {
@@ -46,6 +47,7 @@ const GOLDEN_NAMES = [
   "mail.judgment.recent-summaries",
   "memory.capture",
   "memory.consolidation",
+  "memory.conversation-review",
   "memory.embedding-query-instruction",
   "memory.episode-summary",
   "tools.definitions",
@@ -195,6 +197,45 @@ describe("[PROMPT-GOLDEN] rendered prompts stay byte-identical while text moves 
         [{ label: "N1", memory: memory("2026-11-04"), text: "主人周末常去爬山。" }],
       ),
     ).toMatchFileSnapshot(golden("memory.consolidation"));
+    await expect(
+      conversationReviewPrompt({
+        messages: [
+          {
+            id: "message-1",
+            role: "owner",
+            messageSentAt: "2026-11-10T01:01:00.000Z",
+            text: "下周三我要去大阪出差。",
+          },
+          {
+            id: "message-2",
+            role: "agent",
+            messageSentAt: "2026-11-10T01:02:00.000Z",
+            text: "好的，记得带充电器。",
+          },
+          {
+            id: "message-3",
+            role: "owner",
+            messageSentAt: "2026-11-10T01:03:00.000Z",
+            text: "大阪取消了，改成去京都。",
+          },
+        ],
+        existing: [
+          {
+            id: "memory-1" as Parameters<
+              typeof conversationReviewPrompt
+            >[0]["existing"][number]["id"],
+            recordedOn: "2026-11-03",
+            text: "主人下周三去大阪出差",
+            stance: null,
+            tentative: false,
+          },
+        ],
+        subCategories: { work: ["出差"] },
+        people: [],
+        timeZone: "Asia/Tokyo",
+        day: "2026-11-11",
+      }),
+    ).toMatchFileSnapshot(golden("memory.conversation-review"));
     await expect(
       episodeSummaryPrompt({
         ownerId: "owner-1",

@@ -2,6 +2,7 @@ import path from "node:path";
 import type { ThreadPromptBundleScope } from "@himawari-agent/application";
 import {
   assertWritableSchema,
+  bundledSchemaFingerprint,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   requestThreadPromptRebuild,
@@ -72,7 +73,7 @@ export async function runThreadCommand(
       path.join(configuration.stateRoot, "data", "product.sqlite"),
     );
     try {
-      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE);
+      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE, bundledSchemaFingerprint());
       const record = requestThreadPromptRebuild(database, {
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,

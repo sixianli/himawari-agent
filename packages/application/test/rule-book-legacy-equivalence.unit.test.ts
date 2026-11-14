@@ -4,8 +4,6 @@ import type { ProactiveMail } from "../src/ports/proactive-sources.js";
 import { ruleBookFor } from "../src/rules/rule-book.js";
 import { floorHitIds, quietEnd, quietUntil } from "../src/services/proactive-rules.js";
 
-const LEGACY_MONEY_WORDS =
-  /收费|扣款|入账|付款|退款|账单|缴费|汇款|转账|还款|发票|請求|引落|引き落とし|振込|振り込み|入金|返金|支払|料金|決済|ご利用代金|\b(?:invoice|payment|refund|billing|bill|charged?|receipt|statement)\b/iu;
 const LEGACY_PUBLIC_SUFFIXES = ["go.jp", "lg.jp", "ac.jp", "ed.jp"];
 
 function legacyDomain(address: string): string {
@@ -29,7 +27,6 @@ function legacyFloorHitIds(item: ProactiveMail, senders: readonly string[]): str
   if (legacyImportantSender(item.fromAddress, senders)) hits.push("floor_important_sender");
   if (LEGACY_PUBLIC_SUFFIXES.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`)))
     hits.push("floor_public_domain");
-  if (LEGACY_MONEY_WORDS.test(`${item.subject}\n${item.snippet}`)) hits.push("floor_money_words");
   return hits;
 }
 
@@ -136,7 +133,7 @@ function pick<T>(values: readonly T[], next: () => number): T {
 }
 
 describe("rule book against the pre-rule-book implementation", () => {
-  it("[HR-1] gives the same floor hits, in the same order, as the old hard-coded checks on 20000 random mails", () => {
+  it("[HR-1] gives the same sender and domain floor hits, in the same order, as the old hard-coded checks on 20000 random mails, and never a money hit from words alone", () => {
     const next = random(20261110);
     for (let index = 0; index < 20_000; index++) {
       const senders = Array.from({ length: Math.floor(next() * 4) }, () => pick(SENDERS, next));
@@ -161,6 +158,27 @@ describe("rule book against the pre-rule-book implementation", () => {
         legacyFloorHitIds(item, senders),
       );
     }
+  });
+
+  it("[T7] REVERSE: a money word in the subject no longer raises the floor; only the model's yes does", () => {
+    const rules = ruleBookFor({
+      quietHours: [],
+      quietHoursRevision: 1,
+      importantSenders: [],
+      importantSendersRevision: 1,
+    });
+    const item = {
+      fromAddress: "pay@example.com",
+      subject: "扣款成功通知 invoice",
+      snippet: "引落 payment",
+      body: null,
+    } as unknown as ProactiveMail;
+    expect(floorHitIds(item, rules)).toEqual([]);
+    expect(floorHitIds(item, rules, "no")).toEqual([]);
+    expect(floorHitIds(item, rules, "unknown")).toEqual([]);
+    expect(floorHitIds(item, rules, "yes")).toEqual(["floor_money_words"]);
+    const plain = { ...item, subject: "Lunch on Friday", snippet: "see you" };
+    expect(floorHitIds(plain, rules, "yes")).toEqual(["floor_money_words"]);
   });
 
   it("[HR-1] has no floor hit when the old checks have none, for a mail that matches nothing", () => {

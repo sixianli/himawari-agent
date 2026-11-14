@@ -1,0 +1,7 @@
+{"id":"5","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"背景改成引 ADR 0211 决定 2 原话：只能等 Andy 点“重新确认”"}
+{"id":"6","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"写明讨论记录在 round-1、round-2 目录"}
+{"id":"7","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"删掉仓库外的整合方案路径"}
+{"id":"9","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"前提 3 改成迁移 0087 的两个触发器"}
+{"id":"14","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"删掉以项目记忆为来源的前提 6"}
+{"id":"34","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"改成“再重建一次（之前 0087、0088、0089 都重建过）”"}
+{"id":"53","model":"opencode-go/deepseek-v4.1-flash","outcome":"plan-fixed","change":"改成引 ADR 0211 决定 5 的软偏好路径"}

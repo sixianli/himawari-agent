@@ -1,7 +1,9 @@
 import {
   ApplicationPortError,
   type ClockPort,
+  PERCEPTION_CONFIGURATION_RANGES,
   PERCEPTION_RECORD_TYPES,
+  PERCEPTION_RETENTION_CONFIGURATION,
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
   type PerceptionConfiguration,
@@ -141,10 +143,6 @@ export class ProductionPerceptionControl {
         ]);
         const configuration = this.#options.perceptionConfiguration();
         const days = service.retentionDays(settings);
-        const defaults = {
-          track: configuration.trackRetentionDays,
-          surroundings: configuration.surroundingsRetentionDays,
-        };
         return {
           ...head,
           type: "perception.status.snapshot",
@@ -155,11 +153,17 @@ export class ProductionPerceptionControl {
             day: status.day,
             todayCount: status.todayCount,
             availableSenses: PERCEPTION_SENSES,
-            retention: PERCEPTION_RETENTION_KEYS.map((key) => ({
-              key,
-              days: days[key],
-              defaultDays: defaults[key],
-            })),
+            retention: PERCEPTION_RETENTION_KEYS.map((key) => {
+              const configurationKey = PERCEPTION_RETENTION_CONFIGURATION[key];
+              const [minDays, maxDays] = PERCEPTION_CONFIGURATION_RANGES[configurationKey];
+              return {
+                key,
+                days: days[key],
+                defaultDays: configuration[configurationKey],
+                minDays,
+                maxDays,
+              };
+            }),
             pauseMaximumSeconds: configuration.pauseMaximumSeconds,
             revision: settings.revision,
             generatedAt,

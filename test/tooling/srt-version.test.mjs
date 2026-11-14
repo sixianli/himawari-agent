@@ -138,6 +138,14 @@ describe("SRT version single source", () => {
     expect(srtVersionProblems(root)).toEqual([]);
   });
 
+  it("still checks agent instructions outside the review records", () => {
+    expect(
+      srtVersionProblems(
+        fixture({ files: { ".agents/instructions/sandbox.md": `SRT ${OLD} is current\n` } }),
+      ),
+    ).toEqual([`SRT_VERSION_STALE .agents/instructions/sandbox.md:1 SRT ${OLD}`]);
+  });
+
   it("checks a Hermes start script that is not one of the frozen releases", () => {
     expect(
       srtVersionProblems(
@@ -164,6 +172,7 @@ describe("SRT version single source", () => {
           files: {
             "test/qualification/evidence/old.json": `{ "srt": "${OLD}" }\n`,
             "docs/adr/0001.md": `SRT ${OLD} was used\n`,
+            ".agents/reviews/pr-1/round-1/model.md": `the test wrote srt:${OLD}-other\n`,
           },
         }),
       ),

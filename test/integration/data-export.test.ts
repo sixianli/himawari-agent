@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createDataExportTextPolicy } from "@himawari-agent/platform-node";
 import { afterEach, describe, expect, it } from "vitest";
+import { SqliteMemoryConversationReviewOperations } from "../../packages/persistence-sqlite/src/sqlite-memory-conversation-review-operations.ts";
 import {
   openSide,
   SECRET_API_KEY,
@@ -153,6 +154,7 @@ describe("data export: round trip", () => {
       historyEventsWithoutOriginal: 0,
       decisionTextsWithoutOriginal: 0,
       rulesWithoutOriginal: 0,
+      externalProposalsWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });
@@ -167,6 +169,58 @@ describe("data export: round trip", () => {
     expect(first.manifest.counts.memories).toBe(8);
     expect(first.manifest.counts.decisions).toBe(7);
     expect(first.manifest.counts.sealedEvidenceRows).toBeGreaterThan(0);
+  });
+
+  it("[DREAM][P1-6] carries conversation reviews and their changes, without conversation ids", async () => {
+    const source = await seeded();
+    const first = await exportOf(source);
+    expect(first.manifest.counts.conversationReviews).toBe(2);
+    expect(first.manifest.counts.conversationReviewChanges).toBe(3);
+    const lines = decoder.decode(first.files.get("data/conversation-reviews.jsonl"));
+    expect(lines).not.toMatch(/episode-1|message-1|thread-review|payload-review-output/u);
+    expect(lines).not.toContain("m-pending");
+    const target = await side("reviews");
+    const report = await importInto(target, first.files, { passphrase: PASSPHRASE });
+    expect(report.imported.conversationReviews).toBe(2);
+    expect(report.imported.conversationReviewChanges).toBe(3);
+    const rows = target.database
+      .prepare(
+        `SELECT r.id, r.status, r.attempts, r.output_ref, t.archived_at IS NOT NULL AS archived,
+          (SELECT COUNT(*) FROM memory_conversation_review_changes c WHERE c.review_id = r.id) AS changes
+        FROM memory_conversation_reviews r JOIN threads t ON t.id = r.thread_id ORDER BY r.id`,
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        id: "review-1",
+        status: "completed",
+        attempts: 1,
+        output_ref: null,
+        archived: 1,
+        changes: 3,
+      },
+      { id: "review-2", status: "gave_up", attempts: 3, output_ref: null, archived: 1, changes: 0 },
+    ]);
+    expect(
+      target.database
+        .prepare(
+          "SELECT memory_id, undone_revision FROM memory_conversation_review_changes WHERE undone_revision IS NOT NULL",
+        )
+        .all(),
+    ).toEqual([{ memory_id: "m-archived", undone_revision: 2 }]);
+    const reviews = new SqliteMemoryConversationReviewOperations(
+      target.database,
+      (code: string, message: string) => {
+        throw new Error(`${code}: ${message}`);
+      },
+      () => {},
+    );
+    expect(
+      reviews.execute("memoryConversationReview.position", {
+        ownerId: target.ownerId,
+        agentId: target.agentId,
+      }),
+    ).toBeNull();
   });
 
   it("[P3-1] the search index and its vectors stay out of the export, sealed part included", async () => {
@@ -408,7 +462,7 @@ describe("data export: manifest and files are checked before anything is written
       "an unknown format version",
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
-        manifest.format = "himawari.data-export.v3";
+        manifest.format = "himawari.data-export.v4";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -418,6 +472,15 @@ describe("data export: manifest and files are checked before anything is written
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
         manifest.format = "himawari.data-export.v1";
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
+    ],
+    [
+      "an export in the old v2 format, which had no proposals from other agents",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.format = "himawari.data-export.v2";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -450,6 +513,18 @@ describe("data export: manifest and files are checked before anything is written
           path === "data/consolidations.jsonl"
             ? encoder.encode(
                 decoder.decode(bytes).replace('"memoryId":"m-archived"', '"memoryId":"m-ghost"'),
+              )
+            : bytes,
+        ),
+      DATA_EXPORT_ERROR_CODES.REFERENCE_BROKEN,
+    ],
+    [
+      "a conversation review change on a memory that is not in the file (hashes recomputed)",
+      (files) =>
+        rehash(files, (path, bytes) =>
+          path === "data/conversation-reviews.jsonl"
+            ? encoder.encode(
+                decoder.decode(bytes).replace('"memoryId":"m-plain"', '"memoryId":"m-ghost"'),
               )
             : bytes,
         ),

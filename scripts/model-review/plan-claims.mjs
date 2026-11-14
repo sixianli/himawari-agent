@@ -11,7 +11,8 @@ export const CLAIM_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 export const CLAIMS_VERDICTS_FILE = "claims-verdicts.jsonl";
 export const EVIDENCE_MIN_CHARS = 8;
 export const CLAIMS_LINE_FORMAT =
-  "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>";
+  "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行 或 文件:行@完整提交哈希>|<方案原句>|<代码原文>";
+export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 export function validClaimsFile(path) {
   return (
@@ -101,11 +102,13 @@ export function parseClaimVerdicts(text, path) {
 }
 
 function locationOf(location) {
-  const match = /^`?([^\s:`]+):(\d+)/.exec(location.trim());
+  const match = /^`?([^\s:`]+):(\d+)(?:@([0-9a-f]+))?/.exec(location.trim());
   if (!match) return null;
   const path = match[1];
   if (!validEvidencePath(path)) return null;
-  return { path, line: Number(match[2]) };
+  const commit = match[3] ?? null;
+  if (commit !== null && !COMMIT_PATTERN.test(commit)) return null;
+  return { path, line: Number(match[2]), commit };
 }
 
 function validEvidencePath(path) {
@@ -123,27 +126,168 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
-export function quoteInText(quote, text) {
-  const haystack = collapse(text);
-  const fragments = stripQuoteMarks(quote)
-    .split(/…|\.\.\./)
+const MAX_EVIDENCE_PLACES = 8;
+const LINE_JOINS = /；|\\n|\s\/\s/u;
+
+function quoteFragments(quote, separator) {
+  return stripQuoteMarks(quote)
+    .split(separator)
     .map((fragment) => collapse(stripQuoteMarks(fragment)))
     .filter((fragment) => fragment !== "");
-  return (
-    fragments.length > 0 &&
-    fragments.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
-  );
 }
 
-function claimEvidenceProblem(repo, head, claim) {
-  if (claim.verdict === "找不到" && !locationOf(claim.location)) return null;
-  const place = locationOf(claim.location);
-  if (!place) return "location-missing";
-  const blob = blobAt(repo, head, place.path);
-  if (blob === null) return "location-file-missing";
-  const text = blob.toString("utf8");
-  if (place.line < 1 || place.line > text.split("\n").length) return "location-line-out-of-range";
-  if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
+function fragmentsInOrder(fragments, haystack) {
+  let from = 0;
+  for (const fragment of fragments) {
+    const tooShort = fragment.length < 4 && /[\p{L}\p{N}]/u.test(fragment);
+    const at = tooShort ? -1 : haystack.indexOf(fragment, from);
+    if (at === -1) return false;
+    from = at + fragment.length;
+  }
+  return fragments.some((fragment) => fragment.length >= EVIDENCE_MIN_CHARS);
+}
+
+export function quoteInText(quote, text) {
+  const haystack = collapse(text);
+  const elided = quoteFragments(quote, /…|\.\.\./);
+  if (
+    elided.length > 0 &&
+    elided.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+  )
+    return true;
+  if (elided.length > 1) {
+    const pieces = quoteFragments(quote, /…|\.\.\.|；/);
+    return (
+      pieces.length > 0 &&
+      pieces.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
+    );
+  }
+  const whole = collapse(stripQuoteMarks(quote));
+  if (whole.length >= EVIDENCE_MIN_CHARS && haystack.includes(whole)) return true;
+  return fragmentsInOrder(quoteFragments(quote, LINE_JOINS), haystack);
+}
+
+export function locationsOf(location) {
+  const places = [];
+  for (const part of location.trim().split(/[,，]\s*/u)) {
+    const bare = /^`?(\d+)(?:-\d+)?`?$/u.exec(part);
+    if (bare && places.length > 0) {
+      places.push({
+        path: places.at(-1).path,
+        line: Number(bare[1]),
+        commit: places.at(-1).commit,
+      });
+      continue;
+    }
+    const place = locationOf(part);
+    if (!place) return [];
+    places.push(place);
+  }
+  return places;
+}
+
+function isAncestor(repo, ancestor, descendant) {
+  return git(repo, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
+}
+
+function mergeBase(repo, mainRef, tip) {
+  const base = git(repo, ["merge-base", mainRef, tip]);
+  return base.status === 0 ? base.stdout.trim() : null;
+}
+
+export function commitInPullRequest(repo, commit, head, mainRef, runHead = head) {
+  if (!COMMIT_PATTERN.test(commit)) return false;
+  const baseCommit = mergeBase(repo, mainRef, head);
+  if (baseCommit === null || !isAncestor(repo, commit, head)) return false;
+  if (commit === baseCommit) return true;
+  if (
+    runHead !== head &&
+    COMMIT_PATTERN.test(runHead ?? "") &&
+    isAncestor(repo, runHead, head) &&
+    commit === mergeBase(repo, mainRef, runHead)
+  )
+    return true;
+  return !isAncestor(repo, commit, baseCommit);
+}
+
+const MAX_MOVED_FILES = 400;
+
+const changedFileCache = new Map();
+const headBlobCache = new Map();
+
+function changedFilesBetween(repo, commit, head) {
+  const key = `${repo}\0${commit}\0${head}`;
+  if (!changedFileCache.has(key)) {
+    const listed = git(repo, ["diff", "--name-only", "-z", "--diff-filter=AMR", commit, head]);
+    changedFileCache.set(
+      key,
+      listed.status === 0
+        ? listed.stdout.split("\0").filter((path) => path && validEvidencePath(path))
+        : null,
+    );
+  }
+  return changedFileCache.get(key);
+}
+
+function headTextOf(repo, head, path) {
+  const key = `${repo}\0${head}\0${path}`;
+  if (!headBlobCache.has(key)) {
+    const blob = blobAt(repo, head, path);
+    headBlobCache.set(key, blob === null || blob.includes(0) ? null : blob.toString("utf8"));
+  }
+  return headBlobCache.get(key);
+}
+
+const isAdrPath = (path) => ADR_PATH_PATTERN.test(path);
+
+function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
+  const listed = changedFilesBetween(repo, commit, head);
+  if (listed === null) return "incomplete";
+  const paths = listed.filter((path) => !skipPaths.has(path) && !isAdrPath(path));
+  if (paths.length > MAX_MOVED_FILES) return "incomplete";
+  return paths.some((path) => {
+    const text = headTextOf(repo, head, path);
+    return text !== null && quoteInText(quote, text);
+  })
+    ? "found"
+    : "none";
+}
+
+function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
+  const places = locationsOf(claim.location);
+  if (claim.verdict === "找不到" && places.length === 0) return null;
+  if (places.length === 0) return "location-missing";
+  if (places.length > MAX_EVIDENCE_PLACES) return "too-many-places";
+  const texts = new Map();
+  const headTexts = new Map();
+  for (const place of places) {
+    if (place.commit !== null && !commitInPullRequest(repo, place.commit, head, mainRef, runHead))
+      return "commit-not-in-pr";
+    const key = `${place.commit ?? head}:${place.path}`;
+    if (!texts.has(key)) {
+      const blob = blobAt(repo, place.commit ?? head, place.path);
+      if (blob === null) return "location-file-missing";
+      texts.set(key, blob.toString("utf8"));
+    }
+    const lines = texts.get(key).split("\n").length;
+    if (place.line < 1 || place.line > lines) return "location-line-out-of-range";
+    if (place.commit !== null && !headTexts.has(place.path)) {
+      const atHead = blobAt(repo, head, place.path);
+      headTexts.set(place.path, atHead === null ? null : atHead.toString("utf8"));
+    }
+  }
+  if (claim.verdict === "找不到") return null;
+  if (![...texts.values()].some((text) => quoteInText(claim.code, text)))
+    return "code-quote-not-in-file";
+  if ([...headTexts.values()].some((text) => text !== null && quoteInText(claim.code, text)))
+    return "commit-quote-still-in-head";
+  const sameFiles = new Set(places.map((place) => place.path));
+  const commits = new Set(places.map((place) => place.commit).filter((commit) => commit !== null));
+  for (const commit of commits) {
+    const moved = quoteInChangedFiles(repo, commit, head, claim.code, sameFiles);
+    if (moved === "found") return "commit-quote-still-in-head";
+    if (moved === "incomplete") return "commit-quote-check-incomplete";
+  }
   return null;
 }
 
@@ -181,7 +325,59 @@ function topicLedgers(repo, head, reviewsDir) {
     .map(({ file, match }) => ({ file, dir: `${reviewsDir}/${match[1]}` }));
 }
 
+export function carriedVerdicts(repo, head, ownRecords) {
+  const seen = new Set();
+  const carried = [];
+  for (const record of ownRecords) {
+    if (record.outcome !== "ok") continue;
+    const roundDir = `${record.dir}/round-${record.round ?? 1}`;
+    const key = `${roundDir}\0${record.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const answer = blobAt(repo, head, `${roundDir}/${safe(record.model.split("/").pop())}.md`);
+    const verdictsText = blobAt(repo, head, `${roundDir}/${CLAIMS_VERDICTS_FILE}`);
+    if (answer === null || verdictsText === null) continue;
+    let verdicts;
+    try {
+      verdicts = parseClaimVerdicts(
+        verdictsText.toString("utf8"),
+        `${roundDir}/${CLAIMS_VERDICTS_FILE}`,
+      );
+    } catch {
+      continue;
+    }
+    const answerText = answer.toString("utf8");
+    const { claims } = parseClaims(answerText);
+    for (const verdict of verdicts) {
+      if (verdict.outcome !== "model-wrong" || verdict.model !== record.model) continue;
+      const claim = claims.find((item) => item.id === verdict.id);
+      if (!claim || !CLAIM_PROBLEM_VERDICTS.includes(claim.verdict)) continue;
+      carried.push({
+        model: record.model,
+        sentence: collapse(claim.sentence),
+        verdict,
+        answerText,
+      });
+    }
+  }
+  return carried;
+}
+
+function carriedEvidenceHolds(repo, head, item) {
+  const { verdict } = item;
+  if (!validEvidencePath(verdict.evidenceFile)) return false;
+  const blob = blobAt(repo, head, verdict.evidenceFile);
+  return (
+    blob !== null &&
+    collapse(verdict.evidence).length >= EVIDENCE_MIN_CHARS &&
+    collapse(blob.toString("utf8")).includes(collapse(verdict.evidence)) &&
+    collapse(item.answerText).includes(collapse(verdict.quote))
+  );
+}
+
 export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
+  changedFileCache.clear();
+  headBlobCache.clear();
   const adrs = addedAdrs(repo, head, mainRef);
   const problems = [];
   const files = [];
@@ -222,6 +418,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
       ]);
       files.push(`${dir}/usage.jsonl`, ...listed.stdout.split("\0").filter(Boolean));
     }
+    const carried = carriedVerdicts(repo, head, own);
     const matching = own.filter((record) => record.claimsSha256 === sha);
     if (matching.length === 0) {
       problems.push(own.length > 0 ? `claims-stale ${label}` : `claims-unchecked ${label}`);
@@ -257,7 +454,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
           continue;
         }
         for (const claim of claims) {
-          const why = claimEvidenceProblem(repo, head, claim);
+          const why = claimEvidenceProblem(repo, head, claim, mainRef, record.head);
           if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
         }
         const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;
@@ -275,9 +472,20 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
         for (const claim of claims.filter((item) =>
           CLAIM_PROBLEM_VERDICTS.includes(item.verdict),
         )) {
-          const verdict = verdicts.find(
+          const direct = verdicts.find(
             (item) => item.model === record.model && item.id === claim.id,
           );
+          const sameSentence = carried.filter(
+            (item) => item.model === record.model && item.sentence === collapse(claim.sentence),
+          );
+          const earlier =
+            direct?.outcome === "model-wrong"
+              ? null
+              : (sameSentence.find((item) => carriedEvidenceHolds(repo, head, item)) ??
+                sameSentence[0]);
+          const verdict = direct?.outcome === "model-wrong" ? direct : earlier?.verdict;
+          const verdictAnswer =
+            direct?.outcome === "model-wrong" ? answerText : earlier?.answerText;
           if (!verdict || verdict.outcome !== "model-wrong") {
             problems.push(`claims-unjudged ${label} ${short} ${claim.id} ${claim.verdict}`);
             continue;
@@ -291,7 +499,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
             !collapse(evidenceBlob.toString("utf8")).includes(collapse(verdict.evidence))
           )
             problems.push(`claims-verdict-evidence ${label} ${short} ${claim.id}`);
-          if (!collapse(answerText).includes(collapse(verdict.quote)))
+          if (!collapse(verdictAnswer).includes(collapse(verdict.quote)))
             problems.push(`claims-verdict-quote ${label} ${short} ${claim.id}`);
         }
       }
