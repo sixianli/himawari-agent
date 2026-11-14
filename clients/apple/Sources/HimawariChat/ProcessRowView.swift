@@ -2,13 +2,18 @@ import HimawariCore
 import HimawariDesign
 import SwiftUI
 
-struct ProcessRowView: View {
+public struct ProcessRowView: View {
     let line: ProcessLine
     let failed: Bool
     @State private var showingSteps = false
     @Environment(\.processStepsOpenAfter) private var openAfter
 
-    var body: some View {
+    public init(line: ProcessLine, failed: Bool) {
+        self.line = line
+        self.failed = failed
+    }
+
+    public var body: some View {
         content
             .onChange(of: line) { old, new in
                 Self.reportHaptic(from: old, to: new, failed: failed)
@@ -49,6 +54,8 @@ struct ProcessRowView: View {
                 }
                 if current.phase == .failed || current.phase == .unavailable {
                     ProcessLineLabel(icon: .alertCircle, text: current.title, tint: .hmMuted, shimmering: false)
+                } else if current.phase == .unrecognized {
+                    ProcessLineLabel(icon: .puzzle, text: current.title, tint: .hmMuted, shimmering: false)
                 } else {
                     ProcessLineLabel(icon: Self.icon(current.icon), text: current.title, tint: .hmMuted, shimmering: true)
                 }
@@ -128,7 +135,7 @@ struct ProcessStepsSheet: View {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         HStack(spacing: DesignTokens.Size.rowGap) {
                             Icon(
-                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : ProcessRowView.icon(step.icon),
+                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : step.phase == .unrecognized ? .puzzle : ProcessRowView.icon(step.icon),
                                 size: DesignTokens.IconSize.listRow
                             )
                             .foregroundStyle(Color.hmText)

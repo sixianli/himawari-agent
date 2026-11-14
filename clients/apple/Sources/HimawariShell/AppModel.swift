@@ -26,6 +26,7 @@ public final class AppModel {
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
+    @ObservationIgnored private let kind: DeviceKind
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
@@ -35,16 +36,17 @@ public final class AppModel {
 
     private static let recordAccount = "pairing-record"
 
-    public convenience init(bundle: Bundle = .main) {
-        self.init(bundle: bundle, restoring: true)
+    public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        self.init(bundle: bundle, kind: kind, restoring: true)
     }
 
-    init(bundle: Bundle = .main, restoring: Bool) {
+    init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
+        self.kind = kind
         let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
         keys = SecureEnclaveKeyStore(service: service + ".keys")
         keychain = KeychainValueStore(service: service)
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
-        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
+        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -73,7 +75,7 @@ public final class AppModel {
         guard let record else { return }
         use(record)
         switch record.status {
-        case .pending:
+        case .pending, .unrecognized:
             phase = .waitingForConfirmation(number: record.pairingNumber)
             waitForConfirmation()
         case .active:
@@ -118,8 +120,8 @@ public final class AppModel {
     }
 
     #if DEBUG
-    static func demo(_ phase: AppPhase, host: String? = nil) -> AppModel {
-        let model = AppModel(restoring: false)
+    public static func demo(_ phase: AppPhase, host: String? = nil, kind: DeviceKind = .iphone) -> AppModel {
+        let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
         return model
@@ -148,7 +150,7 @@ public final class AppModel {
                 let confirmKey = keys.signer(.confirm)
                 let device = try await api.pair(
                     invitation: invitation,
-                    kind: .iphone,
+                    kind: kind,
                     name: Self.deviceName,
                     releaseChannel: releaseChannel,
                     deviceKey: deviceKey,
@@ -188,6 +190,11 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public var unsentMessages: Int? {
+        guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
+        return Outbox.unsentCount(in: local)
+    }
+
     public func startOver() {
         guard emptyStore() else {
             phase = .unpaired(.storageUnavailable)
@@ -208,7 +215,40 @@ public final class AppModel {
     }
 
     public func retryReadingKeys() {
-        restore()
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+        } else {
+            restore()
+        }
+    }
+
+    private func recheckUnknownState() {
+        waiting?.cancel()
+        waiting = Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            do {
+                configuration = try await api.configuration()
+            } catch {
+                failure = error
+            }
+            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
+            switch UnknownStateRecheck.outcome(of: failure) {
+            case .connected:
+                try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                Haptics.shared.report(.pairingSucceeded)
+                activate()
+            case .removed:
+                forget(problem: .removed)
+            case .waiting:
+                if let record {
+                    phase = .waitingForConfirmation(number: record.pairingNumber)
+                    waitForConfirmation()
+                }
+            case .stillUnknown:
+                break
+            }
+        }
     }
 
     public func retryPairing() {
@@ -240,7 +280,12 @@ public final class AppModel {
                 } catch let error as DeviceAPIError where error.isRevoked {
                     forget(problem: .removed)
                     return
-                } catch {}
+                } catch {
+                    if let status = record?.status, ConfirmationWait.givesUp(waitingAs: status, after: error) {
+                        phase = .unpaired(.stateUnknown)
+                        return
+                    }
+                }
                 try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
                 delay = min(delay * 2, 10)
             }
@@ -311,6 +356,10 @@ public final class AppModel {
     }
 
     public func becameActive() {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+            return
+        }
         if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
             restore()
             return

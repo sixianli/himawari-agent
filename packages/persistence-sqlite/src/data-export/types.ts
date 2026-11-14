@@ -16,6 +16,7 @@ export interface PortableCounts {
   memoryHistoryEvents: number;
   people: number;
   importBatches: number;
+  pairedDevices: number;
   consolidations: number;
   consolidationChanges: number;
   conversationReviews: number;

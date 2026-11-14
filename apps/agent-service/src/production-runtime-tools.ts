@@ -50,6 +50,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
@@ -714,16 +715,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             return { value: output, contentClassification };
           }
         : undefined,
-      (error) => {
-        const errorCode =
-          error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
-            ? "MEMORY_RECALL_INPUT_INVALID"
-            : "MEMORY_RECALL_UNAVAILABLE";
-        return {
-          errorCode,
-          note: TOOL_RESULT_RECALL_UNAVAILABLE.text,
-        };
-      },
+      (error) =>
+        error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
+          ? {
+              errorCode: "MEMORY_RECALL_INPUT_INVALID",
+              note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+            }
+          : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
   async #reminder(

@@ -38,6 +38,10 @@
 "pairing.problem.keysUnreadable" = "ペアリングと会話は残っています。ロックを解除してここに戻ると自動でやり直します";
 "pairing.problem.keysUnreadable.title" = "この iPhone の鍵が一時的に読めません";
 "pairing.problem.storage" = "ペアリングと会話は残っています。ロックを解除し空き容量を作ってここに戻ると自動でやり直します";
+"pairing.problem.stateUnknown" = "まずアプリを更新してから再試行してください。それでもだめなら消去してペアリングし直してください。会話と記憶はあなたのサーバーにあるので、消去しても失われません";
+"pairing.problem.stateUnknown.title" = "この iPhone は Himawari につながらなくなりました";
 "pairing.problem.storage.title" = "この端末の保存領域を一時的に開けません";
 "pairing.startOver" = "消去して最初からペアリング";
-"pairing.startOver.confirm" = "消去すると、この iPhone に保存した会話と鍵が削除され、もう一度コードを読み取る必要があります。";
+"pairing.startOver.confirm" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われません。";
+"pairing.startOver.confirmUnsent" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われませんが、まだ送信していない %d 件のメッセージは一緒に削除されます。";
+"pairing.startOver.confirmUnknown" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われませんが、この iPhone にまだ送信していないメッセージがあれば一緒に削除されます。";

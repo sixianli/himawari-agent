@@ -28,6 +28,7 @@ import type {
   GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  HomeUrgencyStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -38,6 +39,7 @@ import type {
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -45,6 +47,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
@@ -53,7 +56,8 @@ import type {
   ReliableEventPort,
   ReliableEventRecord,
   ReviewPrereviewStorePort,
-  HomeUrgencyStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchPort,
   RunExecutionSourcePort,
@@ -78,6 +82,11 @@ import type {
   TraceStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type UnitOfWorkPort,
+} from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
   AgentId,
@@ -101,11 +110,6 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "./migration-engine.js";
-import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
-  type UnitOfWorkPort,
-} from "@himawari-agent/application";
 import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
@@ -616,6 +620,14 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.memoryCaptureBacklog();
   }
 
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return this.durable.ruleReviews();
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return this.durable.memoryReviews();
+  }
+
   memoryConversationReviews(): MemoryConversationReviewStorePort {
     return this.durable.memoryConversationReviews();
   }
@@ -646,6 +658,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   webPush(): WebPushStorePort {
     return this.durable.webPush();
+  }
+
+  pairedDevices(): PairedDeviceStorePort {
+    return this.durable.pairedDevices();
   }
 
   proactive(): ProactiveStorePort {

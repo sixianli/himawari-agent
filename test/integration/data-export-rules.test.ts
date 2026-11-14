@@ -287,6 +287,118 @@ describe("data export: the rule book travels with the memories", () => {
     ).toBe("memory_removed");
   });
 
+  it("[P4-1] a paused rule and the owner's review clicks survive the round trip, the suggestion and open review marks stay behind", async () => {
+    const source = await side("rules-suspended");
+    await seedMemory(source, {
+      id: "m-rule-visa",
+      text: "入管局的邮件以后必须通知我",
+      category: "rule",
+    });
+    await seedMemory(source, { id: "m-visa-plan", text: "Andy 每周一看入管局的邮件" });
+    writeRuleVersion(source, {
+      ruleId: "owner:immigration",
+      parameters: ownerRuleParameters(
+        "mail_must_notify",
+        { senderDomains: ["moj.go.jp"] },
+        "入管局的邮件一定提醒",
+      ),
+      source: "ADR 0213；主人在对话里说的一句话",
+      sourceMemoryId: "m-rule-visa",
+      reason: "owner_sentence",
+      at: "2026-11-03T04:00:00.000Z",
+    });
+    const db = source.database;
+    db.prepare(
+      `UPDATE rule_book_rules SET status = 'suspended', suspend_reason = 'parameters_changed',
+         suggestion = ?, revision = revision + 1, updated_at = ?
+       WHERE rule_id = 'owner:immigration'`,
+    ).run(
+      JSON.stringify(
+        ownerRuleParameters(
+          "mail_must_notify",
+          { senderDomains: ["moj.go.jp", "isa.go.jp"] },
+          "入管局和出入国在留管理厅的邮件一定提醒",
+        ),
+      ),
+      "2026-11-04T00:00:00.000Z",
+    );
+    db.prepare(
+      `INSERT INTO rule_book_history (
+        owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
+        change_reason, changed_at
+      ) SELECT owner_id, agent_id, rule_id, revision, parameters, status, source,
+        source_memory_id, 'rule_review_suspended', updated_at
+      FROM rule_book_rules WHERE rule_id = 'owner:immigration'`,
+    ).run();
+    db.prepare(
+      `INSERT INTO memory_review_items (
+        owner_id, agent_id, memory_id, upstream_memory_id, via_memory_id, reason, depth,
+        expanded, status, flagged_at
+      ) VALUES (?, ?, 'm-visa-plan', 'm-rule-visa', NULL, 'owner_reported', 1, 1, 'open', ?)`,
+    ).run(source.ownerId, source.agentId, "2026-11-04T00:00:00.000Z");
+    db.prepare(
+      `INSERT INTO decision_ledger (
+        id, owner_id, agent_id, kind, checked_at, counts, outcome, reason_code, subject_ref,
+        inputs, cost_micros, duration_ms
+      ) VALUES ('memory-review-missed-1', ?, ?, 'memory_review', ?, '{}',
+        'owner_reported_missed', 'owner_reported', 'm-visa-plan', ?, 0, 0)`,
+    ).run(
+      source.ownerId,
+      source.agentId,
+      "2026-11-04T00:00:00.000Z",
+      JSON.stringify({
+        memoryIds: ["m-rule-visa"],
+        ruleIds: [],
+        batchId: null,
+        resultMemoryIds: ["m-visa-plan"],
+      }),
+    );
+    const { files, manifest } = await exportOf(source);
+    const exportedRule = decoder
+      .decode(files.get("data/rules.jsonl"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find(({ ruleId }) => ruleId === "owner:immigration");
+    expect(exportedRule?.["status"]).toBe("suspended");
+    expect(exportedRule?.["suspendReason"]).toBe("parameters_changed");
+    expect(readable(files)).not.toContain("isa.go.jp");
+    const notExported = new Map(
+      (manifest.omitted as readonly { what: string; count: number | null }[]).map(
+        ({ what, count }) => [what, count],
+      ),
+    );
+    expect(notExported.get("规则暂停时系统算出的建议值")).toBe(1);
+    expect(notExported.get("等你确认的待重审记忆标记")).toBe(1);
+    const target = await side("rules-suspended-target");
+    await importInto(target, files, PASSPHRASE);
+    expect(
+      target.database
+        .prepare(
+          `SELECT status, suspend_reason AS suspendReason, suggestion, review_after AS reviewAfter
+           FROM rule_book_rules WHERE rule_id = 'owner:immigration'`,
+        )
+        .get(),
+    ).toEqual({
+      status: "suspended",
+      suspendReason: "parameters_changed",
+      suggestion: null,
+      reviewAfter: null,
+    });
+    expect(
+      target.database
+        .prepare(
+          "SELECT kind, outcome, subject_ref FROM decision_ledger WHERE kind = 'memory_review'",
+        )
+        .all(),
+    ).toEqual([
+      { kind: "memory_review", outcome: "owner_reported_missed", subject_ref: "m-visa-plan" },
+    ]);
+    expect(target.database.prepare("SELECT COUNT(*) FROM memory_review_items").pluck().get()).toBe(
+      0,
+    );
+  });
+
   it("[P1-6] an instance without any stored rule still exports and imports, with zero rules", async () => {
     const source = await side("rules-empty");
     await seedMemory(source, { id: "m-only", text: "喜欢喝茶" });

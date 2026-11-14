@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +27,8 @@ import {
   REQUIRED_GATE_COMMAND,
   resolvePolicySource,
   resolveTestHygieneBaseline,
+  upgradeArmRunnerPolicy,
+  upgradeCoverageToTests,
   upgradeGateRunnerPolicy,
   upgradeHostedRunnerPolicy,
   upgradeRetiredTestChecks,
@@ -33,6 +43,8 @@ import {
 } from "../../scripts/ci/check-policy.mjs";
 import {
   activeMembers,
+  armChecks,
+  armRunnerLabel,
   expectedMembers,
   githubExpression,
   linuxRunnerLabel,
@@ -45,6 +57,36 @@ import { testWorkerCount } from "../../scripts/ci/test-concurrency.mjs";
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const clone = () => structuredClone(policy);
+const coverageShaped = () => {
+  const value = clone();
+  Object.assign(
+    value.checks.find((check) => check.id === "tests"),
+    {
+      id: "coverage",
+      projects: ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
+      outputs: ["json", "lcov", "artifact"],
+    },
+  );
+  value.checks = value.checks.filter((check) => check.id !== "tooling");
+  value.checks.find((check) => check.id === "policy").projects = ["tooling"];
+  value.checks.find((check) => check.id === "required").needs = [
+    "policy",
+    "static",
+    "build",
+    "browser",
+    "coverage",
+    "security",
+  ];
+  return value;
+};
+const armOnSharedRunner = (value) => {
+  for (const check of value.checks)
+    if (armChecks.includes(check.id)) {
+      delete check.members[0].alternateArch;
+      check.members[0].runner = linuxRunnerLabel;
+    }
+  return value;
+};
 const checkout = {
   repository: "actions/checkout",
   version: "v4",
@@ -118,7 +160,7 @@ const buildFetch = () => ({
 });
 const shareCollect = () => ({
   env: { CI_NEEDS: githubExpression("toJSON(needs)") },
-  run: `${shareCommand} collect --to .ci-output/reports`,
+  run: `${shareCommand} collect --to .ci-output/reports --remote-jobs ${armChecks.join(",")}`,
 });
 const shareRemove = () => ({ if: REQUIRED_AFTER_ENTRY, run: `${shareCommand} remove` });
 const gateStep = () => ({
@@ -154,6 +196,7 @@ function workflow() {
         "github.event_name",
         "github.event.pull_request.number || github.ref",
         "github.event_name == 'push' && github.run_id || ''",
+        "github.event.pull_request.draft == true && 'draft' || 'ready'",
       ]
         .map(githubExpression)
         .join("-"),
@@ -186,15 +229,15 @@ function workflow() {
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
             {
               run:
-                check.id === "coverage"
-                  ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
+                check.id === "tests"
+                  ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check tests --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
                   : "node scripts/ci/run.mjs",
             },
-            ...(["browser", "coverage"].includes(check.id) ? [buildFetch()] : []),
+            ...(["browser", "tests"].includes(check.id) ? [buildFetch()] : []),
             ...(check.id === "required"
               ? [shareCollect(), gateStep(), shareRemove()]
               : [sharePut(check), diagnosticSummary(check)]),
-            ...(["static", "coverage"].includes(check.id) ? [{ run: chromiumInstall }] : []),
+            ...(["static", "tests"].includes(check.id) ? [{ run: chromiumInstall }] : []),
           ],
         },
       ]),
@@ -377,9 +420,9 @@ describe("CI policy contract", () => {
     expect(() => resolvePolicySource({ root })).toThrow();
   });
 
-  it("accepts the exact seven-job policy and literal execution graph", () => {
+  it("accepts the exact eight-job policy and literal execution graph", () => {
     expect(validatePolicy(policy)).toBe(policy);
-    expect(validateWorkflow(policy, stringify(workflow()), lock)).toEqual({ jobs: 7, members: 10 });
+    expect(validateWorkflow(policy, stringify(workflow()), lock)).toEqual({ jobs: 8, members: 11 });
   });
   it.each([
     [
@@ -422,7 +465,7 @@ describe("CI policy contract", () => {
     [
       "missing project",
       (value) => {
-        value.checks.find((check) => check.id === "coverage").projects.pop();
+        value.checks.find((check) => check.id === "tests").projects.pop();
       },
     ],
     [
@@ -464,6 +507,15 @@ describe("CI policy contract", () => {
       },
     ],
     [
+      "draft and ready runs sharing one concurrency group",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          /-\$\{\{ github\.event\.pull_request\.draft[^}]*\}\}$/,
+          "",
+        );
+      },
+    ],
+    [
       "concurrency with an extra segment",
       (value) => {
         value.concurrency.group += "-x";
@@ -484,7 +536,7 @@ describe("CI policy contract", () => {
     [
       "wrong DAG",
       (value) => {
-        value.jobs.coverage.needs = ["policy"];
+        value.jobs.tests.needs = ["policy"];
       },
     ],
     [
@@ -516,9 +568,9 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "other condition on coverage",
+      "other condition on tests",
       (value) => {
-        value.jobs.coverage.if = githubExpression("!github.event.pull_request.draft");
+        value.jobs.tests.if = githubExpression("!github.event.pull_request.draft");
       },
     ],
     [
@@ -652,7 +704,7 @@ describe("CI policy contract", () => {
     "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
   ];
   it.each(
-    ["policy", "browser", "coverage", "required"].flatMap((id) =>
+    ["policy", "browser", "tests", "tooling", "required"].flatMap((id) =>
       formerArtifactActions.map((uses) => [id, uses]),
     ),
   )("[I-95] rejects a GitHub artifact step in %s: %s", (id, uses) => {
@@ -714,7 +766,7 @@ describe("CI policy contract", () => {
     value.jobs.required.permissions = { contents: "read", actions: "read" };
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
-  it.each(["static", "coverage"])(
+  it.each(["static", "tests"])(
     "rejects a %s job that runs browser tests without installing Chromium",
     (id) => {
       const value = workflow();
@@ -730,9 +782,9 @@ describe("CI policy contract", () => {
     "conditional runner",
     "duplicate runner",
     "direct baseline write",
-  ])("rejects coverage candidate workflow drift: %s", (change) => {
+  ])("rejects tests candidate workflow drift: %s", (change) => {
     const value = workflow();
-    const steps = value.jobs.coverage.steps;
+    const steps = value.jobs.tests.steps;
     if (change === "missing option")
       steps[1].run = steps[1].run.replace(" --baseline-candidate initial-only", "");
     if (change === "always measure") steps[1].run = steps[1].run.replace("initial-only", "always");
@@ -888,12 +940,12 @@ describe("CI policy contract", () => {
       "Matrix members differ: build",
     );
     const ids = expectedMembers(policy).map((entry) => entry.id);
-    expect(ids).toHaveLength(8);
+    expect(ids).toHaveLength(9);
     expect(ids.some((id) => id.includes("macos-arm64"))).toBe(false);
   });
   it("把已接受的托管 runner 政策升级成 ci-vps 加暂停 macOS 一次", () => {
     const { root, git } = fixtureRepository();
-    const hosted = clone();
+    const hosted = armOnSharedRunner(coverageShaped());
     for (const check of hosted.checks) {
       check.timeoutMinutes =
         check.id === "required"
@@ -940,7 +992,7 @@ describe("CI policy contract", () => {
     expect(upgradeHostedRunnerPolicy(unpausedMac)).toBe(unpausedMac);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(mixed))).toThrow();
     const hostedWithTimeouts = (timeoutFor) => {
-      const value = clone();
+      const value = armOnSharedRunner(coverageShaped());
       for (const check of value.checks) {
         check.timeoutMinutes = timeoutFor(check.id);
         for (const member of check.members)
@@ -954,14 +1006,18 @@ describe("CI policy contract", () => {
     const legacy = hostedWithTimeouts(legacyTimeout);
     expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
     expect(() =>
-      validatePolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+      validatePolicy(
+        upgradeCoverageToTests(
+          upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+        ),
+      ),
     ).not.toThrow();
     const wrongTimeout = hostedWithTimeouts((id) => (id === "build" ? 1 : legacyTimeout(id)));
     expect(upgradeHostedRunnerPolicy(wrongTimeout)).toBe(wrongTimeout);
     expect(() => validatePolicy(upgradeHostedRunnerPolicy(wrongTimeout))).toThrow();
   });
   const hermesPolicy = () => {
-    const value = clone();
+    const value = armOnSharedRunner(coverageShaped());
     for (const check of value.checks)
       for (const member of check.members)
         if (member.key !== "macos-arm64") member.runner = "hermes-home";
@@ -978,8 +1034,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 7,
-      members: 10,
+      jobs: 8,
+      members: 11,
     });
   });
   it("[HR-11] 只升级完整的 hermes-home 写法，混写、未暂停 macOS、时限不对的照样被拒", () => {
@@ -1002,7 +1058,7 @@ describe("CI policy contract", () => {
     );
   });
   const retiredTestPolicy = () => {
-    const value = clone();
+    const value = coverageShaped();
     value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
     const fiveProjects = ["unit", "contracts", "integration", "e2e", "pi-compat"];
     const coverageIndex = value.checks.findIndex((check) => check.id === "coverage");
@@ -1062,8 +1118,8 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 7,
-      members: 10,
+      jobs: 8,
+      members: 11,
     });
   });
   it.each([
@@ -1148,19 +1204,23 @@ describe("CI policy contract", () => {
   it("升级保留 coverage 以外作业的原样，现行七作业策略原样返回", () => {
     expect(upgradeRetiredTestChecks(policy)).toBe(policy);
     const accepted = retiredTestPolicy();
-    const upgraded = upgradeGateRunnerPolicy(upgradeRetiredTestChecks(accepted));
+    const upgraded = upgradeCoverageToTests(
+      upgradeGateRunnerPolicy(upgradeRetiredTestChecks(accepted)),
+    );
     expect(upgraded).toEqual(policy);
     expect(accepted.checks.map((check) => check.id)).toContain("node-floor");
   });
   const sharedRunnerPolicy = () => {
-    const value = clone();
+    const value = coverageShaped();
     value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
     return value;
   };
   it("[ADR-0256] 基准上汇总作业还在 ci-vps 的七作业策略升级成 ci-vps-gate，摘要仍按原始字节算", () => {
     const { root, git } = fixtureRepository();
     const accepted = sharedRunnerPolicy();
-    expect(() => validatePolicy(accepted)).toThrow("Incorrect platform: required/default");
+    expect(() => validatePolicy(upgradeCoverageToTests(accepted))).toThrow(
+      "Incorrect platform: required/default",
+    );
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
     git("add", "ci");
@@ -1169,14 +1229,14 @@ describe("CI policy contract", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
-      jobs: 7,
-      members: 10,
+      jobs: 8,
+      members: 11,
     });
   });
   it("[ADR-0256] 只升级汇总作业在 ci-vps 的七作业写法，现行策略原样返回，别的写法照样被拒", () => {
     expect(upgradeGateRunnerPolicy(policy)).toBe(policy);
     const upgraded = upgradeGateRunnerPolicy(sharedRunnerPolicy());
-    expect(upgraded).toEqual(policy);
+    expect(upgraded).toEqual(coverageShaped());
     const hosted = sharedRunnerPolicy();
     hosted.checks.find((check) => check.id === "required").members[0].runner = "ubuntu-24.04";
     expect(upgradeGateRunnerPolicy(hosted)).toBe(hosted);
@@ -1187,7 +1247,7 @@ describe("CI policy contract", () => {
     checkOnGate.checks.find((check) => check.id === "static").members[0].runner = "ci-vps-gate";
     expect(upgradeGateRunnerPolicy(checkOnGate)).toBe(checkOnGate);
     expect(() => validatePolicy(checkOnGate)).toThrow("Incorrect platform: static/default");
-    expect(() => validatePolicy(sharedRunnerPolicy())).toThrow(
+    expect(() => validatePolicy(upgradeCoverageToTests(sharedRunnerPolicy()))).toThrow(
       "Incorrect platform: required/default",
     );
   });
@@ -1199,15 +1259,178 @@ describe("CI policy contract", () => {
     checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
     expect(() => validateWorkflow(policy, stringify(checkOnGate), lock)).toThrow();
   });
+  it("[ADR-0267] 基准上 coverage 作业带全部测试的七作业策略升级成 tests 加 Oracle 上的 tooling", () => {
+    expect(policy.checks.find((check) => check.id === "policy").projects).toEqual([]);
+    for (const projects of [["tooling"], []]) {
+      const accepted = coverageShaped();
+      accepted.checks.find((check) => check.id === "policy").projects = projects;
+      expect(upgradeCoverageToTests(accepted)).toEqual(policy);
+    }
+    expect(upgradeCoverageToTests(policy)).toBe(policy);
+    expect(policy.checks.find((check) => check.id === "tooling")).toEqual({
+      id: "tooling",
+      needs: ["policy"],
+      timeoutMinutes: 60,
+      members: policy.checks.find((check) => check.id === "static").members,
+      projects: ["tooling"],
+      outputs: ["json"],
+    });
+    expect(policy.checks.find((check) => check.id === "static").members[0]).toMatchObject({
+      runner: armRunnerLabel,
+      alternateArch: "arm64",
+    });
+  });
+  it.each([
+    [
+      "policy 带了别的项目",
+      (value) => {
+        value.checks[0].projects = ["unit"];
+      },
+    ],
+    [
+      "coverage 少 integration",
+      (value) => {
+        const coverage = value.checks.find((check) => check.id === "coverage");
+        coverage.projects = coverage.projects.filter((id) => id !== "integration");
+      },
+    ],
+    [
+      "coverage 少 lcov 输出",
+      (value) => {
+        value.checks.find((check) => check.id === "coverage").outputs = ["json"];
+      },
+    ],
+    [
+      "coverage 放到 ci-arm",
+      (value) => {
+        value.checks.find((check) => check.id === "coverage").members[0].runner = "ci-arm";
+      },
+    ],
+    [
+      "required 没等 coverage",
+      (value) => {
+        const required = value.checks.find((check) => check.id === "required");
+        required.needs = required.needs.filter((id) => id !== "coverage");
+      },
+    ],
+  ])("[ADR-0267] 只升级完整的 coverage 七作业写法，%s的照样被拒", (_name, mutate) => {
+    const value = coverageShaped();
+    mutate(value);
+    expect(upgradeCoverageToTests(value)).toBe(value);
+    expect(() => validatePolicy(upgradeCoverageToTests(value))).toThrow();
+  });
+  it("[ADR-0267] 反向：policy 作业重新带上 tooling、tests 带上 tooling 或 tooling 回到 CI 服务器，策略都被拒", () => {
+    const withTooling = clone();
+    withTooling.checks.find((check) => check.id === "policy").projects = ["tooling"];
+    expect(() => validatePolicy(withTooling)).toThrow("Incomplete project selection: policy");
+    const testsWithTooling = clone();
+    testsWithTooling.checks.find((check) => check.id === "tests").projects.push("tooling");
+    expect(() => validatePolicy(testsWithTooling)).toThrow("Incomplete project selection: tests");
+    const toolingOnVps = clone();
+    const member = toolingOnVps.checks.find((check) => check.id === "tooling").members[0];
+    member.runner = linuxRunnerLabel;
+    delete member.alternateArch;
+    expect(() => validatePolicy(toolingOnVps)).toThrow("Incorrect platform: tooling/default");
+  });
+  it("[ADR-0266] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
+    expect(armChecks).toEqual(["policy", "static", "tooling", "security"]);
+    const { root, git } = fixtureRepository();
+    const accepted = armOnSharedRunner(coverageShaped());
+    expect(() => validatePolicy(accepted)).toThrow();
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted checks without alternateArch");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    for (const id of armChecks)
+      expect(selected.policy.checks.find((check) => check.id === id).members).toEqual([
+        {
+          key: "default",
+          runner: armRunnerLabel,
+          os: "linux",
+          arch: "x64",
+          alternateArch: "arm64",
+          node: "22.22.3",
+        },
+      ]);
+    expect(validateWorkflow(selected.policy, stringify(workflow()), lock)).toEqual({
+      jobs: 8,
+      members: 11,
+    });
+  });
+  it("[ADR-0266] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
+    expect(upgradeArmRunnerPolicy(policy)).toBe(policy);
+    expect(upgradeArmRunnerPolicy(armOnSharedRunner(coverageShaped()))).toEqual(coverageShaped());
+    const withAlternate = armOnSharedRunner(coverageShaped());
+    for (const check of withAlternate.checks)
+      if (armChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
+    expect(upgradeArmRunnerPolicy(withAlternate)).toEqual(coverageShaped());
+    const mixed = armOnSharedRunner(coverageShaped());
+    mixed.checks.find((check) => check.id === "security").members[0].runner = armRunnerLabel;
+    expect(upgradeArmRunnerPolicy(mixed)).toBe(mixed);
+    expect(() => validatePolicy(upgradeCoverageToTests(mixed))).toThrow(
+      "Incorrect platform: policy/default",
+    );
+  });
+  it.each([
+    ["build 允许 arm64", "build", { alternateArch: "arm64" }],
+    ["tests 写成 arm64", "tests", { arch: "arm64" }],
+    ["tooling 放回 ci-vps", "tooling", { runner: "ci-vps" }],
+    ["browser 允许 arm64", "browser", { alternateArch: "arm64" }],
+    ["static 没有 arm64 试跑", "static", { alternateArch: undefined }],
+    ["security 放到汇总 runner", "security", { runner: "ci-vps-gate" }],
+    ["security 放回 ci-vps", "security", { runner: "ci-vps" }],
+    ["static 放回 ci-vps", "static", { runner: "ci-vps" }],
+    ["tests 放到 ci-arm", "tests", { runner: "ci-arm" }],
+    ["policy 写成 arm64", "policy", { arch: "arm64" }],
+  ])("[ADR-0266] 策略里%s就被拒", (_label, id, change) => {
+    const value = clone();
+    const member = value.checks.find((check) => check.id === id).members[0];
+    for (const [key, entry] of Object.entries(change))
+      if (entry === undefined) delete member[key];
+      else member[key] = entry;
+    expect(() => validatePolicy(value)).toThrow(`Incorrect platform: ${id}/`);
+  });
+  it.each([
+    ["static", "ci-vps"],
+    ["security", "ci-vps"],
+    ["policy", "ci-vps"],
+    ["tests", "ci-arm"],
+    ["tooling", "ci-vps"],
+    ["build", "ci-arm"],
+  ])("[ADR-0266] ci.yml 里 %s 的 runs-on 写成 %s 就被拒", (id, label) => {
+    const value = workflow();
+    value.jobs[id]["runs-on"] = label;
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
+  });
+  it("[ADR-0266] 汇总作业不带 --remote-jobs 或带的检查不对就被拒", () => {
+    const find = (value) =>
+      value.jobs.required.steps.find((step) => step.run?.includes("run-share.mjs collect"));
+    const without = workflow();
+    find(without).run = find(without).run.replace(/ --remote-jobs \S+/u, "");
+    expect(() => validateWorkflow(policy, stringify(without), lock)).toThrow();
+    const partial = workflow();
+    find(partial).run = find(partial).run.replace(/--remote-jobs \S+/u, "--remote-jobs policy");
+    expect(() => validateWorkflow(policy, stringify(partial), lock)).toThrow();
+  });
+  it("[ADR-0266] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
+    const read = (name) =>
+      readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
+    expect(existsSync(path.join(repositoryRoot, ".github/workflows/ci-arm-trial.yml"))).toBe(false);
+    expect(read("ci.yml")).not.toContain("ci-arm-trial");
+    expect(read("main.yml")).not.toContain("ci-arm-trial");
+  });
   it.each(["test", "node-floor"])("工作流里多出 %s 作业就被拒", (id) => {
     const value = workflow();
     value.jobs[id] = structuredClone(value.jobs.security);
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
-  it.each(["e2e", "pi-compat"])("coverage 作业缺 %s 就被拒", (project) => {
+  it.each(["e2e", "pi-compat"])("tests 作业缺 %s 就被拒", (project) => {
     const value = clone();
-    const coverage = value.checks.find((check) => check.id === "coverage");
-    coverage.projects = coverage.projects.filter((id) => id !== project);
+    const tests = value.checks.find((check) => check.id === "tests");
+    tests.projects = tests.projects.filter((id) => id !== project);
     expect(() => validatePolicy(value)).toThrow();
   });
   it("[HR-11] 工作流里留下一处 hermes-home 就被拒", () => {
@@ -1225,7 +1448,7 @@ describe("CI policy contract", () => {
   });
   it("迁移旧采集政策时保留原始来源、阈值和其他要求", () => {
     const { root, git } = fixtureRepository();
-    const old = clone();
+    const old = coverageShaped();
     const coverage = old.checks.find((entry) => entry.id === "coverage");
     coverage.projects = ["unit", "contracts", "tooling"];
     coverage.needs = ["policy"];
@@ -1235,14 +1458,7 @@ describe("CI policy contract", () => {
     git("add", "ci");
     git("commit", "--quiet", "-m", "accepted legacy policy");
     const selected = resolvePolicySource({ root });
-    expect(selected.policy.checks.find((entry) => entry.id === "coverage")).toMatchObject({
-      projects: ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
-      needs: ["policy", "build"],
-      outputs: ["json", "lcov", "artifact"],
-    });
-    expect(selected.policy.checks.filter((entry) => entry.id !== "coverage")).toEqual(
-      old.checks.filter((entry) => entry.id !== "coverage"),
-    );
+    expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(old)));
     expect(selected.coverage).toEqual(reviewedCoverage());
   });
@@ -1317,7 +1533,7 @@ describe("CI policy contract", () => {
     );
   });
   it.each(
-    ["browser", "coverage"].flatMap((id) =>
+    ["browser", "tests"].flatMap((id) =>
       ["missing", "wrong digest", "conditional", "wrong path", "duplicated"].map((fault) => [
         id,
         fault,

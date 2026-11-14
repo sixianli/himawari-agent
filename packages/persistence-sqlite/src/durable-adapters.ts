@@ -17,6 +17,7 @@ import type {
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  HomeUrgencyStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -27,6 +28,7 @@ import type {
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
@@ -34,6 +36,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
@@ -41,7 +44,8 @@ import type {
   ReliableEventPort,
   ReliableEventSinkPort,
   ReviewPrereviewStorePort,
-  HomeUrgencyStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -944,6 +948,7 @@ export class SqliteDurableAdapters {
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       readBasis: (changeId) => this.context.read("memoryConsolidation.readBasis", { changeId }),
       readBasisChain: (input) => this.context.read("memoryConsolidation.readBasisChain", input),
+      readDerived: (input) => this.context.read("memoryConsolidation.readDerived", input),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
     });
   }
@@ -1027,6 +1032,26 @@ export class SqliteDurableAdapters {
     });
   }
 
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return Object.freeze<RuleReviewStorePort & RuleReviewOwnerStorePort>({
+      listDue: (input) => this.context.read("ruleReview.listDue", input),
+      resolve: (input) => this.context.write("ruleReview.resolve", input),
+      recordFailure: (input) => this.context.write("ruleReview.recordFailure", input),
+      listOpen: (input) => this.context.read("ruleReview.listOpen", input),
+      act: (input) => this.context.write("ruleReview.act", input),
+    });
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return Object.freeze<MemoryReviewStorePort>({
+      expand: (input) => this.context.write("memoryReview.expand", input),
+      listOpen: (input) => this.context.read("memoryReview.listOpen", input),
+      resolve: (input) => this.context.write("memoryReview.resolve", input),
+      reportMissed: (input) => this.context.write("memoryReview.reportMissed", input),
+      agreement: (input) => this.context.read("memoryReview.agreement", input),
+    });
+  }
+
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
     return Object.freeze<MemoryCaptureBacklogPort>({
       enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
@@ -1072,6 +1097,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<ProactiveStorePort>({
       readSettings: (input) => this.context.read("proactive.readSettings", input),
       writeSettings: (input) => this.context.write("proactive.writeSettings", input),
+      setEnabled: (input) => this.context.write("proactive.setEnabled", input),
       readConnection: (input) => this.context.read("proactive.readConnection", input),
       saveConnection: (input) => this.context.write("proactive.saveConnection", input),
       markConnection: (input) => this.context.write("proactive.markConnection", input),
@@ -1176,6 +1202,21 @@ export class SqliteDurableAdapters {
       retireQuestion: (input) => this.context.write("realEval.retireQuestion", input),
       recordRun: (input) => this.context.write("realEval.recordRun", input),
       listRuns: (input) => this.context.read("realEval.listRuns", input),
+    });
+  }
+
+  pairedDevices(): PairedDeviceStorePort {
+    return Object.freeze<PairedDeviceStorePort>({
+      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
+      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
+      listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
+      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
+      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
+      renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
+      revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
+      recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
+      touchDevice: (input) => this.context.write("pairedDevices.touchDevice", input),
     });
   }
 

@@ -1,3 +1,4 @@
+import type { DataClassification } from "../ports/common.js";
 import { currencyExponent, type MailAmount, MISSING_AMOUNT, type MoneyState } from "./amount.js";
 import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
@@ -12,7 +13,7 @@ export type RuleOutcome =
   | "ask_owner"
   | "refuse";
 export type RuleOrigin = "built_in" | "owner_setting";
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
 
 export function ruleIsEnforced(status: RuleStatus): boolean {
   return status === "active" || status === "needs_review";
@@ -21,6 +22,11 @@ export function ruleIsEnforced(status: RuleStatus): boolean {
 export interface RuleExample {
   readonly facts: RuleFacts;
   readonly hit: boolean;
+}
+
+export interface RuleSharedParameters {
+  readonly classification: Exclude<DataClassification, "restricted">;
+  readonly values: Readonly<Record<string, unknown>>;
 }
 
 export interface RuleRecord {
@@ -33,6 +39,7 @@ export interface RuleRecord {
   readonly source: string;
   readonly status: RuleStatus;
   readonly examples: readonly RuleExample[];
+  readonly sharedParameters?: RuleSharedParameters;
 }
 
 export const RULE_IDS = Object.freeze({
@@ -222,6 +229,10 @@ export function importantSenderRule(senders: readonly string[], revision: number
     source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
     status: "active",
     examples: importantSenderExamples(senders),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ importantSenders: senders }),
+    }),
   });
 }
 
@@ -298,6 +309,10 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
     source: "ADR 0106；主人的设置“静默时段”",
     status: "active",
     examples: quietHoursExamples(periods),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ quietHours: periods }),
+    }),
   });
 }
 

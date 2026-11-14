@@ -42,7 +42,7 @@ Andy 在 2026-11-11 同意了变更清单（`/mnt/project-files/p3-5-capture-ret
 3. 决策记录的结果值有数据库检查：`packages/persistence-sqlite/src/migrations/0069_decision_ledger.sql:50`，`(kind = 'memory_candidate' AND outcome IN ('kept', 'discarded', 'pending_approval'))`。
 4. SQLite 不能直接改检查约束，要新建表、复制、删旧表、改名：<https://www.sqlite.org/lang_altertable.html>（“Making Other Kinds Of Table Schema Changes”）。决策记录表被六张表引用，迁移 0087 已按这个做法重建过一次（[ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 决定 4）。
 5. 模型准入（每次模型调用前的预算和执行权检查）需要当前运行的执行租约，同一个调用编号再次申请会被当成重放：`apps/agent-service/src/production-run-composition.ts`（捕获的 `generate` 经 `auxiliaryMemoryGeneration` 走同一个准入）、`packages/application/src/services/model-invocation-admission-service.ts`。
-6. 发给模型的内容只追加、后台调用固定的在前：[.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 15 条“后台调用也是固定的在前、会变的在后”。
+6. 发给模型的内容只追加、后台调用固定的在前：[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 15 条“后台调用也是固定的在前、会变的在后”。
 
 [返回阅读导航](#contents)
 

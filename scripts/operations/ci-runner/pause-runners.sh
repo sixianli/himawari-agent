@@ -13,6 +13,11 @@ upload_runner_scripts || { echo "RUNNER_PAUSE_FAILED labels and services untouch
 NAMES=$(vps "bash $REMOTE/runner-pause.sh --list") || { echo "RUNNER_PAUSE_FAILED could not list the runners installed on $RUNNER_HOST; labels and services untouched"; exit 1; }
 TABLE=$(github_runners) || { echo "RUNNER_PAUSE_FAILED could not list runners on GitHub; labels and services untouched"; exit 1; }
 REASON=$(reconcile_runners "$NAMES" "$TABLE") || { echo "RUNNER_PAUSE_FAILED $REASON; labels and services untouched"; exit 1; }
+if [ "$RUNNER_SITE" = vps ]; then
+  for name in $NAMES; do
+    has_label "$(runner_field "$TABLE" "$name" 5)" "$RUNNER_ARM_LABEL" && { echo "RUNNER_PAUSE_FAILED $name also carries $RUNNER_ARM_LABEL (arm-fallback.sh on), so GitHub would keep sending it jobs; run arm-fallback.sh off first; labels and services untouched"; exit 1; }
+  done
+fi
 
 put_labels_back() {
   RESTORED=""
