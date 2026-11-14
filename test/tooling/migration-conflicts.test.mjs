@@ -404,10 +404,27 @@ describe("check-migration-conflicts command", () => {
         GIT_CONFIG_KEY_0: "http.proxy",
         GIT_CONFIG_VALUE_0: "http://127.0.0.1:1",
         GIT_TERMINAL_PROMPT: "0",
+        GITHUB_ACTIONS: "",
       },
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/MIGRATION_CONFLICT FETCH_FAILED/);
+  });
+
+  it("uses the checked-out main in CI, where the checkout keeps no credentials to fetch with", () => {
+    const result = spawnSync("node", [script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.proxy",
+        GIT_CONFIG_VALUE_0: "http://127.0.0.1:1",
+        GIT_TERMINAL_PROMPT: "0",
+        GITHUB_ACTIONS: "true",
+      },
+    });
+    expect(result.stderr).not.toMatch(/FETCH_FAILED/);
+    expect(result.stdout).toMatch(/^MIGRATION_CONFLICTS passed/);
   });
 
   it("fails on a commit that does not exist", () => {

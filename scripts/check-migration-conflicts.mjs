@@ -29,11 +29,18 @@ function baseRef() {
   try {
     git(["fetch", "--quiet", "origin", "main"]);
   } catch (error) {
+    if (process.env.GITHUB_ACTIONS === "true") {
+      return localBase();
+    }
     console.error(
       `MIGRATION_CONFLICT FETCH_FAILED cannot update origin/main (${error instanceof Error ? error.message.split("\n")[0] : "unknown"}); pass --base <commit> to compare offline`,
     );
     process.exit(1);
   }
+  return localBase();
+}
+
+function localBase() {
   for (const candidate of ["origin/main", "main"]) {
     try {
       return git(["merge-base", "HEAD", candidate]);
