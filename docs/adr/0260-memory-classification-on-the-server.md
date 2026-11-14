@@ -40,7 +40,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 5. 证件号、银行卡号、密码、密钥的确定性检测是程序做的安全过滤：`packages/sensitive-capture/src/identifiers.ts` 的 `classificationWithIdentifiers`、`mentionsSensitiveMaterial`。
 6. 网页这一侧的服务进程里，后台模型调用的现成做法是 `proactiveModel` 加 `createRealEvalModel`：`apps/agent-service/src/service-main.ts`、`apps/agent-service/src/production-real-eval.ts`；它们经同一条模型传输层发出，出口遮盖在 `packages/runtime-pi/src/pi-model-transport.ts` 的 `exchange.wrapFetch`。
 7. 模型用量表 `model_usage_observations` 的 `purpose` 列有 CHECK 约束，只认现有的几个值：`packages/persistence-sqlite/src/migrations/0091_decision_prereviews.sql`。新加一个值要改表，改表要排队。
-8. 请求开头只追加：`.claude/rules/prompt-prefix.md` 第 4、6 条。本 ADR 的分类调用是后台单独调用，不改任何对话请求的系统提示和工具定义。
+8. 请求开头只追加：`.agents/instructions/prompt-prefix.md` 第 4、6 条。本 ADR 的分类调用是后台单独调用，不改任何对话请求的系统提示和工具定义。
 
 [返回阅读导航](#contents)
 

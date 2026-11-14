@@ -1,9 +1,9 @@
-import { chmod, lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import type {
   AuthorityFence,
   ProductConfiguration,
@@ -11,9 +11,11 @@ import type {
 } from "@himawari-agent/application";
 import {
   actionIntentFingerprint,
+  DEVICE_HARD_LIMIT_KEYS,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
 } from "@himawari-agent/application";
+import { DEVICE_LIMIT_KEYS, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -21,6 +23,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  devicePairingNumber,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
   initializeStateRoot,
@@ -32,14 +35,15 @@ import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
   ProductionThreadGatewayAccessPolicy,
+  resolveDevicePairingAccess,
 } from "../src/production-http-composition.js";
 import {
   MCP_READ_PATH,
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
-import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
+import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
 const ORIGIN = "https://agent.example.test";
 const ISSUER = "https://team.cloudflareaccess.com";
@@ -367,6 +371,11 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "device.list.read",
+          "device.pairing.start",
+          "device.pairing.confirm",
+          "device.rename",
+          "device.revoke",
           "home.read",
           "data.export.start",
           "data.export.cancel",
@@ -1875,4 +1884,352 @@ describe("production Thread access scope", () => {
       ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
     },
   );
+});
+
+describe("[P1-1] device pairing access", () => {
+  const resolve = async (ref: string, version: string) => `resolved:${ref}@${version}`;
+  const base = [
+    { ref: "payload-kek", version: "v1", purpose: "payload-encryption" },
+    { ref: "device-id-ref", version: "v2", purpose: "device-access-client-id" },
+    { ref: "device-key-ref", version: "v3", purpose: "device-access-client-secret" },
+  ];
+
+  it("reads the client id and secret from the two declared secrets", async () => {
+    await expect(resolveDevicePairingAccess(base, resolve)).resolves.toEqual({
+      clientId: "resolved:device-id-ref@v2",
+      clientSecret: "resolved:device-key-ref@v3",
+    });
+  });
+
+  it("refuses an access value the gateway contract would reject", async () => {
+    for (const value of ["", "x".repeat(257), "line\nbreak"])
+      await expect(
+        resolveDevicePairingAccess(base, async (ref) =>
+          ref === "device-key-ref" ? value : "client-id",
+        ),
+      ).rejects.toMatchObject({ code: "PRODUCTION_HTTP_SECRET_MATERIAL_INVALID" });
+    await expect(
+      resolveDevicePairingAccess(base, async () => "x".repeat(256)),
+    ).resolves.toBeDefined();
+  });
+
+  it("gives no access when either secret is not declared", async () => {
+    await expect(resolveDevicePairingAccess(base.slice(0, 1), resolve)).resolves.toBeUndefined();
+    await expect(resolveDevicePairingAccess(base.slice(0, 2), resolve)).resolves.toBeUndefined();
+    await expect(
+      resolveDevicePairingAccess([base[0], base[2]] as typeof base, resolve),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("[P1-1] device management through gateway v2", () => {
+  const ACCESS_ID = `access-id-${randomUUID()}`;
+  const ACCESS_KEY = `access-key-${randomUUID()}`;
+
+  it("pairs, lists, confirms, renames and revokes a device with the gateway types and never leaks the access secrets", async () => {
+    const paths = await fixture();
+    const raw = rawConfiguration(paths);
+    const config = parseProductConfiguration(
+      {
+        ...raw,
+        secretReferences: [
+          ...(raw["secretReferences"] as Record<string, unknown>[]),
+          { ref: "device-id", version: "v1", purpose: "device-access-client-id", scope: "agent" },
+          {
+            ref: "device-key",
+            version: "v1",
+            purpose: "device-access-client-secret",
+            scope: "agent",
+          },
+        ],
+      },
+      NOW.toISOString(),
+    );
+    const sources = secretSources();
+    const leaked: string[] = [];
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const keyPair = {
+      privateKey: await importJWK(productionHttpRs256TestKeys.privateKey, "RS256"),
+      publicKey: await importJWK(productionHttpRs256TestKeys.publicKey, "RS256"),
+    };
+    const jwks: JSONWebKeySet = {
+      keys: [{ ...(await exportJWK(keyPair.publicKey)), kid: "key-production-http", alg: "RS256" }],
+    };
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "key-production-http" })
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject("subject-production-http")
+      .setIssuedAt(Math.floor(NOW.valueOf() / 1000))
+      .setExpirationTime(Math.floor(NOW.valueOf() / 1000) + 300)
+      .sign(keyPair.privateKey);
+    const composition = await createProductionHttpComposition({
+      configuration: config,
+      repository,
+      authority: () => authority(config),
+      secretSources: {
+        keys: sources.keys,
+        provider: {
+          ...sources.provider,
+          resolve: async (ref, version) =>
+            ref === "device-id"
+              ? ACCESS_ID
+              : ref === "device-key"
+                ? ACCESS_KEY
+                : sources.provider.resolve(ref, version),
+        },
+      },
+      jwksFetcher: { fetch: async () => jwks },
+      identityFetcher: {
+        fetch: async () => ({
+          user_uuid: "subject-production-http",
+          iat: Math.floor(NOW.valueOf() / 1000),
+        }),
+      },
+      now: () => new Date(NOW),
+      createSessionToken: () => "session-token-devices-01",
+      executionAuthority: () => ({
+        leaseId: "lease-devices" as AuthorityFence["leaseId"],
+        fencingToken: AUTHORITY.fencingToken,
+      }),
+      onCommandAccepted: (value) => leaked.push(value),
+      onSlowRequest: (value) => leaked.push(JSON.stringify(value)),
+    });
+    const logged = vi.spyOn(process.stdout, "write");
+    const errored = vi.spyOn(process.stderr, "write");
+    try {
+      const app = composition.app;
+      const bootstrap = await app.inject({
+        method: "POST",
+        url: "/bootstrap",
+        headers: { host: "agent.example.test" },
+        payload: {
+          token: "bootstrap-token-production-fixture",
+          ownerId: OWNER_ID,
+          assertionToken: token,
+        },
+      });
+      expect(bootstrap.statusCode).toBe(201);
+      const session = await app.inject({
+        method: "POST",
+        url: "/api/identity/v1/sessions",
+        headers: requestHeaders(token, ""),
+        payload: { deviceLabel: "device gateway fixture" },
+      });
+      expect(session.statusCode).toBe(201);
+      const cookie = "himawari_session=session-token-devices-01";
+      const csrf = (
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/control-center/v1/config",
+            headers: requestHeaders(token, cookie),
+          })
+        ).json() as { csrfToken: string }
+      ).csrfToken;
+      const authenticationRef = (session.json() as { session: { authenticationRef: string } })
+        .session.authenticationRef;
+      const message = (type: string) => ({
+        schemaVersion: "gateway.v2",
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        authority: authority(config),
+        actor: { actorType: "owner", actorId: OWNER_ID },
+        dataClassification: "private",
+        risk: "medium",
+        authorizationRef: authenticationRef,
+        correlationId: `correlation-${type}`,
+        causationId: null,
+        messageId: `message-${type}-${randomUUID()}`,
+        type,
+      });
+      const list = async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, cookie),
+          payload: { ...message("device.list.read"), kind: "query", payload: {} },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        expect(String(response.headers["cache-control"])).toContain("no-store");
+        const parsed = gatewayV2MessageSchema.parseJson(response.body);
+        expect(parsed.type).toBe("device.list.snapshot");
+        return response.json() as {
+          payload: {
+            devices: {
+              id: string;
+              revision: number;
+              name: string;
+              status: string;
+              pairingNumber: string | null;
+            }[];
+            limits: { key: string }[];
+            pairing: { expiresAt: string; access: unknown } | null;
+          };
+        };
+      };
+      const others: string[] = [];
+      const command = async (type: string, payload: Record<string, unknown>) => {
+        const key = `${type}-${randomUUID()}`;
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, cookie, csrf), "idempotency-key": key },
+          payload: { ...message(type), kind: "command", idempotencyKey: key, payload },
+        });
+        others.push(response.body);
+        return response;
+      };
+
+      const empty = await list();
+      expect(empty.payload.devices).toEqual([]);
+      expect(empty.payload.pairing).toBeNull();
+      expect(empty.payload.limits.map(({ key }) => key)).toContain("device.request.body_bytes");
+
+      const invalid = await command("device.pairing.start", { pairingCode: "A".repeat(21) + "B" });
+      expect(invalid.statusCode, invalid.body).toBe(400);
+      expect((await list()).payload.pairing).toBeNull();
+
+      const code = randomBytes(16).toString("base64url");
+      const started = await command("device.pairing.start", { pairingCode: code });
+      expect(started.statusCode, started.body).toBe(200);
+      const open = await list();
+      expect(open.payload.pairing).toEqual({
+        expiresAt: new Date(NOW.valueOf() + 600_000).toISOString(),
+        access: { clientId: ACCESS_ID, clientSecret: ACCESS_KEY },
+      });
+
+      const spki = () =>
+        generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+          .publicKey.export({ type: "spki", format: "der" })
+          .toString("base64");
+      const devicePublicKey = spki();
+      const confirmPublicKey = spki();
+      const paired = await app.inject({
+        method: "POST",
+        url: "/api/device/v1/pair",
+        headers: { host: "agent.example.test", "content-type": "application/json" },
+        payload: JSON.stringify({
+          pairingCode: code,
+          kind: "iphone",
+          name: "Andy iPhone",
+          releaseChannel: "direct",
+          devicePublicKey,
+          confirmPublicKey,
+        }),
+      });
+      others.push(paired.body);
+      expect(paired.statusCode, paired.body).toBe(201);
+      const pending = await list();
+      expect(pending.payload.pairing).toBeNull();
+      expect(pending.payload.devices).toEqual([
+        expect.objectContaining({
+          name: "Andy iPhone",
+          status: "pending",
+          revision: 0,
+          pairingNumber: devicePairingNumber({ devicePublicKey, confirmPublicKey }),
+        }),
+      ]);
+      const deviceId = pending.payload.devices[0]?.id ?? "";
+
+      const stale = await command("device.pairing.confirm", { deviceId, expectedRevision: 5 });
+      expect(stale.statusCode).not.toBe(200);
+      const confirmed = await command("device.pairing.confirm", {
+        deviceId,
+        expectedRevision: 0,
+      });
+      expect(confirmed.statusCode, confirmed.body).toBe(200);
+      expect(confirmed.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: false });
+      const confirmedAgain = await command("device.pairing.confirm", {
+        deviceId,
+        expectedRevision: 0,
+      });
+      expect(confirmedAgain.statusCode, confirmedAgain.body).toBe(200);
+      expect(confirmedAgain.json()).toEqual({ resultRef: `device:${deviceId}:1`, replayed: true });
+      expect((await list()).payload.devices[0]).toMatchObject({
+        status: "active",
+        pairingNumber: null,
+      });
+
+      const hidden = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "Andy‮iPhone",
+      });
+      expect(hidden.statusCode).toBe(400);
+      const renamed = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "  Desk iPhone  ",
+      });
+      expect(renamed.statusCode, renamed.body).toBe(200);
+      const renamedAgain = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "Desk iPhone",
+      });
+      expect(renamedAgain.json()).toEqual({ resultRef: `device:${deviceId}:2`, replayed: true });
+      const otherName = await command("device.rename", {
+        deviceId,
+        expectedRevision: 1,
+        name: "Another name",
+      });
+      expect(otherName.statusCode).not.toBe(200);
+      expect((await list()).payload.devices[0]).toMatchObject({ name: "Desk iPhone", revision: 2 });
+      const rest = await app.inject({
+        method: "POST",
+        url: "/api/devices/v1/list",
+        headers: requestHeaders(token, cookie, csrf),
+        payload: {},
+      });
+      expect(rest.statusCode, rest.body).toBe(200);
+      expect(rest.body).toContain("Desk iPhone");
+
+      const revoked = await command("device.revoke", { deviceId, expectedRevision: 2 });
+      expect(revoked.statusCode, revoked.body).toBe(200);
+      const revokedAgain = await command("device.revoke", { deviceId, expectedRevision: 2 });
+      expect(revokedAgain.json()).toEqual({ resultRef: `device:${deviceId}:3`, replayed: true });
+      const revokedStale = await command("device.revoke", { deviceId, expectedRevision: 0 });
+      expect(revokedStale.statusCode).not.toBe(200);
+      expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
+
+      const printed = [...logged.mock.calls, ...errored.mock.calls].map(([chunk]) => String(chunk));
+      for (const text of [...leaked, ...others, ...printed]) {
+        expect(text).not.toContain(ACCESS_ID);
+        expect(text).not.toContain(ACCESS_KEY);
+      }
+    } finally {
+      logged.mockRestore();
+      errored.mockRestore();
+      await composition.close();
+      await repository.close();
+    }
+    const stored = await Promise.all(
+      [paths.databasePath, `${paths.databasePath}-wal`].map((file) =>
+        readFile(file).catch(() => Buffer.alloc(0)),
+      ),
+    );
+    for (const bytes of stored) {
+      expect(bytes.includes(ACCESS_ID)).toBe(false);
+      expect(bytes.includes(ACCESS_KEY)).toBe(false);
+    }
+  });
+});
+
+describe("[P1-1] device limit keys", () => {
+  it("lists the same keys in the application, the gateway contract and the settings page", async () => {
+    const page = await readFile(
+      new URL("../../control-center/src/components/device-settings.tsx", import.meta.url),
+      "utf8",
+    );
+    const listed =
+      /export const DEVICE_LIMIT_KEYS = \[([\s\S]*?)\] as const/u.exec(page)?.[1] ?? "";
+    const pageKeys = [...listed.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+    expect(pageKeys).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
+    expect([...DEVICE_LIMIT_KEYS]).toEqual([...DEVICE_HARD_LIMIT_KEYS]);
+  });
 });

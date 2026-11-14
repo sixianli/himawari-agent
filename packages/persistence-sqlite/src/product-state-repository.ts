@@ -35,6 +35,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
+  PairedDeviceStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
@@ -652,6 +653,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   webPush(): WebPushStorePort {
     return this.durable.webPush();
+  }
+
+  pairedDevices(): PairedDeviceStorePort {
+    return this.durable.pairedDevices();
   }
 
   proactive(): ProactiveStorePort {
