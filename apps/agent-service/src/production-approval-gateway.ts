@@ -153,18 +153,20 @@ export function createProductionApprovalGateway(options: {
                       : query.type.startsWith("owner.preferences.") &&
                           options.ownerPreferencesControl
                         ? options.ownerPreferencesControl.query(query)
-                        : query.type.startsWith("sensitive.interceptions.") &&
-                            options.sensitiveInterceptionsControl
-                          ? options.sensitiveInterceptionsControl.query(query)
-                          : query.type.startsWith("server.status.") && options.serverStatusControl
-                            ? options.serverStatusControl.query(query)
-                            : query.type.startsWith("data.export.") && options.dataExportControl
-                              ? options.dataExportControl.query(query)
-                              : query.type.startsWith("files.") && options.filesControl
-                                ? options.filesControl.query(query, context)
-                                : query.type.startsWith("device.") && options.deviceControl
-                                  ? options.deviceControl.query(query)
-                                  : searchAuthorization.query(query),
+                        : query.type.startsWith("proposals.") && options.proposalControl
+                          ? options.proposalControl.query(query)
+                          : query.type.startsWith("sensitive.interceptions.") &&
+                              options.sensitiveInterceptionsControl
+                            ? options.sensitiveInterceptionsControl.query(query)
+                            : query.type.startsWith("server.status.") && options.serverStatusControl
+                              ? options.serverStatusControl.query(query)
+                              : query.type.startsWith("data.export.") && options.dataExportControl
+                                ? options.dataExportControl.query(query)
+                                : query.type.startsWith("files.") && options.filesControl
+                                  ? options.filesControl.query(query, context)
+                                  : query.type.startsWith("device.") && options.deviceControl
+                                    ? options.deviceControl.query(query)
+                                    : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {

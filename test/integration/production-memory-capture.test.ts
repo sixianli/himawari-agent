@@ -317,6 +317,7 @@ describe("production memory capture", () => {
               },
             },
           }),
+        reviews: repository.ruleReviews(),
         memory,
         memories: repository.productMemoryState(),
         book: repository.memoryBook(),
