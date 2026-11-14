@@ -245,6 +245,43 @@ export const governanceMessages = [
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
   fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
+  fixture("query", "proactive.sources.read", {}),
+  fixture("snapshot", "proactive.sources.snapshot", {
+    sources: [
+      {
+        source: "gmail",
+        intake: "reader",
+        trust: "external",
+        enabled: true,
+        perDay: {
+          limit: 5000,
+          defaultLimit: 5000,
+          minimum: 1,
+          maximum: 1000000,
+          used: 12,
+          resetsAt: "2026-11-12T15:00:00.000Z",
+          onReach: "hold_until_reset",
+        },
+        perCheck: {
+          limit: 500,
+          defaultLimit: 500,
+          minimum: 1,
+          maximum: 500,
+          onReach: "hold_until_next_check",
+        },
+        dailyLimitReached: false,
+        updatedAt: null,
+      },
+    ],
+    generatedAt: "2026-11-12T00:00:00.000Z",
+  }),
+  fixture("command", "proactive.source.settings.set", {
+    source: "gmail",
+    enabled: true,
+    perDay: 5000,
+    perCheck: 500,
+  }),
+  fixture("command", "proactive.source.switch_off", { source: "gmail" }),
   fixture("query", "proactive.weekly.read", { end: null }),
   fixture("snapshot", "proactive.weekly.snapshot", {
     serviceRevision: "rev-01",
@@ -641,6 +678,7 @@ export const governanceMessages = [
       {
         kind: "conversation",
         label: "10 月 21 日你在对话里说的",
+        recordId: null,
         memoryId: "memory-1",
         threadId: "thread-1",
         at: "2026-10-21T03:00:00.000Z",
@@ -1124,7 +1162,7 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
-  fixture("query", "proposals.read", {}),
+  fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {
     proposals: [
       {
@@ -1136,6 +1174,8 @@ export const governanceMessages = [
         effect: "日本入管局相关的邮件一律提醒",
         origin: "inferred",
         adoptable: true,
+        requiresFullRead: false,
+        requiresPresence: false,
         evidence: [
           {
             kind: "owner_words",
@@ -1158,6 +1198,7 @@ export const governanceMessages = [
     pendingCount: 1,
     limit: 20,
     expiresAfterDays: 30,
+    opened: null,
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
   fixture("command", "proposal.respond", {
@@ -1165,6 +1206,8 @@ export const governanceMessages = [
     expectedVersion: 1,
     fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     action: "adopt",
+    recentAuthenticationRef: null,
+    fullReadToken: null,
   }),
   fixture("command", "memory.rule.respond", {
     target: "action_preauthorize_owner_data",

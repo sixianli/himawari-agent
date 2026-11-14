@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ProactiveSourceItem } from "../src/index.js";
+import type { ProactiveMail } from "../src/index.js";
 import { parseMailReferences, validMailReferences } from "../src/index.js";
 
 const mail = (messageId: string, subject: string, body: string) =>
-  ({ messageId, subject, body, snippet: "" }) as unknown as ProactiveSourceItem;
+  ({ messageId, subject, body, snippet: "" }) as unknown as ProactiveMail;
 
 describe("[T3] numbers the model found in a mail are checked by the program", () => {
   const item = mail("m1", "ご注文のご案内", "注文番号 250-1234567-8901234 と No. 99887766 の件");

@@ -50,6 +50,11 @@ public struct SharedVault: Sendable {
         return DeviceCredentials(origin: record.origin, deviceId: record.deviceId, access: record.access, deviceKey: keys.signer(.device))
     }
 
+    public var sharesStorageWithApp: Bool {
+        guard let appGroup else { return false }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) != nil
+    }
+
     public func handoverStore() throws -> FileLocalStore {
         if let appGroup, let base = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             return try FileLocalStore(directory: base.appendingPathComponent(Self.handoverStoreName, isDirectory: true))

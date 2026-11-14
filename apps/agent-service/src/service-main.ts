@@ -55,9 +55,11 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
+  createApplePushSender,
   createDemoGoogleOAuth,
   createDemoMailReader,
   createGmailReader,
@@ -106,6 +108,8 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { productionOwnerIntentGate } from "./production-owner-intent.js";
+import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
@@ -710,6 +714,8 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let applePush: ProductionApplePush | undefined;
+  let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
@@ -824,6 +830,7 @@ export async function startTenantRuntime(
         await runs?.memoryEpisodes?.stop();
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
+        applePushSender?.close();
         await proactive?.stop();
         await realEval?.stop();
         await perceptionExtraction?.stop();
@@ -1601,9 +1608,21 @@ export async function startTenantRuntime(
         authority: () => invocationAuthority().lease,
         clock,
       });
+      const ownerIntent = productionOwnerIntentGate({
+        configuration,
+        secretSource: hostModelSources(configuration).provider,
+        state: repository,
+        audit: repository.auditLedger(),
+        authority: () => invocationAuthority().lease,
+        clock,
+        threads: repository.threadRepository(),
+        payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
+        protector: recallProtector,
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
         externalContent,
+        ...(ownerIntent ? { ownerIntent } : {}),
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
         state: repository,
@@ -2049,6 +2068,12 @@ export async function startTenantRuntime(
           : undefined;
         proactive = new ProductionProactive({
           ...(checkup ? { checkup } : {}),
+          onLimit: (hit) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "proactive.source_limit_reached",
+              ...hit,
+            }),
           onMasked: (sightings) =>
             void mailEgress.reportMasked(
               {
@@ -2721,6 +2746,60 @@ export async function startTenantRuntime(
             }),
           );
         };
+        const threadTitle = async (threadId: string) => {
+          const thread = await pushRepository
+            .threadRepository()
+            .read(
+              configuration.ownerId,
+              configuration.agentId,
+              threadId as Parameters<ReturnType<typeof pushRepository.threadRepository>["read"]>[2],
+            );
+          if (!thread || thread.status !== "active") return null;
+          const title = thread.titleRef ? await readPlain(thread.titleRef) : undefined;
+          return { title: title?.trim() || null };
+        };
+        const applePushConfiguration = configuration.runPolicy?.applePush;
+        const applePushSecret = applePushConfiguration
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) =>
+                ref === applePushConfiguration.secretRef && purpose === APPLE_PUSH_SECRET_PURPOSE,
+            )
+          : undefined;
+        if (applePushConfiguration && applePushSecret) {
+          applePushSender = createApplePushSender({
+            teamId: applePushConfiguration.teamId,
+            keyId: applePushConfiguration.keyId,
+            signingKey: await pushSources.keys.resolve(
+              applePushSecret.ref,
+              applePushSecret.version,
+            ),
+            requestTimeoutSeconds: applePushConfiguration.requestTimeoutSeconds,
+          });
+          applePush = new ProductionApplePush({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            store: pushRepository.applePush(),
+            sender: applePushSender,
+            configuration: () => applePushConfiguration,
+            threadTitle,
+            publicOrigin: configuration.publicOrigin,
+            now: () => clock.now(),
+            onDelivery: (outcome) =>
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "apple-push.delivery",
+                pushType: outcome.pushType,
+                outcome: outcome.kind,
+                ...(outcome.code ? { code: outcome.code } : {}),
+              }),
+            onFailure: (error) =>
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "apple-push.failed",
+                code: stableErrorCode(error),
+              }),
+          });
+        }
         webPush = new ProductionWebPush({
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
@@ -2772,20 +2851,8 @@ export async function startTenantRuntime(
                   runId as Parameters<ReturnType<typeof pushRepository.runLifecycle>["readRun"]>[0],
                 )
             )?.run.threadId ?? null,
-          threadTitle: async (threadId) => {
-            const thread = await pushRepository
-              .threadRepository()
-              .read(
-                configuration.ownerId,
-                configuration.agentId,
-                threadId as Parameters<
-                  ReturnType<typeof pushRepository.threadRepository>["read"]
-                >[2],
-              );
-            if (!thread || thread.status !== "active") return null;
-            const title = thread.titleRef ? await readPlain(thread.titleRef) : undefined;
-            return { title: title?.trim() || null };
-          },
+          threadTitle,
+          ...(applePush ? { companion: applePush } : {}),
           publicOrigin: configuration.publicOrigin,
           ...(configuration.runPolicy?.timeZone
             ? { timeZone: configuration.runPolicy.timeZone }
@@ -3178,7 +3245,11 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
-        webPush: { presence: webPushPresence, push: webPush },
+        webPush: {
+          presence: webPushPresence,
+          push: webPush,
+          ...(applePush ? { applePush } : {}),
+        },
         ...(proactive ? { proactive } : {}),
         ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
@@ -3255,6 +3326,12 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
+          }),
+        onDevicePushFailed: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "device-push.failed",
+            code: stableErrorCode(error),
           }),
         onDeviceWarning: (warning) =>
           writeServiceDiagnostic(errorOutput, {

@@ -630,7 +630,7 @@ describe("手机搜索页问答经设备通道", () => {
       state: "not_found",
       answer: null,
       basis: [],
-      notFoundText: "没有找到相关的记忆或对话。",
+      notFoundText: "没有找到相关的内容。",
     });
     const suggestions = await ask(h, client, null);
     expect(payloadOf(suggestions.body)).toMatchObject({ state: "suggestions", asks: [] });
