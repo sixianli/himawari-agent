@@ -26,9 +26,6 @@ import {
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
-  PERCEPTION_CONFIGURATION_DEFAULTS,
-  PERCEPTION_CONFIGURATION_RANGES,
-  type PerceptionConfiguration,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -43,6 +40,10 @@ import {
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
+  type OwnerIntentCheckConfiguration,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
   type ProactiveConfiguration,
   type ProductConfiguration,
   REAL_EVAL_MODES,
@@ -50,10 +51,13 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
-  type OwnerIntentCheckConfiguration,
-  type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  type ToolRefusalConfiguration,
+  VOICE_ADDRESSEE_DEFAULTS,
+  VOICE_ADDRESSEE_RANGES,
+  type VoiceAddresseeConfiguration,
+  type VoiceAddresseeRouteConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
@@ -1463,6 +1467,7 @@ function parseDevice(value: unknown): DeviceConfiguration {
       "heartbeatSeconds",
       "connectionMaxSeconds",
       "streamConnections",
+      "prefetchSeconds",
       ...DEVICE_HARD_LIMIT_KEYS,
     ],
     field,
@@ -1503,6 +1508,12 @@ function parseDevice(value: unknown): DeviceConfiguration {
       DEVICE_CONFIGURATION_DEFAULTS.streamConnections,
       1,
       64,
+    ),
+    prefetchSeconds: optional(
+      "prefetchSeconds",
+      DEVICE_CONFIGURATION_DEFAULTS.prefetchSeconds,
+      5,
+      600,
     ),
     limits: Object.freeze(limits),
   });
@@ -1558,6 +1569,37 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
       ]),
     ) as Record<keyof typeof bounds, number>,
   );
+}
+
+function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
+  const field = "configuration.runPolicy.voiceAddressee";
+  const input = record(value, field);
+  const keys = Object.keys(VOICE_ADDRESSEE_DEFAULTS) as (keyof VoiceAddresseeConfiguration)[];
+  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = VOICE_ADDRESSEE_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? VOICE_ADDRESSEE_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as VoiceAddresseeConfiguration;
+  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    inputMicrosPerMillionTokens: integer(
+      input["inputMicrosPerMillionTokens"],
+      `${field}.inputMicrosPerMillionTokens`,
+      1,
+      100_000_000,
+    ),
+  });
 }
 
 function parsePerception(value: unknown): PerceptionConfiguration {
@@ -1710,6 +1752,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "homeFeed",
       "searchAsk",
       "perception",
+      "voiceAddressee",
       "homeUrgency",
       "proactive",
       "museIntake",
@@ -1775,6 +1818,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["perception"] === undefined
       ? {}
       : { perception: parsePerception(input["perception"]) }),
+    ...(input["voiceAddressee"] === undefined
+      ? {}
+      : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
     ...(input["homeUrgency"] === undefined
       ? {}
       : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
