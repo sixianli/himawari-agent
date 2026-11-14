@@ -965,7 +965,7 @@ export const messages = {
   "memory.page.missedSaved": "Noted. It now appears in the recheck list",
   "rules.receipt.label": "Standing rule receipt",
   "rules.receipt.status":
-    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
+    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} rejected {Declined; it will not take effect} other {Standing rule}}",
   "rules.receipt.trials": "Trial run",
   "rules.receipt.trial":
     "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
@@ -975,6 +975,7 @@ export const messages = {
     "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
   "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
   "rules.receipt.confirm": "Apply",
+  "proposals.reject": "Don't want",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",

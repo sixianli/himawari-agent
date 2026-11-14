@@ -1106,6 +1106,48 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
+  fixture("query", "proposals.read", {}),
+  fixture("snapshot", "proposals.snapshot", {
+    proposals: [
+      {
+        proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+        version: 1,
+        fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        type: "owner_rule",
+        summary: "日本入管局相关的邮件一律提醒",
+        effect: "日本入管局相关的邮件一律提醒",
+        origin: "inferred",
+        adoptable: true,
+        evidence: [
+          {
+            kind: "owner_words",
+            text: "入管局的邮件别漏了",
+            sources: [{ kind: "thread", ref: "thread-01" }],
+            figures: [],
+          },
+          {
+            kind: "mail_replay",
+            text: null,
+            sources: [],
+            figures: [{ name: "mailsChecked", value: 120, definition: "回看时检查了多少封邮件" }],
+          },
+        ],
+        proposedAt: "2026-11-11T00:00:00.000Z",
+        expiresAt: "2026-12-11T00:00:00.000Z",
+        refusedBefore: 0,
+      },
+    ],
+    pendingCount: 1,
+    limit: 20,
+    expiresAfterDays: 30,
+    generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "proposal.respond", {
+    proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
+    expectedVersion: 1,
+    fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    action: "adopt",
+  }),
   fixture("command", "memory.rule.respond", {
     target: "action_preauthorize_owner_data",
     action: "ask_first",
