@@ -179,6 +179,17 @@ import Testing
         _ = try decode([ThreadStatus].self, "[\(values)]")
         #expect(reports.all.filter { $0.raw.hasPrefix("zz-diag-many-") }.count == ServerValueDiagnostics.distinctLimit)
     }
+
+    @Test func eachTypeHasItsOwnLimit() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil); ServerValueDiagnostics.shared.reset() }
+        let many = (0..<(ServerValueDiagnostics.distinctLimit + 1)).map { "\"zz-own-\($0)\"" }.joined(separator: ",")
+        _ = try decode([ThreadStatus].self, "[\(many)]")
+        _ = try decode([ExecutionPhase].self, "[\"zz-own-other-type\"]")
+        #expect(reports.all.filter { $0.raw == "zz-own-other-type" }.count == 1)
+    }
 }
 
 private final class Reports: @unchecked Sendable {

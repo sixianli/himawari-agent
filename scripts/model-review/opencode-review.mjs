@@ -1291,6 +1291,7 @@ export function isTestFile(path) {
     /(?:^|\/)(?:test|tests|__tests__)\//.test(path) ||
     /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) ||
     /(?:^|\/)test_[^/]*\.py$/.test(path) ||
+    /(?:^|\/)Tests\/.*\.swift$/.test(path) ||
     /_test\.(?:py|go|rs)$/.test(path) ||
     /(?:^|\/)[A-Z][A-Za-z0-9]*Test\.java$/.test(path)
   );
