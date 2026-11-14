@@ -22,6 +22,30 @@ public struct PairingInvitation: Sendable, Equatable {
 
     public static let scheme = "himawari-pair"
 
+    public init(origin: URL, code: String, access: ServiceAccessToken?) {
+        self.origin = origin
+        self.code = code
+        self.access = access
+    }
+
+    public var link: String {
+        struct Outgoing: Encodable {
+            let v: Int
+            let origin: String
+            let code: String
+            let access: ServiceAccessToken?
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let origin = origin.absoluteString.hasSuffix("/") ? String(origin.absoluteString.dropLast()) : origin.absoluteString
+        let data = (try? encoder.encode(Outgoing(v: 1, origin: origin, code: code, access: access))) ?? Data()
+        return "\(Self.scheme):\(data.base64URLEncodedString())"
+    }
+
+    public static func newCode() -> String {
+        RandomToken.base64URL(byteCount: 16)
+    }
+
     public enum ParseError: Error, Equatable, Sendable {
         case notAPairingCode
         case unsupportedVersion

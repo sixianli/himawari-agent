@@ -402,7 +402,7 @@ public final class HandoverCourier: Sendable {
                 if let budget = configuration.limit("device.upload.file_bytes"), data.count > budget { return .failed(.tooLarge) }
                 do {
                     try await api.uploadMedia(data, kind: kind, batchId: handover.id, contentType: contentType)
-                } catch DeviceAPIError.server(let status, _, _) where status == 404 || status == 405 {
+                } catch DeviceAPIError.server(let status, _, _, _) where status == 404 || status == 405 {
                     return .failed(.serverOutdated)
                 }
                 return .delivered(answered: false)
@@ -420,7 +420,7 @@ public final class HandoverCourier: Sendable {
         switch error {
         case .invalidResponse:
             return .queued
-        case let .server(status, code, _):
+        case let .server(status, code, _, _):
             if error.isRevoked || code == "DEVICE_NOT_PAIRED" { return .deviceRemoved }
             if status == 413 || code == "DEVICE_UPLOAD_TOO_LARGE" { return .failed(.tooLarge) }
             if status == 429 || status >= 500 || status == 408 { return .queued }

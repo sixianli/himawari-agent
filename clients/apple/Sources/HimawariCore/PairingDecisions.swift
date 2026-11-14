@@ -21,7 +21,7 @@ public enum RestoreDecision: Sendable, Equatable {
 public enum PairingAttempt {
     public static func mayHavePaired(_ error: Error) -> Bool {
         if error is PairingInvitation.ParseError || error is DeviceKeyError { return false }
-        if case let .server(status, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
+        if case let .server(status, _, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
         return true
     }
 }
@@ -52,7 +52,7 @@ public enum UnknownStateRecheck: Equatable {
 
 public enum ConfirmationWait {
     public static func givesUp(waitingAs status: PairedDeviceStatus, after error: Error) -> Bool {
-        guard status == .unrecognized, case let .server(code, reason?, _)? = error as? DeviceAPIError else { return false }
+        guard status == .unrecognized, case let .server(code, reason?, _, _)? = error as? DeviceAPIError else { return false }
         return code == 403 && reason != "DEVICE_PENDING"
     }
 }
