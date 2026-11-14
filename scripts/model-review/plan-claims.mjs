@@ -212,17 +212,45 @@ export function commitInPullRequest(repo, commit, head, mainRef, runHead = head)
 
 const MAX_MOVED_FILES = 400;
 
-function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
-  const listed = git(repo, ["diff", "--name-only", "-z", "--diff-filter=AMR", commit, head]);
-  if (listed.status !== 0) return false;
-  const paths = listed.stdout
-    .split("\0")
-    .filter((path) => path && validEvidencePath(path) && !skipPaths.has(path))
-    .slice(0, MAX_MOVED_FILES);
-  return paths.some((path) => {
+const changedFileCache = new Map();
+const headBlobCache = new Map();
+
+function changedFilesBetween(repo, commit, head) {
+  const key = `${repo}\0${commit}\0${head}`;
+  if (!changedFileCache.has(key)) {
+    const listed = git(repo, ["diff", "--name-only", "-z", "--diff-filter=AMR", commit, head]);
+    changedFileCache.set(
+      key,
+      listed.status === 0
+        ? listed.stdout.split("\0").filter((path) => path && validEvidencePath(path))
+        : null,
+    );
+  }
+  return changedFileCache.get(key);
+}
+
+function headTextOf(repo, head, path) {
+  const key = `${repo}\0${head}\0${path}`;
+  if (!headBlobCache.has(key)) {
     const blob = blobAt(repo, head, path);
-    return blob !== null && !blob.includes(0) && quoteInText(quote, blob.toString("utf8"));
-  });
+    headBlobCache.set(key, blob === null || blob.includes(0) ? null : blob.toString("utf8"));
+  }
+  return headBlobCache.get(key);
+}
+
+const isAdrPath = (path) => path.startsWith("docs/adr/");
+
+function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
+  const listed = changedFilesBetween(repo, commit, head);
+  if (listed === null) return "incomplete";
+  const paths = listed.filter((path) => !skipPaths.has(path) && !isAdrPath(path));
+  if (paths.length > MAX_MOVED_FILES) return "incomplete";
+  return paths.some((path) => {
+    const text = headTextOf(repo, head, path);
+    return text !== null && quoteInText(quote, text);
+  })
+    ? "found"
+    : "none";
 }
 
 function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
@@ -255,9 +283,11 @@ function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
     return "commit-quote-still-in-head";
   const sameFiles = new Set(places.map((place) => place.path));
   const commits = new Set(places.map((place) => place.commit).filter((commit) => commit !== null));
-  for (const commit of commits)
-    if (quoteInChangedFiles(repo, commit, head, claim.code, sameFiles))
-      return "commit-quote-still-in-head";
+  for (const commit of commits) {
+    const moved = quoteInChangedFiles(repo, commit, head, claim.code, sameFiles);
+    if (moved === "found") return "commit-quote-still-in-head";
+    if (moved === "incomplete") return "commit-quote-check-incomplete";
+  }
   return null;
 }
 

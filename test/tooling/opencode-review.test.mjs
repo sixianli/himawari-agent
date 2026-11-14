@@ -1425,6 +1425,12 @@ describe("opencode review installed guard", () => {
     expect(hit.passthroughProbe).toBe(false);
     expect(hit.failoverProbe).toBe(false);
     expect(hit.installCheck).toBe(true);
+    const hitDirect = selfCheckSteps({ cached: true, gateway: null });
+    expect(hitDirect.models).toEqual(REVIEW_MODELS.slice(0, 1));
+    expect(hitDirect.guardProbe).toBe(false);
+    expect(hitDirect.passthroughProbe).toBe(false);
+    expect(hitDirect.failoverProbe).toBe(false);
+    expect(hitDirect.installCheck).toBe(false);
     const miss = selfCheckSteps({ cached: false, gateway });
     expect(miss.models).toEqual(REVIEW_MODELS);
     expect(miss.guardProbe).toBe(true);

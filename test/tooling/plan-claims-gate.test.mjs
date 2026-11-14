@@ -595,6 +595,35 @@ describe("plan claims check: the merge gate", () => {
       ]);
     }));
 
+  it("[claims gate] old code quoted inside an ADR is not counted as still in head, but a moved copy in another doc is", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      const quoting = `# 方案\n\n原来是这样：\n\n${CODE_LINE}\n`;
+      f.commit({ [ADR]: quoting }, "adr quotes the old code");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", `${REDACTION}:3@${f.main}`, "第一句", CODE_LINE)}\n`,
+        record: f.claimsRecord({ claimsSha256: sha(quoting) }),
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+      f.commit({ "notes/moved.md": `${CODE_LINE}\n` }, "copy it into another doc");
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-still-in-head`,
+      ]);
+    }));
+
+  it("[claims gate] more changed files than the scan limit cannot be checked, so the old-commit citation is refused", () =>
+    withFixture({}, (f) => {
+      const bulk = {};
+      for (let i = 0; i < 401; i += 1) bulk[`bulk/f${i}.txt`] = `${i}\n`;
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n", ...bulk }, "bulk change");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", `${REDACTION}:3@${f.main}`, "第一句", CODE_LINE)}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-check-incomplete`,
+      ]);
+    }));
+
   it("[claims gate] a quote over several places must sit in one cited file, and every place must exist", () =>
     withFixture({}, (f) => {
       f.writeClaims({
