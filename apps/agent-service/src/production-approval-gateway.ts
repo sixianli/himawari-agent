@@ -22,6 +22,10 @@ type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PRODUCTION_HOME_OPERATIONS, type ProductionHomeControl } from "./production-home.js";
 import {
+  PRODUCTION_DEVICE_OPERATIONS,
+  type ProductionDeviceControl,
+} from "./production-device-control.js";
+import {
   PRODUCTION_MEMORY_OPERATIONS,
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
@@ -94,6 +98,7 @@ export function createProductionApprovalGateway(options: {
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
   readonly dataExportControl?: ProductionDataExportControl;
   readonly filesControl?: ProductionFilesControl;
@@ -152,7 +157,9 @@ export function createProductionApprovalGateway(options: {
                               ? options.dataExportControl.query(query)
                               : query.type.startsWith("files.") && options.filesControl
                                 ? options.filesControl.query(query, context)
-                                : searchAuthorization.query(query),
+                                : query.type.startsWith("device.") && options.deviceControl
+                                  ? options.deviceControl.query(query)
+                                  : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -269,6 +276,8 @@ export function createProductionApprovalGateway(options: {
           options.sensitiveInterceptionsControl
         )
           return options.sensitiveInterceptionsControl.execute(command);
+        if (command.type.startsWith("device.") && options.deviceControl)
+          return options.deviceControl.execute(authentication, command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -298,6 +307,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
       ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),

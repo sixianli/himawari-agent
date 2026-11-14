@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applyMigrations,
   createVerifiedMigrationSnapshot,
+  LATEST_MIGRATION_SEQUENCE,
   loadBundledMigrations,
   openQualifiedDatabase,
   readMigrationLedger,
@@ -19,7 +20,7 @@ const AGENT_ID = "agent-checkpoint-migration";
 const RUN_ID = "run-checkpoint-migration";
 const THREAD_ID = "thread-checkpoint-migration";
 const TRACE_ID = "trace-checkpoint-migration";
-const CURRENT_SCHEMA_SEQUENCE = 95;
+const CURRENT_SCHEMA_SEQUENCE = LATEST_MIGRATION_SEQUENCE;
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));

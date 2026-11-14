@@ -72,6 +72,7 @@ import {
   MUSE_INTAKE_SECRET_PURPOSE,
   PayloadUdsServer,
   parseServiceArguments,
+  portErrorSite,
   RuntimeHealthModel,
   readAuthorityFile,
   readGmailAccount,
@@ -80,7 +81,6 @@ import {
   SERVICE_RUNTIME_ERROR_CODES,
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
-  portErrorSite,
   stableErrorCode,
   TypeSafeJevTransport,
   writeAgentServiceBootBinding,
@@ -2990,6 +2990,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
+          }),
+        onDeviceWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
           }),
         onHomeDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {

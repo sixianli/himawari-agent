@@ -336,6 +336,7 @@ export async function importPortableExport(
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
     people: parsed.people.length,
     importBatches: parsed.importBatches.length,
+    pairedDevices: 0,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
     conversationReviews: parsed.conversationReviews.length,
