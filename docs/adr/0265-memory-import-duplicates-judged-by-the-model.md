@@ -33,7 +33,27 @@ date: "2026-11-14"
 
 ## 前提
 
-1. 原先的判重在网页：改动前的 `apps/control-center/src/memory-import.ts` 第 42 到 49 行 `isDuplicate`，其中 `(known.length > 5 && key.includes(known)) || (key.length > 5 && known.includes(key))`；整理文字的 `normalizeMemoryText` 里有 `.replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")`。
+1. 原先的判重在网页：改动前的 `apps/control-center/src/memory-import.ts` 第 42 到 49 行 `isDuplicate`，其中 `(known.length > 5 && key.includes(known)) || (key.length > 5 && known.includes(key))`；整理文字的 `normalizeMemoryText` 里有 `.replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")`。本 PR 已删掉这段代码，现在的代码里找不到，所以把原文抄在下面（`git show 250455897:apps/control-center/src/memory-import.ts` 第 34 到 49 行）：
+
+   ```ts
+   export const normalizeMemoryText = (text: string) =>
+     text
+       .normalize("NFKC")
+       .replace(/\s+/g, "")
+       .replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")
+       .replace(/[，。；、,.;!！]+$/, "")
+       .toLowerCase();
+
+   function isDuplicate(key: string, existing: readonly string[]) {
+     return existing.some(
+       (known) =>
+         known === key ||
+         (known.length > 5 && key.includes(known)) ||
+         (key.length > 5 && known.includes(key)),
+     );
+   }
+   ```
+
 2. 服务端提交导入时不判重：`apps/agent-service/src/production-memory-control.ts` 的 `#importCommit`（第 1555 行起）逐条检查内容是否存在、是否可存，没有任何与已有记忆比较的步骤。所以网页漏判的条目会原样存成第二条。
 3. 现成的向量检索不能直接用在网页的导入请求上：向量化要带运行上下文和执行租约（`apps/agent-service/src/production-memory-episodes.ts` 第 23 到 27 行的 `embedWithin(request, slot, operation)`），导入是网页发来的一次性查询，没有这个上下文。
 4. 网页分类导入条目的做法是 [ADR 0260](0260-memory-classification-on-the-server.md)：网页把文字存成受保护内容，把引用发给服务端，服务端读出文字再处理。本决定沿用这个通道。
