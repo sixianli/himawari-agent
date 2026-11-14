@@ -856,7 +856,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "提给主人的提议里读不出来的依据或执行原样",
       count: unreadableOwnerProposalTexts,
       reason:
-        "库里的加密载荷已不可读（正在删除、已删除或损坏），导出里写成空；撤销用的原样丢了的提议导入后不能撤销",
+        "库里的加密载荷已不可读（正在删除、已删除或不存在），导出里写成空；撤销用的原样丢了的提议导入后不能撤销",
     });
   if (options.withEvidence !== true)
     omitted.push({
