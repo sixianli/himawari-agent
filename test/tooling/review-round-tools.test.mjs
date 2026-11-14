@@ -263,4 +263,29 @@ describe("review card", () => {
     for (const [, path] of card.matchAll(/\]\((\.\.\/\.\.\/docs\/adr\/[^)#]+)\)/g))
       expect(readFileSync(join(".agents/instructions", path), "utf8").length).toBeGreaterThan(0);
   });
+
+  it("[review-cost] [negative] the card says how to fill every placeholder the next-round command prints", () => {
+    const card = readFileSync(".agents/instructions/model-review-card.md", "utf8");
+    const script = readFileSync("scripts/model-review/opencode-review.mjs", "utf8");
+    const nextLine = script.split("\n").find((line) => line.includes("NEXT fix-and-rereview"));
+    const placeholders = [...nextLine.matchAll(/<[^<>$]+>/g)].map((match) => match[0]);
+    expect(placeholders).toEqual(["<修改后的提交>", "<材料文件>"]);
+    const mainThread = card.slice(
+      card.indexOf('<a id="main-thread">'),
+      card.indexOf('<a id="each-round">'),
+    );
+    for (const placeholder of placeholders) expect(mainThread).toContain(`\`${placeholder}\` 换成`);
+  });
+
+  it("[review-cost] [negative] the main thread starts a subagent only after an ok review that exited 0", () => {
+    const card = readFileSync(".agents/instructions/model-review-card.md", "utf8");
+    const mainThread = card.slice(
+      card.indexOf('<a id="main-thread">'),
+      card.indexOf('<a id="each-round">'),
+    );
+    expect(mainThread).toContain("退出码是 0、输出里有 `outcome=ok` 的 `REVIEW_RESULT`");
+    expect(card).toContain("`ROUND_NOT_OK`");
+    for (const next of ["fix-and-rereview", "fix-low-then", "low-deferred", "done"])
+      expect(mainThread).toMatch(new RegExp(`[\`\\s]${next}\``));
+  });
 });
