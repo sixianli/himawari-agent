@@ -2332,6 +2332,10 @@ describe("opencode review spending", () => {
       expect(dailySpend(root, "2026-11-15").over).toBe(true);
       write("pr-3", [{ at: "not-a-date", cost: 1, round: 1 }]);
       expect(() => dailySpend(root, "2026-11-14")).toThrow("USAGE_LEDGER_INVALID");
+      for (const bad of ["2026-11-14T10:00:00", "+275760-09-13T00:00:00.000Z"]) {
+        write("pr-3", [{ at: bad, cost: 1, round: 1 }]);
+        expect(() => dailySpend(root, "2026-11-14")).toThrow("USAGE_LEDGER_INVALID");
+      }
       rmSync(join(root, REVIEWS_DIR, "pr-3"), { recursive: true, force: true });
       expect(dailySpend(join(root, "missing"), "2026-11-14")).toEqual({
         date: "2026-11-14",
@@ -2339,6 +2343,26 @@ describe("opencode review spending", () => {
         items: [],
         over: false,
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("runs --spend-day end to end without calling any model", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-day-cli-"));
+    try {
+      mkdirSync(join(root, REVIEWS_DIR, "pr-1"), { recursive: true });
+      const at = "2026-11-14T00:00:00.000Z";
+      writeFileSync(
+        join(root, REVIEWS_DIR, "pr-1", "usage.jsonl"),
+        ledgerLine({ at, cost: 6, round: 1 }),
+      );
+      const script = "scripts/model-review/opencode-review.mjs";
+      const args = [script, "--spend-day", "--repo", root, "--date", "2026-11-14"];
+      const run = spawnSync(process.execPath, args, { encoding: "utf8" });
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain("REVIEW_SPEND_DAY_ITEM pr-1 usd=6.000 records=1");
+      expect(run.stdout).toContain("REVIEW_SPEND_DAY date=2026-11-14 total=6.000 line=5 over=yes");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

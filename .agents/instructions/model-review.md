@@ -137,7 +137,7 @@ Andy 在项目聊天对协调者说、由协调者附原话转来，或者他直
   - 只重跑某一轮里失败的那个模型时，加 `--round <那一轮的序号>`，结果记进原来那一轮，不另占一个序号：这一轮里这个模型已经有 `outcome` 为 `ok` 的记录（`ROUND_ALREADY_HAS_RESULT`）、这一轮不存在（`ROUND_NOT_FOUND`）、这一轮记录的提交和这次的 `--head` 不同（`ROUND_HEAD_MISMATCH`），或者这一轮里这个模型的 `<模型>.prompt.md` 和这次发给它的提示词不同（`ROUND_PROMPT_MISMATCH`，例如改了 `--brief`）时拒绝，都在花钱之前；失败那次的文件改名为 `<模型>.attempt-<序号>.*` 留在原目录。提示词文件不在时，改用账本里这一轮记下的 `promptSha256` 比较；两样都没有时以 `ROUND_CANNOT_VERIFY` 拒绝；这一轮有记录缺 `head` 时同样以 `ROUND_CANNOT_VERIFY <轮> head` 拒绝。这一轮已有别的模式（例如方案讨论的独立出方案和审核共用一本账）的记录时以 `ROUND_MODE_MISMATCH` 拒绝；例外记录不算进任何一轮。
   - `usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。
   - 开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核和方案说法核对（`plan-claims`）超过 1 美元、方案讨论（`plan`、`plan-review`）超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
-  - 全项目一天的复核和核对花费：`node scripts/model-review/opencode-review.mjs --spend-day [--date <YYYY-MM-DD>]`，只读，不花钱。它按日本时间的日期把工作区里所有 `.agents/reviews/*/usage.jsonl` 的花费加起来，每本账打一行 `REVIEW_SPEND_DAY_ITEM`，最后一行 `REVIEW_SPEND_DAY date=… total=… line=5 over=yes|no`。只看得到已经在这个工作区里的账本：别的分支上还没合进来的复核不在内，所以先合最新 `main` 再看。
+  - 全项目一天的复核和核对花费：`node scripts/model-review/opencode-review.mjs --spend-day [--date <YYYY-MM-DD>]`，只读，不花钱。它按日本时间的日期把工作区里所有 `.agents/reviews/*/usage.jsonl` 的花费加起来，每本当天有花费的账本打一行 `REVIEW_SPEND_DAY_ITEM`（当天没有记录的账本不打）；账本里某条记录的 `at` 缺失或不是以 `Z` 结尾的可解析时间，就以 `USAGE_LEDGER_INVALID` 拒绝，最后一行 `REVIEW_SPEND_DAY date=… total=… line=5 over=yes|no`。只看得到已经在这个工作区里的账本：别的分支上还没合进来的复核不在内，所以先合最新 `main` 再看。
 
 用法：
 
