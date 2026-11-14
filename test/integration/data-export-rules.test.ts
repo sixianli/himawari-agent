@@ -171,6 +171,40 @@ describe("data export: the rule book travels with the memories", () => {
     expect(decoder.decode(again.files.get("RULES.md"))).toBe(decoder.decode(files.get("RULES.md")));
   });
 
+  it("[HR-4] a push_quiet_hours rule is exported with its wording and imported byte for byte", async () => {
+    const source = await seeded();
+    writeRuleVersion(source, {
+      ruleId: "owner:night-push",
+      parameters: {
+        type: "push_quiet_hours",
+        summary: "夜里别推任务结果",
+        params: {
+          periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+          classes: ["run_result"],
+        },
+      },
+      source: "ADR 0244；主人在对话里说的一句话",
+      reason: "owner_sentence",
+      at: "2026-11-04T05:00:00.000Z",
+    });
+    const { files, manifest } = await exportOf(source);
+    expect(manifest.counts.rules).toBe(6);
+    const markdown = decoder.decode(files.get("RULES.md"));
+    const line = markdown.split("\n").find((text) => text.includes("〔r:owner:night-push〕"));
+    expect(line).toContain("静默延后");
+    expect(line).toContain("夜里别推任务结果");
+    const target = await side("push-rule-target");
+    const report = await importInto(target, files, PASSPHRASE);
+    expect(report.imported.rules).toBe(6);
+    expect(ruleRows(target).rules).toEqual(
+      ruleRows(source).rules.map((row) =>
+        (row as Record<string, unknown>)["source_memory_id"] === "m-verified"
+          ? { ...(row as Record<string, unknown>), source_memory_id: null }
+          : row,
+      ),
+    );
+  });
+
   it("[P1-6] RULES.md lists each stored rule once with its wording, state and source memory", async () => {
     const source = await seeded();
     const { files } = await exportOf(source);
