@@ -86,6 +86,8 @@ const proposal = (over: Partial<PendingProposal> = {}): PendingProposal => ({
   effect: "入管局的邮件一律提醒",
   origin: "inferred",
   adoptable: true,
+  requiresFullRead: false,
+  requiresPresence: false,
   evidence: [
     { kind: "owner_words", text: "入管局的邮件别漏了", sources: [], figures: [] },
     {
@@ -105,6 +107,7 @@ const waiting: PendingProposals = {
   pendingCount: 1,
   limit: 20,
   expiresAfterDays: 30,
+  opened: null,
   generatedAt: "2026-11-11T00:00:00.000Z",
 };
 

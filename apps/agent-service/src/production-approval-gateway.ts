@@ -304,7 +304,7 @@ export function createProductionApprovalGateway(options: {
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
         if (command.type.startsWith("proposal.") && options.proposalControl)
-          return options.proposalControl.execute(command);
+          return options.proposalControl.execute(authentication, command);
         if (command.type.startsWith("data.export.") && options.dataExportControl)
           return options.dataExportControl.execute(command);
         if (
