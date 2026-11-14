@@ -303,7 +303,7 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
     clock.value = new Date(Date.parse(START) + 61_000).toISOString();
     handlers.readBack = "differs";
     await box.list();
-    expect(row(missing)).toMatchObject({ exec: "failed" });
+    expect(row(missing)).toMatchObject({ exec: "unknown" });
 
     const unreadable = ID("unreadable");
     clock.value = START;

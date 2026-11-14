@@ -256,7 +256,7 @@ function evidenceOf(value: unknown): readonly ProposalEvidence[] {
 export class ProductionProposalBox {
   readonly #options: ProductionProposalBoxOptions;
   readonly #handlers = new Map<string, ProposalHandler | ProposalActionHandler>();
-  readonly #active = new Set<string>();
+  readonly #adopting = new Set<string>();
   readonly #undoing = new Map<string, Promise<{ readonly replayed: boolean }>>();
   readonly #fullReads = new Map<
     string,
@@ -538,7 +538,6 @@ export class ProductionProposalBox {
     handler: ProposalActionHandler,
     data: unknown,
     original: unknown,
-    undoable = true,
   ): Promise<OwnerProposalExecutionStatus> {
     const scope = this.#scope();
     const { store, clock } = this.#options;
@@ -546,9 +545,7 @@ export class ProductionProposalBox {
     try {
       verdict =
         (await handler.readBack({ proposalId: row.proposalId, data, original })) === "matches"
-          ? undoable
-            ? "succeeded"
-            : "unknown"
+          ? "succeeded"
           : "failed";
     } catch {
       verdict = "unknown";
@@ -571,10 +568,11 @@ export class ProductionProposalBox {
       .listExpiredLeases({ ...scope, now: clock.now(), limit: LEASE_RECOVERY_BATCH })
       .catch(() => []);
     for (const row of stale) {
-      if (row.leaseId !== null && this.#active.has(row.leaseId)) continue;
+      if (this.#adopting.has(row.proposalId)) continue;
       const handler = this.#handlers.get(row.type);
       const basis = await this.#readBasis(row.evidenceRef);
-      if (!handler || !isAction(handler) || !basis) {
+      const execution = await this.#readExecution(row.executionRef);
+      if (!handler || !isAction(handler) || !basis || !execution) {
         await store
           .moveExecution({
             ...scope,
@@ -587,14 +585,9 @@ export class ProductionProposalBox {
           .catch(() => undefined);
         continue;
       }
-      const execution = await this.#readExecution(row.executionRef);
-      await this.#verifyAfterExecution(
-        row,
-        handler,
-        basis.data,
-        execution?.original,
-        execution !== undefined,
-      ).catch(() => undefined);
+      await this.#verifyAfterExecution(row, handler, basis.data, execution.original).catch(
+        () => undefined,
+      );
     }
   }
 
@@ -655,79 +648,74 @@ export class ProductionProposalBox {
       throw settledError(latest);
     }
     if (token !== null) this.#fullReads.delete(token);
-    this.#active.add(leaseId);
+    let executed: { readonly original: unknown; readonly detail?: string };
     try {
-      let executed: { readonly original: unknown; readonly detail?: string };
-      try {
-        executed = await handler.execute({ proposalId, leaseId, data: basis.data });
-      } catch (error) {
-        const ref = await this.#recordExecution(proposalId, {
-          original: null,
-          detail: null,
-          reason: error instanceof Error ? error.message.slice(0, 200) : "EXECUTION_FAILED",
-        });
-        await store
-          .moveExecution({
-            ...scope,
-            proposalId,
-            from: "running",
-            to: "failed",
-            leaseId,
-            ...(ref ? { executionRef: ref } : {}),
-            now: clock.now(),
-          })
-          .catch(() => undefined);
-        throw new ProposalError(
-          "PROPOSAL_EXECUTION_FAILED",
-          error instanceof Error ? error.message.slice(0, 200) : "",
-        );
-      }
+      executed = await handler.execute({ proposalId, leaseId, data: basis.data });
+    } catch (error) {
       const ref = await this.#recordExecution(proposalId, {
-        original: executed.original,
-        detail: executed.detail ?? null,
-        reason: null,
+        original: null,
+        detail: null,
+        reason: error instanceof Error ? error.message.slice(0, 200) : "EXECUTION_FAILED",
       });
-      const pending = await store.moveExecution({
-        ...scope,
-        proposalId,
-        from: "running",
-        to: "executed_unverified",
-        leaseId,
-        ...(ref ? { executionRef: ref } : {}),
-        now: clock.now(),
-      });
-      if (!pending) throw new ProposalError("PROPOSAL_EXECUTING");
-      if (ref === undefined) {
-        const moved = await store
-          .moveExecution({
-            ...scope,
-            proposalId,
-            from: "executed_unverified",
-            to: "unknown",
-            leaseId,
-            now: clock.now(),
-          })
-          .catch(() => undefined);
-        return Object.freeze({
-          resultRef: proposalId,
-          execution: moved?.execStatus ?? "unknown",
-          ...(executed.detail ? { detail: executed.detail } : {}),
-        });
-      }
-      const execution = await this.#verifyAfterExecution(
-        pending,
-        handler,
-        basis.data,
-        executed.original,
+      await store
+        .moveExecution({
+          ...scope,
+          proposalId,
+          from: "running",
+          to: "failed",
+          leaseId,
+          ...(ref ? { executionRef: ref } : {}),
+          now: clock.now(),
+        })
+        .catch(() => undefined);
+      throw new ProposalError(
+        "PROPOSAL_EXECUTION_FAILED",
+        error instanceof Error ? error.message.slice(0, 200) : "",
       );
+    }
+    const ref = await this.#recordExecution(proposalId, {
+      original: executed.original,
+      detail: executed.detail ?? null,
+      reason: null,
+    });
+    const pending = await store.moveExecution({
+      ...scope,
+      proposalId,
+      from: "running",
+      to: "executed_unverified",
+      leaseId,
+      ...(ref ? { executionRef: ref } : {}),
+      now: clock.now(),
+    });
+    if (!pending) throw new ProposalError("PROPOSAL_EXECUTING");
+    if (ref === undefined) {
+      const moved = await store
+        .moveExecution({
+          ...scope,
+          proposalId,
+          from: "executed_unverified",
+          to: "unknown",
+          leaseId,
+          now: clock.now(),
+        })
+        .catch(() => undefined);
       return Object.freeze({
         resultRef: proposalId,
-        execution,
+        execution: moved?.execStatus ?? "unknown",
         ...(executed.detail ? { detail: executed.detail } : {}),
       });
-    } finally {
-      this.#active.delete(leaseId);
     }
+    const execution = await this.#verifyAfterExecution(
+      pending,
+      handler,
+      basis.data,
+      executed.original,
+    );
+    return Object.freeze({
+      resultRef: proposalId,
+      execution,
+      ...(executed.detail ? { detail: executed.detail } : {}),
+    });
   }
 
   async undo(
@@ -793,7 +781,14 @@ export class ProductionProposalBox {
     if (refused) throw refused;
     const handler = this.#handlers.get(row.type);
     if (!handler) throw new ProposalError("PROPOSAL_TYPE_NOT_ADOPTABLE", row.type);
-    if (isAction(handler)) return this.#adoptAction(row, handler, expected, responder);
+    if (isAction(handler)) {
+      this.#adopting.add(proposalId);
+      try {
+        return await this.#adoptAction(row, handler, expected, responder);
+      } finally {
+        this.#adopting.delete(proposalId);
+      }
+    }
     if (row.status === "pending") this.#requireFullRead(row, responder);
     let claimed = false;
     let current = row;
