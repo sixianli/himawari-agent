@@ -28,6 +28,7 @@ import {
 } from "./contracts.mjs";
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
+import { planTestScope, zeroCounts } from "./test-scope.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
 import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
@@ -83,6 +84,7 @@ export async function runCheck({
   coverage,
   comparison,
   hosted = process.env.GITHUB_ACTIONS === "true",
+  planScope = planTestScope,
 }) {
   if (coverage !== undefined && (checkId !== "tests" || coverage !== "measure"))
     throw new Error("CI_COVERAGE_OPTION_INVALID");
@@ -210,8 +212,20 @@ export async function runCheck({
       }
       if (commandError) throw commandError;
     };
-    const vitest = async (projects) => {
+    const relatedScope = (projects) => {
+      const plan = planScope({ root, context, projects });
+      details.testScope = plan.reason;
+      if (plan.related.size) result.relatedProjects = [...plan.related.keys()];
+      return plan.related;
+    };
+    const vitest = async (projects, related = new Map()) => {
       for (const id of projects) {
+        const selected = related.get(id);
+        if (selected?.length === 0) {
+          result.projects.push({ id, counts: zeroCounts() });
+          result.counts = sumCounts(result.projects);
+          continue;
+        }
         const filename = path.join(directory, `${id}.json`);
         const junit = path.join(directory, `${id}.xml`);
         const args = [
@@ -227,6 +241,7 @@ export async function runCheck({
           "--reporter=junit",
           `--outputFile.json=${filename}`,
           `--outputFile.junit=${junit}`,
+          ...(selected ?? []),
         ];
         files.push({ path: filename, kind: "json" }, { path: junit, kind: "junit" });
         let counts;
@@ -249,7 +264,7 @@ export async function runCheck({
       if (check.projects.length) await vitest(check.projects);
       else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
     } else if (checkId === "tooling") {
-      await vitest(check.projects);
+      await vitest(check.projects, relatedScope(check.projects));
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
       await command("actionlint", tools.actionlint, [
@@ -257,6 +272,7 @@ export async function runCheck({
         ".github/workflows/ci.yml",
         ".github/workflows/quality.yml",
         ".github/workflows/main.yml",
+        ".github/workflows/merge-queue.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };
@@ -335,6 +351,7 @@ export async function runCheck({
         ]);
       const measuredProjects = measure ? coverageProjects : [];
       const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));
+      const related = measure ? new Map() : relatedScope(plainProjects);
       let measuredCounts;
       const collectCoverage = async () => {
         await reportedTestCommand(
@@ -412,6 +429,7 @@ export async function runCheck({
             output: path.join(directory, "tests"),
             context,
             projects: plainProjects,
+            related,
             remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
           });
         } finally {
@@ -511,9 +529,12 @@ export async function runCheck({
         process.env = previous;
       }
     }
+    const allRelatedEmpty =
+      check.projects.length > 0 &&
+      check.projects.every((id) => result.relatedProjects?.includes(id)) &&
+      result.counts.files === 0;
     if (
-      result.counts.files < 1 ||
-      result.counts.executed < 1 ||
+      (!allRelatedEmpty && (result.counts.files < 1 || result.counts.executed < 1)) ||
       result.counts.failed ||
       result.counts.skipped
     )
