@@ -24,6 +24,7 @@ import {
   type EmbeddingRequest,
   embeddingUsageFor,
 } from "@himawari-agent/memory-engine";
+import { isExternalContentSourceRef } from "./context-external-content.js";
 
 const FIRST_EMBEDDING_ATTEMPT_MS = 3_000;
 const EMBEDDING_ATTEMPT_TIMED_OUT = "EMBEDDING_ATTEMPT_TIMED_OUT";
@@ -461,7 +462,7 @@ export function createProductionRunMemory(options: {
           ownerId: memory.ownerId,
           agentId: memory.agentId,
           contentRef: memory.contentRef,
-          sourceRef: memory.sourceRefs[0] ?? memory.id,
+          sourceRef: memory.sourceRefs.find((ref) => !isExternalContentSourceRef(ref)) ?? memory.id,
           searchTerms: [],
           dataClassification: memory.dataClassification,
           updatedAt: memory.updatedAt,
