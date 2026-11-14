@@ -159,7 +159,7 @@ export const ASK_FIRST_LINE_USD = {
   "code-review": 1,
   plan: 0.5,
   "plan-review": 0.5,
-  "plan-claims": 0.5,
+  "plan-claims": 1,
 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
