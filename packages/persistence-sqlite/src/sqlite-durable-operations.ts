@@ -3855,6 +3855,17 @@ export class SqliteDurableOperations {
           WHERE source_id IN (${placeholders(runIds)})`,
         )
         .run(...runIds);
+      payloadRefs.push(
+        ...this.sqlValues(
+          `SELECT arguments_ref AS value FROM device_actions WHERE run_id IN (${placeholders(runIds)})
+          UNION SELECT result_ref AS value FROM device_actions
+          WHERE run_id IN (${placeholders(runIds)}) AND result_ref IS NOT NULL`,
+          [...runIds, ...runIds],
+        ),
+      );
+      this.database
+        .prepare(`DELETE FROM device_actions WHERE run_id IN (${placeholders(runIds)})`)
+        .run(...runIds);
     }
 
     this.database
