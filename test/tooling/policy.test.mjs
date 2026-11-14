@@ -1261,18 +1261,13 @@ describe("CI policy contract", () => {
       id: "tooling",
       needs: ["policy"],
       timeoutMinutes: 60,
-      members: [
-        {
-          key: "default",
-          runner: armRunnerLabel,
-          os: "linux",
-          arch: "x64",
-          alternateArch: "arm64",
-          node: "22.22.3",
-        },
-      ],
+      members: policy.checks.find((check) => check.id === "static").members,
       projects: ["tooling"],
       outputs: ["json"],
+    });
+    expect(policy.checks.find((check) => check.id === "static").members[0]).toMatchObject({
+      runner: armRunnerLabel,
+      alternateArch: "arm64",
     });
   });
   it.each([

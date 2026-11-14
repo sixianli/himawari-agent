@@ -26,7 +26,7 @@ date: "2026-11-14"
 
 ## 背景
 
-CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业（覆盖率作业：跑大部分测试，同时统计每行代码有没有被测试走到）要带着覆盖率统计跑六个测试项目，而且要先等 `policy` 作业，而 policy 里又重复跑了一遍 tooling 测试（仓库脚本自己的测试）。[ADR 0266](0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md) 已经把 policy、static、security 搬到 Oracle 的 ARM 机器上。这份 ADR 定下再往下的两步：PR 上不再统计覆盖率，tooling 测试单独在 ARM 上并行跑；覆盖率改成每天夜里在 main 上统计一次，只出报告。
+CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业（覆盖率作业：跑大部分测试，同时统计每行代码有没有被测试走到）要跑六个测试项目，其中 unit、contracts、tooling、integration 四个带覆盖率统计，而且要先等 `policy` 作业，而 policy 里又重复跑了一遍 tooling 测试（仓库脚本自己的测试）。[ADR 0266](0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md) 已经把 policy、static、security 搬到 Oracle 的 ARM 机器上。这份 ADR 定下再往下的两步：PR 上不再统计覆盖率，tooling 测试单独在 ARM 上并行跑；覆盖率改成每天夜里在 main 上统计一次，只出报告。
 
 <a id="premises"></a>
 
@@ -77,7 +77,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
 
 ## 后果
 
-- 每个 PR 的测试从“policy 跑完 tooling 测试，再跑带覆盖率统计的全部测试”改为“policy 只做校验，再跑不统计覆盖率的测试”；tooling 测试在 ARM 上同时跑。
+- 每个 PR 的测试从“policy 跑完 tooling 测试，再跑全部测试并统计其中四个项目的覆盖率”改为“policy 只做校验，再跑不统计覆盖率的测试”；tooling 测试在 ARM 上同时跑。
 - 新代码有没有被测试走到，PR 上不再报。某个 PR 让覆盖率掉到基线以下，要等夜里的报告才看到，而且不会挡住它合并；夜里报告出问题时，由看到的线程补测试。
 - 第 2 步之前，覆盖率暂时没人统计。
 - tooling 测试失败要等 tooling 作业，原来在 policy 阶段就能看到；static、build、security 不再被它挡住，更早开始。

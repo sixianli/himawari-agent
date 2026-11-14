@@ -559,6 +559,21 @@ describe("periodic quality policy and evidence", () => {
 });
 
 describe("local shared-runner boundary", () => {
+  it("[ADR-0267] package.json 里调 local.mjs 的每个 --check 都是策略里现有的检查，npm test 跑 tests，test:tooling 跑 tooling", () => {
+    const scripts = JSON.parse(
+      readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+    ).scripts;
+    const checks = JSON.parse(readFileSync(path.join(process.cwd(), "ci/policy.json"), "utf8"))
+      .checks.map((check) => check.id)
+      .filter((id) => id !== "required");
+    const used = Object.values(scripts).flatMap((command) =>
+      [...command.matchAll(/scripts\/ci\/local\.mjs --check (\S+)/gu)].map((match) => match[1]),
+    );
+    expect(used.length).toBeGreaterThan(0);
+    for (const check of used) expect(checks).toContain(check);
+    expect(scripts.test).toBe("node scripts/ci/local.mjs --check tests");
+    expect(scripts["test:tooling"]).toBe("node scripts/ci/local.mjs --check tooling");
+  });
   it("rejects unsupported physical platforms instead of relabeling their evidence", async () => {
     for (const [os, cpu] of [
       ["darwin", "x64"],
