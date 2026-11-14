@@ -1168,7 +1168,7 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
@@ -1445,7 +1445,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":
@@ -1605,6 +1605,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
   "sensitive.purpose.review-prereview": "モデルの事前採点",
+  "sensitive.purpose.home-urgency": "ホームの緊急度採点",
   "sensitive.purpose.rule-review": "ルールの再確認",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",

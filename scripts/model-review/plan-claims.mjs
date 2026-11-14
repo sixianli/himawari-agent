@@ -210,6 +210,49 @@ export function commitInPullRequest(repo, commit, head, mainRef, runHead = head)
   return !isAncestor(repo, commit, baseCommit);
 }
 
+const MAX_MOVED_FILES = 400;
+
+const changedFileCache = new Map();
+const headBlobCache = new Map();
+
+function changedFilesBetween(repo, commit, head) {
+  const key = `${repo}\0${commit}\0${head}`;
+  if (!changedFileCache.has(key)) {
+    const listed = git(repo, ["diff", "--name-only", "-z", "--diff-filter=AMR", commit, head]);
+    changedFileCache.set(
+      key,
+      listed.status === 0
+        ? listed.stdout.split("\0").filter((path) => path && validEvidencePath(path))
+        : null,
+    );
+  }
+  return changedFileCache.get(key);
+}
+
+function headTextOf(repo, head, path) {
+  const key = `${repo}\0${head}\0${path}`;
+  if (!headBlobCache.has(key)) {
+    const blob = blobAt(repo, head, path);
+    headBlobCache.set(key, blob === null || blob.includes(0) ? null : blob.toString("utf8"));
+  }
+  return headBlobCache.get(key);
+}
+
+const isAdrPath = (path) => ADR_PATH_PATTERN.test(path);
+
+function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
+  const listed = changedFilesBetween(repo, commit, head);
+  if (listed === null) return "incomplete";
+  const paths = listed.filter((path) => !skipPaths.has(path) && !isAdrPath(path));
+  if (paths.length > MAX_MOVED_FILES) return "incomplete";
+  return paths.some((path) => {
+    const text = headTextOf(repo, head, path);
+    return text !== null && quoteInText(quote, text);
+  })
+    ? "found"
+    : "none";
+}
+
 function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
   const places = locationsOf(claim.location);
   if (claim.verdict === "找不到" && places.length === 0) return null;
@@ -238,6 +281,13 @@ function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
     return "code-quote-not-in-file";
   if ([...headTexts.values()].some((text) => text !== null && quoteInText(claim.code, text)))
     return "commit-quote-still-in-head";
+  const sameFiles = new Set(places.map((place) => place.path));
+  const commits = new Set(places.map((place) => place.commit).filter((commit) => commit !== null));
+  for (const commit of commits) {
+    const moved = quoteInChangedFiles(repo, commit, head, claim.code, sameFiles);
+    if (moved === "found") return "commit-quote-still-in-head";
+    if (moved === "incomplete") return "commit-quote-check-incomplete";
+  }
   return null;
 }
 
@@ -313,7 +363,21 @@ export function carriedVerdicts(repo, head, ownRecords) {
   return carried;
 }
 
+function carriedEvidenceHolds(repo, head, item) {
+  const { verdict } = item;
+  if (!validEvidencePath(verdict.evidenceFile)) return false;
+  const blob = blobAt(repo, head, verdict.evidenceFile);
+  return (
+    blob !== null &&
+    collapse(verdict.evidence).length >= EVIDENCE_MIN_CHARS &&
+    collapse(blob.toString("utf8")).includes(collapse(verdict.evidence)) &&
+    collapse(item.answerText).includes(collapse(verdict.quote))
+  );
+}
+
 export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
+  changedFileCache.clear();
+  headBlobCache.clear();
   const adrs = addedAdrs(repo, head, mainRef);
   const problems = [];
   const files = [];
@@ -411,13 +475,14 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
           const direct = verdicts.find(
             (item) => item.model === record.model && item.id === claim.id,
           );
+          const sameSentence = carried.filter(
+            (item) => item.model === record.model && item.sentence === collapse(claim.sentence),
+          );
           const earlier =
             direct?.outcome === "model-wrong"
               ? null
-              : carried.find(
-                  (item) =>
-                    item.model === record.model && item.sentence === collapse(claim.sentence),
-                );
+              : (sameSentence.find((item) => carriedEvidenceHolds(repo, head, item)) ??
+                sameSentence[0]);
           const verdict = direct?.outcome === "model-wrong" ? direct : earlier?.verdict;
           const verdictAnswer =
             direct?.outcome === "model-wrong" ? answerText : earlier?.answerText;
