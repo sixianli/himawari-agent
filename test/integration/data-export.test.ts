@@ -155,6 +155,7 @@ describe("data export: round trip", () => {
       decisionTextsWithoutOriginal: 0,
       rulesWithoutOriginal: 0,
       externalProposalsWithoutOriginal: 0,
+      ownerProposalsWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });

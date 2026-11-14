@@ -22,6 +22,7 @@ import {
   MANIFEST_SCHEMA,
   MAXIMUM_LINE_LENGTH,
   MEMORY_SCHEMA,
+  OWNER_PROPOSAL_SCHEMA,
   PAIRED_DEVICE_SCHEMA,
   PERCEPTION_FILE_KEYS,
   PERCEPTION_FILE_SCHEMAS,
@@ -108,7 +109,55 @@ export interface ParsedExternalProposal {
   readonly unkeyedClients: readonly string[];
 }
 
+export interface ParsedOwnerProposal {
+  readonly id: string;
+  readonly type: string;
+  readonly summary: string;
+  readonly effect: string;
+  readonly origin: string;
+  readonly sourceRef: string | null;
+  readonly sourceVersion: string | null;
+  readonly version: number;
+  readonly fingerprint: string;
+  readonly status: string;
+  readonly execStatus: string;
+  readonly proposedAt: string;
+  readonly expiresAt: string;
+  readonly decidedAt: string | null;
+  readonly proposedCount: number;
+  readonly rejectCount: number;
+  readonly lastRejectedAt: string | null;
+  readonly attempts: number;
+  readonly executedAt: string | null;
+  readonly requiresFullRead: boolean;
+  readonly requiresPresence: boolean;
+  readonly basis: ParsedText | null;
+  readonly execution: ParsedText | null;
+}
+
 const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+
+export function ownerProposalProblem(proposal: ParsedOwnerProposal): string | null {
+  const where = `提给主人的提议 ${proposal.id}`;
+  for (const value of [
+    proposal.proposedAt,
+    proposal.expiresAt,
+    proposal.decidedAt,
+    proposal.lastRejectedAt,
+    proposal.executedAt,
+  ])
+    if (value !== null && !STORED_TIME.test(value))
+      return `${where}：时间不是库里存的格式（例如 2026-11-12T00:00:00.000Z）`;
+  if ((proposal.status === "pending") !== (proposal.decidedAt === null))
+    return `${where}：只有待采纳的没有处理时间`;
+  if (proposal.rejectCount > 0 && proposal.lastRejectedAt === null)
+    return `${where}：拒绝过但没有最近拒绝时间`;
+  if (proposal.sourceRef === null && proposal.sourceVersion !== null)
+    return `${where}：有来源版本却没有来源`;
+  if (proposal.status === "pending" && proposal.execStatus !== "not_started")
+    return `${where}：待采纳的不能有执行记录`;
+  return null;
+}
 
 export function externalProposalProblem(proposal: ParsedExternalProposal): string | null {
   const where = `其他 agent 的提议 ${proposal.id}`;
@@ -266,6 +315,7 @@ export interface ParsedPortable {
   readonly decisions: readonly ParsedDecision[];
   readonly rules: readonly PortableRule[];
   readonly externalProposals: readonly ParsedExternalProposal[];
+  readonly ownerProposals: readonly ParsedOwnerProposal[];
 }
 
 export function assertSafePath(path: string): void {
@@ -441,6 +491,19 @@ export function parsePortable(
     DATA_FILES.externalProposals,
     EXTERNAL_PROPOSAL_SCHEMA,
   );
+  const ownerProposals = parseLines<ParsedOwnerProposal>(
+    files,
+    DATA_FILES.ownerProposals,
+    OWNER_PROPOSAL_SCHEMA,
+  );
+  unique(
+    ownerProposals.map(({ id }) => id),
+    "提给主人的提议",
+  );
+  for (const proposal of ownerProposals) {
+    const problem = ownerProposalProblem(proposal);
+    if (problem !== null) throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
+  }
   const memoryIds = unique(
     memories.map(({ id }) => id),
     "记忆",
@@ -582,6 +645,7 @@ export function parsePortable(
     rules: rules.length,
     enforcedRules: enforcedRuleCount(rules),
     externalProposals: externalProposals.length,
+    ownerProposals: ownerProposals.length,
     ruleHistoryVersions: rules.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: manifest.counts.sealedOriginals,
     sealedEvidenceRows: manifest.counts.sealedEvidenceRows,
@@ -623,6 +687,7 @@ export function parsePortable(
     decisions,
     rules,
     externalProposals,
+    ownerProposals,
   };
 }
 
