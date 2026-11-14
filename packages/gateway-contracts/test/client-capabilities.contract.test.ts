@@ -90,6 +90,56 @@ describe("[第11批] 客户端能力表", () => {
     expect(rule && requiredClientTier(rule, {})).toBe("change");
   });
 
+  it("外部记忆整批全是拒绝且不带改写文字才算收紧，有一条留下或改写就算改", () => {
+    const external = findClientCapability("v2", "memory.external.respond");
+    const reject = (proposalId: string) => ({ proposalId, decision: "reject", editedText: null });
+    const tier = (payload: unknown) => external && requiredClientTier(external, payload);
+    expect(tier({ items: [reject("a")] })).toBe("tighten");
+    expect(tier({ items: [reject("a"), reject("b")] })).toBe("tighten");
+    expect(
+      tier({ items: [reject("a"), { proposalId: "b", decision: "keep", editedText: null }] }),
+    ).toBe("change");
+    expect(tier({ items: [{ proposalId: "a", decision: "keep", editedText: "改过" }] })).toBe(
+      "change",
+    );
+    expect(tier({ items: [{ proposalId: "a", decision: "reject", editedText: "改过" }] })).toBe(
+      "change",
+    );
+    expect(tier({ items: [{ proposalId: "a", decision: "reject" }] })).toBe("change");
+    expect(
+      tier({ items: [{ proposalId: "a", decision: "reject", editedText: null, extra: 1 }] }),
+    ).toBe("change");
+    expect(tier({ items: [] })).toBe("change");
+    expect(tier({ items: reject("a") })).toBe("change");
+    expect(tier({ items: [reject("a")], extra: true })).toBe("change");
+    expect(tier({})).toBe("change");
+    expect(tier(null)).toBe("change");
+  });
+
+  it("设备管理、导出和登录设备的登记档位", () => {
+    const tiers = (type: string) => findClientCapability("v2", type)?.tier;
+    for (const type of [
+      "device.list.read",
+      "server.status.read",
+      "login.devices.read",
+      "files.list.read",
+      "data.export.status.read",
+      "home.read",
+    ])
+      expect(tiers(type), type).toBe("read");
+    for (const type of [
+      "device.pairing.start",
+      "device.pairing.confirm",
+      "device.rename",
+      "device.revoke",
+      "login.device.revoke",
+      "login.devices.revoke_others",
+      "data.export.start",
+    ])
+      expect(tiers(type), type).toBe("change");
+    expect(tiers("data.export.cancel")).toBe("routine");
+  });
+
   it("正文还带别的设置的开关整个算改，暂停提醒用只有方向的单独类型", () => {
     const settings = findClientCapability("v2", "proactive.settings.set");
     expect(settings?.tier).toBe("change");

@@ -35,7 +35,15 @@ export interface ClientCapabilityEntry {
   readonly tier: ClientCapabilityTier;
   readonly tightenPayload?: Readonly<Record<string, boolean>>;
   readonly tightenOpenKeys?: readonly string[];
+  readonly tightenEveryItem?: ClientItemTighten;
   readonly reason?: string;
+}
+
+export interface ClientItemTighten {
+  readonly key: string;
+  readonly equals: Readonly<Record<string, string>>;
+  readonly nulls: readonly string[];
+  readonly openKeys: readonly string[];
 }
 
 const READ = "read" as const;
@@ -71,6 +79,14 @@ function tightenOrChange(
     tightenPayload,
     ...(tightenOpenKeys.length > 0 ? { tightenOpenKeys } : {}),
   };
+}
+
+function tightenWhenEveryItem(
+  gateway: ClientGateway,
+  type: string,
+  tightenEveryItem: ClientItemTighten,
+): ClientCapabilityEntry {
+  return { gateway, type, kind: "command", tier: CHANGE, tightenEveryItem };
 }
 
 function notOnPhone(
@@ -150,6 +166,32 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   tightenOrChange("v2", "memory.settings.set", { capturePaused: true }),
   routine("v2", "memory.page.viewed"),
   change("v2", "memory.person.respond"),
+  tightenWhenEveryItem("v2", "memory.external.respond", {
+    key: "items",
+    equals: { decision: "reject" },
+    nulls: ["editedText"],
+    openKeys: ["proposalId"],
+  }),
+  change("v2", "memory.external.undo"),
+  change("v2", "memory.conversationReview.undo"),
+  query("v2", "memory.review.read"),
+  change("v2", "memory.review.respond"),
+  change("v2", "memory.review.reportMissed"),
+  query("v2", "memory.classify.read"),
+  query("v2", "home.read"),
+  query("v2", "device.list.read"),
+  change("v2", "device.pairing.start"),
+  change("v2", "device.pairing.confirm"),
+  change("v2", "device.rename"),
+  change("v2", "device.revoke"),
+  query("v2", "server.status.read"),
+  query("v2", "login.devices.read"),
+  change("v2", "login.device.revoke"),
+  change("v2", "login.devices.revoke_others"),
+  query("v2", "files.list.read"),
+  change("v2", "data.export.start"),
+  routine("v2", "data.export.cancel"),
+  query("v2", "data.export.status.read"),
   change("v2", "memory.import.commit"),
   change("v2", "memory.import.undo"),
   notOnPhone("v2", "github.monitor.set_state", "command", WEB_TASKS_ONLY),
@@ -281,7 +323,28 @@ export function requiredClientTier(
 ): ClientCapabilityTier {
   if (entry.tightenPayload && sameFlags(payload, entry.tightenPayload, entry.tightenOpenKeys ?? []))
     return "tighten";
+  if (entry.tightenEveryItem && everyItemTightens(payload, entry.tightenEveryItem))
+    return "tighten";
   return entry.tier;
+}
+
+function everyItemTightens(payload: unknown, rule: ClientItemTighten): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const fields = payload as Record<string, unknown>;
+  const keys = Object.keys(fields);
+  const items = fields[rule.key];
+  if (keys.length !== 1 || keys[0] !== rule.key || !Array.isArray(items) || items.length === 0)
+    return false;
+  const expectedKeys = [...Object.keys(rule.equals), ...rule.nulls, ...rule.openKeys].sort();
+  return items.every((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const entry = item as Record<string, unknown>;
+    return (
+      Object.keys(entry).sort().join("\n") === expectedKeys.join("\n") &&
+      Object.entries(rule.equals).every(([key, value]) => entry[key] === value) &&
+      rule.nulls.every((key) => entry[key] === null)
+    );
+  });
 }
 
 export type ClientPageEntry =
@@ -308,7 +371,7 @@ export const CLIENT_PAGE_TABLE: readonly ClientPageEntry[] = Object.freeze([
   {
     webPage: "sessions-devices",
     nativePage: "settings.devices",
-    noGatewayTypes: "等设备管理的网关类型",
+    noGatewayTypes: "网页自己没有设备管理的查询和命令；手机用设备接口自己的 device.* 类型",
   },
   { webPage: "health-deployment", notOnPhone: WEB_OPERATIONS_ONLY },
 ]);
