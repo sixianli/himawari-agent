@@ -309,6 +309,13 @@ describe("the owner's proposal box travels with the data export", () => {
 
   it("[P1-6][reverse] counts an unreadable execution original, and each unreadable text once", async () => {
     const source = await seeded();
+    await seed(source, {
+      id: pid(6),
+      status: "accepted",
+      execStatus: "succeeded",
+      basis: "依据：两项都会读不出",
+      execution: '{"original":"2026-11-13T00:00:00.000Z"}',
+    });
     source.database
       .prepare(
         "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-execution-%'",
@@ -317,7 +324,7 @@ describe("the owner's proposal box travels with the data export", () => {
     const only = (await exportOf(source)).manifest.omitted.find(({ what }) =>
       what.includes("读不出来"),
     );
-    expect(only?.count).toBe(1);
+    expect(only?.count).toBe(2);
     source.database
       .prepare(
         "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-basis-%'",
@@ -326,6 +333,7 @@ describe("the owner's proposal box travels with the data export", () => {
     const both = (await exportOf(source)).manifest.omitted.find(({ what }) =>
       what.includes("读不出来"),
     );
-    expect(both?.count).toBe(3);
+    expect(both?.count).toBe(5);
+    expect(both?.reason).not.toContain("损坏");
   });
 });
