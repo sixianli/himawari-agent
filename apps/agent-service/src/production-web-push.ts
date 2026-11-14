@@ -153,6 +153,7 @@ export function webPushPayload(notification: WebPushNotification): string {
         lang: notification.lang,
         tag: notification.tag,
         ...(notification.badge > 0 ? { app_badge: String(notification.badge) } : {}),
+        ...(notification.quiet === true ? { silent: true } : {}),
       },
     });
   const full = build(notification.body);
@@ -225,6 +226,11 @@ export interface ProductionWebPushOptions {
 export interface MuseChannelPushSource {
   listActive(now: string): Promise<readonly { readonly outageStartedAt: string }[]>;
 }
+
+type ProposalRead = {
+  readonly ok: boolean;
+  readonly rows: readonly { readonly id: string; readonly proposedAt: string }[];
+};
 
 export interface ProposalPushSource {
   listReady(now: string): Promise<readonly { readonly id: string; readonly proposedAt: string }[]>;
@@ -421,7 +427,7 @@ export class ProductionWebPush {
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
       });
-    const proposals = await this.#readyProposals(now);
+    const { rows: proposals } = await this.#readyProposals(now);
     for (const proposal of proposals)
       items.push({
         ...scope,
@@ -454,18 +460,27 @@ export class ProductionWebPush {
     for (const push of proactive) await this.#options.proactive?.markEnqueued(push.id, now);
   }
 
-  async #readyProposals(
-    now: string,
-  ): Promise<readonly { readonly id: string; readonly proposedAt: string }[]> {
-    if (!this.#options.proposals) return [];
-    try {
-      return (await this.#options.proposals.listReady(now)).filter(
-        ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
-      );
-    } catch (error) {
-      this.#options.onFailure(error);
-      return [];
-    }
+  #proposalRead: { readonly now: string; readonly result: Promise<ProposalRead> } | undefined;
+
+  #readyProposals(now: string): Promise<ProposalRead> {
+    if (this.#proposalRead?.now === now) return this.#proposalRead.result;
+    const source = this.#options.proposals;
+    const result: Promise<ProposalRead> = source
+      ? source.listReady(now).then(
+          (rows) => ({
+            ok: true as const,
+            rows: rows.filter(
+              ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
+            ),
+          }),
+          (error: unknown) => {
+            this.#options.onFailure(error);
+            return { ok: false as const, rows: [] };
+          },
+        )
+      : Promise.resolve({ ok: true as const, rows: [] });
+    this.#proposalRead = { now, result };
+    return result;
   }
 
   async #runThread(runId: string): Promise<string | null> {
@@ -630,7 +645,8 @@ export class ProductionWebPush {
     if (item.kind === "reminder" && item.sourceKey.startsWith("proposal:")) {
       const pending = await this.#readyProposals(now);
       if (
-        !pending.some(
+        pending.ok &&
+        !pending.rows.some(
           ({ id, proposedAt }) =>
             id === item.sourceRef && item.sourceKey === `proposal:${id}:${proposedAt}`,
         )

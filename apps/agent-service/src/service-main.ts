@@ -2840,7 +2840,7 @@ export async function startTenantRuntime(
                   ownerId: configuration.ownerId,
                   agentId: configuration.agentId,
                   now,
-                  limit: 20,
+                  limit: 200,
                 })
               ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
           },

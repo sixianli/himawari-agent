@@ -38,6 +38,7 @@ import {
 import {
   ProductionWebPush,
   WebPushPresence,
+  webPushPayload,
   webPushTopic,
 } from "../../apps/agent-service/src/production-web-push.ts";
 import { type ApnsStub, startApnsStub } from "../fixtures/apns-stub.ts";
@@ -1021,5 +1022,51 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.apns.ofType("alert")).toHaveLength(1);
     expect(context.failures.length).toBeGreaterThan(0);
+    expect(context.failures.length).toBeLessThanOrEqual(2);
+  });
+
+  it("[IOS-4] REVERSE: a proposal already queued is still sent when the proposal list cannot be read at send time", async () => {
+    let readable = true;
+    const context = await setup(
+      {},
+      {
+        proposals: {
+          listReady: async () => {
+            if (!readable) throw new Error("PROPOSALS_UNREADABLE");
+            return [{ id: "rule-1", proposedAt: at(T0, -60) }];
+          },
+        },
+        gate: {
+          decide: ({ now }: { now: string }) =>
+            now < at(T0, 300)
+              ? { action: "defer", until: at(T0, 600), capped: false, ruleRefs: ["owner:night"] }
+              : { action: "deliver", failed: false },
+        } as unknown as PushGate,
+        readPushRules: async () => [],
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toEqual([]);
+    readable = false;
+    context.setClock(at(T0, 601));
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+
+  it("[IOS-4] puts silent in the web payload for a quiet notice only", () => {
+    const base = {
+      title: "t",
+      body: "b",
+      navigate: "/",
+      lang: "zh-CN" as const,
+      tag: "x",
+      badge: 0,
+    };
+    expect(JSON.parse(webPushPayload({ ...base, quiet: true })).notification.silent).toBe(true);
+    expect(JSON.parse(webPushPayload(base)).notification).not.toHaveProperty("silent");
   });
 });
