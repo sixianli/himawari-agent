@@ -322,7 +322,7 @@ export class ProductionProactive {
       throw error;
     }
     if (released.length > 0) await seal.release({ ...scope, refs: released });
-    await store.setEnabled({ ...scope, enabled: true, now });
+    await store.writeSettings({ ...scope, ...settings, enabled: true, now });
   }
 
   async authorizationRedirect(owner: string): Promise<string> {
@@ -471,7 +471,10 @@ export class ProductionProactive {
         },
       });
       if (released.length > 0) await seal.release({ ...scope, refs: released });
-      if (!existing) await store.setEnabled({ ...scope, enabled: true, now });
+      if (!existing) {
+        const settings = await store.readSettings(scope);
+        await store.writeSettings({ ...scope, ...settings, enabled: true, now });
+      }
       void this.tick();
       return "connected";
     } catch (error) {
