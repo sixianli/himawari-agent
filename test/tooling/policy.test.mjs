@@ -64,6 +64,7 @@ const coverageShaped = () => {
     {
       id: "coverage",
       projects: ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
+      outputs: ["json", "lcov", "artifact"],
     },
   );
   value.checks = value.checks.filter((check) => check.id !== "tooling");

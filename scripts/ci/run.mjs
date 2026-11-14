@@ -335,6 +335,7 @@ export async function runCheck({
         ]);
       const measuredProjects = measure ? coverageProjects : [];
       const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));
+      let measuredCounts;
       const collectCoverage = async () => {
         await reportedTestCommand(
           "coverage",
@@ -355,8 +356,8 @@ export async function runCheck({
           "coverage",
           () => {
             const testReport = readJson(filename);
-            vitestCounts(testReport);
-            for (const id of measuredProjects) {
+            measuredCounts = vitestCounts(testReport);
+            for (const id of measuredProjects.filter((entry) => check.projects.includes(entry))) {
               const project = source.policy.testProjects.find((entry) => entry.id === id);
               const subset = testReport.testResults.filter((entry) => {
                 const name = path.relative(root, entry.name).split(path.sep).join("/");
@@ -374,7 +375,7 @@ export async function runCheck({
             result.counts = sumCounts(result.projects);
           },
         );
-        if (result.counts.failed || result.counts.skipped)
+        if (!measuredCounts || measuredCounts.failed || measuredCounts.skipped)
           throw new Error("CI_TEST_INCOMPLETE:coverage");
       };
       const compareCoverage = async () => {

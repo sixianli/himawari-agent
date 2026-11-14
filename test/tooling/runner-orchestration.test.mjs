@@ -393,6 +393,11 @@ describe("共享runner的调度、来源和失败传播", () => {
       "pi-compat",
     ]);
     expect(result.reports.some((entry) => entry.path.includes("coverage-final.json"))).toBe(false);
+    const declared = JSON.parse(readFileSync("ci/policy.json", "utf8")).checks.find(
+      (check) => check.id === "tests",
+    ).outputs;
+    for (const kind of declared)
+      expect([kind, result.reports.some((entry) => entry.kind === kind)]).toEqual([kind, true]);
   });
   it.each([
     ["policy", "measure"],
@@ -487,14 +492,14 @@ describe("共享runner的调度、来源和失败传播", () => {
       expect(result).toMatchObject({ status: "failed", exitCode: 7 });
       expect(result.counts).toEqual(
         report === "failed"
-          ? { files: 6, executed: 10, passed: 6, failed: 4, skipped: 0 }
+          ? { files: 5, executed: 8, passed: 5, failed: 3, skipped: 0 }
           : report === "passed"
-            ? { files: 6, executed: 6, passed: 6, failed: 0, skipped: 0 }
+            ? { files: 5, executed: 5, passed: 5, failed: 0, skipped: 0 }
             : { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 },
       );
       expect(result.projects.map(({ id }) => id)).toEqual(
         ["failed", "passed"].includes(report)
-          ? ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"]
+          ? ["unit", "contracts", "integration", "e2e", "pi-compat"]
           : ["e2e", "pi-compat"],
       );
       expect(state.calls.map(({ name }) => name)).toEqual(["coverage-snapshot", "coverage"]);
@@ -517,7 +522,6 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(result.projects.map(({ id }) => id)).toEqual([
       "unit",
       "contracts",
-      "tooling",
       "integration",
       "e2e",
       "pi-compat",
@@ -610,7 +614,6 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(result.projects.map((entry) => entry.id)).toEqual([
       "unit",
       "contracts",
-      "tooling",
       "integration",
       "e2e",
       "pi-compat",

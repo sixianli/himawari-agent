@@ -328,9 +328,9 @@ describe("complete-attempt gate", () => {
     [
       "missing report kind",
       (input) => {
-        selected(input).result.reports = selected(input).result.reports.filter(
-          (report) => report.kind !== "lcov",
-        );
+        const check = selected(input);
+        check.result.reports = check.result.reports.filter((report) => report.kind !== "json");
+        check.artifacts = check.artifacts.filter((item) => item.path !== "report.json");
       },
     ],
     [

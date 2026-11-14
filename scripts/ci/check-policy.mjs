@@ -235,7 +235,12 @@ export function upgradeCoverageToTests(policy) {
       return [{ ...check, needs: jobIds.filter((id) => id !== "required") }];
     if (check.id !== "coverage") return [check];
     return [
-      { ...check, id: "tests", projects: mainProjects.filter((id) => id !== "tooling") },
+      {
+        ...check,
+        id: "tests",
+        projects: mainProjects.filter((id) => id !== "tooling"),
+        outputs: ["json", "artifact"],
+      },
       {
         id: "tooling",
         needs: ["policy"],

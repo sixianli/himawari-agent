@@ -108,7 +108,7 @@
         }
       ],
       "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
-      "outputs": ["json", "lcov", "artifact"]
+      "outputs": ["json", "artifact"]
     },
     {
       "id": "tooling",
