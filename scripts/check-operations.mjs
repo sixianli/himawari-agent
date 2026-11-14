@@ -26,11 +26,9 @@ function walk(root, relative, accept, extensions = SOURCE_EXTENSIONS) {
   for (const entry of readdirSync(absolute, { withFileTypes: true })) {
     const child = path.posix.join(relative, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) found.push(...walk(root, child, accept, extensions));
-    } else if (
-      extensions.some((extension) => entry.name.endsWith(extension)) &&
-      accept(child)
-    ) {
+      if (!SKIPPED_DIRECTORIES.has(entry.name))
+        found.push(...walk(root, child, accept, extensions));
+    } else if (extensions.some((extension) => entry.name.endsWith(extension)) && accept(child)) {
       found.push(child);
     }
   }

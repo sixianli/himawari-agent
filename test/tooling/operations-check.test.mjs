@@ -118,7 +118,12 @@ describe("operations check", () => {
     ]);
     expect(
       checkOperations(
-        tree(swift("clients/apple/Sources/HimawariManage/Settings/Store.swift", `gateway.command(.v2, "demo.write")`)),
+        tree(
+          swift(
+            "clients/apple/Sources/HimawariManage/Settings/Store.swift",
+            `gateway.command(.v2, "demo.write")`,
+          ),
+        ),
       ).errors,
     ).toEqual([]);
     for (const file of [
