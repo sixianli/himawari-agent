@@ -2,7 +2,13 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  APPLE_PUSH_CONFIGURATION_BOUNDS,
+  APPLE_PUSH_CONFIGURATION_DEFAULTS,
+  APPLE_PUSH_ENVIRONMENTS,
+  APPLE_PUSH_TOPIC_PATTERN,
   APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+  type ApplePushConfiguration,
+  type ApplePushEnvironment,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -1073,6 +1079,7 @@ function parseAutomaticReview(
 }
 
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
+export const APPLE_PUSH_SECRET_PURPOSE = "apple-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
@@ -1390,6 +1397,62 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
   });
 }
 
+function parseApplePush(value: unknown): ApplePushConfiguration {
+  const field = "configuration.runPolicy.applePush";
+  const input = record(value, field);
+  const tunables = Object.keys(
+    APPLE_PUSH_CONFIGURATION_DEFAULTS,
+  ) as (keyof typeof APPLE_PUSH_CONFIGURATION_DEFAULTS)[];
+  rejectUnknown(
+    input,
+    ["secretRef", "teamId", "keyId", "topics", "environments", ...tunables],
+    field,
+  );
+  const identifier = (key: "teamId" | "keyId") => {
+    const value = string(input[key], `${field}.${key}`);
+    if (!/^[A-Z0-9]{10}$/u.test(value))
+      throw invalid(`${field}.${key}`, "must be the 10-character identifier Apple issued");
+    return value;
+  };
+  const list = <T extends string>(
+    key: string,
+    accept: (value: string) => boolean,
+  ): readonly T[] => {
+    const values = input[key];
+    if (
+      !Array.isArray(values) ||
+      values.length < 1 ||
+      values.length > 16 ||
+      values.some((value) => typeof value !== "string" || !accept(value)) ||
+      new Set(values).size !== values.length
+    )
+      throw invalid(`${field}.${key}`, "must be a non-empty list of distinct valid values");
+    return Object.freeze([...(values as T[])]);
+  };
+  return Object.freeze({
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    teamId: identifier("teamId"),
+    keyId: identifier("keyId"),
+    topics: list<string>("topics", (value) => APPLE_PUSH_TOPIC_PATTERN.test(value)),
+    environments: list<ApplePushEnvironment>("environments", (value) =>
+      (APPLE_PUSH_ENVIRONMENTS as readonly string[]).includes(value),
+    ),
+    ...(Object.fromEntries(
+      tunables.map((key) => [
+        key,
+        input[key] === undefined
+          ? APPLE_PUSH_CONFIGURATION_DEFAULTS[key]
+          : integer(
+              input[key],
+              `${field}.${key}`,
+              APPLE_PUSH_CONFIGURATION_BOUNDS[key].minimum,
+              APPLE_PUSH_CONFIGURATION_BOUNDS[key].maximum,
+            ),
+      ]),
+    ) as Record<keyof typeof APPLE_PUSH_CONFIGURATION_DEFAULTS, number>),
+  });
+}
+
 function parseDevice(value: unknown): DeviceConfiguration {
   const field = "configuration.runPolicy.device";
   const input = record(value, field);
@@ -1639,6 +1702,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "applePush",
       "device",
       "homeFeed",
       "searchAsk",
@@ -1701,6 +1765,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["applePush"] === undefined ? {} : { applePush: parseApplePush(input["applePush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["searchAsk"] === undefined ? {} : { searchAsk: parseSearchAsk(input["searchAsk"]) }),
@@ -2012,6 +2077,18 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (runPolicy?.applePush && !runPolicy.webPush)
+    throw invalid(
+      "configuration.runPolicy.applePush",
+      "requires configuration.runPolicy.webPush, which produces the notifications both channels send",
+    );
+  if (runPolicy?.applePush)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.applePush.secretRef,
+      APPLE_PUSH_SECRET_PURPOSE,
+      "configuration.runPolicy.applePush.secretRef",
     );
   if (runPolicy?.importDuplicates)
     assertIdentitySecretReference(

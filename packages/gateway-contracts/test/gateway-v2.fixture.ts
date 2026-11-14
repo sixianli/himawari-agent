@@ -678,6 +678,7 @@ export const governanceMessages = [
       {
         kind: "conversation",
         label: "10 月 21 日你在对话里说的",
+        recordId: null,
         memoryId: "memory-1",
         threadId: "thread-1",
         at: "2026-10-21T03:00:00.000Z",
@@ -1161,7 +1162,7 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
-  fixture("query", "proposals.read", {}),
+  fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {
     proposals: [
       {
@@ -1173,6 +1174,8 @@ export const governanceMessages = [
         effect: "日本入管局相关的邮件一律提醒",
         origin: "inferred",
         adoptable: true,
+        requiresFullRead: false,
+        requiresPresence: false,
         evidence: [
           {
             kind: "owner_words",
@@ -1195,6 +1198,7 @@ export const governanceMessages = [
     pendingCount: 1,
     limit: 20,
     expiresAfterDays: 30,
+    opened: null,
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
   fixture("command", "proposal.respond", {
@@ -1202,6 +1206,8 @@ export const governanceMessages = [
     expectedVersion: 1,
     fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     action: "adopt",
+    recentAuthenticationRef: null,
+    fullReadToken: null,
   }),
   fixture("command", "memory.rule.respond", {
     target: "action_preauthorize_owner_data",

@@ -386,6 +386,10 @@ export class SqlitePerceptionOperations {
         record.dataClassification,
         JSON.stringify(record.evidence),
       );
+    const addTerm = this.database.prepare(
+      "INSERT OR IGNORE INTO perception_search_terms (record_id, term) VALUES (?, ?)",
+    );
+    for (const term of record.searchTerms ?? []) addTerm.run(record.id, term);
     if (episodeId === null) return;
     this.database
       .prepare(
@@ -638,6 +642,30 @@ export class SqlitePerceptionOperations {
     });
   }
 
+  protected op_searchRecords(input: Input<"searchRecords">): readonly PerceptionRecord[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 200)
+      this.fail("PORT_INVALID_OPERATION", "Perception search size is invalid");
+    if (input.terms.length === 0 || input.terms.length > 64)
+      this.fail("PORT_INVALID_OPERATION", "Perception search terms are invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT ${recordColumns}
+           FROM perception_records
+           JOIN (SELECT record_id, COUNT(*) AS matched FROM perception_search_terms
+                  WHERE term IN (SELECT value FROM json_each(@terms)) GROUP BY record_id) m
+             ON m.record_id = perception_records.id
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'active'
+          ORDER BY m.matched DESC, occurred_at_ms DESC, perception_records.id LIMIT @limit`,
+      )
+      .all({
+        terms: JSON.stringify(input.terms),
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        limit: input.limit,
+      }) as RecordRow[];
+    return Object.freeze(rows.map(toRecord));
+  }
+
   protected op_setRecordStatus(input: Input<"setRecordStatus">): boolean {
     return this.database.transaction(() => {
       const row = this.database
@@ -652,6 +680,10 @@ export class SqlitePerceptionOperations {
       this.database
         .prepare("UPDATE perception_records SET status = ? WHERE id = ?")
         .run(input.status, input.recordId);
+      if (input.status === "deleted")
+        this.database
+          .prepare("DELETE FROM perception_search_terms WHERE record_id = ?")
+          .run(input.recordId);
       if (row.episodeId) this.recount([row.episodeId]);
       return true;
     })();

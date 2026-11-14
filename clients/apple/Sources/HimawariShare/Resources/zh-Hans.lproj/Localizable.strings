@@ -23,6 +23,7 @@
 "outcome.tooLarge" = "太大了，交不过去";
 "outcome.limitReached" = "今天交的已经到上限了";
 "outcome.serverOutdated" = "服务器还不认这种内容，更新服务器后再交";
+"outcome.notSent" = "没能确认传上，稍后再分享一次";
 "outcome.rejected" = "没交成";
 "outcome.unreadable" = "这次没读到内容";
 "entry.share.title" = "分享给 Himawari";
