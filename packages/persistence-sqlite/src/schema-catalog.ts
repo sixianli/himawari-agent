@@ -790,6 +790,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Run deletion",
   ),
   entry(
+    "paired_device_kinds",
+    "PairedDeviceStorePort",
+    "reference list of the device kinds a paired device may have; a new kind is one inserted row",
+    "metadata_only",
+    "kept for the life of the database",
+  ),
+  entry(
+    "paired_device_release_channels",
+    "PairedDeviceStorePort",
+    "reference list of the release channels a paired device may report; a new channel is one inserted row",
+    "metadata_only",
+    "kept for the life of the database",
+  ),
+  entry(
     "paired_devices",
     "PairedDeviceStorePort",
     "one row per paired iPhone, Apple Watch or Mac: kind, name, release channel, the two public keys, pending, active or revoked, and which browser device row its embedded web sessions use",

@@ -1,11 +1,24 @@
+CREATE TABLE paired_device_kinds (
+  kind TEXT PRIMARY KEY CHECK (length(kind) BETWEEN 1 AND 32)
+) STRICT;
+
+INSERT INTO paired_device_kinds (kind) VALUES ('iphone'), ('watch'), ('mac');
+
+CREATE TABLE paired_device_release_channels (
+  release_channel TEXT PRIMARY KEY CHECK (length(release_channel) BETWEEN 1 AND 32)
+) STRICT;
+
+INSERT INTO paired_device_release_channels (release_channel)
+VALUES ('direct'), ('testflight'), ('app_store'), ('mac_direct');
+
 CREATE TABLE paired_devices (
   id TEXT PRIMARY KEY CHECK (length(id) = 26 AND substr(id, 1, 4) = 'dev_'),
   owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   revision INTEGER NOT NULL CHECK (revision >= 0),
-  kind TEXT NOT NULL CHECK (kind IN ('iphone', 'watch', 'mac')),
+  kind TEXT NOT NULL REFERENCES paired_device_kinds(kind),
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 64),
-  release_channel TEXT NOT NULL CHECK (release_channel IN ('direct', 'testflight', 'app_store', 'mac_direct')),
+  release_channel TEXT NOT NULL REFERENCES paired_device_release_channels(release_channel),
   device_public_key TEXT NOT NULL CHECK (length(device_public_key) BETWEEN 1 AND 256),
   confirm_public_key TEXT NOT NULL CHECK (length(confirm_public_key) BETWEEN 1 AND 256),
   status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
@@ -23,6 +36,24 @@ CREATE TABLE paired_devices (
 ) STRICT;
 
 CREATE INDEX paired_devices_scope_index ON paired_devices(owner_id, agent_id, status, paired_at);
+
+CREATE TRIGGER paired_devices_kind_insert BEFORE INSERT ON paired_devices
+WHEN NOT EXISTS (SELECT 1 FROM paired_device_kinds WHERE kind = NEW.kind)
+  OR NOT EXISTS (
+    SELECT 1 FROM paired_device_release_channels WHERE release_channel = NEW.release_channel
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'paired device kind or release channel is not registered');
+END;
+
+CREATE TRIGGER paired_devices_kind_update BEFORE UPDATE OF kind, release_channel ON paired_devices
+WHEN NOT EXISTS (SELECT 1 FROM paired_device_kinds WHERE kind = NEW.kind)
+  OR NOT EXISTS (
+    SELECT 1 FROM paired_device_release_channels WHERE release_channel = NEW.release_channel
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'paired device kind or release channel is not registered');
+END;
 
 CREATE TABLE device_pairing_codes (
   code_hash TEXT PRIMARY KEY CHECK (length(code_hash) = 64),
