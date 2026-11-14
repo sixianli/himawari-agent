@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  type ApplePushConfiguration,
   createProactiveSeal,
+  DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
   type GatewayAuthenticationContext,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
   ThreadCommandService,
@@ -35,9 +39,13 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   type DevicePairingAccess,
+  DevicePushService,
   EnvelopePayloadProtector,
   PairedDeviceService,
   type PairedDeviceWarning,
+  type PerceptionLimitWarning,
+  PerceptionService,
+  ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
 import {
@@ -50,6 +58,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
+import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
@@ -90,6 +99,18 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly stateRoot: string;
+  readonly presence: { deviceId: string; visible: boolean }[];
+  readonly registered: { deviceId: string; pushType: string }[];
+  readonly revoking: string[];
+  readonly wiped: string[];
+  readonly perception: PerceptionService;
+  readonly perceptionConfiguration: { current: PerceptionConfiguration };
+  readonly timeZone: { current: string };
+  readonly ownerVoiceQualified: { current: boolean };
+  readonly limitWarnings: PerceptionLimitWarning[];
+  readonly readText: (contentRef: string) => Promise<string | undefined>;
+  readonly protector: EnvelopePayloadProtector;
 }
 
 export async function harness(
@@ -97,6 +118,9 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly applePush?: ApplePushConfiguration;
+    readonly revokeHookFails?: "prepare" | "wipe";
+    readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -215,7 +239,17 @@ export async function harness(
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
   const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
+  const home = new ProductionHomeControl({
+    settings: DEFAULT_HOME_FEED,
+    listApprovals: () =>
+      repository.authorizationStore().listApprovals(ownerId, agentId, { status: "pending" }),
+    runThread: async () => null,
+    threadTitle: async () => null,
+    clock,
+    onSourceFailure: () => undefined,
+  });
   const gatewayV2 = createProductionApprovalGateway({
+    homeControl: home,
     configuration: { ownerId, agentId },
     repository,
     access: threadAccess,
@@ -223,6 +257,7 @@ export async function harness(
     clock,
     authority: () => authority,
     executionAuthority: () => authority as never,
+    ...(options.searchControl ? { searchControl: options.searchControl } : {}),
     museControl: new ProductionMuseControl({
       scope: { ownerId, agentId },
       store: repository.museIntake(),
@@ -245,6 +280,45 @@ export async function harness(
   const ownerActive = { current: true };
   const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
+  const presence: Harness["presence"] = [];
+  const registered: Harness["registered"] = [];
+  const revoking: string[] = [];
+  const wiped: string[] = [];
+  const payloadAdmission = new ProductionHttpPayloadAdmission({
+    ownerId,
+    agentId,
+    sessions,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector,
+    clock: () => clock.now(),
+  });
+  const perceptionConfiguration = { current: PERCEPTION_CONFIGURATION_DEFAULTS };
+  const timeZone = { current: "Asia/Tokyo" };
+  const ownerVoiceQualified = { current: false };
+  const limitWarnings: PerceptionLimitWarning[] = [];
+  const searchTokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => new Uint8Array(32).fill(9) },
+    projectionVersion: "perception-search-test",
+  });
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => configuration.current,
+    configuration: () => perceptionConfiguration.current,
+    timeZone: () => timeZone.current,
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(stateRoot, "device-uploads"),
+    searchIndex: {
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
+    ownerVoiceQualified: () => ownerVoiceQualified.current,
+    onLimitWarning: (warning) => limitWarnings.push(warning),
+    now,
+  });
+  await perception.prepareDirectories();
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -268,14 +342,7 @@ export async function harness(
     csrf,
     threadGateway,
     gatewayV2,
-    payloadAdmission: new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions,
-      payloads: repository.payloadStore(ownerId, agentId),
-      protector,
-      clock: () => clock.now(),
-    }),
+    payloadAdmission,
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
         repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
@@ -288,6 +355,7 @@ export async function harness(
       fencingToken: authority.fencingToken,
     },
     devices: {
+      home: { resolveAction: (input) => home.resolveAction(input) },
       service: new PairedDeviceService({
         store: repository.pairedDevices(),
         sessions,
@@ -300,10 +368,27 @@ export async function harness(
             : undefined,
         now,
         onWarning: (warning) => warnings.push(warning),
+        prepareRevoke: async (deviceId) => {
+          revoking.push(deviceId);
+          if (options.revokeHookFails === "prepare") throw new Error("PREPARE_WIPE_FAILED");
+          return async () => {
+            if (options.revokeHookFails === "wipe") throw new Error("WIPE_FAILED");
+            wiped.push(deviceId);
+          };
+        },
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
+      push: new DevicePushService({
+        store: repository.applePush(),
+        reactions: repository.webPush(),
+        configuration: () => options.applePush,
+        now,
+        onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
+        onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
+      }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
+      perception,
     },
   });
   await app.ready();
@@ -316,6 +401,24 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    stateRoot,
+    presence,
+    registered,
+    revoking,
+    wiped,
+    perception,
+    perceptionConfiguration,
+    timeZone,
+    ownerVoiceQualified,
+    limitWarnings,
+    protector,
+    readText: async (contentRef) => {
+      const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+      if (!payload) return undefined;
+      return new TextDecoder("utf-8", { fatal: true }).decode(
+        await protector.unprotect({ ownerId, agentId, payload }),
+      );
+    },
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,
@@ -349,7 +452,11 @@ export function pairingCode(uri: unknown): string {
   return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
 }
 
-export async function pair(h: Harness, name = "Andy iPhone") {
+export async function pair(
+  h: Harness,
+  name = "Andy iPhone",
+  kind: "iphone" | "watch" | "mac" = "iphone",
+) {
   const started = await web(h, "pairing-codes");
   expect(started.status).toBe(201);
   const keys = generateDeviceTestKeyPair();
@@ -360,7 +467,7 @@ export async function pair(h: Harness, name = "Andy iPhone") {
     headers: { host: new URL(h.origin).host, "content-type": "application/json" },
     payload: JSON.stringify({
       pairingCode: pairingCode(started.body["pairingUri"]),
-      kind: "iphone",
+      kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
@@ -370,8 +477,12 @@ export async function pair(h: Harness, name = "Andy iPhone") {
   return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
 }
 
-export async function pairAndConfirm(h: Harness): Promise<PairedClient> {
-  const paired = await pair(h);
+export async function pairAndConfirm(
+  h: Harness,
+  name?: string,
+  kind?: "iphone" | "watch" | "mac",
+): Promise<PairedClient> {
+  const paired = await pair(h, name, kind);
   expect(paired.response.statusCode).toBe(201);
   const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
   const confirmed = await web(h, "confirm", {

@@ -7,12 +7,17 @@ import type {
   ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
+  DEVICE_CONFIGURATION_DEFAULTS,
+  defaultDeviceHardLimits,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
   autoCommitThreshold,
   type ClockPort,
   claimFromRunExecutionLease,
   classificationRank,
   createProactiveSeal,
   type DataClassification,
+  DEFAULT_HOME_URGENCY,
+  type HomeUrgencyRunResult,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
@@ -50,9 +55,11 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
   CloudflareAccessJwtVerifier,
+  createApplePushSender,
   createDemoGoogleOAuth,
   createDemoMailReader,
   createGmailReader,
@@ -101,6 +108,7 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
@@ -153,6 +161,7 @@ import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -163,6 +172,7 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
+import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import {
@@ -171,6 +181,8 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
+import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -700,6 +712,8 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let applePush: ProductionApplePush | undefined;
+  let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
@@ -709,6 +723,7 @@ export async function startTenantRuntime(
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
+  let perceptionExtraction: ProductionPerceptionExtraction | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -813,8 +828,10 @@ export async function startTenantRuntime(
         await runs?.memoryEpisodes?.stop();
         await runs?.memoryConsolidation?.stop();
         await webPush?.stop();
+        applePushSender?.close();
         await proactive?.stop();
         await realEval?.stop();
+        await perceptionExtraction?.stop();
         await observation?.stop();
       }
     },
@@ -1538,6 +1555,13 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        box: new ProductionProposalBox({
+          configuration,
+          store: repository.ownerProposals(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+        }),
         reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -1550,6 +1574,26 @@ export async function startTenantRuntime(
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
       const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const perceptionScope = {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+      };
+      const perceptionTools = new ProductionPerceptionTools({
+        scope: perceptionScope,
+        store: repository.perception(),
+        devices: repository.pairedDevices().listDevices,
+        readText: async (contentRef) => {
+          const payload = await payloads.get(contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({ ...perceptionScope, payload }),
+          );
+        },
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        now: () => clock.now(),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
       const toolActions = productionToolActionRegistry();
       const installedCapabilities = repository.capabilityStore(
         configuration.ownerId,
@@ -1591,6 +1635,7 @@ export async function startTenantRuntime(
         toolActions,
         ownerScope,
         externalContent,
+        perception: perceptionTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2195,6 +2240,62 @@ export async function startTenantRuntime(
             }),
         });
       }
+      const homeUrgencyConfiguration = configuration.runPolicy?.homeUrgency ?? DEFAULT_HOME_URGENCY;
+      const homeUrgencyRef = homeUrgencyConfiguration.modelRef ?? proactiveConfiguration?.modelRef;
+      const homeUrgencyDescriptor = modelComposition.descriptors.generation.find(
+        ({ ref }) => ref === homeUrgencyRef,
+      );
+      if (homeUrgencyConfiguration.modelRef !== undefined && !homeUrgencyDescriptor)
+        throw new Error("HOME_URGENCY_MODEL_UNAVAILABLE");
+      const homeUrgencyRepository = repository;
+      const homeUrgency =
+        homeUrgencyConfiguration.enabled &&
+        homeUrgencyDescriptor &&
+        protector &&
+        homeUrgencyRepository
+          ? {
+              settings: homeUrgencyConfiguration,
+              seal: createProactiveSeal({
+                payloads: homeUrgencyRepository.payloadStore(
+                  configuration.ownerId,
+                  configuration.agentId,
+                ),
+                protector,
+                ids,
+              }),
+              model: modelComposition.composition.proactiveModel(homeUrgencyDescriptor.ref, {
+                maxOutputTokens: HOME_URGENCY_MAX_OUTPUT_TOKENS,
+                requestTimeoutMs: homeUrgencyConfiguration.requestTimeoutMs,
+                purpose: "home-urgency",
+              }),
+              modelAllows: (classification: DataClassification) =>
+                homeUrgencyDescriptor.allowedDataClassifications.includes(classification),
+              timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+              estimateCostMicros: proactiveCostEstimator(
+                homeUrgencyDescriptor.cost,
+                HOME_URGENCY_MAX_OUTPUT_TOKENS,
+              ),
+              readLocale: async () =>
+                (
+                  await homeUrgencyRepository.ownerPreferences().read({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                  })
+                ).locale,
+              onScored: (result: HomeUrgencyRunResult) => {
+                if (result.attempted > 0 || result.failures.length > 0)
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "home.urgency_scored",
+                    attempted: result.attempted,
+                    recorded: result.recorded,
+                    failed: result.failures.length,
+                    stoppedBy: result.stoppedBy,
+                    ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
+                  });
+              },
+            }
+          : undefined;
       const realEvalConfiguration = configuration.runPolicy?.realEval;
       const realEvalDescriptor = realEvalConfiguration
         ? modelComposition.descriptors.generation.find(
@@ -2294,6 +2395,81 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
+      if (proactiveConfiguration && proactiveDescriptor && protector && durableMemory) {
+        const extractionScope = {
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+        };
+        const extractionPayloads = repository.payloadStore(
+          configuration.ownerId,
+          configuration.agentId,
+        );
+        const extractionModels = modelComposition;
+        const extractionModelRef = proactiveConfiguration.modelRef;
+        const extractionConfiguration = () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
+        const extractionTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
+        let extractionEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+        perceptionExtraction = new ProductionPerceptionExtraction({
+          scope: extractionScope,
+          store: repository.perception(),
+          model: createRealEvalModel({
+            modelRef: extractionModelRef,
+            invoker: (maxOutputTokens) =>
+              extractionModels.composition.proactiveModel(extractionModelRef, {
+                maxOutputTokens,
+                requestTimeoutMs: extractionConfiguration().extractRequestTimeoutSeconds * 1000,
+                purpose: "other",
+              }),
+            cost: proactiveDescriptor.cost,
+            requestTimeoutMs: extractionConfiguration().extractRequestTimeoutSeconds * 1000,
+            now: () => clock.now(),
+          }),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          reminders: new ProductionReminderWriter({
+            configuration,
+            memory: durableMemory,
+            state: repository.productMemoryState(),
+            book: repository.memoryBook(),
+            reminders: repository.memoryReminders(),
+            payloads: extractionPayloads,
+            protector,
+            clock: { now: () => clock.now() },
+            timeZone: extractionTimeZone,
+          }),
+          payloads: extractionPayloads,
+          protector,
+          tag: async () => {
+            extractionEgress ??= createProductionModelEgress(
+              configuration,
+              hostModelSources(configuration),
+            );
+            return extractionEgress.externalTag();
+          },
+          configuration: extractionConfiguration,
+          deviceConfiguration: () =>
+            configuration.runPolicy?.device ?? {
+              ...DEVICE_CONFIGURATION_DEFAULTS,
+              limits: defaultDeviceHardLimits(),
+            },
+          timeZone: extractionTimeZone,
+          clock: { now: () => clock.now() },
+          onReport: (report) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "perception.extracted",
+              ...report,
+            }),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "perception.extract_failed",
+              code: stableErrorCode(error),
+            }),
+        });
+      }
       const museIntakeConfiguration = configuration.runPolicy?.museIntake;
       const museIntakeSecret =
         museIntakeConfiguration?.enabled === true
@@ -2550,6 +2726,60 @@ export async function startTenantRuntime(
             }),
           );
         };
+        const threadTitle = async (threadId: string) => {
+          const thread = await pushRepository
+            .threadRepository()
+            .read(
+              configuration.ownerId,
+              configuration.agentId,
+              threadId as Parameters<ReturnType<typeof pushRepository.threadRepository>["read"]>[2],
+            );
+          if (!thread || thread.status !== "active") return null;
+          const title = thread.titleRef ? await readPlain(thread.titleRef) : undefined;
+          return { title: title?.trim() || null };
+        };
+        const applePushConfiguration = configuration.runPolicy?.applePush;
+        const applePushSecret = applePushConfiguration
+          ? configuration.secretReferences.find(
+              ({ ref, purpose }) =>
+                ref === applePushConfiguration.secretRef && purpose === APPLE_PUSH_SECRET_PURPOSE,
+            )
+          : undefined;
+        if (applePushConfiguration && applePushSecret) {
+          applePushSender = createApplePushSender({
+            teamId: applePushConfiguration.teamId,
+            keyId: applePushConfiguration.keyId,
+            signingKey: await pushSources.keys.resolve(
+              applePushSecret.ref,
+              applePushSecret.version,
+            ),
+            requestTimeoutSeconds: applePushConfiguration.requestTimeoutSeconds,
+          });
+          applePush = new ProductionApplePush({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            store: pushRepository.applePush(),
+            sender: applePushSender,
+            configuration: () => applePushConfiguration,
+            threadTitle,
+            publicOrigin: configuration.publicOrigin,
+            now: () => clock.now(),
+            onDelivery: (outcome) =>
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "apple-push.delivery",
+                pushType: outcome.pushType,
+                outcome: outcome.kind,
+                ...(outcome.code ? { code: outcome.code } : {}),
+              }),
+            onFailure: (error) =>
+              writeServiceDiagnostic(errorOutput, {
+                component: "agent-service",
+                event: "apple-push.failed",
+                code: stableErrorCode(error),
+              }),
+          });
+        }
         webPush = new ProductionWebPush({
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
@@ -2601,20 +2831,8 @@ export async function startTenantRuntime(
                   runId as Parameters<ReturnType<typeof pushRepository.runLifecycle>["readRun"]>[0],
                 )
             )?.run.threadId ?? null,
-          threadTitle: async (threadId) => {
-            const thread = await pushRepository
-              .threadRepository()
-              .read(
-                configuration.ownerId,
-                configuration.agentId,
-                threadId as Parameters<
-                  ReturnType<typeof pushRepository.threadRepository>["read"]
-                >[2],
-              );
-            if (!thread || thread.status !== "active") return null;
-            const title = thread.titleRef ? await readPlain(thread.titleRef) : undefined;
-            return { title: title?.trim() || null };
-          },
+          threadTitle,
+          ...(applePush ? { companion: applePush } : {}),
           publicOrigin: configuration.publicOrigin,
           ...(configuration.runPolicy?.timeZone
             ? { timeZone: configuration.runPolicy.timeZone }
@@ -2657,6 +2875,7 @@ export async function startTenantRuntime(
       }
       proactive?.start();
       realEval?.start();
+      perceptionExtraction?.start();
       observation = new ProductionObservation({
         scope: {
           ownerId: configuration.ownerId,
@@ -3000,14 +3219,33 @@ export async function startTenantRuntime(
       http = await createProductionHttpComposition({
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
-        webPush: { presence: webPushPresence, push: webPush },
+        webPush: {
+          presence: webPushPresence,
+          push: webPush,
+          ...(applePush ? { applePush } : {}),
+        },
         ...(proactive ? { proactive } : {}),
+        ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),
         ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
+          ...(memoryComposition
+            ? {
+                search: {
+                  provider: {
+                    search: (input) =>
+                      (memoryComposition as ProductionMemoryComposition).projection.search(input),
+                  },
+                  episodes: {
+                    search: (input) =>
+                      runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
+                  },
+                },
+              }
+            : {}),
           service: activeDurableMemory,
           externalProposals,
           actionRules: new BuiltInActionRuleSwitches({
@@ -3063,6 +3301,12 @@ export async function startTenantRuntime(
             component: "agent-service",
             ...diagnostic,
           }),
+        onDevicePushFailed: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "device-push.failed",
+            code: stableErrorCode(error),
+          }),
         onDeviceWarning: (warning) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
@@ -3072,6 +3316,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
+          }),
+        onPerceptionLimitWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
           }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");

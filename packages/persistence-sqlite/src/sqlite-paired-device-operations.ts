@@ -6,6 +6,7 @@ import type {
   PairingRedeemResult,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { disablePushForRevokedDevices } from "./sqlite-apple-push-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof PairedDeviceStorePort> = Parameters<PairedDeviceStorePort[TName]>[0];
@@ -292,6 +293,8 @@ export class SqlitePairedDeviceOperations {
         )
         .run(now, device.id);
       this.database.prepare("DELETE FROM device_request_nonces WHERE device_id = ?").run(device.id);
+      disablePushForRevokedDevices(this.database, [device.id], now);
+      this.database.prepare("DELETE FROM device_upload_grants WHERE device_id = ?").run(device.id);
       if (device.webDeviceId !== null) {
         this.database
           .prepare(

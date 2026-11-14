@@ -732,6 +732,48 @@ describe("data export: determinism and the directory", () => {
       expect(decoder.decode(bytes), path).not.toContain(SECRET_API_KEY);
   });
 
+  it("[P1-6][reverse] import refuses an unregistered memory source type and marks perception sources as gone", async () => {
+    const perceptionId = `perception:${"a".repeat(32)}`;
+    const typed = await seeded();
+    typed.database
+      .prepare(
+        "INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted) VALUES ('m-plain', 'perception', ?, 0)",
+      )
+      .run(perceptionId);
+    const target = await side("target-perception-source");
+    await importInto(target, (await exportOf(typed)).files, { passphrase: PASSPHRASE });
+    expect(
+      target.database
+        .prepare(
+          "SELECT source_deleted AS gone FROM memory_provenance WHERE source_type = 'perception' AND source_id = ?",
+        )
+        .all(perceptionId),
+    ).toEqual([{ gone: 1 }]);
+    for (const [type, id] of [
+      ["telepathy", "anything"],
+      ["perception", "not-a-record"],
+    ]) {
+      const bad = await side(`source-bad-${type}`);
+      await seedEverything(bad);
+      bad.database
+        .prepare(
+          "INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted) VALUES ('m-plain', ?, ?, 0)",
+        )
+        .run(type, id);
+      const refused = await side(`target-bad-${type}`);
+      await expect(
+        importInto(refused, (await exportOf(bad)).files, {
+          passphrase: PASSPHRASE,
+          dryRun: true,
+        }),
+      ).rejects.toMatchObject({ code: DATA_EXPORT_ERROR_CODES.LINE_INVALID });
+      await expect(
+        importInto(refused, (await exportOf(bad)).files, { passphrase: PASSPHRASE }),
+      ).rejects.toMatchObject({ code: DATA_EXPORT_ERROR_CODES.LINE_INVALID });
+      expect(counts(refused)["memories"]).toBe(0);
+    }
+  });
+
   it("[P1-6] keeps a withheld history event findable when an earlier event was dropped", async () => {
     const source = await side("history-key");
     await seedMemory(source, {
@@ -984,6 +1026,51 @@ describe("data export: paired devices", () => {
     expect(target.database.prepare("SELECT COUNT(*) AS count FROM paired_devices").get()).toEqual({
       count: 0,
     });
+  });
+
+  it("[P1-6][reverse] Apple push tokens and notification button credentials appear in no exported file", async () => {
+    const source = await withDevice();
+    const pushToken = "ab".repeat(32);
+    const actionTokenHash = "c1".repeat(32);
+    const snapshotHash = "snapshot-hash-for-export-test";
+    source.database
+      .prepare(
+        `INSERT INTO apns_registrations
+           (id, owner_id, agent_id, device_id, push_type, activity_ref, token, environment, topic,
+            locale, status, failure_code, created_at, updated_at, last_delivered_at)
+         VALUES (?, ?, ?, ?, 'alert', '', ?, 'production', 'win.siyi.himawari.exporttest', 'zh-CN',
+           'active', NULL, ?, ?, NULL)`,
+      )
+      .run(`apn_${"B".repeat(22)}`, source.ownerId, source.agentId, deviceId, pushToken, NOW, NOW);
+    source.database
+      .prepare(
+        `INSERT INTO notification_action_tokens
+           (token_hash, owner_id, agent_id, device_id, source_key, action, owner_presence,
+            approval_request_id, approval_revision, approval_snapshot_hash, created_at, expires_at,
+            used_at)
+         VALUES (?, ?, ?, ?, 'approval:export-test:1', 'approve', 1, 'approval-export-test', 1, ?,
+           ?, '2026-11-11T00:00:00.000Z', NULL)`,
+      )
+      .run(actionTokenHash, source.ownerId, source.agentId, deviceId, snapshotHash, NOW);
+    const { files, manifest } = await exportOf(source);
+    for (const [path, bytes] of files) {
+      const text = decoder.decode(bytes);
+      for (const credential of [
+        pushToken,
+        actionTokenHash,
+        snapshotHash,
+        "win.siyi.himawari.exporttest",
+        `apn_${"B".repeat(22)}`,
+      ])
+        expect(text, path).not.toContain(credential);
+    }
+    expect(manifest.omitted.map(({ what }) => what)).toContain("苹果推送令牌和通知按钮凭据");
+    const target = await side("push-not-restored");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    for (const table of ["apns_registrations", "notification_action_tokens"])
+      expect(target.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({
+        count: 0,
+      });
   });
 
   it("[P1-6][reverse] a device line with a public key added is refused", async () => {
