@@ -101,6 +101,7 @@ import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
 import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
+import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
@@ -374,6 +375,7 @@ export class SqliteDurableOperations {
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
   private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
+  private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
@@ -474,6 +476,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
+    this.homeUrgency = new SqliteHomeUrgencyOperations(database, fail, assertDiskHeadroom);
     this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
       database,
       fail,
@@ -662,6 +665,7 @@ export class SqliteDurableOperations {
       return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
+    if (operation.startsWith("homeUrgency.")) return this.homeUrgency.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);

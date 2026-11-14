@@ -25,6 +25,8 @@ export const DEVICE_GATEWAY_ERROR_CODES = Object.freeze({
   NOT_ON_PHONE: "DEVICE_GATEWAY_NOT_ON_PHONE",
   CONFIRM_REQUIRED: "DEVICE_GATEWAY_CONFIRM_REQUIRED",
   GATEWAY_UNAVAILABLE: "DEVICE_GATEWAY_UNAVAILABLE",
+  HOME_ACTION_STALE: "DEVICE_HOME_ACTION_STALE",
+  HOME_ACTION_INVALID: "DEVICE_HOME_ACTION_INVALID",
 } as const);
 
 export type DeviceGatewayErrorCode =
@@ -145,13 +147,14 @@ export async function dispatchDeviceGatewayRequest(input: {
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
   readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+  readonly auditAction?: string;
   readonly now: () => Date;
 }): Promise<unknown> {
   if (input.request.tier === "change" && !input.confirmed)
     throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.CONFIRM_REQUIRED, 403);
   if (input.request.tier === "read" || input.request.tier === "routine") return forward(input);
   const attempt = randomUUID();
-  const action = `device.gateway.${input.request.tier}`;
+  const action = input.auditAction ?? `device.gateway.${input.request.tier}`;
   const targetRef = `${input.pairedDeviceId}:${input.request.entry.gateway}:${input.request.entry.type}`;
   const record = (outcome: "accepted" | "completed" | "failed") =>
     input.audit.append({
