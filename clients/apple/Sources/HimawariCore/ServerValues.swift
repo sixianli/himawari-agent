@@ -27,7 +27,7 @@ public final class ServerValueDiagnostics: @unchecked Sendable {
     public static let rawLimit = 64
 
     private let lock = NSLock()
-    private var seen = Set<String>()
+    private var seen: [String: Set<String>] = [:]
     private var observer: (@Sendable (UnknownServerValue) -> Void)?
 
     public func observe(_ observer: (@Sendable (UnknownServerValue) -> Void)?) {
@@ -41,7 +41,7 @@ public final class ServerValueDiagnostics: @unchecked Sendable {
     func noteFallback(type: String, raw fullRaw: String) {
         let raw = String(fullRaw.prefix(Self.rawLimit))
         let report = lock.withLock { () -> (@Sendable (UnknownServerValue) -> Void)? in
-            guard let observer, seen.count < Self.distinctLimit, seen.insert("\(type)\u{0}\(raw)").inserted else { return nil }
+            guard let observer, (seen[type]?.count ?? 0) < Self.distinctLimit, seen[type, default: []].insert(raw).inserted else { return nil }
             return observer
         }
         report?(UnknownServerValue(type: type, raw: raw))

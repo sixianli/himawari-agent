@@ -14,14 +14,15 @@ import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engi
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { sequentialPlaceholderTag } from "@himawari-agent/sensitive-capture";
 import { afterEach, describe, expect, it } from "vitest";
-import { PERCEPTION_MEMORY_SOURCE_ID } from "../../packages/persistence-sqlite/src/memory-source-types.ts";
 import { createPerceptionExtractionService } from "../../apps/agent-service/src/production-perception-extraction.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
+import { PERCEPTION_MEMORY_SOURCE_ID } from "../../packages/persistence-sqlite/src/memory-source-types.ts";
 import {
   agentId,
   type Harness,
   harness,
   ownerId,
+  ownerSpokenAt,
   pairAndConfirm,
   removeDeviceHarnessDirectories,
 } from "../fixtures/device-api-harness.ts";
@@ -54,7 +55,7 @@ interface Scripted {
 async function setup(options: { readonly withGeneration?: boolean } = {}) {
   const h = await harness();
   const client = await pairAndConfirm(h);
-  h.ownerVoiceQualified.current = true;
+  h.voiceGates.current = ownerSpokenAt(800);
   if (options.withGeneration !== false) {
     const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
     try {
@@ -203,7 +204,7 @@ function reply(value: {
 }
 
 function owner(h: Harness, text: string, seconds = 0, extra: Record<string, unknown> = {}) {
-  const record = utterance(h, text, { seconds, speaker: { kind: "owner" } });
+  const record = utterance(h, text, { seconds, speaker: { kind: "owner", score: 900 } });
   return { ...record, evidence: { ...record.evidence, ...extra } };
 }
 

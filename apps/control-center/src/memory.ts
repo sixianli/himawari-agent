@@ -185,7 +185,7 @@ export function useMemory(input: {
         });
     if (proposalsAvailable)
       void client
-        .query(queryMessage(configuration, "proposals.read", {}))
+        .query(queryMessage(configuration, "proposals.read", { open: null }))
         .then((result) => {
           if (result.type !== "proposals.snapshot") throw new Error("PROPOSALS_INVALID");
           if (!disposed) setProposals(result.payload);
@@ -325,6 +325,8 @@ export function useMemory(input: {
         expectedVersion: version,
         fingerprint,
         action,
+        recentAuthenticationRef: null,
+        fullReadToken: null,
       })),
     review,
     respondReview: (target, action, expectedRevision) =>

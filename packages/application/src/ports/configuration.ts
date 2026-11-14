@@ -1,9 +1,10 @@
 import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { ApplePushConfiguration } from "./apple-push.js";
+import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
-import type { PerceptionConfiguration } from "./perception.js";
 import type { ModelProviderRouting } from "./intelligence.js";
+import type { PerceptionConfiguration } from "./perception.js";
 import type { WebProviderId } from "./web-providers.js";
 
 export interface SecretReferenceDescriptor {
@@ -247,6 +248,8 @@ export interface SearchAskConfiguration {
   readonly askLimit: number;
   readonly answerCharacters: number;
   readonly minimumCoveragePercent: number;
+  readonly indexTermLimit: number;
+  readonly indexRebuildBatch: number;
 }
 
 export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
@@ -255,6 +258,8 @@ export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
   askLimit: 0,
   answerCharacters: 2000,
   minimumCoveragePercent: 50,
+  indexTermLimit: 2000,
+  indexRebuildBatch: 200,
 });
 
 export interface ProactiveGmailConfiguration {
@@ -390,7 +395,8 @@ export interface OwnerIntentCheckConfiguration {
   readonly enabled: boolean;
   readonly minConfidence: number;
   readonly timeoutMs: number;
-  readonly modelRef: string;
+  readonly model: string;
+  readonly secretRef: string;
 }
 
 export interface RunPolicyConfiguration {
@@ -409,6 +415,7 @@ export interface RunPolicyConfiguration {
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
+  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
   readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
@@ -422,6 +429,12 @@ export interface RunPolicyConfiguration {
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
+}
+
+export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {

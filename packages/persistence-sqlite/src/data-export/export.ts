@@ -22,6 +22,8 @@ import {
   INDEX_FILE,
   MANIFEST_FILE,
   MAXIMUM_LINE_LENGTH,
+  ownerProposalBasisKey,
+  ownerProposalExecutionKey,
   PERCEPTION_FILE_KEYS,
   type PerceptionFileKey,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
@@ -183,6 +185,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.rules,
       snapshot.ruleHistory,
       exportedProposals,
+      snapshot.ownerProposals.map((row) => [
+        row["summary"],
+        row["effect"],
+        row["source_ref"],
+        row["source_version"],
+      ]),
       snapshot.externalProposalKeys.filter((row) =>
         exportedProposalIds.has(str(row["proposal_id"])),
       ),
@@ -669,6 +677,44 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     };
   });
 
+  let unreadableOwnerProposalTexts = 0;
+  const ownerProposalText = (ref: string | null, key: string): Nullable<JsonValue> => {
+    if (ref === null) return null;
+    const value = exportedText(ref, key);
+    if (value === null) unreadableOwnerProposalTexts += 1;
+    return value;
+  };
+  const ownerProposalLines: JsonValue[] = snapshot.ownerProposals.map((row) => {
+    const id = str(row["id"]);
+    const basisRef = optionalString(row["evidence_ref"]);
+    const executionRef = optionalString(row["execution_ref"]);
+    return {
+      id,
+      type: str(row["type"]),
+      summary: safeString(str(row["summary"])),
+      effect: safeString(str(row["effect"])),
+      origin: str(row["origin"]),
+      sourceRef: safeOptional(optionalString(row["source_ref"])),
+      sourceVersion: safeOptional(optionalString(row["source_version"])),
+      version: Number(row["version"]),
+      fingerprint: str(row["fingerprint"]),
+      status: str(row["status"]),
+      execStatus: str(row["exec_status"]),
+      proposedAt: str(row["proposed_at"]),
+      expiresAt: str(row["expires_at"]),
+      decidedAt: optionalString(row["decided_at"]),
+      proposedCount: Number(row["proposed_count"]),
+      rejectCount: Number(row["reject_count"]),
+      lastRejectedAt: optionalString(row["last_rejected_at"]),
+      attempts: Number(row["attempts"]),
+      executedAt: optionalString(row["executed_at"]),
+      requiresFullRead: row["requires_full_read"] === 1,
+      requiresPresence: row["requires_presence"] === 1,
+      basis: ownerProposalText(basisRef, ownerProposalBasisKey(id)),
+      execution: ownerProposalText(executionRef, ownerProposalExecutionKey(id)),
+    };
+  });
+
   const evidence = options.withEvidence === true ? buildEvidence(snapshot, texts) : null;
 
   const files: PortableFiles = new Map();
@@ -702,6 +748,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       );
   put(DATA_FILES.rules, "data", rulesText, ruleLines.length);
   put(DATA_FILES.externalProposals, "data", jsonLines(proposalLines), proposalLines.length);
+  put(DATA_FILES.ownerProposals, "data", jsonLines(ownerProposalLines), ownerProposalLines.length);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -804,6 +851,13 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "评测用的派生数据：题目由模型从记忆和原话生成，导入后下一次评测会从导入的记忆重新出题；分数只是统计数字",
     },
   ];
+  if (unreadableOwnerProposalTexts > 0)
+    omitted.push({
+      what: "提给主人的提议里读不出来的依据或执行原样",
+      count: unreadableOwnerProposalTexts,
+      reason:
+        "库里的加密载荷已不可读（正在删除、已删除或损坏），导出里写成空；撤销用的原样丢了的提议导入后不能撤销",
+    });
   if (options.withEvidence !== true)
     omitted.push({
       what: "决策的模型输入输出原文、邮件检查结果、Muse 校准记录",
@@ -828,6 +882,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     rules: ruleLines.length,
     enforcedRules: enforcedRuleCount(ruleLines),
     externalProposals: proposalLines.length,
+    ownerProposals: ownerProposalLines.length,
     ruleHistoryVersions,
     sealedOriginals: options.sealPassphrase === undefined ? 0 : Object.keys(originals).length,
     sealedEvidenceRows,

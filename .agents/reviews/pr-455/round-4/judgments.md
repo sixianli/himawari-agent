@@ -1,0 +1,5 @@
+# PR 455 第 4 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1 低 — 按来源的降频状态在总览和恢复操作里没有带上来源。读代码证实：packages/persistence-sqlite/src/proactive-push-backoff.ts:200-226 的 listBackoff 不选 source，restoreBackoff 的 WHERE 不带 source；触发：以后登记第二个来源，并且它和 Gmail 出现同一个提醒类别的降频（生产现在只登记 Gmail：packages/application/src/ports/proactive-sources.ts:176，存储层按登记表拒收别的来源）；后果：总览会把另一来源的降频条目当成 Gmail 的显示，点恢复会把同一类别在所有来源上都恢复；不丢数据
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2 低 — 清除事件带 source，但观测检查忽略 source，非 Gmail 清除会被当成 Gmail 记录已清。读代码证实：packages/application/src/services/ledger-observation.ts:200-208 和 296-299 只看 kind 和 rows，不看 detail.source；触发：以后登记第二个来源并清除它的记录（生产现在只有 Gmail）；后果：决策记录观测把非 Gmail 的清除当成 Gmail 记录已清，可能掩盖 Gmail 记录的缺口；只影响观测报告，不动数据
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3 低 — 控制中心“全部删除”文案与按来源清除的行为不一致。读代码证实：apps/control-center/src/proactive.ts:255-257 只发 source=gmail，apps/control-center/src/i18n/resources/zh-CN.ts:1244-1247 写的是全部删除；确认文案本身说的是 Gmail 的记录；触发：以后登记第二个来源后，在控制中心点全部删除；后果：用户以为所有来源都删了，实际只删了 Gmail；现在只有 Gmail，文案和行为一致

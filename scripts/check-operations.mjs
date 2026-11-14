@@ -14,21 +14,21 @@ const FRONTEND_EXCLUDED = [
   `${FRONTEND_ROOT}/i18n/`,
 ];
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mjs"];
+const SWIFT_ROOT = "clients/apple/Sources";
+const SWIFT_EXCLUDED_SEGMENTS = ["/Generated/", "/Demo", "Demo.swift"];
 const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist", "build", ".git", "coverage"]);
 const MINIMUM_REASON_LENGTH = 10;
 
-function walk(root, relative, accept) {
+function walk(root, relative, accept, extensions = SOURCE_EXTENSIONS) {
   const found = [];
   const absolute = path.join(root, relative);
   if (!existsSync(absolute)) return found;
   for (const entry of readdirSync(absolute, { withFileTypes: true })) {
     const child = path.posix.join(relative, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) found.push(...walk(root, child, accept));
-    } else if (
-      SOURCE_EXTENSIONS.some((extension) => entry.name.endsWith(extension)) &&
-      accept(child)
-    ) {
+      if (!SKIPPED_DIRECTORIES.has(entry.name))
+        found.push(...walk(root, child, accept, extensions));
+    } else if (extensions.some((extension) => entry.name.endsWith(extension)) && accept(child)) {
       found.push(child);
     }
   }
@@ -320,6 +320,12 @@ export function checkOperations(root = repositoryRoot) {
     ),
     ...walk(root, "scripts", () => true),
     ...walk(root, "apps/admin-cli/src", () => true),
+    ...walk(
+      root,
+      SWIFT_ROOT,
+      (file) => !SWIFT_EXCLUDED_SEGMENTS.some((segment) => file.includes(segment)),
+      [".swift"],
+    ),
   ].map(read);
 
   const testFiles = [
