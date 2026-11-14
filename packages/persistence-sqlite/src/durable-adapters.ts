@@ -1,4 +1,5 @@
 import type {
+  ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
   AuthorityFence,
@@ -434,6 +435,8 @@ export class SqliteDurableAdapters {
           record,
           expectedRevision,
         }),
+      listScheduledJobRefs: (capabilityRef) =>
+        this.context.read("capability.listScheduledJobRefs", { ownerId, agentId, capabilityRef }),
       invalidateCapabilityAuthority: (record, expectedRevision, revokedAt) =>
         this.context.write("capability.invalidateAuthority", {
           ownerId,
@@ -1040,6 +1043,9 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.write("ownerProposal.read", input),
       listPending: (input) => this.context.write("ownerProposal.listPending", input),
       decide: (input) => this.context.write("ownerProposal.decide", input),
+      claim: (input) => this.context.write("ownerProposal.claim", input),
+      moveExecution: (input) => this.context.write("ownerProposal.moveExecution", input),
+      listExpiredLeases: (input) => this.context.write("ownerProposal.listExpiredLeases", input),
       settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
       clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
     });
@@ -1233,6 +1239,25 @@ export class SqliteDurableAdapters {
     });
   }
 
+  applePush(): ApplePushStorePort {
+    return Object.freeze<ApplePushStorePort>({
+      saveRegistration: (input) => this.context.write("applePush.saveRegistration", input),
+      removeRegistration: (input) => this.context.write("applePush.removeRegistration", input),
+      listRegistrations: (input) => this.context.read("applePush.listRegistrations", input),
+      markRegistration: (input) => this.context.write("applePush.markRegistration", input),
+      routeOutbox: (input) => this.context.write("applePush.routeOutbox", input),
+      listDue: (input) => this.context.read("applePush.listDue", input),
+      recordAttempt: (input) => this.context.write("applePush.recordAttempt", input),
+      issueActionTokens: (input) => this.context.write("applePush.issueActionTokens", input),
+      readActionToken: (input) => this.context.read("applePush.readActionToken", input),
+      consumeActionToken: (input) => this.context.write("applePush.consumeActionToken", input),
+      setCompanion: (input) => this.context.write("applePush.setCompanion", input),
+      listActivityRuns: (input) => this.context.read("applePush.listActivityRuns", input),
+      readActivityRuns: (input) => this.context.read("applePush.readActivityRuns", input),
+      prune: (input) => this.context.write("applePush.prune", input),
+    });
+  }
+
   perception(): PerceptionStorePort {
     return Object.freeze<PerceptionStorePort>({
       readSettings: (input) => this.context.read("perception.readSettings", input),
@@ -1242,6 +1267,7 @@ export class SqliteDurableAdapters {
       knownMediaDigests: (input) => this.context.read("perception.knownMediaDigests", input),
       ingestRecords: (input) => this.context.write("perception.ingestRecords", input),
       listDay: (input) => this.context.read("perception.listDay", input),
+      searchRecords: (input) => this.context.read("perception.searchRecords", input),
       countDay: (input) => this.context.read("perception.countDay", input),
       readEpisode: (input) => this.context.read("perception.readEpisode", input),
       setRecordStatus: (input) => this.context.write("perception.setRecordStatus", input),
