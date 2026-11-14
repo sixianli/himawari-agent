@@ -380,6 +380,7 @@ export interface RunPolicyConfiguration {
   readonly webPush?: WebPushConfiguration;
   readonly device?: DeviceConfiguration;
   readonly homeFeed?: HomeFeedConfiguration;
+  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -429,4 +430,17 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
+}
+
+export interface HomeUrgencyConfiguration {
+  readonly enabled: boolean;
+  readonly modelRef?: string;
+  readonly dailyLimit: number;
+  readonly dailyCostMicros: number;
+  readonly perCall: number;
+  readonly referenceLimit: number;
+  readonly requestTimeoutMs: number;
+  readonly checkIntervalSeconds: number;
+  readonly retryAfterHours: number;
+  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

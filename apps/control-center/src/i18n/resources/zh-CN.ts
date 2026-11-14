@@ -1501,6 +1501,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "邮件判断",
   "sensitive.purpose.action-review": "动作复核",
   "sensitive.purpose.review-prereview": "模型预评",
+  "sensitive.purpose.home-urgency": "首页要紧度打分",
   "sensitive.purpose.rule-review": "规则重审",
   "sensitive.purpose.other": "其他",
   "sensitive.maskedOnce": "{time} 遮住 1 次",

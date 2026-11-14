@@ -14,6 +14,7 @@ import {
   type ThreadGatewayRequestMessage,
 } from "@himawari-agent/application";
 import {
+  HOME_LOCALES,
   THREAD_GATEWAY_SCHEMA_VERSION,
   type ThreadExecutionEventsSubscription,
   type ThreadGatewayEvent,
@@ -23,6 +24,8 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   classifyDeviceGatewayRequest,
+  DEVICE_GATEWAY_ERROR_CODES,
+  DeviceGatewayError,
   type DeviceGatewayAuditFailure,
   type DeviceGateways,
   dispatchDeviceGatewayRequest,
@@ -52,6 +55,8 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads", signed: true },
   { method: "POST", path: "approvals/challenge", signed: true },
   { method: "POST", path: "gateway", signed: true },
+  { method: "GET", path: "home", signed: true },
+  { method: "POST", path: "home/act", signed: true },
   { method: "POST", path: "payloads/text/new", signed: true },
   { method: "POST", path: "threads", signed: true },
   { method: "GET", path: "threads/{threadId}", signed: true },
@@ -103,7 +108,29 @@ export interface DevicePairingAccess {
   readonly clientSecret: string;
 }
 
+export type DeviceHomeResolution =
+  | {
+      readonly ok: true;
+      readonly type: string;
+      readonly payload: Readonly<Record<string, unknown>>;
+      readonly ownerPresence: boolean;
+      readonly dataClassification: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "binding_invalid" | "item_gone" | "action_not_offered" | "binding_stale";
+    };
+
+export interface DeviceHomePort {
+  readonly resolveAction: (input: {
+    readonly key: string;
+    readonly action: string;
+    readonly binding: string;
+  }) => Promise<DeviceHomeResolution>;
+}
+
 export interface DeviceApiRouteOptions {
+  readonly home?: DeviceHomePort;
   readonly pairingAccess?: DevicePairingAccess;
   readonly publicOrigin: URL;
   readonly devices: PairedDeviceService;
@@ -175,6 +202,9 @@ function isNotFound(error: unknown): boolean {
 export function pairingAccessFields({ clientId, clientSecret }: DevicePairingAccess) {
   return { clientId, clientSecret };
 }
+
+const HOME_ACT_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+const HOME_ACT_REPLAY_LIMIT = 256;
 
 function stableSuffix(deviceId: string, messageId: string): string {
   return createHash("sha256").update(`${deviceId}\n${messageId}`).digest("hex").slice(0, 40);
@@ -295,6 +325,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       agentId: options.authority.agentId,
     }) as PairedDeviceScope;
   const now = () => (options.now ?? (() => new Date()))();
+  const homeActReplays = new Map<string, { readonly response: unknown; readonly at: number }>();
 
   app.register(
     async (device) => {
@@ -701,6 +732,101 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             authority: options.authority,
             gateways: options.gateways,
             audit: options.audit,
+            ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
+            now,
+          }),
+        );
+      });
+
+      device.get("/home", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const query = new URLSearchParams(rawQuery(request));
+        const locale = query.get("locale");
+        if (
+          [...query.keys()].some((name) => name !== "locale") ||
+          query.getAll("locale").length !== 1 ||
+          !(HOME_LOCALES as readonly string[]).includes(locale ?? "")
+        )
+          return options.rejectBody(400);
+        const result = (await dispatchDeviceGatewayRequest({
+          request: classifyDeviceGatewayRequest({
+            gateway: "v2",
+            type: "home.read",
+            messageId: `home-${stableSuffix(authenticated.device.id, now().toISOString())}`,
+            dataClassification: "private",
+            risk: "low",
+            payload: { locale },
+          }),
+          confirmed: authenticated.confirmed,
+          pairedDeviceId: authenticated.device.id,
+          authentication: authenticated.authentication,
+          authority: options.authority,
+          gateways: options.gateways,
+          audit: options.audit,
+          now,
+        })) as { readonly payload: unknown };
+        return options.sendJson(reply, 200, result.payload);
+      });
+
+      device.post("/home/act", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        const { key, action, binding, requestId } = body;
+        if (
+          Object.keys(body).some(
+            (name) => !["key", "action", "binding", "requestId"].includes(name),
+          ) ||
+          typeof key !== "string" ||
+          typeof action !== "string" ||
+          typeof requestId !== "string" ||
+          !MACHINE_STRING.test(requestId) ||
+          !options.home
+        )
+          return options.rejectBody(400);
+        if (typeof binding !== "string")
+          throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.HOME_ACTION_INVALID, 400);
+        const replayKey = `${authenticated.device.id}\n${requestId}`;
+        const replay = homeActReplays.get(replayKey);
+        if (replay && now().getTime() - replay.at < HOME_ACT_REPLAY_WINDOW_MS)
+          return options.sendJson(reply, 200, replay.response);
+        const resolved = await options.home.resolveAction({ key, action, binding });
+        if (!resolved.ok)
+          throw new DeviceGatewayError(
+            resolved.reason === "binding_invalid" || resolved.reason === "action_not_offered"
+              ? DEVICE_GATEWAY_ERROR_CODES.HOME_ACTION_INVALID
+              : DEVICE_GATEWAY_ERROR_CODES.HOME_ACTION_STALE,
+            resolved.reason === "binding_invalid" || resolved.reason === "action_not_offered"
+              ? 400
+              : 409,
+          );
+        const suffix = stableSuffix(authenticated.device.id, `home-act:${requestId}`);
+        const rememberHomeAct = (target: typeof reply, status: number, response: unknown) => {
+          homeActReplays.set(replayKey, { response, at: now().getTime() });
+          if (homeActReplays.size > HOME_ACT_REPLAY_LIMIT)
+            homeActReplays.delete(homeActReplays.keys().next().value as string);
+          return options.sendJson(target, status, response);
+        };
+        const classified = classifyDeviceGatewayRequest({
+          gateway: "v2",
+          type: resolved.type,
+          messageId: `home-act-${suffix}`,
+          idempotencyKey: `home-act-${suffix}`,
+          dataClassification: resolved.dataClassification,
+          risk: "low",
+          payload: resolved.payload,
+        });
+        return rememberHomeAct(
+          reply,
+          200,
+          await dispatchDeviceGatewayRequest({
+            request: { ...classified, tier: resolved.ownerPresence ? "change" : "tighten" },
+            confirmed: authenticated.confirmed,
+            pairedDeviceId: authenticated.device.id,
+            authentication: authenticated.authentication,
+            authority: options.authority,
+            gateways: options.gateways,
+            audit: options.audit,
+            auditAction: "device.home.act",
             ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
             now,
           }),

@@ -1606,6 +1606,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
   "sensitive.purpose.review-prereview": "モデルの事前採点",
+  "sensitive.purpose.home-urgency": "ホームの緊急度採点",
   "sensitive.purpose.rule-review": "ルールの再確認",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
