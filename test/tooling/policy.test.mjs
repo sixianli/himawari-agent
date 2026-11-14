@@ -196,6 +196,7 @@ function workflow() {
         "github.event_name",
         "github.event.pull_request.number || github.ref",
         "github.event_name == 'push' && github.run_id || ''",
+        "github.event.pull_request.draft == true && 'draft' || 'ready'",
       ]
         .map(githubExpression)
         .join("-"),
@@ -503,6 +504,15 @@ describe("CI policy contract", () => {
       "edited events rerunning CI",
       (value) => {
         value.on.pull_request.types.push("edited");
+      },
+    ],
+    [
+      "draft and ready runs sharing one concurrency group",
+      (value) => {
+        value.concurrency.group = value.concurrency.group.replace(
+          /-\$\{\{ github\.event\.pull_request\.draft[^}]*\}\}$/,
+          "",
+        );
       },
     ],
     [

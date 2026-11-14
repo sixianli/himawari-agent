@@ -66,6 +66,6 @@ PR <编号>，仓库 <路径>，分支 <分支>。材料文件：<brief 路径>�
 | `REVIEW_PREVIOUS_REFUSED`、`chain-broken` | [代码复核](model-review.md#code-review)第 6 步；用 `--finish-round` 打印的命令就不会传错 |
 | `VERDICTS_INVALID`、`FINISH_ROUND_REFUSED` | [代码复核](model-review.md#code-review)第 2 步的字段说明 |
 | `REVIEW_LOW_FIX_REFUSED` | [代码复核](model-review.md#code-review)第 3 步；拒绝原因同时记在 `.agents/reviews/pr-<编号>/low-fix-refusals.jsonl` |
-| `REVIEW_NOT_CURRENT` | [代码复核](model-review.md#code-review)第 6 步 |
+| `REVIEW_NOT_CURRENT`、`REVIEW_RECORD_INVALID` | [代码复核](model-review.md#code-review)第 6 步 |
 | `BUDGET_NEEDS_APPROVAL`、`api-error`、`GATEWAY_*` | [怎么跑](model-review.md#how-to-run)、[经 Magpie 调用模型](model-review.md#gateway) |
 | Andy 说停、跳过、换服务方 | [Andy 怎样控制复核](model-review.md#owner-control) |

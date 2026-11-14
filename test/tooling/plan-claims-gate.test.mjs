@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
   assertReviewed,
   buildPrompt,
@@ -16,11 +17,11 @@ import {
   reviewConfig,
   setRegisteredTestValues,
 } from "../../scripts/model-review/opencode-review.mjs";
-import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
   claimsProblems,
-  parseClaimVerdicts,
+  locationsOf,
   parseClaims,
+  parseClaimVerdicts,
   quoteInText,
 } from "../../scripts/model-review/plan-claims.mjs";
 
@@ -210,6 +211,23 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("  ", text)).toBe(false);
   });
 
+  it("[claims] reads several evidence places from one location field and refuses a broken one", () => {
+    expect(locationsOf("ci/policy.json:110,127")).toEqual([
+      { path: "ci/policy.json", line: 110, commit: null },
+      { path: "ci/policy.json", line: 127, commit: null },
+    ]);
+    expect(locationsOf("a.mjs:3,b/c.mjs:9-12")).toEqual([
+      { path: "a.mjs", line: 3, commit: null },
+      { path: "b/c.mjs", line: 9, commit: null },
+    ]);
+    expect(locationsOf("a.mjs:3")).toEqual([{ path: "a.mjs", line: 3, commit: null }]);
+    expect(locationsOf("-")).toEqual([]);
+    expect(locationsOf("127,a.mjs:3")).toEqual([]);
+    expect(locationsOf("/etc/passwd:1,a.mjs:3")).toEqual([]);
+    expect(locationsOf("a.mjs:3,/etc/passwd:1")).toEqual([]);
+    expect(locationsOf("a.mjs:3,../x.mjs:1")).toEqual([]);
+  });
+
   it("[claims] accepts several quoted fragments joined by a full-width semicolon only when every fragment is in the file in that order", () => {
     const text = "MemoryHigh=19G\nMemoryMax=20G\nnote: 第一步；第二步\n";
     expect(quoteInText("MemoryHigh=19G；MemoryMax=20G", text)).toBe(true);
@@ -217,6 +235,15 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("MemoryHigh=19G；MemoryMax=21G", text)).toBe(false);
     expect(quoteInText("MemoryHigh=19G；20G", text)).toBe(false);
     expect(quoteInText("MemoryHigh=19G；", text)).toBe(true);
+    expect(quoteInText("MemoryHigh=19G\\nMemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("MemoryMax=20G\\nMemoryHigh=19G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G / MemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("MemoryMax=20G / MemoryHigh=19G", text)).toBe(false);
+    const code = 'run([\n  "--",\n  ".github",\n]),\nnext();\n';
+    expect(quoteInText('"--", /  ".github", / ]), / next();', code)).toBe(true);
+    expect(quoteInText('"--", / ]), / ".github",', code)).toBe(false);
+    expect(quoteInText("]), / ;", code)).toBe(false);
+    expect(quoteInText("foo();；bar();", "foo();\nbar();\n")).toBe(false);
     expect(quoteInText("；", text)).toBe(false);
     expect(quoteInText("MemoryMax=20G；MemoryHigh=19G", text)).toBe(false);
     expect(quoteInText("MemoryHigh=19G；MemoryHigh=19G", text)).toBe(false);
@@ -521,6 +548,32 @@ describe("plan claims check: the merge gate", () => {
       });
       expect(claimsOnly(f.check())).toEqual([
         `claims-unjudged ${ADR} deepseek-v4.1-flash 7 找不到`,
+      ]);
+    }));
+
+  it("[claims gate] a quote over several places must sit in one cited file, and every place must exist", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: [
+          claimLine(
+            "1",
+            "一致",
+            `${REDACTION}:1,3`,
+            RIGHT_SENTENCE,
+            "export function maskSensitiveTexts(texts) { / const masked = mask(texts);",
+          ),
+          claimLine("2", "一致", `${REDACTION}:3,code.txt:1`, "第二句", `${CODE_LINE} / feature`),
+          claimLine("3", "一致", `${REDACTION}:3,no/such/file.ts:1`, "第三句", CODE_LINE),
+          claimLine("4", "一致", `${REDACTION}:3,99`, "第四句", CODE_LINE),
+          claimLine("5", "一致", `${REDACTION}:1,2,3,4,1,2,3,4,1`, "第五句", CODE_LINE),
+          "",
+        ].join("\n"),
+      });
+      expect(f.check().problems).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 2 code-quote-not-in-file`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-file-missing`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 4 location-line-out-of-range`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 5 too-many-places`,
       ]);
     }));
 

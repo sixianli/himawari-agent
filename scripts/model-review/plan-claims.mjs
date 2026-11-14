@@ -126,6 +126,9 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
+const MAX_EVIDENCE_PLACES = 8;
+const LINE_JOINS = /；|\\n|\s\/\s/u;
+
 function quoteFragments(quote, separator) {
   return stripQuoteMarks(quote)
     .split(separator)
@@ -136,11 +139,12 @@ function quoteFragments(quote, separator) {
 function fragmentsInOrder(fragments, haystack) {
   let from = 0;
   for (const fragment of fragments) {
-    const at = fragment.length >= 4 ? haystack.indexOf(fragment, from) : -1;
+    const tooShort = fragment.length < 4 && /[\p{L}\p{N}]/u.test(fragment);
+    const at = tooShort ? -1 : haystack.indexOf(fragment, from);
     if (at === -1) return false;
     from = at + fragment.length;
   }
-  return fragments.length > 0;
+  return fragments.some((fragment) => fragment.length >= EVIDENCE_MIN_CHARS);
 }
 
 export function quoteInText(quote, text) {
@@ -158,7 +162,28 @@ export function quoteInText(quote, text) {
       pieces.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
     );
   }
-  return fragmentsInOrder(quoteFragments(quote, /；/), haystack);
+  const whole = collapse(stripQuoteMarks(quote));
+  if (whole.length >= EVIDENCE_MIN_CHARS && haystack.includes(whole)) return true;
+  return fragmentsInOrder(quoteFragments(quote, LINE_JOINS), haystack);
+}
+
+export function locationsOf(location) {
+  const places = [];
+  for (const part of location.trim().split(/[,，]\s*/u)) {
+    const bare = /^`?(\d+)(?:-\d+)?`?$/u.exec(part);
+    if (bare && places.length > 0) {
+      places.push({
+        path: places.at(-1).path,
+        line: Number(bare[1]),
+        commit: places.at(-1).commit,
+      });
+      continue;
+    }
+    const place = locationOf(part);
+    if (!place) return [];
+    places.push(place);
+  }
+  return places;
 }
 
 function isAncestor(repo, ancestor, descendant) {
@@ -186,25 +211,32 @@ export function commitInPullRequest(repo, commit, head, mainRef, runHead = head)
 }
 
 function claimEvidenceProblem(repo, head, claim, mainRef, runHead) {
-  if (claim.verdict === "找不到" && !locationOf(claim.location)) return null;
-  const place = locationOf(claim.location);
-  if (!place) return "location-missing";
-  const atHead = blobAt(repo, head, place.path);
-  let blob = atHead;
-  if (place.commit !== null) {
-    if (!commitInPullRequest(repo, place.commit, head, mainRef, runHead)) return "commit-not-in-pr";
-    blob = blobAt(repo, place.commit, place.path);
+  const places = locationsOf(claim.location);
+  if (claim.verdict === "找不到" && places.length === 0) return null;
+  if (places.length === 0) return "location-missing";
+  if (places.length > MAX_EVIDENCE_PLACES) return "too-many-places";
+  const texts = new Map();
+  const headTexts = new Map();
+  for (const place of places) {
+    if (place.commit !== null && !commitInPullRequest(repo, place.commit, head, mainRef, runHead))
+      return "commit-not-in-pr";
+    const key = `${place.commit ?? head}:${place.path}`;
+    if (!texts.has(key)) {
+      const blob = blobAt(repo, place.commit ?? head, place.path);
+      if (blob === null) return "location-file-missing";
+      texts.set(key, blob.toString("utf8"));
+    }
+    const lines = texts.get(key).split("\n").length;
+    if (place.line < 1 || place.line > lines) return "location-line-out-of-range";
+    if (place.commit !== null && !headTexts.has(place.path)) {
+      const atHead = blobAt(repo, head, place.path);
+      headTexts.set(place.path, atHead === null ? null : atHead.toString("utf8"));
+    }
   }
-  if (blob === null) return "location-file-missing";
-  const text = blob.toString("utf8");
-  if (place.line < 1 || place.line > text.split("\n").length) return "location-line-out-of-range";
-  if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
-  if (
-    place.commit !== null &&
-    claim.verdict !== "找不到" &&
-    atHead !== null &&
-    quoteInText(claim.code, atHead.toString("utf8"))
-  )
+  if (claim.verdict === "找不到") return null;
+  if (![...texts.values()].some((text) => quoteInText(claim.code, text)))
+    return "code-quote-not-in-file";
+  if ([...headTexts.values()].some((text) => text !== null && quoteInText(claim.code, text)))
     return "commit-quote-still-in-head";
   return null;
 }
