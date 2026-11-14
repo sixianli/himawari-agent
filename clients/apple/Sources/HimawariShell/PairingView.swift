@@ -9,6 +9,7 @@ struct PairingView: View {
     let model: AppModel
     @State private var scanning: Bool
     @State private var confirmingStartOver = false
+    @State private var startOverWarning = ""
 
     init(model: AppModel, scanning: Bool = false) {
         self.model = model
@@ -48,7 +49,10 @@ struct PairingView: View {
                 VStack(spacing: 6) {
                     Button(L.text("pairing.retry")) { model.retryReadingKeys() }
                         .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
-                    linkButton(L.text("pairing.startOver")) { confirmingStartOver = true }
+                    linkButton(L.text("pairing.startOver")) {
+                        startOverWarning = Self.startOverWarningText(unsent: model.unsentMessages)
+                        confirmingStartOver = true
+                    }
                 }
             }
         case let .unpaired(problem?) where problem == .unreachable:
@@ -252,8 +256,8 @@ struct PairingView: View {
         return limit + plain
     }
 
-    private var startOverWarning: String {
-        switch model.unsentMessages {
+    private static func startOverWarningText(unsent: Int?) -> String {
+        switch unsent {
         case 0?: L.text("pairing.startOver.confirm")
         case let count?: L.format("pairing.startOver.confirmUnsent", count)
         case nil: L.text("pairing.startOver.confirmUnknown")
