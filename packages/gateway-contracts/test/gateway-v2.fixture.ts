@@ -631,6 +631,24 @@ export const governanceMessages = [
     recentAuthenticationRef: "auth-ref-01",
   }),
   fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
+  fixture("query", "search.ask.read", { query: "我对什么过敏", locale: "zh-CN" }),
+  fixture("snapshot", "search.ask.snapshot", {
+    state: "answered",
+    query: "我对什么过敏",
+    answer: "花生。",
+    notFoundText: null,
+    basis: [
+      {
+        kind: "conversation",
+        label: "10 月 21 日你在对话里说的",
+        memoryId: "memory-1",
+        threadId: "thread-1",
+        at: "2026-10-21T03:00:00.000Z",
+      },
+    ],
+    asks: [],
+    generatedAt: "2026-11-14T03:00:00.000Z",
+  }),
   fixture("query", "home.read", { locale: "zh-CN" }),
   fixture("snapshot", "home.snapshot", {
     items: [
