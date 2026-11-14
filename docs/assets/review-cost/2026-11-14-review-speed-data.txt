@@ -35,3 +35,10 @@ ADR 0270 背景一节的数字都出自这里。统计脚本是线程的临时�
 ## 自检耗时
 
 - 2026-11-14 在云端容器里实测，不带 Magpie 的自检，没有缓存时 22 秒，命中缓存时 11 秒。
+
+## 留下的数据和对比报告（2026-11-14 加）
+
+- 每一轮复核的步数、token、费用、时长都在 `.agents/reviews/pr-N/usage.jsonl`，成立的中高意见在 `pr-N/round-M/verdicts.jsonl`。自检耗时（`selfCheckMs`）、自检缓存命中（`selfCheckCache`：`hit`、`miss`、`off`）和 DeepSeek 一次运行时长（`runMs`）只有新记录有，旧记录没有。
+- 优化前的逐轮数据存在 `2026-11-14-review-rounds-baseline.csv`（2026-11-14 14:38 UTC，即 PR 496 合并之前的 941 轮，比上面 665 轮的统计范围大，因为后来又复核了更多 PR），之后不再改。
+- 重算对比表：`node scripts/model-review/review-speed-report.mjs --cut <分界时间>`；按 PR 或日期查逐轮数据：`--csv`。脚本只读账本，不花钱。
+- 对比表里“优化后”一列按分界时间划分，跨过分界的 PR 只有分界之后的轮算进去，所以每个 PR 平均轮数在样本少时偏低，要等 5 个以上的 PR 从头到尾走完新流程再下结论。
