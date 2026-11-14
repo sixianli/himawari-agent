@@ -164,7 +164,8 @@ export function createProductionApprovalGateway(options: {
                                 ? options.filesControl.query(query, context)
                                 : query.type.startsWith("device.") && options.deviceControl
                                   ? options.deviceControl.query(query)
-                                  : query.type.startsWith("perception.") && options.perceptionControl
+                                  : query.type.startsWith("perception.") &&
+                                      options.perceptionControl
                                     ? options.perceptionControl.query(query)
                                     : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {

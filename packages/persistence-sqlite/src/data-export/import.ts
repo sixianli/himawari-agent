@@ -14,6 +14,7 @@ import {
 import { validateAgainst } from "./schema.js";
 import {
   externalProposalDigestKey,
+  EMPTY_PERCEPTION_COUNTS,
   externalProposalTextKey,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
   SEALED_FILE,

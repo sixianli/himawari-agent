@@ -42,6 +42,7 @@ import {
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
   externalProposalBatchId,
@@ -254,6 +255,7 @@ export class ProductionMemoryControl {
       "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -901,7 +903,11 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.rules.snapshot",
-      payload: { rules, generatedAt: this.options.clock.now() },
+      payload: {
+        rules,
+        builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        generatedAt: this.options.clock.now(),
+      },
     };
   }
 
@@ -1740,6 +1746,19 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
+    }
+    if (
+      command.type === "memory.rule.respond" &&
+      (command.payload.action === "ask_first" || command.payload.action === "allow_directly")
+    ) {
+      const switches = this.options.actionRules;
+      if (!switches)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      await switches.setAskFirst(command.payload.target, command.payload.action === "ask_first");
+      return { resultRef: command.payload.target, replayed: false };
     }
     if (command.type === "memory.review.respond") {
       const { reviews } = this.#reviews();

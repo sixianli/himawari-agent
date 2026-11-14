@@ -172,6 +172,7 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 6], start: "22:00", end: "08:00" }],
     importantSenders: ["@city.shinjuku.lg.jp"],
   }),
+  fixture("command", "proactive.pause", {}),
   fixture("command", "proactive.insight.respond", {
     insightId: "proactive-insight-01",
     action: "rate",
@@ -1083,7 +1084,29 @@ export const governanceMessages = [
         },
       },
     ],
+    builtIn: [
+      {
+        ruleId: "action_preauthorize_owner_data",
+        revision: 1,
+        outcome: "allow_preauthorized",
+        examplesHit: 2,
+        examplesMiss: 6,
+        askFirst: false,
+      },
+      {
+        ruleId: "action_ask_after_external_content",
+        revision: 1,
+        outcome: "ask_owner",
+        examplesHit: 2,
+        examplesMiss: 3,
+        askFirst: null,
+      },
+    ],
     generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.rule.respond", {
+    target: "action_preauthorize_owner_data",
+    action: "ask_first",
   }),
   fixture("command", "memory.rule.respond", {
     target: "owner:0123456789abcdef01234567",

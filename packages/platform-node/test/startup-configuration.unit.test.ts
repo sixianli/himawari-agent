@@ -2079,3 +2079,36 @@ it("accepts the approval preview length only from 1 to 2000 characters and leave
     );
   }
 });
+
+it("[ADR-0257] reads the tool refusal limits from the run policy and rejects values out of range", () => {
+  const raw = config("/tmp/himawari-tool-refusals-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.toolRefusals,
+  ).toBeUndefined();
+  raw["runPolicy"] = { ...policy, toolRefusals: { consecutive: 2, total: 9 } };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.toolRefusals,
+  ).toEqual({ consecutive: 2, total: 9 });
+  for (const toolRefusals of [
+    { consecutive: 0, total: 9 },
+    { consecutive: 2, total: 0 },
+    { consecutive: 2 },
+    { consecutive: 2, total: 9, extra: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, toolRefusals };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          field: expect.stringContaining("configuration.runPolicy.toolRefusals"),
+        }),
+      }),
+    );
+  }
+});

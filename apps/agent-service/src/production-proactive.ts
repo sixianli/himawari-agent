@@ -55,6 +55,7 @@ import type { ProactivePushSource } from "./production-web-push.js";
 export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.overview.read",
   "proactive.settings.set",
+  "proactive.pause",
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
@@ -656,6 +657,10 @@ export class ProductionProactive {
           importantSenders: [...new Set(command.payload.importantSenders.map(normalizeSender))],
           now,
         });
+        return { resultRef: "proactive-settings", replayed: false };
+      }
+      case "proactive.pause": {
+        await store.setEnabled({ ...scope, enabled: false, now });
         return { resultRef: "proactive-settings", replayed: false };
       }
       case "proactive.insight.respond": {

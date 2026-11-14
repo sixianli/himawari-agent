@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
@@ -46,6 +46,7 @@ export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   UPLOAD_IN_PROGRESS: "DEVICE_UPLOAD_IN_PROGRESS",
   LIMIT_REACHED: "DEVICE_LIMIT_REACHED",
   SETTINGS_INVALID: "PERCEPTION_SETTINGS_INVALID",
+  CHALLENGE_INVALID: "DEVICE_CHALLENGE_INVALID",
 } as const);
 
 export type PairedDeviceErrorCode =
@@ -79,6 +80,7 @@ export interface PairedDeviceServiceOptions {
   readonly configuration: () => DeviceConfiguration;
   readonly ownerActive: (scope: PairedDeviceScope) => Promise<boolean>;
   readonly owners?: PairedDeviceOwnerDirectory;
+  readonly ownerSubject?: (scope: PairedDeviceScope) => Promise<string | undefined>;
   readonly now?: () => Date;
   readonly randomBytes?: (size: number) => Buffer;
   readonly onWarning?: (warning: PairedDeviceWarning) => void;
@@ -113,6 +115,10 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => keys.includes(key));
 }
 
+const CHALLENGE_RANDOM_BYTES = 12;
+const CHALLENGE_MAC_BYTES = 18;
+const CHALLENGE_BYTES = 4 + CHALLENGE_RANDOM_BYTES + CHALLENGE_MAC_BYTES;
+
 function canonicalSpki(value: string): string {
   return publicKeyFromSpkiBase64(value).export({ format: "der", type: "spki" }).toString("base64");
 }
@@ -121,9 +127,11 @@ export class PairedDeviceService {
   readonly #options: PairedDeviceServiceOptions;
   readonly #warnedAt = new Map<string, number>();
   readonly #owners: PairedDeviceOwnerDirectory;
+  readonly #challengeKey: Buffer;
 
   constructor(options: PairedDeviceServiceOptions) {
     this.#options = options;
+    this.#challengeKey = (options.randomBytes ?? randomBytes)(32);
     this.#owners = options.owners ?? {
       ownerOf: async (deviceId) => {
         const device = await options.store.readDevice(deviceId);
@@ -282,6 +290,40 @@ export class PairedDeviceService {
     return device;
   }
 
+  #challengeMac(deviceId: string, head: Buffer): Buffer {
+    return createHmac("sha256", this.#challengeKey)
+      .update(deviceId)
+      .update("\n")
+      .update(head)
+      .digest()
+      .subarray(0, CHALLENGE_MAC_BYTES);
+  }
+
+  issueConfirmChallenge(deviceId: string): {
+    readonly challenge: string;
+    readonly expiresAt: string;
+  } {
+    const now = this.#now();
+    const expiresAtSeconds =
+      Math.floor(now.getTime() / 1000) + this.#options.configuration().signatureToleranceSeconds;
+    const head = Buffer.alloc(4 + CHALLENGE_RANDOM_BYTES);
+    head.writeUInt32BE(expiresAtSeconds, 0);
+    this.#random(CHALLENGE_RANDOM_BYTES).copy(head, 4);
+    return Object.freeze({
+      challenge: Buffer.concat([head, this.#challengeMac(deviceId, head)]).toString("base64url"),
+      expiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
+    });
+  }
+
+  #challengeValid(deviceId: string, challenge: string, now: Date): boolean {
+    const bytes = Buffer.from(challenge, "base64url");
+    if (bytes.length !== CHALLENGE_BYTES || bytes.toString("base64url") !== challenge) return false;
+    const head = bytes.subarray(0, 4 + CHALLENGE_RANDOM_BYTES);
+    const mac = bytes.subarray(4 + CHALLENGE_RANDOM_BYTES);
+    if (!timingSafeEqual(mac, this.#challengeMac(deviceId, head))) return false;
+    return Math.floor(now.getTime() / 1000) <= head.readUInt32BE(0);
+  }
+
   async authenticate(input: {
     readonly request: DeviceSignedRequest;
     readonly expectedAuthority: string;
@@ -312,6 +354,8 @@ export class PairedDeviceService {
     });
     const current = device as PairedDevice | undefined;
     if (!current) throw new DeviceSignatureError(DEVICE_SIGNATURE_ERROR_CODES.KEY_UNKNOWN);
+    if (verified.confirmed && !this.#challengeValid(current.id, verified.nonce, now))
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.CHALLENGE_INVALID, 401);
     if (current.status === "revoked")
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
     if (current.status !== "active" || current.webSessionId === null)
@@ -345,17 +389,38 @@ export class PairedDeviceService {
     if (!session || session.status !== "active" || session.ownerId !== current.ownerId)
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
     await this.#options.store.touchDevice({ deviceId: current.id, now: now.toISOString() });
+    const authentication: GatewayAuthenticationContext = {
+      subjectId: current.ownerId,
+      ownerId: current.ownerId,
+      deviceId: session.deviceId,
+      authenticatedAt: now.toISOString(),
+      authenticationRef: session.authenticationRef,
+      sessionId: session.id,
+    };
+    const externalSubjectRef = verified.confirmed
+      ? await this.#options.ownerSubject?.({ ownerId: current.ownerId, agentId: current.agentId })
+      : undefined;
     return Object.freeze({
       device: current,
       confirmed: verified.confirmed,
-      authentication: Object.freeze({
-        subjectId: current.ownerId,
-        ownerId: current.ownerId,
-        deviceId: session.deviceId,
-        authenticatedAt: now.toISOString(),
-        authenticationRef: session.authenticationRef,
-        sessionId: session.id,
-      }),
+      authentication: Object.freeze(
+        externalSubjectRef
+          ? {
+              ...authentication,
+              recentAuthenticationEvidence: Object.freeze({
+                source: "device_confirmation_key" as const,
+                externalSubjectRef,
+                ownerId: session.ownerId,
+                deviceId: session.deviceId,
+                authenticationRef: session.authenticationRef,
+                authenticatedAt: now.toISOString(),
+                expiresAt: new Date(
+                  now.getTime() + configuration.signatureToleranceSeconds * 1000,
+                ).toISOString(),
+              }),
+            }
+          : authentication,
+      ),
     });
   }
 

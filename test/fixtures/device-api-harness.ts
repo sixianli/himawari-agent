@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  createProactiveSeal,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
@@ -11,6 +12,7 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
+  RecentAuthenticationGuard,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
@@ -51,10 +53,12 @@ import {
 } from "@himawari-agent/testing";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
+import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
 } from "../../apps/agent-service/src/production-http-composition.ts";
+import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
 
 export const ownerId = createOwnerId("owner-device-api");
 export const agentId = createAgentId("agent-device-api");
@@ -67,6 +71,7 @@ export const authority: ProductAuthorityFence = {
 const origin = "https://himawari.example";
 export const webToken = "web-session-token-for-device-api-test";
 const csrfKey = new Uint8Array(32).fill(5);
+export const ownerSubjectRef = "cloudflare-access:owner-device-api";
 const temporaryDirectories: string[] = [];
 
 export async function removeDeviceHarnessDirectories(): Promise<void> {
@@ -132,6 +137,18 @@ export async function harness(
     now: () => clock.now(),
   });
   const sessions = repository.sessionDeviceState();
+  const identityState = repository.ownerIdentityState();
+  await identityState.bindFirstOwner({
+    ownerId,
+    externalSubjectRef: ownerSubjectRef,
+    boundAt: clock.now(),
+  });
+  const recentAuthentication = new RecentAuthenticationGuard({
+    identityState,
+    sessionState: sessions,
+    policy: { maximumAgeMilliseconds: 300_000, clockSkewMilliseconds: 0 },
+    now: () => clock.now(),
+  });
   const webDevice = await sessions.saveDevice(
     {
       id: createDeviceId("device:web-browser"),
@@ -192,6 +209,7 @@ export async function harness(
           repository: threads,
           clock,
           authority: () => authority,
+          recentAuthentication,
         }),
         execution: new ThreadExecutionProjection({
           threads,
@@ -205,6 +223,28 @@ export async function harness(
       });
       return { controlPlane: adapter, reads: adapter };
     })(),
+  });
+  const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
+  const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
+  const gatewayV2 = createProductionApprovalGateway({
+    configuration: { ownerId, agentId },
+    repository,
+    access: threadAccess,
+    recentAuthentication,
+    clock,
+    authority: () => authority,
+    executionAuthority: () => authority as never,
+    museControl: new ProductionMuseControl({
+      scope: { ownerId, agentId },
+      store: repository.museIntake(),
+      seal: createProactiveSeal({
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector,
+        ids,
+      }),
+      ids,
+      clock,
+    }),
   });
   const configuration = {
     current: {
@@ -263,6 +303,7 @@ export async function harness(
     },
     csrf,
     threadGateway,
+    gatewayV2,
     payloadAdmission,
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
@@ -282,10 +323,15 @@ export async function harness(
         configuration: () => configuration.current,
         ownerActive: async (scope) =>
           ownerActive.current && scope.ownerId === ownerId && scope.agentId === agentId,
+        ownerSubject: async (scope) =>
+          scope.ownerId === ownerId
+            ? (await identityState.readByOwner(ownerId))?.externalSubjectRef
+            : undefined,
         now,
         onWarning: (warning) => warnings.push(warning),
       }),
       configuration: () => configuration.current,
+      audit: repository.auditLedger(),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
       perception,
     },
@@ -406,4 +452,62 @@ export async function send(h: Harness, request: ReturnType<typeof buildDeviceTes
     headers: request.headers,
     ...(request.body ? { payload: request.body } : {}),
   });
+}
+
+export async function threadCommand(
+  h: Harness,
+  type: string,
+  idempotencyKey: string,
+  payload: (resultRef: string) => Record<string, unknown>,
+) {
+  const resultRef = (
+    await new ProductionHttpPayloadAdmission({
+      ownerId,
+      agentId,
+      sessions: h.repository.sessionDeviceState(),
+      payloads: h.repository.payloadStore(ownerId, agentId),
+      protector: new EnvelopePayloadProtector({
+        keys: {
+          kind: "memory-development",
+          productionSuitable: false,
+          resolve: async () => new Uint8Array(32).fill(9),
+        },
+        activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
+      }),
+      clock: () => h.clock.now(),
+    }).protect({
+      authentication: h.webAuthentication,
+      idempotencyKey,
+      content: `thread-action:${type}`,
+      dataClassification: "private",
+      contentType: "text/plain",
+    })
+  ).payloadRef;
+  const response = await h.app.inject({
+    method: "POST",
+    url: "/api/gateway/thread/v3/commands",
+    headers: { ...(await h.webHeaders()), "idempotency-key": idempotencyKey },
+    payload: JSON.stringify({
+      schemaVersion: "gateway.thread.v3",
+      kind: "command",
+      type,
+      messageId: `message:${idempotencyKey}`,
+      correlationId: "correlation:device-test",
+      causationId: null,
+      scope: { ownerId, agentId },
+      authority,
+      actor: { actorType: "owner", actorId: ownerId },
+      idempotencyKey,
+      payload: payload(resultRef),
+    }),
+  });
+  expect(response.statusCode, response.body).toBe(200);
+}
+
+export async function createThread(h: Harness, threadId: string) {
+  await threadCommand(h, "thread.create", `create:${threadId}`, (resultRef) => ({
+    threadId,
+    answerLocale: "zh-CN",
+    resultRef,
+  }));
 }

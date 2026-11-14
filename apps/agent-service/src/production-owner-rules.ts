@@ -29,8 +29,10 @@ import {
   validRuleSummary,
   writableRuleType,
 } from "@himawari-agent/application";
+import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -249,6 +251,7 @@ interface Proposal {
   readonly quote: string;
   readonly threadId: string | null;
   readonly source?: string;
+  readonly externalOrigins?: readonly string[];
 }
 
 export interface RulePreview {
@@ -326,6 +329,18 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   for (let start = 0; start + quote.length <= clauses.length; start += 1)
     if (quote.every((clause, index) => clauses[start + index] === clause)) return true;
   return false;
+}
+
+function ruleSource(proposal: Proposal): string {
+  const base = proposal.source ?? `chat:${proposal.threadId ?? "none"}`;
+  const origins = [...new Set(proposal.externalOrigins ?? [])].sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
+  return (
+    origins.length === 0
+      ? base
+      : `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${origins.join(",")}|${base}`
+  ).slice(0, 256);
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
@@ -418,6 +433,7 @@ export class ProductionOwnerRuleWriter {
     readonly text: string;
     readonly category: "rule" | "preference";
     readonly threadId: string | null;
+    readonly externalOrigins?: readonly string[];
   }): Promise<MemoryId> {
     const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
       this.#scope(),
@@ -439,7 +455,10 @@ export class ProductionOwnerRuleWriter {
           contentRef,
           dataClassification: classification as ProductMemoryRecord["dataClassification"],
           sourceThreadId: input.threadId as ProductMemoryRecord["sourceThreadId"],
-          sourceRefs: [contentRef],
+          sourceRefs: [
+            contentRef,
+            ...externalContentSourceRefs(memoryId, input.externalOrigins ?? []),
+          ],
           inference: false,
           confidencePermille: 1000,
           policyVersion: RULE_POLICY_VERSION,
@@ -524,13 +543,14 @@ export class ProductionOwnerRuleWriter {
       text: `${proposal.quote}\n${parsed.summary}`,
       category: "rule",
       threadId: proposal.threadId,
+      ...(proposal.externalOrigins?.length ? { externalOrigins: proposal.externalOrigins } : {}),
     });
     const outcome = await this.#options.rules
       .create({
         ...this.#scope(),
         ruleId,
         parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
-        source: (proposal.source ?? `chat:${proposal.threadId ?? "none"}`).slice(0, 256),
+        source: ruleSource(proposal),
         sourceMemoryId: memoryId,
         now: this.#options.clock.now(),
       })
@@ -599,6 +619,7 @@ export class ProductionOwnerRuleWriter {
     readonly summary: string;
     readonly threadId: string | null;
     readonly source?: string;
+    readonly externalOrigins?: readonly string[];
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
     const summary = input.summary.trim();
@@ -613,6 +634,7 @@ export class ProductionOwnerRuleWriter {
         text: `${quote}\n${summary}`,
         category: "preference",
         threadId: input.threadId,
+        ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
       });
       return Object.freeze({
         status: "soft",
@@ -637,6 +659,7 @@ export class ProductionOwnerRuleWriter {
       quote,
       threadId: input.threadId,
       ...(input.source === undefined ? {} : { source: input.source }),
+      ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
     };
     const explicit =
       !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
@@ -817,7 +840,10 @@ export class ProductionOwnerRuleTools {
     this.#writer = writer;
   }
 
-  async run(invocation: RuntimeToolInvocation): Promise<unknown> {
+  async run(
+    invocation: RuntimeToolInvocation,
+    provenance: { readonly externalOrigins?: readonly string[] } = {},
+  ): Promise<unknown> {
     const args = invocation.arguments;
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
@@ -849,6 +875,9 @@ export class ProductionOwnerRuleTools {
       params,
       summary,
       threadId: invocation.context?.threadId ?? null,
+      ...(provenance.externalOrigins?.length
+        ? { externalOrigins: provenance.externalOrigins }
+        : {}),
     });
   }
 }

@@ -1088,6 +1088,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<ProactiveStorePort>({
       readSettings: (input) => this.context.read("proactive.readSettings", input),
       writeSettings: (input) => this.context.write("proactive.writeSettings", input),
+      setEnabled: (input) => this.context.write("proactive.setEnabled", input),
       readConnection: (input) => this.context.read("proactive.readConnection", input),
       saveConnection: (input) => this.context.write("proactive.saveConnection", input),
       markConnection: (input) => this.context.write("proactive.markConnection", input),

@@ -42,6 +42,7 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
@@ -1493,6 +1494,20 @@ function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["real
   });
 }
 
+function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
+  const input = record(value, "configuration.runPolicy.toolRefusals");
+  rejectUnknown(input, ["consecutive", "total"], "configuration.runPolicy.toolRefusals");
+  return Object.freeze({
+    consecutive: integer(
+      input["consecutive"],
+      "configuration.runPolicy.toolRefusals.consecutive",
+      1,
+      1000,
+    ),
+    total: integer(input["total"], "configuration.runPolicy.toolRefusals.total", 1, 10000),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1501,6 +1516,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "version",
       "timeZone",
       "approvalBodyPreviewCharacters",
+      "toolRefusals",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1553,6 +1569,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
             APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
           ),
         }),
+    ...(input["toolRefusals"] === undefined
+      ? {}
+      : { toolRefusals: parseToolRefusals(input["toolRefusals"]) }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
