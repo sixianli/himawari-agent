@@ -98,6 +98,7 @@ export function generate(tokens) {
   scalars("Opacity", tokens.opacity, "Double");
   scalars("Pairing", tokens.pairing ?? {});
   scalars("Scanner", tokens.scanner ?? {});
+  scalars("Handover", tokens.handover ?? {});
   scalars("Mac", tokens.mac ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
@@ -123,11 +124,87 @@ export function generate(tokens) {
   return lines.join("\n");
 }
 
+const kebab = (name) => identifier(name).replace(/[A-Z0-9]+/gu, (part) => `-${part.toLowerCase()}`);
+
+export function generateCss(tokens) {
+  const block = (selector, entries) => [
+    `${selector} {`,
+    ...entries.map(([k, v]) => `  --${k}: ${v};`),
+    "}",
+  ];
+  const colors = (theme) =>
+    Object.keys(tokens.color[theme])
+      .sort()
+      .map((name) => {
+        const [r, g, b, a] = parseColor(tokens.color[theme][name]);
+        return [`color-${kebab(name)}`, `rgba(${r}, ${g}, ${b}, ${a})`];
+      })
+      .concat(
+        Object.keys(tokens.shadow?.[theme] ?? {})
+          .sort()
+          .map((name) => {
+            const { x, y, blur, color } = parseShadow(tokens.shadow[theme][name]);
+            return [
+              `shadow-${kebab(name)}`,
+              `${number(x)}px ${number(y)}px ${number(blur)}px rgba(${color.join(", ")})`,
+            ];
+          }),
+      );
+  const scalars = (group, object) =>
+    Object.keys(object ?? {})
+      .sort()
+      .flatMap((name) => {
+        const value = object[name];
+        if (typeof value === "number") return [[`${group}-${kebab(name)}`, `${number(value)}px`]];
+        if (Array.isArray(value) && value.every((item) => typeof item === "number"))
+          return [[`${group}-${kebab(name)}`, value.map((item) => `${number(item)}px`).join(" ")]];
+        return [];
+      });
+  const type = Object.keys(tokens.type)
+    .sort()
+    .flatMap((name) => {
+      const value = tokens.type[name];
+      if (!Array.isArray(value)) return [];
+      const [size, weight, ...rest] = value;
+      const lineHeight = rest.find((extra) => typeof extra === "number");
+      return [
+        [`type-${kebab(name)}-size`, `${number(size)}px`],
+        [`type-${kebab(name)}-weight`, number(weight)],
+        [
+          `type-${kebab(name)}-line-height`,
+          lineHeight === undefined
+            ? "normal"
+            : lineHeight > 3
+              ? `${number(lineHeight)}px`
+              : number(lineHeight),
+        ],
+      ];
+    });
+  const fixed = [
+    ...scalars("radius", tokens.radius),
+    ...scalars("size", tokens.size),
+    ...scalars("icon", tokens.icon),
+    ...scalars("handover", tokens.handover),
+    ...type,
+  ];
+  return [
+    ...block(":root", [...colors("light"), ...fixed]),
+    "@media (prefers-color-scheme: dark) {",
+    ...block(":root", colors("dark")).map((line) => `  ${line}`),
+    "}",
+    "",
+  ].join("\n");
+}
+
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
-  const [input, output] = process.argv.slice(2);
+  const [input, output, cssOutput] = process.argv.slice(2);
   if (!input || !output) {
-    process.stderr.write("usage: node make-design-tokens.mjs <tokens.json> <DesignTokens.swift>\n");
+    process.stderr.write(
+      "usage: node make-design-tokens.mjs <tokens.json> <DesignTokens.swift> [tokens.css]\n",
+    );
     process.exit(2);
   }
-  writeFileSync(output, generate(JSON.parse(readFileSync(input, "utf8"))));
+  const tokens = JSON.parse(readFileSync(input, "utf8"));
+  writeFileSync(output, generate(tokens));
+  if (cssOutput) writeFileSync(cssOutput, generateCss(tokens));
 }
