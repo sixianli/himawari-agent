@@ -100,8 +100,8 @@ async function seed(target: Side, item: Seed): Promise<void> {
     );
 }
 
-async function seeded(): Promise<Side> {
-  const source = await side("owner-proposals-source");
+async function seeded(name = "owner-proposals-source"): Promise<Side> {
+  const source = await side(name);
   await seed(source, { id: pid(1), basis: "依据：主人说过早上才看提醒" });
   await seed(source, {
     id: pid(2),
@@ -289,5 +289,50 @@ describe("the owner's proposal box travels with the data export", () => {
     await expect(importInto(target, files, PASSPHRASE)).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });
+  });
+
+  it("[P1-6][reverse] counts a basis or execution original that cannot be read instead of dropping it silently", async () => {
+    const source = await seeded();
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-basis-%' AND ref = (SELECT MIN(ref) FROM payloads WHERE ref LIKE 'payload-owner-proposal-basis-%')",
+      )
+      .run();
+    const { manifest } = await exportOf(source);
+    const entry = manifest.omitted.find(({ what }) => what.includes("读不出来"));
+    expect(entry?.count).toBe(1);
+    const clean = await seeded("owner-proposals-clean");
+    expect(
+      (await exportOf(clean)).manifest.omitted.some(({ what }) => what.includes("读不出来")),
+    ).toBe(false);
+  });
+
+  it("[P1-6][reverse] counts an unreadable execution original, and each unreadable text once", async () => {
+    const source = await seeded();
+    await seed(source, {
+      id: pid(6),
+      status: "accepted",
+      execStatus: "succeeded",
+      basis: "依据：两项都会读不出",
+      execution: '{"original":"2026-11-13T00:00:00.000Z"}',
+    });
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-execution-%'",
+      )
+      .run();
+    const only = (await exportOf(source)).manifest.omitted.find(({ what }) =>
+      what.includes("读不出来"),
+    );
+    expect(only?.count).toBe(2);
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-basis-%'",
+      )
+      .run();
+    const both = (await exportOf(source)).manifest.omitted.find(({ what }) =>
+      what.includes("读不出来"),
+    );
+    expect(both?.count).toBe(5);
   });
 });
