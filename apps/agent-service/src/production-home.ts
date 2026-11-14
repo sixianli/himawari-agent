@@ -31,8 +31,32 @@ import {
   HOME_KEY_MAXIMUM,
   machineString,
 } from "@himawari-agent/gateway-contracts";
+import {
+  approvalCommand,
+  decodeHomeBinding,
+  encodeHomeBinding,
+  externalCommand,
+  type HomeCommand,
+  insightCommand,
+  memoryRequestCommand,
+  reminderCommand,
+  ruleCommand,
+} from "./production-home-binding.js";
 import type { ProductionMemoryControl } from "./production-memory-control.js";
 import type { ProductionProactive } from "./production-proactive.js";
+
+export type HomeActionResolution =
+  | {
+      readonly ok: true;
+      readonly type: HomeCommand["type"];
+      readonly payload: Readonly<Record<string, unknown>>;
+      readonly ownerPresence: boolean;
+      readonly dataClassification: HomeCandidate["dataClassification"];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "binding_invalid" | "item_gone" | "action_not_offered" | "binding_stale";
+    };
 
 export const PRODUCTION_HOME_OPERATIONS = Object.freeze(["home.read"] as const);
 
@@ -113,6 +137,7 @@ function action(
     readonly label?: string;
     readonly modelLabel?: string | null;
     readonly ownerPresence?: boolean;
+    readonly command?: HomeCommand;
   } = {},
 ): HomeAction {
   const ownerPresence = options.ownerPresence ?? false;
@@ -123,6 +148,7 @@ function action(
     polarity,
     ownerPresence,
     reviewLabel: ownerPresence ? HOME_TEXT[locale].reviewFirst : null,
+    binding: options.command ? encodeHomeBinding(options.command) : null,
   };
 }
 
@@ -267,7 +293,14 @@ function mailSource(proactive: Pick<ProductionProactive, "overview">): HomeSourc
             },
             deadline: insight.dueAt,
             createdAt: insight.createdAt,
-            actions: [action(locale, "done", "positive"), action(locale, "mute", "negative")],
+            actions: [
+              action(locale, "done", "positive", {
+                command: insightCommand(insight.id, "done"),
+              }),
+              action(locale, "mute", "negative", {
+                command: insightCommand(insight.id, "mute"),
+              }),
+            ],
             ruleHit: insight.floorRaised,
             dataClassification: insight.dataClassification,
           }),
@@ -332,9 +365,15 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: reminder.dueAt,
               createdAt: reminder.remindAt,
               actions: [
-                action(locale, "dismiss", "positive"),
-                action(locale, "snooze", "neutral"),
-                action(locale, "cancel", "negative"),
+                action(locale, "dismiss", "positive", {
+                  command: reminderCommand(reminder.reminderId, "dismiss"),
+                }),
+                action(locale, "snooze", "neutral", {
+                  command: reminderCommand(reminder.reminderId, "snooze"),
+                }),
+                action(locale, "cancel", "negative", {
+                  command: reminderCommand(reminder.reminderId, "cancel"),
+                }),
               ],
               ruleHit: false,
               dataClassification: reminder.dataClassification,
@@ -372,8 +411,13 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: null,
               createdAt: request.requestedAt,
               actions: [
-                action(locale, "approved", "positive", { label: HOME_TEXT[locale].remember }),
-                action(locale, "rejected", "negative"),
+                action(locale, "approved", "positive", {
+                  label: HOME_TEXT[locale].remember,
+                  command: memoryRequestCommand(request.requestId, "approved"),
+                }),
+                action(locale, "rejected", "negative", {
+                  command: memoryRequestCommand(request.requestId, "rejected"),
+                }),
               ],
               ruleHit: false,
               dataClassification: request.dataClassification,
@@ -411,7 +455,14 @@ function memorySources(memory: MemorySources): HomeSource[] {
               },
               deadline: null,
               createdAt: proposal.receivedAt,
-              actions: [action(locale, "keep", "positive"), action(locale, "reject", "negative")],
+              actions: [
+                action(locale, "keep", "positive", {
+                  command: externalCommand(proposal.proposalId, "keep"),
+                }),
+                action(locale, "reject", "negative", {
+                  command: externalCommand(proposal.proposalId, "reject"),
+                }),
+              ],
               ruleHit: false,
               dataClassification: proposal.dataClassification,
             }),
@@ -444,8 +495,12 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: null,
               createdAt: rule.updatedAt,
               actions: [
-                action(locale, "reconfirm", "positive"),
-                action(locale, "undo", "negative"),
+                action(locale, "reconfirm", "positive", {
+                  command: ruleCommand(rule.ruleId, "reconfirm"),
+                }),
+                action(locale, "undo", "negative", {
+                  command: ruleCommand(rule.ruleId, "undo"),
+                }),
               ],
               ruleHit: false,
               dataClassification: rule.dataClassification,
@@ -566,8 +621,11 @@ function approvalSource(
               ownerPresence:
                 "recentAuthenticationRequired" in approval &&
                 approval.recentAuthenticationRequired === true,
+              command: approvalCommand(approval, "approved"),
             }),
-            action(locale, "denied", "negative"),
+            action(locale, "denied", "negative", {
+              command: approvalCommand(approval, "denied"),
+            }),
           ],
           ruleHit: false,
           dataClassification: approval.intentSnapshot.dataClassification,
@@ -780,6 +838,28 @@ export class ProductionHomeControl {
 
   awaitingCount(): Promise<number | undefined> {
     return this.#service.awaitingCount();
+  }
+
+  async resolveAction(input: {
+    readonly key: string;
+    readonly action: string;
+    readonly binding: string;
+  }): Promise<HomeActionResolution> {
+    const command = decodeHomeBinding(input.binding);
+    if (!command) return { ok: false, reason: "binding_invalid" };
+    const feed = await this.#service.read({ locale: "en" });
+    const item = feed.items.find(({ key }) => key === input.key);
+    if (!item) return { ok: false, reason: "item_gone" };
+    const chosen = item.actions.find(({ action: name }) => name === input.action);
+    if (!chosen) return { ok: false, reason: "action_not_offered" };
+    if (chosen.binding !== input.binding) return { ok: false, reason: "binding_stale" };
+    return {
+      ok: true,
+      type: command.type,
+      payload: command.payload,
+      ownerPresence: chosen.ownerPresence,
+      dataClassification: item.dataClassification,
+    };
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
