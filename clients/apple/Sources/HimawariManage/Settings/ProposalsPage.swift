@@ -103,6 +103,7 @@ struct ProposalRow: View {
                                 .frame(minHeight: DesignTokens.Size.minTapTarget)
                         }
                         .buttonStyle(.plain)
+                        .disabled(proposal.requiresFullRead && proposal.hasEvidence && !open)
                     }
                 }
                 .disabled(busy)

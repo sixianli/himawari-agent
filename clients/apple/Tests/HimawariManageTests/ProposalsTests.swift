@@ -45,11 +45,11 @@ private actor ProposalTransport: DeviceTransport {
 }
 
 private func proposalJSON(_ id: String, version: Int = 1, fingerprint: String = "fp", adoptable: Bool = true, requiresFullRead: Bool = false) -> String {
-    #"{"proposalId":"\#(id)","version":\#(version),"fingerprint":"\#(fingerprint)","type":"rule","summary":"雨天多留 10 分钟","effect":"出门提醒提前 10 分钟","origin":"inferred","adoptable":\#(adoptable),"requiresFullRead":\#(requiresFullRead),"requiresPresence":false,"evidence":[{"kind":"observation","text":"这个月有 2 次下雨天你出门晚了","sources":[],"figures":[{"name":"出门晚了的次数","value":2,"definition":"提醒后 10 分钟内才出门"}]}],"proposedAt":"2026-11-10T00:00:00Z","expiresAt":"2026-11-24T00:00:00Z","refusedBefore":0}"#
+    #"{"proposalId":"\#(id)","version":\#(version),"fingerprint":"\#(fingerprint)","type":"rule","summary":"雨天多留 10 分钟","effect":"出门提醒提前 10 分钟","origin":"inferred","adoptable":\#(adoptable),"requiresFullRead":\#(requiresFullRead),"requiresPresence":false,"evidence":[{"kind":"observation","text":"这个月有 2 次下雨天你出门晚了","sources":[],"figures":[{"name":"出门晚了的次数","value":2,"definition":"提醒后 10 分钟内才出门"}]}],"proposedAt":"2026-11-10T00:00:00.000Z","expiresAt":"2026-11-24T00:00:00.000Z","refusedBefore":0}"#
 }
 
 private func list(_ items: [String]) -> String {
-    #"{"payload":{"proposals":[\#(items.joined(separator: ","))],"pendingCount":\#(items.count),"limit":5,"expiresAfterDays":14,"opened":null,"generatedAt":"2026-11-12T00:00:00Z"}}"#
+    #"{"payload":{"proposals":[\#(items.joined(separator: ","))],"pendingCount":\#(items.count),"limit":5,"expiresAfterDays":14,"opened":null,"generatedAt":"2026-11-12T00:00:00.000Z"}}"#
 }
 
 @MainActor
@@ -140,7 +140,7 @@ final class ProposalsTests: XCTestCase {
 
     func testAnAdoptThatNeedsTheFullTextOpensItFirstAndSendsTheToken() async throws {
         let id = "rule:00000000000000000000000000000001"
-        let opened = #"{"payload":{"proposals":[],"pendingCount":0,"limit":5,"expiresAfterDays":14,"opened":{"proposalId":"\#(id)","fullReadToken":"tok","expiresAt":"2026-11-12T00:10:00Z"},"generatedAt":"2026-11-12T00:00:00Z"}}"#
+        let opened = #"{"payload":{"proposals":[],"pendingCount":0,"limit":5,"expiresAfterDays":14,"opened":{"proposalId":"\#(id)","fullReadToken":"tok","expiresAt":"2026-11-12T00:10:00.000Z"},"generatedAt":"2026-11-12T00:00:00.000Z"}}"#
         let transport = ProposalTransport(lists: [list([proposalJSON(id, requiresFullRead: true)]), list([])], openedReply: opened)
         let settings = store(transport)
         await settings.load()
@@ -177,8 +177,12 @@ final class ProposalsTests: XCTestCase {
         do {
             _ = try await settings.respond(proposal, .adopt, reason: "采纳")
             XCTFail("expected a failure")
-        } catch {
+        } catch let error as ManageGatewayError {
+            guard case .rejected(let status, _, _) = error else { return XCTFail("unexpected \(error)") }
+            XCTAssertEqual(status, 409)
             XCTAssertEqual(settings.proposals?.proposals.count, 1)
+        } catch {
+            XCTFail("unexpected \(error)")
         }
     }
 }

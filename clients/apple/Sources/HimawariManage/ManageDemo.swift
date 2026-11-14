@@ -179,7 +179,7 @@ enum ManageDemo {
     }
 
     private static func proposal(_ id: String, _ summary: String, _ effect: String, _ reason: String, figure: (String, Int, String)) -> String {
-        #"{"proposalId":"\#(id)","version":1,"fingerprint":"fp-\#(id)","type":"rule","summary":"\#(summary)","effect":"\#(effect)","origin":"inferred","adoptable":true,"requiresFullRead":false,"requiresPresence":false,"evidence":[{"kind":"observation","text":"\#(reason)","sources":[],"figures":[{"name":"\#(figure.0)","value":\#(figure.1),"definition":"\#(figure.2)"}]}],"proposedAt":"2026-11-10T00:00:00Z","expiresAt":"2026-11-24T00:00:00Z","refusedBefore":0}"#
+        #"{"proposalId":"\#(id)","version":1,"fingerprint":"fp-\#(id)","type":"rule","summary":"\#(summary)","effect":"\#(effect)","origin":"inferred","adoptable":true,"requiresFullRead":false,"requiresPresence":false,"evidence":[{"kind":"observation","text":"\#(reason)","sources":[],"figures":[{"name":"\#(figure.0)","value":\#(figure.1),"definition":"\#(figure.2)"}]}],"proposedAt":"2026-11-10T00:00:00.000Z","expiresAt":"2026-11-24T00:00:00.000Z","refusedBefore":0}"#
     }
 
     private static var loginDevices: String {
