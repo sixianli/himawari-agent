@@ -144,6 +144,7 @@ export interface PrereviewRunResult {
   readonly attempted: number;
   readonly recorded: number;
   readonly failures: readonly string[];
+  readonly skippedClassification: number;
   readonly stoppedBy: "done" | "daily_limit" | "daily_cost" | "disabled";
 }
 
@@ -164,14 +165,26 @@ export class ReviewPrereviewService {
   async run(): Promise<PrereviewRunResult> {
     const { scope, store, settings, clock } = this.#options;
     if (!settings.enabled)
-      return { attempted: 0, recorded: 0, failures: [], stoppedBy: "disabled" };
+      return {
+        attempted: 0,
+        recorded: 0,
+        failures: [],
+        skippedClassification: 0,
+        stoppedBy: "disabled",
+      };
     const now = clock.now();
     const nowMs = Date.parse(now);
     const dayStart = startOfZonedDay(now, this.#options.timeZone);
     const version = { modelRef: this.#options.model.modelRef, promptId: this.promptId };
     const spent = await store.countSince({ ...scope, since: dayStart });
     if (spent.attempts >= settings.dailyLimit)
-      return { attempted: 0, recorded: 0, failures: [], stoppedBy: "daily_limit" };
+      return {
+        attempted: 0,
+        recorded: 0,
+        failures: [],
+        skippedClassification: 0,
+        stoppedBy: "daily_limit",
+      };
     for (const [key, at] of this.#storeFailedAt)
       if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#storeFailedAt.delete(key);
     const subjects = (await this.#options.subjects()).flatMap((source) => {
@@ -211,15 +224,20 @@ export class ReviewPrereviewService {
     let attempted = 0;
     let recorded = 0;
     const failures: string[] = [];
+    let skippedClassification = 0;
     for (const { source, ref } of pending) {
       if (attempted >= settings.perRun) break;
       if (attempts >= settings.dailyLimit)
-        return { attempted, recorded, failures, stoppedBy: "daily_limit" };
+        return { attempted, recorded, failures, skippedClassification, stoppedBy: "daily_limit" };
       const subject = await source.build().catch(() => undefined);
       if (subject === undefined) continue;
+      if (!this.#options.model.allowedDataClassifications.includes(subject.dataClassification)) {
+        skippedClassification += 1;
+        continue;
+      }
       const prompt = prereviewPrompt(subject);
       if (costMicros + this.#options.estimateCostMicros(prompt) > settings.dailyCostMicros)
-        return { attempted, recorded, failures, stoppedBy: "daily_cost" };
+        return { attempted, recorded, failures, skippedClassification, stoppedBy: "daily_cost" };
       attempted += 1;
       attempts += 1;
       const startedAt = Date.parse(clock.now());
@@ -275,7 +293,7 @@ export class ReviewPrereviewService {
         else this.#storeFailedAt.set(subject.key, nowMs);
       }
     }
-    return { attempted, recorded, failures, stoppedBy: "done" };
+    return { attempted, recorded, failures, skippedClassification, stoppedBy: "done" };
   }
 
   async hiddenByModel(candidates: readonly DailyReviewCandidate[]): Promise<ReadonlySet<string>> {

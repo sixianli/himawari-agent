@@ -109,8 +109,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const invocations: string[] = [];
     const released: string[] = [];
     const releaseFails = { input: false, output: false };
+    const allowed: DataClassification[] = ["public", "private", "sensitive", "restricted"];
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
+      allowedDataClassifications: allowed,
       model: {
         async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
           invocations.push(request.invocationId);
@@ -230,17 +232,18 @@ describe("[P4-8] model pre-rating in the running service", () => {
       text: string | null,
       decidedAt: string,
       reasonCode = "transient_ignored",
+      classification: DataClassification = "private",
     ) => {
       const ref = text === null ? null : `memory-${id}`;
       if (ref !== null && text !== null) {
         texts.set(ref, text);
-        classifications.set(ref, "private");
+        classifications.set(ref, classification);
         await payloads.put(
           await protector.protect({
             ownerId: OWNER_ID,
             agentId: AGENT_ID,
             ref,
-            dataClassification: "private",
+            dataClassification: classification,
             contentType: "text/plain",
             plaintext: new TextEncoder().encode(text),
             createdAt: clock.now(),
@@ -284,6 +287,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
         createdAt: string;
       }[];
     return {
+      allowed,
       clock,
       failures,
       invocations,
@@ -366,6 +370,48 @@ describe("[P4-8] model pre-rating in the running service", () => {
     await h.skipped("output-stuck", "想买一本书", NOV_4_10AM_JST);
     await h.service().prereview();
     expect(h.released.at(-1)).toBe(`in-${h.invocations.at(-1)}`);
+  });
+
+  it("[P4-8] skips subjects the pre-rating model may not receive, sends nothing for them and keeps their slot free", async () => {
+    const h = await setup();
+    h.allowed.splice(0, h.allowed.length, "public", "private");
+    await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("secret-b", "想记住私密的 B", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+
+    const result = await h.service().prereview();
+
+    expect(result).toMatchObject({
+      attempted: 1,
+      recorded: 1,
+      failures: [],
+      skippedClassification: 2,
+      stoppedBy: "done",
+    });
+    expect(h.invocations).toHaveLength(1);
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts.join("\n")).not.toContain("私密");
+    expect(h.rows().map(({ decisionId }) => decisionId)).toEqual(["plain"]);
+    h.allowed.push("sensitive");
+    const again = await h.service().prereview();
+    expect(again).toMatchObject({ attempted: 2, recorded: 2, skippedClassification: 0 });
+    expect(
+      h
+        .rows()
+        .map(({ decisionId }) => decisionId)
+        .sort(),
+    ).toEqual(["plain", "secret-a", "secret-b"]);
+  });
+
+  it("[P4-8][reverse] subjects the model may receive are never skipped", async () => {
+    const h = await setup();
+    await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+    expect(await h.service().prereview()).toMatchObject({
+      attempted: 2,
+      recorded: 2,
+      skippedClassification: 0,
+    });
   });
 
   it("[P4-8] keeps the daily cap across a restart and starts again the next day", async () => {
