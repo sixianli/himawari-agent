@@ -48,7 +48,7 @@ public final class AppModel {
         #if canImport(os)
         let logger = Logger(subsystem: subsystem, category: "server-values")
         ServerValueDiagnostics.shared.observe { report in
-            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown the general way")
+            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
         }
         #endif
     }

@@ -24,6 +24,7 @@ public struct UnknownServerValue: Sendable, Equatable {
 public final class ServerValueDiagnostics: @unchecked Sendable {
     public static let shared = ServerValueDiagnostics()
     public static let distinctLimit = 64
+    public static let rawLimit = 64
 
     private let lock = NSLock()
     private var seen = Set<String>()
@@ -37,12 +38,13 @@ public final class ServerValueDiagnostics: @unchecked Sendable {
         lock.withLock { seen.removeAll() }
     }
 
-    func noteFallback(type: String, raw: String) {
+    func noteFallback(type: String, raw fullRaw: String) {
+        let raw = String(fullRaw.prefix(Self.rawLimit))
         let report = lock.withLock { () -> (@Sendable (UnknownServerValue) -> Void)? in
             guard let observer, seen.count < Self.distinctLimit, seen.insert("\(type)\u{0}\(raw)").inserted else { return nil }
             return observer
         }
-        report?(UnknownServerValue(type: type, raw: String(raw.prefix(64))))
+        report?(UnknownServerValue(type: type, raw: raw))
     }
 }
 

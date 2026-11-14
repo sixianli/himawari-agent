@@ -149,15 +149,35 @@ import Testing
 
     @Test func aLongValueIsCutAndWithoutAnObserverNothingHappens() throws {
         let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
         ServerValueDiagnostics.shared.observe(nil)
         _ = try decode([ThreadStatus].self, #"["zz-diag-silent"]"#)
-        ServerValueDiagnostics.shared.reset()
         ServerValueDiagnostics.shared.observe { reports.add($0) }
         defer { ServerValueDiagnostics.shared.observe(nil) }
         let long = "zz-diag-long-" + String(repeating: "x", count: 200)
         _ = try decode([ThreadStatus].self, "[\"\(long)\",\"zz-diag-silent\"]")
         #expect(reports.all.first { $0.raw.hasPrefix("zz-diag-long-") }?.raw.count == 64)
         #expect(reports.all.contains { $0.raw == "zz-diag-silent" })
+    }
+
+    @Test func longValuesSharingTheirFirstCharactersCountOnce() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil) }
+        let head = "zz-diag-same-" + String(repeating: "y", count: ServerValueDiagnostics.rawLimit)
+        _ = try decode([ThreadStatus].self, "[\"\(head)a\",\"\(head)b\"]")
+        #expect(reports.all.filter { $0.raw.hasPrefix("zz-diag-same-") }.count == 1)
+    }
+
+    @Test func atMostTheDistinctLimitOfValuesIsReported() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil); ServerValueDiagnostics.shared.reset() }
+        let values = (0..<(ServerValueDiagnostics.distinctLimit + 1)).map { "\"zz-diag-many-\($0)\"" }.joined(separator: ",")
+        _ = try decode([ThreadStatus].self, "[\(values)]")
+        #expect(reports.all.filter { $0.raw.hasPrefix("zz-diag-many-") }.count == ServerValueDiagnostics.distinctLimit)
     }
 }
 
