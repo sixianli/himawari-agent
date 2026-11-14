@@ -1143,6 +1143,9 @@ export class SqliteDurableAdapters {
       previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
       listBackoff: (input) => this.context.read("proactive.listBackoff", input),
       restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
+      listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
+      writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
+      processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
