@@ -394,7 +394,9 @@ export class ReviewPrereviewService {
       }
     } finally {
       await authority.release().catch(() => undefined);
-      await model.release(outputs).catch(() => undefined);
+      await Promise.all(
+        [authority.inputRef, ...outputs].map((ref) => model.release([ref]).catch(() => undefined)),
+      );
     }
     const durationMs = Math.max(0, Date.parse(clock.now()) - startedAt);
     if (!completed) return { reply: undefined, failure, costMicros, durationMs };

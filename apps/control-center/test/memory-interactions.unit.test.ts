@@ -18,6 +18,7 @@ import { type MemoryItem, type MemoryOverview, useMemory } from "../src/memory.t
 import { memoryChain } from "../src/memory-history.ts";
 import {
   applyImportClassifications,
+  applyImportDuplicates,
   type ImportClassification,
   parseMemoryExport,
   parseMemoryText,
@@ -34,6 +35,7 @@ const configuration: ControlCenterRuntimeConfiguration = {
   installedGatewayV2Operations: [
     "memory.overview.read",
     "memory.classify.read",
+    "memory.import.duplicates.read",
     "memory.approval.respond",
     "memory.mutate",
   ],
@@ -48,6 +50,9 @@ const client = { query, mutate, protectText } as unknown as GatewayClient;
 type Classified = ImportClassification;
 let classifyAnswers: Classified[] = [];
 let classifyFails = false;
+let duplicateAnswers: ("same" | "unsure" | "different" | "skipped")[] = [];
+let duplicatesFail = false;
+let duplicateAsked: string[][] = [];
 const classified = (
   category: ImportClassification["category"],
   classification: "private" | "sensitive" = "private",
@@ -262,7 +267,26 @@ beforeEach(() => {
   };
   classifyAnswers = [];
   classifyFails = false;
+  duplicateAnswers = [];
+  duplicatesFail = false;
+  duplicateAsked = [];
   query.mockImplementation(async (request) => {
+    if (request.type === "memory.import.duplicates.read") {
+      duplicateAsked.push([...request.payload.contentRefs]);
+      if (duplicatesFail) throw new Error("offline");
+      return {
+        ...request,
+        kind: "snapshot",
+        type: "memory.import.duplicates.snapshot",
+        payload: {
+          items: request.payload.contentRefs.map((contentRef: string) => ({
+            contentRef,
+            verdict: duplicateAnswers.shift() ?? "different",
+            memoryId: null,
+          })),
+        },
+      };
+    }
     if (request.type === "memory.classify.read") {
       if (classifyFails) throw new Error("offline");
       return {
@@ -1594,12 +1618,15 @@ describe("memory approval and management", () => {
       fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
     });
     classifyAnswers = [
+      classified("other"),
       classified("rule"),
       classified("other", "sensitive", "other"),
       classified("health", "sensitive", "health"),
     ];
+    duplicateAnswers = ["same", "different", "skipped", "different"];
     await click("#settings .memory-import", "拆成一条条");
     const preview = text("#settings .memory-import");
+    expect(duplicateAsked.map((refs) => refs.length)).toEqual([2]);
     expect(preview).toContain("找到 4 条，已勾 1 条");
     expect(preview).toContain("已经记着，跳过");
     expect(preview).toContain("敏感，默认不导入");
@@ -1764,6 +1791,49 @@ describe("memory approval and management", () => {
     expect(button("#settings .memory-import", "导入勾选").disabled).toBe(false);
   });
 
+  it("[MP-8][A4] leaves every entry off and says so when the server could not check for duplicates", async () => {
+    await render();
+    duplicatesFail = true;
+    classifyAnswers = [classified("preference"), classified("rule")];
+    await click("#settings .memory-footer", "导入记忆");
+    await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
+    const fields = document.querySelectorAll<HTMLTextAreaElement>(
+      "#settings .memory-import textarea",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        fields[1],
+        "- 我喜欢早上跑步\n- 回答不要太长",
+      );
+      fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("#settings .memory-import", "拆成一条条");
+    const preview = text("#settings .memory-import");
+    expect(preview).toContain("找到 2 条，已勾 0 条");
+    expect(preview).toContain("没能核对是否重复，默认不导入");
+    expect(button("#settings .memory-import", "导入勾选").disabled).toBe(true);
+  });
+
+  it("[MP-8][A4] never asks about entries the server could not sort", async () => {
+    await render();
+    classifyFails = true;
+    await click("#settings .memory-footer", "导入记忆");
+    await click("#settings .memory-sources", "ChatGPT、Claude 等其他 AI");
+    const fields = document.querySelectorAll<HTMLTextAreaElement>(
+      "#settings .memory-import textarea",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        fields[1],
+        "- 我对青霉素过敏\n- 我住在上海",
+      );
+      fields[1]?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("#settings .memory-import", "拆成一条条");
+    expect(duplicateAsked).toEqual([]);
+    expect(text("#settings .memory-import")).toContain("找到 2 条，已勾 0 条");
+  });
+
   it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {
     overview = { ...overview, manualAddReady: false };
     await render();
@@ -1875,44 +1945,109 @@ describe("memory import parsing", () => {
       "### himawari-agent",
       "- 自研记忆 desc: 记忆引擎",
     ].join("\n");
-    const parsed = parseMemoryText("memory_summary.md", summary, ["回答一律用简体中文"]);
+    const parsed = parseMemoryText("memory_summary.md", summary);
     expect(parsed.items.map((item) => [item.text, item.status, item.checked])).toEqual([
       ["Andy 在做个人 Agent 项目 Himawari", "classifying", false],
       ["在准备 AI 应用工程师岗位的面试", "classifying", false],
-      ["回答一律用简体中文", "ready", false],
+      ["回答一律用简体中文", "classifying", false],
       ["先给结论，再讲过程", "classifying", false],
       ["提交前先跑文档严格校验", "classifying", false],
     ]);
-    expect(parsed.items[2]?.duplicate).toBe(true);
+    expect(parsed.items.every((item) => item.duplicateCheck === "pending")).toBe(true);
+    expect(parsed.items.every((item) => !item.duplicate)).toBe(true);
     expect(parsed.items[4]).toMatchObject({ coding: true, subCategory: "Codex" });
-    const sorted = applyImportClassifications(parsed.items, [
+    const checked = applyImportDuplicates(parsed.items, [
+      "different",
+      "different",
+      "same",
+      "unsure",
+      "skipped",
+    ]);
+    const sorted = applyImportClassifications(checked, [
       classified("project"),
       classified("goal"),
+      classified("rule"),
       classified("rule"),
       classified("health", "sensitive", "health"),
     ]);
     expect(
-      sorted.map((item) => [item.category, item.sensitive, item.checked, item.status]),
+      sorted.map((item) => [
+        item.category,
+        item.sensitive,
+        item.duplicate,
+        item.duplicateCheck,
+        item.checked,
+      ]),
     ).toEqual([
-      ["project", false, true, "ready"],
-      ["goal", false, true, "ready"],
-      ["other", false, false, "ready"],
-      ["rule", false, true, "ready"],
-      ["project", true, false, "ready"],
+      ["project", false, false, "clear", true],
+      ["goal", false, false, "clear", true],
+      ["rule", false, true, "clear", false],
+      ["rule", false, false, "similar", false],
+      ["project", true, false, "unchecked", false],
     ]);
     expect(sorted[4]?.topic).toBe("health");
   });
 
+  it("[MP-8][A4] never decides sameness from the words: text that merely contains an existing memory stays importable until the server says it is the same", () => {
+    const parsed = parseMemoryText("answer.md", "- 回答一律用简体中文，并且先给结论");
+    expect(parsed.items[0]).toMatchObject({ duplicate: false, duplicateCheck: "pending" });
+    const checked = applyImportDuplicates(parsed.items, ["different"]);
+    const sorted = applyImportClassifications(checked, [classified("rule")]);
+    expect(sorted[0]).toMatchObject({ duplicate: false, duplicateCheck: "clear", checked: true });
+    expect(applyImportDuplicates(parsed.items, [])[0]).toMatchObject({
+      duplicate: false,
+      duplicateCheck: "unchecked",
+      checked: false,
+    });
+  });
+
+  it("[MP-8][A4] keeps a coding note off even when the server says it is not a duplicate", () => {
+    const parsed = parseMemoryText(
+      "memory_summary.md",
+      "## General Tips\n- 提交前先跑文档严格校验",
+    );
+    expect(parsed.items[0]).toMatchObject({ coding: true });
+    const sorted = applyImportDuplicates(
+      applyImportClassifications(parsed.items, [classified("project")]),
+      ["different"],
+    );
+    expect(sorted[0]).toMatchObject({ duplicateCheck: "clear", status: "ready", checked: false });
+  });
+
+  it("[MP-8][A4] keeps an export entry off until the server has checked it, and leaves a failed check off", () => {
+    const exported = JSON.stringify({
+      memories: [{ text: "不吃香菜", category: "preference", status: "active" }],
+    });
+    const parsed = parseMemoryExport("himawari-memories.json", exported);
+    expect(parsed.items[0]).toMatchObject({ checked: false, duplicateCheck: "pending" });
+    expect(applyImportDuplicates(parsed.items, ["different"])[0]?.checked).toBe(true);
+    expect(applyImportDuplicates(parsed.items, ["same"])[0]).toMatchObject({
+      duplicate: true,
+      checked: false,
+    });
+    expect(applyImportDuplicates(parsed.items, ["unsure"])[0]).toMatchObject({
+      duplicateCheck: "similar",
+      checked: false,
+    });
+    expect(applyImportDuplicates(parsed.items, ["skipped"])[0]).toMatchObject({
+      duplicateCheck: "unchecked",
+      checked: false,
+    });
+  });
+
   it("[MP-8][T5] keeps an entry the server could not sort private and unchecked, and never guesses from words", () => {
-    const parsed = parseMemoryText("answer.md", "- 我对青霉素过敏\n- 我最喜欢的颜色是蓝色", []);
+    const parsed = parseMemoryText("answer.md", "- 我对青霉素过敏\n- 我最喜欢的颜色是蓝色");
     expect(parsed.items.map((item) => [item.category, item.sensitive])).toEqual([
       ["other", false],
       ["other", false],
     ]);
-    const sorted = applyImportClassifications(parsed.items, [
-      { category: "other", classification: "sensitive", topic: "other", failed: true },
-      classified("preference"),
-    ]);
+    const sorted = applyImportClassifications(
+      applyImportDuplicates(parsed.items, ["different", "different"]),
+      [
+        { category: "other", classification: "sensitive", topic: "other", failed: true },
+        classified("preference"),
+      ],
+    );
     expect(sorted.map((item) => [item.status, item.sensitive, item.topic, item.checked])).toEqual([
       ["unclassified", true, "other", false],
       ["ready", false, null, true],
@@ -1953,7 +2088,15 @@ describe("memory import parsing", () => {
         },
       ],
     });
-    expect(parseMemoryExport("himawari-memories.json", exported, []).items).toEqual([
+    const parsedExport = parseMemoryExport("himawari-memories.json", exported);
+    expect(
+      applyImportDuplicates(parsedExport.items, [
+        "different",
+        "different",
+        "different",
+        "different",
+      ]),
+    ).toEqual([
       expect.objectContaining({
         text: "不吃香菜",
         subCategory: "饮食",
@@ -1964,7 +2107,7 @@ describe("memory import parsing", () => {
       expect.objectContaining({ text: "每周日去教堂", topic: "beliefs", sensitive: true }),
       expect.objectContaining({ text: "常去的那家店", topic: null, sensitive: true }),
     ]);
-    expect(() => parseMemoryExport("x.json", "{}", [])).toThrow("MEMORY_EXPORT_INVALID");
+    expect(() => parseMemoryExport("x.json", "{}")).toThrow("MEMORY_EXPORT_INVALID");
   });
 });
 
