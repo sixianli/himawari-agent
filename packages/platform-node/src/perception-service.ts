@@ -40,6 +40,7 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_SPEAKER_KINDS,
   PERCEPTION_TEXT_MAXIMUM,
+  PERCEPTION_UTTERANCE_ID_PATTERN,
   type PerceptionCaptureSource,
   type PerceptionConfiguration,
   type PerceptionDayPage,
@@ -1415,6 +1416,15 @@ export class PerceptionService {
       episodeId: input.episodeId,
       cursor: input.cursor,
       limit: this.#options.configuration().listPageRows,
+    });
+  }
+
+  async recordCommandUtterance(scope: PerceptionScope, utteranceId: string): Promise<void> {
+    if (!PERCEPTION_UTTERANCE_ID_PATTERN.test(utteranceId)) return invalid("utteranceId");
+    await this.#options.store.recordCommandUtterance({
+      ...this.#scope(scope),
+      utteranceId,
+      now: this.#now().toISOString(),
     });
   }
 }

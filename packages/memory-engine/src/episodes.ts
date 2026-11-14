@@ -302,9 +302,10 @@ export class MemoryEpisodeService {
     readonly scope: MemoryTimeScope | null;
     readonly allowedClassifications: readonly DataClassification[];
     readonly limit: number;
+    readonly lexicalOnly?: boolean;
   }): Promise<readonly EpisodeHit[]> {
     if (input.limit <= 0 || input.query.trim().length === 0) return [];
-    const embedder = this.#options.embedder;
+    const embedder = input.lexicalOnly === true ? null : this.#options.embedder;
     let embedding = null;
     if (embedder) {
       try {

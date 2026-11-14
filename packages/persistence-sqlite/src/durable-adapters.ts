@@ -35,6 +35,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -1033,6 +1034,17 @@ export class SqliteDurableAdapters {
     });
   }
 
+  ownerProposals(): OwnerProposalStorePort {
+    return Object.freeze<OwnerProposalStorePort>({
+      propose: (input) => this.context.write("ownerProposal.propose", input),
+      read: (input) => this.context.write("ownerProposal.read", input),
+      listPending: (input) => this.context.write("ownerProposal.listPending", input),
+      decide: (input) => this.context.write("ownerProposal.decide", input),
+      settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
+      clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
+    });
+  }
+
   ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
     return Object.freeze<RuleReviewStorePort & RuleReviewOwnerStorePort>({
       listDue: (input) => this.context.read("ruleReview.listDue", input),
@@ -1253,6 +1265,16 @@ export class SqliteDurableAdapters {
       cleanDeletion: (input) => this.context.write("perception.cleanDeletion", input),
       openDeletions: (input) => this.context.read("perception.openDeletions", input),
       readDeletionScopes: (input) => this.context.read("perception.readDeletionScopes", input),
+      listRecordsBetween: (input) => this.context.read("perception.listRecordsBetween", input),
+      readRecords: (input) => this.context.read("perception.readRecords", input),
+      listEpisodesToExtract: (input) =>
+        this.context.read("perception.listEpisodesToExtract", input),
+      readExtraction: (input) => this.context.read("perception.readExtraction", input),
+      commandUtterances: (input) => this.context.read("perception.commandUtterances", input),
+      beginExtraction: (input) => this.context.write("perception.beginExtraction", input),
+      settleExtraction: (input) => this.context.write("perception.settleExtraction", input),
+      recordCommandUtterance: (input) =>
+        this.context.write("perception.recordCommandUtterance", input),
     });
   }
 

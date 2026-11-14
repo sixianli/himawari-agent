@@ -7,6 +7,9 @@ import type {
   ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
+  DEVICE_CONFIGURATION_DEFAULTS,
+  defaultDeviceHardLimits,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
   autoCommitThreshold,
   type ClockPort,
   claimFromRunExecutionLease,
@@ -155,6 +158,7 @@ import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -174,6 +178,8 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
+import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -712,6 +718,7 @@ export async function startTenantRuntime(
   let museControl: ProductionMuseControl | undefined;
   let observation: ProductionObservation | undefined;
   let realEval: ProductionRealEval | RealEvalSampleExpiry | undefined;
+  let perceptionExtraction: ProductionPerceptionExtraction | undefined;
   const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
@@ -818,6 +825,7 @@ export async function startTenantRuntime(
         await webPush?.stop();
         await proactive?.stop();
         await realEval?.stop();
+        await perceptionExtraction?.stop();
         await observation?.stop();
       }
     },
@@ -1541,6 +1549,13 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        box: new ProductionProposalBox({
+          configuration,
+          store: repository.ownerProposals(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+        }),
         reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -1553,6 +1568,26 @@ export async function startTenantRuntime(
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
       const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const perceptionScope = {
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+      };
+      const perceptionTools = new ProductionPerceptionTools({
+        scope: perceptionScope,
+        store: repository.perception(),
+        devices: repository.pairedDevices().listDevices,
+        readText: async (contentRef) => {
+          const payload = await payloads.get(contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({ ...perceptionScope, payload }),
+          );
+        },
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        now: () => clock.now(),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+      });
       const toolActions = productionToolActionRegistry();
       const installedCapabilities = repository.capabilityStore(
         configuration.ownerId,
@@ -1594,6 +1629,7 @@ export async function startTenantRuntime(
         toolActions,
         ownerScope,
         externalContent,
+        perception: perceptionTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2353,6 +2389,81 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
+      if (proactiveConfiguration && proactiveDescriptor && protector && durableMemory) {
+        const extractionScope = {
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+        };
+        const extractionPayloads = repository.payloadStore(
+          configuration.ownerId,
+          configuration.agentId,
+        );
+        const extractionModels = modelComposition;
+        const extractionModelRef = proactiveConfiguration.modelRef;
+        const extractionConfiguration = () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
+        const extractionTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
+        let extractionEgress: ReturnType<typeof createProductionModelEgress> | undefined;
+        perceptionExtraction = new ProductionPerceptionExtraction({
+          scope: extractionScope,
+          store: repository.perception(),
+          model: createRealEvalModel({
+            modelRef: extractionModelRef,
+            invoker: (maxOutputTokens) =>
+              extractionModels.composition.proactiveModel(extractionModelRef, {
+                maxOutputTokens,
+                requestTimeoutMs: extractionConfiguration().extractRequestTimeoutSeconds * 1000,
+                purpose: "other",
+              }),
+            cost: proactiveDescriptor.cost,
+            requestTimeoutMs: extractionConfiguration().extractRequestTimeoutSeconds * 1000,
+            now: () => clock.now(),
+          }),
+          memory: durableMemory,
+          memories: repository.productMemoryState(),
+          book: repository.memoryBook(),
+          reminders: new ProductionReminderWriter({
+            configuration,
+            memory: durableMemory,
+            state: repository.productMemoryState(),
+            book: repository.memoryBook(),
+            reminders: repository.memoryReminders(),
+            payloads: extractionPayloads,
+            protector,
+            clock: { now: () => clock.now() },
+            timeZone: extractionTimeZone,
+          }),
+          payloads: extractionPayloads,
+          protector,
+          tag: async () => {
+            extractionEgress ??= createProductionModelEgress(
+              configuration,
+              hostModelSources(configuration),
+            );
+            return extractionEgress.externalTag();
+          },
+          configuration: extractionConfiguration,
+          deviceConfiguration: () =>
+            configuration.runPolicy?.device ?? {
+              ...DEVICE_CONFIGURATION_DEFAULTS,
+              limits: defaultDeviceHardLimits(),
+            },
+          timeZone: extractionTimeZone,
+          clock: { now: () => clock.now() },
+          onReport: (report) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "perception.extracted",
+              ...report,
+            }),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "perception.extract_failed",
+              code: stableErrorCode(error),
+            }),
+        });
+      }
       const museIntakeConfiguration = configuration.runPolicy?.museIntake;
       const museIntakeSecret =
         museIntakeConfiguration?.enabled === true
@@ -2716,6 +2827,7 @@ export async function startTenantRuntime(
       }
       proactive?.start();
       realEval?.start();
+      perceptionExtraction?.start();
       observation = new ProductionObservation({
         scope: {
           ownerId: configuration.ownerId,
@@ -3068,6 +3180,20 @@ export async function startTenantRuntime(
         ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
+          ...(memoryComposition
+            ? {
+                search: {
+                  provider: {
+                    search: (input) =>
+                      (memoryComposition as ProductionMemoryComposition).projection.search(input),
+                  },
+                  episodes: {
+                    search: (input) =>
+                      runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
+                  },
+                },
+              }
+            : {}),
           service: activeDurableMemory,
           externalProposals,
           actionRules: new BuiltInActionRuleSwitches({

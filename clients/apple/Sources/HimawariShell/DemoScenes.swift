@@ -3,6 +3,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariShare
 import SwiftUI
 
 enum DemoScene: String, CaseIterable {
@@ -22,6 +23,15 @@ enum DemoScene: String, CaseIterable {
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case tabTodayOneDigit = "tab-today-1-digit"
+    case handoverTyping = "19-senses-6-share-sheet"
+    case handoverAnswered = "19-senses-6b-share-answered"
+    case handoverQueued = "19-senses-6c-share-queued"
+    case handoverEntryOff = "19-senses-6d-share-entry-off"
+    case handoverRemoved = "19-senses-6e-share-removed"
+    case handoverUnpaired = "19-senses-6f-share-unpaired"
+    case safariGuide = "22-gaps-1-safari-guide"
+    case safariOn = "22-gaps-1b-safari-on"
+    case shareEntry = "19-senses-share-entry"
     case motionShimmer = "motion-shimmer"
     case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
@@ -100,6 +110,24 @@ struct DemoSceneView: View {
             PairingView(model: .demo(.unpaired(.codeExpired(ttlSeconds: 600))))
         case .pairingUnreachable:
             PairingView(model: .demo(.unpaired(.unreachable)))
+        case .handoverTyping:
+            HandoverDemo.sheet(.typing)
+        case .handoverAnswered:
+            HandoverDemo.sheet(.answered)
+        case .handoverQueued:
+            HandoverDemo.sheet(.queued)
+        case .handoverEntryOff:
+            HandoverDemo.sheet(.entryOff)
+        case .handoverRemoved:
+            HandoverDemo.sheet(.removed)
+        case .handoverUnpaired:
+            HandoverDemo.sheet(.unpaired)
+        case .safariGuide:
+            HandoverDemo.entry(.safariGuide)
+        case .safariOn:
+            HandoverDemo.entry(.safariOn)
+        case .shareEntry:
+            HandoverDemo.entry(.shareOn)
         case .pairingRemoved:
             PairingView(model: .demo(.unpaired(.removed)))
         }
