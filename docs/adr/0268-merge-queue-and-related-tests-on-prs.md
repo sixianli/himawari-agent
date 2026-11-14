@@ -59,9 +59,9 @@ date: "2026-11-14"
 - 只在 `pull_request` 事件上缩小范围；手动触发（合并队列的候选）、推送和夜间运行一律全量。
 - unit 和 contracts 照跑全量（云端容器上实测 unit 183 秒、contracts 34 秒，见 `.agents/evidence/ci-test-timing-2026-11-13.md`；全量跑也能接住一部分只靠动态 import 才用到的代码）。
 - integration、e2e、pi-compat、tooling 只跑 `vitest list --changed <PR 基线>` 选出的测试，可以是零个（`scripts/ci/test-scope.mjs`）。
-- 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的 `.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs` 源码（配置文件 `*.config.*`、`vitest.*` 也不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、提示词文本、`scripts/`、`ci/`、`.github/` 都跑全量。某个项目的 `vitest list` 出错时，那个项目退回全量。
+- 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的 `.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs` 源码（配置文件 `*.config.*`、`vitest.*` 也不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、`scripts/`、`ci/`、`.github/` 都跑全量；提示词写在 `packages/prompt-catalog/src/` 的 `.ts` 文件里，只改它们时按源码走相关测试。某个项目的 `vitest list` 出错时，那个项目退回全量。
 - 检查结果里记下哪些项目只跑了相关测试（`relatedProjects`），汇总结果标 `scope: related`。汇总只在 PR 上接受相关范围，只接受上面四个项目，只有声明了相关范围的项目才允许零计数。
-- main 的轻量确认不接受标成 `related` 的 PR 结果（`MAIN_GATE_RELATED_SCOPE`），`main-evidence.mjs` 拿不到可用证据时退回 `mode: "full"`，所以 PR 上只跑了相关测试、又被人手合并的提交，在 main 上会跑全量；PR 上本来就跑了全量的（例如改了 CI 文件的 PR），main 仍可走轻量确认。
+- main 的轻量确认不接受标成 `related` 的 PR 结果（`MAIN_GATE_RELATED_SCOPE`），`main-evidence.mjs` 拿不到可用证据时退回 `mode: "full"`，所以 PR 上只跑了相关测试、又被人手合并的提交，在 main 上会跑全量；PR 上本来就跑了全量的（例如改了 `package.json` 的 PR），main 仍可走轻量确认；改了 `.github`、`ci`、`scripts/ci` 的提交在 main 上一律跑全量（`MAIN_VALIDATION_CHANGED`）。
 
 ### 合并队列
 
