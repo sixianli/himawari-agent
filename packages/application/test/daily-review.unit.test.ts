@@ -263,6 +263,7 @@ function entry(overrides: Partial<DecisionLedgerEntry>): DecisionLedgerEntry {
       summaryRead: "off",
       summaryGenerated: 0,
       profileBudget: null,
+      limitChange: null,
     },
     reasonRef: null,
     contentRef: null,

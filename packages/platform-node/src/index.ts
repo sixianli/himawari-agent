@@ -54,3 +54,4 @@ export * from "./device-gateway.js";
 export * from "./device-push.js";
 export * from "./text-admission.js";
 export * from "./paired-device-service.js";
+export * from "./perception-service.js";

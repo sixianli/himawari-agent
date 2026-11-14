@@ -37,6 +37,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
+  PerceptionStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
@@ -47,6 +48,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -597,6 +599,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerRules();
   }
 
+  ownerProposals(): OwnerProposalStorePort {
+    return this.durable.ownerProposals();
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
   }
@@ -667,6 +673,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   pairedDevices(): PairedDeviceStorePort {
     return this.durable.pairedDevices();
+  }
+
+  perception(): PerceptionStorePort {
+    return this.durable.perception();
   }
 
   proactive(): ProactiveStorePort {

@@ -158,6 +158,7 @@ import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import {
   createProactivePushSource,
@@ -1547,6 +1548,13 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
+        box: new ProductionProposalBox({
+          configuration,
+          store: repository.ownerProposals(),
+          payloads,
+          protector: recallProtector,
+          clock: { now: () => clock.now() },
+        }),
         reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -3190,6 +3198,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
+          }),
+        onPerceptionLimitWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
           }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");

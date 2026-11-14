@@ -48,6 +48,7 @@ import {
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
@@ -135,6 +136,7 @@ export interface HttpGatewayServerOptions {
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly perception?: PerceptionService;
     readonly home?: DeviceHomePort;
   };
   readonly health?: HttpGatewayHealthPort;
@@ -1305,6 +1307,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       devices: options.devices.service,
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,

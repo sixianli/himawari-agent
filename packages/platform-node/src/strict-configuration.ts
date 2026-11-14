@@ -25,6 +25,9 @@ import {
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -46,6 +49,7 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type OwnerIntentCheckConfiguration,
   type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
@@ -1348,6 +1352,29 @@ function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRe
   return Object.freeze({ audience, proposals: true as const });
 }
 
+function parseOwnerProposals(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["ownerProposals"]> {
+  const field = "configuration.runPolicy.ownerProposals";
+  const input = record(value, field);
+  rejectUnknown(input, ["pendingLimit", "expiresAfterDays"], field);
+  return Object.freeze({
+    ...(input["pendingLimit"] === undefined
+      ? {}
+      : { pendingLimit: integer(input["pendingLimit"], `${field}.pendingLimit`, 1, 200) }),
+    ...(input["expiresAfterDays"] === undefined
+      ? {}
+      : {
+          expiresAfterDays: integer(
+            input["expiresAfterDays"],
+            `${field}.expiresAfterDays`,
+            1,
+            3650,
+          ),
+        }),
+  });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1506,6 +1533,30 @@ function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["home
   );
 }
 
+function parsePerception(value: unknown): PerceptionConfiguration {
+  const field = "configuration.runPolicy.perception";
+  const input = record(value, field);
+  const keys = Object.keys(PERCEPTION_CONFIGURATION_DEFAULTS) as (keyof PerceptionConfiguration)[];
+  rejectUnknown(input, keys, field);
+  const parsed = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = PERCEPTION_CONFIGURATION_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? PERCEPTION_CONFIGURATION_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as PerceptionConfiguration;
+  if (parsed.episodeMaximumSeconds < parsed.episodeSilenceSeconds)
+    throw invalid(
+      `${field}.episodeMaximumSeconds`,
+      "must not be smaller than episodeSilenceSeconds",
+    );
+  return Object.freeze(parsed);
+}
+
 function parseHomeUrgency(value: unknown): NonNullable<RunPolicyConfiguration["homeUrgency"]> {
   const field = "configuration.runPolicy.homeUrgency";
   const input = record(value, field);
@@ -1593,6 +1644,18 @@ function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
   });
 }
 
+function parseOwnerIntentCheck(value: unknown): OwnerIntentCheckConfiguration {
+  const field = "configuration.runPolicy.ownerIntentCheck";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "modelRef"], field);
+  return Object.freeze({
+    enabled: boolean(input["enabled"], `${field}.enabled`),
+    minConfidence: integer(input["minConfidence"], `${field}.minConfidence`, 500, 1000),
+    timeoutMs: integer(input["timeoutMs"], `${field}.timeoutMs`, 500, 30000),
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1602,6 +1665,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "timeZone",
       "approvalBodyPreviewCharacters",
       "toolRefusals",
+      "ownerIntentCheck",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1616,12 +1680,14 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "applePush",
       "device",
       "homeFeed",
+      "perception",
       "homeUrgency",
       "proactive",
       "museIntake",
       "importDuplicates",
       "realEval",
       "mcpRead",
+      "ownerProposals",
     ],
     "configuration.runPolicy",
   );
@@ -1658,6 +1724,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["toolRefusals"] === undefined
       ? {}
       : { toolRefusals: parseToolRefusals(input["toolRefusals"]) }),
+    ...(input["ownerIntentCheck"] === undefined
+      ? {}
+      : { ownerIntentCheck: parseOwnerIntentCheck(input["ownerIntentCheck"]) }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
@@ -1673,6 +1742,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["applePush"] === undefined ? {} : { applePush: parseApplePush(input["applePush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
+    ...(input["perception"] === undefined
+      ? {}
+      : { perception: parsePerception(input["perception"]) }),
     ...(input["homeUrgency"] === undefined
       ? {}
       : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
@@ -1682,6 +1754,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["ownerProposals"] === undefined
+      ? {}
+      : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),

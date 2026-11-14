@@ -14,6 +14,7 @@ import {
   ApplicationPortError,
   DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -74,6 +75,8 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PerceptionLimitWarning,
+  PerceptionService,
   type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
@@ -106,6 +109,10 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  ProductionPerceptionControl,
+} from "./production-perception-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -142,6 +149,11 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
@@ -224,6 +236,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
+  readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
   readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
@@ -754,6 +767,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
@@ -761,6 +775,7 @@ function routeOptions(
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...PRODUCTION_PERCEPTION_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1141,6 +1156,13 @@ export async function createProductionHttpComposition(
         now: clock,
       })
     : undefined;
+  const proposalBox = new ProductionProposalBox({
+    configuration,
+    store: repository.ownerProposals(),
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1190,6 +1212,7 @@ export async function createProductionHttpComposition(
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          box: proposalBox,
           reviews: repository.ruleReviews(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
@@ -1320,6 +1343,31 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
+  const perceptionConfiguration =
+    configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
+  const proactiveConfiguration = configuration.runPolicy?.proactive;
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => deviceConfiguration,
+    configuration: () => perceptionConfiguration,
+    timeZone: () => configuration.runPolicy?.timeZone ?? "UTC",
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    ...(proactiveConfiguration
+      ? {
+          proactiveUsage: {
+            limit: () => proactiveConfiguration.dailyCostMicros,
+            usedSince: (scope, since) => repository.proactive().costSince({ ...scope, since }),
+          },
+        }
+      : {}),
+    ...(options.onPerceptionLimitWarning
+      ? { onLimitWarning: options.onPerceptionLimitWarning }
+      : {}),
+    now,
+  });
+  await perception.prepareDirectories();
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -1341,6 +1389,11 @@ export async function createProductionHttpComposition(
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
     ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
+    proposalControl: new ProductionProposalControl({
+      configuration,
+      box: proposalBox,
+      clock: { now: clock },
+    }),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1357,6 +1410,19 @@ export async function createProductionHttpComposition(
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    perceptionControl: new ProductionPerceptionControl({
+      configuration,
+      perception,
+      perceptionConfiguration: () => perceptionConfiguration,
+      readText: async (contentRef) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
       clock: { now: clock },
     }),
     serverStatusControl: new ProductionServerStatusControl({
@@ -1419,6 +1485,7 @@ export async function createProductionHttpComposition(
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      perception,
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),

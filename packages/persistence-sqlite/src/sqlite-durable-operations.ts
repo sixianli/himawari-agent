@@ -92,6 +92,7 @@ import {
 } from "./sqlite-apple-push-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
 import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
+import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -100,6 +101,7 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
+import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
@@ -373,6 +375,7 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
+  private readonly ownerProposals: SqliteOwnerProposalOperations;
   private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
@@ -390,6 +393,7 @@ export class SqliteDurableOperations {
   private readonly webPush: SqliteWebPushOperations;
   private readonly pairedDevices: SqlitePairedDeviceOperations;
   private readonly applePush: SqliteApplePushOperations;
+  private readonly perception: SqlitePerceptionOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
   private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
@@ -462,6 +466,7 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
+    this.ownerProposals = new SqliteOwnerProposalOperations(database, fail, assertDiskHeadroom);
     this.correctionReview = new SqliteCorrectionReviewOperations(
       database,
       fail,
@@ -503,6 +508,7 @@ export class SqliteDurableOperations {
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
     this.applePush = new SqliteApplePushOperations(database, fail, assertDiskHeadroom);
+    this.perception = new SqlitePerceptionOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
       database,
@@ -673,6 +679,8 @@ export class SqliteDurableOperations {
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
+    if (operation.startsWith("ownerProposal."))
+      return this.ownerProposals.execute(operation, payload);
     if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
       return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
@@ -688,6 +696,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("applePush.")) return this.applePush.execute(operation, payload);
     if (operation.startsWith("pairedDevices."))
       return this.pairedDevices.execute(operation, payload);
+    if (operation.startsWith("perception.")) return this.perception.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("threadPromptBundle."))
@@ -5117,6 +5126,12 @@ export class SqliteDurableOperations {
       this.database
         .prepare(
           `DELETE FROM device_request_nonces WHERE device_id IN (
+             SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
+        )
+        .run(input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM device_upload_grants WHERE device_id IN (
              SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
         )
         .run(input.deviceId);

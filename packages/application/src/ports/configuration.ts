@@ -2,6 +2,7 @@ import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent
 import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
+import type { PerceptionConfiguration } from "./perception.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
 
@@ -354,6 +355,11 @@ export interface McpReadConfiguration {
   readonly proposals?: true;
 }
 
+export interface OwnerProposalConfiguration {
+  readonly pendingLimit?: number;
+  readonly expiresAfterDays?: number;
+}
+
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;
   readonly total: number;
@@ -364,10 +370,19 @@ export const DEFAULT_TOOL_REFUSALS: ToolRefusalConfiguration = Object.freeze({
   total: 20,
 });
 
+export interface OwnerIntentCheckConfiguration {
+  readonly enabled: boolean;
+  readonly minConfidence: number;
+  readonly timeoutMs: number;
+  readonly modelRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly ownerProposals?: OwnerProposalConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
+  readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
@@ -376,6 +391,7 @@ export interface RunPolicyConfiguration {
   readonly applePush?: ApplePushConfiguration;
   readonly device?: DeviceConfiguration;
   readonly homeFeed?: HomeFeedConfiguration;
+  readonly perception?: PerceptionConfiguration;
   readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
