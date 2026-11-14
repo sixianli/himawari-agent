@@ -133,7 +133,7 @@ final class MenuBarModel {
                 actionRequestIds[key] = nil
                 acting = nil
                 return
-            } catch let DeviceAPIError.server(status, _, _) where (400 ..< 500).contains(status) {
+            } catch let DeviceAPIError.server(status, _, _, _) where (400 ..< 500).contains(status) {
                 actionRequestIds[key] = nil
                 failedItem = item.key
             } catch {

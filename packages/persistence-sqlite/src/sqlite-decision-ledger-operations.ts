@@ -22,6 +22,7 @@ import {
 import { parseRuleRef, type RuleBookVersion } from "@himawari-agent/application/rule-ref";
 import { readCalibrationRows } from "@himawari-agent/calibration";
 import { readPrereviewWeek } from "@himawari-agent/calibration/prereview";
+import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import { summaryInputsValid } from "./sqlite-decision-summary-inputs.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -90,6 +91,19 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
       budget.pinned > budget.used)
   )
     return "Decision ledger profile budget is invalid";
+  const change = write.inputs.limitChange ?? null;
+  const limitValue = (value: unknown) =>
+    value === null || (Number.isSafeInteger(value) && (value as number) >= 0);
+  if ((write.kind === "limit_change") !== (change !== null))
+    return "Decision ledger limit change is invalid";
+  if (
+    change !== null &&
+    (!text(change.key, 1, 128) ||
+      !limitValue(change.from) ||
+      !limitValue(change.to) ||
+      change.from === change.to)
+  )
+    return "Decision ledger limit change is invalid";
   if (
     !Number.isSafeInteger(write.costMicros) ||
     write.costMicros < 0 ||
@@ -148,6 +162,7 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
         ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
+        ...(write.inputs.limitChange ? { limitChange: write.inputs.limitChange } : {}),
         ...(write.inputs.summaryRead === undefined
           ? {}
           : {
@@ -200,6 +215,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     summaryRead?: "off" | "ok" | "partial" | "failed";
     summaryGenerated?: number;
     profileBudget?: DecisionInputs["profileBudget"];
+    limitChange?: DecisionInputs["limitChange"];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -263,6 +279,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       summaryRead: inputs.summaryRead ?? "off",
       summaryGenerated: inputs.summaryGenerated ?? 0,
       profileBudget: inputs.profileBudget ? Object.freeze({ ...inputs.profileBudget }) : null,
+      limitChange: inputs.limitChange ? Object.freeze({ ...inputs.limitChange }) : null,
     }),
   });
 }
@@ -681,7 +698,7 @@ export class SqliteDecisionLedgerOperations {
         `SELECT decision_id AS decisionId, thread_id AS threadId, outcome, skip_reason AS skipReason,
            owner_rating AS ownerRating, processed_at AS processedAt
          FROM proactive_processed_messages
-         WHERE owner_id = ? AND agent_id = ? AND source = 'gmail' AND message_id = ?`,
+         WHERE owner_id = ? AND agent_id = ? AND source = '${GMAIL_SOURCE.name}' AND message_id = ?`,
       )
       .get(input.ownerId, input.agentId, input.messageId) as Record<string, unknown> | undefined;
     const asText = (value: unknown) => (typeof value === "string" ? value : null);
@@ -745,7 +762,7 @@ export class SqliteDecisionLedgerOperations {
          FROM muse_reference_entries e
          JOIN proactive_processed_messages p
            ON p.owner_id = e.owner_id AND p.agent_id = e.agent_id
-          AND p.source = 'gmail' AND p.message_id = e.paired_message_id
+          AND p.source = '${GMAIL_SOURCE.name}' AND p.message_id = e.paired_message_id
          JOIN decision_ledger d ON d.id = p.decision_id
          LEFT JOIN muse_intake_items i
            ON i.owner_id = e.owner_id AND i.agent_id = e.agent_id

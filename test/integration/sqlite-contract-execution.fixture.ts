@@ -43,6 +43,8 @@ export function useSqliteContractExecution(execution: "worker" | "direct") {
           throw new ApplicationPortError(code as PortErrorCode, message, details);
         },
         () => undefined,
+        "javascript",
+        configuration.proactiveSources,
       );
       return {
         async request(operation: string, payload: unknown) {

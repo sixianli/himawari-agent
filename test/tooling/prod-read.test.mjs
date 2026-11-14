@@ -380,8 +380,47 @@ describe("prod-read.sh", () => {
     }
   });
 
+  it("lists capabilities as metadata only, running the script read-only", () => {
+    const result = run("capabilities");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("--no-warnings - capabilities");
+    expect(result.input).toContain("{ readOnly: true }");
+    expect(result.input).not.toContain("record_json");
+    const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-db-"));
+    directories.push(directory);
+    const file = path.join(directory, "product.sqlite");
+    const database = new DatabaseSync(file);
+    for (const name of readdirSync(migrations)
+      .filter((entry) => entry.endsWith(".sql"))
+      .sort())
+      database.exec(readFileSync(path.join(migrations, name), "utf8"));
+    database.exec("PRAGMA foreign_keys = OFF");
+    database
+      .prepare(
+        "INSERT INTO capability_declarations (id, owner_id, agent_id, revision, version, integrity, status, declaration_ref, record_json) VALUES ('cap-1', 'o', 'a', 3, '1.0.0', 'sha', 'active', 'ref', '{\"secret\":\"body\"}')",
+      )
+      .run();
+    database.close();
+    const script = result.input.replace("/var/lib/himawari/state/data/product.sqlite", file);
+    const child = spawnSync(process.execPath, ["--no-warnings", "-", "capabilities"], {
+      input: script,
+      encoding: "utf8",
+    });
+    expect(child.status).toBe(0);
+    const rows = JSON.parse(child.stdout);
+    expect(rows).toEqual([
+      { id: "cap-1", status: "active", revision: 3, version: "1.0.0", handle_count: 0 },
+    ]);
+    expect(child.stdout).not.toContain("secret");
+  });
+
   it("refuses arguments for the two new queries", () => {
-    for (const query of ["rule-memories", "system-instruction", "gmail-decisions"]) {
+    for (const query of [
+      "rule-memories",
+      "system-instruction",
+      "gmail-decisions",
+      "capabilities",
+    ]) {
       const result = run(query, "extra");
       expect(result.code).toBe(64);
       expect(result.calls).toBe("");

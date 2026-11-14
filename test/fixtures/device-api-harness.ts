@@ -1,15 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  type ApplePushConfiguration,
   createProactiveSeal,
   DEFAULT_HOME_FEED,
+  DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
   type GatewayAuthenticationContext,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
   ThreadCommandService,
@@ -17,6 +22,9 @@ import {
   ThreadExecutionProjection,
   ThreadForkService,
   ThreadQueryService,
+  VOICE_ADDRESSEE_DEFAULTS,
+  type VoiceAddresseeConfiguration,
+  type VoiceGates,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -27,6 +35,13 @@ import {
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
+  type Embedder,
+  prefetchingEmbedder,
+  QUERY_PREFETCH_LIMIT_DEFAULTS,
+  QueryPrefetch,
+  type QueryPrefetchLimits,
+} from "@himawari-agent/memory-engine";
+import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
@@ -36,10 +51,15 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   type DevicePairingAccess,
+  DevicePushService,
   EnvelopePayloadProtector,
   PairedDeviceService,
   type PairedDeviceWarning,
+  type PerceptionLimitWarning,
+  PerceptionService,
+  ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  VoiceAddresseeDecision,
 } from "@himawari-agent/platform-node";
 import {
   buildDeviceTestRequest,
@@ -55,6 +75,8 @@ import { ProductionHomeControl } from "../../apps/agent-service/src/production-h
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
+  utterancePrefetch,
+  voiceAddressee,
 } from "../../apps/agent-service/src/production-http-composition.ts";
 import { ProductionMuseControl } from "../../apps/agent-service/src/production-muse-intake-control.ts";
 
@@ -71,11 +93,73 @@ export const webToken = "web-session-token-for-device-api-test";
 const csrfKey = new Uint8Array(32).fill(5);
 export const ownerSubjectRef = "cloudflare-access:owner-device-api";
 const temporaryDirectories: string[] = [];
+const decisionServers: Server[] = [];
 
 export async function removeDeviceHarnessDirectories(): Promise<void> {
-  await Promise.all(
-    temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
-  );
+  await Promise.all([
+    ...temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
+    ...decisionServers
+      .splice(0)
+      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+  ]);
+}
+
+export const DECISION_GATEWAY_KEY = "proxy-injected";
+export const DECISION_MODEL = "typesafe-ai/jev";
+
+export interface DecisionGateway {
+  readonly requests: { readonly authorization: string; readonly body: Record<string, unknown> }[];
+  answer: (body: Record<string, unknown>) => {
+    readonly status: number;
+    readonly body: unknown;
+    readonly delayMs?: number;
+    readonly headers?: Record<string, string>;
+    readonly unfinished?: boolean;
+  };
+}
+
+export function decisionAnswer(probability: number, model = DECISION_MODEL) {
+  return {
+    status: 200,
+    body: {
+      model,
+      answers: [{ type: "predicate", name: "addressed", probability }],
+      usage: { input_tokens: 380, output_tokens: 21, total_tokens: 401 },
+    },
+  };
+}
+
+async function decisionGateway(): Promise<{
+  readonly gateway: DecisionGateway;
+  readonly baseUrl: string;
+}> {
+  const gateway: DecisionGateway = { requests: [], answer: () => decisionAnswer(0.97) };
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      gateway.requests.push({ authorization: request.headers.authorization ?? "", body });
+      const answer =
+        request.method === "POST" && request.url === "/v1/decisions"
+          ? gateway.answer(body)
+          : { status: 404, body: { error: { type: "not_found" } } };
+      setTimeout(() => {
+        if (response.destroyed) return;
+        response.writeHead(answer.status, {
+          "content-type": "application/json",
+          ...answer.headers,
+        });
+        if (answer.unfinished) response.write(JSON.stringify(answer.body));
+        else response.end(JSON.stringify(answer.body));
+      }, answer.delayMs ?? 0);
+    });
+  });
+  decisionServers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("DECISION_GATEWAY_ADDRESS");
+  return { gateway, baseUrl: `http://127.0.0.1:${address.port}/v1` };
 }
 
 export function sha256Ref(value: string) {
@@ -92,6 +176,24 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly stateRoot: string;
+  readonly presence: { deviceId: string; visible: boolean }[];
+  readonly registered: { deviceId: string; pushType: string }[];
+  readonly revoking: string[];
+  readonly wiped: string[];
+  readonly perception: PerceptionService;
+  readonly perceptionConfiguration: { current: PerceptionConfiguration };
+  readonly timeZone: { current: string };
+  readonly voiceGates: { current: VoiceGates };
+  readonly decisions: DecisionGateway;
+  readonly addressee: { current: VoiceAddresseeConfiguration };
+  readonly prefetch: QueryPrefetch;
+  readonly prefetchLimits: { current: QueryPrefetchLimits };
+  readonly embeddedQueries: string[];
+  readonly queryEmbedder: Embedder;
+  readonly limitWarnings: PerceptionLimitWarning[];
+  readonly readText: (contentRef: string) => Promise<string | undefined>;
+  readonly protector: EnvelopePayloadProtector;
 }
 
 export async function harness(
@@ -99,6 +201,15 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly applePush?: ApplePushConfiguration;
+    readonly revokeHookFails?: "prepare" | "wipe";
+    readonly withoutAddressee?: boolean;
+    readonly indexTermLimit?: number;
+    readonly indexReadText?: (
+      contentRef: string,
+      read: (contentRef: string) => Promise<string | undefined>,
+    ) => Promise<string | undefined>;
+    readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -235,6 +346,7 @@ export async function harness(
     clock,
     authority: () => authority,
     executionAuthority: () => authority as never,
+    ...(options.searchControl ? { searchControl: options.searchControl } : {}),
     museControl: new ProductionMuseControl({
       scope: { ownerId, agentId },
       store: repository.museIntake(),
@@ -257,6 +369,88 @@ export async function harness(
   const ownerActive = { current: true };
   const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
+  const presence: Harness["presence"] = [];
+  const registered: Harness["registered"] = [];
+  const revoking: string[] = [];
+  const wiped: string[] = [];
+  const payloadAdmission = new ProductionHttpPayloadAdmission({
+    ownerId,
+    agentId,
+    sessions,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector,
+    clock: () => clock.now(),
+  });
+  const perceptionConfiguration = { current: PERCEPTION_CONFIGURATION_DEFAULTS };
+  const timeZone = { current: "Asia/Tokyo" };
+  const voiceGates = { current: DEFAULT_VOICE_GATES };
+  const limitWarnings: PerceptionLimitWarning[] = [];
+  const searchTokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => new Uint8Array(32).fill(9) },
+    projectionVersion: "perception-search-test",
+  });
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => configuration.current,
+    configuration: () => perceptionConfiguration.current,
+    timeZone: () => timeZone.current,
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(stateRoot, "device-uploads"),
+    voiceGates: () => voiceGates.current,
+    searchIndex: {
+      version: "perception-search-test:rules:2000",
+      rebuildBatch: 2,
+      termLimit: options.indexTermLimit ?? 2000,
+      readText: async (contentRef) => {
+        const read = async (ref: string) => {
+          const payload = await repository.payloadStore(ownerId, agentId).get(ref);
+          if (!payload) return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await protector.unprotect({ ownerId, agentId, payload }),
+          );
+        };
+        return options.indexReadText ? options.indexReadText(contentRef, read) : read(contentRef);
+      },
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
+    onLimitWarning: (warning) => limitWarnings.push(warning),
+    now,
+  });
+  await perception.prepareDirectories();
+  const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
+  const prefetch = new QueryPrefetch({
+    limits: () => prefetchLimits.current,
+    now: () => Date.parse(clock.now()),
+  });
+  const embeddedQueries: string[] = [];
+  const fixtureEmbedder: Embedder = {
+    model: "fixture-embedding",
+    dimensions: 2,
+    embedQuery: async (query) => {
+      embeddedQueries.push(query);
+      return new Float32Array([[...query].length, 1]);
+    },
+    embedDocument: async (text) => new Float32Array([[...text].length, 0]),
+  };
+  const queryEmbedder = prefetchingEmbedder(fixtureEmbedder, prefetch);
+  const { gateway: decisions, baseUrl: decisionBaseUrl } = await decisionGateway();
+  const addressee = { current: VOICE_ADDRESSEE_DEFAULTS };
+  const addresseeRoute = voiceAddressee(
+    new VoiceAddresseeDecision({
+      model: DECISION_MODEL,
+      inputMicrosPerMillionTokens: 42_000,
+      apiKey: async () => DECISION_GATEWAY_KEY,
+      baseUrl: decisionBaseUrl,
+    }),
+    () => addressee.current,
+    perception,
+    agentId,
+    () => Date.parse(clock.now()),
+  );
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -280,14 +474,7 @@ export async function harness(
     csrf,
     threadGateway,
     gatewayV2,
-    payloadAdmission: new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions,
-      payloads: repository.payloadStore(ownerId, agentId),
-      protector,
-      clock: () => clock.now(),
-    }),
+    payloadAdmission,
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
         repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
@@ -313,10 +500,38 @@ export async function harness(
             : undefined,
         now,
         onWarning: (warning) => warnings.push(warning),
+        prepareRevoke: async (deviceId) => {
+          revoking.push(deviceId);
+          if (options.revokeHookFails === "prepare") throw new Error("PREPARE_WIPE_FAILED");
+          return async () => {
+            if (options.revokeHookFails === "wipe") throw new Error("WIPE_FAILED");
+            wiped.push(deviceId);
+          };
+        },
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
+      push: new DevicePushService({
+        store: repository.applePush(),
+        reactions: repository.webPush(),
+        configuration: () => options.applePush,
+        now,
+        onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
+        onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
+      }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
+      perception,
+      voiceGates: () => voiceGates.current,
+      prefetch: utterancePrefetch(
+        {
+          queue: prefetch,
+          embedQuery: (text) => fixtureEmbedder.embedQuery(text),
+          estimateMicros: (text) => [...text].length,
+        },
+        perception,
+        agentId,
+      ),
+      ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
     },
   });
   await app.ready();
@@ -329,6 +544,30 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    stateRoot,
+    presence,
+    registered,
+    revoking,
+    wiped,
+    perception,
+    perceptionConfiguration,
+    timeZone,
+    voiceGates,
+    decisions,
+    addressee,
+    prefetch,
+    prefetchLimits,
+    embeddedQueries,
+    queryEmbedder,
+    limitWarnings,
+    protector,
+    readText: async (contentRef) => {
+      const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+      if (!payload) return undefined;
+      return new TextDecoder("utf-8", { fatal: true }).decode(
+        await protector.unprotect({ ownerId, agentId, payload }),
+      );
+    },
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,
@@ -362,7 +601,11 @@ export function pairingCode(uri: unknown): string {
   return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
 }
 
-export async function pair(h: Harness, name = "Andy iPhone") {
+export async function pair(
+  h: Harness,
+  name = "Andy iPhone",
+  kind: "iphone" | "watch" | "mac" = "iphone",
+) {
   const started = await web(h, "pairing-codes");
   expect(started.status).toBe(201);
   const keys = generateDeviceTestKeyPair();
@@ -373,7 +616,7 @@ export async function pair(h: Harness, name = "Andy iPhone") {
     headers: { host: new URL(h.origin).host, "content-type": "application/json" },
     payload: JSON.stringify({
       pairingCode: pairingCode(started.body["pairingUri"]),
-      kind: "iphone",
+      kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
@@ -383,8 +626,12 @@ export async function pair(h: Harness, name = "Andy iPhone") {
   return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
 }
 
-export async function pairAndConfirm(h: Harness): Promise<PairedClient> {
-  const paired = await pair(h);
+export async function pairAndConfirm(
+  h: Harness,
+  name?: string,
+  kind?: "iphone" | "watch" | "mac",
+): Promise<PairedClient> {
+  const paired = await pair(h, name, kind);
   expect(paired.response.statusCode).toBe(201);
   const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
   const confirmed = await web(h, "confirm", {
@@ -422,6 +669,13 @@ export async function send(h: Harness, request: ReturnType<typeof buildDeviceTes
     headers: request.headers,
     ...(request.body ? { payload: request.body } : {}),
   });
+}
+
+export function ownerSpokenAt(threshold: number): VoiceGates {
+  return {
+    ...DEFAULT_VOICE_GATES,
+    ownerSpoken: { ...DEFAULT_VOICE_GATES.ownerSpoken, defaultThreshold: threshold },
+  };
 }
 
 export async function threadCommand(

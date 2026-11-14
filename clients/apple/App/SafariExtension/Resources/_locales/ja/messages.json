@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "Himawari"
+  },
+  "extension_description": {
+    "message": "タップしたページを Himawari に渡します。"
+  },
+  "action_title": {
+    "message": "Himawari に渡す"
+  },
+  "unreachable": {
+    "message": "渡せませんでした"
+  }
+}

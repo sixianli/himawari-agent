@@ -293,6 +293,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
             resultMemoryIds: [],
             sourceIds: [],
             floorHits: {},
+            limitChange: null,
             ruleHits: {},
             memoryInjected: false,
             usedMemoryIds: [],
@@ -1244,7 +1245,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       expect(
         (await proactive.listDecisions({ ...scope, since: SINCE, limit: 10 })).map(({ id }) => id),
       ).toEqual(["gmail-check"]);
-      await proactive.clearRecords(scope);
+      await proactive.clearRecords({ ...scope, source: "gmail" });
       expect((await list()).map(({ id }) => id)).toEqual(["keep-me"]);
     } finally {
       await repository.close();

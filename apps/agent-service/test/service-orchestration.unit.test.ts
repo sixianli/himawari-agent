@@ -768,6 +768,7 @@ function web() {
     "memoryBook",
     "memoryReminders",
     "ownerRules",
+    "ownerProposals",
     "ruleReviews",
     "memoryReviews",
     "memoryProjectionJobs",
@@ -780,6 +781,8 @@ function web() {
     "modelUsage",
     "decisionLedger",
     "gapCaseMarks",
+    "perception",
+    "pairedDevices",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

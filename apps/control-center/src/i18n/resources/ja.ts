@@ -622,6 +622,9 @@ export const messages = {
   "governance.updateAssessment": "更新差分と評価",
   "governance.rollback": "ロールバック版",
   "governance.lastTransition": "最新のバージョン切り替え",
+  "governance.lastInvalidation": "直近の無効化",
+  "governance.lastInvalidationValue":
+    "{time}：スケジュール済みジョブ {count} 件を取り消しました（自動では復元されません）",
   "governance.rollbackBoundary": "副作用 / 製品状態のロールバック境界",
   "governance.notAvailable": "利用不可",
   "governance.capability": "機能",
@@ -934,9 +937,9 @@ export const messages = {
   "rules.builtIn.note":
     "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
+    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_preauthorize_owner_intent_confirmed {外部の内容を読んだ後、あなた自身が明確に求めた操作：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。} other {}}",
+    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_preauthorize_owner_intent_confirmed {例：ウェブページを読んだ後に、あなた自身の言葉で頼んだリマインダー。意図確認が有効で確信が十分高いときだけそのまま実行し、それ以外はカードで確認します。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。} other {}}",
   "rules.builtIn.examples": "例：当てはまる {hit} 件、当てはまらない {miss} 件",
   "rules.builtIn.askFirst": "毎回確認する",
   "review.title": "記憶の修正後に再確認 · {count} 件",
@@ -970,7 +973,7 @@ export const messages = {
   "memory.page.missedSaved": "記録しました。再確認リストに表示されます",
   "rules.receipt.label": "常設ルールの控え",
   "rules.receipt.status":
-    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} rejected {不要としました。有効にはなりません} other {常設ルール}}",
   "rules.receipt.trials": "試算",
   "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -979,6 +982,7 @@ export const messages = {
     "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
   "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
   "rules.receipt.confirm": "適用",
+  "proposals.reject": "不要",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
@@ -1168,7 +1172,7 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
@@ -1445,7 +1449,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":

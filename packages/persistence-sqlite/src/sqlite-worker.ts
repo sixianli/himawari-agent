@@ -657,6 +657,7 @@ const durableOperations = new SqliteDurableOperations(
   applicationFailure,
   assertDiskHeadroom,
   loadVectorExtension(database),
+  configuration.proactiveSources,
 );
 
 function currentAuthority(input: CommitStateAndEventsInput, now: string): AuthorityRow {

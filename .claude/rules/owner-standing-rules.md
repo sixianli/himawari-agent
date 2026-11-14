@@ -14,7 +14,7 @@
 <a id="money-and-models"></a>
 ## 钱和模型
 
-- 花钱先问：任何评测、测试、实验或批量模型调用，预计要花 Andy 的钱超过 0.5 美元时，先在项目聊天报出预计费用和用途，等 Andy 明确同意再开跑；费用说不准时，按会超过处理。例外：用 OpenCode 做的合并前代码复核和方案说法核对（`plan-claims`，把方案里关于代码现状的每句话对着代码核一遍），一个 PR 或一件方案的已花的加上这一轮预计的不超过 1 美元、全项目当天合计不超过 5 美元时不用问，超了才问；费用说不准时同样按会超过处理（Andy 2026-11-14 同意；见[代码复核](../../.agents/instructions/model-review.md#code-review)）。脚本只拦一个 PR 或一件方案的 1 美元，拦不了全项目每天 5 美元：每天的复核和核对花费由协调者汇总报给 Andy，当天合计会超过 5 美元时由协调者先问。
+- 花钱先问：任何评测、测试、实验或批量模型调用，预计要花 Andy 的钱超过 0.5 美元时，先在项目聊天报出预计费用和用途，等 Andy 明确同意再开跑；费用说不准时，按会超过处理。例外：用 OpenCode 做的合并前代码复核和方案说法核对（`plan-claims`，把方案里关于代码现状的每句话对着代码核一遍），一个 PR 或一件方案的已花的加上这一轮预计的不超过 1 美元、全项目当天合计不超过 5 美元时不用问，超了才问；费用说不准时同样按会超过处理（Andy 2026-11-14 同意；见[代码复核](../../.agents/instructions/model-review.md#code-review)）。脚本只拦一个 PR 或一件方案的 1 美元，拦不了全项目每天 5 美元：每天的复核和核对花费由协调者用 `node scripts/model-review/opencode-review.mjs --spend-day` 汇总报给 Andy（只算这个工作区里已有的账本，别的分支上还没合进来的不在内，所以先合最新 `main` 再看），当天合计会超过 5 美元时由协调者先问。
 - 评测用哪个 key（API 密钥），评测之前先问 Andy。评测和测试绝不和生产共用预算：曾有一次评测花光了 Vercel 账号的预算，生产因此中断。
 - 禁用贵模型：任何场景（生产、评测、裁判、测试、实验、后台任务）都不得通过按 token 付费的渠道（例如 Vercel、OpenRouter）调用 Claude、OpenAI 或同价位的模型；按量付费只用 DeepSeek V4.1 Flash 这类低价模型或免费额度。代码和评测脚本里不得写死 `anthropic/`、`openai/` 开头的模型名。
 - Andy 已付费套餐里的 token（例如 Claude Max 附带的 API 额度、OpenCode Go）不在禁用之列，而且要优先用。生产经 Magpie（装在生产机上的模型路由程序）调用模型，顺序是套餐内 token、免费额度、最后才是 Vercel 上的低价模型。
@@ -41,7 +41,7 @@
 - Andy 尽量只和协调者沟通。所以他在项目聊天里对协调者说的话，由协调者附上他那条原话转给对应线程，就算他的授权。上线、回滚、停服、改配置、合并 PR 都是这样，不要让他再去别的线程重说一遍。上线和回滚的细节见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)。
 - 唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。需要时，协调者在项目聊天里直接告诉他“去 Mac 线程打什么”和为什么，不说“在这里说也行”。
 - 会删东西的上线，所有要 Andy 选的选项先选完，再上线。
-- 合并 PR 一律由做这个 PR 的线程执行，不让 Andy 自己去 GitHub 操作。复核没有中、高严重度的“会出错”意见，并且过了[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)写的合并条件，线程就自己合并，不等 Andy 说“合并”（Andy 2026-11-14 同意）。只有这几类要等 Andy 说“合并”（在那个线程或项目聊天里说都算）：动生产或上线的、改数据库表的、改模型调用的大改动，以及 Andy 点名要过目的。等 Andy 的时候，先做不依赖这一步的其他工作。线程执行合并的方式是给 PR 加 `merge-queue` 标签，由合并队列完整测过后合进 `main`；改了 CI 自身文件的 PR 仍由线程直接合并（[ADR 0268](../../docs/adr/0268-merge-queue-and-related-tests-on-prs.md)）；Andy 临时放宽 CI 门禁期间怎么合，见交付模式。
+- 合并 PR 一律由做这个 PR 的线程执行，不让 Andy 自己去 GitHub 操作。复核没有中、高严重度的“会出错”意见，并且过了[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)写的合并条件，线程就自己合并，不等 Andy 说“合并”（Andy 2026-11-14 同意）。只有这几类要等 Andy 说“合并”（在那个线程或项目聊天里说都算）：动生产或上线的、改模型调用的大改动，以及 Andy 点名要过目的。改数据库表不再需要 Andy 点头（Andy 2026-11-14 说：数据库表相关的改动以后都不需要他点头了），复核没有中、高意见并过了合并条件就自己合。等 Andy 的时候，先做不依赖这一步的其他工作。线程执行合并的方式是给 PR 加 `merge-queue` 标签，由合并队列完整测过后合进 `main`；改了 CI 自身文件的 PR 仍由线程直接合并（[ADR 0268](../../docs/adr/0268-merge-queue-and-related-tests-on-prs.md)）；Andy 临时放宽 CI 门禁期间怎么合，见交付模式。
 - 合并前的模型复核由 Andy 控制：他说跳过就跳过（不论复核了几轮），说停就停，说这次用哪家服务方就用哪家；线程怎么做见[Andy 怎样控制复核](../../.agents/instructions/model-review.md#owner-control)。
 
 <a id="prompt-layout-for-the-kv-cache"></a>
