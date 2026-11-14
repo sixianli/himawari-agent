@@ -24,12 +24,12 @@ import {
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
+  RuleReviewService,
   type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
-  RuleReviewService,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -93,8 +93,10 @@ import {
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
+import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
@@ -102,7 +104,6 @@ import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
-import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
@@ -116,12 +117,22 @@ import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import {
+  MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
+  MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
+  memoryClassificationFailureCode,
+  ProductionMemoryClassifier,
+} from "./production-memory-classification.js";
+import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
-import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
 import { expandMemoryReviews, findSourceMessageIds } from "./production-memory-control.js";
+import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
+import {
+  importDuplicateFailureCode,
+  productionImportDuplicateChecker,
+} from "./production-memory-import-duplicates.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -142,11 +153,11 @@ import { ProductionPayloadBrokerHandler } from "./production-payload-broker-hand
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
-  RULE_REVIEW_MAX_OUTPUT_TOKENS,
   PROACTIVE_MAX_OUTPUT_TOKENS,
   ProductionProactive,
   proactiveCostEstimator,
   proactiveRedirectUri,
+  RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
@@ -156,12 +167,6 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import {
-  MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
-  MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
-  memoryClassificationFailureCode,
-  ProductionMemoryClassifier,
-} from "./production-memory-classification.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -172,13 +177,12 @@ import {
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { recordInCurrentRun } from "./production-run-timing.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
-import { productionToolActionRegistry } from "./production-tool-actions.js";
-import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import {
   createProductionSandboxServices,
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -694,6 +698,7 @@ export async function startTenantRuntime(
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
+  let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1866,6 +1871,16 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      memoryImportDuplicates = productionImportDuplicateChecker(
+        configuration,
+        hostModelSources(configuration).provider,
+        (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "memory.import_duplicates_failed",
+            code: importDuplicateFailureCode(error),
+          }),
+      );
       const classifierModels = modelComposition;
       if (proactiveConfiguration && proactiveDescriptor && classifierModels)
         memoryClassifier = new ProductionMemoryClassifier({
@@ -2955,6 +2970,7 @@ export async function startTenantRuntime(
           service: activeDurableMemory,
           externalProposals,
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
+          ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

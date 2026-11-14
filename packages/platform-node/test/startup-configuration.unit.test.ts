@@ -2,7 +2,11 @@
 import { chmod, lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULT_HOME_FEED, DEVICE_HARD_LIMIT_KEYS } from "@himawari-agent/application";
+import {
+  DEFAULT_HOME_FEED,
+  DEVICE_HARD_LIMIT_KEYS,
+  IMPORT_DUPLICATE_DEFAULTS,
+} from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -1812,6 +1816,48 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     raw["runPolicy"] = { ...policy, museIntake: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
+});
+
+it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fills the defaults and rejects bad values", () => {
+  const raw = config("/tmp/himawari-import-duplicates-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const secrets = raw["secretReferences"] as Record<string, unknown>[];
+  const modelAuth = secrets.find(({ purpose }) => purpose === "model-auth");
+  if (!modelAuth) throw new Error("fixture secret missing");
+  const base = {
+    model: "typesafe-ai/jev",
+    secretRef: modelAuth["ref"],
+  };
+  const parse = (importDuplicates: unknown) => {
+    raw["runPolicy"] = { ...policy, importDuplicates };
+    return parseProductConfiguration(raw, "2026-11-13T00:00:00.000Z").runPolicy?.importDuplicates;
+  };
+  expect(parse(base)).toEqual({ ...IMPORT_DUPLICATE_DEFAULTS, ...base });
+  expect(parse({ ...base, yesAtLeastPermille: 850, noAtMostPermille: 150 })).toMatchObject({
+    yesAtLeastPermille: 850,
+    noAtMostPermille: 150,
+  });
+  const { model: _model, ...withoutModel } = base;
+  for (const invalid of [
+    withoutModel,
+    { ...base, secretRef: "missing-secret" },
+    { ...base, inputMicrosPerMillionTokens: 42_000 },
+    { ...base, dailyMaximumRequests: 0 },
+    { ...base, yesAtLeastPermille: 400 },
+    { ...base, noAtMostPermille: 800 },
+    { ...base, candidatesPerRequest: 0 },
+    { ...base, apiKey: "inline" },
+  ])
+    expect(() => parse(invalid)).toThrow();
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-11-13T00:00:00.000Z").runPolicy?.importDuplicates,
+  ).toBeUndefined();
 });
 
 it("[P4-5] accepts a real memory eval with a model that may see private and sensitive data and a weekly cap of at most 0.5 USD", () => {
