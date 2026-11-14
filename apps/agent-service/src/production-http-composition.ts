@@ -12,9 +12,9 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
   defaultDeviceHardLimits,
-  DEFAULT_HOME_FEED,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -90,6 +90,8 @@ import {
   type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
@@ -106,11 +108,16 @@ import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
 } from "./production-device-control.js";
+import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
-import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
+import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
@@ -141,15 +148,9 @@ import {
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
 import {
-  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
-  ProductionLoginDevicesControl,
-} from "./production-login-devices-control.js";
-import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
-import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
-import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -236,7 +237,11 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
+    readonly importDuplicates?: NonNullable<
+      ConstructorParameters<typeof ProductionMemoryControl>[0]["importDuplicates"]
+    >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -1191,6 +1196,7 @@ export async function createProductionHttpComposition(
         reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
+        ...(options.memory.actionRules ? { actionRules: options.memory.actionRules } : {}),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
@@ -1201,6 +1207,9 @@ export async function createProductionHttpComposition(
           ? { externalProposals: options.memory.externalProposals }
           : {}),
         ...(options.memory.classifier ? { classifier: options.memory.classifier } : {}),
+        ...(options.memory.importDuplicates
+          ? { importDuplicates: options.memory.importDuplicates }
+          : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;

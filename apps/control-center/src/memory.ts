@@ -25,7 +25,11 @@ export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
-export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type BuiltInActionRule = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.rules.snapshot" }
+>["payload"]["builtIn"][number];
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "ask_first" | "allow_directly";
 export type MemoryReview = Extract<
   GatewayV2Snapshot,
   { type: "memory.review.snapshot" }
@@ -48,6 +52,7 @@ const REMINDER_REFRESH_MS = 300_000;
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
+  readonly builtInRules: readonly BuiltInActionRule[];
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
   readonly review: MemoryReview | null;
   readonly respondReview: (
@@ -126,6 +131,7 @@ export function useMemory(input: {
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
+  const [builtInRules, setBuiltInRules] = useState<readonly BuiltInActionRule[]>([]);
   const [review, setReview] = useState<MemoryReview | null>(null);
   const reviewAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.review.read") ?? false;
@@ -155,7 +161,10 @@ export function useMemory(input: {
         .query(queryMessage(configuration, "memory.rules.read", {}))
         .then((result) => {
           if (result.type !== "memory.rules.snapshot") throw new Error("RULES_INVALID");
-          if (!disposed) setRules(result.payload.rules);
+          if (!disposed) {
+            setRules(result.payload.rules);
+            setBuiltInRules(result.payload.builtIn);
+          }
         })
         .catch(() => {
           if (!disposed) setFailed(true);
@@ -282,6 +291,7 @@ export function useMemory(input: {
   return {
     overview,
     rules,
+    builtInRules,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
     review,
     respondReview: (target, action, expectedRevision) =>

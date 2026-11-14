@@ -199,6 +199,39 @@ describe("[P2-3] a rule the owner set in one sentence shows its kind in the deci
     });
   });
 
+  it("[HR-4] reads a push_quiet_hours rule's periods and passes its own examples", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:night@2"),
+      stored("owner:night", 2, {
+        type: "push_quiet_hours",
+        summary: "夜里别推任务结果",
+        params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+      }),
+    );
+    expect(view).toMatchObject({
+      kind: "push_quiet_hours",
+      revision: 2,
+      origin: "owner_setting",
+      wording: {
+        values: ["夜里别推任务结果"],
+        quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+      },
+      tests: { state: "passed" },
+    });
+  });
+
+  it("[HR-4] REVERSE: a push_quiet_hours version with unreadable periods cannot be checked", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:night@1"),
+      stored("owner:night", 1, {
+        type: "push_quiet_hours",
+        summary: "x",
+        params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] },
+      }),
+    );
+    expect(view).toMatchObject({ tests: { state: "unavailable" } });
+  });
+
   it("[P2-3] REVERSE: an owner rule with a type it cannot read stays unknown and untested", () => {
     const view = describeRuleVersion(
       parseRuleRef("owner:broken@1"),
