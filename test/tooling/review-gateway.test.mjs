@@ -24,6 +24,7 @@ import {
   floorDecision,
   GATEWAY_PLATFORMS,
   gatewayConfigProblems,
+  gatewayTiming,
   groupArgs,
   installGateway,
   installGateway as installRealGateway,
@@ -33,6 +34,7 @@ import {
   postJson,
   readGatewayConfig,
   readGatewayLock,
+  readGatewayRests,
   readGatewayUsage,
   readStableUsage,
   runningGatewayCount,
@@ -60,6 +62,7 @@ import {
   reserveModels,
   reviewConfig,
   startLiveGateway,
+  timingLine,
   usesCreditProvider,
   withProviderMoney,
 } from "../../scripts/model-review/opencode-review.mjs";
@@ -1271,3 +1274,119 @@ describe("review gateway self-check", () => {
 function sha256Of(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
+
+describe("review gateway timing and price", () => {
+  const req = "group/review-deepseek-v4.1-flash";
+
+  it("[gateway] prices reasoning once because Magpie's out already includes it", () => {
+    const line = {
+      req,
+      provider: "opencode-go",
+      status: 200,
+      in: 4147,
+      out: 187,
+      reasoning: 17,
+      cache_read: 1792,
+    };
+    const { byModel } = summarizeGatewayUsage([line], config);
+    const expected = (4147 * 0.15 + 187 * 0.6 + 1792 * 0.003) / 1e6;
+    expect(byModel[deepseek]["opencode-go"].usd).toBeCloseTo(expected, 12);
+    const doubled = expected + (17 * 0.6) / 1e6;
+    expect(byModel[deepseek]["opencode-go"].usd).not.toBeCloseTo(doubled, 12);
+  });
+
+  it("[gateway] sums request time and counts cache misses per session, skipping the title request", () => {
+    const at = (fields) => ({ req, provider: "opencode-go", status: 200, ...fields });
+    const lines = [
+      at({ session: "s", effort: "low", in: 1400, cache_read: 0, ms: 3000, ttft_ms: 2000 }),
+      at({ session: "s", in: 4000, cache_read: 1800, ms: 4000, ttft_ms: 2000 }),
+      at({ session: "s", in: 2000, cache_read: 5800, ms: 5000, ttft_ms: 1500 }),
+      at({ session: "s", in: 80000, cache_read: 1800, ms: 25000, ttft_ms: 20000 }),
+      at({ session: "s", in: 1000, cache_read: 81000, ms: 6000, ttft_ms: 1000 }),
+      { req: "group/review-glm-5.3-flash", session: "g", in: 9, cache_read: 0, ms: 99 },
+    ];
+    expect(gatewayTiming(lines, deepseek)).toEqual({
+      requests: 4,
+      modelMs: 40000,
+      firstTokenMs: 24500,
+      slowestMs: 25000,
+      cacheMisses: 1,
+      missTokens: 80000,
+    });
+    expect(gatewayTiming([], deepseek)).toBeNull();
+    expect(gatewayTiming(null, deepseek)).toBeNull();
+  });
+
+  it("[gateway] [negative] a failed request or a line without a session is not a cache miss and keeps the baseline", () => {
+    const at = (fields) => ({ req, provider: "opencode-go", status: 200, ...fields });
+    const timing = gatewayTiming(
+      [
+        at({ session: "a", in: 4000, cache_read: 50000, ms: 1000 }),
+        at({ session: "a", status: 502, ms: 2000 }),
+        at({ session: "b", in: 3000, cache_read: 0, ms: 1000 }),
+        at({ in: 9000, cache_read: 0, ms: 1000 }),
+        at({ session: "a", in: 60000, cache_read: 1800, ms: 3000 }),
+        at({ session: "b", in: 1000, cache_read: 3000, ms: 1000 }),
+      ],
+      deepseek,
+    );
+    expect(timing.requests).toBe(6);
+    expect(timing.modelMs).toBe(9000);
+    expect(timing.cacheMisses).toBe(1);
+    expect(timing.missTokens).toBe(60000);
+  });
+
+  it("[gateway] prints timing and the reasons Magpie rested a provider", () => {
+    const record = {
+      model: deepseek,
+      steps: 29,
+      selfCheckMs: 83000,
+      runMs: 394000,
+      gatewayTiming: {
+        requests: 29,
+        modelMs: 320000,
+        firstTokenMs: 64000,
+        slowestMs: 45000,
+        cacheMisses: 2,
+        missTokens: 30000,
+      },
+    };
+    expect(timingLine(record)).toBe(
+      `REVIEW_TIMING ${deepseek} selfCheck=83s run=394s steps=29 requests=29 model=320s firstToken=64s slowest=45s cacheMisses=2 missTokens=30000`,
+    );
+    expect(timingLine({ model: deepseek, steps: 3 })).toBe(
+      `REVIEW_TIMING ${deepseek} selfCheck=-s run=-s steps=3`,
+    );
+    const root = mkdtempSync(join(tmpdir(), "rests-"));
+    try {
+      expect(readGatewayRests(root)).toEqual([]);
+      mkdirSync(join(root, "config", "magpie"), { recursive: true });
+      writeFileSync(
+        join(root, "config", "magpie", "rests.json"),
+        JSON.stringify({
+          opendesign: { why: "credit", status: 402, until: "2026-11-13T09:07:38Z", error: "x y" },
+        }),
+      );
+      expect(readGatewayRests(root)).toEqual(["opendesign credit 402 2026-11-13T09:07:38Z"]);
+      writeFileSync(
+        join(root, "config", "magpie", "rests.json"),
+        JSON.stringify({ "go\u001b[31m": { why: "a\u0007b c", status: 429 } }),
+      );
+      expect(readGatewayRests(root)).toEqual(["go_[31m a_b_c 429 -"]);
+      writeFileSync(join(root, "config", "magpie", "rests.json"), '{"half');
+      expect(readGatewayRests(root)).toEqual(["- unreadable:bad-json - -"]);
+      writeFileSync(join(root, "config", "magpie", "rests.json"), "[]");
+      expect(readGatewayRests(root)).toEqual(["- unreadable:not-a-map - -"]);
+      writeFileSync(
+        join(root, "config", "magpie", "rests.json"),
+        JSON.stringify({ go: { why: "😀".repeat(81), status: 429 } }),
+      );
+      expect(readGatewayRests(root)).toEqual([`go ${"😀".repeat(80)} 429 -`]);
+      rmSync(join(root, "config", "magpie", "rests.json"));
+      mkdirSync(join(root, "config", "magpie", "rests.json"));
+      expect(readGatewayRests(root)).toEqual(["- unreadable:EISDIR - -"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
