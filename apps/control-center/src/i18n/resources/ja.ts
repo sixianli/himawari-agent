@@ -922,7 +922,7 @@ export const messages = {
   "rules.note":
     "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
   "rules.type":
-    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} push_quiet_hours {通知の延期} other {その他のルール}}",
   "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
   "rules.suspended":
     "停止中（適用していません）：元の記憶が変わり、このルールと合わなくなりました。確認待ちです",
@@ -930,6 +930,15 @@ export const messages = {
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
+  "rules.builtIn.title": "組み込みルール · {count} 件",
+  "rules.builtIn.note":
+    "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
+  "rules.builtIn.name":
+    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
+  "rules.builtIn.when":
+    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。} other {}}",
+  "rules.builtIn.examples": "例：当てはまる {hit} 件、当てはまらない {miss} 件",
+  "rules.builtIn.askFirst": "毎回確認する",
   "review.title": "記憶の修正後に再確認 · {count} 件",
   "review.note":
     "直したり消したりした記憶を根拠にした記憶や、それから決めたルールがここに並びます。フラグを付けるだけで、記憶の文面は自動では変えません。停止中のルールは、あなたが決めるまで実行しません。",
@@ -1160,11 +1169,11 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} memory_review {記憶修正後の再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：お金に関わるメールとモデルが判断した} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：お金に関わるメールとモデルが判断した} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} push_quiet_hours {あなたのルール：通知しない時間帯は、指定した通知を終わってから送る} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
@@ -1437,7 +1446,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} memory_review {記憶修正後の再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":

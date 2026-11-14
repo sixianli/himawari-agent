@@ -7,6 +7,7 @@ import {
   type DurableMemoryService,
   isModelVisible,
   isReviewChangeUndoable,
+  type MailMatchParameters,
   MEMORY_REVIEW_EXPAND_BATCH,
   MEMORY_REVIEW_LIST_LIMIT,
   type MemoryBookStorePort,
@@ -42,6 +43,7 @@ import {
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
   externalProposalBatchId,
@@ -128,6 +130,13 @@ const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
 const EXTERNAL_PROPOSALS_SHOWN = 100;
 const EXTERNAL_BATCHES_SHOWN = 10;
+
+function unsupportedRuleAction(): never {
+  throw new ApplicationPortError(
+    PORT_ERROR_CODES.INVALID_OPERATION,
+    "MEMORY_RULE_ACTION_UNSUPPORTED",
+  );
+}
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
@@ -254,6 +263,7 @@ export class ProductionMemoryControl {
       "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -901,7 +911,11 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.rules.snapshot",
-      payload: { rules, generatedAt: this.options.clock.now() },
+      payload: {
+        rules,
+        builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        generatedAt: this.options.clock.now(),
+      },
     };
   }
 
@@ -965,7 +979,9 @@ export class ProductionMemoryControl {
         suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
         suggestionConditions: rule.suggestion
           ? RULE_CONDITION_FIELDS.flatMap((field) => {
-              const values = rule.suggestion?.params[field] ?? [];
+              const params = rule.suggestion?.params;
+              const values =
+                params && field in params ? (params as MailMatchParameters)[field] : [];
               return values.length ? [{ field, values: values.map(clip) }] : [];
             })
           : [],
@@ -1741,6 +1757,19 @@ export class ProductionMemoryControl {
         throw error;
       }
     }
+    if (
+      command.type === "memory.rule.respond" &&
+      (command.payload.action === "ask_first" || command.payload.action === "allow_directly")
+    ) {
+      const switches = this.options.actionRules;
+      if (!switches)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      await switches.setAskFirst(command.payload.target, command.payload.action === "ask_first");
+      return { resultRef: command.payload.target, replayed: false };
+    }
     if (command.type === "memory.review.respond") {
       const { reviews } = this.#reviews();
       const { target, action, expectedRevision } = command.payload;
@@ -1793,18 +1822,15 @@ export class ProductionMemoryControl {
         );
       const { target, action } = command.payload;
       try {
-        if (action === "confirm") {
-          const receipt = await control.confirm(target);
-          return { resultRef: receipt.ruleId ?? target, replayed: false };
-        }
-        if (action === "reconfirm")
-          return { resultRef: (await control.reconfirm(target)).ruleId, replayed: false };
-        if (action === "undo")
-          return { resultRef: (await control.undo(target)).ruleId, replayed: false };
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "MEMORY_RULE_ACTION_UNKNOWN",
-        );
+        const result =
+          action === "confirm"
+            ? (await control.confirm(target)).ruleId
+            : action === "reconfirm"
+              ? (await control.reconfirm(target)).ruleId
+              : action === "undo"
+                ? (await control.undo(target)).ruleId
+                : unsupportedRuleAction();
+        return { resultRef: result ?? target, replayed: false };
       } catch (error) {
         if (error instanceof OwnerRuleError)
           throw new ApplicationPortError(

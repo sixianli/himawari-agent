@@ -977,6 +977,24 @@ export const governanceMessages = [
         },
       },
     ],
+    builtIn: [
+      {
+        ruleId: "action_preauthorize_owner_data",
+        revision: 1,
+        outcome: "allow_preauthorized",
+        examplesHit: 2,
+        examplesMiss: 6,
+        askFirst: false,
+      },
+      {
+        ruleId: "action_ask_after_external_content",
+        revision: 1,
+        outcome: "ask_owner",
+        examplesHit: 2,
+        examplesMiss: 3,
+        askFirst: null,
+      },
+    ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
   fixture("query", "proposals.read", {}),
@@ -1020,6 +1038,10 @@ export const governanceMessages = [
     expectedVersion: 1,
     fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     action: "adopt",
+  }),
+  fixture("command", "memory.rule.respond", {
+    target: "action_preauthorize_owner_data",
+    action: "ask_first",
   }),
   fixture("command", "memory.rule.respond", {
     target: "owner:0123456789abcdef01234567",

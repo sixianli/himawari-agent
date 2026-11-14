@@ -358,10 +358,21 @@ export interface OwnerProposalConfiguration {
   readonly expiresAfterDays?: number;
 }
 
+export interface ToolRefusalConfiguration {
+  readonly consecutive: number;
+  readonly total: number;
+}
+
+export const DEFAULT_TOOL_REFUSALS: ToolRefusalConfiguration = Object.freeze({
+  consecutive: 3,
+  total: 20,
+});
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly ownerProposals?: OwnerProposalConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
+  readonly toolRefusals?: ToolRefusalConfiguration;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;
