@@ -673,8 +673,8 @@ export const HOME_ITEM_KINDS = [
   "running",
   "problem",
 ] as const;
-export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
-export const HOME_RANKS = ["rule", "deadline", "unscored", "recency"] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "model", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "unscored", "model", "recency"] as const;
 export const HOME_TARGET_TYPES = [
   "mail",
   "memory",
@@ -720,7 +720,7 @@ export const HOME_ACTIONS = [
   "undo",
   "reconnect",
 ] as const;
-export const HOME_LABEL_BASES = ["catalog"] as const;
+export const HOME_LABEL_BASES = ["catalog", "model"] as const;
 export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
 const homeQuerySchema = object({
   ...envelope("query", "home.read"),
