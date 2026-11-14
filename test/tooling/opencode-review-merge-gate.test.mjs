@@ -1646,6 +1646,19 @@ describe("opencode review merge gate", () => {
     }
   }, 60000);
 
+  it("[ADR-0268] malformed verdicts at a low-fix check are a problem, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`]: "{bad\n" }, "bad verdicts");
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      const checked = f.check({ acceptLow: 1 });
+      expect(checked.overridden).toBe(false);
+      expect(checked.lines.join("\n")).toContain("VERDICTS_INVALID");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] checks a hand-written low-fix record again at the gate", () => {
     const f = lowFixFixture();
     try {
