@@ -2097,18 +2097,18 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall and perception read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list"]);
+  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read"]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
-  ).toEqual(["reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(7);
+  ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
+  expect(builtin).toHaveLength(9);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2186,4 +2186,4 @@ const EVERY_TOOL_NAMES = [
   "rule_undo",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "569b06f05ee8bf70ebcb55c8ee840061532862aa37f359efc5db69596a2ae2dd";
+  "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";
