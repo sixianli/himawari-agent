@@ -57,7 +57,7 @@ final class SettingsStoreTests: XCTestCase {
         )
     }
 
-    private static let devices = #"""
+    nonisolated private static let devices = #"""
     {"payload":{"devices":[
       {"id":"dev_phone","revision":1,"kind":"iphone","name":"Andy 的 iPhone","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00Z","lastSeenAt":"2026-11-12T00:00:00Z","pairingNumber":null},
       {"id":"dev_watch","revision":2,"kind":"watch","name":"Apple Watch","releaseChannel":"direct","status":"active","pairedAt":"2026-11-02T00:00:00Z","lastSeenAt":null,"pairingNumber":null},
@@ -66,7 +66,7 @@ final class SettingsStoreTests: XCTestCase {
     ],"limits":[],"pairing":null,"generatedAt":"2026-11-12T00:00:00Z"}}
     """#
 
-    private static func answer(_ body: [String: JSONValue]) -> String {
+    nonisolated private static func answer(_ body: [String: JSONValue]) -> String {
         guard case .string(let type)? = body["type"] else { return "{}" }
         switch type {
         case "capability.list":
@@ -181,11 +181,11 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(rename["expectedRevision"], .number(2))
     }
 
-    private static func file(_ id: String, _ name: String, origin: String, deleted: Bool = false) -> String {
+    nonisolated private static func file(_ id: String, _ name: String, origin: String, deleted: Bool = false) -> String {
         #"{"fileId":"\#(id)","threadId":"t1","name":"\#(name)","threadTitle":null,"kind":"pdf","origin":"\#(origin)","mediaType":"application/pdf","sizeBytes":10,"version":1,"createdAt":"2026-11-11T00:00:00Z","deleted":\#(deleted),"contentPath":null}"#
     }
 
-    private static func files(origin: String, before: String?) -> String {
+    nonisolated private static func files(origin: String, before: String?) -> String {
         let items: [String]
         let next: String
         switch (origin, before) {
@@ -237,7 +237,8 @@ final class SettingsStoreTests: XCTestCase {
     func testSigningOutAllOthersIsOneFaceIDAndBusyIsNotAFailure() async throws {
         let transport = ScriptedTransport(answer: Self.answer)
         let settings = store(transport)
-        XCTAssertEqual(try await settings.signOutOthers(reason: "退出其他"), .done)
+        let outcome = try await settings.signOutOthers(reason: "退出其他")
+        XCTAssertEqual(outcome, .done)
         let sent = await transport.sent
         let index = try XCTUnwrap(sent.firstIndex { $0["type"] == "login.devices.revoke_others" })
         XCTAssertEqual(sent[index - 1], [:])
@@ -247,7 +248,8 @@ final class SettingsStoreTests: XCTestCase {
             gateway: ManageGateway(transport: ConflictTransport(), makeIdentifier: { "0123456789abcdef0123" }),
             identity: nil
         )
-        XCTAssertEqual(try await busy.signOutOthers(reason: "退出其他"), .stillChanging)
+        let busyOutcome = try await busy.signOutOthers(reason: "退出其他")
+        XCTAssertEqual(busyOutcome, .stillChanging)
         let browser = try JSONDecoder().decode(
             LoginDevice.self,
             from: Data(#"{"deviceId":"x","label":"Chrome","firstSeenAt":"2026-11-01T00:00:00Z","lastSeenAt":"2026-11-01T00:00:00Z","current":false}"#.utf8)
@@ -290,7 +292,8 @@ final class SettingsStoreTests: XCTestCase {
         await session.run(reason: "添加设备")
         guard case .asking(let device) = session.stage else { return XCTFail("\(session.stage)") }
         XCTAssertEqual(device.id, "dev_new")
-        let code = try XCTUnwrap(await server.startedCode)
+        let started = await server.startedCode
+        let code = try XCTUnwrap(started)
         XCTAssertNotNil(code.range(of: "^[A-Za-z0-9_-]{21}[AQgw]$", options: .regularExpression))
         try await session.confirm(device, reason: "配对")
         let confirmed = await server.confirmed
