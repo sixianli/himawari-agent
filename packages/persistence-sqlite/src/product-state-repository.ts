@@ -28,6 +28,7 @@ import type {
   GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  HomeUrgencyStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -35,7 +36,6 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
-  PairedDeviceStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
@@ -47,6 +47,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
@@ -81,6 +82,11 @@ import type {
   TraceStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type UnitOfWorkPort,
+} from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
   AgentId,
@@ -104,11 +110,6 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "./migration-engine.js";
-import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
-  type UnitOfWorkPort,
-} from "@himawari-agent/application";
 import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
@@ -605,6 +606,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   reviewPrereview(): ReviewPrereviewStorePort {
     return this.durable.reviewPrereview();
+  }
+
+  homeUrgency(): HomeUrgencyStorePort {
+    return this.durable.homeUrgency();
   }
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {

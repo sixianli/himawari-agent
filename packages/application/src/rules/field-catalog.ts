@@ -6,7 +6,7 @@ export interface RuleFieldDefinition {
   readonly description: string;
 }
 
-export const RULE_GATES = ["mail_item", "mail_delivery", "action"] as const;
+export const RULE_GATES = ["mail_item", "mail_delivery", "push_delivery", "action"] as const;
 export type RuleGate = (typeof RULE_GATES)[number];
 
 export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDefinition[]>> =
@@ -68,6 +68,29 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
       }),
     ] as const),
     mail_delivery: Object.freeze([
+      Object.freeze({
+        name: "local_minutes",
+        type: "int",
+        description: "这个实例主人所在时区的当地时间，从 0 点起的分钟数（0 到 1439）",
+      }),
+      Object.freeze({
+        name: "local_weekday",
+        type: "int",
+        description: "主人所在时区当天是星期几（0 是星期日，6 是星期六）",
+      }),
+      Object.freeze({
+        name: "local_previous_weekday",
+        type: "int",
+        description: "主人所在时区前一天是星期几（0 是星期日，6 是星期六）",
+      }),
+    ] as const),
+    push_delivery: Object.freeze([
+      Object.freeze({
+        name: "push_class",
+        type: "string",
+        description:
+          "这条推送属于哪一类：scheduled_reminder 是主人自己定的到点提醒，run_result 是任务完成或失败，mail_reminder 是邮件主动提醒；审批和 Muse 告警由程序直接放行，不会交给规则",
+      }),
       Object.freeze({
         name: "local_minutes",
         type: "int",

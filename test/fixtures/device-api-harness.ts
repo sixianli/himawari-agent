@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   AgentThreadGatewayService,
   createProactiveSeal,
+  DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
@@ -50,6 +51,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
+import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
@@ -216,7 +218,17 @@ export async function harness(
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
   const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
+  const home = new ProductionHomeControl({
+    settings: DEFAULT_HOME_FEED,
+    listApprovals: () =>
+      repository.authorizationStore().listApprovals(ownerId, agentId, { status: "pending" }),
+    runThread: async () => null,
+    threadTitle: async () => null,
+    clock,
+    onSourceFailure: () => undefined,
+  });
   const gatewayV2 = createProductionApprovalGateway({
+    homeControl: home,
     configuration: { ownerId, agentId },
     repository,
     access: threadAccess,
@@ -290,6 +302,7 @@ export async function harness(
       fencingToken: authority.fencingToken,
     },
     devices: {
+      home: { resolveAction: (input) => home.resolveAction(input) },
       service: new PairedDeviceService({
         store: repository.pairedDevices(),
         sessions,

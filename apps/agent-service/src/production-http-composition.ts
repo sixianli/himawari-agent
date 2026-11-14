@@ -111,7 +111,11 @@ import {
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_HOME_OPERATIONS,
+  ProductionHomeControl,
+  type ProductionHomeUrgencyOptions,
+} from "./production-home.js";
 import {
   PRODUCTION_SEARCH_OPERATIONS,
   ProductionSearchControl,
@@ -223,6 +227,7 @@ export interface ProductionHttpCompositionOptions {
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
+  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -289,7 +294,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -1265,6 +1270,7 @@ export async function createProductionHttpComposition(
       const payload = thread.titleRef ? await memoryPayloads.get(thread.titleRef) : undefined;
       if (!payload || payload.contentType !== "text/plain") return { title: null };
       return {
+        dataClassification: payload.dataClassification,
         title:
           new TextDecoder("utf-8", { fatal: true })
             .decode(await payloadProtector.unprotect({ ownerId, agentId, payload }))
@@ -1283,6 +1289,20 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
+    ...(options.homeUrgency
+      ? {
+          urgency: {
+            ...options.homeUrgency,
+            scope: { ownerId, agentId },
+            store: repository.homeUrgency(),
+            onFailure: (error) =>
+              options.onHomeDiagnostic?.({
+                event: "home.urgency_failed",
+                error: error instanceof Error ? error.message : String(error),
+              }),
+          },
+        }
+      : {}),
   });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
@@ -1407,6 +1427,7 @@ export async function createProductionHttpComposition(
     files,
     devices: {
       service: pairedDevices,
+      home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1477,6 +1498,7 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
+        home.startScoring();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1489,10 +1511,12 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
+      home.startScoring();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await home.stopScoring();
       try {
         await app.close();
       } finally {
