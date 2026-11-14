@@ -16,6 +16,7 @@ import {
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
+  enforceableOwnerRule,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
@@ -30,6 +31,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  unreadablePushRule,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -2617,6 +2619,25 @@ export async function startTenantRuntime(
           ...(configuration.runPolicy?.timeZone
             ? { timeZone: configuration.runPolicy.timeZone }
             : {}),
+          readPushRules: async () =>
+            (
+              await pushRepository.ownerRules().list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
+              })
+            ).flatMap((row) => {
+              if (unreadablePushRule(row)) throw new Error("PUSH_RULE_UNREADABLE");
+              const rule = enforceableOwnerRule(row);
+              return rule?.gate === "push_delivery" ? [rule] : [];
+            }),
+          onGateFailure: ({ sourceKey }) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "web-push.gate-failed",
+              code: "WEB_PUSH_RULE_GATE_FAILED",
+              sourceKey,
+            }),
           now: () => clock.now(),
           onDelivery: (outcome) =>
             writeServiceDiagnostic(errorOutput, {

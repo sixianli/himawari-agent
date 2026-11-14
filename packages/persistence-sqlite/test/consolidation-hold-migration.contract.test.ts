@@ -49,7 +49,14 @@ function dump(database: Database) {
       .all(...TABLES)
       .map((row) => {
         const entry = row as { sql: string | null };
-        return { ...entry, sql: entry.sql?.replace(/\s+/gu, " ").replace(/, 'hold'/gu, "") };
+        return {
+          ...entry,
+          sql: entry.sql
+            ?.replace(/\s+/gu, " ")
+            .replace(/, 'hold'/gu, "")
+            .replace(/, 'web_push'/gu, "")
+            .replace(/ OR \(kind = 'web_push' AND outcome = 'deferred'\)/gu, ""),
+        };
       }),
   };
 }

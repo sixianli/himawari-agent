@@ -1,0 +1,3 @@
+{
+  "alters": ["web_push_outbox"]
+}
