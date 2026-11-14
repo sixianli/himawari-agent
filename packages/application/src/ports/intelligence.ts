@@ -389,6 +389,7 @@ export interface RuntimeProjection extends RuntimeProjectionContext {
   readonly systemInstruction: string;
   readonly answerLocaleRef?: string;
   readonly contentClassification?: DataClassification;
+  readonly ownerAttachments?: number;
 }
 
 export interface RuntimeProjectionPort {
@@ -477,6 +478,7 @@ export interface RuntimeToolSettledResult {
   readonly externalActionId: string | null;
   readonly modelContent: string;
   readonly contentClassification?: DataClassification;
+  readonly refused?: true;
 }
 
 export interface RuntimeToolSuspendedResult {
