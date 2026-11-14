@@ -314,6 +314,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
           return scripted;
         },
         modelRef: MODEL_REF,
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt }) {
           (prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text) ? referencePrompts : prompts).push(
             prompt,
@@ -715,6 +716,31 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
     expect(tuned.insights[0]?.rating).toBe("useful");
     expect(tuned.decisions[0]?.rating).toBe("useful");
     expect(tuned.metrics.hits).toBe(1);
+
+    const toggles = () => {
+      const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+      const kinds = database
+        .prepare(
+          "SELECT kind FROM observation_events WHERE kind IN ('proactive_enabled', 'proactive_disabled') ORDER BY sequence",
+        )
+        .all()
+        .map((row) => (row as { kind: string }).kind);
+      database.close();
+      return kinds;
+    };
+    const togglesBefore = toggles();
+    await h.command("proactive.pause", {});
+    await h.command("proactive.pause", {});
+    const paused = await h.overview();
+    expect(paused.enabled).toBe(false);
+    expect(paused.quietHours).toEqual(tuned.quietHours);
+    expect(paused.importantSenders).toEqual(tuned.importantSenders);
+    expect(toggles()).toEqual([...togglesBefore, "proactive_disabled"]);
+    await h.command("proactive.settings.set", {
+      enabled: true,
+      quietHours: tuned.quietHours,
+      importantSenders: tuned.importantSenders,
+    });
 
     await h.command("proactive.insight.respond", { insightId, action: "done", rating: null });
     expect((await h.overview()).insights).toEqual([]);

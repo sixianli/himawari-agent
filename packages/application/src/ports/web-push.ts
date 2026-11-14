@@ -37,6 +37,7 @@ export interface WebPushOutboxItem extends WebPushScope {
   readonly threadId: string | null;
   readonly createdAt: string;
   readonly expiresAt: string;
+  readonly deferUntil?: string | null;
 }
 
 export interface WebPushAttempt {
@@ -131,6 +132,15 @@ export interface WebPushStorePort {
   listDue(
     input: WebPushScope & { readonly now: string; readonly limit: number },
   ): Promise<readonly WebPushDue[]>;
+  deferItem(
+    input: WebPushScope & {
+      readonly sourceKey: string;
+      readonly deferUntil: string;
+      readonly expiresAt: string;
+      readonly ruleRefs: readonly string[];
+      readonly now: string;
+    },
+  ): Promise<boolean>;
   recordAttempt(
     input: WebPushScope & {
       readonly sourceKey: string;

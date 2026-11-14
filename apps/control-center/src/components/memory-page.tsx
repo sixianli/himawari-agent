@@ -49,7 +49,7 @@ import {
   ProactiveReviewSection,
   useHighlight,
 } from "./proactive-reminders.js";
-import { OwnerRulesSection } from "./rule-receipt.js";
+import { BuiltInActionRulesSection, OwnerRulesSection } from "./rule-receipt.js";
 import { WeeklyReport } from "./weekly-report.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -2476,6 +2476,7 @@ export function MemoryPage({
       <ExternalProposalsSection memory={memory} message={message} />
       <ConfirmSection memory={memory} message={message} />
       <OwnerRulesSection memory={memory} message={message} />
+      <BuiltInActionRulesSection memory={memory} message={message} />
       <CorrectionReviewSection
         memory={memory}
         message={message}

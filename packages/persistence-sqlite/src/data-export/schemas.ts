@@ -287,6 +287,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
       "retrieval_degrade",
       "external_read",
       "rule_review",
+      "web_push",
       "memory_review",
     ]),
     scenario: nullable(enumOf(["gmail"])),
