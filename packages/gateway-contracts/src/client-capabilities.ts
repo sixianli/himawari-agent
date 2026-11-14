@@ -210,6 +210,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "capability.install.approve"),
   change("v2", "capability.update.respond"),
   change("v2", "capability.disable"),
+  change("v2", "capability.reactivate"),
   change("v2", "capability.rollback"),
   notOnPhone("v2", "host.file.prepare", "command", WEB_OPERATIONS_ONLY),
   notOnPhone("v2", "host.file.execute", "command", WEB_OPERATIONS_ONLY),

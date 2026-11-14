@@ -128,7 +128,7 @@ date: "2026-11-12"
 
 - 不改表，不改迁移号，不改发给模型的内容。
 - 契约新增一个命令类型；运行目录多一份文件。
-- 手机端要把 `capability.reactivate` 登记进手机能力表，归“改”类；等手机相关的改动合并后由第 11 批线程做。
+- 手机能力表（`packages/gateway-contracts/src/client-capabilities.ts`）已登记 `capability.reactivate`，归“改”类（要面容），Swift 端生成文件同步；手机上的按钮和文案由 iOS 第 11 批线程做。
 - 重新启用只恢复能力本身，句柄和定时任务不回来。
 
 [↑ 返回阅读导航](#contents)

@@ -45,7 +45,7 @@
     "workspace.detail": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "workspace.list": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "workspace.stage": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
-    "capability.reactivate": "调用方是 iPhone 端：Andy 2026-11-12 定有 App 版就不再做网页版，控制中心不加重新启用的按钮；手机能力表的登记由 iOS 第 11 批任务做（ADR 0254）。"
+    "capability.reactivate": "调用方是 iPhone 端：Andy 2026-11-12 定有 App 版就不再做网页版，控制中心不加重新启用的按钮；手机能力表已登记，手机上的按钮由 iOS 第 11 批任务做（ADR 0254）。"
   },
   "notInstalled": {
     "capability.install.approve": "能力管理：契约和页面已有，生产网关没有安装。审核来源、批准安装、更新回应另行安排；装进已安装清单后移出名单",
