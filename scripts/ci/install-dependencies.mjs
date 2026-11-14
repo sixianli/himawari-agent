@@ -436,25 +436,31 @@ export async function installDependencies({
   }
 }
 
+export function installArguments(args) {
+  const options = {};
+  for (let index = 0; index < args.length; index++) {
+    const name = {
+      "--root": "root",
+      "--tools": "toolsDirectory",
+      "--evidence": "evidenceDirectory",
+      "--cache": "cacheDirectory",
+    }[args[index]];
+    assert(name && args[index + 1], `未知或不完整参数: ${args[index]}`);
+    const value = args[++index];
+    options[name] = name === "cacheDirectory" && value === "runner" ? value : resolve(value);
+  }
+  return options;
+}
+
 if (
   process.argv[1] &&
   existsSync(process.argv[1]) &&
   realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const options = {};
-    const args = process.argv.slice(2);
-    for (let index = 0; index < args.length; index++) {
-      const name = {
-        "--root": "root",
-        "--tools": "toolsDirectory",
-        "--evidence": "evidenceDirectory",
-        "--cache": "cacheDirectory",
-      }[args[index]];
-      assert(name && args[index + 1], `未知或不完整参数: ${args[index]}`);
-      options[name] = resolve(args[++index]);
-    }
-    console.log(JSON.stringify(await installDependencies(options), null, 2));
+    console.log(
+      JSON.stringify(await installDependencies(installArguments(process.argv.slice(2))), null, 2),
+    );
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

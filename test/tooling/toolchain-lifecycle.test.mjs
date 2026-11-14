@@ -44,7 +44,11 @@ vi.mock("node:child_process", async (original) => {
   };
 });
 
-import { installDependencies, runnerNpmCache } from "../../scripts/ci/install-dependencies.mjs";
+import {
+  installArguments,
+  installDependencies,
+  runnerNpmCache,
+} from "../../scripts/ci/install-dependencies.mjs";
 import {
   installTools,
   loadToolchainLock,
@@ -449,6 +453,16 @@ describe("合成npm/native/SQLite子进程边界", () => {
     });
     expect(second.cache).toBe("warm");
     expect(readFileSync(join(cache, "_cacache/index"), "utf8")).toBe("synthetic cached bytes");
+  });
+  it("命令行的 --cache runner 原样传给安装，其他路径照旧转成绝对路径", () => {
+    expect(installArguments(["--tools", "t", "--evidence", "e", "--cache", "runner"])).toEqual({
+      toolsDirectory: resolve("t"),
+      evidenceDirectory: resolve("e"),
+      cacheDirectory: "runner",
+    });
+    expect(installArguments(["--cache", ".ci-output/npm-cache"]).cacheDirectory).toBe(
+      resolve(".ci-output/npm-cache"),
+    );
   });
   it("runner 缓存满 7 天整个清空重建", () => {
     const home = mkdtempSync(join(tmpdir(), "runner-cache-"));
