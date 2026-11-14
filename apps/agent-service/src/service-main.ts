@@ -626,13 +626,20 @@ export async function runAgentService(
       dependencies,
     });
     handle = started;
-    const authorityLoss = new Promise<void>((resolve) => started.onAuthorityLost(() => resolve()));
+    let lossError: unknown;
+    const authorityLoss = new Promise<void>((resolve) =>
+      started.onAuthorityLost((error) => {
+        lossError = error;
+        resolve();
+      }),
+    );
     const termination = await waitForTerminationOrAuthorityLoss(authorityLoss);
     const signal = termination.kind === "signal" ? termination.signal : "AUTHORITY_LOST";
     writeServiceDiagnostic(output, {
       component: "agent-service",
       event: "service.draining",
       signal,
+      ...(termination.kind === "signal" ? {} : { code: stableErrorCode(lossError) }),
     });
     await started.stop();
     writeServiceDiagnostic(output, {
@@ -902,7 +909,17 @@ export async function startTenantRuntime(
         read: () => readAuthorityFile(layout),
         write: (deployment) => writeAuthorityFile(layout, deployment),
       },
-      onLost: (error) => {
+      onLost: (error, details) => {
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "authority.lost",
+          code: stableErrorCode(error),
+          ...(details.msSinceLastRenewal === null
+            ? {}
+            : { msSinceLastRenewal: details.msSinceLastRenewal }),
+          leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
+          renewalIntervalMs: AUTHORITY_RENEWAL_INTERVAL_MS,
+        });
         health?.setAuthorityActive(false);
         authorityLost = true;
         authorityLossError = error;

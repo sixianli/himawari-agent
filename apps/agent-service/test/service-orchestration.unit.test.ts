@@ -512,10 +512,16 @@ describe("agent service startup ownership", () => {
     start();
     await settle();
     expect(stdout).toContain('"event":"service.ready"');
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(await exit).toBe(1);
     expect(stdout).toContain('"signal":"AUTHORITY_LOST"');
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AGENT_AUTHORITY_LOST"/);
+    expect(stderr).toContain('"event":"authority.lost"');
+    expect(stderr).toContain('"code":"AGENT_AUTHORITY_LOST"');
+    expect(stderr).toContain('"msSinceLastRenewal"');
     expect(boundary.admissionStop).toHaveBeenCalledOnce();
     expect(boundary.stopWorker).toHaveBeenCalledOnce();
   });
@@ -581,7 +587,9 @@ describe("resource recovery without web Run dispatch", () => {
         boundary.payloadStart.mockRejectedValue(new Error("PAYLOAD_STARTUP_FAILED"));
       if (stage === "authority")
         boundary.connect.mockImplementation(async () => {
-          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+            msSinceLastRenewal: 12_000,
+          });
           return { payload: { ready: true, selectedSchemaVersion: "execution.v2" } };
         });
       start();
@@ -606,7 +614,10 @@ describe("resource recovery without web Run dispatch", () => {
     await settle();
     expect(recoverPending).toHaveBeenCalledOnce();
     if (cause === "signal") signal?.();
-    else boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    else
+      boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+        msSinceLastRenewal: 12_000,
+      });
     await settle();
     expect(received?.aborted).toBe(true);
     expect(await exit).toBe(cause === "signal" ? 0 : 1);
@@ -1220,7 +1231,7 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     const early = vi.fn();
     handle.onAuthorityLost(early);
     const error = new Error("AGENT_AUTHORITY_LOST");
-    boundary.authority.mock.calls[0]?.[0].onLost(error);
+    boundary.authority.mock.calls[0]?.[0].onLost(error, { msSinceLastRenewal: 12_000 });
     await settle();
     expect(early).toHaveBeenCalledWith(error);
     const late = vi.fn();
@@ -1238,7 +1249,9 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
       throw new Error("HANDLER_FAILED");
     });
     handle.onAuthorityLost(other);
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(other).toHaveBeenCalledOnce();
     expect(stderr).toContain('"event":"authority.lost_handler_failed"');

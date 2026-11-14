@@ -158,6 +158,52 @@ function lifecycle(
 }
 
 describe("ProductionAuthorityLifecycle", () => {
+  it("reports the error and the time since the last renewal when the lease expires", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let nowMs = Date.parse(NOW);
+    const losses: { error: unknown; details: unknown }[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: { now: () => new Date(nowMs).toISOString() },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (error, details) => {
+        losses.push({ error, details });
+      },
+    });
+    await service.start();
+    nowMs += 10_000;
+    await service.renew();
+    nowMs += 41_000;
+    leases.currentRecord = undefined;
+    await expect(service.renew()).rejects.toMatchObject({
+      code: "PRODUCTION_AUTHORITY_LOST",
+    });
+    expect(losses).toHaveLength(1);
+    expect(losses[0]?.error).toMatchObject({ code: "PRODUCTION_AUTHORITY_LOST" });
+    expect(losses[0]?.details).toEqual({ msSinceLastRenewal: 41_000 });
+  });
+
+  it("does not report a loss while renewals keep succeeding", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    const losses: unknown[] = [];
+    const service = lifecycle(deploymentStore, leases, undefined, (error) => losses.push(error));
+    await service.start();
+    await service.renew();
+    await service.renew();
+    expect(losses).toEqual([]);
+    await service.stop();
+  });
+
   it("keeps authority when validation overlaps renewal of the same lease", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);
