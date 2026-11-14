@@ -61,7 +61,7 @@ date: "2026-11-14"
 - integration、e2e、pi-compat、tooling 只跑 `vitest list --changed <PR 基线>` 选出的测试，可以是零个（`scripts/ci/test-scope.mjs`）。
 - 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的 `.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs` 源码（配置文件 `*.config.*`、`vitest.*` 也不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、提示词文本、`scripts/`、`ci/`、`.github/` 都跑全量。某个项目的 `vitest list` 出错时，那个项目退回全量。
 - 检查结果里记下哪些项目只跑了相关测试（`relatedProjects`），汇总结果标 `scope: related`。汇总只在 PR 上接受相关范围，只接受上面四个项目，只有声明了相关范围的项目才允许零计数。
-- main 的轻量确认不接受标成 `related` 的 PR 结果（`MAIN_GATE_RELATED_SCOPE`），人手合并的 PR 在 main 上会跑全量。
+- main 的轻量确认不接受标成 `related` 的 PR 结果（`MAIN_GATE_RELATED_SCOPE`），`main-evidence.mjs` 拿不到可用证据时退回 `mode: "full"`，所以 PR 上只跑了相关测试、又被人手合并的提交，在 main 上会跑全量；PR 上本来就跑了全量的（例如改了 CI 文件的 PR），main 仍可走轻量确认。
 
 ### 合并队列
 
@@ -72,7 +72,7 @@ date: "2026-11-14"
   1. 有候选在跑：main 被别的方式改了就取消候选的 CI、丢掉候选；超过 3 小时也取消后丢掉；触发 15 分钟还找不到运行就丢掉。
   2. 候选的 CI 跑完并且 `ci/required` 作业成功：先确认 main 还是候选的基线、每个 PR 还开着、还有标签、头提交没变，有一项不满足就一个都不合、丢掉候选。然后逐个调合并接口（带 `sha`），每次合并前确认 main 等于上一步的结果，合并后核对 main 的两个父提交和树与候选里这一步完全一致；不一致就停下整个队列（状态里写原因，在 PR 上留言），等人工检查。合完的 PR 去掉标签并留言。
   3. 候选失败：只有一个 PR 时把它移出队列（去掉 `merge-queue`、加 `merge-queue-failed`、留言带运行链接）；多于一个时拆成前后两半排在最前面，依次测。前一半过了就先合入，后一半在新的 main 上重测，失败再拆，所以“两半各自都过、合在一起才失败”的情况最终会落到一个 PR 上被移出，不会无限循环。
-  4. 没有候选：按最近一次加标签的时间排序，取最多 5 个就绪的 PR（开着、不是草稿、来自本仓库、目标是 main、PR 头上 `ci/required` 成功、复核检查通过、没改 `.github`、`ci`、`scripts/ci`）。`ci/required` 还在跑或还没有的跳过，不移出；其余不满足的移出并留言。以当前 main 为底逐个 `git merge --no-ff`，冲突的移出；推到唯一的 `mq/<运行号>-<尝试次数>` 分支，手动触发 `ci.yml`（基线是当前 main），完整跑一遍。
+  4. 没有候选：按最近一次加标签的时间排序，取最多 5 个就绪的 PR（开着、不是草稿、来自本仓库、目标是 main、PR 头上 `ci/required` 成功、复核检查通过、没改 `.github`、`ci`、`scripts/ci`）。已关闭的、标签已被摘掉的、PR 头在读取期间刚变的，以及 `ci/required` 还在跑或还没有的，都跳过，不移出；其余不满足的移出并留言。以当前 main 为底逐个 `git merge --no-ff`，冲突的移出；推到唯一的 `mq/<运行号>-<尝试次数>` 分支，手动触发 `ci.yml`（基线是当前 main），完整跑一遍。
 - 复核检查在 PR 头的临时检出上运行 main 上的 `opencode-review.mjs --assert-reviewed`，`--main-ref` 用 main 和 PR 头的共同祖先，这样批里前面的 PR 合入后，后面的 PR 不会因为 main 前进而被判 `main-not-merged`。合在一起是否出错由候选的完整 CI 判断。
 - 改了 `.github`、`ci`、`scripts/ci` 的 PR 不进队列：候选的完整 CI 会用到这些改动，不能自己证明自己。这类 PR 照原流程等 PR 上的 CI 后由线程手动合并，main 确认会跑全量。
 - 只在 `DELIVERY_MODE` 为 `fast` 时工作。完整模式的规则集要求 PR 分支包含 main 的最新提交（`scripts/delivery-mode/github-ruleset.sh` 第 29 行 `"strict_required_status_checks_policy": true`），批里第一个 PR 合进去后，第二个 PR 的分支就不再包含最新的 main，合并会被拒绝，所以完整模式下队列什么都不做。
