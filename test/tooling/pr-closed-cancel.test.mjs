@@ -18,7 +18,7 @@ function evaluateCiGroup(template, { workflow, eventName, prNumber, draft }) {
   });
 }
 
-describe("关闭或合并 PR 时取消它还在排队的 CI", () => {
+describe("关闭或合并 PR 时取消它还在排队的非草稿 CI", () => {
   const ci = read(".github/workflows/ci.yml");
   const closed = read(".github/workflows/pr-closed.yml");
   const closedGroup = (number) =>
@@ -31,7 +31,9 @@ describe("关闭或合并 PR 时取消它还在排队的 CI", () => {
     expect(closed.on).toEqual({ pull_request: { types: ["closed"] } });
     expect(closed.concurrency["cancel-in-progress"]).toBe(true);
     expect(closed.permissions).toEqual({});
-    expect(Object.values(closed.jobs).every((job) => job.if === false)).toBe(true);
+    expect(Object.values(closed.jobs).map((job) => job.if)).toEqual([
+      "github.event.action != 'closed'",
+    ]);
     expect(closedGroup(516)).toBe(
       evaluateCiGroup(ci.concurrency.group, {
         workflow: ci.name,
@@ -57,6 +59,6 @@ describe("关闭或合并 PR 时取消它还在排队的 CI", () => {
     });
     expect(closedGroup(516)).not.toBe(ready517);
     expect(closedGroup(516)).not.toBe(draft516);
-    expect(closedGroup(516)).not.toMatch(/^Main confirmation|^main-confirmation/u);
+    expect(closedGroup(516)).not.toBe(read(".github/workflows/main.yml").concurrency.group);
   });
 });

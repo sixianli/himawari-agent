@@ -10,7 +10,7 @@ concurrency:
 jobs:
   cancel:
     name: cancel-closed-pr-ci
-    if: false
+    if: github.event.action != 'closed'
     runs-on: ci-vps-gate
     steps:
       - run: "true"
