@@ -30,6 +30,7 @@ export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";
 export * from "./local-onnx-embedding.js";
 export * from "./memory-import-duplicate-decision.js";
+export * from "./owner-intent-decision.js";
 export * from "./payload-protector.js";
 export * from "./payload-uds-transport.js";
 export * from "./public-web-egress.js";
