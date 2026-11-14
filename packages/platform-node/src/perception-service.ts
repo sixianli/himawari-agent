@@ -28,7 +28,6 @@ import {
   PERCEPTION_RECORD_ID_PATTERN,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_RECORD_TYPES,
-  perceptionSearchEvidenceText,
   PERCEPTION_RETENTION_CONFIGURATION,
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
@@ -48,6 +47,7 @@ import {
   type PerceptionSettings,
   type PerceptionSpeakerKind,
   type PerceptionStorePort,
+  perceptionSearchEvidenceText,
   perceptionTypesOfSense,
   resolvePerceptionOrigin,
   type TrackPointInput,
@@ -107,6 +107,7 @@ export interface PerceptionServiceOptions {
   readonly searchIndex?: {
     readonly version: string;
     readonly rebuildBatch: number;
+    readonly termLimit: number;
     readonly readText: (contentRef: string) => Promise<string | undefined>;
     readonly document: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
     readonly query: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
@@ -530,7 +531,10 @@ export class PerceptionService {
           const searchTerms =
             indexText === "" || known.has(record.input.id) || !this.#options.searchIndex
               ? undefined
-              : await this.#options.searchIndex.document(scope, indexText).catch(() => undefined);
+              : await this.#options.searchIndex
+                  .document(scope, indexText)
+                  .then((terms) => terms.slice(0, this.#options.searchIndex?.termLimit))
+                  .catch(() => undefined);
           prepared.push({
             ...record.input,
             contentRef,
@@ -667,12 +671,18 @@ export class PerceptionService {
       if (stale.length === 0) return rebuilt;
       for (const record of stale) {
         try {
-          const text =
-            record.contentRef === null ? undefined : await index.readText(record.contentRef);
+          let text: string | undefined;
+          if (record.contentRef !== null) {
+            text = await index.readText(record.contentRef);
+            if (text === undefined) throw new Error("PERCEPTION_INDEX_TEXT_MISSING");
+          }
           const indexText = [text ?? "", perceptionSearchEvidenceText(record.type, record.evidence)]
             .filter((part) => part !== "")
             .join(" ");
-          const terms = indexText === "" ? [] : await index.document(owned, indexText);
+          const terms =
+            indexText === ""
+              ? []
+              : (await index.document(owned, indexText)).slice(0, index.termLimit);
           await this.#options.store.replaceSearchTerms({
             ...owned,
             recordId: record.id,

@@ -188,4 +188,73 @@ describe("perception literal search", () => {
       }),
     ).toHaveLength(0);
   });
+
+  it("rebuilds stale records on the first search without an explicit rebuild", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const spoken = utterance(h, "我对花生过敏", { seconds: -8 });
+    await ingest(h, client, [spoken]);
+    await h.repository.perception().replaceSearchTerms({
+      ...perceptionScope,
+      recordId: spoken.id,
+      version: "old",
+      terms: [],
+    });
+    expect(indexRows(h, spoken.id)).toBe(0);
+    expect(await ask(h, "我对什么过敏")).toMatchObject({ state: "answered" });
+    expect(indexRows(h, spoken.id)).toBeGreaterThan(0);
+  });
+
+  it("caps the stored terms of one record at the configured limit", async () => {
+    const h = await harness({ indexTermLimit: 6 });
+    const client = await pairAndConfirm(h);
+    const long = utterance(h, "今天下午开会讨论预算和下个季度的出差安排以及人员调整", {
+      seconds: -8,
+    });
+    await ingest(h, client, [long]);
+    expect(indexRows(h, long.id)).toBe(6);
+    await h.repository.perception().replaceSearchTerms({
+      ...perceptionScope,
+      recordId: long.id,
+      version: "old",
+      terms: [],
+    });
+    expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(1);
+    expect(indexRows(h, long.id)).toBe(6);
+  });
+
+  it.each(["throw", "undefined"] as const)(
+    "leaves a record stale when reading its text %s during rebuild",
+    async (mode) => {
+      const failing = { on: false };
+      const h = await harness({
+        indexReadText: async (ref, read) => {
+          const text = await read(ref);
+          if (failing.on && text?.includes("花生")) {
+            if (mode === "throw") throw new Error("READ_FAILED");
+            return undefined;
+          }
+          return text;
+        },
+      });
+      const client = await pairAndConfirm(h);
+      const bad = utterance(h, "我对花生过敏", { seconds: -8 });
+      const good = utterance(h, "周五要去京都出差", { seconds: -6 });
+      await ingest(h, client, [bad, good]);
+      for (const id of [bad.id, good.id])
+        await h.repository.perception().replaceSearchTerms({
+          ...perceptionScope,
+          recordId: id,
+          version: "old",
+          terms: [],
+        });
+      failing.on = true;
+      expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(1);
+      expect(indexRows(h, good.id)).toBeGreaterThan(0);
+      expect(indexRows(h, bad.id)).toBe(0);
+      failing.on = false;
+      expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(1);
+      expect(indexRows(h, bad.id)).toBeGreaterThan(0);
+    },
+  );
 });

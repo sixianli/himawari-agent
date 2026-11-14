@@ -1434,15 +1434,14 @@ export async function createProductionHttpComposition(
     searchIndex: {
       version: `${searchTokenizer.projectionVersion}:${PERCEPTION_SEARCH_INDEX_RULES}:${perceptionSearchSettings.indexTermLimit}`,
       rebuildBatch: perceptionSearchSettings.indexRebuildBatch,
+      termLimit: perceptionSearchSettings.indexTermLimit,
       readText: readPerceptionText,
-      document: async (scope, text) =>
-        (
-          await searchTokenizer.tokenizeDocument({
-            ownerId: scope.ownerId,
-            agentId: scope.agentId,
-            text,
-          })
-        ).slice(0, perceptionSearchSettings.indexTermLimit),
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          text,
+        }),
       query: (scope, text) =>
         searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
     },
