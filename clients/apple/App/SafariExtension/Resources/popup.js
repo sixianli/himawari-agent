@@ -11,6 +11,7 @@ const followUp = document.querySelector(".follow-up");
 
 let page = null;
 let textRead = false;
+let kept = true;
 let words = {};
 
 const ask = (message) =>
@@ -41,9 +42,9 @@ function showCard() {
   card.hidden = page === null;
   if (page === null) return;
   card.querySelector(".card-title").textContent = page.title || hostOf(page.url) || page.url;
-  card.querySelector(".card-subtitle").textContent = textRead
-    ? [hostOf(page.url), words["sheet.fullPage"]].filter(Boolean).join(" · ")
-    : words["sheet.textUnreadable"];
+  card.querySelector(".card-subtitle").textContent = !textRead
+    ? words["sheet.textUnreadable"]
+    : [hostOf(page.url), kept ? words["sheet.fullPage"] : ""].filter(Boolean).join(" · ");
 }
 
 function showEditing() {
@@ -59,6 +60,7 @@ function showEditing() {
 
 function showOutcome(reply) {
   panel.dataset.phase = reply.phase;
+  kept = reply.kept !== false;
   const request = field.value.trim();
   field.hidden = true;
   send.hidden = true;

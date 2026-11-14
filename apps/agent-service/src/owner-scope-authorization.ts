@@ -33,6 +33,7 @@ import {
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import type { ContextExternalContent, ExternalContentSource } from "./context-external-content.js";
+import type { OwnerIntentGate } from "./owner-intent-gate.js";
 import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
 import { BUILT_IN_CAPABILITY_VERSION, builtInCapabilityFacts } from "./production-tool-actions.js";
 
@@ -84,6 +85,7 @@ export interface OwnerScopeAuthorizationOptions {
   readonly intentLifetimeMs: number;
   readonly rules?: readonly RuleRecord[];
   readonly externalContent?: Pick<ContextExternalContent, "read" | "mark">;
+  readonly ownerIntent?: Pick<OwnerIntentGate, "confirm">;
 }
 
 export interface OwnerScopeFreeze {
@@ -168,46 +170,61 @@ export class OwnerScopeAuthorization {
     if (externalSources.length > 0) factCodes.push(POLICY_FACT_CODES.contextExternalContent);
     if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);
     if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);
-    const unrated: Omit<GovernedActionIntent, "finalRisk"> = {
-      contractVersion: "authorization.v2",
-      id,
-      ownerId: configuration.ownerId,
-      agentId: configuration.agentId,
-      runId: invocation.runId,
-      threadId: invocation.context?.threadId ?? source.threadId ?? `run:${invocation.runId}`,
-      capabilityRef: row.capabilityRef,
-      capabilityVersion: BUILT_IN_CAPABILITY_VERSION,
-      operation: row.operation,
-      resourceRef: id,
-      resourceRefs: [id],
-      targets: [
-        { type: row.targetType, ref: configuration.ownerId },
-        { type: "tool", ref: row.tool },
-        { type: "input-digest", ref: inputDigest },
-      ],
-      dataClassification: invocation.dataClassification,
-      sideEffect: row.sideEffect,
-      estimatedCostMicros: 0,
-      frequency: { count: 1, intervalMs: null },
-      idempotencyKey: id as GovernedActionIntent["idempotencyKey"],
-      reversible: row.reversible,
-      requestedAt: now,
-      expiresAt,
-      actionKind: row.actionKind,
-      disclosure: row.disclosure,
-      recipients: [],
-      credentialOrAccessChange: false,
-      modelClassification: {
+    const threadId = invocation.context?.threadId ?? source.threadId ?? `run:${invocation.runId}`;
+    const build = (codes: readonly PolicyFactCode[]): GovernedActionIntent => {
+      const unrated: Omit<GovernedActionIntent, "finalRisk"> = {
+        contractVersion: "authorization.v2",
+        id,
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        runId: invocation.runId,
+        threadId,
+        capabilityRef: invocation.capabilityRef,
+        capabilityVersion: BUILT_IN_CAPABILITY_VERSION,
+        operation: row.operation,
+        resourceRef: id,
+        resourceRefs: [id],
+        targets: [
+          { type: row.targetType, ref: configuration.ownerId },
+          { type: "tool", ref: row.tool },
+          { type: "input-digest", ref: inputDigest },
+        ],
+        dataClassification: invocation.dataClassification,
+        sideEffect: row.sideEffect,
+        estimatedCostMicros: 0,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: id as GovernedActionIntent["idempotencyKey"],
+        reversible: row.reversible,
+        requestedAt: now,
+        expiresAt,
         actionKind: row.actionKind,
-        suggestedRisk: ACTION_KIND_RISK_BASELINE[row.actionKind],
-        reasonCode: "product_owner_scope",
-      },
-      deterministicFacts: runtimePolicyFacts(factCodes),
+        disclosure: row.disclosure,
+        recipients: [],
+        credentialOrAccessChange: false,
+        modelClassification: {
+          actionKind: row.actionKind,
+          suggestedRisk: ACTION_KIND_RISK_BASELINE[row.actionKind],
+          reasonCode: "product_owner_scope",
+        },
+        deterministicFacts: runtimePolicyFacts(codes),
+      };
+      return {
+        ...unrated,
+        finalRisk: computeActionRisk({ ...unrated, finalRisk: "LOW" }),
+      };
     };
-    const proposed: GovernedActionIntent = {
-      ...unrated,
-      finalRisk: computeActionRisk({ ...unrated, finalRisk: "LOW" }),
-    };
+    let proposed = build(factCodes);
+    if (
+      this.#options.ownerIntent &&
+      (await this.#options.ownerIntent.confirm({
+        intent: proposed,
+        source,
+        row,
+        invocation,
+        externalSources,
+      }))
+    )
+      proposed = build([...factCodes, POLICY_FACT_CODES.ownerIntentConfirmed]);
     if (expiresAt <= now) return denied("intent_expired");
     const intent = (await freeze(`owner-scope-intent:${id}`, proposed)) as GovernedActionIntent;
     if (

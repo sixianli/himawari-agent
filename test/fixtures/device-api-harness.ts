@@ -110,6 +110,7 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -246,6 +247,7 @@ export async function harness(
     clock,
     authority: () => authority,
     executionAuthority: () => authority as never,
+    ...(options.searchControl ? { searchControl: options.searchControl } : {}),
     museControl: new ProductionMuseControl({
       scope: { ownerId, agentId },
       store: repository.museIntake(),

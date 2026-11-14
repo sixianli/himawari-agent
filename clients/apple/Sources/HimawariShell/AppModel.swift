@@ -4,6 +4,7 @@ import HimawariCore
 import HimawariDesign
 import HimawariManage
 import HimawariSenses
+import HimawariShare
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -392,7 +393,11 @@ public final class AppModel {
         guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
         let queue = HandoverQueue(store: store)
         guard !queue.pending().isEmpty else { return }
+        #if canImport(UIKit)
+        let courier = HandoverCourier(api: api, images: UIKitImageFitter())
+        #else
         let courier = HandoverCourier(api: api)
+        #endif
         handoverDrain = Task { [weak self] in
             let results = await queue.drain(using: courier)
             guard let self else { return }

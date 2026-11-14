@@ -183,8 +183,8 @@ public enum HandoverOutcome: Sendable, Equatable {
 extension HandoverOutcome {
     public var keepsWhatWasRead: Bool {
         switch self {
-        case .delivered, .queued, .failed: true
-        case .entryOff, .deviceRemoved: false
+        case .delivered, .queued: true
+        case .entryOff, .deviceRemoved, .failed: false
         }
     }
 }
@@ -373,6 +373,9 @@ public final class HandoverCourier: Sendable {
             case let .conversation(attachment, kind, name, truncated):
                 let ref = try await api.uploadAttachment(requestId: handover.attachmentRequestId, content: attachment, as: kind == .image ? .image : .text)
                 let tag = MessageAttachment(name: name, ref: ref, bytes: Data(attachment.utf8).count, kind: kind, truncated: truncated)
+                if let limits = configuration.attachments, !MessageAttachments.fits(text: handover.request ?? "", attachments: [tag], limits: limits) {
+                    return .failed(.tooLarge)
+                }
                 let created = try await api.createThread(requestId: handover.threadRequestId, answerLocale: handover.answerLocale)
                 let message = OutgoingMessage(
                     messageId: handover.messageId,
@@ -396,7 +399,11 @@ public final class HandoverCourier: Sendable {
             case let .media(kind, contentType):
                 guard case let .image(data, _, _) = handover.content else { return .failed(.rejected) }
                 if let budget = configuration.limit("device.upload.file_bytes"), data.count > budget { return .failed(.tooLarge) }
-                try await api.uploadMedia(data, kind: kind, batchId: handover.id, contentType: contentType)
+                do {
+                    try await api.uploadMedia(data, kind: kind, batchId: handover.id, contentType: contentType)
+                } catch DeviceAPIError.server(let status, _, _) where status == 404 || status == 405 {
+                    return .failed(.serverOutdated)
+                }
                 return .delivered(answered: false)
             }
         } catch let error as HandoverPlanError {
@@ -424,39 +431,25 @@ public final class HandoverCourier: Sendable {
 
 public final class HandoverQueue: @unchecked Sendable {
     private let store: LocalStore
-    private let lock = NSLock()
-    public static let prefix = "handover-"
+    public static let prefix = "handover-item-"
 
     public init(store: LocalStore) {
         self.store = store
     }
 
-    private static let index = "handover-index"
-
     public func pending() -> [Handover] {
-        lock.withLock { ids() }.compactMap { id in
-            store.read(Self.prefix + id).flatMap { try? JSONDecoder().decode(Handover.self, from: $0) }
-        }
+        store.names()
+            .filter { $0.hasPrefix(Self.prefix) }
+            .compactMap { name in store.read(name).flatMap { try? JSONDecoder().decode(Handover.self, from: $0) } }
+            .sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
     }
 
     public func add(_ handover: Handover) throws {
-        try lock.withLock {
-            try store.write(Self.prefix + handover.id, try JSONEncoder().encode(handover))
-            var list = ids()
-            if !list.contains(handover.id) { list.append(handover.id) }
-            try store.write(Self.index, try JSONEncoder().encode(list))
-        }
+        try store.write(Self.prefix + handover.id, try JSONEncoder().encode(handover))
     }
 
     public func remove(_ id: String) throws {
-        try lock.withLock {
-            try store.write(Self.prefix + id, nil)
-            try store.write(Self.index, try JSONEncoder().encode(ids().filter { $0 != id }))
-        }
-    }
-
-    private func ids() -> [String] {
-        store.read(Self.index).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        try store.write(Self.prefix + id, nil)
     }
 
     public func drain(using courier: HandoverCourier) async -> [String: HandoverOutcome] {
@@ -465,7 +458,7 @@ public final class HandoverQueue: @unchecked Sendable {
             let outcome = await courier.deliver(handover)
             results[handover.id] = outcome
             switch outcome {
-            case .queued: continue
+            case .queued, .failed(.serverOutdated), .failed(.limitReached): continue
             case .deviceRemoved: return results
             default: try? remove(handover.id)
             }

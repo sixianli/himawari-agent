@@ -77,6 +77,13 @@ it("sends the typed request with the page and shows the check only when it was d
   await queued.close();
 });
 
+it("does not claim the full page was handed over when delivery failed", async () => {
+  const tab = await openPanel(context, scene("22-gaps-2h-safari-failed"), words, unreachable);
+  expect(await tab.locator(".outcome-text").textContent()).toBe(words["outcome.serverOutdated"]);
+  expect(await tab.locator(".card-subtitle").textContent()).toBe("tabelog.com");
+  await tab.close();
+});
+
 it("offers exactly one follow-up that opens the matching page in the App", async () => {
   const tab = await openPanel(context, scene("22-gaps-2e-safari-entry-off"), words, unreachable);
   expect(await tab.locator("button:visible").allTextContents()).toEqual([

@@ -159,6 +159,36 @@ import Testing
         #expect(refusedOutcome == .failed(.rejected))
     }
 
+    @Test func aBigImageWithoutARequestOnAServerWithoutUploadsIsReportedAsOutdated() async throws {
+        let exchange = RecordingExchange([ok(configJSON()), HTTPExchangeResponse(status: 404, body: Data())])
+        let item = handover(.image(data: Data([1, 2, 3]), mimeType: "image/png", name: nil), entry: .share)
+        let outcome = await (try courier(exchange)).deliver(item)
+        #expect(outcome == .failed(.serverOutdated))
+    }
+
+    @Test func aRequestLongerThanAMessageIsRefusedBeforeAThreadIsOpened() async throws {
+        let limited = #"{"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":2,"attachments":{"textCharacters":1000,"imageCharacters":1000,"perMessage":10,"messageCharacters":50}}"#
+        let exchange = RecordingExchange([ok(limited), HTTPExchangeResponse(status: 201, body: Data(#"{"ref":"payload:abc"}"#.utf8))])
+        let item = handover(.text("短"), request: String(repeating: "问", count: 80))
+        let outcome = await (try courier(exchange)).deliver(item)
+        #expect(outcome == .failed(.tooLarge))
+        #expect(exchange.requests.map { $0.url?.path ?? "" } == ["/api/device/v1/config", "/api/device/v1/attachments"])
+    }
+
+    @Test func theQueueSurvivesTwoWritersThatNeverSawEachOthersIndex() throws {
+        let store = MemoryLocalStore()
+        let extensionSide = HandoverQueue(store: store)
+        let appSide = HandoverQueue(store: store)
+        let first = Handover(id: "BBBBBBBBBBBBBBBBBBBBBBBB", entry: .share, content: .text("a"), request: nil, sourceApp: nil, createdAt: moment, answerLocale: .chinese)
+        let second = Handover(id: "CCCCCCCCCCCCCCCCCCCCCCCC", entry: .share, content: .text("b"), request: nil, sourceApp: nil, createdAt: moment.addingTimeInterval(1), answerLocale: .chinese)
+        try extensionSide.add(first)
+        try appSide.remove(first.id)
+        try extensionSide.add(second)
+        #expect(appSide.pending().map(\.id) == [second.id])
+        try HandoverSettings().save(to: store)
+        #expect(appSide.pending().map(\.id) == [second.id])
+    }
+
     @Test func theQueueKeepsWhatCouldNotBeSentAndDropsWhatWasDelivered() async throws {
         let queue = HandoverQueue(store: MemoryLocalStore())
         let first = Handover(id: "BBBBBBBBBBBBBBBBBBBBBBBB", entry: .share, content: .text("a"), request: nil, sourceApp: nil, createdAt: moment, answerLocale: .chinese)
@@ -176,6 +206,31 @@ import Testing
         #expect(results[first.id] == .delivered(answered: false))
         #expect(results[second.id] == .queued)
         #expect(queue.pending().map(\.id) == [second.id])
+    }
+
+    @Test func theQueueKeepsWhatAnOutdatedServerCouldNotTakeYet() async throws {
+        let queue = HandoverQueue(store: MemoryLocalStore())
+        let item = Handover(id: "BBBBBBBBBBBBBBBBBBBBBBBB", entry: .share, content: .text("a"), request: "问", sourceApp: nil, createdAt: moment, answerLocale: .chinese)
+        try queue.add(item)
+        let old = #"{"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":2}"#
+        let results = await queue.drain(using: try courier(RecordingExchange([ok(old)])))
+        #expect(results[item.id] == .failed(.serverOutdated))
+        #expect(queue.pending().map(\.id) == [item.id])
+    }
+
+    @Test func manyWritersThatNeverSawEachOthersWorkAllKeepTheirItems() async throws {
+        let store = MemoryLocalStore()
+        let queues = [HandoverQueue(store: store), HandoverQueue(store: store)]
+        let ids = (0..<60).map { String(format: "%024d", $0) }
+        await withTaskGroup(of: Void.self) { group in
+            for (offset, id) in ids.enumerated() {
+                group.addTask {
+                    let item = Handover(id: id, entry: .share, content: .text("a"), request: nil, sourceApp: nil, createdAt: moment.addingTimeInterval(Double(offset)), answerLocale: .chinese)
+                    try? queues[offset % 2].add(item)
+                }
+            }
+        }
+        #expect(queues[0].pending().map(\.id) == ids)
     }
 
     @Test func theDeskRefusesASwitchedOffEntryAndQueuesWhenTheServerIsUnreachable() async throws {
@@ -246,6 +301,7 @@ import Testing
             #expect(subtitle == "tabelog.com")
             #expect(subtitle?.contains(words) == false)
         }
+        #expect(read.pageSubtitle(fullText: words, outcome: .failed(.serverOutdated), paired: true) == "tabelog.com")
         #expect(HandoverContent.link(url: "https://tabelog.com/a", title: nil).pageSubtitle(fullText: words, outcome: nil, paired: true) == nil)
     }
 }

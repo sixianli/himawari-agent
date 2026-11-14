@@ -1,0 +1,2 @@
+{"model": "opencode-go/deepseek-v4.1-flash", "id": "d1", "quote": "### 1. 低：把“读列表不受配置上限截断”改成固定 200，没有任何反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把读取上限改回配置值", "consequence": "测试不会失败", "modelSeverity": "低", "reason": "已补：上限 2 的箱读出 3 条待采纳"}
+{"model": "opencode-go/deepseek-v4.1-flash", "id": "d2", "quote": "### 2. 低：迁移的 CHECK 与新上限不一致；文档只写“不得含控制符”，代码还拒绝了首尾空白", "valid": true, "class": "error", "severity": "low", "trigger": "读表约束或文档", "consequence": "和代码的 200、首尾空白规则对不上", "modelSeverity": "低", "reason": "已改：表里说明和效果的长度约束收到 200，文档补一句"}
