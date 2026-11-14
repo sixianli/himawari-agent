@@ -6,6 +6,9 @@ import Observation
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(os)
+import os
+#endif
 
 public enum AppPhase: Equatable {
     case unpaired(PairingProblem?)
@@ -37,7 +40,17 @@ public final class AppModel {
     private static let recordAccount = "pairing-record"
 
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, restoring: true)
+    }
+
+    private static func logUnknownServerValues(subsystem: String) {
+        #if canImport(os)
+        let logger = Logger(subsystem: subsystem, category: "server-values")
+        ServerValueDiagnostics.shared.observe { report in
+            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
+        }
+        #endif
     }
 
     init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
