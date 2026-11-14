@@ -208,6 +208,9 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       const replies = new Map<string, Answer>();
       const model: ProactiveModelInvoker = {
         modelRef: MODEL_REF,
+        get allowedDataClassifications() {
+          return allowed;
+        },
         model: {
           async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
             const reply = replies.get(request.invocationId) as Answer;
