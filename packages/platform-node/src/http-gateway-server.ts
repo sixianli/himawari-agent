@@ -41,6 +41,7 @@ import {
   registerDeviceApiRoutes,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
+import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -133,6 +134,7 @@ export interface HttpGatewayServerOptions {
     readonly configuration: () => DeviceConfiguration;
     readonly audit: AuditLedgerPort;
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+    readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
     readonly home?: DeviceHomePort;
@@ -915,7 +917,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
-    if (error instanceof DeviceGatewayError) {
+    if (error instanceof DeviceGatewayError || error instanceof DevicePushError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
     }
@@ -1320,6 +1322,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       },
       audit: options.devices.audit,
       ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
+      ...(options.devices.push ? { push: options.devices.push } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({

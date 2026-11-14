@@ -86,6 +86,10 @@ import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import {
+  disablePushForRevokedDevices,
+  SqliteApplePushOperations,
+} from "./sqlite-apple-push-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
 import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
@@ -388,6 +392,7 @@ export class SqliteDurableOperations {
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly pairedDevices: SqlitePairedDeviceOperations;
+  private readonly applePush: SqliteApplePushOperations;
   private readonly perception: SqlitePerceptionOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
@@ -502,6 +507,7 @@ export class SqliteDurableOperations {
     this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
+    this.applePush = new SqliteApplePushOperations(database, fail, assertDiskHeadroom);
     this.perception = new SqlitePerceptionOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
@@ -687,6 +693,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
     if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
+    if (operation.startsWith("applePush.")) return this.applePush.execute(operation, payload);
     if (operation.startsWith("pairedDevices."))
       return this.pairedDevices.execute(operation, payload);
     if (operation.startsWith("perception.")) return this.perception.execute(operation, payload);
@@ -844,6 +851,10 @@ export class SqliteDurableOperations {
             record: CapabilityRegistryRecord;
             expectedRevision: number;
           },
+        );
+      case "capability.listScheduledJobRefs":
+        return this.listCapabilityScheduledJobRefs(
+          payload as { ownerId: string; agentId: string; capabilityRef: string },
         );
       case "capability.invalidateAuthority":
         return this.invalidateCapabilityAuthority(
@@ -2691,7 +2702,6 @@ export class SqliteDurableOperations {
     revokedAt: string;
   }): CapabilityRegistryRecord {
     const transaction = this.database.transaction(() => {
-      const saved = this.saveCapability(input);
       this.revokeCapabilityHandlesCore({
         ownerId: input.ownerId,
         agentId: input.agentId,
@@ -2709,6 +2719,21 @@ export class SqliteDurableOperations {
         revision: number;
         recordJson: string;
       }>;
+      const lifecycle = input.record.lifecycle;
+      const saved = this.saveCapability({
+        ...input,
+        record: {
+          ...input.record,
+          lastInvalidation:
+            lifecycle === "disabled"
+              ? {
+                  lifecycle,
+                  cancelledScheduledJobs: jobs.length,
+                  occurredAt: input.revokedAt,
+                }
+              : (input.record.lastInvalidation ?? null),
+        },
+      });
       for (const job of jobs) {
         const record = JSON.parse(job.recordJson) as Record<string, unknown>;
         this.database
@@ -2731,6 +2756,22 @@ export class SqliteDurableOperations {
       return saved;
     });
     return transaction.immediate();
+  }
+
+  private listCapabilityScheduledJobRefs(input: {
+    ownerId: string;
+    agentId: string;
+    capabilityRef: string;
+  }): readonly string[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT id FROM scheduled_jobs
+          WHERE owner_id = ? AND agent_id = ? AND status != 'revoked'
+            AND json_extract(record_json, '$.capabilityRef') = ? ORDER BY id`,
+        )
+        .all(input.ownerId, input.agentId, input.capabilityRef) as Array<{ id: string }>
+    ).map(({ id }) => id);
   }
 
   private switchCapabilityVersion(input: {
@@ -5105,6 +5146,17 @@ export class SqliteDurableOperations {
           WHERE device_id = ? AND status = 'active'`,
         )
         .run(input.revokedAt, input.deviceId);
+      disablePushForRevokedDevices(
+        this.database,
+        (
+          this.database
+            .prepare(
+              "SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked'",
+            )
+            .all(input.deviceId) as { id: string }[]
+        ).map(({ id }) => id),
+        input.revokedAt,
+      );
       this.database
         .prepare(
           `DELETE FROM device_request_nonces WHERE device_id IN (

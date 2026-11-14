@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AgentThreadGatewayService,
+  type ApplePushConfiguration,
   createProactiveSeal,
   DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
@@ -38,11 +39,13 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   type DevicePairingAccess,
+  DevicePushService,
   EnvelopePayloadProtector,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
+  ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
 import {
@@ -97,6 +100,10 @@ export interface Harness {
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
   readonly stateRoot: string;
+  readonly presence: { deviceId: string; visible: boolean }[];
+  readonly registered: { deviceId: string; pushType: string }[];
+  readonly revoking: string[];
+  readonly wiped: string[];
   readonly perception: PerceptionService;
   readonly perceptionConfiguration: { current: PerceptionConfiguration };
   readonly timeZone: { current: string };
@@ -111,6 +118,8 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly applePush?: ApplePushConfiguration;
+    readonly revokeHookFails?: "prepare" | "wipe";
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
@@ -271,6 +280,10 @@ export async function harness(
   const ownerActive = { current: true };
   const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
+  const presence: Harness["presence"] = [];
+  const registered: Harness["registered"] = [];
+  const revoking: string[] = [];
+  const wiped: string[] = [];
   const payloadAdmission = new ProductionHttpPayloadAdmission({
     ownerId,
     agentId,
@@ -283,6 +296,10 @@ export async function harness(
   const timeZone = { current: "Asia/Tokyo" };
   const ownerVoiceQualified = { current: false };
   const limitWarnings: PerceptionLimitWarning[] = [];
+  const searchTokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => new Uint8Array(32).fill(9) },
+    projectionVersion: "perception-search-test",
+  });
   const perception = new PerceptionService({
     store: repository.perception(),
     deviceConfiguration: () => configuration.current,
@@ -291,6 +308,12 @@ export async function harness(
     protectText: async (input) =>
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(stateRoot, "device-uploads"),
+    searchIndex: {
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
     ownerVoiceQualified: () => ownerVoiceQualified.current,
     onLimitWarning: (warning) => limitWarnings.push(warning),
     now,
@@ -345,9 +368,25 @@ export async function harness(
             : undefined,
         now,
         onWarning: (warning) => warnings.push(warning),
+        prepareRevoke: async (deviceId) => {
+          revoking.push(deviceId);
+          if (options.revokeHookFails === "prepare") throw new Error("PREPARE_WIPE_FAILED");
+          return async () => {
+            if (options.revokeHookFails === "wipe") throw new Error("WIPE_FAILED");
+            wiped.push(deviceId);
+          };
+        },
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
+      push: new DevicePushService({
+        store: repository.applePush(),
+        reactions: repository.webPush(),
+        configuration: () => options.applePush,
+        now,
+        onPresence: (deviceId, visible) => presence.push({ deviceId, visible }),
+        onRegistered: (deviceId, pushType) => registered.push({ deviceId, pushType }),
+      }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
       perception,
     },
@@ -363,6 +402,10 @@ export async function harness(
     webAuthentication,
     warnings,
     stateRoot,
+    presence,
+    registered,
+    revoking,
+    wiped,
     perception,
     perceptionConfiguration,
     timeZone,
@@ -409,7 +452,11 @@ export function pairingCode(uri: unknown): string {
   return (JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { code: string }).code;
 }
 
-export async function pair(h: Harness, name = "Andy iPhone") {
+export async function pair(
+  h: Harness,
+  name = "Andy iPhone",
+  kind: "iphone" | "watch" | "mac" = "iphone",
+) {
   const started = await web(h, "pairing-codes");
   expect(started.status).toBe(201);
   const keys = generateDeviceTestKeyPair();
@@ -420,7 +467,7 @@ export async function pair(h: Harness, name = "Andy iPhone") {
     headers: { host: new URL(h.origin).host, "content-type": "application/json" },
     payload: JSON.stringify({
       pairingCode: pairingCode(started.body["pairingUri"]),
-      kind: "iphone",
+      kind,
       name,
       releaseChannel: "direct",
       devicePublicKey: keys.publicKeySpkiBase64,
@@ -430,8 +477,12 @@ export async function pair(h: Harness, name = "Andy iPhone") {
   return { response, keys, confirmKeys, code: pairingCode(started.body["pairingUri"]) };
 }
 
-export async function pairAndConfirm(h: Harness): Promise<PairedClient> {
-  const paired = await pair(h);
+export async function pairAndConfirm(
+  h: Harness,
+  name?: string,
+  kind?: "iphone" | "watch" | "mac",
+): Promise<PairedClient> {
+  const paired = await pair(h, name, kind);
   expect(paired.response.statusCode).toBe(201);
   const device = (paired.response.json() as { device: { id: string; revision: number } }).device;
   const confirmed = await web(h, "confirm", {
