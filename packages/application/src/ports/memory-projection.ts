@@ -245,6 +245,7 @@ export interface MemoryProviderProjectionPort {
     readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
+    readonly lexicalOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }
