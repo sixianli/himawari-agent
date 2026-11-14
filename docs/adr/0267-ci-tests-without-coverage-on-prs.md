@@ -32,10 +32,10 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
 
 ## 前提和来源
 
-1. 每项检查都要等 policy，coverage 还要等 build。来源：本 PR 之前的 `ci/policy.json` 里 coverage 一项，原话 `"needs": ["policy", "build"],`；static、build、security 各自的 `"needs": ["policy"],`。
-2. policy 作业原来跑 tooling 测试，coverage 作业也跑。来源：本 PR 之前的 `ci/policy.json` 里 policy 一项，原话 `"projects": ["tooling"],`；`scripts/ci/check-policy.mjs` 里 coverage 的必选项目，原话 `const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];`。
+1. 每项检查都要等 policy，coverage 还要等 build。来源：`scripts/ci/check-policy.mjs` 的 `upgradeCoverageToTests` 认的旧写法，原话 `sameSet(coverage.needs ?? [], ["policy", "build"])`。
+2. policy 作业原来可以跑 tooling 测试，coverage 作业也跑 tooling。来源：同一个函数认的旧写法，原话 `[[], ["tooling"]].some((projects) => sameSet(find("policy").projects ?? [], projects))` 和 `sameSet(coverage.projects ?? [], mainProjects)`；`mainProjects` 的原话是 `const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];`。
 3. tooling 里 3 个复核脚本的测试占了 tooling 文件耗时的约 81%。来源：`.agents/evidence/ci-test-timing-2026-11-13.md`，原话“合计 1003 秒，约占 tooling 的 81%”。这是云端容器上的实测，不是 CI 机器上的数字。
-4. 统计覆盖率时，测试在 v8 的覆盖率收集下运行，再生成 JSON 和 LCOV 报告并和基线比较。来源：本 PR 之前的 `scripts/ci/run.mjs`，原话 `"--coverage",`，以及 `collectCoverage()`、`compareCoverage()` 两步。
+4. 统计覆盖率时，测试在 v8 的覆盖率收集下运行，再生成 JSON 和 LCOV 报告并和基线比较。来源：`scripts/ci/run.mjs` 带 `--coverage measure` 时走的那段，原话 `"--coverage",`，以及 `collectCoverage()`、`compareCoverage()` 两步。
 5. 不统计覆盖率时，测试照样全部运行，失败照样让作业失败。来源：本 PR 之后的 `scripts/ci/run.mjs` 第 336–337 行，原话 `const measuredProjects = measure ? coverageProjects : [];` 和 `const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));`。
 6. 未核实：CI 机器上 tests 作业不统计覆盖率时的真实时长。合并后第一批运行的作业时长和 `CI_HOST_LOAD` 日志是核对依据。
 
@@ -59,7 +59,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
    - 新增 `tooling` 作业，在 Oracle 的 ARM 机器上跑，只等 policy，和 tests 并行。policy 作业不再跑任何测试。
    - 本地入口跟着改：`npm test` 运行 `scripts/ci/local.mjs --check tests`，`npm run test:tooling` 运行 `--check tooling`。[ADR 0189](0189-drop-node-floor-and-fold-test-into-coverage.md) 决定 4 的 `--check coverage` 和 [ADR 0064](0064-layer3-individual-trigger-scope.md) 示例里的 `coverage` 从此都换成 `tests`，`coverage` 这个检查名已经不存在。
    - `ci/required`（汇总作业）等 tests 和 tooling，去 ARM 机器取 policy、static、tooling、security 四份报告。
-   - 装依赖时 npm 的下载缓存从作业工作区（每个作业结束就清掉）挪到 runner 账号的 `~/.cache/himawari-ci/npm`，跨作业保留，满 7 天整个清空重建（`scripts/ci/install-dependencies.mjs` 的 `--cache runner`）。npm 照旧按锁文件里的摘要核对每个包，所以缓存被改坏只会让安装失败，不会装进别的东西。
+   - 装依赖时 npm 的下载缓存从作业工作区里的 `.ci-output/npm-cache`（汇总作业的 `scripts/ci/install-gate-dependencies.mjs` 至今仍用它）挪到 runner 账号的 `~/.cache/himawari-ci/npm`，跨作业保留，满 7 天整个清空重建（`scripts/ci/install-dependencies.mjs` 的 `--cache runner`）。npm 照旧按锁文件里的摘要核对每个包，所以缓存被改坏只会让安装失败，不会装进别的东西。
    - main 上旧的 7 作业策略（policy 带 tooling 或不带、coverage 带全部测试）由 `upgradeCoverageToTests` 升级成新的 8 作业形状，摘要照旧按原始字节算；只认那一种完整写法，其他写法照样被拒。
 2. **每天夜里在 main 上统计一次覆盖率，只出报告，不挡 PR。** 定时在日本时间 03:00，用 `run.mjs --check tests --coverage measure` 跑同样的测试并统计覆盖率，和基线比较的结果写进报告。具体放在哪个工作流、报告怎样给人看，在第 2 步的 PR 里定，写进这份 ADR 的后续修订。
 
