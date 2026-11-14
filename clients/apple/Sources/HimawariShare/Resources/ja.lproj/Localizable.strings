@@ -23,7 +23,7 @@
 "outcome.tooLarge" = "大きすぎて渡せません";
 "outcome.limitReached" = "今日の上限に達しました";
 "outcome.serverOutdated" = "サーバーがまだ対応していません。サーバーを更新してから渡してください";
-"outcome.notSent" = "送れませんでした。あとでもう一度共有してください";
+"outcome.notSent" = "送れたか確認できませんでした。あとでもう一度共有してください";
 "outcome.rejected" = "渡せませんでした";
 "outcome.unreadable" = "今回は内容を読み取れませんでした";
 "entry.share.title" = "Himawari に共有";

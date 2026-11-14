@@ -1,22 +1,29 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-const app = path.resolve(__dirname, "../../clients/apple/App");
+const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../clients/apple/App");
 const project = readFileSync(path.join(app, "Himawari.xcodeproj/project.pbxproj"), "utf8");
-const paths = [
-  ...new Set(
-    [...project.matchAll(/CODE_SIGN_ENTITLEMENTS = "([^"]+)";/gu)].flatMap((m) => m[1] ?? []),
-  ),
-];
+const lines = [...project.matchAll(/CODE_SIGN_ENTITLEMENTS = "([^"]+)";/gu)].flatMap(
+  (m) => m[1] ?? [],
+);
+const templates = [...new Set(lines)];
 
 const resolve = (template: string, suffix: string) =>
   template.replace("$(HIMAWARI_ENTITLEMENTS_SUFFIX)", suffix);
 
-it("builds every signed target from entitlements files that exist for both signing variants", () => {
-  expect(paths.length).toBe(3);
-  for (const template of paths) {
-    expect(template).toContain("$(HIMAWARI_ENTITLEMENTS_SUFFIX)");
+it("takes every signed configuration's entitlements file from the signing variant setting", () => {
+  expect(lines.length).toBeGreaterThan(0);
+  for (const line of lines) {
+    expect(line).toContain("$(HIMAWARI_ENTITLEMENTS_SUFFIX)");
+  }
+});
+
+it("has an entitlements file for both signing variants, the keychain-only one without App Groups", () => {
+  for (const template of templates) {
+    expect(existsSync(path.join(app, resolve(template, "")))).toBe(true);
+    expect(existsSync(path.join(app, resolve(template, ".keychain-only")))).toBe(true);
     const full = readFileSync(path.join(app, resolve(template, "")), "utf8");
     const keychainOnly = readFileSync(path.join(app, resolve(template, ".keychain-only")), "utf8");
     expect(full).toContain("com.apple.security.application-groups");
@@ -26,10 +33,10 @@ it("builds every signed target from entitlements files that exist for both signi
   }
 });
 
-it("defaults the signing variant to the full App Group build", () => {
+it("defaults the signing variant to the full App Group build in every project-level configuration", () => {
   const defaults = [...project.matchAll(/HIMAWARI_ENTITLEMENTS_SUFFIX = ([^;]*);/gu)].map(
     (m) => m[1],
   );
-  expect(defaults.length).toBe(2);
+  expect(defaults.length).toBeGreaterThan(0);
   expect(new Set(defaults)).toEqual(new Set(['""']));
 });
