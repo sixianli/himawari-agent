@@ -35,7 +35,11 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
-import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
+import {
+  type DeviceHomePort,
+  type DevicePairingAccess,
+  registerDeviceApiRoutes,
+} from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
@@ -131,6 +135,7 @@ export interface HttpGatewayServerOptions {
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly home?: DeviceHomePort;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1296,6 +1301,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     const deviceWatchExecution = options.threadGateway.watchExecution?.bind(options.threadGateway);
     registerDeviceApiRoutes(app, {
       publicOrigin,
+      ...(options.devices.home ? { home: options.devices.home } : {}),
       devices: options.devices.service,
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),

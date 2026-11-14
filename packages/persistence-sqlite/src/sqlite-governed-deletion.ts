@@ -1057,6 +1057,16 @@ export class SqliteGovernedDeletionAdapter {
         ),
       );
     }
+    refs.push(
+      ...this.#values(
+        database,
+        `SELECT sentence_ref FROM home_item_scores
+        WHERE sentence_ref IS NOT NULL AND approval_request_id IN (
+          SELECT id FROM approval_requests WHERE run_id IN (${placeholders(runIds)})
+        )`,
+        runIds,
+      ),
+    );
     return unique(refs);
   }
 

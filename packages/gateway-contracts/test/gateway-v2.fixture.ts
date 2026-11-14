@@ -659,6 +659,7 @@ export const governanceMessages = [
             polarity: "positive",
             ownerPresence: true,
             reviewLabel: "看内容再定",
+            binding: "b1.fixture",
           },
           {
             action: "denied",
@@ -667,6 +668,7 @@ export const governanceMessages = [
             polarity: "negative",
             ownerPresence: false,
             reviewLabel: null,
+            binding: null,
           },
         ],
         rank: "deadline",
