@@ -136,7 +136,9 @@ function cohortStats(rounds, label) {
     .filter((round) => Number.isFinite(round.runMs))
     .map((r) => r.runMs / 1000);
   const checked = rounds.filter((round) => round.selfCheckMs !== undefined);
-  const labelled = rounds.filter((round) => round.selfCheckCache !== undefined);
+  const labelled = rounds.filter(
+    (round) => round.selfCheckCache === "hit" || round.selfCheckCache === "miss",
+  );
   const hits = labelled.filter((round) => round.selfCheckCache === "hit").length;
   return {
     label,

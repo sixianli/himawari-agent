@@ -282,4 +282,23 @@ describe("review speed report", () => {
   it("returns nothing for a missing directory", () => {
     expect(loadRounds(join(tmpdir(), "no-such-reviews-dir"))).toEqual([]);
   });
+
+  it("leaves cache-off rounds out of the self-check hit rate", () => {
+    const dir = ledger([
+      [
+        7,
+        [
+          record({ round: 1, selfCheckCache: "hit" }),
+          record({ round: 2, at: "2026-11-14T10:20:00.000Z", selfCheckCache: "miss" }),
+          record({ round: 3, at: "2026-11-14T10:40:00.000Z", selfCheckCache: "off" }),
+        ],
+      ],
+    ]);
+    try {
+      const [stats] = compare(loadRounds(dir), "2026-11-15T00:00:00.000Z");
+      expect(stats.selfCheckHitRate).toBe(0.5);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
