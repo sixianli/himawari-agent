@@ -5,10 +5,13 @@ import path from "node:path";
 import {
   AgentThreadGatewayService,
   createProactiveSeal,
+  DEFAULT_HOME_FEED,
   DEVICE_CONFIGURATION_DEFAULTS,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
   type GatewayAuthenticationContext,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
   ThreadCommandService,
@@ -38,6 +41,8 @@ import {
   EnvelopePayloadProtector,
   PairedDeviceService,
   type PairedDeviceWarning,
+  type PerceptionLimitWarning,
+  PerceptionService,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
 import {
@@ -50,6 +55,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
+import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
   ProductionHttpPayloadAdmission,
   ProductionThreadGatewayAccessPolicy,
@@ -90,6 +96,13 @@ export interface Harness {
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
   readonly warnings: PairedDeviceWarning[];
+  readonly stateRoot: string;
+  readonly perception: PerceptionService;
+  readonly perceptionConfiguration: { current: PerceptionConfiguration };
+  readonly timeZone: { current: string };
+  readonly ownerVoiceQualified: { current: boolean };
+  readonly limitWarnings: PerceptionLimitWarning[];
+  readonly readText: (contentRef: string) => Promise<string | undefined>;
 }
 
 export async function harness(
@@ -215,7 +228,17 @@ export async function harness(
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({ ownerId, agentId, sessions });
   const ids = { next: (namespace: string) => `${namespace}:${randomUUID()}` };
+  const home = new ProductionHomeControl({
+    settings: DEFAULT_HOME_FEED,
+    listApprovals: () =>
+      repository.authorizationStore().listApprovals(ownerId, agentId, { status: "pending" }),
+    runThread: async () => null,
+    threadTitle: async () => null,
+    clock,
+    onSourceFailure: () => undefined,
+  });
   const gatewayV2 = createProductionApprovalGateway({
+    homeControl: home,
     configuration: { ownerId, agentId },
     repository,
     access: threadAccess,
@@ -245,6 +268,31 @@ export async function harness(
   const ownerActive = { current: true };
   const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
+  const payloadAdmission = new ProductionHttpPayloadAdmission({
+    ownerId,
+    agentId,
+    sessions,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector,
+    clock: () => clock.now(),
+  });
+  const perceptionConfiguration = { current: PERCEPTION_CONFIGURATION_DEFAULTS };
+  const timeZone = { current: "Asia/Tokyo" };
+  const ownerVoiceQualified = { current: false };
+  const limitWarnings: PerceptionLimitWarning[] = [];
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => configuration.current,
+    configuration: () => perceptionConfiguration.current,
+    timeZone: () => timeZone.current,
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(stateRoot, "device-uploads"),
+    ownerVoiceQualified: () => ownerVoiceQualified.current,
+    onLimitWarning: (warning) => limitWarnings.push(warning),
+    now,
+  });
+  await perception.prepareDirectories();
   const app = buildHttpGatewayServer({
     publicOrigin,
     staticRoot: options.staticRoot ?? stateRoot,
@@ -268,14 +316,7 @@ export async function harness(
     csrf,
     threadGateway,
     gatewayV2,
-    payloadAdmission: new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions,
-      payloads: repository.payloadStore(ownerId, agentId),
-      protector,
-      clock: () => clock.now(),
-    }),
+    payloadAdmission,
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
         repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
@@ -288,6 +329,7 @@ export async function harness(
       fencingToken: authority.fencingToken,
     },
     devices: {
+      home: { resolveAction: (input) => home.resolveAction(input) },
       service: new PairedDeviceService({
         store: repository.pairedDevices(),
         sessions,
@@ -304,6 +346,7 @@ export async function harness(
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
+      perception,
     },
   });
   await app.ready();
@@ -316,6 +359,19 @@ export async function harness(
     ownerActive,
     webAuthentication,
     warnings,
+    stateRoot,
+    perception,
+    perceptionConfiguration,
+    timeZone,
+    ownerVoiceQualified,
+    limitWarnings,
+    readText: async (contentRef) => {
+      const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+      if (!payload) return undefined;
+      return new TextDecoder("utf-8", { fatal: true }).decode(
+        await protector.unprotect({ ownerId, agentId, payload }),
+      );
+    },
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,

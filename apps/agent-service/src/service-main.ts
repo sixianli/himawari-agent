@@ -13,9 +13,12 @@ import {
   classificationRank,
   createProactiveSeal,
   type DataClassification,
+  DEFAULT_HOME_URGENCY,
+  type HomeUrgencyRunResult,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DurableMemoryService,
   ExecutionLiveFeed,
+  enforceableOwnerRule,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
@@ -30,6 +33,7 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  unreadablePushRule,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -161,6 +165,7 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
+import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import {
@@ -2151,10 +2156,15 @@ export async function startTenantRuntime(
               cleared: reports.filter(({ outcome }) => outcome === "cleared").length,
             }),
           onPrereview: (result) => {
-            if (result.attempted > 0 || result.failures.length > 0)
+            if (
+              result.attempted > 0 ||
+              result.failures.length > 0 ||
+              result.skippedClassification > 0
+            )
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
                 event: "proactive.prereviewed",
+                skippedClassification: result.skippedClassification,
                 attempted: result.attempted,
                 recorded: result.recorded,
                 failed: result.failures.length,
@@ -2188,6 +2198,62 @@ export async function startTenantRuntime(
             }),
         });
       }
+      const homeUrgencyConfiguration = configuration.runPolicy?.homeUrgency ?? DEFAULT_HOME_URGENCY;
+      const homeUrgencyRef = homeUrgencyConfiguration.modelRef ?? proactiveConfiguration?.modelRef;
+      const homeUrgencyDescriptor = modelComposition.descriptors.generation.find(
+        ({ ref }) => ref === homeUrgencyRef,
+      );
+      if (homeUrgencyConfiguration.modelRef !== undefined && !homeUrgencyDescriptor)
+        throw new Error("HOME_URGENCY_MODEL_UNAVAILABLE");
+      const homeUrgencyRepository = repository;
+      const homeUrgency =
+        homeUrgencyConfiguration.enabled &&
+        homeUrgencyDescriptor &&
+        protector &&
+        homeUrgencyRepository
+          ? {
+              settings: homeUrgencyConfiguration,
+              seal: createProactiveSeal({
+                payloads: homeUrgencyRepository.payloadStore(
+                  configuration.ownerId,
+                  configuration.agentId,
+                ),
+                protector,
+                ids,
+              }),
+              model: modelComposition.composition.proactiveModel(homeUrgencyDescriptor.ref, {
+                maxOutputTokens: HOME_URGENCY_MAX_OUTPUT_TOKENS,
+                requestTimeoutMs: homeUrgencyConfiguration.requestTimeoutMs,
+                purpose: "home-urgency",
+              }),
+              modelAllows: (classification: DataClassification) =>
+                homeUrgencyDescriptor.allowedDataClassifications.includes(classification),
+              timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+              estimateCostMicros: proactiveCostEstimator(
+                homeUrgencyDescriptor.cost,
+                HOME_URGENCY_MAX_OUTPUT_TOKENS,
+              ),
+              readLocale: async () =>
+                (
+                  await homeUrgencyRepository.ownerPreferences().read({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                  })
+                ).locale,
+              onScored: (result: HomeUrgencyRunResult) => {
+                if (result.attempted > 0 || result.failures.length > 0)
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "home.urgency_scored",
+                    attempted: result.attempted,
+                    recorded: result.recorded,
+                    failed: result.failures.length,
+                    stoppedBy: result.stoppedBy,
+                    ...(result.failures[0] ? { code: result.failures[0].slice(0, 120) } : {}),
+                  });
+              },
+            }
+          : undefined;
       const realEvalConfiguration = configuration.runPolicy?.realEval;
       const realEvalDescriptor = realEvalConfiguration
         ? modelComposition.descriptors.generation.find(
@@ -2612,6 +2678,25 @@ export async function startTenantRuntime(
           ...(configuration.runPolicy?.timeZone
             ? { timeZone: configuration.runPolicy.timeZone }
             : {}),
+          readPushRules: async () =>
+            (
+              await pushRepository.ownerRules().list({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                includeRetired: false,
+              })
+            ).flatMap((row) => {
+              if (unreadablePushRule(row)) throw new Error("PUSH_RULE_UNREADABLE");
+              const rule = enforceableOwnerRule(row);
+              return rule?.gate === "push_delivery" ? [rule] : [];
+            }),
+          onGateFailure: ({ sourceKey }) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "web-push.gate-failed",
+              code: "WEB_PUSH_RULE_GATE_FAILED",
+              sourceKey,
+            }),
           now: () => clock.now(),
           onDelivery: (outcome) =>
             writeServiceDiagnostic(errorOutput, {
@@ -2976,6 +3061,7 @@ export async function startTenantRuntime(
         live,
         webPush: { presence: webPushPresence, push: webPush },
         ...(proactive ? { proactive } : {}),
+        ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),
         ...(mcpRead ? { mcpRead } : {}),
@@ -3046,6 +3132,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",
             ...diagnostic,
+          }),
+        onPerceptionLimitWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
           }),
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");

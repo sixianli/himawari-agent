@@ -95,7 +95,7 @@ export async function readDecisionChain(
   const fields: ReadonlySet<string> = new Set(found.inputFields);
   const inputs = entry.inputs;
   const proactive = entry.kind === "proactive";
-  const rulesRecorded = proactive || entry.kind === "rule_review";
+  const rulesRecorded = proactive || entry.kind === "rule_review" || entry.kind === "web_push";
 
   const ruleMailCounts = new Map<string, number>();
   for (const hits of [inputs.floorHits, inputs.ruleHits ?? {}])

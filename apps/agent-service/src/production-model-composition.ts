@@ -527,6 +527,7 @@ export function createProductionModelComposition(
     return Object.freeze<ProactiveModelInvoker>({
       model,
       modelRef,
+      allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
       async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
         if (!descriptor.allowedDataClassifications.includes(dataClassification))
           throw new Error("PROACTIVE_MODEL_DISCLOSURE_DENIED");

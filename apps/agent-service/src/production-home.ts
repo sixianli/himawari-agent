@@ -2,14 +2,27 @@ import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
   type ClockPort,
+  classificationRank,
+  type DataClassification,
+  type GovernedActionIntent,
+  HOME_SCORING_LOCALE,
   type HomeAction,
   type HomeActionName,
+  type HomeApprovalCopy,
+  type HomeApprovalDetail,
   type HomeCandidate,
   type HomeFeedConfiguration,
   HomeFeedService,
   type HomeLocale,
   type HomeSource,
   type HomeSourceName,
+  type HomeUrgencyConfiguration,
+  type HomeUrgencyRunResult,
+  HomeUrgencyService,
+  type HomeUrgencyStorePort,
+  type ProactiveModelInvoker,
+  type ProactiveScope,
+  type ProactiveSealPort,
   type RunLifecyclePort,
 } from "@himawari-agent/application";
 import {
@@ -18,8 +31,32 @@ import {
   HOME_KEY_MAXIMUM,
   machineString,
 } from "@himawari-agent/gateway-contracts";
+import {
+  approvalCommand,
+  decodeHomeBinding,
+  encodeHomeBinding,
+  externalCommand,
+  type HomeCommand,
+  insightCommand,
+  memoryRequestCommand,
+  reminderCommand,
+  ruleCommand,
+} from "./production-home-binding.js";
 import type { ProductionMemoryControl } from "./production-memory-control.js";
 import type { ProductionProactive } from "./production-proactive.js";
+
+export type HomeActionResolution =
+  | {
+      readonly ok: true;
+      readonly type: HomeCommand["type"];
+      readonly payload: Readonly<Record<string, unknown>>;
+      readonly ownerPresence: boolean;
+      readonly dataClassification: HomeCandidate["dataClassification"];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "binding_invalid" | "item_gone" | "action_not_offered" | "binding_stale";
+    };
 
 export const PRODUCTION_HOME_OPERATIONS = Object.freeze(["home.read"] as const);
 
@@ -96,16 +133,22 @@ function action(
   locale: HomeLocale,
   name: HomeActionName,
   polarity: HomeAction["polarity"],
-  options: { readonly label?: string; readonly ownerPresence?: boolean } = {},
+  options: {
+    readonly label?: string;
+    readonly modelLabel?: string | null;
+    readonly ownerPresence?: boolean;
+    readonly command?: HomeCommand;
+  } = {},
 ): HomeAction {
   const ownerPresence = options.ownerPresence ?? false;
   return {
     action: name,
-    label: options.label ?? HOME_TEXT[locale].actions[name],
-    labelBasis: "catalog",
+    label: options.modelLabel ?? options.label ?? HOME_TEXT[locale].actions[name],
+    labelBasis: options.modelLabel ? "model" : "catalog",
     polarity,
     ownerPresence,
     reviewLabel: ownerPresence ? HOME_TEXT[locale].reviewFirst : null,
+    binding: options.command ? encodeHomeBinding(options.command) : null,
   };
 }
 
@@ -127,9 +170,71 @@ export interface ProductionHomeOptions {
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly runs?: Pick<RunLifecyclePort, "listUnattendedRuns">;
-  readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly threadTitle: (threadId: string) => Promise<{
+    readonly title: string | null;
+    readonly dataClassification?: DataClassification;
+  } | null>;
   readonly clock: ClockPort;
   readonly onSourceFailure: (source: HomeSourceName, error: unknown) => void;
+  readonly urgency?: ProductionHomeUrgencyOptions;
+}
+
+export interface ProductionHomeUrgencyOptions {
+  readonly scope: ProactiveScope;
+  readonly settings: HomeUrgencyConfiguration;
+  readonly store: HomeUrgencyStorePort;
+  readonly seal: ProactiveSealPort;
+  readonly model: ProactiveModelInvoker;
+  readonly modelAllows: (classification: DataClassification) => boolean;
+  readonly timeZone: string;
+  readonly estimateCostMicros: (prompt: string) => number;
+  readonly readLocale: () => Promise<HomeLocale | null>;
+  readonly onScored?: (result: HomeUrgencyRunResult) => void;
+  readonly onFailure: (error: unknown) => void;
+}
+
+export const HOME_URGENCY_MAX_OUTPUT_TOKENS = 2048;
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const approvalKey = (approvalRequestId: string) => `approval:${approvalRequestId}`;
+
+type ApprovalCopyReader = (input: {
+  readonly approvalRequestId: string;
+  readonly semanticSnapshotHash: string;
+  readonly locale: HomeLocale;
+}) => Promise<HomeApprovalCopy>;
+
+function approvalDetail(
+  approval: ApprovalRequest,
+  conversation: string | null,
+): HomeApprovalDetail {
+  const intent = approval.intentSnapshot;
+  const governed = "contractVersion" in intent ? (intent as GovernedActionIntent) : undefined;
+  return {
+    id: approval.id,
+    semanticSnapshotHash: approval.semanticSnapshotHash,
+    facts: JSON.parse(
+      JSON.stringify({
+        capability: intent.capabilityRef,
+        operation: intent.operation,
+        resource: intent.resourceRef,
+        sideEffect: intent.sideEffect,
+        reversible: intent.reversible,
+        frequency: intent.frequency,
+        estimatedCostMicros: intent.estimatedCostMicros,
+        conversation,
+        ...(governed
+          ? {
+              actionKind: governed.actionKind,
+              targets: governed.targets,
+              recipients: governed.recipients,
+              disclosure: governed.disclosure,
+              credentialOrAccessChange: governed.credentialOrAccessChange,
+              risk: governed.finalRisk,
+            }
+          : {}),
+      }),
+    ) as HomeApprovalDetail["facts"],
+  };
 }
 
 function line(text: string | null | undefined, maximum: number): string | null {
@@ -188,7 +293,14 @@ function mailSource(proactive: Pick<ProductionProactive, "overview">): HomeSourc
             },
             deadline: insight.dueAt,
             createdAt: insight.createdAt,
-            actions: [action(locale, "done", "positive"), action(locale, "mute", "negative")],
+            actions: [
+              action(locale, "done", "positive", {
+                command: insightCommand(insight.id, "done"),
+              }),
+              action(locale, "mute", "negative", {
+                command: insightCommand(insight.id, "mute"),
+              }),
+            ],
             ruleHit: insight.floorRaised,
             dataClassification: insight.dataClassification,
           }),
@@ -253,9 +365,15 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: reminder.dueAt,
               createdAt: reminder.remindAt,
               actions: [
-                action(locale, "dismiss", "positive"),
-                action(locale, "snooze", "neutral"),
-                action(locale, "cancel", "negative"),
+                action(locale, "dismiss", "positive", {
+                  command: reminderCommand(reminder.reminderId, "dismiss"),
+                }),
+                action(locale, "snooze", "neutral", {
+                  command: reminderCommand(reminder.reminderId, "snooze"),
+                }),
+                action(locale, "cancel", "negative", {
+                  command: reminderCommand(reminder.reminderId, "cancel"),
+                }),
               ],
               ruleHit: false,
               dataClassification: reminder.dataClassification,
@@ -293,8 +411,13 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: null,
               createdAt: request.requestedAt,
               actions: [
-                action(locale, "approved", "positive", { label: HOME_TEXT[locale].remember }),
-                action(locale, "rejected", "negative"),
+                action(locale, "approved", "positive", {
+                  label: HOME_TEXT[locale].remember,
+                  command: memoryRequestCommand(request.requestId, "approved"),
+                }),
+                action(locale, "rejected", "negative", {
+                  command: memoryRequestCommand(request.requestId, "rejected"),
+                }),
               ],
               ruleHit: false,
               dataClassification: request.dataClassification,
@@ -332,7 +455,14 @@ function memorySources(memory: MemorySources): HomeSource[] {
               },
               deadline: null,
               createdAt: proposal.receivedAt,
-              actions: [action(locale, "keep", "positive"), action(locale, "reject", "negative")],
+              actions: [
+                action(locale, "keep", "positive", {
+                  command: externalCommand(proposal.proposalId, "keep"),
+                }),
+                action(locale, "reject", "negative", {
+                  command: externalCommand(proposal.proposalId, "reject"),
+                }),
+              ],
               ruleHit: false,
               dataClassification: proposal.dataClassification,
             }),
@@ -365,11 +495,15 @@ function memorySources(memory: MemorySources): HomeSource[] {
               deadline: null,
               createdAt: rule.updatedAt,
               actions: [
-                action(locale, "reconfirm", "positive"),
-                action(locale, "undo", "negative"),
+                action(locale, "reconfirm", "positive", {
+                  command: ruleCommand(rule.ruleId, "reconfirm"),
+                }),
+                action(locale, "undo", "negative", {
+                  command: ruleCommand(rule.ruleId, "undo"),
+                }),
               ],
               ruleHit: false,
-              dataClassification: "private",
+              dataClassification: rule.dataClassification,
             }),
           ),
         };
@@ -436,7 +570,10 @@ function memorySources(memory: MemorySources): HomeSource[] {
   ];
 }
 
-function approvalSource(options: ProductionHomeOptions): HomeSource {
+function approvalSource(
+  options: ProductionHomeOptions,
+  readCopy: ApprovalCopyReader | undefined,
+): HomeSource {
   return {
     name: "approvals",
     awaitsOwner: true,
@@ -446,11 +583,27 @@ function approvalSource(options: ProductionHomeOptions): HomeSource {
         if (approval.status !== "pending" || Date.parse(approval.expiresAt) <= Date.parse(now))
           continue;
         const threadId = await options.runThread(approval.runId);
+        const thread = threadId ? await options.threadTitle(threadId).catch(() => null) : null;
+        const conversation =
+          thread?.dataClassification !== undefined &&
+          classificationRank(thread.dataClassification) <=
+            classificationRank(approval.intentSnapshot.dataClassification)
+            ? line(thread.title, 200)
+            : null;
+        const copy = await readCopy?.({
+          approvalRequestId: approval.id,
+          semanticSnapshotHash: approval.semanticSnapshotHash,
+          locale,
+        }).catch((error: unknown) => {
+          options.urgency?.onFailure(error);
+          return undefined;
+        });
+        const sentence = line(copy?.sentence, 2000);
         items.push({
-          key: `approval:${approval.id}`,
+          key: approvalKey(approval.id),
           kind: "approval",
           awaitsOwner: true,
-          ...NO_SENTENCE,
+          ...(sentence ? { sentence, sentenceBasis: "model" as const } : NO_SENTENCE),
           target: { type: "approval", id: approval.id, threadId, link: null },
           source: {
             type: "conversation",
@@ -464,14 +617,19 @@ function approvalSource(options: ProductionHomeOptions): HomeSource {
           createdAt: approval.requestedAt,
           actions: [
             action(locale, "approved", "positive", {
+              modelLabel: copy?.affirmLabel ?? null,
               ownerPresence:
                 "recentAuthenticationRequired" in approval &&
                 approval.recentAuthenticationRequired === true,
+              command: approvalCommand(approval, "approved"),
             }),
-            action(locale, "denied", "negative"),
+            action(locale, "denied", "negative", {
+              command: approvalCommand(approval, "denied"),
+            }),
           ],
           ruleHit: false,
           dataClassification: approval.intentSnapshot.dataClassification,
+          approval: approvalDetail(approval, conversation),
         });
       }
       return { items, unread: 0 };
@@ -563,10 +721,13 @@ function showableOnly(
   };
 }
 
-export function createProductionHomeSources(options: ProductionHomeOptions): HomeSource[] {
+export function createProductionHomeSources(
+  options: ProductionHomeOptions,
+  readCopy?: ApprovalCopyReader,
+): HomeSource[] {
   return [
     ...(options.proactive ? [mailSource(options.proactive)] : []),
-    approvalSource(options),
+    approvalSource(options, readCopy),
     ...(options.memory ? memorySources(options.memory) : []),
     ...(options.runs ? [runSource(options, options.runs)] : []),
   ].map((source) => showableOnly(source, options.onSourceFailure));
@@ -574,11 +735,38 @@ export function createProductionHomeSources(options: ProductionHomeOptions): Hom
 
 export class ProductionHomeControl {
   readonly #service: HomeFeedService;
+  readonly #urgency: HomeUrgencyService | undefined;
+  readonly #options: ProductionHomeOptions;
+  #timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: ProductionHomeOptions) {
-    const { memory, settings } = options;
+    const { memory, settings, urgency } = options;
+    this.#options = options;
+    this.#urgency = urgency
+      ? new HomeUrgencyService({
+          scope: urgency.scope,
+          store: urgency.store,
+          seal: urgency.seal,
+          model: urgency.model,
+          modelAllows: urgency.modelAllows,
+          settings: urgency.settings,
+          timeZone: urgency.timeZone,
+          clock: options.clock,
+          digest: sha256,
+          estimateCostMicros: urgency.estimateCostMicros,
+          candidates: () => this.#service.awaitingCandidates(),
+          locale: async () => (await urgency.readLocale()) ?? HOME_SCORING_LOCALE,
+        })
+      : undefined;
+    const scoring = this.#urgency;
     this.#service = new HomeFeedService({
-      sources: createProductionHomeSources(options),
+      sources: createProductionHomeSources(
+        options,
+        scoring ? (input) => this.approvalCopy(input) : undefined,
+      ),
+      ...(scoring && urgency
+        ? { scores: (candidates) => scoring.scores(candidates), onScoreFailure: urgency.onFailure }
+        : {}),
       ...(memory
         ? {
             upcoming: async ({ now, until, limit }) => {
@@ -601,13 +789,77 @@ export class ProductionHomeControl {
         : {}),
       settings,
       clock: options.clock,
-      digest: (text) => createHash("sha256").update(text).digest("hex"),
+      digest: sha256,
       onSourceFailure: options.onSourceFailure,
     });
   }
 
+  async approvalCopy(input: {
+    readonly approvalRequestId: string;
+    readonly semanticSnapshotHash: string;
+    readonly locale: HomeLocale;
+  }): Promise<HomeApprovalCopy> {
+    if (!this.#urgency) return { sentence: null, affirmLabel: null };
+    return this.#urgency.approvalCopy({
+      ...input,
+      itemKey: approvalKey(input.approvalRequestId),
+      negativeLabel: HOME_TEXT[input.locale].actions.denied,
+    });
+  }
+
+  async score(): Promise<HomeUrgencyRunResult | undefined> {
+    const urgency = this.#options.urgency;
+    if (!this.#urgency || !urgency) return undefined;
+    try {
+      const result = await this.#urgency.run();
+      urgency.onScored?.(result);
+      return result;
+    } catch (error) {
+      urgency.onFailure(error);
+      return undefined;
+    }
+  }
+
+  startScoring(): void {
+    const urgency = this.#options.urgency;
+    if (!this.#urgency || !urgency?.settings.enabled || this.#timer) return;
+    this.#timer = setInterval(() => {
+      void this.score();
+    }, urgency.settings.checkIntervalSeconds * 1000);
+    this.#timer.unref?.();
+    void this.score();
+  }
+
+  async stopScoring(): Promise<void> {
+    if (this.#timer) clearInterval(this.#timer);
+    this.#timer = undefined;
+    await this.#urgency?.settled();
+  }
+
   awaitingCount(): Promise<number | undefined> {
     return this.#service.awaitingCount();
+  }
+
+  async resolveAction(input: {
+    readonly key: string;
+    readonly action: string;
+    readonly binding: string;
+  }): Promise<HomeActionResolution> {
+    const command = decodeHomeBinding(input.binding);
+    if (!command) return { ok: false, reason: "binding_invalid" };
+    const feed = await this.#service.read({ locale: "en" });
+    const item = feed.items.find(({ key }) => key === input.key);
+    if (!item) return { ok: false, reason: "item_gone" };
+    const chosen = item.actions.find(({ action: name }) => name === input.action);
+    if (!chosen) return { ok: false, reason: "action_not_offered" };
+    if (chosen.binding !== input.binding) return { ok: false, reason: "binding_stale" };
+    return {
+      ok: true,
+      type: command.type,
+      payload: command.payload,
+      ownerPresence: chosen.ownerPresence,
+      dataClassification: item.dataClassification,
+    };
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
