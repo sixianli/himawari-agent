@@ -200,7 +200,8 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
     id: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
     revision: 1,
     gate: "action",
-    expression: 'target_type == "managed-task" && action_kind == "CREATE_OR_UPDATE"',
+    expression:
+      'target_type == "managed-task" && action_kind == "CREATE_OR_UPDATE" && reversible == 0',
     outcome: "allow_preauthorized",
     origin: "built_in",
     source: "ADR 0257 第 2 步：停止这一轮自己开的任务，最坏是一件自己开的活停了，可以重开",
@@ -220,6 +221,7 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
         "schedule",
       ),
       example(false, {}),
+      example(false, { targets: [{ type: "managed-task" }], reversible: true }),
       example(false, { targets: [{ type: "managed-task" }], actionKind: "READ", finalRisk: "LOW" }),
     ]),
   }),
