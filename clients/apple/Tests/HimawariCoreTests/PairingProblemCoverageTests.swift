@@ -26,4 +26,18 @@ import Testing
             #expect(keyBody.contains("case .\(name)"), "PairingView.key has no case for .\(name)")
         }
     }
+
+    @Test func theUnknownStatePageIsRoutedAndTranslated() throws {
+        let view = try source("Sources/HimawariShell/PairingView.swift")
+        let route = try #require(view.range(of: "case let .unpaired(problem?) where problem == .keysUnreadable"))
+        let routeLine = view[route.lowerBound...].prefix { $0 != "\n" }
+        #expect(routeLine.contains("problem == .stateUnknown"), "stateUnknown is not routed to the retry page")
+
+        for language in ["en", "ja", "zh-Hans"] {
+            let strings = try source("Sources/HimawariShell/Resources/\(language).lproj/Localizable.strings")
+            for key in ["pairing.problem.stateUnknown", "pairing.problem.stateUnknown.title", "pairing.startOver.confirm", "pairing.startOver.confirmUnsent", "pairing.startOver.confirmUnknown"] {
+                #expect(strings.contains("\"\(key)\" ="), "\(language) is missing \(key)")
+            }
+        }
+    }
 }
