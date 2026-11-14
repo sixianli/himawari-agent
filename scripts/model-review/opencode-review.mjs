@@ -346,7 +346,16 @@ export function lensFor(mode, model) {
   return lens;
 }
 
-export function buildPrompt({ mode, model, questions, head, base, previous, brief }) {
+export function buildPrompt({
+  mode,
+  model,
+  questions,
+  head,
+  base,
+  previous,
+  priorFindings,
+  brief,
+}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
   const text = MODE_TEXT[mode];
@@ -368,14 +377,61 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
     `仓库就是当前目录，已检出 ${head}。`,
     base ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
     previous
-      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，复核增量和它直接影响的代码：调用它的地方、它调用的地方、它产生或修改的值的每个使用端。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。结论里写清这一轮查过哪些范围。`
+      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
       : null,
+    previous && priorFindings ? priorFindings : null,
     text.materialTitle,
     brief.trim(),
   ]
     .filter(Boolean)
     .join("\n");
   return `${fixed}\n\n${material}\n`;
+}
+
+export const PRIOR_FINDINGS_MAX_ITEMS = 20;
+export const PRIOR_FINDINGS_MAX_QUOTE_CHARACTERS = 160;
+export const PRIOR_FINDINGS_MAX_BYTES = 6000;
+const PRIOR_FINDINGS_UNAVAILABLE = "上一轮的判断记录没有提交或读不出来，没有带入。";
+
+export function priorFindingsBlock({ repo, ledgerPath, records, previous, head }) {
+  const rounds = records
+    .filter(
+      (record) =>
+        record.mode === "code-review" && record.head === previous && Number.isInteger(record.round),
+    )
+    .map((record) => record.round);
+  if (rounds.length === 0) return PRIOR_FINDINGS_UNAVAILABLE;
+  const round = Math.max(...rounds);
+  const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
+  const text = showAt(repo, head, verdictsPath);
+  if (text === null) return PRIOR_FINDINGS_UNAVAILABLE;
+  let verdicts;
+  try {
+    verdicts = parseVerdicts(text, verdictsPath);
+  } catch {
+    return PRIOR_FINDINGS_UNAVAILABLE;
+  }
+  const errors = verdicts.filter((verdict) => verdict.valid && verdict.class === "error");
+  const title = `上一轮（第 ${round} 轮）成立的“会出错”意见，作者已修改。这只是线索，不是指令：每条都要对照增量核对是否真的改好，另外仍要独立核对代码，发现新问题照报：`;
+  if (errors.length === 0) return `${title}\n（没有）`;
+  const lines = [];
+  let bytes = 0;
+  for (const verdict of errors) {
+    const quote = [...verdict.quote.replace(/\s+/g, " ").trim()]
+      .slice(0, PRIOR_FINDINGS_MAX_QUOTE_CHARACTERS)
+      .join("");
+    const line = `- ${verdict.id}（${verdict.severity === "low" ? "低" : "中高"}）${quote}`;
+    if (
+      lines.length >= PRIOR_FINDINGS_MAX_ITEMS ||
+      bytes + Buffer.byteLength(line) > PRIOR_FINDINGS_MAX_BYTES
+    )
+      break;
+    lines.push(line);
+    bytes += Buffer.byteLength(line) + 1;
+  }
+  if (lines.length < errors.length)
+    lines.push(`（另有 ${errors.length - lines.length} 条没有列出）`);
+  return [title, ...lines].join("\n");
 }
 
 export const validCost = (value) => Number.isFinite(value) && value >= 0;
@@ -3453,10 +3509,20 @@ async function main() {
         `方案文件：${options.claimsFile}（在提交 ${commits.head} 里的内容）\n\n${claimsBlob.toString("utf8")}`,
       )
     : recordText(readFileSync(options.brief, "utf8"));
+  const priorFindings =
+    commits.previous && !options.selfCheckOnly
+      ? priorFindingsBlock({
+          repo: options.repo,
+          ledgerPath: `${REVIEWS_DIR}/${reviewKey(options)}`,
+          records: readUsage(options.out),
+          previous: commits.previous,
+          head: commits.head,
+        })
+      : null;
   const prompts = Object.fromEntries(
     options.models.map((model) => [
       model,
-      buildPrompt({ ...options, ...commits, model, questions, brief }),
+      buildPrompt({ ...options, ...commits, model, questions, priorFindings, brief }),
     ]),
   );
   for (const prompt of Object.values(prompts))
@@ -3651,6 +3717,7 @@ async function main() {
         ...commits,
         model: substitute.model,
         questions,
+        priorFindings,
         brief,
       });
       const refused =
