@@ -360,7 +360,7 @@ describe("perception deletion", () => {
     await ingest(h, client, [first, power(h, -20)]);
     const none = await deviceGet(h, client, "perception/deletions");
     expect(none.status).toBe(200);
-    expect(none.body).toEqual({ revision: 0, scopes: [] });
+    expect(none.body).toEqual({ revision: 0, latest: 0, scopes: [] });
     const plan = await h.perception.planDeletion(perceptionScope, {
       ...empty,
       kind: "records",
@@ -380,6 +380,7 @@ describe("perception deletion", () => {
       scopes: { revision: number; kind: string; recordIds: string[]; types: string[] }[];
     };
     expect(body.revision).toBe(2);
+    expect((all.body as { latest: number }).latest).toBe(2);
     expect(body.scopes.map(({ kind }) => kind)).toEqual(["records", "types"]);
     expect(body.scopes[0]?.recordIds).toEqual([first.id]);
     expect(body.scopes[1]?.types).toEqual(["context.power"]);
@@ -420,5 +421,55 @@ describe("perception deletion", () => {
       recordIds: ["perception:aaaaaaaaaaaaaaaa"],
     });
     expect(onRecords.status).toBe(400);
+  });
+
+  it("keeps a record added to an episode after the plan, and refuses an impossible calendar day", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await ingest(h, client, [utterance(h, "先说的", { seconds: -30 })]);
+    const page = await remaining(h);
+    const episode = page.rows.find((row) => row.kind === "episode");
+    const episodeId = episode?.kind === "episode" ? episode.episode.id : "";
+    const plan = await h.perception.planDeletion(perceptionScope, {
+      ...empty,
+      kind: "episode",
+      episodeId,
+    });
+    h.clock.advance(1000);
+    await ingest(h, client, [utterance(h, "计划之后接着说的", { seconds: -20 })]);
+    const done = await h.perception.deleteRecords(perceptionScope, plan.id);
+    expect(done.receipt?.records).toBe(1);
+    expect((await remaining(h)).total).toBe(1);
+    for (const day of ["2026-02-30", "2026-13-40"])
+      await expect(
+        h.perception.planDeletion(perceptionScope, { ...empty, kind: "day", day }),
+      ).rejects.toThrow(/DELETION_INVALID/u);
+  });
+
+  it("reports the last revision of a page when the feed has more than one page", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const records = [0, 1, 2].map((index) => utterance(h, `话${index}`, { seconds: -10 - index }));
+    await ingest(h, client, records);
+    for (const record of records) {
+      const plan = await h.perception.planDeletion(perceptionScope, {
+        ...empty,
+        kind: "records",
+        ids: [record.id],
+      });
+      await h.perception.deleteRecords(perceptionScope, plan.id);
+    }
+    h.perceptionConfiguration.current = {
+      ...h.perceptionConfiguration.current,
+      deletionFeedRows: 2,
+    };
+    const first = await deviceGet(h, client, "perception/deletions?after=0");
+    const page = first.body as { revision: number; latest: number; scopes: unknown[] };
+    expect(page.scopes).toHaveLength(2);
+    expect(page.latest).toBe(3);
+    expect(page.revision).toBe(2);
+    const second = await deviceGet(h, client, `perception/deletions?after=${page.revision}`);
+    expect((second.body as { revision: number; scopes: unknown[] }).scopes).toHaveLength(1);
+    expect((second.body as { revision: number }).revision).toBe(3);
   });
 });

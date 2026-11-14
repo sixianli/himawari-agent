@@ -1057,6 +1057,12 @@ export class SqlitePerceptionOperations {
             WHERE owner_id = ? AND agent_id = ? AND received_at < ?`,
         )
         .run(input.ownerId, input.agentId, this.time(input.mediaBefore)).changes;
+      this.database
+        .prepare(
+          `DELETE FROM perception_deletions
+            WHERE owner_id = ? AND agent_id = ? AND status = 'planned' AND expires_at <= ?`,
+        )
+        .run(input.ownerId, input.agentId, now);
       return Object.freeze({ trackPoints, records, grants, media });
     })();
   }
@@ -1127,7 +1133,7 @@ export class SqlitePerceptionOperations {
     const idScopes = this.database
       .prepare(
         `SELECT 1 FROM perception_deletion_scopes
-          WHERE owner_id = ? AND agent_id = ? AND kind IN ('records', 'episode')
+          WHERE owner_id = ? AND agent_id = ?
             AND EXISTS (SELECT 1 FROM json_each(record_ids) WHERE value = ?)`,
       )
       .get(input.ownerId, input.agentId, record.id);
@@ -1166,8 +1172,9 @@ export class SqlitePerceptionOperations {
       case "episode":
         return rows(
           `SELECT id FROM perception_records
-            WHERE owner_id = @ownerId AND agent_id = @agentId AND episode_id = @episode ORDER BY id`,
-          { episode: target.episodeId },
+            WHERE owner_id = @ownerId AND agent_id = @agentId AND episode_id = @episode
+              AND received_at_ms <= @bound ORDER BY id`,
+          { episode: target.episodeId, bound: boundMs },
         );
       case "day":
         return rows(
@@ -1375,7 +1382,7 @@ export class SqlitePerceptionOperations {
           target.deviceId,
           target.kind === "day" ? target.day : null,
           JSON.stringify(target.kind === "types" ? target.types : []),
-          JSON.stringify(target.kind === "records" || target.kind === "episode" ? ids : []),
+          JSON.stringify(ids),
           track ? 1 : 0,
           boundMs,
           now,
@@ -1422,12 +1429,8 @@ export class SqlitePerceptionOperations {
           )
           .get(ref, input.ownerId, input.agentId) as { path: string | null } | undefined;
         if (!payload) continue;
-        try {
-          this.database.prepare("DELETE FROM payloads WHERE ref = ?").run(ref);
-          if (payload.path) paths.push(payload.path);
-        } catch {
-          continue;
-        }
+        this.database.prepare("DELETE FROM payloads WHERE ref = ?").run(ref);
+        if (payload.path) paths.push(payload.path);
       }
       this.database
         .prepare(
@@ -1443,10 +1446,11 @@ export class SqlitePerceptionOperations {
             )
             .run(now, input.id);
       }
+      const after = this.readDeletionRow(input, input.id) as PerceptionDeletion;
       return Object.freeze({
-        deletion: this.readDeletionRow(input, input.id) as PerceptionDeletion,
+        deletion: after,
         paths: Object.freeze(paths),
-        progressed: take.length > 0 || rest.length === 0,
+        progressed: take.length > 0 || after.status === "verified",
       });
     })();
   }
@@ -1465,7 +1469,8 @@ export class SqlitePerceptionOperations {
     const rows = this.database
       .prepare(
         `SELECT revision, kind, device_id AS deviceId, local_day AS day, types,
-                record_ids AS recordIds, track, bound_ms AS boundMs
+                CASE WHEN kind IN ('records', 'episode') THEN record_ids ELSE '[]' END AS recordIds,
+                track, bound_ms AS boundMs
            FROM perception_deletion_scopes
           WHERE owner_id = ? AND agent_id = ? AND revision > ? ORDER BY revision LIMIT ?`,
       )

@@ -657,8 +657,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           scope(authenticated.authentication),
           Number(after),
         );
+        const last = feed.scopes.at(-1)?.revision;
         return options.sendJson(reply, 200, {
-          revision: feed.revision,
+          revision: last ?? feed.revision,
+          latest: feed.revision,
           scopes: feed.scopes.map((entry) => ({
             revision: entry.revision,
             kind: entry.kind,

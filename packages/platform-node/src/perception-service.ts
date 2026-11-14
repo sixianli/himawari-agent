@@ -668,6 +668,7 @@ export class PerceptionService {
         if (
           !only({ day: true, deviceId: true }) ||
           !DAY_PATTERN.test(target.day ?? "") ||
+          Number.isNaN(Date.parse(`${target.day}T00:00:00.000Z`)) ||
           new Date(`${target.day}T00:00:00.000Z`).toISOString().slice(0, 10) !== target.day
         )
           return this.#deletionInvalid("day");
