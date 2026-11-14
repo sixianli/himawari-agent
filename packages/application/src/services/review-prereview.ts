@@ -153,6 +153,10 @@ export const PREREVIEW_FAILURE_BACKOFF_MS = DAY_MS;
 export class ReviewPrereviewService {
   readonly #options: ReviewPrereviewOptions;
   readonly #storeFailedAt = new Map<string, number>();
+  readonly #classificationSkipped = new Map<
+    string,
+    { classification: ProactiveModelInvoker["allowedDataClassifications"][number]; at: number }
+  >();
 
   constructor(options: ReviewPrereviewOptions) {
     this.#options = options;
@@ -187,6 +191,8 @@ export class ReviewPrereviewService {
       };
     for (const [key, at] of this.#storeFailedAt)
       if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#storeFailedAt.delete(key);
+    for (const [key, { at }] of this.#classificationSkipped)
+      if (nowMs - at >= PREREVIEW_FAILURE_BACKOFF_MS) this.#classificationSkipped.delete(key);
     const subjects = (await this.#options.subjects()).flatMap((source) => {
       const ref = subjectRef(source.key);
       return ref === undefined ? [] : [{ source, ref }];
@@ -229,9 +235,22 @@ export class ReviewPrereviewService {
       if (attempted >= settings.perRun) break;
       if (attempts >= settings.dailyLimit)
         return { attempted, recorded, failures, skippedClassification, stoppedBy: "daily_limit" };
+      const allowedClassifications = this.#options.model.allowedDataClassifications;
+      const knownSkip = this.#classificationSkipped.get(source.key);
+      if (knownSkip !== undefined) {
+        if (!allowedClassifications.includes(knownSkip.classification)) {
+          skippedClassification += 1;
+          continue;
+        }
+        this.#classificationSkipped.delete(source.key);
+      }
       const subject = await source.build().catch(() => undefined);
       if (subject === undefined) continue;
-      if (!this.#options.model.allowedDataClassifications.includes(subject.dataClassification)) {
+      if (!allowedClassifications.includes(subject.dataClassification)) {
+        this.#classificationSkipped.set(source.key, {
+          classification: subject.dataClassification,
+          at: nowMs,
+        });
         skippedClassification += 1;
         continue;
       }

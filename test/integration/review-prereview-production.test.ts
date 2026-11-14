@@ -107,6 +107,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const outputs = new Map<string, string>();
     const costs = new Map<string, number>();
     const invocations: string[] = [];
+    const reads: string[] = [];
     const released: string[] = [];
     const releaseFails = { input: false, output: false };
     const allowed: DataClassification[] = ["public", "private", "sensitive", "restricted"];
@@ -212,7 +213,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
         reader: createGmailReader({ oauth, fetch }),
         readAccount: (accessToken) => readGmailAccount({ accessToken, fetch }),
         ledger,
-        readMemoryText: async (ref) => texts.get(ref),
+        readMemoryText: async (ref) => {
+          reads.push(ref);
+          return texts.get(ref);
+        },
         readMemoryClassification: async (ref) => classifications.get(ref),
         prereview: {
           store: wrapStore(repository.reviewPrereview()),
@@ -294,6 +298,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
       ledger,
       prompts,
       raw,
+      reads,
       released,
       releaseFails,
       rows,
@@ -401,6 +406,26 @@ describe("[P4-8] model pre-rating in the running service", () => {
         .map(({ decisionId }) => decisionId)
         .sort(),
     ).toEqual(["plain", "secret-a", "secret-b"]);
+  });
+
+  it("[P4-8] skipped subjects do not take the per-run slot and are not built again while still disallowed", async () => {
+    const h = await setup();
+    h.allowed.splice(0, h.allowed.length, "public", "private");
+    await h.skipped("a-secret", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+    const service = h.service({ perRun: 1 });
+    expect(await service.prereview()).toMatchObject({
+      attempted: 1,
+      recorded: 1,
+      skippedClassification: 1,
+      stoppedBy: "done",
+    });
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts.join("\n")).not.toContain("私密");
+    const reads = () => h.reads.filter((ref) => ref === "memory-a-secret").length;
+    expect(reads()).toBe(1);
+    expect(await service.prereview()).toMatchObject({ attempted: 0, skippedClassification: 1 });
+    expect(reads()).toBe(1);
   });
 
   it("[P4-8][reverse] subjects the model may receive are never skipped", async () => {
