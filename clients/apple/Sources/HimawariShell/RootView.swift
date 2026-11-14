@@ -52,6 +52,7 @@ struct MainTabsView: View {
     @Environment(\.tabsCycleEvery) private var cycleEvery
     private let memoryOverride: AnyView?
     private let settingsOverride: AnyView?
+    @Environment(\.listClock) private var listClock
 
     init(model: AppModel, chat: ChatStore, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
         self.model = model
@@ -91,7 +92,7 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { tab = next }
             }
         }
-        .sheet(isPresented: $settingsOpen) {
+        .hmCover(isPresented: $settingsOpen) {
             Group {
                 if let settingsOverride {
                     settingsOverride
@@ -107,9 +108,6 @@ struct MainTabsView: View {
                     )
                 }
             }
-                .presentationDetents([.large])
-                .presentationCornerRadius(DesignTokens.Radius.sheetTop)
-                .presentationBackground(Color.hmBackground)
         }
     }
 
@@ -139,22 +137,28 @@ struct MainTabsView: View {
 
     private var bars: some View {
         ZStack(alignment: .bottom) {
-            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar).ignoresSafeArea()
-            HStack(spacing: 14) {
+            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar, solid: 0.3)
+            HStack(spacing: 0) {
                 FloatingTabBar(selection: $tab, tabs: [
-                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) { Icon(.sun) },
+                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) {
+                        TimelineView(.everyMinute) { context in
+                            TodayTabIcon(day: TodayNumber.day(at: listClock ?? context.date))
+                        }
+                    },
                     FloatingTab(id: MainTab.chats, title: Text(L.text("tab.chats"))) { Icon(.message) },
                     FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
                 ])
                 .frame(maxWidth: DesignTokens.Size.tabBarWidth)
-                Spacer(minLength: 0)
+                .layoutPriority(1)
+                Spacer(minLength: 12)
                 SunflowerButton(Text(L.text("talk"))) {
                     withAnimation(.snappy) { openThread = OpenThread(threadId: nil) }
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.bottom, 26)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
 

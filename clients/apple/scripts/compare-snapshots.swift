@@ -30,8 +30,8 @@ func load(_ url: URL) -> Bitmap? {
     return drawn ? Bitmap(width: width, height: height, bytes: bytes) : nil
 }
 
-let channelTolerance = 16
-let allowedChangedShare = 0.002
+let channelTolerance = 3
+let allowedChangedShare = 0.0005
 let arguments = CommandLine.arguments
 guard arguments.count == 3 else {
     FileHandle.standardError.write(Data("usage: compare-snapshots.swift <approved-dir> <fresh-dir>\n".utf8))

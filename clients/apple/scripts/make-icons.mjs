@@ -18,17 +18,35 @@ writeFileSync(
   `${JSON.stringify({ info: { author: "xcode", version: 1 } }, null, 2)}\n`,
 );
 
-for (const [key, strokeWidth] of Object.entries(icons)) {
-  const [sourceName, variant] = key.split("@");
-  const name = variant ? `${sourceName}-${variant}` : sourceName;
+function fromTabler(name, sourceName, spec) {
+  const strokeWidth = typeof spec === "number" ? spec : spec.stroke;
+  const drop = typeof spec === "number" ? [] : (spec.drop ?? []);
   const source = readFileSync(join(packageDir, "icons", "outline", `${sourceName}.svg`), "utf8");
   if (!source.includes('stroke-width="2"') || !source.includes('stroke="currentColor"')) {
     throw new Error(`unexpected outline icon format: ${name}`);
   }
-  const svg = source
+  let trimmed = source;
+  for (const path of drop) {
+    const element = `<path d="${path}" />`;
+    if (!trimmed.includes(element)) throw new Error(`path not found in ${name}: ${path}`);
+    trimmed = trimmed.replace(
+      new RegExp(`\\s*${element.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`, "u"),
+      "",
+    );
+  }
+  return trimmed
     .replace('stroke-width="2"', `stroke-width="${strokeWidth}"`)
     .replace('stroke="currentColor"', 'stroke="#000000"')
     .replace(/\s*class="[^"]*"/u, "");
+}
+
+for (const [key, spec] of Object.entries(icons)) {
+  const [sourceName, variant] = key.split("@");
+  const name = variant ? `${sourceName}-${variant}` : sourceName;
+  const svg =
+    typeof spec === "object" && spec.custom
+      ? readFileSync(new URL(`./custom-icons/${spec.custom}`, import.meta.url), "utf8")
+      : fromTabler(name, sourceName, spec);
   const set = join(catalog, `${name}.imageset`);
   mkdirSync(set);
   writeFileSync(join(set, `${name}.svg`), svg);

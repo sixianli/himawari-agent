@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App（以后还有 Apple Watch 和 Mac App）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型 `docs/assets/apple-clients/2026-11-12-v1/` 做。现在做到第 2 批：配对、对话列表、聊天。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批：配对、对话列表、聊天。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -9,6 +9,7 @@
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
 - [截图对照原型](#ui-review)
+- [Mac 菜单栏 App](#mac-app)
 
 <a id="layout"></a>
 ## 代码怎么分
@@ -22,6 +23,7 @@
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
+| `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
 `App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，只有一个入口文件 `App/iOS/HimawariApp.swift`，其余代码都从上面的包里来。
 
@@ -69,7 +71,7 @@ node clients/apple/scripts/make-signature-fixture.mjs clients/apple/Tests/Himawa
 <a id="icons"></a>
 ## 图标
 
-图标用 Tabler Icons（一套开源线条图标，MIT 许可证）的 outline 款，不用苹果自带的 SF Symbols。代码里只写名字，例如 `Icon(.sun)`；颜色跟着文字色走。用到哪些图标、每个的线宽，写在 `scripts/icons.json`：常规的 1.6，返回、关闭、加号、小箭头 2.2。
+图标用 Tabler Icons（一套开源线条图标，MIT 许可证）的 outline 款，不用苹果自带的 SF Symbols。代码里只写名字，例如 `Icon(.message)`；颜色跟着文字色走。用到哪些图标、每个的线宽，写在 `scripts/icons.json`：常规的 1.6，返回、关闭、加号、小箭头 2.2。
 
 要加图标：先在 `scripts/icons.json` 里加一行，再在 `Sources/HimawariDesign/Icon.swift` 的 `IconName` 里加同名的一项，然后重新生成：
 
@@ -101,7 +103,26 @@ clients/apple/scripts/ui-review.sh
 clients/apple/scripts/ui-review.sh --approve
 ```
 
-把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 16/255 的像素多于 0.2% 就报 `SNAPSHOT_DIFF` 并失败。
+把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。
 
 [返回目录](#apple-clients)
 
+<a id="mac-app"></a>
+## Mac 菜单栏 App
+
+Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没有主窗口、聊天窗口和管理页。Xcode 工程里的 `HimawariMac` 目标就是它，入口文件 `App/macOS/HimawariMacApp.swift`，其余代码在 `Sources/HimawariMacUI/`。
+
+- 配对：Mac 不扫码。在 iPhone 的 Himawari 里“设置 → 设备 → 添加设备”，点“Mac 不方便扫：发配对链接过去”，把配对链接（以 `himawari-pair:` 开头）发到 Mac 上。用隔空投送发来时，Mac App 认领 `himawari-pair` 这个链接开头：还没连上时直接打开配对窗口并填好，已经连上时不打开（只记下，下次打开配对窗口时填进去）；别的方式发来的，复制后窗口出现或 App 回到前台时会从剪贴板自动填进去，也可以手动粘贴。没有 iPhone 时也可以在网页设置里添加。
+- 输入条：默认按 ⌥ 空格叫出，快捷键在设置页可改；被别的 App 占用时设置页写明。叫出的那一刻读一次前台 App、正在看的文件和选中的文字（读文件和选中文字要在“系统设置 › 隐私与安全性 › 辅助功能”里允许 Himawari），显示成可以点 × 拿掉的小条，发出前不再刷新。带着的东西先传到服务器换成引用，再照网页附件的格式（`<file name ref bytes kind/>` 标签，和 `apps/control-center/src/draft-attachments.ts` 逐字一致，固定测试数据由 `scripts/make-attachment-fixture.mjs` 从网页代码生成）接在正文后面发出。读不出文字的文件只传文件名和路径。
+- 文件夹和网址规则在 `Sources/HimawariCore/MacAccess.swift`：路径先解开符号链接和 `..` 再按路径分段和允许的文件夹比，只读文件夹不许改；网址只许 `https` 加主机名单。
+- Mac 上的短信：设置页这个开关打开、并在“系统设置 › 隐私与安全性 › 完全磁盘访问权限”里允许 Himawari 后，按心跳间隔从 `~/Library/Messages/chat.db`（信息 App 的数据库）只读地取打开之后的新消息，每条传成一条 `message.text` 感知记录（`POST perception`，每批条数取服务器配置 `device.perception.batch_records`）。打开时从最新一条开始，不补读以前的；关掉就停，并忘掉读到哪里，再打开也不补关着那段。不发消息，也不标已读。正文为空时从 `attributedBody` 列（信息 App 用 NSArchiver 存的富文本）里取：不用系统的反序列化，而是 `Sources/HimawariCore/TypedStreamText.swift` 只按长度取出其中的文字，数据不对就跳过这一条，不会让 App 崩溃。读数据库在后台进行，不卡界面。一批里每条都被服务器拒收时不往后挪，等下次再试；只有个别被拒才跳过那几条。发出去的消息不带对方号码当发件人。表结构不事先假定：每次先用 `PRAGMA table_info` 读出 `message`、`handle` 两张表有哪些列，可有可无的列缺了就退一步（例如没有 `handle` 就不带发件人），`guid`、`date`、`service` 缺了就不读，并在设置页写明缺哪几列。没有完全磁盘访问权限、打不开数据库、传不上去、服务器还不收，设置页那一行都写明，不静默失败。读表的代码在 `Sources/HimawariMacUI/MessagesDatabase.swift`，转成记录的规则在 `Sources/HimawariCore/MessageSensing.swift`。
+
+截图：
+
+```bash
+clients/apple/scripts/mac-ui-review.sh
+```
+
+它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMacUI/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到 `clients/apple/ui-review/mac-latest/`，少一张就报错。
+
+[返回目录](#apple-clients)

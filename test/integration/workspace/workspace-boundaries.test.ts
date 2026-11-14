@@ -132,6 +132,8 @@ it("[R2-S4] [R2-D4] limits Agent imports to risk-reducing sandbox control", asyn
   expect(Object.keys(control).sort()).toEqual([
     "blockJobHostLaunch",
     "containerRunnerDigest",
+    "gatewayJobHostRiskControl",
+    "localJobHostRiskControl",
     "processGroupPresent",
     "queryJobHostControl",
     "readJobHostFinalEvidence",

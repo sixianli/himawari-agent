@@ -5,20 +5,23 @@ public enum IconName: String, CaseIterable, Sendable {
     case affiliate
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
+    case appWindow = "app-window"
     case arrowUp = "arrow-up"
     case bell
     case bolt
     case bulb
     case calculator
     case calendar
+    case calendarFrame = "calendar-frame"
     case camera
     case car
     case check
-    case checklist
+    case clipboardList = "clipboard-list"
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
     case cloud
+    case code
     case creditCard = "credit-card"
     case currentLocation = "current-location"
     case deviceLaptop = "device-laptop"
@@ -26,13 +29,16 @@ public enum IconName: String, CaseIterable, Sendable {
     case deviceWatch = "device-watch"
     case download
     case ear
-    case edit
     case eye
     case faceId = "face-id"
     case filePencil = "file-pencil"
+    case fileSpreadsheet = "file-spreadsheet"
     case fileText = "file-text"
+    case fingerprint
+    case folder
+    case folderSymlink = "folder-symlink"
     case handStop = "hand-stop"
-    case heartRateMonitor = "heart-rate-monitor"
+    case heartbeat
     case history
     case homeBolt = "home-bolt"
     case listCheck = "list-check"
@@ -40,7 +46,9 @@ public enum IconName: String, CaseIterable, Sendable {
     case mapPin = "map-pin"
     case message
     case message2 = "message-2"
+    case messagePlus = "message-plus"
     case microphone
+    case pencil
     case pencilPlus = "pencil-plus"
     case phone
     case photo
@@ -52,13 +60,14 @@ public enum IconName: String, CaseIterable, Sendable {
     case search
     case server
     case serverLarge = "server-large"
+    case settings
     case stack2 = "stack-2"
-    case sun
     case table
     case terminal2 = "terminal-2"
-    case tools
+    case puzzle
     case train
     case upload
+    case trash
     case user
     case users
     case walk
@@ -105,5 +114,38 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return ThirdPartyLicense(id: id, name: name, version: version, text: text)
+    }
+}
+
+public enum ChromeIcon {
+    public static let newChat: IconName = .messagePlus
+}
+
+public struct TodayTabIcon: View {
+    private static let grid: CGFloat = 24
+    private static let baseline: CGFloat = 17.7
+    private static let numberSize: CGFloat = 9.5
+
+    private let day: Int
+    private let size: CGFloat
+
+    public init(day: Int, size: CGFloat = 26) {
+        self.day = day
+        self.size = size
+    }
+
+    public var body: some View {
+        let scale = size / Self.grid
+        let baselineOffset = Self.baseline * scale
+        ZStack(alignment: Alignment(horizontal: .center, vertical: .firstTextBaseline)) {
+            Icon(.calendarFrame, size: size)
+                .alignmentGuide(.firstTextBaseline) { _ in baselineOffset }
+            Text(String(day))
+                .font(.system(size: Self.numberSize * scale, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .fixedSize()
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }

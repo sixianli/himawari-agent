@@ -1,10 +1,15 @@
 source "$HERE/runners.sh"
 
 REPO=${HIMAWARI_REPO:-sixianli/himawari-agent}
-LABEL=$RUNNER_LABEL
 CI_VPS=${CI_VPS_SSH:-ubuntu@158.69.191.249}
 REMOTE=${CI_RUNNER_DIR:-/home/ubuntu/ci-runner}
 LOCK=${RUNNER_LOCK_DIR:-.ci-output/ci-runner-pause.lock}
+SITE_EXPORT=""
+if [ "$RUNNER_SITE" = arm ]; then
+  CI_VPS=${CI_ARM_SSH:-ubuntu@138.2.31.252}
+  LOCK=${RUNNER_LOCK_DIR:-.ci-output/ci-runner-pause-arm.lock}
+  SITE_EXPORT="export RUNNER_SITE=arm; "
+fi
 POLL=${RUNNER_POLL_SECONDS:-30}
 SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 
@@ -17,7 +22,7 @@ take_lock() {
 }
 
 vps() {
-  ssh "${SSH_OPTIONS[@]}" "$CI_VPS" "[ \"\$(hostname)\" = $RUNNER_HOST ] || { echo \"not $RUNNER_HOST\" >&2; exit 68; }; $1"
+  ssh "${SSH_OPTIONS[@]}" "$CI_VPS" "$SITE_EXPORT$(runner_host_test) || { echo \"not $RUNNER_HOST\" >&2; exit 68; }; $1"
 }
 
 upload_runner_scripts() {
@@ -45,9 +50,17 @@ runner_field() {
 
 has_label() {
   case ",$1," in
-    *",$LABEL,"*) return 0 ;;
+    *",$2,"*) return 0 ;;
   esac
   return 1
+}
+
+managed_labels_on() {
+  local label found=""
+  for label in $RUNNER_LABELS; do
+    has_label "$1" "$label" && found="$found $label"
+  done
+  echo $found
 }
 
 reconcile_runners() {
@@ -59,35 +72,52 @@ reconcile_runners() {
   done
   while IFS=$'\t' read -r id name _ _ labels; do
     [ -n "$id" ] || continue
-    has_label "$labels" || continue
+    [ -n "$(managed_labels_on "$labels")" ] || continue
     case " $(echo $names) " in
       *" $name "*) ;;
-      *) echo "GitHub runner $name carries $LABEL but is not installed on $RUNNER_HOST"; return 1 ;;
+      *) echo "GitHub runner $name carries $(managed_labels_on "$labels") but is not installed on $RUNNER_HOST"; return 1 ;;
     esac
   done <<< "$table"
 }
 
+own_label() {
+  runner_label_for_name "$1" || { echo "no label is defined for runner $1" >&2; return 1; }
+}
+
 label_states() {
-  local names=$1 table=$2 name count states=""
+  local names=$1 table=$2 name count labels own fallback states=""
+  fallback=""
+  if [ "$RUNNER_SITE" = vps ]; then
+    runner_select 1
+    fallback=$RUNNER_NAME
+  fi
   for name in $names; do
     count=$(runner_field "$table" "$name" 1 | grep -c .)
-    if [ "$count" != 1 ]; then
+    labels=$(runner_field "$table" "$name" 5)
+    own=$(own_label "$name" 2> /dev/null)
+    if [ "$count" != 1 ] || [ -z "$own" ]; then
       states="$states $name=unread"
-    elif has_label "$(runner_field "$table" "$name" 5)"; then
+    elif [ "$(managed_labels_on "$labels")" = "$own" ]; then
       states="$states $name=on"
-    else
+    elif [ -z "$(managed_labels_on "$labels")" ]; then
       states="$states $name=off"
+    elif [ "$name" = "$fallback" ] && [ "$(managed_labels_on "$labels")" = "$RUNNER_CHECK_LABEL $RUNNER_GATE_LABEL" ]; then
+      states="$states $name=extra"
+    elif has_label "$labels" "$own"; then
+      states="$states $name=mixed"
+    else
+      states="$states $name=foreign"
     fi
   done
   echo $states
 }
 
 add_label() {
-  gh api -X POST "repos/$REPO/actions/runners/$1/labels" -f "labels[]=$LABEL" > /dev/null
+  gh api -X POST "repos/$REPO/actions/runners/$1/labels" -f "labels[]=$2" > /dev/null
 }
 
 remove_label() {
-  gh api -X DELETE "repos/$REPO/actions/runners/$1/labels/$LABEL" > /dev/null
+  gh api -X DELETE "repos/$REPO/actions/runners/$1/labels/$2" > /dev/null
 }
 
 service_states() {

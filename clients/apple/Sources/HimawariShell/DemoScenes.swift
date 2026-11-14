@@ -37,6 +37,7 @@ enum DemoScene: String, CaseIterable {
     case chatOffline = "16-chat-states-4-offline"
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
+    case tabTodayOneDigit = "tab-today-1-digit"
     case motionShimmer = "motion-shimmer"
     case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
@@ -44,6 +45,7 @@ enum DemoScene: String, CaseIterable {
 
     static let argument = "-HimawariDemoScene"
     static let demoHost = "himawari.example.com"
+    static let shownMarker = "himawari-demo-scene-shown"
 
     static var requested: DemoScene? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -54,12 +56,20 @@ enum DemoScene: String, CaseIterable {
 
 struct DemoSceneView: View {
     let scene: DemoScene
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         content
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
             .onAppear { SerifFace.shared.prepare() }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                let marker = FileManager.default.temporaryDirectory.appendingPathComponent(DemoScene.shownMarker)
+                try? Data(scene.rawValue.utf8).write(to: marker, options: .atomic)
+            }
     }
 
     @ViewBuilder
@@ -88,9 +98,12 @@ struct DemoSceneView: View {
             tabs(DemoChatFixtures.chatList())
         case .chatEmpty:
             tabs(DemoChatState())
+        case .tabTodayOneDigit:
+            tabs(DemoChatFixtures.chatList())
+                .environment(\.listClock, DemoChatFixtures.now.addingTimeInterval(-3 * 86_400))
         case .motionTabs:
             tabs(DemoChatFixtures.chatList())
-                .environment(\.tabsCycleEvery, 1.2)
+                .environment(\.tabsCycleEvery, 3)
         case .chat:
             chat(DemoChatFixtures.answered())
         case .chatNew:
@@ -103,13 +116,13 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.answering())
         case .chatSteps:
             chat(DemoChatFixtures.answered())
-                .environment(\.processStepsOpenAfter, 0)
+                .environment(\.processStepsOpenAfter, 1)
         case .motionSheet:
             chat(DemoChatFixtures.answered())
-                .environment(\.processStepsOpenAfter, 1.5)
+                .environment(\.processStepsOpenAfter, 4)
         case .motionScroll:
             chat(DemoChatFixtures.longConversation())
-                .environment(\.transcriptScrollsToTopAfter, 1.5)
+                .environment(\.transcriptScrollsToTopAfter, 4)
         case .pairing:
             PairingView(model: .demo(.unpaired(nil)))
         case .pairingScan:

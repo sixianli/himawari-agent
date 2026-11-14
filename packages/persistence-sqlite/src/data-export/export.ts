@@ -1,5 +1,6 @@
 import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { proposalTextDigest } from "../external-proposal-text.js";
 import { canonicalJson, type JsonValue, jsonLines, sha256Hex } from "./canonical.js";
 import { type MarkdownMemory, renderMemoryMarkdown } from "./markdown.js";
 import {
@@ -8,12 +9,15 @@ import {
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
+  type RuleSuspendReason,
   RULES_INDEX_FILE,
   renderRulesMarkdown,
   ruleParametersKey,
 } from "./rules.js";
 import {
   DATA_FILES,
+  externalProposalDigestKey,
+  externalProposalTextKey,
   FORMAT_VERSION,
   INDEX_FILE,
   MANIFEST_FILE,
@@ -45,6 +49,8 @@ export interface ExportOptions extends PortableTextDependencies {
   readonly now: () => string;
   readonly sealPassphrase?: string;
   readonly withEvidence?: boolean;
+  readonly onProgress?: (textsRead: number, textsTotal: number) => void;
+  readonly signal?: AbortSignal;
 }
 
 export interface ExportResult {
@@ -85,19 +91,54 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     throw new DataExportError(DATA_EXPORT_ERROR_CODES.EVIDENCE_REQUIRES_SEAL);
   const snapshot = readSnapshot(options.database, options.scope, options.withEvidence === true);
   const texts = new Map<string, string>();
+  const restrictedRefs = new Set(
+    snapshot.restrictedMemoryTexts.map((row) => str(row["content_ref"])),
+  );
+  let unreadableRestricted = 0;
+  let textsRead = 0;
+  options.signal?.throwIfAborted();
+  options.onProgress?.(textsRead, snapshot.payloads.size);
   for (const [ref, payload] of snapshot.payloads) {
-    if ("unavailable" in payload) continue;
-    texts.set(
-      ref,
+    options.signal?.throwIfAborted();
+    textsRead += 1;
+    if ("unavailable" in payload) {
+      if (restrictedRefs.has(ref)) unreadableRestricted += 1;
+      options.onProgress?.(textsRead, snapshot.payloads.size);
+      continue;
+    }
+    const read = async () =>
       decoder.decode(
         await options.protector.unprotect({
           ownerId: options.scope.ownerId,
           agentId: options.scope.agentId,
           payload,
         }),
-      ),
-    );
+      );
+    if (!restrictedRefs.has(ref)) texts.set(ref, await read());
+    else {
+      const text = await read().catch(() => null);
+      if (text === null) unreadableRestricted += 1;
+      else texts.set(ref, text);
+    }
+    options.onProgress?.(textsRead, snapshot.payloads.size);
   }
+  options.signal?.throwIfAborted();
+  const restrictedDigests = new Set<string>();
+  for (const row of snapshot.restrictedMemoryTexts) {
+    const text = texts.get(str(row["content_ref"]));
+    if (text !== undefined) restrictedDigests.add(proposalTextDigest(text));
+  }
+  for (const row of snapshot.externalProposals)
+    if (row["restricted_link"] === 1) restrictedDigests.add(str(row["text_sha256"]));
+  const restrictedProposal = (row: Row): boolean => {
+    if (row["restricted_link"] === 1 || restrictedDigests.has(str(row["text_sha256"]))) return true;
+    const contentRef = optionalString(row["content_ref"]);
+    const text = contentRef === null ? undefined : texts.get(contentRef);
+    return text !== undefined && restrictedDigests.has(proposalTextDigest(text));
+  };
+  const exportedProposals = snapshot.externalProposals.filter((row) => !restrictedProposal(row));
+  const restrictedProposals = snapshot.externalProposals.length - exportedProposals.length;
+  const exportedProposalIds = new Set(exportedProposals.map((row) => str(row["id"])));
   const originals: { [key: string]: JsonValue } = {};
   const withheldKeys = new Set<string>();
   const withheldOwners = { memories: new Set<string>(), decisions: new Set<string>() };
@@ -137,6 +178,15 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.people,
       snapshot.decisions,
       snapshot.signals,
+      snapshot.rules,
+      snapshot.ruleHistory,
+      exportedProposals,
+      snapshot.externalProposalKeys.filter((row) =>
+        exportedProposalIds.has(str(row["proposal_id"])),
+      ),
+      snapshot.externalProposalUnkeyed.filter((row) =>
+        exportedProposalIds.has(str(row["proposal_id"])),
+      ),
     ]);
     for (const match of scanned.matchAll(/\[已扣留:(\d{1,6})\]/g))
       highest = Math.max(highest, Number(match[1]));
@@ -294,6 +344,18 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     undoneAt: optionalString(row["undone_at"]),
   }));
 
+  const pairedDeviceLines: JsonValue[] = snapshot.pairedDevices.map((row) => ({
+    id: str(row["id"]),
+    kind: str(row["kind"]),
+    name: safeString(str(row["name"])),
+    releaseChannel: str(row["release_channel"]),
+    status: str(row["status"]),
+    pairedAt: str(row["paired_at"]),
+    confirmedAt: optionalString(row["confirmed_at"]),
+    revokedAt: optionalString(row["revoked_at"]),
+    lastSeenAt: optionalString(row["last_seen_at"]),
+  }));
+
   const basis = group(snapshot.basis, "change_id");
   const changesByRun = group(snapshot.changes, "consolidation_id");
   let consolidationChanges = 0;
@@ -331,6 +393,34 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       errorCode: optionalString(run["error_code"]),
       startedAt: str(run["started_at"]),
       finishedAt: optionalString(run["finished_at"]),
+      changes,
+    };
+  });
+
+  const changesByReview = group(snapshot.reviewChanges, "review_id");
+  let conversationReviewChanges = 0;
+  const reviewLines: JsonValue[] = snapshot.reviews.map((review) => {
+    const changes: JsonValue[] = (changesByReview.get(str(review["id"])) ?? [])
+      .filter((change) => memoryIds.has(str(change["memory_id"])))
+      .map((change) => ({
+        memoryId: str(change["memory_id"]),
+        action: str(change["action"]),
+        afterRevision: num(change["after_revision"]),
+        beforeSupersededBy: keepMemoryRef(optionalString(change["before_superseded_by"])),
+        beforeValidTo: optionalString(change["before_valid_to"]),
+        createdAt: str(change["created_at"]),
+        undoneRevision: change["undone_revision"] === null ? null : num(change["undone_revision"]),
+      }));
+    conversationReviewChanges += changes.length;
+    return {
+      id: str(review["id"]),
+      day: str(review["day"]),
+      status: str(review["status"]),
+      attempts: num(review["attempts"]),
+      errorCode: optionalString(review["error_code"]),
+      startedAt: str(review["started_at"]),
+      finishedAt: optionalString(review["finished_at"]),
+      undoneAt: optionalString(review["undone_at"]),
       changes,
     };
   });
@@ -429,6 +519,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     if (id !== null && kept === null) droppedRuleMemoryLinks += 1;
     return kept;
   };
+  let droppedRuleSuggestions = 0;
   const ruleHistory = group(snapshot.ruleHistory, "rule_id");
   const ruleLines: PortableRule[] = snapshot.rules.map((row) => {
     const ruleId = str(row["rule_id"]);
@@ -453,13 +544,60 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       sourceMemoryId: ruleMemoryLink(row["source_memory_id"]),
       updatedAt: str(row["updated_at"]),
       ...ruleParameters(row["parameters"], ruleParametersKey(ruleId), ruleId),
+      ...(row["suspend_reason"] === null || row["suspend_reason"] === undefined
+        ? {}
+        : { suspendReason: str(row["suspend_reason"]) as RuleSuspendReason }),
       history,
     };
+    if (row["suggestion"] !== null && row["suggestion"] !== undefined) droppedRuleSuggestions += 1;
     assertRuleIdentifiers(rule);
     assertRuleHistory(rule);
     return rule;
   });
   const ruleHistoryVersions = ruleLines.reduce((total, { history }) => total + history.length, 0);
+
+  const proposalKeys = group(snapshot.externalProposalKeys, "proposal_id");
+  const proposalUnkeyed = group(snapshot.externalProposalUnkeyed, "proposal_id");
+  const proposalLines: JsonValue[] = exportedProposals.map((row) => {
+    const id = str(row["id"]);
+    const contentRef = optionalString(row["content_ref"]);
+    const content =
+      contentRef === null ? null : requiredText(contentRef, externalProposalTextKey(id));
+    const withheld =
+      content !== null && (content as { readonly withheld?: boolean }).withheld === true;
+    const digest = str(row["text_sha256"]);
+    if (withheld) originals[externalProposalDigestKey(id)] = digest;
+    const supersededBy = optionalString(row["superseded_by"]);
+    const memoryId = keepMemoryRef(optionalString(row["memory_id"]));
+    return {
+      id,
+      subjectRef: safeString(str(row["subject_ref"])),
+      client: safeString(str(row["client"])),
+      sourceKey: safeOptional(optionalString(row["source_key"])),
+      textSha256: withheld ? null : digest,
+      normalization: str(row["normalization"]),
+      category: str(row["category"]),
+      classification: str(row["classification"]),
+      status: str(row["status"]),
+      receivedAt: str(row["received_at"]),
+      decidedAt: optionalString(row["decided_at"]),
+      batchId:
+        (str(row["status"]) === "committed" && memoryId === null) || content === null
+          ? null
+          : optionalString(row["batch_id"]),
+      memoryId,
+      supersededBy:
+        supersededBy !== null && exportedProposalIds.has(supersededBy) ? supersededBy : null,
+      content,
+      keys: (proposalKeys.get(id) ?? []).map((key) => ({
+        client: safeString(str(key["client"])),
+        sourceKey: safeString(str(key["source_key"])),
+      })),
+      unkeyedClients: (proposalUnkeyed.get(id) ?? []).map((entry) =>
+        safeString(str(entry["client"])),
+      ),
+    };
+  });
 
   const evidence = options.withEvidence === true ? buildEvidence(snapshot, texts) : null;
 
@@ -479,7 +617,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.memories, "data", jsonLines(memoryLines), memoryLines.length);
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
+  put(DATA_FILES.pairedDevices, "data", jsonLines(pairedDeviceLines), pairedDeviceLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
+  put(DATA_FILES.conversationReviews, "data", jsonLines(reviewLines), reviewLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
   const rulesText = jsonLines(ruleLines as unknown as readonly JsonValue[]);
   for (const [index, line] of rulesText.split("\n").entries())
@@ -489,6 +629,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         `规则 ${ruleLines[index]?.ruleId ?? ""} 连同历史超过单行上限`,
       );
   put(DATA_FILES.rules, "data", rulesText, ruleLines.length);
+  put(DATA_FILES.externalProposals, "data", jsonLines(proposalLines), proposalLines.length);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -524,6 +665,17 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "按产品规则不应存在；遇到时只计数，不导出",
     },
     {
+      what: "保存进受限（restricted）记忆的其他 agent 提议，以及正文和它相同的提议",
+      count: restrictedProposals,
+      reason:
+        "正文和受限记忆的文字（当前文字、历史版本或主人的原话）相同，或已保存进受限记忆；和受限记忆一样不导出，明文和封存文件里都没有",
+    },
+    {
+      what: "读不出文字、没法和提议比较的受限（restricted）记忆版本",
+      count: unreadableRestricted,
+      reason: "密文缺失或解不开；和它同文的提议认不出来，会照常导出",
+    },
+    {
       what: "写入时原文已被删除的历史版本和引用原话",
       count: unavailableHistory.events + unavailableHistory.quotes,
       reason: "文字已按删除流程清除，无从导出",
@@ -535,9 +687,14 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     {
-      what: "其他 agent 通过 MCP 提议的记忆（待确认、已拒绝、被替换的提议）",
-      count: snapshot.externalProposals,
-      reason: "本版导出格式还不含这张表；已确认保存的会作为普通记忆导出",
+      what: "规则暂停时系统算出的建议值",
+      count: droppedRuleSuggestions,
+      reason: "只是待你确认的建议，导入后规则仍是暂停状态，你可以恢复原规则或确认停用",
+    },
+    {
+      what: "等你确认的待重审记忆标记",
+      count: snapshot.openMemoryReviews,
+      reason: "是本机的待办清单，不进导出；导入后从空清单开始",
     },
     {
       what: "规则出处里指向未导出记忆的链接",
@@ -550,6 +707,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "检索索引和向量",
       count: null,
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
+    },
+    {
+      what: "配对设备的公钥、配对码和请求随机值",
+      count: null,
+      reason:
+        "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
     },
     {
       what: "记忆评测的题库和每次评测的分数",
@@ -570,13 +733,17 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     memoryHistoryEvents: historyEvents,
     people: peopleLines.length,
     importBatches: batchLines.length,
+    pairedDevices: pairedDeviceLines.length,
     consolidations: consolidationLines.length,
     consolidationChanges,
+    conversationReviews: reviewLines.length,
+    conversationReviewChanges,
     decisions: decisionLines.length,
     decisionSignals,
     markdownMemories: markdown.count,
     rules: ruleLines.length,
     enforcedRules: enforcedRuleCount(ruleLines),
+    externalProposals: proposalLines.length,
     ruleHistoryVersions,
     sealedOriginals: options.sealPassphrase === undefined ? 0 : Object.keys(originals).length,
     sealedEvidenceRows,

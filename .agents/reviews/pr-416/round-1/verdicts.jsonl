@@ -1,0 +1,14 @@
+{"id": "ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作业摘要表的“原因”列没有经过 `cell` 遮盖/转义", "valid": false, "class": "error"}
+{"id": "ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "设计文档仍声称“报告和诊断只在 GitHub 保留 1 天”，与 ADR 0243/工作流矛盾", "valid": true, "severity": "medium-high", "trigger": "照设计文档或 ADR 0243 决定 4 去 GitHub 或共享目录找 quality.yml 的完整报告", "consequence": "文档说报告保留在 GitHub 1 天或在共享目录，实际都不存在，误导排查", "modelSeverity": "中", "class": "error"}
+{"id": "ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "先整文件读入内存，再判断二进制和只取尾部", "valid": true, "severity": "low", "trigger": "诊断目录里有几百 MB 的 trace 或日志", "consequence": "ci-summary 整读进内存，自托管 runner 内存吃紧，最坏这一步失败", "modelSeverity": "低", "class": "error"}
+{"id": "ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "超出上限的提示可能不准确", "valid": true, "severity": "low", "trigger": "最后一个文件加上说明文字刚好超出 64 KiB", "consequence": "明明放得下却说没显示", "modelSeverity": "低", "class": "error"}
+{"id": "ds5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "只统计“成功的 ci/required”，不是“唯一的 ci/required 作业”", "valid": true, "severity": "low", "trigger": "同一尝试里有两个名叫 ci/required 的作业，一成一败", "consequence": "接受成功那个，与 ADR 说的“唯一”不一致", "modelSeverity": "低", "class": "error"}
+{"id": "ds6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“两次结果不一致时确认失败”没有对应实现", "valid": true, "severity": "low", "trigger": "读 ADR 0243 决定 3", "consequence": "以为确认作业会比较两次取证结果，实际不比较", "modelSeverity": "低", "class": "error"}
+{"id": "ds7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`githubLog` 只处理 302", "valid": false, "class": "better"}
+{"id": "ds8", "model": "opencode-go/deepseek-v4.1-flash", "quote": "建议把该授权单独记录到 ADR/事故记录", "valid": false, "class": "better"}
+{"id": "gl1", "model": "opencode-go/glm-5.3-flash", "quote": "设计文档与代码不一致（残留旧产物说法）", "valid": true, "severity": "medium-high", "trigger": "同 ds2", "consequence": "同 ds2", "modelSeverity": "低", "class": "error"}
+{"id": "gl2", "model": "opencode-go/glm-5.3-flash", "quote": "confirm 作业重新 discover 失败时步骤显示为绿，且没有自动回退", "valid": false, "class": "better"}
+{"id": "gl3", "model": "opencode-go/glm-5.3-flash", "quote": "文件整读进内存、二进制判定只看前 8 KiB", "valid": true, "severity": "low", "trigger": "同 ds3；或 NUL 在 8 KiB 之后、内容带 ANSI 控制字符", "consequence": "同 ds3；控制字符原样进作业摘要", "modelSeverity": "低", "class": "error"}
+{"id": "gl4", "model": "opencode-go/glm-5.3-flash", "quote": "解码对真实日志格式的假设未在真实日志上验证", "valid": false, "class": "better"}
+{"id": "gl5", "model": "opencode-go/glm-5.3-flash", "quote": "8 条例外结构合规，Owner 同意无法从代码核实", "valid": false, "class": "better"}
+{"id": "gl6", "model": "opencode-go/glm-5.3-flash", "quote": "旧的 ADR 0238:64,95 和 ADR 0241:54,58 文字仍描述产物上传/下载", "valid": false, "class": "better"}

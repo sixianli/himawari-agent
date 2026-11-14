@@ -9,6 +9,16 @@ public struct KeychainValueStore: Sendable {
         self.service = service
     }
 
+    public func presence(_ account: String) -> KeychainPresence {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: false,
+        ]
+        return KeychainPresence(SecItemCopyMatching(query as CFDictionary, nil))
+    }
+
     public func read(_ account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -38,4 +48,15 @@ public struct KeychainValueStore: Sendable {
         guard status == errSecSuccess else { throw DeviceKeyError.keychain(status) }
     }
 }
+
+extension KeychainPresence {
+    public init(_ status: OSStatus) {
+        switch status {
+        case errSecSuccess: self = .present
+        case errSecItemNotFound: self = .absent
+        default: self = .unreadable
+        }
+    }
+}
+
 #endif

@@ -114,8 +114,27 @@ interface Insight {
   readonly basis: readonly string[];
 }
 
-function statedAt(memory: ProductMemoryRecord): string {
+export function statedAt(
+  memory: Pick<ProductMemoryRecord, "attributes" | "recordedAt" | "updatedAt">,
+): string {
   return memory.attributes?.validFrom ?? memory.recordedAt ?? memory.updatedAt;
+}
+
+export interface ReplacementClaim {
+  readonly statedAt: string;
+  readonly confidencePermille: number;
+  readonly category: MemoryCategory | null;
+}
+
+export function replacesOlder(
+  older: Pick<ProductMemoryRecord, "attributes" | "recordedAt" | "updatedAt">,
+  newer: ReplacementClaim,
+  gates?: CaptureGates,
+): boolean {
+  return (
+    statedAt(older) < newer.statedAt &&
+    newer.confidencePermille >= autoCommitThreshold(newer.category, gates)
+  );
 }
 
 function day(memory: ProductMemoryRecord): string {
@@ -382,9 +401,15 @@ export class MemoryConsolidationService {
           if (
             decision.action === "replace" &&
             newer === keep &&
-            statedAt(older.memory) < statedAt(newer.memory) &&
-            newer.memory.confidencePermille >=
-              autoCommitThreshold(newer.memory.attributes?.category ?? null, this.#options.gates)
+            replacesOlder(
+              older.memory,
+              {
+                statedAt: statedAt(newer.memory),
+                confidencePermille: newer.memory.confidencePermille,
+                category: newer.memory.attributes?.category ?? null,
+              },
+              this.#options.gates,
+            )
           ) {
             const change = await this.#supersede(id, older.memory, newer.memory);
             if (!change) continue;

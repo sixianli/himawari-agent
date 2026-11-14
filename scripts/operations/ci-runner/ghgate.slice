@@ -1,0 +1,10 @@
+[Unit]
+Description=Reserved memory for the CI VPS gate runner
+Before=slices.target
+
+[Slice]
+MemoryMin=2G
+MemoryHigh=3G
+MemoryMax=4G
+MemorySwapMax=0
+TasksMax=1024

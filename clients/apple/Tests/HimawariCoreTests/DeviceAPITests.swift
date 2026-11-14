@@ -86,12 +86,16 @@ import Testing
         #expect(secondBody["refs"] as? [String] == (40..<101).map { "ref\($0)" })
     }
 
-    @Test func textsStopWhenTheServerDefersEveryRef() async throws {
-        let object: [String: Any] = ["items": [String: Any](), "deferred": ["a", "b"]]
-        let exchange = RecordingExchange([HTTPExchangeResponse(status: 200, body: try JSONSerialization.data(withJSONObject: object))])
-        await #expect(throws: DeviceAPIError.invalidResponse) {
-            _ = try await api(exchange).texts(for: ["a", "b"])
-        }
+    @Test func textsKeepWhatArrivedWhenTheServerDefersEveryRemainingRef() async throws {
+        let first: [String: Any] = ["items": ["a": ["text": "A"]], "deferred": ["b", "c"]]
+        let second: [String: Any] = ["items": [String: Any](), "deferred": ["b", "c"]]
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 200, body: try JSONSerialization.data(withJSONObject: first)),
+            HTTPExchangeResponse(status: 200, body: try JSONSerialization.data(withJSONObject: second)),
+        ])
+        let texts = try await api(exchange).texts(for: ["a", "b", "c"])
+        #expect(texts == ["a": "A"])
+        #expect(exchange.requests.count == 2)
     }
 
     @Test func expiredPairingCodeCarriesTheServerTtl() throws {
@@ -127,9 +131,78 @@ import Testing
         }
     }
 
-    @Test func deviceNameIsTrimmedToTheServerLimitInCharacters() {
+    @Test func fullThreadRejectsAnEmptyPageThatStillPointsFurther() async throws {
+        let exchange = RecordingExchange([detailPage([1, 2], next: 2, watermark: 9), detailPage([], next: 3, watermark: 9)])
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).fullThread("thread-a")
+        }
+        #expect(exchange.requests.count == 2)
+    }
+
+    @Test func fullThreadGivesUpAfterThePageLimit() async throws {
+        let pages = (1...DeviceAPI.pageLimit).map { detailPage([$0], next: $0, watermark: 999) }
+        let exchange = RecordingExchange(pages)
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).fullThread("thread-a")
+        }
+        #expect(exchange.requests.count == DeviceAPI.pageLimit)
+    }
+
+    private func executionPage(_ sequences: [Int], next: Int?) -> HTTPExchangeResponse {
+        let records = sequences.map { sequence -> [String: Any] in
+            ["id": "r\(sequence)", "sequence": sequence, "itemId": "i\(sequence)", "kind": "tool", "phase": "completed", "name": "search", "text": "", "occurredAt": "2026-11-12T00:00:00Z"]
+        }
+        var payload: [String: Any] = ["records": records]
+        payload["nextSequence"] = next ?? NSNull()
+        return HTTPExchangeResponse(status: 200, body: try! JSONSerialization.data(withJSONObject: ["type": "run.execution_snapshot", "payload": payload]))
+    }
+
+    private func afters(_ exchange: RecordingExchange) -> [String] {
+        exchange.requests.compactMap { $0.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "after" }?.value }
+    }
+
+    @Test func executionRecordsFollowNextSequenceFromWhatIsAlreadyKnown() async throws {
+        let known = ExecutionRecord(id: "r1", sequence: 1, itemId: "i1", kind: .tool, phase: .completed, name: "search", occurredAt: Date(timeIntervalSince1970: 0))
+        let exchange = RecordingExchange([executionPage([2, 3], next: 3), executionPage([4], next: nil)])
+        let records = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [known])
+        #expect(records.map(\.sequence) == [1, 2, 3, 4])
+        #expect(afters(exchange) == ["1", "3"])
+    }
+
+    @Test func executionRecordsRejectAPageThatDoesNotMoveForward() async throws {
+        let exchange = RecordingExchange([executionPage([1, 2], next: 2), executionPage([1, 2], next: 2)])
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
+        }
+        #expect(exchange.requests.count == 2)
+    }
+
+    @Test func executionRecordsKeepPagingPastAPageWhoseEventsWereAllFilteredOut() async throws {
+        let exchange = RecordingExchange([executionPage([], next: 5), executionPage([6], next: nil)])
+        let records = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
+        #expect(records.map(\.sequence) == [6])
+        #expect(afters(exchange) == ["0", "5"])
+    }
+
+    @Test func executionRecordsGiveUpAfterThePageLimit() async throws {
+        let exchange = RecordingExchange((1...DeviceAPI.pageLimit).map { executionPage([$0], next: $0) })
+        await #expect(throws: DeviceAPIError.invalidResponse) {
+            _ = try await api(exchange).executionRecords(threadId: "thread-a", runId: "run-a", known: [])
+        }
+        #expect(exchange.requests.count == DeviceAPI.pageLimit)
+    }
+
+    @Test func deviceNameFitsTheServerLimitInCodePointsWithoutHiddenCharacters() {
         let long = String(repeating: "葵", count: 70)
         #expect(PairingRequestLimits.deviceName("  " + long + "  ").unicodeScalars.count == 64)
+        let emoji = PairingRequestLimits.deviceName(String(repeating: "🌻", count: 40))
+        #expect(emoji == String(repeating: "🌻", count: 40))
+        let flags = PairingRequestLimits.deviceName("a" + String(repeating: "🇯🇵", count: 40))
+        #expect(flags.unicodeScalars.count == 63)
+        #expect(PairingRequestLimits.deviceName("Andy\u{7}的\niPhone") == "Andy的iPhone")
+        #expect(PairingRequestLimits.deviceName("A\u{202E}B\u{85}C\u{200B}D\u{FEFF}") == "ABCD")
+        #expect(PairingRequestLimits.deviceName("A\u{061C}B\u{2060}C\u{2028}D\u{2029}E") == "ABCDE")
+        #expect(PairingRequestLimits.deviceName("👨‍👩‍👧") == "👨👩👧")
         #expect(PairingRequestLimits.deviceName("Andy 的 iPhone") == "Andy 的 iPhone")
         #expect(PairingRequestLimits.deviceName("   ") == "iPhone")
     }

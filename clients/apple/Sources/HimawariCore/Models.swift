@@ -4,6 +4,7 @@ public enum DeviceKind: String, Codable, Sendable {
     case iphone
     case watch
     case mac
+    case unrecognized
 }
 
 public enum ReleaseChannel: String, Codable, Sendable, CaseIterable {
@@ -11,12 +12,14 @@ public enum ReleaseChannel: String, Codable, Sendable, CaseIterable {
     case testflight
     case appStore = "app_store"
     case macDirect = "mac_direct"
+    case unrecognized
 }
 
 public enum PairedDeviceStatus: String, Codable, Sendable {
     case pending
     case active
     case revoked
+    case unrecognized
 }
 
 public struct PairedDeviceInfo: Codable, Sendable, Equatable {
@@ -38,11 +41,27 @@ public struct DeviceLimit: Codable, Sendable, Equatable, Identifiable {
     public var id: String { key }
 }
 
+public struct AttachmentLimits: Codable, Sendable, Equatable {
+    public let textCharacters: Int
+    public let imageCharacters: Int
+    public let perMessage: Int
+    public let messageCharacters: Int
+
+    public init(textCharacters: Int, imageCharacters: Int, perMessage: Int, messageCharacters: Int) {
+        self.textCharacters = textCharacters
+        self.imageCharacters = imageCharacters
+        self.perMessage = perMessage
+        self.messageCharacters = messageCharacters
+    }
+}
+
 public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let heartbeatSeconds: Int
     public let connectionMaxSeconds: Int
     public let signatureToleranceSeconds: Int
     public let limits: [DeviceLimit]
+    public let streamConnections: Int?
+    public let attachments: AttachmentLimits?
 
     public func limit(_ key: String) -> Int64? {
         limits.first { $0.key == key }?.value

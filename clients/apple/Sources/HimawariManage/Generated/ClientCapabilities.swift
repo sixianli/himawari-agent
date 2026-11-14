@@ -148,6 +148,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "data.export.start", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.cancel", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "data.export.status.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "memory.import.duplicates.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.commit", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.import.undo", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "github.monitor.set_state", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),

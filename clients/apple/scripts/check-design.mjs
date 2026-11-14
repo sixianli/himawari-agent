@@ -10,6 +10,7 @@ export const PAGE_DIRECTORIES = [
   "Sources/HimawariChat",
   "Sources/HimawariShell",
   "Sources/HimawariManage",
+  "Sources/HimawariMacUI",
   "App",
 ];
 
@@ -19,18 +20,8 @@ export const TOKENS_OUTPUT = "Sources/HimawariDesign/Generated/DesignTokens.swif
 const RULES = [
   {
     code: "color-literal",
-    pattern: /\b(?:Color|UIColor|NSColor)\s*\(\s*(?:\.sRGB|red:|hue:|white:|hex)/u,
-  },
-  { code: "color-literal", pattern: /#colorLiteral/u },
-  {
-    code: "color-literal",
     pattern:
-      /\bColor\.(?:white|black|red|green|blue|yellow|orange|gray|grey|pink|purple|brown|cyan|mint|teal|indigo)\b/u,
-  },
-  {
-    code: "color-literal",
-    pattern:
-      /\b(?:foregroundStyle|foregroundColor|background|fill|stroke|tint)\(\s*\.(?:white|black|red|green|blue|yellow|orange|gray|pink|purple)\b/u,
+      /#colorLiteral|\b(?:UIColor|NSColor)\s*\.\w|\b(?:Color|UIColor|NSColor)\s*(?:\.(?:white|black|red|green|blue|yellow|orange|gray|grey|pink|purple|brown|cyan|mint|indigo|teal)\b|\(\s*(?:\.sRGB|\.displayP3|red:|white:|hue:|displayP3|hex|"#))|\b(?:foregroundStyle|foregroundColor|background|fill|stroke|strokeBorder|tint)\(\s*\.(?:white|black|red|green|blue|yellow|orange|gray|grey|pink|purple|brown|cyan|mint|indigo|teal)\b/u,
   },
   {
     code: "direct-haptics",
@@ -40,7 +31,7 @@ const RULES = [
   {
     code: "number-literal",
     pattern:
-      /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d/u,
+      /\b(?:size|cornerRadius|width|height|minWidth|minHeight|maxWidth|maxHeight|idealWidth|idealHeight|lineSpacing|fontSize|radius)\s*:\s*-?\d|\.(?:lineSpacing|cornerRadius|opacity|kerning|tracking)\(\s*-?\d/u,
   },
 ];
 

@@ -2,12 +2,15 @@ import Foundation
 
 public protocol LocalStore: Sendable {
     func read(_ name: String) -> Data?
+    func contains(_ name: String) -> Bool
     func write(_ name: String, _ data: Data?) throws
+    func removeAll() throws
 }
 
 public final class FileLocalStore: LocalStore, @unchecked Sendable {
     private let directory: URL
     private let lock = NSLock()
+    private var retired = false
 
     public init(directory: URL) throws {
         self.directory = directory
@@ -27,8 +30,13 @@ public final class FileLocalStore: LocalStore, @unchecked Sendable {
         lock.withLock { try? Data(contentsOf: directory.appendingPathComponent(name)) }
     }
 
+    public func contains(_ name: String) -> Bool {
+        lock.withLock { FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) }
+    }
+
     public func write(_ name: String, _ data: Data?) throws {
         try lock.withLock {
+            if retired { throw LocalStoreError.retired }
             let url = directory.appendingPathComponent(name)
             guard let data else {
                 try? FileManager.default.removeItem(at: url)
@@ -44,8 +52,16 @@ public final class FileLocalStore: LocalStore, @unchecked Sendable {
 
     public func removeAll() throws {
         try lock.withLock {
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             for name in names { try FileManager.default.removeItem(at: directory.appendingPathComponent(name)) }
+        }
+    }
+
+    public func retire() throws {
+        try lock.withLock {
+            let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            for name in names { try FileManager.default.removeItem(at: directory.appendingPathComponent(name)) }
+            retired = true
         }
     }
 }
@@ -60,8 +76,16 @@ public final class MemoryLocalStore: LocalStore, @unchecked Sendable {
         lock.withLock { files[name] }
     }
 
+    public func contains(_ name: String) -> Bool {
+        lock.withLock { files[name] != nil }
+    }
+
     public func write(_ name: String, _ data: Data?) throws {
         lock.withLock { files[name] = data }
+    }
+
+    public func removeAll() throws {
+        lock.withLock { files.removeAll() }
     }
 }
 

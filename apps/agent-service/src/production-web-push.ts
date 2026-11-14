@@ -160,6 +160,7 @@ export interface ProductionWebPushOptions {
   readonly memories: Pick<ProductMemoryStatePort, "readMany">;
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
+  readonly awaitingCount: () => Promise<number | undefined>;
   readonly proactive?: ProactivePushSource;
   readonly museChannel?: MuseChannelPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
@@ -303,7 +304,7 @@ export class ProductionWebPush {
       })
     ).filter(({ remindAt }) => Date.parse(now) - Date.parse(remindAt) <= REMINDER_WINDOW_MS);
     await this.#collect(now, approvals, reminders);
-    await this.#deliver(now, approvals, reminders.length + approvals.length);
+    await this.#deliver(now, approvals);
     await this.#options.store.prune({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
@@ -394,7 +395,16 @@ export class ProductionWebPush {
     return this.#runThreads.get(runId) ?? null;
   }
 
-  async #deliver(now: string, approvals: readonly ApprovalRequest[], badge: number): Promise<void> {
+  async #badge(): Promise<number> {
+    try {
+      return (await this.#options.awaitingCount()) ?? 0;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return 0;
+    }
+  }
+
+  async #deliver(now: string, approvals: readonly ApprovalRequest[]): Promise<void> {
     const { ownerId, agentId, store } = this.#options;
     const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
     if (due.length === 0) return;
@@ -402,6 +412,7 @@ export class ProductionWebPush {
     const accountLocale = (await this.#options.readLocale?.()) ?? null;
     const visible = this.#options.presence.anyVisible(now);
     const contents = new Map<string, Content>();
+    let badge: number | undefined;
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
@@ -423,6 +434,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", null);
         continue;
       }
+      badge ??= await this.#badge();
       await this.#send(entry, now, content, badge, accountLocale ?? entry.subscription.locale);
     }
   }

@@ -2,13 +2,18 @@ import HimawariCore
 import HimawariDesign
 import SwiftUI
 
-struct ProcessRowView: View {
+public struct ProcessRowView: View {
     let line: ProcessLine
     let failed: Bool
     @State private var showingSteps = false
     @Environment(\.processStepsOpenAfter) private var openAfter
 
-    var body: some View {
+    public init(line: ProcessLine, failed: Bool) {
+        self.line = line
+        self.failed = failed
+    }
+
+    public var body: some View {
         content
             .onChange(of: line) { old, new in
                 Self.reportHaptic(from: old, to: new, failed: failed)
@@ -26,10 +31,12 @@ struct ProcessRowView: View {
             break
         case (_, .waiting):
             Haptics.shared.report(.approvalNeeded, ownerViewingThisPage: true)
-        case (.finished, .finished), (.stopped, .stopped):
+        case (.finished, .finished), (.stopped, .stopped), (.failed, .failed):
             break
         case let (_, .finished(_, seconds)):
             Haptics.shared.report(failed ? .taskFailed : .longTaskFinished, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
+        case let (_, .failed(_, seconds)):
+            Haptics.shared.report(.taskFailed, ownerViewingThisPage: true, waitedSeconds: TimeInterval(seconds))
         default:
             break
         }
@@ -47,27 +54,31 @@ struct ProcessRowView: View {
                 }
                 if current.phase == .failed || current.phase == .unavailable {
                     ProcessLineLabel(icon: .alertCircle, text: current.title, tint: .hmMuted, shimmering: false)
+                } else if current.phase == .unrecognized {
+                    ProcessLineLabel(icon: .puzzle, text: current.title, tint: .hmMuted, shimmering: false)
                 } else {
                     ProcessLineLabel(icon: Self.icon(current.icon), text: current.title, tint: .hmMuted, shimmering: true)
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: current.id)
         case let .waiting(step):
-            ProcessLineLabel(icon: .handStop, text: step.title, tint: .hmSun, shimmering: false)
+            ProcessLineLabel(icon: .handStop, text: step.title.isEmpty ? L.text("process.waiting") : step.title, tint: .hmSun, shimmering: false)
         case let .finished(steps, seconds):
-            summary(icon: .check, steps: steps, seconds: seconds)
+            summary(icon: .check, text: L.format("process.didThings", steps.count), steps: steps, seconds: seconds)
         case let .stopped(steps, seconds):
-            summary(icon: .playerStop, steps: steps, seconds: seconds)
+            summary(icon: .playerStop, text: L.text("process.stopped"), steps: steps, seconds: seconds)
+        case let .failed(steps, seconds):
+            summary(icon: .alertCircle, text: L.text("process.failed"), steps: steps, seconds: seconds)
         }
     }
 
-    private func summary(icon: IconName, steps: [ProcessStep], seconds: Int) -> some View {
+    private func summary(icon: IconName, text: String, steps: [ProcessStep], seconds: Int) -> some View {
         Button {
             showingSteps = true
         } label: {
             HStack(spacing: DesignTokens.ProcessRow.gap) {
                 Icon(icon, size: DesignTokens.IconSize.processRow)
-                Text(L.format("process.didThings", steps.count))
+                Text(text)
                     .font(.system(size: DesignTokens.ProcessRow.fontSize))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(L.format("process.seconds", seconds))
@@ -93,7 +104,7 @@ struct ProcessRowView: View {
     }
 
     static func icon(_ icon: ProcessIcon) -> IconName {
-        IconName(rawValue: icon.rawValue) ?? .tools
+        IconName(rawValue: icon.rawValue) ?? .puzzle
     }
 }
 
@@ -124,7 +135,7 @@ struct ProcessStepsSheet: View {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         HStack(spacing: DesignTokens.Size.rowGap) {
                             Icon(
-                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : ProcessRowView.icon(step.icon),
+                                step.phase == .failed || step.phase == .unavailable ? .alertCircle : step.phase == .unrecognized ? .puzzle : ProcessRowView.icon(step.icon),
                                 size: DesignTokens.IconSize.listRow
                             )
                             .foregroundStyle(Color.hmText)
@@ -207,7 +218,7 @@ struct ShimmerText: View {
     }
 
     private var label: Text {
-        Text(text).hmType(DesignTokens.TypeScale.body)
+        Text(text).hmText(DesignTokens.TypeScale.body)
     }
 }
 

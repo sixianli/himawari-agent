@@ -8,6 +8,7 @@ import VisionKit
 struct PairingView: View {
     let model: AppModel
     @State private var scanning: Bool
+    @State private var confirmingStartOver = false
 
     init(model: AppModel, scanning: Bool = false) {
         self.model = model
@@ -21,7 +22,11 @@ struct PairingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background { PairingGlow() }
             .animation(.easeInOut(duration: 0.25), value: model.phase)
-            .fullScreenCover(isPresented: $scanning) {
+            .confirmationDialog(L.text("pairing.startOver.confirm"), isPresented: $confirmingStartOver, titleVisibility: .visible) {
+                Button(L.text("pairing.startOver"), role: .destructive) { model.startOver() }
+                Button(L.text("pairing.cancel"), role: .cancel) {}
+            }
+            .hmCover(isPresented: $scanning) {
                 PairingScanner { text in
                     scanning = false
                     model.pair(scanned: text)
@@ -38,6 +43,14 @@ struct PairingView: View {
             confirmServer(host)
         case let .waitingForConfirmation(number):
             waiting(number)
+        case let .unpaired(problem?) where problem == .keysUnreadable || problem == .storageUnavailable:
+            problemPage(icon: .alertCircleLarge, tint: .hmMuted, problem: problem) {
+                VStack(spacing: 6) {
+                    Button(L.text("pairing.retry")) { model.retryReadingKeys() }
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                    linkButton(L.text("pairing.startOver")) { confirmingStartOver = true }
+                }
+            }
         case let .unpaired(problem?) where problem == .unreachable:
             problemPage(icon: .serverLarge, tint: .hmMuted, problem: problem) {
                 VStack(spacing: 6) {
@@ -70,7 +83,9 @@ struct PairingView: View {
                         .padding(.vertical, 12)
                         .padding(.horizontal, 18)
                         .frame(maxWidth: .infinity)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
+                        .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DesignTokens.Pairing.bannerRadius, style: .continuous))
+                        .hmShadow(DesignTokens.Shadows.lift)
+                        .padding(.bottom, -7)
                 }
                 SunflowerMark(detail: .full, growing: model.phase == .submitting)
                     .frame(width: DesignTokens.Size.pairingMark, height: DesignTokens.Size.pairingMark)
@@ -81,8 +96,10 @@ struct PairingView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                        .offset(y: removed ? -4 : -3)
                     Text(L.text("pairing.subtitle"))
-                        .hmType(DesignTokens.TypeScale.body)
+                        .font(DesignTokens.TypeScale.body.font)
+                        .hmLineHeight(DesignTokens.TypeScale.body.size * 1.5)
                         .foregroundStyle(Color.hmMuted)
                         .multilineTextAlignment(.center)
                 }
@@ -134,8 +151,9 @@ struct PairingView: View {
                         .font(.system(size: DesignTokens.TypeScale.title1.size, weight: .bold))
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .minimumScaleFactor(0.5)
+                        .truncationMode(.middle)
                         .textSelection(.enabled)
                     Text(L.text("pairing.serverCaption"))
                         .hmType(DesignTokens.TypeScale.secondary)
@@ -161,7 +179,7 @@ struct PairingView: View {
             VStack(spacing: 30) {
                 SunflowerMark(detail: .full, growing: true)
                     .frame(width: DesignTokens.Pairing.waitingMark, height: DesignTokens.Pairing.waitingMark)
-                VStack(spacing: 12) {
+                VStack(spacing: 15) {
                     Text(number)
                         .hmType(DesignTokens.TypeScale.pairingNumber)
                         .monospacedDigit()
@@ -169,7 +187,7 @@ struct PairingView: View {
                         .accessibilityLabel(Text(number.replacingOccurrences(of: " ", with: "")))
                     Text(L.text("pairing.waiting"))
                         .font(.himawari(DesignTokens.Pairing.waitingTextSize, weight: .semibold))
-                        .lineSpacing(DesignTokens.Pairing.waitingTextSize * 0.3)
+                        .hmLineHeight(DesignTokens.Pairing.waitingTextSize * 1.5)
                         .foregroundStyle(Color.hmText)
                         .multilineTextAlignment(.center)
                 }
@@ -194,7 +212,7 @@ struct PairingView: View {
                     .multilineTextAlignment(.center)
                 Text(Self.detail(problem))
                     .font(DesignTokens.TypeScale.body.font)
-                    .lineSpacing(DesignTokens.TypeScale.body.size * 0.3)
+                    .hmLineHeight(DesignTokens.TypeScale.body.size * 1.5)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.center)
             }
@@ -242,6 +260,8 @@ struct PairingView: View {
         case .codeInvalid: "invalid"
         case .unreachable: "unreachable"
         case .keysUnavailable: "keys"
+        case .keysUnreadable: "keysUnreadable"
+        case .storageUnavailable: "storage"
         case .removed: "removed"
         }
     }

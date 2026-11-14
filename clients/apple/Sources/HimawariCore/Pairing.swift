@@ -113,12 +113,23 @@ public enum PairingNumber {
 }
 
 public enum PairingRequestLimits {
-    public static let deviceNameCharacters = 64
+    public static let deviceNameScalars = 64
 
-    public static func deviceName(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = String(String.UnicodeScalarView(trimmed.unicodeScalars.prefix(deviceNameCharacters)))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "iPhone" : name
+    static func hidden(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator: return true
+        default: return false
+        }
+    }
+
+    public static func deviceName(_ raw: String, fallback: String = "iPhone") -> String {
+        let printable = String(String.UnicodeScalarView(raw.unicodeScalars.filter { !Self.hidden($0) }))
+        var name = ""
+        for character in printable.trimmingCharacters(in: .whitespacesAndNewlines) {
+            guard name.unicodeScalars.count + character.unicodeScalars.count <= deviceNameScalars else { break }
+            name.append(character)
+        }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? fallback : name
     }
 }

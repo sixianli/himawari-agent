@@ -1,0 +1,2 @@
+{"id": "12", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|12|找不到|-|它们的准入、用量和缓存预热是另一条路|-", "outcome": "model-wrong", "evidenceFile": "packages/runtime-pi/src/pi-model-transport.ts", "evidence": "maxRetries: 0"}
+{"id": "16", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|16|找不到|-|准入和预算按调用算，没有变。|-", "outcome": "model-wrong", "evidenceFile": "packages/runtime-pi/src/pi-runtime-adapter.ts", "evidence": "Model budget accounting is unavailable"}

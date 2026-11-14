@@ -634,6 +634,78 @@
   color: var(--text-muted);
   margin-top: 14px;
 }
+.device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.device-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.device-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.device-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.device-row[data-status="pending"] .device-detail {
+  color: var(--text);
+}
+.device-actions,
+.device-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.device-pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.device-pairing-code {
+  width: min(220px, 100%);
+  height: auto;
+  border-radius: 8px;
+}
+.device-limits {
+  margin-top: 20px;
+}
+.device-limits h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.device-limits dl {
+  margin: 12px 0 0;
+}
+.device-limits dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.device-limits dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .search-authorization-panel {
   position: static;
   width: auto;
@@ -5132,4 +5204,55 @@ details.settings-details > summary::-webkit-details-marker {
 .setting-row:has(+ .settings-version) {
   border-bottom: 0;
   padding-bottom: 0;
+}
+.memory-external[data-waiting="false"] {
+  border-color: var(--border);
+}
+.memory-external[data-waiting="false"] > h4 {
+  color: inherit;
+}
+.memory-external-all,
+.external-proposal > label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+}
+.memory-external-all input,
+.external-proposal input {
+  width: auto;
+  min-height: 0;
+}
+.external-proposals {
+  max-height: 420px;
+  overflow: auto;
+}
+.external-proposal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.external-proposal > label {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.external-proposal .memory-text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.external-proposal > .memory-editor {
+  flex: 1 1 100%;
+}
+.memory-external-result {
+  display: block;
+  margin: 6px 0;
+}
+.external-batches li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  justify-content: space-between;
 }

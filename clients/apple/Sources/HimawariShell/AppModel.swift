@@ -27,6 +27,7 @@ public final class AppModel {
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
+    @ObservationIgnored private let kind: DeviceKind
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
@@ -36,16 +37,17 @@ public final class AppModel {
 
     private static let recordAccount = "pairing-record"
 
-    public convenience init(bundle: Bundle = .main) {
-        self.init(bundle: bundle, restoring: true)
+    public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        self.init(bundle: bundle, kind: kind, restoring: true)
     }
 
-    init(bundle: Bundle = .main, restoring: Bool) {
+    init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
+        self.kind = kind
         let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
         keys = SecureEnclaveKeyStore(service: service + ".keys")
         keychain = KeychainValueStore(service: service)
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
-        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
+        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -59,13 +61,22 @@ public final class AppModel {
     }
 
     private func restore() {
-        guard let record, keys.exists(.device), keys.exists(.confirm) else {
+        let presence = [keychain.presence(Self.recordAccount), keys.presence(.device), keys.presence(.confirm)]
+        let record = record
+        switch RestoreDecision.decide(presence: presence, recordDecodes: record != nil) {
+        case .unreadable:
+            phase = .unpaired(.keysUnreadable)
+            return
+        case .forget:
             forget(problem: nil)
             return
+        case .use:
+            break
         }
+        guard let record else { return }
         use(record)
         switch record.status {
-        case .pending:
+        case .pending, .unrecognized:
             phase = .waitingForConfirmation(number: record.pairingNumber)
             waitForConfirmation()
         case .active:
@@ -110,8 +121,8 @@ public final class AppModel {
     }
 
     #if DEBUG
-    static func demo(_ phase: AppPhase, host: String? = nil) -> AppModel {
-        let model = AppModel(restoring: false)
+    public static func demo(_ phase: AppPhase, host: String? = nil, kind: DeviceKind = .iphone) -> AppModel {
+        let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
         return model
@@ -140,7 +151,7 @@ public final class AppModel {
                 let confirmKey = keys.signer(.confirm)
                 let device = try await api.pair(
                     invitation: invitation,
-                    kind: .iphone,
+                    kind: kind,
                     name: Self.deviceName,
                     releaseChannel: releaseChannel,
                     deviceKey: deviceKey,
@@ -164,7 +175,7 @@ public final class AppModel {
                     waitForConfirmation()
                 }
             } catch {
-                if !Self.mayHavePaired(error) {
+                if !PairingAttempt.mayHavePaired(error) {
                     keysMadeFor = nil
                     try? keys.delete(.device)
                     try? keys.delete(.confirm)
@@ -174,16 +185,71 @@ public final class AppModel {
         }
     }
 
-    static func mayHavePaired(_ error: Error) -> Bool {
-        if error is PairingInvitation.ParseError || error is DeviceKeyError { return false }
-        if case let .server(status, _, _)? = error as? DeviceAPIError { return status >= 500 || status == 408 || status == 429 }
-        return true
-    }
-
     public func cancelPairing() {
         lastScanned = nil
         keysMadeFor = nil
         forget(problem: nil)
+    }
+
+    public var unsentMessages: Int? {
+        guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
+        return Outbox.unsentCount(in: local)
+    }
+
+    public func startOver() {
+        guard emptyStore() else {
+            phase = .unpaired(.storageUnavailable)
+            return
+        }
+        cancelPairing()
+    }
+
+    private func emptyStore() -> Bool {
+        chat?.stop()
+        chat = nil
+        do {
+            try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func retryReadingKeys() {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+        } else {
+            restore()
+        }
+    }
+
+    private func recheckUnknownState() {
+        waiting?.cancel()
+        waiting = Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            do {
+                configuration = try await api.configuration()
+            } catch {
+                failure = error
+            }
+            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
+            switch UnknownStateRecheck.outcome(of: failure) {
+            case .connected:
+                try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                Haptics.shared.report(.pairingSucceeded)
+                activate()
+            case .removed:
+                forget(problem: .removed)
+            case .waiting:
+                if let record {
+                    phase = .waitingForConfirmation(number: record.pairingNumber)
+                    waitForConfirmation()
+                }
+            case .stillUnknown:
+                break
+            }
+        }
     }
 
     public func retryPairing() {
@@ -215,7 +281,12 @@ public final class AppModel {
                 } catch let error as DeviceAPIError where error.isRevoked {
                     forget(problem: .removed)
                     return
-                } catch {}
+                } catch {
+                    if let status = record?.status, ConfirmationWait.givesUp(waitingAs: status, after: error) {
+                        phase = .unpaired(.stateUnknown)
+                        return
+                    }
+                }
                 try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
                 delay = min(delay * 2, 10)
             }
@@ -224,8 +295,13 @@ public final class AppModel {
 
     private func activate() {
         waiting?.cancel()
+        guard let record else {
+            phase = .unpaired(.keysUnreadable)
+            return
+        }
         do {
             let store = try FileLocalStore.applicationSupport(named: "himawari-device")
+            try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
             let chat = ChatStore(
@@ -239,7 +315,7 @@ public final class AppModel {
             chat.start()
             Task { await refreshConfiguration() }
         } catch {
-            phase = .unpaired(.keysUnavailable)
+            phase = .unpaired(.storageUnavailable)
         }
     }
 
@@ -250,6 +326,7 @@ public final class AppModel {
             let configuration = try await api.configuration()
             self.configuration = configuration
             heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
+            chat?.limitStreams(to: configuration.streamConnections)
         } catch let error as DeviceAPIError where error.isRevoked {
             forget(problem: .removed)
         } catch {
@@ -265,6 +342,7 @@ public final class AppModel {
                 let configuration = try await api.configuration()
                 self.configuration = configuration
                 heartbeat.seconds = TimeInterval(configuration.heartbeatSeconds)
+                chat?.limitStreams(to: configuration.streamConnections)
                 configurationRetry = nil
             } catch let error as DeviceAPIError where error.isRevoked {
                 forget(problem: .removed)
@@ -279,6 +357,14 @@ public final class AppModel {
     }
 
     public func becameActive() {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+            return
+        }
+        if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
+            restore()
+            return
+        }
         guard phase == .active else { return }
         chat?.reconnect()
         Task { await refreshConfiguration() }
@@ -292,26 +378,21 @@ public final class AppModel {
         waiting?.cancel()
         configurationRetry?.cancel()
         configurationRetry = nil
-        chat?.stop()
-        chat = nil
+        let emptied = emptyStore()
         configuration = nil
-        try? store?.removeAll()
-        if store == nil, let fresh = try? FileLocalStore.applicationSupport(named: "himawari-device") {
-            try? fresh.removeAll()
-        }
         store = nil
         try? keys.delete(.device)
         try? keys.delete(.confirm)
         try? save(nil)
         api.http.use(nil)
-        phase = .unpaired(problem)
+        phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
     }
 
     static var deviceName: String {
         #if canImport(UIKit)
         PairingRequestLimits.deviceName(UIDevice.current.name)
         #else
-        PairingRequestLimits.deviceName(Host.current().localizedName ?? "Mac")
+        PairingRequestLimits.deviceName(Host.current().localizedName ?? "", fallback: "Mac")
         #endif
     }
 }

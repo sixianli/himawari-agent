@@ -23,14 +23,14 @@ public enum ChatConnection: Sendable, Equatable {
 @MainActor
 @Observable
 public final class ChatStore {
-    public private(set) var threads: [ThreadSummary] = []
-    public private(set) var texts: [String: String] = [:]
-    public private(set) var details: [String: ThreadDetail] = [:]
-    public private(set) var queued: [OutboxItem] = []
-    public private(set) var streaming: [String: StreamingReply] = [:]
-    public private(set) var connection: ChatConnection = .offline
+    public internal(set) var threads: [ThreadSummary] = []
+    public internal(set) var texts: [String: String] = [:]
+    public internal(set) var details: [String: ThreadDetail] = [:]
+    public internal(set) var queued: [OutboxItem] = []
+    public internal(set) var streaming: [String: StreamingReply] = [:]
+    public internal(set) var connection: ChatConnection = .offline
     public private(set) var loadingThreads = false
-    public private(set) var executions: [String: [ExecutionRecord]] = [:]
+    public internal(set) var executions: [String: [ExecutionRecord]] = [:]
 
     @ObservationIgnored private let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
@@ -49,6 +49,8 @@ public final class ChatStore {
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
+    @ObservationIgnored private var wantedThreadId: String?
+    @ObservationIgnored private var streamConnections: Int?
 
     public init(
         api: DeviceAPI,
@@ -99,10 +101,21 @@ public final class ChatStore {
         unwatch()
     }
 
+    public func limitStreams(to connections: Int?) {
+        streamConnections = connections
+        if !ExecutionStreamPolicy.allowed(streamConnections: connections) {
+            closeWatchedStream()
+        } else if let wantedThreadId {
+            watch(wantedThreadId)
+        }
+    }
+
     public func watch(_ threadId: String) {
         guard !frozen else { return }
+        wantedThreadId = threadId
+        guard ExecutionStreamPolicy.allowed(streamConnections: streamConnections) else { return }
         if watched?.threadId == threadId { return }
-        unwatch()
+        closeWatchedStream()
         let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)
         let task = Task { [weak self] in
             for await event in stream.start() {
@@ -114,6 +127,11 @@ public final class ChatStore {
     }
 
     public func unwatch() {
+        wantedThreadId = nil
+        closeWatchedStream()
+    }
+
+    private func closeWatchedStream() {
         watched?.task.cancel()
         watched?.stream.stop()
         watched = nil
@@ -222,15 +240,8 @@ public final class ChatStore {
         guard !loadingExecutions.contains(runId) else { return }
         loadingExecutions.insert(runId)
         defer { loadingExecutions.remove(runId) }
-        var records = executions[runId] ?? []
         do {
-            while true {
-                let page = try await api.execution(threadId: threadId, runId: runId, afterSequence: records.map(\.sequence).max() ?? 0)
-                let known = Set(records.map(\.id))
-                records += page.records.filter { !known.contains($0.id) }
-                guard page.nextSequence != nil, !page.records.isEmpty else { break }
-            }
-            executions[runId] = records.sorted { $0.sequence < $1.sequence }
+            executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
         } catch {
             await handle(error)
         }
@@ -247,7 +258,13 @@ public final class ChatStore {
     }
 
     public func newThread(requestId: String) async throws -> String {
-        let created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        let created: CreatedThread
+        do {
+            created = try await api.createThread(requestId: requestId, answerLocale: answerLocale)
+        } catch {
+            await handle(error)
+            throw error
+        }
         createdRevisions[created.threadId] = created.threadRevision
         await refreshThreads()
         return created.threadId
@@ -280,25 +297,27 @@ public final class ChatStore {
         }
         flushing = true
         defer { flushing = false }
-        var delivered = false
-        var deferred = false
-        repeat {
+        while true {
             flushAgain = false
             let results = await outbox.flush(using: api) { [weak self] threadId in
                 await self?.details[threadId]?.thread.revision
             }
-            delivered = delivered || results.contains { if case .delivered = $0 { true } else { false } }
-            deferred = results.contains(.retryLater)
-        } while flushAgain && !deferred
-        if deferred {
-            scheduleRetry()
-        } else {
-            retryFailures = 0
-            retryTask?.cancel()
-            retryTask = nil
-        }
-        if delivered {
-            await refreshThreads()
+            let deferred = results.contains(.retryLater)
+            if results.contains(where: { $0.deviceRevoked }) {
+                onSessionInvalid()
+                return
+            }
+            if deferred {
+                scheduleRetry()
+            } else {
+                retryFailures = 0
+                retryTask?.cancel()
+                retryTask = nil
+            }
+            if results.contains(where: { if case .delivered = $0 { true } else { false } }) {
+                await refreshThreads()
+            }
+            if deferred || !flushAgain { return }
         }
     }
 
@@ -360,8 +379,12 @@ public final class ChatStore {
         guard !missing.isEmpty else { return }
         pendingTextRefs.formUnion(missing)
         defer { pendingTextRefs.subtract(missing) }
-        guard let resolved = try? await api.texts(for: missing) else { return }
-        texts.merge(resolved) { _, new in new }
+        do {
+            let resolved = try await api.texts(for: missing)
+            texts.merge(resolved) { _, new in new }
+        } catch {
+            await handle(error)
+        }
     }
 
     private func persist() {

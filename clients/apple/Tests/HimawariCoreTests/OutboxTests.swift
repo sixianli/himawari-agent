@@ -105,6 +105,35 @@ final class ScriptedSender: MessageSender, @unchecked Sendable {
         #expect(await outbox.pending.map(\.state) == [.failed, .waiting])
     }
 
+    @Test func theUnsentCountIsExactWhenReadableAndUnknownWhenNot() async {
+        let store = MemoryLocalStore()
+        #expect(Outbox.unsentCount(in: store) == 0)
+        let outbox = Outbox(store: store)
+        await outbox.enqueue(message("一"))
+        await outbox.enqueue(message("二"))
+        #expect(Outbox.unsentCount(in: store) == 2)
+        try? store.write("outbox.json", Data("not json".utf8))
+        #expect(Outbox.unsentCount(in: store) == nil)
+    }
+
+    @Test func onlyARevokedDeviceEndsTheSessionNotANetworkFailure() async {
+        let revoked = Outbox(store: MemoryLocalStore())
+        await revoked.enqueue(message())
+        let refused = await revoked.flush(using: ScriptedSender([.failure(DeviceAPIError.server(status: 403, code: "DEVICE_REVOKED"))])) { _ in nil }
+        #expect(refused.contains { $0.deviceRevoked })
+
+        let offline = Outbox(store: MemoryLocalStore())
+        await offline.enqueue(message())
+        let failed = await offline.flush(using: ScriptedSender([.failure(URLError(.timedOut))])) { _ in nil }
+        #expect(failed == [.retryLater])
+        #expect(!failed.contains { $0.deviceRevoked })
+
+        let invalid = Outbox(store: MemoryLocalStore())
+        await invalid.enqueue(message())
+        let rejected = await invalid.flush(using: ScriptedSender([.failure(DeviceAPIError.server(status: 400, code: "REQUEST_INVALID"))])) { _ in nil }
+        #expect(!rejected.contains { $0.deviceRevoked })
+    }
+
     @Test func failedMessageCanBeRetriedByHand() async {
         let outbox = Outbox(store: MemoryLocalStore())
         let item = await outbox.enqueue(message())

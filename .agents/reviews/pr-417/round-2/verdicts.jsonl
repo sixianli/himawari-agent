@@ -1,0 +1,5 @@
+{"id": "r2-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "三条记忆类日志的 `site` 接线没有任何反向用例", "valid": true, "class": "error", "severity": "low", "trigger": "删掉 service-main 里任一处 siteField 展开，测试仍通过", "consequence": "诊断字段可能静默丢失，不影响功能，不会误导人", "modelSeverity": "低"}
+{"id": "r2-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`portErrorSite` 对任意 `PORT_` 前缀错误输出原始 message", "valid": true, "class": "better"}
+{"id": "r2-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`run` 账户不再有“粘性分级地板”", "valid": true, "class": "better"}
+{"id": "r2-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "抬高分级不递增 `revision`", "valid": true, "class": "better"}
+{"id": "r2-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "门槛措辞与自动运行范围", "valid": false, "class": "better"}

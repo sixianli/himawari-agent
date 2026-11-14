@@ -99,8 +99,12 @@ export type GatewayV2StreamItem =
       readonly reason: "state_changed";
     };
 
+export interface GatewayV2QueryContext {
+  readonly authentication: GatewayAuthenticationContext;
+}
+
 export interface GatewayV2ReadModelPort {
-  query(query: GatewayV2Query): Promise<GatewayV2Snapshot>;
+  query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot>;
   subscribe(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly afterCursor: string | null;

@@ -1,0 +1,3 @@
+{"id": "r3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“后台任务和记忆重算账户仍不许改”没有反向测试锁住", "valid": true, "class": "better", "reason": "代码行为没变：现有代码对后台任务账户本来就拒绝不同分级；线程在工作区写了反向用例并运行，现有代码下通过（6 条 [I-94] 全过），只是补测试，已加入"}
+{"id": "r3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "四个事件的 `site` 只用源码文本扫描验证，未验证运行时装配", "valid": true, "class": "better", "reason": "第 1、2 轮已提过同一缺口；四条日志的运行时装配需要整套记忆组合，标题那条已有运行时测试，其余靠删掉任一处就失败的源码核对用例；不改行为"}
+{"id": "r3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`portErrorSite` 只按 `PORT_` 前缀信任 `error.message`，并把前 200 字符写进日志", "valid": true, "class": "better", "reason": "与第 1、2 轮同一条，已判为可以更好并列给 Andy"}

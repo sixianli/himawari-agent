@@ -12,6 +12,7 @@ import type {
   FinishBackgroundRunInput,
   FinishBackgroundRunResult,
   BackgroundRunRecord,
+  UnattendedRunRecord,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -374,6 +375,13 @@ export class SqliteRunLifecycleOperations {
       return this.read(ownerId, agentId, createRunId(string(parsed["runId"])));
     if (operation === "runLifecycle.listBackground")
       return this.listBackground(ownerId, agentId, instantText(parsed["now"]));
+    if (operation === "runLifecycle.listUnattended")
+      return this.listUnattended(
+        ownerId,
+        agentId,
+        instantText(parsed["failedSince"]),
+        integer(parsed["limit"]),
+      );
     if (
       operation !== "runLifecycle.transition" &&
       operation !== "runLifecycle.finishBackground" &&
@@ -927,6 +935,43 @@ export class SqliteRunLifecycleOperations {
       );
     }
     return [...runs.values()];
+  }
+
+  private listUnattended(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    failedSince: string,
+    limit: number,
+  ): UnattendedRunRecord[] {
+    if (limit > 500) this.fail("PORT_INVALID_OPERATION", "Unattended Run limit is invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT r.id, r.thread_id, r.created_at, r.updated_at,
+          (r.status NOT IN ('completed', 'failed', 'cancelled') OR EXISTS (
+            SELECT 1 FROM run_background_holds h WHERE h.owner_id = r.owner_id
+              AND h.agent_id = r.agent_id AND h.run_id = r.id AND h.released_at IS NULL)) AS active
+        FROM runs r
+        JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
+          AND t.agent_id = r.agent_id
+        WHERE r.owner_id = @ownerId AND r.agent_id = @agentId AND (
+          (r.status NOT IN ('completed', 'failed', 'cancelled')
+            AND t.source_type != 'user_message')
+          OR EXISTS (SELECT 1 FROM run_background_holds h WHERE h.owner_id = r.owner_id
+            AND h.agent_id = r.agent_id AND h.run_id = r.id AND h.released_at IS NULL)
+          OR (r.status = 'failed' AND r.updated_at >= @failedSince AND (
+            t.source_type != 'user_message'
+            OR EXISTS (SELECT 1 FROM run_background_holds h WHERE h.owner_id = r.owner_id
+              AND h.agent_id = r.agent_id AND h.run_id = r.id))))
+        ORDER BY r.updated_at DESC, r.id LIMIT @limit`,
+      )
+      .all({ ownerId, agentId, failedSince, limit }) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      runId: createRunId(string(row["id"])),
+      threadId: row["thread_id"] === null ? null : string(row["thread_id"]),
+      state: row["active"] === 1 ? "running" : "failed",
+      startedAt: string(row["created_at"]),
+      updatedAt: string(row["updated_at"]),
+    }));
   }
 
   private finishBackground(

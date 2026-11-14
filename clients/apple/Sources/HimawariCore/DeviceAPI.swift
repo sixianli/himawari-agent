@@ -102,17 +102,34 @@ public final class DeviceAPI: Sendable {
         throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "timestamp"))
     }
 
+    public static let pageLimit = 100
+
+    public func executionRecords(threadId: String, runId: String, known: [ExecutionRecord]) async throws -> [ExecutionRecord] {
+        var records = known
+        var after = records.map(\.sequence).max() ?? 0
+        for _ in 0..<Self.pageLimit {
+            let page = try await execution(threadId: threadId, runId: runId, afterSequence: after)
+            let seen = Set(records.map(\.id))
+            records += page.records.filter { !seen.contains($0.id) }
+            guard let next = page.nextSequence else { return records.sorted { $0.sequence < $1.sequence } }
+            guard next > after else { throw DeviceAPIError.invalidResponse }
+            after = next
+        }
+        throw DeviceAPIError.invalidResponse
+    }
+
     public func fullThread(_ threadId: String) async throws -> ThreadDetail {
         var page = try await thread(threadId)
         var messages = page.messages
         var after = 0
+        var pages = 1
         while let next = page.nextSequence {
-            guard next > after else { throw DeviceAPIError.invalidResponse }
+            guard next > after, !page.messages.isEmpty, pages < Self.pageLimit else { throw DeviceAPIError.invalidResponse }
             after = next
+            pages += 1
             page = try await thread(threadId, afterSequence: next)
             let known = Set(messages.map(\.messageId))
             messages += page.messages.filter { !known.contains($0.messageId) }
-            if page.messages.isEmpty { break }
         }
         return ThreadDetail(thread: page.thread, messages: messages.sorted { $0.sequence < $1.sequence }, runs: page.runs, nextSequence: nil)
     }
@@ -138,7 +155,7 @@ public final class DeviceAPI: Sendable {
             }
             let requested = Set(batch)
             let deferred = (page.deferred ?? []).filter { requested.contains($0) && page.items[$0] == nil }
-            guard deferred.count < batch.count else { throw DeviceAPIError.invalidResponse }
+            if deferred.count == batch.count { break }
             pending = deferred[...] + pending
         }
         return result

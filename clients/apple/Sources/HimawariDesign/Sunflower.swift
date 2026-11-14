@@ -25,10 +25,17 @@ public enum SunflowerSeeds {
     static let newestShare = 0.06
     static let birthSeconds = 1.2
     static let fadeSeeds = 6.0
+    static let smallestSeed = 0.43
+    static let seedGrowth = 0.72
+    static let frameShare = 0.94
     static let newSeed = (255.0, 236.0, 170.0)
     static let brown = (92.0, 52.0, 16.0)
     static let amber = (214.0, 128.0, 20.0)
     static let gold = (245.0, 178.0, 48.0)
+
+    public static func reach(_ detail: SunflowerDetail) -> Double {
+        discRadius + (smallestSeed + seedGrowth) * detail.sizeScale
+    }
 
     public static func resting(_ detail: SunflowerDetail) -> Double {
         Double(detail.seedCount + 8)
@@ -57,7 +64,7 @@ public enum SunflowerSeeds {
             return SunflowerSeed(
                 x: center + distance * cos(angle),
                 y: center + distance * sin(angle),
-                radius: (0.43 + 0.72 * share.squareRoot()) * detail.sizeScale * born,
+                radius: (smallestSeed + seedGrowth * share.squareRoot()) * detail.sizeScale * born,
                 red: color.0 / 255,
                 green: color.1 / 255,
                 blue: color.2 / 255,
@@ -101,9 +108,9 @@ public struct SunflowerMark: View {
 
     private func disc(growth: Double) -> some View {
         Canvas { context, size in
-            let scale = min(size.width, size.height) / 48
-            let dx = (size.width - 48 * scale) / 2
-            let dy = (size.height - 48 * scale) / 2
+            let scale = min(size.width, size.height) * SunflowerSeeds.frameShare / (2 * SunflowerSeeds.reach(detail))
+            let dx = size.width / 2 - SunflowerSeeds.center * scale
+            let dy = size.height / 2 - SunflowerSeeds.center * scale
             for seed in SunflowerSeeds.at(detail, growth: growth) where seed.radius > 0 {
                 let r = seed.radius * scale
                 let rect = CGRect(x: dx + seed.x * scale - r, y: dy + seed.y * scale - r, width: r * 2, height: r * 2)

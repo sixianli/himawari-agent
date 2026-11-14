@@ -13,9 +13,12 @@
 "common.ok" = "OK";
 "time.yesterday" = "Yesterday";
 "process.thinking" = "Thinking";
+"process.waiting" = "Waiting for your approval";
 "process.seconds" = "%d s";
 "process.expand" = "Show each step";
 "process.didThings" = "Did %d things";
+"process.failed" = "Didn't finish";
+"process.stopped" = "Stopped";
 "process.sheet.title" = "What it did";
 "process.sheet.close" = "Close";
 "chat.empty.hint" = "Whatever is on your mind, just say it";

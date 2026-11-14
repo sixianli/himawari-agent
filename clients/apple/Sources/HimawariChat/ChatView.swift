@@ -10,6 +10,7 @@ public struct ChatView: View {
     @State private var creating = false
     @State private var createFailed = false
     @State private var createRequestId = ChatStore.newRequestId()
+    @State private var bannerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
@@ -19,6 +20,9 @@ public struct ChatView: View {
         _threadId = State(initialValue: threadId)
         _draft = State(initialValue: draft)
     }
+
+    private static let navBottom = DesignTokens.Size.navTop + DesignTokens.Size.glassButton
+    private static let fadeBelowNav: CGFloat = 32
 
     private var title: String {
         guard let threadId, let thread = store.threads.first(where: { $0.threadId == threadId }) else {
@@ -34,18 +38,22 @@ public struct ChatView: View {
             } else {
                 transcript
             }
+            EdgeFade(.top, height: Self.navBottom + Self.fadeBelowNav, solid: Self.navBottom / (Self.navBottom + Self.fadeBelowNav))
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                 if store.connection != .online, threadId != nil {
                     OfflineBanner()
                         .padding(.top, 2)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
                         .transition(.opacity)
                 }
                 Spacer(minLength: 0)
                 ChatInputBar(text: $draft, focused: $inputFocused, sending: creating, send: submit)
                     .padding(.horizontal, DesignTokens.Size.composerInsetX)
                     .padding(.bottom, DesignTokens.Size.composerBottom)
-                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer).ignoresSafeArea() }
+                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
@@ -55,8 +63,6 @@ public struct ChatView: View {
             if let threadId {
                 store.watch(threadId)
                 await store.load(threadId)
-            } else {
-                inputFocused = true
             }
         }
         .onDisappear { store.unwatch() }
@@ -67,7 +73,6 @@ public struct ChatView: View {
 
     private var header: some View {
         ZStack {
-            EdgeFade(.top, height: DesignTokens.Size.fadeTop).ignoresSafeArea()
             HStack {
                 GlassCircleButton(Text(L.text("chat.back")), action: close) {
                     Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
@@ -75,7 +80,7 @@ public struct ChatView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            Text(title)
+            Text(threadId == nil ? "" : title)
                 .hmType(DesignTokens.TypeScale.navTitle)
                 .foregroundStyle(Color.hmText)
                 .lineLimit(1)
@@ -124,10 +129,12 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 84)
+            .padding(.top, store.connection != .online ? 94 + bannerHeight : 73)
             .padding(.bottom, 110)
         }
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.hidden)
     }
@@ -168,7 +175,7 @@ struct MessageRow: View {
         case .agent:
             Text(text ?? "")
                 .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
-                .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
+                .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
                 .foregroundStyle(failed ? Color.hmMuted : Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
@@ -203,15 +210,21 @@ struct StreamingAnswer: View {
     let text: String
 
     var body: some View {
-        (Text(text)
+        Text("\(answer) \(dot)")
+            .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var answer: Text {
+        Text(text)
             .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
             .foregroundStyle(Color.hmText)
-            + Text(" ")
-            + Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
-                context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
-            }))
-            .lineSpacing(DesignTokens.TypeScale.answer.lineSpacing)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var dot: Text {
+        Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
+            context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
+        })
     }
 }
 
@@ -228,8 +241,8 @@ struct NewChatPrompt: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: DesignTokens.Size.newChatGlowRadius / 2)
-                .ignoresSafeArea()
         }
+        .ignoresSafeArea(.container)
     }
 }
 
@@ -288,6 +301,8 @@ struct QueuedMessageRow: View {
             .hmType(DesignTokens.TypeScale.caption)
             .buttonStyle(.plain)
             .frame(minHeight: DesignTokens.Size.minTapTarget)
+            .contentShape(Rectangle())
+            .padding(.vertical, -(DesignTokens.Size.minTapTarget - (DesignTokens.TypeScale.caption.lineHeight ?? DesignTokens.Size.minTapTarget)) / 2)
             .padding(.trailing, 6)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

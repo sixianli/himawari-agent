@@ -6,7 +6,7 @@ export interface RuleFieldDefinition {
   readonly description: string;
 }
 
-export const RULE_GATES = ["mail_item", "mail_delivery"] as const;
+export const RULE_GATES = ["mail_item", "mail_delivery", "action"] as const;
 export type RuleGate = (typeof RULE_GATES)[number];
 
 export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDefinition[]>> =
@@ -44,6 +44,12 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         description: "content_folded 里每一段连续的英文字母、数字、下划线，去掉重复",
       }),
       Object.freeze({
+        name: "money_state",
+        type: "string",
+        description:
+          "模型判断这封邮件是不是涉及主人要付出、被扣、可收回或已入账的具体钱款事项：yes 是，no 不是，unknown 是模型没给出或答案格式不对（这个字段永远存在，判断之前也是 unknown）",
+      }),
+      Object.freeze({
         name: "amount_state",
         type: "string",
         description:
@@ -76,6 +82,43 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         name: "local_previous_weekday",
         type: "int",
         description: "主人所在时区前一天是星期几（0 是星期日，6 是星期六）",
+      }),
+    ] as const),
+    action: Object.freeze([
+      Object.freeze({
+        name: "action_kind",
+        type: "string",
+        description: "动作类别，权限引擎 11 类之一的大写名字，例如 READ、CREATE_OR_UPDATE、DELETE",
+      }),
+      Object.freeze({
+        name: "risk",
+        type: "string",
+        description: "权限引擎算出的风险档位：LOW、MEDIUM、HIGH 或 CRITICAL",
+      }),
+      Object.freeze({
+        name: "reversible",
+        type: "int",
+        description: "这个动作能不能撤销：1 是能，0 是不能",
+      }),
+      Object.freeze({
+        name: "disclosure",
+        type: "string",
+        description: "对外披露方式：none、same_owner、named_recipients 或 public",
+      }),
+      Object.freeze({
+        name: "recipient_count",
+        type: "int",
+        description: "对外收件人的个数；只动主人自己的数据时是 0",
+      }),
+      Object.freeze({
+        name: "run_source",
+        type: "string",
+        description: "这一轮是谁发起的：user_message、schedule 或 external_event",
+      }),
+      Object.freeze({
+        name: "facts",
+        type: "list<string>",
+        description: "动作意图里的事实代码，按代码排序，例如 context_external_content",
       }),
     ] as const),
   });

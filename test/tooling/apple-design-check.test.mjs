@@ -13,6 +13,8 @@ it("rejects color literals in page code", () => {
     ".foregroundStyle(.red)",
     "UIColor(red: 1, green: 0, blue: 0, alpha: 1)",
     "#colorLiteral(red: 1, green: 0, blue: 0, alpha: 1)",
+    "Color(white: 0.2)",
+    "NSColor.systemRed",
   ]) {
     expect(findViolations(line, "X.swift").map((v) => v.code)).toEqual(["color-literal"]);
   }
@@ -24,7 +26,11 @@ it("rejects scattered size numbers in page code", () => {
     ".frame(width: 46, height: 46)",
     "RoundedRectangle(cornerRadius: 26)",
     ".frame(minHeight: 44)",
-    ".lineSpacing(lineSpacing: 8)",
+    ".lineSpacing(8)",
+    ".cornerRadius(26)",
+    ".opacity(0.5)",
+    ".kerning(0.4)",
+    ".frame(idealWidth: 120)",
   ]) {
     expect(findViolations(line, "X.swift").length).toBeGreaterThan(0);
   }
@@ -49,6 +55,8 @@ it("accepts token-based code", () => {
     "RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous)",
     ".foregroundStyle(Color.hmMuted)",
     ".padding(.horizontal, 20)",
+    ".hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)",
+    ".opacity(DesignTokens.Opacity.disabled)",
   ]) {
     expect(findViolations(line, "X.swift")).toEqual([]);
   }

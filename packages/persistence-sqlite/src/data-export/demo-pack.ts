@@ -153,9 +153,12 @@ export function buildDemoPack(options: DemoPackOptions): {
   put(DATA_FILES.memories, "data", jsonLines(memoryLines), memoryLines.length);
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", "", 0);
+  put(DATA_FILES.pairedDevices, "data", "", 0);
   put(DATA_FILES.consolidations, "data", "", 0);
   put(DATA_FILES.decisions, "data", "", 0);
   put(DATA_FILES.rules, "data", "", 0);
+  put(DATA_FILES.conversationReviews, "data", "", 0);
+  put(DATA_FILES.externalProposals, "data", "", 0);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -168,15 +171,19 @@ export function buildDemoPack(options: DemoPackOptions): {
     memoryHistoryEvents: built.reduce((total, { events }) => total + events, 0),
     people: peopleLines.length,
     importBatches: 0,
+    pairedDevices: 0,
     consolidations: 0,
     consolidationChanges: 0,
     decisions: 0,
     decisionSignals: 0,
+    conversationReviews: 0,
+    conversationReviewChanges: 0,
     markdownMemories: markdown.count,
     sealedOriginals: 0,
     sealedEvidenceRows: 0,
     rules: 0,
     enforcedRules: 0,
+    externalProposals: 0,
     ruleHistoryVersions: 0,
   };
   const manifest: PortableManifest = {
@@ -195,7 +202,7 @@ export function buildDemoPack(options: DemoPackOptions): {
     withheld: { texts: 0, memories: 0, decisions: 0, rules: 0 },
     omitted: [
       {
-        what: "对话、消息、决策记录、规则",
+        what: "对话、消息、决策记录、规则、其他 agent 的提议",
         count: null,
         reason: "示范数据只含记忆和人物，是编出来的，不属于任何真人",
       },
