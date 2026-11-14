@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0060-hard-constraint-on-third-repeat.md"
 superseded_by: ""
+amended_by: "docs/adr/0269-load-instructions-on-demand-at-thread-start.md"
 date: "2026-10-29"
 ---
 
