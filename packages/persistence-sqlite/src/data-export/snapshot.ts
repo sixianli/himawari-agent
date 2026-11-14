@@ -14,6 +14,7 @@ export interface PortableSnapshot {
   readonly people: readonly Row[];
   readonly aliases: readonly Row[];
   readonly importBatches: readonly Row[];
+  readonly pairedDevices: readonly Row[];
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
@@ -149,6 +150,11 @@ export function readSnapshot(
       const importBatches = all(
         `SELECT id, source, item_count, created_at, undone_at FROM memory_import_batches
         WHERE owner_id = @ownerId AND agent_id = @agentId ORDER BY created_at, id`,
+      );
+      const pairedDevices = all(
+        `SELECT id, kind, name, release_channel, status, paired_at, confirmed_at, revoked_at, last_seen_at
+        FROM paired_devices WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY paired_at, id`,
       );
       const runs = all(
         `SELECT id, day, trigger_run_id, status, reviewed_through, model_called, change_count,
@@ -331,6 +337,7 @@ export function readSnapshot(
         people,
         aliases,
         importBatches,
+        pairedDevices,
         runs,
         changes,
         basis,
