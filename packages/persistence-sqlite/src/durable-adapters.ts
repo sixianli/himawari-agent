@@ -35,6 +35,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
@@ -1190,6 +1191,21 @@ export class SqliteDurableAdapters {
       retireQuestion: (input) => this.context.write("realEval.retireQuestion", input),
       recordRun: (input) => this.context.write("realEval.recordRun", input),
       listRuns: (input) => this.context.read("realEval.listRuns", input),
+    });
+  }
+
+  pairedDevices(): PairedDeviceStorePort {
+    return Object.freeze<PairedDeviceStorePort>({
+      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
+      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
+      listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
+      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
+      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
+      renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
+      revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
+      recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
+      touchDevice: (input) => this.context.write("pairedDevices.touchDevice", input),
     });
   }
 

@@ -486,6 +486,12 @@ class SandboxReadPathsTest(RenderedPacket):
 class DerivedExpectationsTest(RenderedPacket):
     TAG = '[PG-2]'
 
+    def setUp(self):
+        super().setUp()
+        patcher = unittest.mock.patch.object(packet_maker, 'check_migration_replay')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_schema_comes_from_production_and_the_commit(self):
         self.assertEqual(packet_maker.target_schema(TWELFTH_COMMIT), 56)
         derived = packet_maker.schema_parameters({'COMMIT': TWELFTH_COMMIT, 'TARGET_SCHEMA': 56}, {'schema': {'current': 56, 'minimumWriter': 56}})
@@ -753,6 +759,15 @@ class PacketChecksRunnerTest(unittest.TestCase):
         self.write_audit_copy('export const SUPPORTED_SCHEMA_MAX = 68;\n')
         self.assertIsNone(checks_runner.audit_script_problem(self.packet, 68))
         self.assertIsNone(checks_runner.audit_script_problem(self.packet, 57))
+
+    def test_a_packet_whose_audit_script_reads_the_schema_by_introspection_passes_for_any_target(self):
+        self.write_audit_copy('export const LEGACY_MIGRATION_COUNT = 95;\nexport const AUDIT_READ_TABLES = Object.freeze([\n  "runs",\n]);\n')
+        self.assertIsNone(checks_runner.audit_script_problem(self.packet, 96))
+        self.assertIsNone(checks_runner.audit_script_problem(self.packet, 500))
+
+    def test_a_packet_whose_audit_script_lists_no_tables_is_refused(self):
+        self.write_audit_copy('export const LEGACY_MIGRATION_COUNT = 95;\nexport const AUDIT_READ_TABLES = Object.freeze([]);\n')
+        self.assertIsNotNone(checks_runner.audit_script_problem(self.packet, 96))
 
     def test_a_packet_with_an_audit_script_without_a_declared_limit_or_without_the_script_is_refused(self):
         self.assertEqual(checks_runner.audit_script_problem(self.packet, 68), 'PACKET_CHECKS_AUDIT_SCRIPT_MISSING ' + checks_runner.AUDIT_COPY)
@@ -1304,6 +1319,90 @@ class InstalledProbeCheckTest(unittest.TestCase):
     def test_the_packet_checker_passes_the_tools_directory(self):
         source = (HERE / 'make-packet.py').read_text()
         self.assertIn("' --pi-tools ' + shlex.quote(self.settings['piToolBin'])", source)
+
+
+class TimestampedMigrationTests(unittest.TestCase):
+    LEGACY = ['0001_one.sql', '0002_two.sql', '0003_three.sql']
+    ENGINE = ''.join('{ sequence: %d, name: "%s", changeSet: "x", phase: "expand" as const, file: "%s" },' % (index + 1, name[5:-4], name) for index, name in enumerate(LEGACY))
+
+    def fake_git(self, files):
+        def run(*arguments, binary=False):
+            if arguments[0] == 'ls-tree':
+                return '\n'.join(packet_maker.MIGRATIONS + '/' + name for name in files)
+            if arguments[0] == 'show' and arguments[1].endswith(packet_maker.MIGRATION_ENGINE):
+                return self.ENGINE
+            if arguments[0] == 'show':
+                return 'CREATE TABLE harmless (id TEXT);'
+            raise AssertionError(arguments)
+        return run
+
+    def plan(self, files, applied, current=None):
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
+            target = packet_maker.target_schema('c')
+            derived = packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': target}, {'schema': {'current': len(applied), 'minimumWriter': len(applied)}, 'migrationIds': applied, 'migrationDigests': ['d' + str(index) for index in range(len(applied))], 'migrationNames': ['n' + str(index) for index in range(len(applied))]})
+        return target, json.loads(derived['MIGRATION_LEDGER'])
+
+    def test_the_real_replay_check_passes_at_the_repository_head(self):
+        packet_maker.check_migration_replay('HEAD')
+
+    def test_the_packet_passes_the_applied_digests_to_the_replay_check(self):
+        files = self.LEGACY
+        seen = []
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(files)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay', side_effect=lambda commit, pairs=None: seen.append(pairs)):
+            packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['aa', 'bb', 'cc'], 'migrationNames': ['x', 'y', 'z']})
+        self.assertEqual(seen, [['0001:aa:x', '0002:bb:y', '0003:cc:z']])
+
+    def test_a_missing_or_short_digest_list_is_refused_instead_of_skipping_the_check(self):
+        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationNames': ['x', 'y', 'z']}
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(self.LEGACY)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
+            for digests in (None, ['a', 'b'], ['a', 'b', '']):
+                state = dict(base)
+                if digests is not None:
+                    state['migrationDigests'] = digests
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_S0_MIGRATION_DIGESTS_INVALID'):
+                    packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, state)
+
+    def test_a_missing_or_malformed_name_list_is_refused_instead_of_skipping_the_rename_check(self):
+        base = {'schema': {'current': 3, 'minimumWriter': 3}, 'migrationIds': ['0001', '0002', '0003'], 'migrationDigests': ['a', 'b', 'c']}
+        with unittest.mock.patch.object(packet_maker, 'git', self.fake_git(self.LEGACY)), unittest.mock.patch.object(packet_maker, 'preserved_tables', return_value=()), unittest.mock.patch.object(packet_maker, 'check_migration_replay'):
+            for names in (None, ['x', 'y'], ['x', 'y', ''], ['x', 'y', 'a:b']):
+                state = dict(base)
+                if names is not None:
+                    state['migrationNames'] = names
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_S0_MIGRATION_NAMES_INVALID'):
+                    packet_maker.schema_parameters({'COMMIT': 'c', 'TARGET_SCHEMA': 3}, state)
+
+    def test_a_commit_whose_migrations_do_not_replay_is_refused(self):
+        failed = subprocess.CompletedProcess([], 1, stdout='', stderr='MIGRATION_CONFLICT FULL_REPLAY_FAILS boom')
+        with unittest.mock.patch.object(packet_maker.subprocess, 'run', return_value=failed):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'MIGRATION_REPLAY_FAILED'):
+                packet_maker.check_migration_replay('c')
+
+    def test_timestamped_files_count_toward_the_target_and_are_planned_by_id(self):
+        files = self.LEGACY + ['20261114010000_first.sql', '20261114020000_second.sql', '20261114020000_second.meta.json']
+        target, ledger = self.plan(files, ['0001', '0002', '0003'])
+        self.assertEqual(target, 5)
+        self.assertEqual(ledger, [{'sequence': 4, 'name': 'first', 'phase': 'expand'}, {'sequence': 5, 'name': 'second', 'phase': 'expand'}])
+
+    def test_a_late_merging_smaller_id_is_planned_after_the_ones_already_applied(self):
+        files = self.LEGACY + ['20261114010000_first.sql', '20261114020000_second.sql']
+        _, ledger = self.plan(files, ['0001', '0002', '0003', '20261114020000'])
+        self.assertEqual(ledger, [{'sequence': 5, 'name': 'first', 'phase': 'expand'}])
+
+    def test_unrecognized_files_and_foreign_production_ids_are_refused(self):
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_FILE_NOT_RECOGNIZED bad_file.sql'):
+            self.plan(self.LEGACY + ['bad_file.sql'], ['0001', '0002', '0003'])
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PRODUCTION_HAS_MIGRATIONS_NOT_IN_COMMIT'):
+            self.plan(self.LEGACY + ['20261114010000_first.sql'], ['0001', '0002', '0003', '20261114030000'])
+
+    def test_the_same_count_with_a_different_set_is_refused(self):
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_COUNT_MISMATCH|PACKET_PRODUCTION_HAS_MIGRATIONS_NOT_IN_COMMIT'):
+            self.plan(self.LEGACY + ['20261114010000_first.sql'], ['0001', '0002', '0003', '20261114020000'])
+
+    def test_production_in_sync_with_the_commit_needs_no_migration(self):
+        files = self.LEGACY + ['20261114010000_first.sql']
+        _, ledger = self.plan(files, ['0001', '0002', '0003', '20261114010000'])
+        self.assertEqual(ledger, [])
 
 
 if __name__ == '__main__':

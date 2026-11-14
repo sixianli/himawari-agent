@@ -128,6 +128,11 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 
 在决定运行哪些测试层、把测试层写进提交说明或添加测试之前，先读 [.agents/instructions/test-trigger-timing.md](.agents/instructions/test-trigger-timing.md)。它定义了第 0-5 层，以及共享钩子强制要求的 `Layer-0-tests:` 提交说明行。
 
+<a id="database-migrations"></a>
+## 数据库迁移
+
+新增或修改产品库的迁移之前，先读 [.agents/instructions/migrations.md](.agents/instructions/migrations.md)：编号用 `npm run migration:new` 生成，不再向协调者要编号，也不改共用的清单。决定见 [ADR 0265](docs/adr/0265-migrations-get-unique-ids-and-merge-in-any-order.md)。
+
 <a id="disk-space-hygiene"></a>
 ## 磁盘空间清理
 
