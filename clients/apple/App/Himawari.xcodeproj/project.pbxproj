@@ -456,6 +456,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
+				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
 				CLANG_ENABLE_MODULES = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -472,6 +473,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
+				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
 				CLANG_ENABLE_MODULES = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -491,7 +493,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				HIMAWARI_RELEASE_CHANNEL = direct;
-				CODE_SIGN_ENTITLEMENTS = iOS/Himawari.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "iOS/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				INFOPLIST_FILE = iOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -516,7 +518,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				HIMAWARI_RELEASE_CHANNEL = direct;
-				CODE_SIGN_ENTITLEMENTS = iOS/Himawari.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "iOS/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				INFOPLIST_FILE = iOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -585,7 +587,7 @@
 		FE9A56148A4C490C766ED608 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "ShareExtension/ShareExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -611,7 +613,7 @@
 		D70FC6A4C5BA8AEB26512E59 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "ShareExtension/ShareExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -637,7 +639,7 @@
 		8345D7BF8DD6D7E52415DBF1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = SafariExtension/SafariExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/SafariExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -663,7 +665,7 @@
 		81B9C1A3F681204B73274051 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = SafariExtension/SafariExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/SafariExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
