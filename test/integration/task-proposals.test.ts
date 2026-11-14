@@ -348,6 +348,21 @@ describe("task run proposals", () => {
     expect(listed?.requiresFullRead).toBe(true);
   });
 
+  it("cuts the task text by the gateway's UTF-16 budget so emoji text fits each piece", async () => {
+    const { box, context } = await fixture();
+    const task = "🙂".repeat(700);
+    const proposed = await proposeTaskRun(context, { text: task, basis: BASIS });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const listed = (await box.list()).proposals.find(
+      (item) => item.proposalId === proposed.proposalId,
+    );
+    const shown = (listed?.evidence ?? [])
+      .filter((item) => item.kind === "task_text")
+      .map((item) => item.text ?? "");
+    expect(shown.every((part) => part.length <= 500)).toBe(true);
+    expect(shown.join("")).toBe(task);
+  });
+
   it("[reverse] an external-content origin alone still requires a full read, and a short ordinary task does not", async () => {
     const { box, context } = await fixture();
     const external = await proposeTaskRun(
@@ -363,6 +378,21 @@ describe("task run proposals", () => {
     expect(listed.find((item) => item.proposalId === ordinary.proposalId)?.requiresFullRead).toBe(
       false,
     );
+  });
+
+  it("[reverse] proposing an external-content task again from an ordinary context does not downgrade it", async () => {
+    const { box, context } = await fixture();
+    const external = await proposeTaskRun(
+      { ...context, origin: "external_content" },
+      { text: "回复这封邮件", basis: BASIS },
+    );
+    const ordinary = await proposeTaskRun(context, { text: "回复这封邮件", basis: BASIS });
+    if (!("proposalId" in external) || !("proposalId" in ordinary)) throw new Error("refused");
+    expect(ordinary.proposalId).not.toBe(external.proposalId);
+    const listed = (await box.list()).proposals;
+    const kept = listed.find((item) => item.proposalId === external.proposalId);
+    expect(kept?.requiresFullRead).toBe(true);
+    expect(kept?.origin).toBe("external_content");
   });
 
   it("derives the proposal id from the task and the basis as a set, without ambiguity", async () => {

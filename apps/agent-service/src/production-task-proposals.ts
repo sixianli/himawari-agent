@@ -195,11 +195,21 @@ export function registerTaskProposalHandler(options: {
 }
 
 function chunks(text: string, size: number): string[] {
-  const characters = [...text];
   const parts: string[] = [];
-  for (let start = 0; start < characters.length; start += size)
-    parts.push(characters.slice(start, start + size).join(""));
+  let current = "";
+  for (const character of text) {
+    if (current.length + character.length > size) {
+      parts.push(current);
+      current = "";
+    }
+    current += character;
+  }
+  if (current.length > 0) parts.push(current);
   return parts;
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function clip(text: string, maximum: number): string {
@@ -232,10 +242,11 @@ export async function proposeTaskRun(
   const basis = input.basis
     .map(({ kind, ref }) => ({ kind, ref }))
     .sort((a, b) =>
-      a.kind === b.kind ? a.ref.localeCompare(b.ref) : a.kind.localeCompare(b.kind),
+      a.kind === b.kind ? compareText(a.ref, b.ref) : compareText(a.kind, b.kind),
     );
+  const external = context.externalContentSeen === true || context.origin === "external_content";
   const proposalId = `task:${createHash("sha256")
-    .update(JSON.stringify([text, basis.map(({ kind, ref }) => [kind, ref])]))
+    .update(JSON.stringify([text, basis.map(({ kind, ref }) => [kind, ref]), external]))
     .digest("hex")
     .slice(0, 32)}`;
   const long = [...text].length > FULL_READ_TEXT_LENGTH;
@@ -250,7 +261,7 @@ export async function proposeTaskRun(
     evidence: [
       {
         kind: "detail",
-        text: [...context.reason].slice(0, EVIDENCE_CHUNK_LENGTH).join(""),
+        text: chunks(context.reason, EVIDENCE_CHUNK_LENGTH)[0] ?? "",
         sources: basis,
         figures: [],
       },
@@ -263,7 +274,7 @@ export async function proposeTaskRun(
     ],
     data: { text, basis },
     requiresFullRead:
-      long || context.externalContentSeen === true || context.origin === "external_content",
+      long || external,
     ...(context.source ? { source: context.source } : {}),
     ...(context.externalContentSeen === true ? { externalContentSeen: true } : {}),
   });
