@@ -38,6 +38,19 @@ const context = {
 };
 const count = () => ({ files: 1, executed: 2, passed: 2, failed: 0, skipped: 0 });
 const archive = (platform) => Buffer.from(`verified ${platform} archive`);
+function writeEnvelopeFiles(folder, envelope) {
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
+  for (const report of envelope.result.reports) {
+    const platform = ["browser", "tests"].includes(envelope.result.checkId)
+      ? "linux-x64"
+      : envelope.result.matrixKey;
+    writeFileSync(
+      path.join(folder, report.path),
+      report.kind === "artifact" ? archive(platform) : Buffer.from(`real ${report.kind} report`),
+    );
+  }
+}
 const directories = [];
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -455,19 +468,7 @@ describe("complete-attempt gate", () => {
     directories.push(directory);
     for (const envelope of input.reports) {
       const folder = path.join(directory, envelope.result.checkId, envelope.result.matrixKey);
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
-      for (const report of envelope.result.reports) {
-        const platform = ["browser", "tests"].includes(envelope.result.checkId)
-          ? "linux-x64"
-          : envelope.result.matrixKey;
-        writeFileSync(
-          path.join(folder, report.path),
-          report.kind === "artifact"
-            ? archive(platform)
-            : Buffer.from(`real ${report.kind} report`),
-        );
-      }
+      writeEnvelopeFiles(folder, envelope);
     }
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("passed");
@@ -484,19 +485,7 @@ describe("complete-attempt gate", () => {
         directory,
         `${envelope.result.checkId}-${envelope.result.matrixKey}`,
       );
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
-      for (const report of envelope.result.reports) {
-        const platform = ["browser", "tests"].includes(envelope.result.checkId)
-          ? "linux-x64"
-          : envelope.result.matrixKey;
-        writeFileSync(
-          path.join(folder, report.path),
-          report.kind === "artifact"
-            ? archive(platform)
-            : Buffer.from(`real ${report.kind} report`),
-        );
-      }
+      writeEnvelopeFiles(folder, envelope);
     }
     const browserFolder = readdirSync(directory).find((name) => name.startsWith("browser-"));
     const evidence = path.join(directory, browserFolder, "browser/reports/execution-chain");
