@@ -106,11 +106,15 @@ export class VoiceAddresseeDecision implements VoiceAddresseeModel {
       body: voiceAddresseeRequestBody(this.#options.model, input),
       signal: input.signal,
     });
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel();
       throw new VoiceAddresseeDecisionFailure(`VOICE_ADDRESSEE_HTTP_${response.status}`);
+    }
     const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > MAX_RESPONSE_BYTES)
+    if (declared > MAX_RESPONSE_BYTES) {
+      await response.body?.cancel();
       throw new VoiceAddresseeDecisionFailure("VOICE_ADDRESSEE_RESPONSE_TOO_LARGE");
+    }
     const reader = response.body?.getReader();
     if (!reader) throw new VoiceAddresseeDecisionFailure("VOICE_ADDRESSEE_RESPONSE_INVALID");
     const chunks: Uint8Array[] = [];

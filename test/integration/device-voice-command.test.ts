@@ -77,8 +77,8 @@ const commands = (h: Harness) =>
     ),
   });
 
-async function setup() {
-  const h = await harness();
+async function setup(options: Parameters<typeof harness>[0] = {}) {
+  const h = await harness(options);
   const client = await pairAndConfirm(h);
   const { threadId } = await conversation(h, client);
   return { h, client, threadId };
@@ -353,6 +353,47 @@ describe("[iOS-8] the decision model decides whether a name call is meant for Hi
       error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
     });
     expect(await commands(h)).toEqual([]);
+  });
+
+  it("asks first when the decision model declares an answer larger than the limit", async () => {
+    const { h, client, threadId } = await setup();
+    const body = { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) };
+    h.decisions.answer = () => ({
+      status: 200,
+      body,
+      headers: { "content-length": String(Buffer.byteLength(JSON.stringify(body))) },
+    });
+    const refused = await say(h, client, airpods, threadId);
+    expect(refused.body).toEqual({
+      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
+    });
+    expect(await commands(h)).toEqual([]);
+  });
+
+  it("stops reading an oversize answer without waiting for it to finish", async () => {
+    const { h, client, threadId } = await setup();
+    h.decisions.answer = () => ({
+      status: 200,
+      body: { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) },
+      unfinished: true,
+    });
+    const started = Date.now();
+    const refused = await say(h, client, airpods, threadId);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(refused.body).toEqual({
+      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
+    });
+  });
+
+  it("asks first on a name call and still carries out a touch when no addressee check is wired", async () => {
+    const { h, client, threadId } = await setup({ withoutAddressee: true });
+    const refused = await say(h, client, airpods, threadId);
+    expect(refused.body).toEqual({
+      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
+    });
+    expect(h.decisions.requests).toHaveLength(0);
+    const touched = await say(h, client, { trigger: "hands_on" }, threadId);
+    expect(touched.status, JSON.stringify(touched.body)).toBe(200);
   });
 
   it("puts the fixed question before the sentence in the request to the decision model", async () => {

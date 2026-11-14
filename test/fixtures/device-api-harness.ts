@@ -113,6 +113,8 @@ export interface DecisionGateway {
     readonly status: number;
     readonly body: unknown;
     readonly delayMs?: number;
+    readonly headers?: Record<string, string>;
+    readonly unfinished?: boolean;
   };
 }
 
@@ -144,8 +146,12 @@ async function decisionGateway(): Promise<{
           : { status: 404, body: { error: { type: "not_found" } } };
       setTimeout(() => {
         if (response.destroyed) return;
-        response.writeHead(answer.status, { "content-type": "application/json" });
-        response.end(JSON.stringify(answer.body));
+        response.writeHead(answer.status, {
+          "content-type": "application/json",
+          ...answer.headers,
+        });
+        if (answer.unfinished) response.write(JSON.stringify(answer.body));
+        else response.end(JSON.stringify(answer.body));
       }, answer.delayMs ?? 0);
     });
   });
@@ -197,6 +203,7 @@ export async function harness(
     readonly pairingAccess?: DevicePairingAccess;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
+    readonly withoutAddressee?: boolean;
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
@@ -506,7 +513,7 @@ export async function harness(
         perception,
         agentId,
       ),
-      addressee: addresseeRoute,
+      ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
     },
   });
   await app.ready();

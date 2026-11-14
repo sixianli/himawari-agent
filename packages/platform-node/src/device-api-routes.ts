@@ -989,7 +989,9 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
                   text: body["text"] as string,
                 },
               })
-            : "addressed_unsure";
+            : evidence.trigger === "hands_on"
+              ? "addressed"
+              : "addressed_unsure";
           if (addressed !== "addressed")
             return options.sendJson(reply, 409, {
               error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },

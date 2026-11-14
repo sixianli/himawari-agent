@@ -1,0 +1,7 @@
+# PR 484 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1、中低、客户端按字形计数、服务端按码点校验，上一轮第 8 条并没有改好。SpokenCommand.swift 原按字形 prefix、device-api-routes.ts isHeardName 按码点并拒绝 Cc/Cf，确实不一致；已改客户端按 unicodeScalars 截断并去掉 Cc/Cf 和首尾空白，ListeningTests.swift 补两条断言（Swift 在 Linux 上无法编译，待 Mac 线程跑）；触发：名字含组合字符或不可见格式字符、码点数超过 64 但字形数不到 64；后果：服务器对 voice 字段回 400，这一句没有执行，手机回到收听；判低理由：名字来自设置里的几个叫法，正常使用碰不到，只有构造的怪名字才触发且只会被拒绝
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2、低、超限响应测试在旧代码上也会通过，不能防止退回“先整段读入”。属实；已补 content-length 超限用例和“响应迟迟不结束也要在 1 秒内拒绝”的用例；后者在 response.text() 旧写法上失败（2614ms），新代码通过；触发：有人把 voice-addressee-decision.ts 改回先整段读入再检查大小；后果：测试仍然绿，守不住边读边限长；运行时最终仍是 addressed_unsure
+- 3（deepseek-v4.1-flash）不成立：### 3、低、`reserve` 抛异常时直接变成 500，没有落到约定的 `addressed_unsure`。不成立，沿用第 1 轮第 5 条原判：reserve 抛错（存储故障）时请求不会被执行，是不执行的方向；同一路由 protectText、提交对话等的存储错误同样是 500，没有因为这一处不同；本轮新写的 catch 只是不把失败的 Promise 留在缓存里。
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4、低、`Content-Length` 超限分支没有取消响应体，可能占用连接。属实；voice-addressee-decision.ts 两处抛错前已加 await response.body?.cancel()；内存和连接行为受 1.5 秒超时限制，结果不变；触发：Jev 网关返回声明长度超过 64 KiB 或非 2xx 的响应；后果：响应体没有取消，连接可能多占一会儿；结果仍是 addressed_unsure
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5、低、缺 `addressee` 的 fail-closed 分支没有测试，而且会连带拒绝 `hands_on`。属实；device-api-routes.ts 默认值改成 hands_on 放行、其余 addressed_unsure，与 production-http-composition 的回退一致；harness 加 withoutAddressee，新增用例断言名字调用 409 且没有请求 Jev、hands_on 通过；生产总会传入，只有别的组装才触发；触发：某个组装漏传 addressee；后果：名字调用默认 addressed_unsure（安全方向）；hands_on 也被 409 拒绝，与生产回退不一致
