@@ -28,7 +28,18 @@ public struct VoiceEvidence: Codable, Sendable, Equatable {
         self.inputRoute = inputRoute
         self.inEar = inEar
         self.loudnessScore = loudnessScore.map(VoiceScore.clamp)
-        self.heardName = trigger == .handsOn ? nil : heardName.map { String($0.prefix(Self.heardNameMaximumCharacters)) }.flatMap { $0.isEmpty ? nil : $0 }
+        self.heardName = trigger == .handsOn ? nil : heardName.map(Self.normalizedHeardName).flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
+extension VoiceEvidence {
+    static func normalizedHeardName(_ value: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in value.unicodeScalars where scalar.properties.generalCategory != .control && scalar.properties.generalCategory != .format {
+            if scalars.count >= heardNameMaximumCharacters { break }
+            scalars.append(scalar)
+        }
+        return String(scalars)
     }
 }
 

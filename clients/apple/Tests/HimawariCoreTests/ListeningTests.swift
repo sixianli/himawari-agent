@@ -6,6 +6,15 @@ import Testing
 @testable import HimawariCore
 
 @Suite struct SpokenCommandTests {
+    @Test func heardNameIsTrimmedByCodePointsAndDropsInvisibleCharacters() {
+        let long = String(repeating: "あ", count: 80)
+        let trimmed = VoiceEvidence(trigger: .ambientName, heardName: long).heardName
+        #expect(trimmed?.unicodeScalars.count == VoiceEvidence.heardNameMaximumCharacters)
+        #expect(VoiceEvidence(trigger: .ambientName, heardName: "Hima\u{200B}wari\u{0007}").heardName == "Himawari")
+        #expect(VoiceEvidence(trigger: .ambientName, heardName: "\u{200B}").heardName == nil)
+        #expect(VoiceEvidence(trigger: .handsOn, heardName: "Himawari").heardName == nil)
+    }
+
     private func api(_ exchange: RecordingExchange) throws -> DeviceAPI {
         let http = DeviceHTTPClient(exchange: exchange, now: { Date(timeIntervalSince1970: 1_800_000_000) })
         http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test/")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
