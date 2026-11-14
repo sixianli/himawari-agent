@@ -35,3 +35,21 @@ describe("[P5-2] memory source of external proposals", () => {
     expect(memorySourceState({ ...base, memoryId: "memory:mcpx:1" } as never)).toBe("tidy");
   });
 });
+
+describe("[ADR-0257] memory source of reminders written with external content", () => {
+  it("keeps a reminder whose source refs also carry the external-content mark as a reminder", () => {
+    const item = {
+      ...base,
+      memoryId: "memory:reminder:x",
+      sourceThreadId: "thread-1",
+      sourceRefs: ["memory-content:reminder:x", "external-content:memory:reminder:x|web_fetch"],
+    };
+    expect(memorySourceState(item as never)).toBe("reminder");
+    expect(
+      memorySourceState({
+        ...item,
+        sourceRefs: ["external-content:memory:reminder:x|web_fetch"],
+      } as never),
+    ).toBe("unavailable");
+  });
+});

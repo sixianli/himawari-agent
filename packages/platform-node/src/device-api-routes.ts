@@ -3,6 +3,7 @@ import { Readable, Transform } from "node:stream";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
@@ -20,12 +21,23 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  classifyDeviceGatewayRequest,
+  type DeviceGatewayAuditFailure,
+  type DeviceGateways,
+  dispatchDeviceGatewayRequest,
+} from "./device-gateway.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import {
+  PLAIN_TEXT_MAXIMUM_CHARACTERS,
+  parseTextAdmission,
+  type TextAdmissionClassification,
+} from "./text-admission.js";
 
 export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
@@ -38,6 +50,9 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
   { method: "GET", path: "threads", signed: true },
+  { method: "POST", path: "approvals/challenge", signed: true },
+  { method: "POST", path: "gateway", signed: true },
+  { method: "POST", path: "payloads/text/new", signed: true },
   { method: "POST", path: "threads", signed: true },
   { method: "GET", path: "threads/{threadId}", signed: true },
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
@@ -73,7 +88,8 @@ export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
 
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const MESSAGE_TEXT_MAXIMUM = 64 * 1024;
+const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+export type DeviceTextClassification = TextAdmissionClassification;
 
 export interface DeviceApiAuthority {
   readonly agentId: string;
@@ -94,10 +110,14 @@ export interface DeviceApiRouteOptions {
   readonly configuration: () => DeviceConfiguration;
   readonly authority: DeviceApiAuthority;
   readonly threadGateway: AgentThreadGatewayPort;
+  readonly gateways: DeviceGateways;
+  readonly audit: AuditLedgerPort;
+  readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
     readonly content: string;
+    readonly dataClassification?: DeviceTextClassification;
   }) => Promise<string>;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
@@ -641,6 +661,49 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           reply,
           200,
           await options.threadGateway.request(authentication, command),
+        );
+      });
+
+      device.post("/payloads/text/new", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const { idempotencyKey, ...text } = json(request);
+        const admitted = parseTextAdmission(text, PLAIN_TEXT_MAXIMUM_CHARACTERS);
+        if (
+          typeof idempotencyKey !== "string" ||
+          !MESSAGE_ID_PATTERN.test(idempotencyKey) ||
+          !admitted
+        )
+          return options.rejectBody(400);
+        const payloadRef = await options.protectText({
+          authentication,
+          idempotencyKey: `device-text:${stableSuffix(paired.id, idempotencyKey)}`,
+          ...admitted,
+        });
+        return options.sendJson(reply, 201, { payloadRef });
+      });
+
+      device.post("/approvals/challenge", async (request, reply) => {
+        const { device: paired } = await authenticate(request);
+        return options.sendJson(reply, 201, options.devices.issueConfirmChallenge(paired.id));
+      });
+
+      device.post("/gateway", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const classified = classifyDeviceGatewayRequest(json(request));
+        return options.sendJson(
+          reply,
+          200,
+          await dispatchDeviceGatewayRequest({
+            request: classified,
+            confirmed: authenticated.confirmed,
+            pairedDeviceId: authenticated.device.id,
+            authentication: authenticated.authentication,
+            authority: options.authority,
+            gateways: options.gateways,
+            audit: options.audit,
+            ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
+            now,
+          }),
         );
       });
 

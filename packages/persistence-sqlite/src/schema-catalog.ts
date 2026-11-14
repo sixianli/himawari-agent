@@ -841,7 +841,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "web_push_outbox",
     "WebPushStorePort",
-    "one row per event to push, naming only its source; pruned seven days after it expires",
+    "one row per event to push, naming only its source; pruned seven days after it expires; a push held by a quiet-hours rule carries the time it is held until and the rule versions that held it, cleared whenever any rule changes",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),

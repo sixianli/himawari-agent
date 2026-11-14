@@ -1,0 +1,11 @@
+[
+  "action_ask_after_external_content",
+  "action_preauthorize_own_task_cancel",
+  "action_preauthorize_owner_data",
+  "action_refuse_background_after_external_content",
+  "floor_important_sender",
+  "floor_money_words",
+  "floor_public_domain",
+  "quiet_hours",
+  "suppress_small_amount"
+]

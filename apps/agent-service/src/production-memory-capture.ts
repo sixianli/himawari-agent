@@ -48,6 +48,7 @@ import {
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
 import { judgeOrDefault } from "./auxiliary-judgment.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 type ProductThreadMessage = Awaited<
@@ -291,6 +292,7 @@ function jsonObject(output: string): unknown {
 export function parseMemoryCandidates(input: {
   readonly output: string;
   readonly sourceRef: string;
+  readonly extraSourceRefs?: readonly string[];
   readonly sourceClassification: DataClassification;
   readonly existingIds: ReadonlySet<string>;
   readonly tentativeMemories?: ReadonlyMap<
@@ -496,7 +498,7 @@ export function parseMemoryCandidates(input: {
       dataClassification,
       confidencePermille,
       inference,
-      sourceRefs: [input.sourceRef],
+      sourceRefs: [input.sourceRef, ...(input.extraSourceRefs ?? [])],
       attributes: {
         category,
         importancePermille,
@@ -691,6 +693,7 @@ export interface ProductionMemoryCaptureOptions {
   readonly generations: Pick<ThreadDistillationStatePort, "request">;
   readonly state: Pick<ProductMemoryStatePort, "listActive" | "readMany">;
   readonly relevantMemoryIds?: (runId: RuntimeRequest["runId"]) => readonly MemoryId[];
+  readonly externalOrigins?: (runId: RuntimeRequest["runId"]) => Promise<readonly string[]>;
   readonly product: IncrementalMemoryProductPort;
   readonly approvals: SensitiveMemoryApprovalStatePort;
   readonly payloads: PayloadStorePort;
@@ -764,6 +767,7 @@ interface CapturePlan {
   readonly subCategories: Record<string, string[]>;
   readonly people: readonly { readonly id: string }[];
   readonly committedAt: string | null;
+  readonly externalSourceRefs: readonly string[];
   readonly input: Omit<
     CommittedRunMemoryInput,
     "explicitRememberCandidateOrdinal" | "rejectedCandidates"
@@ -1202,6 +1206,10 @@ export class ProductionMemoryCapture {
       subCategories,
       people,
       committedAt: owner.committedAt,
+      externalSourceRefs: externalContentSourceRefs(
+        source.payloadRef,
+        (await this.options.externalOrigins?.(sourceRunId)) ?? [],
+      ),
       input,
       audit,
     };
@@ -1260,6 +1268,7 @@ export class ProductionMemoryCapture {
         parseMemoryCandidates({
           output,
           sourceRef: plan.input.sourceRef,
+          extraSourceRefs: plan.externalSourceRefs,
           sourceClassification: plan.input.sourceClassification,
           existingIds: new Set(existing.map(({ id }) => id)),
           tentativeMemories: new Map(

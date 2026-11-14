@@ -1,0 +1,3 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "复核材料漏列了 6 个实际冲突文件", "valid": false, "class": "error", "severity": "low", "trigger": "复核者按材料清单看", "consequence": "漏看自动合并的文件", "modelSeverity": "low"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`memory.rule.respond` 的兜底分支会把未知 action 当作 `undo`", "valid": true, "class": "better"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`builtIn` 是快照必填字段，混合版本部署时规则页会整块失败", "valid": false, "class": "error", "severity": "low", "trigger": "新网页遇到旧服务", "consequence": "规则页整块失败", "modelSeverity": "low"}

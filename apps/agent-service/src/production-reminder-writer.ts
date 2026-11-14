@@ -24,6 +24,7 @@ import {
 } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { reminderSchedule } from "./production-memory-capture.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -179,6 +180,7 @@ export class ProductionReminderWriter {
     readonly due: string;
     readonly repeat: "none" | "yearly";
     readonly sourceThreadId?: string | null;
+    readonly externalOrigins?: readonly string[];
   }): Promise<CreatedReminder> {
     const key = reminderKey(input.key);
     const memoryId = `${MEMORY_ID_PREFIX}${key}` as MemoryId;
@@ -242,7 +244,10 @@ export class ProductionReminderWriter {
           contentRef,
           dataClassification: payload.dataClassification,
           sourceThreadId: (input.sourceThreadId ?? null) as ProductMemoryRecord["sourceThreadId"],
-          sourceRefs: [contentRef],
+          sourceRefs: [
+            contentRef,
+            ...externalContentSourceRefs(memoryId, input.externalOrigins ?? []),
+          ],
           inference: false,
           confidencePermille: 1000,
           policyVersion: REMINDER_POLICY_VERSION,
@@ -388,7 +393,10 @@ export class ProductionReminderTools {
     return `${localTimeText(instant, this.#timeZone)}（${this.#timeZone}）`;
   }
 
-  async run(invocation: RuntimeToolInvocation): Promise<unknown> {
+  async run(
+    invocation: RuntimeToolInvocation,
+    provenance: { readonly externalOrigins?: readonly string[] } = {},
+  ): Promise<unknown> {
     const args = invocation.arguments;
     const names = Object.keys(args);
     if (invocation.capabilityRef === REMINDER_LIST_CAPABILITY_REF) {
@@ -432,6 +440,9 @@ export class ProductionReminderTools {
       due,
       repeat,
       sourceThreadId: invocation.context?.threadId ?? null,
+      ...(provenance.externalOrigins?.length
+        ? { externalOrigins: provenance.externalOrigins }
+        : {}),
     });
     return {
       created: true,

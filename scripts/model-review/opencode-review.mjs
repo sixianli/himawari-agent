@@ -159,7 +159,7 @@ export const ASK_FIRST_LINE_USD = {
   "code-review": 1,
   plan: 0.5,
   "plan-review": 0.5,
-  "plan-claims": 0.5,
+  "plan-claims": 1,
 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
@@ -1442,6 +1442,88 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   return { accepted, broken };
 }
 
+const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+export function lowFixChecker({ repo, ledgerPath, mainRef, skip }) {
+  return (point) => {
+    const check = lowFixProblems({
+      repo,
+      ledgerPath,
+      round: point.round,
+      from: point.from,
+      to: point.head,
+      mainRef,
+      skip,
+    });
+    const problems = [...check.problems];
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+        skip,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
+    if (
+      check.problems.length === 0 &&
+      !sameList(
+        point.findings,
+        check.errors.map((verdict) => maskSecretLike(verdict.id)),
+      )
+    )
+      problems.push("findings-differ");
+    return problems;
+  };
+}
+
+export function previousProblem({ records, round, head, previous, isAncestor, lowFixCheck }) {
+  const joins = (given) => {
+    if (!given) return null;
+    const earlier = records.filter((record) => (record.round ?? 1) < round);
+    const next = { round, head, previous: given, by: "requested" };
+    const { accepted, broken } = walkChain([...coveragePoints(earlier), next], {
+      isAncestor,
+      lowFixCheck,
+    });
+    if (accepted.at(-1) === next) return null;
+    if (broken && broken.point !== next)
+      return `chain-already-broken round=${broken.point.round} ${broken.point.head} ${broken.problems.join(",")} use=no-previous`;
+    const covered = accepted.at(-1)?.head;
+    if (!covered) return "no-accepted-round use=no-previous";
+    if (!isAncestor(covered, head))
+      return `head-not-after-accepted ${covered} head=${head} use=no-previous`;
+    return `chain-broken previous=${given} use=--previous ${covered}`;
+  };
+  const sameRound = [
+    ...new Set(
+      records
+        .filter(
+          (record) =>
+            record.mode === "code-review" &&
+            (record.round ?? 1) === round &&
+            record.outcome === "ok",
+        )
+        .map((record) => record.previous ?? null),
+    ),
+  ];
+  if (sameRound.length > 0 && sameRound.some((recorded) => recorded !== (previous ?? null))) {
+    const [recorded] = sameRound;
+    const use =
+      sameRound.length > 1 || joins(recorded)
+        ? "new-round"
+        : recorded === null
+          ? "no-previous"
+          : `--previous ${recorded}`;
+    return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${use}`;
+  }
+  const problem = joins(previous);
+  return problem ? `REVIEW_PREVIOUS_REFUSED ${problem}` : null;
+}
+
 function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
@@ -1530,40 +1612,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     unreviewedFiles(repo, from, to, ledgerPath, mainRef).filter((file) => !claimsOwned.has(file));
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
-  const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  const lowFixCheck = (point) => {
-    const check = lowFixProblems({
-      repo,
-      ledgerPath,
-      round: point.round,
-      from: point.from,
-      to: point.head,
-      mainRef,
-      skip: claimsOwned,
-    });
-    const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
-      const legacy = lowFixProblems({
-        repo,
-        ledgerPath,
-        round: point.round,
-        from: point.from,
-        to: point.head,
-        skip: claimsOwned,
-      });
-      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
-        problems.push("files-differ");
-    }
-    if (
-      check.problems.length === 0 &&
-      !sameList(
-        point.findings,
-        check.errors.map((verdict) => maskSecretLike(verdict.id)),
-      )
-    )
-      problems.push("findings-differ");
-    return problems;
-  };
+  const lowFixCheck = lowFixChecker({ repo, ledgerPath, mainRef, skip: claimsOwned });
   const points = records ? coveragePoints(records) : [];
   const { accepted, broken } = walkChain(points, { isAncestor, lowFixCheck });
   const complete = accepted.at(-1) ?? null;
@@ -3729,6 +3778,36 @@ async function main() {
           options.models.map((model) => [model, promptOnDisk(model)]),
         ),
       });
+  if (options.mode === "code-review" && !options.selfCheckOnly) {
+    const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
+    let claimsOwned;
+    const skip = () => {
+      claimsOwned ??= new Set(
+        claimsProblems({
+          repo: options.repo,
+          head: commits.head,
+          mainRef: "origin/main",
+          reviewsDir: REVIEWS_DIR,
+          parseUsage,
+          looksSecret: claimsFileSecretLike,
+        }).files,
+      );
+      return claimsOwned;
+    };
+    const refused = previousProblem({
+      records,
+      round,
+      head: commits.head,
+      previous: commits.previous,
+      isAncestor: (from, to) =>
+        gitStatus(["merge-base", "--is-ancestor", from, to], options.repo).status === 0,
+      lowFixCheck: (point) =>
+        lowFixChecker({ repo: options.repo, ledgerPath, mainRef: "origin/main", skip: skip() })(
+          point,
+        ),
+    });
+    if (refused) throw new Error(refused);
+  }
   const binary = opencodeBinary();
   const gateway = gatewayConfig ? { install: installGateway(), config: gatewayConfig } : null;
   if (gateway) {

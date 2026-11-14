@@ -26,7 +26,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ProductionHttpPayloadAdmission } from "../../apps/agent-service/src/production-http-composition.ts";
 import {
   agentId,
-  authority,
+  createThread,
   type Harness,
   harness,
   ownerId,
@@ -37,68 +37,11 @@ import {
   removeDeviceHarnessDirectories,
   send,
   signedRequest,
+  threadCommand,
   web,
 } from "../fixtures/device-api-harness.ts";
 
 afterEach(removeDeviceHarnessDirectories);
-
-async function threadCommand(
-  h: Harness,
-  type: string,
-  idempotencyKey: string,
-  payload: (resultRef: string) => Record<string, unknown>,
-) {
-  const resultRef = (
-    await new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions: h.repository.sessionDeviceState(),
-      payloads: h.repository.payloadStore(ownerId, agentId),
-      protector: new EnvelopePayloadProtector({
-        keys: {
-          kind: "memory-development",
-          productionSuitable: false,
-          resolve: async () => new Uint8Array(32).fill(9),
-        },
-        activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
-      }),
-      clock: () => h.clock.now(),
-    }).protect({
-      authentication: h.webAuthentication,
-      idempotencyKey,
-      content: `thread-action:${type}`,
-      dataClassification: "private",
-      contentType: "text/plain",
-    })
-  ).payloadRef;
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/gateway/thread/v3/commands",
-    headers: { ...(await h.webHeaders()), "idempotency-key": idempotencyKey },
-    payload: JSON.stringify({
-      schemaVersion: "gateway.thread.v3",
-      kind: "command",
-      type,
-      messageId: `message:${idempotencyKey}`,
-      correlationId: "correlation:device-test",
-      causationId: null,
-      scope: { ownerId, agentId },
-      authority,
-      actor: { actorType: "owner", actorId: ownerId },
-      idempotencyKey,
-      payload: payload(resultRef),
-    }),
-  });
-  expect(response.statusCode, response.body).toBe(200);
-}
-
-async function createThread(h: Harness, threadId: string) {
-  await threadCommand(h, "thread.create", `create:${threadId}`, (resultRef) => ({
-    threadId,
-    answerLocale: "zh-CN",
-    resultRef,
-  }));
-}
 
 describe("[P1-1] device pairing and signed device API", () => {
   it("pairs as pending, works only after the owner confirms, and never exposes the internal session", async () => {

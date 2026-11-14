@@ -19,6 +19,7 @@ import {
   TOOL_RESULT_RECALL_HISTORY,
   TOOL_RESULT_RECALL_TENTATIVE,
 } from "@himawari-agent/prompt-catalog";
+import { carriesExternalContent } from "./context-external-content.js";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
@@ -95,6 +96,7 @@ export interface RecallResult {
   readonly output: Record<string, unknown>;
   readonly contentClassification: DataClassification;
   readonly memoryIds: readonly string[];
+  readonly externalContent?: boolean;
 }
 
 export class ProductionMemoryRecall {
@@ -145,6 +147,7 @@ export class ProductionMemoryRecall {
     );
     const shown: DataClassification[] = [];
     const shownIds: string[] = [];
+    let externalContent = false;
     const tentativeLimit = Math.floor(input.limit / 2);
     const [confirmed, tentativeHits] = await Promise.all([
       within("memory-recall", () =>
@@ -258,6 +261,7 @@ export class ProductionMemoryRecall {
     const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
       shown.push(memory.dataClassification);
       shownIds.push(memory.id);
+      if (carriesExternalContent(memory.sourceRefs)) externalContent = true;
       const attributes = memory.attributes;
       const validTo = attributes?.validTo ?? null;
       return {
@@ -309,6 +313,7 @@ export class ProductionMemoryRecall {
       output,
       contentClassification,
       memoryIds: shownIds,
+      externalContent,
     };
   }
 }
