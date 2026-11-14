@@ -35,6 +35,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -1030,6 +1031,17 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.read("ownerRule.read", input),
       create: (input) => this.context.write("ownerRule.create", input),
       setStatus: (input) => this.context.write("ownerRule.setStatus", input),
+    });
+  }
+
+  ownerProposals(): OwnerProposalStorePort {
+    return Object.freeze<OwnerProposalStorePort>({
+      propose: (input) => this.context.write("ownerProposal.propose", input),
+      read: (input) => this.context.write("ownerProposal.read", input),
+      listPending: (input) => this.context.write("ownerProposal.listPending", input),
+      decide: (input) => this.context.write("ownerProposal.decide", input),
+      settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
+      clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
     });
   }
 

@@ -16,6 +16,7 @@ export const POLICY_FACT_CODES = Object.freeze({
   contextExternalContent: "context_external_content",
   ownerPresenceRequired: "owner_presence_required",
   standingRuleChange: "standing_rule_change",
+  ownerIntentConfirmed: "owner_intent_confirmed",
 } as const);
 
 export type PolicyFactCode = (typeof POLICY_FACT_CODES)[keyof typeof POLICY_FACT_CODES];
@@ -92,6 +93,14 @@ export const POLICY_FACT_REGISTRY: readonly PolicyFactDefinition[] = Object.free
         zh: "改的是长期规则",
         en: "Changes a standing rule",
         ja: "長期のルールを変更します",
+      },
+    },
+    {
+      code: POLICY_FACT_CODES.ownerIntentConfirmed,
+      label: {
+        zh: "你自己明说过要做这件事",
+        en: "You said you wanted this done",
+        ja: "あなた自身がこの操作を明確に求めました",
       },
     },
   ].map((definition) => Object.freeze({ ...definition, label: Object.freeze(definition.label) })),

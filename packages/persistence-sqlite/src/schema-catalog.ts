@@ -713,6 +713,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its review or its Memory record",
   ),
   entry(
+    "owner_proposals",
+    "OwnerProposalStorePort",
+    "one row per next step proposed to the owner, of any kind: pending until adopted, refused or expired, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner and the data its handler needs stay in a protected payload the row points to",
+    "payload_reference",
+    "cascade with Owner or Agent deletion; the source thread link clears with the thread",
+  ),
+  entry(
     "memory_review_items",
     "MemoryReviewStorePort",
     "one row per Memory and upstream Memory whose change put it up for review, with the reason, chain depth, the Memory it was reached through, whether the chain was cut short and how the owner answered; the upstream id carries no foreign key so a deleted upstream still explains the row",

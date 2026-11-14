@@ -768,6 +768,7 @@ function web() {
     "memoryBook",
     "memoryReminders",
     "ownerRules",
+    "ownerProposals",
     "ruleReviews",
     "memoryReviews",
     "memoryProjectionJobs",
