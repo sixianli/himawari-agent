@@ -1416,7 +1416,7 @@ describe("opencode review installed guard", () => {
     }
   });
 
-  it("[self-check cache] scripts imported from outside the script folder are part of the key", () => {
+  it("[self-check cache] scripts imported from outside the script folder are part of the key, and changing one changes it", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-imports-"));
     try {
       const dir = join(root, "model-review");
@@ -1438,6 +1438,20 @@ describe("opencode review installed guard", () => {
       ).toContain(
         fileURLToPath(new URL("../../scripts/ci/verified-download.mjs", import.meta.url)),
       );
+      const binary = join(root, "opencode");
+      writeFileSync(binary, "#!/bin/sh\necho one\n");
+      const keyOf = () =>
+        selfCheckCacheKey({ binary, mode: "code-review", gateway: null, scriptDir: dir });
+      const before = keyOf();
+      expect(keyOf()).toBe(before);
+      writeFileSync(
+        join(root, "ci", "helper.mjs"),
+        'export { z } from "./deeper.mjs";\nexport const v = 2;\n',
+      );
+      const afterHelper = keyOf();
+      expect(afterHelper).not.toBe(before);
+      writeFileSync(join(root, "ci", "deeper.mjs"), "export const z = 1;\n");
+      expect(keyOf()).not.toBe(afterHelper);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

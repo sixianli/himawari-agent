@@ -2674,8 +2674,13 @@ export function outsideImports(dir) {
 
 export const SELF_CHECK_CACHE_ENV_KEYS = [...OPENCODE_KEPT_ENV, "LC_ALL"];
 
-export function selfCheckCacheKey({ binary, mode, gateway, env = process.env }) {
-  const scriptDir = dirname(fileURLToPath(import.meta.url));
+export function selfCheckCacheKey({
+  binary,
+  mode,
+  gateway,
+  env = process.env,
+  scriptDir = dirname(fileURLToPath(import.meta.url)),
+}) {
   const scripts = readdirSync(scriptDir)
     .filter((name) => /\.(?:mjs|json)$/.test(name))
     .sort()
