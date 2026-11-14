@@ -75,12 +75,21 @@ public final class SensesModel {
         for item in items where item.isMirror {
             if let count = await service.mirrorCount(item) { mirrorCounts[item] = count }
         }
-        resume()
+        await resume()
     }
 
-    public func resume() {
-        for item in items where SenseStateRule.collects(state(item)) {
+    public func resume() async {
+        for item in items { await reconcile(item) }
+    }
+
+    private func reconcile(_ item: SenseItem) async {
+        switch state(item) {
+        case .on:
             service.start(item)
+        case .off, .systemDenied, .serverUnsupported:
+            await service.stop(item)
+        case .serverPaused:
+            break
         }
     }
 
@@ -135,7 +144,7 @@ public final class SensesModel {
             await reloadStatus()
         }
         update(item) { $0.on = true }
-        service.start(item)
+        await reconcile(item)
         await loadDay(item)
     }
 
