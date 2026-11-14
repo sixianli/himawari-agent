@@ -19,7 +19,9 @@ public struct SecureEnclaveKeySigner: DeviceKeySigner {
 
     public func sign(_ message: Data, reason: String?) async throws -> Data {
         let context = LAContext()
+        #if !os(watchOS)
         if let reason { context.localizedReason = reason }
+        #endif
         let key = try store.load(role, context: role == .confirm ? context : nil)
         return try key.signature(for: message).rawRepresentation
     }
