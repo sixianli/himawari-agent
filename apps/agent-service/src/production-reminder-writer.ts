@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   ClockPort,
   DataClassification,
@@ -14,6 +15,7 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { classificationRank } from "@himawari-agent/application";
+import { MACHINE_STRING_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
 import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
@@ -37,6 +39,22 @@ const REMINDER_IMPORTANCE = 500;
 const MAXIMUM_TEXT = 500;
 const LISTED = 20;
 const CEILING_SCAN_LIMIT = 200;
+const MEMORY_ID_PREFIX = "memory:reminder:";
+const REMINDER_ID_PREFIX = `reminder:${MEMORY_ID_PREFIX}`;
+
+const SHORTENED_KEY = /\.[0-9a-f]{64}$/u;
+
+function reminderKey(key: string): string {
+  if (
+    REMINDER_ID_PREFIX.length + key.length <= MACHINE_STRING_MAX_LENGTH &&
+    !SHORTENED_KEY.test(key)
+  )
+    return key;
+  const digest = createHash("sha256").update(key, "utf8").digest("hex");
+  const kept = MACHINE_STRING_MAX_LENGTH - REMINDER_ID_PREFIX.length - digest.length - 1;
+  return `${key.slice(0, kept)}.${digest}`;
+}
+
 const LIST_WINDOW_MS = 2 * 366 * 24 * 3_600_000;
 const SET_ARGUMENTS = ["text", "due", "repeat"];
 const CANCEL_ARGUMENTS = ["reminderId"];
@@ -162,7 +180,8 @@ export class ProductionReminderWriter {
     readonly repeat: "none" | "yearly";
     readonly sourceThreadId?: string | null;
   }): Promise<CreatedReminder> {
-    const memoryId = `memory:reminder:${input.key}` as MemoryId;
+    const key = reminderKey(input.key);
+    const memoryId = `${MEMORY_ID_PREFIX}${key}` as MemoryId;
     const reminderId = `reminder:${memoryId}`;
     const existing = await this.#options.reminders.read(reminderId);
     if (
@@ -188,7 +207,7 @@ export class ProductionReminderWriter {
     let text = contentRef ? await this.#readText(contentRef) : undefined;
     if (contentRef === undefined) {
       text = (input.text ?? "").trim();
-      contentRef = `memory-content:reminder:${input.key}`;
+      contentRef = `memory-content:reminder:${key}`;
     }
     if (text === undefined || text.trim().length === 0 || text.length > MAXIMUM_TEXT)
       throw new ReminderInputError(
