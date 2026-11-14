@@ -33,8 +33,8 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet, DeterministicIdGenerator } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import { HOME_TEXT, ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
+import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import { protectedMemoryCandidates } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
@@ -654,6 +654,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       remind,
       memoryRequest,
       memory,
+      control,
       push,
       sender,
       failures,
@@ -1011,6 +1012,31 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       source: { type: "rule", label: "日本入管局相关的邮件一律提醒" },
       actions: [{ action: "reconfirm" }, { action: "undo" }],
     });
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET classification = 'sensitive' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET classification = 'private' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET status = 'trashed' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE rule_book_rules SET source_memory_id = NULL WHERE rule_id = ?")
+        .run("owner:immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
   });
 
   it("shows unattended runs and failures without counting them, and never an empty sentence", async () => {

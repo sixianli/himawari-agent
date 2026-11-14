@@ -494,9 +494,36 @@ export class ProductionMemoryControl {
   }
 
   async rulesNeedingReview() {
-    return ((await this.options.ownerRules?.list()) ?? []).filter(
+    const rules = ((await this.options.ownerRules?.list()) ?? []).filter(
       ({ status }) => status === "needs_review",
     );
+    return Promise.all(
+      rules.map(async (rule) => ({
+        ...rule,
+        dataClassification: await this.#ruleClassification(rule.sourceMemoryId),
+      })),
+    );
+  }
+
+  async #ruleClassification(
+    sourceMemoryId: string | null,
+  ): Promise<ProductMemoryRecord["dataClassification"]> {
+    const { ownerId, agentId } = this.options.configuration;
+    const record = sourceMemoryId
+      ? await this.options.state.read(sourceMemoryId as MemoryId).catch(() => undefined)
+      : undefined;
+    if (
+      !record ||
+      record.ownerId !== ownerId ||
+      record.agentId !== agentId ||
+      record.status === "trashed" ||
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified"
+    )
+      return "sensitive";
+    return classificationRank(record.dataClassification) > classificationRank("private")
+      ? record.dataClassification
+      : "private";
   }
 
   async pendingRequests() {
