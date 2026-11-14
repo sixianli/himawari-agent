@@ -199,6 +199,14 @@ export function createRepo({ cwd, remote = "origin", env = process.env }) {
   };
 }
 
+function labelExists(body) {
+  try {
+    return (JSON.parse(body).errors ?? []).some((entry) => entry?.code === "already_exists");
+  } catch {
+    return false;
+  }
+}
+
 export function createGithub({ token, repository, request = fetch, sleep }) {
   assert(token, "MQ_TOKEN_REQUIRED");
   assert(/^[\w.-]+\/[\w.-]+$/u.test(repository ?? ""), "MQ_REPOSITORY_REQUIRED");
@@ -217,7 +225,10 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
     if (allow.includes(response.status)) return { status: response.status, data: null };
     const text = await response.text();
     if (!response.ok)
-      throw new Error(`MQ_GITHUB_${response.status} ${method} ${route} ${text.slice(0, 300)}`);
+      throw Object.assign(
+        new Error(`MQ_GITHUB_${response.status} ${method} ${route} ${text.slice(0, 300)}`),
+        { status: response.status, body: text },
+      );
     return { status: response.status, data: text ? JSON.parse(text) : null };
   };
   const get = async (route) => (await call("GET", route)).data;
@@ -311,7 +322,7 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
       try {
         await call("POST", "/labels", { name: label, color: "b60205" });
       } catch (error) {
-        if (!/^MQ_GITHUB_422 [\s\S]*"already_exists"/u.test(error.message)) throw error;
+        if (!(error.status === 422 && labelExists(error.body))) throw error;
       }
       await call("POST", `/issues/${number}/labels`, { labels: [label] });
     },
@@ -388,6 +399,15 @@ export async function processQueue({
     if (state.candidate) repo.deleteBranch(state.candidate.branch);
     state = { ...state, stopped: { reason, at: at() } };
   };
+  const undecidedDrop = (reason) => {
+    const undecided = state.undecided + 1;
+    drop(reason);
+    state = { ...state, undecided };
+    if (undecided >= undecidedLimit)
+      stop(
+        `候选的完整 CI 连续 ${undecided} 次没有给出成功或失败的结论（最近一次：${reason}），像是 CI 本身出了问题`,
+      );
+  };
   const remainingGroups = (candidate) =>
     candidate.fromGroup ? state.groups.slice(1) : state.groups;
 
@@ -430,12 +450,11 @@ export async function processQueue({
       expected = after;
     }
     repo.deleteBranch(candidate.branch);
-    state = { ...state, candidate: null, groups: remainingGroups(candidate), undecided: 0 };
+    state = { ...state, candidate: null, groups: remainingGroups(candidate) };
   };
 
   const failCandidate = async (candidate, run) => {
     repo.deleteBranch(candidate.branch);
-    state = { ...state, undecided: 0 };
     const rest = remainingGroups(candidate);
     if (candidate.prs.length === 1) {
       await eject(candidate.prs[0].number, `它和当前 main 合在一起后完整 CI 没过：${run.url}`);
@@ -452,7 +471,7 @@ export async function processQueue({
     const main = repo.fetchMain();
     const run = await github.findRun(candidate.branch, candidate.sha);
     if (!run) {
-      if (now() - Date.parse(candidate.createdAt) > runGraceMs) drop("run-missing");
+      if (now() - Date.parse(candidate.createdAt) > runGraceMs) undecidedDrop("run-missing");
       else log(`MQ_WAIT_RUN ${candidate.branch}`);
       return;
     }
@@ -464,23 +483,19 @@ export async function processQueue({
       }
       if (now() - Date.parse(candidate.createdAt) > candidateTimeoutMs) {
         await github.cancel(run.id);
-        return drop("timeout");
+        return undecidedDrop(`timeout ${run.url}`);
       }
       log(`MQ_WAIT_RUN ${candidate.branch} ${run.url}`);
       return;
     }
     const required = await github.requiredJobConclusion(run);
-    if (run.conclusion === "success" && required === "success")
-      return mergeCandidate(state.candidate, run, main);
-    if (run.conclusion === "failure" && required === "failure")
-      return failCandidate(state.candidate, run);
-    const undecided = state.undecided + 1;
-    drop(`ci-not-judged run=${run.conclusion} required=${required}`);
-    state = { ...state, undecided };
-    if (undecided >= undecidedLimit)
-      stop(
-        `候选的完整 CI 连续 ${undecided} 次没有给出成功或失败的结论（最近一次 ${run.url}），像是 CI 本身出了问题`,
-      );
+    const passed = run.conclusion === "success" && required === "success";
+    const failed = run.conclusion === "failure" && required === "failure";
+    if (!passed && !failed)
+      return undecidedDrop(`ci-not-judged run=${run.conclusion} required=${required} ${run.url}`);
+    state = { ...state, undecided: 0 };
+    if (passed) return mergeCandidate(state.candidate, run, main);
+    return failCandidate(state.candidate, run);
   };
 
   const readiness = async (number, main) => {
@@ -501,8 +516,9 @@ export async function processQueue({
       return { eject: `PR 最新提交上的 ci/required 没过：${check.url}` };
     const review = checkReview(number, head, main);
     if (review.broken) {
-      log(`MQ_REVIEW_CHECK_BROKEN #${number} ${review.output.split("\n")[0] ?? ""}`);
-      return { skip: true };
+      const first = (review.output.split("\n")[0] ?? "").slice(0, 200);
+      log(`MQ_REVIEW_CHECK_BROKEN #${number} ${first}`);
+      return { skip: true, halt: true };
     }
     if (!review.ok)
       return {
@@ -537,6 +553,7 @@ export async function processQueue({
       const verdict = await readiness(number, main);
       if (verdict.eject) await eject(number, verdict.eject);
       if (verdict.ready) ready.push(verdict.ready);
+      if (verdict.halt) break;
     }
     if (ready.length === 0) {
       if (fromGroup) state = { ...state, groups: groups.slice(1) };

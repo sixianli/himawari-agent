@@ -477,20 +477,53 @@ describe("合并队列 [ADR-0268]", () => {
     expect((await step(env)).undecided).toBe(0);
   });
 
-  it("复核检查本身卡住或被杀时这一轮跳过 PR，不移出", async () => {
+  it("CI 给出结论后计数清零，即使随后因 main 被改而丢掉候选；找不到运行也计入没有结论", async () => {
     const env = setup();
     env.fake.addPr(1, { "c.txt": "c\n" });
+    await step(env);
+    env.fake.finish("startup_failure", null);
+    expect((await step(env)).undecided).toBe(1);
+    env.fake.finish("success");
+    git(env.scratch, ["fetch", "--quiet", "origin"]);
+    git(env.scratch, ["checkout", "--quiet", "-B", "side", "origin/main"]);
+    write(env.scratch, { "z.txt": "z\n" });
+    git(env.scratch, ["add", "-A"]);
+    git(env.scratch, ["commit", "--quiet", "-m", "side"]);
+    git(env.scratch, ["push", "--quiet", "origin", "HEAD:main"]);
+    let state = await step(env);
+    expect(state.undecided).toBe(0);
+    expect(env.fake.calls.some((c) => c[0] === "merge")).toBe(false);
+    for (let round = 1; round <= 3; round += 1) {
+      env.fake.runs = [];
+      const created = Date.parse(state.candidate.createdAt);
+      state = await step(env, { now: () => created + runGraceMs + 1 });
+      expect(state.undecided).toBe(round);
+    }
+    expect(state.stopped.reason).toContain("run-missing");
+  });
+
+  it("复核检查本身卡住或被杀时这一轮跳过 PR，不移出，也不再检查后面的 PR", async () => {
+    const env = setup();
+    env.fake.addPr(1, { "c.txt": "c\n" });
+    env.fake.addPr(2, { "d.txt": "d\n" });
+    const checked = [];
     const state = await step(env, {
-      checkReview: () => ({ ok: false, broken: true, output: "" }),
+      checkReview: (number) => {
+        checked.push(number);
+        return { ok: false, broken: true, output: "x".repeat(5000) };
+      },
     });
+    expect(checked).toEqual([1]);
     expect(state.candidate).toBeNull();
     expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([queueLabel]);
     expect(env.fake.calls.some((c) => c[0] === "comment")).toBe(false);
   });
 
-  it("状态里没有的 mq 分支（上次推了分支却没存下状态）在建新候选前删掉", async () => {
+  it("状态里没有的 mq 分支（上次推了分支却没存下状态）在建新候选前删掉，不建候选时不动", async () => {
     const env = setup();
     git(env.origin, ["update-ref", "refs/heads/mq/orphan", mainSha(env.origin)]);
+    await step(env);
+    expect(remoteBranches(env.origin)).toContain("refs/heads/mq/orphan");
     env.fake.addPr(1, { "c.txt": "c\n" });
     const state = await step(env);
     const branches = remoteBranches(env.origin).filter((b) => b.startsWith("refs/heads/mq/"));
@@ -593,7 +626,12 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
       seen.push([init.method, url.replace(/^.*\/repos\/[^/]+\/[^/]+/u, ""), init.body]);
       const creating = url.endsWith("/repos/sixianli/himawari-agent/labels");
       const status = creating ? 422 : 200;
-      const body = creating ? JSON.stringify({ errors: [{ code: labelError }] }) : "[]";
+      const body = creating
+        ? JSON.stringify({
+            message: "m".repeat(400),
+            errors: [{ resource: "Label", code: labelError }],
+          })
+        : "[]";
       return { ok: status === 200, status, text: async () => body };
     };
     const github = createGithub({ token: "t", repository, request });
