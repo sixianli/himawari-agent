@@ -2153,10 +2153,15 @@ export async function startTenantRuntime(
               cleared: reports.filter(({ outcome }) => outcome === "cleared").length,
             }),
           onPrereview: (result) => {
-            if (result.attempted > 0 || result.failures.length > 0)
+            if (
+              result.attempted > 0 ||
+              result.failures.length > 0 ||
+              result.skippedClassification > 0
+            )
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
                 event: "proactive.prereviewed",
+                skippedClassification: result.skippedClassification,
                 attempted: result.attempted,
                 recorded: result.recorded,
                 failed: result.failures.length,

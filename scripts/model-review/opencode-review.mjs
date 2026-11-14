@@ -1522,7 +1522,9 @@ export function previousProblem({ records, round, head, previous, isAncestor, lo
     return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${use}`;
   }
   const problem = joins(previous);
-  return problem ? `REVIEW_PREVIOUS_REFUSED ${problem}` : null;
+  if (!problem) return null;
+  const advice = sameRound.length > 0 ? problem.replace(/ use=.*$/, " use=new-round") : problem;
+  return `REVIEW_PREVIOUS_REFUSED ${advice}`;
 }
 
 function gitStatus(args, cwd) {

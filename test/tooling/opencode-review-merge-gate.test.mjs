@@ -1806,6 +1806,9 @@ describe("opencode review merge gate", () => {
       expect(f.ask(undefined, { records: stuck })).toBe(
         "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=new-round",
       );
+      expect(f.ask(f.fixed, { records: stuck })).toMatch(
+        /^REVIEW_PREVIOUS_REFUSED chain-already-broken .* use=new-round$/,
+      );
       const split = [...done, ok(2, f.ledgerCommit, glm, { previous: f.reviewed })];
       expect(f.ask(f.fixed, { records: split })).toBe(
         "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=new-round",
