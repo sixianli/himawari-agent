@@ -1873,11 +1873,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     if (
       !descriptor ||
       descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
       !descriptor.allowedDataClassifications.includes("private")
     )
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
-        "must name a configured generation model that accepts private data",
+        "must name a configured openai-completions generation model that accepts private data",
       );
   }
   const realEval = runPolicy?.realEval;
