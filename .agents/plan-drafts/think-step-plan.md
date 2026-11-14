@@ -32,10 +32,10 @@
 ### 前提（每条写了来源，我自己打开读过）
 
 1. 提议箱已有两类处理方，一步动作和“去办一件事”都能登记：`apps/agent-service/src/production-proposals.ts` 的 `ProposalActionHandler`（接口里的 `verify`、`execute`、`readBack`、`undo`），合并的提交 `8fc09d2b3`（PR 534）、`e2af70416`（PR 533）。
-2. 现在没有任何来源调用 `proposeReminderReschedule`、`proposeReminderCreate`、`proposeTaskRun`。来源：这三个函数在 `apps/agent-service/src` 里只被定义和被测试引用，PR 说明写明“还没有来源调用”。（用 `grep -rn "proposeTaskRun" apps/agent-service/src` 可复现，结果只有定义文件。）
+2. 现在没有任何来源调用 `proposeReminderReschedule`、`proposeReminderCreate`、`proposeTaskRun`。来源：这三个函数在 `apps/agent-service/src` 里只被定义和被测试引用，PR 534、533 的说明里写了“这一步还没有来源调用提议入口”（GitHub，不在仓库文件里）。（用 `grep -rn "proposeTaskRun" apps/agent-service/src` 可复现，结果只有定义文件。）
 3. 后台模型调用的现有写法是“一段提示进、一段文字出”，不带工具：`apps/agent-service/src/production-model-composition.ts:531`（`async prepare({ invocationId, prompt, deadlineAt, dataClassification })`）。
 4. 应用层有“定时、外部事件也能当触发来源”的类型，但生产服务没有接线：`packages/application/src/services/unified-trigger-ingestion-service.ts:13`（`export type UnifiedTriggerSource = "user_message" | "schedule" | "external_event";`），而 `grep -rn "trigger.admit\|TriggerAdmissionPort" apps/agent-service/src` 没有结果。所以“带工具的后台想一想”需要先新做一条不由主人消息开始的运行路径，这是大工程，第一版不做。
-5. 是非题和多选题的判断已经有 Jev（TypeSafe AI 的决策接口）的现成调用写法：`packages/platform-node/src/memory-import-duplicate-decision.ts:81`（`POST ${base}/decisions`，经 Vercel AI Gateway，带 `zeroDataRetention: true`，同文件第 64 行）；权限审批用的是 `packages/platform-node/src/owner-intent-decision.ts:84`；说名字是不是叫她用的是 `packages/platform-node/src/voice-addressee-decision.ts:99`。Jev 的回答是“是”的概率；TypeSafe 的建议是不低于 0.7 算是、不高于 0.3 算不是，中间当作单独一种结果（`docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md:57` 引的 <https://docs.typesafe.ai/confidence.md>）。Andy 在 11-14 定：是非和选一类判断优先用 Jev。
+5. 是非题和多选题的判断已经有 Jev（TypeSafe AI 的决策接口）的现成调用写法：`packages/platform-node/src/memory-import-duplicate-decision.ts:81`（`POST ${base}/decisions`，经 Vercel AI Gateway，带 `zeroDataRetention: true`，同文件第 64 行）；权限审批用的是 `packages/platform-node/src/owner-intent-decision.ts:84`；说名字是不是叫她用的是 `packages/platform-node/src/voice-addressee-decision.ts:99`。Jev 的回答是“是”的概率；TypeSafe 的建议是不低于 0.7 算是、不高于 0.3 算不是，中间当作单独一种结果（`docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md:58` 引的 <https://docs.typesafe.ai/confidence.md>）。Andy 在 11-14 定：是非和选一类判断优先用 Jev。
 6. 同意后开的运行，触发来源是 `external_event`；这类运行里**不管读没读外部内容**，授权这一步都会把它标成“有外来内容”：`apps/agent-service/src/owner-scope-authorization.ts:249`（`if (source.sourceType === "external_event") await marks.mark(invocation.runId, "external_event");`）。内置规则拒绝其中的写操作：`packages/application/src/rules/action-rules.ts:238`（`action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts` → 拒绝）。
 7. 触发来源只有三种，加新的要重建触发表：`packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql:133`（`CHECK (source_type IN ('user_message', 'schedule', 'external_event'))`）。
 8. 首页“正在做的”取的是来源不是 `user_message` 的运行：`packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts:958`（`AND t.source_type != 'user_message'`）。
@@ -61,7 +61,6 @@
 
 ### 模型花费预估（估的，没实测）
 
-没有仓库里的价格表，下面用最近的 DeepSeek 复核账来折算：一轮复核约 19 万输入、1 万多输出、几百万缓存读取，花 0.07 到 0.12 美元。折算：
 价格有仓库里的出处：Jev 在 Vercel 上叫 `typesafe-ai/jev`，每百万输入 token 0.042 美元，输出不收钱（`docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md:56`）；DeepSeek V4 Flash 的目录价是每百万 token 输入 0.06、输出 0.18、缓存读取 0.015 美元（`docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md` 的价格表，是 2026-09-07 读公开目录的观察值，当时的价，实际账单可能不同）。
 - 第一次判断（Jev）：输入约 3 千 token，每次约 0.0001 美元。
 - 第二次判断（DeepSeek 一次生成）：输入约 6 千、输出约 500，再加思考 token 按 2 千算，每次约 0.001 美元。
