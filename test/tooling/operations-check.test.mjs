@@ -110,6 +110,27 @@ describe("operations check", () => {
     ]);
   });
 
+  it("[第11批] counts a Swift call as a caller but not generated or demo Swift", () => {
+    const withoutCaller = { ...complete, "apps/control-center/src/page.ts": `send("demo.read");` };
+    const swift = (file, text) => ({ ...withoutCaller, [file]: text });
+    expect(checkOperations(tree(withoutCaller)).errors).toEqual([
+      "OPERATION_INCOMPLETE demo.write 缺：调用方",
+    ]);
+    expect(
+      checkOperations(
+        tree(swift("clients/apple/Sources/HimawariManage/Settings/Store.swift", `gateway.command(.v2, "demo.write")`)),
+      ).errors,
+    ).toEqual([]);
+    for (const file of [
+      "clients/apple/Sources/HimawariManage/Generated/Table.swift",
+      "clients/apple/Sources/HimawariManage/ManageDemo.swift",
+    ]) {
+      expect(checkOperations(tree(swift(file, `"demo.write"`))).errors).toEqual([
+        "OPERATION_INCOMPLETE demo.write 缺：调用方",
+      ]);
+    }
+  });
+
   it("[P1-4] does not count a fixture as a test", () => {
     const files = {
       ...complete,
