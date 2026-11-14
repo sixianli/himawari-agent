@@ -63,7 +63,7 @@ date: "2026-11-02"
 - 已经通过的 ADR 正文和归档文档：历史记录不重写，在这里记“旧叫法 → 新叫法”即可。
 - `docs/product-vision.md`：只有 Andy 能改愿景正文。v2.3（[ADR 0153](adr/0153-adopt-product-vision-v2-3.md)）已把“决策账本”改称“决策记录”；愿景里其余旧写法（例如附录里记录旧版改动的文字）不改，所以这个文件不在检查范围内。
 - 已冻结的设计原型（`docs/assets/`）、已封存的 Runbook（`docs/runbooks/`）和已做完的实施计划（`docs/execution/plans/`）：原型是定稿截图的源文件，Runbook 改了文字要重新封存，计划是做完的任务清单，不再维护。
-- 发给模型的提示词和工具结果文字：已发出的内容只能往后追加（见 [prompt-prefix.md](../.claude/rules/prompt-prefix.md)），不为改名而改动。
+- 发给模型的提示词和工具结果文字：已发出的内容只能往后追加（见 [prompt-prefix.md](../.agents/instructions/prompt-prefix.md)），不为改名而改动。
 
 [↑ 回到阅读导航](#contents)
 

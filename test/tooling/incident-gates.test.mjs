@@ -1,8 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkIncidentGates, INCIDENT_LIST } from "../../scripts/check-incident-gates.mjs";
+import {
+  checkIncidentGates,
+  INCIDENT_LIST,
+  openIncidentLines,
+} from "../../scripts/check-incident-gates.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -96,6 +101,33 @@ describe("incident and gate list check", () => {
       "I-02",
       "I-03",
     ]);
+  });
+
+  it("lists only incidents that still lack a gate or wait on Andy, one short line each", () => {
+    const longSymptom = `${"很长的现象".repeat(40)}。第二句不显示`;
+    const root = fixture([
+      row({}),
+      row({ id: "I-02", state: "缺门槛", gate: "无", symptom: "第一句。第二句" }),
+      row({ id: "I-03", state: "仓库外", gate: "替代做法" }),
+      row({ id: "I-04", state: "等 Andy", gate: "待定", symptom: longSymptom }),
+    ]);
+    const lines = openIncidentLines(checkIncidentGates({ root }).incidents);
+    expect(lines[0]).toBe("I-02 | 缺门槛 | 2026-10-28 | 第一句。");
+    expect(lines[1].startsWith("I-04 | 等 Andy | 2026-10-28 | 很长的现象")).toBe(true);
+    expect(lines[1].endsWith("…")).toBe(true);
+    expect(lines[1]).not.toContain("第二句");
+    expect(lines).toHaveLength(2);
+  });
+
+  it("prints the repository's open incidents from the command line", () => {
+    const output = execFileSync("node", ["scripts/check-incident-gates.mjs", "--open"], {
+      encoding: "utf8",
+    });
+    const { incidents } = checkIncidentGates();
+    const open = incidents.filter((incident) => ["缺门槛", "等 Andy"].includes(incident.state));
+    const rows = output.split("\n").filter((line) => /^I-\d/.test(line));
+    expect(rows.map((line) => line.split(" | ")[0])).toEqual(open.map((incident) => incident.id));
+    expect(output).toContain(`INCIDENT_OPEN count=${open.length} total=${incidents.length}`);
   });
 
   it("checks the repository's own list", () => {

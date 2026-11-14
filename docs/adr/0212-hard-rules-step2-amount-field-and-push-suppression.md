@@ -40,7 +40,7 @@ date: "2026-11-11"
 4. `rule_book_rules` 表没有 `gate` 列，闸门由代码按规则 id 决定：`packages/persistence-sqlite/src/migrations/0086_rule_book.sql`。
 5. 邮件判断提示词在 `packages/prompt-catalog/src/mail.ts`，有 golden 快照，检查是 `npm run check:prompt-catalog`。
 6. `AttentionPolicyService` 的静默窗口在生产里没有人用：除测试和夹具外，没有任何生产代码构造 `AttentionPolicyService`（`grep -rn "AttentionPolicyService("` 在非测试代码里没有结果）；四处测试和夹具把静默窗口设成 `null`，一个单元测试打开过它。
-7. 发给模型的内容只能往后追加：`.claude/rules/prompt-prefix.md`；后台调用是“固定的在前、会变的在后”。
+7. 发给模型的内容只能往后追加：`.agents/instructions/prompt-prefix.md`；后台调用是“固定的在前、会变的在后”。
 
 [返回阅读导航](#contents)
 
@@ -107,6 +107,6 @@ date: "2026-11-11"
 
 - [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)：规则手册、字段目录、裁判。
 - [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md)：决策记录。
-- [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 
 [返回阅读导航](#contents)

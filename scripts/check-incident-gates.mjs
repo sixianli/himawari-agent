@@ -7,6 +7,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 export const INCIDENT_LIST = "docs/incidents-and-gates.md";
 export const INCIDENT_STATES = Object.freeze(["已落门槛", "缺门槛", "等 Andy", "仓库外"]);
 const HARD_GATE_STATES = new Set(["已落门槛", "等 Andy", "仓库外"]);
+const OPEN_STATES = new Set(["缺门槛", "等 Andy"]);
+const SHORT_SYMPTOM_LENGTH = 80;
 const COLUMNS = ["编号", "日期", "现象", "根因", "次数", "门槛（文件或命令）", "状态"];
 const REPOSITORY_PATH = /`((?:\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_.-]+)`/g;
 
@@ -73,9 +75,31 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
   return { incidents, errors };
 }
 
+function firstSentence(text) {
+  const end = text.search(/[。！？]/);
+  const sentence = end < 0 ? text : text.slice(0, end + 1);
+  return sentence.length > SHORT_SYMPTOM_LENGTH
+    ? `${sentence.slice(0, SHORT_SYMPTOM_LENGTH)}…`
+    : sentence;
+}
+
+export function openIncidentLines(incidents) {
+  return incidents
+    .filter((incident) => OPEN_STATES.has(incident.state))
+    .map(
+      (incident) =>
+        `${incident.id} | ${incident.state} | ${incident.date} | ${firstSentence(incident.symptom ?? "")}`,
+    );
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { incidents, errors } = checkIncidentGates();
   for (const error of errors) process.stderr.write(`${error}\n`);
+  if (process.argv.includes("--open")) {
+    const lines = openIncidentLines(incidents);
+    for (const line of lines) process.stdout.write(`${line}\n`);
+    process.stdout.write(`INCIDENT_OPEN count=${lines.length} total=${incidents.length}\n`);
+  }
   process.stdout.write(
     `INCIDENT_GATES ${errors.length === 0 ? "passed" : "failed"} incidents=${incidents.length} errors=${errors.length}\n`,
   );

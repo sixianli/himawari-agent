@@ -37,7 +37,7 @@ date: "2026-11-11"
 2. [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 合并后，规则类记忆的**文字**仍然占档案块的字数。PR 366 说明的原话：“规则类记忆**文字**的 2000 字预算（清单 M-3）没动”。Andy 在 2026-11-11 10:44 JST 的决策卡上选了“366 合并后照清单做”，也就是说，规则继续先占字数，被挤掉的规则编号同样记录。
 3. 决策记录里已有 `context_truncation` 这一类，`outcome` 只允许 `truncated`，`reason_code` 是 1 到 64 个字符的任意文字，`inputs` 是一个 JSON 对象（`packages/persistence-sqlite/src/migrations/0087_rule_book_memory_link.sql`）。所以加新的原因码和新的输入字段，都不用改表。
 4. “每天打分”页把 `context_truncation` 归进 `other` 组（`packages/application/src/services/daily-review.ts` 的 `ledgerGroup`）。这一组折叠显示，不占每日预算。
-5. 档案块放在每轮的最后一条用户消息里，不在按对话冻结的系统提示里（`.claude/rules/prompt-prefix.md` 第 2 条：每轮会变的内容只放在最后一条用户消息里）。
+5. 档案块放在每轮的最后一条用户消息里，不在按对话冻结的系统提示里（`.agents/instructions/prompt-prefix.md` 第 2 条：每轮会变的内容只放在最后一条用户消息里）。
 
 [返回阅读导航](#contents)
 

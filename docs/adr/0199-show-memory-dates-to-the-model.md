@@ -39,7 +39,7 @@ Andy 问过：搜出来的记忆交给模型时，模型怎么知道这条记忆
 4. 生效时间段由记忆提取填写，`validFrom` 是 `YYYY-MM-DD`：`packages/prompt-catalog/src/memory.ts:26`，“validFrom：如果这件事从某个日期开始才成立（例如“下个月搬到杭州”），按 messageSentAt 换算成 YYYY-MM-DD，否则填 null。”
 5. 资料块只出现在最后一条用户消息里：本改动之前的 `packages/runtime-pi/src/pi-runtime-adapter.ts:627-628`，`contextBlockContent` 把每个块拼成 `${contextBlockMarker(block)}\n${block.content}`，由 `turnPrompt` 放进本轮的 `<himawari-context>`。
 6. 档案每行原来只写记忆正文：本改动之前的 `packages/application/src/services/owner-profile-service.ts:296`，`` ...lines.map(({ text }) => `- ${text}`), ``。
-7. 发给模型的内容只能追加，每轮会变的内容只放最后一条消息：`.claude/rules/prompt-prefix.md` 第 2 条，“每轮都会变的内容只放在最后一条用户消息里。”
+7. 发给模型的内容只能追加，每轮会变的内容只放最后一条消息：`.agents/instructions/prompt-prefix.md` 第 2 条，“每轮都会变的内容只放在最后一条用户消息里。”
 
 <a id="decision"></a>
 

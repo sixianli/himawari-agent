@@ -45,7 +45,7 @@ date: "2026-11-12"
 
 ## 决定
 
-1. 传给 Pi 模型层的 `maxRetries` 从 0 改成 2，`maxRetryDelayMs` 设为 10 秒。重试只重发同一份请求体，失败的那次不进历史，不影响 KV 缓存（[prompt-prefix 规则](../../.claude/rules/prompt-prefix.md)第 4 条）。服务方要求等超过 10 秒时立刻失败，总等待不超过约 22 秒。
+1. 传给 Pi 模型层的 `maxRetries` 从 0 改成 2，`maxRetryDelayMs` 设为 10 秒。重试只重发同一份请求体，失败的那次不进历史，不影响 KV 缓存（[prompt-prefix 规则](../../.agents/instructions/prompt-prefix.md)第 4 条）。服务方要求等超过 10 秒时立刻失败，总等待不超过约 22 秒。
 2. Pi 的自动重试仍然关着，决定 7 的前提不变。
 3. Vercel 网关的请求观察器的单次请求规则放宽为：上一次得到 408、409、429 或 5xx 的拒绝（没有生成内容，不记用量）时允许重发，最多重发 2 次；其他非 2xx（如 400、401）、发过一次成功响应后再发，仍然报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`；网络错误之后再发，直接重抛原来的错误，不再发请求。
 4. 聊天请求和压缩摘要请求里，每个被拒绝的响应写一行服务日志 `model.request_rejected`：运行号、状态码、`retry-after`、`x-should-retry`、服务方主机名（不含路径、密钥和内容；头部文字截到 128 个字符）。这是这次查不到“谁返回的 429、等多久”的缺口。
