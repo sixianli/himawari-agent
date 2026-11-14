@@ -1,5 +1,5 @@
 import path from "node:path";
-import { DEFAULT_SEARCH_ASK } from "@himawari-agent/application";
+import { DEFAULT_SEARCH_ASK, perceptionSearchEvidenceText } from "@himawari-agent/application";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProductionSearchControl } from "../../apps/agent-service/src/production-search.ts";
@@ -11,7 +11,7 @@ import {
   pairAndConfirm,
   removeDeviceHarnessDirectories,
 } from "../fixtures/device-api-harness.ts";
-import { ingest, perceptionScope, utterance } from "../fixtures/perception-test-client.ts";
+import { ingest, perceptionScope, utterance, visit } from "../fixtures/perception-test-client.ts";
 
 afterEach(removeDeviceHarnessDirectories);
 
@@ -40,8 +40,10 @@ function control(h: Harness) {
         const records = await h.perception.search({ scope: perceptionScope, query, limit });
         const rows = await Promise.all(
           records.map(async (record) => {
-            const text =
+            const spoken =
               record.contentRef === null ? undefined : await h.readText(record.contentRef);
+            const written = perceptionSearchEvidenceText(record.type, record.evidence);
+            const text = spoken ?? (written === "" ? undefined : written);
             return text === undefined
               ? []
               : [
@@ -99,5 +101,49 @@ describe("perception literal search", () => {
     expect(deleted).toBe(true);
     expect(indexRows(h, spoken.id)).toBe(0);
     expect(await ask(h, "我对什么过敏")).toMatchObject({ state: "not_found", basis: [] });
+  });
+
+  it("finds a record by the place name in its evidence and answers with that name", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const stop = visit(h, -5);
+    await ingest(h, client, [stop, utterance(h, "今天下午开会讨论预算", { seconds: -6 })]);
+
+    const found = await ask(h, "Tokyo Station");
+    expect(found).toMatchObject({ state: "answered", answer: "Tokyo Station" });
+    expect(found.basis[0]).toMatchObject({ kind: "perception", recordId: stop.id });
+    expect(await ask(h, "Osaka Castle")).toMatchObject({ state: "not_found", basis: [] });
+  });
+
+  it("rebuilds records whose index was built with another version", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const spoken = utterance(h, "我对花生过敏", { seconds: -8 });
+    const stop = visit(h, -7);
+    const third = utterance(h, "周五要去京都出差", { seconds: -6 });
+    await ingest(h, client, [spoken, stop, third]);
+    expect((await ask(h, "我对什么过敏")).state).toBe("answered");
+
+    const store = h.repository.perception();
+    for (const id of [spoken.id, stop.id, third.id])
+      await store.replaceSearchTerms({
+        ...perceptionScope,
+        recordId: id,
+        version: "old",
+        terms: [],
+      });
+    expect(await ask(h, "我对什么过敏")).toMatchObject({ state: "not_found" });
+    expect(
+      await store.listStaleSearchRecords({
+        ...perceptionScope,
+        version: "perception-search-test:rules:2000",
+        limit: 10,
+      }),
+    ).toHaveLength(3);
+
+    expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(3);
+    expect((await ask(h, "我对什么过敏")).state).toBe("answered");
+    expect((await ask(h, "Tokyo Station")).state).toBe("answered");
+    expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(0);
   });
 });

@@ -390,6 +390,10 @@ export class SqlitePerceptionOperations {
       "INSERT OR IGNORE INTO perception_search_terms (record_id, term) VALUES (?, ?)",
     );
     for (const term of record.searchTerms ?? []) addTerm.run(record.id, term);
+    if (record.searchVersion !== undefined)
+      this.database
+        .prepare("INSERT INTO perception_search_index_state (record_id, version) VALUES (?, ?)")
+        .run(record.id, record.searchVersion);
     if (episodeId === null) return;
     this.database
       .prepare(
@@ -664,6 +668,55 @@ export class SqlitePerceptionOperations {
         limit: input.limit,
       }) as RecordRow[];
     return Object.freeze(rows.map(toRecord));
+  }
+
+  protected op_listStaleSearchRecords(
+    input: Input<"listStaleSearchRecords">,
+  ): readonly PerceptionRecord[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000)
+      this.fail("PORT_INVALID_OPERATION", "Perception search rebuild size is invalid");
+    const rows = this.database
+      .prepare(
+        `SELECT ${recordColumns}
+           FROM perception_records
+           LEFT JOIN perception_search_index_state s ON s.record_id = perception_records.id
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'active'
+            AND (s.record_id IS NULL OR s.version <> @version)
+          ORDER BY occurred_at_ms DESC, perception_records.id LIMIT @limit`,
+      )
+      .all({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        version: input.version,
+        limit: input.limit,
+      }) as RecordRow[];
+    return Object.freeze(rows.map(toRecord));
+  }
+
+  protected op_replaceSearchTerms(input: Input<"replaceSearchTerms">): boolean {
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `SELECT 1 AS found FROM perception_records
+            WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'active'`,
+        )
+        .get(input.recordId, input.ownerId, input.agentId);
+      if (!row) return false;
+      this.database
+        .prepare("DELETE FROM perception_search_terms WHERE record_id = ?")
+        .run(input.recordId);
+      const addTerm = this.database.prepare(
+        "INSERT OR IGNORE INTO perception_search_terms (record_id, term) VALUES (?, ?)",
+      );
+      for (const term of input.terms) addTerm.run(input.recordId, term);
+      this.database
+        .prepare(
+          `INSERT INTO perception_search_index_state (record_id, version) VALUES (?, ?)
+             ON CONFLICT(record_id) DO UPDATE SET version = excluded.version`,
+        )
+        .run(input.recordId, input.version);
+      return true;
+    })();
   }
 
   protected op_setRecordStatus(input: Input<"setRecordStatus">): boolean {

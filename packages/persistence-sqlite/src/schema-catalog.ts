@@ -860,6 +860,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its record; removed when the record is deleted; never exported",
   ),
   entry(
+    "perception_search_index_state",
+    "PerceptionStorePort",
+    "which search-key version each perception record's search words were built with, so records built with an older key or an older rule are found and rebuilt",
+    "metadata_only",
+    "cascade with its record; removed when the record is deleted; never exported",
+  ),
+  entry(
     "device_mirror_items",
     "PerceptionStorePort",
     "the server copy of calendar events, reminders, contacts and home accessories from one device, one row per item with its version",

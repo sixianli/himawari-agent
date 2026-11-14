@@ -1113,17 +1113,23 @@ it("reads the search answer limits from runPolicy.searchAsk and rejects values o
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk,
   ).toBeUndefined();
-  raw["runPolicy"] = { ...policy, searchAsk: { askLimit: 8, basisLimit: 3 } };
+  raw["runPolicy"] = {
+    ...policy,
+    searchAsk: { askLimit: 8, basisLimit: 3, indexTermLimit: 300 },
+  };
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk).toEqual({
     ...DEFAULT_SEARCH_ASK,
     askLimit: 8,
     basisLimit: 3,
+    indexTermLimit: 300,
   });
   for (const searchAsk of [
     { candidateLimit: 0 },
     { basisLimit: 11 },
     { minimumCoveragePercent: 101 },
     { answerCharacters: 1.5 },
+    { indexTermLimit: 0 },
+    { indexRebuildBatch: 1001 },
     { unknownSetting: 1 },
   ]) {
     raw["runPolicy"] = { ...policy, searchAsk };

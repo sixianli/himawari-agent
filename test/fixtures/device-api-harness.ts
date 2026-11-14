@@ -309,6 +309,15 @@ export async function harness(
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(stateRoot, "device-uploads"),
     searchIndex: {
+      version: "perception-search-test:rules:2000",
+      rebuildBatch: 2,
+      readText: async (contentRef) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+        if (!payload) return undefined;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await protector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
       document: (scope, text) =>
         searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
       query: (scope, text) =>

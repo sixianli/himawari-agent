@@ -28,6 +28,7 @@ import {
   PERCEPTION_RECORD_ID_PATTERN,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_RECORD_TYPES,
+  perceptionSearchEvidenceText,
   PERCEPTION_RETENTION_CONFIGURATION,
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
@@ -104,6 +105,9 @@ export interface PerceptionServiceOptions {
   }) => Promise<string>;
   readonly uploadDirectory: string;
   readonly searchIndex?: {
+    readonly version: string;
+    readonly rebuildBatch: number;
+    readonly readText: (contentRef: string) => Promise<string | undefined>;
     readonly document: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
     readonly query: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
   };
@@ -517,14 +521,22 @@ export class PerceptionService {
                   content: record.text,
                   dataClassification: record.input.dataClassification,
                 });
+          const indexText = [
+            record.text ?? "",
+            perceptionSearchEvidenceText(record.input.type, record.input.evidence),
+          ]
+            .filter((part) => part !== "")
+            .join(" ");
           const searchTerms =
-            record.text === null || known.has(record.input.id) || !this.#options.searchIndex
+            indexText === "" || known.has(record.input.id) || !this.#options.searchIndex
               ? undefined
-              : await this.#options.searchIndex.document(scope, record.text).catch(() => undefined);
+              : await this.#options.searchIndex.document(scope, indexText).catch(() => undefined);
           prepared.push({
             ...record.input,
             contentRef,
-            ...(searchTerms ? { searchTerms } : {}),
+            ...(searchTerms && this.#options.searchIndex
+              ? { searchTerms, searchVersion: this.#options.searchIndex.version }
+              : {}),
           });
         }
         return prepared.length === 0
@@ -613,12 +625,63 @@ export class PerceptionService {
     readonly limit: number;
   }) {
     const scope = this.#scope(input.scope);
+    await this.#ensureSearchIndex(scope);
     const terms = this.#options.searchIndex
       ? await this.#options.searchIndex.query(scope, input.query)
       : [];
     return terms.length === 0
       ? []
       : this.#options.store.searchRecords({ ...scope, terms, limit: input.limit });
+  }
+
+  #searchIndexReady = new Map<string, Promise<void>>();
+
+  #ensureSearchIndex(scope: PerceptionScope): Promise<void> {
+    const key = `${scope.ownerId}\n${scope.agentId}`;
+    const cached = this.#searchIndexReady.get(key);
+    if (cached) return cached;
+    const pending = this.rebuildSearchIndex(scope).then(
+      () => undefined,
+      (error: unknown) => {
+        this.#searchIndexReady.delete(key);
+        throw error;
+      },
+    );
+    this.#searchIndexReady.set(key, pending);
+    return pending;
+  }
+
+  async rebuildSearchIndex(scope: PerceptionScope): Promise<number> {
+    const index = this.#options.searchIndex;
+    if (!index) return 0;
+    const owned = this.#scope(scope);
+    let rebuilt = 0;
+    for (;;) {
+      const stale = await this.#options.store.listStaleSearchRecords({
+        ...owned,
+        version: index.version,
+        limit: index.rebuildBatch,
+      });
+      if (stale.length === 0) return rebuilt;
+      for (const record of stale) {
+        const text =
+          record.contentRef === null
+            ? ""
+            : await index.readText(record.contentRef).catch(() => undefined);
+        const indexText = [text ?? "", perceptionSearchEvidenceText(record.type, record.evidence)]
+          .filter((part) => part !== "")
+          .join(" ");
+        const terms =
+          indexText === "" ? [] : await index.document(owned, indexText).catch(() => []);
+        await this.#options.store.replaceSearchTerms({
+          ...owned,
+          recordId: record.id,
+          version: index.version,
+          terms,
+        });
+        rebuilt += 1;
+      }
+    }
   }
 
   async prune(scope: PerceptionScope) {

@@ -16,6 +16,8 @@ import {
   DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_SEARCH_INDEX_RULES,
+  perceptionSearchEvidenceText,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -1369,10 +1371,12 @@ export async function createProductionHttpComposition(
             });
             const rows = await Promise.all(
               found.map(async (record) => {
-                const text =
+                const spoken =
                   record.contentRef === null
                     ? undefined
                     : await readPerceptionText(record.contentRef).catch(() => undefined);
+                const written = perceptionSearchEvidenceText(record.type, record.evidence);
+                const text = spoken ?? (written === "" ? undefined : written);
                 return text === undefined
                   ? []
                   : [
@@ -1407,6 +1411,7 @@ export async function createProductionHttpComposition(
       await payloadProtector.unprotect({ ownerId, agentId, payload }),
     );
   };
+  const perceptionSearchSettings = configuration.runPolicy?.searchAsk ?? DEFAULT_SEARCH_ASK;
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1426,8 +1431,17 @@ export async function createProductionHttpComposition(
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
     searchIndex: {
-      document: (scope, text) =>
-        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      version: `${searchTokenizer.projectionVersion}:${PERCEPTION_SEARCH_INDEX_RULES}:${perceptionSearchSettings.indexTermLimit}`,
+      rebuildBatch: perceptionSearchSettings.indexRebuildBatch,
+      readText: readPerceptionText,
+      document: async (scope, text) =>
+        (
+          await searchTokenizer.tokenizeDocument({
+            ownerId: scope.ownerId,
+            agentId: scope.agentId,
+            text,
+          })
+        ).slice(0, perceptionSearchSettings.indexTermLimit),
       query: (scope, text) =>
         searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
     },
