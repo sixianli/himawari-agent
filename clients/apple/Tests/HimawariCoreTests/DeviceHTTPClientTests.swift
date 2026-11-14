@@ -222,3 +222,69 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         #expect(!input.contains("confirm="))
     }
 }
+
+@Suite struct ConfirmChallengeTests {
+    let challenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    func approval(presence: Bool) throws -> PendingApproval {
+        let json = """
+        {"approvalRequestId":"apr_1","revision":1,"status":"pending","semanticSnapshotHash":"h","finalRisk":"high",
+         "recentAuthenticationRequired":\(presence),"requestedAt":"2026-11-13T06:38:00.000Z","expiresAt":"2026-11-13T06:48:00.000Z","decidedAt":null,
+         "display":{"displayTitle":"t","askedBecause":{"kind":"no_rule_allows"}},
+         "intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_1","runId":"run_1"}}
+        """
+        return try JSONDecoder().decode(PendingApproval.self, from: Data(json.utf8))
+    }
+
+    func api(_ exchange: RecordingExchange) throws -> DeviceAPI {
+        let http = DeviceHTTPClient(exchange: exchange)
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        return DeviceAPI(http: http)
+    }
+
+    func nonces(_ request: URLRequest) throws -> [String] {
+        let input = try #require(request.value(forHTTPHeaderField: "Signature-Input"))
+        return input.components(separatedBy: ", ").compactMap { member in
+            member.range(of: "nonce=\"[^\"]+\"", options: .regularExpression).map { String(member[$0].dropFirst(7).dropLast()) }
+        }
+    }
+
+    @Test func approvingAnOwnerPresenceActionUsesTheServersChallengeAsTheNonce() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"approved"}"#.utf8)),
+        ])
+        let reply = try await api(exchange).respond(to: approval(presence: true), approved: true, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .recorded(status: "approved"))
+        #expect(exchange.requests.count == 2)
+        #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
+        #expect(exchange.requests[1].url?.path.hasSuffix("approvals/apr_1/respond") == true)
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+    }
+
+    @Test func decliningOrApprovingWithoutPresenceAsksForNoChallenge() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"denied"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"approved"}"#.utf8)),
+        ])
+        let signer = try SoftwareKeySigner()
+        _ = try await api(exchange).respond(to: approval(presence: true), approved: false, confirm: signer, reason: "r")
+        _ = try await api(exchange).respond(to: approval(presence: false), approved: true, confirm: signer, reason: "r")
+        #expect(exchange.requests.count == 2)
+        #expect(exchange.requests.allSatisfy { $0.url?.path.hasSuffix("approvals/challenge") == false })
+        #expect(try exchange.requests.allSatisfy { try nonces($0).count == 1 })
+    }
+
+    @Test func changingThePolicyUsesTheServersChallengeAsTheNonce() async throws {
+        let policy = #"{"revision":4,"actions":[]}"#
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(policy.utf8)),
+        ])
+        let change = try await api(exchange).changeActionPolicy(expectedRevision: 3, blocked: ["calendar.delete"], confirm: try SoftwareKeySigner(), reason: "r")
+        guard case let .written(view) = change else { Issue.record("expected written"); return }
+        #expect(view.revision == 4)
+        #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+    }
+}

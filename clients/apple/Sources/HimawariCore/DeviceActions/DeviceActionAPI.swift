@@ -43,11 +43,18 @@ extension DeviceAPI: DeviceActionTransport {
         try decode(DevicePolicyView.self, try await http.send(DeviceRequest(method: "GET", path: "actions/policy")))
     }
 
+    public func issueConfirmChallenge() async throws -> String {
+        struct Reply: Decodable { let challenge: String }
+        let data = try await http.send(DeviceRequest(method: "POST", path: "approvals/challenge", body: Data("{}".utf8)))
+        return try decode(Reply.self, data).challenge
+    }
+
     public func changeActionPolicy(expectedRevision: Int, blocked: [String], confirm: DeviceKeySigner, reason: String) async throws -> DevicePolicyChange {
         struct Body: Encodable { let expectedRevision: Int; let blockedActions: [String] }
         let body = try JSONEncoder().encode(Body(expectedRevision: expectedRevision, blockedActions: blocked.sorted()))
         do {
-            let data = try await http.send(DeviceRequest(method: "POST", path: "actions/policy", body: body, confirmSigner: confirm, confirmReason: reason))
+            let challenge = try await issueConfirmChallenge()
+            let data = try await http.send(DeviceRequest(method: "POST", path: "actions/policy", body: body, nonce: challenge, confirmSigner: confirm, confirmReason: reason))
             return .written(try decode(DevicePolicyView.self, data))
         } catch let DeviceAPIError.server(status, _, _) where status == 403 {
             return .ownerPresenceRequired
@@ -81,10 +88,12 @@ extension DeviceAPI: DeviceActionTransport {
         ))
         let signer = approved && approval.recentAuthenticationRequired ? confirm : nil
         do {
+            let challenge = signer == nil ? nil : try await issueConfirmChallenge()
             let data = try await http.send(DeviceRequest(
                 method: "POST",
                 path: "approvals/\(approval.id)/respond",
                 body: body,
+                nonce: challenge,
                 confirmSigner: signer,
                 confirmReason: signer == nil ? nil : reason
             ))
