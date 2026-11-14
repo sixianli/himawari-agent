@@ -853,6 +853,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "surroundings types are removed after their retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
+    "perception_search_terms",
+    "PerceptionStorePort",
+    "one row per keyed digest of a word in a perception record's text, so a search can find the record without reading every text; the digests cannot be turned back into words without the search key",
+    "metadata_only",
+    "cascade with its record; removed when the record is deleted; never exported",
+  ),
+  entry(
     "device_mirror_items",
     "PerceptionStorePort",
     "the server copy of calendar events, reminders, contacts and home accessories from one device, one row per item with its version",

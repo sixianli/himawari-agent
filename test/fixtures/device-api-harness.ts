@@ -45,6 +45,7 @@ import {
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
+  ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
 import {
@@ -295,6 +296,10 @@ export async function harness(
   const timeZone = { current: "Asia/Tokyo" };
   const ownerVoiceQualified = { current: false };
   const limitWarnings: PerceptionLimitWarning[] = [];
+  const searchTokenizer = new ScopedThreadSearchTokenizer({
+    keys: { resolve: async () => new Uint8Array(32).fill(9) },
+    projectionVersion: "perception-search-test",
+  });
   const perception = new PerceptionService({
     store: repository.perception(),
     deviceConfiguration: () => configuration.current,
@@ -303,6 +308,12 @@ export async function harness(
     protectText: async (input) =>
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(stateRoot, "device-uploads"),
+    searchIndex: {
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
     ownerVoiceQualified: () => ownerVoiceQualified.current,
     onLimitWarning: (warning) => limitWarnings.push(warning),
     now,

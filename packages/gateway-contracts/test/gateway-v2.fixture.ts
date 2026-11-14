@@ -641,6 +641,7 @@ export const governanceMessages = [
       {
         kind: "conversation",
         label: "10 月 21 日你在对话里说的",
+        recordId: null,
         memoryId: "memory-1",
         threadId: "thread-1",
         at: "2026-10-21T03:00:00.000Z",
