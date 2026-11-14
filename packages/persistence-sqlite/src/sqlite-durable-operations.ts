@@ -845,6 +845,10 @@ export class SqliteDurableOperations {
             expectedRevision: number;
           },
         );
+      case "capability.listScheduledJobRefs":
+        return this.listCapabilityScheduledJobRefs(
+          payload as { ownerId: string; agentId: string; capabilityRef: string },
+        );
       case "capability.invalidateAuthority":
         return this.invalidateCapabilityAuthority(
           payload as {
@@ -2691,7 +2695,6 @@ export class SqliteDurableOperations {
     revokedAt: string;
   }): CapabilityRegistryRecord {
     const transaction = this.database.transaction(() => {
-      const saved = this.saveCapability(input);
       this.revokeCapabilityHandlesCore({
         ownerId: input.ownerId,
         agentId: input.agentId,
@@ -2709,6 +2712,21 @@ export class SqliteDurableOperations {
         revision: number;
         recordJson: string;
       }>;
+      const lifecycle = input.record.lifecycle;
+      const saved = this.saveCapability({
+        ...input,
+        record: {
+          ...input.record,
+          lastInvalidation:
+            lifecycle === "disabled"
+              ? {
+                  lifecycle,
+                  cancelledScheduledJobs: jobs.length,
+                  occurredAt: input.revokedAt,
+                }
+              : (input.record.lastInvalidation ?? null),
+        },
+      });
       for (const job of jobs) {
         const record = JSON.parse(job.recordJson) as Record<string, unknown>;
         this.database
@@ -2731,6 +2749,22 @@ export class SqliteDurableOperations {
       return saved;
     });
     return transaction.immediate();
+  }
+
+  private listCapabilityScheduledJobRefs(input: {
+    ownerId: string;
+    agentId: string;
+    capabilityRef: string;
+  }): readonly string[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT id FROM scheduled_jobs
+          WHERE owner_id = ? AND agent_id = ? AND status != 'revoked'
+            AND json_extract(record_json, '$.capabilityRef') = ? ORDER BY id`,
+        )
+        .all(input.ownerId, input.agentId, input.capabilityRef) as Array<{ id: string }>
+    ).map(({ id }) => id);
   }
 
   private switchCapabilityVersion(input: {

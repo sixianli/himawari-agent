@@ -434,6 +434,8 @@ export class SqliteDurableAdapters {
           record,
           expectedRevision,
         }),
+      listScheduledJobRefs: (capabilityRef) =>
+        this.context.read("capability.listScheduledJobRefs", { ownerId, agentId, capabilityRef }),
       invalidateCapabilityAuthority: (record, expectedRevision, revokedAt) =>
         this.context.write("capability.invalidateAuthority", {
           ownerId,
