@@ -12,7 +12,8 @@ function readJsonLines(path) {
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim()) continue;
     try {
-      rows.push(JSON.parse(line));
+      const parsed = JSON.parse(line);
+      if (parsed !== null && typeof parsed === "object") rows.push(parsed);
     } catch {
       rows.invalid += 1;
     }
@@ -193,8 +194,12 @@ export function renderTable(stats) {
     ["缓存命中率（缓存读 /（输入 + 缓存读））", (s) => s.cacheHitRate, 3],
     ["从上一轮到这一轮的间隔中位（分钟，不含超过 6 小时的）", (s) => s.turnaroundMin, 1],
     ["一次模型运行时长中位（秒，只有新记录有）", (s) => s.runSeconds, 0],
-    ["每轮成立的中高意见数（平均，没有 verdicts.jsonl 的轮不算）", (s) => s.mediumHighPerRound, 2],
-    ["没有 verdicts.jsonl 的轮数", (s) => s.roundsWithoutVerdicts, 0],
+    [
+      "每轮成立的中高意见数（平均，没有可读 verdicts.jsonl 的轮不算）",
+      (s) => s.mediumHighPerRound,
+      2,
+    ],
+    ["没有可读 verdicts.jsonl 的轮数（文件不存在或格式错误）", (s) => s.roundsWithoutVerdicts, 0],
     ["自检耗时中位（秒，只有新记录有）", (s) => s.selfCheckSeconds, 0],
     ["自检缓存命中比例（只有新记录有）", (s) => s.selfCheckHitRate, 2],
   ];

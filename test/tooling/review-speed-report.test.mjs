@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -231,6 +232,51 @@ describe("review speed report", () => {
     const lines = renderCsv(rows.slice(1)).split("\n");
     expect(lines[1].split(",")[15]).toBe("");
     expect(renderCsv(rows).split("\n")[2].split(",")[15]).toBe(String(30 * 60_000));
+  });
+
+  it("skips valid-json null rows without throwing", () => {
+    const dir = ledger([[20, [record({ round: 1 })], {}]]);
+    writeFileSync(
+      join(dir, "pr-20", "usage.jsonl"),
+      `null\n${JSON.stringify(record({ round: 1 }))}\n`,
+    );
+    mkdirSync(join(dir, "pr-20", "round-1"), { recursive: true });
+    writeFileSync(join(dir, "pr-20", "round-1", "verdicts.jsonl"), "null\n");
+    try {
+      const rounds = loadRounds(dir);
+      expect(rounds).toHaveLength(1);
+      expect(rounds[0].mediumHigh).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("yields no rounds for a pr that only has failed records", () => {
+    const dir = ledger([[30, [record({ outcome: "failed", cost: 0.2 })], {}]]);
+    try {
+      expect(loadRounds(dir)).toEqual([]);
+      const [stats] = compare(loadRounds(dir), "2026-12-01T00:00:00.000Z");
+      expect(stats.rounds).toBe(0);
+      expect(stats.costPerPr).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports REVIEW_SPEED_REPORT_NO_DIR from the cli for a missing directory", () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "scripts/model-review/review-speed-report.mjs",
+        "--reviews-dir",
+        join(tmpdir(), "no-such-reviews-dir"),
+        "--cut",
+        "2026-11-14T00:00:00.000Z",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("REVIEW_SPEED_REPORT_NO_DIR");
   });
 
   it("returns nothing for a missing directory", () => {

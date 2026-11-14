@@ -1,6 +1,6 @@
 # 复核提速分析的数据（2026-11-14）
 
-ADR 0270 背景一节的数字都出自这里。统计脚本在 `scripts/model-review/review-speed-report.mjs`；下面写明取法，换人可以重算。基线 CSV 是旧脚本的原始快照，里面的 `sincePreviousMs` 和 `mediumHigh` 两列按单条模型运行算，不能和新脚本导出的同名列直接比。
+ADR 0270 背景一节的数字都出自这里。统计脚本在 `scripts/model-review/review-speed-report.mjs`；下面写明取法，换人可以重算。基线 CSV 是旧脚本的原始快照，里面的 `sincePreviousMs` 按单条模型运行算，不能和新脚本导出的同名列直接比；`mediumHigh` 两边都按轮算，同一轮的几行同值。
 
 ## 取法
 
@@ -42,3 +42,4 @@ ADR 0270 背景一节的数字都出自这里。统计脚本在 `scripts/model-r
 - 优化前的逐轮数据存在 `2026-11-14-review-rounds-baseline.csv`（2026-11-14 14:38 UTC，即 PR 496 合并之前的 941 条模型运行记录，同一轮跑了几个模型就有几行，比上面 665 轮的统计范围大，因为后来又复核了更多 PR），之后不再改。
 - 重算对比表：`node scripts/model-review/review-speed-report.mjs --cut <分界时间>`；导出逐条模型运行数据：`--csv`（可加 `--cut` 只取分界之前的），要按 PR 或日期筛选就在导出的表里筛。脚本只读账本，不花钱。
 - 对比表里“优化后”一列按分界时间划分，跨过分界的 PR 只有分界之后的轮算进去，所以每个 PR 平均轮数在样本少时偏低，要等 5 个以上的 PR 从头到尾走完新流程再下结论。
+- 导出的 CSV 里 `sincePreviousMs` 是同一 PR 上一轮到本轮的间隔；手工按日期筛“优化后”时，每个 PR 的首行间隔会跨过分界，要排除或重算。
