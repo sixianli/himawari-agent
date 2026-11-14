@@ -37,7 +37,7 @@ Andy 在 2026-11-12 定的原则是：理解用户的意思一律交给模型判
 1. 删除之后，recall 不再从问题文字推时间：`apps/agent-service/test/production-memory-recall.unit.test.ts` 的用例“[T6] reads the time window only from what the model filled, never from the words of the query”，查询“我以前用什么手机，昨天说过的”时检索范围是 `{ includeHistory: false, from: null, to: null }`。
 2. recall 工具早已让模型填日期：`packages/prompt-catalog/src/tools.ts` 的 `TOOL_RECALL` 在本 ADR 之前就有“问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）”。
 3. 对外 MCP 工具 `find_memories` 在本 ADR 之前已有 from、to（`apps/agent-service/src/production-mcp-read.ts` 第 1508 行 `name: "find_memories"` 起的参数定义），本 ADR 加上 includeHistory。
-4. 改提示词文字只对新对话生效：`.claude/rules/prompt-prefix.md` 第 43 行“改了提示词文字，**只对新对话生效**”。老对话里冻结的旧文字从此按外来内容检查（同文件第 53 行），旧 recall 说明里没有会被认成敏感信息的数字。
+4. 改提示词文字只对新对话生效：`.agents/instructions/prompt-prefix.md` 第 43 行“改了提示词文字，**只对新对话生效**”。老对话里冻结的旧文字从此按外来内容检查（同文件第 53 行），旧 recall 说明里没有会被认成敏感信息的数字。
 5. 检索评测集：`test/fixtures/memory-evaluation/dataset.json`，时间相关的题是 temporal 15 题、history 10 题、time_window 12 题、episode 8 题；第二阶段关口在 `test/integration/memory-evaluation.test.ts` 的“answers history, time-window and past-conversation questions”用例。
 
 [返回阅读导航](#contents)

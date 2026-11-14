@@ -9,7 +9,7 @@ date: "2026-11-05"
 
 <a id="contents"></a>
 
-这份文档是 Himawari 组装“发给模型的请求”时的最佳实践。它写三样东西：每条做法是什么、为什么（附一手来源原话），以及 Himawari 现在做到了没有。开发时必须遵守的条目另写在 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)，两份的条目编号一致。
+这份文档是 Himawari 组装“发给模型的请求”时的最佳实践。它写三样东西：每条做法是什么、为什么（附一手来源原话），以及 Himawari 现在做到了没有。开发时必须遵守的条目另写在 [.agents/instructions/prompt-prefix.md](../.agents/instructions/prompt-prefix.md)，两份的条目编号一致。
 
 KV 缓存，也叫提示缓存（prompt cache）：模型服务方把“请求开头完全相同的部分”缓存起来。下一次请求的开头只要和上一次逐字节相同，这部分就不用重新计算，速度更快，费用通常只有正常输入价的一成左右。匹配是逐字节的：开头任何一处变了，从那里往后的内容全部按全价重算。
 
@@ -49,7 +49,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 ## 做法、理由和现状
 
-编号和 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md) 一致。
+编号和 [.agents/instructions/prompt-prefix.md](../.agents/instructions/prompt-prefix.md) 一致。
 
 | # | 做法 | 来源 | Himawari 现状 |
 |---|---|---|---|
