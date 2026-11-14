@@ -373,7 +373,7 @@ export class ProductionAuthorityLifecycle {
       this.assertStartingGeneration(generation);
       this.#record = record;
       this.#authority = authority;
-      this.#lastRenewedAtMs = this.nowMs();
+      this.#lastRenewedAtMs = this.safeNowMs();
       this.#state = "active";
       return this.snapshot();
     } catch (error) {
@@ -455,7 +455,7 @@ export class ProductionAuthorityLifecycle {
       this.assertActiveGeneration(generation, record);
       this.#record = renewed;
       this.#authority = authority;
-      this.#lastRenewedAtMs = this.nowMs();
+      this.#lastRenewedAtMs = this.safeNowMs();
       return this.snapshot();
     } catch (error) {
       if (generation !== this.#generation || this.#state !== "active" || this.#record !== record) {
@@ -528,6 +528,14 @@ export class ProductionAuthorityLifecycle {
       });
     } catch {
       return Object.freeze({ msSinceLastRenewal: null });
+    }
+  }
+
+  private safeNowMs(): number | null {
+    try {
+      return this.nowMs();
+    } catch {
+      return null;
     }
   }
 

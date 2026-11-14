@@ -254,6 +254,42 @@ describe("ProductionAuthorityLifecycle", () => {
     expect(losses).toEqual([{ msSinceLastRenewal: null }]);
   });
 
+  it("starts and renews even when the clock throws only while the elapsed-time stamp is taken", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let reads = 0;
+    let throwAfter = Number.POSITIVE_INFINITY;
+    const losses: unknown[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: {
+        now: () => {
+          reads += 1;
+          if (reads > throwAfter) throw new Error("CLOCK_FAILED");
+          return NOW;
+        },
+      },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (_error, details) => {
+        losses.push(details);
+      },
+    });
+    throwAfter = 0;
+    await expect(service.start()).resolves.toMatchObject({ state: "active" });
+    await expect(service.renew()).resolves.toMatchObject({ state: "active" });
+    expect(service.isAccepting()).toBe(true);
+    expect(losses).toEqual([]);
+    await service.stop();
+  });
+
   it("does not report a loss while renewals keep succeeding", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);
