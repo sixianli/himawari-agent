@@ -32,8 +32,6 @@ const EXECUTION_STEPS: readonly (readonly [string, string])[] = [
   ["executed_unverified", "failed"],
   ["executed_unverified", "unknown"],
   ["succeeded", "undone"],
-  ["unknown", "succeeded"],
-  ["unknown", "failed"],
 ];
 
 const FINGERPRINT = /^[0-9a-f]{64}$/u;

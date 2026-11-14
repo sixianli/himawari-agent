@@ -34,6 +34,7 @@ class Handlers {
   failure: Error | undefined;
   undoFailure: Error | undefined;
   undoDelay = 0;
+  executeDelay = 0;
   presence = false;
   readonly action: ProposalActionHandler = {
     kind: "action",
@@ -41,6 +42,8 @@ class Handlers {
     verify: async () => this.premises,
     execute: async () => {
       this.executed += 1;
+      if (this.executeDelay > 0)
+        await new Promise((resolve) => setTimeout(resolve, this.executeDelay));
       if (this.failure) throw this.failure;
       return { original: { time: "9:00" }, detail: "9:00 → 9:40" };
     },
@@ -290,7 +293,7 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
     clock.value = new Date(Date.parse(START) + 61_000).toISOString();
     handlers.readBack = "matches";
     await box.list();
-    expect(row(stuck)).toMatchObject({ exec: "succeeded", lease: null });
+    expect(row(stuck)).toMatchObject({ exec: "unknown", lease: null });
     expect(handlers.executed).toBe(0);
 
     const missing = ID("missing");
@@ -311,6 +314,20 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
     await box.list();
     expect(row(unreadable)).toMatchObject({ exec: "unknown" });
     expect(handlers.executed).toBe(0);
+  });
+
+  it("leaves an execution that outlives its lease to the process that is still running it", async () => {
+    const { box, clock, row, propose, seen, handlers } = await fixture({ leaseSeconds: 60 });
+    handlers.executeDelay = 80;
+    const id = ID("slow");
+    await propose(id);
+    const adopting = box.adopt(id, await seen(id));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    clock.value = new Date(Date.parse(START) + 61_000).toISOString();
+    handlers.readBack = "differs";
+    await box.list();
+    expect(row(id)).toMatchObject({ exec: "running" });
+    expect(await adopting).toMatchObject({ execution: "failed" });
   });
 
   it("demands proof that the owner is present only for actions that ask for it", async () => {
