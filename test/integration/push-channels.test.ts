@@ -70,6 +70,7 @@ describe("[IOS-4] push channels", () => {
   async function setup(
     overrides: Partial<ApplePushConfiguration> = {},
     pushOptions: Partial<ConstructorParameters<typeof ProductionWebPush>[0]> = {},
+    appleOptions: Partial<ConstructorParameters<typeof ProductionApplePush>[0]> = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-push-channels-"));
     directories.push(stateRoot);
@@ -248,6 +249,7 @@ describe("[IOS-4] push channels", () => {
       now: () => clock,
       onDelivery: (outcome) => deliveries.push(outcome),
       onFailure: (error) => failures.push(error),
+      ...appleOptions,
     });
     const awaiting: { value: number | undefined; calls: number } = { value: 1, calls: 0 };
     const push = new ProductionWebPush({
@@ -970,5 +972,71 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     await context.push.tick();
     expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+  it("[IOS-4] uses the model-written sentence and button text for a plain approval, and keeps the fixed text when the owner must be present", async () => {
+    const asked: string[] = [];
+    const context = await setup(
+      {},
+      {},
+      {
+        approvalCopy: async ({ approvalRequestId }) => {
+          asked.push(approvalRequestId);
+          return { sentence: "要把周报发给张三", affirmLabel: "发出去" };
+        },
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    context.approval("plain", false);
+    context.approval("present", true);
+    await context.push.tick();
+    const alerts = context.apns.ofType("alert");
+    const byId = (id: string) =>
+      alerts.find(
+        (alert) =>
+          (
+            alert.json["himawari"] as { actions: { action: string; ownerPresence: boolean }[] }
+          ).actions.find(({ action }) => action === "approve")?.ownerPresence ===
+          (id === "present"),
+      );
+    const labelOf = (id: string) =>
+      (byId(id)?.json["himawari"] as { actions: { action: string; label: string }[] }).actions.find(
+        ({ action }) => action === "approve",
+      )?.label;
+    expect(labelOf("plain")).toBe("发出去");
+    expect((byId("plain")?.json["aps"] as { alert: { body: string } }).alert.body).toBe(
+      "要把周报发给张三",
+    );
+    expect(labelOf("present")).toBe("看内容再定");
+    expect(asked).toEqual(["plain"]);
+  });
+
+  it("[IOS-4] REVERSE: falls back to the fixed approval text when the sentence and label cannot be read", async () => {
+    const context = await setup(
+      {},
+      {},
+      {
+        approvalCopy: async () => {
+          throw new Error("COPY_UNAVAILABLE");
+        },
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    context.approval("plain", false);
+    await context.push.tick();
+    const [alert] = context.apns.ofType("alert");
+    const actions = (
+      alert?.json["himawari"] as {
+        actions: { action: string; label: string; labelBasis: string }[];
+      }
+    ).actions;
+    expect(actions.find(({ action }) => action === "approve")).toMatchObject({
+      label: "同意",
+      labelBasis: "catalog",
+    });
+    expect(context.failures).toHaveLength(1);
   });
 });
