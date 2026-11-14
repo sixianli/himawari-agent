@@ -26,7 +26,7 @@ date: "2026-11-14"
 
 ## 背景
 
-[ADR 0267](0267-ci-tests-without-coverage-on-prs.md) 之后，每个 PR 仍要把 unit、contracts、integration、e2e、pi-compat 和 tooling 全部跑完，`ci/required`（CI 的汇总作业，PR 能不能合看它）才会变绿。几个 PR 同时排队时，每个都跑一遍全量，CI 服务器的 runner（替 GitHub 执行 CI 任务的程序）一直被占满。这份 ADR 定下两件一起做的事：PR 上只跑基础测试和与改动相关的测试；PR 要合并时加 `merge-queue` 标签进合并队列（合并队列：把几个排队的 PR 先合到一起，用完整 CI 测一次合在一起的结果，过了再逐个合进 `main`），由队列补上完整测试。
+在这份 ADR 之前，按 [ADR 0267](0267-ci-tests-without-coverage-on-prs.md)，每个 PR 仍要把 unit、contracts、integration、e2e、pi-compat 和 tooling 全部跑完，`ci/required`（CI 的汇总作业，PR 能不能合看它）才会变绿。几个 PR 同时排队时，每个都跑一遍全量，CI 服务器的 runner（替 GitHub 执行 CI 任务的程序）一直被占满。这份 ADR 定下两件一起做的事：PR 上只跑基础测试和与改动相关的测试；PR 要合并时加 `merge-queue` 标签进合并队列（合并队列：把几个排队的 PR 先合到一起，用完整 CI 测一次合在一起的结果，过了再逐个合进 `main`），由队列补上完整测试。
 
 <a id="premises"></a>
 
@@ -57,7 +57,7 @@ date: "2026-11-14"
 ### PR 上的测试范围
 
 - 只在 `pull_request` 事件上缩小范围；手动触发（合并队列的候选）、推送和夜间运行一律全量。
-- unit 和 contracts 照跑全量（两个加起来约 4 分钟，也能接住一部分只靠动态 import 才用到的代码）。
+- unit 和 contracts 照跑全量（云端容器上实测 unit 183 秒、contracts 34 秒，见 `.agents/evidence/ci-test-timing-2026-11-13.md`；全量跑也能接住一部分只靠动态 import 才用到的代码）。
 - integration、e2e、pi-compat、tooling 只跑 `vitest list --changed <PR 基线>` 选出的测试，可以是零个（`scripts/ci/test-scope.mjs`）。
 - 改动里只要有一个文件不是 `apps/`、`packages/`、`test/` 下的 `.ts`、`.tsx`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs` 源码（配置文件 `*.config.*`、`vitest.*` 也不算源码），也不是 `.md` 或 `.agents/` 下的记录，就全部全量。所以改依赖、SQL、JSON、提示词文本、`scripts/`、`ci/`、`.github/` 都跑全量。某个项目的 `vitest list` 出错时，那个项目退回全量。
 - 检查结果里记下哪些项目只跑了相关测试（`relatedProjects`），汇总结果标 `scope: related`。汇总只在 PR 上接受相关范围，只接受上面四个项目，只有声明了相关范围的项目才允许零计数。
