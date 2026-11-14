@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 async function qualifyImmediateStartup(browser, baseUrl, output) {
   const cases = [];
@@ -12,9 +13,8 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
       });
       const page = await context.newPage();
       const commands = [];
-      const errors = [];
+      const errors = collectPageErrors(page);
       let detailQuery;
-      page.on("pageerror", (e) => errors.push(e.message));
       page.on("request", (request) => {
         if (request.method() !== "POST") return;
         if (request.url().endsWith("/api/gateway/thread/v3/commands"))
@@ -77,7 +77,7 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
         await expect.poll(() => detailQuery?.payload.threadId).toBe(commands[0].payload.threadId);
         const snapshot = await (
           await page.request.post(`${baseUrl}/api/gateway/thread/v3/queries`, {
-            data: detailQuery,
+            data: { ...detailQuery, payload: { ...detailQuery.payload, afterSequence: 0 } },
           })
         ).json();
         expect(snapshot.payload.messages).toHaveLength(1);
@@ -124,16 +124,49 @@ async function qualifyImmediateStartup(browser, baseUrl, output) {
   return cases;
 }
 
+async function qualifyStartupFocusKept(browser, baseUrl) {
+  const context = await browser.newContext({
+    locale: "zh-CN",
+    viewport: { width: 1280, height: 820 },
+  });
+  await context.addInitScript(() => {
+    new MutationObserver((_records, observer) => {
+      const composer = document.querySelector(".composer textarea");
+      if (!composer) return;
+      observer.disconnect();
+      composer.focus();
+    }).observe(document, { childList: true, subtree: true });
+  });
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+  try {
+    await page.goto(`${baseUrl}/threads`);
+    await expect(page.locator(".composer textarea")).toBeVisible();
+    await page.waitForTimeout(500);
+    const focused = await page.evaluate(() => ({
+      composer: document.activeElement === document.querySelector(".composer textarea"),
+      id: document.activeElement?.id ?? null,
+      tag: document.activeElement?.tagName ?? null,
+    }));
+    if (!focused.composer)
+      throw new Error(`CONTROL_CENTER_STARTUP_FOCUS_STOLEN:${JSON.stringify(focused)}`);
+    expect(errors).toEqual([]);
+    return { scenario: "composer-focused-as-shell-appears-keeps-focus", passed: true };
+  } finally {
+    await context.close();
+  }
+}
+
 export async function qualifyControlCenterV4(browser, baseUrl, out) {
   if (out) await mkdir(out, { recursive: true });
+  const startupFocus = await qualifyStartupFocusKept(browser, baseUrl);
   const immediateStartup = await qualifyImmediateStartup(browser, baseUrl, out);
   const context = await browser.newContext({
     viewport: { width: 1248, height: 810 },
     locale: "zh-CN",
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  const errors = collectPageErrors(page);
   let release = () => {};
   try {
     const hold = new Promise((resolve) => {
@@ -220,6 +253,7 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
   return {
     scenario: "startup-before-readiness",
     passed: true,
+    startupFocus,
     immediateStartup,
   };
 }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  ApprovalDisplayInput,
   CapabilityHandleService,
   GovernedActionIntent,
   GovernedCapabilityExecutionHandle,
@@ -18,6 +19,7 @@ import {
 
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
 import type { ExternalRedactionOptions } from "@himawari-agent/sensitive-capture";
+import type { ApprovalDisplayBuilder } from "./production-approval-display.js";
 import type { ProductionHostReadOnly } from "./production-host-read.js";
 import type { ProductionHostWeb } from "./production-host-web.js";
 import type { ProductionThreadArtifacts } from "./production-thread-artifacts.js";
@@ -55,7 +57,12 @@ export type CodingBinding =
   | (Omit<FileReadBinding, "grant"> & { readonly grant: null });
 export interface ProductionFileReadServices {
   binding(call: RuntimeToolInvocation): Promise<CodingBinding | undefined>;
-  authorize(intent: GovernedActionIntent, signal?: AbortSignal): Promise<PermissionDecision>;
+  authorize(
+    intent: GovernedActionIntent,
+    signal?: AbortSignal,
+    display?: () => Promise<ApprovalDisplayInput>,
+  ): Promise<PermissionDecision>;
+  readonly approvalDisplay?: ApprovalDisplayBuilder;
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
@@ -256,6 +263,16 @@ export class ProductionFileReadWorkflow {
         throw new Error("FILE_READ_CONTEXT_CHANGED");
     };
     const resource = `host-file:${encodeURIComponent(binding.hostId)}:${encodeURIComponent(binding.grant.id)}:${hash(relativePath)}`;
+    const authorize = (action: GovernedActionIntent) => {
+      const display = this.services.approvalDisplay?.({
+        threadId: binding.threadId,
+        tool: "read",
+        arguments: call.arguments,
+      });
+      return display
+        ? this.services.authorize(action, ctx.signal, display)
+        : this.services.authorize(action, ctx.signal);
+    };
     const intent = (
       operation: string,
       target: unknown,
@@ -323,7 +340,7 @@ export class ProductionFileReadWorkflow {
       action: GovernedActionIntent,
     ) => {
       await active();
-      const permission = await this.services.authorize(action, ctx.signal);
+      const permission = await authorize(action);
       if (permission.decision !== "ALLOW") return decisionFailure(permission);
       await active();
       let saved = (await ctx.load(`${phase}:handle`)) as
@@ -430,10 +447,10 @@ export class ProductionFileReadWorkflow {
     if (!["model", "external_approved"].includes(binding.grant.disclosure))
       return failure("FILE_READ_DIRECTORY_DISCLOSURE_DENIED");
     const readIntent = intent("read", target);
-    const readPermission = await this.services.authorize(readIntent, ctx.signal);
+    const readPermission = await authorize(readIntent);
     if (readPermission.decision !== "ALLOW") return decisionFailure(readPermission);
     const disclosureIntent = intent("disclose", target, true);
-    const disclosure = await this.services.authorize(disclosureIntent, ctx.signal);
+    const disclosure = await authorize(disclosureIntent);
     if (disclosure.decision !== "ALLOW") return decisionFailure(disclosure);
     const result = await runPhase(
       "read",
@@ -451,7 +468,7 @@ export class ProductionFileReadWorkflow {
     if (result.outcome !== "succeeded") return result;
     await active();
     if (result.outcome === "succeeded") {
-      const renewed = await this.services.authorize(disclosureIntent, ctx.signal);
+      const renewed = await authorize(disclosureIntent);
       if (renewed.decision !== "ALLOW") return decisionFailure(renewed);
     }
     return result;

@@ -1,0 +1,4 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：`lastUsed.decisionId` 的过滤规则比网关契约宽，坏 id 会让整个规则快照解析失败", "valid": true, "class": "error", "reason": "决定编号过滤比契约宽；改成与契约完全相同的规则，并加以 - 开头的编号的反向用例", "severity": "medium"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中低（需产品确认）：`quote` 绕过了记忆页的可见性/状态检查", "valid": true, "class": "error", "reason": "原话没有挡住已删除/回收站/不可见分级的来源记忆；已加同样的检查，并加删除来源记忆后 quote 为 null 的用例", "severity": "medium"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：新增的 `quote`/`changes`/`lastUsed` 在网页端没有消费者", "valid": false, "class": "better", "reason": "本 PR 只做服务器端，界面由 iOS 第 11 批展示；不改"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：`undo()` 返回的 `revision`/`updatedAt` 是改动前的旧值", "valid": false, "class": "better", "reason": "undo 返回的 revision 现在没有任何使用方（给模型的结果已去掉）；不改"}

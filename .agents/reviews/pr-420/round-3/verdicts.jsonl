@@ -1,0 +1,3 @@
+{"id": "ds3-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "受限记忆的正文仍可能通过一条“同文的被替换提议”明文导出", "valid": true, "class": "error", "severity": "medium-high", "trigger": "库里有受限记忆，一条提议保存进了它，另有一条正文相同、已被替换的旧提议（30 天内正文还在）", "consequence": "受限记忆的文字经那条旧提议的正文进明文导出", "modelSeverity": "高"}
+{"id": "ds3-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "反向测试没有检查封存文件", "valid": true, "class": "better"}
+{"id": "ds3-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "受限记忆被永久删除后，关联提议的正文摘要仍会明文导出", "valid": true, "class": "error", "severity": "low", "trigger": "受限记忆被永久删除后导出，关联提议已被改成拒绝、正文已删，只剩摘要", "consequence": "摘要按决定 6 写在明文层，正文很短时可能被逐个试出", "modelSeverity": "低"}

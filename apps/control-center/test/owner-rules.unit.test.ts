@@ -3,11 +3,15 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OwnerRulesSection, RuleReceiptCard } from "../src/components/rule-receipt.tsx";
+import {
+  BuiltInActionRulesSection,
+  OwnerRulesSection,
+  RuleReceiptCard,
+} from "../src/components/rule-receipt.tsx";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/gateway-client.ts";
 import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
-import { type OwnerRule, useMemory } from "../src/memory.ts";
+import { type BuiltInActionRule, type OwnerRule, useMemory } from "../src/memory.ts";
 
 const intl = createIntl({ locale: "zh-CN", messages });
 const message = (id: MessageId, values?: Record<string, string | number>) =>
@@ -72,6 +76,21 @@ const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   status: "active",
   enforced: true,
   updatedAt: "2026-11-11T00:00:00.000Z",
+  quote: null,
+  quoteSuperseded: false,
+  quoteLatestMemoryId: null,
+  changes: 0,
+  lastUsed: null,
+  ...change,
+});
+
+const builtIn = (change: Partial<BuiltInActionRule> = {}): BuiltInActionRule => ({
+  ruleId: "action_preauthorize_owner_data",
+  revision: 1,
+  outcome: "allow_preauthorized",
+  examplesHit: 2,
+  examplesMiss: 6,
+  askFirst: false,
   ...change,
 });
 
@@ -229,7 +248,11 @@ describe("[P2-3] standing rules on the web page", () => {
             ...request,
             kind: "snapshot",
             type: "memory.rules.snapshot",
-            payload: { rules: [rule()], generatedAt: "2026-11-11T00:00:00.000Z" },
+            payload: {
+              rules: [rule()],
+              builtIn: [builtIn()],
+              generatedAt: "2026-11-11T00:00:00.000Z",
+            },
           }
         : { ...request, kind: "snapshot", type: "memory.other" },
     );
@@ -243,6 +266,7 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(seen.model?.rules.map(({ ruleId }) => ruleId)).toEqual([
       "owner:0123456789abcdef01234567",
     ]);
+    expect(seen.model?.builtInRules).toEqual([builtIn()]);
     await act(async () => {
       await seen.model?.respondRule("owner:0123456789abcdef01234567", "undo");
     });
@@ -250,5 +274,68 @@ describe("[P2-3] standing rules on the web page", () => {
       type: "memory.rule.respond",
       payload: { target: "owner:0123456789abcdef01234567", action: "undo" },
     });
+  });
+
+  it("[ADR-0257] lists the built-in action rules with their examples and a switch only on the just-do-it ones", async () => {
+    const respondRule = vi.fn(async () => true);
+    await show(
+      h(BuiltInActionRulesSection, {
+        memory: {
+          builtInRules: [
+            builtIn(),
+            builtIn({
+              ruleId: "action_ask_after_external_content",
+              outcome: "ask_owner",
+              examplesHit: 2,
+              examplesMiss: 3,
+              askFirst: null,
+            }),
+            builtIn({
+              ruleId: "action_refuse_background_after_external_content",
+              outcome: "refuse",
+              askFirst: null,
+            }),
+          ],
+          respondRule,
+          busy: false,
+        },
+        message,
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("内置规则 · 3 条");
+    expect(text).toContain("改你自己的数据：直接做");
+    expect(text).toContain("读过外来内容后要做事：先问你");
+    expect(text).toContain("后台读过外来内容后要做事：不做");
+    expect(text).toContain("例子：2 个该命中，6 个不该命中");
+    const switches = [...container.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
+    expect(switches).toHaveLength(1);
+    expect(switches[0]?.checked).toBe(false);
+    expect(switches[0]?.closest("[data-built-in-rule]")?.getAttribute("data-built-in-rule")).toBe(
+      "action_preauthorize_owner_data",
+    );
+    await act(async () => switches[0]?.click());
+    expect(respondRule).toHaveBeenCalledWith("action_preauthorize_owner_data", "ask_first");
+  });
+
+  it("[ADR-0257] REVERSE: a switched-on rule switches back with allow_directly, and nothing renders without built-in rules", async () => {
+    const respondRule = vi.fn(async () => true);
+    await show(
+      h(BuiltInActionRulesSection, {
+        memory: { builtInRules: [builtIn({ askFirst: true })], respondRule, busy: false },
+        message,
+      }),
+    );
+    const toggle = container.querySelector<HTMLInputElement>('input[role="switch"]');
+    expect(toggle?.checked).toBe(true);
+    await act(async () => toggle?.click());
+    expect(respondRule).toHaveBeenCalledWith("action_preauthorize_owner_data", "allow_directly");
+    await show(
+      h(BuiltInActionRulesSection, {
+        memory: { builtInRules: [], respondRule, busy: false },
+        message,
+      }),
+    );
+    expect(container.textContent).toBe("");
   });
 });

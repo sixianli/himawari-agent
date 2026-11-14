@@ -32,6 +32,10 @@ export function createProactiveSeal(options: {
         await options.protector.unprotect({ ownerId, agentId, payload }),
       );
     },
+    async classificationOf({ ref }) {
+      const payload = await options.payloads.get(ref);
+      return payload?.contentType === CONTENT_TYPE ? payload.dataClassification : undefined;
+    },
     async release({ refs }) {
       for (const ref of refs) await options.payloads.delete(ref);
     },

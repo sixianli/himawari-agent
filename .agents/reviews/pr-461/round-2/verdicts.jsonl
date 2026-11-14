@@ -1,0 +1,6 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中：不同确认键在生成中会拿到同一个编号，随后该键重试又变成新编号，破坏“同一键同一结果”", "valid": true, "class": "error", "reason": "生成中被接受的其他确认键没有记下；改为每个任务记下所有被接受的键，保留期内都重放到同一编号，并加用例", "severity": "medium"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中：失败任务没有过期时间也没有清理，同一确认键重试永远返回 failed", "valid": true, "class": "error", "reason": "失败任务被同键永久重放；改为失败任务不重放，同键可以重新生成，并加用例", "severity": "medium"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 中：已过期但定时器还没清掉的任务，会在同键重放时返回 expired 编号", "valid": true, "class": "error", "reason": "已过期但定时器未清的任务被同键重放；改为重放前先看过期时间，并加用例", "severity": "medium"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：作者说“网页直下与网关开始撞上时返回 429”，但网关开始一侧实际是 409", "valid": false, "class": "error", "reason": "网关一侧遇忙返回冲突（409）是有意的，网关命令没有 429 这种语义；作者说明措辞不准，已在下一轮说明里改正"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低：契约样例里的 `downloadPath` 与同一个样例的 `exportId` 不一致，且契约不校验这一点", "valid": true, "class": "error", "reason": "样例里的 downloadPath 改为由同一个 exportId 生成", "severity": "low"}
+{"id": "D6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 6. 低：内存明文压缩包保留 10 分钟是新出现的数据驻留面，文档未写", "valid": false, "class": "better", "reason": "内存里保留 10 分钟已写在 PR 描述，是否写进设计文档交 iOS 设计线程"}

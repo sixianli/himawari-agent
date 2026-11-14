@@ -17,6 +17,31 @@ describe("Jarvis Test dataset", () => {
       expect(dataset.cases.filter((item) => item.scenario === scenario)).toHaveLength(6);
   });
 
+  it("labels every next-step case as should or should not propose, with both labels in every question it asks", () => {
+    const cases = dataset.cases.filter(({ scenario }) => scenario === "proactive_next_step");
+    expect(cases.length).toBeGreaterThan(0);
+    for (const item of cases) {
+      expect(typeof item.shouldPropose, item.id).toBe("boolean");
+      expect(item.toolResults?.length ?? 0, item.id).toBeGreaterThan(0);
+      for (const prepared of item.toolResults ?? []) {
+        expect(["web_search", "web_fetch"], item.id).toContain(prepared.tool);
+        expect(prepared.outputs.length, item.id).toBeGreaterThan(0);
+      }
+      const sameQuestion = cases.filter(({ prompt }) => prompt === item.prompt);
+      expect(
+        sameQuestion.some(({ shouldPropose }) => shouldPropose === true),
+        item.id,
+      ).toBe(true);
+      expect(
+        sameQuestion.some(({ shouldPropose }) => shouldPropose === false),
+        item.id,
+      ).toBe(true);
+    }
+    for (const item of dataset.cases)
+      if (item.scenario !== "proactive_next_step")
+        expect(item.shouldPropose, item.id).toBeUndefined();
+  });
+
   it("dates every correction three weeks back from the fixed today", () => {
     expect(dataset.today).toBe(new Date(dataset.today).toISOString());
     for (const item of dataset.cases.filter(({ scenario }) => scenario === "memory_correction")) {

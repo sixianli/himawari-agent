@@ -43,7 +43,7 @@ const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
 ];
 export type DailyReviewSource = "ledger" | "mail" | "checkup";
 export type DailyReviewKind =
-  | Exclude<DecisionKind, "limit_change" | "delivery_timing" | "proposal">
+  | Exclude<DecisionKind, "web_push" | "limit_change" | "delivery_timing" | "proposal">
   | "mail"
   | "checkup";
 
@@ -361,7 +361,13 @@ async function collectReviewCandidates(
   const candidates = new Map<string, ReviewCandidate>();
   for (const entry of entries) {
     const kind = entry.kind;
-    if (kind === "limit_change" || kind === "delivery_timing" || kind === "proposal") continue;
+    if (
+      kind === "web_push" ||
+      kind === "limit_change" ||
+      kind === "delivery_timing" ||
+      kind === "proposal"
+    )
+      continue;
     if (entry.kind === "memory_candidate" && OWNER_DECIDED_DISCARDS.has(entry.reasonCode)) continue;
     if (entry.kind === "memory_candidate" && EXTERNAL_PROPOSAL_NOT_SAVED.has(entry.reasonCode))
       continue;

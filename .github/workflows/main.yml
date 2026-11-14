@@ -7,7 +7,7 @@ permissions:
   actions: read
   pull-requests: read
 concurrency:
-  group: main-confirmation-${{ github.run_id }}
+  group: main-confirmation
   cancel-in-progress: false
 defaults:
   run:
@@ -19,7 +19,6 @@ jobs:
     timeout-minutes: 15
     outputs:
       mode: ${{ steps.verify.outputs.mode }}
-      evidence: ${{ steps.retain.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -28,36 +27,20 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
-      - name: 查找已合并 PR 的完整验收记录
+      - name: 查找已合并 PR 的完整验收记录，从 ci/required 的日志取汇总结论
         id: candidate
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci/main-evidence.mjs discover
-      - name: 下载对应运行的不可变汇总记录
-        if: steps.candidate.outputs.artifact_id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ steps.candidate.outputs.run_id }}
-          artifact-ids: ${{ steps.candidate.outputs.artifact_id }}
-          merge-multiple: true
-          path: .ci-output/main-evidence/gate
       - name: 无法证明一致时选择完整 CI
         if: always()
         id: verify
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci/main-evidence.mjs verify
-      - name: 保存路径选择证据
+      - name: 把路径选择写进作业摘要
         if: always()
-        id: retain
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: main-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-output/main-evidence/
-          if-no-files-found: error
-          retention-days: 1
+        run: node scripts/ci/ci-summary.mjs --title "main 路径选择" --from .ci-output/main-evidence
   full:
     needs: plan
     if: always() && (needs.plan.result != 'success' || needs.plan.outputs.mode != 'light')
@@ -81,22 +64,15 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
-      - name: 下载本次确认的 PR 证据
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          artifact-ids: ${{ needs.plan.outputs.evidence }}
-          merge-multiple: true
-          path: .ci-output/main-evidence
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 重新查找并取回本次确认的 PR 汇总结论
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/main-evidence.mjs discover
       - name: 在实际 main 提交上构建并验证安装启动及安全检查
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
         run: .ci-output/tools/bin/node scripts/ci/main-confirm.mjs
-      - name: 保存 main 确认报告
+      - name: 把 main 确认报告写进作业摘要
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: main-confirmation-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-output/main-public/
-          if-no-files-found: error
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "main 确认报告" --from .ci-output/main-public

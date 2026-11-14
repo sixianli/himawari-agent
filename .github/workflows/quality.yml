@@ -7,10 +7,6 @@ on:
         description: 明确的比较基线 commit SHA
         type: string
         required: true
-      ci_run_id:
-        description: 可选：导出此默认分支完整 CI run 的交接格式
-        type: string
-        required: false
 permissions:
   contents: read
 concurrency:
@@ -45,22 +41,12 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-scale
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "scale 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-scale
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "scale 失败诊断" --from .ci-output/public/diagnostics
   thread-scale:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -83,22 +69,12 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-thread-scale
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "thread-scale 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-thread-scale
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "thread-scale 失败诊断" --from .ci-output/public/diagnostics
   brands:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -127,22 +103,12 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-brands
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "brands 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-brands
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "brands 失败诊断" --from .ci-output/public/diagnostics
   dependencies:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -165,22 +131,12 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-dependencies
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "dependencies 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-dependencies
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "dependencies 失败诊断" --from .ci-output/public/diagnostics
   node-observation:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -203,22 +159,12 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-node-observation
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "node-observation 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-node-observation
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "node-observation 失败诊断" --from .ci-output/public/diagnostics
   container:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' }}
@@ -251,65 +197,9 @@ jobs:
         if: always()
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
         id: publish
-      - name: 保存本次检测结果
+      - name: 把检测结果写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-container
-          path: .ci-output/public/reports/
-          if-no-files-found: error
-          retention-days: 1
-      - name: 保存失败诊断
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "container 检测结果" --from .ci-output/public/reports
+      - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-container
-          path: .ci-output/public/diagnostics/
-          if-no-files-found: ignore
-          retention-days: 1
-  handoff:
-    runs-on: ubuntu-24.04
-    if: ${{ github.ref == 'refs/heads/main' && inputs.ci_run_id != '' }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read
-    env:
-      CI_RUN_ID: ${{ inputs.ci_run_id }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22.22.3
-      - name: 安装固定工具
-        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
-      - name: 隔离依赖与原生探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
-      - name: 读取指定 CI run 元数据
-        id: metadata
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: .ci-output/tools/bin/node scripts/ci/export-evidence.mjs --mode metadata --run-id "$CI_RUN_ID" --output .ci-output/run-metadata.json
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.ci_run_id }}
-          pattern: report-${{ inputs.ci_run_id }}-${{ steps.metadata.outputs.attempt }}-*
-          path: .ci-output/reports
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.ci_run_id }}
-          name: gate-${{ inputs.ci_run_id }}-${{ steps.metadata.outputs.attempt }}
-          path: .ci-output/gate
-      - name: 复验并导出 CI 交接格式
-        run: .ci-output/tools/bin/node scripts/ci/export-evidence.mjs --metadata .ci-output/run-metadata.json --reports .ci-output/reports --gate .ci-output/gate --output .ci-output/handoff/evidence.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: handoff-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-output/handoff/evidence.json
-          if-no-files-found: error
-          retention-days: 1
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "container 失败诊断" --from .ci-output/public/diagnostics

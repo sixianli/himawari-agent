@@ -5,7 +5,6 @@ import type {
   PerceptionDayPage,
   PerceptionDayRow,
   PerceptionExtractionState,
-  PerceptionRunInitiator,
   PerceptionEpisode,
   PerceptionIngestOutcome,
   PerceptionIngestResult,
@@ -1210,61 +1209,6 @@ export class SqlitePerceptionOperations {
         .pluck()
         .all(input.ownerId, input.agentId, this.ids(input.utteranceIds, 5000)) as string[],
     );
-  }
-
-  private ownedRun(scope: PerceptionScope, runId: string): { sourceType: string } | undefined {
-    return this.database
-      .prepare(
-        `SELECT t.source_type AS sourceType FROM runs r JOIN triggers t ON t.id = r.trigger_id
-          WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ?`,
-      )
-      .get(runId, scope.ownerId, scope.agentId) as { sourceType: string } | undefined;
-  }
-
-  protected op_markRunRead(input: Input<"markRunRead">): void {
-    this.assertDiskHeadroom();
-    const now = this.time(input.now);
-    if (!Number.isSafeInteger(input.maximum) || input.maximum < 1)
-      this.fail("PORT_INVALID_OPERATION", "Run read maximum is invalid");
-    this.ids(input.recordIds, 2000);
-    this.database.transaction(() => {
-      if (!this.ownedRun(input, input.runId))
-        return this.fail("PORT_NOT_FOUND", "Run was not found");
-      const insert = this.database.prepare(
-        `INSERT INTO perception_run_reads (run_id, record_id, owner_id, agent_id, read_at)
-         SELECT @runId, @recordId, @ownerId, @agentId, @now
-          WHERE (SELECT COUNT(*) FROM perception_run_reads WHERE run_id = @runId) < @maximum
-         ON CONFLICT DO NOTHING`,
-      );
-      for (const recordId of [...input.recordIds].sort())
-        insert.run({
-          runId: input.runId,
-          recordId,
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          now,
-          maximum: input.maximum,
-        });
-      return undefined;
-    })();
-  }
-
-  protected op_runReadRecordIds(input: Input<"runReadRecordIds">): readonly string[] {
-    return Object.freeze(
-      this.database
-        .prepare(
-          `SELECT record_id FROM perception_run_reads
-            WHERE run_id = ? AND owner_id = ? AND agent_id = ? ORDER BY record_id`,
-        )
-        .pluck()
-        .all(input.runId, input.ownerId, input.agentId) as string[],
-    );
-  }
-
-  protected op_runInitiator(input: Input<"runInitiator">): PerceptionRunInitiator | undefined {
-    const run = this.ownedRun(input, input.runId);
-    if (!run) return undefined;
-    return run.sourceType === "user_message" ? "owner" : "background";
   }
 
   protected op_prune(input: Input<"prune">) {

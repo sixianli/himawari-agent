@@ -6,7 +6,7 @@ supersedes: "docs/adr/0160-self-hosted-runner-on-hermes.md, docs/adr/0171-two-ru
 superseded_by: ""
 amends: "docs/adr/0168-longer-ci-job-limits-on-hermes.md, docs/adr/0169-pause-runners-by-removing-the-label.md"
 date: "2026-11-07"
-amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
+amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0256-gate-job-gets-its-own-runner.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md"
 ---
 
 # ADR 0176：CI 全部搬到 OVH 的 VPS 上，注销 Hermes 上的 runner

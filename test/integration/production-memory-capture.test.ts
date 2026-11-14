@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DurableMemoryService,
+  IMPORT_DUPLICATE_DEFAULTS,
+  type ImportDuplicateAnswer,
   type MemoryExtractionAuditRecord,
   type MemoryProviderProjectionPort,
   OwnerProfileService,
+  type ProactiveModelInvoker,
   type ProductMemoryRecord,
+  RuleReviewService,
+  type RunExecutionSourcePort,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -21,6 +26,7 @@ import {
 import {
   gatewayV2MessageSchema,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  memorySourceState,
 } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
@@ -33,11 +39,18 @@ import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ContextExternalContent,
+  externalContentKey,
+  runExternalOrigins,
+} from "../../apps/agent-service/src/context-external-content.ts";
+import {
   type MemoryCaptureCall,
   memoryCapturePrompt,
   ProductionMemoryCapture,
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
+import { ProductionMemoryClassifier } from "../../apps/agent-service/src/production-memory-classification.ts";
+import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
   isStandingQuote,
@@ -209,26 +222,56 @@ describe("production memory capture", () => {
     const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
-    const capture = new ProductionMemoryCapture({
-      sources: {
-        read: async (runId) => {
-          const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
-          if (!owner) return undefined;
-          return {
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            runId,
-            sessionId: "session" as never,
-            threadId: THREAD_ID,
-            triggerId: "trigger" as never,
-            sourceType: "user_message",
-            sourceId: owner.id,
-            payloadRef: owner.contentRef,
-            dataClassification: "private",
-            occurredAt: T0,
-          };
+    const externalMarks = new Map<string, readonly string[]>();
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async (_owner, _agent, key) => {
+          const origins = externalMarks.get(key);
+          return origins
+            ? ({
+                revision: 1,
+                value: {
+                  sources: origins.map((origin) => ({
+                    origin,
+                    firstRunId: "run-earlier",
+                    firstSeenAt: T0,
+                  })),
+                },
+              } as never)
+            : undefined;
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("marks are seeded directly in this test");
         },
       },
+      source: { read: (runId) => runSources.read(runId) },
+      authority: () => {
+        throw new Error("marks are seeded directly in this test");
+      },
+      clock: { now: () => T0 },
+    });
+    const runSources: RunExecutionSourcePort = {
+      read: async (runId) => {
+        const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
+        if (!owner) return undefined;
+        return {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId,
+          sessionId: "session" as never,
+          threadId: THREAD_ID,
+          triggerId: "trigger" as never,
+          sourceType: "user_message",
+          sourceId: owner.id,
+          payloadRef: owner.contentRef,
+          dataClassification: "private",
+          occurredAt: T0,
+        };
+      },
+    };
+    const capture = new ProductionMemoryCapture({
+      sources: runSources,
       threads: {
         listMessages: async (_owner, _agent, _thread, afterSequence, limit) =>
           messages.filter(({ sequence }) => sequence > afterSequence).slice(0, limit),
@@ -238,12 +281,14 @@ describe("production memory capture", () => {
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
       relevantMemoryIds: () => relevant as never,
+      externalOrigins: runExternalOrigins(externalContent),
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
       book: repository.memoryBook(),
       ledger: repository.decisionLedger(),
       backlog: repository.memoryCaptureBacklog(),
+      unitOfWork: repository.unitOfWork(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
@@ -275,6 +320,7 @@ describe("production memory capture", () => {
     const ruleWriter = new ProductionOwnerRuleWriter({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       rules: repository.ownerRules(),
+      reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
       book: repository.memoryBook(),
@@ -283,14 +329,70 @@ describe("production memory capture", () => {
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
     });
+    const actionRules = {
+      list: vi.fn(async () => [
+        {
+          ruleId: "action_preauthorize_owner_data",
+          revision: 1,
+          outcome: "allow_preauthorized" as const,
+          examplesHit: 2,
+          examplesMiss: 6,
+          askFirst: false,
+        },
+      ]),
+      setAskFirst: vi.fn(async () => undefined),
+    };
+    const classifyOutputs: string[] = [];
+    const classifyPrompts: string[] = [];
+    const classifyFailures: unknown[] = [];
+    const classifier = new ProductionMemoryClassifier({
+      model: {
+        estimateMicros: () => 10,
+        generate: async ({ prompt }) => {
+          classifyPrompts.push(prompt);
+          const output = classifyOutputs.shift();
+          if (output === undefined) throw new Error("MODEL_NOT_COMPLETED");
+          return { output, costMicros: 10 };
+        },
+      },
+      dailyLimitMicros: 1_000,
+      batchCharacters: 6000,
+      outputTokensPerItem: 60,
+      timeZone: "Asia/Shanghai",
+      now: () => clock.value,
+      newId: () => "classify",
+      onFailure: (error) => classifyFailures.push(error),
+    });
+    const duplicateAnswers: (ImportDuplicateAnswer | undefined)[] = [];
+    const duplicateRequests: {
+      existing: readonly { key: string; text: string }[];
+      candidates: readonly { text: string }[];
+    }[] = [];
+    const duplicateSettings = { ...IMPORT_DUPLICATE_DEFAULTS };
+    const importDuplicates = new ProductionImportDuplicateChecker({
+      decision: {
+        decide: async ({ existing, candidates }) => {
+          duplicateRequests.push({ existing, candidates });
+          return candidates.map(() => duplicateAnswers.shift());
+        },
+      },
+      settings: duplicateSettings,
+      onFailure: () => {},
+    });
     const control = new ProductionMemoryControl({
+      classifier,
+      importDuplicates,
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      actionRules,
+      unitOfWork: repository.unitOfWork(),
       memory,
       reminders: repository.memoryReminders(),
       ownerRules: ruleWriter,
+      reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
+      ledger: repository.decisionLedger(),
       book: repository.memoryBook(),
       profile: new OwnerProfileService({
         state: repository.productMemoryState(),
@@ -328,11 +430,12 @@ describe("production memory capture", () => {
       ref: string,
       text: string,
       dataClassification: "private" | "sensitive" = "private",
+      agentId: string = AGENT_ID,
     ) =>
-      payloads.put(
+      (agentId === AGENT_ID ? payloads : repository.payloadStore(OWNER_ID, agentId as never)).put(
         await adapters.payloadProtector.protect({
           ownerId: OWNER_ID,
-          agentId: AGENT_ID,
+          agentId: agentId as never,
           ref,
           dataClassification,
           contentType: "text/plain",
@@ -372,6 +475,10 @@ describe("production memory capture", () => {
       plaintext,
       capture,
       control,
+      actionRules,
+      markThread: (threadId: string, origins: readonly string[]) => {
+        externalMarks.set(externalContentKey({ threadId, runId: "" }), origins);
+      },
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
@@ -384,6 +491,12 @@ describe("production memory capture", () => {
       failures,
       prompts,
       calls,
+      classifyOutputs,
+      classifyPrompts,
+      classifyFailures,
+      duplicateAnswers,
+      duplicateRequests,
+      duplicateSettings,
     };
   }
 
@@ -741,7 +854,13 @@ describe("production memory capture", () => {
     await viaGateway(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-coffee",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-coffee",
     );
     const coffee = (await gatewayOverview(context.control)).memories.find(({ text }) =>
@@ -1085,6 +1204,72 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
+  it("[P3-5] rolls a sensitive approval back completely when its last write fails, and lets the Owner approve it again", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [pending] = (await overview(context.control)).pending;
+    if (!pending) throw new Error("pending");
+    const options = (
+      context.control as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
+      }
+    ).options;
+    const failing = new ProductionMemoryControl({
+      ...options,
+      approvals: {
+        ...options.approvals,
+        markCommitted: async () => {
+          throw new Error("PORT_UNAVAILABLE");
+        },
+      },
+    });
+    await expect(respond(failing, pending.requestId, "approved")).rejects.toThrow(
+      "PORT_UNAVAILABLE",
+    );
+    expect(await activeMemories(context)).toEqual([]);
+    expect((await overview(context.control)).pending.map(({ requestId }) => requestId)).toEqual([
+      pending.requestId,
+    ]);
+    await respond(context.control, pending.requestId, "approved");
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect((await overview(context.control)).pending).toEqual([]);
+  });
+
+  it("[P3-5] sends no approval audit record when the approval's transaction is rolled back", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [pending] = (await overview(context.control)).pending;
+    if (!pending) throw new Error("pending");
+    const options = (
+      context.control as unknown as {
+        options: ConstructorParameters<typeof ProductionMemoryControl>[0];
+      }
+    ).options;
+    const sent: MemoryExtractionAuditRecord[] = [];
+    const rolledBack = new ProductionMemoryControl({
+      ...options,
+      onAudit: (record) => sent.push(record),
+      unitOfWork: {
+        run: (work) =>
+          options.unitOfWork.run(async () => {
+            await work();
+            throw new Error("COMMIT_LOST");
+          }),
+      },
+    });
+    await expect(respond(rolledBack, pending.requestId, "approved")).rejects.toThrow("COMMIT_LOST");
+    expect(sent).toEqual([]);
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
   it("[mask-not-block] tells the model to mark passwords, keys, identity and card numbers sensitive and to skip one-time codes", () => {
     const prompt = memoryCapturePrompt("记住我的密码是 abc12345", [], null, null, null);
     expect(prompt).toContain("证件号码、银行卡或账户号码、密码、密钥用 sensitive");
@@ -1403,9 +1588,14 @@ describe("production memory capture", () => {
           },
         ],
       });
-    const round = async (runId: string, ownerText: string, output: string) => {
+    const round = async (
+      runId: string,
+      ownerText: string,
+      output: string,
+      ...judge: readonly string[]
+    ) => {
       await context.turn("owner", ownerText, runId);
-      context.outputs.push(output);
+      context.outputs.push(output, ...judge);
       const capture = new ProductionMemoryCapture(options);
       await capture.start(context.requestFor(runId));
       await capture.stop();
@@ -1413,10 +1603,33 @@ describe("production memory capture", () => {
     await round("run-pa2-2", "今天天气不错", unchanged("明治"));
     expect((await tentativeState()).attributes?.tentative).toBe(true);
     expect(context.audits.map(({ outcome }) => outcome)).toContain("evidence_unverified");
-    await round("run-pa2-unrelated", "明天下午三点开会", unchanged("明天下午三点开会"));
+    const callsBefore = context.calls.length;
+    await round(
+      "run-pa2-unrelated",
+      "明天下午三点开会",
+      unchanged("明天下午三点开会"),
+      '{"supports":false}',
+    );
+    expect(context.calls.length - callsBefore).toBe(2);
     expect((await tentativeState()).attributes?.tentative).toBe(true);
-    await round("run-pa2-3", "我又买了明治的牛奶", unchanged("我又买了明治的牛奶"));
+    await round(
+      "run-pa2-judge-down",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      "not json",
+      "still not json",
+    );
+    expect((await tentativeState()).attributes?.tentative).toBe(true);
+    expect(context.failures).toHaveLength(1);
+    context.failures.length = 0;
+    await round(
+      "run-pa2-3",
+      "我又买了明治的牛奶",
+      unchanged("我又买了明治的牛奶"),
+      '{"supports":true}',
+    );
     expect((await tentativeState()).attributes?.tentative).not.toBe(true);
+    expect(context.prompts.at(-1)).toContain("ownerQuote");
     const confirmed = (await context.ledgerEntries()).filter(
       ({ reasonCode }) => reasonCode === "tentative_confirmed",
     );
@@ -1651,6 +1864,66 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
   });
 
+  it("keeps reminder and memory ids within the gateway limit when the command key or tool call id is as long as allowed", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-long", "给妈妈打电话");
+    const longKey = `page-${"k".repeat(123)}`;
+    const page = { contentRef: "payload-long", due: "2026-10-26", repeat: "none" };
+    const created = await command(context.control, "memory.reminder.create", page, longKey);
+    const replay = await command(context.control, "memory.reminder.create", page, longKey);
+    expect(replay).toEqual({ resultRef: created.resultRef, replayed: true });
+    const other = await command(
+      context.control,
+      "memory.reminder.create",
+      page,
+      `page-${"k".repeat(122)}x`,
+    );
+    expect(other.resultRef).not.toBe(created.resultRef);
+    const shortened = String(created.resultRef).slice("reminder:memory:reminder:owner:".length);
+    expect(shortened).toMatch(/\.[0-9a-f]{64}$/u);
+    const lookalike = await command(context.control, "memory.reminder.create", page, shortened);
+    expect(lookalike.resultRef).not.toBe(created.resultRef);
+    expect(String(lookalike.resultRef).length).toBeLessThanOrEqual(128);
+    const tool = (await context.reminderTools.run({
+      runId: createRunId(`run-${"r".repeat(120)}`),
+      toolCallId: `call-${"c".repeat(120)}`,
+      capabilityRef: "reminder.set",
+      capabilityHandleRef: null,
+      arguments: { text: "周五交周报", due: "2026-10-30T15:00", repeat: "none" },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as { reminderId: string };
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.overview.read",
+      payload: {},
+    } as never);
+    const { idempotencyKey: _queryKey, ...message } = snapshot as unknown as Record<
+      string,
+      unknown
+    >;
+    const parsed = gatewayV2MessageSchema.parse(message);
+    if (parsed.type !== "memory.overview.snapshot") throw new Error("snapshot");
+    expect(parsed.payload.upcoming.map(({ reminderId }) => reminderId).sort()).toEqual(
+      [created.resultRef, other.resultRef, lookalike.resultRef, tool.reminderId].sort(),
+    );
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: tool.reminderId, action: "cancel" },
+    } as never);
+    expect(await context.repository.memoryReminders().read(tool.reminderId)).toMatchObject({
+      status: "cancelled",
+    });
+  });
+
   it("sets, lists and cancels reminders from the conversation tool and the reminders page through one writer", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
@@ -1863,6 +2136,191 @@ describe("production memory capture", () => {
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
   });
 
+  it('[HR-4] turns "夜里别提醒我" into an enforced push_quiet_hours rule through the rule tool, and refuses periods that are not times', async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const set = (args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef: "rule.set",
+        capabilityHandleRef: null,
+        arguments: {
+          inferred: false,
+          type: "push_quiet_hours",
+          summary: "夜里 23 点到早上 7 点，任务完成和邮件提醒等到早上再推",
+          quote: sentence,
+          ...args,
+        },
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const night = { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] };
+    const created = await set({ params: night }, "call-night");
+    expect(created).toMatchObject({ status: "active", type: "push_quiet_hours", replayed: false });
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => hit)).toBe(true);
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => !hit)).toBe(true);
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: created["ruleId"] as string,
+    } as never);
+    expect(stored).toMatchObject({ status: "active" });
+    await expect(
+      set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+    await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
+      code: "RULE_PARAMETERS_INVALID",
+    });
+  });
+
+  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
+    const output =
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
+    const marked = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    marked.markThread(THREAD_ID, ["web_fetch"]);
+    await marked.capture.start(marked.request);
+    await marked.capture.stop();
+    const [captured] = await marked.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(captured?.sourceRefs).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^external-content:.*\|web_fetch$/u)]),
+    );
+    const plain = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    plain.markThread("thread-elsewhere", ["web_fetch"]);
+    await plain.capture.start(plain.request);
+    await plain.capture.stop();
+    const [unmarked] = await plain.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(unmarked?.sourceRefs.some((ref) => ref.startsWith("external-content:"))).toBe(false);
+  });
+
+  it("[ADR-0257] marks a reminder and a rule written with external content in context, and keeps the reminder's source readable", async () => {
+    const sentence = "以后扣款邮件必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const invocation = (capabilityRef: string, toolCallId: string, args: unknown) =>
+      ({
+        runId: createRunId("run-external-marks"),
+        toolCallId,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      }) as never;
+    const provenance = { externalOrigins: ["web_fetch", "execution_task_output"] };
+    const reminder = (await context.reminderTools.run(
+      invocation("reminder.set", "call-external", { text: "改会议", due: "2026-10-30T15:00" }),
+      provenance,
+    )) as Record<string, unknown>;
+    const reminderMemory = await context.repository
+      .productMemoryState()
+      .read((reminder["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(reminderMemory?.sourceRefs).toEqual([
+      `external-content:${reminderMemory?.id}|execution_task_output`,
+      `external-content:${reminderMemory?.id}|web_fetch`,
+      expect.stringMatching(/^memory-content:reminder:/u),
+    ]);
+    expect(
+      memorySourceState({
+        memoryId: reminderMemory?.id ?? "",
+        importBatchId: null,
+        sourceThreadId: THREAD_ID,
+        sourceMessageId: null,
+        sourceRefs: reminderMemory?.sourceRefs ?? [],
+        history: [],
+      }),
+    ).toBe("reminder");
+
+    const rule = (await context.ruleTools.run(
+      invocation("rule.set", "call-external-rule", {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "扣款邮件一律提醒",
+        params: { phrases: ["扣款"] },
+      }),
+      provenance,
+    )) as Record<string, unknown>;
+    expect(rule).toMatchObject({ status: "active" });
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: rule["ruleId"] as string,
+    } as never);
+    expect(stored?.source).toBe(
+      `external-content:execution_task_output,web_fetch|chat:${THREAD_ID}`,
+    );
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(rule["memoryId"] as never);
+    expect(ruleMemory?.sourceRefs).toContain(
+      `external-content:${ruleMemory?.id}|execution_task_output`,
+    );
+
+    const plain = (await context.reminderTools.run(
+      invocation("reminder.set", "call-plain", { text: "交周报", due: "2026-10-30T16:00" }),
+    )) as Record<string, unknown>;
+    const plainMemory = await context.repository
+      .productMemoryState()
+      .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+  });
+
+  it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.rules.read",
+      payload: {},
+    } as never);
+    if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+    const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+    gatewayV2MessageSchema.parse(parsable);
+    expect(snapshot.payload.builtIn).toEqual([
+      expect.objectContaining({ ruleId: "action_preauthorize_owner_data", askFirst: false }),
+    ]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "ask_first" },
+      "ask-first",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "allow_directly" },
+      "allow-directly",
+    );
+    expect(context.actionRules.setAskFirst.mock.calls).toEqual([
+      ["action_preauthorize_owner_data", true],
+      ["action_preauthorize_owner_data", false],
+    ]);
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: "action_preauthorize_owner_data", action: "future_action" },
+        "unknown-action",
+      ),
+    ).rejects.toThrow("MEMORY_RULE_ACTION_UNSUPPORTED");
+    expect(context.actionRules.setAskFirst).toHaveBeenCalledTimes(2);
+  });
+
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
     const sentence = "日本入管局相关的邮件以后必须通知我";
     const context = await setup(
@@ -1872,6 +2330,7 @@ describe("production memory capture", () => {
     await context.capture.start(context.request);
     await context.capture.stop();
     await context.turn("owner", sentence, null);
+    await context.turn("owner", "日本入管局相关的邮件\n以后必须通知我", null);
     const immigration = { senderDomains: ["isa.go.jp"], phrases: ["在留資格"] };
     const tool = (capabilityRef: string, args: Record<string, unknown>, id: string) =>
       context.ruleTools.run({
@@ -1897,6 +2356,8 @@ describe("production memory capture", () => {
         payload: {},
       } as never);
       if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
       return snapshot.payload.rules;
     };
 
@@ -1904,6 +2365,81 @@ describe("production memory capture", () => {
     expect(created).toMatchObject({ status: "active", type: "mail_must_notify", replayed: false });
     expect(created["ruleId"]).toMatch(/^owner:[0-9a-f]{24}$/u);
     expect((created["trials"] as unknown[]).length).toBeGreaterThanOrEqual(3);
+    const detail = (await listed()).find(({ ruleId }) => ruleId === created["ruleId"]);
+    expect(detail).toMatchObject({ quote: sentence, changes: 0, lastUsed: null });
+    await context.repository.decisionLedger().append({
+      id: "rule-review-1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      kind: "rule_review",
+      decidedAt: "2026-11-11T09:00:00.000Z",
+      outcome: "needs_review",
+      reasonCode: "source_memory_changed",
+      subjectRef: null,
+      inputs: { memoryIds: [], ruleIds: [created["ruleId"]] },
+      reasonRef: null,
+      contentRef: null,
+      costMicros: 0,
+      durationMs: 0,
+    } as never);
+    expect(
+      (await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed,
+    ).toBeNull();
+    const recordUse = (id: string, checkedAt: string) =>
+      context.repository.proactive().record({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        decision: {
+          id,
+          scenario: "gmail",
+          checkedAt,
+          counts: {
+            fetched: 0,
+            skipped: 0,
+            judged: 0,
+            act: 0,
+            know: 0,
+            check: 0,
+            ignore: 0,
+            floorRaised: 0,
+            pushed: 0,
+          },
+          verdict: "silent",
+          reasonCode: "nothing_new",
+          pushSourceKey: null,
+          costMicros: 0,
+          durationMs: 1,
+          ownerRating: null,
+          ratedAt: null,
+        },
+        inputs: {
+          ruleIds: [`${created["ruleId"]}@1`],
+          sourceIds: [],
+          floorHits: {},
+          memoryInjected: false,
+          memoryIds: [],
+          usedMemoryIds: [],
+          tentativeMemoryIds: [],
+          memoryByMail: {},
+          memoryRecall: "off",
+        },
+        modelPayloads: [],
+        processed: [],
+        insights: [],
+        repliedThreads: [],
+        push: null,
+        cursor: null,
+      } as never);
+    await recordUse("rule-used-1", "2026-11-11T08:00:00.000Z");
+    expect((await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed).toEqual({
+      at: "2026-11-11T08:00:00.000Z",
+      kind: "proactive",
+      decisionId: "rule-used-1",
+    });
+    await recordUse("-1", "2026-11-11T10:00:00.000Z");
+    expect(
+      (await listed()).find(({ ruleId }) => ruleId === created["ruleId"])?.lastUsed,
+    ).toBeNull();
     const ruleMemory = await context.repository
       .productMemoryState()
       .read(created["memoryId"] as never);
@@ -2054,6 +2590,38 @@ describe("production memory capture", () => {
     expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("今晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这次别提醒我")).toBe(false);
+    expect(isStandingQuote("提醒我")).toBe(false);
+    expect(isStandingQuote("现在别提醒我")).toBe(false);
+    expect(isStandingQuote("我在开会，一会别打扰我")).toBe(false);
+    expect(isStandingQuote("今夜は通知しないで")).toBe(false);
+    expect(isStandingQuote("do not disturb me right now")).toBe(false);
+    expect(isStandingQuote("从现在起夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("晚上别提醒我")).toBe(true);
+    expect(isStandingQuote("周末别打扰我")).toBe(true);
+    expect(isStandingQuote("don't remind me at night")).toBe(true);
+    expect(isStandingQuote("别提醒我")).toBe(false);
+    expect(isStandingQuote("明天别提醒我")).toBe(false);
+    expect(isStandingQuote("暂时别提醒我")).toBe(false);
+    expect(isStandingQuote("先别提醒我")).toBe(false);
+    expect(isStandingQuote("明天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me tomorrow")).toBe(false);
+    expect(isStandingQuote("这个周末别提醒我")).toBe(false);
+    expect(isStandingQuote("下周三晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("后天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("昨晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("明年夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("下个月起，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("今年先这样，以后夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("从今天开始，以后夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("本季度夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me at night this month")).toBe(false);
+    expect(isStandingQuote("don't remind me this weekend")).toBe(false);
+    expect(isStandingQuote("don't remind me next week at night")).toBe(false);
     expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
     expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
@@ -2098,6 +2666,33 @@ describe("production memory capture", () => {
     expect(
       (await tool("rule.list", {}, "call-list"))["rules"] as { ruleId: string }[],
     ).toHaveLength(1);
+    const listedRules = (await tool("rule.list", {}, "call-list-shape"))["rules"] as Record<
+      string,
+      unknown
+    >[];
+    expect(Object.keys(listedRules[0] ?? {})).not.toEqual(expect.arrayContaining(["revision"]));
+    expect(Object.keys(listedRules[0] ?? {})).not.toContain("sourceMemoryId");
+    const multiline = await set(
+      { quote: "日本入管局相关的邮件\n以后必须通知我", params: immigration },
+      "call-multiline",
+    );
+    const multilineDetail = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
+    expect(multilineDetail?.quote).toBe("日本入管局相关的邮件 以后必须通知我");
+    await context.memory.delete(
+      multiline["memoryId"] as never,
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never,
+    );
+    const afterDelete = (await listed()).find(({ ruleId }) => ruleId === multiline["ruleId"]);
+    expect(afterDelete).toMatchObject({ status: "needs_review", quote: null });
+    const undone = (
+      await tool("rule.undo", { ruleId: multiline["ruleId"] }, "call-undo-multiline")
+    )["undone"] as Record<string, unknown>;
+    expect(undone).toMatchObject({ ruleId: multiline["ruleId"], status: "retired" });
+    expect(Object.keys(undone)).not.toContain("revision");
+    expect(Object.keys(undone)).not.toContain("sourceMemoryId");
     await expect(
       command(
         context.control,
@@ -2133,6 +2728,434 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  it("[P4-1] flags a three-level chain after an edit, leaves an unrelated memory alone, suspends the rule whose source changed and counts what the Owner agreed with", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const texts = {
+      a: "Andy 在办日本签证续签",
+      b: "Andy 最近常和入管局通信",
+      c: "Andy 每周一早上要看入管局的邮件",
+      d: "Andy 喜欢早上跑步",
+    } as const;
+    for (const [key, text] of Object.entries(texts)) {
+      await context.protect(`payload-chain-${key}`, text);
+      await command(
+        context.control,
+        "memory.create",
+        { contentRef: `payload-chain-${key}`, category: "other", subCategory: null, pinned: false },
+        `chain-${key}`,
+      );
+    }
+    const id = (key: keyof typeof texts) => `memory:owner:chain-${key}`;
+    context.sql((database) => {
+      database
+        .prepare(
+          `INSERT INTO memory_consolidation_runs (id, owner_id, agent_id, day, trigger_run_id,
+            status, model_called, started_at) VALUES ('run-p41', ?, ?, '2026-05-01', 'r', 'completed', 1, ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, T0);
+      for (const [change, memoryId, basis] of [
+        ["change-b", id("b"), id("a")],
+        ["change-c", id("c"), id("b")],
+      ] as const) {
+        database
+          .prepare(
+            `INSERT INTO memory_consolidation_changes (id, consolidation_id, owner_id, agent_id,
+              memory_id, action, after_revision, created_at)
+             VALUES (?, 'run-p41', ?, ?, ?, 'reflect', 1, ?)`,
+          )
+          .run(change, OWNER_ID, AGENT_ID, memoryId, T0);
+        database
+          .prepare(
+            "INSERT INTO memory_consolidation_change_basis (change_id, position, memory_id) VALUES (?, 0, ?)",
+          )
+          .run(change, basis);
+      }
+    });
+    const review = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.review.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.review.snapshot") throw new Error("snapshot");
+      return snapshot.payload;
+    };
+    const current = async (key: keyof typeof texts) => {
+      const found = (await overview(context.control)).memories.find(
+        ({ memoryId }) => memoryId === id(key),
+      );
+      if (!found) throw new Error(key);
+      return found;
+    };
+    expect((await review()).memories).toEqual([]);
+
+    context.clock.value = "2026-10-26T00:00:00.000Z";
+    await context.protect("payload-chain-a2", "Andy 的日本签证已经续好了");
+    await mutate(
+      context.control,
+      id("a"),
+      (await current("a")).revision,
+      "correct",
+      "payload-chain-a2",
+    );
+    const flagged = await review();
+    expect(
+      flagged.memories.map(({ memoryId, upstreamMemoryId, depth, reason, upstreamText }) => ({
+        memoryId,
+        upstreamMemoryId,
+        depth,
+        reason,
+        upstreamText,
+      })),
+    ).toEqual([
+      {
+        memoryId: id("b"),
+        upstreamMemoryId: id("a"),
+        depth: 1,
+        reason: "memory_edited",
+        upstreamText: "Andy 的日本签证已经续好了",
+      },
+      {
+        memoryId: id("c"),
+        upstreamMemoryId: id("a"),
+        depth: 2,
+        reason: "memory_edited",
+        upstreamText: "Andy 的日本签证已经续好了",
+      },
+    ]);
+    expect(flagged.memories.some(({ memoryId }) => memoryId === id("d"))).toBe(false);
+    expect((await current("b")).text).toBe(texts.b);
+    expect((await current("c")).text).toBe(texts.c);
+
+    context.clock.value = "2026-10-27T00:00:00.000Z";
+    await command(
+      context.control,
+      "memory.review.respond",
+      { target: id("c"), action: "dismiss", expectedRevision: null },
+      "dismiss-c",
+    );
+    await expect(
+      command(
+        context.control,
+        "memory.review.respond",
+        { target: id("d"), action: "dismiss", expectedRevision: null },
+        "dismiss-d",
+      ),
+    ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
+    await context.protect("payload-chain-b2", "Andy 最近不再和入管局通信");
+    await mutate(
+      context.control,
+      id("b"),
+      (await current("b")).revision,
+      "correct",
+      "payload-chain-b2",
+    );
+    expect(
+      await command(
+        context.control,
+        "memory.review.reportMissed",
+        { memoryId: id("d"), upstreamMemoryId: id("a") },
+        "missed-d",
+      ),
+    ).toMatchObject({ replayed: false });
+    expect(
+      await command(
+        context.control,
+        "memory.review.reportMissed",
+        { memoryId: id("d"), upstreamMemoryId: id("a") },
+        "missed-d-again",
+      ),
+    ).toMatchObject({ replayed: true });
+    const after = await review();
+    expect(
+      after.memories.map(({ memoryId, upstreamMemoryId, reason }) => [
+        memoryId,
+        upstreamMemoryId,
+        reason,
+      ]),
+    ).toEqual([
+      [id("d"), id("a"), "owner_reported"],
+      [id("c"), id("b"), "memory_edited"],
+    ]);
+    expect(after.agreement).toEqual({
+      handled: 2,
+      agreed: 1,
+      missed: 1,
+      openMemories: 2,
+      openRules: 0,
+    });
+
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-p41"),
+      toolCallId: "call-p41",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "入管局的邮件一律提醒",
+        quote: sentence,
+        params: { senderDomains: ["isa.go.jp"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const ruleId = created["ruleId"] as string;
+    const rules = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      return snapshot.payload.rules;
+    };
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(created["memoryId"] as never);
+    if (!ruleMemory) throw new Error("rule memory");
+    context.clock.value = "2026-10-28T00:00:00.000Z";
+    await context.protect("payload-rule-p41", "日本和韩国入管局相关的邮件以后必须通知我");
+    await mutate(
+      context.control,
+      ruleMemory.id,
+      ruleMemory.revision,
+      "correct",
+      "payload-rule-p41",
+    );
+    expect(await rules()).toMatchObject([{ ruleId, status: "needs_review", enforced: true }]);
+
+    const prompts: string[] = [];
+    const answer = JSON.stringify({
+      standing: true,
+      type: "mail_must_notify",
+      summary: "日本和韩国入管局的邮件一律提醒",
+      params: { senderDomains: ["isa.go.jp", "moj.go.kr"] },
+    });
+    const model: ProactiveModelInvoker = {
+      modelRef: "stub-flash",
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+      model: {
+        listAvailable: async () => [],
+        async *invoke(request) {
+          yield {
+            type: "model.output",
+            invocationId: request.invocationId,
+            sequence: 0,
+            payloadRef: "out-p41" as never,
+            occurredAt: context.clock.value,
+          };
+          yield {
+            type: "model.completed",
+            invocationId: request.invocationId,
+            inputTokens: 1,
+            outputTokens: 1,
+            costMicros: 1,
+            latencyMs: 1,
+            occurredAt: context.clock.value,
+          };
+        },
+      },
+      async prepare({ prompt }) {
+        prompts.push(prompt);
+        return {
+          runId: "run-p41-review" as never,
+          inputRef: "in-p41",
+          allowedDisclosureRef: "in-p41",
+          secretHandleRefs: [],
+          release: async () => undefined,
+        };
+      },
+      readOutput: async () => answer,
+      release: async () => undefined,
+    };
+    const reviewer = new RuleReviewService({
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      clock: { now: () => context.clock.value },
+      store: context.repository.ruleReviews(),
+      memories: context.repository.productMemoryState(),
+      readMemoryText: async (record) => (await context.plaintext(record.contentRef)) ?? "",
+      model,
+      nextInvocationId: () => `rule-review-${prompts.length}`,
+    });
+    expect(await reviewer.run()).toEqual([{ ruleId, outcome: "suspended" }]);
+    expect(prompts[0]).toContain("日本和韩国入管局相关的邮件以后必须通知我");
+    expect(await rules()).toMatchObject([{ ruleId, status: "suspended", enforced: false }]);
+    const [suspended] = (await review()).rules;
+    expect(suspended).toMatchObject({
+      ruleId,
+      status: "suspended",
+      suspendReason: "parameters_changed",
+      suggestion: "日本和韩国入管局的邮件一律提醒",
+      suggestionConditions: [{ field: "senderDomains", values: ["isa.go.jp", "moj.go.kr"] }],
+    });
+    if (!suspended) throw new Error("suspended");
+    await expect(
+      command(
+        context.control,
+        "memory.review.respond",
+        { target: ruleId, action: "adopt", expectedRevision: suspended.revision - 1 },
+        "adopt-stale",
+      ),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+    expect(await rules()).toMatchObject([{ ruleId, status: "suspended" }]);
+    await command(
+      context.control,
+      "memory.review.respond",
+      { target: ruleId, action: "adopt", expectedRevision: suspended.revision },
+      "adopt",
+    );
+    expect(await rules()).toMatchObject([{ ruleId, status: "active", enforced: true }]);
+    const stored = await context.repository
+      .ownerRules()
+      .read({ ownerId: OWNER_ID, agentId: AGENT_ID, ruleId } as never);
+    expect(stored?.parameters).toMatchObject({
+      params: { senderDomains: ["isa.go.jp", "moj.go.kr"] },
+    });
+    expect(await reviewer.run()).toEqual([]);
+    expect((await review()).agreement).toEqual({
+      handled: 3,
+      agreed: 2,
+      missed: 1,
+      openMemories: 2,
+      openRules: 0,
+    });
+  });
+
+  it("[iOS] 规则引用的记忆后来被新记忆取代时，照样给出引用并标明，给出最新那条记忆；归档的不标", async () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-superseded"),
+      toolCallId: "call-superseded",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "入管局的邮件一律提醒",
+        params: { senderDomains: ["isa.go.jp"] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const state = context.repository.productMemoryState();
+    const sourceId = created["memoryId"] as never;
+    const newer = (await state.listActive(OWNER_ID, AGENT_ID)).find(({ id }) => id !== sourceId);
+    if (!newer) throw new Error("newer memory");
+    const listed = async () => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.rules.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+      gatewayV2MessageSchema.parse(parsable);
+      return snapshot.payload.rules.find(({ ruleId }) => ruleId === created["ruleId"]);
+    };
+    const generation = async () =>
+      (await context.repository.memoryBook().latestGeneration({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+      } as never)) as never;
+    const revise = async (memoryId: never, change: Record<string, unknown>) =>
+      context.memory.revise({
+        memoryId,
+        expectedRevision: (await state.read(memoryId))?.revision ?? 0,
+        generationId: await generation(),
+        ...change,
+      } as never);
+
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { attributes: { supersededBy: newer.id } });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: newer.id,
+    });
+    await revise(newer.id as never, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: true,
+      quoteLatestMemoryId: null,
+    });
+    await revise(newer.id as never, { status: "active" });
+    await revise(newer.id as never, { attributes: { supersededBy: sourceId } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(newer.id as never, { attributes: { supersededBy: null } });
+    await revise(sourceId, { status: "archived" });
+    expect(await listed()).toMatchObject({
+      quote: sentence,
+      quoteSuperseded: false,
+      quoteLatestMemoryId: null,
+    });
+    await revise(sourceId, { status: "active" });
+    const chain: string[] = [];
+    for (let index = 1; index <= 9; index += 1) {
+      await context.protect(`payload-chain-${index}`, `主人的第 ${index} 版说法`);
+      await context.control.execute({
+        ...envelope,
+        idempotencyKey: `chain-${index}`,
+        kind: "command",
+        type: "memory.create",
+        payload: {
+          contentRef: `payload-chain-${index}`,
+          category: "preference",
+          subCategory: "其他",
+          pinned: false,
+        },
+      } as never);
+      chain.push(`memory:owner:chain-${index}`);
+    }
+    await revise(sourceId, { attributes: { supersededBy: chain[0] } });
+    for (let index = 0; index < 8; index += 1)
+      await revise(chain[index] as never, { attributes: { supersededBy: chain[index + 1] } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
+    await revise(chain[7] as never, { attributes: { supersededBy: null } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: chain[7] });
+    context.sql((database) =>
+      database
+        .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('agent-other', ?, 0)")
+        .run(OWNER_ID),
+    );
+    await context.protect("payload-other-agent", "主人的另一版说法", "private", "agent-other");
+    const foreign = await state.save(
+      {
+        ...((await state.read(newer.id as never)) as object),
+        contentRef: "payload-other-agent",
+        sourceThreadId: null,
+        id: "memory:other-agent-latest",
+        agentId: "agent-other",
+        revision: 1,
+      } as never,
+      null,
+    );
+    await revise(sourceId, { attributes: { supersededBy: foreign.id } });
+    expect(await listed()).toMatchObject({ quoteSuperseded: true, quoteLatestMemoryId: null });
   });
 
   it("tells the model when the reminder list is cut off and why a brand-new account cannot set one", async () => {
@@ -2341,7 +3364,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-manual", category: "preference", subCategory: "运动", pinned: false },
+      {
+        contentRef: "payload-manual",
+        category: "preference",
+        subCategory: "运动",
+        topic: null,
+        pinned: false,
+      },
       "manual-1",
     );
     const added = (await overview(context.control)).memories.find(({ text }) =>
@@ -2360,7 +3389,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-card", category: "finance", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-card",
+        category: "finance",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-2",
     );
     expect(
@@ -2382,13 +3417,25 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "preference", subCategory: null, pinned: true },
+      {
+        contentRef: "payload-coffee",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: true,
+      },
       "manual-pinned",
     );
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-run", category: "preference", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-run",
+        category: "preference",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-plain",
     );
     let view = await overview(context.control);
@@ -2442,7 +3489,13 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-mood",
+        category: "health",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-mood",
     );
     const mood = (await overview(context.control)).memories.find(({ text }) =>
@@ -2470,6 +3523,7 @@ describe("production memory capture", () => {
         contentRef: "payload-sister",
         category: "relationship",
         subCategory: null,
+        topic: null,
         pinned: false,
       },
       "manual-sister",
@@ -2513,13 +3567,25 @@ describe("production memory capture", () => {
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-coffee", category: "identity", subCategory: "饮食", pinned: true },
+      {
+        contentRef: "payload-coffee",
+        category: "identity",
+        subCategory: "饮食",
+        topic: null,
+        pinned: true,
+      },
       "manual-coffee",
     );
     await command(
       context.control,
       "memory.create",
-      { contentRef: "payload-mood", category: "health", subCategory: null, pinned: false },
+      {
+        contentRef: "payload-mood",
+        category: "health",
+        subCategory: null,
+        topic: null,
+        pinned: false,
+      },
       "manual-mood",
     );
     const find = async (needle: string) => {
@@ -2791,7 +3857,9 @@ describe("production memory capture", () => {
       {
         batchId: "memory-import-codex-2",
         source: "codex",
-        items: [{ contentRef: "payload-import-1", category: "rule", subCategory: null }],
+        items: [
+          { contentRef: "payload-import-1", category: "rule", subCategory: null, topic: null },
+        ],
       },
       "import-p11",
     );
@@ -2946,8 +4014,13 @@ describe("production memory capture", () => {
           batchId: "memory-import-codex-1",
           source: "codex",
           items: [
-            { contentRef: "payload-import-1", category: "rule", subCategory: "回答方式" },
-            { contentRef: "payload-import-2", category: "goal", subCategory: null },
+            {
+              contentRef: "payload-import-1",
+              category: "rule",
+              subCategory: "回答方式",
+              topic: null,
+            },
+            { contentRef: "payload-import-2", category: "goal", subCategory: null, topic: null },
           ],
         },
         "import-1",
@@ -2994,7 +4067,9 @@ describe("production memory capture", () => {
       {
         batchId: "memory-import-sensitive-1",
         source: "assistant",
-        items: [{ contentRef: "payload-import-pwd", category: "other", subCategory: null }],
+        items: [
+          { contentRef: "payload-import-pwd", category: "other", subCategory: null, topic: null },
+        ],
       },
       "import-sensitive-1",
     );
@@ -3004,6 +4079,293 @@ describe("production memory capture", () => {
         .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
         .map(({ dataClassification }) => dataClassification),
     ).toEqual(["sensitive"]);
+  });
+
+  it("[A4] judges an imported entry against the owner's private memories with the model and never compares words", async () => {
+    const context = await setup(
+      "请记住，我对乳制品不耐受。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人对乳制品不耐受","classification":"private","confidence":950,"explicit":true,"quote":"我对乳制品不耐受"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-d1", "喝不了牛奶");
+    await context.protect("payload-d2", "对乳制品不耐受，每次喝都难受");
+    await context.protect("payload-d3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-d4", "我得了抑郁症", "sensitive");
+    const duplicates = async (contentRefs: readonly string[]) => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.import.duplicates.read",
+        payload: { contentRefs },
+      } as never);
+      if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+      return snapshot.payload.items.map(({ contentRef, verdict, memoryId }) => [
+        contentRef,
+        verdict,
+        memoryId === null ? null : memoryId.length > 0,
+      ]);
+    };
+    context.duplicateAnswers.push(
+      { matchKey: "m0", probabilityPermille: 920 },
+      { matchKey: null, probabilityPermille: 0 },
+    );
+    expect(await duplicates(["payload-d1", "payload-d2", "payload-d3", "payload-d4"])).toEqual([
+      ["payload-d1", "same", true],
+      ["payload-d2", "different", null],
+      ["payload-d3", "skipped", null],
+      ["payload-d4", "skipped", null],
+    ]);
+    expect(context.duplicateRequests).toHaveLength(1);
+    const request = context.duplicateRequests[0];
+    expect(request?.existing.map(({ text }) => text)).toEqual(["主人对乳制品不耐受"]);
+    expect(request?.candidates.map(({ text }) => text)).toEqual([
+      "喝不了牛奶",
+      "对乳制品不耐受，每次喝都难受",
+    ]);
+    expect(JSON.stringify(context.duplicateRequests)).not.toContain("抑郁症");
+    await context.protect("payload-d5", "我最近总睡不好");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "health", classification: "sensitive", topic: "health" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-d5"] },
+    } as never);
+    const before = context.duplicateRequests.length;
+    expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "skipped", null]]);
+    expect(context.duplicateRequests).toHaveLength(before);
+  });
+
+  it("[A4] never calls an entry different when older memories were left out of the comparison", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-t1", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-two",
+        source: "assistant",
+        items: [{ contentRef: "payload-t1", category: "other", subCategory: null, topic: null }],
+      },
+      "import-two",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    await context.protect("payload-t2", "喜欢吃辣");
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-t2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
+  });
+
+  it("[A4] reports skipped when every existing memory is sensitive, and never counts them against the limit", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-s1", "我每周日去教堂", "sensitive");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-sensitive-only",
+        source: "assistant",
+        items: [
+          { contentRef: "payload-s1", category: "other", subCategory: null, topic: "beliefs" },
+        ],
+      },
+      "import-sensitive-only",
+    );
+    await context.protect("payload-s2", "喜欢蓝色");
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests).toHaveLength(0);
+    await context.protect("payload-s3", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-a-private",
+        source: "assistant",
+        items: [{ contentRef: "payload-s3", category: "other", subCategory: null, topic: null }],
+      },
+      "import-a-private",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const limited = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (limited.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(limited.payload.items.map(({ verdict }) => verdict)).toEqual(["different"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
+  });
+
+  it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.protect("payload-c1", "我不吃药，身体一直很好");
+    await context.protect("payload-c2", "每天早上吃一片降压药");
+    await context.protect("payload-c3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-c4", "回答不要用表情符号");
+    const classify = async (contentRefs: readonly string[]) => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.classify.read",
+        payload: { contentRefs },
+      } as never);
+      if (snapshot.type !== "memory.classify.snapshot") throw new Error("snapshot");
+      return snapshot.payload.items;
+    };
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [
+          { id: "0", category: "preference", classification: "private", topic: null },
+          { id: "1", category: "health", classification: "private", topic: null },
+          { id: "3", category: "made-up", classification: "private", topic: null },
+        ],
+      }),
+    );
+    expect(await classify(["payload-c1", "payload-c2", "payload-c3", "payload-c4"])).toEqual([
+      {
+        contentRef: "payload-c1",
+        category: "preference",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+      {
+        contentRef: "payload-c2",
+        category: "health",
+        classification: "sensitive",
+        topic: "health",
+        failed: false,
+      },
+      {
+        contentRef: "payload-c3",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: false,
+      },
+      {
+        contentRef: "payload-c4",
+        category: "other",
+        classification: "private",
+        topic: null,
+        failed: false,
+      },
+    ]);
+    expect(context.classifyPrompts).toHaveLength(1);
+    expect(context.classifyPrompts[0]).toContain("我不吃药，身体一直很好");
+    expect(context.classifyPrompts[0]).not.toContain("110101199003071234");
+    await context.protect("payload-c5", "我最近心情很低落", "sensitive");
+    expect(await classify(["payload-c5"])).toEqual([
+      {
+        contentRef: "payload-c5",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: false,
+      },
+    ]);
+    expect(context.classifyPrompts).toHaveLength(1);
+    context.classifyOutputs.push("not json", '{"items":"nope"}');
+    expect(await classify(["payload-c1"])).toEqual([
+      {
+        contentRef: "payload-c1",
+        category: "other",
+        classification: "sensitive",
+        topic: "other",
+        failed: true,
+      },
+    ]);
+    expect(context.classifyFailures).toHaveLength(1);
+  });
+
+  it("[T5] stores a hand-added memory at least as sensitive as its text and category demand, whatever the page sent", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-id", "我的身份证号是 110101199003071234");
+    await context.protect("payload-bp", "每天早上吃一片降压药");
+    await context.protect("payload-bp-topic", "我在吃抗抑郁的药");
+    await context.protect("payload-plain", "我喜欢早上跑步");
+    const add = (contentRef: string, category: string, topic: string | null, key: string) =>
+      command(
+        context.control,
+        "memory.create",
+        { contentRef, category, subCategory: null, topic, pinned: false },
+        key,
+      );
+    await add("payload-id", "identity", null, "t5-id");
+    await add("payload-bp", "health", null, "t5-bp");
+    await add("payload-bp-topic", "preference", "health", "t5-topic");
+    await add("payload-plain", "preference", null, "t5-plain");
+    await context.protect("payload-belief", "我每周日去教堂");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "other", classification: "sensitive", topic: "beliefs" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-belief"] },
+    } as never);
+    await add("payload-belief", "other", null, "t5-judged");
+    const stored = Object.fromEntries(
+      (await overview(context.control)).memories
+        .filter(({ memoryId }) => memoryId.startsWith("memory:owner:t5-"))
+        .map(({ memoryId, dataClassification, topic, sourceRefs }) => [
+          memoryId.slice("memory:owner:".length),
+          {
+            dataClassification,
+            topic,
+            raised: sourceRefs.some((ref) => ref.startsWith("memory-raised:")),
+          },
+        ]),
+    );
+    expect(stored).toEqual({
+      "t5-id": { dataClassification: "sensitive", topic: "other", raised: true },
+      "t5-bp": { dataClassification: "sensitive", topic: "health", raised: true },
+      "t5-topic": { dataClassification: "sensitive", topic: "health", raised: true },
+      "t5-plain": { dataClassification: "private", topic: null, raised: false },
+      "t5-judged": { dataClassification: "sensitive", topic: "beliefs", raised: true },
+    });
   });
 
   const P3_5_MESSAGE = "我超想出去玩，周末去哪儿都行";
@@ -3090,6 +4452,45 @@ describe("production memory capture", () => {
     expect(backlogRows(context)).toEqual([]);
   });
 
+  it("[P3-5] still sends the audit records when the transaction committed but its answer was lost", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = optionsOf(context);
+    const lost = new ProductionMemoryCapture({
+      ...options,
+      unitOfWork: {
+        run: async (work) => {
+          await options.unitOfWork.run(work);
+          throw new Error("COMMIT_ANSWER_LOST");
+        },
+      },
+    });
+    await lost.start(context.request);
+    await lost.stop();
+    expect(await activeMemories(context)).toHaveLength(1);
+    expect(context.audits.length).toBeGreaterThan(0);
+    expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] keeps saving and keeps the turn queued when the queue cannot be read", async () => {
+    const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
+    const options = failingWrites(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    const blind = new ProductionMemoryCapture({
+      ...options,
+      backlog: {
+        ...backlog,
+        has: async () => {
+          throw new Error("PORT_UNAVAILABLE");
+        },
+      },
+    });
+    await blind.start(context.request);
+    await blind.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([1]);
+  });
+
   it("[P3-5] retries an answer that is not valid JSON and records the failure", async () => {
     const context = await setup(P3_5_MESSAGE, "好的，我记住了。");
     context.outputs.push(P3_5_MEMORY);
@@ -3169,6 +4570,29 @@ describe("production memory capture", () => {
     ]);
     await nextTurn(context, "run-d", ['{"memories":[]}']);
     expect(context.calls.at(-1)?.invocationId).toBe("memory-capture:run-d");
+    expect(await activeMemories(context)).toEqual([]);
+  });
+
+  it("[P3-5] does not ask the model again for a turn that was given up when its queued row could not be removed", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    for (const runId of ["run-a", "run-b"])
+      await nextTurn(context, runId, ['{"memories":[]}', "不是 JSON"]);
+    const removing = removeFailingOnce(context, 1);
+    await context.turn("owner", "今天 run-c 轮，随便聊聊。", "run-c");
+    context.outputs.push('{"memories":[]}', "不是 JSON");
+    const failing = new ProductionMemoryCapture(removing.options);
+    await failing.start(context.requestFor("run-c"));
+    await failing.stop();
+    expect(backlogRows(context).map((row) => (row as { attempts: number }).attempts)).toEqual([3]);
+    const before = context.calls.length;
+    await nextTurn(context, "run-d", ['{"memories":[]}']);
+    expect(context.calls.slice(before)).toEqual([
+      { invocationId: "memory-capture:run-d", retryToolCall: false },
+    ]);
+    expect(backlogRows(context)).toEqual([]);
     expect(await activeMemories(context)).toEqual([]);
   });
 
@@ -3292,7 +4716,7 @@ describe("production memory capture", () => {
     } as ConstructorParameters<typeof ProductionMemoryCapture>[0];
   };
 
-  it("[P3-5] records a turn whose memories could not be written, without asking the model again or queueing it", async () => {
+  it("[P3-5] keeps a turn whose memories could not be written in the queue, after saving it twice without asking the model again", async () => {
     const context = await setup(P3_5_MESSAGE, P3_5_MEMORY);
     context.outputs.push(P3_5_MEMORY);
     const capture = new ProductionMemoryCapture(failingWrites(context));
@@ -3304,120 +4728,116 @@ describe("production memory capture", () => {
     expect(await activeMemories(context)).toEqual([]);
     expect(
       (await captureFailures(context)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
-    ).toEqual([["capture_gave_up", "PORT_CONFLICT"]]);
-    expect(backlogRows(context)).toEqual([]);
+    ).toEqual([["capture_queued", "PORT_CONFLICT"]]);
+    expect(backlogRows(context)).toEqual([
+      {
+        generationId: "memory-capture:run-memory-capture",
+        attempts: 1,
+        lastErrorCode: "PORT_CONFLICT",
+      },
+    ]);
     expect(context.failures).toHaveLength(1);
   });
 
-  it("[P3-5] gives up a replayed turn whose memories cannot be written, and does not replay it again when the row could not be removed", async () => {
+  it("[P3-5] gives up a turn whose memories cannot be written after the third failed save, and drops it from the queue", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
     await context.capture.stop();
-    const options = failingWrites(context);
-    const backlog = options.backlog;
-    if (!backlog) throw new Error("backlog");
-    let removeFailures = 1;
-    const capture = new ProductionMemoryCapture({
-      ...options,
-      backlog: {
-        ...backlog,
-        enqueue: (entry) => backlog.enqueue(entry),
-        oldest: (query) => backlog.oldest(query),
-        recordAttempt: (attempt) => backlog.recordAttempt(attempt),
-        remove: async (generationId) => {
-          if (generationId === "memory-capture:run-memory-capture" && removeFailures > 0) {
-            removeFailures -= 1;
-            throw new Error("PORT_UNAVAILABLE");
-          }
-          return backlog.remove(generationId);
-        },
-      },
-    });
-    await context.turn("owner", "今天第二轮，随便聊聊。", "run-save-fails");
-    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
-    await capture.start(context.requestFor("run-save-fails"));
-    await vi.waitFor(() =>
-      expect(
-        context.failures.some(
-          (error) => error instanceof Error && error.message === "PORT_UNAVAILABLE",
-        ),
-      ).toBe(true),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(removeFailures).toBe(0);
-    expect(backlogRows(context)).toHaveLength(1);
-    expect(
-      (await captureFailures(context)).filter(({ outcome }) => outcome === "capture_gave_up"),
-    ).toHaveLength(1);
-    await context.turn("owner", "今天第三轮，随便聊聊。", "run-after");
-    context.outputs.push('{"memories":[]}');
-    await capture.start(context.requestFor("run-after"));
-    await capture.stop();
-    expect(context.calls.map(({ invocationId }) => invocationId).slice(2)).toEqual([
-      "memory-capture:run-save-fails",
-      "memory-capture:run-save-fails:backlog",
-      "memory-capture:run-after",
-    ]);
-    expect(await activeMemories(context)).toEqual([]);
+    for (const run of ["run-save-a", "run-save-b", "run-save-c"]) {
+      await context.turn("owner", `今天 ${run} 轮，随便聊聊。`, run);
+      context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+      const capture = new ProductionMemoryCapture(failingWrites(context));
+      await capture.start(context.requestFor(run));
+      await capture.stop();
+      expect(await activeMemories(context)).toEqual([]);
+    }
     expect(backlogRows(context)).toEqual([]);
     expect(
       (await captureFailures(context))
         .filter(({ reasonCode }) => reasonCode === "PORT_CONFLICT")
-        .map(({ outcome }) => outcome),
-    ).toEqual(["capture_gave_up"]);
+        .map(({ outcome }) => outcome)
+        .sort(),
+    ).toEqual(["capture_gave_up", "capture_queued", "capture_queued"]);
   });
 
-  it("[P3-5] does not replay a turn again after its memories were saved but its row could not be removed", async () => {
+  const removeFailingOnce = (context: Awaited<ReturnType<typeof setup>>, failures: number) => {
+    const options = optionsOf(context);
+    const backlog = options.backlog;
+    if (!backlog) throw new Error("backlog");
+    const state = { remaining: failures };
+    return {
+      state,
+      options: {
+        ...options,
+        backlog: {
+          ...backlog,
+          remove: async (generationId: string) => {
+            if (generationId === "memory-capture:run-memory-capture" && state.remaining > 0) {
+              state.remaining -= 1;
+              throw new Error("PORT_UNAVAILABLE");
+            }
+            return backlog.remove(generationId);
+          },
+        },
+      } as ConstructorParameters<typeof ProductionMemoryCapture>[0],
+    };
+  };
+
+  it("[P3-5] saves the memories and removes the queued row in one transaction: a failed removal rolls the save back, and the second save writes everything once", async () => {
     const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
     context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
     await context.capture.start(context.request);
     await context.capture.stop();
-    const options = optionsOf(context);
-    const backlog = options.backlog;
-    if (!backlog) throw new Error("backlog");
-    let removeFailures = 1;
-    const capture = new ProductionMemoryCapture({
-      ...options,
-      backlog: {
-        ...backlog,
-        enqueue: (entry) => backlog.enqueue(entry),
-        oldest: (query) => backlog.oldest(query),
-        recordAttempt: (attempt) => backlog.recordAttempt(attempt),
-        remove: async (generationId) => {
-          if (generationId === "memory-capture:run-memory-capture" && removeFailures > 0) {
-            removeFailures -= 1;
-            throw new Error("PORT_UNAVAILABLE");
-          }
-          return backlog.remove(generationId);
-        },
-      },
-    });
+    const { state, options } = removeFailingOnce(context, 1);
     await context.turn("owner", "今天第二轮，随便聊聊。", "run-saved");
     context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    const capture = new ProductionMemoryCapture(options);
     await capture.start(context.requestFor("run-saved"));
-    await vi.waitFor(() =>
-      expect(
-        context.failures.some(
-          (error) => error instanceof Error && error.message === "PORT_UNAVAILABLE",
-        ),
-      ).toBe(true),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(backlogRows(context)).toHaveLength(1);
-    await context.turn("owner", "今天第三轮，随便聊聊。", "run-after");
-    context.outputs.push('{"memories":[]}');
-    await capture.start(context.requestFor("run-after"));
     await capture.stop();
-    expect(context.calls.map(({ invocationId }) => invocationId).slice(2)).toEqual([
-      "memory-capture:run-saved",
-      "memory-capture:run-saved:backlog",
-      "memory-capture:run-after",
-    ]);
+    expect(state.remaining).toBe(0);
     expect((await activeMemories(context)).map(({ id }) => id)).toEqual([
       "memory:memory-capture:run-memory-capture:0",
     ]);
+    expect(
+      await context.repository.productMemoryState().listHistory({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        memoryIds: ["memory:memory-capture:run-memory-capture:0" as never],
+      }),
+    ).toHaveLength(1);
     expect(backlogRows(context)).toEqual([]);
+  });
+
+  it("[P3-5] leaves nothing behind when the queued row cannot be removed twice, and keeps the turn queued", async () => {
+    const context = await setup(P3_5_MESSAGE, new Error("AI_GATEWAY_PROVIDER_UNAVAILABLE"));
+    context.outputs.push(new Error("AI_GATEWAY_REQUEST_TIMEOUT"));
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const { options } = removeFailingOnce(context, 2);
+    await context.turn("owner", "今天第二轮，随便聊聊。", "run-rolled-back");
+    context.outputs.push('{"memories":[]}', P3_5_MEMORY);
+    const capture = new ProductionMemoryCapture(options);
+    await capture.start(context.requestFor("run-rolled-back"));
+    await capture.stop();
+    expect(await activeMemories(context)).toEqual([]);
+    expect(
+      await context.repository
+        .decisionLedger()
+        .list({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          kind: "memory_candidate",
+          since: "2000-01-01T00:00:00.000Z",
+          limit: 100,
+        } as never)
+        .then((rows) => rows.filter(({ outcome }) => outcome === "kept")),
+    ).toEqual([]);
+    expect(backlogRows(context)).toHaveLength(1);
+    expect(backlogRows(context)[0]).toMatchObject({
+      attempts: 1,
+      lastErrorCode: "PORT_UNAVAILABLE",
+    });
   });
 
   it("[P3-5] does not replay a turn that another run is still retrying", async () => {

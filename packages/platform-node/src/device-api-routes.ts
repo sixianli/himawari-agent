@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceConfiguration,
@@ -26,6 +27,12 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  classifyDeviceGatewayRequest,
+  type DeviceGatewayAuditFailure,
+  type DeviceGateways,
+  dispatchDeviceGatewayRequest,
+} from "./device-gateway.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   type AuthenticatedDeviceRequest,
@@ -34,6 +41,11 @@ import {
   type PairedDeviceService,
 } from "./paired-device-service.js";
 import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
+import {
+  PLAIN_TEXT_MAXIMUM_CHARACTERS,
+  parseTextAdmission,
+  type TextAdmissionClassification,
+} from "./text-admission.js";
 
 export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
@@ -46,6 +58,9 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
   { method: "GET", path: "threads", signed: true },
+  { method: "POST", path: "approvals/challenge", signed: true },
+  { method: "POST", path: "gateway", signed: true },
+  { method: "POST", path: "payloads/text/new", signed: true },
   { method: "POST", path: "threads", signed: true },
   { method: "GET", path: "threads/{threadId}", signed: true },
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
@@ -97,7 +112,8 @@ export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
 const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const MESSAGE_TEXT_MAXIMUM = 64 * 1024;
+const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
+export type DeviceTextClassification = TextAdmissionClassification;
 
 export interface DeviceApiAuthority {
   readonly agentId: string;
@@ -119,10 +135,14 @@ export interface DeviceApiRouteOptions {
   readonly authority: DeviceApiAuthority;
   readonly perception?: PerceptionService;
   readonly threadGateway: AgentThreadGatewayPort;
+  readonly gateways: DeviceGateways;
+  readonly audit: AuditLedgerPort;
+  readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
     readonly content: string;
+    readonly dataClassification?: DeviceTextClassification;
   }) => Promise<string>;
   readonly streamThreadEvents: (input: {
     readonly gateway: AgentThreadGatewayPort;
@@ -253,6 +273,7 @@ function holdDeviceStream(
   deviceId: string,
   stream: Readable,
   maximum: number,
+  connection: NodeJS.EventEmitter,
 ): void {
   const open = counts.get(deviceId) ?? 0;
   if (open >= maximum) {
@@ -262,10 +283,19 @@ function holdDeviceStream(
     });
   }
   counts.set(deviceId, open + 1);
-  stream.once("close", () => {
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
     const remaining = (counts.get(deviceId) ?? 1) - 1;
     if (remaining > 0) counts.set(deviceId, remaining);
     else counts.delete(deviceId);
+  };
+  stream.once("close", release);
+  stream.once("error", release);
+  connection.once("close", () => {
+    release();
+    stream.destroy();
   });
 }
 
@@ -301,8 +331,14 @@ async function* bounded(
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
   const streamCounts = new Map<string, number>();
-  const holdStream = (deviceId: string, stream: Readable, maximum: number) =>
-    holdDeviceStream(streamCounts, deviceId, stream, maximum);
+  const holdStream = (
+    deviceId: string,
+    stream: Readable,
+    maximum: number,
+    connection: NodeJS.EventEmitter,
+  ) => {
+    holdDeviceStream(streamCounts, deviceId, stream, maximum, connection);
+  };
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
       ownerId: authentication.ownerId,
@@ -712,9 +748,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
-          holdStream(authenticated.device.id, stream, configuration.streamConnections);
-          options.setStreamHeaders(reply);
-          return reply.send(stream);
+          holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+          try {
+            options.setStreamHeaders(reply);
+            return reply.send(stream);
+          } catch (error) {
+            stream.destroy();
+            throw error;
+          }
         }
         const after = new URLSearchParams(rawQuery(request)).get("after") ?? "0";
         if (!/^(0|[1-9][0-9]{0,15})$/u.test(after)) options.rejectBody(400);
@@ -859,6 +900,49 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, 200, accepted);
       });
 
+      device.post("/payloads/text/new", async (request, reply) => {
+        const { device: paired, authentication } = await authenticate(request);
+        const { idempotencyKey, ...text } = json(request);
+        const admitted = parseTextAdmission(text, PLAIN_TEXT_MAXIMUM_CHARACTERS);
+        if (
+          typeof idempotencyKey !== "string" ||
+          !MESSAGE_ID_PATTERN.test(idempotencyKey) ||
+          !admitted
+        )
+          return options.rejectBody(400);
+        const payloadRef = await options.protectText({
+          authentication,
+          idempotencyKey: `device-text:${stableSuffix(paired.id, idempotencyKey)}`,
+          ...admitted,
+        });
+        return options.sendJson(reply, 201, { payloadRef });
+      });
+
+      device.post("/approvals/challenge", async (request, reply) => {
+        const { device: paired } = await authenticate(request);
+        return options.sendJson(reply, 201, options.devices.issueConfirmChallenge(paired.id));
+      });
+
+      device.post("/gateway", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const classified = classifyDeviceGatewayRequest(json(request));
+        return options.sendJson(
+          reply,
+          200,
+          await dispatchDeviceGatewayRequest({
+            request: classified,
+            confirmed: authenticated.confirmed,
+            pairedDeviceId: authenticated.device.id,
+            authentication: authenticated.authentication,
+            authority: options.authority,
+            gateways: options.gateways,
+            audit: options.audit,
+            ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
+            now,
+          }),
+        );
+      });
+
       device.get("/stream", async (request, reply) => {
         const authenticated = await authenticate(request);
         const { authentication } = authenticated;
@@ -897,9 +981,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
-        holdStream(authenticated.device.id, stream, configuration.streamConnections);
-        options.setStreamHeaders(reply);
-        return reply.send(stream);
+        holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+        try {
+          options.setStreamHeaders(reply);
+          return reply.send(stream);
+        } catch (error) {
+          stream.destroy();
+          throw error;
+        }
       });
     },
     { prefix: DEVICE_API_PREFIX },

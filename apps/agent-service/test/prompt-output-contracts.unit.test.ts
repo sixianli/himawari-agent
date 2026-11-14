@@ -4,6 +4,8 @@ import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
 import * as capture from "../src/production-memory-capture.js";
+import * as classification from "../src/production-memory-classification.js";
+import * as review from "../src/production-memory-conversation-review.js";
 
 const message = "我下周三要去大阪出差，记得提醒我前一天订酒店。";
 const memory = {
@@ -53,14 +55,21 @@ const isEntry = (value: unknown): value is PromptEntry =>
 
 const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryCandidates: capture.parseMemoryCandidates,
+  parseSupportVerdict: capture.parseSupportVerdict,
+  parseMemoryClassifications: classification.parseMemoryClassifications,
+  parseConversationReview: review.parseConversationReview,
+  parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
   parseJudgements: application.parseJudgements,
+  parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
   parseGeneratedQuestion: application.parseGeneratedQuestion,
   parseJudgeVerdict: application.parseJudgeVerdict,
+  parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
   parsePerceptionExtraction: application.parsePerceptionExtraction,
   parsePerceptionSourceCheck: application.parsePerceptionSourceCheck,
   parsePerceptionImage: application.parsePerceptionImage,
+  parseRuleReviewAnswer: application.parseRuleReviewAnswer,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -87,8 +96,10 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     ).toEqual(
       [
         "eval.real-memory.judge",
+        "eval.real-memory.leak-judge",
         "eval.real-memory.question",
         "mail.judgment",
+        "mail.reference-extraction",
         "memory.capture",
         "perception.extract",
         "perception.image.understand",
@@ -97,8 +108,13 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "perception.source.message",
         "perception.source.screen",
         "perception.source.speech",
+        "memory.classification",
+        "memory.confirmation-judge",
+        "memory.conversation-review",
+        "memory.import-duplicate-question",
         "review.prereview",
         "review.typesafe-questions",
+        "rule.review",
       ].sort(),
     );
   });
@@ -120,6 +136,30 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
     expect(missing.candidates).toHaveLength(0);
     expect(missing.invalidCandidates).toBe(1);
     expect(() => captured("好的，我记下了。")).toThrow("MEMORY_CAPTURE_RESPONSE_INVALID");
+  });
+
+  it("memory classification: accepts the items JSON the prompt asks for and rejects anything else", () => {
+    const example = JSON.stringify({
+      items: [{ id: "0", category: "preference", classification: "private", topic: null }],
+    });
+    expect(classification.parseMemoryClassifications(example, ["0"]).get("0")).toEqual({
+      category: "preference",
+      classification: "private",
+      topic: null,
+      failed: false,
+    });
+    expect(
+      classification.parseMemoryClassifications(`\`\`\`json\n${example}\n\`\`\``, ["0"]).size,
+    ).toBe(1);
+    expect(() => classification.parseMemoryClassifications("好的", ["0"])).toThrow(
+      "MEMORY_CLASSIFICATION_RESPONSE_INVALID",
+    );
+    expect(
+      classification.parseMemoryClassifications(
+        JSON.stringify({ items: [{ id: "0", category: "preference", classification: "secret" }] }),
+        ["0"],
+      ).size,
+    ).toBe(0);
   });
 
   it("mail judgment: accepts the items JSON the prompt asks for", () => {

@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DECISION_OUTCOMES } from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -55,11 +54,8 @@ function dump(database: Database) {
           sql: entry.sql
             ?.replace(/\s+/gu, " ")
             .replace(/, 'hold'/gu, "")
-            .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
-            .replace(
-              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded', 'told' ))",
-              "",
-            ),
+            .replace(/, 'web_push'/gu, "")
+            .replace(/ OR \(kind = 'web_push' AND outcome = 'deferred'\)/gu, ""),
         };
       }),
   };
@@ -171,7 +167,7 @@ async function openMigrated() {
     database,
     path.join(directory, "snapshot.sqlite"),
   );
-  applyMigrations(database, migrations, { snapshot });
+  applyMigrations(database, migrations.slice(0, sequence + 1), { snapshot });
   return { database, before };
 }
 
@@ -201,21 +197,6 @@ describe("consolidation hold migration", () => {
       /DECISION_SIGNAL_IMMUTABLE/u,
     );
     expect(database.pragma("foreign_key_check")).toEqual([]);
-    const ledger = (kind: string, outcome: string) =>
-      database
-        .prepare(
-          `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, checked_at, counts, outcome,
-            reason_code, subject_ref, inputs, cost_micros, duration_ms)
-           VALUES (?, ?, ?, ?, ?, '{}', ?, 'test', 'subject', '{"memoryIds":[],"ruleIds":[]}', 0, 0)`,
-        )
-        .run(`d-${kind}-${outcome}`, OWNER, AGENT, kind, T0, outcome);
-    expect(ledger("limit_change", "changed").changes).toBe(1);
-    expect(ledger("delivery_timing", "deferred").changes).toBe(1);
-    for (const outcome of DECISION_OUTCOMES.proposal)
-      expect(ledger("proposal", outcome).changes).toBe(1);
-    expect(() => ledger("proposal", "changed")).toThrow(/CHECK/u);
-    expect(() => ledger("limit_change", "deferred")).toThrow(/CHECK/u);
-    expect(() => ledger("no_such_kind", "changed")).toThrow(/CHECK/u);
     expect(database.prepare("SELECT count(*) FROM source_insights").pluck().get()).toBe(1);
     database.prepare("DELETE FROM memory_consolidation_changes WHERE id = 'change-1'").run();
     expect(

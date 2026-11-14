@@ -1,4 +1,4 @@
-import type { AttachmentKind } from "./attachment-text.js";
+export type AttachmentKind = "text" | "pdf" | "word" | "excel" | "powerpoint" | "image";
 
 export interface DraftAttachment {
   readonly name: string;

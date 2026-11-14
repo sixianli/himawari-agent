@@ -1,0 +1,1 @@
+{"id": "67", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|67|找不到|-|做梦记忆（PR 395）里“重试时补做取代”的补丁|-", "outcome": "model-wrong", "evidenceFile": "docs/adr/0231-review-past-conversations-to-fix-memory.md", "evidence": "重试会补做取代"}

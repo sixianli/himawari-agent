@@ -1,0 +1,6 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 低 — `GATEWAY_REST` 的 “unreadable” 输出不符合文档规定的四段格式", "valid": true, "class": "error", "severity": "low", "trigger": "rests.json 读不出", "consequence": "unreadable 落在服务方那一段，和文档的四段格式不一致", "modelSeverity": "低"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 低 — “读不出（非 ENOENT）”分支没有自动测试覆盖", "valid": true, "class": "error", "severity": "low", "trigger": "rests.json 是目录或无权限", "consequence": "这条分支改坏了测试发现不了", "modelSeverity": "低"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低 — 截断按 UTF-16 code unit 做，可能切断代理对", "valid": true, "class": "error", "severity": "low", "trigger": "停用原因第 80 个字符落在 emoji 中间", "consequence": "日志里出现坏字符", "modelSeverity": "低"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低 — `REVIEW_TIMING` / `GATEWAY_REST` 不在 `--report` 输出里，规则文档与实现只有部分一致", "valid": true, "class": "better"}
+{"id": "5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低（未核实）— `session`、`status` 的 Magpie 日志格式依赖没有真实样本作证", "valid": false, "class": "error"}
+{"id": "6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 6. 低（未核实）— `answered` 的两处定义不一致", "valid": true, "class": "error", "severity": "low", "trigger": "Magpie 把 status 写成字符串", "consequence": "费用照算而耗时统计跳过这一行", "modelSeverity": "低"}

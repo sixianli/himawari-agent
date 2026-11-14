@@ -1,0 +1,2 @@
+{"id": "5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|5|找不到|-|落地之前没有任何地方记“模型看得到的内容里有没有外来内容”|-", "outcome": "model-wrong", "evidenceFile": "apps/agent-service/src/owner-scope-authorization.ts", "evidence": "const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];"}
+{"id": "61", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|61|找不到|-|开任务本身一直走写代码那条路的权限引擎|-", "outcome": "model-wrong", "evidenceFile": "apps/agent-service/src/production-tool-actions.ts", "evidence": "authorization: \"governed_workflow\","}

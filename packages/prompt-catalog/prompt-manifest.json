@@ -170,9 +170,9 @@
     }
   },
   "chat.identity": {
-    "sha256": "fda7f9520b2b825ba99e9de6198aafaead9b430560ab0955a8b18fbe055d2103",
-    "changedIn": "ADR 0166",
-    "reason": "W-05、W-09、W-12、W-21、W-24：资料标记改中文并给主人的要求单独标记；提醒成功后说事情时间和提醒时刻；删掉和回答语言规则重复的一句；审批写成系统自动发起的事实"
+    "sha256": "35e600b78cdeb3525ddd9047946f457c9bcd9983cd4bc833303757126fa0d61b",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚，再提一个可以直接点头的具体做法并说出依据"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -304,15 +304,20 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
+  "eval.real-memory.leak-judge": {
+    "sha256": "28918cd7f5c42b965548321deb7f78a7f882af0bcb2bcf5751bebec1a1905c02",
+    "changedIn": "ADR 0249",
+    "reason": "新增：评测出题后判断题干有没有透露答案，取代日期数字词表"
+  },
   "eval.real-memory.question": {
     "sha256": "bd9ec88d02e4d3c4b6f21b5dab89941946a27e7727395de39d6489a43a1e2fd8",
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
   "mail.judgment": {
-    "sha256": "6828d0988462d4e491a4b7036b8a1f0fc3985ec859ddf79d6a2d10fdedc55f99",
-    "changedIn": "HR-2",
-    "reason": "邮件判断可选写主金额 amount（value、currency、confidence），供主人的金额规则使用；追加在固定文字末尾，不改前面的字节",
+    "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
+    "changedIn": "ADR 0248",
+    "reason": "每封邮件（含 ignore）多写 money=yes/no，供涉钱地板规则读取；只在后台邮件判断调用里，不属于对话请求开头",
     "emphasis": {
       "kind": "deferred",
       "batch": "第 3 批 W-06、W-11/W-19",
@@ -344,10 +349,15 @@
     "changedIn": "ADR 0179",
     "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
   },
+  "mail.reference-extraction": {
+    "sha256": "d2b0bb030eb725e1aa8169f3d92d12db31008af3a84db135787563fda757ab51",
+    "changedIn": "ADR 0249",
+    "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
+  },
   "mcp.find-memories": {
-    "sha256": "b237866524c80554f6c6b7196603727f09c43dd92f6e05fe7ea57f173a916fa6",
-    "changedIn": "ADR 0242",
-    "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
+    "sha256": "01d2d22db95c24492af1b2b773a89e601243e73c48a1b79da3595cbcb79ad13c",
+    "changedIn": "ADR 0262",
+    "reason": "新增 includeHistory 参数，说明里写明什么时候填"
   },
   "mcp.propose-memories": {
     "sha256": "f75b853df7d4a7a9e00f60981b07066014f3f68105df73f5ce30419d3bdfce7f",
@@ -534,6 +544,21 @@
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
+  "memory.agenda.ending": {
+    "sha256": "92de03887fec2a5dc5a657558dd947164f46120189f0dab7ab28cba3f6c11a18",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排加入带日期的记忆；这 7 天的提醒全部读到且其中没有它时才写“这 7 天里没有提醒”"
+  },
+  "memory.agenda.omitted": {
+    "sha256": "135300a696b772e9adb68a7bb733c83a28d0c2db39793f31bb1adf3f8c0d7790",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排放不下时，写明还有几项没有列出"
+  },
+  "memory.agenda.unreminded": {
+    "sha256": "a9eae4450706a8b7e2058e4b1ca1f7b5aaa7b35eae7d981e85d1c8217b555836",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排加入带日期的记忆；这 7 天的提醒全部读到且其中没有它时才写“这 7 天里没有提醒”"
+  },
   "memory.capture": {
     "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",
     "changedIn": "ADR 0185",
@@ -547,6 +572,16 @@
       ],
       "reason": "解析函数的硬要求：非 create 的候选没有有效的 existingMemoryId 整条作废；非 unchanged、非 restricted 的候选 quote 对不上原话会被拒。“unchanged 也要填”是给模型的统一要求，代码对 unchanged 和 restricted 不拦"
     }
+  },
+  "memory.classification": {
+    "sha256": "dd98a816e5e4d4603f7a4b95030c750073ffc940d23032216f679ba318144095",
+    "changedIn": "ADR 0260",
+    "reason": "新增：主人手动添加和导入的记忆由模型判断类别和是否敏感，代替网页上的词表猜测"
+  },
+  "memory.confirmation-judge": {
+    "sha256": "34cc58d299f3339aa04ce8615462b94478c0393c43191021d05ed7f592b65732",
+    "changedIn": "ADR 0249",
+    "reason": "新增：判断主人原话是否确认待确认规矩的裁判提示词"
   },
   "memory.consolidation": {
     "sha256": "94e2bac81138bc9b4b4c30556d3a29a9b0dc7be2c5dee422a3d905b2f6fab83d",
@@ -577,6 +612,25 @@
     "sha256": "1903531c8c4bca28d8e853a4cd569aa0a9b95fc691f39d72d81d5f183c8fb058",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "memory.conversation-review": {
+    "sha256": "9b9fc6c0068093938dd12a124c53306fdba877716daa200de1ea94075a5ed530",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：每天回看一段已经结束的对话，补记跨几条消息才完整的信息，找出被推翻的旧记忆；字段规则和每轮抽取共用同一份文字",
+    "emphasis": {
+      "kind": "hard-condition",
+      "phrases": ["supersede 和 unchanged 必须填 existingMemoryId", "每条都必须填"],
+      "evidence": [
+        "apps/agent-service/src/production-memory-capture.ts#(requestedDecision !== \"create\" && existing === null)",
+        "apps/agent-service/src/production-memory-capture.ts#const evidenceRejected"
+      ],
+      "reason": "回看把每条候选交给每轮抽取同一个解析函数：非 create 的候选没有有效的 existingMemoryId 整条作废；quote 对不上 messageId 那条主人消息的原话会被拒"
+    }
+  },
+  "memory.conversation-review.day": {
+    "sha256": "0299f9a2367cdb92f9eb7292fd9f87ebf498863f59c74a86eb9f3190736da0f5",
+    "changedIn": "ADR 0231",
+    "reason": "初次登记：回看提示词最后一行带今天的日期，每天会变，所以放在最后"
   },
   "memory.date.ongoing": {
     "sha256": "2e254e51b948538ef3e6edf6362cafe1b73eb1b2ed73e9f6dc9ca31a4fd72ac1",
@@ -638,75 +692,10 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
-  "perception.data-notice": {
-    "sha256": "da76be06e6177f16d79d1d00289481149234b0e618e9c71b703dee79dba2eeb2",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.extract": {
-    "sha256": "a733d4be5215106cf9e68aa742d122707d55563f2e596b0fab83e74975ac194c",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "perception.extract.calendar-header": {
-    "sha256": "62e60932c45d5d6a400ac46e914ee2a27932490be68a80e6006d86fc4ff28698",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.extract.continued-note": {
-    "sha256": "6442d0c93d5efae1a0d1d1e845f733a979ce25da88aeb0f4d0d833e5f50bf94e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.extract.open-todos-header": {
-    "sha256": "2f05f1c93c2b7170b1ea84996d9e12923eb9337a280a6149f512db408cd3e804",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.extract.records-header": {
-    "sha256": "45092b26cad3556dddea528e908310e8cb5ff83be2f0d247df446259148d0d0f",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.image.understand": {
-    "sha256": "c5657895b67fc6947bb78b8bf15e0d85ca45fabc926fe9139b9d0322b916696f",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.now-header": {
-    "sha256": "717130edd1cf2ec9b6ba5f1d0bdb3f20f86384e6745586712f1e053a7aa7918e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.source.calendar": {
-    "sha256": "eb77d4cb7c6254e07b24aafb66a5b247f600d856bf75c97d628d87e01029830d",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "perception.source.items-header": {
-    "sha256": "b372be4acbdf2e4cc1467754cce9833a87a067453438261807647c6d09de0273",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "perception.source.location": {
-    "sha256": "1921f31349109f4d2929ea12df3f591fca857dca09cd1944790d92aae91c9412",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "perception.source.message": {
-    "sha256": "dfad03d71a06d0c13e43356748558f0c8ddf4d3fa457e360b698677fcb3c6614",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "perception.source.screen": {
-    "sha256": "387323bac164bef1cb6535cabca113c77892b5e40a981b3d474845457a04f743",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "perception.source.speech": {
-    "sha256": "d17c642a7acbc011b22fcad50912d547c7a62b3b3e5029ce178e0d8b0db5a9c7",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
+  "memory.import-duplicate-question": {
+    "sha256": "324340a48c186039fa92a6a4d0f7bb175cadfb4d107b573b24d5916cb56c3255",
+    "changedIn": "ADR 0271",
+    "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
   },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
@@ -717,6 +706,16 @@
     "sha256": "693762a6b2f60f490e1217f79dea053f4319292232d8043fc8194e949232ac0d",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "rule.review": {
+    "sha256": "81d386ad3305c145522fe129882843b6b12888ab8d7bf3562bdfd17e89ec2a73",
+    "changedIn": "ADR 0232",
+    "reason": "新增：规则的来源记忆被改后，请模型按改后的主人原话重译规则，供程序和现有规则比较"
+  },
+  "rule.review.instructions-header": {
+    "sha256": "bc69f86b71bed300c90480a913df92a23d47cfc50e02b1c5331d016e6b8b1156",
+    "changedIn": "ADR 0232",
+    "reason": "新增：重检提示词里引用立规则说明的标题"
   },
   "runtime.compaction.summary-instruction": {
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
@@ -762,6 +761,11 @@
     "sha256": "a10bafeeee0ad6e161cfcae8cf94043bcc9e0a261659898d1877a55b46958b6d",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "tool-result.recall-input-invalid": {
+    "sha256": "d2c78196e63aa1d82083fba11d56b17377113aef7932fa45f71d69d768f85d86",
+    "changedIn": "ADR 0262",
+    "reason": "新增：查记忆的参数不对（日期不存在、先后颠倒等）时，告诉模型怎么改正后重查"
   },
   "tool-result.recall-tentative": {
     "sha256": "e7421bd88df36380fef973ec47331df9d9f4e1457227fc77d7456350d498d73b",
@@ -833,26 +837,6 @@
     "changedIn": "ADR 0166",
     "reason": "W-15：去掉“受限 Worker、输出披露”等行话；bash 改用 tools.builtin.bash，这条只接在 write、edit 后面"
   },
-  "tools.device-action": {
-    "sha256": "502103b2555dc8d9d9cebecaeba345fb612f968ea5a02e63940c40cfa38e29fb",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.device-action.action": {
-    "sha256": "1c0a39432b9056d8e87471848502835a32a47a802feb20cc04613960800249ac",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.device-action.arguments": {
-    "sha256": "368907ce8354af39d5c225ec6a493b2a321df7f429e380d68da79eaa41124aa8",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.device-action.device": {
-    "sha256": "314a6fd3914144f4e61a0f985a3a6be36b8dfbb9188c378d4d6f581767be1526",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
   "tools.execution-task-cancel": {
     "sha256": "a5804e88d5cb351804fc32276d6cb9a5d40f4ac17dccdaab0b5dd8a83a1b2e18",
     "changedIn": "ADR 0166",
@@ -901,36 +885,6 @@
       "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
     }
   },
-  "tools.perception-read": {
-    "sha256": "52a384947d102d95e7b068169bdbc4f0363417cab34ae51f7e557de61ad7e3a1",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.perception-read.detail": {
-    "sha256": "e48ec6bd6de645c7fe4c3e522dc0e344e69ca80a55226ba21599317426f2273d",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.perception-read.from": {
-    "sha256": "3302a922bfcfcc991d2159fe5c41b623b6aee3f68b9321c64fd459ae47d80903",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.perception-read.kinds": {
-    "sha256": "66bc2fb530ceb617d2a68b7a26c42a21e46086361b03a478889aa1f674578756",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.perception-read.query": {
-    "sha256": "8fe8cccbcc8d9a7009dc280993737cd1557c096e0cf9fbeaac61043566c02d78",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.perception-read.to": {
-    "sha256": "516e64eb2730126ff8848c17dc1df6c6ae86d21d31678596107bb9d9b27857fc",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
   "tools.policy-blocked.file-authorization": {
     "sha256": "7c4dc0b70eb7c780f932329cdbfc8a0218ff3c0f643c11581b4df452ef8c13b1",
     "changedIn": "ADR 0164",
@@ -967,9 +921,9 @@
     "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
   },
   "tools.recall": {
-    "sha256": "e8ff4b0aac87bfa9348d3600401389c7a57f0adb89c880dce50e6343ced11c4e",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "347d934d121bcd84306cf4a8f4078bfc5f5bad275423e924c751c5cd57349853",
+    "changedIn": "ADR 0262",
+    "reason": "时间范围只用模型填的：补一句问现在的情况时不填 includeHistory"
   },
   "tools.reminder-cancel": {
     "sha256": "36162b20fbebb99afd1ebe1d48ac2e88f721f3043fa99b09c612a472668d5d30",
@@ -986,130 +940,15 @@
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
   },
-  "tools.result.device-action.describe": {
-    "sha256": "23c31ae00ba70a34a1d2f83751f6de2c07a62d1d9e193ca9819e68508c1b4f7c",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.expired": {
-    "sha256": "b0fa7a4fdf5933178c26c5cae04050de30f93d33a32ec74b716a5dfee3927732",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.failed": {
-    "sha256": "95d440cb6bb4bca22485608a2e21f7bc6a7e3e154c3585fb00a7b63a51deb5e5",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.invalid": {
-    "sha256": "701188b88ed074f3fc77c77d3e8815579298b0f12791a23dda72fd0479edcf60",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.no-device": {
-    "sha256": "85656789e182a839281721cdaf358d42b64fd8ccba0eb67b4db193ad2b5d76d5",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.queued": {
-    "sha256": "a156383abd8e27ee2d6418ee93011dfafb813259199105273c8307ed59c29942",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.rejected": {
-    "sha256": "d2dbc0bffcbeedaceb491d41fdc82dfc7b4dfbe836ea0c0ed3fb595e8d5f110a",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.result-unknown": {
-    "sha256": "6d2b2d6fcd4c6715ef65a229f5780525cfbe8226c1895a5e5638b8f606326e0f",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.succeeded": {
-    "sha256": "239da62ff3d1e7c7e20d1e007606e1f443b1aeef17ccb6ec1c9fa79dce517793",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.unavailable": {
-    "sha256": "5cedefd301fc808bc637a50faec1a44486324195c46e538d1c72ea04107c44fc",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.unconfirmed": {
-    "sha256": "e05f02c1fb9c18595955c2af9d3bf3e7ad0a7e5712cf15c4bebc2b65a46e53a8",
-    "changedIn": "ADR 0230",
-    "reason": "要主人确认的设备动作没拿到确认时单独说明"
-  },
-  "tools.result.device-action.unknown-action": {
-    "sha256": "b5af85ce1d1ee305d9e513cc2576b8fd8f946eeec941b9da26c820da8d89fb53",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.unsupported": {
-    "sha256": "5cd885aa95e3b11c7a145bfd6ca25818812f88735beefcc1f7a35a85e329ed9e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.device-action.waiting-owner": {
-    "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.origin-gate.confirm": {
-    "sha256": "6c9e2f09b8682192d6da57989cdbc7c4ae65014b709ef0e51f60e3d16991ad2c",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：两个固定工具、感知抽取和来源检查的提示词"
-  },
-  "tools.result.origin-gate.deferred": {
-    "sha256": "c151ed61c23723ba881b5d4ea3d3bb2c9b83d5fec5295d3af893bd054294f623",
-    "changedIn": "ADR 0230",
-    "reason": "入口检查的后台说明不再说留给主人决定"
-  },
-  "tools.result.perception-read.empty": {
-    "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.hidden": {
-    "sha256": "88dabd0971cc71994b5d4e76b92286044172b4f0bbacc1c21353979c7fed8243",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.invalid": {
-    "sha256": "d493b32b8fe13e31b65d724d3ab825700cc0bfe7ef178b8e7297cca3fac451de",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.truncated": {
-    "sha256": "1ccb7a91d63a67982a9b51e8c4c07f6c46d45998a00b99fd430a953e2c72ecef",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.unavailable": {
-    "sha256": "36c597463358add3b336d6a1779234ed95b6ceb0155dddc53933bff27e5d1330",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.unexamined": {
-    "sha256": "34c06447a5943f463cea56ffdd370cd54e0765f877ed70e560e60bb435165591",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
-  "tools.result.perception-read.unknown-kinds": {
-    "sha256": "47c227d179d2b590592d1fa6324aedcd4ae6eebbf0e8ab511041f2d1b5334d2e",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批初次登记：两个固定工具、感知抽取、来源检查和资料包装的全部新文字一次上线"
-  },
   "tools.rule-list": {
     "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",
     "changedIn": "ADR 0213",
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "f62529b980811148f549896178580e077ccfe36cffb99db03067fc1e8e0147aa",
-    "changedIn": "ADR 0213",
-    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
+    "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
+    "changedIn": "ADR 0244",
+    "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],

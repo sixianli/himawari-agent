@@ -1,0 +1,7 @@
+DerivedData/
+latest/
+*.mov
+*.mp4
+DerivedData-mac/
+mac-latest/
+mac-build.log

@@ -171,6 +171,7 @@ function RuleItem({
         {message("decision.chain.rule", { k: rule.kind, id: rule.ruleId })}
         {` · ${message("decision.chain.origin", { o: rule.origin ?? "unknown" })}`}
         {rule.status === "needs_review" ? ` · ${message("decision.chain.ruleNeedsReview")}` : ""}
+        {rule.status === "suspended" ? ` · ${message("decision.chain.ruleSuspended")}` : ""}
         {thisMail ? ` · ${message("decision.email.thisMail")}` : ""}
       </p>
       {rule.memory ? (

@@ -1,4 +1,10 @@
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import {
+  OWNER_AGENDA_ENDING,
+  OWNER_AGENDA_OMITTED,
+  OWNER_AGENDA_UNREMINDED,
+  renderPrompt,
+} from "@himawari-agent/prompt-catalog";
 import type {
   DataClassification,
   MemoryBookStorePort,
@@ -8,13 +14,13 @@ import type {
   ProductMemoryRecord,
   ProductMemoryStatePort,
 } from "../ports/index.js";
-import { memoryDateNote, memoryDatesOf } from "../ports/memory-dates.js";
+import { memoryDateNote, memoryDatesOf, memoryLocalDate } from "../ports/memory-dates.js";
 import { highestClassification, modelVisibleCeiling } from "./model-visibility.js";
 
 export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
-const AGENDA_CHARACTER_BUDGET = 800;
+export const OWNER_AGENDA_CHARACTER_BUDGET = 2400;
 const AGENDA_HORIZON_MS = 7 * 24 * 3_600_000;
-const AGENDA_LIMIT = 10;
+const AGENDA_REMINDER_LIMIT = 100;
 const PROFILE_MINIMUM_IMPORTANCE = 600;
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   public: 0,
@@ -95,6 +101,7 @@ export interface OwnerProfileServiceOptions {
   }) => Promise<void>;
   readonly digest: (text: string) => string;
   readonly characterBudget?: number;
+  readonly agendaCharacterBudget?: number;
   readonly reminders?: Pick<MemoryReminderStorePort, "listUpcoming">;
   readonly pins?: Pick<MemoryBookStorePort, "listProfilePins">;
   readonly timeZone?: string;
@@ -109,6 +116,10 @@ function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
   if (!attributes) return false;
   if (attributes.supersededBy !== null || attributes.tentative === true) return false;
   return attributes.validTo === null || attributes.validTo > now;
+}
+
+function byCodeUnit(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function byImportance(left: ProductMemoryRecord, right: ProductMemoryRecord): number {
@@ -181,6 +192,7 @@ export class OwnerProfileService implements OwnerProfilePort {
       ).map(({ memoryId, pinned }) => [memoryId, pinned]),
     );
     const pinned = new Set([...choices].flatMap(([memoryId, on]) => (on ? [memoryId] : [])));
+    const declined = new Set([...choices].flatMap(([memoryId, on]) => (on ? [] : [memoryId])));
     const valid = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
       (memory) =>
         memory.status === "active" &&
@@ -248,25 +260,31 @@ export class OwnerProfileService implements OwnerProfilePort {
       pinned: pinnedUsed,
       queued: Object.freeze(queued),
     });
-    return { rules, sections, eligible: valid, usage };
+    return { rules, sections, eligible: valid, declined, usage };
   }
 
   async #agenda(
     input: { readonly ownerId: OwnerId; readonly agentId: AgentId; readonly now: string },
     eligible: readonly ProductMemoryRecord[],
+    declined: ReadonlySet<MemoryId>,
   ) {
-    const reminders = this.#options.reminders;
-    if (!reminders) return [];
+    const timeZone = this.#options.timeZone ?? "UTC";
+    const now = Date.parse(input.now);
+    const until = new Date(now + AGENDA_HORIZON_MS).toISOString();
+    const firstDay = memoryLocalDate(input.now, timeZone);
+    const lastDay = memoryLocalDate(until, timeZone);
     const memories = new Map(eligible.map((memory) => [memory.id, memory]));
-    const upcoming = await reminders.listUpcoming({
+    const listed = await this.#options.reminders?.listUpcoming({
       ownerId: input.ownerId,
       agentId: input.agentId,
       from: input.now,
-      to: new Date(Date.parse(input.now) + AGENDA_HORIZON_MS).toISOString(),
-      limit: AGENDA_LIMIT,
+      to: until,
+      limit: AGENDA_REMINDER_LIMIT,
     });
-    const format = new Intl.DateTimeFormat("zh-CN", {
-      timeZone: this.#options.timeZone ?? "UTC",
+    const upcoming = listed ?? [];
+    const remindersComplete = listed !== undefined && listed.length < AGENDA_REMINDER_LIMIT;
+    const timed = new Intl.DateTimeFormat("zh-CN", {
+      timeZone,
       month: "numeric",
       day: "numeric",
       weekday: "short",
@@ -274,19 +292,85 @@ export class OwnerProfileService implements OwnerProfilePort {
       minute: "2-digit",
       hourCycle: "h23",
     });
-    let remaining = AGENDA_CHARACTER_BUDGET;
-    const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+    const dayOnly = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "UTC",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+    });
+    const entries: {
+      memory: ProductMemoryRecord;
+      day: string;
+      timed: boolean;
+      instant: string;
+      tie: string;
+      label: string;
+    }[] = [];
+    const reminded = new Set<MemoryId>();
     for (const reminder of upcoming) {
       const memory = memories.get(reminder.memoryId);
       if (!memory) continue;
-      const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
-      if (!text) continue;
-      const line = `${format.format(new Date(reminder.dueAt))}：${text}`;
-      if (line.length + 3 > remaining) continue;
-      remaining -= line.length + 3;
-      lines.push({ memory, text: line });
+      reminded.add(memory.id);
+      entries.push({
+        memory,
+        day: memoryLocalDate(reminder.dueAt, timeZone),
+        timed: true,
+        instant: reminder.dueAt,
+        tie: reminder.id,
+        label: timed.format(new Date(reminder.dueAt)),
+      });
     }
-    return lines;
+    const dayInWindow = (value: string | null): string | null => {
+      if (value === null) return null;
+      const instant = Date.parse(value);
+      if (value.includes("T") && (instant <= now || instant > now + AGENDA_HORIZON_MS)) return null;
+      const day = memoryLocalDate(value, timeZone);
+      return day >= firstDay && day <= lastDay ? day : null;
+    };
+    for (const memory of eligible) {
+      if (reminded.has(memory.id) || declined.has(memory.id)) continue;
+      const dates = memoryDatesOf(memory);
+      for (const [value, ending] of [
+        [dates.validFrom, false],
+        [dates.validTo, true],
+      ] as const) {
+        const day = dayInWindow(value);
+        if (day === null) continue;
+        const shown = dayOnly.format(new Date(`${day}T12:00:00.000Z`));
+        const label = ending ? renderPrompt(OWNER_AGENDA_ENDING, { day: shown }) : shown;
+        entries.push({
+          memory,
+          day,
+          timed: false,
+          instant: "",
+          tie: memory.id,
+          label: remindersComplete ? renderPrompt(OWNER_AGENDA_UNREMINDED, { label }) : label,
+        });
+      }
+    }
+    entries.sort(
+      (left, right) =>
+        byCodeUnit(left.day, right.day) ||
+        Number(left.timed) - Number(right.timed) ||
+        byCodeUnit(left.instant, right.instant) ||
+        byCodeUnit(left.tie, right.tie) ||
+        byCodeUnit(left.label, right.label),
+    );
+    let remaining = this.#options.agendaCharacterBudget ?? OWNER_AGENDA_CHARACTER_BUDGET;
+    let omitted = 0;
+    const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+    for (const entry of entries) {
+      const text = (await this.#options.readText(entry.memory))?.replace(/\s+/gu, " ").trim();
+      if (!text) continue;
+      const line = `${entry.label}：${text}`;
+      if (line.length + 3 > remaining) {
+        omitted += 1;
+        continue;
+      }
+      remaining -= line.length + 3;
+      lines.push({ memory: entry.memory, text: line });
+    }
+    return { lines, omitted };
   }
 
   async compose(input: {
@@ -295,8 +379,8 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfile> {
-    const { rules, sections, eligible, usage } = await this.#select(input);
-    const agenda = await this.#agenda(input, eligible);
+    const { rules, sections, eligible, declined, usage } = await this.#select(input);
+    const agenda = await this.#agenda(input, eligible, declined);
     const blocks: OwnerProfileBlock[] = [];
     const name =
       CLASSIFICATION_RANK[input.maxClassification] >= CLASSIFICATION_RANK.private
@@ -337,16 +421,19 @@ export class OwnerProfileService implements OwnerProfilePort {
           sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),
         ),
       );
-    if (agenda.length > 0)
+    if (agenda.lines.length > 0 || agenda.omitted > 0)
       blocks.push(
         await this.#block(
           input,
           "owner-agenda",
           [
             `主人接下来 7 天的安排（时间为主人当地时间，${this.#options.timeZone ?? "UTC"}）：`,
-            ...agenda.map(({ text }) => `- ${text}`),
+            ...agenda.lines.map(({ text }) => `- ${text}`),
+            ...(agenda.omitted > 0
+              ? [renderPrompt(OWNER_AGENDA_OMITTED, { count: String(agenda.omitted) })]
+              : []),
           ].join("\n"),
-          agenda.map(({ memory }) => memory),
+          [...new Set(agenda.lines.map(({ memory }) => memory))],
         ),
       );
     return Object.freeze({

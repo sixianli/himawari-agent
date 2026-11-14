@@ -350,7 +350,6 @@ export interface PerceptionConfiguration {
   readonly extractCalendarDays: number;
   readonly extractMaximumCandidates: number;
   readonly extractBatchEpisodes: number;
-  readonly runReadMaximumRecords: number;
 }
 
 export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object.freeze({
@@ -377,7 +376,6 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   extractCalendarDays: 21,
   extractMaximumCandidates: 12,
   extractBatchEpisodes: 4,
-  runReadMaximumRecords: 50,
 });
 
 export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
@@ -406,7 +404,6 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   extractCalendarDays: [7, 62],
   extractMaximumCandidates: [1, 50],
   extractBatchEpisodes: [1, 50],
-  runReadMaximumRecords: [1, 500],
 });
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
@@ -590,9 +587,6 @@ export interface PerceptionExtractionState {
   readonly updatedAt: string;
 }
 
-export const PERCEPTION_RUN_INITIATORS = ["owner", "background"] as const;
-export type PerceptionRunInitiator = (typeof PERCEPTION_RUN_INITIATORS)[number];
-
 export interface PerceptionStorePort {
   listRecordsBetween(
     input: PerceptionScope & {
@@ -642,18 +636,6 @@ export interface PerceptionStorePort {
   commandUtterances(
     input: PerceptionScope & { readonly utteranceIds: readonly string[] },
   ): Promise<readonly string[]>;
-  markRunRead(
-    input: PerceptionScope & {
-      readonly runId: string;
-      readonly recordIds: readonly string[];
-      readonly maximum: number;
-      readonly now: string;
-    },
-  ): Promise<void>;
-  runReadRecordIds(input: PerceptionScope & { readonly runId: string }): Promise<readonly string[]>;
-  runInitiator(
-    input: PerceptionScope & { readonly runId: string },
-  ): Promise<PerceptionRunInitiator | undefined>;
   readSettings(input: PerceptionScope): Promise<PerceptionSettings>;
   writeSettings(
     input: PerceptionScope & {
