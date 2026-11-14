@@ -32,6 +32,7 @@ import {
   parseArgs,
   parseUsage,
   parseVerdicts,
+  priorFindingsBlock,
   proxyCredentialProblems,
   RAW_FILE_SUFFIXES,
   RECORD_SECRET_RULES,
@@ -1411,6 +1412,128 @@ describe("opencode review merge gate", () => {
     ).toBe('REVIEW_LOW_FIX_REFUSED file-name-has-line-break "test/odd\\nname.test.mjs"');
   });
 
+  it("[incremental round] carries the previous round's confirmed errors, deterministically and within limits", () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      verdict({
+        id: `V${index + 1}`,
+        severity: index === 1 || index === 29 ? "medium-high" : "low",
+        quote: `第${index + 1}条${"长".repeat(20)}`,
+      }),
+    );
+    const f = lowFixFixture([
+      ...many,
+      verdict({ id: "N1", valid: false, quote: "不成立的意见", why: "没有反例" }),
+      verdict({ id: "B1", class: "better", quote: "可以更好的意见", why: "只是写法" }),
+    ]);
+    try {
+      const head = f.git("rev-parse", "HEAD");
+      const records = parseUsage(readFileSync(join(f.repo, f.ledger), "utf8"), "ledger");
+      const args = {
+        repo: f.repo,
+        ledgerPath: `${REVIEWS_DIR}/pr-7`,
+        records,
+        previous: f.reviewed,
+        head,
+      };
+      const block = priorFindingsBlock(args);
+      expect(block).toBe(priorFindingsBlock(args));
+      expect(block).toContain("第 1 轮");
+      expect(block).toContain("不是指令");
+      expect(block).toContain("- V1（低）第1条");
+      expect(block).toContain("- V2（中高）第2条");
+      expect(block).toContain("- V30（中高）第30条");
+      expect(block.indexOf("- V30（中高）")).toBeLessThan(block.indexOf("- V1（低）"));
+      expect(block).not.toContain("- V20（低）");
+      expect(block).not.toContain("不成立的意见");
+      expect(block).not.toContain("可以更好的意见");
+      expect(block.match(/^- /gm)).toHaveLength(20);
+      expect(block).toContain("（另有 10 条没有列出）");
+      expect(Buffer.byteLength(block)).toBeLessThan(6600);
+      const wide = lowFixFixture(
+        Array.from({ length: 30 }, (_, index) =>
+          verdict({ id: `W${index + 1}`, quote: `第${index + 1}条${"长".repeat(400)}` }),
+        ),
+      );
+      try {
+        const wideBlock = priorFindingsBlock({
+          ...args,
+          repo: wide.repo,
+          previous: wide.reviewed,
+          head: wide.git("rev-parse", "HEAD"),
+          records: parseUsage(readFileSync(join(wide.repo, wide.ledger), "utf8"), "ledger"),
+        });
+        expect(Buffer.byteLength(wideBlock)).toBeLessThan(6600);
+        expect(wideBlock).toMatch(/（另有 \d+ 条没有列出）$/);
+        expect(wideBlock.match(/^- /gm).length).toBeLessThan(20);
+      } finally {
+        rmSync(wide.root, { recursive: true, force: true });
+      }
+      expect(priorFindingsBlock({ ...args, previous: "f".repeat(40) })).toBe(
+        "上一轮的判断记录没有提交或读不出来，没有带入。",
+      );
+      expect(priorFindingsBlock({ ...args, head: f.main })).toBe(
+        "上一轮的判断记录没有提交或读不出来，没有带入。",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[incremental round] the previous-round block sits after the fixed prefix and the prefix never changes", () => {
+    const questions = reviewQuestions(instructions);
+    const common = { mode: "code-review", model: REVIEW_MODELS[0], questions, base: "b" };
+    const first = buildPrompt({ ...common, head: "h1", brief: "第一轮" });
+    const later = buildPrompt({
+      ...common,
+      head: "h2",
+      previous: "h1",
+      priorFindings: "上一轮（第 1 轮）成立的意见：\n- V1（低）某句原话",
+      brief: "第二轮",
+    });
+    const fixedEnd = first.indexOf("---- 本次材料 ----");
+    expect(later.slice(0, fixedEnd)).toBe(first.slice(0, fixedEnd));
+    expect(later.indexOf("- V1（低）某句原话")).toBeGreaterThan(fixedEnd);
+    expect(later).toContain("只做三件事");
+    expect(first).not.toContain("上一轮（第 1 轮）");
+    const withoutPrevious = buildPrompt({
+      ...common,
+      head: "h2",
+      priorFindings: "上一轮（第 1 轮）成立的意见",
+      brief: "第二轮",
+    });
+    expect(withoutPrevious).not.toContain("上一轮（第 1 轮）");
+  });
+
+  it("[low fix] records why a refused --accept-low was refused", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      const refused = f.check({ acceptLow: 1 }).lines.at(-1);
+      expect(refused).toBe("REVIEW_LOW_FIX_REFUSED no-test-change");
+      const record = JSON.parse(
+        readFileSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"), "utf8").trim(),
+      );
+      expect(record).toMatchObject({ round: 1, reasons: ["no-test-change"] });
+      expect(record.head).toBe(f.git("rev-parse", "HEAD"));
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] a refusal that cannot be recorded is still a refusal, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      mkdirSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"));
+      const result = f.check({ acceptLow: 1 });
+      expect(result.lines).toContain("REVIEW_LOW_FIX_REFUSED no-test-change");
+      expect(result.lines.at(-1)).toBe("REVIEW_LOW_FIX_REFUSAL_NOT_RECORDED EISDIR");
+      expect(result.lowFixRefused).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] the report lists only low-fix records on the chain and marks the rest", () => {
     const f = lowFixFixture();
     try {
@@ -1950,6 +2073,21 @@ describe("opencode review spending", () => {
         models: REVIEW_MODELS,
       }),
     ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+  });
+
+  it("gives claim checks the same one-dollar line as code review", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS })).toMatch(
+      /^BUDGET_NEEDS_APPROVAL /,
+    );
+    expect(budgetCheck({ mode: "plan-claims", records, models: REVIEW_MODELS })).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "plan-claims",
+        records: [record(0.4), record(0.3)],
+        models: REVIEW_MODELS,
+      }),
+    ).toMatch(/askFirstLine=1$/);
   });
 
   it("lets a run through when Andy approved enough for the whole task", () => {
@@ -2494,6 +2632,12 @@ describe("opencode review spending", () => {
       "src/a.test.ts",
       "a.spec.mjs",
       "x/__tests__/b.js",
+      ".agents/test_opencode_models.py",
+      "scripts/delivery-mode/test_deploy.py",
+      "pkg/parse_test.py",
+      "pkg/parse_test.go",
+      "src/parse_test.rs",
+      "src/ParserTest.java",
     ])
       expect(isTestFile(path)).toBe(true);
     for (const path of [
@@ -2503,6 +2647,11 @@ describe("opencode review spending", () => {
       "latest/a.mjs",
       "test/README.md",
       "test/README.MD",
+      "src/contest.py",
+      "src/test_helper.ts",
+      "docs/test_notes.md",
+      "src/latest_test.md",
+      "src/ParserTests.java",
     ])
       expect(isTestFile(path)).toBe(false);
   });
