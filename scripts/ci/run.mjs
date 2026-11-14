@@ -29,6 +29,7 @@ import {
 import { prepareCoverageComparison, retainComparisonEvidence } from "./coverage-comparison.mjs";
 import { coverageProjects, strategyDigest, validateCoveragePolicy } from "./coverage-model.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { startHostLoad } from "./host-load.mjs";
 import { isolatedEnvironment, verifyInstalledTools } from "./install-tools.mjs";
 import { artifactPlatformKey, hostArch, hostOs } from "./platforms.mjs";
 import { observeResources } from "./resources.mjs";
@@ -251,7 +252,6 @@ export async function runCheck({
         ".github/workflows/ci.yml",
         ".github/workflows/quality.yml",
         ".github/workflows/main.yml",
-        ".github/workflows/ci-arm-trial.yml",
       ]);
       await command("diff", "git", ["diff", "--check"]);
       result.counts = { files: 3, executed: 3, passed: 3, failed: 0, skipped: 0 };
@@ -584,16 +584,22 @@ export async function main(argv = process.argv.slice(2)) {
     if (fileSha256(artifact) !== producer.artifacts[0].sha256)
       throw new Error("CI_ARTIFACT_TRANSFER_DIGEST_MISMATCH");
   }
-  const result = await runCheck({
-    checkId: args["--check"],
-    matrixKey: args["--matrix"],
-    output: args["--output"],
-    toolsDirectory: path.resolve(args["--tools"]),
-    context,
-    artifact,
-    baselineCandidate: args["--baseline-candidate"],
-    comparison: args["--comparison"] && path.resolve(args["--comparison"]),
-  });
+  const stopHostLoad = startHostLoad();
+  let result;
+  try {
+    result = await runCheck({
+      checkId: args["--check"],
+      matrixKey: args["--matrix"],
+      output: args["--output"],
+      toolsDirectory: path.resolve(args["--tools"]),
+      context,
+      artifact,
+      baselineCandidate: args["--baseline-candidate"],
+      comparison: args["--comparison"] && path.resolve(args["--comparison"]),
+    });
+  } finally {
+    process.stdout.write(`${stopHostLoad()}\n`);
+  }
   process.stdout.write(
     `${result.checkId}/${result.matrixKey}: ${result.status} (${result.counts.passed} passed, ${result.counts.failed} failed)\n`,
   );

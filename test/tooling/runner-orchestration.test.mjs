@@ -259,6 +259,7 @@ vi.mock("../../scripts/ci/check-security.mjs", () => ({
 
 import { createContext } from "../../scripts/ci/context.mjs";
 import { repositoryRoot, sha256 } from "../../scripts/ci/contracts.mjs";
+import { startHostLoad } from "../../scripts/ci/host-load.mjs";
 import { runCheck } from "../../scripts/ci/run.mjs";
 
 let context;
@@ -782,5 +783,26 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     await expect(run("node-floor")).rejects.toThrow("CI_CHECK_UNSUPPORTED:node-floor");
     await expect(run("test")).rejects.toThrow("CI_CHECK_UNSUPPORTED:test");
+  });
+});
+
+describe("job log records how busy the machine was", () => {
+  it("CI_HOST_LOAD 一行写明核数、平均和峰值负载、内存峰值和采样数", () => {
+    const loads = [1, 3, 2];
+    let clock = 0;
+    const stop = startHostLoad({
+      intervalMs: 3_600_000,
+      loadAverage: () => loads.shift() ?? 2,
+      freeMemory: () => 6 * 1024 ** 3,
+      totalMemory: () => 8 * 1024 ** 3,
+      cpuCount: () => 4,
+      now: () => {
+        clock += 30_000;
+        return clock;
+      },
+    });
+    expect(stop()).toBe(
+      "CI_HOST_LOAD cpus=4 loadAvg1Mean=2.00 loadAvg1Peak=3.00 loadPerCpuMean=0.50 memUsedPeakMiB=2048 memTotalMiB=8192 samples=2 seconds=30",
+    );
   });
 });

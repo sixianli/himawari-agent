@@ -885,6 +885,7 @@ function runOpencode({
         stopReason = marker.reason;
       resolvePromise({ stdout, stderr, stopReason, guard: marker, inFlight, ...result });
     };
+    child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
       pending += chunk;
@@ -908,6 +909,7 @@ function runOpencode({
         if (stopOnToolCall && calledTool) stop("wrap-up-tool-call");
       }
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
@@ -2378,11 +2380,12 @@ function startProbeServer(probes) {
   const requests = [];
   const served = new Map();
   const server = http.createServer((request, response) => {
-    let body = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(probeModelList());
@@ -2638,11 +2641,12 @@ export const GUARD_PROBE_REQUESTS = 3;
 function startLoopServer() {
   let mainRequests = 0;
   const server = http.createServer((request, response) => {
-    let body = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(probeModelList());
