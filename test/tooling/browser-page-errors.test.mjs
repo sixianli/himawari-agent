@@ -163,6 +163,7 @@ it("[webkit-teardown] 扫描能找出放进目录里的直接监听，允许名�
 });
 
 const screenshotOnlyLaunches = new Set([
+  "browser-page-errors.mjs",
   "demo/record-email-decision.mjs",
   "render-brand-assets.mjs",
   "test-control-center-visual-v4.mjs",
