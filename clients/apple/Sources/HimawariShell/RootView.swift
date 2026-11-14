@@ -1,6 +1,8 @@
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariListen
+import HimawariListenUI
 import HimawariManage
 import HimawariShare
 import SwiftUI
@@ -65,6 +67,8 @@ struct MainTabsView: View {
     @State private var tab: MainTab
     @State private var openThread: OpenThread?
     @State private var settingsOpen: Bool
+    @State private var listening: ListeningController?
+    @State private var listenOpen = false
     @Environment(\.tabsCycleEvery) private var cycleEvery
     private let memoryOverride: AnyView?
     private let settingsOverride: AnyView?
@@ -108,6 +112,11 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { tab = next }
             }
         }
+        .overlay(alignment: .bottom) {
+            if let listening {
+                ListenOverlay(controller: listening)
+            }
+        }
         .hmCover(isPresented: $settingsOpen) {
             Group {
                 if let settingsOverride {
@@ -125,13 +134,29 @@ struct MainTabsView: View {
                 }
             }
         }
+        .sheet(isPresented: $listenOpen) {
+            if let listening {
+                ListenEntrySheet(controller: listening) { listenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+        #if os(iOS)
+        .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
+            ListenEvalKitView { listening?.recordingKitOpen = false }
+        }
+        #endif
+        .onAppear {
+            if listening == nil, model.phase == .active {
+                listening = ListeningController(api: model.api, chat: chat)
+            }
+        }
     }
 
     @ViewBuilder
     private var content: some View {
         switch tab {
         case .today:
-            TodayView { settingsOpen = true }
+            TodayView(listening: listening, openListening: { listenOpen = true }) { settingsOpen = true }
         case .chats:
             ChatListView(store: chat) { threadId in
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
@@ -179,11 +204,21 @@ struct MainTabsView: View {
 }
 
 struct TodayView: View {
+    var listening: ListeningController?
+    var openListening: () -> Void = {}
     let openSettings: () -> Void
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             EmptyStateView(Text(L.text("placeholder.notConnected")))
+            if let listening {
+                VStack {
+                    ListenTodayCard(controller: listening, open: openListening)
+                        .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+                        .padding(.top, 96)
+                    Spacer()
+                }
+            }
             GlassCircleButton(Text(L.text("settings")), action: openSettings) {
                 Icon(.user, size: DesignTokens.IconSize.glassButton)
             }

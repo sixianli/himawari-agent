@@ -1224,5 +1224,10 @@
     "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
     "changedIn": "ADR 0166",
     "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
+  },
+  "voice.addressee-question": {
+    "sha256": "f2ff2cddd375550cb2cc3efa5c038b094f2d356fefae13dc3d09446e6b67887c",
+    "changedIn": "ADR 0264",
+    "reason": "第 8 批：手机认出名字的口头指令，提交前问判断模型是不是在叫 Himawari"
   }
 }

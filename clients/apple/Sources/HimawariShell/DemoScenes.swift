@@ -3,6 +3,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariListenUI
 import HimawariManage
 import HimawariShare
 import SwiftUI
@@ -39,6 +40,13 @@ enum DemoScene: String, CaseIterable {
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case tabTodayOneDigit = "tab-today-1-digit"
+    case listenIntro = "23-listen-1"
+    case listenEnroll = "23-listen-2"
+    case listenLive = "23-listen-3"
+    case listenInterrupted = "23-listen-3b"
+    case listenCalling = "23-listen-4"
+    case listenAsking = "23-listen-5"
+    case listenStopped = "23-listen-6"
     case handoverTyping = "19-senses-6-share-sheet"
     case handoverAnswered = "19-senses-6b-share-answered"
     case handoverQueued = "19-senses-6c-share-queued"
@@ -165,6 +173,8 @@ struct DemoSceneView: View {
             HandoverDemo.entry(.shareOn)
         case .pairingRemoved:
             PairingView(model: .demo(.unpaired(.removed)))
+        case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
+            ListenDemoScene(scene: scene)
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .addDevice, .addDeviceAsking,
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers:
             EmptyView()
@@ -177,6 +187,100 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+    }
+}
+
+struct ListenDemoScene: View {
+    let scene: DemoScene
+
+    static let clock = Date(timeIntervalSince1970: 1_794_468_600)
+    static let listeningSince = clock.addingTimeInterval(-(45 * 60 + 12))
+
+    private var listening: ListenLiveState {
+        ListenLiveState(phase: .listening, startedAt: Self.listeningSince, source: .deviceMicrophone)
+    }
+
+    var body: some View {
+        switch scene {
+        case .listenIntro:
+            ListenSheetChrome {
+                ListenIntroView(onStart: {}, onLater: {})
+            }
+            .background(Color.hmBackground)
+        case .listenEnroll:
+            ListenSheetChrome {
+                VoiceprintEnrollView(
+                    progress: EnrollmentProgress(index: 1, total: 3, prompt: ListenText.enrollmentPrompts()[1], levels: Array(VoiceLevels.resting.prefix(27))),
+                    onClose: {},
+                    onLater: {}
+                )
+            }
+            .background(Color.hmBackground)
+        case .listenLive:
+            liveToday
+        case .listenInterrupted:
+            lockScreen(time: Self.clock) {
+                let text = ListenNoticeText.of(.pausedTapToContinue, policy: .designed, now: Self.clock)
+                LockNotificationCard(title: text.title, body: text.body, when: ListenText.nowLabel, actions: [ListenNoticeText.continueAction])
+            }
+        case .listenCalling:
+            lockScreen(time: Self.clock) {
+                ListenCallPanel(
+                    state: ListenLiveState(phase: .calling, startedAt: Self.listeningSince, source: .deviceMicrophone, heard: ListenText.demoRequest, heardTail: ListenText.demoRequestTail),
+                    levels: VoiceLevels.resting
+                )
+            }
+        case .listenAsking:
+            lockScreen(time: Self.clock.addingTimeInterval(60)) {
+                ListenAskPanel(
+                    state: ListenLiveState(phase: .asking, startedAt: Self.listeningSince, source: .deviceMicrophone, heard: ListenText.demoAskHeard, askReason: .speakerUnconfirmed)
+                ) { label in label } itsMe: { label in label }
+            }
+        case .listenStopped:
+            lockScreen(time: Self.clock) {
+                VStack(spacing: 8) {
+                    let limit = ListenNoticeText.of(.stopped(.dailyAudioLimit, resumesAt: Calendar.current.startOfDay(for: Self.clock.addingTimeInterval(86_400))), policy: .designed, now: Self.clock)
+                    LockNotificationCard(title: limit.title, body: limit.body, when: ListenText.nowLabel, actions: [])
+                    let battery = ListenNoticeText.of(.downgraded(.batteryLow), policy: .designed, now: Self.clock)
+                    LockNotificationCard(title: battery.title, body: battery.body, when: Self.clock.addingTimeInterval(-25 * 60).formatted(date: .omitted, time: .shortened), actions: [])
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private var liveToday: some View {
+        ZStack(alignment: .topLeading) {
+            Color.hmBackground.ignoresSafeArea()
+            RadialGradient(colors: [Color.hmGlow, .clear], center: UnitPoint(x: 0, y: 20 / 844), startRadius: 0, endRadius: 340)
+                .ignoresSafeArea()
+            ListenTodayCardPreview()
+                .padding(.horizontal, 16)
+                .padding(.top, 152)
+            ListenIslandCompact(state: listening, now: Self.clock)
+                .padding(.horizontal, 12)
+                .listenIslandPreviewSurface()
+                .offset(x: 96, y: 11)
+            ListenLockBanner(state: listening, now: Self.clock) { label in label } stop: { label in label }
+                .listenBannerPreviewSurface()
+                .offset(x: 12, y: 62)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func lockScreen<Content: View>(time: Date, @ViewBuilder content: () -> Content) -> some View {
+        LockScreenBackdrop(
+            time: time.formatted(date: .omitted, time: .shortened),
+            date: time.formatted(.dateTime.month().day().weekday(.abbreviated)),
+            content: content
+        )
+    }
+}
+
+struct ListenTodayCardPreview: View {
+    var body: some View {
+        SensingCard(summary: SensingSummary(paused: false, senses: [ListenText.hearingLabel], todayCount: 5), onPause: {}, onOpen: {})
     }
 }
 #endif
