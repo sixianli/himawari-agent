@@ -971,4 +971,55 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.apns.ofType("alert")).toHaveLength(1);
   });
+  it("[IOS-4] sends a pending proposal as a quiet notice: passive, no sound, no badge, no buttons, generic text", async () => {
+    const proposals = [{ id: "rule-1", proposedAt: at(T0, -60) }];
+    const context = await setup({}, { proposals: { listReady: async () => proposals } });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    await context.subscribe("laptop");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    const [alert] = context.apns.ofType("alert");
+    const aps = alert?.json["aps"] as Record<string, unknown>;
+    expect(aps["interruption-level"]).toBe("passive");
+    expect(aps).not.toHaveProperty("sound");
+    expect(aps).not.toHaveProperty("badge");
+    expect(aps["alert"]).toEqual({ title: "有一条建议等你看", body: "不急，有空时看看。" });
+    expect((alert?.json["himawari"] as { actions: unknown[] }).actions).toEqual([]);
+    expect(context.awaiting.calls).toBeGreaterThanOrEqual(0);
+  });
+
+  it("[IOS-4] REVERSE: sends nothing for a proposal that is was made more than a day ago", async () => {
+    const proposals = [{ id: "old", proposedAt: at(T0, -90_000) }];
+    const context = await setup({}, { proposals: { listReady: async () => proposals } });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toEqual([]);
+    expect(context.failures).toEqual([]);
+  });
+
+  it("[IOS-4] REVERSE: a proposal source that throws does not stop other notifications", async () => {
+    const context = await setup(
+      {},
+      {
+        proposals: {
+          listReady: async () => {
+            throw new Error("PROPOSALS_UNREADABLE");
+          },
+        },
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    context.reminder("r1");
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(context.failures.length).toBeGreaterThan(0);
+  });
 });

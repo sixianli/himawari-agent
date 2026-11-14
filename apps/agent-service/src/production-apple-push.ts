@@ -88,17 +88,22 @@ export function applePushAlertPayload(input: {
   readonly tag: string;
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
+  readonly quiet?: boolean;
   readonly actions: readonly ApplePushAction[];
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
       aps: {
         alert: { title, body },
-        sound: "default",
-        ...(input.badge === undefined ? {} : { badge: input.badge }),
+        ...(input.quiet ? {} : { sound: "default" }),
+        ...(input.badge === undefined || input.quiet ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
+        "interruption-level": input.quiet
+          ? "passive"
+          : input.kind === "approval"
+            ? "time-sensitive"
+            : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       himawari: {
@@ -386,6 +391,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
+        quiet: built.quiet === true,
         actions: await this.#actions(entry, now, locale, approvals),
       }),
     });

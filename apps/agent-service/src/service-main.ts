@@ -2833,6 +2833,17 @@ export async function startTenantRuntime(
                 }),
               }
             : {}),
+          proposals: {
+            listReady: async (now) =>
+              (
+                await pushRepository.ownerProposals().listPending({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  now,
+                  limit: 20,
+                })
+              ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
+          },
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
