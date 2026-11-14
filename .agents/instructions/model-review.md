@@ -28,7 +28,7 @@
 起因：线程整合两个模型的意见时，把其中对代码行为的说法写进了方案和 ADR 0242，没有自己打开代码核对，三次都是这样（[审核时直接采信代理自报的检查结果](../../docs/lessons.md#trust-reported-checks)）。按[事故和反复犯的错误](../../.claude/rules/incident-gates.md#what-counts)，第三次要上硬门槛：整合后的方案里每一句讲代码或仓库文档现状的话，都由低价模型对着代码核一遍，没核过的 ADR 不让合并。
 
 1. 方案要放在仓库里并提交（例如新 ADR 的草稿 `docs/adr/NNNN-….md`）；放在仓库外的整合方案，先提交成分支里的文件再核。
-2. 运行：`node scripts/model-review/opencode-review.mjs --mode plan-claims --head <提交> --topic <短名> --claims-file <方案文件的仓库路径> --gateway magpie`。不传 `--brief`：脚本直接读 `--head` 那个提交里的文件，所以核的就是提交过的内容。默认只跑 DeepSeek，Andy 指明两个模型都跑时加 `--models`；只用这两个模型，经 Magpie；不上网、只读代码；提示里不放代码复核的必答问题（它只核事实，不评方案）。记录写进这件事的方案讨论记录目录 `.agents/reviews/topic-<短名>/round-<序号>/`，用量进同一份 `usage.jsonl`。核对的先问线是 1 美元（Andy 2026-11-14 同意，见[钱和模型](../../.claude/rules/owner-standing-rules.md#money-and-models)），算的是这份账本里已花的全部，包括同一件方案前面的方案讨论（`--approved-usd` 照旧）。
+2. 运行：`node scripts/model-review/opencode-review.mjs --mode plan-claims --head <提交> --topic <短名> --claims-file <方案文件的仓库路径> --gateway magpie`。不传 `--brief`：脚本直接读 `--head` 那个提交里的文件，所以核的就是提交过的内容。默认只跑 DeepSeek，Andy 指明两个模型都跑时加 `--models`；只用这两个模型，经 Magpie；不上网、只读代码；提示里不放代码复核的必答问题（它只核事实，不评方案）。记录写进这件事的方案讨论记录目录 `.agents/reviews/topic-<短名>/round-<序号>/`，用量进同一份 `usage.jsonl`。核对的先问线是 1 美元（Andy 2026-11-14 同意，见[钱和模型](../../.claude/rules/owner-standing-rules.md#money-and-models)），算的是这份账本里已花的全部，包括同一件方案前面的方案讨论，再加上别的 `topic-*` 账本里核对同一个方案文件（`--claims-file` 相同）的花费，换个题目名不会重新从零算（`--approved-usd` 照旧）。
 3. 模型把每一句现状说法单独列成一行：`CLAIM|<序号>|<一致、不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>`。脚本跑完打印 `CLAIMS_SUMMARY`（总数、一致数、有问题数）和每条 `CLAIMS_FLAGGED`；答案里一条 CLAIM 都解析不出来，或有格式坏了的行，打印 `CLAIMS_PARSE_FAILED`，退出码 4，不算核过。序号只要求不重复（提示里要求用 1、2、3……，脚本不检查是否连续）。方案原句里的竖线要换成全角“｜”（提示里已经这样要求）；只有“代码原文”这一栏允许出现竖线。
 4. 线程逐条处理“不一致”和“找不到”：自己打开代码看。
    - 方案写错了：改方案，提交，对改后的内容重新跑一次，直到这一轮没有“不一致”和“找不到”，或剩下的都是模型看错的。旧的记录留着。
@@ -137,6 +137,7 @@ Andy 在项目聊天对协调者说、由协调者附原话转来，或者他直
   - 只重跑某一轮里失败的那个模型时，加 `--round <那一轮的序号>`，结果记进原来那一轮，不另占一个序号：这一轮里这个模型已经有 `outcome` 为 `ok` 的记录（`ROUND_ALREADY_HAS_RESULT`）、这一轮不存在（`ROUND_NOT_FOUND`）、这一轮记录的提交和这次的 `--head` 不同（`ROUND_HEAD_MISMATCH`），或者这一轮里这个模型的 `<模型>.prompt.md` 和这次发给它的提示词不同（`ROUND_PROMPT_MISMATCH`，例如改了 `--brief`）时拒绝，都在花钱之前；失败那次的文件改名为 `<模型>.attempt-<序号>.*` 留在原目录。提示词文件不在时，改用账本里这一轮记下的 `promptSha256` 比较；两样都没有时以 `ROUND_CANNOT_VERIFY` 拒绝；这一轮有记录缺 `head` 时同样以 `ROUND_CANNOT_VERIFY <轮> head` 拒绝。这一轮已有别的模式（例如方案讨论的独立出方案和审核共用一本账）的记录时以 `ROUND_MODE_MISMATCH` 拒绝；例外记录不算进任何一轮。
   - `usage.jsonl` 有一行读不出来、费用不是非负数字或轮次不是正整数，脚本以 `USAGE_LEDGER_INVALID` 拒绝开跑，不猜已花多少。
   - 开跑前脚本把 `usage.jsonl` 里已花的加上这一轮最多会花的（每个模型 0.2 美元）：代码复核和方案说法核对（`plan-claims`）超过 1 美元、方案讨论（`plan`、`plan-review`）超过 0.5 美元，就以 `BUDGET_NEEDS_APPROVAL` 拒绝开跑，并打印这几个数。线程把数报给 Andy，他同意的总额用 `--approved-usd <美元>` 传入，累计不超过这个数才放行。每次运行结束打印 `REVIEW_SPENT_TOTAL`，线程汇报费用就用这个数。
+  - 全项目一天的复核和核对花费：`node scripts/model-review/opencode-review.mjs --spend-day [--date <YYYY-MM-DD>]`，只读，不花钱。它按日本时间的日期把工作区里所有 `.agents/reviews/*/usage.jsonl` 的花费加起来，每本当天有花费的账本打一行 `REVIEW_SPEND_DAY_ITEM`（当天没有记录的账本不打）；账本里某条记录的 `at` 缺失或不是以 `Z` 结尾的可解析时间，就以 `USAGE_LEDGER_INVALID` 拒绝，最后一行 `REVIEW_SPEND_DAY date=… total=… line=5 over=yes|no`。只看得到已经在这个工作区里的账本：别的分支上还没合进来的复核不在内，所以先合最新 `main` 再看。
 
 用法：
 

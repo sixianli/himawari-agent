@@ -32,6 +32,7 @@ date: "2026-11-14"
 3. 本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。
 4. [ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 要求每个线程开工时读事故清单，原话“每个线程开工时读，收尾时更新”。
 5. 事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态），绝大多数行的状态是“已落门槛”。
+6. 云端线程不载入仓库里的技能。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“Cloud threads load each repository's `CLAUDE.md` instructions but not its skills, `.mcp.json` servers, or `.claude/settings.json`”，表格里“Skills under `.claude/skills/`”一行写的是“Not loaded”。
 
 <a id="context"></a>
 
@@ -68,7 +69,7 @@ Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开
 ## 业界做法
 
 - Anthropic 的 Claude Code 文档建议每个 `CLAUDE.md` 不超过 200 行，只在部分场景用到的说明放进按需载入的地方；技能（skill）开局只载入描述，用到时才载入全文（[memory](https://code.claude.com/docs/en/memory)、[skills](https://code.claude.com/docs/en/skills)，原话“Unlike CLAUDE.md content, a skill's body loads only when it's used, so long reference material costs almost nothing until you need it”）。
-- 本项目的做法和这一致：开局只放每个线程都要遵守的规则和“什么时候读什么”的指引，长的参考内容由线程按需打开。云端线程不载入带 `paths` 的规则，也不载入仓库里的技能（前提 1），所以按需的办法只能是“规则里写明什么时候读哪份文件”。
+- 本项目的做法和这一致：开局只放每个线程都要遵守的规则和“什么时候读什么”的指引，长的参考内容由线程按需打开。云端线程不载入带 `paths` 的规则，也不载入仓库里的技能（前提 6），所以按需的办法只能是“规则里写明什么时候读哪份文件”。
 
 <a id="options"></a>
 
