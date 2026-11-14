@@ -56,11 +56,12 @@ export function processState(
 export function startScriptedModel(reply, record = (parsed) => parsed) {
   const requests = [];
   const server = http.createServer((request, response) => {
-    let body = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end('{"data":[]}');
