@@ -139,6 +139,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
+    readonly lexicalOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]> {
     if (input.query.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
@@ -148,7 +149,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
     if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
       throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
-    const embedder = this.#options.embedder;
+    const embedder = input.lexicalOnly === true ? null : this.#options.embedder;
     let embedding = null;
     if (embedder) {
       try {

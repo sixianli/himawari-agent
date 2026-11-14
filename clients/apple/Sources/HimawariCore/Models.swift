@@ -55,6 +55,11 @@ public struct AttachmentLimits: Codable, Sendable, Equatable {
     }
 }
 
+public struct PerceptionSummary: Codable, Sendable, Equatable {
+    public let recordTextCharacters: Int?
+    public let recordTypes: [String: PerceptionTypeRule]?
+}
+
 public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let heartbeatSeconds: Int
     public let connectionMaxSeconds: Int
@@ -62,6 +67,7 @@ public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let limits: [DeviceLimit]
     public let streamConnections: Int?
     public let attachments: AttachmentLimits?
+    public let perception: PerceptionSummary?
 
     public func limit(_ key: String) -> Int64? {
         limits.first { $0.key == key }?.value

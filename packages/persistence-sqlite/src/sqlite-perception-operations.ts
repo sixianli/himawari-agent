@@ -4,6 +4,7 @@ import type {
   LimitUsageRow,
   PerceptionDayPage,
   PerceptionDayRow,
+  PerceptionExtractionState,
   PerceptionEpisode,
   PerceptionIngestOutcome,
   PerceptionIngestResult,
@@ -976,6 +977,237 @@ export class SqlitePerceptionOperations {
           input.key,
           this.time(input.periodStart),
         ).changes === 1
+    );
+  }
+
+  private ids(values: readonly string[], maximum: number): string {
+    if (values.length > maximum || values.some((value) => typeof value !== "string"))
+      this.fail("PORT_INVALID_OPERATION", "Perception id list is invalid");
+    return JSON.stringify(values);
+  }
+
+  protected op_listRecordsBetween(input: Input<"listRecordsBetween">) {
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 500 ||
+      !Number.isSafeInteger(input.fromMs) ||
+      !Number.isSafeInteger(input.toMs) ||
+      input.fromMs < 0 ||
+      input.toMs < input.fromMs
+    )
+      this.fail("PORT_INVALID_OPERATION", "Perception range is invalid");
+    const parameters = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      fromMs: input.fromMs,
+      toMs: input.toMs,
+      types: input.types === null ? null : JSON.stringify(input.types),
+    };
+    const where = `owner_id = @ownerId AND agent_id = @agentId AND status = 'active'
+      AND occurred_at_ms BETWEEN @fromMs AND @toMs
+      AND (@types IS NULL OR type IN (SELECT value FROM json_each(@types)))`;
+    const rows = this.database
+      .prepare(
+        `SELECT ${recordColumns} FROM perception_records WHERE ${where}
+            AND (@afterMs IS NULL OR occurred_at_ms > @afterMs
+                 OR (occurred_at_ms = @afterMs AND id > @afterId))
+          ORDER BY occurred_at_ms, id LIMIT @limit`,
+      )
+      .all({
+        ...parameters,
+        afterMs: input.after?.atMs ?? null,
+        afterId: input.after?.id ?? null,
+        limit: input.limit,
+      }) as RecordRow[];
+    const { total } = this.database
+      .prepare(`SELECT COUNT(*) AS total FROM perception_records WHERE ${where}`)
+      .get(parameters) as { total: number };
+    return Object.freeze({ records: Object.freeze(rows.map(toRecord)), total });
+  }
+
+  protected op_readRecords(input: Input<"readRecords">): readonly PerceptionRecord[] {
+    if (input.ids.length === 0) return Object.freeze([]);
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT ${recordColumns} FROM perception_records
+              WHERE owner_id = ? AND agent_id = ? AND status = 'active'
+                AND id IN (SELECT value FROM json_each(?))
+              ORDER BY occurred_at_ms, id`,
+          )
+          .all(input.ownerId, input.agentId, this.ids(input.ids, 2000)) as RecordRow[]
+      ).map(toRecord),
+    );
+  }
+
+  private extraction(episodeId: string): PerceptionExtractionState | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT episode_id AS episodeId, status, attempts, record_count AS recordCount,
+                next_attempt_at AS nextAttemptAt, error_code AS errorCode,
+                cost_micros AS costMicros, updated_at AS updatedAt
+           FROM perception_extractions WHERE episode_id = ?`,
+      )
+      .get(episodeId) as PerceptionExtractionState | undefined;
+    return row ? Object.freeze(row) : undefined;
+  }
+
+  private ownedEpisode(scope: PerceptionScope, episodeId: string): PerceptionEpisode | undefined {
+    return this.database
+      .prepare(
+        `SELECT ${episodeColumns} FROM perception_episodes
+          WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'active'`,
+      )
+      .get(episodeId, scope.ownerId, scope.agentId) as PerceptionEpisode | undefined;
+  }
+
+  protected op_listEpisodesToExtract(
+    input: Input<"listEpisodesToExtract">,
+  ): readonly PerceptionEpisode[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500)
+      this.fail("PORT_INVALID_OPERATION", "Perception page size is invalid");
+    return Object.freeze(
+      this.database
+        .prepare(
+          `SELECT ${episodeColumns
+            .split(",")
+            .map((column) => `e.${column.trim()}`)
+            .join(", ")}
+             FROM perception_episodes e
+             LEFT JOIN perception_extractions x ON x.episode_id = e.id
+            WHERE e.owner_id = @ownerId AND e.agent_id = @agentId AND e.status = 'active'
+              AND e.ended_at_ms < @endedBeforeMs
+              AND (x.episode_id IS NULL
+                   OR (x.status IN ('done', 'failed') AND x.record_count <> e.record_count)
+                   OR (x.status IN ('running', 'retry', 'waiting_budget')
+                       AND x.next_attempt_at <= @now
+                       AND (x.attempts < @maximumAttempts OR x.status = 'waiting_budget'
+                            OR x.record_count <> e.record_count)))
+            ORDER BY e.ended_at_ms, e.id LIMIT @limit`,
+        )
+        .all({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          endedBeforeMs: input.endedBeforeMs,
+          now: this.time(input.now),
+          maximumAttempts: input.maximumAttempts,
+          limit: input.limit,
+        }) as PerceptionEpisode[],
+    );
+  }
+
+  protected op_readExtraction(
+    input: Input<"readExtraction">,
+  ): PerceptionExtractionState | undefined {
+    return this.ownedEpisode(input, input.episodeId) ? this.extraction(input.episodeId) : undefined;
+  }
+
+  protected op_beginExtraction(
+    input: Input<"beginExtraction">,
+  ): PerceptionExtractionState | undefined {
+    this.assertDiskHeadroom();
+    const now = this.time(input.now);
+    const leaseUntil = this.time(input.leaseUntil);
+    if (leaseUntil <= now) this.fail("PORT_INVALID_OPERATION", "Extraction lease is invalid");
+    return this.database.transaction(() => {
+      if (!this.ownedEpisode(input, input.episodeId)) return undefined;
+      const current = this.extraction(input.episodeId);
+      if (
+        current?.status === "running" &&
+        current.nextAttemptAt !== null &&
+        current.nextAttemptAt > now
+      )
+        return undefined;
+      const fresh = !current || current.recordCount !== input.recordCount;
+      this.database
+        .prepare(
+          `INSERT INTO perception_extractions
+             (episode_id, owner_id, agent_id, status, attempts, record_count, next_attempt_at,
+              error_code, cost_micros, updated_at)
+           VALUES (@episodeId, @ownerId, @agentId, 'running', 1, @recordCount, @leaseUntil,
+                   NULL, 0, @now)
+           ON CONFLICT (episode_id) DO UPDATE SET
+             status = 'running', attempts = @attempts, record_count = @recordCount,
+             next_attempt_at = @leaseUntil, error_code = NULL, updated_at = @now`,
+        )
+        .run({
+          episodeId: input.episodeId,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          recordCount: this.amount(input.recordCount),
+          leaseUntil,
+          now,
+          attempts: fresh
+            ? 1
+            : (current?.attempts ?? 0) + (current?.status === "waiting_budget" ? 0 : 1),
+        });
+      return this.extraction(input.episodeId);
+    })();
+  }
+
+  protected op_settleExtraction(input: Input<"settleExtraction">): PerceptionExtractionState {
+    this.assertDiskHeadroom();
+    const now = this.time(input.now);
+    const waits = input.status === "retry" || input.status === "waiting_budget";
+    if (waits !== (input.nextAttemptAt !== null))
+      this.fail("PORT_INVALID_OPERATION", "Extraction retry time is invalid");
+    if (input.nextAttemptAt !== null) this.time(input.nextAttemptAt);
+    for (const decision of input.decisions) {
+      const problem = validateLedgerWrite(decision);
+      if (problem) this.fail("PORT_INVALID_OPERATION", problem);
+    }
+    return this.database.transaction(() => {
+      if (!this.ownedEpisode(input, input.episodeId) && !this.extraction(input.episodeId))
+        return this.fail("PORT_NOT_FOUND", "Extraction was not found");
+      const changed = this.database
+        .prepare(
+          `UPDATE perception_extractions
+              SET status = ?, next_attempt_at = ?, error_code = ?,
+                  cost_micros = cost_micros + ?, updated_at = ?
+            WHERE episode_id = ? AND owner_id = ? AND agent_id = ? AND status = 'running'`,
+        )
+        .run(
+          input.status,
+          input.nextAttemptAt,
+          input.errorCode,
+          this.amount(input.costMicros),
+          now,
+          input.episodeId,
+          input.ownerId,
+          input.agentId,
+        ).changes;
+      if (changed !== 1) return this.fail("PORT_CONFLICT", "Extraction is not running");
+      for (const decision of input.decisions) insertLedgerRow(this.database, decision);
+      return this.extraction(input.episodeId) as PerceptionExtractionState;
+    })();
+  }
+
+  protected op_recordCommandUtterance(input: Input<"recordCommandUtterance">): void {
+    this.assertDiskHeadroom();
+    if (input.utteranceId.length < 1 || input.utteranceId.length > 64)
+      this.fail("PORT_INVALID_OPERATION", "Utterance id is invalid");
+    this.database
+      .prepare(
+        `INSERT INTO perception_command_utterances (owner_id, agent_id, utterance_id, recorded_at)
+         VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      )
+      .run(input.ownerId, input.agentId, input.utteranceId, this.time(input.now));
+  }
+
+  protected op_commandUtterances(input: Input<"commandUtterances">): readonly string[] {
+    if (input.utteranceIds.length === 0) return Object.freeze([]);
+    return Object.freeze(
+      this.database
+        .prepare(
+          `SELECT utterance_id FROM perception_command_utterances
+            WHERE owner_id = ? AND agent_id = ?
+              AND utterance_id IN (SELECT value FROM json_each(?))
+            ORDER BY utterance_id`,
+        )
+        .pluck()
+        .all(input.ownerId, input.agentId, this.ids(input.utteranceIds, 5000)) as string[],
     );
   }
 

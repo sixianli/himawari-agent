@@ -184,6 +184,9 @@ export class DurableMemoryService {
         {
           contentRef: proposal.contentRef,
           sourceRefs: [...new Set([...current.sourceRefs, ...proposal.sourceRefs])].sort(),
+          ...(current.sourceTypes || proposal.sourceTypes
+            ? { sourceTypes: { ...current.sourceTypes, ...proposal.sourceTypes } }
+            : {}),
           dataClassification: proposal.dataClassification,
           inference: proposal.inference,
           confidencePermille: proposal.confidencePermille,

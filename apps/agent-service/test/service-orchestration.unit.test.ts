@@ -781,6 +781,8 @@ function web() {
     "modelUsage",
     "decisionLedger",
     "gapCaseMarks",
+    "perception",
+    "pairedDevices",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

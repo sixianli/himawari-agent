@@ -5,6 +5,7 @@ export * from "./entry.js";
 export * from "./eval.js";
 export * from "./mail.js";
 export * from "./memory.js";
+export * from "./perception.js";
 export * from "./review.js";
 export * from "./runtime.js";
 export * from "./tools.js";

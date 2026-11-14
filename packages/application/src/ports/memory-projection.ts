@@ -25,6 +25,41 @@ export const MEMORY_CATEGORIES = [
 
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
+export const MEMORY_SOURCE_TYPES = ["reference", "perception"] as const;
+export type MemorySourceType = (typeof MEMORY_SOURCE_TYPES)[number];
+export const DEFAULT_MEMORY_SOURCE_TYPE: MemorySourceType = "reference";
+
+export interface MemorySource {
+  readonly type: MemorySourceType;
+  readonly id: string;
+}
+
+export function isMemorySourceType(value: unknown): value is MemorySourceType {
+  return typeof value === "string" && (MEMORY_SOURCE_TYPES as readonly string[]).includes(value);
+}
+
+export function memorySources(
+  record: Pick<ProductMemoryRecord, "sourceRefs" | "sourceTypes">,
+): readonly MemorySource[] {
+  return Object.freeze(
+    [...new Set(record.sourceRefs)]
+      .map((id) =>
+        Object.freeze({ type: record.sourceTypes?.[id] ?? DEFAULT_MEMORY_SOURCE_TYPE, id }),
+      )
+      .sort((left, right) =>
+        left.type === right.type
+          ? left.id < right.id
+            ? -1
+            : left.id > right.id
+              ? 1
+              : 0
+          : left.type < right.type
+            ? -1
+            : 1,
+      ),
+  );
+}
+
 export interface ProductMemoryAttributes {
   readonly category: MemoryCategory;
   readonly importancePermille: number;
@@ -60,6 +95,7 @@ export interface ProductMemoryRecord {
   readonly dataClassification: DataClassification;
   readonly sourceThreadId: ThreadId | null;
   readonly sourceRefs: readonly string[];
+  readonly sourceTypes?: Readonly<Record<string, MemorySourceType>>;
   readonly inference: boolean;
   readonly confidencePermille: number;
   readonly policyVersion: string;
@@ -209,6 +245,7 @@ export interface MemoryProviderProjectionPort {
     readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
+    readonly lexicalOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }
@@ -303,6 +340,7 @@ export type ProductMemoryProposal =
       readonly memoryId: MemoryId;
       readonly contentRef: PayloadRef;
       readonly sourceRefs: readonly string[];
+      readonly sourceTypes?: Readonly<Record<string, MemorySourceType>>;
       readonly dataClassification: DataClassification;
       readonly inference: boolean;
       readonly confidencePermille: number;
