@@ -2075,6 +2075,21 @@ describe("opencode review spending", () => {
     ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
   });
 
+  it("gives claim checks the same one-dollar line as code review", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS })).toMatch(
+      /^BUDGET_NEEDS_APPROVAL /,
+    );
+    expect(budgetCheck({ mode: "plan-claims", records, models: REVIEW_MODELS })).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "plan-claims",
+        records: [record(0.4), record(0.3)],
+        models: REVIEW_MODELS,
+      }),
+    ).toMatch(/askFirstLine=1$/);
+  });
+
   it("lets a run through when Andy approved enough for the whole task", () => {
     const records = [record(0.12), record(0.14)];
     expect(
