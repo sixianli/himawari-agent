@@ -20,9 +20,7 @@ async function latestMigrationSequence() {
   const names = await readdir(
     path.join(repositoryRoot, "packages/persistence-sqlite/src/migrations"),
   );
-  return Math.max(
-    ...names.flatMap((name) => (/^(\d{4})_.*\.sql$/u.exec(name) ? [Number(name.slice(0, 4))] : [])),
-  );
+  return names.filter((name) => /^(\d{4}|\d{14})_[a-z0-9_]+\.sql$/u.test(name)).length;
 }
 let testRoot = "";
 let prefix = "";
