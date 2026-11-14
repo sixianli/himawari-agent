@@ -182,6 +182,7 @@ export class ProductionReminderWriter {
     readonly repeat: "none" | "yearly";
     readonly sourceThreadId?: string | null;
     readonly externalOrigins?: readonly string[];
+    readonly expectedDueAt?: string;
   }): Promise<CreatedReminder> {
     const key = reminderKey(input.key);
     const memoryId = `${MEMORY_ID_PREFIX}${key}` as MemoryId;
@@ -206,6 +207,8 @@ export class ProductionReminderWriter {
     if (!DUE_FORMAT.test(due)) throw new ReminderInputError("REMINDER_TIME_INVALID");
     const schedule = reminderSchedule(due, input.repeat, now, this.#options.timeZone);
     if (!schedule) throw new ReminderInputError("REMINDER_TIME_INVALID");
+    if (input.expectedDueAt !== undefined && schedule.dueAt !== input.expectedDueAt)
+      throw new ReminderInputError("REMINDER_TIME_INVALID");
     let contentRef = input.contentRef;
     let text = contentRef ? await this.#readText(contentRef) : undefined;
     if (contentRef === undefined) {

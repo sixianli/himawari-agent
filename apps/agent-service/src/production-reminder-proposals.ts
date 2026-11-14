@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ClockPort } from "@himawari-agent/application";
+import { ApplicationPortError, type ClockPort } from "@himawari-agent/application";
 import {
   localTimeText,
   type ProductionReminderWriter,
@@ -118,7 +118,13 @@ export function registerReminderProposalHandlers(options: {
         return refused("这条提醒在提议之后被改过");
       const dueAt = Date.parse(parsed.dueAt);
       const remindAt = Date.parse(parsed.remindAt);
-      if (!Number.isFinite(dueAt) || !Number.isFinite(remindAt) || remindAt > dueAt)
+      if (
+        !Number.isFinite(dueAt) ||
+        !Number.isFinite(remindAt) ||
+        remindAt > dueAt ||
+        new Date(dueAt).toISOString() !== parsed.dueAt ||
+        new Date(remindAt).toISOString() !== parsed.remindAt
+      )
         return refused("提议里的时间不对");
       if (dueAt <= Date.parse(clock.now())) return refused("新的时间已经过了");
       return { ok: true };
@@ -155,24 +161,24 @@ export function registerReminderProposalHandlers(options: {
         : "differs";
     },
     async undo({ data, original }) {
-      const parsed = rescheduleData(data);
-      const before = rescheduleOriginal(original);
-      if (!parsed || !before) throw new ReminderInputError("REMINDER_INPUT_INVALID");
-      const current = await writer.describe(parsed.reminderId);
-      if (
-        current?.reminder.status === "scheduled" &&
-        current.reminder.dueAt === before.dueAt &&
-        current.reminder.remindAt === before.remindAt
-      )
-        return;
-      await unlessInputError(() =>
-        writer.moveSchedule({
+      await unlessInputError(async () => {
+        const parsed = rescheduleData(data);
+        const before = rescheduleOriginal(original);
+        if (!parsed || !before) throw new ReminderInputError("REMINDER_INPUT_INVALID");
+        const current = await writer.describe(parsed.reminderId);
+        if (
+          current?.reminder.status === "scheduled" &&
+          current.reminder.dueAt === before.dueAt &&
+          current.reminder.remindAt === before.remindAt
+        )
+          return;
+        await writer.moveSchedule({
           reminderId: parsed.reminderId,
           expectedUpdatedAt: before.updatedAt,
           dueAt: before.dueAt,
           remindAt: before.remindAt,
-        }),
-      );
+        });
+      });
     },
   };
   const create: ProposalActionHandler = {
@@ -189,14 +195,26 @@ export function registerReminderProposalHandlers(options: {
     async execute({ proposalId, data }) {
       const parsed = createData(data);
       if (!parsed) throw new ReminderInputError("REMINDER_INPUT_INVALID");
-      const created = await writer.create({
+      const request = {
         key: `proposal:${proposalId}`,
         text: parsed.text,
         due: parsed.due,
         repeat: parsed.repeat,
-        sourceThreadId: parsed.threadId,
+        expectedDueAt: parsed.dueAt,
         externalOrigins: parsed.externalOrigins,
-      });
+      } as const;
+      let created: Awaited<ReturnType<Writer["create"]>>;
+      try {
+        created = await writer.create({ ...request, sourceThreadId: parsed.threadId });
+      } catch (error) {
+        if (
+          parsed.threadId === null ||
+          !(error instanceof ApplicationPortError) ||
+          error.code !== "PORT_NOT_FOUND"
+        )
+          throw error;
+        created = await writer.create({ ...request, sourceThreadId: null });
+      }
       return { original: { reminderId: created.reminderId }, detail: created.reminderId };
     },
     async readBack({ original }) {
@@ -206,9 +224,11 @@ export function registerReminderProposalHandlers(options: {
       return found?.reminder.status === "scheduled" ? "matches" : "differs";
     },
     async undo({ original }) {
-      const made = createOriginal(original);
-      if (!made) throw new ReminderInputError("REMINDER_INPUT_INVALID");
-      await unlessInputError(() => writer.withdraw(made.reminderId));
+      await unlessInputError(async () => {
+        const made = createOriginal(original);
+        if (!made) throw new ReminderInputError("REMINDER_INPUT_INVALID");
+        await writer.withdraw(made.reminderId);
+      });
     },
   };
   box.register(REMINDER_RESCHEDULE_PROPOSAL_TYPE, reschedule);

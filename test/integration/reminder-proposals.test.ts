@@ -143,7 +143,30 @@ describe("reminder proposals", () => {
       writer.create({ key, text: "出门提醒", due, repeat: "none" });
     const reminder = (id: string) => repository.memoryReminders().read(id);
     const memoryStatus = (id: string) => repository.productMemoryState().read(id as never);
-    return { box, writer, context, seen, seed, reminder, memoryStatus, clock, provider };
+    const withoutDelete = new ProductionReminderWriter({
+      configuration,
+      memory: { applyProposal: memory.applyProposal.bind(memory) } as never,
+      state: repository.productMemoryState(),
+      book: repository.memoryBook(),
+      reminders: repository.memoryReminders(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock: { now: () => clock.value },
+      timeZone: ZONE,
+    });
+    return {
+      box,
+      writer,
+      withoutDelete,
+      file,
+      context,
+      seen,
+      seed,
+      reminder,
+      memoryStatus,
+      clock,
+      provider,
+    };
   }
 
   async function failureOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -335,5 +358,64 @@ describe("reminder proposals", () => {
       remindAt: "2026-11-22T03:00:00.000Z",
     });
     expect(await failureOf(box.undo(proposed.proposalId))).toBe("PROPOSAL_NOT_UNDOABLE");
+  });
+
+  it("[P1-6] still creates the reminder when the source conversation was deleted after the proposal", async () => {
+    const { box, context, seen, reminder, memoryStatus, file } = await fixture();
+    const proposed = await proposeReminderCreate(
+      { ...context, threadId: THREAD_ID },
+      { text: "周五交周报", due: "2026-11-20T15:00" },
+    );
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const version = await seen(proposed.proposalId);
+    const raw = openQualifiedDatabase(file);
+    raw.pragma("foreign_keys = OFF");
+    raw.prepare("DELETE FROM threads WHERE id = ?").run(THREAD_ID);
+    raw.close();
+    const outcome = await box.adopt(proposed.proposalId, version);
+    expect(outcome).toMatchObject({ execution: "succeeded" });
+    const made = await reminder(String((outcome as { detail?: unknown }).detail));
+    expect((await memoryStatus(made?.memoryId ?? ""))?.sourceThreadId).toBeNull();
+  });
+
+  it("[P1-6][reverse] refuses to create a reminder whose date no longer matches the one the owner saw", async () => {
+    const { writer } = await fixture();
+    await expect(
+      writer.create({
+        key: "stale",
+        text: "年度提醒",
+        due: "2026-11-20T15:00",
+        repeat: "yearly",
+        expectedDueAt: "2025-11-20T07:00:00.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "REMINDER_TIME_INVALID" });
+  });
+
+  it("[P1-6][reverse] refuses to withdraw a created reminder when the memory cannot be deleted, and leaves it scheduled", async () => {
+    const { withoutDelete, writer, reminder } = await fixture();
+    const created = await writer.create({
+      key: "nodelete",
+      text: "周五交周报",
+      due: "2026-11-20T15:00",
+      repeat: "none",
+    });
+    await expect(withoutDelete.withdraw(created.reminderId)).rejects.toMatchObject({
+      code: "REMINDER_MEMORY_NOT_READY",
+    });
+    expect((await reminder(created.reminderId))?.status).toBe("scheduled");
+  });
+
+  it("[P1-6] lets undo of a created reminder finish after the withdraw already ran", async () => {
+    const { box, context, writer, seen, reminder } = await fixture();
+    const proposed = await proposeReminderCreate(context, {
+      text: "周五交周报",
+      due: "2026-11-20T15:00",
+    });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const outcome = await box.adopt(proposed.proposalId, await seen(proposed.proposalId));
+    const reminderId = String((outcome as { detail?: unknown }).detail);
+    await writer.withdraw(reminderId);
+    expect(await box.undo(proposed.proposalId)).toEqual({ replayed: false });
+    expect((await reminder(reminderId))?.status).toBe("cancelled");
   });
 });
