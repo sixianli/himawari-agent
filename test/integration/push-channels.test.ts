@@ -214,10 +214,12 @@ describe("[IOS-4] push channels", () => {
     closers.push(async () => appleSender.close());
 
     const webRequests: string[] = [];
+    const webUrgencies: string[] = [];
     const webServer: Server = createServer((request, response) => {
       request.resume();
       request.on("end", () => {
         webRequests.push(request.url ?? "");
+        webUrgencies.push(String(request.headers["urgency"] ?? ""));
         response.writeHead(201).end();
       });
     });
@@ -349,6 +351,7 @@ describe("[IOS-4] push channels", () => {
     return {
       apns,
       webRequests,
+      webUrgencies,
       store,
       appleStore,
       pairedDevices: repository.pairedDevices(),
@@ -1079,6 +1082,54 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     await context.push.tick();
     expect(context.webRequests).toHaveLength(1);
+  });
+
+  it("[IOS-4] a proposal notice is not deferred by a rule that defers other notifications", async () => {
+    const gate = {
+      decide: () => ({ action: "defer" as const, until: at(T0, 600), ruleRefs: ["owner:night"] }),
+    } as unknown as PushGate;
+    const context = await setup(
+      {},
+      {
+        gate,
+        readPushRules: async () => [],
+        timeZone: "Asia/Tokyo",
+        proposals: { listReady: async () => [{ id: "rule-1", proposedAt: at(T0, -60) }] },
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+
+  it("[IOS-4] a quiet proposal notice does not read the badge count", async () => {
+    const context = await setup(
+      {},
+      { proposals: { listReady: async () => [{ id: "rule-1", proposedAt: at(T0, -60) }] } },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(context.awaiting.calls).toBe(0);
+  });
+
+  it("[IOS-4] a web-only proposal notice has normal urgency", async () => {
+    const context = await setup(
+      {},
+      { proposals: { listReady: async () => [{ id: "rule-1", proposedAt: at(T0, -60) }] } },
+    );
+    await context.subscribe("laptop");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.webRequests).toEqual(["/laptop"]);
+    expect(context.webUrgencies).toEqual(["normal"]);
   });
 
   it("[IOS-4] puts silent in the web payload for a quiet notice only", () => {
