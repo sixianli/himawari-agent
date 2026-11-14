@@ -274,6 +274,21 @@ describe("hybrid Memory provider relevance cutoff", () => {
       expect(() => provider(relevance)).toThrow("MEMORY_RELEVANCE_TUNING_INVALID");
   });
 
+  it("searches by literal terms without asking the embedder when lexicalOnly is set", async () => {
+    const { port } = index();
+    const lexical = new HybridMemoryProvider({
+      index: port,
+      embedder: embedder(),
+      embeddableClassifications: ["public", "private"],
+      now: () => now,
+    });
+    await lexical.search({ ownerId, agentId, query: "杭州", limit: 5, lexicalOnly: true });
+    expect(lexical.embedder?.embedQuery).not.toHaveBeenCalled();
+    expect(port.search).toHaveBeenCalledWith(expect.objectContaining({ embedding: null }));
+    await lexical.search({ ownerId, agentId, query: "杭州", limit: 5 });
+    expect(lexical.embedder?.embedQuery).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a per-call floor outside 0 to 1 before asking for an embedding, and accepts 1 like the Gmail setting", async () => {
     const checked = provider();
     for (const minimumSimilarity of [Number.NaN, -0.1, 1.1])

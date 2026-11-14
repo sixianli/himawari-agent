@@ -1,0 +1,1 @@
+{"id":"1","model":"opencode-go/deepseek-v4.1-flash","quote":"### 1. 低：`asks` 的契约清洗没有专门的反向用例","valid":true,"class":"better","severity":null,"trigger":"","consequence":"","modelSeverity":"","why":"production-search.ts:128-130、197-198 对实体名已 singleLine 去控制字符并拒绝超过 120 的名字，代码正确；只是 asks 这半边没有单独测试，属覆盖缺口，不是现有错误"}
