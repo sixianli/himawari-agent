@@ -108,8 +108,7 @@ export class OwnerIntentGate {
     const recorded = await state.readScopedState(configuration.ownerId, configuration.agentId, key);
     if (recorded) return recorded.value["confirmed"] === true;
     const result = await this.#run(input);
-    await this.#record(input, key, result);
-    return result.confirmed;
+    return this.#record(input, key, result);
   }
 
   async #run(input: OwnerIntentGateInput): Promise<OwnerIntentGateResult> {
@@ -172,7 +171,7 @@ export class OwnerIntentGate {
     input: OwnerIntentGateInput,
     key: string,
     result: OwnerIntentGateResult,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { configuration, state, clock, settings } = this.#options;
     const checkedAt = clock.now();
     const value = {
@@ -200,18 +199,25 @@ export class OwnerIntentGate {
         resultRef: key,
         committedAt: checkedAt,
       })
-      .catch(async (error: unknown) => {
-        if (!(await state.readScopedState(configuration.ownerId, configuration.agentId, key)))
-          throw error;
-      });
+      .catch(() => undefined);
+    const persisted = await state.readScopedState(
+      configuration.ownerId,
+      configuration.agentId,
+      key,
+    );
+    if (!persisted) throw new Error("OWNER_INTENT_RECORD_MISSING");
+    const confirmed = persisted.value["confirmed"] === true;
+    const recordedAt =
+      typeof persisted.value["checkedAt"] === "string" ? persisted.value["checkedAt"] : checkedAt;
     await appendAuditRecord(this.#options.audit, {
-      id: `owner-intent:${digest([input.intent.id, result.confirmed])}`,
+      id: `owner-intent:${digest([input.intent.id])}`,
       ownerId: input.intent.ownerId,
       agentId: input.intent.agentId,
       action: "authorization.owner_intent.checked",
       targetRef: key,
-      outcome: result.confirmed ? "completed" : "rejected",
-      occurredAt: checkedAt,
+      outcome: confirmed ? "completed" : "rejected",
+      occurredAt: recordedAt,
     });
+    return confirmed;
   }
 }

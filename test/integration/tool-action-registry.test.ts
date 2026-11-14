@@ -1161,6 +1161,43 @@ it("[ADR-0257] sets the reminder without a card after outside content when the o
   }
 });
 
+it("[ADR-0257] follows the record that won a race for the same intent, so the action and the record never disagree", async () => {
+  const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
+  const s = await setup({ ownerIntent: { check } });
+  try {
+    const original = s.repository.commitStateAndEvents.bind(s.repository);
+    let raced = false;
+    vi.spyOn(s.repository, "commitStateAndEvents").mockImplementation(async (input) => {
+      if (input.command.commandType === "authorization.owner_intent.checked" && !raced) {
+        raced = true;
+        await original({
+          ...input,
+          command: { ...input.command, commandFingerprint: "competing-writer" },
+          state: {
+            ...input.state,
+            value: { ...(input.state.value as object), confirmed: false, checkedAt: T1 },
+          },
+        });
+      }
+      return original(input);
+    });
+    expect(await readOutputThenSetReminder(s, "race")).toMatchObject({
+      outcome: "awaiting_approval",
+    });
+    expect(raced).toBe(true);
+    expect(s.reminders).not.toHaveBeenCalled();
+    const [pending] = await s.approvals();
+    const record = await s.repository.readScopedState(
+      OWNER_ID,
+      AGENT_ID,
+      `owner-intent-check:${(pending?.intentSnapshot as GovernedActionIntent).id}`,
+    );
+    expect(record?.value).toMatchObject({ confirmed: false });
+  } finally {
+    await s.close();
+  }
+});
+
 it("[ADR-0257] still asks the owner when the check says no, is unsure, is not confident, quotes words the owner never said, fails, or times out", async () => {
   const cases: readonly [string, () => Promise<unknown>, number?][] = [
     ["no", async () => ({ ...EXPLICIT, verdict: "not_explicit" })],
