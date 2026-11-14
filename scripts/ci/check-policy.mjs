@@ -505,6 +505,7 @@ export function validateWorkflow(policy, source, toolchain) {
     "github.event_name",
     "github.event.pull_request.number || github.ref",
     "github.event_name == 'push' && github.run_id || ''",
+    "github.event.pull_request.draft == true && 'draft' || 'ready'",
   ]
     .map(githubExpression)
     .join("-");

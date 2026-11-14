@@ -200,7 +200,8 @@ vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
   },
 }));
 vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact, projects }) => {
+  runTests: async ({ output, artifact, projects, related }) => {
+    state.related = related;
     const report = path.join(output, "tests.json");
     write(report, { status: "passed" });
     return {
@@ -398,6 +399,50 @@ describe("共享runner的调度、来源和失败传播", () => {
     ).outputs;
     for (const kind of declared)
       expect([kind, result.reports.some((entry) => entry.kind === kind)]).toEqual([kind, true]);
+  });
+  it("[ADR-0268] PR 上 tooling 没有相关测试时不启动 vitest，结果记下相关范围和零计数", async () => {
+    const result = await run("tooling", {
+      planScope: () => ({ related: new Map([["tooling", []]]), reason: "related" }),
+    });
+    expect(
+      JSON.parse(readFileSync(path.join(state.root, ".ci-output/tooling/details.json"), "utf8")),
+    ).toMatchObject({ failures: [] });
+    expect(result.status).toBe("passed");
+    expect(state.calls).toEqual([]);
+    expect(result.relatedProjects).toEqual(["tooling"]);
+    expect(result.projects).toEqual([
+      { id: "tooling", counts: { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 } },
+    ]);
+  });
+  it("[ADR-0268] tooling 只把相关测试文件交给 vitest；不是相关范围时不带文件", async () => {
+    await run("tooling", {
+      planScope: () => ({
+        related: new Map([["tooling", ["test/tooling/example.test.mjs"]]]),
+        reason: "related",
+      }),
+    });
+    expect(state.calls[0].args.at(-1)).toBe("test/tooling/example.test.mjs");
+    state.calls.length = 0;
+    const full = await run("tooling", {
+      output: ".ci-output/tooling-full",
+      planScope: () => ({ related: new Map(), reason: "full-event" }),
+    });
+    expect(state.calls[0].args.at(-1)).toMatch(/^--outputFile\.junit=/);
+    expect(full.relatedProjects).toBeUndefined();
+  });
+  it("[ADR-0268] tests 不量覆盖率时把相关范围交给 runTests，量覆盖率时不选范围", async () => {
+    const asked = [];
+    const planScope = ({ projects }) => {
+      asked.push(projects);
+      return { related: new Map([["integration", []]]), reason: "related" };
+    };
+    const plain = await run("tests", { coverage: undefined, planScope });
+    expect(asked).toEqual([["unit", "contracts", "integration", "e2e", "pi-compat"]]);
+    expect([...state.related]).toEqual([["integration", []]]);
+    expect(plain.relatedProjects).toEqual(["integration"]);
+    await run("tests", { output: ".ci-output/tests-measure", planScope });
+    expect(asked).toHaveLength(1);
+    expect(state.related.size).toBe(0);
   });
   it.each([
     ["policy", "measure"],
