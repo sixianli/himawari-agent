@@ -1,0 +1,40 @@
+{
+  "alters": [
+    "decision_ledger"
+  ],
+  "removes": [
+    "proactive",
+    "memory_candidate",
+    "consolidation",
+    "context_truncation",
+    "retrieval_degrade",
+    "external_read",
+    "rule_review",
+    "memory_review",
+    "kept",
+    "discarded",
+    "pending_approval",
+    "capture_retrying",
+    "capture_queued",
+    "capture_gave_up",
+    "merge",
+    "supersede",
+    "archive",
+    "reflect",
+    "hold",
+    "truncated",
+    "degraded",
+    "read",
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+    "flagged",
+    "owner_edited",
+    "owner_dismissed",
+    "owner_reported_missed"
+  ]
+}

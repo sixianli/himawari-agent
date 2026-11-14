@@ -881,6 +881,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; proactive rows are removed when the owner deletes proactive records",
   ),
   entry(
+    "decision_ledger_kinds",
+    "DecisionLedgerPort",
+    "the decision kinds the ledger accepts; a new kind is one inserted row, not a table rebuild",
+    "metadata_only",
+    "retained for the life of the database; a kind still used by a ledger row cannot be removed",
+  ),
+  entry(
+    "decision_ledger_outcomes",
+    "DecisionLedgerPort",
+    "the outcomes each decision kind may record; a new outcome is one inserted row, not a table rebuild",
+    "metadata_only",
+    "retained for the life of the database; an outcome still used by a ledger row cannot be removed",
+  ),
+  entry(
     "decision_ledger_payloads",
     "ProactiveStorePort",
     "which protected prompt and answer payloads each proactive check's model calls left behind, in call order; the payload text is never stored here",
