@@ -1808,6 +1808,66 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
   });
 
+  it("keeps reminder and memory ids within the gateway limit when the command key or tool call id is as long as allowed", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-long", "给妈妈打电话");
+    const longKey = `page-${"k".repeat(123)}`;
+    const page = { contentRef: "payload-long", due: "2026-10-26", repeat: "none" };
+    const created = await command(context.control, "memory.reminder.create", page, longKey);
+    const replay = await command(context.control, "memory.reminder.create", page, longKey);
+    expect(replay).toEqual({ resultRef: created.resultRef, replayed: true });
+    const other = await command(
+      context.control,
+      "memory.reminder.create",
+      page,
+      `page-${"k".repeat(122)}x`,
+    );
+    expect(other.resultRef).not.toBe(created.resultRef);
+    const shortened = String(created.resultRef).slice("reminder:memory:reminder:owner:".length);
+    expect(shortened).toMatch(/\.[0-9a-f]{64}$/u);
+    const lookalike = await command(context.control, "memory.reminder.create", page, shortened);
+    expect(lookalike.resultRef).not.toBe(created.resultRef);
+    expect(String(lookalike.resultRef).length).toBeLessThanOrEqual(128);
+    const tool = (await context.reminderTools.run({
+      runId: createRunId(`run-${"r".repeat(120)}`),
+      toolCallId: `call-${"c".repeat(120)}`,
+      capabilityRef: "reminder.set",
+      capabilityHandleRef: null,
+      arguments: { text: "周五交周报", due: "2026-10-30T15:00", repeat: "none" },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as { reminderId: string };
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.overview.read",
+      payload: {},
+    } as never);
+    const { idempotencyKey: _queryKey, ...message } = snapshot as unknown as Record<
+      string,
+      unknown
+    >;
+    const parsed = gatewayV2MessageSchema.parse(message);
+    if (parsed.type !== "memory.overview.snapshot") throw new Error("snapshot");
+    expect(parsed.payload.upcoming.map(({ reminderId }) => reminderId).sort()).toEqual(
+      [created.resultRef, other.resultRef, lookalike.resultRef, tool.reminderId].sort(),
+    );
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: tool.reminderId, action: "cancel" },
+    } as never);
+    expect(await context.repository.memoryReminders().read(tool.reminderId)).toMatchObject({
+      status: "cancelled",
+    });
+  });
+
   it("sets, lists and cancels reminders from the conversation tool and the reminders page through one writer", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
