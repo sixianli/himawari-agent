@@ -80,7 +80,7 @@ class FakeGithub {
     this.clock = 0;
     this.mergeTamper = null;
   }
-  addPr(number, files, { check = "success", label = true, from = "main" } = {}) {
+  addPr(number, files, { check = "success", label = true, from = "main", moves = [] } = {}) {
     git(this.scratch, ["fetch", "--quiet", "origin", "main"]);
     git(this.scratch, [
       "checkout",
@@ -90,6 +90,10 @@ class FakeGithub {
       from === "main" ? "origin/main" : from,
     ]);
     write(this.scratch, files);
+    for (const [from, to] of moves) {
+      mkdirSync(path.dirname(path.join(this.scratch, to)), { recursive: true });
+      git(this.scratch, ["mv", from, to]);
+    }
     git(this.scratch, ["add", "-A"]);
     git(this.scratch, ["commit", "--quiet", "-m", `pr ${number}`]);
     const head = git(this.scratch, ["rev-parse", "HEAD"]);
@@ -311,6 +315,16 @@ describe("合并队列 [ADR-0268]", () => {
     expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([failedLabel]);
   });
 
+  it("把 CI 自身的文件改名移出保护目录的 PR 同样移出队列", async () => {
+    const env = setup();
+    env.fake.addPr(1, {}, { moves: [["ci/policy.json", "docs/policy.json"]] });
+    env.fake.addPr(2, { "c.txt": "c\n" });
+    const state = await step(env);
+    expect(state.candidate.prs.map((pr) => pr.number)).toEqual([2]);
+    expect(commentsFor(env.fake, 1)[0]).toContain("ci/policy.json");
+    expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([failedLabel]);
+  });
+
   it("PR 上的 ci/required 还在跑或还没有时不进候选也不移出；失败时移出", async () => {
     const env = setup();
     env.fake.addPr(1, { "c.txt": "c\n" }, { check: "pending" });
@@ -382,6 +396,7 @@ describe("合并队列 [ADR-0268]", () => {
     env.fake.mergeTamper = 1;
     const state = await step(env);
     expect(state.stopped.reason).toContain("#1");
+    expect(remoteBranches(env.origin).filter((b) => b.startsWith("refs/heads/mq/"))).toEqual([]);
     expect(env.fake.calls.filter((c) => c[0] === "merge").map((c) => c[1])).toEqual([1]);
     expect(remoteState(env.origin).stopped).not.toBeNull();
     env.fake.mergeTamper = null;
@@ -420,14 +435,33 @@ describe("合并队列 [ADR-0268]", () => {
     expect(state.candidate.branch).not.toBe(first.candidate.branch);
   });
 
-  it("CI 结论成功但 ci/required 作业不是成功时按失败处理", async () => {
+  it.each([
+    ["success", "skipped"],
+    ["startup_failure", null],
+    ["timed_out", "cancelled"],
+    ["failure", null],
+  ])(
+    "CI 结论 %s、ci/required 为 %s 时不算 PR 的错：不合并、不移出，丢掉候选重建",
+    async (conclusion, required) => {
+      const env = setup();
+      env.fake.addPr(1, { "c.txt": "c\n" });
+      const first = await step(env);
+      env.fake.finish(conclusion, required);
+      const state = await step(env);
+      expect(env.fake.calls.some((c) => c[0] === "merge")).toBe(false);
+      expect(env.fake.calls.some((c) => c[0] === "addLabel")).toBe(false);
+      expect(state.candidate.branch).not.toBe(first.candidate.branch);
+      expect(remoteBranches(env.origin)).not.toContain(`refs/heads/${first.candidate.branch}`);
+    },
+  );
+
+  it("状态里没有的 mq 分支（上次推了分支却没存下状态）在建新候选前删掉", async () => {
     const env = setup();
+    git(env.origin, ["update-ref", "refs/heads/mq/orphan", mainSha(env.origin)]);
     env.fake.addPr(1, { "c.txt": "c\n" });
-    await step(env);
-    env.fake.finish("success", "skipped");
-    await step(env);
-    expect(env.fake.calls.some((c) => c[0] === "merge")).toBe(false);
-    expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([failedLabel]);
+    const state = await step(env);
+    const branches = remoteBranches(env.origin).filter((b) => b.startsWith("refs/heads/mq/"));
+    expect(branches).toEqual([`refs/heads/${state.candidate.branch}`]);
   });
 
   it("完整模式下队列什么都不做", async () => {
@@ -510,6 +544,27 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
     expect(printed.a.slice(0, 3)).toEqual(["--assert-reviewed", "--pr", "1"]);
     expect(printed.a[printed.a.indexOf("--main-ref") + 1]).toBe(base);
     expect(git(env.runner, ["worktree", "list"]).split("\n")).toHaveLength(1);
+    const slow = path.join(env.root, "slow-review.mjs");
+    writeFileSync(slow, "setTimeout(() => {}, 60_000);\n");
+    const stuck = reviewChecker({ repo: env.repo, script: slow, timeout: 300 })(1, head, main);
+    expect(stuck.ok).toBe(false);
+    expect(git(env.runner, ["worktree", "list"]).split("\n")).toHaveLength(1);
+  });
+
+  it("GitHub 接口：加标签前先建标签，标签已存在（422）不算错", async () => {
+    const seen = [];
+    const request = async (url, init) => {
+      seen.push([init.method, url.replace(/^.*\/repos\/[^/]+\/[^/]+/u, ""), init.body]);
+      const status = url.endsWith("/repos/sixianli/himawari-agent/labels") ? 422 : 200;
+      return { ok: status === 200, status, text: async () => "[]" };
+    };
+    const github = createGithub({ token: "t", repository, request });
+    await github.addLabel(7, failedLabel);
+    expect(seen.map(([method, route]) => [method, route])).toEqual([
+      ["POST", "/labels"],
+      ["POST", "/issues/7/labels"],
+    ]);
+    expect(JSON.parse(seen[0][2]).name).toBe(failedLabel);
   });
 
   it("GitHub 接口：合并遇到 405 时重试，四次都失败返回未合并；找运行只认同分支同提交的 ci.yml 手动触发", async () => {

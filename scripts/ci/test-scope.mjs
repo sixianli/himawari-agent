@@ -17,7 +17,7 @@ export function classifyChanges(files) {
 }
 
 export function changedFiles(root, base, tested) {
-  const result = spawnSync("git", ["diff", "--name-only", "-z", base, tested], {
+  const result = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", base, tested], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

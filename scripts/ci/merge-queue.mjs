@@ -13,6 +13,7 @@ export const batchLimit = 5;
 export const runGraceMs = 15 * 60_000;
 export const candidateTimeoutMs = 3 * 3600_000;
 export const requiredJobName = "ci/required";
+export const reviewTimeoutMs = 5 * 60_000;
 const workflowFile = "ci.yml";
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const shaPattern = /^[a-f0-9]{40}$/u;
@@ -102,7 +103,7 @@ export function createRepo({ cwd, remote = "origin", env = process.env }) {
     fetchPull: (number) => fetchRef(`refs/pull/${number}/head`, `refs/mq/pull/${number}`),
     deliveryMode: () => run(["show", "refs/mq/main:DELIVERY_MODE"]).trim(),
     changedFiles: (base, head) =>
-      run(["diff", "--name-only", "-z", `${base}...${head}`])
+      run(["diff", "--name-only", "--no-renames", "-z", `${base}...${head}`])
         .split("\0")
         .filter(Boolean),
     mergeBase: (a, b) => run(["merge-base", a, b]),
@@ -146,6 +147,11 @@ export function createRepo({ cwd, remote = "origin", env = process.env }) {
         rmSync(dir, { recursive: true, force: true });
       }
     },
+    candidateBranches: () =>
+      run(["ls-remote", "--heads", remote, `refs/heads/${candidatePrefix}*`])
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.split("\t")[1].slice("refs/heads/".length)),
     pushBranch: (sha, branch) => run(["push", "--quiet", remote, `${sha}:refs/heads/${branch}`]),
     deleteBranch: (branch) =>
       run(["push", "--quiet", remote, `:refs/heads/${branch}`], { allowFail: true }),
@@ -299,7 +305,10 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
       call("DELETE", `/issues/${number}/labels/${encodeURIComponent(label)}`, undefined, {
         allow: [404],
       }),
-    addLabel: (number, label) => call("POST", `/issues/${number}/labels`, { labels: [label] }),
+    async addLabel(number, label) {
+      await call("POST", "/labels", { name: label, color: "b60205" }, { allow: [422] });
+      await call("POST", `/issues/${number}/labels`, { labels: [label] });
+    },
     comment: (number, body) => call("POST", `/issues/${number}/comments`, { body }),
   };
 }
@@ -307,6 +316,7 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
 export function reviewChecker({
   repo,
   script = path.join(scriptRoot, "scripts/model-review/opencode-review.mjs"),
+  timeout = reviewTimeoutMs,
 }) {
   return (number, head, main) =>
     repo.withWorktree(head, (dir) => {
@@ -322,7 +332,7 @@ export function reviewChecker({
           "--main-ref",
           repo.mergeBase(main, head),
         ],
-        { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+        { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout },
       );
       const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
       return { ok: result.status === 0, output };
@@ -369,6 +379,7 @@ export async function processQueue({
   };
   const stop = (reason) => {
     log(`MQ_STOP ${reason}`);
+    if (state.candidate) repo.deleteBranch(state.candidate.branch);
     state = { ...state, stopped: { reason, at: at() } };
   };
   const remainingGroups = (candidate) =>
@@ -451,11 +462,12 @@ export async function processQueue({
       log(`MQ_WAIT_RUN ${candidate.branch} ${run.url}`);
       return;
     }
-    if (run.conclusion === "cancelled") return drop("cancelled");
     const required = await github.requiredJobConclusion(run);
     if (run.conclusion === "success" && required === "success")
       return mergeCandidate(state.candidate, run, main);
-    return failCandidate(state.candidate, run);
+    if (run.conclusion === "failure" && required === "failure")
+      return failCandidate(state.candidate, run);
+    return drop(`ci-not-judged run=${run.conclusion} required=${required}`);
   };
 
   const readiness = async (number, main) => {
@@ -483,6 +495,10 @@ export async function processQueue({
   };
 
   const start = async () => {
+    for (const branch of repo.candidateBranches()) {
+      log(`MQ_ORPHAN ${branch}`);
+      repo.deleteBranch(branch);
+    }
     const main = repo.fetchMain();
     const queued = await github.listQueued();
     const queuedSet = new Set(queued);

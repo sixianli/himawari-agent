@@ -169,6 +169,9 @@ describe("main 轻量路径的完整证据", () => {
     const full = fixture();
     full.summary.scope = "full";
     expect(verifyGate(full)).toMatchObject({ mode: "light" });
+    const unknown = fixture();
+    unknown.summary.scope = "partial";
+    expect(() => verifyGate(unknown)).toThrow("MAIN_GATE_RELATED_SCOPE");
   });
 });
 function apiData() {

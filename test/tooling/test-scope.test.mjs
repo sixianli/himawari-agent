@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  changedFiles,
   classifyChanges,
   listRelatedFiles,
   planTestScope,
@@ -156,5 +158,34 @@ describe("PR 上测试范围的选择 [ADR-0268]", () => {
         run: () => ({ status: 1 }),
       }),
     ).toBeNull();
+  });
+
+  it("改名的文件新旧两个路径都算改动，把非源码文件改名成源码路径仍然全量", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "ci-scope-git-"));
+    directories.push(root);
+    const git = (...args) =>
+      execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+      }).trim();
+    git("init", "--quiet");
+    mkdirSync(path.join(root, "scripts"), { recursive: true });
+    writeFileSync(path.join(root, "scripts/build.mjs"), "export const x = 1;\n".repeat(20));
+    git("add", "-A");
+    git("commit", "--quiet", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    mkdirSync(path.join(root, "packages/a/src"), { recursive: true });
+    git("mv", "scripts/build.mjs", "packages/a/src/build.mjs");
+    git("commit", "--quiet", "-m", "move");
+    const files = changedFiles(root, base, git("rev-parse", "HEAD"));
+    expect(files.sort()).toEqual(["packages/a/src/build.mjs", "scripts/build.mjs"]);
+    expect(classifyChanges(files).full).toBe(true);
   });
 });
