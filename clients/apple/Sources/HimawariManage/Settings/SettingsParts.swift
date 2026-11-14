@@ -89,7 +89,7 @@ struct SettingsRow: View {
                         .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
                 }
                 if let switchState {
-                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSun)
+                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSuccess)
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)

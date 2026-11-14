@@ -174,12 +174,18 @@ enum M {
     static var addDevice: String { text("添加设备", ja: "デバイスを追加", en: "Add a device") }
     static var thisIPhone: String { text("这台 iPhone", ja: "この iPhone", en: "This iPhone") }
 
+    static func relative(_ date: Date) -> String {
+        let formatted = date.formatted(.relative(presentation: .named).locale(locale))
+        guard ManageLanguage.current == .zh else { return formatted }
+        return formatted.replacingOccurrences(of: #"(\d)(\p{Han})"#, with: "$1 $2", options: .regularExpression)
+    }
+
     static func presence(_ presence: DevicePresence) -> String {
         switch presence {
         case .connected: text("连着", ja: "つながっています", en: "Connected")
         case .justNow: text("刚刚", ja: "たった今", en: "Just now")
         case .seen(let date):
-            date.formatted(.relative(presentation: .named).locale(locale))
+            relative(date)
         case .neverSeen: text("还没连过", ja: "まだつながっていません", en: "Never connected")
         case .waitingForConfirmation: text("等确认", ja: "確認待ち", en: "Waiting to confirm")
         }
@@ -276,7 +282,7 @@ enum M {
     static func loginSeen(_ device: LoginDevice) -> String {
         if device.current { return text("现在在用", ja: "いま使用中", en: "In use now") }
         guard let seen = Timestamp.parse(device.lastSeenAt) else { return "" }
-        return seen.formatted(.relative(presentation: .named).locale(locale))
+        return relative(seen)
     }
     static var files: String { text("文件", ja: "ファイル", en: "Files") }
     static func fileOrigin(_ origin: FileOrigin) -> String {
@@ -292,7 +298,7 @@ enum M {
         }
     }
     static func fileLine(day: Date, thread: String?) -> String {
-        let when = day.formatted(.relative(presentation: .named).locale(locale))
+        let when = relative(day)
         guard let title = thread?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty else { return when }
         return text("\(when) · 对话“\(title)”", ja: "\(when) · 会話「\(title)」", en: "\(when) · “\(title)”")
     }
