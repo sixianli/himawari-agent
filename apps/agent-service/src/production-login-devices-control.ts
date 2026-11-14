@@ -9,6 +9,7 @@ import {
   type SessionDeviceStatePort,
 } from "@himawari-agent/application";
 import type {
+  GatewayErrorReasonCode,
   GatewayV2Command,
   GatewayV2Query,
   GatewayV2Snapshot,
@@ -28,6 +29,7 @@ export interface ProductionLoginDevicesControlOptions {
 }
 
 const REVOKE_OTHERS_ATTEMPTS = 3;
+const LOGIN_DEVICES_STILL_CHANGING: GatewayErrorReasonCode = "LOGIN_DEVICES_STILL_CHANGING";
 
 const singleLine = (value: string): string => {
   let text = "";
@@ -133,7 +135,7 @@ export class ProductionLoginDevicesControl {
         }
       }
       if (remaining.length > 0)
-        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "LOGIN_DEVICES_STILL_CHANGING");
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, LOGIN_DEVICES_STILL_CHANGING);
       return { resultRef: authentication.deviceId, replayed: false };
     }
     if (command.type !== "login.device.revoke")

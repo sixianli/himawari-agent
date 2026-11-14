@@ -59,6 +59,7 @@ import {
   type ProductionMemoryClassifier,
   UNCLASSIFIED,
 } from "./production-memory-classification.js";
+import type { ProductionImportDuplicateChecker } from "./production-memory-import-duplicates.js";
 import { OwnerRuleError, type ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 
@@ -67,6 +68,13 @@ type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
 type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
+type ImportDuplicateResultView = Awaited<
+  ReturnType<ProductionImportDuplicateChecker["check"]>
+>[number];
+type ImportDuplicatesSnapshot = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.import.duplicates.snapshot" }
+>;
 const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
@@ -74,6 +82,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
   "memory.classify.read",
+  "memory.import.duplicates.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
@@ -259,6 +268,7 @@ export class ProductionMemoryControl {
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
+    readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -1154,6 +1164,7 @@ export class ProductionMemoryControl {
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type === "memory.classify.read") return this.#classify(query);
+    if (query.type === "memory.import.duplicates.read") return this.#importDuplicates(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
     if (query.type === "memory.review.read") return this.#review(query);
@@ -1324,6 +1335,86 @@ export class ProductionMemoryControl {
         }),
       },
     } as ClassifySnapshot;
+  }
+
+  async #importDuplicates(
+    query: Extract<GatewayV2Query, { type: "memory.import.duplicates.read" }>,
+  ): Promise<ImportDuplicatesSnapshot> {
+    const checker = this.options.importDuplicates;
+    const refs = query.payload.contentRefs;
+    const results = checker ? await this.#checkImportDuplicates(checker, refs) : null;
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.import.duplicates.snapshot",
+      payload: {
+        items: refs.map((contentRef, index) => ({
+          contentRef,
+          verdict: results?.[index]?.verdict ?? "skipped",
+          memoryId: results?.[index]?.memoryId ?? null,
+        })),
+      },
+    } as ImportDuplicatesSnapshot;
+  }
+
+  async #checkImportDuplicates(
+    checker: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">,
+    refs: readonly string[],
+  ) {
+    const { ownerId, agentId } = this.options.configuration;
+    const candidates: string[] = [];
+    const sendable: number[] = [];
+    for (const [index, ref] of refs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (
+        (payload &&
+          classificationRank(payload.dataClassification) > classificationRank("private")) ||
+        this.#sensitiveJudgments.has(ref)
+      )
+        candidates.push("");
+      else {
+        candidates.push(await this.readText(ref));
+        sendable.push(index);
+      }
+    }
+    if (sendable.length === 0)
+      return candidates.map(
+        (): ImportDuplicateResultView => ({ verdict: "skipped", memoryId: null }),
+      );
+    const existing: { memoryId: string; text: string }[] = [];
+    let complete = true;
+    const limit = checker.existingLimit;
+    const active = [...(await this.options.state.listActive(ownerId, agentId))].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    );
+    for (const record of active) {
+      if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
+        continue;
+      if (existing.length >= limit) {
+        complete = false;
+        break;
+      }
+      const text = await this.readText(record.contentRef).catch(() => null);
+      if (text) existing.push({ memoryId: record.id, text });
+      else complete = false;
+    }
+    if (existing.length === 0 && active.length > 0) complete = false;
+    const checked = await checker.check(
+      sendable.map((index) => candidates[index] ?? ""),
+      existing,
+      { complete },
+    );
+    const results = candidates.map(
+      (): ImportDuplicateResultView => ({
+        verdict: "skipped",
+        memoryId: null,
+      }),
+    );
+    for (const [position, index] of sendable.entries()) {
+      const result = checked[position];
+      if (result) results[index] = result;
+    }
+    return results;
   }
 
   async #storedAtLeast(

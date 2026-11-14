@@ -344,6 +344,18 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     undoneAt: optionalString(row["undone_at"]),
   }));
 
+  const pairedDeviceLines: JsonValue[] = snapshot.pairedDevices.map((row) => ({
+    id: str(row["id"]),
+    kind: str(row["kind"]),
+    name: safeString(str(row["name"])),
+    releaseChannel: str(row["release_channel"]),
+    status: str(row["status"]),
+    pairedAt: str(row["paired_at"]),
+    confirmedAt: optionalString(row["confirmed_at"]),
+    revokedAt: optionalString(row["revoked_at"]),
+    lastSeenAt: optionalString(row["last_seen_at"]),
+  }));
+
   const basis = group(snapshot.basis, "change_id");
   const changesByRun = group(snapshot.changes, "consolidation_id");
   let consolidationChanges = 0;
@@ -605,6 +617,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.memories, "data", jsonLines(memoryLines), memoryLines.length);
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
+  put(DATA_FILES.pairedDevices, "data", jsonLines(pairedDeviceLines), pairedDeviceLines.length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
   put(DATA_FILES.conversationReviews, "data", jsonLines(reviewLines), reviewLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
@@ -696,6 +709,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
     },
     {
+      what: "配对设备的公钥、配对码和请求随机值",
+      count: null,
+      reason:
+        "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
+    },
+    {
       what: "记忆评测的题库和每次评测的分数",
       count: null,
       reason:
@@ -714,6 +733,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     memoryHistoryEvents: historyEvents,
     people: peopleLines.length,
     importBatches: batchLines.length,
+    pairedDevices: pairedDeviceLines.length,
     consolidations: consolidationLines.length,
     consolidationChanges,
     conversationReviews: reviewLines.length,

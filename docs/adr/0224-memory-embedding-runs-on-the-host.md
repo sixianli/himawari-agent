@@ -84,7 +84,7 @@ date: "2026-11-11"
 - **上线：**生产机要先放好模型目录（约 600 MB，属于“往生产机放模型文件”，要 Andy 同意），上线包配置里写 `configTargets.embedding`；没放好时上线前检查会停。回滚到旧版本会恢复旧配置，回到网关模型，同样要重算一次向量。
 - **内存：**常驻多约 1.35 GB（生产机当时可用约 6.6 GB）。
 - **每日摘要：**`memory_episodes` 的向量补算只看有关键词条目的摘要（`JOIN memory_episode_terms`）。没有关键词条目的是只含 sensitive 内容、本来就不进索引的摘要，这是有意的，这次不改。
-- **遮盖用的固定文字清单不变：**出口遮盖会跳过提示词目录里不少于 24 个字符的固定文字（[KV 缓存规则第 11 条](../../.claude/rules/prompt-prefix.md#deterministic)），清单变了，含这段文字的老对话请求开头会变一次。新增的向量前缀里，除了原有的 Qwen3 查询指令（本来就在清单里），每段都短于 24 个字符（EmbeddingGemma 的查询前缀拆成两段写），清单和改动前完全一样，`prompt-rendering-golden.unit.test.ts` 检查向量前缀不往清单里加东西。
+- **遮盖用的固定文字清单不变：**出口遮盖会跳过提示词目录里不少于 24 个字符的固定文字（[KV 缓存规则第 11 条](../../.agents/instructions/prompt-prefix.md#deterministic)），清单变了，含这段文字的老对话请求开头会变一次。新增的向量前缀里，除了原有的 Qwen3 查询指令（本来就在清单里），每段都短于 24 个字符（EmbeddingGemma 的查询前缀拆成两段写），清单和改动前完全一样，`prompt-rendering-golden.unit.test.ts` 检查向量前缀不往清单里加东西。
 - **依赖：**新增 `onnxruntime-node` 1.30.0 和 `@huggingface/tokenizers` 0.2.0，版本写死；出包时只保留当前平台的 ONNX Runtime 二进制，去掉 CUDA 和 TensorRT 的部分。
 
 <a id="verification"></a>

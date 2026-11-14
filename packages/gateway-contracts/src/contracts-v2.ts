@@ -35,6 +35,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.overview.read",
   "proactive.overview.snapshot",
   "proactive.settings.set",
+  "proactive.pause",
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
@@ -65,6 +66,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.basis.snapshot",
   "memory.classify.read",
   "memory.classify.snapshot",
+  "memory.import.duplicates.read",
+  "memory.import.duplicates.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -564,17 +567,7 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
-function isHiddenNameCharacter(code: number): boolean {
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    (code >= 0x200b && code <= 0x200f) ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x2064) ||
-    (code >= 0x2066 && code <= 0x2069) ||
-    code === 0xfeff
-  );
-}
+const HIDDEN_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string")
@@ -584,7 +577,7 @@ const deviceNameSchema: Schema<string> = {
     if (
       characters.length < 1 ||
       characters.length > DEVICE_NAME_MAX_LENGTH ||
-      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+      HIDDEN_NAME_CHARACTER.test(trimmed)
     )
       throw new ContractValidationError(
         path,
@@ -593,7 +586,22 @@ const deviceNameSchema: Schema<string> = {
     return trimmed;
   },
 };
+export function normalizeDeviceName(input: unknown): string | null {
+  try {
+    return deviceNameSchema.parse(input);
+  } catch {
+    return null;
+  }
+}
 const accessText = boundedString(256);
+export function isDeviceAccessText(input: unknown): boolean {
+  try {
+    accessText.parse(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const deviceAccessSchema = object({
   clientId: accessText,
   clientSecret: accessText,
@@ -952,6 +960,10 @@ const loginDevicesSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+export const GATEWAY_ERROR_REASON_CODES = Object.freeze(["LOGIN_DEVICES_STILL_CHANGING"] as const);
+export type GatewayErrorReasonCode = (typeof GATEWAY_ERROR_REASON_CODES)[number];
+export const isGatewayErrorReasonCode = (value: string): value is GatewayErrorReasonCode =>
+  (GATEWAY_ERROR_REASON_CODES as readonly string[]).includes(value);
 const loginDevicesRevokeOthersCommandSchema = object({
   ...commandEnvelope("login.devices.revoke_others"),
   payload: object({ recentAuthenticationRef: nullable(machineString) }),
@@ -970,6 +982,10 @@ const proactiveSettingsSetCommandSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
   }),
+});
+const proactivePauseCommandSchema = object({
+  ...commandEnvelope("proactive.pause"),
+  payload: object({}),
 });
 const proactiveInsightRespondCommandSchema = object({
   ...commandEnvelope("proactive.insight.respond"),
@@ -1585,6 +1601,32 @@ const memoryClassifySnapshotSchema = object({
         classification: enumeration(["private", "sensitive"]),
         topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         failed: booleanValue,
+      }),
+    ),
+  }),
+});
+export const MEMORY_IMPORT_DUPLICATES_MAXIMUM = 500;
+const memoryImportDuplicatesQuerySchema = object({
+  ...envelope("query", "memory.import.duplicates.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_IMPORT_DUPLICATES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryImportDuplicatesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.duplicates.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        verdict: enumeration(["same", "unsure", "different", "skipped"]),
+        memoryId: nullable(machineString),
       }),
     ),
   }),
@@ -3062,6 +3104,7 @@ const schemasByType = {
   "proactive.overview.read": proactiveOverviewQuerySchema,
   "proactive.overview.snapshot": proactiveOverviewSnapshotSchema,
   "proactive.settings.set": proactiveSettingsSetCommandSchema,
+  "proactive.pause": proactivePauseCommandSchema,
   "proactive.insight.respond": proactiveInsightRespondCommandSchema,
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
@@ -3112,6 +3155,8 @@ const schemasByType = {
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
   "memory.classify.read": memoryClassifyQuerySchema,
   "memory.classify.snapshot": memoryClassifySnapshotSchema,
+  "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
+  "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,

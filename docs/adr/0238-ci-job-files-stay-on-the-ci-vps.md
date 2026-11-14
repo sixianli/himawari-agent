@@ -6,7 +6,7 @@ supersedes: "docs/adr/0201-delete-run-reports-after-gate-passes.md"
 superseded_by: ""
 amends: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-11"
-amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
+amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md"
 ---
 
 # ADR 0238：CI 作业之间的文件放在 CI VPS 上，不再用 GitHub 产物存储

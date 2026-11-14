@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-12"
+amended_by: "docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md"
 ---
 
 # ADR 0253：让 Himawari 能在 linux-arm64 上跑检查、跑沙箱、出包和做资格验证（测试用途）

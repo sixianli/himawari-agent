@@ -64,7 +64,7 @@ async function openMigrated() {
 }
 
 describe("web push gate migration", () => {
-  it("[HR-4] keeps every decision record, signal and pre-review when the ledger tables are rebuilt", async () => {
+  it("[HR-4] keeps every decision record, signal and pre-review and adds the web push kind without rebuilding", async () => {
     const database = await openMigrated();
     expect(database.prepare("SELECT count(*) FROM decision_ledger").pluck().get()).toBe(1);
     expect(database.prepare("SELECT count(*) FROM decision_signals").pluck().get()).toBe(1);
@@ -89,7 +89,7 @@ describe("web push gate migration", () => {
         )
         .run(id, OWNER, AGENT, kind, T0, outcome);
     insert("d-push", "web_push", "deferred");
-    expect(() => insert("d-push-sent", "web_push", "sent")).toThrow(/CHECK/u);
-    expect(() => insert("d-other", "rule_review", "deferred")).toThrow(/CHECK/u);
+    expect(() => insert("d-push-sent", "web_push", "sent")).toThrow();
+    expect(() => insert("d-other", "rule_review", "deferred")).toThrow();
   });
 });

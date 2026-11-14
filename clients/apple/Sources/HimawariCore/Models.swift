@@ -4,6 +4,7 @@ public enum DeviceKind: String, Codable, Sendable {
     case iphone
     case watch
     case mac
+    case unrecognized
 }
 
 public enum ReleaseChannel: String, Codable, Sendable, CaseIterable {
@@ -11,12 +12,14 @@ public enum ReleaseChannel: String, Codable, Sendable, CaseIterable {
     case testflight
     case appStore = "app_store"
     case macDirect = "mac_direct"
+    case unrecognized
 }
 
 public enum PairedDeviceStatus: String, Codable, Sendable {
     case pending
     case active
     case revoked
+    case unrecognized
 }
 
 public struct PairedDeviceInfo: Codable, Sendable, Equatable {

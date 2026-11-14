@@ -2,7 +2,26 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 
-export const SUPPORTED_SCHEMA_MAX = 96;
+export const LEGACY_MIGRATION_COUNT = 95;
+export const AUDIT_READ_TABLES = Object.freeze([
+  "capability_invocation_receipts",
+  "execution_environment_calls",
+  "execution_environment_leases",
+  "execution_environment_release_receipts",
+  "execution_environments",
+  "execution_jobs",
+  "runs",
+  "sandbox_admission_queue",
+  "sandbox_execution_intents",
+  "sandbox_execution_records",
+  "sandbox_jobs",
+  "sandbox_legacy_occupancy",
+  "sandbox_release_receipts",
+  "sandbox_reservation_release_receipts",
+  "sandbox_workspace_barriers",
+  "sandbox_workspace_occupancy",
+]);
+export const AUDIT_REVIEWED_MIGRATIONS = Object.freeze([]);
 const sections = ["executions", "legacy", "queue", "environments"];
 function assertArgument(condition) {
   if (!condition) throw new Error("WORKSPACE_AUDIT_ARGUMENT_INVALID");
@@ -29,11 +48,31 @@ export function auditWorkspaceLifecycle({
         .prepare("SELECT count(*) AS count, max(sequence) AS sequence FROM schema_migration_ledger")
         .get();
       const version = ledger.sequence;
+      const hasIdColumn =
+        db
+          .prepare(
+            "SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name = 'migration_id'",
+          )
+          .get() !== undefined;
+      const unknownLegacyLike = hasIdColumn
+        ? db
+            .prepare(
+              "SELECT count(*) FROM schema_migration_ledger WHERE sequence > ? AND migration_id IS NULL",
+            )
+            .pluck()
+            .get(LEGACY_MIGRATION_COUNT)
+        : Math.max(0, ledger.count - LEGACY_MIGRATION_COUNT);
+      const missingTables = AUDIT_READ_TABLES.filter(
+        (table) =>
+          db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table) ===
+          undefined,
+      );
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > SUPPORTED_SCHEMA_MAX ||
-        ledger.count !== version
+        ledger.count !== version ||
+        unknownLegacyLike > 0 ||
+        (version >= LEGACY_MIGRATION_COUNT && missingTables.length > 0)
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
       let rows;
