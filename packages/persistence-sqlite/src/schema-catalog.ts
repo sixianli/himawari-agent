@@ -715,7 +715,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "owner_proposals",
     "OwnerProposalStorePort",
-    "one row per next step proposed to the owner, of any kind: pending until adopted, refused or expired, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner and the data its handler needs stay in a protected payload the row points to",
+    "one row per next step proposed to the owner, of any kind: the owner's decision (pending until adopted, refused, expired, superseded or withdrawn) and the execution of a fixed action (not started, running under a lease, done and awaiting read-back, succeeded, failed, unknown or undone, undone being final) kept in separate columns, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner, the data its handler needs and what an execution changed (for undo) stay in protected payloads the row points to",
     "payload_reference",
     "cascade with Owner or Agent deletion; the source thread link clears with the thread",
   ),
