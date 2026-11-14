@@ -12,6 +12,7 @@ import {
   readlinkSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import http from "node:http";
@@ -32,6 +33,7 @@ import {
   LOOPBACK_NO_PROXY,
   postJson,
   readGatewayConfig,
+  sha256File,
   startGateway,
   stopAllGateways,
   summarizeGatewayUsage,
@@ -325,7 +327,7 @@ const MODE_TEXT = {
   "plan-claims": {
     role: "你是方案里“关于代码和文档现状的说法”的核对者。",
     network: "不能上网。",
-    task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
+    task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。方案里讲“原来”“已删除”“改之前”的旧代码，在材料里给出的基线提交里找：证据位置写成 文件:行@完整提交哈希，代码原文取自那个提交里的文件；这样写只限于当前提交里已经没有这段原文的旧代码，讲现状的句子仍然用当前提交里的文件和行。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
     output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号用 1、2、3……，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
     materialTitle: "待核对的方案：",
   },
@@ -354,6 +356,7 @@ export function buildPrompt({
   base,
   previous,
   priorFindings,
+  claimsBase,
   brief,
 }) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
@@ -376,6 +379,9 @@ export function buildPrompt({
     "---- 本次材料 ----",
     `仓库就是当前目录，已检出 ${head}。`,
     base ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
+    mode === "plan-claims" && claimsBase
+      ? `本 PR 的基线提交是 ${claimsBase}（main 与 ${head} 的共同祖先）。`
+      : null,
     previous
       ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
       : null,
@@ -2611,7 +2617,94 @@ export function checkProbeRequests({
   return problems;
 }
 
-async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, gateway }) {
+export const SELF_CHECK_CACHE_ENV = "HIMAWARI_REVIEW_SELFCHECK_CACHE";
+export const SELF_CHECK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const SELF_CHECK_CACHE_SMALL_FILE_BYTES = 1024 * 1024;
+
+export function selfCheckCacheDir(env = process.env) {
+  const setting = env[SELF_CHECK_CACHE_ENV];
+  if (setting === "off") return null;
+  return setting || join(homedir(), ".cache", "himawari-review-selfcheck");
+}
+
+function fileFingerprint(path) {
+  try {
+    const stat = statSync(path);
+    return {
+      path,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      sha256: stat.size < SELF_CHECK_CACHE_SMALL_FILE_BYTES ? sha256File(path) : null,
+    };
+  } catch {
+    return { path, missing: true };
+  }
+}
+
+export function selfCheckCacheKey({ binary, mode, gateway }) {
+  const scriptDir = dirname(fileURLToPath(import.meta.url));
+  const scripts = readdirSync(scriptDir)
+    .filter((name) => /\.(?:mjs|json)$/.test(name))
+    .sort()
+    .map((name) => [name, sha256File(join(scriptDir, name))]);
+  const which = (name) =>
+    spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        mode,
+        scripts,
+        config: reviewConfig({ mode, baseURL: "http://127.0.0.1:0/v1" }),
+        binary: fileFingerprint(binary),
+        git: fileFingerprint(which("git")),
+        bash: fileFingerprint(which("bash")),
+        gateway: gateway ? { install: gateway.install, config: gateway.config } : null,
+      }),
+    )
+    .digest("hex");
+}
+
+export function selfCheckCacheHit({ key, now = Date.now(), env = process.env }) {
+  const dir = selfCheckCacheDir(env);
+  if (!dir) return false;
+  try {
+    const record = JSON.parse(readFileSync(join(dir, `${key}.json`), "utf8"));
+    return (
+      record?.key === key &&
+      Number.isFinite(record.at) &&
+      now - record.at < SELF_CHECK_CACHE_MAX_AGE_MS &&
+      record.at <= now
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function selfCheckCacheWrite({ key, now = Date.now(), env = process.env }) {
+  const dir = selfCheckCacheDir(env);
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const target = join(dir, `${key}.json`);
+    const temporary = `${target}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify({ key, at: now })}\n`, { mode: 0o600 });
+    renameSync(temporary, target);
+  } catch {}
+}
+
+export async function selfCheck({
+  binary,
+  copy,
+  workRoot,
+  gitGuard,
+  mode,
+  timeoutMs,
+  gateway,
+  cached = false,
+}) {
   const plan = probePlan(
     workRoot,
     git(["ls-files"], copy)
@@ -2643,7 +2736,7 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
       ),
     );
     const problems = [];
-    for (const model of REVIEW_MODELS) {
+    for (const model of cached ? REVIEW_MODELS.slice(0, 1) : REVIEW_MODELS) {
       const before = requests.length;
       const run = await runOpencode({
         binary,
@@ -2688,12 +2781,14 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
     }
     live?.stop();
     live = null;
-    problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
+    if (!cached)
+      problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
     if (gateway) {
-      problems.push(
-        ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
-        ...(await failoverProbe({ workRoot, gateway })),
-      );
+      if (!cached)
+        problems.push(
+          ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
+          ...(await failoverProbe({ workRoot, gateway })),
+        );
       const changed = binaryProblem(gateway.install);
       if (changed) problems.push(changed);
     }
@@ -3509,6 +3604,15 @@ async function main() {
         `方案文件：${options.claimsFile}（在提交 ${commits.head} 里的内容）\n\n${claimsBlob.toString("utf8")}`,
       )
     : recordText(readFileSync(options.brief, "utf8"));
+  const claimsBase = claimsMode
+    ? (() => {
+        const base = spawnSync("git", ["merge-base", "origin/main", commits.head], {
+          cwd: options.repo,
+          encoding: "utf8",
+        });
+        return base.status === 0 ? base.stdout.trim() : null;
+      })()
+    : null;
   const priorFindings =
     commits.previous && !options.selfCheckOnly
       ? priorFindingsBlock({
@@ -3522,7 +3626,7 @@ async function main() {
   const prompts = Object.fromEntries(
     options.models.map((model) => [
       model,
-      buildPrompt({ ...options, ...commits, model, questions, priorFindings, brief }),
+      buildPrompt({ ...options, ...commits, model, questions, priorFindings, claimsBase, brief }),
     ]),
   );
   for (const prompt of Object.values(prompts))
@@ -3586,6 +3690,11 @@ async function main() {
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
     const gitGuard = installGitGuard(workRoot);
     const selfCheckStartedAt = Date.now();
+    const cacheKey = selfCheckCacheDir()
+      ? selfCheckCacheKey({ binary, mode: options.mode, gateway })
+      : null;
+    const cached =
+      Boolean(cacheKey) && !options.selfCheckOnly && selfCheckCacheHit({ key: cacheKey });
     const problems = await selfCheck({
       binary,
       copy,
@@ -3594,14 +3703,18 @@ async function main() {
       mode: options.mode,
       timeoutMs: 180000,
       gateway,
+      cached,
     });
     if (problems.length > 0) {
       console.error(`SELF_CHECK_FAILED ${problems.join(" | ")}`);
       process.exitCode = 3;
       return;
     }
+    if (cacheKey && !cached) selfCheckCacheWrite({ key: cacheKey });
     const selfCheckMs = Date.now() - selfCheckStartedAt;
-    console.log(`SELF_CHECK_OK ms=${selfCheckMs}`);
+    console.log(
+      `SELF_CHECK_OK ms=${selfCheckMs} cache=${cacheKey ? (cached ? "hit" : "miss") : "off"}`,
+    );
     if (options.selfCheckOnly) return;
     let liveGateway = null;
     if (gateway) {
@@ -3718,6 +3831,7 @@ async function main() {
         model: substitute.model,
         questions,
         priorFindings,
+        claimsBase,
         brief,
       });
       const refused =

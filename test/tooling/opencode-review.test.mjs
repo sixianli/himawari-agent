@@ -54,6 +54,12 @@ import {
   promptFileName,
   QUESTIONS_PATH,
   questionsSource,
+  SELF_CHECK_CACHE_ENV,
+  SELF_CHECK_CACHE_MAX_AGE_MS,
+  selfCheckCacheDir,
+  selfCheckCacheHit,
+  selfCheckCacheKey,
+  selfCheckCacheWrite,
   REVIEW_MODELS,
   REVIEW_PARENT_CANARY_ENV,
   REVIEWS_DIR,
@@ -1359,6 +1365,42 @@ describe("opencode review installed guard", () => {
     expect(ctypeOf({ LANG: "zh_CN.UTF-8" })).toBe("zh_CN.UTF-8");
     expect(ctypeOf({ LC_ALL: "", LC_CTYPE: "", LANG: "zh_CN.UTF-8" })).toBe("zh_CN.UTF-8");
     expect(ctypeOf({ LC_ALL: "", LC_CTYPE: "", LANG: "" })).toBe("");
+  });
+
+  it("[self-check cache] only a pass for the same code, binary, mode and tools counts, and it expires", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-cache-"));
+    try {
+      const binary = join(root, "opencode");
+      writeFileSync(binary, "#!/bin/sh\necho one\n");
+      const env = { [SELF_CHECK_CACHE_ENV]: join(root, "cache") };
+      const key = selfCheckCacheKey({ binary, mode: "code-review", gateway: null });
+      expect(selfCheckCacheKey({ binary, mode: "code-review", gateway: null })).toBe(key);
+      expect(selfCheckCacheHit({ key, env })).toBe(false);
+      selfCheckCacheWrite({ key, now: 1000, env });
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(true);
+      expect(selfCheckCacheHit({ key, now: 1000 + SELF_CHECK_CACHE_MAX_AGE_MS - 1, env })).toBe(
+        true,
+      );
+      expect(selfCheckCacheHit({ key, now: 1000 + SELF_CHECK_CACHE_MAX_AGE_MS, env })).toBe(false);
+      expect(selfCheckCacheHit({ key, now: 500, env })).toBe(false);
+      expect(selfCheckCacheKey({ binary, mode: "plan", gateway: null })).not.toBe(key);
+      writeFileSync(binary, "#!/bin/sh\necho two\n");
+      const changed = selfCheckCacheKey({ binary, mode: "code-review", gateway: null });
+      expect(changed).not.toBe(key);
+      expect(selfCheckCacheHit({ key: changed, now: 1000, env })).toBe(false);
+      writeFileSync(join(root, "cache", `${key}.json`), "not json");
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(false);
+      writeFileSync(join(root, "cache", `${key}.json`), JSON.stringify({ key: "x", at: 1000 }));
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(false);
+      expect(selfCheckCacheDir({ [SELF_CHECK_CACHE_ENV]: "off" })).toBeNull();
+      selfCheckCacheWrite({ key: "k".repeat(64), env: { [SELF_CHECK_CACHE_ENV]: "off" } });
+      expect(selfCheckCacheHit({ key, now: 1000, env: { [SELF_CHECK_CACHE_ENV]: "off" } })).toBe(
+        false,
+      );
+      expect(selfCheckCacheDir({})).toMatch(/himawari-review-selfcheck$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("[review env] the real self-check passes with secrets in the script's environment", () => {

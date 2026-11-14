@@ -11,7 +11,8 @@ export const CLAIM_ID_PATTERN = /^[A-Za-z0-9._-]{1,40}$/;
 export const CLAIMS_VERDICTS_FILE = "claims-verdicts.jsonl";
 export const EVIDENCE_MIN_CHARS = 8;
 export const CLAIMS_LINE_FORMAT =
-  "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>";
+  "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行 或 文件:行@完整提交哈希>|<方案原句>|<代码原文>";
+export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 export function validClaimsFile(path) {
   return (
@@ -101,11 +102,13 @@ export function parseClaimVerdicts(text, path) {
 }
 
 function locationOf(location) {
-  const match = /^`?([^\s:`]+):(\d+)/.exec(location.trim());
+  const match = /^`?([^\s:`@]+):(\d+)(?:@([0-9a-f]+))?/.exec(location.trim());
   if (!match) return null;
   const path = match[1];
   if (!validEvidencePath(path)) return null;
-  return { path, line: Number(match[2]) };
+  const commit = match[3] ?? null;
+  if (commit !== null && !COMMIT_PATTERN.test(commit)) return null;
+  return { path, line: Number(match[2]), commit };
 }
 
 function validEvidencePath(path) {
@@ -158,15 +161,40 @@ export function quoteInText(quote, text) {
   return fragmentsInOrder(quoteFragments(quote, /；/), haystack);
 }
 
-function claimEvidenceProblem(repo, head, claim) {
+function isAncestor(repo, ancestor, descendant) {
+  return git(repo, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
+}
+
+export function commitInPullRequest(repo, commit, head, mainRef) {
+  if (!COMMIT_PATTERN.test(commit)) return false;
+  const base = git(repo, ["merge-base", mainRef, head]);
+  if (base.status !== 0) return false;
+  const baseCommit = base.stdout.trim();
+  if (commit === baseCommit) return true;
+  return isAncestor(repo, commit, head) && !isAncestor(repo, commit, baseCommit);
+}
+
+function claimEvidenceProblem(repo, head, claim, mainRef) {
   if (claim.verdict === "找不到" && !locationOf(claim.location)) return null;
   const place = locationOf(claim.location);
   if (!place) return "location-missing";
-  const blob = blobAt(repo, head, place.path);
+  const atHead = blobAt(repo, head, place.path);
+  let blob = atHead;
+  if (place.commit !== null) {
+    if (!commitInPullRequest(repo, place.commit, head, mainRef)) return "commit-not-in-pr";
+    blob = blobAt(repo, place.commit, place.path);
+  }
   if (blob === null) return "location-file-missing";
   const text = blob.toString("utf8");
   if (place.line < 1 || place.line > text.split("\n").length) return "location-line-out-of-range";
   if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
+  if (
+    place.commit !== null &&
+    claim.verdict !== "找不到" &&
+    atHead !== null &&
+    quoteInText(claim.code, atHead.toString("utf8"))
+  )
+    return "commit-quote-still-in-head";
   return null;
 }
 
@@ -202,6 +230,44 @@ function topicLedgers(repo, head, reviewsDir) {
     .map((file) => ({ file, match: pattern.exec(file) }))
     .filter(({ match }) => match)
     .map(({ file, match }) => ({ file, dir: `${reviewsDir}/${match[1]}` }));
+}
+
+export function carriedVerdicts(repo, head, ownRecords) {
+  const seen = new Set();
+  const carried = [];
+  for (const record of ownRecords) {
+    if (record.outcome !== "ok") continue;
+    const roundDir = `${record.dir}/round-${record.round ?? 1}`;
+    const key = `${roundDir}\0${record.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const answer = blobAt(repo, head, `${roundDir}/${safe(record.model.split("/").pop())}.md`);
+    const verdictsText = blobAt(repo, head, `${roundDir}/${CLAIMS_VERDICTS_FILE}`);
+    if (answer === null || verdictsText === null) continue;
+    let verdicts;
+    try {
+      verdicts = parseClaimVerdicts(
+        verdictsText.toString("utf8"),
+        `${roundDir}/${CLAIMS_VERDICTS_FILE}`,
+      );
+    } catch {
+      continue;
+    }
+    const answerText = answer.toString("utf8");
+    const { claims } = parseClaims(answerText);
+    for (const verdict of verdicts) {
+      if (verdict.outcome !== "model-wrong" || verdict.model !== record.model) continue;
+      const claim = claims.find((item) => item.id === verdict.id);
+      if (!claim || !CLAIM_PROBLEM_VERDICTS.includes(claim.verdict)) continue;
+      carried.push({
+        model: record.model,
+        sentence: collapse(claim.sentence),
+        verdict,
+        answerText,
+      });
+    }
+  }
+  return carried;
 }
 
 export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
@@ -245,6 +311,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
       ]);
       files.push(`${dir}/usage.jsonl`, ...listed.stdout.split("\0").filter(Boolean));
     }
+    const carried = carriedVerdicts(repo, head, own);
     const matching = own.filter((record) => record.claimsSha256 === sha);
     if (matching.length === 0) {
       problems.push(own.length > 0 ? `claims-stale ${label}` : `claims-unchecked ${label}`);
@@ -280,7 +347,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
           continue;
         }
         for (const claim of claims) {
-          const why = claimEvidenceProblem(repo, head, claim);
+          const why = claimEvidenceProblem(repo, head, claim, mainRef);
           if (why) problems.push(`claims-evidence ${label} ${short} ${claim.id} ${why}`);
         }
         const verdictsPath = `${roundDir}/${CLAIMS_VERDICTS_FILE}`;
@@ -298,9 +365,19 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
         for (const claim of claims.filter((item) =>
           CLAIM_PROBLEM_VERDICTS.includes(item.verdict),
         )) {
-          const verdict = verdicts.find(
+          const direct = verdicts.find(
             (item) => item.model === record.model && item.id === claim.id,
           );
+          const earlier =
+            direct?.outcome === "model-wrong"
+              ? null
+              : carried.find(
+                  (item) =>
+                    item.model === record.model && item.sentence === collapse(claim.sentence),
+                );
+          const verdict = direct?.outcome === "model-wrong" ? direct : earlier?.verdict;
+          const verdictAnswer =
+            direct?.outcome === "model-wrong" ? answerText : earlier?.answerText;
           if (!verdict || verdict.outcome !== "model-wrong") {
             problems.push(`claims-unjudged ${label} ${short} ${claim.id} ${claim.verdict}`);
             continue;
@@ -314,7 +391,7 @@ export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, lo
             !collapse(evidenceBlob.toString("utf8")).includes(collapse(verdict.evidence))
           )
             problems.push(`claims-verdict-evidence ${label} ${short} ${claim.id}`);
-          if (!collapse(answerText).includes(collapse(verdict.quote)))
+          if (!collapse(verdictAnswer).includes(collapse(verdict.quote)))
             problems.push(`claims-verdict-quote ${label} ${short} ${claim.id}`);
         }
       }

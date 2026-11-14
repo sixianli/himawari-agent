@@ -15,7 +15,7 @@
 
 PR 开好、测试过了以后，每一轮分两步：
 
-1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<材料文件>` 换成材料文件的路径，`--previous` 已经填好。等待时不调工具，后台命令结束会叫醒主线程。
+1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<材料文件>` 换成材料文件的路径，`--previous` 已经填好；带 `--previous` 的轮次，脚本自动把上一轮已提交的 `verdicts.jsonl` 里成立的“会出错”意见带进提示，并让模型只查上一轮意见是否改好、增量改的行、增量产生或修改的值的直接使用端，所以上一轮的 `verdicts.jsonl` 要先提交（[ADR 0270](../../docs/adr/0270-faster-review-rounds.md)）。等待时不调工具，后台命令结束会叫醒主线程。
 2. 命令退出码是 0、输出里有 `outcome=ok` 的 `REVIEW_RESULT` 行，并且这一轮该跑的每个模型都有 `outcome=ok` 的结果（用 `--round` 只补跑了一部分的不算）以后，用 Agent 工具起一个新的子代理 `code-review-round`（定义在 `.claude/agents/code-review-round.md`，在后台跑），提示照下面写，把尖括号换成实际值。退出码不是 0（模型的 `outcome` 不是 `ok`、报错、要先问花钱）时不起子代理，按[常见报错查哪里](#errors)处理。
 
 ```
@@ -65,7 +65,7 @@ PR <编号>，仓库 <路径>，分支 <分支>。材料文件：<brief 路径>�
 | `REVIEW_RESULT` 的 `outcome` 不是 `ok`、`ROUND_NOT_OK` | [代码复核](model-review.md#code-review)第 3 步（服务报错的重跑和替补）、[怎么跑](model-review.md#how-to-run)（按 `outcome` 处理，不原样重跑） |
 | `REVIEW_PREVIOUS_REFUSED`、`chain-broken` | [代码复核](model-review.md#code-review)第 6 步；用 `--finish-round` 打印的命令就不会传错 |
 | `VERDICTS_INVALID`、`FINISH_ROUND_REFUSED` | [代码复核](model-review.md#code-review)第 2 步的字段说明 |
-| `REVIEW_LOW_FIX_REFUSED` | [代码复核](model-review.md#code-review)第 3 步 |
+| `REVIEW_LOW_FIX_REFUSED` | [代码复核](model-review.md#code-review)第 3 步；拒绝原因同时记在 `.agents/reviews/pr-<编号>/low-fix-refusals.jsonl` |
 | `REVIEW_NOT_CURRENT` | [代码复核](model-review.md#code-review)第 6 步 |
 | `BUDGET_NEEDS_APPROVAL`、`api-error`、`GATEWAY_*` | [怎么跑](model-review.md#how-to-run)、[经 Magpie 调用模型](model-review.md#gateway) |
 | Andy 说停、跳过、换服务方 | [Andy 怎样控制复核](model-review.md#owner-control) |

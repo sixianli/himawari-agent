@@ -11,6 +11,7 @@ const toolingEnvironment = {
   ),
   GITHUB_ACTIONS: "false",
   HIMAWARI_REVIEW_GATEWAY: "",
+  HIMAWARI_REVIEW_SELFCHECK_CACHE: "off",
 };
 
 export default defineConfig({

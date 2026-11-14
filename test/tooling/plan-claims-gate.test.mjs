@@ -123,7 +123,7 @@ const fixture = ({ adrText = `# 方案\n\n${RIGHT_SENTENCE}。\n`, withAdr = tru
     return commit(files, "claims records");
   };
   const check = (extra = {}) => assertReviewed({ repo, pr: 7, mainRef: "origin/main", ...extra });
-  return { root, repo, git, commit, writeClaims, claimsRecord, check, reviewed };
+  return { root, repo, git, commit, writeClaims, claimsRecord, check, reviewed, main };
 };
 
 const withFixture = (options, run) => {
@@ -293,7 +293,7 @@ describe("plan claims check: running it", () => {
       brief: `方案文件：${ADR}\n\n${WRONG_SENTENCE}\n`,
     });
     expect(prompt).toContain(
-      "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>",
+      "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行 或 文件:行@完整提交哈希>|<方案原句>|<代码原文>",
     );
     expect(prompt).toContain(WRONG_SENTENCE);
     expect(prompt).not.toContain("必答问题");
@@ -399,6 +399,72 @@ describe("plan claims check: the merge gate", () => {
         `claims-evidence ${ADR} deepseek-v4.1-flash 1 code-quote-not-in-file`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 2 location-file-missing`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-line-out-of-range`,
+      ]);
+    }));
+
+  it("[claims gate] code the PR removed can be cited at the PR's base commit, only when head no longer has it", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      const old = claimLine(
+        "1",
+        "一致",
+        `${REDACTION}:3@${f.main}`,
+        "`maskSensitiveTexts` 原来输出前把占位编号去掉",
+        CODE_LINE,
+      );
+      f.writeClaims({ answer: `${old}\n` });
+      expect(claimsOnly(f.check())).toEqual([]);
+    }));
+
+  it("[claims gate] an old commit cannot stand in for code that head still has, or for a commit outside the PR", () =>
+    withFixture({}, (f) => {
+      const still = claimLine("1", "一致", `${REDACTION}:3@${f.main}`, RIGHT_SENTENCE, CODE_LINE);
+      const stranger = claimLine(
+        "2",
+        "一致",
+        `${REDACTION}:3@${"a".repeat(40)}`,
+        "第二句",
+        CODE_LINE,
+      );
+      const short = claimLine("3", "一致", `${REDACTION}:3@abc1234`, "第三句", CODE_LINE);
+      f.writeClaims({ answer: `${still}\n${stranger}\n${short}\n` });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-still-in-head`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 2 commit-not-in-pr`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-missing`,
+      ]);
+    }));
+
+  it("[claims gate] a judgment written for the same sentence in an earlier run carries over, but only while its evidence still holds", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: wrongAnswer(),
+        verdicts: modelWrongVerdict(),
+        topic: "plan-a",
+      });
+      const flaggedAgain = [
+        claimLine("1", "一致", `${REDACTION}:3`, RIGHT_SENTENCE, CODE_LINE),
+        claimLine("7", "找不到", "-", WRONG_SENTENCE, "-"),
+        "",
+      ].join("\n");
+      f.writeClaims({
+        answer: flaggedAgain,
+        record: f.claimsRecord({ at: "2026-11-12T03:00:00.000Z" }),
+        topic: "plan-b",
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+      const different = [
+        claimLine("1", "一致", `${REDACTION}:3`, RIGHT_SENTENCE, CODE_LINE),
+        claimLine("7", "找不到", "-", "完全不同的另一句", "-"),
+        "",
+      ].join("\n");
+      f.writeClaims({
+        answer: different,
+        record: f.claimsRecord({ at: "2026-11-12T04:00:00.000Z" }),
+        topic: "plan-c",
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-unjudged ${ADR} deepseek-v4.1-flash 7 找不到`,
       ]);
     }));
 
