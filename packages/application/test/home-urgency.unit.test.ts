@@ -204,6 +204,9 @@ describe("[home-urgency] accepting a model-written button label", () => {
   it("[negative] rejects a label that has no visible character", () => {
     expect(accept("\u200B", "zh-CN")).toBe(false);
     expect(accept("\u2060\u200D", "en", "Decline")).toBe(false);
+    expect(accept("\u3164", "zh-CN")).toBe(false);
+    expect(accept("\u2800", "zh-CN")).toBe(false);
+    expect(accept("\uFE0F", "zh-CN")).toBe(false);
     expect(accept("发出去👨‍👩‍👧", "zh-CN")).toBe(true);
   });
 

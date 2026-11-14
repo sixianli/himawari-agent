@@ -1012,7 +1012,7 @@ describe("[IOS-4] push channels", () => {
       label: "不同意",
       labelBasis: "catalog",
     });
-    expect((plain.json["aps"] as { alert: { body: string } }).alert.body).not.toContain("张三");
+    expect((plain.json["aps"] as { alert: { body: string } }).alert.body).toBe("查下周东京天气");
     expect(asked).toEqual(["plain"]);
   });
 
@@ -1021,6 +1021,7 @@ describe("[IOS-4] push channels", () => {
     ["no label was written", async () => ({ affirmLabel: null }), 0],
     ["the label is blank", async () => ({ affirmLabel: "   " }), 0],
     ["the label has no visible character", async () => ({ affirmLabel: "\u200B" }), 0],
+    ["the label is only a filler character", async () => ({ affirmLabel: "\u3164" }), 0],
   ])(
     "[IOS-4] REVERSE: falls back to the fixed approve text when %s",
     async (_name, approvalCopy, failureCount) => {

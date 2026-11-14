@@ -124,6 +124,13 @@ export function homeAffirmLabelMax(
   return typeof limit === "number" && Number.isInteger(limit) && limit > 0 ? limit : undefined;
 }
 
+const INVISIBLE_CHARACTERS = /[\p{Cf}\p{Mn}\p{Me}\p{Default_Ignorable_Code_Point}\u2800\s]/gu;
+const VISIBLE_CHARACTER = /[\p{L}\p{N}\p{P}\p{S}]/u;
+
+export function hasVisibleText(text: string): boolean {
+  return VISIBLE_CHARACTER.test(text.replace(INVISIBLE_CHARACTERS, ""));
+}
+
 const UNSAFE_LINE_CHARACTERS = /[\p{Cc}\p{Zl}\p{Zp}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
 
 export function acceptsHomeAffirmLabel(input: {
@@ -139,7 +146,7 @@ export function acceptsHomeAffirmLabel(input: {
     label.length === 0 ||
     label !== input.label ||
     UNSAFE_LINE_CHARACTERS.test(label) ||
-    label.replace(/\p{Cf}/gu, "").trim().length === 0
+    !hasVisibleText(label)
   )
     return false;
   if (graphemes(label) > limit) return false;

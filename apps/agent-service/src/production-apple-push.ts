@@ -10,6 +10,7 @@ import {
   type ApplePushSendResult,
   type ApplePushStorePort,
   type ApprovalRequest,
+  hasVisibleText,
   type MemoryReminder,
   type NotificationAction,
   type NotificationActionTokenInput,
@@ -315,8 +316,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         locale,
       });
       const label = copy.affirmLabel?.trim() ?? "";
-      if (label.replace(/\p{Cf}/gu, "").trim() === "") return null;
-      return label === "" ? null : label;
+      return hasVisibleText(label) ? label : null;
     } catch (error) {
       this.#options.onFailure(error);
       return null;
