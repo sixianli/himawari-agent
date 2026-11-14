@@ -2310,6 +2310,15 @@ describe("production memory capture", () => {
       ["action_preauthorize_owner_data", true],
       ["action_preauthorize_owner_data", false],
     ]);
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: "action_preauthorize_owner_data", action: "future_action" },
+        "unknown-action",
+      ),
+    ).rejects.toThrow("MEMORY_RULE_ACTION_UNSUPPORTED");
+    expect(context.actionRules.setAskFirst).toHaveBeenCalledTimes(2);
   });
 
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
@@ -2936,6 +2945,7 @@ describe("production memory capture", () => {
     });
     const model: ProactiveModelInvoker = {
       modelRef: "stub-flash",
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
       model: {
         listAvailable: async () => [],
         async *invoke(request) {
