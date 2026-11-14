@@ -45,6 +45,7 @@ function fixture() {
     "console.error('BOUNDARY_STUB_RAN');\nprocess.exit(0);\n",
   );
   write(root, "scripts/check-format.mjs", "console.error('FORMAT_STUB_RAN');\nprocess.exit(0);\n");
+  write(root, "scripts/check-lint.mjs", "console.error('LINT_STUB_RAN');\nprocess.exit(0);\n");
   write(
     root,
     "scripts/scan-machine-secrets.mjs",
@@ -153,42 +154,55 @@ describe("Layer 0 hooks from the repository", () => {
     expect(pushed.status).toBe(0);
     expect(pushed.stderr).toContain("BOUNDARY_STUB_RAN");
     expect(pushed.stderr).toContain("FORMAT_STUB_RAN");
+    expect(pushed.stderr).toContain("LINT_STUB_RAN");
     expect(pushed.stderr).toContain("SECRETS_STUB_RAN");
   });
 
-  it("runs the same format check at push as npm run format:check", () => {
+  it("runs the same format, lint and secret checks at push as the npm scripts", () => {
     const scripts = JSON.parse(
       readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
     ).scripts;
     expect(scripts["format:check"]).toBe("node scripts/check-format.mjs");
+    expect(scripts.lint).toBe("node scripts/check-lint.mjs");
     expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
   });
 
-  const formatRoot = (entry) => {
-    const root = mkdtempSync(path.join(tmpdir(), "format-check-"));
+  const biomeRoot = (script, entry) => {
+    const root = mkdtempSync(path.join(tmpdir(), "biome-check-"));
     roots.push(root);
     mkdirSync(path.join(root, "scripts"));
-    cpSync(
-      path.join(repositoryRoot, "scripts/check-format.mjs"),
-      path.join(root, "scripts/check-format.mjs"),
-    );
+    cpSync(path.join(repositoryRoot, script), path.join(root, script));
     if (entry) write(root, "node_modules/@biomejs/biome/bin/biome", entry);
     return root;
   };
-  const runFormat = (root) =>
-    spawnSync(process.execPath, [path.join(root, "scripts/check-format.mjs")], {
-      encoding: "utf8",
+  const runBiomeCheck = (root, script) =>
+    spawnSync(process.execPath, [path.join(root, script)], { encoding: "utf8" });
+
+  for (const [script, args, unavailable] of [
+    ["scripts/check-format.mjs", "format .", "FORMAT_CHECK_UNAVAILABLE"],
+    [
+      "scripts/check-lint.mjs",
+      "lint --error-on-warnings --diagnostic-level=warn .",
+      "LINT_CHECK_UNAVAILABLE",
+    ],
+  ]) {
+    it(`${script} runs the installed biome on the whole repository and passes its exit code on`, () => {
+      const passing = biomeRoot(
+        script,
+        "require('node:fs').writeFileSync('args.txt', process.argv.slice(2).join(' '));\n",
+      );
+      expect(runBiomeCheck(passing, script).status).toBe(0);
+      expect(readFileSync(path.join(passing, "args.txt"), "utf8")).toBe(args);
+      const failing = biomeRoot(script, "process.exit(3);\n");
+      expect(runBiomeCheck(failing, script).status).toBe(3);
     });
 
-  it("runs the installed biome on the whole repository and passes its exit code on", () => {
-    const passing = formatRoot(
-      "require('node:fs').writeFileSync('args.txt', process.argv.slice(2).join(' '));\n",
-    );
-    expect(runFormat(passing).status).toBe(0);
-    expect(readFileSync(path.join(passing, "args.txt"), "utf8")).toBe("format .");
-    const failing = formatRoot("process.exit(3);\n");
-    expect(runFormat(failing).status).toBe(3);
-  });
+    it(`${script} refuses when biome is not installed`, () => {
+      const run = runBiomeCheck(biomeRoot(script, null), script);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(unavailable);
+    });
+  }
 
   it("formats hand-kept eval data but not the JSON the eval scripts write", () => {
     const root = mkdtempSync(path.join(tmpdir(), "format-evals-"));
@@ -212,14 +226,9 @@ describe("Layer 0 hooks from the repository", () => {
     expect(kept.status).not.toBe(0);
   });
 
-  it("refuses the format check when biome is not installed", () => {
-    const run = runFormat(formatRoot(null));
-    expect(run.status).toBe(1);
-    expect(run.stderr).toContain("FORMAT_CHECK_UNAVAILABLE");
-  });
-
   for (const [script, code] of [
     ["scripts/check-format.mjs", "PUSH_FORMAT_CHECK_FAILED"],
+    ["scripts/check-lint.mjs", "PUSH_LINT_CHECK_FAILED"],
     ["scripts/scan-machine-secrets.mjs", "PUSH_SECRET_SCAN_FAILED"],
   ]) {
     it(`refuses at push when ${script} fails or is missing`, () => {

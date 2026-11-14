@@ -285,6 +285,6 @@ date: "2026-11-12"
 - [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)：规则手册；本 ADR 做它计划里的动作闸门，只做内置规则。
 - [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：审批写在工具执行里、主人点头后回放。
 - [苹果端详细设计](../execution/specs/2026-11-11-apple-device-body-design.md)：“指令和数据的界线”“设备工具和动作”“新值清单”。
-- [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 
 [返回阅读导航](#contents)

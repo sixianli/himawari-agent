@@ -10,6 +10,7 @@ export interface ImportCandidate {
   readonly topic: MemoryTopic | null;
   readonly sensitive: boolean;
   readonly duplicate: boolean;
+  readonly duplicateCheck: "pending" | "clear" | "similar" | "unchecked";
   readonly coding: boolean;
   readonly from: string;
   readonly checked: boolean;
@@ -23,6 +24,8 @@ export interface ImportClassification {
   readonly failed: boolean;
 }
 
+export type ImportDuplicateVerdict = "same" | "unsure" | "different" | "skipped";
+
 export interface ImportParse {
   readonly items: readonly ImportCandidate[];
 }
@@ -32,29 +35,10 @@ const SKIPPED_SECTION =
 const MAXIMUM_TEXT = 500;
 
 export const normalizeMemoryText = (text: string) =>
-  text
-    .normalize("NFKC")
-    .replace(/\s+/g, "")
-    .replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")
-    .replace(/[，。；、,.;!！]+$/, "")
-    .toLowerCase();
+  text.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 
-function isDuplicate(key: string, existing: readonly string[]) {
-  return existing.some(
-    (known) =>
-      known === key ||
-      (known.length > 5 && key.includes(known)) ||
-      (key.length > 5 && known.includes(key)),
-  );
-}
-
-export function parseMemoryText(
-  name: string,
-  text: string,
-  existingTexts: readonly string[],
-): ImportParse {
+export function parseMemoryText(name: string, text: string): ImportParse {
   const agents = /agents\.md$/i.test(name);
-  const existing = existingTexts.map(normalizeMemoryText);
   const seen = new Set<string>();
   const items: ImportCandidate[] = [];
   let section = agents ? "agents" : "";
@@ -70,7 +54,6 @@ export function parseMemoryText(
     const key = normalizeMemoryText(line);
     if (seen.has(key)) return;
     seen.add(key);
-    const duplicate = isDuplicate(key, existing);
     const coding = kind === "project";
     items.push({
       text: line,
@@ -78,11 +61,12 @@ export function parseMemoryText(
       subCategory: coding ? (project || "Codex").slice(0, 32) : null,
       topic: null,
       sensitive: false,
-      duplicate,
+      duplicate: false,
+      duplicateCheck: "pending",
       coding,
       from: section && section !== "agents" ? `${name} · ${section}` : name,
       checked: false,
-      status: duplicate ? "ready" : "classifying",
+      status: "classifying",
     });
   };
   for (const rawLine of text.split(/\r?\n/)) {
@@ -119,14 +103,9 @@ export function parseMemoryText(
   return { items };
 }
 
-export function parseMemoryExport(
-  name: string,
-  text: string,
-  existingTexts: readonly string[],
-): ImportParse {
+export function parseMemoryExport(name: string, text: string): ImportParse {
   const data = JSON.parse(text) as { memories?: unknown };
   if (!Array.isArray(data.memories)) throw new Error("MEMORY_EXPORT_INVALID");
-  const existing = existingTexts.map(normalizeMemoryText);
   const items: ImportCandidate[] = [];
   for (const entry of data.memories as Record<string, unknown>[]) {
     const raw = entry?.["text"];
@@ -139,7 +118,6 @@ export function parseMemoryExport(
     const sensitive = entry["sensitive"] === true;
     const topic = entry["sensitiveTopic"];
     const sub = entry["subCategory"];
-    const duplicate = isDuplicate(normalizeMemoryText(memoryText), existing);
     items.push({
       text: memoryText,
       category,
@@ -149,14 +127,39 @@ export function parseMemoryExport(
           ? (topic as MemoryTopic)
           : null,
       sensitive,
-      duplicate,
+      duplicate: false,
+      duplicateCheck: "pending",
       coding: false,
       from: name,
-      checked: !duplicate && !sensitive,
+      checked: false,
       status: "ready",
     });
   }
   return { items };
+}
+
+export function applyImportDuplicates(
+  items: readonly ImportCandidate[],
+  verdicts: readonly ImportDuplicateVerdict[],
+): readonly ImportCandidate[] {
+  return items.map((item, index) => {
+    if (item.duplicateCheck !== "pending") return item;
+    const verdict = verdicts[index] ?? "skipped";
+    const duplicate = verdict === "same";
+    const duplicateCheck =
+      verdict === "unsure" ? "similar" : verdict === "skipped" ? "unchecked" : "clear";
+    return {
+      ...item,
+      duplicate,
+      duplicateCheck,
+      checked:
+        item.status === "ready" &&
+        !duplicate &&
+        duplicateCheck === "clear" &&
+        !item.sensitive &&
+        !item.coding,
+    };
+  });
 }
 
 export function applyImportClassifications(
@@ -176,7 +179,7 @@ export function applyImportClassifications(
       category: item.coding ? item.category : result.category,
       sensitive,
       topic: sensitive ? (result.topic ?? "other") : null,
-      checked: !item.duplicate && !sensitive && !item.coding,
+      checked: !item.duplicate && item.duplicateCheck === "clear" && !sensitive && !item.coding,
       status: "ready",
     };
   });

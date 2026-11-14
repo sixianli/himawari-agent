@@ -7,6 +7,8 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -42,12 +44,11 @@ function contained(root, path) {
   );
 }
 
-function cacheLocation(value, root) {
-  const base = join(realpathSync(root), ".ci-output");
-  const target = resolve(realpathSync(root), value);
-  assert(target !== base && contained(base, target), "npm cache 必须位于仓库 .ci-output 子目录");
+const runnerCacheMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
+
+function rejectSymlinks(target, stop) {
   let current = target;
-  while (current !== dirname(base)) {
+  while (current !== stop) {
     try {
       assert(!lstatSync(current).isSymbolicLink(), "npm cache 路径不得包含符号链接");
     } catch (error) {
@@ -55,6 +56,33 @@ function cacheLocation(value, root) {
     }
     current = dirname(current);
   }
+}
+
+export function runnerNpmCache(env = process.env, now = Date.now()) {
+  assert(
+    env.GITHUB_ACTIONS === "true" && env.HOME && isAbsolute(env.HOME),
+    "runner npm cache 只能在 GitHub Actions runner 上使用",
+  );
+  const home = realpathSync(env.HOME);
+  const target = join(home, ".cache", "himawari-ci", "npm");
+  rejectSymlinks(target, dirname(home));
+  const stamp = join(target, ".himawari-created");
+  const created = lstatSync(stamp, { throwIfNoEntry: false });
+  if (!created?.isFile() || now - created.mtimeMs > runnerCacheMaxAgeMs) {
+    rmSync(target, { recursive: true, force: true });
+    mkdirSync(target, { recursive: true });
+    writeFileSync(stamp, "");
+    utimesSync(stamp, new Date(now), new Date(now));
+  }
+  return target;
+}
+
+function cacheLocation(value, root, env) {
+  if (value === "runner") return runnerNpmCache(env);
+  const base = join(realpathSync(root), ".ci-output");
+  const target = resolve(realpathSync(root), value);
+  assert(target !== base && contained(base, target), "npm cache 必须位于仓库 .ci-output 子目录");
+  rejectSymlinks(target, dirname(base));
   return target;
 }
 
@@ -277,6 +305,7 @@ export async function installDependencies({
   toolsDirectory,
   evidenceDirectory,
   cacheDirectory,
+  env: hostEnvironment = process.env,
 }) {
   assert(toolsDirectory && evidenceDirectory, "必须指定 --tools 和 --evidence 目录");
   const lock = loadToolchainLock(root);
@@ -296,9 +325,12 @@ export async function installDependencies({
   );
   mkdirSync(evidence, { recursive: true });
   const cachePath = cacheDirectory
-    ? cacheLocation(cacheDirectory, root)
+    ? cacheLocation(cacheDirectory, root, hostEnvironment)
     : join(evidence, "npm-cache");
-  const cache = existsSync(cachePath) && readdirSync(cachePath).length > 0 ? "warm" : "cold";
+  const cache =
+    existsSync(cachePath) && readdirSync(cachePath).some((name) => name !== ".himawari-created")
+      ? "warm"
+      : "cold";
   const userConfig = join(evidence, "npm-user.conf");
   const globalConfig = join(evidence, "npm-global.conf");
   writeFileSync(userConfig, "");
@@ -404,25 +436,31 @@ export async function installDependencies({
   }
 }
 
+export function installArguments(args) {
+  const options = {};
+  for (let index = 0; index < args.length; index++) {
+    const name = {
+      "--root": "root",
+      "--tools": "toolsDirectory",
+      "--evidence": "evidenceDirectory",
+      "--cache": "cacheDirectory",
+    }[args[index]];
+    assert(name && args[index + 1], `未知或不完整参数: ${args[index]}`);
+    const value = args[++index];
+    options[name] = name === "cacheDirectory" && value === "runner" ? value : resolve(value);
+  }
+  return options;
+}
+
 if (
   process.argv[1] &&
   existsSync(process.argv[1]) &&
   realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const options = {};
-    const args = process.argv.slice(2);
-    for (let index = 0; index < args.length; index++) {
-      const name = {
-        "--root": "root",
-        "--tools": "toolsDirectory",
-        "--evidence": "evidenceDirectory",
-        "--cache": "cacheDirectory",
-      }[args[index]];
-      assert(name && args[index + 1], `未知或不完整参数: ${args[index]}`);
-      options[name] = resolve(args[++index]);
-    }
-    console.log(JSON.stringify(await installDependencies(options), null, 2));
+    console.log(
+      JSON.stringify(await installDependencies(installArguments(process.argv.slice(2))), null, 2),
+    );
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

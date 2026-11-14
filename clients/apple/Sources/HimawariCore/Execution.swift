@@ -4,6 +4,7 @@ public enum ExecutionRecordKind: String, Codable, Sendable {
     case message
     case tool
     case status
+    case unrecognized
 }
 
 public enum ExecutionPhase: String, Codable, Sendable {
@@ -14,6 +15,7 @@ public enum ExecutionPhase: String, Codable, Sendable {
     case waiting
     case stopped
     case unavailable
+    case unrecognized
 }
 
 public struct ExecutionRecord: Codable, Sendable, Equatable, Identifiable {
@@ -98,7 +100,7 @@ public enum ProcessLine: Sendable, Equatable {
         var order: [String] = []
         var latest: [String: ExecutionRecord] = [:]
         var first: [String: ExecutionRecord] = [:]
-        for record in records.sorted(by: { $0.sequence < $1.sequence }) where record.kind == .tool {
+        for record in records.sorted(by: { $0.sequence < $1.sequence }) where record.kind == .tool || record.kind == .unrecognized {
             if latest[record.itemId] == nil {
                 order.append(record.itemId)
                 first[record.itemId] = record
@@ -122,8 +124,8 @@ public enum ProcessLine: Sendable, Equatable {
             return ProcessStep(
                 id: itemId,
                 title: last.activity ?? last.name,
-                icon: ProcessIcon.chosen(last.activityIcon),
-                phase: last.phase,
+                icon: last.kind == .unrecognized ? .puzzle : ProcessIcon.chosen(last.activityIcon),
+                phase: last.kind == .unrecognized ? .unrecognized : last.phase,
                 startedAt: start.occurredAt,
                 endedAt: last.occurredAt
             )
@@ -149,10 +151,14 @@ public enum ProcessLine: Sendable, Equatable {
             default: return .finished(steps: steps, seconds: seconds)
             }
         }
-        if let latest = sorted.last, latest.phase == .waiting, latest.kind != .message {
+        if let latest = sorted.last, latest.phase == .waiting, latest.kind == .tool || latest.kind == .status {
             let step = (latest.kind == .tool ? steps.first(where: { $0.id == latest.itemId }) : steps.last)
                 ?? ProcessStep(id: latest.itemId, title: Self.present(latest.activity) ?? "", icon: ProcessIcon.chosen(latest.activityIcon), phase: .waiting, startedAt: latest.occurredAt, endedAt: latest.occurredAt)
             return .waiting(ProcessStep(id: step.id, title: step.title, icon: step.icon, phase: .waiting, startedAt: step.startedAt, endedAt: latest.occurredAt))
+        }
+        let latestUnknownStatus = sorted.last(where: { $0.kind == .status && $0.phase == .unrecognized })
+        if let unknown = latestUnknownStatus, unknown == sorted.last || steps.isEmpty {
+            return .working(current: ProcessStep(id: unknown.itemId, title: Self.present(unknown.activity) ?? unknown.name, icon: .puzzle, phase: .unrecognized, startedAt: unknown.occurredAt, endedAt: unknown.occurredAt), setback: nil)
         }
         guard let current = steps.last else { return .thinking }
         let setback = steps.dropLast().last.flatMap { $0.phase == .failed || $0.phase == .unavailable ? $0 : nil }

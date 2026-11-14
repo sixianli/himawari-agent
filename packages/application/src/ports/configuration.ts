@@ -1,5 +1,6 @@
-import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
+import type { DeviceConfiguration } from "./device-limits.js";
 import type { ModelProviderRouting } from "./intelligence.js";
 import type { WebProviderId } from "./web-providers.js";
 
@@ -292,6 +293,49 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export interface ImportDuplicateTuning {
+  readonly yesAtLeastPermille: number;
+  readonly noAtMostPermille: number;
+  readonly existingPerRequest: number;
+  readonly existingCharactersPerRequest: number;
+  readonly candidatesPerRequest: number;
+  readonly maximumExistingMemories: number;
+  readonly maximumRequests: number;
+  readonly dailyMaximumRequests: number;
+  readonly requestTimeoutMs: number;
+}
+
+export interface ImportDuplicateConfiguration extends ImportDuplicateTuning {
+  readonly model: string;
+  readonly secretRef: string;
+}
+
+export const IMPORT_DUPLICATE_DEFAULTS: ImportDuplicateTuning = Object.freeze({
+  yesAtLeastPermille: 700,
+  noAtMostPermille: 300,
+  existingPerRequest: 200,
+  existingCharactersPerRequest: 30_000,
+  candidatesPerRequest: 20,
+  maximumExistingMemories: 1_000,
+  maximumRequests: 150,
+  dailyMaximumRequests: 1_500,
+  requestTimeoutMs: 15_000,
+});
+
+export const IMPORT_DUPLICATE_RANGES: Readonly<
+  Record<keyof ImportDuplicateTuning, readonly [number, number]>
+> = Object.freeze({
+  yesAtLeastPermille: [500, 1000],
+  noAtMostPermille: [0, 500],
+  existingPerRequest: [10, 500],
+  existingCharactersPerRequest: [2_000, 100_000],
+  candidatesPerRequest: [1, 50],
+  maximumExistingMemories: [0, 5_000],
+  maximumRequests: [1, 1_000],
+  dailyMaximumRequests: [1, 100_000],
+  requestTimeoutMs: [1_000, 60_000],
+});
+
 export const REAL_EVAL_MODES = ["off", "once", "weekly"] as const;
 export type RealEvalMode = (typeof REAL_EVAL_MODES)[number];
 export const REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM = 500_000;
@@ -314,8 +358,10 @@ export interface RunPolicyConfiguration {
   readonly approvalBodyPreviewCharacters?: number;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
+  readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly device?: DeviceConfiguration;
   readonly homeFeed?: HomeFeedConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;

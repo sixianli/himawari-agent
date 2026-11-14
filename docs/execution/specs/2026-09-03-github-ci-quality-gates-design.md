@@ -307,7 +307,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 实际规则以 GitHub 回读和失败 PR 的不可合并状态为证据。规则尚未配置时记录 `enforcement_not_configured`；规则接口拒绝或管理权限不足时记录 `enforcement_unavailable`。已启用规则下的 fork 待批准、检查未运行或资源限制属于检查未完成，必须继续阻止合并，不能误报规则不存在。不得回退为本地 hook 后宣称服务端强制完成。
 
-当前个人公开仓库方案不包含 merge queue。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
+当前个人公开仓库方案不包含 GitHub 自带的 merge queue；仓库另有自建的合并队列，见 [ADR 0268](../../adr/0268-merge-queue-and-related-tests-on-prs.md)。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
 
 ### 11. 周期检测与 S9 交接
 
