@@ -109,7 +109,9 @@ struct SettingsPage<Content: View>: View {
         }
         .scrollIndicators(.hidden)
         .himawariScreenBackground()
+        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
+        #endif
     }
 }
 
