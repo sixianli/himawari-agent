@@ -292,6 +292,7 @@ export class SqlitePairedDeviceOperations {
         )
         .run(now, device.id);
       this.database.prepare("DELETE FROM device_request_nonces WHERE device_id = ?").run(device.id);
+      this.database.prepare("DELETE FROM device_upload_grants WHERE device_id = ?").run(device.id);
       if (device.webDeviceId !== null) {
         this.database
           .prepare(

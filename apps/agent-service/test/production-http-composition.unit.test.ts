@@ -387,6 +387,11 @@ describe("production HTTP composition", () => {
           "login.devices.read",
           "login.device.revoke",
           "login.devices.revoke_others",
+          "perception.status.read",
+          "perception.day.read",
+          "perception.episode.read",
+          "perception.usage.read",
+          "perception.settings.change",
         ],
         healthDependenciesAvailable: true,
       });

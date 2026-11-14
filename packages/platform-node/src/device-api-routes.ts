@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { rm } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
@@ -10,8 +13,10 @@ import {
   type GatewayAuthenticationContext,
   type PairedDevice,
   type PairedDeviceScope,
+  PERCEPTION_SENSES,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
+  type UploadGrantPurpose,
 } from "@himawari-agent/application";
 import {
   HOME_LOCALES,
@@ -32,10 +37,12 @@ import {
 } from "./device-gateway.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
+  type AuthenticatedDeviceRequest,
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import type { AuthorizedUpload, PerceptionService } from "./perception-service.js";
 import {
   PLAIN_TEXT_MAXIMUM_CHARACTERS,
   parseTextAdmission,
@@ -63,7 +70,22 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
   { method: "GET", path: "threads/{threadId}/runs/{runId}/execution", signed: true },
   { method: "POST", path: "payloads/text", signed: true },
+  { method: "POST", path: "uploads/begin", signed: true },
+  { method: "POST", path: "perception", signed: true, uploadPurpose: "perception" },
+  { method: "POST", path: "perception/media", signed: false, uploadPurpose: "media" },
+  { method: "POST", path: "track", signed: true, uploadPurpose: "track" },
+  { method: "POST", path: "mirror", signed: true },
+  { method: "GET", path: "usage", signed: true },
+  { method: "POST", path: "usage/report", signed: true },
 ] as const);
+
+export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
+
+const DEVICE_UPLOAD_PURPOSES: ReadonlyMap<string, UploadGrantPurpose> = new Map(
+  DEVICE_API_ROUTES.flatMap((route) =>
+    "uploadPurpose" in route ? [[route.path, route.uploadPurpose] as const] : [],
+  ),
+);
 
 const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
   method: route.method,
@@ -136,6 +158,7 @@ export interface DeviceApiRouteOptions {
   readonly devices: PairedDeviceService;
   readonly configuration: () => DeviceConfiguration;
   readonly authority: DeviceApiAuthority;
+  readonly perception?: PerceptionService;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
@@ -248,6 +271,31 @@ export function presentDeviceLimits(configuration: DeviceConfiguration) {
   }));
 }
 
+export async function presentDevicePerception(
+  service: PerceptionService,
+  scope: PairedDeviceScope,
+) {
+  const status = await service.status(scope);
+  const settings = await service.settings(scope);
+  const usage = await service.usage(scope);
+  return {
+    state: status.state,
+    pausedUntil: status.pausedUntil,
+    senses: PERCEPTION_SENSES.map((sense) => ({
+      sense,
+      enabled: status.senses.includes(sense),
+    })),
+    retentionDays: service.retentionDays(settings),
+    usageLimits: usage.limits.map(({ key, unit, limit, onReach, state }) => ({
+      key,
+      unit,
+      limit,
+      onReach,
+      state,
+    })),
+  };
+}
+
 function holdDeviceStream(
   counts: Map<string, number>,
   deviceId: string,
@@ -332,26 +380,46 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       device.addHook("onRoute", (route) => {
         route.bodyLimit = DEVICE_HARD_LIMITS["device.request.body_bytes"].maximum;
       });
+      const uploads = new WeakMap<
+        FastifyRequest,
+        { readonly authorized: AuthorizedUpload; readonly device: AuthenticatedDeviceRequest }
+      >();
+      const bodyLimit = (request: FastifyRequest) =>
+        uploads.get(request)?.authorized.grant.bytes ??
+        options.configuration().limits["device.request.body_bytes"];
+      const tooLarge = (request: FastifyRequest): Error => {
+        const upload = uploads.get(request);
+        if (upload)
+          return new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.UPLOAD_TOO_LARGE, 413, {
+            limit: upload.authorized.grant.bytes,
+            key: "device.upload.file_bytes",
+          });
+        try {
+          return options.rejectBody(413);
+        } catch (error) {
+          return error as Error;
+        }
+      };
       device.removeAllContentTypeParsers();
-      device.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) =>
-        done(null, body),
-      );
-      device.addHook("preParsing", async (_request, _reply, payload) => {
-        const limit = options.configuration().limits["device.request.body_bytes"];
+      device.addContentTypeParser("*", (request, payload, done) => {
+        if (uploads.has(request)) return done(null, payload);
+        const chunks: Buffer[] = [];
+        payload.on("data", (chunk: Buffer) => chunks.push(chunk));
+        payload.once("error", (error) => done(error));
+        payload.once("end", () => done(null, Buffer.concat(chunks)));
+      });
+      device.addHook("preParsing", async (request, _reply, payload) => {
+        const limit = bodyLimit(request);
         let received = 0;
-        return payload.pipe(
-          new Transform({
-            transform(chunk: Buffer, _encoding, callback) {
-              received += chunk.length;
-              if (received <= limit) return callback(null, chunk);
-              try {
-                options.rejectBody(413);
-              } catch (error) {
-                callback(error as Error);
-              }
-            },
-          }),
-        );
+        const bounded = new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            received += chunk.length;
+            if (received <= limit) return callback(null, chunk);
+            callback(tooLarge(request));
+          },
+        });
+        payload.once("error", (error) => bounded.destroy(error));
+        return payload.pipe(bounded);
       });
       device.addHook("onRequest", async (request) => {
         const path = requestPath(request).slice(DEVICE_API_PREFIX.length + 1);
@@ -361,9 +429,23 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           )
         )
           options.rejectNotAllowed();
-        const limit = options.configuration().limits["device.request.body_bytes"];
+        const token = header(request, DEVICE_UPLOAD_GRANT_HEADER);
+        const purpose = DEVICE_UPLOAD_PURPOSES.get(path);
+        if (token !== undefined) {
+          if (!options.perception) options.rejectNotAllowed();
+          if (purpose === undefined || request.method !== "POST")
+            throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.UPLOAD_GRANT_PATH, 403);
+          const authorized = await (options.perception as PerceptionService).authorizeUpload({
+            token,
+            purpose,
+          });
+          uploads.set(request, {
+            authorized,
+            device: await options.devices.authenticateStored(authorized.grant.deviceId),
+          });
+        }
         const declared = Number(header(request, "content-length") ?? "0");
-        if (Number.isFinite(declared) && declared > limit) options.rejectBody(413);
+        if (Number.isFinite(declared) && declared > bodyLimit(request)) throw tooLarge(request);
       });
 
       const signed = (
@@ -412,7 +494,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       });
 
       device.get("/config", async (request, reply) => {
-        await authenticate(request);
+        const authenticated = await authenticate(request);
         const configuration = options.configuration();
         return options.sendJson(reply, 200, {
           heartbeatSeconds: configuration.heartbeatSeconds,
@@ -420,7 +502,153 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           streamConnections: configuration.streamConnections,
           signatureToleranceSeconds: configuration.signatureToleranceSeconds,
           limits: presentDeviceLimits(configuration),
+          ...(options.perception
+            ? {
+                perception: await presentDevicePerception(
+                  options.perception,
+                  scope(authenticated.authentication),
+                ),
+              }
+            : {}),
         });
+      });
+
+      const perception = (): PerceptionService => options.perception ?? options.rejectNotAllowed();
+      const only = (body: Record<string, unknown>, keys: readonly string[]) => {
+        if (Object.keys(body).some((key) => !keys.includes(key))) options.rejectBody(400);
+      };
+      const receiveUpload = async (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        upload: {
+          readonly authorized: AuthorizedUpload;
+          readonly device: AuthenticatedDeviceRequest;
+        },
+      ) => {
+        const service = perception();
+        const source = request.body as Readable;
+        if (upload.authorized.replay !== null) {
+          source.resume();
+          return options.sendJson(reply, 200, upload.authorized.replay);
+        }
+        const encoding = header(request, "content-encoding")?.trim().toLowerCase();
+        if (encoding !== undefined && encoding !== "gzip" && encoding !== "identity")
+          options.rejectBody(415);
+        const file = service.temporaryUploadPath();
+        const hash = createHash("sha256");
+        let bytes = 0;
+        try {
+          await pipeline(
+            source,
+            new Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                bytes += chunk.length;
+                hash.update(chunk);
+                callback(null, chunk);
+              },
+            }),
+            createWriteStream(file, { flags: "wx", mode: 0o600 }),
+          );
+        } catch (error) {
+          await rm(file, { force: true });
+          throw error;
+        }
+        const result = await service.consumeUpload({
+          scope: scope(upload.device.authentication),
+          authentication: upload.device.authentication,
+          grant: upload.authorized.grant,
+          upload: { file, bytes, sha256: hash.digest("hex"), gzip: encoding === "gzip" },
+        });
+        return options.sendJson(reply, 200, result);
+      };
+
+      device.post("/uploads/begin", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const granted = await perception().beginUpload({
+          scope: scope(authenticated.authentication),
+          deviceId: authenticated.device.id,
+          body: json(request),
+        });
+        return options.sendJson(reply, 201, {
+          grant: granted.grant,
+          expiresAt: granted.expiresAt,
+          path: `${DEVICE_API_PREFIX}/${granted.path}`,
+          header: DEVICE_UPLOAD_GRANT_HEADER,
+        });
+      });
+
+      device.post("/perception", async (request, reply) => {
+        const upload = uploads.get(request);
+        if (upload) return receiveUpload(request, reply, upload);
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["records"]);
+        return options.sendJson(
+          reply,
+          200,
+          await perception().ingest({
+            scope: scope(authenticated.authentication),
+            authentication: authenticated.authentication,
+            deviceId: authenticated.device.id,
+            records: body["records"],
+          }),
+        );
+      });
+
+      device.post("/perception/media", async (request, reply) => {
+        const upload = uploads.get(request);
+        if (!upload)
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.UPLOAD_GRANT_INVALID, 401);
+        return receiveUpload(request, reply, upload);
+      });
+
+      device.post("/track", async (request, reply) => {
+        const upload = uploads.get(request);
+        if (upload) return receiveUpload(request, reply, upload);
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["points"]);
+        return options.sendJson(
+          reply,
+          200,
+          await perception().track({
+            scope: scope(authenticated.authentication),
+            deviceId: authenticated.device.id,
+            points: body["points"],
+          }),
+        );
+      });
+
+      device.post("/mirror", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await perception().syncMirror({
+            scope: scope(authenticated.authentication),
+            deviceId: authenticated.device.id,
+            body: json(request),
+          }),
+        );
+      });
+
+      device.get("/usage", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await perception().usage(scope(authenticated.authentication)),
+        );
+      });
+
+      device.post("/usage/report", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        await perception().reportDeviceUsage({
+          scope: scope(authenticated.authentication),
+          deviceId: authenticated.device.id,
+          body: json(request),
+        });
+        return options.sendJson(reply, 200, { accepted: true });
       });
 
       const envelope = (

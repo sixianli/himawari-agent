@@ -37,6 +37,8 @@ export * from "./memory-consolidation.js";
 export * from "./memory-conversation-review.js";
 export * from "./memory-dates.js";
 export * from "./memory-episodes.js";
+export * from "./perception.js";
+export * from "./usage-limits.js";
 export * from "./memory-projection.js";
 export * from "./memory-reminders.js";
 export * from "./memory-review.js";

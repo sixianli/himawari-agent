@@ -8,7 +8,15 @@ import {
 import { canonicalJson, type JsonValue, jsonLines, sha256Hex } from "./canonical.js";
 import { type MarkdownMemory, renderMemoryMarkdown } from "./markdown.js";
 import { RULES_INDEX_FILE, renderRulesMarkdown } from "./rules.js";
-import { DATA_FILES, FORMAT_VERSION, INDEX_FILE, MANIFEST_FILE, SCHEMA_FILES } from "./schemas.js";
+import {
+  DATA_FILES,
+  EMPTY_PERCEPTION_COUNTS,
+  FORMAT_VERSION,
+  INDEX_FILE,
+  MANIFEST_FILE,
+  PERCEPTION_FILE_KEYS,
+  SCHEMA_FILES,
+} from "./schemas.js";
 import {
   DATA_EXPORT_ERROR_CODES,
   DataExportError,
@@ -154,6 +162,7 @@ export function buildDemoPack(options: DemoPackOptions): {
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", "", 0);
   put(DATA_FILES.pairedDevices, "data", "", 0);
+  for (const key of PERCEPTION_FILE_KEYS) put(DATA_FILES[key], "data", "", 0);
   put(DATA_FILES.consolidations, "data", "", 0);
   put(DATA_FILES.decisions, "data", "", 0);
   put(DATA_FILES.rules, "data", "", 0);
@@ -172,6 +181,7 @@ export function buildDemoPack(options: DemoPackOptions): {
     people: peopleLines.length,
     importBatches: 0,
     pairedDevices: 0,
+    ...EMPTY_PERCEPTION_COUNTS,
     consolidations: 0,
     consolidationChanges: 0,
     decisions: 0,

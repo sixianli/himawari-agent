@@ -172,6 +172,25 @@ describe("incident and gate list check", () => {
     expect(noTable.stdout).not.toContain("count=0");
   });
 
+  it("reports a list path that is a directory instead of crashing", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-gates-"));
+    roots.push(root);
+    mkdirSync(join(root, INCIDENT_LIST), { recursive: true });
+    expect(checkIncidentGates({ root })).toEqual({
+      incidents: [],
+      errors: [`INCIDENT_LIST_UNREADABLE ${INCIDENT_LIST}`],
+    });
+  });
+
+  it("refuses an argument it does not know instead of ignoring it", () => {
+    const result = spawnSync("node", ["scripts/check-incident-gates.mjs", "--Open"], {
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("INCIDENT_ARGUMENT_UNKNOWN --Open");
+    expect(result.stdout).toBe("");
+  });
+
   it("withholds the open list when the list can be read but fails a check", () => {
     const root = fixture([
       row({}),

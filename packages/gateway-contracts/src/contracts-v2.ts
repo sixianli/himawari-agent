@@ -147,6 +147,15 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.pairing.confirm",
   "device.rename",
   "device.revoke",
+  "perception.status.read",
+  "perception.status.snapshot",
+  "perception.day.read",
+  "perception.day.snapshot",
+  "perception.episode.read",
+  "perception.episode.snapshot",
+  "perception.usage.read",
+  "perception.usage.snapshot",
+  "perception.settings.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -664,6 +673,160 @@ const deviceRevokeCommandSchema = object({
 const deviceRenameCommandSchema = object({
   ...commandEnvelope("device.rename"),
   payload: object({ ...deviceRevisionTargetShape, name: deviceNameSchema }),
+});
+export const PERCEPTION_STATES = ["sensing", "paused", "off"] as const;
+export const PERCEPTION_SETTINGS_CHANGE_KINDS = [
+  "sense",
+  "pause",
+  "resume",
+  "retention",
+  "limit",
+] as const;
+export const PERCEPTION_ROW_KINDS = ["episode", "record"] as const;
+export const PERCEPTION_SUMMARY_SOURCES = ["recorded", "model", "none"] as const;
+export const USAGE_LIMIT_STATES = ["ok", "near", "stopped"] as const;
+const perceptionDaySchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(input))
+      throw new ContractValidationError(path, "expected a calendar day");
+    return input;
+  },
+};
+const perceptionCursorSchema = boundedString(256);
+const perceptionRecordViewSchema = object({
+  id: machineString,
+  type: machineString,
+  sense: machineString,
+  origin: machineString,
+  captureSource: machineString,
+  occurredAt: timestamp,
+  deviceId: machineString,
+  speakerKind: nullable(machineString),
+  text: nullable(boundedString(32 * 1024)),
+  textTruncated: booleanValue,
+  evidence: array(object({ name: machineString, value: boundedString(512) })),
+});
+const perceptionEpisodeViewSchema = object({
+  id: machineString,
+  startedAt: timestamp,
+  endedAt: timestamp,
+  recordCount: integer(0),
+  senses: array(machineString),
+  types: array(machineString),
+  deviceIds: array(machineString),
+  preview: nullable(boundedString(32 * 1024)),
+  previewTruncated: booleanValue,
+  summary: nullable(boundedString(2048)),
+  summarySource: enumeration(PERCEPTION_SUMMARY_SOURCES),
+});
+const perceptionStatusQuerySchema = object({
+  ...envelope("query", "perception.status.read"),
+  payload: object({}),
+});
+const perceptionStatusSnapshotSchema = object({
+  ...envelope("snapshot", "perception.status.snapshot"),
+  payload: object({
+    state: enumeration(PERCEPTION_STATES),
+    pausedUntil: nullable(timestamp),
+    senses: array(machineString),
+    day: perceptionDaySchema,
+    todayCount: integer(0),
+    availableSenses: array(machineString),
+    retention: array(
+      object({
+        key: machineString,
+        days: integer(1),
+        defaultDays: integer(1),
+        minDays: integer(1),
+        maxDays: integer(1),
+      }),
+    ),
+    pauseMaximumSeconds: integer(1),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionDayQuerySchema = object({
+  ...envelope("query", "perception.day.read"),
+  payload: object({
+    day: nullable(perceptionDaySchema),
+    sense: nullable(machineString),
+    types: nullable(array(machineString)),
+    cursor: nullable(perceptionCursorSchema),
+  }),
+});
+const perceptionDaySnapshotSchema = object({
+  ...envelope("snapshot", "perception.day.snapshot"),
+  payload: object({
+    day: perceptionDaySchema,
+    total: integer(0),
+    senseCounts: array(object({ sense: machineString, count: integer(0) })),
+    rows: array(
+      object({
+        kind: enumeration(PERCEPTION_ROW_KINDS),
+        at: timestamp,
+        episode: nullable(perceptionEpisodeViewSchema),
+        record: nullable(perceptionRecordViewSchema),
+      }),
+    ),
+    nextCursor: nullable(perceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionEpisodeQuerySchema = object({
+  ...envelope("query", "perception.episode.read"),
+  payload: object({ episodeId: machineString, cursor: nullable(perceptionCursorSchema) }),
+});
+const perceptionEpisodeSnapshotSchema = object({
+  ...envelope("snapshot", "perception.episode.snapshot"),
+  payload: object({
+    episode: nullable(perceptionEpisodeViewSchema),
+    records: array(perceptionRecordViewSchema),
+    nextCursor: nullable(perceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionUsageQuerySchema = object({
+  ...envelope("query", "perception.usage.read"),
+  payload: object({}),
+});
+const perceptionUsageSnapshotSchema = object({
+  ...envelope("snapshot", "perception.usage.snapshot"),
+  payload: object({
+    day: perceptionDaySchema,
+    resetsAt: timestamp,
+    warnPermille: integer(1, 999),
+    limits: array(
+      object({
+        key: machineString,
+        unit: machineString,
+        limit: nullable(integer(0)),
+        defaultLimit: nullable(integer(0)),
+        minimum: integer(0),
+        maximum: integer(0),
+        adjustable: booleanValue,
+        used: integer(0),
+        devices: array(object({ deviceId: machineString, used: integer(0) })),
+        resetsAt: timestamp,
+        onReach: machineString,
+        state: enumeration(USAGE_LIMIT_STATES),
+      }),
+    ),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionSettingsChangeCommandSchema = object({
+  ...commandEnvelope("perception.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    kind: enumeration(PERCEPTION_SETTINGS_CHANGE_KINDS),
+    sense: nullable(machineString),
+    enabled: nullable(booleanValue),
+    until: nullable(timestamp),
+    key: nullable(machineString),
+    value: nullable(integer(0)),
+  }),
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
@@ -1662,6 +1825,9 @@ const decisionChainSnapshotSchema = object({
         "rule_review",
         "web_push",
         "memory_review",
+        "limit_change",
+        "delivery_timing",
+        "proposal",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
@@ -3214,6 +3380,15 @@ const schemasByType = {
   "device.pairing.confirm": devicePairingConfirmCommandSchema,
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
+  "perception.status.read": perceptionStatusQuerySchema,
+  "perception.status.snapshot": perceptionStatusSnapshotSchema,
+  "perception.day.read": perceptionDayQuerySchema,
+  "perception.day.snapshot": perceptionDaySnapshotSchema,
+  "perception.episode.read": perceptionEpisodeQuerySchema,
+  "perception.episode.snapshot": perceptionEpisodeSnapshotSchema,
+  "perception.usage.read": perceptionUsageQuerySchema,
+  "perception.usage.snapshot": perceptionUsageSnapshotSchema,
+  "perception.settings.change": perceptionSettingsChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,

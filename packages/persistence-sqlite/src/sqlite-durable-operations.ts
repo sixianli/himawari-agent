@@ -88,6 +88,7 @@ import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operation
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
 import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
+import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -387,6 +388,7 @@ export class SqliteDurableOperations {
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
   private readonly pairedDevices: SqlitePairedDeviceOperations;
+  private readonly perception: SqlitePerceptionOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
   private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
@@ -500,6 +502,7 @@ export class SqliteDurableOperations {
     this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
+    this.perception = new SqlitePerceptionOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
       database,
@@ -686,6 +689,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("pairedDevices."))
       return this.pairedDevices.execute(operation, payload);
+    if (operation.startsWith("perception.")) return this.perception.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("threadPromptBundle."))
@@ -5104,6 +5108,12 @@ export class SqliteDurableOperations {
       this.database
         .prepare(
           `DELETE FROM device_request_nonces WHERE device_id IN (
+             SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
+        )
+        .run(input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM device_upload_grants WHERE device_id IN (
              SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
         )
         .run(input.deviceId);
