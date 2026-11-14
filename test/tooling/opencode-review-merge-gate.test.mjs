@@ -19,6 +19,9 @@ import {
   buildPrompt,
   COST_LIMIT_PER_MODEL_USD,
   clearStopRequest,
+  claimsFileRecords,
+  DAILY_SPEND_LINE_USD,
+  dailySpend,
   installGitGuard,
   isTestFile,
   keepEarlierAttempt,
@@ -2088,6 +2091,89 @@ describe("opencode review spending", () => {
         models: REVIEW_MODELS,
       }),
     ).toMatch(/askFirstLine=1$/);
+  });
+
+  it("keeps plan-review and plan on the half-dollar line", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(budgetCheck({ mode: "plan-review", records, models: REVIEW_MODELS })).toMatch(
+      /askFirstLine=0\.5$/,
+    );
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS })).toMatch(
+      /askFirstLine=0\.5$/,
+    );
+  });
+
+  it("adds up what other topics already spent on the same claims file", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-claims-"));
+    try {
+      const write = (topic, lines) => {
+        mkdirSync(join(root, REVIEWS_DIR, topic), { recursive: true });
+        writeFileSync(
+          join(root, REVIEWS_DIR, topic, "usage.jsonl"),
+          lines.map(ledgerLine).join(""),
+        );
+      };
+      const base = {
+        mode: "plan-claims",
+        round: 1,
+        model: REVIEW_MODELS[0],
+        outcome: "ok",
+        at: "2026-11-14T00:00:00.000Z",
+        head: "a".repeat(40),
+        claimsFile: "docs/adr/0001-a.md",
+        claimsSha256: "b".repeat(64),
+      };
+      write("topic-first", [{ ...base, cost: 0.3 }]);
+      write("topic-second", [{ ...base, cost: 0.2 }]);
+      write("topic-other-file", [{ ...base, claimsFile: "docs/adr/0002-b.md", cost: 0.9 }]);
+      write("topic-review-mode", [{ ...base, mode: "plan", cost: 0.9 }]);
+      const records = claimsFileRecords(root, "docs/adr/0001-a.md", "topic-second");
+      expect(records.map((entry) => entry.cost)).toEqual([0.3]);
+      expect(spentOf(records)).toBeCloseTo(0.3);
+      expect(claimsFileRecords(root, "docs/adr/0003-c.md", "topic-second")).toEqual([]);
+      expect(claimsFileRecords(join(root, "missing"), "docs/adr/0001-a.md", "x")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds up one Japan-time day of spending across every review ledger", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-day-"));
+    try {
+      const write = (key, lines) => {
+        mkdirSync(join(root, REVIEWS_DIR, key), { recursive: true });
+        writeFileSync(join(root, REVIEWS_DIR, key, "usage.jsonl"), lines.map(ledgerLine).join(""));
+      };
+      write("pr-1", [
+        { at: "2026-11-14T14:50:00.000Z", cost: 1.5, round: 1 },
+        { at: "2026-11-14T15:10:00.000Z", cost: 9, round: 2 },
+      ]);
+      write("topic-a", [{ at: "2026-11-14T00:00:00.000Z", cost: 2, round: 1 }]);
+      write("pr-2", [{ at: "2026-11-13T14:59:00.000Z", cost: 7, round: 1 }]);
+      const result = dailySpend(root, "2026-11-14");
+      expect(result.total).toBeCloseTo(3.5);
+      expect(result.items.map((item) => item.key)).toEqual(["pr-1", "topic-a"]);
+      expect(result.over).toBe(false);
+      expect(DAILY_SPEND_LINE_USD).toBe(5);
+      expect(dailySpend(root, "2026-11-15").total).toBeCloseTo(9);
+      expect(dailySpend(root, "2026-11-15").over).toBe(true);
+      expect(dailySpend(join(root, "missing"), "2026-11-14")).toEqual({
+        date: "2026-11-14",
+        total: 0,
+        items: [],
+        over: false,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("parses the daily spending command and refuses options that are not for it", () => {
+    expect(parseArgs(["--spend-day"]).spendDay).toBe(true);
+    expect(parseArgs(["--spend-day", "--date", "2026-11-14"]).date).toBe("2026-11-14");
+    expect(() => parseArgs(["--spend-day", "--date", "11-14"])).toThrow("ARG_INVALID --date");
+    expect(() => parseArgs(["--spend-day", "--pr", "1"])).toThrow("ARG_NOT_FOR_SUBCOMMAND --pr");
+    expect(() => parseArgs(["--date", "2026-11-14"])).toThrow("ARG_ONLY_FOR_SPEND_DAY --date");
   });
 
   it("lets a run through when Andy approved enough for the whole task", () => {
