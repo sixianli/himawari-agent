@@ -241,6 +241,22 @@ export interface HomeFeedConfiguration {
   readonly upcomingDays: number;
 }
 
+export interface SearchAskConfiguration {
+  readonly candidateLimit: number;
+  readonly basisLimit: number;
+  readonly askLimit: number;
+  readonly answerCharacters: number;
+  readonly minimumCoveragePercent: number;
+}
+
+export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
+  candidateLimit: 20,
+  basisLimit: 1,
+  askLimit: 0,
+  answerCharacters: 2000,
+  minimumCoveragePercent: 50,
+});
+
 export interface ProactiveGmailConfiguration {
   readonly clientId: string;
   readonly clientSecretRef: string;
@@ -391,6 +407,7 @@ export interface RunPolicyConfiguration {
   readonly applePush?: ApplePushConfiguration;
   readonly device?: DeviceConfiguration;
   readonly homeFeed?: HomeFeedConfiguration;
+  readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
   readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;

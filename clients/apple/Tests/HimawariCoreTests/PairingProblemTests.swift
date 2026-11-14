@@ -126,6 +126,10 @@ private final class UnreadableMarkStore: LocalStore, @unchecked Sendable {
         name == "owner" || inner.contains(name)
     }
 
+    func names() -> [String] {
+        inner.names()
+    }
+
     func write(_ name: String, _ data: Data?) throws {
         try inner.write(name, data)
     }

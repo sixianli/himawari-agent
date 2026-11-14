@@ -13,6 +13,7 @@ import {
   AgentThreadGatewayService,
   ApplicationPortError,
   DEFAULT_HOME_FEED,
+  DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   defaultDeviceHardLimits,
@@ -124,6 +125,11 @@ import {
   ProductionHomeControl,
   type ProductionHomeUrgencyOptions,
 } from "./production-home.js";
+import {
+  PRODUCTION_SEARCH_OPERATIONS,
+  ProductionSearchControl,
+  type ProductionSearchOptions,
+} from "./production-search.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
@@ -244,6 +250,10 @@ export interface ProductionHttpCompositionOptions {
     readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
   };
   readonly memory?: {
+    readonly search?: {
+      readonly provider: ProductionSearchOptions["provider"];
+      readonly episodes?: ProductionSearchOptions["episodes"];
+    };
     readonly service: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -732,6 +742,7 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  searchAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -772,6 +783,7 @@ function routeOptions(
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
+        ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -1336,6 +1348,27 @@ export async function createProductionHttpComposition(
         }
       : {}),
   });
+  const searchControl = options.memory?.search
+    ? new ProductionSearchControl({
+        ownerId,
+        agentId,
+        settings: configuration.runPolicy?.searchAsk ?? DEFAULT_SEARCH_ASK,
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+        provider: options.memory.search.provider,
+        ...(options.memory.search.episodes ? { episodes: options.memory.search.episodes } : {}),
+        state: repository.productMemoryState(),
+        readText: async (record) => {
+          const payload = await memoryPayloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await payloadProtector.unprotect({ ownerId, agentId, payload }),
+          );
+        },
+        clock: { now: clock },
+      })
+    : undefined;
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1373,6 +1406,7 @@ export async function createProductionHttpComposition(
     repository,
     access: threadAccess,
     homeControl: home,
+    ...(searchControl ? { searchControl } : {}),
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1473,6 +1507,7 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(searchControl),
     ),
     gatewayV2,
     threadSearch,

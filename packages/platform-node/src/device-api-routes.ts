@@ -14,6 +14,7 @@ import {
   type PairedDevice,
   type PairedDeviceScope,
   PERCEPTION_SENSES,
+  PERCEPTION_UTTERANCE_ID_PATTERN,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
@@ -120,6 +121,7 @@ export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
+const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
 export type DeviceTextClassification = TextAdmissionClassification;
@@ -869,8 +871,12 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const body = json(request);
         if (
           Object.keys(body).some(
-            (key) => !["messageId", "threadId", "expectedRevision", "text"].includes(key),
+            (key) =>
+              !["messageId", "threadId", "expectedRevision", "text", "utteranceId"].includes(key),
           ) ||
+          (body["utteranceId"] !== undefined &&
+            (typeof body["utteranceId"] !== "string" ||
+              !UTTERANCE_ID_PATTERN.test(body["utteranceId"]))) ||
           typeof body["messageId"] !== "string" ||
           !MESSAGE_ID_PATTERN.test(body["messageId"]) ||
           typeof body["threadId"] !== "string" ||
@@ -923,11 +929,13 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             resultRef,
           },
         }) as ThreadGatewayRequestMessage;
-        return options.sendJson(
-          reply,
-          200,
-          await options.threadGateway.request(authentication, command),
-        );
+        const accepted = await options.threadGateway.request(authentication, command);
+        if (typeof body["utteranceId"] === "string" && options.perception)
+          await options.perception.recordCommandUtterance(
+            scope(authentication),
+            body["utteranceId"],
+          );
+        return options.sendJson(reply, 200, accepted);
       });
 
       device.post("/payloads/text/new", async (request, reply) => {

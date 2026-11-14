@@ -109,6 +109,7 @@ export interface Harness {
   readonly ownerVoiceQualified: { current: boolean };
   readonly limitWarnings: PerceptionLimitWarning[];
   readonly readText: (contentRef: string) => Promise<string | undefined>;
+  readonly protector: EnvelopePayloadProtector;
 }
 
 export async function harness(
@@ -118,6 +119,7 @@ export async function harness(
     readonly pairingAccess?: DevicePairingAccess;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
+    readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -254,6 +256,7 @@ export async function harness(
     clock,
     authority: () => authority,
     executionAuthority: () => authority as never,
+    ...(options.searchControl ? { searchControl: options.searchControl } : {}),
     museControl: new ProductionMuseControl({
       scope: { ownerId, agentId },
       store: repository.museIntake(),
@@ -397,6 +400,7 @@ export async function harness(
     timeZone,
     ownerVoiceQualified,
     limitWarnings,
+    protector,
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
       if (!payload) return undefined;
