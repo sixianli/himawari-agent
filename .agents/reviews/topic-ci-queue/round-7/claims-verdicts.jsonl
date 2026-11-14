@@ -1,0 +1,2 @@
+{"id": "48", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|48|找不到|-|模型的意见怎么处理的（记录在 `.agents/reviews/topic-ci-queue/`）|-", "outcome": "model-wrong", "evidenceFile": ".agents/instructions/model-review.md", "evidence": "方案讨论记录目录 `.agents/reviews/topic-<短名>/round-<序号>/`"}
+{"id": "49", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|49|找不到|-|它只跑 15 秒，不是排队的来源|-", "outcome": "model-wrong", "evidenceFile": ".agents/evidence/ci-queue-2026-11-12.md", "evidence": "取证据作业（`main/evidence`）只跑 15 秒"}

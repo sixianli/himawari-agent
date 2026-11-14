@@ -39,6 +39,7 @@ date: "2026-10-13"
 - [复制上一次操作包时留下旧文件和旧文件名](#copied-packet-stale-names)
 - [上线验收只查了首页 200 没真点网页](#release-without-browser-walkthrough)
 - [新建 ADR 时只看了 main，和别的线程撞了编号](#adr-number-collision)
+- [记过低意见修改后，复核传错了上一轮的提交](#review-previous-after-low-fix)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -741,5 +742,20 @@ date: "2026-10-13"
   - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把 Gmail 那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。两份各有 3 处入链。改 Gmail 那份而不改出口那份，是因为出口那份被 ADR 0146 文件开头的 `superseded_by` 字段引用，改它的编号要动 ADR 的生命周期字段；Gmail 那份只有正文里的普通链接。
   - 新建 ADR 前，除了看 main，还要看还没合并的 PR 新加的 `docs/adr/` 文件，取所有这些编号里最大的加一。
   - 限制：检查只能在两个撞号的 PR 先后进了同一棵树时才失败，例如后合并的那个 PR 先把 main 合并进来再跑 `npm run check`；两个 PR 各自单独跑都会通过。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="review-previous-after-low-fix"></a>
+
+## 记过低意见修改后，复核传错了上一轮的提交
+
+- 反复出现的情况：合并前代码复核（`scripts/model-review/opencode-review.mjs --mode code-review`）的某一轮之后，线程用 `--accept-low` 把低意见的修改记进复核账本（账本是 `.agents/reviews/pr-<编号>/usage.jsonl`，每轮复核一行），再提交账本。下一轮复核时，线程把“提交账本的那个提交”当成上一轮复核到的地方传给 `--previous`，而复核链认的是 low-fix 记录里的 `head`（`--assert-reviewed` 打印的 `REVIEW_CURRENT … reviewed=` 那个提交）。账本提交不是那个 `head` 的祖先，这一轮接不上复核链（`chain-broken`），钱花了却不算数。
+- 发生记录（都可以在对应分支的账本里看到）：
+  - 2026-11-12：PR 436 第 6、7 轮传 `a00a7253`，该传 `f35bb782`。
+  - 2026-11-13：PR 466 第 3 轮传账本提交 `19644ba2`，该传 `8f40158b`，第 3、4 轮作废，只能从分叉点整份重跑。
+  - 2026-11-13：PR 460 第 3 轮传账本提交 `01debf3f`，该传 `4456a13c`，第 4 轮重跑。
+- 为什么要紧：每轮复核都花 Andy 的钱，而且要到合并前检查才发现，后面接着它的轮次也一起作废。
+- 硬约束（2026-11-13，[I-98](incidents-and-gates.md#incidents)）：代码复核传了 `--previous` 时，脚本开跑前用本地账本算复核链（`previousProblem`，判断逻辑和合并前检查共用 `walkChain` 和 `lowFixChecker`），接不上就以 `REVIEW_PREVIOUS_REFUSED` 退出、不花钱，并写出该传的提交。测试在 `test/tooling/opencode-review-merge-gate.test.mjs` 的 `[I-98]` 用例。
+- 同一轮补跑（`--round <n>`）时，`--previous` 还必须和这一轮已有结果用的相同（这一轮已有结果本身接不上链时提示 `use=new-round`：不带 `--round`、`--previous` 新开一轮）；账本里的 low-fix 记录按合并前检查同样的规则重新核对，不合格就判链已断。
 
 [回到目录](#编码代理反复犯的错误)

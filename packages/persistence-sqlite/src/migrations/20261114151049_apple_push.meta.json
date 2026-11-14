@@ -1,0 +1,1 @@
+{"alters": ["paired_devices", "web_push_outbox", "web_push_attempts", "web_push_feedback"]}

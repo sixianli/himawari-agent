@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md"
 date: "2026-11-09"
 ---
 
@@ -40,7 +41,7 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 5. Pi 只在两处追加 `context_edit`（把失败的那次回答从模型上下文里拿掉）：自动重试（`agent-session.ts` 里 `_omitRecoveryAttempt(message)`，注释“Keep the failed attempt in raw history while durably omitting it from model projection.”），以及上下文溢出或截断恢复，后者紧接着压缩（同一文件，“Persistently omit the selected final attempt before post-run recovery compaction.”）。Himawari 一直关着 Pi 的自动重试：`packages/runtime-pi/src/pi-runtime-adapter.ts` 设置 `retry: { enabled: false, maxRetries: 0 }`。
 6. pi-durable 是实验性的：`packages/durable/README.md`（v1.5.0）“**Experimental.** The API changes without notice between releases.”
 7. 同类开源项目 OpenClaw 在 2026.5.22 把 Pi 的 Agent 运行时收回自己维护，并关掉 Pi 内置重试：`CHANGELOG/2026.5.22.md` 第 29 行“internalize the former Pi agent runtime into OpenClaw”、第 255 行“disable the embedded pi-coding-agent runtime auto-retry so OpenClaw's own retry and failover loop does not replay failed tool calls through a nested SDK retry”。
-8. 发给模型的内容只能往后追加，系统提示和工具按对话冻结：[.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 4、6 条。
+8. 发给模型的内容只能往后追加，系统提示和工具按对话冻结：[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 4、6 条。
 
 <a id="decision"></a>
 
@@ -52,7 +53,7 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 4. **旧快照不兼容。**v2 快照续跑时报 `PI_CONTINUATION_VERSION_INVALID`；生产的工具结果恢复扫描遇到 v2 快照时跳过它，不让整个扫描出错（Andy 同意的第 2 条）。
 5. **存历史时去掉 system 消息。**Pi 1.5.0 的消息列表里带 system 消息，Himawari 的历史不存它们，原有的“历史里不许有 system 角色”的检查保留。
 6. **工具参数先过 JSON 检查。**直接执行 Pi 内置工具的两处（沙箱里的执行器、文件改动预演）先检查参数是普通 JSON 值（拒绝 undefined、BigInt、Map、循环引用，深度和节点数有上限），再交给 Pi 的参数校验。
-7. **`context_edit` 归入压缩。**Himawari 关着 Pi 的自动重试，所以它只会和压缩一起出现（前提 5），按 prompt-prefix 规则第 12 条的压缩例外处理。`check:prompt-prefix` 加一条用例：模型返回 503 时，同一轮不会再发第二次请求，下一轮请求仍以第一轮请求开头。实施时手动把设置改成打开 Pi 自动重试，这条用例失败；适配器没有可以从外面打开重试的入口，所以这一步没有提交成自动用例。再加一条检查：请求中间出现 system 或 developer 角色的消息，判为破坏（有反向用例）；以及一条用例：冻结的工具名和 Pi 能执行的工具名不一致时，一次请求都不发（`PI_REQUEST_TOOLS_DIVERGED`）。
+7. **`context_edit` 归入压缩。**Himawari 关着 Pi 的自动重试，所以它只会和压缩一起出现（前提 5），按 prompt-prefix 规则第 12 条的压缩例外处理。`check:prompt-prefix` 加一条用例（这一句已被 [ADR 0245](0245-retry-rate-limited-model-requests-at-the-request-layer.md) 修订：Pi 的自动重试仍关着，但请求层现在会对 429/503 重发同一份请求，用例改为检查重发的字节相同）：模型持续返回 503 时，请求层只重发字节完全相同的请求（最多 2 次），历史里没有 `context_edit`，下一轮请求仍以第一轮请求开头。实施时手动把设置改成打开 Pi 自动重试，这条用例失败；适配器没有可以从外面打开重试的入口，所以这一步没有提交成自动用例。再加一条检查：请求中间出现 system 或 developer 角色的消息，判为破坏（有反向用例）；以及一条用例：冻结的工具名和 Pi 能执行的工具名不一致时，一次请求都不发（`PI_REQUEST_TOOLS_DIVERGED`）。
 8. **内置工具文字跟随 Pi 1.5.0。**Himawari 替换掉的那几段原文（ADR 0166）在 1.5.0 里没变；bash 工具 `command` 参数的说明从 “Bash command to execute” 变成 “Shell command to execute”，按 Pi 的新文字。已有对话冻结的工具文字不变。
 9. **保留 `legacy-pi-history.ts`。**它仍被运维导入脚本和资格证据使用。
 

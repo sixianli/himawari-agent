@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -46,6 +46,7 @@ export class SqliteMigrationError extends Error {
 }
 
 export interface MigrationDefinition {
+  readonly id: string;
   readonly sequence: number;
   readonly name: string;
   readonly changeSet: string;
@@ -55,6 +56,7 @@ export interface MigrationDefinition {
 }
 
 export interface MigrationLedgerRecord {
+  readonly id: string;
   readonly sequence: number;
   readonly name: string;
   readonly phase: MigrationPhase;
@@ -67,6 +69,7 @@ export interface VerifiedMigrationSnapshot {
   readonly sourceDatabasePath: string;
   readonly snapshotPath: string;
   readonly schemaSequence: number;
+  readonly schemaFingerprint: string;
   readonly digest: string;
   readonly verifiedAt: string;
 }
@@ -74,6 +77,12 @@ export interface VerifiedMigrationSnapshot {
 export interface MigrationResult {
   readonly appliedSequences: readonly number[];
   readonly currentSequence: number;
+}
+
+export interface SchemaIdentity {
+  readonly count: number;
+  readonly ids: readonly string[];
+  readonly fingerprint: string;
 }
 
 const bundledMigrationFiles = [
@@ -730,22 +739,79 @@ const bundledMigrationFiles = [
   },
   {
     sequence: 94,
-    name: "paired_devices",
-    changeSet: "paired-devices",
+    name: "memory_conversation_review",
+    changeSet: "memory-conversation-review",
     phase: "expand" as const,
-    file: "0094_paired_devices.sql",
+    file: "0094_memory_conversation_review.sql",
   },
   {
     sequence: 95,
-    name: "apple_push",
-    changeSet: "apple-push",
+    name: "correction_propagation",
+    changeSet: "correction-propagation",
     phase: "expand" as const,
-    file: "0095_apple_push.sql",
+    file: "0095_correction_propagation.sql",
   },
 ] as const;
 
+export const LEGACY_MIGRATION_COUNT: number = bundledMigrationFiles.length;
+
+const TIMESTAMPED_MIGRATION_FILE = /^(\d{14})_([a-z][a-z0-9_]*)\.sql$/;
+const MIGRATION_META_FILE = /^(\d{14})_([a-z][a-z0-9_]*)\.meta\.json$/;
+const MIGRATION_FILE_SYNC_DIRECTORY = new URL("./migrations/", import.meta.url);
+
+function legacyMigrationId(sequence: number): string {
+  return String(sequence).padStart(4, "0");
+}
+
 export const LATEST_MIGRATION_SEQUENCE: number =
-  bundledMigrationFiles[bundledMigrationFiles.length - 1]?.sequence ?? 0;
+  LEGACY_MIGRATION_COUNT +
+  readdirSync(MIGRATION_FILE_SYNC_DIRECTORY).filter((name) => TIMESTAMPED_MIGRATION_FILE.test(name))
+    .length;
+
+export function migrationSetFingerprint(
+  entries: readonly { readonly id: string; readonly digest: string }[],
+): string {
+  const lines = [...entries]
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+    .map((entry) => `${entry.id} ${entry.digest}\n`);
+  return sha256(`himawari.migration-set.v1\n${lines.join("")}`);
+}
+
+export function bundledSchemaFingerprint(directory: URL = MIGRATION_FILE_SYNC_DIRECTORY): string {
+  const entries = [
+    ...bundledMigrationFiles.map((metadata) => ({
+      id: legacyMigrationId(metadata.sequence),
+      file: metadata.file,
+    })),
+    ...readdirSync(directory).flatMap((file) => {
+      if (bundledMigrationFiles.some((metadata) => metadata.file === file)) return [];
+      if (MIGRATION_META_FILE.test(file)) return [];
+      const match = TIMESTAMPED_MIGRATION_FILE.exec(file);
+      if (!match) {
+        throw new SqliteMigrationError(
+          SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+          `Unrecognized file in the migration directory: ${file}`,
+          { file },
+        );
+      }
+      return [{ id: match[1] as string, file }];
+    }),
+  ];
+  return migrationSetFingerprint(
+    entries.map((entry) => ({
+      id: entry.id,
+      digest: sha256(readFileSync(new URL(entry.file, directory), "utf8")),
+    })),
+  );
+}
+
+export function describeMigrationSet(migrations: readonly MigrationDefinition[]): SchemaIdentity {
+  return Object.freeze({
+    count: migrations.length,
+    ids: Object.freeze(migrations.map((migration) => migration.id).sort()),
+    fingerprint: migrationSetFingerprint(migrations),
+  });
+}
 
 function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
@@ -765,6 +831,8 @@ function validateDefinitions(migrations: readonly MigrationDefinition[]): void {
   const phases = new Set<string>(MIGRATION_PHASES);
   const phaseOrder = new Map(MIGRATION_PHASES.map((phase, index) => [phase, index]));
   const lastPhaseByChangeSet = new Map<string, number>();
+  const seenIds = new Set<string>();
+  let lastTimestampId = "";
   for (const [index, migration] of migrations.entries()) {
     const expectedSequence = index + 1;
     if (migration.sequence !== expectedSequence) {
@@ -774,6 +842,19 @@ function validateDefinitions(migrations: readonly MigrationDefinition[]): void {
         { expectedSequence: String(expectedSequence), actualSequence: String(migration.sequence) },
       );
     }
+    const legacyPosition = expectedSequence <= LEGACY_MIGRATION_COUNT;
+    const idValid = legacyPosition
+      ? migration.id === legacyMigrationId(expectedSequence)
+      : /^\d{14}$/.test(migration.id) && migration.id > lastTimestampId;
+    if (!idValid || seenIds.has(migration.id)) {
+      throw new SqliteMigrationError(
+        SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+        `Migration ${migration.sequence} has an invalid, duplicate or out-of-order id`,
+        { sequence: String(migration.sequence), id: migration.id },
+      );
+    }
+    seenIds.add(migration.id);
+    if (!legacyPosition) lastTimestampId = migration.id;
     if (
       !/^[a-z][a-z0-9_]*$/.test(migration.name) ||
       !/^[a-z][a-z0-9-]*$/.test(migration.changeSet) ||
@@ -842,17 +923,52 @@ function ensureInternalSchema(database: SqliteDatabase): void {
 export function readMigrationLedger(database: SqliteDatabase): readonly MigrationLedgerRecord[] {
   const hasLedger = applicationTables(database).includes("schema_migration_ledger");
   if (!hasLedger) return [];
-  return database
+  const hasIdColumn = ledgerHasIdColumn(database);
+  const rows = database
     .prepare(
-      "SELECT sequence, name, phase, digest, applied_at AS appliedAt FROM schema_migration_ledger ORDER BY sequence",
+      `SELECT sequence, name, phase, digest, applied_at AS appliedAt, ${hasIdColumn ? "migration_id" : "NULL"} AS migrationId FROM schema_migration_ledger ORDER BY sequence`,
     )
-    .all() as MigrationLedgerRecord[];
+    .all() as (Omit<MigrationLedgerRecord, "id"> & { migrationId: string | null })[];
+  return rows.map(({ migrationId, ...record }) => ({
+    id: migrationId ?? legacyMigrationId(record.sequence),
+    ...record,
+  }));
+}
+
+function ledgerHasIdColumn(database: SqliteDatabase): boolean {
+  return (
+    database
+      .prepare(
+        "SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name = 'migration_id'",
+      )
+      .pluck()
+      .get() === 1
+  );
+}
+
+function ensureLedgerIdColumn(database: SqliteDatabase): void {
+  if (!ledgerHasIdColumn(database)) {
+    database.exec("ALTER TABLE schema_migration_ledger ADD COLUMN migration_id TEXT");
+  }
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS schema_migration_ledger_migration_id ON schema_migration_ledger (migration_id) WHERE migration_id IS NOT NULL",
+  );
+}
+
+export function readSchemaIdentity(database: SqliteDatabase): SchemaIdentity {
+  const ledger = readMigrationLedger(database);
+  return Object.freeze({
+    count: ledger.length,
+    ids: Object.freeze(ledger.map((record) => record.id).sort()),
+    fingerprint: migrationSetFingerprint(ledger),
+  });
 }
 
 function validateLedger(
   ledger: readonly MigrationLedgerRecord[],
   migrations: readonly MigrationDefinition[],
 ): void {
+  const definitions = new Map(migrations.map((migration) => [migration.id, migration]));
   for (const [index, record] of ledger.entries()) {
     const expectedSequence = index + 1;
     if (record.sequence !== expectedSequence) {
@@ -862,12 +978,12 @@ function validateLedger(
         { expectedSequence: String(expectedSequence), actualSequence: String(record.sequence) },
       );
     }
-    const definition = migrations[index];
+    const definition = definitions.get(record.id);
     if (!definition) {
       throw new SqliteMigrationError(
         SQLITE_MIGRATION_ERROR_CODES.UNKNOWN_APPLIED_MIGRATION,
         `Database contains unknown migration ${record.sequence}`,
-        { sequence: String(record.sequence), name: record.name },
+        { sequence: String(record.sequence), id: record.id, name: record.name },
       );
     }
     if (
@@ -932,6 +1048,7 @@ function verifySnapshot(
     snapshot.host !== hostname() ||
     snapshot.sourceDatabasePath !== database.name ||
     snapshot.schemaSequence !== currentSequence ||
+    snapshot.schemaFingerprint !== readSchemaIdentity(database).fingerprint ||
     snapshotDigest !== snapshot.digest
   ) {
     throw new SqliteMigrationError(
@@ -956,8 +1073,12 @@ function verifySnapshot(
         "The pre-migration snapshot failed integrity_check",
       );
     }
-    const snapshotSequence = readMigrationLedger(snapshotDatabase).at(-1)?.sequence ?? 0;
-    if (snapshotSequence !== snapshot.schemaSequence) {
+    const snapshotLedger = readMigrationLedger(snapshotDatabase);
+    const snapshotSequence = snapshotLedger.at(-1)?.sequence ?? 0;
+    if (
+      snapshotSequence !== snapshot.schemaSequence ||
+      migrationSetFingerprint(snapshotLedger) !== snapshot.schemaFingerprint
+    ) {
       throw new SqliteMigrationError(
         SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_INVALID,
         "The pre-migration snapshot ledger does not match its declared sequence",
@@ -981,36 +1102,56 @@ export function applyMigrations(
   ensureInternalSchema(database);
   const ledger = readMigrationLedger(database);
   validateLedger(ledger, migrations);
-  const currentSequence = ledger.at(-1)?.sequence ?? 0;
-  const pending = migrations.slice(currentSequence);
+  const currentSequence = ledger.length;
+  const appliedIds = new Set(ledger.map((record) => record.id));
+  const pending = migrations.filter((migration) => !appliedIds.has(migration.id));
+  const expectedFingerprint = migrationSetFingerprint(migrations);
 
   if (pending.length === 0) {
-    assertWritableSchema(database, migrations.length);
+    assertWritableSchema(database, migrations.length, expectedFingerprint);
     return { appliedSequences: [], currentSequence };
   }
   if (currentSequence > 0) verifySnapshot(database, options.snapshot, currentSequence);
 
   const appliedSequences: number[] = [];
+  const applied: { id: string; digest: string }[] = ledger.map(({ id, digest }) => ({
+    id,
+    digest,
+  }));
   for (const migration of pending) {
     const applyOne = database.transaction(() => {
+      ensureLedgerIdColumn(database);
       database.exec(migration.sql);
       const appliedAt = new Date().toISOString();
+      const sequence = applied.length + 1;
       database
         .prepare(
-          "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at) VALUES (?, ?, ?, ?, ?)",
+          "INSERT INTO schema_migration_ledger (sequence, name, phase, digest, applied_at, migration_id) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run(migration.sequence, migration.name, migration.phase, migration.digest, appliedAt);
-      writeSchemaMetadata(database, migration.sequence, appliedAt);
+        .run(
+          sequence,
+          migration.name,
+          migration.phase,
+          migration.digest,
+          appliedAt,
+          migration.id.length === 4 ? null : migration.id,
+        );
+      applied.push({ id: migration.id, digest: migration.digest });
+      writeSchemaMetadata(database, sequence, appliedAt);
+      return sequence;
     });
-    applyOne.immediate();
-    appliedSequences.push(migration.sequence);
+    appliedSequences.push(applyOne.immediate());
   }
 
-  assertWritableSchema(database, migrations.length);
+  assertWritableSchema(database, migrations.length, expectedFingerprint);
   return { appliedSequences, currentSequence: migrations.length };
 }
 
-export function assertWritableSchema(database: SqliteDatabase, writerSequence: number): void {
+export function assertWritableSchema(
+  database: SqliteDatabase,
+  writerSequence: number,
+  expectedFingerprint?: string,
+): void {
   ensureInternalSchema(database);
   const currentSequence = readMigrationLedger(database).at(-1)?.sequence ?? 0;
   const minimumWriterSequence = readMetadataNumber(database, "minimum_writer_sequence");
@@ -1023,6 +1164,17 @@ export function assertWritableSchema(database: SqliteDatabase, writerSequence: n
         currentSequence: String(currentSequence),
         minimumWriterSequence: String(minimumWriterSequence),
       },
+    );
+  }
+  if (
+    currentSequence === writerSequence &&
+    expectedFingerprint !== undefined &&
+    readSchemaIdentity(database).fingerprint !== expectedFingerprint
+  ) {
+    throw new SqliteMigrationError(
+      SQLITE_MIGRATION_ERROR_CODES.SCHEMA_NOT_CURRENT,
+      "The applied migrations are a different set from the ones this binary knows",
+      { writerSequence: String(writerSequence), currentSequence: String(currentSequence) },
     );
   }
   if (currentSequence !== writerSequence) {
@@ -1126,7 +1278,10 @@ export async function createVerifiedMigrationSnapshot(
       "Source database failed integrity_check before snapshot",
     );
   }
-  const sourceSequence = readMigrationLedger(database).at(-1)?.sequence ?? 0;
+  const sourceLedger = readMigrationLedger(database);
+  const sourceSequence = sourceLedger.at(-1)?.sequence ?? 0;
+  const sourceFingerprint = migrationSetFingerprint(sourceLedger);
+  let snapshotFingerprint = "";
   const absoluteSnapshotPath = path.resolve(snapshotPath);
   if (absoluteSnapshotPath === database.name) {
     throw new SqliteMigrationError(
@@ -1146,9 +1301,16 @@ export async function createVerifiedMigrationSnapshot(
         "Created snapshot failed integrity_check",
       );
     }
-    const snapshotSequence = readMigrationLedger(snapshotDatabase).at(-1)?.sequence ?? 0;
+    const snapshotLedger = readMigrationLedger(snapshotDatabase);
+    snapshotFingerprint = migrationSetFingerprint(snapshotLedger);
+    const snapshotSequence = snapshotLedger.at(-1)?.sequence ?? 0;
     const sourceSequenceAfterBackup = readMigrationLedger(database).at(-1)?.sequence ?? 0;
-    if (snapshotSequence !== sourceSequence || sourceSequenceAfterBackup !== sourceSequence) {
+    if (
+      snapshotSequence !== sourceSequence ||
+      sourceSequenceAfterBackup !== sourceSequence ||
+      snapshotFingerprint !== sourceFingerprint ||
+      readSchemaIdentity(database).fingerprint !== sourceFingerprint
+    ) {
       throw new SqliteMigrationError(
         SQLITE_MIGRATION_ERROR_CODES.SNAPSHOT_INVALID,
         "The source schema changed while the pre-migration snapshot was created",
@@ -1167,6 +1329,7 @@ export async function createVerifiedMigrationSnapshot(
     sourceDatabasePath: database.name,
     snapshotPath: absoluteSnapshotPath,
     schemaSequence: sourceSequence,
+    schemaFingerprint: snapshotFingerprint,
     digest: sha256(readFileSync(absoluteSnapshotPath)),
     verifiedAt: new Date().toISOString(),
   });
@@ -1174,12 +1337,48 @@ export async function createVerifiedMigrationSnapshot(
 
 export async function loadBundledMigrations(): Promise<readonly MigrationDefinition[]> {
   const migrationDirectory = new URL("./migrations/", import.meta.url);
-  const migrations = await Promise.all(
+  const legacy = await Promise.all(
     bundledMigrationFiles.map(async (metadata) => {
       const sql = await readFileAsync(new URL(metadata.file, migrationDirectory), "utf8");
-      return Object.freeze({ ...metadata, sql, digest: sha256(sql) });
+      return Object.freeze({
+        ...metadata,
+        id: legacyMigrationId(metadata.sequence),
+        sql,
+        digest: sha256(sql),
+      });
     }),
   );
+  const legacyFiles = new Set<string>(bundledMigrationFiles.map((metadata) => metadata.file));
+  const timestamped: { id: string; name: string; file: string }[] = [];
+  for (const file of readdirSync(migrationDirectory)) {
+    if (legacyFiles.has(file) || MIGRATION_META_FILE.test(file)) continue;
+    const match = TIMESTAMPED_MIGRATION_FILE.exec(file);
+    if (!match) {
+      throw new SqliteMigrationError(
+        SQLITE_MIGRATION_ERROR_CODES.DEFINITION_INVALID,
+        `Unrecognized file in the migration directory: ${file}`,
+        { file },
+      );
+    }
+    timestamped.push({ id: match[1] as string, name: match[2] as string, file });
+  }
+  timestamped.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const fresh = await Promise.all(
+    timestamped.map(async (entry, index) => {
+      const sql = await readFileAsync(new URL(entry.file, migrationDirectory), "utf8");
+      return Object.freeze({
+        id: entry.id,
+        sequence: legacy.length + index + 1,
+        name: entry.name,
+        changeSet: entry.name.replace(/_/g, "-"),
+        phase: "expand" as const,
+        file: entry.file,
+        sql,
+        digest: sha256(sql),
+      });
+    }),
+  );
+  const migrations = [...legacy, ...fresh];
   validateDefinitions(migrations);
   return Object.freeze(migrations);
 }

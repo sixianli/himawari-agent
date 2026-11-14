@@ -1,0 +1,20 @@
+CLAIM|1|一致|CLAUDE.md:1|本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。|@AGENTS.md
+CLAIM|2|一致|.claude/rules/incident-gates.md:9（提交 120fdd9）|改动前，事故规则要求每个线程开工时通读事故清单|读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。
+CLAIM|3|一致|docs/adr/0107-every-incident-gets-an-automatic-gate.md:46|ADR 0107 决定 3 原话“每个线程开工时读，收尾时更新”|每个线程开工时读，收尾时更新。
+CLAIM|4|一致|docs/incidents-and-gates.md:38|事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态）|&#124; 编号 &#124; 日期 &#124; 现象 &#124; 根因 &#124; 次数 &#124; 门槛（文件或命令） &#124; 状态 &#124;
+CLAIM|5|一致|docs/incidents-and-gates.md:40|绝大多数行的状态是“已落门槛”|&#124; I-01 &#124; 2026-10-25 &#124; 上线后只读回了首页 200 和服务端状态，没人在真浏览器里用一遍；长回答被截断、旧前端、搜索卡 5 分钟、重启后开关勾不上，都是 Andy 自己发现的 &#124; 上线脚本对“在浏览器里按用户的用法走一遍”没有任何条件 &#124; 4 &#124; `scripts/delivery-mode/browser-acceptance-gate.py`：`deploy.sh` 先核对 `test/integration/product-path-browser.test.ts` 的发布走查记录，缺一项就以退出码 5 拒绝上线（[详细](lessons.md#release-without-browser-walkthrough)） &#124; 已落门槛 &#124;
+CLAIM|6|一致|.claude/rules/incident-gates.md:4（提交 120fdd9）|开局自动载入的仓库内容包括 `AGENTS.md` 和 `.claude/rules/` 下的全部规则|每个事故都必须以一项自动检查结束，同一个错误出现三次就必须用硬门槛（会自动拦下的测试或可执行逻辑）挡住。云端线程（在 claude.ai 云端运行的工作线程）会加载本文件，所以每个会话都是通过这里知道这条规则的。它在快速模式和完整模式下都适用。
+CLAIM|7|一致|.claude/rules/prompt-prefix.md:4（提交 120fdd9）|其中只追加规则|这份规则约束所有会话，包括协调者和云端线程，快速模式和完整模式都适用。凡是组装或修改发给模型的内容，都要先读它。“发给模型的内容”包括系统提示、工具定义、历史、资料块、遮盖和压缩。
+CLAIM|8|一致|.claude/rules/incident-gates.md:9（提交 120fdd9）|事故规则还要求开工通读整份事故清单|读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。
+CLAIM|9|一致|docs/incidents-and-gates.md:12|清单记的是全部事故的完整经过|这份清单记两件事：Himawari 出过的事故，以及每个事故落下的“门槛”。这里的事故指生产故障、上线失败或回退、上线前很晚才被拦下的问题，以及 Andy 自己用的时候才发现、本来能被检查发现的缺陷。门槛指一道自动运行、不通过就拦住的检查，例如上线脚本的上线前检查、出包检查（生成上线操作包时在测试机 Hermes 上跑的检查）、测试、`npm run check` 里的一项，或者每次使用都会自检的脚本。只写文档或案例不算门槛。
+CLAIM|10|一致|docs/kv-cache-guide.md:14|这些内容留在上下文里，之后每一轮请求都要重发|KV 缓存，也叫提示缓存（prompt cache）：模型服务方把“请求开头完全相同的部分”缓存起来。下一次请求的开头只要和上一次逐字节相同，这部分就不用重新计算，速度更快，费用通常只有正常输入价的一成左右。匹配是逐字节的：开头任何一处变了，从那里往后的内容全部按全价重算。
+CLAIM|11|一致|.agents/instructions/prompt-prefix.md:4|只追加规则只在改发给模型的内容时才用得上|这份规则约束所有会话，包括协调者和云端线程，快速模式和完整模式都适用。凡是组装或修改发给模型的内容，都要先读它。“发给模型的内容”包括系统提示、工具定义、历史、资料块、遮盖和压缩。
+CLAIM|12|一致|scripts/check-incident-gates.mjs:106|之后照旧是检查结果行 `INCIDENT_GATES …`|`INCIDENT_GATES ${errors.length === 0 ? "passed" : "failed"} incidents=${incidents.length} errors=${errors.length}\n`
+CLAIM|13|一致|scripts/check-incident-gates.mjs:66|“第三次必须有硬门槛”仍由 `npm run check:incident-gates` 拦|errors.push(`INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
+CLAIM|14|一致|package.json:30|这一步现在也跑 `test/tooling/incident-gates.test.mjs`|"check:incident-gates": "node scripts/check-incident-gates.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/incident-gates.test.mjs",
+CLAIM|15|一致|AGENTS.md:43|`AGENTS.md` 的“发给模型的内容只追加”一节保留三条核心原则，写明只要动到发给模型的上下文就必须先读这份规则|设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.agents/instructions/prompt-prefix.md](.agents/instructions/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。那份规则不在开局自动载入，只要动到上面这些内容就必须先读，不能靠自己判断“影响不大”而跳过。拿不准一个改动算不算动到这些内容时，问自己下面几个问题，只要有一个答“会”或“不确定”，就算动到了，先去读它：
+CLAIM|16|一致|AGENTS.md:45-49|并列出 5 个用来判断“算不算动到”的问题|- 这个改动会不会让模型已经见过的请求开头变化？\n- 我加的值是不是每轮都一样？不一样的只能放在最后一条消息里。\n- 我是不是在存历史之前处理了消息？\n- 我加进去的列表或 JSON，顺序是不是固定的？\n- 这个改动会不会让同一对话换模型、换服务方，或者增删工具？
+CLAIM|17|一致|scripts/check-prompt-prefix.mjs:59|`npm run check:prompt-prefix` 照旧是阻断检查|process.exitCode = ok ? 0 : 1;
+CLAIM|18|一致|docs/kv-cache-guide.md:12|`docs/` 下指向只追加规则的链接已同步改成新路径 `.agents/instructions/prompt-prefix.md`|这份文档是 Himawari 组装“发给模型的请求”时的最佳实践。它写三样东西：每条做法是什么、为什么（附一手来源原话），以及 Himawari 现在做到了没有。开发时必须遵守的条目另写在 [.agents/instructions/prompt-prefix.md](../.agents/instructions/prompt-prefix.md)，两份的条目编号一致。
+
+外部 Claude Code 文档、PR 495 的说明、token 数和线程使用分布的估算未核对；决定 1/3/4 里新增或搬迁的内容按“计划”处理，未逐条当作现状。改动前的说法按提交 120fdd9 核对，HEAD 里 `.claude/rules/prompt-prefix.md` 已不存在、`.claude/rules/incident-gates.md:9` 也已改为开工不通读整份清单。

@@ -1,77 +1,44 @@
-import { MEMORY_CATEGORY_NAMES } from "@himawari-agent/gateway-contracts";
-import {
-  classificationWithIdentifiers,
-  mentionsSensitiveMaterial,
-} from "@himawari-agent/sensitive-capture";
+import { MEMORY_CATEGORY_NAMES, MEMORY_SENSITIVE_TOPICS } from "@himawari-agent/gateway-contracts";
 
 export type MemoryCategory = (typeof MEMORY_CATEGORY_NAMES)[number];
+export type MemoryTopic = (typeof MEMORY_SENSITIVE_TOPICS)[number];
 
 export interface ImportCandidate {
   readonly text: string;
   readonly category: MemoryCategory;
   readonly subCategory: string | null;
+  readonly topic: MemoryTopic | null;
   readonly sensitive: boolean;
   readonly duplicate: boolean;
+  readonly duplicateCheck: "pending" | "clear" | "similar" | "unchecked";
   readonly coding: boolean;
   readonly from: string;
   readonly checked: boolean;
+  readonly status: "classifying" | "ready" | "unclassified";
 }
+
+export interface ImportClassification {
+  readonly category: MemoryCategory;
+  readonly classification: "private" | "sensitive";
+  readonly topic: MemoryTopic | null;
+  readonly failed: boolean;
+}
+
+export type ImportDuplicateVerdict = "same" | "unsure" | "different" | "skipped";
 
 export interface ImportParse {
   readonly items: readonly ImportCandidate[];
 }
 
-const RULE = /不要|别|一律|每次|以后|总是|先.+再|never|always|don't|do not/i;
 const SKIPPED_SECTION =
   /what's in memory|older memory topics|^task \d+|rollout_summary_files|keywords/i;
 const MAXIMUM_TEXT = 500;
 
-export function guessCategory(text: string): { category: MemoryCategory; sensitive: boolean } {
-  if (/过敏|药|血压|病|医院|allerg|medic/i.test(text))
-    return { category: "health", sensitive: true };
-  if (/还款|工资|房租|存款|贷款|收入|信用卡/.test(text))
-    return { category: "finance", sensitive: true };
-  const category: MemoryCategory =
-    /妈|爸|老婆|老公|妻子|丈夫|朋友|同事|孩子|女儿|儿子|导师|室友/.test(text)
-      ? "relationship"
-      : RULE.test(text)
-        ? "rule"
-        : /喜欢|讨厌|偏好|爱吃|不吃|习惯|prefer/i.test(text)
-          ? "preference"
-          : /\d+\s*月\s*\d+\s*[日号]|明天|下周|下个月/.test(text)
-            ? "event"
-            : /目标|计划|打算|准备|想要/.test(text)
-              ? "goal"
-              : /项目|在做|开发/.test(text)
-                ? "project"
-                : "other";
-  return { category, sensitive: false };
-}
-
 export const normalizeMemoryText = (text: string) =>
-  text
-    .normalize("NFKC")
-    .replace(/\s+/g, "")
-    .replace(/^(?:我的|我|主人的|主人|用户的|用户)/, "")
-    .replace(/[，。；、,.;!！]+$/, "")
-    .toLowerCase();
+  text.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 
-function isDuplicate(key: string, existing: readonly string[]) {
-  return existing.some(
-    (known) =>
-      known === key ||
-      (known.length > 5 && key.includes(known)) ||
-      (key.length > 5 && known.includes(key)),
-  );
-}
-
-export function parseMemoryText(
-  name: string,
-  text: string,
-  existingTexts: readonly string[],
-): ImportParse {
+export function parseMemoryText(name: string, text: string): ImportParse {
   const agents = /agents\.md$/i.test(name);
-  const existing = existingTexts.map(normalizeMemoryText);
   const seen = new Set<string>();
   const items: ImportCandidate[] = [];
   let section = agents ? "agents" : "";
@@ -87,31 +54,19 @@ export function parseMemoryText(
     const key = normalizeMemoryText(line);
     if (seen.has(key)) return;
     seen.add(key);
-    const guess = guessCategory(line);
-    const sensitive =
-      guess.sensitive ||
-      mentionsSensitiveMaterial(line) ||
-      classificationWithIdentifiers(line, "private") === "sensitive";
-    const category: MemoryCategory = guess.sensitive
-      ? guess.category
-      : kind === "rule"
-        ? RULE.test(line)
-          ? "rule"
-          : "preference"
-        : kind === "project"
-          ? "project"
-          : guess.category;
-    const duplicate = isDuplicate(key, existing);
     const coding = kind === "project";
     items.push({
       text: line,
-      category,
+      category: coding ? "project" : "other",
       subCategory: coding ? (project || "Codex").slice(0, 32) : null,
-      sensitive,
-      duplicate,
+      topic: null,
+      sensitive: false,
+      duplicate: false,
+      duplicateCheck: "pending",
       coding,
       from: section && section !== "agents" ? `${name} · ${section}` : name,
-      checked: !duplicate && !sensitive && !coding,
+      checked: false,
+      status: "classifying",
     });
   };
   for (const rawLine of text.split(/\r?\n/)) {
@@ -148,14 +103,9 @@ export function parseMemoryText(
   return { items };
 }
 
-export function parseMemoryExport(
-  name: string,
-  text: string,
-  existingTexts: readonly string[],
-): ImportParse {
+export function parseMemoryExport(name: string, text: string): ImportParse {
   const data = JSON.parse(text) as { memories?: unknown };
   if (!Array.isArray(data.memories)) throw new Error("MEMORY_EXPORT_INVALID");
-  const existing = existingTexts.map(normalizeMemoryText);
   const items: ImportCandidate[] = [];
   for (const entry of data.memories as Record<string, unknown>[]) {
     const raw = entry?.["text"];
@@ -166,18 +116,71 @@ export function parseMemoryExport(
       ? (entry["category"] as MemoryCategory)
       : "other";
     const sensitive = entry["sensitive"] === true;
+    const topic = entry["sensitiveTopic"];
     const sub = entry["subCategory"];
-    const duplicate = isDuplicate(normalizeMemoryText(memoryText), existing);
     items.push({
       text: memoryText,
       category,
       subCategory: typeof sub === "string" && sub ? sub.slice(0, 32) : null,
+      topic:
+        sensitive && MEMORY_SENSITIVE_TOPICS.includes(topic as MemoryTopic)
+          ? (topic as MemoryTopic)
+          : null,
       sensitive,
-      duplicate,
+      duplicate: false,
+      duplicateCheck: "pending",
       coding: false,
       from: name,
-      checked: !duplicate && !sensitive,
+      checked: false,
+      status: "ready",
     });
   }
   return { items };
+}
+
+export function applyImportDuplicates(
+  items: readonly ImportCandidate[],
+  verdicts: readonly ImportDuplicateVerdict[],
+): readonly ImportCandidate[] {
+  return items.map((item, index) => {
+    if (item.duplicateCheck !== "pending") return item;
+    const verdict = verdicts[index] ?? "skipped";
+    const duplicate = verdict === "same";
+    const duplicateCheck =
+      verdict === "unsure" ? "similar" : verdict === "skipped" ? "unchecked" : "clear";
+    return {
+      ...item,
+      duplicate,
+      duplicateCheck,
+      checked:
+        item.status === "ready" &&
+        !duplicate &&
+        duplicateCheck === "clear" &&
+        !item.sensitive &&
+        !item.coding,
+    };
+  });
+}
+
+export function applyImportClassifications(
+  items: readonly ImportCandidate[],
+  results: readonly ImportClassification[],
+): readonly ImportCandidate[] {
+  let next = 0;
+  return items.map((item) => {
+    if (item.status !== "classifying") return item;
+    const result = results[next];
+    next += 1;
+    if (!result || result.failed)
+      return { ...item, sensitive: true, topic: "other", checked: false, status: "unclassified" };
+    const sensitive = result.classification === "sensitive";
+    return {
+      ...item,
+      category: item.coding ? item.category : result.category,
+      sensitive,
+      topic: sensitive ? (result.topic ?? "other") : null,
+      checked: !item.duplicate && item.duplicateCheck === "clear" && !sensitive && !item.coding,
+      status: "ready",
+    };
+  });
 }

@@ -77,4 +77,13 @@ describe("npm run check", () => {
   it("refuses a step that is not a plain npm script", () => {
     expect(() => stepNames("npm run a && node b.mjs")).toThrow("CHECK_STEP_NOT_AN_NPM_SCRIPT");
   });
+
+  it("gives every tsc run in the typecheck step a fixed heap limit above the 2.5 GB it needs", () => {
+    const runs = manifest.scripts.typecheck.split(" && ");
+    expect(runs).toHaveLength(2);
+    for (const run of runs)
+      expect(run).toMatch(
+        /^node --max-old-space-size=4096 node_modules\/typescript\/bin\/tsc -p \S+$/,
+      );
+  });
 });

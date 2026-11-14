@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type {
+  DerivedMemories,
   MemoryBasisChainNode,
   MemoryConsolidationChange,
   MemoryConsolidationRun,
@@ -8,6 +8,7 @@ import type {
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
 
@@ -16,8 +17,56 @@ export function consolidationLedgerId(changeId: string): string {
   return `ledger:${createHash("sha256").update(changeId).digest("hex").slice(0, 40)}`;
 }
 
-const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
+export const MEMORY_BASIS_CHAIN_MAX_DEPTH = 8;
 const MEMORY_BASIS_CHAIN_MAX_NODES = 200;
+
+export interface DerivedMemoryNode {
+  readonly memoryId: MemoryId;
+  readonly via: string;
+  readonly depth: number;
+}
+
+export interface DerivedMemoryTree {
+  readonly nodes: readonly DerivedMemoryNode[];
+  readonly truncated: boolean;
+}
+
+export function derivedMemories(
+  database: Database.Database,
+  input: { readonly ownerId: string; readonly agentId: string; readonly memoryId: string },
+  maxDepth: number,
+): DerivedMemoryTree {
+  const children = database.prepare(
+    `SELECT DISTINCT change.memory_id AS memoryId
+    FROM memory_consolidation_change_basis basis
+    JOIN memory_consolidation_changes change ON change.id = basis.change_id
+    WHERE basis.memory_id = ? AND change.owner_id = ? AND change.agent_id = ?
+      AND change.action = 'reflect' AND change.undone_at IS NULL AND change.memory_id <> basis.memory_id
+    ORDER BY change.memory_id`,
+  );
+  const seen = new Set<string>([input.memoryId]);
+  const found: DerivedMemoryNode[] = [];
+  let frontier: string[] = [input.memoryId];
+  let truncated = false;
+  for (let depth = 0; frontier.length > 0; depth += 1) {
+    const next: string[] = [];
+    for (const memoryId of frontier)
+      for (const { memoryId: child } of children.all(memoryId, input.ownerId, input.agentId) as {
+        memoryId: MemoryId;
+      }[]) {
+        if (seen.has(child)) continue;
+        if (depth >= maxDepth || found.length >= MEMORY_BASIS_CHAIN_MAX_NODES) {
+          truncated = true;
+          continue;
+        }
+        seen.add(child);
+        found.push(Object.freeze({ memoryId: child, via: memoryId, depth: depth + 1 }));
+        next.push(child);
+      }
+    frontier = next;
+  }
+  return Object.freeze({ nodes: Object.freeze(found), truncated });
+}
 const ACTIONS = new Set(["merge", "supersede", "archive", "reflect", "hold"]);
 
 const runSelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, day,
@@ -159,6 +208,10 @@ export class SqliteMemoryConsolidationOperations {
         return this.readBasis((payload as { changeId: string }).changeId);
       case "memoryConsolidation.readBasisChain":
         return this.readBasisChain(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryId: MemoryId },
+        );
+      case "memoryConsolidation.readDerived":
+        return this.readDerived(
           payload as { ownerId: OwnerId; agentId: AgentId; memoryId: MemoryId },
         );
       case "memoryConsolidation.markUndone":
@@ -363,6 +416,18 @@ export class SqliteMemoryConsolidationOperations {
       });
     };
     return walk(input.memoryId, 0);
+  }
+
+  private readDerived(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryId: MemoryId;
+  }): DerivedMemories {
+    const tree = derivedMemories(this.database, input, MEMORY_BASIS_CHAIN_MAX_DEPTH);
+    return Object.freeze({
+      memoryIds: Object.freeze(tree.nodes.map(({ memoryId }) => memoryId)),
+      truncated: tree.truncated,
+    });
   }
 
   private markUndone(input: { id: string; undoneAt: string }): boolean {

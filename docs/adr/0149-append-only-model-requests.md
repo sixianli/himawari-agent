@@ -52,7 +52,7 @@ date: "2026-11-02"
 
 1. 原生历史存实际发出去的那条用户消息，资料块照留，不再换回原话。删掉 `withOwnerWords`。
 2. 在 `<himawari-context>` 开头加一句：更早的消息里附的时间和资料只反映当时，不代表现在，以本条消息里的为准。它只出现在新发的消息里，已存的历史不改。
-3. 硬规则：已发给模型的内容不得改动、重排、删除，只能在末尾追加；每轮会变的内容只放最后一条用户消息；遮盖必须确定。写入 [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)，由 `AGENTS.md` 指向。
+3. 硬规则：已发给模型的内容不得改动、重排、删除，只能在末尾追加；每轮会变的内容只放最后一条用户消息；遮盖必须确定。写入 [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)，由 `AGENTS.md` 指向。
 4. 阻断检查 `npm run check:prompt-prefix`：用真实 Pi 适配器和真实出口遮盖对回环服务跑多轮对话（含工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间），逐字节检查后一次请求以前一次为开头；反向用例把历史里的用户消息改写、让系统提示带每轮变化的值，必须失败。测试同时在 `test/integration/thread-run-lifecycle.test.ts` 的真实数据库组合里检查跨轮前缀。
 5. 生产监控：后续轮次的 chat 请求命中率低于 50%（且输入不少于 1024 token、上游报告了缓存字段）时，服务日志写 `cache.follow_up_low_hit`（`apps/agent-service/src/cache-hit-monitor.ts`）；`scripts/operations/cache-hit-report.mjs --by turn` 按轮次和首次请求分开给出命中率。阈值 50% 的依据：改成只追加之后，后续轮次第一次请求的前缀等于上一次请求的全部内容，预期命中率约等于上一次输入占这一次输入的比例，生产数据里这个比例通常在 70% 以上；上游偶发零命中（见[没有查清的部分](#open-questions)）会触发日志，这是预期，日志是报告，不是告警。
 6. 双模型复核的问题清单加一条：这个改动会不会改变模型已经见过的请求开头（[.agents/instructions/model-review.md](../../.agents/instructions/model-review.md)）。

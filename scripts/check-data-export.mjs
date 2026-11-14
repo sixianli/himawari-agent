@@ -9,11 +9,12 @@ const TAG = "[P1-6]";
 const FILES = [
   "test/integration/data-export.test.ts",
   "test/integration/data-export-rules.test.ts",
+  "test/integration/data-export-external-proposals.test.ts",
   "test/integration/data-export-retrieval.test.ts",
   "test/integration/data-cli.test.ts",
   "test/integration/data-export-http.test.ts",
 ];
-const REQUIRED = 86;
+const REQUIRED = 108;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-data-export-"));

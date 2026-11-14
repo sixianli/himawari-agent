@@ -53,7 +53,16 @@ function capabilityLine(entry: ClientCapabilityEntry): string {
         .join(", ")}]`
     : "nil";
   const open = `[${(entry.tightenOpenKeys ?? []).map(swiftString).join(", ")}]`;
-  return `        ClientCapability(gateway: .${GATEWAY_CASES[entry.gateway]}, type: ${swiftString(entry.type)}, kind: .${entry.kind}, tier: .${TIER_CASES[entry.tier]}, tightenPayload: ${tighten}, tightenOpenKeys: ${open}),`;
+  const every = entry.tightenEveryItem
+    ? `ClientItemTighten(key: ${swiftString(entry.tightenEveryItem.key)}, equals: [${Object.entries(
+        entry.tightenEveryItem.equals,
+      )
+        .map(([key, value]) => `${swiftString(key)}: ${swiftString(value)}`)
+        .join(
+          ", ",
+        )}], nulls: [${entry.tightenEveryItem.nulls.map(swiftString).join(", ")}], openKeys: [${entry.tightenEveryItem.openKeys.map(swiftString).join(", ")}])`
+    : "nil";
+  return `        ClientCapability(gateway: .${GATEWAY_CASES[entry.gateway]}, type: ${swiftString(entry.type)}, kind: .${entry.kind}, tier: .${TIER_CASES[entry.tier]}, tightenPayload: ${tighten}, tightenOpenKeys: ${open}, tightenEveryItem: ${every}),`;
 }
 
 function nativePages(pages: readonly ClientPageEntry[]): string[] {
@@ -87,6 +96,25 @@ public enum ClientCapabilityTier: String, Sendable {
     case notOnPhone = "not_on_phone"
 }
 
+public struct ClientItemTighten: Sendable, Hashable {
+    public let key: String
+    public let equals: [String: String]
+    public let nulls: [String]
+    public let openKeys: [String]
+
+    func accepts(_ payload: JSONValue) -> Bool {
+        guard case .object(let fields) = payload, fields.count == 1, case .array(let items)? = fields[key], !items.isEmpty else {
+            return false
+        }
+        let expectedKeys = Set(equals.keys).union(nulls).union(openKeys)
+        return items.allSatisfy { item in
+            guard case .object(let entry) = item, Set(entry.keys) == expectedKeys else { return false }
+            return equals.allSatisfy { entry[$0.key] == JSONValue.string($0.value) }
+                && nulls.allSatisfy { entry[$0] == JSONValue.null }
+        }
+    }
+}
+
 public struct ClientCapability: Sendable, Hashable {
     public let gateway: ClientGateway
     public let type: String
@@ -94,11 +122,16 @@ public struct ClientCapability: Sendable, Hashable {
     public let tier: ClientCapabilityTier
     public let tightenPayload: [String: Bool]?
     public let tightenOpenKeys: [String]
+    public let tightenEveryItem: ClientItemTighten?
 
-    public func requiredTier(payloadKeys: Set<String>, payloadFlags: [String: Bool]?) -> ClientCapabilityTier {
-        guard let tightenPayload, let payloadFlags, Set(tightenOpenKeys).isSubset(of: payloadKeys) else { return tier }
-        let checked = payloadFlags.filter { !tightenOpenKeys.contains($0.key) }
-        return checked == tightenPayload ? .tighten : tier
+    public func requiredTier(payload: JSONValue) -> ClientCapabilityTier {
+        if let tightenEveryItem, tightenEveryItem.accepts(payload) { return .tighten }
+        guard
+            let tightenPayload,
+            Set(tightenOpenKeys).isSubset(of: payload.keys),
+            let flags = payload.flags(ignoring: tightenOpenKeys)
+        else { return tier }
+        return flags == tightenPayload ? .tighten : tier
     }
 }
 

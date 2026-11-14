@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CLIENT_CAPABILITY_TABLE,
+  CLIENT_PAGE_TABLE,
   CLIENT_GATEWAY_MESSAGE_TYPES,
   CLIENT_GATEWAY_SCHEMAS,
   CLIENT_GATEWAYS,
@@ -48,10 +49,11 @@ describe("[第11批] 客户端能力表", () => {
     for (const entry of CLIENT_CAPABILITY_TABLE) {
       if (entry.tier === "not_on_phone") expect(entry.reason?.length ?? 0).toBeGreaterThan(0);
       else expect(entry.reason).toBeUndefined();
-      if (entry.tightenPayload) {
+      if (entry.tightenPayload || entry.tightenEveryItem) {
         expect(entry.kind).toBe("command");
         expect(entry.tier).toBe("change");
       }
+      if (entry.tightenPayload && entry.tightenEveryItem) expect.fail(entry.type);
     }
   });
 
@@ -87,6 +89,56 @@ describe("[第11批] 客户端能力表", () => {
     expect(memory?.tightenOpenKeys).toBeUndefined();
     const rule = findClientCapability("v2", "memory.rule.respond");
     expect(rule && requiredClientTier(rule, {})).toBe("change");
+  });
+
+  it("外部记忆整批全是拒绝且不带改写文字才算收紧，有一条留下或改写就算改", () => {
+    const external = findClientCapability("v2", "memory.external.respond");
+    const reject = (proposalId: string) => ({ proposalId, decision: "reject", editedText: null });
+    const tier = (payload: unknown) => external && requiredClientTier(external, payload);
+    expect(tier({ items: [reject("a")] })).toBe("tighten");
+    expect(tier({ items: [reject("a"), reject("b")] })).toBe("tighten");
+    expect(
+      tier({ items: [reject("a"), { proposalId: "b", decision: "keep", editedText: null }] }),
+    ).toBe("change");
+    expect(tier({ items: [{ proposalId: "a", decision: "keep", editedText: "改过" }] })).toBe(
+      "change",
+    );
+    expect(tier({ items: [{ proposalId: "a", decision: "reject", editedText: "改过" }] })).toBe(
+      "change",
+    );
+    expect(tier({ items: [{ proposalId: "a", decision: "reject" }] })).toBe("change");
+    expect(
+      tier({ items: [{ proposalId: "a", decision: "reject", editedText: null, extra: 1 }] }),
+    ).toBe("change");
+    expect(tier({ items: [] })).toBe("change");
+    expect(tier({ items: reject("a") })).toBe("change");
+    expect(tier({ items: [reject("a")], extra: true })).toBe("change");
+    expect(tier({})).toBe("change");
+    expect(tier(null)).toBe("change");
+  });
+
+  it("设备管理、导出和登录设备的登记档位", () => {
+    const tiers = (type: string) => findClientCapability("v2", type)?.tier;
+    for (const type of [
+      "device.list.read",
+      "server.status.read",
+      "login.devices.read",
+      "files.list.read",
+      "data.export.status.read",
+      "home.read",
+    ])
+      expect(tiers(type), type).toBe("read");
+    for (const type of [
+      "device.pairing.start",
+      "device.pairing.confirm",
+      "device.rename",
+      "device.revoke",
+      "login.device.revoke",
+      "login.devices.revoke_others",
+      "data.export.start",
+    ])
+      expect(tiers(type), type).toBe("change");
+    expect(tiers("data.export.cancel")).toBe("routine");
   });
 
   it("正文还带别的设置的开关整个算改，暂停提醒用只有方向的单独类型", () => {
@@ -138,5 +190,28 @@ describe("[第11批] 客户端能力表", () => {
 
   it("任务页的 GitHub 监控开关手机上不做", () => {
     expect(findClientCapability("v2", "github.monitor.set_state")?.tier).toBe("not_on_phone");
+  });
+
+  it("运维类页面留在网页：三页和它们的消息类型手机上不做，点头和服务器状态不受影响", () => {
+    for (const webPage of ["host-workspaces", "workers", "health-deployment"]) {
+      const page = CLIENT_PAGE_TABLE.find((entry) => entry.webPage === webPage);
+      expect(page && "notOnPhone" in page ? page.notOnPhone : undefined, webPage).toContain(
+        "多端分工",
+      );
+    }
+    const operations = CLIENT_CAPABILITY_TABLE.filter(
+      (entry) =>
+        entry.gateway === "v2" &&
+        (entry.type.startsWith("workspace.") ||
+          entry.type.startsWith("host.") ||
+          entry.type.startsWith("delegation.")),
+    );
+    expect(operations.length).toBeGreaterThanOrEqual(12);
+    for (const entry of operations) {
+      expect(entry.tier, entry.type).toBe("not_on_phone");
+      expect(entry.reason, entry.type).toContain("多端分工");
+    }
+    expect(findClientCapability("v2", "approval.respond")?.tier).toBe("change");
+    expect(findClientCapability("v2", "capability.list")?.tier).toBe("read");
   });
 });

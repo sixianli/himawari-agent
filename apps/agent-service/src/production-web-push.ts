@@ -161,7 +161,7 @@ export interface PushCompanionChannel {
   deliver(input: {
     readonly now: string;
     readonly approvals: readonly ApprovalRequest[];
-    readonly badge: number;
+    readonly badge: () => Promise<number | undefined>;
     readonly kinds: readonly WebPushOutboxItem["kind"][];
     readonly accountLocale: WebPushLocale | null;
     readonly visible: boolean;
@@ -187,6 +187,7 @@ export interface ProductionWebPushOptions {
   readonly memories: Pick<ProductMemoryStatePort, "readMany">;
   readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
+  readonly awaitingCount: () => Promise<number | undefined>;
   readonly proactive?: ProactivePushSource;
   readonly museChannel?: MuseChannelPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
@@ -325,7 +326,7 @@ export class ProductionWebPush {
       })
     ).filter(({ remindAt }) => Date.parse(now) - Date.parse(remindAt) <= REMINDER_WINDOW_MS);
     await this.#collect(now, approvals, reminders);
-    await this.#deliver(now, approvals, reminders.length + approvals.length);
+    await this.#deliver(now, approvals);
     await this.#options.companion?.maintain({
       now,
       approvals,
@@ -423,7 +424,16 @@ export class ProductionWebPush {
     return this.#runThreads.get(runId) ?? null;
   }
 
-  async #deliver(now: string, approvals: readonly ApprovalRequest[], badge: number): Promise<void> {
+  async #awaiting(): Promise<number | undefined> {
+    try {
+      return await this.#options.awaitingCount();
+    } catch (error) {
+      this.#options.onFailure(error);
+      return undefined;
+    }
+  }
+
+  async #deliver(now: string, approvals: readonly ApprovalRequest[]): Promise<void> {
     const { ownerId, agentId, store } = this.#options;
     const kinds = await store.readKinds({ ownerId, agentId });
     const accountLocale = (await this.#options.readLocale?.()) ?? null;
@@ -436,11 +446,16 @@ export class ProductionWebPush {
       contents.set(item.sourceKey, built);
       return built;
     };
+    let counted: Promise<number | undefined> | undefined;
+    const awaiting = () => {
+      counted ??= this.#awaiting();
+      return counted;
+    };
     await this.#options.companion
       ?.deliver({
         now,
         approvals,
-        badge,
+        badge: awaiting,
         kinds,
         accountLocale,
         visible,
@@ -467,7 +482,13 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", null);
         continue;
       }
-      await this.#send(entry, now, content, badge, accountLocale ?? entry.subscription.locale);
+      await this.#send(
+        entry,
+        now,
+        content,
+        (await awaiting()) ?? 0,
+        accountLocale ?? entry.subscription.locale,
+      );
     }
   }
 

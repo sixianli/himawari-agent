@@ -59,7 +59,9 @@ export function sandboxReconciliationFailureReason(error: unknown): string {
       ].includes(error.message)
     )
       return error.message;
-    if (error.message === "JOB_HOST_CONTROL_TIMEOUT") return "SANDBOX_CONTROL_TIMED_OUT";
+    if (["JOB_HOST_CONTROL_TIMEOUT", "JOB_HOST_GATEWAY_CONTROL_TIMEOUT"].includes(error.message))
+      return "SANDBOX_CONTROL_TIMED_OUT";
+    if (error.message === "JOB_HOST_GATEWAY_UNAVAILABLE") return "SANDBOX_SUPERVISOR_UNAVAILABLE";
     if (error.message === "EXECUTION_STOP_UNCONFIRMED")
       return "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED";
     if (["JOB_HOST_CONTROL_EVIDENCE_INVALID", "JOB_HOST_CONTROL_TOO_LARGE"].includes(error.message))

@@ -6,15 +6,18 @@ import {
   APPLE_PUSH_CONFIGURATION_DEFAULTS,
   APPLE_PUSH_ENVIRONMENTS,
   APPLE_PUSH_TOPIC_PATTERN,
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   type ApplePushConfiguration,
   type ApplePushEnvironment,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
+  type ConfiguredConversationReview,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
@@ -27,6 +30,10 @@ import {
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  IMPORT_DUPLICATE_DEFAULTS,
+  IMPORT_DUPLICATE_RANGES,
+  type ImportDuplicateConfiguration,
+  type ImportDuplicateTuning,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
@@ -163,6 +170,29 @@ function memoryRetrieval(value: unknown): ConfiguredMemoryRetrieval | undefined 
   if (input["dedupeSameSource"] !== undefined)
     parsed["dedupeSameSource"] = boolean(input["dedupeSameSource"], `${field}.dedupeSameSource`);
   return Object.freeze(parsed) as ConfiguredMemoryRetrieval;
+}
+
+const CONVERSATION_REVIEW_LIMITS = {
+  maximumSegmentsPerDay: [0, 50],
+  maximumSourceCharacters: [1000, 200000],
+  maximumRelatedMemories: [0, 200],
+  maximumNewMemoriesPerDay: [0, 100],
+  maximumOutputTokens: [256, 8192],
+} as const;
+
+function conversationReview(value: unknown): ConfiguredConversationReview | undefined {
+  if (value === undefined) return undefined;
+  const field = "configuration.memory.conversationReview";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", ...Object.keys(CONVERSATION_REVIEW_LIMITS)], field);
+  const parsed: Record<string, number | boolean> = {};
+  if (input["enabled"] !== undefined)
+    parsed["enabled"] = boolean(input["enabled"], `${field}.enabled`);
+  for (const [key, [minimum, maximum]] of Object.entries(CONVERSATION_REVIEW_LIMITS)) {
+    if (input[key] === undefined) continue;
+    parsed[key] = integer(input[key], `${field}.${key}`, minimum, maximum);
+  }
+  return Object.freeze(parsed) as ConfiguredConversationReview;
 }
 
 function unitInterval(value: unknown, field: string): number {
@@ -1281,6 +1311,31 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
   });
 }
 
+function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
+  const field = "configuration.runPolicy.importDuplicates";
+  const input = record(value, field);
+  const keys = Object.keys(IMPORT_DUPLICATE_DEFAULTS) as (keyof ImportDuplicateTuning)[];
+  rejectUnknown(input, [...keys, "model", "secretRef"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = IMPORT_DUPLICATE_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? IMPORT_DUPLICATE_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as ImportDuplicateTuning;
+  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+  });
+}
+
 function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
   const field = "configuration.runPolicy.mcpRead";
   const input = record(value, field);
@@ -1423,6 +1478,32 @@ function parseDevice(value: unknown): DeviceConfiguration {
   });
 }
 
+function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["homeFeed"]> {
+  const field = "configuration.runPolicy.homeFeed";
+  const input = record(value, field);
+  const bounds = {
+    awaitingLimit: [1, 1000],
+    otherLimit: [0, 200],
+    sourceReadLimit: [1, 200],
+    deadlineLeadMinutes: [0, 43_200],
+    recentHours: [1, 720],
+    upcomingLimit: [0, 200],
+    upcomingDays: [1, 366],
+  } as const satisfies Record<keyof typeof DEFAULT_HOME_FEED, readonly [number, number]>;
+  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
+  rejectUnknown(input, keys, field);
+  return Object.freeze(
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        input[key] === undefined
+          ? DEFAULT_HOME_FEED[key]
+          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
+      ]),
+    ) as Record<keyof typeof bounds, number>,
+  );
+}
+
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
   const field = "configuration.runPolicy.realEval";
   const input = record(value, field);
@@ -1455,6 +1536,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     [
       "version",
       "timeZone",
+      "approvalBodyPreviewCharacters",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1468,8 +1550,10 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "webPush",
       "applePush",
       "device",
+      "homeFeed",
       "proactive",
       "museIntake",
+      "importDuplicates",
       "realEval",
       "mcpRead",
     ],
@@ -1495,6 +1579,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   }
   return Object.freeze({
     ...(timeZone === undefined ? {} : { timeZone }),
+    ...(input["approvalBodyPreviewCharacters"] === undefined
+      ? {}
+      : {
+          approvalBodyPreviewCharacters: integer(
+            input["approvalBodyPreviewCharacters"],
+            "configuration.runPolicy.approvalBodyPreviewCharacters",
+            1,
+            APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+          ),
+        }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
@@ -1509,12 +1603,16 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["applePush"] === undefined ? {} : { applePush: parseApplePush(input["applePush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
+    ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["importDuplicates"] === undefined
+      ? {}
+      : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1650,10 +1748,19 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
     memory,
-    ["adapter", "version", "storagePath", "dimensions", "minimumSimilarity", "retrieval"],
+    [
+      "adapter",
+      "version",
+      "storagePath",
+      "dimensions",
+      "minimumSimilarity",
+      "retrieval",
+      "conversationReview",
+    ],
     "configuration.memory",
   );
   const retrieval = memoryRetrieval(memory["retrieval"]);
+  const conversationReviewSettings = conversationReview(memory["conversationReview"]);
   const minimumSimilarity =
     memory["minimumSimilarity"] === undefined
       ? undefined
@@ -1809,6 +1916,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       APPLE_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.applePush.secretRef",
     );
+  if (runPolicy?.importDuplicates)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.importDuplicates.secretRef,
+      "model-auth",
+      "configuration.runPolicy.importDuplicates.secretRef",
+    );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(
       secretReferences,
@@ -1836,11 +1950,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     if (
       !descriptor ||
       descriptor.role === "embedding" ||
+      descriptor.api !== "openai-completions" ||
       !descriptor.allowedDataClassifications.includes("private")
     )
       throw invalid(
         "configuration.runPolicy.proactive.modelRef",
-        "must name a configured generation model that accepts private data",
+        "must name a configured openai-completions generation model that accepts private data",
       );
   }
   const realEval = runPolicy?.realEval;
@@ -1904,6 +2019,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
       ...(retrieval === undefined ? {} : { retrieval }),
+      ...(conversationReviewSettings === undefined
+        ? {}
+        : { conversationReview: conversationReviewSettings }),
     }),
     repositoryAllowlistRefs: stringArray(
       input["repositoryAllowlistRefs"],

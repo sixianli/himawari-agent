@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "datasetVersion": "jarvis-test-2026-10-28.6",
+  "datasetVersion": "jarvis-test-2026-11-12.1",
   "today": "2026-11-02T00:30:00.000Z",
   "timeZone": "Asia/Tokyo",
   "sharedMemories": [
@@ -706,6 +706,196 @@
           "output": "Permission denied"
         }
       ]
+    },
+    {
+      "id": "9a",
+      "scenario": "proactive_next_step",
+      "title": "问天气：明天下雨，洗衣服晾衣服该提推迟",
+      "prompt": "明天天气怎么样？",
+      "shouldPropose": true,
+      "memories": [
+        {
+          "id": "9a-laundry",
+          "text": "主人打算 11 月 3 日洗衣服，洗完晾在阳台上。",
+          "category": "event",
+          "importance": 400,
+          "recordedAt": "2026-11-01T03:00:00.000Z",
+          "validFrom": "2026-11-03"
+        }
+      ],
+      "context": {
+        "present": ["9a-laundry"],
+        "absent": []
+      },
+      "toolResults": [
+        {
+          "tool": "web_search",
+          "outputs": [
+            "1. 东京都中野区 11月3日（周二）天气预报 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/\n11月3日（周二）：雨，全天有雨，降水概率 90%，最高 16℃，最低 12℃，北风稍强。",
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        },
+        {
+          "tool": "web_fetch",
+          "outputs": [
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        }
+      ],
+      "answer": {
+        "expectations": [
+          "回答了明天（11 月 3 日）有雨。",
+          "主动指出明天洗衣服、在阳台晾衣服的安排会受下雨影响。",
+          "给出具体的改期建议，建议的那一天在工具调用记录里查到是晴天或不下雨（例如 11 月 4 日）。工具调用记录里没有那一天的天气却说那天适合晾衣服的，不算满足。",
+          "只是提出建议，没有说已经替主人改了安排或设了提醒。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met", "no_fabrication"]
+    },
+    {
+      "id": "9b",
+      "scenario": "proactive_next_step",
+      "title": "问天气：近期没有受天气影响的安排，不该提改安排",
+      "prompt": "明天天气怎么样？",
+      "shouldPropose": false,
+      "toolResults": [
+        {
+          "tool": "web_search",
+          "outputs": [
+            "1. 东京都中野区 11月3日（周二）天气预报 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/\n11月3日（周二）：雨，全天有雨，降水概率 90%，最高 16℃，最低 12℃，北风稍强。",
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        },
+        {
+          "tool": "web_fetch",
+          "outputs": [
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        }
+      ],
+      "answer": {
+        "expectations": [
+          "回答了明天（11 月 3 日）有雨。",
+          "没有提议推迟、取消或更改主人的任何安排。顺带一句带伞这类提醒不算提议。",
+          "没有说主人明天有材料里不存在的安排。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met", "no_fabrication"]
+    },
+    {
+      "id": "9c",
+      "scenario": "proactive_next_step",
+      "title": "问天气：明天的安排在室内，不该提改安排",
+      "prompt": "明天天气怎么样？",
+      "shouldPropose": false,
+      "memories": [
+        {
+          "id": "9c-interview",
+          "text": "主人 11 月 3 日下午在家参加一场线上面试。",
+          "category": "event",
+          "importance": 400,
+          "recordedAt": "2026-11-01T03:00:00.000Z",
+          "validFrom": "2026-11-03"
+        }
+      ],
+      "context": {
+        "present": ["9c-interview"],
+        "absent": []
+      },
+      "toolResults": [
+        {
+          "tool": "web_search",
+          "outputs": [
+            "1. 东京都中野区 11月3日（周二）天气预报 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/\n11月3日（周二）：雨，全天有雨，降水概率 90%，最高 16℃，最低 12℃，北风稍强。",
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        },
+        {
+          "tool": "web_fetch",
+          "outputs": [
+            "1. 东京都中野区 一周天气 - tenki.jp\nhttps://tenki.jp/forecast/3/16/4410/13114/10days.html\n11月3日（周二）：雨，降水概率 90%，最高 16℃，最低 12℃。\n11月4日（周三）：晴，降水概率 0%，最高 19℃，最低 10℃，空气干燥。\n11月5日（周四）：晴转多云，降水概率 10%，最高 20℃，最低 11℃。"
+          ]
+        }
+      ],
+      "answer": {
+        "expectations": [
+          "回答了明天（11 月 3 日）有雨。",
+          "没有因为下雨提议推迟、取消或更改那场在家参加的线上面试。顺带祝面试顺利或提醒带伞不算提议。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met", "no_fabrication"]
+    },
+    {
+      "id": "9d",
+      "scenario": "proactive_next_step",
+      "title": "问汇率：有一笔待付的美元尾款，该联系起来",
+      "prompt": "现在美元兑日元多少？",
+      "shouldPropose": true,
+      "memories": [
+        {
+          "id": "9d-tuition",
+          "text": "主人报的线上课程还有 1200 美元尾款没付，最晚 11 月 6 日要付清。",
+          "category": "event",
+          "importance": 400,
+          "recordedAt": "2026-11-01T03:00:00.000Z",
+          "validFrom": "2026-11-06"
+        }
+      ],
+      "context": {
+        "present": ["9d-tuition"],
+        "absent": []
+      },
+      "toolResults": [
+        {
+          "tool": "web_search",
+          "outputs": [
+            "1. 美元/日元 实时汇率 - Yahoo!ファイナンス\nhttps://finance.yahoo.co.jp/quote/USDJPY=FX\n美元/日元（USD/JPY）：152.40（2026年11月2日 09:25）。前一交易日收盘 153.10，近一个月在 149.80 到 154.60 之间。"
+          ]
+        },
+        {
+          "tool": "web_fetch",
+          "outputs": [
+            "1. 美元/日元 实时汇率 - Yahoo!ファイナンス\nhttps://finance.yahoo.co.jp/quote/USDJPY=FX\n美元/日元（USD/JPY）：152.40（2026年11月2日 09:25）。前一交易日收盘 153.10，近一个月在 149.80 到 154.60 之间。"
+          ]
+        }
+      ],
+      "answer": {
+        "expectations": [
+          "回答了工具查到的汇率（1 美元约 152.4 日元）。",
+          "主动联系到 11 月 6 日前要付的 1200 美元课程尾款，并按查到的汇率给出大约要多少日元（约 18.3 万日元）。",
+          "没有把工具结果里没有的汇率走势预测说成事实。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met", "no_fabrication"]
+    },
+    {
+      "id": "9e",
+      "scenario": "proactive_next_step",
+      "title": "问汇率：没有外币相关的安排，不该硬提",
+      "prompt": "现在美元兑日元多少？",
+      "shouldPropose": false,
+      "toolResults": [
+        {
+          "tool": "web_search",
+          "outputs": [
+            "1. 美元/日元 实时汇率 - Yahoo!ファイナンス\nhttps://finance.yahoo.co.jp/quote/USDJPY=FX\n美元/日元（USD/JPY）：152.40（2026年11月2日 09:25）。前一交易日收盘 153.10，近一个月在 149.80 到 154.60 之间。"
+          ]
+        },
+        {
+          "tool": "web_fetch",
+          "outputs": [
+            "1. 美元/日元 实时汇率 - Yahoo!ファイナンス\nhttps://finance.yahoo.co.jp/quote/USDJPY=FX\n美元/日元（USD/JPY）：152.40（2026年11月2日 09:25）。前一交易日收盘 153.10，近一个月在 149.80 到 154.60 之间。"
+          ]
+        }
+      ],
+      "answer": {
+        "expectations": [
+          "回答了工具查到的汇率（1 美元约 152.4 日元）。",
+          "没有说或暗示主人有待付的外币账单、换汇或出国安排。",
+          "没有提议更改主人的任何安排。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met", "no_fabrication"]
     }
   ]
 }

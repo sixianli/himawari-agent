@@ -253,6 +253,31 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     await h.repository.close();
   });
 
+  it("外部提议全部拒绝免面容；含保留或改写的要确认签名且不留审计", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const respond = (items: unknown[]) =>
+      gatewayBody({ gateway: "v2", type: "memory.external.respond", payload: { items } });
+    const keep = await gateway(
+      h,
+      client,
+      respond([{ proposalId: "p1", decision: "keep", editedText: null }]),
+    );
+    expect(keep.statusCode).toBe(403);
+    expect(keep.json()).toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    expect(await auditTrail(h)).toEqual([]);
+    const reject = await gateway(
+      h,
+      client,
+      respond([{ proposalId: "p1", decision: "reject", editedText: null }]),
+    );
+    expect(reject.json()).not.toEqual({ error: { code: "DEVICE_GATEWAY_CONFIRM_REQUIRED" } });
+    expect((await auditTrail(h))[0]).toContain(
+      `device.gateway.tighten:${client.deviceId}:v2:memory.external.respond:accepted`,
+    );
+    await h.repository.close();
+  });
+
   it("关掉一种推送只用设备密钥就过了面容这一关，打开要确认签名", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
@@ -468,6 +493,17 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     );
     expect(legacy.statusCode).toBe(403);
     expect(legacy.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
+
+    const issued = await challenge(h, client);
+    const commit = await gateway(
+      h,
+      client,
+      gatewayBody({ gateway: "v2", type: "workspace.commit", payload: {} }),
+      { nonce: issued.challenge },
+    );
+    expect(commit.statusCode).toBe(403);
+    expect(commit.json()).toEqual({ error: { code: "DEVICE_GATEWAY_NOT_ON_PHONE" } });
+    expect(await auditTrail(h)).toEqual([]);
 
     const unknown = await gateway(
       h,

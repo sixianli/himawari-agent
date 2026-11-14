@@ -1,7 +1,20 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
-import { RecentAuthenticationGuard } from "@himawari-agent/application";
+import {
+  PAIRED_DEVICE_KINDS,
+  PAIRED_DEVICE_RELEASE_CHANNELS,
+  RecentAuthenticationGuard,
+} from "@himawari-agent/application";
 import { createSessionId } from "@himawari-agent/domain";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+} from "@himawari-agent/persistence-sqlite";
 import {
   DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES,
   devicePairingNumber,
@@ -961,6 +974,44 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("frees a stream slot when the device drops the connection", async () => {
+    const h = await harness();
+    h.configuration.current = { ...h.configuration.current, streamConnections: 1 };
+    const client = await pairAndConfirm(h);
+    const address = await h.app.listen({ host: "127.0.0.1", port: 0 });
+    const connect = () =>
+      new Promise<{ status: number; drop: () => void }>((resolve, reject) => {
+        const request = signedRequest(h, client, { method: "GET", path: "/api/device/v1/stream" });
+        const url = new URL(request.url);
+        const outgoing = httpRequest(
+          `${address}${url.pathname}${url.search}`,
+          { method: "GET", headers: request.headers },
+          (response) => {
+            response.resume();
+            resolve({ status: response.statusCode ?? 0, drop: () => outgoing.destroy() });
+          },
+        );
+        outgoing.on("error", () => undefined);
+        outgoing.once("error", reject);
+        outgoing.end();
+      });
+    try {
+      const first = await connect();
+      expect(first.status).toBe(200);
+      const refused = await connect();
+      expect(refused.status).toBe(429);
+      refused.drop();
+      first.drop();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const again = await connect();
+      expect(again.status).toBe(200);
+      again.drop();
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
+  });
+
   it("answers a refused stream handshake with an error body", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
@@ -1193,5 +1244,55 @@ describe("[P1-1] device client routes", () => {
       413,
     );
     await h.repository.close();
+  });
+});
+
+describe("[P1-1] device kinds in the database", () => {
+  it("keeps the kind and release channel lists equal to the program and refuses unregistered values", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-device-kinds-"));
+    try {
+      const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+      applyMigrations(database, await loadBundledMigrations());
+      const column = (sql: string) =>
+        (database.prepare(sql).all() as Record<string, string>[]).map(
+          (row) => Object.values(row)[0],
+        );
+      expect(column("SELECT kind FROM paired_device_kinds ORDER BY kind")).toEqual(
+        [...PAIRED_DEVICE_KINDS].sort(),
+      );
+      expect(
+        column(
+          "SELECT release_channel FROM paired_device_release_channels ORDER BY release_channel",
+        ),
+      ).toEqual([...PAIRED_DEVICE_RELEASE_CHANNELS].sort());
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('owner-kinds', 0)").run();
+      database
+        .prepare(
+          "INSERT INTO agents (id, owner_id, revision) VALUES ('agent-kinds', 'owner-kinds', 0)",
+        )
+        .run();
+      const insert = (kind: string, channel: string, id: string) =>
+        database
+          .prepare(
+            `INSERT INTO paired_devices (id, owner_id, agent_id, revision, kind, name, release_channel,
+               device_public_key, confirm_public_key, status, supported_actions, paired_at)
+             VALUES (?, 'owner-kinds', 'agent-kinds', 0, ?, 'n', ?, 'a', 'b', 'pending', '[]',
+               '2026-11-14T00:00:00.000Z')`,
+          )
+          .run(id, kind, channel);
+      expect(() => insert("iphone", "direct", `dev_${"a".repeat(22)}`)).not.toThrow();
+      expect(() => insert("ipad", "direct", `dev_${"b".repeat(22)}`)).toThrow(/not registered/u);
+      expect(() => insert("mac", "sideload", `dev_${"c".repeat(22)}`)).toThrow(/not registered/u);
+      expect(() =>
+        database
+          .prepare("UPDATE paired_devices SET kind = 'tv' WHERE id = ?")
+          .run(`dev_${"a".repeat(22)}`),
+      ).toThrow(/not registered/u);
+      database.prepare("INSERT INTO paired_device_kinds (kind) VALUES ('ipad')").run();
+      expect(() => insert("ipad", "direct", `dev_${"d".repeat(22)}`)).not.toThrow();
+      database.close();
+    } finally {
+      await rm(directory, { recursive: true });
+    }
   });
 });

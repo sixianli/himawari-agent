@@ -37,7 +37,7 @@ const approvedUsd = Number(options.get("confirm-cost"));
 if (!options.has("confirm-cost") || !Number.isFinite(approvedUsd) || approvedUsd <= 0) {
   const last = (await readHistory("evals/jarvis-test/history.jsonl")).at(-1);
   console.error(
-    `JARVIS_LIVE_COST_APPROVAL_REQUIRED：真模型层会花钱，开跑前要先报预计费用并经 Andy 同意，再用 --confirm-cost=<美元上限> 运行；花费到上限就停。上一轮完整跑（18 条×3 次）花了 ${last?.costMicros == null ? "未测量" : `${(last.costMicros / 1_000_000).toFixed(2)} 美元`}，被测模型是 ${last?.models.subject.id ?? "未知"}。`,
+    `JARVIS_LIVE_COST_APPROVAL_REQUIRED：真模型层会花钱，开跑前要先报预计费用并经 Andy 同意，再用 --confirm-cost=<美元上限> 运行；花费到上限就停。上一轮完整跑（${last?.cases?.length ?? "未知"} 条×${last?.trials ?? "未知"} 次）花了 ${last?.costMicros == null ? "未测量" : `${(last.costMicros / 1_000_000).toFixed(2)} 美元`}，被测模型是 ${last?.models.subject.id ?? "未知"}。`,
   );
   process.exit(2);
 }

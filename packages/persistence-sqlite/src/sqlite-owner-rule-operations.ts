@@ -85,7 +85,7 @@ export class SqliteOwnerRuleOperations {
       .prepare(
         `SELECT ${columns} FROM rule_book_rules
          WHERE owner_id = ? AND agent_id = ? AND substr(rule_id, 1, ${OWNER_RULE_PREFIX.length}) = ?
-           AND (? = 1 OR status IN ('active', 'needs_review'))
+           AND (? = 1 OR status <> 'retired')
          ORDER BY updated_at DESC, rule_id LIMIT ${MAX_LISTED}`,
       )
       .all(input.ownerId, input.agentId, OWNER_RULE_PREFIX, input.includeRetired ? 1 : 0) as Row[];
@@ -177,7 +177,9 @@ export class SqliteOwnerRuleOperations {
     return this.database.transaction((): StoredOwnerRule | undefined => {
       const changed = this.database
         .prepare(
-          `UPDATE rule_book_rules SET status = ?, revision = revision + 1, updated_at = ?
+          `UPDATE rule_book_rules SET status = ?, revision = revision + 1, updated_at = ?,
+             review_after = NULL, review_attempts = 0, review_failure = NULL,
+             suspend_reason = NULL, suggestion = NULL
            WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status != ?`,
         )
         .run(

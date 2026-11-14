@@ -87,7 +87,7 @@ export function applePushAlertPayload(input: {
   readonly navigate: string;
   readonly tag: string;
   readonly kind: WebPushOutboxItem["kind"];
-  readonly badge: number;
+  readonly badge?: number | undefined;
   readonly actions: readonly ApplePushAction[];
 }): string {
   const build = (title: string, body: string) =>
@@ -95,7 +95,7 @@ export function applePushAlertPayload(input: {
       aps: {
         alert: { title, body },
         sound: "default",
-        badge: input.badge,
+        ...(input.badge === undefined ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
         "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
@@ -286,7 +286,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         entry,
         now,
         content,
-        input.badge,
+        await input.badge(),
         input.accountLocale ?? entry.registration.locale,
         input.approvals,
       );
@@ -361,7 +361,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     entry: ApplePushDue,
     now: string,
     content: Extract<PushContent, { expired: false }>,
-    badge: number,
+    badge: number | undefined,
     locale: WebPushLocale,
     approvals: readonly ApprovalRequest[],
   ): Promise<void> {

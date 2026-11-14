@@ -232,6 +232,7 @@ function holdDeviceStream(
   deviceId: string,
   stream: Readable,
   maximum: number,
+  connection: NodeJS.EventEmitter,
 ): void {
   const open = counts.get(deviceId) ?? 0;
   if (open >= maximum) {
@@ -241,10 +242,19 @@ function holdDeviceStream(
     });
   }
   counts.set(deviceId, open + 1);
-  stream.once("close", () => {
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
     const remaining = (counts.get(deviceId) ?? 1) - 1;
     if (remaining > 0) counts.set(deviceId, remaining);
     else counts.delete(deviceId);
+  };
+  stream.once("close", release);
+  stream.once("error", release);
+  connection.once("close", () => {
+    release();
+    stream.destroy();
   });
 }
 
@@ -280,8 +290,14 @@ async function* bounded(
 
 export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApiRouteOptions) {
   const streamCounts = new Map<string, number>();
-  const holdStream = (deviceId: string, stream: Readable, maximum: number) =>
-    holdDeviceStream(streamCounts, deviceId, stream, maximum);
+  const holdStream = (
+    deviceId: string,
+    stream: Readable,
+    maximum: number,
+    connection: NodeJS.EventEmitter,
+  ) => {
+    holdDeviceStream(streamCounts, deviceId, stream, maximum, connection);
+  };
   const scope = (authentication: GatewayAuthenticationContext): PairedDeviceScope =>
     ({
       ownerId: authentication.ownerId,
@@ -511,9 +527,14 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               configuration.connectionMaxSeconds * 1000,
             ),
           );
-          holdStream(authenticated.device.id, stream, configuration.streamConnections);
-          options.setStreamHeaders(reply);
-          return reply.send(stream);
+          holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+          try {
+            options.setStreamHeaders(reply);
+            return reply.send(stream);
+          } catch (error) {
+            stream.destroy();
+            throw error;
+          }
         }
         const after = new URLSearchParams(rawQuery(request)).get("after") ?? "0";
         if (!/^(0|[1-9][0-9]{0,15})$/u.test(after)) options.rejectBody(400);
@@ -830,11 +851,16 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             configuration.connectionMaxSeconds * 1000,
           ),
         );
-        holdStream(authenticated.device.id, stream, configuration.streamConnections);
+        holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
         options.push?.streamOpened(authenticated.device.id);
         stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
-        options.setStreamHeaders(reply);
-        return reply.send(stream);
+        try {
+          options.setStreamHeaders(reply);
+          return reply.send(stream);
+        } catch (error) {
+          stream.destroy();
+          throw error;
+        }
       });
     },
     { prefix: DEVICE_API_PREFIX },

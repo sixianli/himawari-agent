@@ -245,11 +245,16 @@ describe("[IOS-4] push channels", () => {
       onDelivery: (outcome) => deliveries.push(outcome),
       onFailure: (error) => failures.push(error),
     });
+    const awaiting: { value: number | undefined; calls: number } = { value: 1, calls: 0 };
     const push = new ProductionWebPush({
       ...scope,
       store,
       sender: webSender,
       presence,
+      awaitingCount: async () => {
+        awaiting.calls += 1;
+        return awaiting.value;
+      },
       companion: applePush,
       reminders: {
         listDue: async ({ now }) =>
@@ -348,6 +353,7 @@ describe("[IOS-4] push channels", () => {
       deliveries,
       approvals,
       reminders,
+      awaiting,
       configuration,
       device,
       run,
@@ -888,5 +894,34 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.webRequests).toEqual(["/laptop"]);
     expect(context.failures).toContain(broken);
+  });
+
+  it("[IOS-4] puts the count of things waiting for the owner on the badge, and leaves the badge out when that count cannot be read in full", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    context.awaiting.value = 7;
+    context.reminder("counted");
+    await context.push.tick();
+    const [first] = context.apns.ofType("alert");
+    expect((first?.json["aps"] as { badge?: number }).badge).toBe(7);
+
+    context.awaiting.value = undefined;
+    context.reminder("unknown", at(T0, 1));
+    context.setClock(at(T0, 1));
+    await context.push.tick();
+    const second = context.apns.ofType("alert")[1];
+    expect(second).toBeDefined();
+    expect(Object.keys(second?.json["aps"] as object)).not.toContain("badge");
+  });
+
+  it("[IOS-4] does not read the count when nothing is sent", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    expect(context.awaiting.calls).toBe(0);
   });
 });
