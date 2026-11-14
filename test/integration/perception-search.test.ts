@@ -1,4 +1,6 @@
+import path from "node:path";
 import { DEFAULT_SEARCH_ASK } from "@himawari-agent/application";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProductionSearchControl } from "../../apps/agent-service/src/production-search.ts";
 import {
@@ -12,6 +14,19 @@ import {
 import { ingest, perceptionScope, utterance } from "../fixtures/perception-test-client.ts";
 
 afterEach(removeDeviceHarnessDirectories);
+
+function indexRows(h: Harness, recordId: string): number {
+  const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
+  try {
+    return (
+      database
+        .prepare("SELECT COUNT(*) AS n FROM perception_search_terms WHERE record_id = ?")
+        .get(recordId) as { n: number }
+    ).n;
+  } finally {
+    database.close();
+  }
+}
 
 function control(h: Harness) {
   return new ProductionSearchControl({
@@ -69,6 +84,8 @@ describe("perception literal search", () => {
     const spoken = utterance(h, "我对花生过敏", { seconds: -8 });
     await ingest(h, client, [spoken, utterance(h, "今天下午开会讨论预算", { seconds: -6 })]);
 
+    expect(indexRows(h, spoken.id)).toBeGreaterThan(0);
+
     const found = await ask(h, "我对什么过敏");
     expect(found.state).toBe("answered");
     expect(found.basis[0]).toMatchObject({ kind: "perception", recordId: spoken.id });
@@ -80,6 +97,7 @@ describe("perception literal search", () => {
       .perception()
       .setRecordStatus({ ...perceptionScope, recordId: spoken.id, status: "deleted" });
     expect(deleted).toBe(true);
+    expect(indexRows(h, spoken.id)).toBe(0);
     expect(await ask(h, "我对什么过敏")).toMatchObject({ state: "not_found", basis: [] });
   });
 });
