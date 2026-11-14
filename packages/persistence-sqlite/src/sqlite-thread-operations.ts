@@ -1089,7 +1089,7 @@ export class SqliteThreadOperations {
           `INSERT INTO triggers (
             id, owner_id, agent_id, thread_id, idempotency_key, source_type,
             source_id, payload_ref, source_proof_ref, occurred_at
-          ) VALUES (?, ?, ?, ?, ?, 'user_message', ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.triggerId,
@@ -1097,6 +1097,7 @@ export class SqliteThreadOperations {
           input.agentId,
           input.threadId,
           input.idempotencyKey,
+          input.triggerSource ?? "user_message",
           input.messageId,
           input.contentRef,
           input.sourceProofRef,

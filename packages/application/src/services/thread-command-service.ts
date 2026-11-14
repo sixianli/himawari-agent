@@ -178,6 +178,7 @@ export class ThreadCommandService {
   }
 
   async admitOwnerMessage(input: {
+    readonly triggerSource?: "user_message" | "external_event";
     readonly modelSelection?: import("../ports/run-execution-source.js").RunModelSelection;
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
@@ -221,6 +222,9 @@ export class ThreadCommandService {
         messageId,
         contentRef: input.contentRef,
         ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+        ...(input.triggerSource && input.triggerSource !== "user_message"
+          ? { triggerSource: input.triggerSource }
+          : {}),
       }),
       occurredAt,
       authority: this.dependencies.authority(),
