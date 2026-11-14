@@ -42,6 +42,7 @@ import {
   ProductionMcpRead,
   type ProductionMcpReadOptions,
 } from "../src/production-mcp-read.js";
+import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { createMcpAccess } from "./fixtures/mcp-access.js";
 import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 
@@ -2196,6 +2197,97 @@ describe("[P1-1] device management through gateway v2", () => {
       const revokedStale = await command("device.revoke", { deviceId, expectedRevision: 0 });
       expect(revokedStale.statusCode).not.toBe(200);
       expect((await list()).payload.devices[0]).toMatchObject({ status: "revoked", revision: 3 });
+
+      const secondCode = randomBytes(16).toString("base64url");
+      expect((await command("device.pairing.start", { pairingCode: secondCode })).statusCode).toBe(
+        200,
+      );
+      const second = {
+        device: generateDeviceTestKeyPair(),
+        confirm: generateDeviceTestKeyPair(),
+      };
+      const secondPaired = await app.inject({
+        method: "POST",
+        url: "/api/device/v1/pair",
+        headers: { host: "agent.example.test", "content-type": "application/json" },
+        payload: JSON.stringify({
+          pairingCode: secondCode,
+          kind: "iphone",
+          name: "Confirmed iPhone",
+          releaseChannel: "direct",
+          devicePublicKey: second.device.publicKeySpkiBase64,
+          confirmPublicKey: second.confirm.publicKeySpkiBase64,
+        }),
+      });
+      expect(secondPaired.statusCode, secondPaired.body).toBe(201);
+      const secondDevice = (secondPaired.json() as { device: { id: string } }).device.id;
+      expect(
+        (await command("device.pairing.confirm", { deviceId: secondDevice, expectedRevision: 0 }))
+          .statusCode,
+      ).toBe(200);
+      const webLogins = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: { ...message("login.devices.read"), kind: "query", payload: {} },
+      });
+      expect(webLogins.statusCode, webLogins.body).toBe(200);
+      const webLogin = (
+        webLogins.json() as { payload: { devices: { deviceId: string; current: boolean }[] } }
+      ).payload.devices.find((device) => device.current);
+      expect(webLogin).toBeDefined();
+      const signedGateway = (body: unknown, confirm?: string) =>
+        buildDeviceTestRequest({
+          method: "POST",
+          origin: ORIGIN,
+          path: "/api/device/v1/gateway",
+          body: JSON.stringify(body),
+          deviceId: secondDevice,
+          deviceKey: second.device.privateKey,
+          createdAtSeconds: Math.floor(NOW.valueOf() / 1000),
+          ...(confirm ? { confirmKey: second.confirm.privateKey, nonce: confirm } : {}),
+        });
+      const sendDevice = (request: ReturnType<typeof signedGateway>) =>
+        app.inject({
+          method: "POST",
+          url: new URL(request.url).pathname,
+          headers: request.headers,
+          ...(request.body ? { payload: request.body } : {}),
+        });
+      const signOutLogin = {
+        gateway: "v2",
+        type: "login.device.revoke",
+        messageId: "device-message-sign-out",
+        idempotencyKey: "device-idempotency-sign-out",
+        dataClassification: "private",
+        risk: "low",
+        payload: { deviceId: webLogin?.deviceId, recentAuthenticationRef: "device" },
+      };
+      const unconfirmed = await sendDevice(signedGateway(signOutLogin));
+      expect(unconfirmed.statusCode, unconfirmed.body).toBe(403);
+      const challengeRequest = buildDeviceTestRequest({
+        method: "POST",
+        origin: ORIGIN,
+        path: "/api/device/v1/approvals/challenge",
+        body: "{}",
+        deviceId: secondDevice,
+        deviceKey: second.device.privateKey,
+        createdAtSeconds: Math.floor(NOW.valueOf() / 1000),
+      });
+      const issued = await sendDevice(challengeRequest);
+      expect(issued.statusCode, issued.body).toBe(201);
+      const signedOut = await sendDevice(
+        signedGateway(signOutLogin, (issued.json() as { challenge: string }).challenge),
+      );
+      expect(signedOut.statusCode, signedOut.body).toBe(200);
+      others.push(unconfirmed.body, issued.body, signedOut.body);
+      const afterSignOut = await app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/queries",
+        headers: requestHeaders(token, cookie),
+        payload: { ...message("login.devices.read"), kind: "query", payload: {} },
+      });
+      expect(afterSignOut.statusCode).toBe(401);
 
       const printed = [...logged.mock.calls, ...errored.mock.calls].map(([chunk]) => String(chunk));
       for (const text of [...leaked, ...others, ...printed]) {

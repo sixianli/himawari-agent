@@ -172,6 +172,7 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 6], start: "22:00", end: "08:00" }],
     importantSenders: ["@city.shinjuku.lg.jp"],
   }),
+  fixture("command", "proactive.pause", {}),
   fixture("command", "proactive.insight.respond", {
     insightId: "proactive-insight-01",
     action: "rate",
