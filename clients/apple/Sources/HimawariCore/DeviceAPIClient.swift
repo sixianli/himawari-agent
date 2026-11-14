@@ -226,9 +226,10 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     private struct ErrorBody: Decodable {
         struct Inner: Decodable {
             let code: String
+            let reasonCode: String?
+            let reason: String?
             let serverTime: String?
             let pairingCodeTtlSeconds: Int?
-            let reason: String?
         }
         let error: Inner
     }
@@ -236,7 +237,7 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
         let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
-        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason)
+        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
     }
 
     static func serverTime(_ body: Data) -> Date? {
