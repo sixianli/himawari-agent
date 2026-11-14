@@ -959,6 +959,10 @@ const loginDevicesSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+export const GATEWAY_ERROR_REASON_CODES = Object.freeze(["LOGIN_DEVICES_STILL_CHANGING"] as const);
+export type GatewayErrorReasonCode = (typeof GATEWAY_ERROR_REASON_CODES)[number];
+export const isGatewayErrorReasonCode = (value: string): value is GatewayErrorReasonCode =>
+  (GATEWAY_ERROR_REASON_CODES as readonly string[]).includes(value);
 const loginDevicesRevokeOthersCommandSchema = object({
   ...commandEnvelope("login.devices.revoke_others"),
   payload: object({ recentAuthenticationRef: nullable(machineString) }),

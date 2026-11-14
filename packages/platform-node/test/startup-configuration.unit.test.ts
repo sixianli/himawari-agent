@@ -1635,6 +1635,46 @@ it("[PG-12] accepts proactive Gmail checks only with a Google client secret and 
   }
 });
 
+it("[PG-12][reverse] rejects a proactive model that the mail check cannot call, before the service starts", () => {
+  const raw = config("/tmp/himawari-proactive-specialist-config");
+  (raw["modelDescriptors"] as Record<string, unknown>[]).push({
+    ref: "model-specialist",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private"],
+    disclosure: "external_remote",
+    secretRef: "provider-specialist",
+  });
+  raw["secretReferences"] = [
+    ...(raw["secretReferences"] as unknown[]),
+    { ref: "provider-specialist", version: "v1", purpose: "model-auth", scope: "model-specialist" },
+    { ref: "google-oauth", version: "v1", purpose: "google-oauth-client", scope: "agent" },
+  ];
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const gmail = { clientId: "123-abc.apps.googleusercontent.com", clientSecretRef: "google-oauth" };
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-primary", gmail } };
+  expect(() => parseProductConfiguration(raw, "2026-11-13T00:00:00.000Z")).not.toThrow();
+  raw["runPolicy"] = { ...policy, proactive: { modelRef: "model-specialist", gmail } };
+  expect(() => parseProductConfiguration(raw, "2026-11-13T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.proactive.modelRef" }),
+    }),
+  );
+});
+
 it("[P6-demo] accepts a fake inbox in place of Gmail, in one of the offered languages, and never both at once", () => {
   const raw = config("/tmp/himawari-demo-inbox-config");
   const policy = {
