@@ -112,21 +112,34 @@ export class VoiceAddresseeJudge {
     if (known) return (await known.judged) ?? "addressed_unsure";
     if (!this.#admit(request.deviceId, at, configuration)) return "addressed_unsure";
     const input = { heardName: request.heardName, text: request.text };
-    if (!(await this.#options.reserve(this.#options.model.estimateMicros(input))))
-      return "addressed_budget";
-    const judged = this.#judge(input, configuration);
+    const judged = this.#reserveAndJudge(input, configuration);
     device.set(key, { judged, at });
     while (device.size > configuration.cacheEntriesPerDevice) {
       const oldest = device.keys().next().value;
       if (oldest === undefined) break;
       device.delete(oldest);
     }
-    const outcome = await judged;
-    if (outcome === null) {
+    let outcome: VoiceAddresseeOutcome | null;
+    try {
+      outcome = await judged;
+    } catch (error) {
       if (device.get(key)?.judged === judged) device.delete(key);
-      return "addressed_unsure";
+      throw error;
+    }
+    if (outcome === null || outcome === "addressed_budget") {
+      if (device.get(key)?.judged === judged) device.delete(key);
+      return outcome ?? "addressed_unsure";
     }
     return outcome;
+  }
+
+  async #reserveAndJudge(
+    input: { readonly heardName: string; readonly text: string },
+    configuration: VoiceAddresseeConfiguration,
+  ): Promise<VoiceAddresseeOutcome | null> {
+    if (!(await this.#options.reserve(this.#options.model.estimateMicros(input))))
+      return "addressed_budget";
+    return this.#judge(input, configuration);
   }
 
   async #judge(

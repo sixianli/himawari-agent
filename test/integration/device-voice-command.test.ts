@@ -319,4 +319,50 @@ describe("[iOS-8] the decision model decides whether a name call is meant for Hi
     });
     expect(h.decisions.requests).toHaveLength(1);
   });
+
+  it("asks the model once when the same sentence arrives twice at the same time", async () => {
+    const { h, client, threadId } = await setup();
+    h.decisions.answer = () => ({ ...decisionAnswer(0.97), delayMs: 300 });
+    sequence += 1;
+    const id = String(sequence).padStart(4, "0");
+    const post = (messageId: string) =>
+      devicePost(h, client, "messages", {
+        messageId,
+        threadId,
+        expectedRevision: 1,
+        text: "帮我把明天的会改到下午",
+        utteranceId: `utterance-voice-${id}`,
+        voice: named(airpods),
+      });
+    const [first, second] = await Promise.all([
+      post(`device-message-voice-${id}-a`),
+      post(`device-message-voice-${id}-b`),
+    ]);
+    expect(first.status).toBe(second.status);
+    expect(h.decisions.requests).toHaveLength(1);
+  });
+
+  it("asks first when the decision model's answer is larger than the limit", async () => {
+    const { h, client, threadId } = await setup();
+    h.decisions.answer = () => ({
+      status: 200,
+      body: { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) },
+    });
+    const refused = await say(h, client, airpods, threadId);
+    expect(refused.body).toEqual({
+      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
+    });
+    expect(await commands(h)).toEqual([]);
+  });
+
+  it("puts the fixed question before the sentence in the request to the decision model", async () => {
+    const { h, client, threadId } = await setup();
+    await say(h, client, airpods, threadId);
+    expect(Object.keys(h.decisions.requests[0]?.body ?? {})).toEqual([
+      "model",
+      "questions",
+      "input",
+      "providerOptions",
+    ]);
+  });
 });

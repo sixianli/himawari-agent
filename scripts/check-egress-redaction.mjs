@@ -76,7 +76,6 @@ export const EXTERNAL_EGRESS_PATTERNS = Object.freeze([
   { name: "AI Gateway decision request", pattern: /\/decisions[`"']/u },
   { name: "Exa MCP request", pattern: /https:\/\/mcp\.exa\.ai\/mcp/u },
   { name: "DeepSeek web tool request", pattern: /\/v1\/tools\/(?:search|fetch)/u },
-  { name: "AI Gateway decision request", pattern: /\/decisions[`"']/u },
 ]);
 
 export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(

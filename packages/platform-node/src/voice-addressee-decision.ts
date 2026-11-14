@@ -54,6 +54,9 @@ export function voiceAddresseeRequestBody(
   const options = { known: new Map<string, string>(), tag: sequentialPlaceholderTag() };
   return JSON.stringify({
     model,
+    questions: [
+      { type: "predicate", name: QUESTION_NAME, instructions: VOICE_ADDRESSEE_QUESTION.text },
+    ],
     input: [
       {
         role: "user",
@@ -67,9 +70,6 @@ export function voiceAddresseeRequestBody(
           },
         ],
       },
-    ],
-    questions: [
-      { type: "predicate", name: QUESTION_NAME, instructions: VOICE_ADDRESSEE_QUESTION.text },
     ],
     providerOptions: { gateway: { zeroDataRetention: true } },
   });
@@ -108,9 +108,24 @@ export class VoiceAddresseeDecision implements VoiceAddresseeModel {
     });
     if (!response.ok)
       throw new VoiceAddresseeDecisionFailure(`VOICE_ADDRESSEE_HTTP_${response.status}`);
-    const text = await response.text();
-    if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES)
+    const declared = Number(response.headers.get("content-length") ?? 0);
+    if (declared > MAX_RESPONSE_BYTES)
       throw new VoiceAddresseeDecisionFailure("VOICE_ADDRESSEE_RESPONSE_TOO_LARGE");
+    const reader = response.body?.getReader();
+    if (!reader) throw new VoiceAddresseeDecisionFailure("VOICE_ADDRESSEE_RESPONSE_INVALID");
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new VoiceAddresseeDecisionFailure("VOICE_ADDRESSEE_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
     let body: unknown;
     try {
       body = JSON.parse(text);
