@@ -1,0 +1,4 @@
+{"id": "r4ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`amends` 只写了一端，ADR 0198 缺少 `amended_by`", "valid": true, "class": "error", "severity": "low", "trigger": "后来的人读 ADR 0198 时", "consequence": "只是文档说明滞后：读到过时的“503 不会再发”或看不到修订关系，不影响运行", "modelSeverity": "低"}
+{"id": "r4ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 0198 决定 7 的原句仍与代码相反", "valid": true, "class": "error", "severity": "low", "trigger": "后来的人读 ADR 0198 时", "consequence": "只是文档说明滞后：读到过时的“503 不会再发”或看不到修订关系，不影响运行", "modelSeverity": "低"}
+{"id": "r4ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "背景句“本 ADR 把它改成 2 次”没有限定范围", "valid": true, "class": "better"}
+{"id": "r4ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说明不完整", "valid": true, "class": "better"}

@@ -1,0 +1,1 @@
+{"id": "11", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|11|不一致|apps/control-center/src/i18n/resources/zh-CN.ts:1004|并在界面上写“可能已存下一部分”|    \"这轮对话的记忆补做了 3 次仍没成功（抽取或保存都算），这一轮没有记下任何内容，系统不再重试\",", "outcome": "model-wrong", "evidenceFile": "docs/adr/0222-retry-and-queue-failed-memory-capture.md", "evidence": "说明里写明可能已存下一部分"}

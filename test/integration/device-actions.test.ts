@@ -7,7 +7,6 @@ import {
   type DeviceActionIntent,
   DeviceActionRegistry,
   PERCEPTION_CONFIGURATION_DEFAULTS,
-  PerceptionOriginGate,
 } from "@himawari-agent/application";
 import { createRunId } from "@himawari-agent/domain";
 import {
@@ -82,13 +81,6 @@ function setup(h: Harness) {
     devices: (scope) => h.repository.pairedDevices().listDevices(scope),
     readText: h.readText,
     configuration: () => h.perceptionConfiguration.current,
-    gate: new PerceptionOriginGate({
-      scope: perceptionScope,
-      store: h.repository.perception(),
-      ledger: h.repository.decisionLedger(),
-      proposals: { receive: async () => undefined },
-      now: () => h.clock.now(),
-    }),
     ...h.actions.tools,
     timeZone: "Asia/Tokyo",
     now: () => h.clock.now(),
@@ -96,14 +88,20 @@ function setup(h: Harness) {
   let calls = 0;
   const act = async (runId: string, args: Record<string, unknown>, toolCallId?: string) =>
     (
-      (await tools.run({
-        runId: createRunId(runId),
-        toolCallId: toolCallId ?? `call:${++calls}`,
-        capabilityRef: "device.action",
-        capabilityHandleRef: null,
-        arguments: args as never,
-        dataClassification: "private",
-      })) as { value: Record<string, unknown> }
+      (await tools.run(
+        {
+          runId: createRunId(runId),
+          toolCallId: toolCallId ?? `call:${++calls}`,
+          capabilityRef: "device.action",
+          capabilityHandleRef: null,
+          arguments: args as never,
+          dataClassification: "private",
+        },
+        {
+          authorize: async () => undefined,
+          markExternalContent: () => h.externalContent.mark(createRunId(runId), "perception_read"),
+        },
+      )) as { value: Record<string, unknown> }
     ).value;
   return { tools, act };
 }
@@ -168,13 +166,27 @@ async function changePolicy(
   body: Record<string, unknown>,
   confirmed: boolean,
 ) {
+  const nonce = confirmed
+    ? (
+        (
+          await send(
+            h,
+            signedRequest(h, client, {
+              method: "POST",
+              path: "/api/device/v1/approvals/challenge",
+              body: "{}",
+            }),
+          )
+        ).json() as { challenge: string }
+      ).challenge
+    : undefined;
   const response = await send(
     h,
     signedRequest(h, client, {
       method: "POST",
       path: "/api/device/v1/actions/policy",
       body: JSON.stringify(body),
-      ...(confirmed ? { confirmKey: client.confirmKeys.privateKey } : {}),
+      ...(nonce === undefined ? {} : { confirmKey: client.confirmKeys.privateKey, nonce }),
     }),
   );
   return { status: response.statusCode, body: response.json() as Record<string, unknown> };
@@ -813,6 +825,7 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       scope: perceptionScope,
       store: full.deviceActions(),
       perception: h.repository.perception(),
+      externalContent: h.externalContent,
       devices: (scope) => h.repository.pairedDevices().listDevices(scope),
       ledger: h.repository.decisionLedger(),
       payloads: h.repository.payloadStore(ownerId, agentId),
@@ -938,6 +951,24 @@ describe("[iOS-9A] review round 3: actions nobody can verify do not block the qu
 });
 
 describe("[iOS-9A] actions that need the owner in person", () => {
+  it("tells the owner's authorization when the run already read content from outside, and not before", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.delete"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    await addRun(h, "run-2");
+    const request = { action: "calendar.delete", arguments: { eventId: "evt-1" } };
+    const seen: DeviceActionIntent[] = [];
+    h.actions.authorization.current = ownerIsAsked(seen);
+    await act("run-1", request);
+    await h.externalContent.mark(createRunId("run-2"), "perception_read");
+    await act("run-2", request);
+    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([false, true]);
+    await h.repository.close();
+  });
+
   it("[reverse] is not carried out while the device is offline or the owner's presence is unproven", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

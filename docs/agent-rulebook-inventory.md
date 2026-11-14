@@ -69,7 +69,7 @@ date: "2026-11-10"
 | --- | --- | --- | --- | --- | --- | --- |
 | H-1 | 命中主人的“重要发件人”名单（整个邮箱地址或域名）的邮件，判断结果不得低于“值得知道”；拿不准的强制改成“请看原信”。代码标识 `floor_important_sender` | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)；名单由主人在设置里维护，每个发件人是谁、何时填的，仓库内无记载（Andy 2026-11-10 说想不起来） | `rules/rule-book.ts` 的 `importantSenderRule`、`proactive-rules.ts` 的 `floorHitIds`；名单存在 `rule_book_rules`（规则 `floor_important_sender`，带修订号和历史，[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md)） | 硬 | 某人的事一定提醒 | `test/integration/proactive-mail-check.test.ts` 的 PG-8（夹具默认名单含 smbc.co.jp）、降频一组里“never backs off a floor-rule reminder” |
 | H-2 | 发件人域名是 go.jp、lg.jp、ac.jp、ed.jp（含子域名）的邮件，同 H-1 抬升。代码标识 `floor_public_domain`。名单是规则手册里的内置规则，写在代码的数据文件里，主人改不了 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md) | `rules/rule-book.ts` 的 `BUILT_IN_RULES` | 硬 | 某类事一定提醒 | PG-4（lg.jp 域名） |
-| H-3 | 标题或摘要里有收费、扣款、付款、退款、账单、請求、引落、invoice、payment、refund 等中日英金钱词的邮件，同 H-1 抬升。代码标识 `floor_money_words`。词表是规则手册里的内置规则，写在代码的数据文件里 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md) | `rules/rule-book.ts` 的 `BUILT_IN_RULES` | 硬 | 某类事一定提醒 | PG-9（“お引落し”）、PG-17、PG-18、OM-3 |
+| H-3 | 模型逐封判断为“涉及主人要付出、被扣、可收回或已入账的钱款”的邮件（规则事实 `money_state` 为 `yes`），同 H-1 抬升；模型没给或格式不对时不命中。代码标识 `floor_money_words`，第 2 版起不再读词表 | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0209](adr/0209-rule-book-with-cel-expressions-and-judge.md)、[ADR 0248](adr/0248-money-floor-follows-the-models-judgement.md) | `rules/rule-book.ts` 的 `BUILT_IN_RULES` | 硬 | 某类事一定提醒 | T7（涉钱判断，含“扣款成功通知”词表命中但模型答否的反向用例）、PG-17、PG-18、OM-3 |
 | H-4 | 抬升的算法：判断是“要你做事”的不动；判断是“拿不准”或“请看原信”的一律改成“请看原信”；判断是“不用管”的改成“值得知道” | [ADR 0106](adr/0106-proactive-loop-v1-gmail-read-only.md) | `proactive-rules.ts` 的 `applyFloor` | 硬 | 同 H-1 到 H-3 的共用算法 | PG-8（“请看原信”抬升） |
 | H-5 | 主人自己发出的邮件不适用地板规则：同样的词，收到的邮件会被抬升，自己发的不会；到每日费用上限时也不为自己发的邮件直接生成提醒 | [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 决定第 6 条 | `proactive-mail-check-service.ts` 里 `item.sentByOwner ? [] : floorHitIds(...)` | 硬 | 尚无 | OM-3 |
 | H-6 | 优先级为低的“要你做事”不放上提醒页，除非命中地板；“值得知道”只有命中地板才上提醒页 | 测试编号 PG-17、PG-18；没有 ADR 专门记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `proactive-rules.ts` 的 `isReminderWorthy`、`keepOffReminderPage` | 硬 | 某类事不提醒 | PG-17（低优先级）、PG-18（值得知道只有命中地板才上提醒页） |
@@ -122,7 +122,7 @@ date: "2026-11-10"
 | S-12 | 资料里没有的以前的信息，用 recall 查；查不到就说不记得，不编造 | 同上 | `chat.identity` | 软 | 尚无 | 无 |
 | S-13 | 本轮主人说的和记忆冲突，以本轮为准 | 同上 | `chat.identity` | 软 | 尚无 | 无 |
 | S-14 | 设提醒必须用 reminder_set，失败时不说“已设好”，没有这个工具时请主人去提醒页新建；写进文件不算设了提醒 | 仓库内无记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `chat.identity`、`tools.reminder-set`、`tool-result.reminder-*` | 软（工具返回的失败说明是程序给的） | 尚无 | 无 |
-| S-15 | “主动”：看到和主人安排、目标、偏好有关的冲突、风险、下一步，用一两句话提出来；主动是提醒和建议，不是替主人做决定 | [产品愿景](product-vision.md) 的主动原则 | `chat.identity` | 软 | 尚无 | 无 |
+| S-15 | “主动”：看到和主人安排、目标、偏好有关的冲突、风险、下一步，用一两句话提出来；提之前能用本轮的工具查清楚的先查，再提一个主人可以直接点头的具体做法并说出依据，查不到依据的不提；主动是提醒和建议，不是替主人做决定 | [产品愿景](product-vision.md) 的主动原则 | `chat.identity` | 软 | 尚无 | 无 |
 | S-16 | 需要批准的操作照常调用，不要先口头问，不要绕过审批；被拒绝后不要换工具或换说法再做同一件事 | 仓库内无记载；立这条规矩的那次对话无出处（Andy 2026-11-10 说想不起来） | `chat.identity`“做事”一节；真正的拦截是程序（见 [E](#product-policy)） | 硬+软 | 尚无 | 审批相关集成测试覆盖程序部分 |
 | S-17 | 批准只对主人看到的那个动作和内容有效，改了要重新给他看 | 同上 | `chat.identity`；程序里是 `approval_hash_mismatch` | 硬+软 | 尚无 | 同上 |
 | S-18 | 没真正执行的操作不说完成，没查到的信息不说成事实；说“有结果告诉你”之前要有真会回报的机制 | 同上 | `chat.identity` | 软 | 尚无 | 无 |
@@ -204,11 +204,11 @@ date: "2026-11-10"
 
 下面都是读代码得到的事实，没有改任何行为。
 
-1. **同一条规则两处各写一份，其中 2 处已经不一致。** H-1 到 H-3 的地板规则在 `mail.judgment` 里有文字版（S-8、S-9 等）。对不上的两处：提示词写“日本官方机构（go.jp、lg.jp 等）”，程序里是四个后缀（多了 ac.jp、ed.jp）；提示词写“账单和金钱”，程序是一张具体的中日英词表。以后改一边忘了另一边，模型就会拿过时的标准判断。
+1. **同一条规则两处各写一份，其中 1 处不一致。** H-1 到 H-2 的地板规则在 `mail.judgment` 里有文字版（S-8、S-9 等）。对不上的一处：提示词写“日本官方机构（go.jp、lg.jp 等）”，程序里是四个后缀（多了 ac.jp、ed.jp）。涉钱那条（H-3）已改成模型逐封判断、程序只读结果，不再有两份。以后改一边忘了另一边，模型就会拿过时的标准判断。
 2. **“主人定的要求”靠模型判断才存成规则，再靠预算才能被看到。** 一句话能不能变成 `rule` 记忆由模型决定（M-1），变成之后能不能进模型的视野还要过 2000 字预算（M-3）。这就是愿景附录第 10 条说的“产品承诺确定性，实现是概率性”。
 3. **除 Gmail 外，没有一条聊天里的规矩是硬的。** S-11 到 S-24 全靠模型自觉，没有程序检查，也没有记录到决策记录里。
 4. **系统主动提醒的主人设置没有历史（迁移 0086 之前）。** 静默时段、重要发件人原先存在 `proactive_settings`，改了就覆盖。迁移 0086 起它们是规则手册里的规则，有修订号和只追加的历史；迁移之前的修改没有记录，所以 H-1 的名单内容和 H-8 的时段设置仍没有逐项出处。
-5. **地板规则的名单和词表有两种存法。** 重要发件人名单存在数据库，主人能改；公共机构后缀和金钱词表现在是规则手册里的内置规则，写在代码的数据文件里，主人仍改不了也看不到，要等后续步骤的规则页。
+5. **地板规则的名单有两种存法。** 重要发件人名单存在数据库，主人能改；公共机构后缀现在是规则手册里的内置规则，写在代码的数据文件里，主人仍改不了也看不到，要等后续步骤的规则页。
 6. **H-6（低优先级不上提醒页）找不到专门的 ADR 记载**，只有测试编号 PG-17、PG-18，出处缺失。
 
 [↑ 回到阅读导航](#contents)

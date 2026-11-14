@@ -856,11 +856,17 @@ export class SqliteGovernedDeletionAdapter {
     } else if (objectType === "memory") {
       const memory = database
         .prepare(
-          `SELECT content_ref AS contentRef, status, provider_record_id AS providerRecordId
+          `SELECT content_ref AS contentRef, status, provider_record_id AS providerRecordId,
+            classification
           FROM memory_records WHERE id = ? AND owner_id = ? AND agent_id = ?`,
         )
         .get(objectId, this.#options.ownerId, this.#options.agentId) as
-        | { contentRef: string; status: string; providerRecordId: string | null }
+        | {
+            contentRef: string;
+            status: string;
+            providerRecordId: string | null;
+            classification: string;
+          }
         | undefined;
       if (!memory && !retry) this.#failNotFound(objectType, objectId);
       if (memory) {
@@ -892,17 +898,28 @@ export class SqliteGovernedDeletionAdapter {
         );
         const proposals = database
           .prepare(
-            `SELECT id, content_ref AS contentRef FROM external_memory_proposals
-            WHERE owner_id = ? AND agent_id = ? AND memory_id = ?`,
+            memory.classification === "restricted"
+              ? `SELECT id, content_ref AS contentRef FROM external_memory_proposals
+                WHERE owner_id = @ownerId AND agent_id = @agentId AND text_sha256 IN (
+                  SELECT text_sha256 FROM external_memory_proposals
+                  WHERE owner_id = @ownerId AND agent_id = @agentId AND memory_id = @memoryId)`
+              : `SELECT id, content_ref AS contentRef FROM external_memory_proposals
+                WHERE owner_id = @ownerId AND agent_id = @agentId AND memory_id = @memoryId`,
           )
-          .all(this.#options.ownerId, this.#options.agentId, objectId) as Array<{
+          .all({
+            ownerId: this.#options.ownerId,
+            agentId: this.#options.agentId,
+            memoryId: objectId,
+          }) as Array<{
           id: string;
           contentRef: string | null;
         }>;
         const forget = database.prepare(
-          `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
-            content_ref = NULL, batch_id = NULL
-          WHERE id = ?`,
+          memory.classification === "restricted"
+            ? "DELETE FROM external_memory_proposals WHERE id = ?"
+            : `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
+              content_ref = NULL, batch_id = NULL
+            WHERE id = ?`,
         );
         for (const proposal of proposals) {
           forget.run(proposal.id);
@@ -1064,6 +1081,16 @@ export class SqliteGovernedDeletionAdapter {
         ),
       );
     }
+    refs.push(
+      ...this.#values(
+        database,
+        `SELECT sentence_ref FROM home_item_scores
+        WHERE sentence_ref IS NOT NULL AND approval_request_id IN (
+          SELECT id FROM approval_requests WHERE run_id IN (${placeholders(runIds)})
+        )`,
+        runIds,
+      ),
+    );
     return unique(refs);
   }
 

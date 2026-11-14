@@ -79,6 +79,7 @@ import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
+import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
@@ -87,6 +88,7 @@ import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operation
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
+import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
@@ -96,10 +98,12 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
+import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
 import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
+import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
@@ -368,9 +372,13 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
+  private readonly ownerProposals: SqliteOwnerProposalOperations;
+  private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
+  private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
+  private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
@@ -455,13 +463,25 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
+    this.ownerProposals = new SqliteOwnerProposalOperations(database, fail, assertDiskHeadroom);
+    this.correctionReview = new SqliteCorrectionReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memoryCaptureBacklog = new SqliteMemoryCaptureBacklogOperations(
       database,
       fail,
       assertDiskHeadroom,
     );
     this.memoryCheckup = new SqliteMemoryCheckupOperations(database, fail, assertDiskHeadroom);
+    this.memoryConversationReview = new SqliteMemoryConversationReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
+    this.homeUrgency = new SqliteHomeUrgencyOperations(database, fail, assertDiskHeadroom);
     this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
       database,
       fail,
@@ -540,7 +560,52 @@ export class SqliteDurableOperations {
     );
   }
 
+  private transactionScopeOpen = false;
+  private transactionScopeLost = false;
+
+  private transactionScopeAborted(): never {
+    this.transactionScopeLost = true;
+    return this.fail("PORT_CONFLICT", "The transaction scope was rolled back", {
+      reason: "TRANSACTION_ABORTED",
+    });
+  }
+
+  private executeTransactionScope(operation: string): null | undefined {
+    switch (operation) {
+      case "transaction.begin":
+        if (this.database.inTransaction)
+          this.fail("PORT_INVALID_OPERATION", "A transaction scope is already open");
+        this.database.exec("BEGIN IMMEDIATE");
+        this.transactionScopeLost = false;
+        this.transactionScopeOpen = true;
+        return null;
+      case "transaction.commit":
+        if (this.transactionScopeLost || !this.transactionScopeOpen || !this.database.inTransaction)
+          this.transactionScopeAborted();
+        this.transactionScopeOpen = false;
+        this.database.exec("COMMIT");
+        return null;
+      case "transaction.rollback":
+        this.transactionScopeOpen = false;
+        this.transactionScopeLost = false;
+        if (this.database.inTransaction) this.database.exec("ROLLBACK");
+        return null;
+      default:
+        return undefined;
+    }
+  }
+
   execute(operation: string, payload: unknown): unknown {
+    const scoped = this.executeTransactionScope(operation);
+    if (scoped !== undefined) return scoped;
+    if (this.transactionScopeLost) this.transactionScopeAborted();
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    const value = this.executeUnscoped(operation, payload);
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    return value;
+  }
+
+  private executeUnscoped(operation: string, payload: unknown): unknown {
     if (this.database.inTransaction || !isProcessRecordWrite(operation, payload))
       return this.executeOperation(operation, payload);
     this.database.pragma("synchronous = NORMAL");
@@ -602,12 +667,19 @@ export class SqliteDurableOperations {
       return this.memoryCaptureBacklog.execute(operation, payload);
     if (operation.startsWith("memoryCheckup."))
       return this.memoryCheckup.execute(operation, payload);
+    if (operation.startsWith("memoryConversationReview."))
+      return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
+    if (operation.startsWith("homeUrgency.")) return this.homeUrgency.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
+    if (operation.startsWith("ownerProposal."))
+      return this.ownerProposals.execute(operation, payload);
+    if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
+      return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
     if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);

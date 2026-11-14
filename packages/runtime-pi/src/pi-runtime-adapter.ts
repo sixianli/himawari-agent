@@ -96,6 +96,10 @@ import {
 } from "./compaction-prefix.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
+import {
+  observeProviderRejections,
+  type ProviderRejection,
+} from "./provider-rejection-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
@@ -106,7 +110,11 @@ import {
   piToolBatchSessionManager,
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
-import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
+import {
+  PiToolProgressGuard,
+  type PiToolProgressState,
+  type PiToolRefusalLimits,
+} from "./pi-tool-progress-guard.js";
 import {
   contextBlockMarker,
   runtimeEnvironmentAfterCompaction,
@@ -185,6 +193,7 @@ export interface PiRuntimeResourcePort {
 
 export interface PiAgentRuntimeAdapterDependencies {
   readonly egress: ModelEgress;
+  readonly toolRefusalLimits?: PiToolRefusalLimits;
   readonly projection: RuntimeProjectionPort;
   readonly promptBundles?: RuntimePromptBundlePort;
   readonly onHandleTools?: (
@@ -223,6 +232,7 @@ export interface PiAgentRuntimeAdapterDependencies {
     request: RuntimeRequest,
     failure: { readonly code: string; readonly message: string },
   ) => void;
+  readonly onModelRequestRejected?: (request: RuntimeRequest, rejection: ProviderRejection) => void;
   readonly usage?: {
     readonly store: ModelUsageStorePort;
     readonly onFailure: (error: unknown) => void;
@@ -435,9 +445,20 @@ function backgroundCommandMessage(notice: RuntimeBackgroundCommandNotice) {
   };
 }
 
+const MODEL_REQUEST_MAX_RETRIES = 2;
+const MODEL_REQUEST_MAX_RETRY_DELAY_MS = 10_000;
+
+function providerStatusOf(errorMessage: string | undefined): string | undefined {
+  const message = errorMessage ?? "";
+  return (
+    /^(\d{3})(?:\s|:)/.exec(message)?.[1] ??
+    /^Server requested \d+s retry delay \(max: \d+s\)\. (\d{3})(?:\s|:)/.exec(message)?.[1]
+  );
+}
+
 function modelFailureCode(errorMessage: string | undefined): string {
   if (errorMessage === PI_CONTEXT_WINDOW_EXHAUSTED) return PI_CONTEXT_WINDOW_EXHAUSTED;
-  const status = /^(\d{3})(?:\s|:)/.exec(errorMessage ?? "")?.[1];
+  const status = providerStatusOf(errorMessage);
   if (status === "429") return "PI_MODEL_RATE_LIMITED";
   if (status === "402") return "PI_MODEL_QUOTA_EXCEEDED";
   if (status === "401" || status === "403") return "PI_MODEL_AUTH_FAILED";
@@ -454,7 +475,7 @@ function loggableModelFailure(errorMessage: string | undefined): string {
     message === PI_REQUEST_HEAD_DIVERGED
   )
     return message;
-  const status = /^(\d{3})(?:\s|:)/.exec(message)?.[1];
+  const status = providerStatusOf(message);
   return status === undefined ? "provider_message_withheld" : `provider_status_${status}`;
 }
 
@@ -1011,6 +1032,7 @@ async function admitPiStream(
   usageRecording?: PiAgentRuntimeAdapterDependencies["usage"],
   redactionRuleset?: number,
   usagePurpose: "chat" | "other" = "chat",
+  onRequestRejected?: PiAgentRuntimeAdapterDependencies["onModelRequestRejected"],
 ): Promise<AssistantMessageEventStream> {
   let permit: ModelInvocationPermit | undefined;
   let started = false;
@@ -1112,7 +1134,14 @@ async function admitPiStream(
       purpose: "chat",
       ...(redactionRuleset === undefined ? {} : { redactionRuleset }),
     });
-    const cacheFields = observeCacheFields(exchange.wrapFetch(options?.fetch ?? globalThis.fetch));
+    const cacheFields = observeCacheFields(
+      observeProviderRejections(
+        exchange.wrapFetch(options?.fetch ?? globalThis.fetch),
+        onRequestRejected === undefined
+          ? undefined
+          : (rejection) => onRequestRejected(request, rejection),
+      ),
+    );
     withoutAmbientApiKey.fetch = cacheFields.fetch;
     const gateway = isGateway ? observeGatewayFetch(cacheFields.fetch, model.id) : undefined;
     if (gateway !== undefined) {
@@ -1144,7 +1173,8 @@ async function admitPiStream(
       await original(model, transcript, {
         ...withoutAmbientApiKey,
         ...(secret === undefined ? {} : { apiKey: secret }),
-        maxRetries: 0,
+        maxRetries: MODEL_REQUEST_MAX_RETRIES,
+        maxRetryDelayMs: MODEL_REQUEST_MAX_RETRY_DELAY_MS,
       }),
       exchange,
     );
@@ -1436,7 +1466,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         messageSequence = continuation.messageSequence;
       }
       let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
-      const toolProgress = new PiToolProgressGuard(continuation?.toolProgress);
+      const toolProgress = new PiToolProgressGuard(
+        continuation?.toolProgress,
+        this.#dependencies.toolRefusalLimits,
+      );
       let loopStoppedAppended = false;
       const appendLoopStopped = () => {
         const active = this.#activeSessions.get(request.runId);
@@ -1523,7 +1556,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               });
               pi.on("tool_result", (event) => {
                 const details = event.details as
-                  | { productOutcome?: unknown; errorCode?: unknown }
+                  | { productOutcome?: unknown; errorCode?: unknown; refused?: unknown }
                   | undefined;
                 if (!suspended && !unknownTool && !replayedResults.delete(event.toolCallId))
                   toolProgress.observe(
@@ -1535,6 +1568,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                       typeof details?.errorCode === "string"
                       ? details.errorCode
                       : undefined,
+                    details?.refused === true,
                   );
                 if (toolProgress.blocked) appendLoopStopped();
                 if (
@@ -1681,6 +1715,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             this.#dependencies.usage,
             bundle?.redactionRuleset,
             summaryContext ? "other" : "chat",
+            this.#dependencies.onModelRequestRejected,
           );
         },
       );
@@ -2160,6 +2195,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               reasonCode: decision.reasonCode,
               productOutcome: "failed",
               dispatchState: "not_sent",
+              refused: true,
             },
             isError: true,
           };
@@ -2213,6 +2249,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         details: {
           ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
           productOutcome: result.outcome,
+          ...(result.refused ? { refused: true } : {}),
           ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
           productRunId: request.runId,
           resultRef: result.resultRef,

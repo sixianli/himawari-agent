@@ -43,7 +43,10 @@ const DEFAULT_GROUPS: readonly DailyReviewGroup[] = [
 ];
 export type DailyReviewSource = "ledger" | "mail" | "checkup";
 export type DailyReviewKind =
-  | Exclude<DecisionKind, "limit_change" | "delivery_timing" | "proposal" | "device_action">
+  | Exclude<
+      DecisionKind,
+      "web_push" | "limit_change" | "delivery_timing" | "proposal" | "device_action"
+    >
   | "mail"
   | "checkup";
 
@@ -362,6 +365,7 @@ async function collectReviewCandidates(
   for (const entry of entries) {
     const kind = entry.kind;
     if (
+      kind === "web_push" ||
       kind === "limit_change" ||
       kind === "delivery_timing" ||
       kind === "proposal" ||

@@ -1,3 +1,7 @@
+import {
+  sandboxEnforcementClaimsMatchEvidence,
+  sandboxRequiredControlsEnforced,
+} from "@himawari-agent/execution-contracts";
 import type {
   CapabilityArtifactVerifierPort,
   CapabilityDeclaration,
@@ -658,7 +662,7 @@ export class CapabilityLifecycleService {
     if (
       !qualification.productionSuitable ||
       qualification.artifactDigest !== manifest.integrity ||
-      Object.values(qualification.enforcement).some((enforced) => !enforced)
+      !qualificationEnforcementHolds(manifest, qualification)
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
@@ -757,4 +761,18 @@ export class CapabilityLifecycleService {
       `Capability ${current.ref} cannot move from ${current.lifecycle} to ${requested}`,
     );
   }
+}
+
+function qualificationEnforcementHolds(
+  manifest: CapabilityManifest,
+  qualification: CapabilityRuntimeQualification,
+): boolean {
+  const { enforcement, sandbox } = qualification;
+  if (sandbox === undefined)
+    return Object.values(enforcement).every((enforced) => enforced === true);
+  return (
+    manifest.runtime.kind === "program" &&
+    sandboxEnforcementClaimsMatchEvidence(qualification, sandbox) &&
+    sandboxRequiredControlsEnforced(enforcement)
+  );
 }

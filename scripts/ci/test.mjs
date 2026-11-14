@@ -7,7 +7,9 @@ import { resolvePolicySource, validateVitestProjects } from "./check-policy.mjs"
 import { outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { artifactPlatformKey } from "./platforms.mjs";
 import { testWorkerCount } from "./test-concurrency.mjs";
+import { zeroCounts } from "./test-scope.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export const parseVitestReport = vitestCounts;
@@ -18,6 +20,7 @@ export async function runTests({
   output,
   context,
   projects: selection,
+  related = new Map(),
   remainingBudgetMs,
 } = {}) {
   const started = performance.now();
@@ -26,7 +29,7 @@ export async function runTests({
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination, { recursive: false });
   const policy = resolvePolicySource({ root, base: context.baseSha }).policy;
-  const check = policy.checks.find((entry) => entry.id === "coverage");
+  const check = policy.checks.find((entry) => entry.id === "tests");
   const budgetMs = Math.min(check.timeoutMinutes * 60_000, remainingBudgetMs ?? Infinity);
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) throw new Error("CI_TEST_CHECK_TIMEOUT");
   const config = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);
@@ -54,6 +57,11 @@ export async function runTests({
   if (!selection?.length || selection.some((id) => !check.projects.includes(id)))
     throw new Error("CI_TEST_PROJECT_SELECTION_INVALID");
   for (const id of selection) {
+    const selected = related.get(id);
+    if (selected?.length === 0) {
+      projects.push({ id, counts: zeroCounts() });
+      continue;
+    }
     const remaining = budgetMs - (performance.now() - started);
     if (remaining <= 0) throw new Error(`CI_TEST_CHECK_TIMEOUT:${id}`);
     const json = path.join(destination, `${id}.json`);
@@ -77,6 +85,7 @@ export async function runTests({
         "--reporter=junit",
         `--outputFile.json=${json}`,
         `--outputFile.junit=${junit}`,
+        ...(selected ?? []),
       ],
       {
         cwd: root,
@@ -100,7 +109,7 @@ export async function runTests({
     const counts = parseVitestReport(report);
     if (outcome.exitCode === 0 && (counts.failed || counts.skipped))
       throw new Error(`CI_TEST_EXIT_CONTRADICTION:${id}`);
-    const expectedFiles = trackedFiles
+    const expectedFiles = (selected ?? trackedFiles)
       .filter(
         (filename) =>
           expected.include.some((glob) => path.matchesGlob(filename, glob)) &&
@@ -148,7 +157,7 @@ export async function runTests({
     artifact: {
       path: archive,
       sha256: verified.sha256,
-      platform: verified.manifest.platform.os === "darwin" ? "macos-arm64" : "linux-x64",
+      platform: artifactPlatformKey(verified.manifest.platform.os, verified.manifest.platform.arch),
     },
     exitCode,
   };

@@ -20,13 +20,15 @@ import {
   ownerLocalDay,
   PERCEPTION_CAPTURE_SOURCES,
   PERCEPTION_CONFIDENCE_MAXIMUM,
+  PERCEPTION_CONFIGURATION_RANGES,
   PERCEPTION_DEVICE_TIME_MAXIMUM,
-  PERCEPTION_MEDIA_KINDS,
   PERCEPTION_EPISODE_ANCHOR_TYPES,
   PERCEPTION_EPISODE_BOUNDARY_TYPES,
+  PERCEPTION_MEDIA_KINDS,
   PERCEPTION_RECORD_ID_PATTERN,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_RECORD_TYPES,
+  PERCEPTION_RETENTION_CONFIGURATION,
   PERCEPTION_RETENTION_KEYS,
   PERCEPTION_SENSES,
   PERCEPTION_SPEAKER_KINDS,
@@ -225,8 +227,11 @@ export class PerceptionService {
   retentionDays(settings: PerceptionSettings): Readonly<Record<PerceptionRetentionKey, number>> {
     const configuration = this.#options.configuration();
     return Object.freeze({
-      track: settings.retentionDays.track ?? configuration.trackRetentionDays,
-      surroundings: settings.retentionDays.surroundings ?? configuration.surroundingsRetentionDays,
+      track:
+        settings.retentionDays.track ?? configuration[PERCEPTION_RETENTION_CONFIGURATION.track],
+      surroundings:
+        settings.retentionDays.surroundings ??
+        configuration[PERCEPTION_RETENTION_CONFIGURATION.surroundings],
     });
   }
 
@@ -297,7 +302,9 @@ export class PerceptionService {
         const retention = { ...current.retentionDays };
         if (change.days === null) delete retention[change.key];
         else {
-          if (!Number.isSafeInteger(change.days) || change.days < 1 || change.days > 3650)
+          const [minimum, maximum] =
+            PERCEPTION_CONFIGURATION_RANGES[PERCEPTION_RETENTION_CONFIGURATION[change.key]];
+          if (!Number.isSafeInteger(change.days) || change.days < minimum || change.days > maximum)
             refuse("retention_days");
           retention[change.key] = change.days;
         }

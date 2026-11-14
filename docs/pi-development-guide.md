@@ -28,7 +28,7 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 3. **只有两种情况允许不照官方写：**官方没有能满足需求的写法，或者官方写法有缺陷（例如等审批要等几个小时，而官方的拦截只能让进程一直挂着等，服务重启就丢了）。这时必须先按[第六节](#how-to-deviate)出方案，Andy 同意后才能写进代码和这份规范。
 4. **现有偏离不是范本。**[第五节](#current-deviations)列的是代码里已经存在、还没经 Andy 批准的偏离。新代码不得照抄它们，也不得在它们上面继续加东西；要动它们，先出方案。
 5. **只有 `packages/runtime-pi` 能导入 Pi。**这条来自 [Pi 优先与工作区约定](../.agents/instructions/pi-and-workspace.md#workspace-contract)：“只能在 `packages/runtime-pi` 中导入 `@earendil-works/pi-*` 包”。
-6. **发给模型的内容只追加。**任何写法都不能违反 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。[第三节](#official-patterns)里标着“官方示例原样，Himawari 不得照抄”的代码只用来说明钩子长什么样。
+6. **发给模型的内容只追加。**任何写法都不能违反 [.agents/instructions/prompt-prefix.md](../.agents/instructions/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。[第三节](#official-patterns)里标着“官方示例原样，Himawari 不得照抄”的代码只用来说明钩子长什么样。
 7. **照官方写不等于不用先出方案。**动到模型调用和路由、Agent 循环、权限和授权、记忆系统这类核心特性，即使用的是官方写法，仍按 [Andy 定的长期规则](../.claude/rules/owner-standing-rules.md#fixing-bugs-and-new-features)“大改动先出方案、讨论后再动工”，Andy 同意后才动工。
 
 <a id="how-to-look-up"></a>
@@ -178,14 +178,14 @@ pi.on("tool_result", async (event, ctx) => {
 
 Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头由 `himawari-request-head` 扩展的 `context_with_system` 钩子生成（D1 第 3 步，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-3-record)）。
 
-官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.claude/rules/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只用冻结的那一份，不每轮改。
+官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.agents/instructions/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只用冻结的那一份，不每轮改。
 
 <a id="pattern-context"></a>
 ### 每次请求前改上下文
 
 出处：`docs/extensions.md` 第 815 行“context”、第 829 行“context_with_system”。
 
-**下面是官方示例原样，Himawari 不得照抄：**它按条件删掉、截掉已经发过的历史，违反 [prompt-prefix 规则第 4 条](../.claude/rules/prompt-prefix.md#append-only)。在 Himawari 里用这两个钩子，只能在列表末尾追加；要缩短历史只能走压缩。
+**下面是官方示例原样，Himawari 不得照抄：**它按条件删掉、截掉已经发过的历史，违反 [prompt-prefix 规则第 4 条](../.agents/instructions/prompt-prefix.md#append-only)。在 Himawari 里用这两个钩子，只能在列表末尾追加；要缩短历史只能走压缩。
 
 ```typescript
 pi.on("context", async (event, ctx) => {
@@ -267,7 +267,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 ```
 
 - 什么时候压缩由设置决定：`contextTokens > contextWindow - reserveTokens`（`docs/compaction.md`“When It Triggers”）。
-- 让压缩请求沿用原对话的开头（[prompt-prefix 规则第 13 条](../.claude/rules/prompt-prefix.md#compaction)）已按 [ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md) 做：`session_before_compact` 只观察、返回空，由模型运行库的包装改写 Pi 自己发出的摘要请求。真要自己出摘要，用 `session_before_compact` 返回 `compaction`；官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
+- 让压缩请求沿用原对话的开头（[prompt-prefix 规则第 13 条](../.agents/instructions/prompt-prefix.md#compaction)）已按 [ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md) 做：`session_before_compact` 只观察、返回空，由模型运行库的包装改写 Pi 自己发出的摘要请求。真要自己出摘要，用 `session_before_compact` 返回 `compaction`；官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
 - 返回 `{ cancel: true }` 取消这次压缩。
 
 <a id="pattern-steer"></a>
@@ -323,9 +323,9 @@ SettingsManager.inMemory({
 });
 ```
 
-- 自动重试 Himawari 关着（[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) 第 7 条）。
+- 自动重试 Himawari 关着（[ADR 0198](adr/0198-upgrade-pi-to-1-5-0.md#decision) 第 7 条）。模型请求层的重试开着：传给 pi-ai 的 `maxRetries: 2`、`maxRetryDelayMs: 10000`，只重发同一份请求、不碰历史（[ADR 0245](adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md)）。
 - 缓存预热（`cacheWarming`，Pi 定时补发一个只要 1 个输出 token 的请求，让服务方的缓存不过期）：1.5.0 默认 `"streaming"`，1.5.1 默认改成 `"idle"`，空闲时最多续 30 分钟。补发的请求会花钱。升级 Pi 时必须先看 `CHANGELOG.md` 里改了哪些默认值。
-- 预热要保留，不能因为 Himawari 管不到费用就关掉（Andy 2026-11-10）。官方的管法：模型配置写 `promptCache`（服务方缓存能存几秒，没写的模型不预热，`docs/models.md` 第 106 行）；每次预热前 Pi 发 `cache_warming_decision` 事件（`docs/extensions.md` 第 912 行），第 929 行原话“Return `{ action: "warm" }` or `{ action: "stop" }` to override”，Himawari 在这里按自己的预算决定；预热的用量 Pi 记成一条 `cache_warm` 会话条目并发出 `entry_appended` 事件（1.5.1 `dist/core/cache-warmer.js` 第 188 行）。Himawari 现在把 `entry_appended` 列为忽略的事件（`pi-runtime-adapter.ts` 的 `KNOWN_IGNORED_EVENTS`），用量表的来源也只有 `model-port`、`agent-stream` 两种（`packages/application/src/ports/model-usage.ts`），所以记预热用量要在 D7 的方案里一起改：事件映射（从忽略列表拿掉还要加处理分支，否则会报未知事件）、用量的类型、持久化校验和迁移里的 `CHECK`。预热请求由 Pi 直接重放上一次请求（1.5.0 `dist/core/cache-warmer.js` 第 238 行），不经过 Himawari 替换的请求函数，所以没有准入、预算和用量记录；但它沿用那次请求的选项（1.5.0 `dist/core/sdk.js` 第 199、269 行把选项原样存下），D1 第 2 步之后，预热器调用的是每次运行的模型代理，遮盖和密钥在代理里现加，所以不会绕开遮盖，但预热请求也会先走审批回放的判断（[ADR 0208 第 2 步记录](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-2-record)）。但这些 `fetch` 是为一次请求做的，例如走 Vercel 网关时只允许发一次，再发就报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`（`packages/runtime-pi/src/gateway-observation.ts`），预热重放会失败；D7 的方案要给预热单独准备能重复用、仍走遮盖的 `fetch`，并用“连续两次都遮盖、都带密钥”的测试锁住。
+- 预热要保留，不能因为 Himawari 管不到费用就关掉（Andy 2026-11-10）。官方的管法：模型配置写 `promptCache`（服务方缓存能存几秒，没写的模型不预热，`docs/models.md` 第 106 行）；每次预热前 Pi 发 `cache_warming_decision` 事件（`docs/extensions.md` 第 912 行），第 929 行原话“Return `{ action: "warm" }` or `{ action: "stop" }` to override”，Himawari 在这里按自己的预算决定；预热的用量 Pi 记成一条 `cache_warm` 会话条目并发出 `entry_appended` 事件（1.5.1 `dist/core/cache-warmer.js` 第 188 行）。Himawari 现在把 `entry_appended` 列为忽略的事件（`pi-runtime-adapter.ts` 的 `KNOWN_IGNORED_EVENTS`），用量表的来源也只有 `model-port`、`agent-stream` 两种（`packages/application/src/ports/model-usage.ts`），所以记预热用量要在 D7 的方案里一起改：事件映射（从忽略列表拿掉还要加处理分支，否则会报未知事件）、用量的类型、持久化校验和迁移里的 `CHECK`。预热请求由 Pi 直接重放上一次请求（1.5.0 `dist/core/cache-warmer.js` 第 238 行），不经过 Himawari 替换的请求函数，所以没有准入、预算和用量记录；但它沿用那次请求的选项（1.5.0 `dist/core/sdk.js` 第 199、269 行把选项原样存下），D1 第 2 步之后，预热器调用的是每次运行的模型代理，遮盖和密钥在代理里现加，所以不会绕开遮盖，但预热请求也会先走审批回放的判断（[ADR 0208 第 2 步记录](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-2-record)）。但这些 `fetch` 是为一次请求做的，例如走 Vercel 网关时，一个成功的响应之后不允许再发（上一次是 408、409、429 或 5xx 的拒绝时最多再发 2 次，见 [ADR 0245](adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md)），再发就报 `AI_GATEWAY_MULTIPLE_REQUESTS_FORBIDDEN`（`packages/runtime-pi/src/gateway-observation.ts`），预热重放会失败；D7 的方案要给预热单独准备能重复用、仍走遮盖的 `fetch`，并用“连续两次都遮盖、都带密钥”的测试锁住。
 - DeepSeek 不需要预热：缓存自动开启，不用之后“usually within a few hours to a few days”才清掉（<https://api-docs.deepseek.com/guides/kv_cache>）。Himawari 每次运行（处理一条用户消息的整个过程，中间可以多次请求模型）新建 Pi 会话、跑完关掉（`pi-runtime-adapter.ts` 的 `session.dispose()`），会话一关预热就停，所以两次运行之间的空闲预热现在跑不起来。
 - 现状（[ADR 0206](adr/0206-pi-deviations-d5-insertion-and-d7-cache-warming.md)）：Himawari 显式写 `cacheWarming: "streaming"`，升级 Pi 不会被新默认值带走；注册给 Pi 的模型都不填 `promptCache`，所以不预热，`configured-model-binding.compat.test.ts` 的 `[D7]` 用例锁住这一点。要加 5 分钟缓存的模型，先按上一条出整套方案（预算、遮盖、用量）。
 
@@ -358,7 +358,7 @@ SettingsManager.inMemory({
 
 1. 写出前提：官方文档和示例的原文（包名、版本、文件、行号、原话），说明官方写法具体缺什么。
 2. 写出至少两个办法，其中一个必须是“照官方写，接受它的缺点”，比较各自的代价。
-3. 写清它会不会改变模型已经见过的请求开头（[prompt-prefix 规则第八节](../.claude/rules/prompt-prefix.md#before-you-change)）。
+3. 写清它会不会改变模型已经见过的请求开头（[prompt-prefix 规则第八节](../.agents/instructions/prompt-prefix.md#before-you-change)）。
 4. 交 Andy 看。他同意后：新开一份 ADR 记下决定，在[第五节](#current-deviations)加一行，并加一条测试，让 Pi 升级后官方行为一变就失败。
 5. 升级 Pi 时，逐条重查第五节：新版本官方补上了的，改回官方写法。
 

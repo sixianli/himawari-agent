@@ -2,13 +2,10 @@ import {
   type DataClassification,
   highestClassification,
   isModelVisible,
-  type OriginGateDecision,
-  type OriginGatedEffect,
   type PairedDevice,
   PERCEPTION_RECORD_TYPE_NAMES,
   PERCEPTION_SENSES,
   type PerceptionConfiguration,
-  type PerceptionOriginGate,
   type PerceptionRecord,
   type PerceptionRecordType,
   type PerceptionScope,
@@ -165,11 +162,10 @@ export interface DeviceActionOutcome {
 
 export interface ProductionPerceptionToolsOptions {
   readonly scope: PerceptionScope;
-  readonly store: Pick<PerceptionStorePort, "listRecordsBetween" | "markRunRead">;
+  readonly store: Pick<PerceptionStorePort, "listRecordsBetween">;
   readonly devices: (scope: PerceptionScope) => Promise<readonly PairedDevice[]>;
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly configuration: () => PerceptionConfiguration;
-  readonly gate: Pick<PerceptionOriginGate, "check">;
   readonly actions?: () => readonly DeviceActionDefinition[];
   readonly offered?: (device: PairedDevice) => Promise<readonly string[]>;
   readonly perform?: (request: DeviceActionRequest) => Promise<DeviceActionOutcome>;
@@ -186,6 +182,11 @@ export class PerceptionToolError extends Error {
     this.code = code;
     this.note = note;
   }
+}
+
+export interface PerceptionToolHooks {
+  readonly authorize: () => Promise<void>;
+  readonly markExternalContent: () => Promise<void>;
 }
 
 export interface PerceptionToolResult {
@@ -242,22 +243,13 @@ export class ProductionPerceptionTools {
     this.#timeZone = options.timeZone ?? "UTC";
   }
 
-  gate(invocation: RuntimeToolInvocation, effect: OriginGatedEffect): Promise<OriginGateDecision> {
-    return this.#options.gate.check(
-      {
-        runId: invocation.runId,
-        toolCallId: invocation.toolCallId,
-        capabilityRef: invocation.capabilityRef,
-        arguments: invocation.arguments,
-      },
-      effect,
-    );
-  }
-
-  run(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  run(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     return invocation.capabilityRef === PERCEPTION_READ_CAPABILITY_REF
-      ? this.#read(invocation)
-      : this.#action(invocation);
+      ? this.#read(invocation, hooks)
+      : this.#action(invocation, hooks);
   }
 
   #kinds(raw: unknown): readonly PerceptionRecordType[] | null | undefined {
@@ -274,7 +266,10 @@ export class ProductionPerceptionTools {
     return PERCEPTION_RECORD_TYPE_NAMES.filter((type) => types.has(type));
   }
 
-  async #read(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  async #read(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     const args = invocation.arguments;
     const configuration = this.#options.configuration();
     const invalid = () =>
@@ -312,7 +307,7 @@ export class ProductionPerceptionTools {
           note: TOOL_RESULT_PERCEPTION_READ_UNKNOWN_KINDS.text,
         },
       };
-    const needle = typeof query === "string" ? query.trim().toLocaleLowerCase() : null;
+    const needle = typeof query === "string" ? query.trim().toLowerCase() : null;
     const listed: Record<string, unknown>[] = [];
     const shown: PerceptionRecord[] = [];
     let characters = 0;
@@ -323,13 +318,14 @@ export class ProductionPerceptionTools {
     let after: { readonly atMs: number; readonly id: string } | null = null;
     let full = false;
     for (;;) {
+      const scanLimit = Math.min(SCAN_PAGE, configuration.readMaximumScanned - examined);
       const page = await this.#options.store.listRecordsBetween({
         ...this.#options.scope,
         fromMs,
         toMs,
         types,
         after,
-        limit: SCAN_PAGE,
+        limit: scanLimit,
       });
       total = page.total;
       for (const record of page.records) {
@@ -344,7 +340,7 @@ export class ProductionPerceptionTools {
         }
         const text =
           record.contentRef === null ? undefined : await this.#options.readText(record.contentRef);
-        if (needle !== null && !(text ?? "").toLocaleLowerCase().includes(needle)) continue;
+        if (needle !== null && !(text ?? "").toLowerCase().includes(needle)) continue;
         const body =
           text === undefined
             ? undefined
@@ -379,7 +375,13 @@ export class ProductionPerceptionTools {
         shown.push(record);
       }
       const last = page.records.at(-1);
-      if (!last || page.records.length < SCAN_PAGE || (full && needle !== null)) break;
+      if (
+        !last ||
+        page.records.length < scanLimit ||
+        (full && needle !== null) ||
+        examined >= configuration.readMaximumScanned
+      )
+        break;
       after = { atMs: last.occurredAtMs, id: last.id };
     }
     const unexamined = total - examined;
@@ -402,15 +404,7 @@ export class ProductionPerceptionTools {
       );
     if (hidden > 0)
       notes.push(renderPrompt(TOOL_RESULT_PERCEPTION_READ_HIDDEN, { hidden: String(hidden) }));
-    const outside = shown.filter((record) => record.origin === "other").map((record) => record.id);
-    if (outside.length > 0)
-      await this.#options.store.markRunRead({
-        ...this.#options.scope,
-        runId: invocation.runId,
-        recordIds: outside,
-        maximum: configuration.runReadMaximumRecords,
-        now: this.#options.now(),
-      });
+    if (shown.some((record) => record.origin === "other")) await hooks.markExternalContent();
     return {
       value: {
         ...(listed.length > 0 ? { notice: PERCEPTION_DATA_NOTICE.text } : {}),
@@ -425,7 +419,10 @@ export class ProductionPerceptionTools {
     };
   }
 
-  async #action(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
+  async #action(
+    invocation: RuntimeToolInvocation,
+    hooks: PerceptionToolHooks,
+  ): Promise<PerceptionToolResult> {
     const args = invocation.arguments;
     const action = args["action"];
     const device = args["device"];
@@ -513,22 +510,19 @@ export class ProductionPerceptionTools {
               : TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED.text,
         },
       };
-    if (!definition.reads) {
-      const decision = await this.gate(invocation, "device_action");
-      if (decision.errorCode !== null)
-        throw new PerceptionToolError(decision.errorCode, decision.note ?? "");
-    }
     if (!this.#options.perform)
       throw new PerceptionToolError(
         "DEVICE_ACTION_UNAVAILABLE",
         TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
       );
-    const outcome = await this.#options.perform({
+    const request: DeviceActionRequest = {
       invocation,
       device: target,
       action: definition,
       arguments: parameters as Readonly<Record<string, unknown>>,
-    });
+    };
+    if (!definition.reads) await hooks.authorize();
+    const outcome = await this.#options.perform(request);
     return {
       value: {
         done: outcome.state === "succeeded",

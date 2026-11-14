@@ -79,21 +79,23 @@ export class SqlitePairedDeviceOperations {
     return value;
   }
 
-  private createPairingCode(input: Input<"createPairingCode">): void {
+  private createPairingCode(input: Input<"createPairingCode">): { readonly expiresAt: string } {
     this.assertDiskHeadroom();
     const now = this.time(input.now);
     const expiresAt = this.time(input.expiresAt);
     if (!/^[0-9a-f]{64}$/u.test(input.codeHash) || expiresAt <= now)
       this.fail("PORT_INVALID_OPERATION", "Pairing code is invalid");
-    this.database.transaction(() => {
+    return this.database.transaction(() => {
       const open = this.database
         .prepare(
-          `SELECT 1 FROM device_pairing_codes
+          `SELECT expires_at AS expiresAt FROM device_pairing_codes
             WHERE code_hash = ? AND owner_id = ? AND agent_id = ? AND session_id = ?
               AND used_at IS NULL AND expires_at > ?`,
         )
-        .get(input.codeHash, input.ownerId, input.agentId, input.sessionId, now);
-      if (open) return;
+        .get(input.codeHash, input.ownerId, input.agentId, input.sessionId, now) as
+        | { expiresAt: string }
+        | undefined;
+      if (open) return { expiresAt: open.expiresAt };
       this.database
         .prepare(
           `DELETE FROM device_pairing_codes
@@ -107,6 +109,7 @@ export class SqlitePairedDeviceOperations {
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(input.codeHash, input.ownerId, input.agentId, input.sessionId, now, expiresAt);
+      return { expiresAt };
     })();
   }
 
@@ -318,20 +321,19 @@ export class SqlitePairedDeviceOperations {
       this.database
         .prepare("DELETE FROM device_request_nonces WHERE device_id = ? AND expires_at <= ?")
         .run(input.deviceId, now);
+      const inserted = this.database
+        .prepare(
+          `INSERT INTO device_request_nonces (device_id, nonce, expires_at)
+           SELECT ?, ?, ?
+            WHERE (SELECT COUNT(*) FROM device_request_nonces WHERE device_id = ?) < ?
+           ON CONFLICT (device_id, nonce) DO NOTHING`,
+        )
+        .run(input.deviceId, input.nonce, expiresAt, input.deviceId, input.maximumRetained);
+      if (inserted.changes === 1) return "accepted";
       const seen = this.database
         .prepare("SELECT 1 FROM device_request_nonces WHERE device_id = ? AND nonce = ?")
         .get(input.deviceId, input.nonce);
-      if (seen) return "replayed";
-      const { count } = this.database
-        .prepare("SELECT COUNT(*) AS count FROM device_request_nonces WHERE device_id = ?")
-        .get(input.deviceId) as { count: number };
-      if (count >= input.maximumRetained) return "full";
-      this.database
-        .prepare(
-          "INSERT INTO device_request_nonces (device_id, nonce, expires_at) VALUES (?, ?, ?)",
-        )
-        .run(input.deviceId, input.nonce, expiresAt);
-      return "accepted";
+      return seen ? "replayed" : "full";
     })();
   }
 

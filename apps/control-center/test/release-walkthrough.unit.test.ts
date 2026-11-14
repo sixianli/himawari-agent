@@ -50,6 +50,7 @@ const memoryOverview = {
   externalProposals: { total: 0, items: [], batches: [] },
   pending: [],
   tidyUps: [],
+  conversationReviews: [],
   reminders: [],
   upcoming: [],
   people: [],

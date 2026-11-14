@@ -1,10 +1,12 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { aggregate, readReportEnvelopes } from "./aggregate.mjs";
 import { resolvePolicySource } from "./check-policy.mjs";
 import { createContext, outputPath } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
+import { encodeGate } from "./gate-log.mjs";
+import { redactText } from "./redact-text.mjs";
 
 export function required({
   reports,
@@ -31,22 +33,51 @@ export function required({
       flag: "wx",
     });
   }
-  return summary;
+  return { context, summary };
 }
 
-export function main(argv = process.argv.slice(2)) {
+const cell = (value) => redactText(String(value)).replace(/[\p{Cc}|`]/gu, " ");
+
+export const publicGate = (gate) =>
+  JSON.parse(
+    JSON.stringify(gate, (_key, value) => (typeof value === "string" ? redactText(value) : value)),
+  );
+
+export function gateSummaryMarkdown(summary) {
+  const rows = summary.checks.map(
+    (check) =>
+      `| ${cell(check.checkId)}/${cell(check.matrixKey)} | ${cell(check.status)} | ${cell(check.reasons.join("；") || "-")} |`,
+  );
+  return [
+    `### ci/required：${summary.status === "passed" ? "通过" : "失败"}`,
+    "",
+    `收到 ${summary.observed.length}/${summary.expected.length} 份报告${summary.missing.length ? `，缺少：${summary.missing.map(cell).join("、")}` : ""}。`,
+    "",
+    "| 检查 | 结果 | 原因 |",
+    "| --- | --- | --- |",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
+export function main(
+  argv = process.argv.slice(2),
+  { env = process.env, write = (text) => process.stdout.write(text) } = {},
+) {
   const args = parseArguments(argv, ["--reports", "--output", "--base"]);
-  if (!args["--reports"] || !args["--output"] || !process.env.CI_NEEDS)
+  if (!args["--reports"] || !args["--output"] || !env.CI_NEEDS)
     throw new Error("CI_GATE_INPUT_REQUIRED");
-  const summary = required({
+  const { context, summary } = required({
     reports: args["--reports"],
     output: args["--output"],
     base: args["--base"],
-    needs: JSON.parse(process.env.CI_NEEDS),
+    needs: JSON.parse(env.CI_NEEDS),
+    env,
   });
-  process.stdout.write(
-    `${summary.status}: ${summary.observed.length}/${summary.expected.length} reports\n`,
-  );
+  write(encodeGate(publicGate({ context, summary })));
+  if (env.GITHUB_STEP_SUMMARY)
+    appendFileSync(env.GITHUB_STEP_SUMMARY, gateSummaryMarkdown(summary));
+  write(`${summary.status}: ${summary.observed.length}/${summary.expected.length} reports\n`);
   process.exitCode = summary.status === "passed" ? 0 : 1;
   return summary;
 }

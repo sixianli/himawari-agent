@@ -1,10 +1,40 @@
-RUNNER_IDS="1 2"
+RUNNER_IDS="1 2 3 6"
 RUNNER_HOST=ci-vps
-RUNNER_LABEL=ci-vps
+RUNNER_CHECK_LABEL=ci-vps
+RUNNER_GATE_LABEL=ci-vps-gate
+RUNNER_LABELS="$RUNNER_CHECK_LABEL $RUNNER_GATE_LABEL"
 RUNNER_CONTROLLER=ubuntu
 RUNNER_SHARE_ROOT=/srv/gh-runner-share
 RUNNER_SHARE_GROUP=gh-ci-share
 RUNNER_SHARE_KEEP_MINUTES=360
+RUNNER_SITE=${RUNNER_SITE:-vps}
+RUNNER_COMMON_ROOT=/srv/gh-runner
+RUNNER_SLICE_UNITS="gh-runners.slice ghgate.slice"
+RUNNER_PACKAGE_ARCH=x64
+RUNNER_PACKAGE_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
+RUNNER_ARM_LABEL=ci-arm
+RUNNER_SEND_USER=gh-ci-send
+RUNNER_SEND_HOME=/var/lib/gh-ci-send
+RUNNER_SEND_SCRIPT=/usr/local/lib/gh-runner/send-reports
+RUNNER_REMOTE_SHARE=/etc/gh-runner/remote-share
+
+case "$RUNNER_SITE" in
+  vps) ;;
+  arm)
+    RUNNER_IDS="4 5"
+    RUNNER_HOST=ci-arm
+    RUNNER_CHECK_LABEL=$RUNNER_ARM_LABEL
+    RUNNER_GATE_LABEL=""
+    RUNNER_LABELS=$RUNNER_ARM_LABEL
+    RUNNER_SLICE_UNITS="gh-arm-runners.slice"
+    RUNNER_PACKAGE_ARCH=arm64
+    RUNNER_PACKAGE_SHA256=670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de945
+    ;;
+  *)
+    echo "unknown RUNNER_SITE: $RUNNER_SITE (expected vps or arm)" >&2
+    exit 64
+    ;;
+esac
 
 runner_select() {
   case "$1" in
@@ -13,23 +43,101 @@ runner_select() {
       RUNNER_ROOT=/srv/gh-runner
       RUNNER_UNIT=gh-runner.service
       RUNNER_NAME=ci-vps-1
-      RUNNER_OTHER_ROOT=/srv/gh-runner-2
+      RUNNER_OTHER_ROOTS="/srv/gh-runner-2 /srv/gh-runner-3 /srv/gh-runner-gate"
       ;;
     2)
       RUNNER_USER=gh-runner-2
       RUNNER_ROOT=/srv/gh-runner-2
       RUNNER_UNIT=gh-runner-2.service
       RUNNER_NAME=ci-vps-2
-      RUNNER_OTHER_ROOT=/srv/gh-runner
+      RUNNER_OTHER_ROOTS="/srv/gh-runner /srv/gh-runner-3 /srv/gh-runner-gate"
+      ;;
+    3)
+      RUNNER_USER=gh-runner-gate
+      RUNNER_ROOT=/srv/gh-runner-gate
+      RUNNER_UNIT=gh-runner-gate.service
+      RUNNER_NAME=ci-vps-gate
+      RUNNER_OTHER_ROOTS="/srv/gh-runner /srv/gh-runner-2 /srv/gh-runner-3"
+      ;;
+    4)
+      RUNNER_USER=gh-runner-arm-1
+      RUNNER_ROOT=/srv/gh-runner-arm-1
+      RUNNER_UNIT=gh-runner-arm-1.service
+      RUNNER_NAME=ci-arm-1
+      RUNNER_OTHER_ROOTS="/srv/gh-runner-arm-2"
+      ;;
+    5)
+      RUNNER_USER=gh-runner-arm-2
+      RUNNER_ROOT=/srv/gh-runner-arm-2
+      RUNNER_UNIT=gh-runner-arm-2.service
+      RUNNER_NAME=ci-arm-2
+      RUNNER_OTHER_ROOTS="/srv/gh-runner-arm-1"
+      ;;
+    6)
+      RUNNER_USER=gh-runner-3
+      RUNNER_ROOT=/srv/gh-runner-3
+      RUNNER_UNIT=gh-runner-3.service
+      RUNNER_NAME=ci-vps-3
+      RUNNER_OTHER_ROOTS="/srv/gh-runner /srv/gh-runner-2 /srv/gh-runner-gate"
       ;;
     *)
-      echo "unknown runner: ${1:-} (expected 1 or 2)" >&2
+      echo "unknown runner: ${1:-} (expected 1, 2, 3, 4, 5 or 6)" >&2
       return 64
       ;;
   esac
+  case " $RUNNER_IDS " in
+    *" $1 "*) ;;
+    *)
+      echo "runner $1 does not belong to site $RUNNER_SITE (its runners: $RUNNER_IDS)" >&2
+      return 64
+      ;;
+  esac
+  if [ "$1" = 4 ] || [ "$1" = 5 ]; then
+    RUNNER_LABEL=$RUNNER_ARM_LABEL
+    RUNNER_SLICE=gh-arm-runners.slice
+    RUNNER_MEMORY_MIN=0
+    RUNNER_MEMORY_HIGH=14G
+    RUNNER_MEMORY_MAX=15G
+    RUNNER_TASKS_MAX=2048
+  elif [ "$1" = 3 ]; then
+    RUNNER_LABEL=$RUNNER_GATE_LABEL
+    RUNNER_SLICE=ghgate.slice
+    RUNNER_MEMORY_MIN=2G
+    RUNNER_MEMORY_HIGH=3G
+    RUNNER_MEMORY_MAX=4G
+    RUNNER_TASKS_MAX=1024
+  else
+    RUNNER_LABEL=$RUNNER_CHECK_LABEL
+    RUNNER_SLICE=gh-runners.slice
+    RUNNER_MEMORY_MIN=0
+    RUNNER_MEMORY_HIGH=14G
+    RUNNER_MEMORY_MAX=15G
+    RUNNER_TASKS_MAX=2048
+  fi
+}
+
+runner_label_for_name() {
+  local id
+  for id in $RUNNER_IDS; do
+    runner_select "$id"
+    [ "$RUNNER_NAME" = "$1" ] && { printf '%s\n' "$RUNNER_LABEL"; return 0; }
+  done
+  return 1
+}
+
+runner_host_test() {
+  if [ "$RUNNER_SITE" = arm ]; then
+    printf '%s' '[ "$(uname -s)-$(uname -m)" = Linux-aarch64 ]'
+  else
+    printf '[ "$(hostname)" = %s ]' "$RUNNER_HOST"
+  fi
 }
 
 require_runner_host() {
+  if [ "$RUNNER_SITE" = arm ]; then
+    [ "$(uname -s)-$(uname -m)" = Linux-aarch64 ] || { echo "RUNNER_SITE=arm only runs on the Linux ARM machine, not on $(uname -s)-$(uname -m)" >&2; exit 68; }
+    return 0
+  fi
   [ "$(hostname)" = "$RUNNER_HOST" ] || { echo "this script only runs on $RUNNER_HOST, not $(hostname)" >&2; exit 68; }
 }
 
@@ -51,7 +159,12 @@ render_runner_unit() {
   sed -e "s|@USER@|$RUNNER_USER|g" \
     -e "s|@ROOT@|$RUNNER_ROOT|g" \
     -e "s|@NAME@|$RUNNER_NAME|g" \
-    -e "s|@OTHER_ROOT@|$RUNNER_OTHER_ROOT|g" \
+    -e "s|@OTHER_ROOTS@|$(printf ' -%s' $RUNNER_OTHER_ROOTS)|g" \
+    -e "s|@SLICE@|$RUNNER_SLICE|g" \
+    -e "s|@MEMORY_MIN@|$RUNNER_MEMORY_MIN|g" \
+    -e "s|@MEMORY_HIGH@|$RUNNER_MEMORY_HIGH|g" \
+    -e "s|@MEMORY_MAX@|$RUNNER_MEMORY_MAX|g" \
+    -e "s|@TASKS_MAX@|$RUNNER_TASKS_MAX|g" \
     -e "s|@SHARE@|$RUNNER_SHARE_ROOT|g" \
     -e "s|@SHARE_GROUP@|$RUNNER_SHARE_GROUP|g" "$2"
 }

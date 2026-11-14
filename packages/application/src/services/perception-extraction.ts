@@ -52,7 +52,6 @@ export const PERCEPTION_REASON_CODES = Object.freeze({
   restricted: "perception_restricted",
   proposed: "perception_proposed",
   doneProposed: "perception_done_proposed",
-  gateDeferred: "perception_gate_deferred",
 });
 
 const DAY_MS = 86_400_000;
@@ -336,11 +335,21 @@ export function quotedSource(
   return null;
 }
 
-export const PERCEPTION_PROPOSAL_SOURCE_KINDS = ["perception_episode", "gated_tool_call"] as const;
+export const PERCEPTION_PROPOSAL_SOURCE_KINDS = ["perception_episode"] as const;
 export type PerceptionProposalSourceKind = (typeof PERCEPTION_PROPOSAL_SOURCE_KINDS)[number];
 
 export const PERCEPTION_PROPOSAL_TRUST = ["owner", "external"] as const;
 export type PerceptionProposalTrust = (typeof PERCEPTION_PROPOSAL_TRUST)[number];
+
+export const COMMAND_UTTERANCE_BATCH = 1000;
+
+export function commandUtteranceBatches(utteranceIds: readonly string[]): string[][] {
+  const distinct = [...new Set(utteranceIds)].sort();
+  const batches: string[][] = [];
+  for (let start = 0; start < distinct.length; start += COMMAND_UTTERANCE_BATCH)
+    batches.push(distinct.slice(start, start + COMMAND_UTTERANCE_BATCH));
+  return batches;
+}
 
 export interface PerceptionProposalSource {
   readonly recordType: PerceptionRecord["type"];
@@ -373,7 +382,7 @@ export interface VerifiedPerceptionProposal {
   readonly sourceKind: PerceptionProposalSourceKind;
   readonly sourceId: string;
   readonly sourceVersion: string;
-  readonly kind: "next_step" | "todo_done" | "gated_action";
+  readonly kind: "next_step" | "todo_done";
   readonly what: string | null;
   readonly todoId: string | null;
   readonly quote: string | null;
@@ -529,9 +538,9 @@ export class PerceptionExtractionService {
     const utterances = records.flatMap((record) =>
       typeof record.evidence["utteranceId"] === "string" ? [record.evidence["utteranceId"]] : [],
     );
-    const commands = new Set(
-      await store.commandUtterances({ ...scope, utteranceIds: [...new Set(utterances)].sort() }),
-    );
+    const commands = new Set<string>();
+    for (const utteranceIds of commandUtteranceBatches(utterances))
+      for (const id of await store.commandUtterances({ ...scope, utteranceIds })) commands.add(id);
     const sources: PerceptionExtractionSource[] = [];
     for (const record of records) {
       if (!isModelVisible(record.dataClassification)) continue;

@@ -1,0 +1,153 @@
+{
+  "model": "deepseek-v4.1-flash",
+  "now": "2026-10-25T12:00:00.000Z",
+  "timeZone": "Asia/Tokyo",
+  "metric": "recallAt5 and staleFree over the top 5, per ability",
+  "note": "regex = parseTimeScope before ADR 0262; none = no time scope; model-run1/model-run2 = the two runs recorded in result.json",
+  "results": {
+    "hash/regex": {
+      "temporal": {
+        "recallAt5": 0.7222,
+        "staleFree": 1
+      },
+      "history": {
+        "recallAt5": 0.8,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 0.8333,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "hash/none": {
+      "temporal": {
+        "recallAt5": 0.7222,
+        "staleFree": 1
+      },
+      "history": {
+        "recallAt5": 0,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 0,
+        "staleFree": 0.3333
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "hash/model-run1": {
+      "temporal": {
+        "recallAt5": 0.7222,
+        "staleFree": 0.9091
+      },
+      "history": {
+        "recallAt5": 0.8,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 0.8333,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "hash/model-run2": {
+      "temporal": {
+        "recallAt5": 0.7222,
+        "staleFree": 0.9091
+      },
+      "history": {
+        "recallAt5": 0.7,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 0.8333,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 0.875,
+        "staleFree": null
+      }
+    },
+    "qwen4096/regex": {
+      "temporal": {
+        "recallAt5": 1,
+        "staleFree": 1
+      },
+      "history": {
+        "recallAt5": 1,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 1,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "qwen4096/none": {
+      "temporal": {
+        "recallAt5": 1,
+        "staleFree": 1
+      },
+      "history": {
+        "recallAt5": 0,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 0,
+        "staleFree": 0
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "qwen4096/model-run1": {
+      "temporal": {
+        "recallAt5": 1,
+        "staleFree": 0.9091
+      },
+      "history": {
+        "recallAt5": 1,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 1,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 1,
+        "staleFree": null
+      }
+    },
+    "qwen4096/model-run2": {
+      "temporal": {
+        "recallAt5": 1,
+        "staleFree": 0.9091
+      },
+      "history": {
+        "recallAt5": 0.9,
+        "staleFree": null
+      },
+      "time_window": {
+        "recallAt5": 1,
+        "staleFree": 1
+      },
+      "episode": {
+        "recallAt5": 0.875,
+        "staleFree": null
+      }
+    }
+  }
+}

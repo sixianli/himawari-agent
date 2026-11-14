@@ -54,3 +54,34 @@ it("bounds file conflicts across changing content, intervening reads, and approv
     expect(guard.blocked).toBe(i === 3);
   }
 });
+
+it("[ADR-0257] stops after the configured refusals in a row or in total, and keeps the count across approval restoration", () => {
+  const limits = { consecutive: 3, total: 5 };
+  let guard = new PiToolProgressGuard(undefined, limits);
+  for (let i = 0; i < 2; i++)
+    guard.observe("reminder_set", { text: `a${i}` }, "refused", true, "action_rule_refused", true);
+  guard = new PiToolProgressGuard(guard.snapshot(), limits);
+  expect(guard.blocked).toBe(false);
+  guard.observe("reminder_set", { text: "a2" }, "refused", true, "action_rule_refused", true);
+  expect(guard.blocked).toBe(true);
+
+  const total = new PiToolProgressGuard(undefined, limits);
+  for (let i = 0; i < 4; i++) {
+    total.observe("rule_set", { text: `r${i}` }, "refused", true, undefined, true);
+    total.observe("read", { path: `file-${i}` }, `content ${i}`, false);
+  }
+  expect(total.blocked).toBe(false);
+  total.observe("rule_set", { text: "r4" }, "refused", true, undefined, true);
+  expect(total.blocked).toBe(true);
+
+  const untouched = new PiToolProgressGuard(undefined, limits);
+  for (let i = 0; i < 10; i++)
+    untouched.observe("read", { path: `file-${i}` }, "failed", true, "FILE_NOT_FOUND");
+  expect(untouched.blocked).toBe(false);
+  expect(() => new PiToolProgressGuard(undefined, { consecutive: 0, total: 5 })).toThrow(
+    "PI_TOOL_REFUSAL_LIMITS_INVALID",
+  );
+  expect(() => new PiToolProgressGuard({ ...untouched.snapshot(), refusals: -1 }, limits)).toThrow(
+    "PI_TOOL_PROGRESS_STATE_INVALID",
+  );
+});

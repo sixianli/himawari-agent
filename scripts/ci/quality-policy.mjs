@@ -106,12 +106,8 @@ export function validateQualityWorkflow(policy, source, toolchain) {
       "node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation",
     ),
   ];
-  const upload = (name, artifactPath, retention, missing, options = {}) =>
-    action("actions/upload-artifact", {
-      ...options,
-      with: { name, path: artifactPath, "if-no-files-found": missing, "retention-days": retention },
-    });
-  const runIdentity = `${githubExpression("github.run_id")}-${githubExpression("github.run_attempt")}`;
+  const summary = (title, from) =>
+    run(`${node} scripts/ci/ci-summary.mjs --title "${title}" --from ${from}`, { if: published });
   const expectedJobs = Object.fromEntries(
     policy.checks.map((check) => [
       check,
@@ -148,75 +144,16 @@ export function validateQualityWorkflow(policy, source, toolchain) {
             `${node} scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools`,
             { if: "always()", id: "publish" },
           ),
-          upload(
-            `quality-${runIdentity}-${check}`,
-            ".ci-output/public/reports/",
-            policy.retentionDays.reports,
-            "error",
-            { if: published },
-          ),
-          upload(
-            `quality-diagnostic-${runIdentity}-${check}`,
-            ".ci-output/public/diagnostics/",
-            policy.retentionDays.diagnostics,
-            "ignore",
-            { if: published },
-          ),
+          summary(`${check} 检测结果`, ".ci-output/public/reports"),
+          summary(`${check} 失败诊断`, ".ci-output/public/diagnostics"),
         ],
       },
     ]),
   );
-  expectedJobs.handoff = {
-    "runs-on": "ubuntu-24.04",
-    if: githubExpression(
-      `github.ref == 'refs/heads/${policy.defaultBranch}' && inputs.ci_run_id != ''`,
-    ),
-    "timeout-minutes": 15,
-    permissions: { contents: "read", actions: "read" },
-    env: { CI_RUN_ID: githubExpression("inputs.ci_run_id") },
-    steps: [
-      ...installation(),
-      run(
-        `${node} scripts/ci/export-evidence.mjs --mode metadata --run-id "$CI_RUN_ID" --output .ci-output/run-metadata.json`,
-        {
-          id: "metadata",
-          env: { GITHUB_TOKEN: githubExpression("github.token") },
-        },
-      ),
-      ...[
-        {
-          pattern: `report-${githubExpression("inputs.ci_run_id")}-${githubExpression("steps.metadata.outputs.attempt")}-*`,
-          path: ".ci-output/reports",
-        },
-        {
-          name: `gate-${githubExpression("inputs.ci_run_id")}-${githubExpression("steps.metadata.outputs.attempt")}`,
-          path: ".ci-output/gate",
-        },
-      ].map((selection) =>
-        action("actions/download-artifact", {
-          with: {
-            "github-token": githubExpression("github.token"),
-            "run-id": githubExpression("inputs.ci_run_id"),
-            ...selection,
-          },
-        }),
-      ),
-      run(
-        `${node} scripts/ci/export-evidence.mjs --metadata .ci-output/run-metadata.json --reports .ci-output/reports --gate .ci-output/gate --output .ci-output/handoff/evidence.json`,
-      ),
-      upload(
-        `handoff-${runIdentity}`,
-        ".ci-output/handoff/evidence.json",
-        policy.retentionDays.reports,
-        "error",
-      ),
-    ],
-  };
   const expectedEvents = {
     workflow_dispatch: {
       inputs: {
         base_sha: { type: "string", required: true },
-        ci_run_id: { type: "string", required: false },
       },
     },
     ...(policy.schedule.enabled ? { schedule: [{ cron: policy.schedule.cron }] } : {}),

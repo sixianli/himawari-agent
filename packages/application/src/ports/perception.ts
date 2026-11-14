@@ -341,6 +341,7 @@ export interface PerceptionConfiguration {
   readonly readMaximumRecords: number;
   readonly readMaximumCharacters: number;
   readonly readMaximumDays: number;
+  readonly readMaximumScanned: number;
   readonly extractIntervalSeconds: number;
   readonly extractMaximumAttempts: number;
   readonly extractRetrySeconds: number;
@@ -349,7 +350,6 @@ export interface PerceptionConfiguration {
   readonly extractCalendarDays: number;
   readonly extractMaximumCandidates: number;
   readonly extractBatchEpisodes: number;
-  readonly runReadMaximumRecords: number;
   readonly actionExpirySeconds: number;
   readonly actionPresenceExpirySeconds: number;
   readonly actionWaitSeconds: number;
@@ -371,6 +371,7 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   readMaximumRecords: 50,
   readMaximumCharacters: 8000,
   readMaximumDays: 31,
+  readMaximumScanned: 5000,
   extractIntervalSeconds: 60,
   extractMaximumAttempts: 5,
   extractRetrySeconds: 300,
@@ -379,7 +380,6 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   extractCalendarDays: 21,
   extractMaximumCandidates: 12,
   extractBatchEpisodes: 4,
-  runReadMaximumRecords: 50,
   actionExpirySeconds: 600,
   actionPresenceExpirySeconds: 120,
   actionWaitSeconds: 20,
@@ -403,6 +403,7 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   readMaximumRecords: [1, 500],
   readMaximumCharacters: [200, 200_000],
   readMaximumDays: [1, 366],
+  readMaximumScanned: [500, 200_000],
   extractIntervalSeconds: [5, 24 * 3600],
   extractMaximumAttempts: [1, 20],
   extractRetrySeconds: [10, 24 * 3600],
@@ -411,7 +412,6 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   extractCalendarDays: [7, 62],
   extractMaximumCandidates: [1, 50],
   extractBatchEpisodes: [1, 50],
-  runReadMaximumRecords: [1, 500],
   actionExpirySeconds: [30, 86_400],
   actionPresenceExpirySeconds: [30, 3600],
   actionWaitSeconds: [0, 120],
@@ -420,6 +420,10 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
 export type PerceptionRetentionKey = (typeof PERCEPTION_RETENTION_KEYS)[number];
+export const PERCEPTION_RETENTION_CONFIGURATION = Object.freeze({
+  track: "trackRetentionDays",
+  surroundings: "surroundingsRetentionDays",
+} as const satisfies Record<PerceptionRetentionKey, keyof PerceptionConfiguration>);
 
 export interface PerceptionScope {
   readonly ownerId: OwnerId;
@@ -595,9 +599,6 @@ export interface PerceptionExtractionState {
   readonly updatedAt: string;
 }
 
-export const PERCEPTION_RUN_INITIATORS = ["owner", "background"] as const;
-export type PerceptionRunInitiator = (typeof PERCEPTION_RUN_INITIATORS)[number];
-
 export interface PerceptionStorePort {
   listRecordsBetween(
     input: PerceptionScope & {
@@ -647,18 +648,6 @@ export interface PerceptionStorePort {
   commandUtterances(
     input: PerceptionScope & { readonly utteranceIds: readonly string[] },
   ): Promise<readonly string[]>;
-  markRunRead(
-    input: PerceptionScope & {
-      readonly runId: string;
-      readonly recordIds: readonly string[];
-      readonly maximum: number;
-      readonly now: string;
-    },
-  ): Promise<void>;
-  runReadRecordIds(input: PerceptionScope & { readonly runId: string }): Promise<readonly string[]>;
-  runInitiator(
-    input: PerceptionScope & { readonly runId: string },
-  ): Promise<PerceptionRunInitiator | undefined>;
   readSettings(input: PerceptionScope): Promise<PerceptionSettings>;
   writeSettings(
     input: PerceptionScope & {
@@ -734,7 +723,12 @@ export interface PerceptionStorePort {
       readonly now: string;
       readonly items: readonly DeviceMirrorItemInput[];
     },
-  ): Promise<{ readonly applied: number; readonly stale: number; readonly removed: number }>;
+  ): Promise<{
+    readonly applied: number;
+    readonly stale: number;
+    readonly removed: number;
+    readonly active: number;
+  }>;
   listMirror(
     input: PerceptionScope & { readonly kind: DeviceMirrorKind; readonly includeDeleted: boolean },
   ): Promise<readonly DeviceMirrorItem[]>;
