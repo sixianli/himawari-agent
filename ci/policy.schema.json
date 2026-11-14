@@ -61,7 +61,7 @@
                   "minLength": 1
                 },
                 "runner": {
-                  "enum": ["ci-vps", "ci-vps-gate", "macos-15"]
+                  "enum": ["ci-vps", "ci-vps-gate", "ci-arm", "macos-15"]
                 },
                 "paused": {
                   "const": true
@@ -71,6 +71,9 @@
                 },
                 "arch": {
                   "enum": ["x64", "arm64"]
+                },
+                "alternateArch": {
+                  "const": "arm64"
                 },
                 "node": {
                   "type": "string",

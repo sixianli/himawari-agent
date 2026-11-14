@@ -170,9 +170,9 @@
     }
   },
   "chat.identity": {
-    "sha256": "fda7f9520b2b825ba99e9de6198aafaead9b430560ab0955a8b18fbe055d2103",
-    "changedIn": "ADR 0166",
-    "reason": "W-05、W-09、W-12、W-21、W-24：资料标记改中文并给主人的要求单独标记；提醒成功后说事情时间和提醒时刻；删掉和回答语言规则重复的一句；审批写成系统自动发起的事实"
+    "sha256": "35e600b78cdeb3525ddd9047946f457c9bcd9983cd4bc833303757126fa0d61b",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚，再提一个可以直接点头的具体做法并说出依据"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -355,9 +355,9 @@
     "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
   },
   "mcp.find-memories": {
-    "sha256": "b237866524c80554f6c6b7196603727f09c43dd92f6e05fe7ea57f173a916fa6",
-    "changedIn": "ADR 0242",
-    "reason": "外部 agent 读记忆：新增 start_here 和服务使用说明，三个读工具的描述写明触发条件"
+    "sha256": "01d2d22db95c24492af1b2b773a89e601243e73c48a1b79da3595cbcb79ad13c",
+    "changedIn": "ADR 0262",
+    "reason": "新增 includeHistory 参数，说明里写明什么时候填"
   },
   "mcp.propose-memories": {
     "sha256": "f75b853df7d4a7a9e00f60981b07066014f3f68105df73f5ce30419d3bdfce7f",
@@ -544,6 +544,21 @@
     "changedIn": "ADR 0219",
     "reason": "新增：对外只读 MCP 入口的工具说明和失败文字"
   },
+  "memory.agenda.ending": {
+    "sha256": "92de03887fec2a5dc5a657558dd947164f46120189f0dab7ab28cba3f6c11a18",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排加入带日期的记忆；这 7 天的提醒全部读到且其中没有它时才写“这 7 天里没有提醒”"
+  },
+  "memory.agenda.omitted": {
+    "sha256": "135300a696b772e9adb68a7bb733c83a28d0c2db39793f31bb1adf3f8c0d7790",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排放不下时，写明还有几项没有列出"
+  },
+  "memory.agenda.unreminded": {
+    "sha256": "a9eae4450706a8b7e2058e4b1ca1f7b5aaa7b35eae7d981e85d1c8217b555836",
+    "changedIn": "主动提议第 0 步",
+    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：近期安排加入带日期的记忆；这 7 天的提醒全部读到且其中没有它时才写“这 7 天里没有提醒”"
+  },
   "memory.capture": {
     "sha256": "951c3556271b7e3e72b6aa91f48292aeb7505014e928f56036f5e3c849f8a445",
     "changedIn": "ADR 0185",
@@ -557,6 +572,11 @@
       ],
       "reason": "解析函数的硬要求：非 create 的候选没有有效的 existingMemoryId 整条作废；非 unchanged、非 restricted 的候选 quote 对不上原话会被拒。“unchanged 也要填”是给模型的统一要求，代码对 unchanged 和 restricted 不拦"
     }
+  },
+  "memory.classification": {
+    "sha256": "dd98a816e5e4d4603f7a4b95030c750073ffc940d23032216f679ba318144095",
+    "changedIn": "ADR 0260",
+    "reason": "新增：主人手动添加和导入的记忆由模型判断类别和是否敏感，代替网页上的词表猜测"
   },
   "memory.confirmation-judge": {
     "sha256": "34cc58d299f3339aa04ce8615462b94478c0393c43191021d05ed7f592b65732",
@@ -672,6 +692,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "memory.import-duplicate-question": {
+    "sha256": "324340a48c186039fa92a6a4d0f7bb175cadfb4d107b573b24d5916cb56c3255",
+    "changedIn": "ADR 0271",
+    "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
+  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -681,6 +706,16 @@
     "sha256": "693762a6b2f60f490e1217f79dea053f4319292232d8043fc8194e949232ac0d",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "rule.review": {
+    "sha256": "81d386ad3305c145522fe129882843b6b12888ab8d7bf3562bdfd17e89ec2a73",
+    "changedIn": "ADR 0232",
+    "reason": "新增：规则的来源记忆被改后，请模型按改后的主人原话重译规则，供程序和现有规则比较"
+  },
+  "rule.review.instructions-header": {
+    "sha256": "bc69f86b71bed300c90480a913df92a23d47cfc50e02b1c5331d016e6b8b1156",
+    "changedIn": "ADR 0232",
+    "reason": "新增：重检提示词里引用立规则说明的标题"
   },
   "runtime.compaction.summary-instruction": {
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
@@ -726,6 +761,11 @@
     "sha256": "a10bafeeee0ad6e161cfcae8cf94043bcc9e0a261659898d1877a55b46958b6d",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "tool-result.recall-input-invalid": {
+    "sha256": "d2c78196e63aa1d82083fba11d56b17377113aef7932fa45f71d69d768f85d86",
+    "changedIn": "ADR 0262",
+    "reason": "新增：查记忆的参数不对（日期不存在、先后颠倒等）时，告诉模型怎么改正后重查"
   },
   "tool-result.recall-tentative": {
     "sha256": "e7421bd88df36380fef973ec47331df9d9f4e1457227fc77d7456350d498d73b",
@@ -881,9 +921,9 @@
     "reason": "第二步 PR-A：产品策略拦下工具调用时，不再只给模型看 reasonCode，按原因说明哪个能力不可用、不要重试、怎样告诉主人；未知原因用这条通用说明"
   },
   "tools.recall": {
-    "sha256": "e8ff4b0aac87bfa9348d3600401389c7a57f0adb89c880dce50e6343ced11c4e",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
+    "sha256": "347d934d121bcd84306cf4a8f4078bfc5f5bad275423e924c751c5cd57349853",
+    "changedIn": "ADR 0262",
+    "reason": "时间范围只用模型填的：补一句问现在的情况时不填 includeHistory"
   },
   "tools.reminder-cancel": {
     "sha256": "36162b20fbebb99afd1ebe1d48ac2e88f721f3043fa99b09c612a472668d5d30",

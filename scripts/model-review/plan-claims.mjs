@@ -123,6 +123,9 @@ function stripQuoteMarks(text) {
   return text.replace(/^[\s`'"“”‘’]+|[\s`'"“”‘’]+$/g, "");
 }
 
+const MAX_EVIDENCE_PLACES = 8;
+const LINE_JOINS = /；|\\n|\s\/\s/u;
+
 function quoteFragments(quote, separator) {
   return stripQuoteMarks(quote)
     .split(separator)
@@ -133,11 +136,12 @@ function quoteFragments(quote, separator) {
 function fragmentsInOrder(fragments, haystack) {
   let from = 0;
   for (const fragment of fragments) {
-    const at = fragment.length >= 4 ? haystack.indexOf(fragment, from) : -1;
+    const tooShort = fragment.length < 4 && /[\p{L}\p{N}]/u.test(fragment);
+    const at = tooShort ? -1 : haystack.indexOf(fragment, from);
     if (at === -1) return false;
     from = at + fragment.length;
   }
-  return fragments.length > 0;
+  return fragments.some((fragment) => fragment.length >= EVIDENCE_MIN_CHARS);
 }
 
 export function quoteInText(quote, text) {
@@ -155,18 +159,46 @@ export function quoteInText(quote, text) {
       pieces.every((fragment) => fragment.length >= 4 && haystack.includes(fragment))
     );
   }
-  return fragmentsInOrder(quoteFragments(quote, /；/), haystack);
+  const whole = collapse(stripQuoteMarks(quote));
+  if (whole.length >= EVIDENCE_MIN_CHARS && haystack.includes(whole)) return true;
+  return fragmentsInOrder(quoteFragments(quote, LINE_JOINS), haystack);
+}
+
+export function locationsOf(location) {
+  const places = [];
+  for (const part of location.trim().split(/[,，]\s*/u)) {
+    const bare = /^`?(\d+)(?:-\d+)?`?$/u.exec(part);
+    if (bare && places.length > 0) {
+      places.push({ path: places.at(-1).path, line: Number(bare[1]) });
+      continue;
+    }
+    const place = locationOf(part);
+    if (!place) return [];
+    places.push(place);
+  }
+  return places;
 }
 
 function claimEvidenceProblem(repo, head, claim) {
-  if (claim.verdict === "找不到" && !locationOf(claim.location)) return null;
-  const place = locationOf(claim.location);
-  if (!place) return "location-missing";
-  const blob = blobAt(repo, head, place.path);
-  if (blob === null) return "location-file-missing";
-  const text = blob.toString("utf8");
-  if (place.line < 1 || place.line > text.split("\n").length) return "location-line-out-of-range";
-  if (claim.verdict !== "找不到" && !quoteInText(claim.code, text)) return "code-quote-not-in-file";
+  const places = locationsOf(claim.location);
+  if (claim.verdict === "找不到" && places.length === 0) return null;
+  if (places.length === 0) return "location-missing";
+  if (places.length > MAX_EVIDENCE_PLACES) return "too-many-places";
+  const texts = new Map();
+  for (const place of places) {
+    if (!texts.has(place.path)) {
+      const blob = blobAt(repo, head, place.path);
+      if (blob === null) return "location-file-missing";
+      texts.set(place.path, blob.toString("utf8"));
+    }
+    const lines = texts.get(place.path).split("\n").length;
+    if (place.line < 1 || place.line > lines) return "location-line-out-of-range";
+  }
+  if (
+    claim.verdict !== "找不到" &&
+    ![...texts.values()].some((text) => quoteInText(claim.code, text))
+  )
+    return "code-quote-not-in-file";
   return null;
 }
 

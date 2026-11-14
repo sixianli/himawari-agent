@@ -2,6 +2,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -10,15 +11,24 @@ import {
   type ConfiguredMemoryRetrieval,
   type ConfiguredModelDescriptor,
   type DataClassification,
+  DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
+  DEVICE_CONFIGURATION_DEFAULTS,
+  DEVICE_HARD_LIMIT_KEYS,
+  DEVICE_HARD_LIMITS,
+  type DeviceConfiguration,
+  type DeviceHardLimitKey,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
   type IdentityBootstrapConfiguration,
   type IdentityConfiguration,
   type IdentityCsrfConfiguration,
+  IMPORT_DUPLICATE_DEFAULTS,
+  IMPORT_DUPLICATE_RANGES,
+  type ImportDuplicateConfiguration,
+  type ImportDuplicateTuning,
   isWebProviderId,
-  APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
@@ -1294,6 +1304,31 @@ function parseMuseIntake(value: unknown): NonNullable<RunPolicyConfiguration["mu
   });
 }
 
+function parseImportDuplicates(value: unknown): ImportDuplicateConfiguration {
+  const field = "configuration.runPolicy.importDuplicates";
+  const input = record(value, field);
+  const keys = Object.keys(IMPORT_DUPLICATE_DEFAULTS) as (keyof ImportDuplicateTuning)[];
+  rejectUnknown(input, [...keys, "model", "secretRef"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = IMPORT_DUPLICATE_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? IMPORT_DUPLICATE_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as ImportDuplicateTuning;
+  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+  });
+}
+
 function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRead"]> {
   const field = "configuration.runPolicy.mcpRead";
   const input = record(value, field);
@@ -1323,6 +1358,87 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
     secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
     subject,
   });
+}
+
+function parseDevice(value: unknown): DeviceConfiguration {
+  const field = "configuration.runPolicy.device";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "signatureToleranceSeconds",
+      "heartbeatSeconds",
+      "connectionMaxSeconds",
+      "streamConnections",
+      ...DEVICE_HARD_LIMIT_KEYS,
+    ],
+    field,
+  );
+  const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
+    input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
+  const limits = Object.fromEntries(
+    DEVICE_HARD_LIMIT_KEYS.map((key) => {
+      const definition = DEVICE_HARD_LIMITS[key];
+      return [key, optional(key, definition.defaultValue, definition.minimum, definition.maximum)];
+    }),
+  ) as Record<DeviceHardLimitKey, number>;
+  const heartbeatSeconds = optional(
+    "heartbeatSeconds",
+    DEVICE_CONFIGURATION_DEFAULTS.heartbeatSeconds,
+    1,
+    300,
+  );
+  const connectionMaxSeconds = optional(
+    "connectionMaxSeconds",
+    DEVICE_CONFIGURATION_DEFAULTS.connectionMaxSeconds,
+    60,
+    86_400,
+  );
+  if (connectionMaxSeconds < heartbeatSeconds)
+    throw invalid(`${field}.connectionMaxSeconds`, "must not be smaller than heartbeatSeconds");
+  return Object.freeze({
+    signatureToleranceSeconds: optional(
+      "signatureToleranceSeconds",
+      DEVICE_CONFIGURATION_DEFAULTS.signatureToleranceSeconds,
+      5,
+      600,
+    ),
+    heartbeatSeconds,
+    connectionMaxSeconds,
+    streamConnections: optional(
+      "streamConnections",
+      DEVICE_CONFIGURATION_DEFAULTS.streamConnections,
+      1,
+      64,
+    ),
+    limits: Object.freeze(limits),
+  });
+}
+
+function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["homeFeed"]> {
+  const field = "configuration.runPolicy.homeFeed";
+  const input = record(value, field);
+  const bounds = {
+    awaitingLimit: [1, 1000],
+    otherLimit: [0, 200],
+    sourceReadLimit: [1, 200],
+    deadlineLeadMinutes: [0, 43_200],
+    recentHours: [1, 720],
+    upcomingLimit: [0, 200],
+    upcomingDays: [1, 366],
+  } as const satisfies Record<keyof typeof DEFAULT_HOME_FEED, readonly [number, number]>;
+  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
+  rejectUnknown(input, keys, field);
+  return Object.freeze(
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        input[key] === undefined
+          ? DEFAULT_HOME_FEED[key]
+          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
+      ]),
+    ) as Record<keyof typeof bounds, number>,
+  );
 }
 
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
@@ -1369,8 +1485,11 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "device",
+      "homeFeed",
       "proactive",
       "museIntake",
+      "importDuplicates",
       "realEval",
       "mcpRead",
     ],
@@ -1418,12 +1537,17 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
+    ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["importDuplicates"] === undefined
+      ? {}
+      : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     ...(input["freezeThreadPrompts"] === undefined
@@ -1446,6 +1570,11 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { retiredKeys: Object.freeze(["maxMemoryClassification"]) }),
   });
 }
+
+export const DEVICE_ACCESS_SECRET_PURPOSES = [
+  "device-access-client-id",
+  "device-access-client-secret",
+] as const;
 
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
@@ -1634,6 +1763,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.identity.csrf.keySecretRef",
     );
   }
+  const deviceAccessCounts = DEVICE_ACCESS_SECRET_PURPOSES.map(
+    (purpose) => secretReferences.filter((entry) => entry.purpose === purpose).length,
+  );
+  if (deviceAccessCounts.some((count) => count > 1) || new Set(deviceAccessCounts).size > 1) {
+    throw invalid(
+      "configuration.secretReferences",
+      "must declare the device access client id and secret together, at most once each",
+    );
+  }
   const secretReferenceNames = new Set(secretReferences.map(({ ref }) => ref));
   for (const descriptor of modelDescriptors) {
     if (descriptor.secretRef !== null && !secretReferenceNames.has(descriptor.secretRef)) {
@@ -1700,6 +1838,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.webPush.secretRef,
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
+    );
+  if (runPolicy?.importDuplicates)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.importDuplicates.secretRef,
+      "model-auth",
+      "configuration.runPolicy.importDuplicates.secretRef",
     );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(

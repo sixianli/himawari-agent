@@ -1,15 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { proposalTextDigest } from "../external-proposal-text.js";
 import type { JsonValue } from "./canonical.js";
-import { validateAgainst } from "./schema.js";
-import {
-  externalProposalDigestKey,
-  externalProposalTextKey,
-  RULE_PARAMETERS_MAXIMUM_LENGTH,
-  SEALED_FILE,
-  SEALED_SCHEMA,
-} from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -18,6 +11,14 @@ import {
   ruleParametersKey,
   storedRuleProblem,
 } from "./rules.js";
+import { validateAgainst } from "./schema.js";
+import {
+  externalProposalDigestKey,
+  externalProposalTextKey,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
+  SEALED_FILE,
+  SEALED_SCHEMA,
+} from "./schemas.js";
 import { unsealJson } from "./seal.js";
 import {
   DATA_EXPORT_ERROR_CODES,
@@ -307,7 +308,7 @@ export async function importPortableExport(
       proposalsWithout += 1;
       continue;
     }
-    if (!/^[0-9a-f]{64}$/.test(digest))
+    if (!/^[0-9a-f]{64}$/.test(digest) || (text !== null && proposalTextDigest(text) !== digest))
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
         `其他 agent 的提议 ${proposal.id} 的正文摘要不对`,
@@ -335,6 +336,7 @@ export async function importPortableExport(
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
     people: parsed.people.length,
     importBatches: parsed.importBatches.length,
+    pairedDevices: 0,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
     conversationReviews: parsed.conversationReviews.length,
@@ -697,8 +699,8 @@ export async function importPortableExport(
           );
       }
       const ruleRow = database.prepare(
-        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at, suspend_reason, review_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const ruleVersion = database.prepare(
         `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, change_reason, changed_at)
@@ -715,6 +717,8 @@ export async function importPortableExport(
           rule.source,
           rule.sourceMemoryId,
           rule.updatedAt,
+          rule.suspendReason ?? null,
+          rule.status === "needs_review" ? rule.updatedAt : null,
         );
         for (const version of versions)
           ruleVersion.run(
@@ -761,7 +765,8 @@ export async function importPortableExport(
           item.status,
           item.receivedAt,
           item.decidedAt,
-          item.status === "committed" && keptMemoryLink(item.memoryId) === null
+          (item.status === "committed" && keptMemoryLink(item.memoryId) === null) ||
+            plan.contentRef === null
             ? null
             : item.batchId,
           keptMemoryLink(item.memoryId),

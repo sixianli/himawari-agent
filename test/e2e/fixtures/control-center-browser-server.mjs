@@ -1179,6 +1179,23 @@ function weeklySnapshot(withMails = false) {
               gate: null,
             })),
       },
+      correction: withMails
+        ? {
+            handled: 12,
+            agreed: 9,
+            missed: 2,
+            openMemories: 3,
+            openRules: 1,
+            agreement: {
+              successes: 9,
+              samples: 12,
+              enough: true,
+              value: 0.75,
+              low: 0.4677,
+              high: 0.9111,
+            },
+          }
+        : null,
     },
     generatedAt: now,
   };

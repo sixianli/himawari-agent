@@ -1,0 +1,4 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "纯日期记忆实际按“当地日期闭区间”算，不是作者说的 7×24 小时窗口", "valid": false, "class": "error"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "记忆页说明对“敏感记忆”和“所有带日期记忆”的表述与代码不一致", "valid": true, "class": "error", "severity": "low", "trigger": "主人读记忆页的说明，想知道哪些记忆会每轮带上", "consequence": "说明只提到带日期的敏感记忆和事件会进近期安排，没说其他类别带日期的记忆也会进", "modelSeverity": "中", "reason": "上一轮改完后说明不再和实际相反，只是没说全；只是界面说明文字，不影响发给模型的内容和任何行为，改一句话即可"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "历史趋势测试仍硬编码三个场景，新增场景没有进入历史报告测试", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人改坏“主动提下一步”场景的标签或汇总", "consequence": "历史报告测试照样通过，挡不住退步；只影响评测报告", "modelSeverity": "低"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“敏感分类的带日期记忆进入近期安排”没有正向测试", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把敏感分级的带日期记忆从近期安排里挡掉", "consequence": "测试照样通过，挡不住退步", "modelSeverity": "低"}

@@ -521,6 +521,8 @@ export class SqliteDecisionLedgerOperations {
          WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
            AND (owner_rating IS NULL OR rated_at >= ?)
            AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
+           AND kind <> 'memory_review'
+           AND NOT (kind = 'rule_review' AND substr(outcome, 1, 6) = 'owner_')
          ORDER BY checked_at DESC, id DESC LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.since, input.ratedSince, input.limit)

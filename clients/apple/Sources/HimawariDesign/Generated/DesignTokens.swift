@@ -146,6 +146,62 @@ public enum DesignTokens {
         public static let window: CGFloat = 250
     }
 
+    public enum Mac {
+        public static let buttonGap: CGFloat = 8
+        public static let buttonHeight: CGFloat = 34
+        public static let buttonPaddingX: CGFloat = 16
+        public static let cardButtonGap: CGFloat = 6
+        public static let cardButtonHeight: CGFloat = 32
+        public static let checklistGap: CGFloat = 14
+        public static let checklistIcon: CGFloat = 20
+        public static let checklistPadding: CGFloat = 24
+        public static let checklistRadius: CGFloat = 28
+        public static let checklistRowPadding: CGFloat = 9
+        public static let checklistWidth: CGFloat = 460
+        public static let chipClose: CGFloat = 14
+        public static let chipHeight: CGFloat = 28
+        public static let chipIcon: CGFloat = 15
+        public static let chipPaddingLeading: CGFloat = 11
+        public static let chipPaddingTrailing: CGFloat = 6
+        public static let chipRadius: CGFloat = 14
+        public static let inputAnswerMaxHeight: CGFloat = 320
+        public static let inputBarPaddingX: CGFloat = 8
+        public static let inputBarPaddingY: CGFloat = 6
+        public static let inputBarRadius: CGFloat = 26
+        public static let inputBarWidth: CGFloat = 500
+        public static let inputChipGap: CGFloat = 8
+        public static let inputChipsBottom: CGFloat = 2
+        public static let inputChipsTop: CGFloat = 10
+        public static let inputGap: CGFloat = 12
+        public static let inputInnerPaddingX: CGFloat = 10
+        public static let inputMark: CGFloat = 28
+        public static let inputRowHeight: CGFloat = 52
+        public static let noticeButtonHeight: CGFloat = 30
+        public static let noticeMark: CGFloat = 30
+        public static let noticePadding: CGFloat = 14
+        public static let noticeRadius: CGFloat = 22
+        public static let noticeWidth: CGFloat = 340
+        public static let pairingMark: CGFloat = 56
+        public static let pairingPadding: CGFloat = 24
+        public static let pairingWidth: CGFloat = 420
+        public static let panelCardPadding: CGFloat = 14
+        public static let panelCardRadius: CGFloat = 18
+        public static let panelGap: CGFloat = 10
+        public static let panelPadding: CGFloat = 12
+        public static let panelRadius: CGFloat = 26
+        public static let panelWidth: CGFloat = 350
+        public static let progressHeight: CGFloat = 6
+        public static let settingsHeight: CGFloat = 440
+        public static let settingsIcon: CGFloat = 18
+        public static let settingsPaddingX: CGFloat = 18
+        public static let settingsRowPadding: CGFloat = 8
+        public static let settingsWidth: CGFloat = 500
+        public static let smallButtonHeight: CGFloat = 28
+        public static let statusBadgeGap: CGFloat = 5
+        public static let statusIcon: CGFloat = 17
+        public static let talkRowHeight: CGFloat = 38
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 500, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)
@@ -155,6 +211,22 @@ public enum DesignTokens {
         public static let emptyTitle = TypeToken(size: 24, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
         public static let emptyTitleNewChat = TypeToken(size: 28, weight: 600, lineHeight: nil, face: .himawari, tracking: 0)
         public static let groupLabel = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macAnswer = TypeToken(size: 15, weight: 500, lineHeight: 15 * 1.6, face: .system, tracking: 0)
+        public static let macButton = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macButtonSmall = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macButtonSmallStrong = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .system, tracking: 0)
+        public static let macButtonStrong = TypeToken(size: 14, weight: 600, lineHeight: nil, face: .system, tracking: 0)
+        public static let macChecklistTitle = TypeToken(size: 21, weight: 600, lineHeight: 21 * 1.45, face: .himawari, tracking: 0)
+        public static let macChip = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macDraft = TypeToken(size: 17, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macInput = TypeToken(size: 19, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macLabel = TypeToken(size: 12, weight: 600, lineHeight: nil, face: .system, tracking: 0)
+        public static let macNotice = TypeToken(size: 15.5, weight: 600, lineHeight: 15.5 * 1.45, face: .himawari, tracking: 0)
+        public static let macRow = TypeToken(size: 15, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macRowStrong = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
+        public static let macSentence = TypeToken(size: 16, weight: 600, lineHeight: 16 * 1.45, face: .himawari, tracking: 0)
+        public static let macSetting = TypeToken(size: 13.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let macSmall = TypeToken(size: 12.5, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let offlineBanner = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)

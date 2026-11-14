@@ -153,6 +153,7 @@ export function buildDemoPack(options: DemoPackOptions): {
   put(DATA_FILES.memories, "data", jsonLines(memoryLines), memoryLines.length);
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", "", 0);
+  put(DATA_FILES.pairedDevices, "data", "", 0);
   put(DATA_FILES.consolidations, "data", "", 0);
   put(DATA_FILES.decisions, "data", "", 0);
   put(DATA_FILES.rules, "data", "", 0);
@@ -170,6 +171,7 @@ export function buildDemoPack(options: DemoPackOptions): {
     memoryHistoryEvents: built.reduce((total, { events }) => total + events, 0),
     people: peopleLines.length,
     importBatches: 0,
+    pairedDevices: 0,
     consolidations: 0,
     consolidationChanges: 0,
     decisions: 0,

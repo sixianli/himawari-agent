@@ -14,6 +14,7 @@ export interface PortableSnapshot {
   readonly people: readonly Row[];
   readonly aliases: readonly Row[];
   readonly importBatches: readonly Row[];
+  readonly pairedDevices: readonly Row[];
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
@@ -35,6 +36,7 @@ export interface PortableSnapshot {
   readonly externalProposals: readonly Row[];
   readonly externalProposalKeys: readonly Row[];
   readonly externalProposalUnkeyed: readonly Row[];
+  readonly openMemoryReviews: number;
 }
 
 const EXPORTABLE_STATUSES = "('active', 'archived', 'trashed')";
@@ -80,6 +82,11 @@ export function readSnapshot(
         JOIN memory_records memory ON memory.id = history.memory_id
         WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
           AND memory.classification = 'restricted' AND history.content_ref IS NOT NULL
+        UNION
+        SELECT history.quote_ref FROM memory_history_events history
+        JOIN memory_records memory ON memory.id = history.memory_id
+        WHERE memory.owner_id = @ownerId AND memory.agent_id = @agentId
+          AND memory.classification = 'restricted' AND history.quote_ref IS NOT NULL
         ORDER BY content_ref`,
       );
       const externalProposals = all(
@@ -102,6 +109,10 @@ export function readSnapshot(
         JOIN external_memory_proposals proposal ON proposal.id = unkeyed.proposal_id
         WHERE proposal.owner_id = @ownerId AND proposal.agent_id = @agentId
         ORDER BY unkeyed.proposal_id, unkeyed.client`,
+      );
+      const openMemoryReviews = count(
+        `SELECT COUNT(*) FROM memory_review_items
+          WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'open'`,
       );
       const history = all(
         `SELECT memory_id, kind, content_ref, stance, quote_ref, source_deleted, occurred_at
@@ -139,6 +150,11 @@ export function readSnapshot(
       const importBatches = all(
         `SELECT id, source, item_count, created_at, undone_at FROM memory_import_batches
         WHERE owner_id = @ownerId AND agent_id = @agentId ORDER BY created_at, id`,
+      );
+      const pairedDevices = all(
+        `SELECT id, kind, name, release_channel, status, paired_at, confirmed_at, revoked_at, last_seen_at
+        FROM paired_devices WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY paired_at, id`,
       );
       const runs = all(
         `SELECT id, day, trigger_run_id, status, reviewed_through, model_called, change_count,
@@ -218,7 +234,8 @@ export function readSnapshot(
           )
         : [];
       const rules = all(
-        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at
+        `SELECT rule_id, revision, parameters, status, source, source_memory_id, updated_at,
+          suspend_reason, suggestion
         FROM rule_book_rules WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY rule_id`,
       );
@@ -320,6 +337,7 @@ export function readSnapshot(
         people,
         aliases,
         importBatches,
+        pairedDevices,
         runs,
         changes,
         basis,
@@ -341,6 +359,7 @@ export function readSnapshot(
         externalProposals,
         externalProposalKeys,
         externalProposalUnkeyed,
+        openMemoryReviews,
       };
     })
     .deferred();

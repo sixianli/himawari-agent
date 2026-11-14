@@ -24,6 +24,7 @@ import {
   creditReserve,
   floorDecision,
   GATEWAY_PROVIDER_ID,
+  gatewayTiming,
   getJson,
   groupId,
   groupName,
@@ -39,13 +40,14 @@ import {
 import {
   CLAIM_PROBLEM_VERDICTS,
   CLAIMS_LINE_FORMAT,
-  claimsProblems,
   blobAt as claimsBlobAt,
   blobSha256 as claimsBlobSha256,
+  claimsProblems,
   parseClaims,
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
+import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -77,6 +79,8 @@ export function reviewModelsProblems(config) {
     )
   )
     problems.push("substitutes");
+  if (!Number.isSafeInteger(config?.lowDeferFromRound) || config.lowDeferFromRound < 2)
+    problems.push("lowDeferFromRound");
   return problems;
 }
 
@@ -95,6 +99,7 @@ export function readReviewModels(path = REVIEW_MODELS_CONFIG_PATH) {
 const reviewModels = readReviewModels();
 export const REVIEW_MODELS = reviewModels.allowed;
 export const DEFAULT_REVIEW_MODELS = reviewModels.default;
+export const LOW_DEFER_FROM_ROUND = reviewModels.lowDeferFromRound;
 export const REASONING_VARIANT = "high";
 export const OUTPUT_TOKEN_MAX = 200000;
 export const MIN_OUTPUT_TOKENS = 100000;
@@ -297,7 +302,7 @@ const MODE_TEXT = {
     network: "不能上网。",
     task: "系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。",
     output:
-      "输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
+      "输出格式：按严重度从高到低排列，每条意见单独一个以「### 」开头的三级标题（标题里写序号、严重度和一句话问题），下面写：文件:行、问题、证据（引用你亲自读到的那几行代码）、建议；意见以外的内容不要用三级标题。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。",
     materialTitle: "作者的说法（可能有错，请核对）：",
   },
   plan: {
@@ -364,7 +369,7 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
     `仓库就是当前目录，已检出 ${head}。`,
     base ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
     previous
-      ? `上一轮复核到 ${previous}，先看 git diff ${previous}..${head} 的增量，但可以读任何文件。`
+      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，复核增量和它直接影响的代码：调用它的地方、它调用的地方、它产生或修改的值的每个使用端。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。结论里写清这一轮查过哪些范围。`
       : null,
     text.materialTitle,
     brief.trim(),
@@ -881,6 +886,7 @@ function runOpencode({
         stopReason = marker.reason;
       resolvePromise({ stdout, stderr, stopReason, guard: marker, inFlight, ...result });
     };
+    child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
       pending += chunk;
@@ -904,6 +910,7 @@ function runOpencode({
         if (stopOnToolCall && calledTool) stop("wrap-up-tool-call");
       }
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
@@ -1435,6 +1442,8 @@ export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
   return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
 }
 
+export const REVIEW_RECORD_ERRORS = ["USAGE_LEDGER_INVALID", "REVIEW_ROUND_HEADS_DIFFER"];
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -1632,6 +1641,191 @@ export const STOP_REASONS = {
   "run-failed": () => "有模型没跑完（outcome 不是 ok）",
 };
 
+const SKELETON_SKIPPED_SECTIONS = /必答|侧重|结论|总结|summary|conclusion/i;
+
+export function deferredLowLines({ repo, ledgerPath, records }) {
+  const lines = [];
+  const rounds = [
+    ...new Set(
+      records
+        .filter((record) => record.mode === "code-review")
+        .map((record) => record.round ?? 1)
+        .filter((round) => round >= LOW_DEFER_FROM_ROUND),
+    ),
+  ].sort((a, b) => a - b);
+  for (const round of rounds) {
+    if (records.some((record) => record.mode === "low-fix" && record.round === round)) continue;
+    const path = `${ledgerPath}/round-${round}/verdicts.jsonl`;
+    const text = showAt(repo, "HEAD", path);
+    if (text === null) {
+      lines.push(`  第 ${round} 轮 verdicts.jsonl 没有提交，列不出这一轮的低意见`);
+      continue;
+    }
+    const errors = parseVerdicts(text, path).filter(
+      (verdict) => verdict.valid && verdict.class === "error",
+    );
+    if (errors.length === 0 || errors.some((verdict) => verdict.severity !== "low")) continue;
+    for (const verdict of errors)
+      lines.push(
+        `  第 ${round} 轮 ${printable(verdict.id)} ${verdict.model.split("/").pop()}：${printable(verdict.quote)}｜${printable(verdict.trigger)} → ${printable(verdict.consequence)}`,
+      );
+  }
+  return lines;
+}
+
+function latestReviewRound(repo, pr) {
+  const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
+  const usagePath = join(repo, ledgerPath, "usage.jsonl");
+  if (!existsSync(usagePath)) throw new Error(`ROUND_LEDGER_MISSING ${ledgerPath}`);
+  const records = parseUsage(readFileSync(usagePath, "utf8"), usagePath).filter(
+    (record) => record.mode === "code-review",
+  );
+  if (records.length === 0) throw new Error(`ROUND_NONE ${ledgerPath}`);
+  const round = Math.max(...records.map((record) => record.round ?? 1));
+  const own = records.filter((record) => (record.round ?? 1) === round);
+  const ok = own.filter((record) => record.outcome === "ok");
+  if (ok.length === 0) throw new Error(`ROUND_NOT_OK round-${round}`);
+  return { ledgerPath, round, records: ok, dir: join(repo, ledgerPath, `round-${round}`) };
+}
+
+export function skeletonFindings(answer) {
+  const findings = [];
+  let skipped = false;
+  for (const line of answer.split("\n")) {
+    const section = /^##\s+(.*)$/.exec(line);
+    if (section) {
+      skipped = SKELETON_SKIPPED_SECTIONS.test(section[1]);
+      continue;
+    }
+    if (!skipped && /^###\s+\S/.test(line)) findings.push(line);
+  }
+  return findings;
+}
+
+export function judgeSkeleton({ repo, pr }) {
+  const { ledgerPath, round, records, dir } = latestReviewRound(repo, pr);
+  const target = join(dir, "verdicts.jsonl");
+  if (existsSync(target))
+    throw new Error(`JUDGE_SKELETON_EXISTS ${ledgerPath}/round-${round}/verdicts.jsonl`);
+  const lines = [];
+  for (const record of records) {
+    const short = record.model.split("/").pop();
+    const answer = readFileSync(join(dir, `${short}.md`), "utf8");
+    skeletonFindings(answer).forEach((quote, index) => {
+      lines.push(
+        JSON.stringify({
+          id: `${records.length > 1 ? `${short}-` : ""}${index + 1}`,
+          model: record.model,
+          quote,
+          valid: null,
+          class: null,
+          severity: null,
+          trigger: "",
+          consequence: "",
+          modelSeverity: "",
+          why: "",
+        }),
+      );
+    });
+  }
+  if (lines.length === 0)
+    throw new Error(
+      `JUDGE_SKELETON_NONE round-${round} 答案里没有找到以「### 」开头的意见，读答案后手写 verdicts.jsonl；确实没有意见就写一个空文件`,
+    );
+  writeFileSync(target, `${lines.join("\n")}\n`);
+  return [
+    `JUDGE_SKELETON round=${round} findings=${lines.length} path=${ledgerPath}/round-${round}/verdicts.jsonl`,
+    "填好 valid、class、why；成立的会出错再填 severity、trigger、consequence、modelSeverity（判低而模型没给低时加 reason）。不是意见的行删掉，漏掉的意见照格式补一行。",
+  ];
+}
+
+const VERDICT_LABEL = (verdict) =>
+  !verdict.valid
+    ? "不成立"
+    : verdict.class === "better"
+      ? "成立，可以更好"
+      : `成立，会出错，${verdict.severity === "low" ? "低" : "中高"}`;
+
+export function finishRound({ repo, pr }) {
+  const { ledgerPath, round, records, dir } = latestReviewRound(repo, pr);
+  const path = `${ledgerPath}/round-${round}/verdicts.jsonl`;
+  const target = join(dir, "verdicts.jsonl");
+  if (!existsSync(target)) throw new Error(`FINISH_ROUND_NO_VERDICTS ${path}`);
+  const verdicts = parseVerdicts(readFileSync(target, "utf8"), path);
+  const problems = [];
+  const answers = new Map();
+  for (const verdict of verdicts) {
+    if (!answers.has(verdict.model)) {
+      const file = join(dir, `${verdict.model.split("/").pop()}.md`);
+      answers.set(verdict.model, existsSync(file) ? readFileSync(file, "utf8") : "");
+    }
+    if (!answers.get(verdict.model).includes(verdict.quote))
+      problems.push(`quote-not-found ${printable(verdict.id)}`);
+    if ((!verdict.valid || verdict.class === "better") && !String(verdict.why ?? "").trim())
+      problems.push(`why-missing ${printable(verdict.id)}`);
+    if (
+      ["why", "trigger", "consequence", "reason"].some(
+        (field) =>
+          verdict[field] !== undefined &&
+          (typeof verdict[field] !== "string" || hasControlCharacter(verdict[field])),
+      )
+    )
+      problems.push(`control-character ${printable(verdict.id)}`);
+  }
+  if (!COMMIT_PATTERN.test(records[0].base ?? "")) problems.push("base-invalid");
+  if (problems.length > 0) throw new Error(`FINISH_ROUND_REFUSED ${problems.join(" ")}`);
+  const errors = verdicts.filter((verdict) => verdict.valid && verdict.class === "error");
+  const high = errors.filter((verdict) => verdict.severity !== "low");
+  const low = errors.filter((verdict) => verdict.severity === "low");
+  const better = verdicts.filter((verdict) => verdict.valid && verdict.class === "better");
+  const models = [...new Set(records.map((record) => record.model.split("/").pop()))].join("、");
+  const judgment = [
+    `# PR ${pr} 第 ${round} 轮判断（${models}）`,
+    "",
+    ...verdicts.map((verdict) => {
+      const basis = [
+        verdict.why,
+        verdict.trigger && `触发：${verdict.trigger}`,
+        verdict.consequence && `后果：${verdict.consequence}`,
+        verdict.reason && `判低理由：${verdict.reason}`,
+      ]
+        .filter((part) => String(part ?? "").trim())
+        .join("；");
+      return `- ${verdict.id}（${verdict.model.split("/").pop()}）${VERDICT_LABEL(verdict)}：${verdict.quote}${basis ? `。${basis}` : ""}`;
+    }),
+    "",
+  ].join("\n");
+  writeFileSync(join(dir, "judgments.md"), judgment);
+  const record = records[0];
+  const reviewed = record.head;
+  const lines = [
+    `ROUND_SUMMARY pr=${pr} round=${round} reviewed=${reviewed} mediumHigh=${high.length} low=${low.length} better=${better.length} invalid=${verdicts.filter((verdict) => !verdict.valid).length}`,
+    `JUDGMENTS_WRITTEN ${ledgerPath}/round-${round}/judgments.md`,
+  ];
+  const gateway = record.gateway ? ` --gateway ${record.gateway}` : "";
+  if (high.length > 0)
+    lines.push(
+      `NEXT fix-and-rereview node scripts/model-review/opencode-review.mjs --mode code-review --base ${record.base} --head <修改后的提交> --previous ${reviewed} --pr ${pr} --brief <材料文件>${gateway}`,
+    );
+  else if (low.length > 0 && round < LOW_DEFER_FROM_ROUND)
+    lines.push(
+      `NEXT fix-low-then node scripts/model-review/opencode-review.mjs --assert-reviewed --pr ${pr} --accept-low ${round}`,
+    );
+  else if (low.length > 0)
+    lines.push(
+      `NEXT low-deferred 第 ${round} 轮只剩低意见，不修，--report 会列出：${low.map((verdict) => printable(verdict.id)).join(",")}`,
+    );
+  else
+    lines.push(
+      `NEXT done node scripts/model-review/opencode-review.mjs --assert-reviewed --pr ${pr}`,
+    );
+  if (better.length > 0)
+    lines.push(
+      `BETTER ${better.map((verdict) => `${printable(verdict.id)}：${printable(verdict.quote)}`).join(" ｜ ")}`,
+    );
+  return lines;
+}
+
 export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   if (!Object.hasOwn(STOP_REASONS, stop)) throw new Error("ARG_INVALID --stop");
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
@@ -1676,6 +1870,7 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
         }),
       ];
     });
+  const deferredLines = deferredLowLines({ repo, ledgerPath, records });
   const overrideLines = records
     .filter((record) => record.mode === "override")
     .map(
@@ -1687,6 +1882,9 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
     ...reviews.map(resultLine),
     `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
     ...(lowFixLines.length > 0 ? ["低严重度已改、未复核：", ...lowFixLines] : []),
+    ...(deferredLines.length > 0
+      ? [`低严重度未修（第 ${LOW_DEFER_FROM_ROUND} 轮起只列不修）：`, ...deferredLines]
+      : []),
     ...(overrideLines.length > 0 ? ["Andy 说跳过复核的记录：", ...overrideLines] : []),
     ...gate.lines,
     `停下的原因：${STOP_REASONS[stop](andyQuote)}`,
@@ -2185,11 +2383,12 @@ function startProbeServer(probes) {
   const requests = [];
   const served = new Map();
   const server = http.createServer((request, response) => {
-    let body = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(probeModelList());
@@ -2445,11 +2644,12 @@ export const GUARD_PROBE_REQUESTS = 3;
 function startLoopServer() {
   let mainRequests = 0;
   const server = http.createServer((request, response) => {
-    let body = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      body += chunk;
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
       if (request.method !== "POST") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(probeModelList());
@@ -2788,6 +2988,7 @@ export function promptFileName(model) {
 }
 
 export const SUBCOMMAND_ONLY_OPTIONS = ["--main-ref", "--stop", "--andy-quote"];
+export const ROUND_TOOL_OPTIONS = ["--judge-skeleton", "--finish-round", "--pr", "--repo"];
 export const ASSERT_OPTIONS = [
   "--assert-reviewed",
   "--pr",
@@ -2850,6 +3051,8 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--require-gateway") options.requireGateway = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
+    else if (key === "--judge-skeleton") options.judgeSkeleton = true;
+    else if (key === "--finish-round") options.finishRound = true;
     else if (key === "--stop") options.stop = take();
     else if (key === "--andy-quote") {
       options.andyQuote = take();
@@ -2908,6 +3111,13 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
+  if (options.judgeSkeleton || options.finishRound) {
+    if (options.judgeSkeleton && options.finishRound) throw new Error("ARG_SKELETON_AND_FINISH");
+    const extra = [...given].filter((key) => !ROUND_TOOL_OPTIONS.includes(key));
+    if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
+    if (options.pr === undefined) throw new Error("ARG_REQUIRED --pr");
+    return options;
+  }
   if (options.assertReviewed || options.report) {
     if (options.assertReviewed && options.report) throw new Error("ARG_ASSERT_AND_REPORT");
     const allowed = options.report ? REPORT_OPTIONS : ASSERT_OPTIONS;
@@ -3000,6 +3210,27 @@ export function withProviderMoney(record, creditProvider) {
 export function gatewayRequested(review) {
   const allowed = review.runs.reduce((total, run) => total + (run.guard?.allowed ?? 0), 0);
   return Math.max(review.summary.usage.steps, allowed);
+}
+
+export function timingLine(record) {
+  const seconds = (ms) => (Number.isFinite(ms) ? Math.round(ms / 1000) : "-");
+  const timing = record.gatewayTiming;
+  return [
+    `REVIEW_TIMING ${record.model}`,
+    `selfCheck=${seconds(record.selfCheckMs)}s`,
+    `run=${seconds(record.runMs)}s`,
+    `steps=${record.steps}`,
+    ...(timing
+      ? [
+          `requests=${timing.requests}`,
+          `model=${seconds(timing.modelMs)}s`,
+          `firstToken=${seconds(timing.firstTokenMs)}s`,
+          `slowest=${seconds(timing.slowestMs)}s`,
+          `cacheMisses=${timing.cacheMisses}`,
+          `missTokens=${timing.missTokens}`,
+        ]
+      : []),
+  ].join(" ");
 }
 
 export function gatewayUsageLine(record) {
@@ -3163,11 +3394,27 @@ async function main() {
     for (const line of reviewReport(options)) console.log(line);
     return;
   }
+  if (options.judgeSkeleton) {
+    for (const line of judgeSkeleton(options)) console.log(line);
+    return;
+  }
+  if (options.finishRound) {
+    for (const line of finishRound(options)) console.log(line);
+    return;
+  }
   if (options.assertReviewed) {
-    const result = assertReviewed(options);
+    let result;
+    try {
+      result = assertReviewed(options);
+    } catch (error) {
+      if (!REVIEW_RECORD_ERRORS.some((code) => error.message.startsWith(`${code} `))) throw error;
+      console.log(`REVIEW_RECORD_INVALID ${error.message}`);
+      process.exitCode = REVIEW_NOT_COVERED_EXIT;
+      return;
+    }
     for (const line of result.lines) console.log(line);
     if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)
-      process.exitCode = 5;
+      process.exitCode = REVIEW_NOT_COVERED_EXIT;
     return;
   }
   const missingProxy = gatewayRequiredProblem(options, process.env);
@@ -3268,6 +3515,7 @@ async function main() {
     const removed = prepareCopy({ repo: options.repo, copy, commits, workRoot });
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
     const gitGuard = installGitGuard(workRoot);
+    const selfCheckStartedAt = Date.now();
     const problems = await selfCheck({
       binary,
       copy,
@@ -3282,7 +3530,8 @@ async function main() {
       process.exitCode = 3;
       return;
     }
-    console.log("SELF_CHECK_OK");
+    const selfCheckMs = Date.now() - selfCheckStartedAt;
+    console.log(`SELF_CHECK_OK ms=${selfCheckMs}`);
     if (options.selfCheckOnly) return;
     let liveGateway = null;
     if (gateway) {
@@ -3318,6 +3567,7 @@ async function main() {
       keepEarlierAttempt(roundDir, name);
       keepEarlierAttempt(roundRawDir, name, RAW_FILE_SUFFIXES);
       writeFileSync(join(roundDir, promptFileName(model)), maskSecretLike(prompt));
+      const runStartedAt = Date.now();
       const review = await reviewModel({
         binary,
         cwd: copy,
@@ -3329,8 +3579,10 @@ async function main() {
         timeoutMs,
         extraEnv: routed ? gatewayOpencodeEnv() : {},
       });
+      const runMs = Date.now() - runStartedAt;
       writeFileSync(join(roundRawDir, `${name}.jsonl`), review.stdout);
       const gatewayUsage = liveGateway ? await liveGateway.live.stableUsage() : null;
+      const timing = liveGateway ? gatewayTiming(gatewayUsage, model) : null;
       const { summary } = review;
       writeFileSync(join(roundDir, `${name}.md`), maskedRecordText(summary.text));
       if (summary.thinking)
@@ -3353,6 +3605,9 @@ async function main() {
         exitCode: review.runs.at(-1).code,
         ...summary.usage,
         toolCalls: summary.toolCalls.length,
+        selfCheckMs,
+        runMs,
+        ...(timing ? { gatewayTiming: timing } : {}),
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
         ...(review.retry ? { retry: review.retry } : {}),
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
@@ -3416,7 +3671,9 @@ async function main() {
     for (const record of results) {
       console.log(resultLine(record));
       if (record.gateway) console.log(gatewayUsageLine(record));
+      console.log(timingLine(record));
     }
+    for (const rest of liveGateway?.live.rests() ?? []) console.log(`GATEWAY_REST ${rest}`);
     if (gateway) {
       const changed = binaryProblem(gateway.install);
       if (changed) {

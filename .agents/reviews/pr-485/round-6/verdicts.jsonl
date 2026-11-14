@@ -1,0 +1,6 @@
+{"id": "R6-1", "quote": "### 中：第 5 轮修复 (1) 「先过滤敏感/受限再判截断」没有对应的自动检查", "valid": true, "class": "error", "severity": "low", "trigger": "以后有人把敏感过滤挪回截断判断之后", "consequence": "回归不会被测试发现；当前代码本身正确", "modelSeverity": "中", "reason": "代码正确，只缺回归测试，属测试缺口；已在全敏感用例里补“已读满上限后遇到敏感记忆仍判 different”，并验证旧顺序下失败", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "R6-2", "quote": "### 低：新增顺序测试里「第一个请求单独发」的断言几乎是空的", "valid": true, "class": "error", "severity": "low", "trigger": "实现改成全部并发", "consequence": "测试仍通过", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "R6-3", "quote": "### 低：ADR 把可配置的默认值写成了硬上限", "valid": true, "class": "error", "severity": "low", "trigger": "上线时调大配置", "consequence": "ADR 和实际行为不符", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "R6-4", "quote": "### 低：词表门槛文档没有写明实现的两个盲区", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "R6-5", "quote": "### 低：确定性敏感的已有记忆仍会占用截断名额", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "R6-6", "quote": "### 低：ADR 第 9 条提到的 `normalizeMemoryText` 登记行在登记表里并不存在", "valid": true, "class": "error", "severity": "low", "trigger": "读者按 ADR 去找登记行", "consequence": "找不到，文档误导", "modelSeverity": "低", "model": "opencode-go/deepseek-v4.1-flash"}

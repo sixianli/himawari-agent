@@ -63,6 +63,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.snapshot",
   "memory.basis.read",
   "memory.basis.snapshot",
+  "memory.classify.read",
+  "memory.classify.snapshot",
+  "memory.import.duplicates.read",
+  "memory.import.duplicates.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -75,6 +79,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.rules.read",
   "memory.rules.snapshot",
   "memory.rule.respond",
+  "memory.review.read",
+  "memory.review.snapshot",
+  "memory.review.respond",
+  "memory.review.reportMissed",
   "memory.create",
   "memory.category.set",
   "memory.settings.set",
@@ -137,9 +145,18 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.revoke",
   "server.status.read",
   "server.status.snapshot",
+  "home.read",
+  "home.snapshot",
   "data.export.start",
+  "data.export.cancel",
   "data.export.status.read",
   "data.export.status.snapshot",
+  "files.list.read",
+  "files.list.snapshot",
+  "login.devices.read",
+  "login.devices.snapshot",
+  "login.device.revoke",
+  "login.devices.revoke_others",
   "stream.event",
 ] as const;
 
@@ -549,17 +566,7 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
-function isHiddenNameCharacter(code: number): boolean {
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    (code >= 0x200b && code <= 0x200f) ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x2064) ||
-    (code >= 0x2066 && code <= 0x2069) ||
-    code === 0xfeff
-  );
-}
+const HIDDEN_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string")
@@ -569,7 +576,7 @@ const deviceNameSchema: Schema<string> = {
     if (
       characters.length < 1 ||
       characters.length > DEVICE_NAME_MAX_LENGTH ||
-      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+      HIDDEN_NAME_CHARACTER.test(trimmed)
     )
       throw new ContractValidationError(
         path,
@@ -578,7 +585,22 @@ const deviceNameSchema: Schema<string> = {
     return trimmed;
   },
 };
+export function normalizeDeviceName(input: unknown): string | null {
+  try {
+    return deviceNameSchema.parse(input);
+  } catch {
+    return null;
+  }
+}
 const accessText = boundedString(256);
+export function isDeviceAccessText(input: unknown): boolean {
+  try {
+    accessText.parse(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const deviceAccessSchema = object({
   clientId: accessText,
   clientSecret: accessText,
@@ -641,6 +663,126 @@ const deviceRenameCommandSchema = object({
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
+export const HOME_KEY_MAXIMUM = 160;
+export const HOME_ITEM_KINDS = [
+  "heads_up",
+  "approval",
+  "memory_confirm",
+  "done",
+  "running",
+  "problem",
+] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "unscored", "recency"] as const;
+export const HOME_TARGET_TYPES = [
+  "mail",
+  "memory",
+  "thread",
+  "approval",
+  "memory_request",
+  "external_proposal",
+  "rule",
+  "connection",
+] as const;
+export const HOME_ORIGIN_TYPES = [
+  "mail",
+  "memory",
+  "conversation",
+  "agent",
+  "rule",
+  "connection",
+] as const;
+export const HOME_SOURCE_NAMES = [
+  "mail",
+  "reminders",
+  "approvals",
+  "memory_requests",
+  "external_proposals",
+  "rules",
+  "done",
+  "runs",
+  "upcoming",
+] as const;
+export const HOME_LOCALES = ["zh-CN", "en", "ja"] as const;
+export const HOME_ACTIONS = [
+  "done",
+  "mute",
+  "dismiss",
+  "snooze",
+  "cancel",
+  "approved",
+  "denied",
+  "rejected",
+  "keep",
+  "reject",
+  "reconfirm",
+  "undo",
+  "reconnect",
+] as const;
+export const HOME_LABEL_BASES = ["catalog"] as const;
+export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
+const homeQuerySchema = object({
+  ...envelope("query", "home.read"),
+  payload: object({ locale: enumeration(HOME_LOCALES) }),
+});
+const homeSnapshotSchema = object({
+  ...envelope("snapshot", "home.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        key: boundedString(HOME_KEY_MAXIMUM),
+        kind: enumeration(HOME_ITEM_KINDS),
+        awaitsOwner: booleanValue,
+        sentence: nullable(boundedString(2000)),
+        sentenceBasis: enumeration(HOME_SENTENCE_BASES),
+        target: object({
+          type: enumeration(HOME_TARGET_TYPES),
+          id: nullable(machineString),
+          threadId: nullable(machineString),
+          link: nullable(boundedString(512)),
+        }),
+        source: object({
+          type: enumeration(HOME_ORIGIN_TYPES),
+          from: nullable(boundedString(320)),
+          label: nullable(boundedString(500)),
+          threadId: nullable(machineString),
+          decisionId: nullable(machineString),
+          at: timestamp,
+        }),
+        deadline: nullable(timestamp),
+        createdAt: timestamp,
+        actions: array(
+          object({
+            action: enumeration(HOME_ACTIONS),
+            label: boundedString(64),
+            labelBasis: enumeration(HOME_LABEL_BASES),
+            polarity: enumeration(HOME_POLARITIES),
+            ownerPresence: booleanValue,
+            reviewLabel: nullable(boundedString(64)),
+          }),
+        ),
+        rank: enumeration(HOME_RANKS),
+        dataClassification: classificationSchema,
+      }),
+    ),
+    awaitingCount: integer(0),
+    awaitingTruncated: booleanValue,
+    incompleteSources: array(enumeration(HOME_SOURCE_NAMES)),
+    upcoming: array(
+      object({
+        reminderId: machineString,
+        memoryId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+        sourceThreadId: nullable(machineString),
+        dataClassification: classificationSchema,
+      }),
+    ),
+    revision: machineString,
+    generatedAt: timestamp,
+  }),
+});
 const serverStatusQuerySchema = object({
   ...envelope("query", "server.status.read"),
   payload: object({}),
@@ -662,7 +804,7 @@ const serverStatusSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
-export const DATA_EXPORT_STATES = ["running", "ready", "failed", "expired"] as const;
+export const DATA_EXPORT_STATES = ["running", "ready", "failed", "cancelled", "expired"] as const;
 const patternString = (pattern: RegExp, expected: string): Schema<string> => ({
   parse(input, path = "$") {
     if (typeof input !== "string" || !pattern.test(input))
@@ -676,6 +818,10 @@ const dataExportStartCommandSchema = object({
   ...commandEnvelope("data.export.start"),
   payload: object({}),
 });
+const dataExportCancelCommandSchema = object({
+  ...commandEnvelope("data.export.cancel"),
+  payload: object({ exportId: dataExportIdSchema }),
+});
 const dataExportStatusQuerySchema = object({
   ...envelope("query", "data.export.status.read"),
   payload: object({ exportId: dataExportIdSchema }),
@@ -688,6 +834,12 @@ const dataExportStatusSnapshotObjectSchema = object({
     startedAt: nullable(timestamp),
     finishedAt: nullable(timestamp),
     failureCode: nullable(machineString),
+    progress: nullable(
+      object({
+        textsRead: integer(0),
+        textsTotal: integer(0),
+      }),
+    ),
     result: nullable(
       object({
         downloadPath: boundedString(256),
@@ -708,6 +860,19 @@ const dataExportStatusSnapshotSchema: Schema<
 > = {
   parse(input, path = "$") {
     const snapshot = dataExportStatusSnapshotObjectSchema.parse(input, path);
+    const progress = snapshot.payload.progress;
+    if (progress) {
+      if (snapshot.payload.state !== "running")
+        throw new ContractValidationError(
+          `${path}.payload.progress`,
+          "expected progress only while the export is running",
+        );
+      if (progress.textsRead > progress.textsTotal)
+        throw new ContractValidationError(
+          `${path}.payload.progress.textsRead`,
+          "expected texts read to be at most the total",
+        );
+    }
     const result = snapshot.payload.result;
     if (result) {
       const url = new URL(result.downloadPath, "http://localhost");
@@ -725,6 +890,86 @@ const dataExportStatusSnapshotSchema: Schema<
     return snapshot;
   },
 };
+export const FILE_LIST_KINDS = [
+  "document",
+  "code",
+  "web",
+  "image",
+  "pdf",
+  "data",
+  "other",
+] as const;
+export const FILE_LIST_ORIGINS = ["uploaded", "generated"] as const;
+export const FILE_LIST_PAGE_LIMIT = 100;
+const fileListCursorSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^[A-Za-z0-9_-]{1,512}$/u.test(input))
+      throw new ContractValidationError(path, "expected a file list cursor");
+    return input;
+  },
+};
+const filesListQuerySchema = object({
+  ...envelope("query", "files.list.read"),
+  payload: object({
+    kind: nullable(enumeration(FILE_LIST_KINDS)),
+    origin: nullable(enumeration(FILE_LIST_ORIGINS)),
+    before: nullable(fileListCursorSchema),
+    limit: integer(1, FILE_LIST_PAGE_LIMIT),
+  }),
+});
+const filesListSnapshotSchema = object({
+  ...envelope("snapshot", "files.list.snapshot"),
+  payload: object({
+    files: array(
+      object({
+        fileId: machineString,
+        threadId: machineString,
+        threadTitle: nullable(boundedString(256)),
+        name: boundedString(256),
+        kind: enumeration(FILE_LIST_KINDS),
+        origin: enumeration(FILE_LIST_ORIGINS),
+        mediaType: boundedString(128),
+        sizeBytes: integer(0),
+        version: integer(1),
+        createdAt: timestamp,
+        deleted: booleanValue,
+        contentPath: nullable(boundedString(512)),
+      }),
+    ),
+    nextCursor: nullable(fileListCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const loginDevicesQuerySchema = object({
+  ...envelope("query", "login.devices.read"),
+  payload: object({}),
+});
+const loginDevicesSnapshotSchema = object({
+  ...envelope("snapshot", "login.devices.snapshot"),
+  payload: object({
+    devices: array(
+      object({
+        deviceId: machineString,
+        label: boundedString(80),
+        firstSeenAt: timestamp,
+        lastSeenAt: timestamp,
+        current: booleanValue,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const loginDevicesRevokeOthersCommandSchema = object({
+  ...commandEnvelope("login.devices.revoke_others"),
+  payload: object({ recentAuthenticationRef: nullable(machineString) }),
+});
+const loginDeviceRevokeCommandSchema = object({
+  ...commandEnvelope("login.device.revoke"),
+  payload: object({
+    deviceId: machineString,
+    recentAuthenticationRef: nullable(machineString),
+  }),
+});
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
   payload: object({
@@ -769,6 +1014,7 @@ const proactiveReviewKinds = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_review",
   "mail",
   "checkup",
 ] as const;
@@ -1218,6 +1464,16 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         ),
       }),
+      correction: nullable(
+        object({
+          handled: integer(0),
+          agreed: integer(0),
+          missed: integer(0),
+          openMemories: integer(0),
+          openRules: integer(0),
+          agreement: calibrationRateSchema,
+        }),
+      ),
     }),
     generatedAt: timestamp,
   }),
@@ -1311,6 +1567,61 @@ const memoryBasisSnapshotSchema = object({
     complete: booleanValue,
   }),
 });
+export const MEMORY_CLASSIFY_MAXIMUM = 500;
+const memoryClassifyRefsSchema = array(machineString);
+const memoryClassifyQuerySchema = object({
+  ...envelope("query", "memory.classify.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_CLASSIFY_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryClassifySnapshotSchema = object({
+  ...envelope("snapshot", "memory.classify.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        classification: enumeration(["private", "sensitive"]),
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
+        failed: booleanValue,
+      }),
+    ),
+  }),
+});
+export const MEMORY_IMPORT_DUPLICATES_MAXIMUM = 500;
+const memoryImportDuplicatesQuerySchema = object({
+  ...envelope("query", "memory.import.duplicates.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_IMPORT_DUPLICATES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryImportDuplicatesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.duplicates.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        verdict: enumeration(["same", "unsure", "different", "skipped"]),
+        memoryId: nullable(machineString),
+      }),
+    ),
+  }),
+});
 const decisionChainQuerySchema = object({
   ...envelope("query", "decision.chain.read"),
   payload: object({ decisionId: machineString }),
@@ -1335,6 +1646,7 @@ const decisionChainSnapshotSchema = object({
         "retrieval_degrade",
         "external_read",
         "rule_review",
+        "memory_review",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
@@ -1362,7 +1674,7 @@ const decisionChainSnapshotSchema = object({
           ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
           source: nullable(boundedString(256)),
-          status: nullable(enumeration(["active", "needs_review", "retired"])),
+          status: nullable(enumeration(["active", "needs_review", "suspended", "retired"])),
           changedAt: nullable(timestamp),
           memory: nullable(
             object({
@@ -1705,10 +2017,12 @@ const memoryRulesSnapshotSchema = object({
         ruleId: machineString,
         type: boundedString(64),
         summary: boundedString(200),
-        status: enumeration(["active", "needs_review"]),
+        status: enumeration(["active", "needs_review", "suspended"]),
         enforced: booleanValue,
         updatedAt: timestamp,
         quote: nullable(boundedString(500)),
+        quoteSuperseded: booleanValue,
+        quoteLatestMemoryId: nullable(machineString),
         changes: integer(0),
         lastUsed: nullable(
           object({ at: timestamp, kind: machineString, decisionId: machineString }),
@@ -1725,12 +2039,97 @@ const memoryRuleRespondCommandSchema = object({
     action: enumeration(OWNER_RULE_ACTIONS),
   }),
 });
+export const MEMORY_REVIEW_REASONS = [
+  "memory_edited",
+  "memory_superseded",
+  "memory_removed",
+  "memory_restored",
+  "memory_reclassified",
+  "owner_reported",
+] as const;
+export const RULE_SUSPEND_REASONS = [
+  "source_removed",
+  "no_longer_standing",
+  "parameters_changed",
+] as const;
+export const RULE_CONDITION_FIELDS = [
+  "senderDomains",
+  "senderAddresses",
+  "phrases",
+  "words",
+  "excludePhrases",
+] as const;
+export const MEMORY_REVIEW_ACTIONS = ["dismiss", "adopt", "confirm_suspended", "restore"] as const;
+const memoryReviewQuerySchema = object({
+  ...envelope("query", "memory.review.read"),
+  payload: object({}),
+});
+const memoryReviewSnapshotSchema = object({
+  ...envelope("snapshot", "memory.review.snapshot"),
+  payload: object({
+    memories: array(
+      object({
+        memoryId: machineString,
+        text: nullable(boundedString(200)),
+        upstreamMemoryId: machineString,
+        upstreamText: nullable(boundedString(200)),
+        reason: enumeration(MEMORY_REVIEW_REASONS),
+        depth: integer(1),
+        truncated: booleanValue,
+        flaggedAt: timestamp,
+      }),
+    ),
+    rules: array(
+      object({
+        ruleId: machineString,
+        revision: integer(1),
+        status: enumeration(["needs_review", "suspended"]),
+        summary: boundedString(200),
+        suggestion: nullable(boundedString(200)),
+        suggestionConditions: array(
+          object({
+            field: enumeration(RULE_CONDITION_FIELDS),
+            values: array(boundedString(200)),
+          }),
+        ),
+        suspendReason: nullable(enumeration(RULE_SUSPEND_REASONS)),
+        rechecking: booleanValue,
+        sourceMemoryId: nullable(machineString),
+        updatedAt: timestamp,
+      }),
+    ),
+    agreement: object({
+      handled: integer(0),
+      agreed: integer(0),
+      missed: integer(0),
+      openMemories: integer(0),
+      openRules: integer(0),
+    }),
+    generatedAt: timestamp,
+  }),
+});
+const memoryReviewRespondCommandSchema = object({
+  ...commandEnvelope("memory.review.respond"),
+  payload: object({
+    target: machineString,
+    action: enumeration(MEMORY_REVIEW_ACTIONS),
+    expectedRevision: nullable(integer(1)),
+  }),
+});
+const memoryReviewReportMissedCommandSchema = object({
+  ...commandEnvelope("memory.review.reportMissed"),
+  payload: object({
+    memoryId: machineString,
+    upstreamMemoryId: machineString,
+  }),
+});
 const memoryCreateCommandSchema = object({
   ...commandEnvelope("memory.create"),
   payload: object({
     contentRef: machineString,
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
+    topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
     pinned: booleanValue,
   }),
 });
@@ -1759,6 +2158,7 @@ const memoryImportItemsSchema = array(
     contentRef: machineString,
     category: enumeration(MEMORY_CATEGORY_NAMES),
     subCategory: nullable(memoryLabelSchema),
+    topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
   }),
 );
 const memoryImportCommitCommandSchema = object({
@@ -2722,9 +3122,18 @@ const schemasByType = {
   "device.revoke": deviceRevokeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
+  "home.read": homeQuerySchema,
+  "home.snapshot": homeSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
+  "data.export.cancel": dataExportCancelCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
   "data.export.status.snapshot": dataExportStatusSnapshotSchema,
+  "files.list.read": filesListQuerySchema,
+  "files.list.snapshot": filesListSnapshotSchema,
+  "login.devices.read": loginDevicesQuerySchema,
+  "login.devices.snapshot": loginDevicesSnapshotSchema,
+  "login.device.revoke": loginDeviceRevokeCommandSchema,
+  "login.devices.revoke_others": loginDevicesRevokeOthersCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,
   "sensitive.interceptions.clear": sensitiveInterceptionsClearCommandSchema,
@@ -2732,6 +3141,10 @@ const schemasByType = {
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.basis.read": memoryBasisQuerySchema,
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
+  "memory.classify.read": memoryClassifyQuerySchema,
+  "memory.classify.snapshot": memoryClassifySnapshotSchema,
+  "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
+  "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
@@ -2744,6 +3157,10 @@ const schemasByType = {
   "memory.rules.read": memoryRulesQuerySchema,
   "memory.rules.snapshot": memoryRulesSnapshotSchema,
   "memory.rule.respond": memoryRuleRespondCommandSchema,
+  "memory.review.read": memoryReviewQuerySchema,
+  "memory.review.snapshot": memoryReviewSnapshotSchema,
+  "memory.review.respond": memoryReviewRespondCommandSchema,
+  "memory.review.reportMissed": memoryReviewReportMissedCommandSchema,
   "memory.create": memoryCreateCommandSchema,
   "memory.category.set": memoryCategorySetCommandSchema,
   "memory.settings.set": memorySettingsSetCommandSchema,

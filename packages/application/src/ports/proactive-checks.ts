@@ -98,6 +98,8 @@ export interface ProactiveInsightContent {
   readonly link: string;
 }
 
+export const PROACTIVE_INSIGHT_LIST_MAXIMUM = 500;
+
 export interface ProactiveInsight {
   readonly id: string;
   readonly source: ProactiveSource;
@@ -445,6 +447,9 @@ export interface ProactiveSealPort {
     },
   ): Promise<string>;
   open(input: ProactiveScope & { readonly ref: string }): Promise<string | undefined>;
+  classificationOf?(
+    input: ProactiveScope & { readonly ref: string },
+  ): Promise<DataClassification | undefined>;
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }
 
