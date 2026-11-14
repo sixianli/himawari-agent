@@ -866,7 +866,7 @@ export const messages = {
   "rules.title": "长期规则 · {count} 条",
   "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
   "rules.type":
-    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
+    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} push_quiet_hours {推送延后} other {其他规则}}",
   "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
   "rules.suspended": "已暂停，不执行：来源记忆改了，自动核对后发现和原规则对不上，等你确认",
   "rules.resume": "恢复执行",
@@ -1099,11 +1099,11 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} web_push {推送延后} memory_review {改记忆后待重审} other {其他}}",
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：模型判断这封邮件涉及钱款} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：模型判断这封邮件涉及钱款} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} push_quiet_hours {你立的规则：静默时段里，指定的推送等时段结束再发} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
@@ -1352,7 +1352,7 @@ export const messages = {
   "weekly.check.rowsKept": "已检查过的日子没有少记录",
   "weekly.check.rowsCleared": "已检查过的日子少了 {rows} 条 Gmail 记录，都是你清除的",
   "weekly.check.rowsMissing":
-    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
+    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} web_push {推送延后} memory_review {改记忆后待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
   "weekly.check.timeOk": "决策记录里的时间格式都正确",
   "weekly.check.timeBad": "决策记录里有 {rows} 条时间格式不对",
   "weekly.check.other":
