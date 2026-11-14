@@ -45,6 +45,7 @@ import {
   opencodeChildEnv,
   opencodeEnv,
   opencodeInstallDir,
+  outsideImports,
   parseArgs,
   prepareCopy,
   prepareRawDir,
@@ -54,13 +55,6 @@ import {
   promptFileName,
   QUESTIONS_PATH,
   questionsSource,
-  SELF_CHECK_CACHE_ENV,
-  SELF_CHECK_CACHE_MAX_AGE_MS,
-  selfCheckCacheDir,
-  selfCheckCacheHit,
-  selfCheckCacheKey,
-  outsideImports,
-  selfCheckCacheWrite,
   REVIEW_MODELS,
   REVIEW_PARENT_CANARY_ENV,
   REVIEWS_DIR,
@@ -76,8 +70,16 @@ import {
   reviewModelsProblems,
   reviewQuestions,
   runOutcome,
+  SELF_CHECK_CACHE_ENV,
+  SELF_CHECK_CACHE_MAX_AGE_MS,
   SHELL_LOG_NAME,
   SUBSTITUTES,
+  selfCheckCacheDir,
+  selfCheckCacheHit,
+  selfCheckCacheLabel,
+  selfCheckCacheKey,
+  selfCheckCacheWrite,
+  selfCheckSteps,
   spentOf,
   substituteFor,
   summarizeEvents,
@@ -1416,6 +1418,32 @@ describe("opencode review installed guard", () => {
     }
   });
 
+  it("[self-check cache] a cached pass probes only the first model and skips the guard, passthrough and failover probes; a full check runs all of them", () => {
+    const gateway = { install: {} };
+    const hit = selfCheckSteps({ cached: true, gateway });
+    expect(hit.models).toEqual(REVIEW_MODELS.slice(0, 1));
+    expect(hit.guardProbe).toBe(false);
+    expect(hit.passthroughProbe).toBe(false);
+    expect(hit.failoverProbe).toBe(false);
+    expect(hit.installCheck).toBe(true);
+    const hitDirect = selfCheckSteps({ cached: true, gateway: null });
+    expect(hitDirect.models).toEqual(REVIEW_MODELS.slice(0, 1));
+    expect(hitDirect.guardProbe).toBe(false);
+    expect(hitDirect.passthroughProbe).toBe(false);
+    expect(hitDirect.failoverProbe).toBe(false);
+    expect(hitDirect.installCheck).toBe(false);
+    const miss = selfCheckSteps({ cached: false, gateway });
+    expect(miss.models).toEqual(REVIEW_MODELS);
+    expect(miss.guardProbe).toBe(true);
+    expect(miss.passthroughProbe).toBe(true);
+    expect(miss.failoverProbe).toBe(true);
+    const direct = selfCheckSteps({ cached: false, gateway: null });
+    expect(direct.guardProbe).toBe(true);
+    expect(direct.passthroughProbe).toBe(false);
+    expect(direct.failoverProbe).toBe(false);
+    expect(direct.installCheck).toBe(false);
+  });
+
   it("[self-check cache] scripts imported from outside the script folder are part of the key, and changing one changes it", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-imports-"));
     try {
@@ -2107,5 +2135,13 @@ describe("append-only failure message", () => {
     expect(
       firstChangedMessage(earlier, { messages: [...earlier.messages, { role: "user" }] }),
     ).toBe("");
+  });
+});
+
+describe("selfCheckCacheLabel", () => {
+  it("names off, miss and hit for the ledger", () => {
+    expect(selfCheckCacheLabel({ cacheKey: "", cached: false })).toBe("off");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: false })).toBe("miss");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: true })).toBe("hit");
   });
 });

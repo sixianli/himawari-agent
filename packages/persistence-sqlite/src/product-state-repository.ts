@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type {
+  ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
   AuthorityFence,
@@ -28,6 +29,7 @@ import type {
   GapCaseMarkPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  HomeUrgencyStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -35,7 +37,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
-  PairedDeviceStorePort,
+  PerceptionStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
@@ -46,7 +48,9 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
@@ -81,6 +85,11 @@ import type {
   TraceStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  PORT_ERROR_CODES,
+  type UnitOfWorkPort,
+} from "@himawari-agent/application";
 import type {
   AgentAuthorityLease,
   AgentId,
@@ -104,11 +113,6 @@ import {
   loadBundledMigrations,
   openQualifiedDatabase,
 } from "./migration-engine.js";
-import {
-  ApplicationPortError,
-  PORT_ERROR_CODES,
-  type UnitOfWorkPort,
-} from "@himawari-agent/application";
 import {
   SqliteExecutionContext,
   type SqliteSlowOperation,
@@ -141,6 +145,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
   readonly transactionScopeTimeoutMs?: number;
   readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
+  readonly proactiveSources?: SqliteWorkerConfiguration["proactiveSources"];
 }
 
 export const DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS = 2000;
@@ -290,6 +295,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           minimumFreeBytes,
           warningFreeBytes,
           ...(options.qualification ? { qualification: options.qualification } : {}),
+          ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
         },
         {
           ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -305,6 +311,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
             minimumFreeBytes,
             warningFreeBytes,
             readOnly: true,
+            ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
           },
           {
             ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -595,6 +602,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerRules();
   }
 
+  ownerProposals(): OwnerProposalStorePort {
+    return this.durable.ownerProposals();
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
   }
@@ -605,6 +616,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   reviewPrereview(): ReviewPrereviewStorePort {
     return this.durable.reviewPrereview();
+  }
+
+  homeUrgency(): HomeUrgencyStorePort {
+    return this.durable.homeUrgency();
   }
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {
@@ -655,8 +670,16 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.webPush();
   }
 
+  applePush(): ApplePushStorePort {
+    return this.durable.applePush();
+  }
+
   pairedDevices(): PairedDeviceStorePort {
     return this.durable.pairedDevices();
+  }
+
+  perception(): PerceptionStorePort {
+    return this.durable.perception();
   }
 
   proactive(): ProactiveStorePort {

@@ -43,6 +43,24 @@ private actor ConflictTransport: DeviceTransport {
     }
 }
 
+private actor SlowSecondPageTransport: DeviceTransport {
+    private var served = 0
+    nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
+        if case .object(let payload)? = body["payload"], case .string? = payload["before"] {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return Self.page("旧第二页", "null")
+        }
+        let n = await nextServed()
+        return Self.page(n == 1 ? "旧第一页" : "刷新后", n == 1 ? #""page2""# : "null")
+    }
+    private func nextServed() -> Int { served += 1; return served }
+    private static func page(_ name: String, _ next: String) -> DeviceResponse {
+        let file = #"{"fileId":"\#(name)","threadId":"t1","name":"\#(name)","threadTitle":null,"kind":"pdf","origin":"generated","mediaType":"application/pdf","sizeBytes":10,"version":1,"createdAt":"2026-11-11T00:00:00Z","deleted":false,"contentPath":null}"#
+        return DeviceResponse(status: 200, body: Data(#"{"payload":{"files":[\#(file)],"nextCursor":\#(next),"generatedAt":"2026-11-12T00:00:00Z"}}"#.utf8))
+    }
+}
+
 private func payloadString(_ body: [String: JSONValue], _ key: String) -> String? {
     guard case .object(let payload)? = body["payload"], case .string(let value)? = payload[key] else { return nil }
     return value
@@ -78,7 +96,8 @@ final class SettingsStoreTests: XCTestCase {
             case "cap-search": ("网页搜索", "active")
             default: ("旧的", "disabled")
             }
-            return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)"}}"#
+            let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+            return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":3\#(assessment)}}"#
         case "device.list.read":
             return devices
         case "login.devices.read":
@@ -98,7 +117,26 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.phase, .loaded)
         XCTAssertEqual(settings.waitingCapabilities.map(\.displayName), ["日历"])
         XCTAssertEqual(settings.capabilitiesInUse.map(\.displayName), ["网页搜索"])
-        XCTAssertEqual(settings.capabilityCount, 2)
+        XCTAssertEqual(settings.capabilitiesDisabled.map(\.displayName), ["旧的"])
+        XCTAssertEqual(settings.waitingCapabilities.first?.updateAssessment?.expansions, ["改日程"])
+        XCTAssertNil(settings.capabilitiesInUse.first?.updateAssessment)
+        XCTAssertEqual(settings.capabilityCount, 3)
+    }
+
+    func testTurningACapabilityOffAsksForFaceIDWithItsRevision() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        try await settings.disable(settings.capabilitiesInUse[0], reason: "停用")
+        let sent = await transport.sent
+        guard let index = sent.firstIndex(where: { $0["type"] == "capability.disable" }) else { return XCTFail() }
+        XCTAssertEqual(sent[index - 1], [:])
+        guard case .object(let payload)? = sent[index]["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload["capabilityRef"], .string("cap-search"))
+        XCTAssertEqual(payload["expectedRevision"], .number(3))
+        XCTAssertEqual(payload["reasonCode"], .string("owner_disabled"))
+        XCTAssertEqual(payload["recentAuthenticationRef"], .string(ClientCapabilities.referencePlaceholder))
+        XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
@@ -215,6 +253,17 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.shelf(.uploaded).files.map(\.name), ["会议白板.jpg"])
         let reads = await transport.sent.filter { $0["type"] == "files.list.read" }
         XCTAssertEqual(reads.count, 3)
+    }
+
+    func testRefreshingWhileLoadingMoreKeepsTheRefreshedPage() async throws {
+        let settings = SettingsStore(gateway: ManageGateway(transport: SlowSecondPageTransport(), makeIdentifier: { "0123456789abcdef0123" }), identity: nil)
+        await settings.loadFiles(.generated)
+        XCTAssertEqual(settings.shelf(.generated).files.map(\.name), ["旧第一页"])
+        let more = Task { await settings.loadFiles(.generated, more: true) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await settings.loadFiles(.generated)
+        await more.value
+        XCTAssertEqual(settings.shelf(.generated).files.map(\.name), ["刷新后"])
     }
 
     func testSigningOutABrowserAsksForFaceIDAndTheCurrentOneSaysInUse() async throws {

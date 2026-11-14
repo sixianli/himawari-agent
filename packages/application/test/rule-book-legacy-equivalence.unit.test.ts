@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProactiveQuietPeriod, ProactiveSourceItem } from "../src/ports/proactive-checks.js";
+import type { ProactiveQuietPeriod } from "../src/ports/proactive-checks.js";
+import type { ProactiveMail } from "../src/ports/proactive-sources.js";
 import { ruleBookFor } from "../src/rules/rule-book.js";
 import { floorHitIds, quietEnd, quietUntil } from "../src/services/proactive-rules.js";
 
@@ -20,7 +21,7 @@ function legacyImportantSender(address: string, senders: readonly string[]): boo
   });
 }
 
-function legacyFloorHitIds(item: ProactiveSourceItem, senders: readonly string[]): string[] {
+function legacyFloorHitIds(item: ProactiveMail, senders: readonly string[]): string[] {
   const domain = legacyDomain(item.fromAddress);
   const hits: string[] = [];
   if (legacyImportantSender(item.fromAddress, senders)) hits.push("floor_important_sender");
@@ -146,7 +147,7 @@ describe("rule book against the pre-rule-book implementation", () => {
         fromAddress: pick(ADDRESSES, next),
         subject,
         snippet,
-      } as ProactiveSourceItem;
+      } as ProactiveMail;
       const rules = ruleBookFor({
         quietHours: [],
         quietHoursRevision: 1,
@@ -171,7 +172,7 @@ describe("rule book against the pre-rule-book implementation", () => {
       subject: "扣款成功通知 invoice",
       snippet: "引落 payment",
       body: null,
-    } as unknown as ProactiveSourceItem;
+    } as unknown as ProactiveMail;
     expect(floorHitIds(item, rules)).toEqual([]);
     expect(floorHitIds(item, rules, "no")).toEqual([]);
     expect(floorHitIds(item, rules, "unknown")).toEqual([]);
@@ -191,7 +192,7 @@ describe("rule book against the pre-rule-book implementation", () => {
       fromAddress: "friend@example.com",
       subject: "Lunch on Friday",
       snippet: "see you there",
-    } as ProactiveSourceItem;
+    } as ProactiveMail;
     expect(floorHitIds(item, rules)).toEqual([]);
   });
 

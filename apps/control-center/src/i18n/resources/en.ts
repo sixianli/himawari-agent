@@ -616,6 +616,9 @@ export const messages = {
   "governance.updateAssessment": "Update diff and assessment",
   "governance.rollback": "Rollback version",
   "governance.lastTransition": "Latest version transition",
+  "governance.lastInvalidation": "Latest disable",
+  "governance.lastInvalidationValue":
+    "{time}: cancelled {count} scheduled jobs; they are not restored",
   "governance.rollbackBoundary": "Side-effect / product-state rollback boundary",
   "governance.notAvailable": "Not available",
   "governance.capability": "Capability",
@@ -928,9 +931,9 @@ export const messages = {
   "rules.builtIn.note":
     "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
+    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_preauthorize_owner_intent_confirmed {After reading outside content, something you clearly asked for: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded.} other {}}",
+    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded.} other {}}",
   "rules.builtIn.examples": "Examples: {hit} should match, {miss} should not",
   "rules.builtIn.askFirst": "Ask me every time",
   "review.title": "To recheck after memory edits · {count}",
@@ -965,7 +968,7 @@ export const messages = {
   "memory.page.missedSaved": "Noted. It now appears in the recheck list",
   "rules.receipt.label": "Standing rule receipt",
   "rules.receipt.status":
-    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
+    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} rejected {Declined; it will not take effect} other {Standing rule}}",
   "rules.receipt.trials": "Trial run",
   "rules.receipt.trial":
     "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
@@ -975,6 +978,7 @@ export const messages = {
     "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
   "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
   "rules.receipt.confirm": "Apply",
+  "proposals.reject": "Don't want",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
@@ -1169,7 +1173,7 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} web_push {Push deferral} memory_review {Review after a memory edit} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} web_push {Push deferral} memory_review {Review after a memory edit} limit_change {Usage limit change} delivery_timing {Reminder delivery time} proposal {Proposed next step} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
@@ -1456,7 +1460,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "{rows} Gmail records are gone from days already checked; you cleared them",
   "weekly.check.rowsMissing":
-    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} web_push {push deferral} memory_review {review-after-edit} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} web_push {push deferral} memory_review {review-after-edit} limit_change {usage limit change} delivery_timing {reminder delivery time} proposal {proposed next step} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
   "weekly.check.timeOk": "All times in the decision record are well formed",
   "weekly.check.timeBad": "{rows} times in the decision record are malformed",
   "weekly.check.other":
@@ -1618,6 +1622,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
   "sensitive.purpose.review-prereview": "model pre-rating",
+  "sensitive.purpose.home-urgency": "home urgency scoring",
   "sensitive.purpose.rule-review": "rule recheck",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",

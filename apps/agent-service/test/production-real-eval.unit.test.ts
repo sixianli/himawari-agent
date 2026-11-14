@@ -169,6 +169,7 @@ function invoker(
   const outputs = new Map<string, string>();
   return {
     modelRef: "eval-model",
+    allowedDataClassifications: ["public", "private"],
     model: {
       async *invoke(request: { invocationId: string }) {
         for (const event of events(request.invocationId)) {

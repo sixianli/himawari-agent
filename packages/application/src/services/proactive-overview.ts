@@ -7,12 +7,12 @@ import {
   type ProactiveQuietPeriod,
   type ProactiveRating,
   type ProactiveScope,
-  type ProactiveSourceItem,
   type ProactiveSealPort,
-  type ProactiveSource,
   type ProactiveStorePort,
   type ProactiveVerdict,
 } from "../ports/proactive-checks.js";
+import type { ProactiveSource } from "../ports/proactive-sources.js";
+import type { ProactiveMail } from "../ports/proactive-sources.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
 import { ruleBookFor } from "../rules/rule-book.js";
 import {
@@ -167,7 +167,7 @@ export async function readProactiveOverview(options: {
             fromAddress: fromAddressOf(content.from ?? ""),
             subject: content.subject ?? "",
             snippet: content.summary ?? "",
-          } as ProactiveSourceItem,
+          } as ProactiveMail,
           rules,
         ).length > 0);
     if (!isReminderWorthy(insight.result, insight.priority, floor)) {

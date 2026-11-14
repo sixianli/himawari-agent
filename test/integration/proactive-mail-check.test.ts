@@ -11,8 +11,9 @@ import {
   ProactiveMailCheckService,
   type ProactiveMemoryRecall,
   type ProactiveRecentSummaries,
-  type ProactiveSourceItem,
-  type ProactiveSourceReader,
+  type ProactiveMail,
+  type FlatMailReader,
+  mailReader,
   proactivePrompt,
   readProactiveOverview,
 } from "@himawari-agent/application";
@@ -70,10 +71,7 @@ interface Scripted {
   readonly money?: "yes" | "no";
 }
 
-function mail(
-  messageId: string,
-  overrides: Partial<ProactiveSourceItem> = {},
-): ProactiveSourceItem {
+function mail(messageId: string, overrides: Partial<ProactiveMail> = {}): ProactiveMail {
   return {
     source: "gmail",
     messageId,
@@ -197,10 +195,10 @@ describe("proactive Gmail check acceptance", () => {
     });
     const reader = {
       source: "gmail" as const,
-      items: [] as ProactiveSourceItem[],
+      items: [] as ProactiveMail[],
       nextCursor: "history-2",
       calls: [] as (string | null)[],
-      related: undefined as ProactiveSourceReader["related"],
+      related: undefined as FlatMailReader["related"],
       async fetch(input: { cursor: string | null }) {
         reader.calls.push(input.cursor);
         return { kind: "items" as const, items: reader.items, cursor: reader.nextCursor };
@@ -358,7 +356,7 @@ describe("proactive Gmail check acceptance", () => {
         },
       },
       seal,
-      reader,
+      reader: mailReader(reader),
       model: {
         get model() {
           if (referenceCall)
@@ -369,6 +367,7 @@ describe("proactive Gmail check acceptance", () => {
           return queued.shift() ?? scripted;
         },
         modelRef: MODEL_REF,
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         async prepare({ invocationId, prompt, deadlineAt, dataClassification }) {
           referenceCall = prompt.startsWith(MAIL_REFERENCE_EXTRACTION.text);
           (referenceCall ? referencePrompts : prompts).push(prompt);
@@ -1195,6 +1194,7 @@ describe("proactive Gmail check acceptance", () => {
       const stale = (
         await h.store.previewBackoff({
           ...scope,
+          source: "gmail",
           classKeys: [CLASS_KEY],
           settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
           now: h.clock.now(),
@@ -1206,6 +1206,7 @@ describe("proactive Gmail check acceptance", () => {
         applyBackoffWrites(
           database,
           { ownerId: OWNER_ID, agentId: AGENT_ID },
+          "gmail",
           decisionId,
           [{ ...(stale as NonNullable<typeof stale>), ignoredCount: 5_000 }],
           h.clock.now(),
@@ -1218,6 +1219,7 @@ describe("proactive Gmail check acceptance", () => {
         const second = (
           await h.store.previewBackoff({
             ...scope,
+            source: "gmail",
             classKeys: [CLASS_KEY],
             settings: { threshold: 3, ignoreAfterMs: 24 * HOUR, gapMs: 24 * HOUR },
             now: h.clock.now(),
@@ -1227,6 +1229,7 @@ describe("proactive Gmail check acceptance", () => {
         applyBackoffWrites(
           database,
           { ownerId: OWNER_ID, agentId: AGENT_ID },
+          "gmail",
           decisionId,
           [{ ...(second as NonNullable<typeof second>), stage: 2, steppedUp: true }],
           h.clock.now(),
@@ -1688,7 +1691,7 @@ describe("proactive Gmail check acceptance", () => {
   describe("[HR-2] an owner rule can keep a push back, but never when the amount is unclear or a floor rule hit", () => {
     const smallYen = () => [amountThresholdRule({ currency: "JPY", minor: 1000 }, 3, "测试")];
     const FULL_BODY = "ご請求額は 500 円です。";
-    const due = (overrides: Partial<ProactiveSourceItem> = {}) =>
+    const due = (overrides: Partial<ProactiveMail> = {}) =>
       mail("due", {
         from: "Shop <shop@example.com>",
         fromAddress: "shop@example.com",
@@ -1729,7 +1732,7 @@ describe("proactive Gmail check acceptance", () => {
     });
 
     it("REVERSE: pushes as before when the amount is unsure, missing, in another currency, exactly the limit, or the body was not read in full", async () => {
-      const cases: [string, unknown, Partial<ProactiveSourceItem>][] = [
+      const cases: [string, unknown, Partial<ProactiveMail>][] = [
         ["unsure", yen("500", "unsure"), {}],
         ["missing", undefined, {}],
         ["other currency", yen("5", "sure", "USD"), {}],
@@ -1908,7 +1911,7 @@ describe("proactive Gmail check acceptance", () => {
         ...scope,
         decisionId: decision?.id ?? "",
       });
-      const released = await h.store.clearRecords(scope);
+      const released = await h.store.clearRecords({ ...scope, source: "gmail" });
       expect(released).toContain(first?.ref);
       await h.seal.release({ ...scope, refs: released });
       expect(await h.readPayload(first?.ref ?? "")).toBeUndefined();
@@ -2205,7 +2208,7 @@ describe("proactive Gmail check acceptance", () => {
     });
   });
   describe("[OM] the owner's own mail and the full body reach the model", () => {
-    const own = (id: string, overrides: Partial<ProactiveSourceItem> = {}) =>
+    const own = (id: string, overrides: Partial<ProactiveMail> = {}) =>
       mail(id, {
         from: "Andy <andy@example.com>",
         fromAddress: "andy@example.com",
@@ -2786,7 +2789,7 @@ describe("proactive Gmail check acceptance", () => {
     it("marks the check partial when only some mails lost their history", async () => {
       const h = await harness();
       h.reader.related = async ({ items }) => ({
-        byMail: new Map([[items[0]?.messageId ?? "", [archive[1] as ProactiveSourceItem]]]),
+        byMail: new Map([[items[0]?.messageId ?? "", [archive[1] as ProactiveMail]]]),
         failed: new Map([[items[1]?.messageId ?? "", "subject"]]),
         requests: 3,
       });

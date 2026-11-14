@@ -107,10 +107,13 @@ describe("[P4-8] model pre-rating in the running service", () => {
     const outputs = new Map<string, string>();
     const costs = new Map<string, number>();
     const invocations: string[] = [];
+    const reads: string[] = [];
     const released: string[] = [];
     const releaseFails = { input: false, output: false };
+    const allowed: DataClassification[] = ["public", "private", "sensitive", "restricted"];
     const model: ProactiveModelInvoker = {
       modelRef: MODEL_REF,
+      allowedDataClassifications: allowed,
       model: {
         async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
           invocations.push(request.invocationId);
@@ -210,7 +213,10 @@ describe("[P4-8] model pre-rating in the running service", () => {
         reader: createGmailReader({ oauth, fetch }),
         readAccount: (accessToken) => readGmailAccount({ accessToken, fetch }),
         ledger,
-        readMemoryText: async (ref) => texts.get(ref),
+        readMemoryText: async (ref) => {
+          reads.push(ref);
+          return texts.get(ref);
+        },
         readMemoryClassification: async (ref) => classifications.get(ref),
         prereview: {
           store: wrapStore(repository.reviewPrereview()),
@@ -230,17 +236,18 @@ describe("[P4-8] model pre-rating in the running service", () => {
       text: string | null,
       decidedAt: string,
       reasonCode = "transient_ignored",
+      classification: DataClassification = "private",
     ) => {
       const ref = text === null ? null : `memory-${id}`;
       if (ref !== null && text !== null) {
         texts.set(ref, text);
-        classifications.set(ref, "private");
+        classifications.set(ref, classification);
         await payloads.put(
           await protector.protect({
             ownerId: OWNER_ID,
             agentId: AGENT_ID,
             ref,
-            dataClassification: "private",
+            dataClassification: classification,
             contentType: "text/plain",
             plaintext: new TextEncoder().encode(text),
             createdAt: clock.now(),
@@ -284,12 +291,14 @@ describe("[P4-8] model pre-rating in the running service", () => {
         createdAt: string;
       }[];
     return {
+      allowed,
       clock,
       failures,
       invocations,
       ledger,
       prompts,
       raw,
+      reads,
       released,
       releaseFails,
       rows,
@@ -366,6 +375,68 @@ describe("[P4-8] model pre-rating in the running service", () => {
     await h.skipped("output-stuck", "想买一本书", NOV_4_10AM_JST);
     await h.service().prereview();
     expect(h.released.at(-1)).toBe(`in-${h.invocations.at(-1)}`);
+  });
+
+  it("[P4-8] skips subjects the pre-rating model may not receive, sends nothing for them and keeps their slot free", async () => {
+    const h = await setup();
+    h.allowed.splice(0, h.allowed.length, "public", "private");
+    await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("secret-b", "想记住私密的 B", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+
+    const result = await h.service().prereview();
+
+    expect(result).toMatchObject({
+      attempted: 1,
+      recorded: 1,
+      failures: [],
+      skippedClassification: 2,
+      stoppedBy: "done",
+    });
+    expect(h.invocations).toHaveLength(1);
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts.join("\n")).not.toContain("私密");
+    expect(h.rows().map(({ decisionId }) => decisionId)).toEqual(["plain"]);
+    h.allowed.push("sensitive");
+    const again = await h.service().prereview();
+    expect(again).toMatchObject({ attempted: 2, recorded: 2, skippedClassification: 0 });
+    expect(
+      h
+        .rows()
+        .map(({ decisionId }) => decisionId)
+        .sort(),
+    ).toEqual(["plain", "secret-a", "secret-b"]);
+  });
+
+  it("[P4-8] skipped subjects do not take the per-run slot and are not built again while still disallowed", async () => {
+    const h = await setup();
+    h.allowed.splice(0, h.allowed.length, "public", "private");
+    await h.skipped("a-secret", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+    const service = h.service({ perRun: 1 });
+    expect(await service.prereview()).toMatchObject({
+      attempted: 1,
+      recorded: 1,
+      skippedClassification: 1,
+      stoppedBy: "done",
+    });
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts.join("\n")).not.toContain("私密");
+    const reads = () => h.reads.filter((ref) => ref === "memory-a-secret").length;
+    expect(reads()).toBe(1);
+    expect(await service.prereview()).toMatchObject({ attempted: 0, skippedClassification: 1 });
+    expect(reads()).toBe(1);
+  });
+
+  it("[P4-8][reverse] subjects the model may receive are never skipped", async () => {
+    const h = await setup();
+    await h.skipped("secret-a", "想记住私密的 A", NOV_4_10AM_JST, "transient_ignored", "sensitive");
+    await h.skipped("plain", "我最近想吃牛肉", NOV_4_10AM_JST);
+    expect(await h.service().prereview()).toMatchObject({
+      attempted: 2,
+      recorded: 2,
+      skippedClassification: 0,
+    });
   });
 
   it("[P4-8] keeps the daily cap across a restart and starts again the next day", async () => {
@@ -600,7 +671,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     expect(
       h.raw.prepare("SELECT COUNT(*) FROM decision_prereviews WHERE id = 'mail-pre'").pluck().get(),
     ).toBe(1);
-    await h.store.clearRecords(scope);
+    await h.store.clearRecords({ ...scope, source: "gmail" });
     expect(
       h.raw.prepare("SELECT COUNT(*) FROM decision_prereviews WHERE id = 'mail-pre'").pluck().get(),
     ).toBe(0);

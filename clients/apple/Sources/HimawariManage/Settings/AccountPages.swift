@@ -24,7 +24,7 @@ struct LoginDevicesPage: View {
                 }
                 if devices.contains(where: { !$0.current }) {
                     Button(action: signOutOthers) {
-                        Text(M.signOutOthers).hmType(SL.rowValue).foregroundStyle(Color.hmSun)
+                        Text(M.signOutOthers).hmType(SL.rowValue).foregroundStyle(Color.hmDanger)
                             .frame(minHeight: DesignTokens.Size.minTapTarget)
                     }
                     .buttonStyle(.plain)

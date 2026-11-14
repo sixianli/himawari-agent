@@ -109,7 +109,7 @@ struct DevicePage: View {
                     .buttonStyle(.plain)
                     presenceRow(device)
                     let channel = M.channel(device.releaseChannel)
-                    SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.shortDate), last: channel == nil)
+                    SettingsRow(icon: nil, title: M.pairedOn, value: Timestamp.parse(device.pairedAt).map(M.pairedDay), last: channel == nil)
                     if let channel {
                         SettingsRow(icon: nil, title: M.deviceVersion, value: channel, last: true)
                     }

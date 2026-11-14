@@ -18,11 +18,11 @@ public struct DeviceCredentials: Sendable {
 }
 
 public enum DeviceAPIError: Error, Sendable, Equatable {
-    case server(status: Int, code: String?, pairingCodeTtlSeconds: Int? = nil)
+    case server(status: Int, code: String?, pairingCodeTtlSeconds: Int? = nil, reason: String? = nil)
     case invalidResponse
 
     public var code: String? {
-        if case let .server(_, code, _) = self { return code }
+        if case let .server(_, code, _, _) = self { return code }
         return nil
     }
 
@@ -129,6 +129,21 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         return try Self.check(response)
     }
 
+    public func upload(path: String, header: String, grant: String, body: Data, contentType: String) async throws -> Data {
+        guard let credentials = currentCredentials else { throw DeviceAPIError.server(status: 401, code: "DEVICE_NOT_PAIRED") }
+        guard path.hasPrefix(Self.prefix) else { throw DeviceAPIError.invalidResponse }
+        guard let url = Self.url(origin: credentials.origin, path: String(path.dropFirst(Self.prefix.count)), rawQuery: "") else {
+            throw DeviceAPIError.invalidResponse
+        }
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.httpBody = body
+        urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(grant, forHTTPHeaderField: header)
+        Self.apply(access: credentials.access, to: &urlRequest)
+        return try Self.check(try await exchange.send(urlRequest))
+    }
+
     private func perform(_ request: DeviceRequest, allowClockRetry: Bool) async throws -> Data {
         let urlRequest = try await signed(request)
         let response = try await exchange.send(urlRequest)
@@ -211,6 +226,8 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     private struct ErrorBody: Decodable {
         struct Inner: Decodable {
             let code: String
+            let reasonCode: String?
+            let reason: String?
             let serverTime: String?
             let pairingCodeTtlSeconds: Int?
         }
@@ -220,7 +237,7 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
         let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
-        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds)
+        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
     }
 
     static func serverTime(_ body: Data) -> Date? {

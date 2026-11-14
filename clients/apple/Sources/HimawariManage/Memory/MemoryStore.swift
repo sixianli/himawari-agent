@@ -44,7 +44,7 @@ public final class MemoryStore {
     }
 
     public func correct(_ item: MemoryItem, text: String, reason: String) async throws {
-        let contentRef = try await gateway.uploadText(text)
+        let contentRef = try await gateway.uploadText(text, dataClassification: item.dataClassification ?? "private")
         _ = try await gateway.command(
             .v2,
             "memory.mutate",

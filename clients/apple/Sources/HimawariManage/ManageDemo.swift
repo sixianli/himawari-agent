@@ -70,6 +70,7 @@ public struct ManageDemoView: View {
     private func exporting(_ stage: DataExportStage) -> some View {
         NavigationStack {
             DataExportPage(session: DataExportSession(gateway: ManageDemo.gateway(), fixed: stage)) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
 
@@ -123,7 +124,7 @@ enum ManageDemo {
         memories: 1280,
         rules: 12,
         withheld: 3,
-        expiresAt: "2999-01-01T00:00:00Z"
+        expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
     static func gateway() -> ManageGateway {
@@ -140,7 +141,7 @@ enum ManageDemo {
         case "login.devices.read": loginDevices
         case "proposals.read": proposals
         case "capability.list":
-            #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail"],"nextCursor":null}}"#
+            #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail","cap-photos"],"nextCursor":null}}"#
         default: "{}"
         }
     }
@@ -149,9 +150,11 @@ enum ManageDemo {
         let (name, lifecycle) = switch ref {
         case "cap-calendar": ("日历", "update_proposed")
         case "cap-search": ("网页搜索", "active")
+        case "cap-photos": ("相册整理", "disabled")
         default: ("邮件", "active")
         }
-        return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)"}}"#
+        let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+        return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":1\#(assessment)}}"#
     }
 
     static func files(origin: String) -> String {

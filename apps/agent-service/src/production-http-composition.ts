@@ -13,7 +13,11 @@ import {
   AgentThreadGatewayService,
   ApplicationPortError,
   DEFAULT_HOME_FEED,
+  DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_SEARCH_INDEX_RULES,
+  perceptionSearchEvidenceText,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -59,6 +63,7 @@ import {
   DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
+  DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -73,6 +78,8 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PerceptionLimitWarning,
+  PerceptionService,
   type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
@@ -92,9 +99,11 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
+import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
+  PRODUCTION_CAPABILITY_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
@@ -105,12 +114,25 @@ import {
   registerDataExportRoute,
 } from "./production-data-export.js";
 import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  ProductionPerceptionControl,
+} from "./production-perception-control.js";
+import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
 } from "./production-device-control.js";
 import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
-import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_HOME_OPERATIONS,
+  ProductionHomeControl,
+  type ProductionHomeUrgencyOptions,
+} from "./production-home.js";
+import {
+  PRODUCTION_SEARCH_OPERATIONS,
+  ProductionSearchControl,
+  type ProductionSearchOptions,
+} from "./production-search.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
@@ -136,6 +158,11 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
@@ -216,13 +243,20 @@ export interface ProductionHttpCompositionOptions {
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
+  readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
+  readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
     readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
   };
   readonly memory?: {
+    readonly search?: {
+      readonly provider: ProductionSearchOptions["provider"];
+      readonly episodes?: ProductionSearchOptions["episodes"];
+    };
     readonly service: Pick<
       DurableMemoryService,
       | "applyProposal"
@@ -247,6 +281,7 @@ export interface ProductionHttpCompositionOptions {
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
+    readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
@@ -279,7 +314,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
-  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -710,6 +745,7 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  searchAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -745,13 +781,17 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_CAPABILITY_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
+        ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...PRODUCTION_PERCEPTION_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1132,6 +1172,13 @@ export async function createProductionHttpComposition(
         now: clock,
       })
     : undefined;
+  const proposalBox = new ProductionProposalBox({
+    configuration,
+    store: repository.ownerProposals(),
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1181,6 +1228,7 @@ export async function createProductionHttpComposition(
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          box: proposalBox,
           reviews: repository.ruleReviews(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
@@ -1229,6 +1277,23 @@ export async function createProductionHttpComposition(
     },
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+    prepareRevoke: async (deviceId) => {
+      const report = (error: unknown) => options.onDevicePushFailed?.(error);
+      const wipe = await options.webPush?.applePush?.prepareWipe(deviceId).catch(report);
+      return wipe ? () => wipe().catch(report) : undefined;
+    },
+  });
+  const pushPresence = options.webPush?.presence ?? new WebPushPresence();
+  const applePush = options.webPush?.applePush;
+  const devicePush = new DevicePushService({
+    store: repository.applePush(),
+    reactions: repository.webPush(),
+    configuration: () => (applePush ? configuration.runPolicy?.applePush : undefined),
+    now,
+    onPresence: (deviceId, visible, at) => pushPresence.beat(`device:${deviceId}`, visible, at),
+    onRegistered: (_deviceId, pushType) => {
+      if (pushType === "widgets") applePush?.requestWidgetRefresh();
+    },
   });
   const home = new ProductionHomeControl({
     settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
@@ -1253,6 +1318,7 @@ export async function createProductionHttpComposition(
       const payload = thread.titleRef ? await memoryPayloads.get(thread.titleRef) : undefined;
       if (!payload || payload.contentType !== "text/plain") return { title: null };
       return {
+        dataClassification: payload.dataClassification,
         title:
           new TextDecoder("utf-8", { fatal: true })
             .decode(await payloadProtector.unprotect({ ownerId, agentId, payload }))
@@ -1271,7 +1337,82 @@ export async function createProductionHttpComposition(
               ? error.name
               : "unknown",
       }),
+    ...(options.homeUrgency
+      ? {
+          urgency: {
+            ...options.homeUrgency,
+            scope: { ownerId, agentId },
+            store: repository.homeUrgency(),
+            onFailure: (error) =>
+              options.onHomeDiagnostic?.({
+                event: "home.urgency_failed",
+                error: error instanceof Error ? error.message : String(error),
+              }),
+          },
+        }
+      : {}),
   });
+  const searchControl = options.memory?.search
+    ? new ProductionSearchControl({
+        ownerId,
+        agentId,
+        settings: configuration.runPolicy?.searchAsk ?? DEFAULT_SEARCH_ASK,
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+        provider: options.memory.search.provider,
+        ...(options.memory.search.episodes ? { episodes: options.memory.search.episodes } : {}),
+        perception: {
+          search: async ({ query, limit }) => {
+            const found = await perception.search({
+              scope: { ownerId, agentId },
+              query,
+              limit,
+            });
+            const rows = await Promise.all(
+              found.map(async (record) => {
+                const spoken =
+                  record.contentRef === null
+                    ? undefined
+                    : await readPerceptionText(record.contentRef).catch(() => undefined);
+                const written = perceptionSearchEvidenceText(record.type, record.evidence);
+                const text =
+                  [spoken ?? "", written].filter((part) => part !== "").join(" · ") || undefined;
+                return text === undefined
+                  ? []
+                  : [
+                      {
+                        recordId: record.id,
+                        origin: record.origin,
+                        occurredAt: new Date(record.occurredAtMs).toISOString(),
+                        dataClassification: record.dataClassification,
+                        text,
+                      },
+                    ];
+              }),
+            );
+            return rows.flat();
+          },
+        },
+        state: repository.productMemoryState(),
+        readText: async (record) => {
+          const payload = await memoryPayloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await payloadProtector.unprotect({ ownerId, agentId, payload }),
+          );
+        },
+        clock: { now: clock },
+      })
+    : undefined;
+  const readPerceptionText = async (contentRef: string) => {
+    const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+    if (!payload || payload.contentType !== "text/plain") return undefined;
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      await payloadProtector.unprotect({ ownerId, agentId, payload }),
+    );
+  };
+  const perceptionSearchSettings = configuration.runPolicy?.searchAsk ?? DEFAULT_SEARCH_ASK;
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1279,11 +1420,51 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     now: clock,
   });
+  const perceptionConfiguration =
+    configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS;
+  const proactiveConfiguration = configuration.runPolicy?.proactive;
+  const perception = new PerceptionService({
+    store: repository.perception(),
+    deviceConfiguration: () => deviceConfiguration,
+    configuration: () => perceptionConfiguration,
+    timeZone: () => configuration.runPolicy?.timeZone ?? "UTC",
+    protectText: async (input) =>
+      (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
+    uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    searchIndex: {
+      version: `${searchTokenizer.projectionVersion}:${PERCEPTION_SEARCH_INDEX_RULES}:${perceptionSearchSettings.indexTermLimit}`,
+      rebuildBatch: perceptionSearchSettings.indexRebuildBatch,
+      termLimit: perceptionSearchSettings.indexTermLimit,
+      readText: readPerceptionText,
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          text,
+        }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
+    ...(proactiveConfiguration
+      ? {
+          proactiveUsage: {
+            limit: () => proactiveConfiguration.dailyCostMicros,
+            usedSince: (scope, since) => repository.proactive().costSince({ ...scope, since }),
+          },
+        }
+      : {}),
+    ...(options.onPerceptionLimitWarning
+      ? { onLimitWarning: options.onPerceptionLimitWarning }
+      : {}),
+    now,
+  });
+  await perception.prepareDirectories();
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
     access: threadAccess,
     homeControl: home,
+    ...(searchControl ? { searchControl } : {}),
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1293,13 +1474,19 @@ export async function createProductionHttpComposition(
     webPushControl: new ProductionWebPushControl({
       configuration,
       store: repository.webPush(),
-      presence: options.webPush?.presence ?? new WebPushPresence(),
+      presence: pushPresence,
       push: options.webPush?.push,
       clock: { now: clock },
     }),
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
     ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
+    proposalControl: new ProductionProposalControl({
+      configuration,
+      box: proposalBox,
+      recentAuthentication,
+      clock: { now: clock },
+    }),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1316,6 +1503,19 @@ export async function createProductionHttpComposition(
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    perceptionControl: new ProductionPerceptionControl({
+      configuration,
+      perception,
+      perceptionConfiguration: () => perceptionConfiguration,
+      readText: async (contentRef) => {
+        const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return new TextDecoder("utf-8", { fatal: true }).decode(
+          await payloadProtector.unprotect({ ownerId, agentId, payload }),
+        );
+      },
       clock: { now: clock },
     }),
     serverStatusControl: new ProductionServerStatusControl({
@@ -1366,16 +1566,20 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(searchControl),
     ),
     gatewayV2,
     threadSearch,
     files,
     devices: {
       service: pairedDevices,
+      home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
+      push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      perception,
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -1442,6 +1646,7 @@ export async function createProductionHttpComposition(
           port: httpConfiguration.listenPort,
         });
         searchIndexer.start();
+        home.startScoring();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1454,10 +1659,12 @@ export async function createProductionHttpComposition(
         throw error;
       }
       searchIndexer.start();
+      home.startScoring();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await home.stopScoring();
       try {
         await app.close();
       } finally {

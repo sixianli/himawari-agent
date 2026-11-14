@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DEFAULT_HOME_FEED,
+  DEFAULT_SEARCH_ASK,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1097,6 +1101,42 @@ it("[HOME-settings] fills home feed settings from the defaults and rejects value
   }
 });
 
+it("reads the search answer limits from runPolicy.searchAsk and rejects values outside the bounds", () => {
+  const raw = config("/tmp/himawari-policy-config");
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk,
+  ).toBeUndefined();
+  raw["runPolicy"] = {
+    ...policy,
+    searchAsk: { askLimit: 8, basisLimit: 3, indexTermLimit: 300 },
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk).toEqual({
+    ...DEFAULT_SEARCH_ASK,
+    askLimit: 8,
+    basisLimit: 3,
+    indexTermLimit: 300,
+  });
+  for (const searchAsk of [
+    { candidateLimit: 0 },
+    { basisLimit: 11 },
+    { minimumCoveragePercent: 101 },
+    { answerCharacters: 1.5 },
+    { indexTermLimit: 0 },
+    { indexRebuildBatch: 1001 },
+    { unknownSetting: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, searchAsk };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
 it("[RULE-memory-visible] accepts the retired maxMemoryClassification key without letting it limit Memory", () => {
   const raw = config("/tmp/himawari-policy-config");
   raw["runPolicy"] = {
@@ -1464,6 +1504,98 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
 
+it("[P3] parses every perception setting with its default and rejects unknown or out-of-range keys", () => {
+  const raw = config("/tmp/himawari-perception-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const parse = (perception: unknown) => {
+    raw["runPolicy"] = { ...policy, perception };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.perception;
+  };
+  expect(parse({})).toEqual(PERCEPTION_CONFIGURATION_DEFAULTS);
+  const keys = Object.keys(PERCEPTION_CONFIGURATION_DEFAULTS) as (keyof PerceptionConfiguration)[];
+  for (const key of keys) {
+    const [minimum, maximum] = PERCEPTION_CONFIGURATION_RANGES[key];
+    expect(() => parse({ [key]: minimum - 1 })).toThrow();
+    expect(() => parse({ [key]: maximum + 1 })).toThrow();
+    expect(() => parse({ [key]: "1" })).toThrow();
+  }
+  expect(parse({ previewCharacters: 40 })?.previewCharacters).toBe(40);
+  expect(() => parse({ unknownSetting: 5 })).toThrow();
+  expect(() => parse({ episodeSilenceSeconds: 600, episodeMaximumSeconds: 300 })).toThrow();
+});
+
+it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple identifiers and listed topics", () => {
+  const raw = config("/tmp/himawari-apple-push-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    webPush: { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win" },
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "web-push-vapid", version: "v1", purpose: "web-push", scope: "agent" },
+    { ref: "apple-push-key", version: "v1", purpose: "apple-push", scope: "agent" },
+  ];
+  const base = {
+    secretRef: "apple-push-key",
+    teamId: "TEAM123456",
+    keyId: "KEY1234567",
+    topics: ["win.siyi.himawari", "win.siyi.himawari.watchkitapp"],
+    environments: ["production"],
+  };
+  const parse = (applePush: unknown, extra: Record<string, unknown> = policy) => {
+    raw["runPolicy"] = { ...extra, applePush };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.applePush;
+  };
+  expect(parse(base)).toEqual({
+    ...base,
+    widgetRefreshMinimumSeconds: 900,
+    liveActivityUpdateMinimumSeconds: 15,
+    liveActivityStartAfterSeconds: 30,
+    liveActivityStaleAfterSeconds: 600,
+    actionTokenLifetimeSeconds: 86_400,
+    requestTimeoutSeconds: 10,
+    liveActivityRegistrationsPerDevice: 8,
+  });
+  expect(
+    parse({
+      ...base,
+      widgetRefreshMinimumSeconds: 60,
+      environments: ["development", "production"],
+    }),
+  ).toMatchObject({ widgetRefreshMinimumSeconds: 60, environments: ["development", "production"] });
+  for (const applePush of [
+    { ...base, secretRef: "web-push-vapid" },
+    { ...base, secretRef: "missing-secret" },
+    { ...base, teamId: "team" },
+    { ...base, keyId: "KEY12345678" },
+    { ...base, topics: [] },
+    { ...base, topics: ["win.siyi.himawari", "win.siyi.himawari"] },
+    { ...base, topics: ["bad topic"] },
+    { ...base, topics: [`w${"a".repeat(232)}`] },
+    { ...base, environments: ["staging"] },
+    { ...base, environments: [] },
+    { ...base, widgetRefreshMinimumSeconds: 0 },
+    { ...base, liveActivityStaleAfterSeconds: 86_401 },
+    { ...base, actionTokenLifetimeSeconds: 59 },
+    { ...base, requestTimeoutSeconds: 1.5 },
+    { ...base, liveActivityRegistrationsPerDevice: 0 },
+    { ...base, liveActivityRegistrationsPerDevice: 65 },
+    { ...base, signingKey: "inline" },
+  ])
+    expect(() => parse(applePush), JSON.stringify(applePush)).toThrow();
+  const { webPush: _webPush, ...withoutWebPush } = policy;
+  expect(() => parse(base, withoutWebPush)).toThrow();
+});
+
 it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {
   const raw = config("/tmp/himawari-device-config");
   const policy = {
@@ -1751,6 +1883,32 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     heartbeatMilliseconds: 15_000,
   };
   raw["identity"] = accessIdentity;
+  for (const ownerProposals of [
+    {},
+    { pendingLimit: 1 },
+    { pendingLimit: 200, expiresAfterDays: 3650 },
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerProposals };
+    expect(
+      parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
+    ).toEqual(ownerProposals);
+  }
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
+  ).toBeUndefined();
+  for (const invalid of [
+    { pendingLimit: 0 },
+    { pendingLimit: 201 },
+    { pendingLimit: 1.5 },
+    { expiresAfterDays: 0 },
+    { expiresAfterDays: 3651 },
+    { limit: 20 },
+    20,
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerProposals: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
   for (const mcpRead of [
     { audience: "mcp-access-audience" },
     { audience: "mcp-access-audience", proposals: true },
@@ -1856,6 +2014,103 @@ it("accepts Muse intake only with a boolean switch and one secret whose purpose 
     raw["runPolicy"] = { ...policy, museIntake: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
+});
+
+it("accepts home urgency scoring settings, fills in the defaults, and refuses values out of range", () => {
+  const raw = config("/tmp/himawari-home-urgency-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy, homeUrgency: {} };
+  expect(parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency).toEqual(
+    {
+      enabled: true,
+      dailyLimit: 1_000,
+      dailyCostMicros: 1_000_000,
+      perCall: 20,
+      referenceLimit: 30,
+      requestTimeoutMs: 30_000,
+      checkIntervalSeconds: 60,
+      retryAfterHours: 24,
+      affirmLabelMax: { "zh-CN": 6, ja: 8, en: 16 },
+    },
+  );
+  raw["runPolicy"] = {
+    ...policy,
+    homeUrgency: {
+      enabled: false,
+      modelRef: "model-primary",
+      dailyLimit: 0,
+      perCall: 5,
+      affirmLabelMax: { "zh-CN": 4, fr: 12 },
+    },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
+  ).toMatchObject({
+    enabled: false,
+    modelRef: "model-primary",
+    dailyLimit: 0,
+    perCall: 5,
+    referenceLimit: 30,
+    affirmLabelMax: { "zh-CN": 4, fr: 12 },
+  });
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z").runPolicy?.homeUrgency,
+  ).toBeUndefined();
+  for (const invalid of [
+    { enabled: "yes" },
+    { unknown: 1 },
+    { modelRef: "model-embedding" },
+    { modelRef: "model-missing" },
+    { dailyLimit: -1 },
+    { dailyLimit: 100_001 },
+    { perCall: 0 },
+    { perCall: 51 },
+    { referenceLimit: 201 },
+    { requestTimeoutMs: 10 },
+    { checkIntervalSeconds: 5 },
+    { retryAfterHours: 0 },
+    { affirmLabelMax: { "zh-CN": 0 } },
+    { affirmLabelMax: { "zh-CN": 65 } },
+    { affirmLabelMax: { "not a tag": 6 } },
+    { affirmLabelMax: [6] },
+  ]) {
+    raw["runPolicy"] = { ...policy, homeUrgency: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow();
+  }
+  (raw["modelDescriptors"] as Record<string, unknown>[]).push({
+    ref: "model-specialist",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private", "sensitive"],
+    disclosure: "external_remote",
+    secretRef: "provider-specialist",
+  });
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-specialist",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-specialist",
+  });
+  raw["runPolicy"] = { ...policy, homeUrgency: { modelRef: "model-specialist" } };
+  expect(() => parseProductConfiguration(raw, "2026-11-12T00:00:00.000Z")).toThrow(
+    expect.objectContaining({
+      details: expect.objectContaining({ field: "configuration.runPolicy.homeUrgency.modelRef" }),
+    }),
+  );
 });
 
 it("[A4] accepts a duplicate-judgement route that names a model-auth secret, fills the defaults and rejects bad values", () => {
@@ -2046,6 +2301,49 @@ it("accepts the approval preview length only from 1 to 2000 characters and leave
       expect.objectContaining({
         details: expect.objectContaining({
           field: "configuration.runPolicy.approvalBodyPreviewCharacters",
+        }),
+      }),
+    );
+  }
+});
+
+it("[ADR-0257] reads the owner intent check settings and rejects values out of range", () => {
+  const raw = config("/tmp/himawari-owner-intent-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toBeUndefined();
+  const valid = {
+    enabled: true,
+    minConfidence: 900,
+    timeoutMs: 5000,
+    model: "typesafe-ai/jev",
+    secretRef: "secret:owner-intent",
+  };
+  raw["runPolicy"] = { ...policy, ownerIntentCheck: valid };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toEqual(valid);
+  for (const ownerIntentCheck of [
+    { ...valid, minConfidence: 499 },
+    { ...valid, timeoutMs: 100 },
+    { ...valid, enabled: "yes" },
+    { ...valid, model: "bad ref" },
+    { ...valid, secretRef: "bad ref" },
+    { enabled: true, minConfidence: 900, timeoutMs: 5000, model: "typesafe-ai/jev" },
+    { ...valid, extra: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerIntentCheck };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          field: expect.stringContaining("configuration.runPolicy.ownerIntentCheck"),
         }),
       }),
     );
