@@ -160,6 +160,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "server.status.snapshot",
   "home.read",
   "home.snapshot",
+  "search.ask.read",
+  "search.ask.snapshot",
   "data.export.start",
   "data.export.cancel",
   "data.export.status.read",
@@ -949,6 +951,32 @@ const homeSnapshotSchema = object({
       }),
     ),
     revision: machineString,
+    generatedAt: timestamp,
+  }),
+});
+export const SEARCH_ASK_STATES = ["answered", "not_found", "suggestions"] as const;
+export const SEARCH_BASIS_KINDS = ["memory", "conversation"] as const;
+const searchAskQuerySchema = object({
+  ...envelope("query", "search.ask.read"),
+  payload: object({ query: nullable(boundedString(500)), locale: enumeration(HOME_LOCALES) }),
+});
+const searchAskSnapshotSchema = object({
+  ...envelope("snapshot", "search.ask.snapshot"),
+  payload: object({
+    state: enumeration(SEARCH_ASK_STATES),
+    query: nullable(boundedString(500)),
+    answer: nullable(boundedString(2000)),
+    notFoundText: nullable(boundedString(200)),
+    basis: array(
+      object({
+        kind: enumeration(SEARCH_BASIS_KINDS),
+        label: boundedString(200),
+        memoryId: nullable(machineString),
+        threadId: nullable(machineString),
+        at: timestamp,
+      }),
+    ),
+    asks: array(boundedString(500)),
     generatedAt: timestamp,
   }),
 });
@@ -2657,6 +2685,7 @@ export const disableCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -2666,6 +2695,7 @@ export const rollbackCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -3128,6 +3158,13 @@ export const capabilitySnapshotSchema = object({
     updateAssessment: nullable(updateAssessmentSnapshotSchema),
     rollbackVersion: nullable(machineString),
     rollbackAvailable: booleanValue,
+    lastInvalidation: nullable(
+      object({
+        lifecycle: enumeration(["disabled"]),
+        cancelledScheduledJobs: integer(0),
+        occurredAt: timestamp,
+      }),
+    ),
     lastTransition: nullable(
       object({
         fromVersion: machineString,
@@ -3413,6 +3450,8 @@ const schemasByType = {
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
   "home.snapshot": homeSnapshotSchema,
+  "search.ask.read": searchAskQuerySchema,
+  "search.ask.snapshot": searchAskSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
   "data.export.cancel": dataExportCancelCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
