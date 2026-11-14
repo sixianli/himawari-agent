@@ -34,6 +34,7 @@ public enum SafariBridge {
 
     static func describe(_ phase: HandoverSheetPhase) -> [String: Any] {
         var reply: [String: Any] = ["phase": name(phase), "done": phase.isDone]
+        if case let .finished(outcome) = phase { reply["kept"] = outcome.keepsWhatWasRead }
         if let line = phase.line { reply["line"] = line }
         if let title = phase.followUpTitle, let url = phase.followUpURL(.safari) {
             reply["button"] = title

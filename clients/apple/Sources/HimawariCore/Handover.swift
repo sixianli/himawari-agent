@@ -458,7 +458,7 @@ public final class HandoverQueue: @unchecked Sendable {
             let outcome = await courier.deliver(handover)
             results[handover.id] = outcome
             switch outcome {
-            case .queued: continue
+            case .queued, .failed(.serverOutdated), .failed(.limitReached): continue
             case .deviceRemoved: return results
             default: try? remove(handover.id)
             }

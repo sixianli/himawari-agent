@@ -208,6 +208,31 @@ import Testing
         #expect(queue.pending().map(\.id) == [second.id])
     }
 
+    @Test func theQueueKeepsWhatAnOutdatedServerCouldNotTakeYet() async throws {
+        let queue = HandoverQueue(store: MemoryLocalStore())
+        let item = Handover(id: "BBBBBBBBBBBBBBBBBBBBBBBB", entry: .share, content: .text("a"), request: "问", sourceApp: nil, createdAt: moment, answerLocale: .chinese)
+        try queue.add(item)
+        let old = #"{"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":2}"#
+        let results = await queue.drain(using: try courier(RecordingExchange([ok(old)])))
+        #expect(results[item.id] == .failed(.serverOutdated))
+        #expect(queue.pending().map(\.id) == [item.id])
+    }
+
+    @Test func manyWritersThatNeverSawEachOthersWorkAllKeepTheirItems() async throws {
+        let store = MemoryLocalStore()
+        let queues = [HandoverQueue(store: store), HandoverQueue(store: store)]
+        let ids = (0..<60).map { String(format: "%024d", $0) }
+        await withTaskGroup(of: Void.self) { group in
+            for (offset, id) in ids.enumerated() {
+                group.addTask {
+                    let item = Handover(id: id, entry: .share, content: .text("a"), request: nil, sourceApp: nil, createdAt: moment.addingTimeInterval(Double(offset)), answerLocale: .chinese)
+                    try? queues[offset % 2].add(item)
+                }
+            }
+        }
+        #expect(queues[0].pending().map(\.id) == ids)
+    }
+
     @Test func theDeskRefusesASwitchedOffEntryAndQueuesWhenTheServerIsUnreachable() async throws {
         let store = MemoryLocalStore()
         var settings = HandoverSettings()
