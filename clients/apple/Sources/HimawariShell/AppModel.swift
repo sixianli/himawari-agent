@@ -2,9 +2,13 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariShare
 import Observation
 #if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(os)
+import os
 #endif
 
 public enum AppPhase: Equatable {
@@ -23,6 +27,7 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -34,19 +39,30 @@ public final class AppModel {
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
 
-    private static let recordAccount = "pairing-record"
+    private static let recordAccount = SharedVault.recordAccount
 
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, restoring: true)
+    }
+
+    private static func logUnknownServerValues(subsystem: String) {
+        #if canImport(os)
+        let logger = Logger(subsystem: subsystem, category: "server-values")
+        ServerValueDiagnostics.shared.observe { report in
+            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
+        }
+        #endif
     }
 
     init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
         self.kind = kind
-        let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
-        keys = SecureEnclaveKeyStore(service: service + ".keys")
-        keychain = KeychainValueStore(service: service)
+        let vault = SharedVault(bundle: bundle)
+        self.vault = vault
+        keys = vault.keys
+        keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
-        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
+        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -75,7 +91,7 @@ public final class AppModel {
         guard let record else { return }
         use(record)
         switch record.status {
-        case .pending:
+        case .pending, .unrecognized:
             phase = .waitingForConfirmation(number: record.pairingNumber)
             waitForConfirmation()
         case .active:
@@ -190,6 +206,11 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public var unsentMessages: Int? {
+        guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
+        return Outbox.unsentCount(in: local)
+    }
+
     public func startOver() {
         guard emptyStore() else {
             phase = .unpaired(.storageUnavailable)
@@ -210,7 +231,40 @@ public final class AppModel {
     }
 
     public func retryReadingKeys() {
-        restore()
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+        } else {
+            restore()
+        }
+    }
+
+    private func recheckUnknownState() {
+        waiting?.cancel()
+        waiting = Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            do {
+                configuration = try await api.configuration()
+            } catch {
+                failure = error
+            }
+            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
+            switch UnknownStateRecheck.outcome(of: failure) {
+            case .connected:
+                try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                Haptics.shared.report(.pairingSucceeded)
+                activate()
+            case .removed:
+                forget(problem: .removed)
+            case .waiting:
+                if let record {
+                    phase = .waitingForConfirmation(number: record.pairingNumber)
+                    waitForConfirmation()
+                }
+            case .stillUnknown:
+                break
+            }
+        }
     }
 
     public func retryPairing() {
@@ -242,7 +296,12 @@ public final class AppModel {
                 } catch let error as DeviceAPIError where error.isRevoked {
                     forget(problem: .removed)
                     return
-                } catch {}
+                } catch {
+                    if let status = record?.status, ConfirmationWait.givesUp(waitingAs: status, after: error) {
+                        phase = .unpaired(.stateUnknown)
+                        return
+                    }
+                }
                 try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
                 delay = min(delay * 2, 10)
             }
@@ -270,6 +329,7 @@ public final class AppModel {
             phase = .active
             chat.start()
             Task { await refreshConfiguration() }
+            deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -308,17 +368,41 @@ public final class AppModel {
         }
     }
 
+    @ObservationIgnored private var handoverDrain: Task<Void, Never>?
+
+    private func deliverWaitingHandovers() {
+        guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
+        let queue = HandoverQueue(store: store)
+        guard !queue.pending().isEmpty else { return }
+        #if canImport(UIKit)
+        let courier = HandoverCourier(api: api, images: UIKitImageFitter())
+        #else
+        let courier = HandoverCourier(api: api)
+        #endif
+        handoverDrain = Task { [weak self] in
+            let results = await queue.drain(using: courier)
+            guard let self else { return }
+            handoverDrain = nil
+            if results.values.contains(.deviceRemoved) { checkRevoked() }
+        }
+    }
+
     private func checkRevoked() {
         Task { await refreshConfiguration() }
     }
 
     public func becameActive() {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+            return
+        }
         if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
             restore()
             return
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        deliverWaitingHandovers()
         Task { await refreshConfiguration() }
     }
 

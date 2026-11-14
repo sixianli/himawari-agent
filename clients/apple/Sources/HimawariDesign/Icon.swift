@@ -8,6 +8,8 @@ public enum IconName: String, CaseIterable, Sendable {
     case appWindow = "app-window"
     case arrowUp = "arrow-up"
     case bell
+    case brandSafari = "brand-safari"
+    case brandSafariLarge = "brand-safari-large"
     case bulb
     case calculator
     case calendar
@@ -44,6 +46,9 @@ public enum IconName: String, CaseIterable, Sendable {
     case message2 = "message-2"
     case messagePlus = "message-plus"
     case microphone
+    case number1 = "number-1"
+    case number2 = "number-2"
+    case number3 = "number-3"
     case pencil
     case pencilPlus = "pencil-plus"
     case phone
@@ -55,6 +60,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case search
     case server
     case serverLarge = "server-large"
+    case share2 = "share-2"
     case settings
     case stack2 = "stack-2"
     case table
@@ -130,9 +136,10 @@ public struct TodayTabIcon: View {
 
     public var body: some View {
         let scale = size / Self.grid
+        let baselineOffset = Self.baseline * scale
         ZStack(alignment: Alignment(horizontal: .center, vertical: .firstTextBaseline)) {
             Icon(.calendarFrame, size: size)
-                .alignmentGuide(.firstTextBaseline) { _ in Self.baseline * scale }
+                .alignmentGuide(.firstTextBaseline) { _ in baselineOffset }
             Text(String(day))
                 .font(.system(size: Self.numberSize * scale, weight: .bold, design: .rounded))
                 .monospacedDigit()

@@ -14,6 +14,7 @@ import {
 import { validateAgainst } from "./schema.js";
 import {
   externalProposalDigestKey,
+  EMPTY_PERCEPTION_COUNTS,
   externalProposalTextKey,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
   SEALED_FILE,
@@ -336,6 +337,8 @@ export async function importPortableExport(
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
     people: parsed.people.length,
     importBatches: parsed.importBatches.length,
+    pairedDevices: 0,
+    ...EMPTY_PERCEPTION_COUNTS,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
     conversationReviews: parsed.conversationReviews.length,

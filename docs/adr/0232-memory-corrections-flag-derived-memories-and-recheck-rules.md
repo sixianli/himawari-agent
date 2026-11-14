@@ -41,7 +41,7 @@ Himawari 的记忆不是孤立的：整理记忆（“做梦”）时，模型�
 2. 待重审的规则照常执行。来源 [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 决定 2：“待重审的规则**照常执行**……规则停掉等于主人的要求悄悄失效”。
 3. 以前管规则的是迁移 0087 的两个触发器（修改用 `memory_rule_needs_review`，永久删除用 `memory_rule_needs_review_on_delete`），而且不管恢复：ADR 0211 决定 3：“同样的文字再次确认、只改重要度、改的是别的记忆、记忆从回收站恢复，都不触发；已经是 `needs_review` 的规则不会重复触发”。
 4. 只有 `reflect` 是“从别的记忆推出来”：`packages/persistence-sqlite/src/sqlite-memory-consolidation-operations.ts` 的 `derivedMemories` 只沿 `action = 'reflect' AND undone_at IS NULL` 的整理记录走（同一文件的 `MEMORY_BASIS_CHAIN_MAX_DEPTH = 8`）。
-5. 后台模型调用要固定内容在前：`.claude/rules/prompt-prefix.md:67`：“后台调用也是固定的在前、会变的在后。”
+5. 后台模型调用要固定内容在前：`.agents/instructions/prompt-prefix.md:67`：“后台调用也是固定的在前、会变的在后。”
 
 <a id="decision"></a>
 

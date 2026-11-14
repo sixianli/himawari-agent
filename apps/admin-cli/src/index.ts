@@ -3,6 +3,7 @@ import { chmod, lstat, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   applyMigrations,
+  bundledSchemaFingerprint,
   createVerifiedMigrationSnapshot,
   type GovernedDeletionObjectType,
   inspectSqliteDatabaseReadOnly,
@@ -412,6 +413,7 @@ async function recoveryAdapter(configurationPath: string, secretDirectory: strin
       backupKey: { ref: backupKey.ref, version: backupKey.version },
       payloadProtector,
       expectedSchemaSequence,
+      expectedSchemaFingerprint: bundledSchemaFingerprint(),
     }),
   });
 }

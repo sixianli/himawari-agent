@@ -2,7 +2,7 @@ import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gatewa
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
-import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
+import type { ImportCandidate, ImportDuplicateVerdict, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type MemoryOverview = Extract<
@@ -25,7 +25,17 @@ export type OwnerRule = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["rules"][number];
-export type OwnerRuleAction = "undo" | "confirm" | "reconfirm";
+export type PendingProposals = Extract<
+  GatewayV2Snapshot,
+  { type: "proposals.snapshot" }
+>["payload"];
+export type PendingProposal = PendingProposals["proposals"][number];
+export type ProposalAction = "adopt" | "reject";
+export type BuiltInActionRule = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.rules.snapshot" }
+>["payload"]["builtIn"][number];
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "ask_first" | "allow_directly";
 export type MemoryReview = Extract<
   GatewayV2Snapshot,
   { type: "memory.review.snapshot" }
@@ -48,6 +58,12 @@ const REMINDER_REFRESH_MS = 300_000;
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
   readonly rules: readonly OwnerRule[];
+  readonly proposals: PendingProposals | null;
+  readonly respondProposal: (
+    proposal: Pick<PendingProposal, "proposalId" | "version" | "fingerprint">,
+    action: ProposalAction,
+  ) => Promise<boolean>;
+  readonly builtInRules: readonly BuiltInActionRule[];
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
   readonly review: MemoryReview | null;
   readonly respondReview: (
@@ -84,6 +100,9 @@ export interface MemoryModel {
     repeat: "none" | "yearly",
   ) => Promise<boolean>;
   readonly classify: (texts: readonly string[]) => Promise<readonly MemoryClassification[]>;
+  readonly importDuplicates: (
+    texts: readonly string[],
+  ) => Promise<readonly ImportDuplicateVerdict[]>;
   readonly create: (
     text: string,
     picked: MemoryCategory | null,
@@ -122,7 +141,11 @@ export function useMemory(input: {
   const rulesAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.rules.read") ?? false;
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
+  const proposalsAvailable =
+    configuration?.installedGatewayV2Operations?.includes("proposals.read") ?? false;
+  const [proposals, setProposals] = useState<PendingProposals | null>(null);
   const [rules, setRules] = useState<readonly OwnerRule[]>([]);
+  const [builtInRules, setBuiltInRules] = useState<readonly BuiltInActionRule[]>([]);
   const [review, setReview] = useState<MemoryReview | null>(null);
   const reviewAvailable =
     configuration?.installedGatewayV2Operations?.includes("memory.review.read") ?? false;
@@ -152,7 +175,20 @@ export function useMemory(input: {
         .query(queryMessage(configuration, "memory.rules.read", {}))
         .then((result) => {
           if (result.type !== "memory.rules.snapshot") throw new Error("RULES_INVALID");
-          if (!disposed) setRules(result.payload.rules);
+          if (!disposed) {
+            setRules(result.payload.rules);
+            setBuiltInRules(result.payload.builtIn);
+          }
+        })
+        .catch(() => {
+          if (!disposed) setFailed(true);
+        });
+    if (proposalsAvailable)
+      void client
+        .query(queryMessage(configuration, "proposals.read", {}))
+        .then((result) => {
+          if (result.type !== "proposals.snapshot") throw new Error("PROPOSALS_INVALID");
+          if (!disposed) setProposals(result.payload);
         })
         .catch(() => {
           if (!disposed) setFailed(true);
@@ -173,6 +209,7 @@ export function useMemory(input: {
   }, [
     available,
     rulesAvailable,
+    proposalsAvailable,
     reviewAvailable,
     client,
     configuration,
@@ -244,6 +281,30 @@ export function useMemory(input: {
     }
     return results;
   };
+  const importDuplicates = async (
+    texts: readonly string[],
+  ): Promise<readonly ImportDuplicateVerdict[]> => {
+    if (!operations.includes("memory.import.duplicates.read")) return texts.map(() => "skipped");
+    const results: ImportDuplicateVerdict[] = [];
+    for (let start = 0; start < texts.length; start += CLASSIFY_BATCH) {
+      const chunk = texts.slice(start, start + CLASSIFY_BATCH);
+      try {
+        const contentRefs = await Promise.all(chunk.map((text) => protectedRef(text, false)));
+        const result = await client.query(
+          queryMessage(configuration, "memory.import.duplicates.read", { contentRefs }),
+        );
+        if (result.type !== "memory.import.duplicates.snapshot")
+          throw new Error("IMPORT_DUPLICATES_INVALID");
+        for (const [index, ref] of contentRefs.entries()) {
+          const item = result.payload.items[index];
+          results.push(item && item.contentRef === ref ? item.verdict : "skipped");
+        }
+      } catch {
+        results.push(...chunk.map((): ImportDuplicateVerdict => "skipped"));
+      }
+    }
+    return results;
+  };
   const mutate = (item: MemoryItem, action: string) =>
     send("memory.mutate", () => ({
       memoryId: item.memoryId,
@@ -255,7 +316,16 @@ export function useMemory(input: {
   return {
     overview,
     rules,
+    proposals,
+    builtInRules,
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    respondProposal: ({ proposalId, version, fingerprint }, action) =>
+      send("proposal.respond", () => ({
+        proposalId,
+        expectedVersion: version,
+        fingerprint,
+        action,
+      })),
     review,
     respondReview: (target, action, expectedRevision) =>
       send("memory.review.respond", () => ({ target, action, expectedRevision })),
@@ -321,6 +391,7 @@ export function useMemory(input: {
         repeat,
       })),
     classify,
+    importDuplicates,
     create: async (text, picked, pinned) => {
       let category: MemoryCategory = picked ?? "other";
       const ok = await send("memory.create", async () => {

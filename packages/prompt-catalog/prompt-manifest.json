@@ -314,6 +314,11 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
+  "home.urgency": {
+    "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
+    "changedIn": "ADR 0255",
+    "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
+  },
   "mail.judgment": {
     "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
     "changedIn": "ADR 0248",
@@ -692,6 +697,11 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "memory.import-duplicate-question": {
+    "sha256": "324340a48c186039fa92a6a4d0f7bb175cadfb4d107b573b24d5916cb56c3255",
+    "changedIn": "ADR 0271",
+    "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
+  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -701,6 +711,16 @@
     "sha256": "693762a6b2f60f490e1217f79dea053f4319292232d8043fc8194e949232ac0d",
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
+  },
+  "rule.review": {
+    "sha256": "81d386ad3305c145522fe129882843b6b12888ab8d7bf3562bdfd17e89ec2a73",
+    "changedIn": "ADR 0232",
+    "reason": "新增：规则的来源记忆被改后，请模型按改后的主人原话重译规则，供程序和现有规则比较"
+  },
+  "rule.review.instructions-header": {
+    "sha256": "bc69f86b71bed300c90480a913df92a23d47cfc50e02b1c5331d016e6b8b1156",
+    "changedIn": "ADR 0232",
+    "reason": "新增：重检提示词里引用立规则说明的标题"
   },
   "runtime.compaction.summary-instruction": {
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
@@ -747,15 +767,15 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
-  "tool-result.recall-tentative": {
-    "sha256": "e7421bd88df36380fef973ec47331df9d9f4e1457227fc77d7456350d498d73b",
-    "changedIn": "ADR 0179",
-    "reason": "聊天检索返回待确认记忆时附一句说明（PA-2）"
-  },
   "tool-result.recall-input-invalid": {
     "sha256": "d2c78196e63aa1d82083fba11d56b17377113aef7932fa45f71d69d768f85d86",
     "changedIn": "ADR 0262",
     "reason": "新增：查记忆的参数不对（日期不存在、先后颠倒等）时，告诉模型怎么改正后重查"
+  },
+  "tool-result.recall-tentative": {
+    "sha256": "e7421bd88df36380fef973ec47331df9d9f4e1457227fc77d7456350d498d73b",
+    "changedIn": "ADR 0179",
+    "reason": "聊天检索返回待确认记忆时附一句说明（PA-2）"
   },
   "tool-result.recall-unavailable": {
     "sha256": "bcd38ff5486a41c8d382801b937786f04703b86ccc08383e21126e5be4364a52",
@@ -931,9 +951,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "f62529b980811148f549896178580e077ccfe36cffb99db03067fc1e8e0147aa",
-    "changedIn": "ADR 0213",
-    "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果",
+    "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
+    "changedIn": "ADR 0244",
+    "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
@@ -974,15 +994,5 @@
     "sha256": "a55c0eceeba5e2b024a12f881ccc8ccb7e9029e470da74d3aa09df7adff68f3d",
     "changedIn": "ADR 0166",
     "reason": "W-10、W-14：联网搜索默认打开、不逐次询问（ADR 0121），删掉“经用户确认”"
-  },
-  "rule.review": {
-    "sha256": "81d386ad3305c145522fe129882843b6b12888ab8d7bf3562bdfd17e89ec2a73",
-    "changedIn": "ADR 0232",
-    "reason": "新增：规则的来源记忆被改后，请模型按改后的主人原话重译规则，供程序和现有规则比较"
-  },
-  "rule.review.instructions-header": {
-    "sha256": "bc69f86b71bed300c90480a913df92a23d47cfc50e02b1c5331d016e6b8b1156",
-    "changedIn": "ADR 0232",
-    "reason": "新增：重检提示词里引用立规则说明的标题"
   }
 }

@@ -415,6 +415,19 @@ Memory 端口使用产品自己的 proposal、record、candidate 和 correction 
 
 user message、schedule 和 external event 没有各自的上下文实现，三者只改变统一请求中的 `sourceType`。Pi 的公开产品依赖面只包含 Agent Runtime Port，因此不能直接调用 Memory 的 proposal、commit、correct 或 delete；长期记忆写入仍必须由后续 Run Coordinator 的产品策略触发。该边界落实可替换 Memory 决策：[SOURCE: docs/adr/0005-replaceable-memory-boundary.md]
 
+### 等主人决定的提议（2026-11-12）
+
+Himawari 想做、但要主人点头才做的事，统一存进一个“提议箱”，不按来源或场景各建一套。模型用 `rule_set` 提的、主人没明说的规则是第一种提议（类型 `owner_rule`）；以后“提议下一步”等能力往同一个箱子里放，不改表。
+
+- **表 `owner_proposals` 只存索引**：提议编号、类型（任意字符串，箱子不解释）、一句话说明、采纳后会发生什么（提议方写好存下来的一句话）、来源标记（主人说的、模型推断的、外部 agent 提的）、来源对话、来源记录和来源版本（可空，给以后按来源清理用）、版本号、内容指纹、状态（待采纳、已采纳、已拒绝、已过期）、产生和过期时间、被提议和被拒绝的次数。类型、来源标记、状态的取值在代码里校验，表里只限长度，以后加取值不用改表。
+- **依据在加密载荷里**，表里只存载荷引用。依据是一个通用列表，每项有种类、一段文字（可空）、出处列表（种类加引用）、数字列表（名字、值、这个数字的定义）。规则提议的依据是主人原话、试算例子、历史回放数字；别的提议可以放任何依据。读列表时按字段校验，结构不对的部分按没有处理，文字去掉改变文字方向的控制符。
+- **版本号和内容指纹**：指纹是类型、说明、效果、来源标记、依据和处理方数据的 SHA-256；同一编号再次提议时，指纹变了版本号加一，已拒绝、已过期或已采纳的重新打开时版本号也加一。采纳和不要的请求必须带上界面当时看到的版本号和指纹，对不上就拒绝，原因码 `PROPOSAL_CHANGED`，状态不变。这样两台设备同时点、或者提议被换了内容之后点旧卡片，都不会按主人没看过的内容执行。
+- **再次提议同一编号**：已经待采纳的延长过期日，说明、来源标记和依据换成这一次的；已拒绝、已过期、已采纳的重置为待采纳（拒绝次数保留）；规则的提议方在重提之前先查同参数的规则是否仍在生效，仍在生效就不重提，直接按“已有规则”回执。每次都把依据写到一个新的载荷引用上，写表成功后才删旧载荷，写表失败或已满时删掉刚写的，所以读的一方不会遇到依据缺失的空档。已拒绝和已过期的提议只留表里那一行，依据载荷在拒绝时或下次读列表时删掉，引用置空。
+- **采纳按类型分派**：处理方在启动时按类型登记（`ProductionProposalBox.register`），采纳时提议箱先把状态从待采纳改成已采纳（同时点只有一个成功），再按认领后那一行的载荷引用读出数据交给处理方；处理方失败就把状态改回待采纳（改回失败重试一次，仍失败时这条提议停在已采纳，要提议方重提才回到列表）。已采纳的提议再点采纳时，只有声明了可重复执行（`repeatable`）的处理方才会再执行，其余报 `PROPOSAL_ACCEPTED`，所以以后会发消息、花钱这类不可撤销的处理方不会被重复执行；规则的处理方是可重复的。提议入箱时校验编号格式和类型（最长 64、不得含控制符、首尾不得有空白）、说明、效果（各最长 200，和界面能显示的长度一致，去掉控制符后不为空），不合格报 `PROPOSAL_INVALID`。读列表和补做整理时最多读 200 条，不受配置的上限影响，所以把上限调低后已有的提议仍然看得到。没有处理方的类型照样能列出、能拒绝，采纳时报 `PROPOSAL_TYPE_NOT_ADOPTABLE`，列表里每条带 `adoptable` 告诉界面能不能采纳。规则的处理方在 `production-owner-rules.ts`：一条规则经采纳或主人原话生效时，参数相同、还在待采纳的其他规则提议一并标成已采纳，漏掉的在下次读列表时补做；已采纳的规则提议保留依据，因为规则撤销后主人还能用同一张卡片再采纳。
+- **上限**：待采纳数量上限（默认 20，必须在 1 到 200 之间）和过期天数（默认 30，1 到 3650）是可选配置 `runPolicy.ownerProposals.pendingLimit` 和 `runPolicy.ownerProposals.expiresAfterDays`，不写就用默认值，越界时服务启动就报错；两个值随列表响应一起返回，界面显示的就是它们。上限是为了不让主人被提议淹没，满了以后新提议被拒绝并告诉提议方。
+- **网关**：读操作 `proposals.read` 返回 `proposals.snapshot`（顺序固定，带已用条数、上限、过期天数，每条带版本号、指纹、依据和过期日）；命令 `proposal.respond` 的动作是 `adopt` 和 `reject`，未知动作报 `PROPOSAL_ACTION_UNKNOWN`，重复请求靠网关已有的幂等键去重。它们在自己的模块 `production-proposal-control.ts` 里，不挂在记忆操作下面。`memory.rule.respond` 仍只有 `undo`、`confirm`、`reconfirm`；对话里的规则卡片点“生效”走 `confirm`，点“不要”走 `proposal.respond`，只有这条提议还在待采纳列表里时才显示“不要”。
+- 外部 agent 经 MCP 提的规则当场确认，不写这张表。
+
 ### Model routing and trusted Provider boundary
 
 Model descriptor 以产品值固定 provider、model、version、routing class、deterministic priority、capabilities、允许的数据等级、披露边界和可空 Secret requirement。`ModelRouterService` 的策略阶段先对候选生成明确 allow/deny reason，并把任务 profile、数据等级、请求披露上限、政策引用、全部候选和最终模型身份写入 protected Trace；只有 `model.route_decided` 成功写入后才进入执行阶段并产生 Provider request。

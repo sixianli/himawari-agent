@@ -35,6 +35,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.overview.read",
   "proactive.overview.snapshot",
   "proactive.settings.set",
+  "proactive.pause",
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
@@ -56,6 +57,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "proposals.read",
+  "proposals.snapshot",
+  "proposal.respond",
   "sensitive.interceptions.read",
   "sensitive.interceptions.snapshot",
   "sensitive.interceptions.clear",
@@ -65,6 +69,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.basis.snapshot",
   "memory.classify.read",
   "memory.classify.snapshot",
+  "memory.import.duplicates.read",
+  "memory.import.duplicates.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -141,10 +147,21 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "device.pairing.confirm",
   "device.rename",
   "device.revoke",
+  "perception.status.read",
+  "perception.status.snapshot",
+  "perception.day.read",
+  "perception.day.snapshot",
+  "perception.episode.read",
+  "perception.episode.snapshot",
+  "perception.usage.read",
+  "perception.usage.snapshot",
+  "perception.settings.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
   "home.snapshot",
+  "search.ask.read",
+  "search.ask.snapshot",
   "data.export.start",
   "data.export.cancel",
   "data.export.status.read",
@@ -564,17 +581,7 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
-function isHiddenNameCharacter(code: number): boolean {
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    (code >= 0x200b && code <= 0x200f) ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x2064) ||
-    (code >= 0x2066 && code <= 0x2069) ||
-    code === 0xfeff
-  );
-}
+const HIDDEN_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
     if (typeof input !== "string")
@@ -584,7 +591,7 @@ const deviceNameSchema: Schema<string> = {
     if (
       characters.length < 1 ||
       characters.length > DEVICE_NAME_MAX_LENGTH ||
-      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+      HIDDEN_NAME_CHARACTER.test(trimmed)
     )
       throw new ContractValidationError(
         path,
@@ -593,7 +600,22 @@ const deviceNameSchema: Schema<string> = {
     return trimmed;
   },
 };
+export function normalizeDeviceName(input: unknown): string | null {
+  try {
+    return deviceNameSchema.parse(input);
+  } catch {
+    return null;
+  }
+}
 const accessText = boundedString(256);
+export function isDeviceAccessText(input: unknown): boolean {
+  try {
+    accessText.parse(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const deviceAccessSchema = object({
   clientId: accessText,
   clientSecret: accessText,
@@ -654,9 +676,164 @@ const deviceRenameCommandSchema = object({
   ...commandEnvelope("device.rename"),
   payload: object({ ...deviceRevisionTargetShape, name: deviceNameSchema }),
 });
+export const PERCEPTION_STATES = ["sensing", "paused", "off"] as const;
+export const PERCEPTION_SETTINGS_CHANGE_KINDS = [
+  "sense",
+  "pause",
+  "resume",
+  "retention",
+  "limit",
+] as const;
+export const PERCEPTION_ROW_KINDS = ["episode", "record"] as const;
+export const PERCEPTION_SUMMARY_SOURCES = ["recorded", "model", "none"] as const;
+export const USAGE_LIMIT_STATES = ["ok", "near", "stopped"] as const;
+const perceptionDaySchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(input))
+      throw new ContractValidationError(path, "expected a calendar day");
+    return input;
+  },
+};
+const perceptionCursorSchema = boundedString(256);
+const perceptionRecordViewSchema = object({
+  id: machineString,
+  type: machineString,
+  sense: machineString,
+  origin: machineString,
+  captureSource: machineString,
+  occurredAt: timestamp,
+  deviceId: machineString,
+  speakerKind: nullable(machineString),
+  text: nullable(boundedString(32 * 1024)),
+  textTruncated: booleanValue,
+  evidence: array(object({ name: machineString, value: boundedString(512) })),
+});
+const perceptionEpisodeViewSchema = object({
+  id: machineString,
+  startedAt: timestamp,
+  endedAt: timestamp,
+  recordCount: integer(0),
+  senses: array(machineString),
+  types: array(machineString),
+  deviceIds: array(machineString),
+  preview: nullable(boundedString(32 * 1024)),
+  previewTruncated: booleanValue,
+  summary: nullable(boundedString(2048)),
+  summarySource: enumeration(PERCEPTION_SUMMARY_SOURCES),
+});
+const perceptionStatusQuerySchema = object({
+  ...envelope("query", "perception.status.read"),
+  payload: object({}),
+});
+const perceptionStatusSnapshotSchema = object({
+  ...envelope("snapshot", "perception.status.snapshot"),
+  payload: object({
+    state: enumeration(PERCEPTION_STATES),
+    pausedUntil: nullable(timestamp),
+    senses: array(machineString),
+    day: perceptionDaySchema,
+    todayCount: integer(0),
+    availableSenses: array(machineString),
+    retention: array(
+      object({
+        key: machineString,
+        days: integer(1),
+        defaultDays: integer(1),
+        minDays: integer(1),
+        maxDays: integer(1),
+      }),
+    ),
+    pauseMaximumSeconds: integer(1),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionDayQuerySchema = object({
+  ...envelope("query", "perception.day.read"),
+  payload: object({
+    day: nullable(perceptionDaySchema),
+    sense: nullable(machineString),
+    types: nullable(array(machineString)),
+    cursor: nullable(perceptionCursorSchema),
+  }),
+});
+const perceptionDaySnapshotSchema = object({
+  ...envelope("snapshot", "perception.day.snapshot"),
+  payload: object({
+    day: perceptionDaySchema,
+    total: integer(0),
+    senseCounts: array(object({ sense: machineString, count: integer(0) })),
+    rows: array(
+      object({
+        kind: enumeration(PERCEPTION_ROW_KINDS),
+        at: timestamp,
+        episode: nullable(perceptionEpisodeViewSchema),
+        record: nullable(perceptionRecordViewSchema),
+      }),
+    ),
+    nextCursor: nullable(perceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionEpisodeQuerySchema = object({
+  ...envelope("query", "perception.episode.read"),
+  payload: object({ episodeId: machineString, cursor: nullable(perceptionCursorSchema) }),
+});
+const perceptionEpisodeSnapshotSchema = object({
+  ...envelope("snapshot", "perception.episode.snapshot"),
+  payload: object({
+    episode: nullable(perceptionEpisodeViewSchema),
+    records: array(perceptionRecordViewSchema),
+    nextCursor: nullable(perceptionCursorSchema),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionUsageQuerySchema = object({
+  ...envelope("query", "perception.usage.read"),
+  payload: object({}),
+});
+const perceptionUsageSnapshotSchema = object({
+  ...envelope("snapshot", "perception.usage.snapshot"),
+  payload: object({
+    day: perceptionDaySchema,
+    resetsAt: timestamp,
+    warnPermille: integer(1, 999),
+    limits: array(
+      object({
+        key: machineString,
+        unit: machineString,
+        limit: nullable(integer(0)),
+        defaultLimit: nullable(integer(0)),
+        minimum: integer(0),
+        maximum: integer(0),
+        adjustable: booleanValue,
+        used: integer(0),
+        devices: array(object({ deviceId: machineString, used: integer(0) })),
+        resetsAt: timestamp,
+        onReach: machineString,
+        state: enumeration(USAGE_LIMIT_STATES),
+      }),
+    ),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionSettingsChangeCommandSchema = object({
+  ...commandEnvelope("perception.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    kind: enumeration(PERCEPTION_SETTINGS_CHANGE_KINDS),
+    sense: nullable(machineString),
+    enabled: nullable(booleanValue),
+    until: nullable(timestamp),
+    key: nullable(machineString),
+    value: nullable(integer(0)),
+  }),
+});
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
 export const HOME_KEY_MAXIMUM = 160;
+export const HOME_BINDING_MAXIMUM = 2048;
 export const HOME_ITEM_KINDS = [
   "heads_up",
   "approval",
@@ -665,8 +842,8 @@ export const HOME_ITEM_KINDS = [
   "running",
   "problem",
 ] as const;
-export const HOME_SENTENCE_BASES = ["recorded", "catalog", "none"] as const;
-export const HOME_RANKS = ["rule", "deadline", "unscored", "recency"] as const;
+export const HOME_SENTENCE_BASES = ["recorded", "catalog", "model", "none"] as const;
+export const HOME_RANKS = ["rule", "deadline", "unscored", "model", "recency"] as const;
 export const HOME_TARGET_TYPES = [
   "mail",
   "memory",
@@ -712,7 +889,7 @@ export const HOME_ACTIONS = [
   "undo",
   "reconnect",
 ] as const;
-export const HOME_LABEL_BASES = ["catalog"] as const;
+export const HOME_LABEL_BASES = ["catalog", "model"] as const;
 export const HOME_POLARITIES = ["positive", "negative", "neutral"] as const;
 const homeQuerySchema = object({
   ...envelope("query", "home.read"),
@@ -752,6 +929,7 @@ const homeSnapshotSchema = object({
             polarity: enumeration(HOME_POLARITIES),
             ownerPresence: booleanValue,
             reviewLabel: nullable(boundedString(64)),
+            binding: nullable(boundedString(HOME_BINDING_MAXIMUM)),
           }),
         ),
         rank: enumeration(HOME_RANKS),
@@ -773,6 +951,32 @@ const homeSnapshotSchema = object({
       }),
     ),
     revision: machineString,
+    generatedAt: timestamp,
+  }),
+});
+export const SEARCH_ASK_STATES = ["answered", "not_found", "suggestions"] as const;
+export const SEARCH_BASIS_KINDS = ["memory", "conversation"] as const;
+const searchAskQuerySchema = object({
+  ...envelope("query", "search.ask.read"),
+  payload: object({ query: nullable(boundedString(500)), locale: enumeration(HOME_LOCALES) }),
+});
+const searchAskSnapshotSchema = object({
+  ...envelope("snapshot", "search.ask.snapshot"),
+  payload: object({
+    state: enumeration(SEARCH_ASK_STATES),
+    query: nullable(boundedString(500)),
+    answer: nullable(boundedString(2000)),
+    notFoundText: nullable(boundedString(200)),
+    basis: array(
+      object({
+        kind: enumeration(SEARCH_BASIS_KINDS),
+        label: boundedString(200),
+        memoryId: nullable(machineString),
+        threadId: nullable(machineString),
+        at: timestamp,
+      }),
+    ),
+    asks: array(boundedString(500)),
     generatedAt: timestamp,
   }),
 });
@@ -952,6 +1156,10 @@ const loginDevicesSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+export const GATEWAY_ERROR_REASON_CODES = Object.freeze(["LOGIN_DEVICES_STILL_CHANGING"] as const);
+export type GatewayErrorReasonCode = (typeof GATEWAY_ERROR_REASON_CODES)[number];
+export const isGatewayErrorReasonCode = (value: string): value is GatewayErrorReasonCode =>
+  (GATEWAY_ERROR_REASON_CODES as readonly string[]).includes(value);
 const loginDevicesRevokeOthersCommandSchema = object({
   ...commandEnvelope("login.devices.revoke_others"),
   payload: object({ recentAuthenticationRef: nullable(machineString) }),
@@ -970,6 +1178,10 @@ const proactiveSettingsSetCommandSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
   }),
+});
+const proactivePauseCommandSchema = object({
+  ...commandEnvelope("proactive.pause"),
+  payload: object({}),
 });
 const proactiveInsightRespondCommandSchema = object({
   ...commandEnvelope("proactive.insight.respond"),
@@ -1589,6 +1801,32 @@ const memoryClassifySnapshotSchema = object({
     ),
   }),
 });
+export const MEMORY_IMPORT_DUPLICATES_MAXIMUM = 500;
+const memoryImportDuplicatesQuerySchema = object({
+  ...envelope("query", "memory.import.duplicates.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_IMPORT_DUPLICATES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryImportDuplicatesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.duplicates.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        verdict: enumeration(["same", "unsure", "different", "skipped"]),
+        memoryId: nullable(machineString),
+      }),
+    ),
+  }),
+});
 const decisionChainQuerySchema = object({
   ...envelope("query", "decision.chain.read"),
   payload: object({ decisionId: machineString }),
@@ -1613,7 +1851,11 @@ const decisionChainSnapshotSchema = object({
         "retrieval_degrade",
         "external_read",
         "rule_review",
+        "web_push",
         "memory_review",
+        "limit_change",
+        "delivery_timing",
+        "proposal",
       ]),
       decidedAt: timestamp,
       outcome: boundedString(64),
@@ -1637,6 +1879,7 @@ const decisionChainSnapshotSchema = object({
             "amount_threshold",
             "mail_must_notify",
             "mail_read_whole_thread",
+            "push_quiet_hours",
             "unknown",
           ]),
           origin: nullable(enumeration(["owner_setting", "built_in"])),
@@ -1971,7 +2214,20 @@ const memoryReminderCreateCommandSchema = object({
     repeat: enumeration(["none", "yearly"]),
   }),
 });
-export const OWNER_RULE_ACTIONS = ["undo", "confirm", "reconfirm"] as const;
+export const OWNER_RULE_ACTIONS = [
+  "undo",
+  "confirm",
+  "reconfirm",
+  "ask_first",
+  "allow_directly",
+] as const;
+export const BUILT_IN_ACTION_RULE_OUTCOMES = [
+  "allow_preauthorized",
+  "ask_owner",
+  "refuse",
+] as const;
+export const PROPOSAL_ACTIONS = ["adopt", "reject"] as const;
+export const PROPOSAL_ORIGINS = ["owner_said", "inferred", "external_agent"] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -1996,7 +2252,68 @@ const memoryRulesSnapshotSchema = object({
         ),
       }),
     ),
+    builtIn: array(
+      object({
+        ruleId: machineString,
+        revision: integer(1),
+        outcome: enumeration(BUILT_IN_ACTION_RULE_OUTCOMES),
+        examplesHit: integer(0),
+        examplesMiss: integer(0),
+        askFirst: nullable(booleanValue),
+      }),
+    ),
     generatedAt: timestamp,
+  }),
+});
+const proposalsQuerySchema = object({
+  ...envelope("query", "proposals.read"),
+  payload: object({}),
+});
+const proposalsSnapshotSchema = object({
+  ...envelope("snapshot", "proposals.snapshot"),
+  payload: object({
+    proposals: array(
+      object({
+        proposalId: machineString,
+        version: integer(1),
+        fingerprint: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        effect: boundedString(200),
+        origin: enumeration(PROPOSAL_ORIGINS),
+        adoptable: booleanValue,
+        evidence: array(
+          object({
+            kind: boundedString(64),
+            text: nullable(boundedString(500)),
+            sources: array(object({ kind: boundedString(64), ref: boundedString(256) })),
+            figures: array(
+              object({
+                name: boundedString(64),
+                value: integer(Number.MIN_SAFE_INTEGER),
+                definition: boundedString(200),
+              }),
+            ),
+          }),
+        ),
+        proposedAt: timestamp,
+        expiresAt: timestamp,
+        refusedBefore: integer(0),
+      }),
+    ),
+    pendingCount: integer(0),
+    limit: integer(1),
+    expiresAfterDays: integer(1),
+    generatedAt: timestamp,
+  }),
+});
+const proposalRespondCommandSchema = object({
+  ...commandEnvelope("proposal.respond"),
+  payload: object({
+    proposalId: machineString,
+    expectedVersion: integer(1),
+    fingerprint: machineString,
+    action: enumeration(PROPOSAL_ACTIONS),
   }),
 });
 const memoryRuleRespondCommandSchema = object({
@@ -3069,6 +3386,7 @@ const schemasByType = {
   "proactive.overview.read": proactiveOverviewQuerySchema,
   "proactive.overview.snapshot": proactiveOverviewSnapshotSchema,
   "proactive.settings.set": proactiveSettingsSetCommandSchema,
+  "proactive.pause": proactivePauseCommandSchema,
   "proactive.insight.respond": proactiveInsightRespondCommandSchema,
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
@@ -3090,16 +3408,30 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "proposals.read": proposalsQuerySchema,
+  "proposals.snapshot": proposalsSnapshotSchema,
+  "proposal.respond": proposalRespondCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
   "device.pairing.start": devicePairingStartCommandSchema,
   "device.pairing.confirm": devicePairingConfirmCommandSchema,
   "device.rename": deviceRenameCommandSchema,
   "device.revoke": deviceRevokeCommandSchema,
+  "perception.status.read": perceptionStatusQuerySchema,
+  "perception.status.snapshot": perceptionStatusSnapshotSchema,
+  "perception.day.read": perceptionDayQuerySchema,
+  "perception.day.snapshot": perceptionDaySnapshotSchema,
+  "perception.episode.read": perceptionEpisodeQuerySchema,
+  "perception.episode.snapshot": perceptionEpisodeSnapshotSchema,
+  "perception.usage.read": perceptionUsageQuerySchema,
+  "perception.usage.snapshot": perceptionUsageSnapshotSchema,
+  "perception.settings.change": perceptionSettingsChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
   "home.snapshot": homeSnapshotSchema,
+  "search.ask.read": searchAskQuerySchema,
+  "search.ask.snapshot": searchAskSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
   "data.export.cancel": dataExportCancelCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,
@@ -3119,6 +3451,8 @@ const schemasByType = {
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
   "memory.classify.read": memoryClassifyQuerySchema,
   "memory.classify.snapshot": memoryClassifySnapshotSchema,
+  "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
+  "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,

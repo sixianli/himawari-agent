@@ -7,6 +7,9 @@ import {
   type DurableMemoryService,
   isModelVisible,
   isReviewChangeUndoable,
+  type MailMatchParameters,
+  MEMORY_REVIEW_EXPAND_BATCH,
+  MEMORY_REVIEW_LIST_LIMIT,
   type MemoryBookStorePort,
   type MemoryCategory,
   type MemoryConsolidationStorePort,
@@ -16,8 +19,6 @@ import {
   type MemoryProjectionJobStatePort,
   type MemoryReminderStorePort,
   type MemoryReviewStorePort,
-  MEMORY_REVIEW_EXPAND_BATCH,
-  MEMORY_REVIEW_LIST_LIMIT,
   type MemorySourceMessage,
   modelVisibleCeiling,
   type OwnerProfileService,
@@ -30,8 +31,8 @@ import {
   type RuleReviewOwnerStorePort,
   reviewMemoryVisible,
   type SensitiveMemoryApprovalStatePort,
-  type UnitOfWorkPort,
   type SensitiveMemoryTopic,
+  type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import {
   type GatewayV2Command,
@@ -42,14 +43,8 @@ import {
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
+import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
-import {
-  DETERMINISTIC_SENSITIVE,
-  deterministicallySensitive,
-  type MemoryClassification,
-  type ProductionMemoryClassifier,
-  UNCLASSIFIED,
-} from "./production-memory-classification.js";
 import {
   externalProposalBatchId,
   type ProductionMcpMemoryWriter,
@@ -58,6 +53,14 @@ import {
   createProductionAutomaticMemory,
   protectedMemoryCandidates,
 } from "./production-memory-capture.js";
+import {
+  DETERMINISTIC_SENSITIVE,
+  deterministicallySensitive,
+  type MemoryClassification,
+  type ProductionMemoryClassifier,
+  UNCLASSIFIED,
+} from "./production-memory-classification.js";
+import type { ProductionImportDuplicateChecker } from "./production-memory-import-duplicates.js";
 import { OwnerRuleError, type ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionReminderWriter, ReminderInputError } from "./production-reminder-writer.js";
 
@@ -66,6 +69,13 @@ type GenerationId = Parameters<DurableMemoryService["delete"]>[1];
 type OverviewSnapshot = Extract<GatewayV2Snapshot, { type: "memory.overview.snapshot" }>;
 type BasisSnapshot = Extract<GatewayV2Snapshot, { type: "memory.basis.snapshot" }>;
 type ClassifySnapshot = Extract<GatewayV2Snapshot, { type: "memory.classify.snapshot" }>;
+type ImportDuplicateResultView = Awaited<
+  ReturnType<ProductionImportDuplicateChecker["check"]>
+>[number];
+type ImportDuplicatesSnapshot = Extract<
+  GatewayV2Snapshot,
+  { type: "memory.import.duplicates.snapshot" }
+>;
 const BASIS_NODES_SHOWN = 200;
 type Command<T extends GatewayV2Command["type"]> = Extract<GatewayV2Command, { type: T }>;
 
@@ -73,6 +83,7 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.basis.read",
   "memory.classify.read",
+  "memory.import.duplicates.read",
   "decision.chain.read",
   "memory.approval.respond",
   "memory.mutate",
@@ -119,6 +130,13 @@ const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
 const EXTERNAL_PROPOSALS_SHOWN = 100;
 const EXTERNAL_BATCHES_SHOWN = 10;
+
+function unsupportedRuleAction(): never {
+  throw new ApplicationPortError(
+    PORT_ERROR_CODES.INVALID_OPERATION,
+    "MEMORY_RULE_ACTION_UNSUPPORTED",
+  );
+}
 
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
@@ -245,6 +263,7 @@ export class ProductionMemoryControl {
       "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
+    readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -258,6 +277,7 @@ export class ProductionMemoryControl {
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
+    readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
 
@@ -474,9 +494,36 @@ export class ProductionMemoryControl {
   }
 
   async rulesNeedingReview() {
-    return ((await this.options.ownerRules?.list()) ?? []).filter(
+    const rules = ((await this.options.ownerRules?.list()) ?? []).filter(
       ({ status }) => status === "needs_review",
     );
+    return Promise.all(
+      rules.map(async (rule) => ({
+        ...rule,
+        dataClassification: await this.#ruleClassification(rule.sourceMemoryId),
+      })),
+    );
+  }
+
+  async #ruleClassification(
+    sourceMemoryId: string | null,
+  ): Promise<ProductMemoryRecord["dataClassification"]> {
+    const { ownerId, agentId } = this.options.configuration;
+    const record = sourceMemoryId
+      ? await this.options.state.read(sourceMemoryId as MemoryId).catch(() => undefined)
+      : undefined;
+    if (
+      !record ||
+      record.ownerId !== ownerId ||
+      record.agentId !== agentId ||
+      record.status === "trashed" ||
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified"
+    )
+      return "sensitive";
+    return classificationRank(record.dataClassification) > classificationRank("private")
+      ? record.dataClassification
+      : "private";
   }
 
   async pendingRequests() {
@@ -891,7 +938,11 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.rules.snapshot",
-      payload: { rules, generatedAt: this.options.clock.now() },
+      payload: {
+        rules,
+        builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        generatedAt: this.options.clock.now(),
+      },
     };
   }
 
@@ -955,7 +1006,9 @@ export class ProductionMemoryControl {
         suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
         suggestionConditions: rule.suggestion
           ? RULE_CONDITION_FIELDS.flatMap((field) => {
-              const values = rule.suggestion?.params[field] ?? [];
+              const params = rule.suggestion?.params;
+              const values =
+                params && field in params ? (params as MailMatchParameters)[field] : [];
               return values.length ? [{ field, values: values.map(clip) }] : [];
             })
           : [],
@@ -1151,6 +1204,7 @@ export class ProductionMemoryControl {
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
     if (query.type === "memory.basis.read") return this.#basisChain(query);
     if (query.type === "memory.classify.read") return this.#classify(query);
+    if (query.type === "memory.import.duplicates.read") return this.#importDuplicates(query);
     if (query.type === "decision.chain.read") return this.#decisionChain(query);
     if (query.type === "memory.rules.read") return this.#rules(query);
     if (query.type === "memory.review.read") return this.#review(query);
@@ -1321,6 +1375,86 @@ export class ProductionMemoryControl {
         }),
       },
     } as ClassifySnapshot;
+  }
+
+  async #importDuplicates(
+    query: Extract<GatewayV2Query, { type: "memory.import.duplicates.read" }>,
+  ): Promise<ImportDuplicatesSnapshot> {
+    const checker = this.options.importDuplicates;
+    const refs = query.payload.contentRefs;
+    const results = checker ? await this.#checkImportDuplicates(checker, refs) : null;
+    return {
+      ...query,
+      kind: "snapshot",
+      type: "memory.import.duplicates.snapshot",
+      payload: {
+        items: refs.map((contentRef, index) => ({
+          contentRef,
+          verdict: results?.[index]?.verdict ?? "skipped",
+          memoryId: results?.[index]?.memoryId ?? null,
+        })),
+      },
+    } as ImportDuplicatesSnapshot;
+  }
+
+  async #checkImportDuplicates(
+    checker: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">,
+    refs: readonly string[],
+  ) {
+    const { ownerId, agentId } = this.options.configuration;
+    const candidates: string[] = [];
+    const sendable: number[] = [];
+    for (const [index, ref] of refs.entries()) {
+      const payload = await this.options.payloads.get(ref);
+      if (
+        (payload &&
+          classificationRank(payload.dataClassification) > classificationRank("private")) ||
+        this.#sensitiveJudgments.has(ref)
+      )
+        candidates.push("");
+      else {
+        candidates.push(await this.readText(ref));
+        sendable.push(index);
+      }
+    }
+    if (sendable.length === 0)
+      return candidates.map(
+        (): ImportDuplicateResultView => ({ verdict: "skipped", memoryId: null }),
+      );
+    const existing: { memoryId: string; text: string }[] = [];
+    let complete = true;
+    const limit = checker.existingLimit;
+    const active = [...(await this.options.state.listActive(ownerId, agentId))].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    );
+    for (const record of active) {
+      if (record.dataClassification === "sensitive" || record.dataClassification === "restricted")
+        continue;
+      if (existing.length >= limit) {
+        complete = false;
+        break;
+      }
+      const text = await this.readText(record.contentRef).catch(() => null);
+      if (text) existing.push({ memoryId: record.id, text });
+      else complete = false;
+    }
+    if (existing.length === 0 && active.length > 0) complete = false;
+    const checked = await checker.check(
+      sendable.map((index) => candidates[index] ?? ""),
+      existing,
+      { complete },
+    );
+    const results = candidates.map(
+      (): ImportDuplicateResultView => ({
+        verdict: "skipped",
+        memoryId: null,
+      }),
+    );
+    for (const [position, index] of sendable.entries()) {
+      const result = checked[position];
+      if (result) results[index] = result;
+    }
+    return results;
   }
 
   async #storedAtLeast(
@@ -1650,6 +1784,19 @@ export class ProductionMemoryControl {
         throw error;
       }
     }
+    if (
+      command.type === "memory.rule.respond" &&
+      (command.payload.action === "ask_first" || command.payload.action === "allow_directly")
+    ) {
+      const switches = this.options.actionRules;
+      if (!switches)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      await switches.setAskFirst(command.payload.target, command.payload.action === "ask_first");
+      return { resultRef: command.payload.target, replayed: false };
+    }
     if (command.type === "memory.review.respond") {
       const { reviews } = this.#reviews();
       const { target, action, expectedRevision } = command.payload;
@@ -1707,7 +1854,9 @@ export class ProductionMemoryControl {
             ? (await control.confirm(target)).ruleId
             : action === "reconfirm"
               ? (await control.reconfirm(target)).ruleId
-              : (await control.undo(target)).ruleId;
+              : action === "undo"
+                ? (await control.undo(target)).ruleId
+                : unsupportedRuleAction();
         return { resultRef: result ?? target, replayed: false };
       } catch (error) {
         if (error instanceof OwnerRuleError)
