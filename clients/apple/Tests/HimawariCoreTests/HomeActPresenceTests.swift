@@ -115,18 +115,21 @@ private struct RefusingSigner: DeviceKeySigner {
         #expect(exchange.requests.isEmpty)
     }
 
-    @Test func missingConfirmKeyIsReportedAsAKeyErrorNotAsADecline() async throws {
-        struct MissingKey: DeviceKeySigner {
-            func publicKeySPKI() throws -> Data { throw DeviceKeyError.keyMissing(.confirm) }
-            func sign(_ message: Data, reason: String?) async throws -> Data { throw DeviceKeyError.keyMissing(.confirm) }
+    @Test(arguments: [DeviceKeyError.keyMissing(.confirm), .keyUnreadable(.confirm)])
+    func confirmKeyFaultIsReportedAsAKeyErrorNotAsADecline(fault: DeviceKeyError) async throws {
+        struct FaultyKey: DeviceKeySigner {
+            let fault: DeviceKeyError
+            func publicKeySPKI() throws -> Data { throw fault }
+            func sign(_ message: Data, reason: String?) async throws -> Data { throw fault }
         }
         let exchange = RecordingExchange([
             HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(Self.challenge)","expiresAt":"2027-01-15T08:05:00.000Z"}"#.utf8)),
         ])
         let (api, _) = try api(exchange)
         let (item, action) = item(ownerPresence: true)
-        await #expect(throws: DeviceKeyError.keyMissing(.confirm)) {
-            try await api.act(on: item, action: action, requestId: "req-5", presence: OwnerPresenceSigner(key: MissingKey(), reason: "确认"))
+        await #expect(throws: fault) {
+            try await api.act(on: item, action: action, requestId: "req-5", presence: OwnerPresenceSigner(key: FaultyKey(fault: fault), reason: "确认"))
         }
+        #expect(exchange.requests.map { $0.url?.path } == ["/api/device/v1/approvals/challenge"])
     }
 }
