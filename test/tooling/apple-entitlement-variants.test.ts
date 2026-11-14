@@ -5,7 +5,9 @@ import { expect, it } from "vitest";
 const app = path.resolve(__dirname, "../../clients/apple/App");
 const project = readFileSync(path.join(app, "Himawari.xcodeproj/project.pbxproj"), "utf8");
 const paths = [
-  ...new Set([...project.matchAll(/CODE_SIGN_ENTITLEMENTS = "([^"]+)";/gu)].map((m) => m[1])),
+  ...new Set(
+    [...project.matchAll(/CODE_SIGN_ENTITLEMENTS = "([^"]+)";/gu)].flatMap((m) => m[1] ?? []),
+  ),
 ];
 
 const resolve = (template: string, suffix: string) =>
