@@ -6,6 +6,7 @@ import type {
   ThreadCommandService,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
+import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import {
   type ProductionProposalBox,
   type ProposalActionHandler,
@@ -30,6 +31,7 @@ const SHOWN_TEXT_LENGTH = 60;
 const FULL_READ_TEXT_LENGTH = 120;
 const MAXIMUM_TASK_LENGTH = 2000;
 const BASIS_LIMIT = 8;
+const EVIDENCE_CHUNK_LENGTH = 500;
 const TASK_OPEN = "<<<已同意的任务>>>";
 const TASK_CLOSE = "<<<已同意的任务结束>>>";
 
@@ -126,6 +128,7 @@ export function registerTaskProposalHandler(options: {
       if (!session) throw new ProposalError("PROPOSAL_INVALID", "TASK_SESSION_REQUIRED");
       const id = ids(proposalId);
       const now = clock.now();
+      const classification = classificationWithIdentifiers(parsed.text, "private");
       if (!(await payloads.get(id.contentRef))) {
         await payloads.put(
           await protector.protect({
@@ -133,7 +136,7 @@ export function registerTaskProposalHandler(options: {
             agentId,
             ref: id.contentRef,
             contentType: "text/plain",
-            dataClassification: "private",
+            dataClassification: classification,
             plaintext: new TextEncoder().encode(
               taskRunMessage({ proposalId, text: parsed.text, decidedAt: now, timeZone }),
             ),
@@ -158,7 +161,7 @@ export function registerTaskProposalHandler(options: {
         idempotencyKey: `proposal-task-run:${proposalId}`,
         contentRef: id.contentRef,
         sourceProofRef: `proposal:${proposalId}:${session.proofRef}`,
-        dataClassification: "private",
+        dataClassification: classification,
         resultRef: id.contentRef,
         messageId: id.messageId,
         turnId: id.turnId,
@@ -191,6 +194,14 @@ export function registerTaskProposalHandler(options: {
   box.register(TASK_RUN_PROPOSAL_TYPE, handler);
 }
 
+function chunks(text: string, size: number): string[] {
+  const characters = [...text];
+  const parts: string[] = [];
+  for (let start = 0; start < characters.length; start += size)
+    parts.push(characters.slice(start, start + size).join(""));
+  return parts;
+}
+
 function clip(text: string, maximum: number): string {
   const characters = [...text.replace(/\s+/gu, " ").trim()];
   return characters.length <= maximum
@@ -218,8 +229,13 @@ export async function proposeTaskRun(
   if (text.length === 0 || [...text].length > MAXIMUM_TASK_LENGTH)
     return { refused: "TASK_TEXT_INVALID" };
   if (!taskData({ text, basis: input.basis })) return { refused: "TASK_BASIS_REQUIRED" };
+  const basis = input.basis
+    .map(({ kind, ref }) => ({ kind, ref }))
+    .sort((a, b) =>
+      a.kind === b.kind ? a.ref.localeCompare(b.ref) : a.kind.localeCompare(b.kind),
+    );
   const proposalId = `task:${createHash("sha256")
-    .update([text, ...input.basis.map((entry) => `${entry.kind}:${entry.ref}`)].join("\n"))
+    .update(JSON.stringify([text, basis.map(({ kind, ref }) => [kind, ref])]))
     .digest("hex")
     .slice(0, 32)}`;
   const long = [...text].length > FULL_READ_TEXT_LENGTH;
@@ -227,12 +243,27 @@ export async function proposeTaskRun(
     proposalId,
     type: TASK_RUN_PROPOSAL_TYPE,
     summary: `交给我去办：${clip(text, SHOWN_TEXT_LENGTH)}`,
-    effect: "新开一个对话，把这段任务说明原样交给我去办；对外发送、花钱、删除仍要你另外批准",
+    effect:
+      "新开一个对话，把这段任务说明原样交给我去办；这次运行在后台，需要写入、发送、花钱、删除的动作会被直接拒绝",
     origin: context.origin,
     threadId: context.threadId,
-    evidence: [{ kind: "detail", text: context.reason, sources: input.basis, figures: [] }],
-    data: { text, basis: input.basis },
-    requiresFullRead: long || context.externalContentSeen === true,
+    evidence: [
+      {
+        kind: "detail",
+        text: [...context.reason].slice(0, EVIDENCE_CHUNK_LENGTH).join(""),
+        sources: basis,
+        figures: [],
+      },
+      ...chunks(text, EVIDENCE_CHUNK_LENGTH).map((part) => ({
+        kind: "task_text",
+        text: part,
+        sources: [],
+        figures: [],
+      })),
+    ],
+    data: { text, basis },
+    requiresFullRead:
+      long || context.externalContentSeen === true || context.origin === "external_content",
     ...(context.source ? { source: context.source } : {}),
     ...(context.externalContentSeen === true ? { externalContentSeen: true } : {}),
   });

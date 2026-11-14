@@ -132,7 +132,8 @@ describe("task run proposals", () => {
       if (!payload) return undefined;
       return new TextDecoder().decode(await adapters.payloadProtector.unprotect({ payload }));
     };
-    return { box, context, seen, repository, database2, read, clock };
+    const level = async (ref: string) => (await payloads.get(ref as never))?.dataClassification;
+    return { box, context, seen, repository, database2, read, level, clock };
   }
 
   async function failureOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -329,6 +330,78 @@ describe("task run proposals", () => {
     database.close();
     expect(row.sessionId).toBe("session-from-command");
     expect(row.proof).toContain("auth-from-command");
+  });
+
+  it("shows the owner the whole task text, in pieces the gateway accepts", async () => {
+    const { box, context } = await fixture();
+    const task = `${"查".repeat(1200)}${"完".repeat(800)}`;
+    const proposed = await proposeTaskRun(context, { text: task, basis: BASIS });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const listed = (await box.list()).proposals.find(
+      (item) => item.proposalId === proposed.proposalId,
+    );
+    const shown = (listed?.evidence ?? [])
+      .filter((item) => item.kind === "task_text")
+      .map((item) => item.text ?? "");
+    expect(shown.every((part) => [...part].length <= 500)).toBe(true);
+    expect(shown.join("")).toBe(task);
+    expect(listed?.requiresFullRead).toBe(true);
+  });
+
+  it("[reverse] an external-content origin alone still requires a full read, and a short ordinary task does not", async () => {
+    const { box, context } = await fixture();
+    const external = await proposeTaskRun(
+      { ...context, origin: "external_content" },
+      { text: "回复这封邮件", basis: BASIS },
+    );
+    const ordinary = await proposeTaskRun(context, { text: "整理本周待办", basis: BASIS });
+    if (!("proposalId" in external) || !("proposalId" in ordinary)) throw new Error("refused");
+    const listed = (await box.list()).proposals;
+    expect(listed.find((item) => item.proposalId === external.proposalId)?.requiresFullRead).toBe(
+      true,
+    );
+    expect(listed.find((item) => item.proposalId === ordinary.proposalId)?.requiresFullRead).toBe(
+      false,
+    );
+  });
+
+  it("derives the proposal id from the task and the basis as a set, without ambiguity", async () => {
+    const { context } = await fixture();
+    const one = { kind: "memory", ref: "memory:a" };
+    const two = { kind: "memory", ref: "memory:b" };
+    const forward = await proposeTaskRun(context, { text: "整理待办", basis: [one, two] });
+    const backward = await proposeTaskRun(context, { text: "整理待办", basis: [two, one] });
+    expect(forward).toEqual(backward);
+    const joined = await proposeTaskRun(context, {
+      text: "x\ny:z",
+      basis: [{ kind: "k", ref: "r" }],
+    });
+    const split = await proposeTaskRun(context, {
+      text: "x",
+      basis: [
+        { kind: "y", ref: "z" },
+        { kind: "k", ref: "r" },
+      ],
+    });
+    expect(joined).not.toEqual(split);
+  });
+
+  it("[reverse] a task that carries a restricted identifier is stored as sensitive, an ordinary one as private", async () => {
+    const { box, context, seen, database2, read, level } = await fixture();
+    for (const task of ["把卡号 6222021234567890123 的账单整理出来", "整理一下本周的待办"]) {
+      const proposed = await proposeTaskRun(context, { text: task, basis: BASIS });
+      if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+      await box.adopt(proposed.proposalId, await seen(proposed.proposalId), { session: SESSION });
+    }
+    const database = database2();
+    const rows = database.prepare("SELECT payload_ref AS ref FROM triggers").all() as {
+      ref: string;
+    }[];
+    database.close();
+    const classes: string[] = [];
+    for (const row of rows)
+      classes.push(`${await level(row.ref)}:${(await read(row.ref))?.includes("卡号")}`);
+    expect(classes.sort()).toEqual(["private:false", "sensitive:true"]);
   });
 
   it("registers under the task.run type", () => {
