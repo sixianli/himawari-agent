@@ -62,4 +62,4 @@
 - Andy 2026-11-12 定、2026-11-13 补充（[ADR 0249](../../docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）：判断用户一句话的意图、时效、是否明说、两句话是不是同一件事，一律交给模型，程序只做校验（原话是否逐字出自主人、格式、额度、白名单）。不得用关键词表、正则、停用词表或写死的词典去猜用户的意思，也不得“先放词表，以后再改”。
 - 门槛：`npm run check:meaning-word-lists` 找出新增的词表形状，每一处必须在 [词表登记表](../../docs/meaning-word-lists.md) 登记类别和理由。登记表里没有“理解用户意思”这一类；要加新类别，先问 Andy。
 - 做法参考 PR 423、467 和 ADR 0249、ADR 0252：独立裁判提示词、严格解析、失败走安全默认、用本机回环模型桩写自动测试，再用真模型小批量评测（花钱先按本文件“钱和模型”一节问）。
-- 起因：[I-100](../../docs/incidents-and-gates.md#incidents)，这类词表已经出现三次。
+- 起因：[I-104](../../docs/incidents-and-gates.md#incidents)，这类词表已经出现三次。
