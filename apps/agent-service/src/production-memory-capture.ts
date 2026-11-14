@@ -32,9 +32,14 @@ import {
   type ThreadDistillationStatePort,
   type ThreadDistillationWork,
   type ThreadRepositoryPort,
+  type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import { localDayStart } from "@himawari-agent/memory-engine";
-import { MEMORY_CAPTURE, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
+import {
+  MEMORY_CAPTURE,
+  MEMORY_CONFIRMATION_JUDGE,
+  TRUSTED_PROMPT_TEXTS,
+} from "@himawari-agent/prompt-catalog";
 import {
   classificationWithIdentifiers,
   type EgressPlaceholderKind,
@@ -42,6 +47,7 @@ import {
   placeholderTable,
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
+import { judgeOrDefault } from "./auxiliary-judgment.js";
 
 type MemoryId = NonNullable<ExtractedMemoryCandidate["existingMemoryId"]>;
 type ProductThreadMessage = Awaited<
@@ -70,6 +76,10 @@ const MAXIMUM_RELEVANT_MEMORIES = 10;
 const MAXIMUM_CONTEXT_CHARACTERS = 1500;
 const MAXIMUM_CANDIDATES = 8;
 const MAXIMUM_MEMORY_CHARACTERS = 500;
+const MAXIMUM_SUPPORT_CACHE = 500;
+const SUPPORT_JUDGE_VERSION = createHash("sha256")
+  .update(MEMORY_CONFIRMATION_JUDGE.text)
+  .digest("hex");
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
   public: 0,
   private: 1,
@@ -126,6 +136,7 @@ export interface ParsedMemoryCandidates {
   readonly rejectedCandidates: readonly ExtractedMemoryCandidate[];
   readonly invalidCandidates: number;
   readonly returnedNone: boolean;
+  readonly supportChecks: readonly SupportCheck[];
 }
 
 function evidenceText(text: string): string {
@@ -145,35 +156,56 @@ export function quoteFromOwnerMessage(quote: string, ownerMessage: string): bool
   );
 }
 
-const GENERIC_TERMS =
-  /主人|用户|喜欢|偏好|喜爱|好像|可能|经常|一直|比较|觉得|今天|现在|明天|昨天|一下|这个|那个|什么|没有|可以|知道|时候|因为|所以|但是|还是|这样|那样|以后|之前|已经|一定|顺便|帮我|[的了是我你他她它在有和与就也都还很不最想要又]/gu;
-
-function relevanceTokens(text: string): Set<string> {
-  const tokens = new Set<string>();
-  const runs = text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(GENERIC_TERMS, " ")
-    .split(/[^\p{L}\p{N}]+/u);
-  for (const run of runs) {
-    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(run)) {
-      const chars = [...run];
-      for (let index = 0; index + 1 < chars.length; index += 1) {
-        tokens.add(`${chars[index]}${chars[index + 1]}`);
-      }
-    } else if ([...run].length >= 2) {
-      tokens.add(run);
-    }
-  }
-  return tokens;
+export interface SupportCheck {
+  readonly key: string;
+  readonly memoryText: string;
+  readonly quote: string;
 }
 
-export function quoteRelatesToMemory(quote: string, memoryTexts: readonly string[]): boolean {
-  const quoted = relevanceTokens(quote);
-  return memoryTexts.some((text) => {
-    for (const token of relevanceTokens(text)) if (quoted.has(token)) return true;
-    return false;
-  });
+export class SupportVerdictCache {
+  readonly #known = new Map<string, boolean>();
+
+  get(check: SupportCheck, classification: DataClassification): boolean | undefined {
+    return this.#known.get(this.#key(check, classification));
+  }
+
+  set(check: SupportCheck, classification: DataClassification, verdict: boolean): void {
+    if (this.#known.size >= MAXIMUM_SUPPORT_CACHE) this.#known.clear();
+    this.#known.set(this.#key(check, classification), verdict);
+  }
+
+  #key(check: SupportCheck, classification: DataClassification): string {
+    return createHash("sha256")
+      .update(
+        `${SUPPORT_JUDGE_VERSION}\u0000${classification}\u0000${check.memoryText}\u0000${check.quote}`,
+      )
+      .digest("hex");
+  }
+}
+
+export function supportCheckKey(memoryId: string, quote: string): string {
+  return `${memoryId}\u0000${quote}`;
+}
+
+export function memoryConfirmationJudgePrompt(memoryText: string, quote: string): string {
+  return [
+    MEMORY_CONFIRMATION_JUDGE.text,
+    JSON.stringify({
+      pendingMemory: memoryText.slice(0, MAXIMUM_MEMORY_CHARACTERS),
+      ownerQuote: quote.slice(0, MAXIMUM_SOURCE_CHARACTERS),
+    }),
+  ].join("\n");
+}
+
+export function parseSupportVerdict(output: string): boolean {
+  const parsed = jsonObject(output);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof (parsed as { supports?: unknown }).supports !== "boolean"
+  )
+    throw new Error("MEMORY_CAPTURE_RESPONSE_INVALID");
+  return (parsed as { supports: boolean }).supports;
 }
 
 export function memoryCapturePrompt(
@@ -266,6 +298,7 @@ export function parseMemoryCandidates(input: {
     { readonly text: string; readonly category: MemoryCategory }
   >;
   readonly ownerMessage?: string;
+  readonly supportVerdicts?: ReadonlyMap<string, boolean>;
   readonly sentAt?: string;
   readonly timeZone?: string;
   readonly subCategories?: Readonly<Record<string, readonly string[]>>;
@@ -309,6 +342,7 @@ export function parseMemoryCandidates(input: {
   let explicitOrdinal: number | null = null;
   let unverifiedEvidence = 0;
   let invalidCandidates = 0;
+  const supportChecks: SupportCheck[] = [];
   for (const item of items.slice(0, MAXIMUM_CANDIDATES)) {
     if (typeof item !== "object" || item === null) {
       invalidCandidates += 1;
@@ -359,14 +393,19 @@ export function parseMemoryCandidates(input: {
       existing !== null &&
       input.tentativeMemories?.has(existing) === true &&
       (decision === "unchanged" || decision === "update" || decision === "merge");
+    const supportKey = existing === null ? "" : supportCheckKey(existing, quote);
+    if (confirmsTentative && evidenceVerified && !input.supportVerdicts?.has(supportKey))
+      supportChecks.push({
+        key: supportKey,
+        memoryText: input.tentativeMemories?.get(existing)?.text ?? "",
+        quote,
+      });
     const evidenceRejected =
       (input.ownerMessage !== undefined &&
         decision !== "unchanged" &&
         dataClassification !== "restricted" &&
         !evidenceVerified) ||
-      (confirmsTentative &&
-        (!evidenceVerified ||
-          !quoteRelatesToMemory(quote, [input.tentativeMemories?.get(existing)?.text ?? ""])));
+      (confirmsTentative && (!evidenceVerified || input.supportVerdicts?.get(supportKey) !== true));
     const category = (
       typeof value["category"] === "string" && CATEGORIES.has(value["category"])
         ? value["category"]
@@ -508,6 +547,7 @@ export function parseMemoryCandidates(input: {
     rejectedCandidates,
     invalidCandidates,
     returnedNone: items.length === 0,
+    supportChecks,
   };
 }
 
@@ -671,6 +711,7 @@ export interface ProductionMemoryCaptureOptions {
     call: MemoryCaptureCall,
   ) => Promise<string>;
   readonly backlog?: MemoryCaptureBacklogPort;
+  readonly unitOfWork: UnitOfWorkPort;
   readonly ledger?: DecisionLedgerPort;
   readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   readonly onFailure: (error: unknown) => void;
@@ -694,6 +735,8 @@ const REPLAY_NOT_ATTEMPTED_ERRORS: ReadonlySet<string> = new Set([
 ]);
 
 const UNKNOWN_CAPTURE_ERROR = "MEMORY_CAPTURE_FAILED";
+const SAVE_PENDING_CODE = "MEMORY_CAPTURE_SAVE_PENDING";
+const SAVE_ATTEMPTS_PER_TURN = 2;
 
 export function captureErrorCode(error: unknown): string {
   const code =
@@ -733,6 +776,7 @@ export class ProductionMemoryCapture {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   readonly #captured = new Set<string>();
   readonly #busy = new Set<string>();
+  readonly #supportCache = new SupportVerdictCache();
   readonly #settled = new Set<string>();
   #stopping = false;
   private readonly options: ProductionMemoryCaptureOptions;
@@ -867,17 +911,74 @@ export class ProductionMemoryCapture {
 
   async #save(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
     const { backlog } = this.options;
-    try {
+    if (!backlog) {
       await this.#commit(plan, parsed);
-    } catch (error) {
-      if (!backlog) throw error;
-      await this.#recordFailure(plan, "capture_gave_up", captureErrorCode(error), "save").catch(
-        this.options.onFailure,
-      );
-      await this.#settle(plan.generationId);
-      throw error;
+      return;
     }
-    if (backlog) await this.#settle(plan.generationId);
+    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) {
+      await this.#commit(plan, parsed);
+      await this.#settle(plan.generationId);
+      return;
+    }
+    const owned = !this.#busy.has(plan.generationId);
+    if (owned) this.#busy.add(plan.generationId);
+    try {
+      if (!(await backlog.has(plan.generationId).catch(() => false)))
+        await backlog.enqueue({
+          generationId: plan.generationId,
+          ownerId: plan.request.ownerId,
+          agentId: plan.request.agentId,
+          threadId: plan.threadId,
+          sourceRunId: plan.sourceRunId,
+          lastErrorCode: SAVE_PENDING_CODE,
+          createdAt: this.options.clock.now(),
+        });
+      let failure: unknown;
+      const held: MemoryExtractionAuditRecord[] = [];
+      for (let attempt = 1; attempt <= SAVE_ATTEMPTS_PER_TURN; attempt += 1) {
+        try {
+          await this.#commit(plan, parsed, held);
+          return;
+        } catch (error) {
+          failure = error;
+          const state = await backlog.has(plan.generationId).then(
+            (queued) => (queued ? "queued" : "gone"),
+            () => "unknown",
+          );
+          if (state === "gone") {
+            this.#emitAudits(held);
+            return;
+          }
+          if (state === "unknown") break;
+        }
+      }
+      const code = captureErrorCode(failure);
+      const attempts = await backlog
+        .recordAttempt({
+          generationId: plan.generationId,
+          errorCode: code,
+          updatedAt: this.options.clock.now(),
+        })
+        .catch((error: unknown) => {
+          if ((error as { code?: string }).code === "PORT_NOT_FOUND") return 0;
+          throw error;
+        });
+      if (attempts === 0) {
+        this.#emitAudits(held);
+        return;
+      }
+      const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
+      if (gaveUp) await this.#settle(plan.generationId);
+      await this.#recordFailure(
+        plan,
+        gaveUp ? "capture_gave_up" : "capture_queued",
+        code,
+        `save:${attempts}`,
+      ).catch(this.options.onFailure);
+      throw failure;
+    } finally {
+      if (owned) this.#busy.delete(plan.generationId);
+    }
   }
 
   async #settle(generationId: string): Promise<void> {
@@ -905,7 +1006,10 @@ export class ProductionMemoryCapture {
     if (!entry || this.#busy.has(entry.generationId)) return;
     this.#busy.add(entry.generationId);
     try {
-      if (this.#settled.has(entry.generationId)) {
+      if (
+        this.#settled.has(entry.generationId) ||
+        entry.attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS
+      ) {
         await backlog.remove(entry.generationId);
         this.#settled.delete(entry.generationId);
         return;
@@ -930,7 +1034,7 @@ export class ProductionMemoryCapture {
           updatedAt: this.options.clock.now(),
         });
         const gaveUp = attempts >= MEMORY_CAPTURE_BACKLOG_MAX_ATTEMPTS;
-        if (gaveUp) await backlog.remove(entry.generationId);
+        if (gaveUp) await this.#settle(entry.generationId);
         await this.#recordFailure(
           plan,
           gaveUp ? "capture_gave_up" : "capture_queued",
@@ -1103,6 +1207,41 @@ export class ProductionMemoryCapture {
     };
   }
 
+  async #judgeSupport(
+    plan: CapturePlan,
+    call: MemoryCaptureCall,
+    checks: readonly SupportCheck[],
+  ): Promise<ReadonlyMap<string, boolean>> {
+    const verdicts = new Map<string, boolean>();
+    for (const [index, check] of checks.entries()) {
+      const known = this.#supportCache.get(check, plan.request.dataClassification);
+      if (known !== undefined) {
+        verdicts.set(check.key, known);
+        continue;
+      }
+      const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
+      let settled = true;
+      const verdict = await judgeOrDefault(
+        {
+          ask: (attempt) =>
+            this.options.generate(plan.request, prompt, () => {}, {
+              invocationId: `${call.invocationId}:support:${index}:${attempt}`,
+              retryToolCall: false,
+            }),
+          parse: parseSupportVerdict,
+        },
+        false,
+        (error) => {
+          settled = false;
+          this.options.onFailure(error);
+        },
+      );
+      if (settled) this.#supportCache.set(check, plan.request.dataClassification, verdict);
+      verdicts.set(check.key, verdict);
+    }
+    return verdicts;
+  }
+
   async #extract(
     plan: CapturePlan,
     onAdmitted: () => void,
@@ -1117,26 +1256,31 @@ export class ProductionMemoryCapture {
         jsonEmbedded: true,
       });
       const { existing } = plan;
-      return parseMemoryCandidates({
-        output,
-        sourceRef: plan.input.sourceRef,
-        sourceClassification: plan.input.sourceClassification,
-        existingIds: new Set(existing.map(({ id }) => id)),
-        tentativeMemories: new Map(
-          existing
-            .filter(({ tentative }) => tentative)
-            .map(({ id, text, category }) => [
-              id,
-              { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
-            ]),
-        ),
-        ownerMessage: plan.message,
-        ...(plan.committedAt ? { sentAt: plan.committedAt } : {}),
-        timeZone: this.options.timeZone ?? "UTC",
-        subCategories: plan.subCategories,
-        knownPersonIds: new Set(plan.people.map(({ id }) => id)),
-        restore: (text: string) => restorePlaceholders(text, table),
-      });
+      const parseWith = (supportVerdicts: ReadonlyMap<string, boolean>) =>
+        parseMemoryCandidates({
+          output,
+          sourceRef: plan.input.sourceRef,
+          sourceClassification: plan.input.sourceClassification,
+          existingIds: new Set(existing.map(({ id }) => id)),
+          tentativeMemories: new Map(
+            existing
+              .filter(({ tentative }) => tentative)
+              .map(({ id, text, category }) => [
+                id,
+                { text, category: category ?? DEFAULT_MEMORY_ATTRIBUTES.category },
+              ]),
+          ),
+          supportVerdicts,
+          ownerMessage: plan.message,
+          ...(plan.committedAt ? { sentAt: plan.committedAt } : {}),
+          timeZone: this.options.timeZone ?? "UTC",
+          subCategories: plan.subCategories,
+          knownPersonIds: new Set(plan.people.map(({ id }) => id)),
+          restore: (text: string) => restorePlaceholders(text, table),
+        });
+      const first = parseWith(new Map());
+      if (first.supportChecks.length === 0) return first;
+      return parseWith(await this.#judgeSupport(plan, call, first.supportChecks));
     } catch (error) {
       plan.audit("extraction_failed");
       throw error;
@@ -1186,22 +1330,61 @@ export class ProductionMemoryCapture {
     return parsed;
   }
 
-  async #commit(plan: CapturePlan, parsed: ParsedMemoryCandidates): Promise<void> {
-    const { audit, input } = plan;
-    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) audit("evidence_unverified");
-    for (let index = 0; index < parsed.invalidCandidates; index += 1) audit("candidate_invalid");
-    if (parsed.returnedNone) audit("nothing_to_remember");
-    if (parsed.candidates.length === 0 && parsed.rejectedCandidates.length === 0) return;
-    const service = createProductionAutomaticMemory({
-      ...this.options,
-      extract: async () => parsed.candidates,
-      readSourceText: async () => plan.message,
-      onAudit: this.options.onAudit,
-    });
-    await service.processCommittedRun({
-      ...input,
-      explicitRememberCandidateOrdinal: parsed.explicitOrdinal,
-      rejectedCandidates: parsed.rejectedCandidates,
-    });
+  #emitAudits(records: readonly MemoryExtractionAuditRecord[]): void {
+    for (const record of records)
+      try {
+        this.options.onAudit(record);
+      } catch (error) {
+        try {
+          this.options.onFailure(error);
+        } catch {}
+      }
+  }
+
+  async #commit(
+    plan: CapturePlan,
+    parsed: ParsedMemoryCandidates,
+    audits: MemoryExtractionAuditRecord[] = [],
+  ): Promise<void> {
+    const { input } = plan;
+    audits.length = 0;
+    const note = (outcome: MemoryExtractionAuditRecord["outcome"]) =>
+      audits.push({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: input.threadId,
+        sourceRef: input.sourceRef,
+        generationId: input.generationId,
+        policyVersion: input.policyVersion,
+        modelDescriptorRef: input.modelDescriptorRef,
+        candidateOrdinal: null,
+        classification: input.sourceClassification,
+        outcome,
+        secretFindings: [],
+        occurredAt: this.options.clock.now(),
+      });
+    for (let index = 0; index < parsed.unverifiedEvidence; index += 1) note("evidence_unverified");
+    for (let index = 0; index < parsed.invalidCandidates; index += 1) note("candidate_invalid");
+    if (parsed.returnedNone) note("nothing_to_remember");
+    if (parsed.candidates.length > 0 || parsed.rejectedCandidates.length > 0) {
+      const service = createProductionAutomaticMemory({
+        ...this.options,
+        extract: async () => parsed.candidates,
+        readSourceText: async () => plan.message,
+        onAudit: (record) => {
+          audits.push(record);
+        },
+      });
+      const { backlog } = this.options;
+      await this.options.unitOfWork.run(async () => {
+        await service.processCommittedRun({
+          ...input,
+          explicitRememberCandidateOrdinal: parsed.explicitOrdinal,
+          rejectedCandidates: parsed.rejectedCandidates,
+        });
+        await backlog?.remove(plan.generationId);
+      });
+    }
+    this.#emitAudits(audits);
   }
 }

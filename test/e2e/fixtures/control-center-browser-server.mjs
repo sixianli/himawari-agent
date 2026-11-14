@@ -173,6 +173,7 @@ const approvals = new Map(
       expiresAt: "2026-08-28T00:00:00.000Z",
       decidedAt: null,
       grantId: null,
+      display: null,
       intent: { ...approvalIntent, intentId: `intent:${approvalRequestId}` },
       trueResultRef: null,
       generatedAt: now,
@@ -1178,6 +1179,23 @@ function weeklySnapshot(withMails = false) {
               gate: null,
             })),
       },
+      correction: withMails
+        ? {
+            handled: 12,
+            agreed: 9,
+            missed: 2,
+            openMemories: 3,
+            openRules: 1,
+            agreement: {
+              successes: 9,
+              samples: 12,
+              enough: true,
+              value: 0.75,
+              low: 0.4677,
+              high: 0.9111,
+            },
+          }
+        : null,
     },
     generatedAt: now,
   };
@@ -1359,15 +1377,15 @@ function decisionChainFixture(decisionId) {
       items: [
         {
           ruleId: "floor_money_words",
-          revision: 1,
-          current: false,
+          revision: 2,
+          current: true,
           kind: "money_words",
           origin: "built_in",
-          source: "ADR 0106 第 4 条；ADR 0209",
+          source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
           status: "active",
           changedAt: null,
           memory: null,
-          wording: { values: ["账单", "扣款", "invoice"], quietHours: [], amount: null },
+          wording: { values: [], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 2,
         },
@@ -2313,6 +2331,7 @@ async function handleRequest(request, response) {
         expiresAt: "2026-08-28T00:00:00.000Z",
         decidedAt: null,
         grantId: null,
+        display: null,
         intent: {
           ...approvalIntent,
           intentId: `intent:${approvalRequestId}`,

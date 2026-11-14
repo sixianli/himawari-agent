@@ -31,10 +31,10 @@ import {
   MCP_PROPOSE_MEMORY_CHANGED,
   MCP_PROPOSE_MEMORY_DECLINED,
   MCP_PROPOSE_MEMORY_FAILED,
+  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
-  MCP_PROPOSE_MEMORY_FULL,
   MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
@@ -62,7 +62,6 @@ import {
   MCP_PROPOSAL_CONFIRM_KEY,
   MCP_PROPOSAL_UNSEEN_ANSWER_MS,
   MCP_READ_PATH,
-  MCP_READ_TOOL_NAMES,
   MCP_WRITE_TOOL_NAMES,
   mcpProposalAnswer,
   ProductionMcpRead,
@@ -81,6 +80,7 @@ import { ProductionReminderWriter } from "../../apps/agent-service/src/productio
 import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
+const READ_TOOL_NAMES = ["start_here", "find_memories", "today_context", "rule_book"];
 const OWNER_ID = createOwnerId("owner-mcp-write");
 const AGENT_ID = createAgentId("agent-mcp-write");
 const THREAD_ID = createThreadId("thread-mcp-write");
@@ -272,6 +272,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       configuration: scope,
       rules: repository.ownerRules(),
       box: proposalBox,
+      reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
       book: repository.memoryBook(),
@@ -361,9 +362,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       timeZone: TIME_ZONE,
       requestTimeoutMs: 30_000,
       sources: {
-        recall: (args, within) => recall.recallOutsideRun(args, within),
+        recall: (args, within, ceiling) => recall.recallOutsideRun(args, within, ceiling),
         embedOutsideRun: async (_context, operation) => operation(),
-        reminders: (windowMs) => reminders.list(windowMs),
+        reminders: (windowMs, ceiling) => reminders.list(windowMs, ceiling),
         settings: () => settingsStore.readSettings(scope),
       },
       ledger: realLedger,
@@ -508,21 +509,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
   it("shows the write tool only when proposals are turned on, and only on a modern connection", async () => {
     const readOnly = await setup({ readOnly: true });
     const reader = await readOnly.connect();
-    expect((await reader.listTools()).tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-    ]);
+    expect((await reader.listTools()).tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES]);
     const f = await setup();
     const writer = await f.connect();
     const tools = (await writer.listTools()).tools;
-    expect(tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-      ...MCP_WRITE_TOOL_NAMES,
-    ]);
+    expect(tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES, ...MCP_WRITE_TOOL_NAMES]);
     expect(tools.at(-1)?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false });
     const legacy = await f.connect({ era: "legacy" });
-    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([
-      ...MCP_READ_TOOL_NAMES,
-    ]);
+    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES]);
     await expect(
       legacy.callTool({ name: "propose_memory", arguments: { text: COFFEE } }),
     ).rejects.toThrow();
@@ -1316,6 +1310,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       protector: f.protector,
       clock: f.clock,
       externalProposals: f.writer,
+      unitOfWork: f.repository.unitOfWork(),
       onAudit: () => {},
     });
     return {
@@ -1588,6 +1583,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.writer.dropExpiredDiscardedText()).toBe(0);
     f.clock.advance(2 * 86_400_000);
     expect(await f.writer.dropExpiredDiscardedText()).toBe(1);
+    expect(await f.writer.listBatches(10)).toEqual([]);
     const later = await f.connect({ elicitation: false, name: "muse" });
     expect(await f.writer.read(waiting?.id ?? "")).toMatchObject({
       status: "rejected",
@@ -1596,7 +1592,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
     expect((await f.propose(later, { text: RAIN })).text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     expect(await f.payloads.get(waiting?.contentRef ?? "")).toBeUndefined();
-    expect(await f.writer.undoBatch("external-batch-rain", async () => undefined)).toEqual([]);
+    expect(await f.writer.undoBatch("external-batch-rain", async () => undefined)).toBeUndefined();
     expect(await f.writer.listBatch("external-batch-rain")).toEqual([]);
   });
 

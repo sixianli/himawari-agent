@@ -24,7 +24,13 @@ import {
   AI_GATEWAY_PRIMARY_MODEL,
   createAiGatewayLiveConfiguration,
 } from "../fixtures/openrouter-live-configuration.ts";
-import type { CaseFailure, CasePermissions, JarvisCase, JarvisDataset } from "./cases.ts";
+import type {
+  CaseFailure,
+  CasePermissions,
+  CaseToolResult,
+  JarvisCase,
+  JarvisDataset,
+} from "./cases.ts";
 import {
   AGENT_ID,
   assembleContext,
@@ -214,6 +220,8 @@ export class FixtureRuntimeTools implements RuntimeToolPort {
   readonly #descriptors: readonly RuntimeToolDescriptor[];
   readonly #workspaceRoot: string;
   readonly #failures: readonly CaseFailure[];
+  readonly #toolResults: readonly CaseToolResult[];
+  readonly #toolCalls = new Map<string, number>();
   readonly #unreadable: readonly string[];
   readonly #operations: GovernedCodingOperationsPort;
 
@@ -221,12 +229,14 @@ export class FixtureRuntimeTools implements RuntimeToolPort {
     readonly descriptors: readonly RuntimeToolDescriptor[];
     readonly workspaceRoot: string;
     readonly failures: readonly CaseFailure[];
+    readonly toolResults?: readonly CaseToolResult[];
     readonly permissions?: CasePermissions;
     readonly steps: TranscriptStep[];
   }) {
     this.#descriptors = input.descriptors;
     this.#workspaceRoot = input.workspaceRoot;
     this.#failures = input.failures;
+    this.#toolResults = input.toolResults ?? [];
     this.#unreadable = (input.permissions?.unreadable ?? []).map((item) =>
       path.join(input.workspaceRoot, item),
     );
@@ -272,6 +282,15 @@ export class FixtureRuntimeTools implements RuntimeToolPort {
         ? undefined
         : injected(this.#failures, name, JSON.stringify(invocation.arguments));
     if (failure) return { text: failure.error ?? failure.output ?? "failed", isError: true };
+    const canned =
+      name === "web_fetch" || name === "web_search"
+        ? (this.#toolResults.find(({ tool }) => tool === name)?.outputs ?? [])
+        : [];
+    if (canned.length > 0) {
+      const call = this.#toolCalls.get(name) ?? 0;
+      this.#toolCalls.set(name, call + 1);
+      return { text: canned[Math.min(call, canned.length - 1)] ?? "", isError: false };
+    }
     if (name === "web_fetch" || name === "web_search")
       return { text: "评测环境没有联网，这个工具不可用。", isError: true };
     if (!(CODING_TOOLS as readonly string[]).includes(name))
@@ -559,6 +578,7 @@ export async function runTrial(options: TrialOptions): Promise<TrialResult> {
     descriptors: await productionToolDescriptors(configuration),
     workspaceRoot,
     failures: item.failures ?? [],
+    ...(item.toolResults ? { toolResults: item.toolResults } : {}),
     ...(item.permissions ? { permissions: item.permissions } : {}),
     steps,
   });

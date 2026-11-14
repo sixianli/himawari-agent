@@ -98,6 +98,8 @@ export interface ProactiveInsightContent {
   readonly link: string;
 }
 
+export const PROACTIVE_INSIGHT_LIST_MAXIMUM = 500;
+
 export interface ProactiveInsight {
   readonly id: string;
   readonly source: ProactiveSource;
@@ -334,6 +336,9 @@ export interface ProactiveStorePort {
       readonly now: string;
     },
   ): Promise<void>;
+  setEnabled(
+    input: ProactiveScope & { readonly enabled: boolean; readonly now: string },
+  ): Promise<void>;
   readConnection(
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<ProactiveConnection | undefined>;
@@ -445,6 +450,9 @@ export interface ProactiveSealPort {
     },
   ): Promise<string>;
   open(input: ProactiveScope & { readonly ref: string }): Promise<string | undefined>;
+  classificationOf?(
+    input: ProactiveScope & { readonly ref: string },
+  ): Promise<DataClassification | undefined>;
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }
 
@@ -483,6 +491,7 @@ export interface ProactiveSourceReader {
         readonly items: readonly ProactiveSourceItem[];
         readonly limits: ProactiveRelatedLimits;
         readonly wholeThread?: ReadonlySet<string>;
+        readonly references?: ReadonlyMap<string, readonly string[]>;
         readonly signal: AbortSignal;
       }) => Promise<ProactiveRelatedFetch>)
     | undefined;

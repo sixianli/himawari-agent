@@ -247,7 +247,7 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 公开仓库可使用 GitHub CodeQL/code scanning、Dependency Review 和 SARIF 接收能力，不再标记为私有仓库能力受限。功能可用不等于已配置。首期必需门禁仍采用机器密钥、Gitleaks 和 Semgrep CE 扫描，以保留本地复现与统一例外判定；GitHub 原生能力可作为后续补充，接入前需明确检查身份、启用配置、权限、失败语义与正反验证，并同步本 Spec 和 Plan。Dependency Review 的增量检查不能替代完整依赖复扫，上传 SARIF 成功也不能代替安全判定。
 
-JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。2026-11-12 起 CI 不再上传 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)），但作业日志和作业摘要同样可由有仓库读取权限的用户查看，不是私密证据存储。公开目录只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
+JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。2026-11-12 起 CI 不再上传 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)），但作业日志和作业摘要同样可由有仓库读取权限的用户查看，不是私密证据存储。检查失败时，失败用例的名字和报错开头（取自 vitest 的 JSON 报告，最多 30 条）以及遮盖后的命令日志（`result.json` 登记为 `diagnostic` 的每个 `.log` 文件的最后 120 行）接在诊断后面写进作业摘要；写进摘要的内容都逐行加 `| ` 前缀打印到作业日志，供没有网页的代理通过日志 API 读取。公开目录只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
 
 ### 8. 汇总器必须拒绝不完整成功
 
@@ -307,7 +307,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 实际规则以 GitHub 回读和失败 PR 的不可合并状态为证据。规则尚未配置时记录 `enforcement_not_configured`；规则接口拒绝或管理权限不足时记录 `enforcement_unavailable`。已启用规则下的 fork 待批准、检查未运行或资源限制属于检查未完成，必须继续阻止合并，不能误报规则不存在。不得回退为本地 hook 后宣称服务端强制完成。
 
-当前个人公开仓库方案不包含 merge queue。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
+当前个人公开仓库方案不包含 GitHub 自带的 merge queue；仓库另有自建的合并队列，见 [ADR 0268](../../adr/0268-merge-queue-and-related-tests-on-prs.md)。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
 
 ### 11. 周期检测与 S9 交接
 
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`ci.yml` 的检查失败时另加失败的用例和每个命令日志的最后 120 行；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 

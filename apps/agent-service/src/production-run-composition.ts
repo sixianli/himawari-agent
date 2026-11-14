@@ -535,6 +535,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         assertActive: () => authority.assertActive(),
         externalTag: () => options.egress.externalTag(),
         backlog: repository.memoryCaptureBacklog(),
+        unitOfWork: repository.unitOfWork(),
         generate: (request, prompt, onAdmitted, call) =>
           auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture", call),
         onAudit: memoryCaptureOptions.onAudit,

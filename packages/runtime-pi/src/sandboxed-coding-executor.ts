@@ -77,7 +77,7 @@ export async function executeSandboxedPiCodingTool(input: {
             },
           ]
         : result.content;
-    return { ...result, content, isError: false };
+    return { ...result, content, isError: result.isError === true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "PI_TOOL_FAILED";
     return {

@@ -10,13 +10,14 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
+          "alternateArch": "arm64",
           "node": "22.22.3"
         }
       ],
-      "projects": ["tooling"],
+      "projects": [],
       "outputs": ["json"]
     },
     {
@@ -26,9 +27,10 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
+          "alternateArch": "arm64",
           "node": "22.22.3"
         }
       ],
@@ -93,7 +95,7 @@
       "outputs": ["json", "artifact"]
     },
     {
-      "id": "coverage",
+      "id": "tests",
       "needs": ["policy", "build"],
       "timeoutMinutes": 60,
       "members": [
@@ -105,8 +107,25 @@
           "node": "22.22.3"
         }
       ],
-      "projects": ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
-      "outputs": ["json", "lcov", "artifact"]
+      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
+      "outputs": ["json", "artifact"]
+    },
+    {
+      "id": "tooling",
+      "needs": ["policy"],
+      "timeoutMinutes": 60,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ci-arm",
+          "os": "linux",
+          "arch": "x64",
+          "alternateArch": "arm64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": ["tooling"],
+      "outputs": ["json"]
     },
     {
       "id": "security",
@@ -115,9 +134,10 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-arm",
           "os": "linux",
           "arch": "x64",
+          "alternateArch": "arm64",
           "node": "22.22.3"
         }
       ],
@@ -126,12 +146,12 @@
     },
     {
       "id": "required",
-      "needs": ["policy", "static", "build", "browser", "coverage", "security"],
+      "needs": ["policy", "static", "build", "browser", "tests", "tooling", "security"],
       "timeoutMinutes": 15,
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps",
+          "runner": "ci-vps-gate",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"

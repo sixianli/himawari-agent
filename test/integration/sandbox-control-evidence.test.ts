@@ -18,6 +18,8 @@ import {
   type JobHostControlObservation,
   openJobHostControl,
 } from "../../packages/runtime-sandbox/src/job-host-control.ts";
+import { gatewayJobHostControlAccess } from "../../packages/runtime-sandbox/src/job-host-control-access.ts";
+import { serveJobHostGateway } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
 import {
   processGroupPresent,
   readProcessStartToken,
@@ -43,6 +45,7 @@ async function fixture(
     preparationOnly?: boolean;
     diagnosticOutput?: NodeJS.WritableStream;
     traceFailure?: "read" | "write";
+    access?: "local" | "gateway";
   } = {},
 ) {
   let clockOffset = 0;
@@ -53,8 +56,28 @@ async function fixture(
   cleanups.push(f.close);
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/r4-evidence-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  const directory = path.join(root, "control");
-  await mkdir(directory, { mode: 0o700 });
+  const controlName = `control-${"0".repeat(20)}`;
+  let jobHostControl: runtimeControl.JobHostRiskControl | undefined;
+  if (options.access === "gateway") {
+    const gatewayServer = createServer();
+    serveJobHostGateway(gatewayServer, {
+      idleExitMs: 60000,
+      onIdle: () => {},
+      controlRoot: root,
+    });
+    const socketPath = path.join(root, "gateway.sock");
+    await new Promise<void>((resolve) => gatewayServer.listen(socketPath, resolve));
+    cleanups.push(() => new Promise<void>((resolve) => gatewayServer.close(() => resolve())));
+    jobHostControl = runtimeControl.gatewayJobHostRiskControl(socketPath);
+  }
+  const directory = jobHostControl
+    ? (
+        await gatewayJobHostControlAccess(path.join(root, "gateway.sock")).prepareDirectory(
+          controlName,
+        )
+      ).directory
+    : path.join(root, controlName);
+  if (!jobHostControl) await mkdir(directory, { mode: 0o700 });
   const record = (await sandboxV2Call(f, "admit", sandboxV2Admission(f)))
     .record as SandboxExecutionRecord;
   const binding = {
@@ -127,6 +150,7 @@ async function fixture(
   let machineBootId = "11111111-2222-4333-8444-555555555555";
   const control = createProductionSandboxControl({
     ...(options.diagnosticOutput ? { diagnosticOutput: options.diagnosticOutput } : {}),
+    ...(jobHostControl ? { jobHostControl } : {}),
     machineBootId: async () => machineBootId,
     fixedFileCompleted: async () => options.completed === true,
     now,
@@ -204,40 +228,48 @@ async function fixture(
     },
   };
 }
-it("binds preparation to the original ready host and rejects replacement", async () => {
-  const f = await fixture();
-  expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 1 });
-  await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).resolves.toBeUndefined();
-  expect(await f.control.register(f.record.plan, f.binding)).toBe(false);
-  expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 2 });
-  await expect(
-    f.control.register(f.record.plan, { ...f.binding, token: "b".repeat(64) }),
-  ).rejects.toThrow();
-  f.set({ phase: "running", taskStarted: true });
-  await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).rejects.toThrow();
-});
-it("returns observation proof from one host verification without caching later observations", async () => {
-  const f = await fixture();
-  f.set({
-    phase: "running",
-    taskStarted: true,
-    resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
-  });
-  const first = settled(await f.control.refreshEvidence(f.record));
-  expect(first.resource.supervision).toBe("controlled");
-  expect(first.evidence).toHaveLength(1);
-  expect(f.counts().hostChecks).toBe(1);
-  f.setPlatform("linux");
-  const second = settled(
-    await f.control.refreshEvidence({
-      ...f.record,
-      facts: { ...f.record.facts, resource: first.resource },
-    }),
-  );
-  expect(second.resource.supervision).toBe("lost");
-  expect(second.evidence).toEqual([]);
-  expect(f.counts().hostChecks).toBe(2);
-});
+it.each(["local", "gateway"] as const)(
+  "binds preparation to the original ready host and rejects replacement (%s)",
+  async (access) => {
+    const f = await fixture({ access });
+    expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 1 });
+    await expect(
+      f.control.verifyPreparation(f.record.plan, f.record.facts),
+    ).resolves.toBeUndefined();
+    expect(await f.control.register(f.record.plan, f.binding)).toBe(false);
+    expect(f.counts()).toEqual({ hostChecks: 0, admissionChecks: 2 });
+    await expect(
+      f.control.register(f.record.plan, { ...f.binding, token: "b".repeat(64) }),
+    ).rejects.toThrow();
+    f.set({ phase: "running", taskStarted: true });
+    await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).rejects.toThrow();
+  },
+);
+it.each(["local", "gateway"] as const)(
+  "returns observation proof from one host verification without caching later observations (%s)",
+  async (access) => {
+    const f = await fixture({ access });
+    f.set({
+      phase: "running",
+      taskStarted: true,
+      resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+    });
+    const first = settled(await f.control.refreshEvidence(f.record));
+    expect(first.resource.supervision).toBe("controlled");
+    expect(first.evidence).toHaveLength(1);
+    expect(f.counts().hostChecks).toBe(1);
+    f.setPlatform("linux");
+    const second = settled(
+      await f.control.refreshEvidence({
+        ...f.record,
+        facts: { ...f.record.facts, resource: first.resource },
+      }),
+    );
+    expect(second.resource.supervision).toBe("lost");
+    expect(second.evidence).toEqual([]);
+    expect(f.counts().hostChecks).toBe(2);
+  },
+);
 it("samples live process state after slow host verification instead of aging the sample", async () => {
   const f = await fixture();
   f.setHostElapsed(2000);
@@ -259,33 +291,36 @@ it("delivers stop before expensive host verification and still requires cleanup 
   expect(resource).toMatchObject({ kind: "cleanup_pending", identity: f.record.plan.identity });
   expect(resource).not.toHaveProperty("supervision");
 });
-it("keeps the authenticated control timeout when no final proof exists", async () => {
-  const f = await fixture();
-  await f.finishControl();
-  await rm(path.join(f.directory, "final.json"));
-  const connections = new Set<Socket>();
-  const stalled = createServer({ allowHalfOpen: true }, (socket) => {
-    connections.add(socket);
-    socket.resume();
-    socket.on("close", () => connections.delete(socket));
-  });
-  await new Promise<void>((resolve, reject) => {
-    stalled.once("error", reject);
-    stalled.listen(path.join(f.directory, "control.sock"), resolve);
-  });
-  cleanups.push(async () => {
-    for (const socket of connections) socket.destroy();
-    await new Promise<void>((resolve, reject) =>
-      stalled.close((error) => (error ? reject(error) : resolve())),
-    );
-  });
-  await expect(
-    f.control.observe(f.record, "inspect", new AbortController().signal),
-  ).rejects.toThrow("JOB_HOST_CONTROL_TIMEOUT");
-  const diagnostics = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
-  expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]?.[1].value).toMatchObject({ reasonCode: "SANDBOX_CONTROL_TIMED_OUT" });
-});
+it.each(["local", "gateway"] as const)(
+  "keeps the authenticated control timeout when no final proof exists (%s)",
+  async (access) => {
+    const f = await fixture({ access });
+    await f.finishControl();
+    await rm(path.join(f.directory, "final.json"));
+    const connections = new Set<Socket>();
+    const stalled = createServer({ allowHalfOpen: true }, (socket) => {
+      connections.add(socket);
+      socket.resume();
+      socket.on("close", () => connections.delete(socket));
+    });
+    await new Promise<void>((resolve, reject) => {
+      stalled.once("error", reject);
+      stalled.listen(path.join(f.directory, "control.sock"), resolve);
+    });
+    cleanups.push(async () => {
+      for (const socket of connections) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        stalled.close((error) => (error ? reject(error) : resolve())),
+      );
+    });
+    await expect(
+      f.control.observe(f.record, "inspect", new AbortController().signal),
+    ).rejects.toThrow("JOB_HOST_CONTROL_TIMEOUT");
+    const diagnostics = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.[1].value).toMatchObject({ reasonCode: "SANDBOX_CONTROL_TIMED_OUT" });
+  },
+);
 
 it.each([
   [undefined, "SANDBOX_HOST_UNAVAILABLE"],
@@ -494,16 +529,19 @@ it("reports a verified-tree task whose namespace ended before the host saw the e
     namespace.mockRestore();
   }
 });
-it("rejects directory inode replacement and changed supervisor identity", async () => {
-  const f = await fixture();
-  f.set({ bootId: randomUUID() });
-  await expect(f.control.observe(f.record)).rejects.toThrow();
-  await rename(f.directory, `${f.directory}-old`);
-  await mkdir(f.directory, { mode: 0o700 });
-  await expect(f.control.observe(f.record)).rejects.toThrow("DIRECTORY_CHANGED");
-  await rm(f.directory, { recursive: true });
-  await rename(`${f.directory}-old`, f.directory);
-});
+it.each(["local", "gateway"] as const)(
+  "rejects directory inode replacement and changed supervisor identity (%s)",
+  async (access) => {
+    const f = await fixture({ access });
+    f.set({ bootId: randomUUID() });
+    await expect(f.control.observe(f.record)).rejects.toThrow();
+    await rename(f.directory, `${f.directory}-old`);
+    await mkdir(f.directory, { mode: 0o700 });
+    await expect(f.control.observe(f.record)).rejects.toThrow("DIRECTORY_CHANGED");
+    await rm(f.directory, { recursive: true });
+    await rename(`${f.directory}-old`, f.directory);
+  },
+);
 
 it.each([
   "supervisorId",
@@ -669,22 +707,25 @@ it.each(["exited", "expired", "supervisor-changed"])(
   },
 );
 
-it("sends an unbound stop to the original authenticated host without reauthorizing execution", async () => {
-  const f = await fixture();
-  const before = f.counts();
-  await f.control.stopPreparation(f.record.plan);
-  expect(f.order).toEqual(["stop"]);
-  expect(f.counts()).toEqual(before);
-  const receipts = [...f.stored.entries()].filter(([key]) => key.includes(":preparation-stop:"));
-  expect(receipts).toHaveLength(1);
-  expect(receipts[0]?.[1].value).toMatchObject({
-    observation: { phase: "stopping", taskStarted: false },
-  });
-  await rename(f.directory, `${f.directory}-replaced`);
-  await mkdir(f.directory, { mode: 0o700 });
-  await expect(f.control.stopPreparation(f.record.plan)).rejects.toThrow("DIRECTORY_CHANGED");
-  expect(f.order).toEqual(["stop"]);
-});
+it.each(["local", "gateway"] as const)(
+  "sends an unbound stop to the original authenticated host without reauthorizing execution (%s)",
+  async (access) => {
+    const f = await fixture({ access });
+    const before = f.counts();
+    await f.control.stopPreparation(f.record.plan);
+    expect(f.order).toEqual(["stop"]);
+    expect(f.counts()).toEqual(before);
+    const receipts = [...f.stored.entries()].filter(([key]) => key.includes(":preparation-stop:"));
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.[1].value).toMatchObject({
+      observation: { phase: "stopping", taskStarted: false },
+    });
+    await rename(f.directory, `${f.directory}-replaced`);
+    await mkdir(f.directory, { mode: 0o700 });
+    await expect(f.control.stopPreparation(f.record.plan)).rejects.toThrow("DIRECTORY_CHANGED");
+    expect(f.order).toEqual(["stop"]);
+  },
+);
 
 it.each(["alive", "started", "cleanup-unknown", "verified"] as const)(
   "attests a never-started reservation only with independent host exit proof: %s",

@@ -21,7 +21,7 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'push' && github.run_id || '' }}-${{ github.event.pull_request.draft == true && 'draft' || 'ready' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 defaults:
   run:
@@ -30,7 +30,7 @@ jobs:
   policy:
     name: policy
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-vps
+    runs-on: ci-arm
     timeout-minutes: 60
     outputs:
       default: ${{ steps.share.outputs.default }}
@@ -50,7 +50,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check policy --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -65,11 +65,11 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "policy-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "policy/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "policy/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   static:
     name: static
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-vps
+    runs-on: ci-arm
     needs:
       - policy
     timeout-minutes: 60
@@ -91,7 +91,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 安装布局检查用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
@@ -108,7 +108,7 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "static-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "static/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "static/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   build:
     name: build / ${{ matrix.key }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
@@ -141,7 +141,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check build --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -156,7 +156,7 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "build-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "build/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "build/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
     outputs:
       linux-x64: ${{ steps.share.outputs.linux-x64 }}
   browser:
@@ -208,7 +208,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 从 CI 服务器取本次 Linux 构建并核对摘要
         env:
           CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
@@ -229,9 +229,9 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "browser-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
-  coverage:
-    name: coverage
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
+  tests:
+    name: tests
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     runs-on: ci-vps
     needs:
@@ -256,7 +256,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 安装集成测试用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 从 CI 服务器取本次 Linux 构建并核对摘要
@@ -264,7 +264,7 @@ jobs:
           CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input
       - name: 执行共享检查
-        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check tests --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json
       - name: 核验公开输出白名单
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
@@ -274,14 +274,14 @@ jobs:
       - name: 把本次完整报告放进 CI 服务器上本次运行的目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "coverage-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "tests-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "coverage/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
-  security:
-    name: security
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "tests/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
+  tooling:
+    name: tooling
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-vps
+    runs-on: ci-arm
     needs:
       - policy
     timeout-minutes: 60
@@ -303,7 +303,48 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 执行共享检查
+        run: .ci-output/tools/bin/node scripts/ci/run.mjs --check tooling --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
+      - name: 核验公开输出白名单
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
+        if: always()
+        id: publish
+      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+        id: share
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "tooling-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把失败诊断写进作业摘要
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "tooling/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
+  security:
+    name: security
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: ci-arm
+    needs:
+      - policy
+    timeout-minutes: 60
+    outputs:
+      default: ${{ steps.share.outputs.default }}
+    env:
+      CI_NODE: 22.22.3
+      CI_MATRIX: default
+      CI_BASE: ${{ inputs.base_sha || '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装并核验固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: 隔离安装依赖及 SQLite 探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
@@ -320,17 +361,18 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "security-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "security/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics
+        run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "security/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   required:
     name: ci/required
     if: always()
-    runs-on: ci-vps
+    runs-on: ci-vps-gate
     needs:
       - policy
       - static
       - build
       - browser
-      - coverage
+      - tests
+      - tooling
       - security
     timeout-minutes: 15
     env:
@@ -359,7 +401,7 @@ jobs:
       - name: 安装汇总器最小依赖
         run: .ci-output/tools/bin/node scripts/ci/install-gate-dependencies.mjs
       - name: 从 CI 服务器取本次各任务的报告并核对摘要
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports
+        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports --remote-jobs policy,static,tooling,security
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
       - name: 核对全部 job 与报告，把汇总结论写进本步骤日志和作业摘要

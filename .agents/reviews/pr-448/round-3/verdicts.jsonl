@@ -1,0 +1,2 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 【中】改号后，现有 ADR 的 plan-claims 记录失效，`--assert-reviewed` 会被挡住", "valid": false, "class": "error"}
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 【低】作者对“增量”和“除编号外没有别的改动”的说明不准确", "valid": false, "class": "error"}

@@ -218,6 +218,7 @@ export function verifyGate({
   assert(context.toolchainSha256 === hash(toolchainBytes), "MAIN_TOOLCHAIN_MISMATCH");
   for (const [key, value] of Object.entries(context))
     assert(summary[key] === value, "MAIN_SUMMARY_IDENTITY");
+  assert(summary.scope === undefined || summary.scope === "full", "MAIN_GATE_RELATED_SCOPE");
   assert(
     summary.schemaVersion === 1 &&
       summary.status === "passed" &&

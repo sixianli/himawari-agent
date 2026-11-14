@@ -1,11 +1,13 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PI_RUNNER_CONTRACT, PI_WRITE_VERIFIER } from "@himawari-agent/execution-contracts";
 import { formatForegroundPiResult, verifyPiWriteEvidence } from "@himawari-agent/platform-node";
-import { fitPiResultOutput } from "@himawari-agent/runtime-pi";
+import { executeSandboxedPiCodingTool, fitPiResultOutput } from "@himawari-agent/runtime-pi";
 import { afterEach, describe, expect, it } from "vitest";
+import { failedCommandModelContent } from "../src/production-sandbox-tool-result.js";
 import { toolResultSentToModel } from "./fixtures/model-egress.js";
 
 const roots: string[] = [];
@@ -430,5 +432,74 @@ describe("[R2-T14] file tool result that carries part of a private key", () => {
       },
     });
     expect(await toolResultSentToModel(output)).not.toContain("R2T14SECRETVALUE0001");
+  });
+});
+
+describe("a real shell command that exits nonzero", () => {
+  async function runBash(command: string) {
+    const workspace = await privateDirectory();
+    let commandExitCode: number | null = null;
+    const result = await executeSandboxedPiCodingTool({
+      name: "bash",
+      toolCallId: "nonzero-bash",
+      cwd: workspace,
+      parameters: { command },
+      operations: {
+        access: async () => undefined,
+        readFile: async () => Buffer.alloc(0),
+        writeFile: async () => undefined,
+        makeDirectory: async () => undefined,
+        executeCommand: ({ command: line, cwd, onData }) =>
+          new Promise((resolve, reject) => {
+            const child = spawn("bash", ["-c", line], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+            child.stdout.on("data", (chunk: Buffer) => onData(chunk));
+            child.stderr.on("data", (chunk: Buffer) => onData(chunk));
+            child.on("error", reject);
+            child.on("close", (code) => {
+              commandExitCode = code;
+              resolve({ exitCode: code });
+            });
+          }),
+      },
+    });
+    const formatted = await formatForegroundPiResult({
+      tool: "bash",
+      result,
+      commandExitCode,
+      verifiedWrite: null,
+      privateDirectory: await privateDirectory(),
+      maxOutputBytes: 64 * 1024,
+      fitOutput: fitPiResultOutput,
+      closing: {},
+      source: {
+        workspace,
+        toolCallId: "nonzero-bash",
+        directoryGrantRef: "grant",
+        directoryGrantRevision: 1,
+        parameters: { command },
+      },
+    });
+    return { result, formatted };
+  }
+
+  it("leaves the runner with the command's exit code and tells the model the command failed", async () => {
+    const { result, formatted } = await runBash("echo 'not ok 4 - rounds totals'; exit 3");
+    expect(result.isError).toBe(true);
+    expect(formatted.exitCode).toBe(3);
+    const notice = failedCommandModelContent(formatted.output, {
+      operation: "bash",
+      processExitCode: 3,
+    });
+    expect(notice).toContain("命令执行失败：命令以退出码 3 结束");
+    expect(notice).toContain("not ok 4 - rounds totals");
+  });
+
+  it("keeps a successful command at exit code 0 without a failure notice", async () => {
+    const { result, formatted } = await runBash("echo ok");
+    expect(result.isError).toBe(false);
+    expect(formatted.exitCode).toBe(0);
+    expect(
+      failedCommandModelContent(formatted.output, { operation: "bash", processExitCode: 0 }),
+    ).toBeNull();
   });
 });

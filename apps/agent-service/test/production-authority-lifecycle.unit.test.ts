@@ -158,6 +158,150 @@ function lifecycle(
 }
 
 describe("ProductionAuthorityLifecycle", () => {
+  it("reports the error and the time since the last renewal when the lease expires", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let nowMs = Date.parse(NOW);
+    const losses: { error: unknown; details: unknown }[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: { now: () => new Date(nowMs).toISOString() },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (error, details) => {
+        losses.push({ error, details });
+      },
+    });
+    await service.start();
+    nowMs += 10_000;
+    await service.renew();
+    nowMs += 41_000;
+    leases.currentRecord = undefined;
+    await expect(service.renew()).rejects.toMatchObject({
+      code: "PRODUCTION_AUTHORITY_LOST",
+    });
+    expect(losses).toHaveLength(1);
+    expect(losses[0]?.error).toMatchObject({ code: "PRODUCTION_AUTHORITY_LOST" });
+    expect(losses[0]?.details).toEqual({ msSinceLastRenewal: 41_000 });
+  });
+
+  it("reports no elapsed time when the clock returned an invalid instant at the last renewal", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let clockValue = "not-a-date";
+    const losses: unknown[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: { now: () => clockValue },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (_error, details) => {
+        losses.push(details);
+      },
+    });
+    await service.start();
+    clockValue = NOW;
+    leases.currentRecord = undefined;
+    await expect(service.renew()).rejects.toMatchObject({ code: "PRODUCTION_AUTHORITY_LOST" });
+    expect(losses).toEqual([{ msSinceLastRenewal: null }]);
+  });
+
+  it("still reports the loss when the clock throws while computing the elapsed time", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let throwing = false;
+    const losses: unknown[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: {
+        now: () => {
+          if (throwing) throw new Error("CLOCK_FAILED");
+          return NOW;
+        },
+      },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (_error, details) => {
+        losses.push(details);
+      },
+    });
+    await service.start();
+    leases.currentRecord = undefined;
+    const renewal = service.renew();
+    throwing = true;
+    await expect(renewal).rejects.toMatchObject({ code: "PRODUCTION_AUTHORITY_LOST" });
+    expect(losses).toEqual([{ msSinceLastRenewal: null }]);
+  });
+
+  it("starts and renews even when the clock throws only while the elapsed-time stamp is taken", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let reads = 0;
+    let throwAfter = Number.POSITIVE_INFINITY;
+    const losses: unknown[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: {
+        now: () => {
+          reads += 1;
+          if (reads > throwAfter) throw new Error("CLOCK_FAILED");
+          return NOW;
+        },
+      },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (_error, details) => {
+        losses.push(details);
+      },
+    });
+    throwAfter = 0;
+    await expect(service.start()).resolves.toMatchObject({ state: "active" });
+    await expect(service.renew()).resolves.toMatchObject({ state: "active" });
+    expect(service.isAccepting()).toBe(true);
+    expect(losses).toEqual([]);
+    await service.stop();
+  });
+
+  it("does not report a loss while renewals keep succeeding", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    const losses: unknown[] = [];
+    const service = lifecycle(deploymentStore, leases, undefined, (error) => losses.push(error));
+    await service.start();
+    await service.renew();
+    await service.renew();
+    expect(losses).toEqual([]);
+    await service.stop();
+  });
+
   it("keeps authority when validation overlaps renewal of the same lease", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);

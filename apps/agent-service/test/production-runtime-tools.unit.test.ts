@@ -2,17 +2,20 @@ import {
   ApplicationPortError,
   type PayloadRef,
   type RuntimeToolInvocation,
+  ToolActionRegistry,
 } from "@himawari-agent/application";
 import {
   piFileRecoveryOperationKey,
   SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
 } from "@himawari-agent/execution-contracts";
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
 import { ReminderInputError } from "../src/production-reminder-writer.js";
+import { PRODUCTION_TOOL_ACTION_ROWS } from "../src/production-tool-actions.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
@@ -1497,6 +1500,11 @@ it("answers recall from owner memory, replays the saved result and reports failu
   const failed = await tools.execute({ ...call, toolCallId: "recall-failed" });
   expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_UNAVAILABLE" });
   expect(failed.modelContent).toContain("不要编造");
+  recall.mockRejectedValueOnce(new Error("MEMORY_RECALL_INPUT_INVALID"));
+  const invalid = await tools.execute({ ...call, toolCallId: "recall-invalid" });
+  expect(invalid).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_INPUT_INVALID" });
+  expect(invalid.modelContent).toContain("改正后再查一次");
+  expect(invalid.modelContent).not.toContain("查不了记忆");
 });
 
 it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {
@@ -1512,6 +1520,7 @@ it("offers reminder tools last, runs them once per call and tells the model why 
       }),
     },
     reminders: { run },
+    ownerScope: { authorize: async () => OWNER_SCOPE_ALLOW },
   });
   const names = (
     await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
@@ -1811,3 +1820,287 @@ it("[BG-8] gives a bash command its own 30-minute limit instead of the 5-minute 
   await tools.execute(read).catch(() => undefined);
   expect(issued).toHaveLength(2);
 });
+
+const OWNER_SCOPE_ALLOW = {
+  decision: "ALLOW" as const,
+  basis: { type: "grant" as const, ref: "grant:owner-scope" },
+  executionScope: {
+    capabilityRef: "reminder.set",
+    operations: ["set"],
+    exactResourceRef: null,
+    resourcePrefixes: [],
+    maxDataClassification: "private" as const,
+    sideEffects: ["reversible" as const],
+    maxCostMicrosPerUse: 0,
+    maxFrequency: { count: 1, intervalMs: null },
+  },
+};
+
+function everyToolOptions(f: ReturnType<typeof fixture>) {
+  const base = hostOptions(
+    f,
+    vi.fn(async () => ({ modelContent: "unused", isError: false, errorCode: null })),
+  );
+  const route = {
+    hostId: "host:test",
+    workerInstanceId: "worker-instance",
+    capabilityRef: "web",
+    capabilityVersion: "1.0.0",
+    maximumBytes: 4096,
+    scopeSource: "private_temp" as const,
+  };
+  return {
+    ...base,
+    coding: {
+      ...base.coding,
+      enabledTools: [
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "find",
+        "grep",
+        "ls",
+        "move_directory",
+        "save_copy",
+      ] as const,
+    },
+    publicSearch: route,
+    publicFetch: route,
+    backgroundCommands: { waitMs: 1000, maximumMs: 1000 },
+    managedTasks: { execute: vi.fn() },
+    taskHandle: async () => true,
+    memoryRecall: {
+      recallWithClassification: async () => ({
+        output: {},
+        contentClassification: "private" as const,
+        memoryIds: [],
+      }),
+    },
+    reminders: { run: vi.fn(async () => ({})) },
+    ownerRules: { run: vi.fn(async () => ({})) },
+  } satisfies ProductionRuntimeToolsOptions;
+}
+
+it("[ADR-0257] offers every tool through the action registry with unchanged definitions and order", async () => {
+  const f = fixture();
+  const descriptors = await new ProductionRuntimeTools(everyToolOptions(f)).listAuthorized(
+    invocation.runId,
+    [invocation.capabilityHandleRef],
+  );
+  expect(descriptors.map(({ name }) => name)).toEqual(EVERY_TOOL_NAMES);
+  expect(createHash("sha256").update(JSON.stringify(descriptors)).digest("hex")).toBe(
+    EVERY_TOOL_DEFINITIONS_SHA256,
+  );
+  const withoutRegistry = new ToolActionRegistry(
+    PRODUCTION_TOOL_ACTION_ROWS.filter(({ tool }) => tool !== "reminder_set"),
+  );
+  const fewer = await new ProductionRuntimeTools({
+    ...everyToolOptions(f),
+    toolActions: withoutRegistry,
+  }).listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect(fewer.map(({ name }) => name)).toEqual(
+    EVERY_TOOL_NAMES.filter((name) => name !== "reminder_set"),
+  );
+});
+
+it("[ADR-0257] refuses a tool with consequences when no authorization exit is wired, and still reads", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ reminders: [] }));
+  const tools = new ProductionRuntimeTools({ ...f.options, reminders: { run } });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const set = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-06T15:00" },
+  };
+  expect((await tools.preflight(set)).allowed).toBe(false);
+  await expect(tools.execute(set)).rejects.toThrow();
+  expect(run).not.toHaveBeenCalled();
+  const list = { ...set, capabilityRef: "reminder.list", toolCallId: "list", arguments: {} };
+  expect((await tools.preflight(list)).allowed).toBe(true);
+  expect(await tools.execute(list)).toMatchObject({ outcome: "succeeded" });
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("[ADR-0257] reports a failed check and does nothing when the authorization exit breaks, then works once it recovers", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true }));
+  const authorize = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("state store unavailable"))
+    .mockResolvedValue(OWNER_SCOPE_ALLOW);
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    reminders: { run },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const set = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-13T15:00" },
+  };
+  const broken = await tools.execute(set);
+  expect(broken).toMatchObject({
+    outcome: "failed",
+    errorCode: "authorization_component_error",
+    dispatchState: "not_sent",
+  });
+  expect(broken.modelContent).not.toContain("state store unavailable");
+  expect(run).not.toHaveBeenCalled();
+  const diagnostics = () =>
+    [...f.artifacts.keys()].filter((key) => key.startsWith("runtime-tool-diagnostic:"));
+  expect(diagnostics()).toHaveLength(1);
+  const artifacts = f.options.artifacts as { commit: typeof f.options.artifacts.commit };
+  const commit = artifacts.commit;
+  artifacts.commit = async (input) => {
+    if (input.operationKey.startsWith("runtime-tool-diagnostic:")) throw new Error("disk full");
+    return commit(input);
+  };
+  authorize.mockRejectedValueOnce(new TypeError("state store unavailable"));
+  expect(await tools.execute({ ...set, toolCallId: "unrecorded" })).toMatchObject({
+    outcome: "failed",
+    errorCode: "authorization_component_error",
+  });
+  expect(diagnostics()).toHaveLength(1);
+  artifacts.commit = commit;
+  expect(await tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("[ADR-0257] throws instead of reporting a failed check when the run has stopped or the call was cancelled while the exit broke", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true }));
+  const assertRunActive = vi.fn(async () => undefined);
+  const authorize = vi.fn(async () => {
+    throw new Error("state store unavailable");
+  });
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    assertRunActive,
+    reminders: { run },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const set = {
+    ...invocation,
+    capabilityRef: "reminder.set",
+    capabilityHandleRef: null,
+    arguments: { text: "交周报", due: "2026-11-13T15:00" },
+  };
+  const controller = new AbortController();
+  authorize.mockImplementationOnce(async () => {
+    controller.abort();
+    throw new Error("state store unavailable");
+  });
+  await expect(
+    tools.execute({ ...set, toolCallId: "cancelled" }, { signal: controller.signal }),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  authorize.mockImplementationOnce(async () => {
+    assertRunActive.mockRejectedValue(new Error("RUN_STOPPED"));
+    throw new Error("state store unavailable");
+  });
+  await expect(tools.execute({ ...set, toolCallId: "stopped" })).rejects.toThrow("RUN_STOPPED");
+  expect(run).not.toHaveBeenCalled();
+  expect(
+    [...f.artifacts.keys()].filter((key) => key.startsWith("runtime-tool-diagnostic:")),
+  ).toEqual([]);
+});
+
+it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {
+  const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
+  expect(
+    builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
+  ).toEqual(["recall", "reminder_list", "rule_list"]);
+  expect(
+    builtin
+      .filter(({ authorization }) => authorization === "owner_scope")
+      .map(({ tool }) => tool)
+      .sort(),
+  ).toEqual(["reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
+  expect(builtin).toHaveLength(7);
+});
+
+it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({ created: true }));
+  const decisions: unknown[] = [
+    { decision: "DENY", reasonCode: "action_rule_refused", alternativesAllowed: true },
+    {
+      decision: "ASK",
+      approvalRequest: { id: "approval:1", semanticSnapshotHash: "hash", expiresAt: now },
+    },
+    OWNER_SCOPE_ALLOW,
+  ];
+  const authorize = vi.fn(async () => decisions.shift());
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    reminders: { run },
+    ownerRules: { run },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const call = {
+    ...invocation,
+    capabilityRef: "rule.set",
+    capabilityHandleRef: null,
+    arguments: { text: "以后账单邮件都提醒我" },
+  };
+  expect(await tools.execute(call)).toMatchObject({
+    outcome: "failed",
+    errorCode: "action_rule_refused",
+    dispatchState: "not_sent",
+  });
+  expect(await tools.execute(call)).toMatchObject({
+    outcome: "awaiting_approval",
+    approval: { approvalRequestId: "approval:1" },
+  });
+  expect(run).not.toHaveBeenCalled();
+  const done = await tools.execute(call);
+  expect(done).toMatchObject({ outcome: "succeeded" });
+  expect(await tools.execute(call)).toEqual(done);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(authorize).toHaveBeenCalledTimes(3);
+  expect(
+    (authorize.mock.calls as unknown as readonly (readonly unknown[])[])[0]?.[1],
+  ).toMatchObject({ tool: "rule_set", standingRuleChange: true });
+  await tools.execute({ ...call, capabilityRef: "rule.list", toolCallId: "list", arguments: {} });
+  expect(authorize).toHaveBeenCalledTimes(3);
+});
+
+const EVERY_TOOL_NAMES = [
+  "read",
+  "write",
+  "edit",
+  "bash",
+  "find",
+  "grep",
+  "ls",
+  "move_directory",
+  "save_copy",
+  "web_search",
+  "web_fetch",
+  "authorized_945a82d2850afbce529963f7",
+  "execution_task_status",
+  "execution_task_output",
+  "execution_task_cancel",
+  "execution_task_start",
+  "recall",
+  "reminder_set",
+  "reminder_list",
+  "reminder_cancel",
+  "rule_set",
+  "rule_list",
+  "rule_undo",
+];
+const EVERY_TOOL_DEFINITIONS_SHA256 =
+  "569b06f05ee8bf70ebcb55c8ee840061532862aa37f359efc5db69596a2ae2dd";

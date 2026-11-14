@@ -44,8 +44,7 @@ export function validateMainWorkflow(source, lock) {
     "permissions",
   );
   assert(
-    w.concurrency?.["cancel-in-progress"] === false &&
-      w.concurrency.group === `main-confirmation-${expression("github.run_id")}`,
+    w.concurrency?.["cancel-in-progress"] === false && w.concurrency.group === "main-confirmation",
     "concurrency",
   );
   assert(Object.keys(w.jobs).sort().join(",") === "confirm,full,plan", "jobs");

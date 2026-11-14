@@ -79,13 +79,15 @@ import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
+import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
-import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
+import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -94,8 +96,8 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
-import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
+import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
 import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
@@ -368,6 +370,7 @@ export class SqliteDurableOperations {
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
   private readonly ownerProposals: SqliteOwnerProposalOperations;
+  private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
   private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
@@ -381,6 +384,7 @@ export class SqliteDurableOperations {
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
+  private readonly pairedDevices: SqlitePairedDeviceOperations;
   private readonly threadArtifacts: SqliteThreadArtifactOperations;
   private readonly threadPromptBundles: SqliteThreadPromptBundleOperations;
   private readonly sensitiveInterceptions: SqliteSensitiveInterceptionOperations;
@@ -454,6 +458,11 @@ export class SqliteDurableOperations {
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
     this.ownerProposals = new SqliteOwnerProposalOperations(database, fail, assertDiskHeadroom);
+    this.correctionReview = new SqliteCorrectionReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memoryCaptureBacklog = new SqliteMemoryCaptureBacklogOperations(
       database,
       fail,
@@ -487,6 +496,7 @@ export class SqliteDurableOperations {
     this.modelUsage = new SqliteModelUsageOperations(database, fail, assertDiskHeadroom);
     this.realEval = new SqliteRealEvalOperations(database, fail, assertDiskHeadroom);
     this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
+    this.pairedDevices = new SqlitePairedDeviceOperations(database, fail, assertDiskHeadroom);
     this.threadArtifacts = new SqliteThreadArtifactOperations(database, fail, assertDiskHeadroom);
     this.threadPromptBundles = new SqliteThreadPromptBundleOperations(
       database,
@@ -541,7 +551,52 @@ export class SqliteDurableOperations {
     );
   }
 
+  private transactionScopeOpen = false;
+  private transactionScopeLost = false;
+
+  private transactionScopeAborted(): never {
+    this.transactionScopeLost = true;
+    return this.fail("PORT_CONFLICT", "The transaction scope was rolled back", {
+      reason: "TRANSACTION_ABORTED",
+    });
+  }
+
+  private executeTransactionScope(operation: string): null | undefined {
+    switch (operation) {
+      case "transaction.begin":
+        if (this.database.inTransaction)
+          this.fail("PORT_INVALID_OPERATION", "A transaction scope is already open");
+        this.database.exec("BEGIN IMMEDIATE");
+        this.transactionScopeLost = false;
+        this.transactionScopeOpen = true;
+        return null;
+      case "transaction.commit":
+        if (this.transactionScopeLost || !this.transactionScopeOpen || !this.database.inTransaction)
+          this.transactionScopeAborted();
+        this.transactionScopeOpen = false;
+        this.database.exec("COMMIT");
+        return null;
+      case "transaction.rollback":
+        this.transactionScopeOpen = false;
+        this.transactionScopeLost = false;
+        if (this.database.inTransaction) this.database.exec("ROLLBACK");
+        return null;
+      default:
+        return undefined;
+    }
+  }
+
   execute(operation: string, payload: unknown): unknown {
+    const scoped = this.executeTransactionScope(operation);
+    if (scoped !== undefined) return scoped;
+    if (this.transactionScopeLost) this.transactionScopeAborted();
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    const value = this.executeUnscoped(operation, payload);
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    return value;
+  }
+
+  private executeUnscoped(operation: string, payload: unknown): unknown {
     if (this.database.inTransaction || !isProcessRecordWrite(operation, payload))
       return this.executeOperation(operation, payload);
     this.database.pragma("synchronous = NORMAL");
@@ -613,6 +668,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("ownerProposal."))
       return this.ownerProposals.execute(operation, payload);
+    if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
+      return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
     if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
@@ -623,6 +680,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
     if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
+    if (operation.startsWith("pairedDevices."))
+      return this.pairedDevices.execute(operation, payload);
     if (operation.startsWith("threadArtifact."))
       return this.threadArtifacts.execute(operation, payload);
     if (operation.startsWith("threadPromptBundle."))
@@ -5036,6 +5095,18 @@ export class SqliteDurableOperations {
         .prepare(
           `UPDATE product_sessions SET revision = revision + 1, status = 'revoked', revoked_at = ?
           WHERE device_id = ? AND status = 'active'`,
+        )
+        .run(input.revokedAt, input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM device_request_nonces WHERE device_id IN (
+             SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
+        )
+        .run(input.deviceId);
+      this.database
+        .prepare(
+          `UPDATE paired_devices SET status = 'revoked', revoked_at = ?, revision = revision + 1
+            WHERE web_device_id = ? AND status <> 'revoked'`,
         )
         .run(input.revokedAt, input.deviceId);
       return this.readProductDevice(input.deviceId);

@@ -202,42 +202,43 @@ export function OwnerRulesSection({
 }) {
   if (!memory.rules.length) return null;
   return (
-    <>
-      <section
-        id="memory-rules"
-        className="memory-confirm"
-        aria-label={message("rules.title", { count: memory.rules.length })}
-      >
-        <h4>{message("rules.title", { count: memory.rules.length })}</h4>
-        <p className="settings-note">{message("rules.note")}</p>
-        {memory.rules.map((rule) => (
-          <section className="memory-card" key={rule.ruleId} data-rule={rule.ruleId}>
-            <span className="memory-tag" data-kind="rule">
-              {message("rules.type", { t: rule.type })}
-            </span>
-            {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
-            {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
-            <p className="memory-text">{rule.summary}</p>
-            <div className="actions">
-              {rule.status === "needs_review" && rule.enforced ? (
-                <ActionButton
-                  disabled={memory.busy}
-                  onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
-                >
-                  {message("rules.reconfirm")}
-                </ActionButton>
-              ) : null}
+    <section
+      id="memory-rules"
+      className="memory-confirm"
+      aria-label={message("rules.title", { count: memory.rules.length })}
+    >
+      <h4>{message("rules.title", { count: memory.rules.length })}</h4>
+      <p className="settings-note">{message("rules.note")}</p>
+      {memory.rules.map((rule) => (
+        <section className="memory-card" key={rule.ruleId} data-rule={rule.ruleId}>
+          <span className="memory-tag" data-kind="rule">
+            {message("rules.type", { t: rule.type })}
+          </span>
+          {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
+          {rule.status === "suspended" ? <small> {message("rules.suspended")}</small> : null}
+          {rule.enforced || rule.status === "suspended" ? null : (
+            <small> {message("rules.notEnforced")}</small>
+          )}
+          <p className="memory-text">{rule.summary}</p>
+          <div className="actions">
+            {(rule.status === "needs_review" && rule.enforced) || rule.status === "suspended" ? (
               <ActionButton
-                variant="quiet"
                 disabled={memory.busy}
-                onClick={() => void memory.respondRule(rule.ruleId, "undo")}
+                onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
               >
-                {message("rules.undo")}
+                {message(rule.status === "suspended" ? "rules.resume" : "rules.reconfirm")}
               </ActionButton>
-            </div>
-          </section>
-        ))}
-      </section>
-    </>
+            ) : null}
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.respondRule(rule.ruleId, "undo")}
+            >
+              {message("rules.undo")}
+            </ActionButton>
+          </div>
+        </section>
+      ))}
+    </section>
   );
 }
