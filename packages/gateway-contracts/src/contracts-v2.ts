@@ -955,7 +955,7 @@ const homeSnapshotSchema = object({
   }),
 });
 export const SEARCH_ASK_STATES = ["answered", "not_found", "suggestions"] as const;
-export const SEARCH_BASIS_KINDS = ["memory", "conversation"] as const;
+export const SEARCH_BASIS_KINDS = ["memory", "conversation", "perception"] as const;
 const searchAskQuerySchema = object({
   ...envelope("query", "search.ask.read"),
   payload: object({ query: nullable(boundedString(500)), locale: enumeration(HOME_LOCALES) }),
@@ -971,6 +971,7 @@ const searchAskSnapshotSchema = object({
       object({
         kind: enumeration(SEARCH_BASIS_KINDS),
         label: boundedString(200),
+        recordId: nullable(machineString),
         memoryId: nullable(machineString),
         threadId: nullable(machineString),
         at: timestamp,

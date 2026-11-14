@@ -20,9 +20,9 @@ type Basis = SearchSnapshot["payload"]["basis"][number];
 export const PRODUCTION_SEARCH_OPERATIONS = Object.freeze(["search.ask.read"] as const);
 
 export const SEARCH_TEXT: Readonly<Record<Locale, { readonly notFound: string }>> = Object.freeze({
-  "zh-CN": { notFound: "没有找到相关的记忆或对话。" },
-  en: { notFound: "I couldn’t find a related memory or conversation." },
-  ja: { notFound: "関連する記憶や会話は見つかりませんでした。" },
+  "zh-CN": { notFound: "没有找到相关的内容。" },
+  en: { notFound: "I couldn’t find anything related." },
+  ja: { notFound: "関連する内容は見つかりませんでした。" },
 });
 
 function dateParts(at: string, now: string, timeZone: string) {
@@ -40,11 +40,15 @@ function dateParts(at: string, now: string, timeZone: string) {
   return { ...date, otherYear: date.year !== part(now).year };
 }
 
+type LabelKind = "conversation" | "memory" | "perception_owner" | "perception_other";
+
 const BASIS_LABELS: Readonly<
-  Record<Locale, (kind: Basis["kind"], date: ReturnType<typeof dateParts>) => string>
+  Record<Locale, (kind: LabelKind, date: ReturnType<typeof dateParts>) => string>
 > = Object.freeze({
   "zh-CN": (kind, { year, month, day, otherYear }) => {
     const when = `${otherYear ? `${year} 年 ` : ""}${month} 月 ${day} 日`;
+    if (kind === "perception_owner") return `${when}你说的`;
+    if (kind === "perception_other") return `${when}周围听到的`;
     return kind === "conversation" ? `${when}你在对话里说的` : `记忆 · ${when}记下`;
   },
   en: (kind, { year, month, day, otherYear }) => {
@@ -54,12 +58,16 @@ const BASIS_LABELS: Readonly<
       ...(otherYear ? { year: "numeric" } : {}),
       timeZone: "UTC",
     }).format(new Date(Date.UTC(year, month - 1, day)));
+    if (kind === "perception_owner") return `You said this on ${when}`;
+    if (kind === "perception_other") return `Heard around you on ${when}`;
     return kind === "conversation"
       ? `You said this in a conversation on ${when}`
       : `Memory · saved ${when}`;
   },
   ja: (kind, { year, month, day, otherYear }) => {
     const when = `${otherYear ? `${year}年` : ""}${month}月${day}日`;
+    if (kind === "perception_owner") return `${when}にあなたが話したこと`;
+    if (kind === "perception_other") return `${when}に周りで聞こえたこと`;
     return kind === "conversation" ? `${when}の会話であなたが話したこと` : `記憶 · ${when}に記録`;
   },
 });
@@ -101,6 +109,17 @@ export interface ProductionSearchOptions {
     >;
   };
   readonly readText: (record: ProductMemoryRecord) => Promise<string | undefined>;
+  readonly perception?: {
+    search(input: { readonly query: string; readonly limit: number }): Promise<
+      readonly {
+        readonly recordId: string;
+        readonly origin: "owner_spoken" | "other";
+        readonly occurredAt: string;
+        readonly dataClassification: DataClassification;
+        readonly text: string;
+      }[]
+    >;
+  };
   readonly clock: { readonly now: () => string };
 }
 
@@ -108,6 +127,7 @@ interface Candidate {
   readonly answer: string;
   readonly coverage: number;
   readonly order: number;
+  readonly labelKind: LabelKind;
   readonly basis: Omit<Basis, "label">;
 }
 
@@ -259,8 +279,10 @@ export class ProductionSearchControl {
           answer: text,
           coverage: matched,
           order: order++,
+          labelKind: memory.sourceThreadId ? "conversation" : "memory",
           basis: {
             kind: memory.sourceThreadId ? "conversation" : "memory",
+            recordId: null,
             memoryId: memory.id,
             threadId: memory.sourceThreadId,
             at: memory.recordedAt ?? memory.updatedAt,
@@ -289,11 +311,38 @@ export class ProductionSearchControl {
           answer: line,
           coverage: matched,
           order: order++,
+          labelKind: "conversation",
           basis: {
             kind: "conversation",
+            recordId: null,
             memoryId: null,
             threadId: episode.threadId,
             at: episode.endedAt,
+          },
+        });
+      }
+      const heard = this.#options.perception
+        ? await this.#options.perception
+            .search({ query: asked, limit: settings.candidateLimit })
+            .catch(() => [])
+        : [];
+      for (const found of heard) {
+        const line = singleLine(found.text);
+        const matched = coverage(terms, line);
+        if (line.length === 0 || matched < minimum || !searchVisible(found.dataClassification))
+          continue;
+        const owner = found.origin === "owner_spoken";
+        candidates.push({
+          answer: line,
+          coverage: matched,
+          order: order++,
+          labelKind: owner ? "perception_owner" : "perception_other",
+          basis: {
+            kind: "perception",
+            recordId: found.recordId,
+            memoryId: null,
+            threadId: null,
+            at: found.occurredAt,
           },
         });
       }
@@ -316,10 +365,10 @@ export class ProductionSearchControl {
       query: asked,
       answer: clip(best.answer, settings.answerCharacters),
       notFoundText: null,
-      basis: ranked.slice(0, settings.basisLimit).map(({ basis }) => ({
+      basis: ranked.slice(0, settings.basisLimit).map(({ basis, labelKind }) => ({
         ...basis,
         label: BASIS_LABELS[locale](
-          basis.kind,
+          labelKind,
           dateParts(basis.at, now, this.#options.timeZone ?? "UTC"),
         ),
       })),
