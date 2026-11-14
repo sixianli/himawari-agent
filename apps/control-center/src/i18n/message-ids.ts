@@ -1356,6 +1356,7 @@ export const MESSAGE_IDS = [
   "sensitive.purpose.mail-judgment",
   "sensitive.purpose.action-review",
   "sensitive.purpose.review-prereview",
+  "sensitive.purpose.home-urgency",
   "sensitive.purpose.rule-review",
   "sensitive.purpose.other",
   "sensitive.maskedOnce",

@@ -131,6 +131,13 @@ const IMPORT_POLICY_VERSION = "memory-import:v1";
 const EXTERNAL_PROPOSALS_SHOWN = 100;
 const EXTERNAL_BATCHES_SHOWN = 10;
 
+function unsupportedRuleAction(): never {
+  throw new ApplicationPortError(
+    PORT_ERROR_CODES.INVALID_OPERATION,
+    "MEMORY_RULE_ACTION_UNSUPPORTED",
+  );
+}
+
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
 }
@@ -487,9 +494,36 @@ export class ProductionMemoryControl {
   }
 
   async rulesNeedingReview() {
-    return ((await this.options.ownerRules?.list()) ?? []).filter(
+    const rules = ((await this.options.ownerRules?.list()) ?? []).filter(
       ({ status }) => status === "needs_review",
     );
+    return Promise.all(
+      rules.map(async (rule) => ({
+        ...rule,
+        dataClassification: await this.#ruleClassification(rule.sourceMemoryId),
+      })),
+    );
+  }
+
+  async #ruleClassification(
+    sourceMemoryId: string | null,
+  ): Promise<ProductMemoryRecord["dataClassification"]> {
+    const { ownerId, agentId } = this.options.configuration;
+    const record = sourceMemoryId
+      ? await this.options.state.read(sourceMemoryId as MemoryId).catch(() => undefined)
+      : undefined;
+    if (
+      !record ||
+      record.ownerId !== ownerId ||
+      record.agentId !== agentId ||
+      record.status === "trashed" ||
+      record.status === "deletion_pending" ||
+      record.status === "deleted_verified"
+    )
+      return "sensitive";
+    return classificationRank(record.dataClassification) > classificationRank("private")
+      ? record.dataClassification
+      : "private";
   }
 
   async pendingRequests() {
@@ -1820,7 +1854,9 @@ export class ProductionMemoryControl {
             ? (await control.confirm(target)).ruleId
             : action === "reconfirm"
               ? (await control.reconfirm(target)).ruleId
-              : (await control.undo(target)).ruleId;
+              : action === "undo"
+                ? (await control.undo(target)).ruleId
+                : unsupportedRuleAction();
         return { resultRef: result ?? target, replayed: false };
       } catch (error) {
         if (error instanceof OwnerRuleError)
