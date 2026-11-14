@@ -337,6 +337,10 @@ export interface PerceptionConfiguration {
   readonly listPageRows: number;
   readonly previewCharacters: number;
   readonly mediaRetentionDays: number;
+  readonly deletionPlanTtlSeconds: number;
+  readonly deletionChunk: number;
+  readonly deletionMaxIds: number;
+  readonly deletionFeedRows: number;
 }
 
 export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object.freeze({
@@ -351,6 +355,10 @@ export const PERCEPTION_CONFIGURATION_DEFAULTS: PerceptionConfiguration = Object
   listPageRows: 100,
   previewCharacters: 200,
   mediaRetentionDays: 7,
+  deletionPlanTtlSeconds: 600,
+  deletionChunk: 200,
+  deletionMaxIds: 500,
+  deletionFeedRows: 200,
 });
 
 export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
@@ -367,6 +375,10 @@ export const PERCEPTION_CONFIGURATION_RANGES: Readonly<
   listPageRows: [1, 500],
   previewCharacters: [20, 2000],
   mediaRetentionDays: [1, 90],
+  deletionPlanTtlSeconds: [60, 24 * 3600],
+  deletionChunk: [1, 5000],
+  deletionMaxIds: [1, 5000],
+  deletionFeedRows: [1, 1000],
 });
 
 export const PERCEPTION_RETENTION_KEYS = ["track", "surroundings"] as const;
@@ -409,7 +421,11 @@ export interface PerceptionRecordInput {
   readonly audioMilliseconds: number;
 }
 
-export type PerceptionIngestOutcome = "stored" | "duplicate" | "limit_reached";
+export type PerceptionIngestOutcome =
+  | "stored"
+  | "duplicate"
+  | "limit_reached"
+  | "suppressed_by_deletion";
 
 export interface PerceptionIngestResult {
   readonly outcomes: readonly { readonly id: string; readonly outcome: PerceptionIngestOutcome }[];
@@ -499,10 +515,57 @@ export interface UploadGrant {
   readonly batchId: string | null;
   readonly mediaKind: PerceptionMediaKind | null;
   readonly mediaMilliseconds: number | null;
+  readonly recordIds: readonly string[];
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly usedAt: string | null;
   readonly result: string | null;
+}
+
+export const PERCEPTION_DELETION_TARGET_KINDS = ["records", "episode", "day", "types"] as const;
+export type PerceptionDeletionTargetKind = (typeof PERCEPTION_DELETION_TARGET_KINDS)[number];
+
+export interface PerceptionDeletionTarget {
+  readonly kind: PerceptionDeletionTargetKind;
+  readonly ids: readonly string[];
+  readonly episodeId: string | null;
+  readonly day: string | null;
+  readonly deviceId: string | null;
+  readonly types: readonly string[];
+}
+
+export interface PerceptionDeletionCounts {
+  readonly records: number;
+  readonly trackPoints: number;
+  readonly media: number;
+}
+
+export const PERCEPTION_DELETION_STATUSES = ["planned", "running", "verified"] as const;
+export type PerceptionDeletionStatus = (typeof PERCEPTION_DELETION_STATUSES)[number];
+
+export interface PerceptionDeletion {
+  readonly id: string;
+  readonly status: PerceptionDeletionStatus;
+  readonly target: PerceptionDeletionTarget;
+  readonly boundMs: number;
+  readonly plan: PerceptionDeletionCounts;
+  readonly receipt: PerceptionDeletionCounts | null;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly pendingPayloads: number;
+}
+
+export interface PerceptionDeletionScope {
+  readonly revision: number;
+  readonly kind: PerceptionDeletionTargetKind;
+  readonly deviceId: string | null;
+  readonly day: string | null;
+  readonly types: readonly string[];
+  readonly recordIds: readonly string[];
+  readonly track: boolean;
+  readonly boundMs: number;
 }
 
 export interface LimitUsageRow {
@@ -642,6 +705,7 @@ export interface PerceptionStorePort {
   recordMedia(
     input: PerceptionScope & {
       readonly item: Omit<PerceptionMediaItem, "status">;
+      readonly recordIds?: readonly string[];
       readonly periodStart: string;
       readonly reservations: readonly LimitReservation[];
     },
@@ -693,4 +757,38 @@ export interface PerceptionStorePort {
     readonly grants: number;
     readonly media: number;
   }>;
+  planDeletion(
+    input: PerceptionScope & {
+      readonly id: string;
+      readonly target: PerceptionDeletionTarget;
+      readonly trackTypes: readonly string[];
+      readonly now: string;
+      readonly expiresAt: string;
+    },
+  ): Promise<PerceptionDeletion | "episode_unknown" | "device_unknown">;
+  readDeletion(
+    input: PerceptionScope & { readonly id: string },
+  ): Promise<PerceptionDeletion | undefined>;
+  startDeletion(
+    input: PerceptionScope & {
+      readonly id: string;
+      readonly trackTypes: readonly string[];
+      readonly now: string;
+    },
+  ): Promise<PerceptionDeletion | "unknown" | "expired">;
+  cleanDeletion(
+    input: PerceptionScope & {
+      readonly id: string;
+      readonly now: string;
+      readonly chunk: number;
+    },
+  ): Promise<{
+    readonly deletion: PerceptionDeletion;
+    readonly paths: readonly string[];
+    readonly progressed: boolean;
+  }>;
+  openDeletions(input: PerceptionScope): Promise<readonly string[]>;
+  readDeletionScopes(
+    input: PerceptionScope & { readonly after: number; readonly limit: number },
+  ): Promise<{ readonly scopes: readonly PerceptionDeletionScope[]; readonly revision: number }>;
 }

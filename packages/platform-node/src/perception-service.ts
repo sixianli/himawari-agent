@@ -5,6 +5,7 @@ import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { createGunzip } from "node:zlib";
 import {
+  ApplicationPortError,
   DEVICE_MIRROR_EXTERNAL_ID_MAXIMUM,
   DEVICE_MIRROR_KIND_NAMES,
   DEVICE_MIRROR_KINDS,
@@ -19,6 +20,12 @@ import {
   ownerDayBounds,
   ownerLocalDay,
   PERCEPTION_CAPTURE_SOURCES,
+  PERCEPTION_DELETION_TARGET_KINDS,
+  PERCEPTION_EPISODE_ID_PATTERN,
+  PORT_ERROR_CODES,
+  type PerceptionDeletion,
+  type PerceptionDeletionTarget,
+  type PerceptionDeletionScope,
   PERCEPTION_CONFIDENCE_MAXIMUM,
   PERCEPTION_CONFIGURATION_RANGES,
   PERCEPTION_DEVICE_TIME_MAXIMUM,
@@ -594,6 +601,173 @@ export class PerceptionService {
     await this.prune(scope);
   }
 
+  #deletionInvalid(reason: string): never {
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.INVALID_OPERATION,
+      "PERCEPTION_DELETION_INVALID",
+      { reason },
+    );
+  }
+
+  #deletionTarget(raw: unknown): PerceptionDeletionTarget {
+    const input = plainObject(raw);
+    const maximum = this.#options.configuration().deletionMaxIds;
+    if (!input) return this.#deletionInvalid("target");
+    const kind = input["kind"];
+    const ids = input["ids"];
+    const types = input["types"];
+    const episodeId = input["episodeId"];
+    const day = input["day"];
+    const deviceId = input["deviceId"];
+    if (
+      !onlyKeys(input, ["kind", "ids", "episodeId", "day", "deviceId", "types"]) ||
+      typeof kind !== "string" ||
+      !(PERCEPTION_DELETION_TARGET_KINDS as readonly string[]).includes(kind) ||
+      !Array.isArray(ids) ||
+      !Array.isArray(types) ||
+      (episodeId !== null && typeof episodeId !== "string") ||
+      (day !== null && typeof day !== "string") ||
+      (deviceId !== null &&
+        (typeof deviceId !== "string" || !/^[A-Za-z0-9_.:-]{1,64}$/u.test(deviceId)))
+    )
+      return this.#deletionInvalid("target_shape");
+    const target = {
+      kind: kind as PerceptionDeletionTarget["kind"],
+      ids: ids as string[],
+      episodeId: episodeId as string | null,
+      day: day as string | null,
+      deviceId: deviceId as string | null,
+      types: types as string[],
+    };
+    const only = (
+      expected: Partial<Record<"ids" | "episodeId" | "day" | "types" | "deviceId", boolean>>,
+    ) =>
+      target.ids.length > 0 === (expected.ids ?? false) &&
+      (target.episodeId !== null) === (expected.episodeId ?? false) &&
+      (target.day !== null) === (expected.day ?? false) &&
+      target.types.length > 0 === (expected.types ?? false) &&
+      (expected.deviceId === true || target.deviceId === null);
+    switch (target.kind) {
+      case "records":
+        if (
+          !only({ ids: true }) ||
+          target.ids.length > maximum ||
+          new Set(target.ids).size !== target.ids.length ||
+          !target.ids.every((id) => typeof id === "string" && PERCEPTION_RECORD_ID_PATTERN.test(id))
+        )
+          return this.#deletionInvalid("records");
+        break;
+      case "episode":
+        if (
+          !only({ episodeId: true }) ||
+          !PERCEPTION_EPISODE_ID_PATTERN.test(target.episodeId ?? "")
+        )
+          return this.#deletionInvalid("episode");
+        break;
+      case "day":
+        if (
+          !only({ day: true, deviceId: true }) ||
+          !DAY_PATTERN.test(target.day ?? "") ||
+          new Date(`${target.day}T00:00:00.000Z`).toISOString().slice(0, 10) !== target.day
+        )
+          return this.#deletionInvalid("day");
+        break;
+      case "types":
+        if (
+          !only({ types: true, deviceId: true }) ||
+          target.types.length > PERCEPTION_RECORD_TYPE_NAMES.length ||
+          new Set(target.types).size !== target.types.length ||
+          !target.types.every((type) =>
+            (PERCEPTION_RECORD_TYPE_NAMES as readonly string[]).includes(type),
+          )
+        )
+          return this.#deletionInvalid("types");
+        break;
+    }
+    return Object.freeze({
+      ...target,
+      ids: Object.freeze([...target.ids].sort()),
+      types: Object.freeze([...target.types].sort()),
+    });
+  }
+
+  #trackTypes(): readonly string[] {
+    return perceptionTypesOfSense("location");
+  }
+
+  async planDeletion(scope: PerceptionScope, rawTarget: unknown): Promise<PerceptionDeletion> {
+    const target = this.#deletionTarget(rawTarget);
+    const now = this.#now();
+    const planned = await this.#options.store.planDeletion({
+      ...this.#scope(scope),
+      id: randomBytes(16).toString("hex"),
+      target,
+      trackTypes: this.#trackTypes(),
+      now: now.toISOString(),
+      expiresAt: new Date(
+        now.getTime() + this.#options.configuration().deletionPlanTtlSeconds * 1000,
+      ).toISOString(),
+    });
+    if (typeof planned === "string") return this.#deletionInvalid(planned);
+    return planned;
+  }
+
+  async readDeletion(scope: PerceptionScope, id: string): Promise<PerceptionDeletion | undefined> {
+    return this.#options.store.readDeletion({ ...this.#scope(scope), id });
+  }
+
+  async deleteRecords(scope: PerceptionScope, id: string): Promise<PerceptionDeletion> {
+    const checked = this.#scope(scope);
+    const started = await this.#options.store.startDeletion({
+      ...checked,
+      id,
+      trackTypes: this.#trackTypes(),
+      now: this.#now().toISOString(),
+    });
+    if (started === "unknown" || started === "expired")
+      throw new ApplicationPortError(
+        started === "unknown" ? PORT_ERROR_CODES.NOT_FOUND : PORT_ERROR_CODES.CONFLICT,
+        started === "unknown" ? "PERCEPTION_DELETION_UNKNOWN" : "PERCEPTION_DELETION_PLAN_EXPIRED",
+      );
+    return this.#finishDeletion(checked, id);
+  }
+
+  async #finishDeletion(scope: PerceptionScope, id: string): Promise<PerceptionDeletion> {
+    return this.#exclusive(`deletion:${id}`, async () => {
+      for (;;) {
+        const step = await this.#options.store.cleanDeletion({
+          ...scope,
+          id,
+          now: this.#now().toISOString(),
+          chunk: this.#options.configuration().deletionChunk,
+        });
+        for (const file of step.paths) await rm(file, { force: true });
+        if (step.deletion.status !== "running" || !step.progressed) {
+          await this.#sweepMedia();
+          return step.deletion;
+        }
+      }
+    });
+  }
+
+  async resumeDeletions(scope: PerceptionScope): Promise<number> {
+    const checked = this.#scope(scope);
+    const open = await this.#options.store.openDeletions(checked);
+    for (const id of open) await this.#finishDeletion(checked, id);
+    return open.length;
+  }
+
+  async deletionFeed(
+    scope: PerceptionScope,
+    after: number,
+  ): Promise<{ readonly scopes: readonly PerceptionDeletionScope[]; readonly revision: number }> {
+    return this.#options.store.readDeletionScopes({
+      ...this.#scope(scope),
+      after,
+      limit: this.#options.configuration().deletionFeedRows,
+    });
+  }
+
   async prune(scope: PerceptionScope) {
     const now = this.#now();
     const settings = await this.settings(scope);
@@ -764,6 +938,7 @@ export class PerceptionService {
         "batchId",
         "mediaKind",
         "durationMs",
+        "recordIds",
       ]) ||
       typeof purpose !== "string" ||
       !(UPLOAD_GRANT_PURPOSES as readonly string[]).includes(purpose) ||
@@ -809,6 +984,16 @@ export class PerceptionService {
         : mediaKind !== undefined || duration !== undefined
     )
       return invalid("upload_media");
+    const linked = body["recordIds"];
+    if (
+      linked !== undefined &&
+      (purpose !== "media" ||
+        !Array.isArray(linked) ||
+        linked.length > limits["device.perception.batch_records"] ||
+        !linked.every((id) => typeof id === "string" && PERCEPTION_RECORD_ID_PATTERN.test(id)) ||
+        new Set(linked).size !== linked.length)
+    )
+      return invalid("upload_record_ids");
     const now = this.#now();
     const token = (this.#options.randomBytes ?? randomBytes)(32).toString("base64url");
     const expiresAt = new Date(
@@ -826,6 +1011,7 @@ export class PerceptionService {
       batchId: records ? null : (batchId as string),
       mediaKind: purpose === "media" ? (mediaKind as PerceptionMediaKind) : null,
       mediaMilliseconds: mediaKind === "audio" ? (duration as number) : null,
+      recordIds: Object.freeze([...((linked as string[] | undefined) ?? [])].sort()),
       now: now.toISOString(),
       expiresAt,
     });
@@ -1004,6 +1190,7 @@ export class PerceptionService {
             const outcome = await this.#options.store.recordMedia({
               ...scope,
               periodStart: bounds.start,
+              recordIds: grant.recordIds,
               item: {
                 id: `media:${grant.sha256}`,
                 deviceId: grant.deviceId,

@@ -1247,6 +1247,12 @@ export class SqliteDurableAdapters {
       reportDeviceUsage: (input) => this.context.write("perception.reportDeviceUsage", input),
       markUsageWarned: (input) => this.context.write("perception.markUsageWarned", input),
       prune: (input) => this.context.write("perception.prune", input),
+      planDeletion: (input) => this.context.write("perception.planDeletion", input),
+      readDeletion: (input) => this.context.read("perception.readDeletion", input),
+      startDeletion: (input) => this.context.write("perception.startDeletion", input),
+      cleanDeletion: (input) => this.context.write("perception.cleanDeletion", input),
+      openDeletions: (input) => this.context.read("perception.openDeletions", input),
+      readDeletionScopes: (input) => this.context.read("perception.readDeletionScopes", input),
     });
   }
 

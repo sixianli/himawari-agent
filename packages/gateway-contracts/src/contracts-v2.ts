@@ -153,6 +153,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "perception.usage.read",
   "perception.usage.snapshot",
   "perception.settings.change",
+  "perception.deletion.plan",
+  "perception.deletion.read",
+  "perception.deletion.snapshot",
+  "perception.records.delete",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -824,6 +828,46 @@ const perceptionSettingsChangeCommandSchema = object({
     key: nullable(machineString),
     value: nullable(integer(0)),
   }),
+});
+export const PERCEPTION_DELETION_STATUSES = ["planned", "running", "verified"] as const;
+export const PERCEPTION_DELETION_TARGET_KINDS = ["records", "episode", "day", "types"] as const;
+const perceptionDeletionCountsSchema = object({
+  records: integer(0),
+  trackPoints: integer(0),
+  media: integer(0),
+});
+const perceptionDeletionPlanQuerySchema = object({
+  ...envelope("query", "perception.deletion.plan"),
+  payload: object({
+    kind: enumeration(PERCEPTION_DELETION_TARGET_KINDS),
+    ids: array(machineString),
+    episodeId: nullable(machineString),
+    day: nullable(perceptionDaySchema),
+    deviceId: nullable(machineString),
+    types: array(machineString),
+  }),
+});
+const perceptionDeletionReadQuerySchema = object({
+  ...envelope("query", "perception.deletion.read"),
+  payload: object({ planId: machineString }),
+});
+const perceptionDeletionSnapshotSchema = object({
+  ...envelope("snapshot", "perception.deletion.snapshot"),
+  payload: object({
+    planId: nullable(machineString),
+    status: nullable(enumeration(PERCEPTION_DELETION_STATUSES)),
+    plan: nullable(perceptionDeletionCountsSchema),
+    deleted: nullable(perceptionDeletionCountsSchema),
+    expiresAt: nullable(timestamp),
+    pendingPayloads: integer(0),
+    deletionRevision: integer(0),
+    keptElsewhere: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionRecordsDeleteCommandSchema = object({
+  ...commandEnvelope("perception.records.delete"),
+  payload: object({ planId: machineString }),
 });
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
@@ -3330,6 +3374,10 @@ const schemasByType = {
   "perception.usage.read": perceptionUsageQuerySchema,
   "perception.usage.snapshot": perceptionUsageSnapshotSchema,
   "perception.settings.change": perceptionSettingsChangeCommandSchema,
+  "perception.deletion.plan": perceptionDeletionPlanQuerySchema,
+  "perception.deletion.read": perceptionDeletionReadQuerySchema,
+  "perception.deletion.snapshot": perceptionDeletionSnapshotSchema,
+  "perception.records.delete": perceptionRecordsDeleteCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,

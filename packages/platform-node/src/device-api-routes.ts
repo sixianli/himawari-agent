@@ -76,6 +76,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "track", signed: true, uploadPurpose: "track" },
   { method: "POST", path: "mirror", signed: true },
   { method: "GET", path: "usage", signed: true },
+  { method: "GET", path: "perception/deletions", signed: true },
   { method: "POST", path: "usage/report", signed: true },
 ] as const);
 
@@ -286,6 +287,7 @@ export async function presentDevicePerception(
       enabled: status.senses.includes(sense),
     })),
     retentionDays: service.retentionDays(settings),
+    deletionRevision: (await service.deletionFeed(scope, Number.MAX_SAFE_INTEGER)).revision,
     usageLimits: usage.limits.map(({ key, unit, limit, onReach, state }) => ({
       key,
       unit,
@@ -639,6 +641,35 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           200,
           await perception().usage(scope(authenticated.authentication)),
         );
+      });
+
+      device.get("/perception/deletions", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const query = new URLSearchParams(rawQuery(request));
+        const after = query.get("after") ?? "0";
+        if (
+          [...query.keys()].some((name) => name !== "after") ||
+          query.getAll("after").length > 1 ||
+          !/^\d{1,15}$/u.test(after)
+        )
+          return options.rejectBody(400);
+        const feed = await perception().deletionFeed(
+          scope(authenticated.authentication),
+          Number(after),
+        );
+        return options.sendJson(reply, 200, {
+          revision: feed.revision,
+          scopes: feed.scopes.map((entry) => ({
+            revision: entry.revision,
+            kind: entry.kind,
+            deviceId: entry.deviceId,
+            day: entry.day,
+            types: entry.types,
+            recordIds: entry.recordIds,
+            includesTrack: entry.track,
+            through: new Date(entry.boundMs).toISOString(),
+          })),
+        });
       });
 
       device.post("/usage/report", async (request, reply) => {
