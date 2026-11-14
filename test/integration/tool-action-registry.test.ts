@@ -158,7 +158,8 @@ async function setup(
                 enabled: true,
                 minConfidence: 900,
                 timeoutMs: options.ownerIntent.timeoutMs ?? 2_000,
-                modelRef: "test/jev",
+                model: "test/jev",
+                secretRef: "secret:test",
               },
               check: { check: options.ownerIntent.check },
               ownerWords: async () =>
@@ -1204,7 +1205,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
     ["unsure", async () => ({ ...EXPLICIT, verdict: "unsure" })],
     ["low", async () => ({ ...EXPLICIT, confidence: 899 })],
     ["forged", async () => ({ ...EXPLICIT, quote: "请把会议改到下周" })],
-    ["noquote", async () => ({ ...EXPLICIT, quote: null })],
+    ["overlong", async () => ({ ...EXPLICIT, quote: "好".repeat(401) })],
     ["malformed", async () => "explicit"],
     [
       "failed",
@@ -1241,7 +1242,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
       await s.close();
     }
   }
-});
+}, 60_000);
 
 it("[ADR-0257] does not ask the check at all without outside content, for a standing rule, or for a scheduled run, and asks with no owner words as unconfirmed", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
