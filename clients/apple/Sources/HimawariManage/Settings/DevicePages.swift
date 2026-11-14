@@ -175,6 +175,7 @@ struct DevicePage: View {
 }
 
 struct AddDevicePage: View {
+    @Environment(\.pairingClock) private var pairingClock
     let store: SettingsStore
     let back: () -> Void
     @State private var session: PairingSession
@@ -206,6 +207,12 @@ struct AddDevicePage: View {
         .alert(M.actionFailed, isPresented: $failed) {}
     }
 
+    private func expiryLine(_ expiresAt: Date, now: Date) -> some View {
+        Text(M.expiresIn(max(0, Int(expiresAt.timeIntervalSince(now)))))
+            .hmType(DesignTokens.TypeScale.secondary)
+            .foregroundStyle(Color.hmMuted)
+    }
+
     private func scan(link: String, expiresAt: Date) -> some View {
         VStack(spacing: DL.detailGap) {
             QRCodeView(text: link)
@@ -214,10 +221,12 @@ struct AddDevicePage: View {
                 .frame(width: DL.qrCard, height: DL.qrCard)
                 .background(Color.hmSurface, in: RoundedRectangle(cornerRadius: DL.qrCardRadius, style: .continuous))
             Text(M.scanWithNewDevice).hmType(DL.scanTitle).foregroundStyle(Color.hmText).multilineTextAlignment(.center)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(M.expiresIn(max(0, Int(expiresAt.timeIntervalSince(context.date)))))
-                    .hmType(DesignTokens.TypeScale.secondary)
-                    .foregroundStyle(Color.hmMuted)
+            if let frozenNow = pairingClock {
+                expiryLine(expiresAt, now: frozenNow)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    expiryLine(expiresAt, now: context.date)
+                }
             }
             Spacer(minLength: DL.askTopPadding)
             ShareLink(item: link) {
@@ -320,4 +329,8 @@ struct QRCodeView: View {
         return nil
         #endif
     }
+}
+
+extension EnvironmentValues {
+    @Entry var pairingClock: Date? = nil
 }

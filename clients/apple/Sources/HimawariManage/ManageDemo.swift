@@ -56,7 +56,7 @@ public struct ManageDemoView: View {
         case .loginBrowsers:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.loginBrowsers]) {}
         case .addDevice:
-            pairing(.showing(link: ManageDemo.link, expiresAt: Date().addingTimeInterval(581)))
+            pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
             pairing(.asking(ManageDemo.newcomer))
         case .addDeviceExpired:
@@ -74,11 +74,13 @@ public struct ManageDemoView: View {
         let store = ManageDemo.settingsStore()
         return NavigationStack {
             AddDevicePage(store: store, session: PairingSession(store: store, fixed: stage)) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
 }
 
 enum ManageDemo {
+    static let frozenNow = Date(timeIntervalSince1970: 1_794_000_000)
     static let phoneId = "dev_demoPhone000000000000"
     static let macId = "dev_demoMac00000000000000"
     static let link = PairingInvitation(
