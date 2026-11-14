@@ -7,15 +7,6 @@ import {
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import {
-  createAgentId,
-  createMessageId,
-  createOwnerId,
-  createRunId,
-  createSessionId,
-  createThreadId,
-  createTurnId,
-} from "@himawari-agent/domain";
-import {
   type ProductionProposalBox,
   type ProposalActionHandler,
   ProposalError,
@@ -23,6 +14,15 @@ import {
   type ProposalSource,
 } from "./production-proposals.js";
 import { localTimeText } from "./production-reminder-writer.js";
+
+type Admission = Parameters<ThreadCommandService["admitOwnerMessage"]>[0];
+type OwnerId = Admission["ownerId"];
+type AgentId = Admission["agentId"];
+type ThreadId = Admission["threadId"];
+type MessageId = NonNullable<Admission["messageId"]>;
+type TurnId = NonNullable<Admission["turnId"]>;
+type RunId = NonNullable<Admission["runId"]>;
+type SessionId = Admission["sessionId"];
 
 export const TASK_RUN_PROPOSAL_TYPE = "task.run";
 
@@ -101,15 +101,15 @@ export function registerTaskProposalHandler(options: {
   readonly timeZone: string;
 }): void {
   const { box, configuration, commands, threads, payloads, protector, clock, timeZone } = options;
-  const ownerId = createOwnerId(configuration.ownerId);
-  const agentId = createAgentId(configuration.agentId);
+  const ownerId = configuration.ownerId as OwnerId;
+  const agentId = configuration.agentId as AgentId;
   const ids = (proposalId: string) => {
     const key = digest(proposalId);
     return {
-      threadId: createThreadId(`thread:proposal:${key}`),
-      messageId: createMessageId(`message:proposal:${key}`),
-      turnId: createTurnId(`turn:proposal:${key}`),
-      runId: createRunId(`run:proposal:${key}`),
+      threadId: `thread:proposal:${key}` as ThreadId,
+      messageId: `message:proposal:${key}` as MessageId,
+      turnId: `turn:proposal:${key}` as TurnId,
+      runId: `run:proposal:${key}` as RunId,
       contentRef: `proposal-task:${key}`,
     };
   };
@@ -154,7 +154,7 @@ export function registerTaskProposalHandler(options: {
         agentId,
         threadId: id.threadId,
         expectedThreadRevision: created.thread.revision,
-        sessionId: createSessionId(session.sessionId),
+        sessionId: session.sessionId as SessionId,
         idempotencyKey: `proposal-task-run:${proposalId}`,
         contentRef: id.contentRef,
         sourceProofRef: `proposal:${proposalId}:${session.proofRef}`,
@@ -176,7 +176,7 @@ export function registerTaskProposalHandler(options: {
       const snapshot = await threads.readDetailSnapshot({
         ownerId,
         agentId,
-        threadId: createThreadId(made.threadId),
+        threadId: made.threadId as ThreadId,
         afterSequence: 0,
         limit: 5,
       });
