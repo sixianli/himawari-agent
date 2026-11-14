@@ -33,6 +33,7 @@ class Handlers {
   readBack: "matches" | "differs" | "throws" = "matches";
   failure: Error | undefined;
   undoFailure: Error | undefined;
+  undoDelay = 0;
   presence = false;
   readonly action: ProposalActionHandler = {
     kind: "action",
@@ -48,6 +49,7 @@ class Handlers {
       return this.readBack;
     },
     undo: async () => {
+      if (this.undoDelay > 0) await new Promise((resolve) => setTimeout(resolve, this.undoDelay));
       if (this.undoFailure) throw this.undoFailure;
       this.undone += 1;
     },
@@ -73,7 +75,10 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function fixture(options: { readonly leaseSeconds?: number } = {}) {
+  async function fixture(
+    options: { readonly leaseSeconds?: number; readonly failExecutionPayload?: boolean } = {},
+  ) {
+    const { failExecutionPayload, ...boxOptions } = options;
     const handlers = new Handlers();
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-proposal-execution-"));
     directories.push(stateRoot);
@@ -103,10 +108,18 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
     const box = new ProductionProposalBox({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       store: repository.ownerProposals(),
-      payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+      payloads: failExecutionPayload
+        ? {
+            ...repository.payloadStore(OWNER_ID, AGENT_ID),
+            put: async (payload: { readonly ref: string }) => {
+              if (payload.ref.includes(":x")) throw new Error("payload store is full");
+              return repository.payloadStore(OWNER_ID, AGENT_ID).put(payload as never);
+            },
+          }
+        : repository.payloadStore(OWNER_ID, AGENT_ID),
       protector: createReferenceAdapterSet().payloadProtector,
       clock: { now: () => clock.value },
-      ...options,
+      ...boxOptions,
     });
     box.register("reminder_time", handlers.action);
     box.register("do_a_thing", handlers.task);
@@ -439,5 +452,38 @@ describe.each(["worker", "direct"] as const)("proposal execution through %s", (e
       replayed: false,
     });
     expect(handlers.undone).toBe(1);
+  });
+
+  it("never records a success it cannot undo when the original-state payload could not be stored", async () => {
+    const { box, row, propose, seen, handlers } = await fixture({ failExecutionPayload: true });
+    const id = ID("nopayload");
+    await propose(id);
+    expect(await box.adopt(id, await seen(id))).toMatchObject({ execution: "unknown" });
+    expect(row(id)).toMatchObject({ exec: "unknown" });
+    expect(handlers.executed).toBe(1);
+  });
+
+  it("runs the undo once when two undo requests arrive together", async () => {
+    const { box, row, propose, seen, handlers } = await fixture();
+    const id = ID("twice");
+    await propose(id);
+    const expected = await seen(id);
+    await box.adopt(id, expected);
+    handlers.undoDelay = 20;
+    const results = await Promise.all([box.undo(id, expected), box.undo(id, expected)]);
+    expect(handlers.undone).toBe(1);
+    expect(results.map((item) => item.replayed).sort()).toEqual([false, true]);
+    expect(row(id)).toMatchObject({ exec: "undone" });
+  });
+
+  it("does not let the proposer lower the full-read requirement of outside content", async () => {
+    const { row, propose } = await fixture();
+    const task = ID("lowered");
+    await propose(
+      task,
+      { externalContentSeen: true, origin: "owner_said", requiresFullRead: false },
+      "do_a_thing",
+    );
+    expect(row(task)).toMatchObject({ fullRead: 1 });
   });
 });

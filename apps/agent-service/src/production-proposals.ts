@@ -256,6 +256,7 @@ function evidenceOf(value: unknown): readonly ProposalEvidence[] {
 export class ProductionProposalBox {
   readonly #options: ProductionProposalBoxOptions;
   readonly #handlers = new Map<string, ProposalHandler | ProposalActionHandler>();
+  readonly #undoing = new Map<string, Promise<{ readonly replayed: boolean }>>();
   readonly #fullReads = new Map<
     string,
     {
@@ -373,7 +374,7 @@ export class ProductionProposalBox {
       input.externalContentSeen === true ? "external_content" : input.origin;
     const handler = this.#handlers.get(input.type);
     const requiresFullRead =
-      input.requiresFullRead ??
+      input.requiresFullRead === true ||
       (origin === "external_content" && !(handler !== undefined && isAction(handler)));
     const requiresPresence =
       input.requiresPresence ??
@@ -685,6 +686,23 @@ export class ProductionProposalBox {
       now: clock.now(),
     });
     if (!pending) throw new ProposalError("PROPOSAL_EXECUTING");
+    if (ref === undefined) {
+      const moved = await store
+        .moveExecution({
+          ...scope,
+          proposalId,
+          from: "executed_unverified",
+          to: "unknown",
+          leaseId,
+          now: clock.now(),
+        })
+        .catch(() => undefined);
+      return Object.freeze({
+        resultRef: proposalId,
+        execution: moved?.execStatus ?? "unknown",
+        ...(executed.detail ? { detail: executed.detail } : {}),
+      });
+    }
     const execution = await this.#verifyAfterExecution(
       pending,
       handler,
@@ -699,6 +717,20 @@ export class ProductionProposalBox {
   }
 
   async undo(
+    proposalId: string,
+    expected?: OwnerProposalVersion,
+  ): Promise<{ readonly replayed: boolean }> {
+    const queued = (this.#undoing.get(proposalId) ?? Promise.resolve()).catch(() => undefined);
+    const running = queued.then(() => this.#undoOnce(proposalId, expected));
+    this.#undoing.set(proposalId, running);
+    try {
+      return await running;
+    } finally {
+      if (this.#undoing.get(proposalId) === running) this.#undoing.delete(proposalId);
+    }
+  }
+
+  async #undoOnce(
     proposalId: string,
     expected?: OwnerProposalVersion,
   ): Promise<{ readonly replayed: boolean }> {
