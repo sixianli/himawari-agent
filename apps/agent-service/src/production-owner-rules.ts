@@ -18,6 +18,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  PUSH_QUIET_CLASSES,
   parseOwnerRuleParameters,
   RULE_TYPES,
   type RuleRecord,
@@ -79,6 +80,50 @@ const STANDING_MARKERS = [
   "whenever",
   "must",
 ].map(foldText);
+const QUIET_REQUEST_MARKERS = [
+  "别提醒我",
+  "不要提醒我",
+  "别通知我",
+  "不要通知我",
+  "别打扰我",
+  "不要打扰我",
+  "通知しないで",
+  "邪魔しないで",
+  "don't remind me",
+  "do not remind me",
+  "don't notify me",
+  "do not notify me",
+  "don't disturb me",
+  "do not disturb me",
+].map(foldText);
+const RECURRING_TIME_MARKERS = [
+  "夜里",
+  "夜间",
+  "夜晚",
+  "晚上",
+  "半夜",
+  "深夜",
+  "凌晨",
+  "早上",
+  "每天",
+  "每晚",
+  "平时",
+  "周末",
+  "工作日",
+  "夜は",
+  "夜間",
+  "毎晩",
+  "毎日",
+  "平日",
+  "週末",
+  "overnight",
+  "at night",
+  "nights",
+  "evenings",
+  "weekends",
+  "weekdays",
+  "daily",
+].map(foldText);
 const ONE_OFF_MARKERS = [
   "这封",
   "这一封",
@@ -93,6 +138,75 @@ const ONE_OFF_MARKERS = [
   "刚才",
   "今天",
   "今晚",
+  "现在",
+  "正在",
+  "一会",
+  "等会",
+  "待会",
+  "今夜",
+  "今晩",
+  "right now",
+  "这个月",
+  "本月",
+  "下个月",
+  "上个月",
+  "今年",
+  "明年",
+  "去年",
+  "本季",
+  "这个季度",
+  "下个季度",
+  "this month",
+  "next month",
+  "last month",
+  "this year",
+  "next year",
+  "last year",
+  "今月",
+  "来月",
+  "来年",
+  "下周",
+  "下个",
+  "下星期",
+  "这个周",
+  "这周",
+  "本周",
+  "这个星期",
+  "后天",
+  "大后天",
+  "这两天",
+  "这阵子",
+  "昨天",
+  "昨晚",
+  "上周",
+  "上个",
+  "next week",
+  "next weekend",
+  "this week",
+  "this weekend",
+  "these days",
+  "yesterday",
+  "last night",
+  "last week",
+  "来週",
+  "今週",
+  "明後日",
+  "明天",
+  "明早",
+  "明晚",
+  "明日",
+  "暂时",
+  "目前",
+  "眼下",
+  "这几天",
+  "最近",
+  "先别",
+  "tomorrow",
+  "temporarily",
+  "for the time being",
+  "しばらく",
+  "明日は",
+  "for now",
   "この",
   "今回",
   "今日",
@@ -114,6 +228,9 @@ const ONE_OFF_MARKERS = [
   "we'll see",
 ].map(foldText);
 const STANDING_STARTS = [
+  "从现在起",
+  "从现在开始",
+  "现在起",
   "从今天起",
   "从今天开始",
   "今天起",
@@ -180,6 +297,32 @@ export function ownerRuleToolDescriptors(
               phrases: list,
               words: list,
               excludePhrases: list,
+              periods: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    days: {
+                      type: "array",
+                      items: { type: "integer", minimum: 0, maximum: 6 },
+                      minItems: 1,
+                      maxItems: 7,
+                    },
+                    start: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                    end: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                  },
+                  required: ["days", "start", "end"],
+                  additionalProperties: false,
+                },
+                minItems: 1,
+                maxItems: 8,
+              },
+              classes: {
+                type: "array",
+                items: { type: "string", enum: [...PUSH_QUIET_CLASSES] },
+                minItems: 1,
+                maxItems: 3,
+              },
             },
             additionalProperties: false,
           },
@@ -280,7 +423,20 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
+
+function pushTrial(example: RuleRecord["examples"][number]): RuleTrial {
+  const minutes = Number(example.facts["local_minutes"] ?? 0);
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return Object.freeze({
+    from: String(example.facts["push_class"] ?? ""),
+    subject: `${WEEKDAY_NAMES[Number(example.facts["local_weekday"] ?? 0)] ?? ""} ${clock}`,
+    hit: example.hit,
+  });
+}
+
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
+  if (rule.gate === "push_delivery") return rule.examples.map(pushTrial);
   return rule.examples.map((example) => {
     const text = String(example.facts["text"] ?? "");
     return Object.freeze({
@@ -299,6 +455,11 @@ function containsMarker(clause: string, marker: string): boolean {
 }
 
 export function isStandingQuote(quote: string): boolean {
+  const whole = STANDING_STARTS.reduce(
+    (text, start) => text.replaceAll(start, " | "),
+    foldText(quote).replace(/\s+/gu, " "),
+  );
+  if (ONE_OFF_MARKERS.some((marker) => containsMarker(whole, marker))) return false;
   return foldText(quote)
     .split(CLAUSE_BREAK)
     .map((clause) => clause.replace(/\s+/gu, " ").trim())
@@ -306,8 +467,9 @@ export function isStandingQuote(quote: string): boolean {
     .some((clause) => {
       const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
       return (
-        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) &&
-        !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker))
+        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) ||
+        (QUIET_REQUEST_MARKERS.some((marker) => containsMarker(rest, marker)) &&
+          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)))
       );
     });
 }
@@ -499,7 +661,7 @@ export class ProductionOwnerRuleWriter {
   }
 
   async #replay(rule: RuleRecord): Promise<RuleReplay | null> {
-    if (!this.#options.replay) return null;
+    if (!this.#options.replay || rule.gate !== "mail_item") return null;
     try {
       return await this.#options.replay(rule);
     } catch {
