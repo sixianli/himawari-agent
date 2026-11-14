@@ -254,6 +254,16 @@ import Testing
         #expect(HandoverSettings.load(from: store).state(.share) == .off)
     }
 
+    @Test func aDeskWithoutSharedStorageSaysNotSentInsteadOfQueuing() async throws {
+        let store = MemoryLocalStore()
+        let down = RecordingExchange([HTTPExchangeResponse(status: 503, body: Data())])
+        let desk = HandoverDesk(store: store, courier: try courier(down), queuesOffline: false, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        let outcome = await desk.hand(handover(.page(url: "https://a.example", title: nil, text: nil)))
+        #expect(outcome == .failed(.notSent))
+        #expect(outcome.keepsWhatWasRead == false)
+        #expect(desk.queue.pending().isEmpty)
+    }
+
     struct HalvingFitter: ImageFitting {
         func fit(_ data: Data, maxBytes: Int) -> (data: Data, mimeType: String)? {
             (Data(data.prefix(maxBytes)), "image/jpeg")

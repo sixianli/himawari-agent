@@ -40,11 +40,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   classifyDeviceGatewayRequest,
   DEVICE_GATEWAY_ERROR_CODES,
+  DEVICE_REFERENCE_PLACEHOLDER,
   type DeviceGatewayAuditFailure,
   DeviceGatewayError,
   type DeviceGateways,
   dispatchDeviceGatewayRequest,
 } from "./device-gateway.js";
+import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from "./device-push.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   type AuthenticatedDeviceRequest,
@@ -72,6 +74,10 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "utterances/partial", signed: true },
   { method: "GET", path: "threads", signed: true },
   { method: "POST", path: "approvals/challenge", signed: true },
+  { method: "POST", path: "approvals/respond", signed: true },
+  { method: "POST", path: "feedback", signed: true },
+  { method: "POST", path: "push/register", signed: true },
+  { method: "POST", path: "companions", signed: true },
   { method: "POST", path: "gateway", signed: true },
   { method: "GET", path: "home", signed: true },
   { method: "POST", path: "home/act", signed: true },
@@ -239,6 +245,7 @@ export interface DeviceApiRouteOptions {
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
   readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+  readonly push?: DevicePushPort;
   readonly protectText: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
@@ -1067,6 +1074,102 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, 201, options.devices.issueConfirmChallenge(paired.id));
       });
 
+      const pushPort = (): DevicePushPort => {
+        if (!options.push) throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.NOT_CONFIGURED, 503);
+        return options.push;
+      };
+
+      device.post("/push/register", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await pushPort().register({
+            scope: scope(authenticated.authentication),
+            device: authenticated.device,
+            body: json(request),
+          }),
+        );
+      });
+
+      device.post("/feedback", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await pushPort().feedback({
+            scope: scope(authenticated.authentication),
+            body: json(request),
+          }),
+        );
+      });
+
+      device.post("/companions", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await pushPort().linkCompanion({
+            scope: scope(authenticated.authentication),
+            device: authenticated.device,
+            body: json(request),
+          }),
+        );
+      });
+
+      device.post("/approvals/respond", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        if (!options.gateways.v2)
+          throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.GATEWAY_UNAVAILABLE, 503);
+        const token = await pushPort().takeAction({
+          device: authenticated.device,
+          confirmed: authenticated.confirmed,
+          body: json(request),
+        });
+        const approval = token.approval;
+        if (approval === null)
+          throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
+        const decisions = { approve: "approved", deny: "denied" } as const;
+        const reference = token.tokenHash.slice(0, 40);
+        try {
+          return options.sendJson(
+            reply,
+            200,
+            await dispatchDeviceGatewayRequest({
+              request: classifyDeviceGatewayRequest({
+                gateway: "v2",
+                type: "approval.respond",
+                messageId: `notification-action:${reference}`,
+                idempotencyKey: `notification-action:${reference}`,
+                dataClassification: "private",
+                risk: "medium",
+                payload: {
+                  approvalRequestId: approval.requestId,
+                  expectedRevision: approval.revision,
+                  decision: decisions[token.action],
+                  semanticSnapshotHash: approval.snapshotHash,
+                  editedPayloadRef: null,
+                  recentAuthenticationRef: DEVICE_REFERENCE_PLACEHOLDER,
+                },
+              }),
+              confirmed: authenticated.confirmed,
+              notificationAction: true,
+              pairedDeviceId: authenticated.device.id,
+              authentication: authenticated.authentication,
+              authority: options.authority,
+              gateways: options.gateways,
+              audit: options.audit,
+              ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
+              now,
+            }),
+          );
+        } catch (error) {
+          if (error instanceof ApplicationPortError)
+            throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.ACTION_INVALID, 410);
+          throw error;
+        }
+      });
+
       device.post("/gateway", async (request, reply) => {
         const authenticated = await authenticate(request);
         const classified = classifyDeviceGatewayRequest(json(request));
@@ -1241,12 +1344,15 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
               revalidate: async () => {
                 if (!(await options.devices.stillActive(authenticated.device.id)))
                   throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
+                options.push?.streamAlive(authenticated.device.id);
               },
             }),
             configuration.connectionMaxSeconds * 1000,
           ),
         );
         holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
+        options.push?.streamOpened(authenticated.device.id);
+        stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
         try {
           options.setStreamHeaders(reply);
           return reply.send(stream);
