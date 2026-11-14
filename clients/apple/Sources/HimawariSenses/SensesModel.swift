@@ -85,7 +85,7 @@ public final class SensesModel {
     private func reconcile(_ item: SenseItem) async {
         switch state(item) {
         case .on:
-            service.start(item)
+            if service.server != nil { service.start(item) }
         case .off, .systemDenied, .serverUnsupported:
             await service.stop(item)
         case .serverPaused:
@@ -141,6 +141,7 @@ public final class SensesModel {
                 notice = L.text("detail.failed")
                 return
             }
+            await service.refreshServer()
             await reloadStatus()
         }
         update(item) { $0.on = true }

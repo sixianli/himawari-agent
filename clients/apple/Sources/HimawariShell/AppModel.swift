@@ -336,7 +336,8 @@ public final class AppModel {
                 deviceId: record.deviceId,
                 confirmation: EnclaveConfirmation(keys: keys),
                 operations: Self.phoneOperations([SenseOperation.deleteRecords]),
-                configuration: { [weak self] in self?.configuration }
+                configuration: { [weak self] in self?.configuration },
+                refreshConfiguration: { [weak self] in await self?.refreshConfiguration() }
             )
             let senses = SensesModel(service: service, store: store)
             self.senses = senses

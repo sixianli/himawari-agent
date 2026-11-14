@@ -20,6 +20,7 @@ public protocol SensesService: AnyObject {
     func status() async throws -> PerceptionStatusSnapshot
     func day(_ item: SenseItem) async throws -> PerceptionDaySnapshot
     func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws
+    func refreshServer() async
     func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws
     func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult
     func mirrorCount(_ item: SenseItem) async -> Int?
@@ -38,6 +39,7 @@ public final class LiveSensesService: SensesService {
     private let sink: SenseSink
     private let collectors: [SenseItem: SenseCollector]
     private let configuration: () -> DeviceConfiguration?
+    private let refreshConfiguration: () async -> Void
     private var running: Set<SenseItem> = []
     public let deviceId: String?
     public let operations: Set<String>
@@ -48,7 +50,8 @@ public final class LiveSensesService: SensesService {
         deviceId: String?,
         confirmation: ConfirmationSigner?,
         operations: Set<String>,
-        configuration: @escaping () -> DeviceConfiguration?
+        configuration: @escaping () -> DeviceConfiguration?,
+        refreshConfiguration: @escaping () async -> Void
     ) {
         gateway = SensesGateway(api: api, confirmation: confirmation)
         sink = SenseSink(
@@ -59,6 +62,7 @@ public final class LiveSensesService: SensesService {
         )
         collectors = SenseCollectors.all()
         self.configuration = configuration
+        self.refreshConfiguration = refreshConfiguration
         self.deviceId = deviceId
         self.operations = operations
     }
@@ -107,6 +111,10 @@ public final class LiveSensesService: SensesService {
 
     public func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws {
         try await gateway.setSense(sense, enabled: enabled, expectedRevision: revision, reason: reason)
+    }
+
+    public func refreshServer() async {
+        await refreshConfiguration()
     }
 
     public func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {

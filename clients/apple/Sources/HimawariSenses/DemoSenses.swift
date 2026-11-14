@@ -129,6 +129,8 @@ public final class DemoSensesService: SensesService {
 
     public func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws {}
 
+    public func refreshServer() async {}
+
     public func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {}
 
     public func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult {
