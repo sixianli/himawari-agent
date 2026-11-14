@@ -35,14 +35,20 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
-import { type DevicePairingAccess, registerDeviceApiRoutes } from "./device-api-routes.js";
+import {
+  type DeviceHomePort,
+  type DevicePairingAccess,
+  registerDeviceApiRoutes,
+} from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
+import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
   PairedDeviceError,
   type PairedDeviceService,
 } from "./paired-device-service.js";
+import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
 import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
@@ -128,7 +134,10 @@ export interface HttpGatewayServerOptions {
     readonly configuration: () => DeviceConfiguration;
     readonly audit: AuditLedgerPort;
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+    readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly perception?: PerceptionService;
+    readonly home?: DeviceHomePort;
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -908,7 +917,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
-    if (error instanceof DeviceGatewayError) {
+    if (error instanceof DeviceGatewayError || error instanceof DevicePushError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
     }
@@ -1294,9 +1303,11 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     const deviceWatchExecution = options.threadGateway.watchExecution?.bind(options.threadGateway);
     registerDeviceApiRoutes(app, {
       publicOrigin,
+      ...(options.devices.home ? { home: options.devices.home } : {}),
       devices: options.devices.service,
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,
@@ -1311,6 +1322,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       },
       audit: options.devices.audit,
       ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
+      ...(options.devices.push ? { push: options.devices.push } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({

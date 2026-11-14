@@ -1,4 +1,6 @@
+import { DEFAULT_SEARCH_ASK, type ProductMemoryRecord } from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProductionSearchControl } from "../../apps/agent-service/src/production-search.ts";
 import {
   agentId,
   createThread,
@@ -559,5 +561,85 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
     }
     expect(await audits(h)).toEqual([]);
     await h.repository.close();
+  });
+});
+
+describe("手机搜索页问答经设备通道", () => {
+  const memory = {
+    id: "memory-allergy",
+    ownerId,
+    agentId,
+    status: "active",
+    dataClassification: "private",
+    contentRef: "text-allergy",
+    sourceRefs: [],
+    sourceThreadId: "thread-allergy",
+    providerRecordId: "provider-allergy",
+    attributes: { category: "preference", entities: ["花生"], validTo: null, supersededBy: null },
+    updatedAt: "2026-10-22T00:00:00.000Z",
+    recordedAt: "2026-10-21T03:00:00.000Z",
+  } as unknown as ProductMemoryRecord;
+  const searchControl = () =>
+    new ProductionSearchControl({
+      ownerId: ownerId as ProductMemoryRecord["ownerId"],
+      agentId: agentId as ProductMemoryRecord["agentId"],
+      settings: DEFAULT_SEARCH_ASK,
+      provider: {
+        search: async (input) =>
+          input.query.includes("过敏")
+            ? [{ productMemoryId: memory.id, providerRecordId: "provider-allergy", score: 1 }]
+            : [],
+      },
+      state: { readMany: async () => [memory], listActive: async () => [memory] },
+      readText: async () => "我对花生过敏",
+      clock: { now: () => "2026-11-14T03:00:00.000Z" },
+    });
+  const ask = (h: Harness, client: PairedClient, query: string | null) =>
+    gateway(
+      h,
+      client,
+      gatewayBody({
+        gateway: "v2",
+        type: "search.ask.read",
+        command: false,
+        payload: { query, locale: "zh-CN" },
+      }),
+    );
+  const payloadOf = (body: string) =>
+    (JSON.parse(body) as { payload: Record<string, unknown> }).payload;
+
+  it("问得到：回答、来源对话和时间；问不到：服务器给出没找到的话；不问：给建议", async () => {
+    const h = await harness({ searchControl: searchControl() });
+    const client = await pairAndConfirm(h);
+    const found = await ask(h, client, "我对什么过敏");
+    expect(found.statusCode, found.body).toBe(200);
+    expect(payloadOf(found.body)).toMatchObject({
+      state: "answered",
+      answer: "我对花生过敏",
+      basis: [
+        {
+          kind: "conversation",
+          label: "10 月 21 日你在对话里说的",
+          memoryId: "memory-allergy",
+          threadId: "thread-allergy",
+        },
+      ],
+    });
+    const missing = await ask(h, client, "我住在哪里");
+    expect(payloadOf(missing.body)).toMatchObject({
+      state: "not_found",
+      answer: null,
+      basis: [],
+      notFoundText: "没有找到相关的内容。",
+    });
+    const suggestions = await ask(h, client, null);
+    expect(payloadOf(suggestions.body)).toMatchObject({ state: "suggestions", asks: [] });
+  });
+
+  it("没有装配搜索时这个操作不可用，不返回空答案", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const response = await ask(h, client, "我对什么过敏");
+    expect(response.statusCode).not.toBe(200);
   });
 });

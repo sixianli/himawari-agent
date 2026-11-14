@@ -18,6 +18,7 @@ date: "2026-11-12"
 - [前提](#premises)
 - [决定](#decision)
 - [新值清单](#new-values)
+- [第 3 步怎么分批](#step-3-implementation)
 - [分几步做](#steps)
 - [业界怎么做](#industry)
 - [放弃的做法](#options)
@@ -227,9 +228,21 @@ date: "2026-11-12"
 | “要主人本人在场” | 登记表 | 建审批时定要不要近期身份验证 | 有这条事实的审批没有近期身份验证就拒绝，不管档位 | 第 4 步（设备动作接入时） |
 | 卡片上的原因：`display.askedBecause` 新增 `{kind: "rule", ruleId, ruleText}` | 统一出口命中“先问”的内置规则时，把规则编号和一句说明（读过哪些外来来源，最多列 5 个，每个最多 80 字，多的写“等 N 个来源”）交给权限引擎建审批 | 网关的审批快照（`governance-gateway-adapter.ts`）；网页和苹果端的审批卡片还没有读它，按规则编号出三种语言的文字留给卡片界面那一步 | 原因的种类穷举 | `test/integration/tool-action-registry.test.ts`（卡片原因是这条规则，文字里有来源） |
 | 规则页的内置规则：`memory.rules.snapshot` 多一组 `builtIn`（编号、修订号、结果、该命中和不该命中的例子数、“每次都先问我”开关，只有“直接做”的规则有开关，其余为 null）；`memory.rule.respond` 多两个动作 `ask_first`、`allow_directly` | `apps/agent-service/src/action-rule-switches.ts`，开关写 `action-rule:<编号>` 的 `enabled`，命令类型 `authorization.action_rule.set` | 网页规则页“内置规则”一块 | 先问和不做的规则改不了（`ACTION_RULE_HAS_NO_SWITCH`）；只能把“直接做”改成问，关回去就是恢复内置的默认 | `test/integration/tool-action-registry.test.ts`（关掉后建提醒等主人点头，打开后直接做；先问的规则改不了）；`test/integration/production-memory-capture.test.ts`（快照过网关结构校验，命令转给开关）；`apps/control-center/test/owner-rules.unit.test.ts`（只有“直接做”的有开关；反向：开着的按下变 `allow_directly`，没有内置规则时整块不显示） |
-| 主人意图核对的配置键（开关、把握门槛、用哪个模型）和提示词编号 | 配置解析、提示词目录 | 核对端口 | 开关默认关；提示词目录里没有的编号发不出去 | 第 3 步的测试和评测 |
+| 主人意图核对的配置键：`runPolicy.ownerIntentCheck{enabled, minConfidence, timeoutMs, model, secretRef}`（`minConfidence` 500 到 1000，`timeoutMs` 500 到 30000） | 配置解析（`strict-configuration.ts` 的 `parseOwnerIntentCheck`），不写就是关 | 核对入口 `OwnerIntentGate`（`apps/agent-service/src/owner-intent-gate.ts`） | 配置解析只认登记的键名和范围；没写这组键、或 `enabled` 为假，核对根本不调用。提示词 `authorization.owner-intent-question` 和 Jev 适配器 `packages/platform-node/src/owner-intent-decision.ts` 在第二批 | `packages/platform-node/test/startup-configuration.unit.test.ts`（范围和多余键）；第二批的评测 |
+| 事实代码 `owner_intent_confirmed` 和内置规则 `action_preauthorize_owner_intent_confirmed` | 核对入口在核对通过时把事实加进动作意图，冻结后随意图保存；规则登记表（`action-rules.ts`） | 动作闸门的规则判断：新规则要求这条事实，先问规则（修订号升到 2）排除“满足同一组条件且有这条事实”的动作 | 事实只在“用户消息发起、读过外来内容、`CREATE_OR_UPDATE`、中风险、能撤销、不外发、不要本人在场、不改长期规则”时才加；规则表达式把同一组条件再核一遍，所以事实单独出现不会放行（规则例子里有反向）；“每次都先问我”开关照内置规则的做法生效 | `packages/application/test/policy-fact-registry.unit.test.ts` 的规则例子校验；`test/integration/tool-action-registry.test.ts` |
+| 核对结果记录：状态记录 `owner-intent-check:<动作意图编号>`（是否通过、原因、把握、引用的原话、外来来源、模型编号）和审计记录 `authorization.owner_intent.checked` | `OwnerIntentGate` | 重放时直接读这条记录，不再调用模型；运维和以后的评测报告 | 同一个动作意图只写一次；写不进去也不影响结果（再读一次，读不到才报错） | `test/integration/tool-action-registry.test.ts` |
 
 [返回阅读导航](#contents)
+
+<a id="step-3-implementation"></a>
+
+第 3 步分两批做。第一批做不花钱的部分（已合并），第二批做模型适配器、接线和评测。
+
+- 第一批：核对端口 `OwnerIntentCheckPort`（输入只有主人原话和动作的类别、参数，没有工具结果）；严格解析 `judgeOwnerIntent`（答案格式不对、没有把握、不是“明说”、引用了原话但不是逐字出自主人的消息，都算没通过）；`OwnerIntentGate`（只在上面新值清单写的条件下才调用，超时、出错、拿不到原话都算没通过）；新的事实和内置规则；配置键。核对通过时，卡片被省掉，动作直接做，审批记录里仍有预授权的键，规则页上这条规则带“每次都先问我”的开关。
+- 第二批：Jev 适配器（走 Vercel AI Gateway 的 `/v1/decisions`，选择题、带把握、`zeroDataRetention`，发出去前先遮盖敏感内容）、提示词目录里的核对问题、`service-main.ts` 里的接线（只有配置写了这组键且密钥来源适合生产才装上）、70 条评测集和评测脚本 `scripts/evals/owner-intent-live.eval.ts`。DeepSeek V4.1 Flash 只在评测里跑（它是语言模型，`/decisions` 不收，走聊天接口又受出口检查限制）；它要是更好，再单开一批做走治理路径的适配器。
+- 评测（2026-11-14，70 条：夹带指令 30、边界 10、主人明说 30；Jev 一轮、DeepSeek 两轮，合计约 0.03 美元）：夹带指令和边界类被自动放行为 0（Jev 在任何把握门槛下都是 0，DeepSeek 也是 0）。主人明说的 30 条里，Jev 判“明说”的有 29 条，但它给的把握普遍在 570 到 870 之间：`minConfidence` 900 只放行 2 条，700 放行 16 条，600 放行 24 条，500 放行 29 条。DeepSeek（自报把握）放行 29 条。建议生产 `minConfidence` 先用 600：宁可多问一次，注入类在所有门槛下都没漏。评测只有 70 条，样本小，打开之后看审计记录里的实际分布再调。
+- 评测结果出来、Andy 点头之前，生产配置不写这组键，核对不会被调用。
+- 回执上“内容取自哪份外来内容”这一条只写在审计记录和状态记录里（外来来源），还没有出现在发给模型的工具结果里；要不要加，和 Andy 定，因为加了就是新增发给模型的内容。
 
 <a id="steps"></a>
 

@@ -9,7 +9,11 @@ export const ACTION_RULE_IDS = Object.freeze({
   preauthorizeOwnTaskCancel: "action_preauthorize_own_task_cancel",
   askAfterExternalContent: "action_ask_after_external_content",
   refuseBackgroundAfterExternalContent: "action_refuse_background_after_external_content",
+  preauthorizeOwnerIntentConfirmed: "action_preauthorize_owner_intent_confirmed",
 } as const);
+
+const OWNER_INTENT_CONFIRMED_EXPRESSION =
+  'action_kind == "CREATE_OR_UPDATE" && risk == "MEDIUM" && reversible == 1 && disclosure == "none" && recipient_count == 0 && run_source == "user_message" && "context_external_content" in facts && "owner_intent_confirmed" in facts && !("owner_presence_required" in facts) && !("standing_rule_change" in facts)';
 
 export const ACTION_RULE_OUTCOMES = Object.freeze([
   "allow_preauthorized",
@@ -113,10 +117,9 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
   }),
   Object.freeze({
     id: ACTION_RULE_IDS.askAfterExternalContent,
-    revision: 1,
+    revision: 2,
     gate: "action",
-    expression:
-      'action_kind != "READ" && target_type != "managed-task" && "context_external_content" in facts',
+    expression: `action_kind != "READ" && target_type != "managed-task" && "context_external_content" in facts && !(${OWNER_INTENT_CONFIRMED_EXPRESSION})`,
     outcome: "ask_owner",
     origin: "built_in",
     source: "ADR 0257 决定 3、4；苹果端设计“指令和数据的界线”",
@@ -140,6 +143,88 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
         actionKind: "READ",
         deterministicFacts: [
           { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(true, {
+        finalRisk: "HIGH",
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+    ]),
+  }),
+  Object.freeze({
+    id: ACTION_RULE_IDS.preauthorizeOwnerIntentConfirmed,
+    revision: 1,
+    gate: "action",
+    expression: OWNER_INTENT_CONFIRMED_EXPRESSION,
+    outcome: "allow_preauthorized",
+    origin: "built_in",
+    source:
+      "ADR 0257 决定 4：读过外来内容后，主人自己明说要做的中风险、能撤销、只动自己数据的动作，核对通过就直接做",
+    status: "active",
+    examples: Object.freeze([
+      example(true, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        finalRisk: "HIGH",
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        reversible: false,
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "owner_intent_confirmed" },
+          { code: "run_source_user_message" },
+          { code: "standing_rule_change" },
+        ],
+      }),
+      example(
+        false,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "owner_intent_confirmed" },
+            { code: "run_source_schedule" },
+          ],
+        },
+        "schedule",
+      ),
+      example(false, {
+        deterministicFacts: [
+          { code: "owner_intent_confirmed" },
           { code: "run_source_user_message" },
         ],
       }),
@@ -200,7 +285,8 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
     id: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
     revision: 1,
     gate: "action",
-    expression: 'target_type == "managed-task" && action_kind == "CREATE_OR_UPDATE"',
+    expression:
+      'target_type == "managed-task" && action_kind == "CREATE_OR_UPDATE" && reversible == 0',
     outcome: "allow_preauthorized",
     origin: "built_in",
     source: "ADR 0257 第 2 步：停止这一轮自己开的任务，最坏是一件自己开的活停了，可以重开",
@@ -220,6 +306,7 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
         "schedule",
       ),
       example(false, {}),
+      example(false, { targets: [{ type: "managed-task" }], reversible: true }),
       example(false, { targets: [{ type: "managed-task" }], actionKind: "READ", finalRisk: "LOW" }),
     ]),
   }),

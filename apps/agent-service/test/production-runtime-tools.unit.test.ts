@@ -1555,6 +1555,94 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   expect(broken).toMatchObject({ outcome: "failed", errorCode: "REMINDER_UNAVAILABLE" });
 });
 
+it("[iOS-5] offers the two perception tools last, marks outside content on read and sends only non-read device actions through the owner-scope exit", async () => {
+  const f = fixture();
+  const performed = vi.fn();
+  const perception = vi.fn(
+    async (
+      call: RuntimeToolInvocation,
+      hooks: { authorize: () => Promise<void>; markExternalContent: () => Promise<void> },
+    ) => {
+      if (call.capabilityRef === "perception.read") {
+        if (call.arguments["outside"] === true) await hooks.markExternalContent();
+        return { value: { records: [] } };
+      }
+      if (call.arguments["action"] !== "describe") await hooks.authorize();
+      performed(call.toolCallId);
+      return { value: { done: true } };
+    },
+  );
+  const authorize = vi.fn().mockResolvedValueOnce(OWNER_SCOPE_ALLOW).mockResolvedValue({
+    decision: "DENY",
+    reasonCode: "external_content_background",
+    alternativesAllowed: false,
+  });
+  const mark = vi.fn(async () => undefined);
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    perception: { run: perception },
+    ownerScope: { authorize } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["ownerScope"]
+    >,
+    externalContent: { mark, read: async () => [] } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["externalContent"]
+    >,
+  });
+  const definitions = await tools.listAuthorized(invocation.runId, [
+    invocation.capabilityHandleRef,
+  ]);
+  expect(definitions.map(({ name }) => name).slice(-2)).toEqual([
+    "device_action",
+    "perception_read",
+  ]);
+  const base = { ...invocation, capabilityHandleRef: null };
+  const read = { ...base, toolCallId: "p-read", capabilityRef: "perception.read", arguments: {} };
+  expect((await tools.preflight(read)).allowed).toBe(true);
+  expect(await tools.execute(read)).toMatchObject({ outcome: "succeeded" });
+  expect(mark).not.toHaveBeenCalled();
+  expect(
+    await tools.execute({ ...read, toolCallId: "p-read-outside", arguments: { outside: true } }),
+  ).toMatchObject({ outcome: "succeeded" });
+  expect(mark).toHaveBeenCalledTimes(1);
+  expect(mark).toHaveBeenCalledWith(invocation.runId, "perception_read");
+  expect(authorize).not.toHaveBeenCalled();
+  const act = (toolCallId: string, action: string) => ({
+    ...base,
+    toolCallId,
+    capabilityRef: "device.action",
+    arguments: { action },
+  });
+  expect((await tools.preflight(act("a0", "describe"))).allowed).toBe(true);
+  expect(await tools.execute(act("a0", "describe"))).toMatchObject({ outcome: "succeeded" });
+  expect(authorize).not.toHaveBeenCalled();
+  expect(await tools.execute(act("a1", "set_volume"))).toMatchObject({ outcome: "succeeded" });
+  expect(authorize).toHaveBeenCalledTimes(1);
+  const refused = await tools.execute(act("a2", "set_volume"));
+  expect(refused).toMatchObject({ outcome: "failed" });
+  expect(performed.mock.calls.map(([id]) => id)).toEqual(["a0", "a1"]);
+});
+
+it("[iOS-5] does not offer or allow the perception tools when they are not configured", async () => {
+  const f = fixture();
+  const tools = f.tool();
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names).not.toContain("perception_read");
+  expect(names).not.toContain("device_action");
+  for (const capabilityRef of ["perception.read", "device.action"])
+    expect(
+      (
+        await tools.preflight({
+          ...invocation,
+          capabilityRef,
+          capabilityHandleRef: null,
+          arguments: {},
+        })
+      ).allowed,
+    ).toBe(false);
+});
+
 it("does not offer or allow reminder tools when reminders are not configured", async () => {
   const f = fixture();
   const tools = f.tool();
@@ -2014,18 +2102,18 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the three listing and recall tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall and perception read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list"]);
+  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read"]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
-  ).toEqual(["reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(7);
+  ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
+  expect(builtin).toHaveLength(9);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2103,4 +2191,4 @@ const EVERY_TOOL_NAMES = [
   "rule_undo",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "569b06f05ee8bf70ebcb55c8ee840061532862aa37f359efc5db69596a2ae2dd";
+  "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";

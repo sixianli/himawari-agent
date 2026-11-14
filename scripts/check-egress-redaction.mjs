@@ -21,6 +21,7 @@ export const REDACTOR_ONLY_FILES = Object.freeze([
   "packages/sensitive-capture/src/restoration.ts",
   "packages/sensitive-capture/src/identifiers.ts",
   "packages/application/src/services/model-egress.ts",
+  "packages/application/src/services/perception-extraction.ts",
   "packages/platform-node/src/files/pi-output-export.ts",
   "apps/agent-service/src/production-gap-export.ts",
 ]);
@@ -86,6 +87,7 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
       "packages/platform-node/src/memory-import-duplicate-decision.ts",
       ["AI Gateway decision request"],
     ],
+    ["packages/platform-node/src/owner-intent-decision.ts", ["AI Gateway decision request"]],
   ]),
 );
 
@@ -98,6 +100,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
   new Map([
     ["packages/platform-node/src/typesafe-jev-transport.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/memory-import-duplicate-decision.ts", ["redactForExternalText"]],
+    ["packages/platform-node/src/owner-intent-decision.ts", ["redactForExternalText"]],
     [
       "packages/platform-node/src/exa-public-search.ts",
       ["redactForExternalText", "redactForExternalUrl"],
