@@ -40,8 +40,8 @@ date: "2026-11-14"
 
 Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开一个线程，开局载入了哪些上下文、是不是全部一起载入”。分析发现：
 
-- 开局自动载入的仓库内容里，篇幅最大的几份是 `AGENTS.md`、Andy 的全局指令和只追加规则。
-- 事故规则还要求开工通读整份事故清单，而清单是全部仓库指令里最长的一份；开工时真正用得上的，只有还没关闭的那几条。
+- 开局自动载入的仓库内容包括 `AGENTS.md` 和 `.claude/rules/` 下的全部规则，其中只追加规则只有少数线程用得上。
+- 事故规则还要求开工通读整份事故清单，而清单记的是全部事故的完整经过；开工时真正用得上的，只有还没关闭的那几条。
 - 这些内容留在上下文里，之后每一轮请求都要重发。
 
 只追加规则只在改发给模型的内容时才用得上，大多数线程（例如改界面、改上线脚本、写文档）用不到它。按字数估算的 token 数和提交统计写在 PR 495 的说明里，没有用分词器实测，这里不重复。
@@ -60,7 +60,7 @@ Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开
 
 本 ADR 修改 [ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 的决定 3 里“每个线程开工时读”这一句，ADR 0107 的其他决定不变。
 
-1. **开工时不通读事故清单。** 线程开工时运行 `node scripts/check-incident-gates.mjs --open`，它只打印没有关闭的条目（“缺门槛”“等 Andy”和“仓库外”）的编号、状态、日期和一句话现象，最后一行是 `INCIDENT_OPEN count=<条数> total=<总数>`。清单有任何一处通不过检查时，不列条目，只打印 `INCIDENT_OPEN unavailable errors=<错误数>`，因为这时列出来的可能不全。工作涉及其中某条的领域时，再去读清单里的那一行。
+1. **开工时不通读事故清单。** 线程开工时运行 `node scripts/check-incident-gates.mjs --open`，它只打印没有关闭的条目（“缺门槛”“等 Andy”和“仓库外”）的编号、状态、日期和一句话现象，再打印一行 `INCIDENT_OPEN count=<条数> total=<总数>`，之后照旧是检查结果行 `INCIDENT_GATES …`。清单有任何一处通不过检查时，不列条目，用一行 `INCIDENT_OPEN unavailable errors=<错误数>` 代替，因为这时列出来的可能不全。工作涉及其中某条的领域时，再去读清单里的那一行。
 2. **判断重犯时按关键词搜。** 出了错要判断是不是重复发生时，按领域、文件名或报错关键词搜整份清单，包括已关闭的行（已关闭的事故又出现，说明它的门槛漏了），不必通读。清单本身一条不删，“第三次必须有硬门槛”仍由 `npm run check:incident-gates` 拦；这一步现在也跑 `test/tooling/incident-gates.test.mjs`。
 3. **只追加规则改为按需读。** `.claude/rules/prompt-prefix.md` 移到 `.agents/instructions/prompt-prefix.md`。`AGENTS.md` 的“发给模型的内容只追加”一节保留三条核心原则，写明只要动到发给模型的上下文就必须先读这份规则，并列出 5 个用来判断“算不算动到”的问题。`npm run check:prompt-prefix` 照旧是阻断检查。
 4. **`AGENTS.md` 只留触发条件。** “交付模式”“和 OpenCode 协作”“Pi 优先与工作区”三节只保留什么时候要读什么、读哪份文件，细节以 `.agents/instructions/delivery-mode.md`、`model-review.md`、`model-review-card.md` 和 `docs/pi-development-guide.md` 为准。
