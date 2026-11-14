@@ -112,6 +112,7 @@ public enum DesignTokens {
 
     public enum Opacity {
         public static let emptyMark: Double = 0.55
+        public static let watchPressed: Double = 0.7
     }
 
     public enum Pairing {
@@ -200,6 +201,24 @@ public enum DesignTokens {
         public static let talkRowHeight: CGFloat = 38
     }
 
+    public enum Watch {
+        public static let answerLineHeight: CGFloat = 20
+        public static let answerSize: CGFloat = 16
+        public static let buttonGap: CGFloat = 6
+        public static let buttonHeight: CGFloat = 44
+        public static let cardButtonTop: CGFloat = 6
+        public static let cardGap: CGFloat = 6
+        public static let markMedium: CGFloat = 56
+        public static let markPairing: CGFloat = 64
+        public static let markQuiet: CGFloat = 80
+        public static let markSmall: CGFloat = 28
+        public static let markWidget: CGFloat = 30
+        public static let screenPadding: CGFloat = 6
+        public static let talkInsetHeight: CGFloat = 24
+        public static let talkInsetWidth: CGFloat = 16
+        public static let talkPadding: CGFloat = 8
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 500, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)
@@ -232,5 +251,13 @@ public enum DesignTokens {
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
+        public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchAnswerStrong = TypeToken(size: 16, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchButton = TypeToken(size: 16, weight: 500, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchCaption = TypeToken(size: 12, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchFootnote = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchNumber = TypeToken(size: 34, weight: 700, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchSentence = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchTime = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
     }
 }

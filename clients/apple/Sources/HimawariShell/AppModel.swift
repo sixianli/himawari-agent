@@ -36,6 +36,10 @@ public final class AppModel {
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
+    #endif
+    public private(set) var watchOffer: String?
 
     private static let recordAccount = "pairing-record"
 
@@ -112,6 +116,27 @@ public final class AppModel {
             lastScanned = nil
             phase = .unpaired(PairingProblem.from(error))
         }
+    }
+
+    public func handlePairingLink(_ text: String) {
+        #if os(iOS)
+        if phase == .active, (try? PairingInvitation.parse(text)) != nil, watchRelay.canOffer {
+            watchOffer = text
+            return
+        }
+        #endif
+        pair(scanned: text)
+    }
+
+    public func sendOfferToWatch() {
+        #if os(iOS)
+        if let watchOffer { watchRelay.send(watchOffer) }
+        #endif
+        watchOffer = nil
+    }
+
+    public func declineWatchOffer() {
+        watchOffer = nil
     }
 
     public func connectToScannedServer() {

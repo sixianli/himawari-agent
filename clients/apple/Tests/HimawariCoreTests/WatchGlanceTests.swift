@@ -146,6 +146,23 @@ import Testing
         let body = try #require(object as? [String: String])
         #expect(body == ["key": "insight:7", "action": "dismiss", "binding": "b2", "requestId": "req_AAAAAAAAAAAAAAAA"])
     }
+
+    @Test func textFitsWhenItFitsTheScreenAndNotOtherwise() {
+        #expect(WatchTextFit.fits("好的", width: 180, height: 120, fontSize: 16, lineHeight: 20))
+        let long = String(repeating: "很长的回答", count: 40)
+        #expect(!WatchTextFit.fits(long, width: 180, height: 120, fontSize: 16, lineHeight: 20))
+        #expect(WatchTextFit.fits(long, width: 400, height: 2000, fontSize: 16, lineHeight: 20))
+        #expect(!WatchTextFit.fits("a", width: 0, height: 100, fontSize: 16, lineHeight: 20))
+        #expect(!WatchTextFit.fits("a\nb\nc", width: 100, height: 40, fontSize: 16, lineHeight: 20))
+    }
+
+    @Test func complicationStoreReturnsUnknownUntilSomethingWasSaved() {
+        let store = WatchComplicationStore(appGroup: "himawari.test.\(UUID().uuidString)")
+        #expect(store.load().display == .unknown)
+        let state = WatchComplicationState(awaiting: 1, latest: "x", updatedAt: Date(timeIntervalSince1970: 5))
+        store.save(state)
+        #expect(store.load() == state)
+    }
 }
 
 enum PairingTestLink {

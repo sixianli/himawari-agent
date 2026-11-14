@@ -7,6 +7,9 @@ import CoreHaptics
 #if canImport(UIKit)
 import UIKit
 #endif
+#if os(watchOS)
+import WatchKit
+#endif
 
 @MainActor
 public final class Haptics {
@@ -72,6 +75,15 @@ public final class Haptics {
         case .bloom: playFile("bloom")
         case .knock: playFile("knock")
         case .knockFirm: playFile("knock-firm")
+        }
+        #elseif os(watchOS)
+        let device = WKInterfaceDevice.current()
+        switch pattern {
+        case .impactLight, .impactMedium, .impactSoft, .impactRigid: device.play(.click)
+        case .success: device.play(.success)
+        case .error: device.play(.failure)
+        case .warning: device.play(.retry)
+        case .bloom, .knock, .knockFirm: device.play(.notification)
         }
         #endif
     }

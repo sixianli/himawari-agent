@@ -189,6 +189,8 @@ public struct WatchComplicationState: Codable, Sendable, Equatable {
 }
 
 public enum WatchReminderPlan {
+    public static let systemPendingLimit = 64
+
     public static func due(_ upcoming: [WatchUpcoming], after now: Date, limit: Int) -> [WatchUpcoming] {
         let future = upcoming.filter { $0.due > now && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         var seen = Set<String>()
@@ -242,5 +244,63 @@ public enum WatchPairingRelay {
     public static func link(in message: [String: Any]) -> String? {
         guard let link = message[key] as? String, (try? PairingInvitation.parse(link)) != nil else { return nil }
         return link
+    }
+}
+
+public enum WatchTextFit {
+    public static func fits(_ text: String, width: Double, height: Double, fontSize: Double, lineHeight: Double) -> Bool {
+        guard width > 0, height > 0, fontSize > 0, lineHeight > 0 else { return false }
+        let maxLines = Int(height / lineHeight)
+        guard maxLines > 0 else { return false }
+        var lines = 1
+        var used = 0.0
+        for character in text {
+            if character == "\n" {
+                lines += 1
+                used = 0
+                continue
+            }
+            let advance = advance(of: character, fontSize: fontSize)
+            if used + advance > width {
+                lines += 1
+                used = advance
+            } else {
+                used += advance
+            }
+            if lines > maxLines { return false }
+        }
+        return lines <= maxLines
+    }
+
+    static func advance(of character: Character, fontSize: Double) -> Double {
+        guard let scalar = character.unicodeScalars.first else { return fontSize * 0.5 }
+        switch scalar.value {
+        case 0x2E80...0x9FFF, 0xAC00...0xD7AF, 0xF900...0xFAFF, 0xFF00...0xFFEF, 0x1F000...0x1FAFF: return fontSize
+        case 0x20: return fontSize * 0.3
+        default: return fontSize * 0.58
+        }
+    }
+}
+
+public struct WatchComplicationStore: Sendable {
+    public static let stateKey = "himawari.watch.complication"
+    private let suite: String
+
+    public init(appGroup: String) {
+        suite = appGroup
+    }
+
+    public func save(_ state: WatchComplicationState) {
+        guard let defaults = UserDefaults(suiteName: suite), let data = try? JSONEncoder().encode(state) else { return }
+        defaults.set(data, forKey: Self.stateKey)
+    }
+
+    public func load() -> WatchComplicationState {
+        guard
+            let defaults = UserDefaults(suiteName: suite),
+            let data = defaults.data(forKey: Self.stateKey),
+            let state = try? JSONDecoder().decode(WatchComplicationState.self, from: data)
+        else { return .unknown }
+        return state
     }
 }

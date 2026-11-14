@@ -31,6 +31,15 @@ public struct HimawariRootView: View {
             }
         }
         .onAppear { SerifFace.shared.prepare() }
+        .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
+        .confirmationDialog(
+            L.text("watch.offer.title"),
+            isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
+            titleVisibility: .visible
+        ) {
+            Button(L.text("watch.offer.watch")) { model.sendOfferToWatch() }
+            Button(L.text("watch.offer.cancel"), role: .cancel) { model.declineWatchOffer() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
         }
