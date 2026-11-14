@@ -42,7 +42,7 @@ date: "2026-11-10"
 5. Pi 默认的请求函数先整理请求选项、会话请求前启动缓存预热，再调 `modelRuntime.streamSimple`：`dist/core/sdk.js` 261–272 行。缓存预热也直接用 `streamSimple(...).result()`（`dist/core/cache-warmer.js`），所以对 `streamSimple` 的包装必须同步返回流。
 6. 官方注册服务方是进程级共享的，`streamSimple(model, context, options)` 里没有本次运行的 owner、runId、预算许可、暂停状态：`docs/custom-provider.md`。Himawari 本来有每次运行一个的 `sessionModelRuntime` 代理，D4（[ADR 0205](0205-pi-native-provider-auth.md)）合并后它已被删除，现在适配器直接用共享的 `binding.modelRuntime`，所以第 2 步要自己重建每次运行专属的模型代理。
 7. 官方没有“不调模型、直接回放已存回答”的写法（D3，见 [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)）。
-8. 发给模型的内容只追加、系统提示和工具按对话冻结：[prompt-prefix 规则](../../.claude/rules/prompt-prefix.md)第 4、6 条。
+8. 发给模型的内容只追加、系统提示和工具按对话冻结：[prompt-prefix 规则](../../.agents/instructions/prompt-prefix.md)第 4、6 条。
 
 <a id="decision"></a>
 
