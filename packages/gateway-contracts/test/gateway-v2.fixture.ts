@@ -172,6 +172,7 @@ export const governanceMessages = [
     quietHours: [{ days: [0, 6], start: "22:00", end: "08:00" }],
     importantSenders: ["@city.shinjuku.lg.jp"],
   }),
+  fixture("command", "proactive.pause", {}),
   fixture("command", "proactive.insight.respond", {
     insightId: "proactive-insight-01",
     action: "rate",
@@ -733,6 +734,15 @@ export const governanceMessages = [
         topic: "other",
         failed: true,
       },
+    ],
+  }),
+  fixture("query", "memory.import.duplicates.read", {
+    contentRefs: ["payload-05", "payload-06"],
+  }),
+  fixture("snapshot", "memory.import.duplicates.snapshot", {
+    items: [
+      { contentRef: "payload-05", verdict: "same", memoryId: "memory-insight" },
+      { contentRef: "payload-06", verdict: "skipped", memoryId: null },
     ],
   }),
   fixture("query", "memory.basis.read", { memoryId: "memory-insight" }),

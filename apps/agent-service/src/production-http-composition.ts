@@ -12,6 +12,8 @@ import type {
 import {
   AgentThreadGatewayService,
   ApplicationPortError,
+  DEVICE_CONFIGURATION_DEFAULTS,
+  defaultDeviceHardLimits,
   DEFAULT_HOME_FEED,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -35,12 +37,16 @@ import {
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
 } from "@himawari-agent/application";
-import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
+import {
+  isDeviceAccessText,
+  type ThreadExecutionEnvironment,
+} from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
+  assertUnixSocketPathLength,
   authenticateHttpRequest,
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
@@ -50,6 +56,9 @@ import {
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
+  DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceGatewayAuditFailure,
+  type DevicePairingAccess,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -63,21 +72,22 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  prepareUnixSocketPath,
-  removeUnixSocketFile,
-  sealUnixSocket,
-  type UnixSocketIdentity,
-  assertUnixSocketPathLength,
+  PairedDeviceService,
+  type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
+  prepareUnixSocketPath,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
   registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
+  removeUnixSocketFile,
   ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  sealUnixSocket,
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
+  type UnixSocketIdentity,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -92,6 +102,10 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import {
+  PRODUCTION_DEVICE_OPERATIONS,
+  ProductionDeviceControl,
+} from "./production-device-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
 import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
@@ -198,7 +212,9 @@ export interface ProductionHttpCompositionOptions {
   ) => Promise<void>;
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
+  readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
@@ -467,7 +483,27 @@ export class ProductionThreadGatewayAccessPolicy implements ThreadGatewayAccessP
   }
 }
 
-class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
+export async function resolveDevicePairingAccess(
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+  resolve: (ref: string, version: string) => Promise<string>,
+): Promise<DevicePairingAccess | undefined> {
+  const [clientIdReference, clientSecretReference] = DEVICE_ACCESS_SECRET_PURPOSES.map((purpose) =>
+    secretReferences.find((entry) => entry.purpose === purpose),
+  );
+  if (!clientIdReference || !clientSecretReference) return undefined;
+  const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
+  const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
+  for (const value of [clientId, clientSecret])
+    if (!isDeviceAccessText(value))
+      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
+  return { clientId, clientSecret };
+}
+
+export class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort {
   readonly #ownerId: OwnerId;
   readonly #agentId: AgentId;
   readonly #sessions: SessionDeviceStatePort;
@@ -706,6 +742,7 @@ function routeOptions(
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
@@ -764,6 +801,14 @@ export async function createProductionHttpComposition(
   const agentId = configuration.agentId;
   const identityState = scopedIdentityState(repository.ownerIdentityState(), ownerId);
   const sessionsState = repository.sessionDeviceState();
+  const deviceConfiguration = configuration.runPolicy?.device ?? {
+    ...DEVICE_CONFIGURATION_DEFAULTS,
+    limits: defaultDeviceHardLimits(),
+  };
+  const devicePairingAccess = await resolveDevicePairingAccess(
+    configuration.secretReferences,
+    (ref, version) => secretSources.provider.resolve(ref, version),
+  );
   const payloadKey = soleSecret(configuration, "payload-encryption");
   const payloadProtector = new EnvelopePayloadProtector({
     keys: secretSources.keys,
@@ -1159,6 +1204,23 @@ export async function createProductionHttpComposition(
         onAudit: options.memory.onAudit,
       })
     : undefined;
+  const pairedDevices = new PairedDeviceService({
+    store: repository.pairedDevices(),
+    sessions: sessionsState,
+    configuration: () => deviceConfiguration,
+    ownerActive: async (scope) => {
+      if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
+      if (identityConfiguration.kind === "built-in") return true;
+      return (await identityState.readByOwner(ownerId))?.status === "active";
+    },
+    ownerSubject: async (scope) => {
+      if (scope.ownerId !== ownerId || scope.agentId !== agentId) return undefined;
+      const binding = await identityState.readByOwner(ownerId);
+      return binding?.status === "active" ? binding.externalSubjectRef : undefined;
+    },
+    now,
+    ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+  });
   const home = new ProductionHomeControl({
     settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
     ...(options.proactive ? { proactive: options.proactive } : {}),
@@ -1240,6 +1302,13 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
     }),
+    deviceControl: new ProductionDeviceControl({
+      configuration,
+      devices: pairedDevices,
+      deviceConfiguration: () => deviceConfiguration,
+      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
     serverStatusControl: new ProductionServerStatusControl({
       configuration,
       health,
@@ -1292,6 +1361,13 @@ export async function createProductionHttpComposition(
     gatewayV2,
     threadSearch,
     files,
+    devices: {
+      service: pairedDevices,
+      configuration: () => deviceConfiguration,
+      audit: repository.auditLedger(),
+      ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
+      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+    },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
   });

@@ -1,4 +1,5 @@
 import { ApplicationPortError, PORT_ERROR_CODES } from "@himawari-agent/application";
+import { isGatewayErrorReasonCode } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
 import { ProductionLoginDevicesControl } from "../src/production-login-devices-control.ts";
 
@@ -171,10 +172,14 @@ describe("ProductionLoginDevicesControl scope", () => {
     expect([...once.active.keys()]).toEqual(["device-current"]);
     expect(once.revoked.sort()).toEqual(["device-laptop", "device-tablet"]);
     const always = build(99);
-    await expect(always.devices.execute(revokeOthers() as never)).rejects.toMatchObject({
+    const stillChanging = await always.devices
+      .execute(revokeOthers() as never)
+      .catch((error) => error);
+    expect(stillChanging).toMatchObject({
       code: PORT_ERROR_CODES.CONFLICT,
       message: "LOGIN_DEVICES_STILL_CHANGING",
     });
+    expect(isGatewayErrorReasonCode(stillChanging.message)).toBe(true);
     expect([...always.active.keys()]).toEqual(["device-current", "device-laptop"]);
     expect(always.attempts.filter((id) => id === "device-laptop")).toHaveLength(3);
   });

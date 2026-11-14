@@ -16,4 +16,4 @@
 ## 约定
 
 - 识别规则只写在这个包里。`npm run check:egress-redaction` 会拒绝其他产品代码里出现识别规则的特征写法。
-- 同一段文字，每次遮出来的字节必须相同（见 `.claude/rules/prompt-prefix.md` 第 11 条）。
+- 同一段文字，每次遮出来的字节必须相同（见 `.agents/instructions/prompt-prefix.md` 第 11 条）。

@@ -38,6 +38,10 @@
 "pairing.problem.keysUnreadable" = "配对和对话都还在。解锁手机后回到这里会自动再试";
 "pairing.problem.keysUnreadable.title" = "暂时读不到这台 iPhone 的密钥";
 "pairing.problem.storage" = "配对和对话都还在。解锁手机、空出一些存储后回到这里会自动再试";
+"pairing.problem.stateUnknown" = "先更新 App 再点重试。还不行就清掉，重新配对。对话和记忆都存在你的服务器上，清掉不会丢";
+"pairing.problem.stateUnknown.title" = "这台 iPhone 连不上 Himawari 了";
 "pairing.problem.storage.title" = "本机存储暂时打不开";
 "pairing.startOver" = "清掉，重新配对";
-"pairing.startOver.confirm" = "清掉后，这台 iPhone 上存的对话和密钥都会删除，要重新扫码配对。";
+"pairing.startOver.confirm" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢。";
+"pairing.startOver.confirmUnsent" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；但还有 %d 条消息没发出去，会一起删掉。";
+"pairing.startOver.confirmUnknown" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；这台 iPhone 上如果有还没发出去的消息，会一起删掉。";
