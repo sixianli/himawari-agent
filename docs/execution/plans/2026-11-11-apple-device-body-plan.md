@@ -129,7 +129,7 @@ Andy 2026-11-11 21:32（日本时间）同意开工：“那这样，我们先�
 ## 收尾清单
 
 - [ ] 每批的检查都跑过并记在 PR 里。
-- [ ] `.claude/rules/prompt-prefix.md`、`docs/glossary.md`（加“感知记录”）、`docs/kv-cache-guide.md` 随第 5 批一起改。
+- [ ] `.agents/instructions/prompt-prefix.md`、`docs/glossary.md`（加“感知记录”）、`docs/kv-cache-guide.md` 随第 5 批一起改。
 - [ ] 两份 Runbook 里不许在 MacBook 上构建和跑测试的句子在切回完整模式时重新封存。
 - [ ] 工程案例库写一个案例：为什么从“不做原生 App”改成四样设备。
 - [ ] 没做完的事记进 Backlog。

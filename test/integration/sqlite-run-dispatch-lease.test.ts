@@ -23,6 +23,7 @@ import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  readSchemaIdentity,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -308,6 +309,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             sourceDatabasePath: resource.databasePath,
             snapshotPath,
             schemaSequence: 25,
+            schemaFingerprint: readSchemaIdentity(database).fingerprint,
             digest: createHash("sha256")
               .update(await readFile(snapshotPath))
               .digest("hex"),

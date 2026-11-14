@@ -12,6 +12,11 @@ import {
   type DataClassification,
   DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
+  DEVICE_CONFIGURATION_DEFAULTS,
+  DEVICE_HARD_LIMIT_KEYS,
+  DEVICE_HARD_LIMITS,
+  type DeviceConfiguration,
+  type DeviceHardLimitKey,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -1326,6 +1331,61 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
   });
 }
 
+function parseDevice(value: unknown): DeviceConfiguration {
+  const field = "configuration.runPolicy.device";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "signatureToleranceSeconds",
+      "heartbeatSeconds",
+      "connectionMaxSeconds",
+      "streamConnections",
+      ...DEVICE_HARD_LIMIT_KEYS,
+    ],
+    field,
+  );
+  const optional = (key: string, fallback: number, minimum: number, maximum: number) =>
+    input[key] === undefined ? fallback : integer(input[key], `${field}.${key}`, minimum, maximum);
+  const limits = Object.fromEntries(
+    DEVICE_HARD_LIMIT_KEYS.map((key) => {
+      const definition = DEVICE_HARD_LIMITS[key];
+      return [key, optional(key, definition.defaultValue, definition.minimum, definition.maximum)];
+    }),
+  ) as Record<DeviceHardLimitKey, number>;
+  const heartbeatSeconds = optional(
+    "heartbeatSeconds",
+    DEVICE_CONFIGURATION_DEFAULTS.heartbeatSeconds,
+    1,
+    300,
+  );
+  const connectionMaxSeconds = optional(
+    "connectionMaxSeconds",
+    DEVICE_CONFIGURATION_DEFAULTS.connectionMaxSeconds,
+    60,
+    86_400,
+  );
+  if (connectionMaxSeconds < heartbeatSeconds)
+    throw invalid(`${field}.connectionMaxSeconds`, "must not be smaller than heartbeatSeconds");
+  return Object.freeze({
+    signatureToleranceSeconds: optional(
+      "signatureToleranceSeconds",
+      DEVICE_CONFIGURATION_DEFAULTS.signatureToleranceSeconds,
+      5,
+      600,
+    ),
+    heartbeatSeconds,
+    connectionMaxSeconds,
+    streamConnections: optional(
+      "streamConnections",
+      DEVICE_CONFIGURATION_DEFAULTS.streamConnections,
+      1,
+      64,
+    ),
+    limits: Object.freeze(limits),
+  });
+}
+
 function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["homeFeed"]> {
   const field = "configuration.runPolicy.homeFeed";
   const input = record(value, field);
@@ -1396,6 +1456,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "device",
       "homeFeed",
       "proactive",
       "museIntake",
@@ -1446,6 +1507,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
@@ -1475,6 +1537,11 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       : { retiredKeys: Object.freeze(["maxMemoryClassification"]) }),
   });
 }
+
+export const DEVICE_ACCESS_SECRET_PURPOSES = [
+  "device-access-client-id",
+  "device-access-client-secret",
+] as const;
 
 export function parseProductConfiguration(value: unknown, loadedAt: string): ProductConfiguration {
   const input = record(value, "configuration");
@@ -1661,6 +1728,15 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       identity.csrf.keySecretRef,
       "identity-csrf",
       "configuration.identity.csrf.keySecretRef",
+    );
+  }
+  const deviceAccessCounts = DEVICE_ACCESS_SECRET_PURPOSES.map(
+    (purpose) => secretReferences.filter((entry) => entry.purpose === purpose).length,
+  );
+  if (deviceAccessCounts.some((count) => count > 1) || new Set(deviceAccessCounts).size > 1) {
+    throw invalid(
+      "configuration.secretReferences",
+      "must declare the device access client id and secret together, at most once each",
     );
   }
   const secretReferenceNames = new Set(secretReferences.map(({ ref }) => ref));

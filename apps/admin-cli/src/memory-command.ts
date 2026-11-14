@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   assertWritableSchema,
+  bundledSchemaFingerprint,
   LATEST_MIGRATION_SEQUENCE,
   openQualifiedDatabase,
   planMemoryReindex,
@@ -51,7 +52,7 @@ export async function runMemoryCommand(
       path.join(configuration.stateRoot, "data", "product.sqlite"),
     );
     try {
-      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE);
+      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE, bundledSchemaFingerprint());
       const plan = planMemoryReindex(database, scope);
       writeServiceDiagnostic(output, {
         component: "admin-cli",

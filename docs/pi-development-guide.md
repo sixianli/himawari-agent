@@ -28,7 +28,7 @@ Andy 在 2026-11-10 要求写这份规范，原话是“让 AI coding agent 以�
 3. **只有两种情况允许不照官方写：**官方没有能满足需求的写法，或者官方写法有缺陷（例如等审批要等几个小时，而官方的拦截只能让进程一直挂着等，服务重启就丢了）。这时必须先按[第六节](#how-to-deviate)出方案，Andy 同意后才能写进代码和这份规范。
 4. **现有偏离不是范本。**[第五节](#current-deviations)列的是代码里已经存在、还没经 Andy 批准的偏离。新代码不得照抄它们，也不得在它们上面继续加东西；要动它们，先出方案。
 5. **只有 `packages/runtime-pi` 能导入 Pi。**这条来自 [Pi 优先与工作区约定](../.agents/instructions/pi-and-workspace.md#workspace-contract)：“只能在 `packages/runtime-pi` 中导入 `@earendil-works/pi-*` 包”。
-6. **发给模型的内容只追加。**任何写法都不能违反 [.claude/rules/prompt-prefix.md](../.claude/rules/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。[第三节](#official-patterns)里标着“官方示例原样，Himawari 不得照抄”的代码只用来说明钩子长什么样。
+6. **发给模型的内容只追加。**任何写法都不能违反 [.agents/instructions/prompt-prefix.md](../.agents/instructions/prompt-prefix.md)。官方写法和这条冲突时（例如官方让 Pi 自己每轮重算系统提示），按第 3 条处理。[第三节](#official-patterns)里标着“官方示例原样，Himawari 不得照抄”的代码只用来说明钩子长什么样。
 7. **照官方写不等于不用先出方案。**动到模型调用和路由、Agent 循环、权限和授权、记忆系统这类核心特性，即使用的是官方写法，仍按 [Andy 定的长期规则](../.claude/rules/owner-standing-rules.md#fixing-bugs-and-new-features)“大改动先出方案、讨论后再动工”，Andy 同意后才动工。
 
 <a id="how-to-look-up"></a>
@@ -178,14 +178,14 @@ pi.on("tool_result", async (event, ctx) => {
 
 Himawari 的写法：资源加载器的 `systemPromptOverride: () => frozenSystemPrompt` 给初始提示，不再在 `before_agent_start` 里重复返回（偏离 D6 已删除，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md)）；发出请求的开头由 `himawari-request-head` 扩展的 `context_with_system` 钩子生成（D1 第 3 步，[ADR 0208](adr/0208-adopt-pi-official-request-head-and-session-runtime-wrapper.md#step-3-record)）。
 
-官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.claude/rules/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只用冻结的那一份，不每轮改。
+官方示例在 `event.systemPrompt` 后面拼“本轮”的额外说明（`docs/extensions.md` 第 615 行起），Himawari 不得照抄：每轮会变的内容放在最后一条用户消息里（[prompt-prefix 规则第一节](../.agents/instructions/prompt-prefix.md#order)）。官方说明：改 `systemPromptOptions` 里的分节时，Pi 只追加一条补丁；直接返回 `systemPrompt` 会整段替换，换了就“a cache miss when it changes”。Himawari 的系统提示按对话冻结（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)），所以只用冻结的那一份，不每轮改。
 
 <a id="pattern-context"></a>
 ### 每次请求前改上下文
 
 出处：`docs/extensions.md` 第 815 行“context”、第 829 行“context_with_system”。
 
-**下面是官方示例原样，Himawari 不得照抄：**它按条件删掉、截掉已经发过的历史，违反 [prompt-prefix 规则第 4 条](../.claude/rules/prompt-prefix.md#append-only)。在 Himawari 里用这两个钩子，只能在列表末尾追加；要缩短历史只能走压缩。
+**下面是官方示例原样，Himawari 不得照抄：**它按条件删掉、截掉已经发过的历史，违反 [prompt-prefix 规则第 4 条](../.agents/instructions/prompt-prefix.md#append-only)。在 Himawari 里用这两个钩子，只能在列表末尾追加；要缩短历史只能走压缩。
 
 ```typescript
 pi.on("context", async (event, ctx) => {
@@ -267,7 +267,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 ```
 
 - 什么时候压缩由设置决定：`contextTokens > contextWindow - reserveTokens`（`docs/compaction.md`“When It Triggers”）。
-- 让压缩请求沿用原对话的开头（[prompt-prefix 规则第 13 条](../.claude/rules/prompt-prefix.md#compaction)）已按 [ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md) 做：`session_before_compact` 只观察、返回空，由模型运行库的包装改写 Pi 自己发出的摘要请求。真要自己出摘要，用 `session_before_compact` 返回 `compaction`；官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
+- 让压缩请求沿用原对话的开头（[prompt-prefix 规则第 13 条](../.agents/instructions/prompt-prefix.md#compaction)）已按 [ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md) 做：`session_before_compact` 只观察、返回空，由模型运行库的包装改写 Pi 自己发出的摘要请求。真要自己出摘要，用 `session_before_compact` 返回 `compaction`；官方示例里的 `ctx.modelRegistry.complete` 在 Himawari 里要换成 Himawari 自己的模型调用入口，理由见[单次后台模型调用](#pattern-direct-call)。
 - 返回 `{ cancel: true }` 取消这次压缩。
 
 <a id="pattern-steer"></a>
@@ -358,7 +358,7 @@ SettingsManager.inMemory({
 
 1. 写出前提：官方文档和示例的原文（包名、版本、文件、行号、原话），说明官方写法具体缺什么。
 2. 写出至少两个办法，其中一个必须是“照官方写，接受它的缺点”，比较各自的代价。
-3. 写清它会不会改变模型已经见过的请求开头（[prompt-prefix 规则第八节](../.claude/rules/prompt-prefix.md#before-you-change)）。
+3. 写清它会不会改变模型已经见过的请求开头（[prompt-prefix 规则第八节](../.agents/instructions/prompt-prefix.md#before-you-change)）。
 4. 交 Andy 看。他同意后：新开一份 ADR 记下决定，在[第五节](#current-deviations)加一行，并加一条测试，让 Pi 升级后官方行为一变就失败。
 5. 升级 Pi 时，逐条重查第五节：新版本官方补上了的，改回官方写法。
 
