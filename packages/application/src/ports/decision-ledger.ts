@@ -39,6 +39,9 @@ export const DECISION_KINDS = [
   "rule_review",
   "web_push",
   "memory_review",
+  "limit_change",
+  "delivery_timing",
+  "proposal",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -69,6 +72,21 @@ export const DECISION_OUTCOMES = {
   ],
   web_push: ["deferred"],
   memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
+  limit_change: ["changed"],
+  delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
+  proposal: [
+    "proposed",
+    "blocked",
+    "accepted",
+    "dismissed",
+    "expired",
+    "executed",
+    "failed",
+    "undone",
+    "not_proposed",
+    "superseded",
+    "told",
+  ],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
@@ -142,7 +160,16 @@ export interface DecisionInputs {
   readonly summaryRead?: "off" | "ok" | "partial" | "failed";
   readonly summaryGenerated?: number;
   readonly profileBudget?: ProfileBudget | null;
+  readonly limitChange?: LimitChangeInput | null;
 }
+
+export interface LimitChangeInput {
+  readonly key: string;
+  readonly from: number | null;
+  readonly to: number | null;
+}
+
+export const LIMIT_CHANGE_REASON_CODE = "limit_changed_by_owner";
 
 export interface ProfileBudget {
   readonly limit: number;
