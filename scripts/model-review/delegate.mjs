@@ -162,7 +162,7 @@ ${
   task.replyTo
     ? `如果你有给其他会话发消息的工具，就给会话 ${task.replyTo} 发消息；没有就跳过，不要因此算失败，结果以推送到分支上的提交为准。\n开跑前发一行 REVIEW_DELEGATION_STARTED ${key}；\n结束后发一行 JSON：{"event":"REVIEW_DELEGATION_DONE","dir":"${key}","tip":"${task.tip}","exit":<脚本退出码>}，失败时 event 写 REVIEW_DELEGATION_FAILED 并加 "reason":"<错误码>"。\n`
     : ""
-}在你自己的最后回复里写：推送后的分支头提交、每个模型的 REVIEW_RESULT 行、GATEWAY_USAGE 行、REVIEW_SPENT_TOTAL 行。
+}在你自己的最后回复里写：推送后的分支头提交、每个模型的 REVIEW_RESULT 行、GATEWAY_USAGE 行、REVIEW_TIMING 行、全部 GATEWAY_REST 行、REVIEW_SPENT_TOTAL 行。
 
 ## 不许做的事
 
