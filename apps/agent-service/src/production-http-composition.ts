@@ -153,6 +153,11 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
+import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
@@ -769,6 +774,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
@@ -1158,6 +1164,13 @@ export async function createProductionHttpComposition(
         now: clock,
       })
     : undefined;
+  const proposalBox = new ProductionProposalBox({
+    configuration,
+    store: repository.ownerProposals(),
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1207,6 +1220,7 @@ export async function createProductionHttpComposition(
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          box: proposalBox,
           reviews: repository.ruleReviews(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
@@ -1388,6 +1402,11 @@ export async function createProductionHttpComposition(
     ...(options.proactive ? { proactiveControl: options.proactive } : {}),
     ...(options.museControl ? { museControl: options.museControl } : {}),
     ...(options.observation ? { observationControl: options.observation } : {}),
+    proposalControl: new ProductionProposalControl({
+      configuration,
+      box: proposalBox,
+      clock: { now: clock },
+    }),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),

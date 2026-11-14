@@ -1,6 +1,7 @@
 export * from "./authority-identities.js";
 export * from "./authorization.js";
 export * from "./automatic-action-review.js";
+export * from "./owner-intent-check.js";
 export * from "./automatic-memory.js";
 export * from "./backup-transfer.js";
 export * from "./built-in-identity.js";
@@ -48,6 +49,7 @@ export * from "./model-usage.js";
 export * from "./muse-intake.js";
 export * from "./observability.js";
 export * from "./owner-preferences.js";
+export * from "./owner-proposals.js";
 export * from "./owner-rules.js";
 export * from "./paired-devices.js";
 export * from "./persistence.js";

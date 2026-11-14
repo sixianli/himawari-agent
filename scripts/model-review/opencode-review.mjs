@@ -1220,6 +1220,60 @@ export function readUsage(out) {
   return parseUsage(readFileSync(path, "utf8"), path);
 }
 
+export const DAILY_SPEND_LINE_USD = 5;
+const JAPAN_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function reviewLedgers(repo) {
+  const dir = join(repo, REVIEWS_DIR);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (entry.name.startsWith("pr-") || entry.name.startsWith("topic-")) &&
+        existsSync(join(dir, entry.name, "usage.jsonl")),
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+export function claimsFileRecords(repo, claimsFile, exceptKey) {
+  return reviewLedgers(repo)
+    .filter((key) => key.startsWith("topic-") && key !== exceptKey)
+    .flatMap((key) => readUsage(join(repo, REVIEWS_DIR, key)))
+    .filter((record) => record.mode === "plan-claims" && record.claimsFile === claimsFile);
+}
+
+export function dailySpend(repo, date) {
+  const items = [];
+  for (const key of reviewLedgers(repo)) {
+    const records = readUsage(join(repo, REVIEWS_DIR, key)).filter((record) => {
+      const ms =
+        typeof record.at === "string" && record.at.endsWith("Z") ? Date.parse(record.at) : NaN;
+      const shifted = ms + JAPAN_OFFSET_MS;
+      if (!Number.isFinite(ms) || Math.abs(shifted) > 8.64e15)
+        throw new Error(
+          `USAGE_LEDGER_INVALID ${join(REVIEWS_DIR, key)} at=${JSON.stringify(String(record.at).slice(0, 40))}`,
+        );
+      return new Date(shifted).toISOString().slice(0, 10) === date;
+    });
+    if (records.length > 0) items.push({ key, usd: spentOf(records), records: records.length });
+  }
+  const total = items.reduce((sum, item) => sum + item.usd, 0);
+  return { date, total, items, over: total > DAILY_SPEND_LINE_USD };
+}
+
+export function spendDayLines({ date, total, items, over }) {
+  return [
+    ...items.map(
+      (item) =>
+        `REVIEW_SPEND_DAY_ITEM ${item.key} usd=${item.usd.toFixed(3)} records=${item.records}`,
+    ),
+    `REVIEW_SPEND_DAY date=${date} total=${total.toFixed(3)} line=${DAILY_SPEND_LINE_USD} over=${over ? "yes" : "no"}`,
+    "只读这个工作区里已有的 usage.jsonl（按日本时间的日期）：别的分支上还没合进来的复核不在内，所以先合最新 main 再看。",
+  ];
+}
+
 export function resultLine(record) {
   return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
 }
@@ -3262,6 +3316,7 @@ export function promptFileName(model) {
 
 export const SUBCOMMAND_ONLY_OPTIONS = ["--main-ref", "--stop", "--andy-quote"];
 export const ROUND_TOOL_OPTIONS = ["--judge-skeleton", "--finish-round", "--pr", "--repo"];
+export const SPEND_DAY_OPTIONS = ["--spend-day", "--repo", "--date"];
 export const ASSERT_OPTIONS = [
   "--assert-reviewed",
   "--pr",
@@ -3324,7 +3379,16 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--require-gateway") options.requireGateway = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
-    else if (key === "--judge-skeleton") options.judgeSkeleton = true;
+    else if (key === "--spend-day") options.spendDay = true;
+    else if (key === "--date") {
+      options.date = take();
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(options.date) ||
+        Number.isNaN(Date.parse(options.date)) ||
+        new Date(Date.parse(options.date)).toISOString().slice(0, 10) !== options.date
+      )
+        throw new Error("ARG_INVALID --date");
+    } else if (key === "--judge-skeleton") options.judgeSkeleton = true;
     else if (key === "--finish-round") options.finishRound = true;
     else if (key === "--stop") options.stop = take();
     else if (key === "--andy-quote") {
@@ -3384,6 +3448,13 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
+  if (options.date !== undefined && !options.spendDay)
+    throw new Error("ARG_ONLY_FOR_SPEND_DAY --date");
+  if (options.spendDay) {
+    const extra = [...given].filter((key) => !SPEND_DAY_OPTIONS.includes(key));
+    if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
+    return options;
+  }
   if (options.judgeSkeleton || options.finishRound) {
     if (options.judgeSkeleton && options.finishRound) throw new Error("ARG_SKELETON_AND_FINISH");
     const extra = [...given].filter((key) => !ROUND_TOOL_OPTIONS.includes(key));
@@ -3663,6 +3734,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2), {
     defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
   });
+  if (options.spendDay) {
+    const today = new Date(Date.now() + JAPAN_OFFSET_MS).toISOString().slice(0, 10);
+    for (const line of spendDayLines(dailySpend(options.repo, options.date ?? today)))
+      console.log(line);
+    return;
+  }
   if (options.report) {
     for (const line of reviewReport(options)) console.log(line);
     return;
@@ -3752,11 +3829,15 @@ async function main() {
   const proxyProblems = proxyCredentialProblems(process.env);
   if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
+  const sameFileRecords =
+    options.selfCheckOnly || options.mode !== "plan-claims"
+      ? []
+      : claimsFileRecords(options.repo, options.claimsFile, reviewKey(options));
   const overBudget = options.selfCheckOnly
     ? null
     : budgetCheck({
         mode: options.mode,
-        records,
+        records: [...records, ...sameFileRecords],
         models: options.models,
         approvedUsd: options.approvedUsd,
       });

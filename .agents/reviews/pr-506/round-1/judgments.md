@@ -1,0 +1,9 @@
+# PR 506 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：1. 中：规则说 `--spend-day` “只算已合进 main 的账本”，代码实际算工作区里所有账本。owner-standing-rules.md:17 原写“只算已合进 main 的账本”，opencode-review.mjs reviewLedgers 读工作区目录；已把规则改成与 model-review.md 一致的“只算这个工作区里已有的账本，先合最新 main”；触发：协调者在功能分支工作区跑 --spend-day，照规则以为只含 main；后果：把本分支未合进 main 的账本也算进当天合计，数偏高，只会让问 Andy 更早，不会漏问；判低理由：偏保守，不会漏掉先问线，只是文字和代码不符
+- 2（deepseek-v4.1-flash）成立，可以更好：2. 中：别的 topic 账本损坏会挡住无关的 plan-claims 复核，且让 `--spend-day` 整条命令失败。预算路径遇到坏账本拒绝是有意的“失败即拒绝”，宁可挡住也不静默少算；错误信息 USAGE_LEDGER_INVALID 已带出坏账本的路径和行号，不是模型说的指不出坏账本；要坏掉一行已提交的账本才触发，建议不采纳，分批汇总会放宽预算门
+- 3（deepseek-v4.1-flash）成立，会出错，低：3. 中：`at` 不是合法时间字符串时，`dailySpend` 会抛 `RangeError`，而不是给出可读错误。parseUsage 只对 plan-claims 校验 at；dailySpend 对其他模式直接 Date.parse 再 toISOString。已改成抛 USAGE_LEDGER_INVALID 并带账本名，测试里写 at 为 not-a-date 的账本断言报错；触发：某本账本里非 plan-claims 记录的 at 是无法解析的字符串（手改账本）；后果：--spend-day 以 RangeError 崩溃，不指出哪本账；判低理由：只有手改坏账本才触发，且只是报错退出，不丢数据不放宽预算
+- 4（deepseek-v4.1-flash）成立，可以更好：4. 中低：`--repo` 写错或不存在时，`--spend-day` 静默报 0，plan-claims 也静默少算别的 topic。默认 --repo 来自脚本自身路径，只有手动传了拼错的 --repo 才触发；现有测试固化了缺目录返回空，别的子命令也这样处理；建议不采纳，要改须同时改默认行为和现有测试
+- 5（deepseek-v4.1-flash）成立，会出错，低：5. 低：`--date` 只校验格式和 `Date.parse` 可解析，不保证是真实日历日期；测试没有覆盖。实测 node 里 Date.parse('2026-02-31') 返回有限数；已改成回环比对 toISOString 日期，并在 parseArgs 测试里补 2026-02-31 的拒绝用例；触发：传 --date 2026-02-31；后果：通过校验，但没有任何记录的日期会等于它，打印 total=0 over=no，像是那天没花钱
+- 6（deepseek-v4.1-flash）成立，可以更好：6. 低：预算已把别的 topic 算进来，但 `REVIEW_SPENT_TOTAL` 仍只报当前账本，规则却让人用它汇报费用。REVIEW_SPENT_TOTAL 的口径一直是本账本累计，门槛因跨 topic 多算时超限会另行拒绝并说明；多打一行是增加输出，不改变现有行为，不属于出错；建议不采纳或留给后续
+- 7（deepseek-v4.1-flash）不成立：7. 低：未知参数写入 stderr 后立即 `process.exit(2)`，可能截断输出；参数内容也未做控制字符处理。Linux 和 macOS 上 process.stderr 对管道和文件是同步写，process.exit 前已写完，不会截断（Node 文档 process.stdout/stderr 的同步说明）；未知参数来自本机命令行，输出控制字符只影响自己终端，测试已覆盖 INCIDENT_ARGUMENT_UNKNOWN 退出码 2

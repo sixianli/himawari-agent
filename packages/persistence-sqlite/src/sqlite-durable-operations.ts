@@ -97,6 +97,7 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
+import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
@@ -370,6 +371,7 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
+  private readonly ownerProposals: SqliteOwnerProposalOperations;
   private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
@@ -459,6 +461,7 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
+    this.ownerProposals = new SqliteOwnerProposalOperations(database, fail, assertDiskHeadroom);
     this.correctionReview = new SqliteCorrectionReviewOperations(
       database,
       fail,
@@ -670,6 +673,8 @@ export class SqliteDurableOperations {
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
+    if (operation.startsWith("ownerProposal."))
+      return this.ownerProposals.execute(operation, payload);
     if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
       return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))

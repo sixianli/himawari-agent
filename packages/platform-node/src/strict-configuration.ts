@@ -44,6 +44,7 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type OwnerIntentCheckConfiguration,
   type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
@@ -1345,6 +1346,29 @@ function parseMcpRead(value: unknown): NonNullable<RunPolicyConfiguration["mcpRe
   return Object.freeze({ audience, proposals: true as const });
 }
 
+function parseOwnerProposals(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["ownerProposals"]> {
+  const field = "configuration.runPolicy.ownerProposals";
+  const input = record(value, field);
+  rejectUnknown(input, ["pendingLimit", "expiresAfterDays"], field);
+  return Object.freeze({
+    ...(input["pendingLimit"] === undefined
+      ? {}
+      : { pendingLimit: integer(input["pendingLimit"], `${field}.pendingLimit`, 1, 200) }),
+    ...(input["expiresAfterDays"] === undefined
+      ? {}
+      : {
+          expiresAfterDays: integer(
+            input["expiresAfterDays"],
+            `${field}.expiresAfterDays`,
+            1,
+            3650,
+          ),
+        }),
+  });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1582,6 +1606,18 @@ function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
   });
 }
 
+function parseOwnerIntentCheck(value: unknown): OwnerIntentCheckConfiguration {
+  const field = "configuration.runPolicy.ownerIntentCheck";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "modelRef"], field);
+  return Object.freeze({
+    enabled: boolean(input["enabled"], `${field}.enabled`),
+    minConfidence: integer(input["minConfidence"], `${field}.minConfidence`, 500, 1000),
+    timeoutMs: integer(input["timeoutMs"], `${field}.timeoutMs`, 500, 30000),
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1591,6 +1627,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "timeZone",
       "approvalBodyPreviewCharacters",
       "toolRefusals",
+      "ownerIntentCheck",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1612,6 +1649,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "importDuplicates",
       "realEval",
       "mcpRead",
+      "ownerProposals",
     ],
     "configuration.runPolicy",
   );
@@ -1648,6 +1686,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["toolRefusals"] === undefined
       ? {}
       : { toolRefusals: parseToolRefusals(input["toolRefusals"]) }),
+    ...(input["ownerIntentCheck"] === undefined
+      ? {}
+      : { ownerIntentCheck: parseOwnerIntentCheck(input["ownerIntentCheck"]) }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
@@ -1675,6 +1716,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { museIntake: parseMuseIntake(input["museIntake"]) }),
     ...(input["mcpRead"] === undefined ? {} : { mcpRead: parseMcpRead(input["mcpRead"]) }),
+    ...(input["ownerProposals"] === undefined
+      ? {}
+      : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
