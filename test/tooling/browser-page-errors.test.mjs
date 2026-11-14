@@ -199,6 +199,11 @@ it("[webkit-teardown] 扫描能找出启动了浏览器却不收页面报错的�
       path.join(root, "persistent.mjs"),
       "await chromium.launchPersistentContext(dir);\n",
     );
+    await writeFile(path.join(root, "server.mjs"), "await chromium.launchServer ({});\n");
+    await writeFile(
+      path.join(root, "server-collected.mjs"),
+      "await chromium.launchServer();\ncollectPageErrors(page);\n",
+    );
     await writeFile(path.join(root, "render-brand-assets.mjs"), "await chromium.launch();\n");
     await writeFile(path.join(root, "notes.md"), "chromium.launch()\n");
     expect(await findUnwatchedBrowserLaunches(root, new Set(["render-brand-assets.mjs"]))).toEqual([
@@ -206,6 +211,7 @@ it("[webkit-teardown] 扫描能找出启动了浏览器却不收页面报错的�
       "demo/nested.ts",
       "imported.mjs",
       "persistent.mjs",
+      "server.mjs",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });
