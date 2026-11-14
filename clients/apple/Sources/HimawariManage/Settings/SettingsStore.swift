@@ -14,6 +14,7 @@ public final class SettingsStore {
     public private(set) var phase: Phase = .loading
     public private(set) var waitingCapabilities: [CapabilitySummary] = []
     public private(set) var capabilitiesInUse: [CapabilitySummary] = []
+    public private(set) var capabilitiesDisabled: [CapabilitySummary] = []
 
     public private(set) var devices: [PairedDevice] = []
     public private(set) var server: ServerReach?
@@ -22,7 +23,7 @@ public final class SettingsStore {
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
 
-    public var capabilityCount: Int { waitingCapabilities.count + capabilitiesInUse.count }
+    public var capabilityCount: Int { waitingCapabilities.count + capabilitiesInUse.count + capabilitiesDisabled.count }
 
     @ObservationIgnored let gateway: ManageGateway
     @ObservationIgnored let identity: DeviceIdentity?
@@ -41,6 +42,7 @@ public final class SettingsStore {
             let all = try await capabilities
             waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
             capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
+            capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
             devices = try await listed.devices
             phase = .loaded
         } catch {
@@ -48,6 +50,29 @@ public final class SettingsStore {
         }
         server = await status
         loginDevices = await logins
+    }
+
+    public func disable(_ capability: CapabilitySummary, reason: String) async throws {
+        defer { Task { await reloadCapabilities() } }
+        _ = try await gateway.command(
+            .v2,
+            "capability.disable",
+            payload: [
+                "capabilityRef": .string(capability.capabilityRef),
+                "expectedRevision": .number(Double(capability.revision)),
+                "reasonCode": .string(Self.ownerDisabledReason),
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
+
+    static let ownerDisabledReason = "owner_disabled"
+
+    public func reloadCapabilities() async {
+        guard let all = try? await loadCapabilities() else { return }
+        waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
+        capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
+        capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
     }
 
     public func reloadLoginDevices() async {

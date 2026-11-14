@@ -44,6 +44,15 @@ enum M {
     static var capabilities: String { text("它会的本事", ja: "できること", en: "What it can do") }
     static var waitingForYou: String { text("等你看", ja: "確認待ち", en: "Waiting for you") }
     static var inUse: String { text("在用", ja: "使用中", en: "In use") }
+    static var disabledCapabilities: String { text("停用了", ja: "停止中", en: "Turned off") }
+    static func capabilityExpansions(_ items: [String]) -> String? {
+        guard !items.isEmpty else { return nil }
+        let joined = items.joined(separator: "、")
+        return text("多了：\(joined)，要你同意", ja: "追加：\(joined)。確認が必要です", en: "Adds: \(joined). Needs your approval")
+    }
+    static func confirmDisableCapability(_ name: String) -> String {
+        text("停用“\(name)”", ja: "「\(name)」を停止", en: "Turn off \"\(name)\"")
+    }
     static var noCapabilities: String { text("还没有装上的本事", ja: "まだ何も入っていません", en: "Nothing installed yet") }
     static var confirmAdopt: String { text("采纳这条改进", ja: "この改善を採用", en: "Adopt this improvement") }
     static var confirmReject: String { text("不要这条改进", ja: "この改善を見送る", en: "Turn down this improvement") }
@@ -139,6 +148,13 @@ enum M {
         return date.formatted(style.locale(Locale(identifier: ManageLanguage.current == .en ? "en_US" : ManageLanguage.current == .ja ? "ja_JP" : "zh_CN")))
     }
 
+    static func pairedDay(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.month, .day], from: date)
+        let month = parts.month ?? 1
+        let day = parts.day ?? 1
+        return text("\(month) 月 \(day) 日", ja: "\(month)月\(day)日", en: date.formatted(.dateTime.month(.abbreviated).day().locale(Locale(identifier: "en_US"))))
+    }
+
     static var server: String { text("服务器", ja: "サーバー", en: "Server") }
 
     static func serverState(_ reach: ServerReach) -> String {
@@ -232,6 +248,12 @@ enum M {
     static var exportLeaveAndReturn: String { text("可以先离开，回来再看", ja: "いったん離れても大丈夫。あとで見に来てください", en: "You can leave and come back") }
     static var stopExport: String { text("不导了", ja: "やめる", en: "Stop") }
     static var exportReady: String { text("打包好了", ja: "まとまりました", en: "Ready") }
+    static func exportExpiry(_ expiresAt: String, now: Date = Date()) -> String? {
+        guard let date = Timestamp.parse(expiresAt), date > now else { return nil }
+        let days = Int((date.timeIntervalSince(now) / 86_400).rounded(.up))
+        return text("\(days) 天后从服务器上删掉", ja: "\(days) 日後にサーバーから削除されます", en: "Deleted from the server in \(days) days")
+    }
+
     static func exportContents(_ result: DataExportResult) -> String {
         let size = ByteCountFormatter.string(fromByteCount: Int64(result.sizeBytes), countStyle: .file)
         return text(

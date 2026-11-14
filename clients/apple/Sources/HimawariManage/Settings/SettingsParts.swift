@@ -64,6 +64,7 @@ struct SettingsRow: View {
     var value: String? = nil
     var tone: Tone = .muted
     var chevron = false
+    var switchState: Binding<Bool>? = nil
     var last = false
 
     var body: some View {
@@ -86,6 +87,9 @@ struct SettingsRow: View {
                     Text(value)
                         .hmType(SL.rowValue)
                         .foregroundStyle(tone == .attention ? Color.hmDanger : tone == .good ? Color.hmSuccess : Color.hmMuted)
+                }
+                if let switchState {
+                    Toggle("", isOn: switchState).labelsHidden().tint(Color.hmSun)
                 }
                 if chevron {
                     Icon(.chevronRight, size: DesignTokens.IconSize.chevron).foregroundStyle(Color.hmMuted)

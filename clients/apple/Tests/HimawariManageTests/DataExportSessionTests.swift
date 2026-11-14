@@ -102,3 +102,15 @@ final class DataExportSessionTests: XCTestCase {
         XCTAssertEqual(export.stage, .idle)
     }
 }
+
+@MainActor
+final class ExportExpiryTextTests: XCTestCase {
+    func testExpiryShowsWholeDaysLeftAndNothingOnceGone() {
+        let now = Date(timeIntervalSince1970: 1_794_000_000)
+        let inSevenDays = ISO8601DateFormatter().string(from: now.addingTimeInterval(7 * 86_400 - 3_600))
+        let past = ISO8601DateFormatter().string(from: now.addingTimeInterval(-60))
+        XCTAssertTrue(M.exportExpiry(inSevenDays, now: now)?.contains("7") == true)
+        XCTAssertNil(M.exportExpiry(past, now: now))
+        XCTAssertNil(M.exportExpiry("not a date", now: now))
+    }
+}

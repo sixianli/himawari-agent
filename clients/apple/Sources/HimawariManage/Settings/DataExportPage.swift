@@ -6,6 +6,7 @@ import SwiftUI
 typealias XL = ManageLayout.ExportSheet
 
 struct DataExportPage: View {
+    @Environment(\.pairingClock) private var pairingClock
     let session: DataExportSession
     let back: () -> Void
     @State private var failed = false
@@ -69,6 +70,9 @@ struct DataExportPage: View {
         Text(M.exportReady).hmType(XL.title).foregroundStyle(Color.hmText)
         Text(M.exportContents(result)).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
             .multilineTextAlignment(.center)
+        if let expiry = M.exportExpiry(result.expiresAt, now: pairingClock ?? Date()) {
+            Text(expiry).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+        }
         if result.withheld > 0 {
             Text(M.exportWithheld(result.withheld)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
         }
