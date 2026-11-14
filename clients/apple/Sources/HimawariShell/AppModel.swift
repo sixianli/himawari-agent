@@ -131,6 +131,10 @@ public final class AppModel {
 
     @ObservationIgnored var demoHost: String?
 
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
+
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
         return record.map { Self.host($0.origin) } ?? demoHost
