@@ -1543,6 +1543,8 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
     askLimit: [0, 20],
     answerCharacters: [1, 2000],
     minimumCoveragePercent: [1, 100],
+    indexTermLimit: [1, 100000],
+    indexRebuildBatch: [1, 1000],
   } as const satisfies Record<keyof typeof DEFAULT_SEARCH_ASK, readonly [number, number]>;
   const keys = Object.keys(bounds) as (keyof typeof bounds)[];
   rejectUnknown(input, keys, field);
