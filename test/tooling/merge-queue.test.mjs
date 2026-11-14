@@ -17,7 +17,7 @@ import {
   touchesProtected,
   validateState,
 } from "../../scripts/ci/merge-queue.mjs";
-import { REVIEW_NOT_COVERED_EXIT } from "../../scripts/model-review/opencode-review.mjs";
+import { REVIEW_NOT_COVERED_EXIT } from "../../scripts/model-review/exit-codes.mjs";
 
 const repository = "sixianli/himawari-agent";
 const identity = {

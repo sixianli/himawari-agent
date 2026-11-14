@@ -47,6 +47,7 @@ import {
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
+import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -1441,12 +1442,7 @@ export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
   return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
 }
 
-export const REVIEW_NOT_COVERED_EXIT = 5;
-export const REVIEW_RECORD_ERRORS = [
-  "USAGE_LEDGER_INVALID",
-  "REVIEW_ROUND_HEADS_DIFFER",
-  "VERDICTS_INVALID",
-];
+export const REVIEW_RECORD_ERRORS = ["USAGE_LEDGER_INVALID", "REVIEW_ROUND_HEADS_DIFFER"];
 
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;

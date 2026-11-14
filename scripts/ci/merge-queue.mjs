@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { REVIEW_NOT_COVERED_EXIT } from "../model-review/opencode-review.mjs";
+import { REVIEW_NOT_COVERED_EXIT } from "../model-review/exit-codes.mjs";
 
 export const queueLabel = "merge-queue";
 export const failedLabel = "merge-queue-failed";
