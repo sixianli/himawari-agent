@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -497,7 +505,25 @@ describe("complete-attempt gate", () => {
       path.join(evidence, "result.json"),
       JSON.stringify({ cases: [], scope: "fixture" }),
     );
+    const browserResultFile = path.join(directory, browserFolder, "result.json");
+    const browserResult = JSON.parse(readFileSync(browserResultFile, "utf8"));
+    const nested = "browser/reports/execution-chain/result.json";
+    const nestedBytes = readFileSync(path.join(evidence, "result.json"));
+    const nestedReport = {
+      path: nested,
+      sha256: sha256(nestedBytes),
+      bytes: nestedBytes.length,
+      kind: "json",
+    };
+    browserResult.reports.push(nestedReport);
+    writeFileSync(browserResultFile, JSON.stringify(browserResult));
+    const browserEnvelope = input.reports.find((envelope) => envelope.result.checkId === "browser");
+    browserEnvelope.result.reports.push(nestedReport);
     input.reports = readReportEnvelopes(directory);
+    expect(
+      input.reports.find((envelope) => envelope.source === path.join(browserFolder, "result.json"))
+        .artifacts,
+    ).toContainEqual({ path: nested, sha256: sha256(nestedBytes), bytes: nestedBytes.length });
     expect(input.reports.map((envelope) => envelope.source)).not.toContain(
       path.join(browserFolder, "browser/reports/execution-chain/result.json"),
     );

@@ -250,7 +250,7 @@ export function readReportEnvelopes(directory) {
   const walk = (current, insideResult) => {
     const entries = readdirSync(current, { withFileTypes: true });
     const holdsResult =
-      insideResult || entries.some((entry) => entry.isFile() && entry.name === "result.json");
+      insideResult || entries.some((entry) => !entry.isDirectory() && entry.name === "result.json");
     for (const entry of entries) {
       const filename = path.join(current, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Symbolic link in reports: ${filename}`);
