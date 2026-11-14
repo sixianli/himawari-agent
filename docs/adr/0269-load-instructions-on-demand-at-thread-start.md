@@ -31,20 +31,20 @@ date: "2026-11-14"
 2. `@` 引用的文件和引用它的 `CLAUDE.md` 一起全量载入，不省上下文。来源：[Claude Code 文档 memory 一页](https://code.claude.com/docs/en/memory)，原话“Imports help you organize a long file but don't reduce its context cost, because imported files load together with the CLAUDE.md that imports them”。
 3. 本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。
 4. 改动前，事故规则要求每个线程开工时通读事故清单：`.claude/rules/incident-gates.md` 第 9 行（提交 `120fdd9`）原话“读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。”；[ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 原话“每个线程开工时读，收尾时更新”。
-5. 改动前，事故清单 `docs/incidents-and-gates.md` 有 184413 字节、96 条，其中 90 条“已落门槛”、5 条“缺门槛”、1 条“仓库外”（提交 `120fdd9`，用 `node scripts/check-incident-gates.mjs` 读出的状态统计）。
-6. 改动前，只追加规则 `.claude/rules/prompt-prefix.md` 有 14505 字节，开局自动载入（提交 `120fdd9`）。
+5. 事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态），绝大多数行的状态是“已落门槛”。
+6. 改动前，只追加规则放在 `.claude/rules/prompt-prefix.md`，属于前提 1 里开局自动载入的范围（提交 `120fdd9`）。
 
 <a id="context"></a>
 
 ## 背景
 
-Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开一个线程，开局载入了哪些上下文、是不是全部一起载入”。分析结果（按字数估算 token，没有用分词器实测）：
+Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开一个线程，开局载入了哪些上下文、是不是全部一起载入”。分析发现：
 
-- 开局自动载入的仓库内容约 1.69 万 token：`AGENTS.md` 约 4.5k、`.claude/rules/` 下五个文件约 12.4k，其中只追加规则 `prompt-prefix.md` 一份就约 4.7k。
-- 事故规则还要求开工通读整份事故清单，约 5.8 万 token；而开工时真正用得上的，只有还没关闭的 6 条。
+- 开局自动载入的仓库内容里，篇幅最大的几份是 `AGENTS.md`、Andy 的全局指令和只追加规则。
+- 事故规则还要求开工通读整份事故清单，而清单是全部仓库指令里最长的一份；开工时真正用得上的，只有还没关闭的那几条。
 - 这些内容留在上下文里，之后每一轮请求都要重发。
 
-只追加规则只在改发给模型的内容时才用得上：2026-11-01 以来 910 个提交里，动到 `packages/prompt-catalog`、`packages/runtime-pi`、`packages/sensitive-capture` 的只有 72 个（约 8%）。
+只追加规则只在改发给模型的内容时才用得上，大多数线程（例如改界面、改上线脚本、写文档）用不到它。按字数估算的 token 数和提交统计写在 PR 495 的说明里，没有用分词器实测，这里不重复。
 
 <a id="owner-decisions"></a>
 
@@ -85,11 +85,11 @@ Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开
 
 ## 后果
 
-- 正面：开局自动载入的仓库内容从约 1.69 万 token 降到约 1.2 万；加上不再通读事故清单，每个线程开局少约 6 万 token，之后每一轮也少带这么多。
+- 正面：开局自动载入的内容少了只追加规则和 `AGENTS.md` 里的细节，开工也不再通读事故清单；省下的上下文之后每一轮都不用再带（PR 495 说明里按字数估算，每个线程开局约少 6 万 token）。
 - 负面：
   - 改发给模型内容的线程，要靠 `AGENTS.md` 里的那 5 个问题想起去读只追加规则。漏读时，还有 `npm run check:prompt-prefix` 和合并前复核的必问题“这个改动会不会改变模型已经见过的请求开头”兜底。
   - 线程开工时多跑一条命令。
-- 后续：大约 30 份 ADR 和文档里指向旧路径 `.claude/rules/prompt-prefix.md` 的链接已同步改成新路径；`.agents/reviews/` 下的历史复核记录不改。
+- 后续：`docs/` 下指向只追加规则的链接已同步改成新路径 `.agents/instructions/prompt-prefix.md`。
 
 <a id="references"></a>
 
