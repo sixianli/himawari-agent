@@ -190,6 +190,14 @@ export function upgradeRetiredTestChecks(policy) {
   return upgraded;
 }
 
+export function upgradePolicyWithoutTests(policy) {
+  const check = policy?.checks?.find((entry) => entry.id === "policy");
+  if (!check || !sameSet(check.projects ?? [], ["tooling"])) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks.find((entry) => entry.id === "policy").projects = [];
+  return upgraded;
+}
+
 const runnerLabelFor = (checkId) =>
   checkId === "required"
     ? gateRunnerLabel
@@ -350,9 +358,7 @@ export function validatePolicy(
         ? legacyCoverage
           ? ["unit", "contracts", "tooling"]
           : mainProjects
-        : check.id === "policy"
-          ? ["tooling"]
-          : [];
+        : [];
     assert(sameSet(check.projects, requiredProjects), `Incomplete project selection: ${check.id}`);
     const requiredKeys =
       check.id === "build"
@@ -1242,11 +1248,13 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeArmRunnerPolicy(
-      upgradeGateRunnerPolicy(
-        upgradeRetiredTestChecks(
-          upgradeArtifactRetention(
-            upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    upgradePolicyWithoutTests(
+      upgradeArmRunnerPolicy(
+        upgradeGateRunnerPolicy(
+          upgradeRetiredTestChecks(
+            upgradeArtifactRetention(
+              upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+            ),
           ),
         ),
       ),

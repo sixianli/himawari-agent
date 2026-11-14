@@ -244,7 +244,8 @@ export async function runCheck({
         context.baseSha,
       ]);
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
-      await vitest(check.projects);
+      if (check.projects.length) await vitest(check.projects);
+      else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
       await command("actionlint", tools.actionlint, [

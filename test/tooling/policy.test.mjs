@@ -30,6 +30,7 @@ import {
   upgradeArmRunnerPolicy,
   upgradeGateRunnerPolicy,
   upgradeHostedRunnerPolicy,
+  upgradePolicyWithoutTests,
   upgradeRetiredTestChecks,
   upgradeRunnerLabel,
   validatePolicy,
@@ -1219,6 +1220,27 @@ describe("CI policy contract", () => {
     const checkOnGate = workflow();
     checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
     expect(() => validateWorkflow(policy, stringify(checkOnGate), lock)).toThrow();
+  });
+  it("policy 作业不再跑测试：策略里 projects 为空，基准上写着 tooling 的策略升级成空", () => {
+    expect(policy.checks.find((check) => check.id === "policy").projects).toEqual([]);
+    const accepted = clone();
+    accepted.checks.find((check) => check.id === "policy").projects = ["tooling"];
+    const upgraded = upgradePolicyWithoutTests(accepted);
+    expect(upgraded).toEqual(policy);
+    expect(accepted.checks.find((check) => check.id === "policy").projects).toEqual(["tooling"]);
+    expect(upgradePolicyWithoutTests(policy)).toBe(policy);
+    const other = clone();
+    other.checks.find((check) => check.id === "policy").projects = ["unit"];
+    expect(upgradePolicyWithoutTests(other)).toBe(other);
+  });
+  it("反向：policy 作业重新带上 tooling，或 coverage 少了 tooling，策略都被拒", () => {
+    const withTooling = clone();
+    withTooling.checks.find((check) => check.id === "policy").projects = ["tooling"];
+    expect(() => validatePolicy(withTooling)).toThrow("Incomplete project selection: policy");
+    const withoutTooling = clone();
+    const coverage = withoutTooling.checks.find((check) => check.id === "coverage");
+    coverage.projects = coverage.projects.filter((id) => id !== "tooling");
+    expect(() => validatePolicy(withoutTooling)).toThrow("Incomplete project selection: coverage");
   });
   it("[ADR-0266] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
     expect(armChecks).toEqual(["policy", "static", "security"]);

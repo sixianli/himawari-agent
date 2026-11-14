@@ -17,7 +17,7 @@
           "node": "22.22.3"
         }
       ],
-      "projects": ["tooling"],
+      "projects": [],
       "outputs": ["json"]
     },
     {
