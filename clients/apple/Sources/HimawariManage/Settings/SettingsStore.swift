@@ -19,6 +19,7 @@ public final class SettingsStore {
     public private(set) var server: ServerReach?
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
+    public private(set) var proposals: ProposalList?
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
 
@@ -35,6 +36,7 @@ public final class SettingsStore {
     public func load() async {
         async let status = loadServerReach()
         async let logins = try? loadLoginDevices()
+        async let listedProposals = try? loadProposals()
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
@@ -48,6 +50,7 @@ public final class SettingsStore {
         }
         server = await status
         loginDevices = await logins
+        proposals = await listedProposals
     }
 
     public func reloadLoginDevices() async {
@@ -80,6 +83,39 @@ public final class SettingsStore {
     }
 
     static let stillChangingReason: String? = "LOGIN_DEVICES_STILL_CHANGING"
+
+    public func reloadProposals() async {
+        if let listed = try? await loadProposals() { proposals = listed }
+    }
+
+    public func respond(_ proposal: Proposal, _ action: ProposalAction, reason: String) async throws -> ProposalOutcome {
+        do {
+            _ = try await gateway.command(
+                .v2,
+                "proposal.respond",
+                payload: [
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                    "action": .string(action.rawValue),
+                ],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+            await reloadProposals()
+            return .done(action)
+        } catch let error as ManageGatewayError {
+            guard case .rejected(let status, _, _) = error, status != 401, status != 403 else { throw error }
+            await reloadProposals()
+            guard let latest = proposals?.proposals.first(where: { $0.proposalId == proposal.proposalId }) else { return .gone }
+            guard latest.version != proposal.version || latest.fingerprint != proposal.fingerprint else { throw error }
+            return .changed(latest)
+        }
+    }
+
+    private func loadProposals() async throws -> ProposalList {
+        let data = try await gateway.read(.v2, "proposals.read")
+        return try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+    }
 
     public func shelf(_ origin: FileOrigin) -> FileShelf {
         shelves[origin] ?? FileShelf()

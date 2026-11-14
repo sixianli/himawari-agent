@@ -20,6 +20,7 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case exportReady = "19-settings-more-7-export-ready"
     case capabilities = "20-himawari-self-1-capabilities"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
+    case proposals = "20-himawari-self-3-proposals"
 }
 
 public struct ManageDemoView: View {
@@ -55,6 +56,8 @@ public struct ManageDemoView: View {
             exporting(.ready(ManageDemo.exportResult))
         case .loginBrowsers:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.loginBrowsers]) {}
+        case .proposals:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.proposals]) {}
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -135,6 +138,7 @@ enum ManageDemo {
         case "server.status.read":
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "login.devices.read": loginDevices
+        case "proposals.read": proposals
         case "capability.list":
             #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail"],"nextCursor":null}}"#
         default: "{}"
@@ -161,6 +165,18 @@ enum ManageDemo {
         let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-daysAgo * 86_400))
         let title = thread.map { #""\#($0)""# } ?? "null"
         return #"{"fileId":"\#(id)","threadId":"t1","threadTitle":\#(title),"name":"\#(name)","kind":"\#(kind)","origin":"\#(origin)","mediaType":"application/octet-stream","sizeBytes":2048,"version":1,"createdAt":"\#(at)","deleted":false,"contentPath":null}"#
+    }
+
+    private static var proposals: String {
+        let items = [
+            proposal("p1", "算出门时间时，雨天多留 10 分钟", "之后出门提醒在下雨天提前 10 分钟", "这个月有 2 次下雨天你出门晚了", figure: ("出门晚了的次数", 2, "提醒送到后 10 分钟内才出门的次数")),
+            proposal("p2", "开会时的提醒改成会后一起送", "会议期间的提醒先攒着，散会后一起送", "上周 5 条提醒在开会时送到，你都没看", figure: ("没看的提醒", 5, "开会时送到、之后两小时内没点开的提醒数")),
+        ]
+        return #"{"payload":{"proposals":[\#(items.joined(separator: ","))],"pendingCount":2,"limit":5,"expiresAfterDays":14,"generatedAt":"2026-11-12T00:00:00Z"}}"#
+    }
+
+    private static func proposal(_ id: String, _ summary: String, _ effect: String, _ reason: String, figure: (String, Int, String)) -> String {
+        #"{"proposalId":"\#(id)","version":1,"fingerprint":"fp-\#(id)","type":"rule","summary":"\#(summary)","effect":"\#(effect)","origin":"inferred","adoptable":true,"evidence":[{"kind":"observation","text":"\#(reason)","sources":[],"figures":[{"name":"\#(figure.0)","value":\#(figure.1),"definition":"\#(figure.2)"}]}],"proposedAt":"2026-11-10T00:00:00Z","expiresAt":"2026-11-24T00:00:00Z","refusedBefore":0}"#
     }
 
     private static var loginDevices: String {
