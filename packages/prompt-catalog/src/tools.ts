@@ -33,7 +33,7 @@ export const TOOL_RECALL = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-memory-recall.ts"],
   layer: "tools",
   output: "free-text",
-  text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况时 includeHistory 填 true。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
+  text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
 });
 
 export const TOOL_TASK_STATUS = fixedPrompt({
@@ -186,6 +186,18 @@ export const TOOL_RESULT_RECALL_UNAVAILABLE = fixedPrompt({
   text: "记忆暂时查不到。不要编造，告诉主人现在查不了记忆。",
 });
 
+export const TOOL_RESULT_RECALL_INPUT_INVALID = fixedPrompt({
+  id: "tool-result.recall-input-invalid",
+  purpose: "查记忆的参数不对时工具结果里的说明：告诉模型怎么改正后重查",
+  usedBy: [
+    "apps/agent-service/src/production-runtime-tools.ts",
+    "apps/agent-service/src/production-mcp-read.ts",
+  ],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；只能用工具定义里列出的参数。改正后再查一次。",
+});
+
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({
   id: "tool-result.reminder-memory-not-ready",
   purpose: "设提醒失败：主人还没有任何记忆",
@@ -309,7 +321,7 @@ export const MCP_TOOL_FIND_MEMORIES = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用，你正在处理的问题可能涉及主人的个人情况时先查一次。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。auto 填 true 时是随手查一下：最多返回 3 条，和问题不够相关就什么都不返回（memories 和 conversations 都是空的），这时不要说主人没有相关记忆。只读，不会改动任何记忆。",
+  text: "按问题查 Himawari 里主人的长期记忆和以前的对话摘要。需要了解主人的偏好、经历、计划、以前说过的事时使用，你正在处理的问题可能涉及主人的个人情况时先查一次。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；待确认的记忆标 tentative，只能当线索。auto 填 true 时是随手查一下：最多返回 3 条，和问题不够相关就什么都不返回（memories 和 conversations 都是空的），这时不要说主人没有相关记忆。只读，不会改动任何记忆。",
 });
 
 export const MCP_TOOL_TODAY_CONTEXT = fixedPrompt({
@@ -341,12 +353,20 @@ export const MCP_TOOL_RESULT_FAILED = fixedPrompt({
 
 export const MCP_TOOL_PROPOSE_MEMORY = fixedPrompt({
   id: "mcp.propose-memory",
-  purpose:
-    "对外 MCP 写工具 propose_memory 的描述：外部 agent 提议一条新记忆，主人在客户端确认后才保存",
+  purpose: "对外 MCP 写工具 propose_memory 的描述：外部 agent 提议一条新记忆，主人确认后才保存",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tools",
   output: "free-text",
-  text: "向主人提议在 Himawari 里新存一条长期记忆。调用后主人会在你所在的客户端里看到确认框，主人在确认框里选同意才会存下；拒绝、取消或超时都不会存。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类。只能在能弹出确认框的交互会话里使用。「以后每次都怎样做」这类规则不要用这个工具提。",
+  text: "向主人提议在 Himawari 里新存一条长期记忆。客户端能弹确认框时，主人在确认框里选同意就存下、选拒绝就不存；客户端不能弹框、主人没回答或关掉了确认框时，这条先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它。text 写一条完整、单独看也能懂的事实或偏好；category 选最贴近的分类；key 可选，写这条在你那边的固定编号（例如记忆文件里的条目路径），同一个 key 带来新内容时，还没确认的旧内容会被替换。同样的内容只会存一条，主人拒绝过的不会再出现。「以后每次都怎样做」这类规则不要用这个工具提。",
+});
+
+export const MCP_TOOL_PROPOSE_MEMORIES = fixedPrompt({
+  id: "mcp.propose-memories",
+  purpose: "对外 MCP 写工具 propose_memories 的描述：外部 agent 一次提议多条记忆，全部先存待确认",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "一次向主人提议多条长期记忆（最多 50 条），适合定时把你那边新记下的内容搬给 Himawari。每条都先存进「待确认」，主人之后在 Himawari 里确认了才会保存，确认前 Himawari 不会用它们；这个工具不弹确认框。每条的 text、category、key 和 propose_memory 的意思相同。结果按顺序逐条列出：pending 是已存进待确认，replaced 是被同一次调用里后面同一个 key 的条目替换了，already_saved 是同样的内容已经保存过，declined_before 是主人拒绝过同样的内容，invalid 是正文为空或超过 2000 字（分类不在九种里、超过 50 条时整次调用被拒），secret 是正文或 key 里像有密码、密钥或令牌，full 是主人那边待确认或刚处理过的内容太多，这一条没有存。同样的内容只会存一条，可以放心重发。",
 });
 
 export const MCP_PROPOSE_MEMORY_CONFIRM = templatePrompt({
@@ -397,11 +417,55 @@ export const MCP_PROPOSE_MEMORY_ALREADY_SAVED = fixedPrompt({
 
 export const MCP_PROPOSE_MEMORY_DECLINED = fixedPrompt({
   id: "mcp.propose-memory-declined",
-  purpose: "主人拒绝或取消提议时，返回给外部 agent 的文字",
+  purpose: "主人拒绝了这条提议，或之前拒绝过同样的内容时，返回给外部 agent 的文字",
   usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
   layer: "tool-result",
   output: "free-text",
   text: "主人没有同意，这条记忆没有保存。除非主人再次要求，不要重复提议同样的内容。",
+});
+
+export const MCP_PROPOSE_MEMORY_PENDING = templatePrompt({
+  id: "mcp.propose-memory-pending",
+  purpose: "提议的记忆存进待确认、等主人在 Himawari 里确认时，返回给外部 agent 的回执",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text(
+      "已收到，这条记忆存进了 Himawari 的「待确认」，主人在 Himawari 里确认后才会保存，在那之前 Himawari 不会用它。不要告诉主人已经存好了，也不用重复提议。提议编号：",
+    ),
+    slot("proposalId"),
+    text("；收到时间："),
+    slot("receivedAt"),
+  ],
+});
+
+export const MCP_PROPOSE_MEMORY_FULL = fixedPrompt({
+  id: "mcp.propose-memory-full",
+  purpose:
+    "待确认积了 1000 条，或者待确认加 30 天内拒绝、被替换还留着正文的共 5000 条时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有保存：主人那边待确认或刚处理过的内容太多了。请先别再提议新内容，等主人在 Himawari 里处理之后再提。",
+});
+
+export const MCP_PROPOSE_MEMORY_SECRET = fixedPrompt({
+  id: "mcp.propose-memory-secret",
+  purpose: "提议的正文或 key 里像有密码、密钥或令牌时，返回给外部 agent 的文字",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有保存：正文或 key 里像有密码、密钥或令牌，这类内容不能存进记忆。请去掉后再提议。",
+});
+
+export const MCP_PROPOSE_MEMORIES_RESULT = fixedPrompt({
+  id: "mcp.propose-memories-result",
+  purpose: "propose_memories 结果里附带的说明，告诉外部 agent 结果怎么读",
+  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "results 按提交顺序逐条列出结果。pending 的条目要等主人在 Himawari 里确认后才会保存，不要告诉主人已经存好了。",
 });
 
 export const MCP_PROPOSE_RULE_NOT_READY = fixedPrompt({
@@ -449,15 +513,6 @@ export const MCP_PROPOSE_MEMORY_INVALID = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "没有保存：text 去掉不可见字符后为空或超过 2000 字，或 category 不是允许的九种之一。",
-});
-
-export const MCP_PROPOSE_MEMORY_NOT_READY = fixedPrompt({
-  id: "mcp.propose-memory-not-ready",
-  purpose: "Himawari 记忆功能还没就绪时，返回给外部 agent 的文字",
-  usedBy: ["apps/agent-service/src/production-mcp-read.ts"],
-  layer: "tool-result",
-  output: "free-text",
-  text: "Himawari 的记忆功能还没准备好，这次没有保存。",
 });
 
 export const MCP_PROPOSE_MEMORY_FAILED = fixedPrompt({

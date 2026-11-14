@@ -373,7 +373,8 @@ export class SqliteProactiveOperations {
         ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
         ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET revision = excluded.revision,
           parameters = excluded.parameters, status = 'active', source = excluded.source,
-          updated_at = excluded.updated_at`,
+          updated_at = excluded.updated_at, review_after = NULL, review_attempts = 0,
+          review_failure = NULL, suspend_reason = NULL, suggestion = NULL`,
       )
       .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
     this.database

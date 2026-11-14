@@ -1,0 +1,4 @@
+{"id": "r3-1", "quote": "先写 `undone_revision` 再 `revise`，失败时会把别人的一次写入误判成“已撤销”", "valid": true, "class": "error", "severity": "medium-high", "modelSeverity": "高", "trigger": "撤销先记了预期版本号，改回时因主人刚好改了这条记忆而版本冲突", "consequence": "下次撤销把主人的那次修改当成已改回，跳过这条，整批显示已撤销但记忆没改回", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r3-2", "quote": "`applyProposal` 补做 `supersedes` 会取代不该取代的记忆", "valid": true, "class": "error", "severity": "medium-high", "modelSeverity": "中", "trigger": "用来取代的新记忆自己已被别的记忆取代；或回看中断后主人把旧记忆恢复，下次重试又取代它", "consequence": "一条已失效的记忆去取代别的记忆；或主人刚恢复的旧记忆被再次标成已取代", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r3-3", "quote": "`#settle` 的新判断没有对应的自动检查/反向用例", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}
+{"id": "r3-4", "quote": "`revised.revision !== expected` 的更正分支实际不可达，文档描述有误导", "valid": true, "class": "better", "model": "opencode-go/deepseek-v4.1-flash"}

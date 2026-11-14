@@ -1,0 +1,3 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "文档仍写“两条 `[I-94]`”，代码里已有三条", "valid": true, "class": "error", "severity": "low", "trigger": "读文档的人以为只有两条 [I-94] 用例", "consequence": "说明与代码不符，不会让人做错事", "modelSeverity": "低", "reason": "只是条数写得不准，没有行为错误，也不会误导人做错事"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增反向测试只断言 `code`，没有钉住具体拒绝点", "valid": true, "class": "error", "severity": "low", "trigger": "将来回归让第二次预留被别的 PORT_CONFLICT 拒绝", "consequence": "测试假通过；当前确实走到分级断言", "modelSeverity": "低", "reason": "当前不会误判，只有将来回归时才会假通过，不涉及运行时行为"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "四条失败日志的“装配测试”可能不在任何必过门里", "valid": true, "class": "better", "reason": "同第 2、3 轮：CI 的 unit 项目会跑这个文件，不改"}

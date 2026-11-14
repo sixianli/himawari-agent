@@ -57,20 +57,26 @@ describe("[P2-7] decision records point at a rule version", () => {
       expect(ruleKindOf(unknown)).toBe("unknown");
   });
 
-  it("[P2-7] shows a built-in rule with its word list, source and passing examples", () => {
-    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 1 }, undefined);
+  it("[P2-7] shows the money rule as one the model's yes/no feeds, with its source and passing examples", () => {
+    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 2 }, undefined);
     expect(view).toMatchObject({
       kind: "money_words",
       origin: "built_in",
       status: "active",
       current: false,
-      revision: 1,
-      source: "ADR 0106 第 4 条；ADR 0209",
+      revision: 2,
+      source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
       tests: { state: "passed", failedAt: null },
     });
     expect(view.tests.total).toBeGreaterThan(1);
-    expect(view.wording?.values).toEqual(BUILT_IN_RULE_VALUES[RULE_IDS.moneyWords]);
-    expect(view.wording?.values).toContain("invoice");
+    expect(view.wording?.values).toEqual([]);
+    expect(BUILT_IN_RULE_VALUES[RULE_IDS.moneyWords]).toBeUndefined();
+  });
+
+  it("[P2-7] REVERSE: the word-list revision 1 of the money rule is no longer in the code", () => {
+    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 1 }, undefined);
+    expect(view.wording).toBeNull();
+    expect(view.tests.state).toBe("unavailable");
   });
 
   it("[P2-7] refuses to describe a built-in revision the code does not have", () => {

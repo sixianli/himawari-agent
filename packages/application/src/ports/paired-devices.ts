@@ -56,7 +56,7 @@ export interface PairedDeviceStorePort {
       readonly now: string;
       readonly expiresAt: string;
     },
-  ): Promise<void>;
+  ): Promise<{ readonly expiresAt: string }>;
   redeemPairingCode(input: {
     readonly codeHash: string;
     readonly now: string;
@@ -71,6 +71,9 @@ export interface PairedDeviceStorePort {
   }): Promise<PairingRedeemResult>;
   readDevice(deviceId: string): Promise<PairedDevice | undefined>;
   listDevices(input: PairedDeviceScope): Promise<readonly PairedDevice[]>;
+  readOpenPairingCode(
+    input: PairedDeviceScope & { readonly now: string },
+  ): Promise<{ readonly expiresAt: string } | undefined>;
   confirmDevice(
     input: PairedDeviceScope & {
       readonly deviceId: string;

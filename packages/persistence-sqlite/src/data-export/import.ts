@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { proposalTextDigest } from "../external-proposal-text.js";
 import type { JsonValue } from "./canonical.js";
-import { validateAgainst } from "./schema.js";
-import { RULE_PARAMETERS_MAXIMUM_LENGTH, SEALED_FILE, SEALED_SCHEMA } from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -12,6 +11,14 @@ import {
   ruleParametersKey,
   storedRuleProblem,
 } from "./rules.js";
+import { validateAgainst } from "./schema.js";
+import {
+  externalProposalDigestKey,
+  externalProposalTextKey,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
+  SEALED_FILE,
+  SEALED_SCHEMA,
+} from "./schemas.js";
 import { unsealJson } from "./seal.js";
 import {
   DATA_EXPORT_ERROR_CODES,
@@ -21,7 +28,12 @@ import {
   type PortableFiles,
   type PortableTextDependencies,
 } from "./types.js";
-import { type ParsedMemory, type ParsedText, parsePortable } from "./verify.js";
+import {
+  type ParsedExternalProposal,
+  type ParsedMemory,
+  type ParsedText,
+  parsePortable,
+} from "./verify.js";
 
 export interface ImportOptions extends PortableTextDependencies {
   readonly database: Database.Database;
@@ -41,6 +53,7 @@ export interface ImportReport {
     readonly historyEventsWithoutOriginal: number;
     readonly decisionTextsWithoutOriginal: number;
     readonly rulesWithoutOriginal: number;
+    readonly externalProposalsWithoutOriginal: number;
     readonly evidenceNotImported: boolean;
   };
 }
@@ -69,11 +82,13 @@ const EMPTY_TARGET_TABLES = [
   "memory_people",
   "memory_import_batches",
   "memory_consolidation_runs",
+  "memory_conversation_reviews",
   "source_insights",
   "proactive_processed_messages",
   "muse_reference_entries",
   "rule_book_rules",
   "rule_book_history",
+  "external_memory_proposals",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -274,6 +289,48 @@ export async function importPortableExport(
       })),
     });
   }
+  const proposalPlans: {
+    readonly proposal: ParsedExternalProposal;
+    readonly textSha256: string;
+    readonly contentRef: string | null;
+  }[] = [];
+  let proposalsWithout = 0;
+  for (const proposal of parsed.externalProposals) {
+    const withheld = proposal.content?.withheld === true;
+    const digest = withheld
+      ? sealedText(externalProposalDigestKey(proposal.id))
+      : proposal.textSha256;
+    const text =
+      proposal.content === null
+        ? null
+        : original(externalProposalTextKey(proposal.id), proposal.content);
+    if (digest === null || (proposal.content !== null && text === null)) {
+      proposalsWithout += 1;
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/.test(digest) || (text !== null && proposalTextDigest(text) !== digest))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+        `其他 agent 的提议 ${proposal.id} 的正文摘要不对`,
+      );
+    proposalPlans.push({
+      proposal,
+      textSha256: digest,
+      contentRef:
+        proposal.content === null || text === null ? null : await protect(proposal.content, text),
+    });
+  }
+  const liveDigests = new Set<string>();
+  for (const { proposal, textSha256 } of proposalPlans) {
+    if (proposal.status === "superseded") continue;
+    if (liveDigests.has(textSha256))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `其他 agent 的提议 ${proposal.id} 的正文摘要和另一条没被替换的提议重复`,
+      );
+    liveDigests.add(textSha256);
+  }
+  const importedProposalIds = new Set(proposalPlans.map(({ proposal }) => proposal.id));
   const imported: PortableCounts = {
     memories: plans.length,
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
@@ -282,11 +339,14 @@ export async function importPortableExport(
     pairedDevices: 0,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
+    conversationReviews: parsed.conversationReviews.length,
+    conversationReviewChanges: 0,
     decisions: parsed.decisions.length,
     decisionSignals: parsed.decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: parsed.manifest.counts.markdownMemories,
     rules: rulePlans.length,
     enforcedRules: enforcedRuleCount(rulePlans.map(({ rule }) => rule)),
+    externalProposals: proposalPlans.length,
     ruleHistoryVersions: rulePlans.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence
@@ -301,6 +361,14 @@ export async function importPortableExport(
     (total, { changes }) => total + changes.length,
     0,
   );
+  const keptReviews = parsed.conversationReviews.map((review) => ({
+    review,
+    changes: review.changes.filter(({ memoryId }) => importedMemoryIds.has(memoryId)),
+  }));
+  imported.conversationReviewChanges = keptReviews.reduce(
+    (total, { changes }) => total + changes.length,
+    0,
+  );
 
   const report = (dryRun: boolean): ImportReport => ({
     dryRun,
@@ -310,6 +378,7 @@ export async function importPortableExport(
       historyEventsWithoutOriginal: historyWithout,
       decisionTextsWithoutOriginal: decisionWithout,
       rulesWithoutOriginal: rulesWithout,
+      externalProposalsWithoutOriginal: proposalsWithout,
       evidenceNotImported: evidence === null && parsed.manifest.counts.sealedEvidenceRows > 0,
     },
   });
@@ -450,11 +519,9 @@ export async function importPortableExport(
           pin.run(item.id, ownerId, agentId, item.pin.pinned ? 1 : 0, item.pin.updatedAt);
       }
       const indexable = plans.filter(({ memory: item }) => item.status === "active");
-      if (indexable.length > 0) {
-        const suffix = randomUUID();
-        const threadId = `data-import-thread-${suffix}`;
-        const checkpointId = `data-import-checkpoint-${suffix}`;
-        const generationId = `data-import-generation-${suffix}`;
+      const suffix = randomUUID();
+      const threadId = `data-import-thread-${suffix}`;
+      if (indexable.length > 0 || keptReviews.length > 0)
         database
           .prepare(
             `INSERT INTO threads (
@@ -462,6 +529,9 @@ export async function importPortableExport(
             ) VALUES (?, ?, ?, 1, 'open', ?, ?, ?)`,
           )
           .run(threadId, ownerId, agentId, now, now, now);
+      if (indexable.length > 0) {
+        const checkpointId = `data-import-checkpoint-${suffix}`;
+        const generationId = `data-import-generation-${suffix}`;
         database
           .prepare(
             `INSERT INTO thread_checkpoint_jobs (
@@ -542,6 +612,44 @@ export async function importPortableExport(
           for (const [position, id] of kept.entries()) basis.run(entry.id, position, id);
         }
       }
+      const review = database.prepare(
+        `INSERT INTO memory_conversation_reviews (id, owner_id, agent_id, thread_id, episode_id, episode_created_at, day, status, attempts, output_ref, error_code, started_at, finished_at, undone_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      );
+      const reviewChange = database.prepare(
+        `INSERT INTO memory_conversation_review_changes (review_id, memory_id, action, source_message_id, after_revision, before_superseded_by, before_valid_to, created_at, undone_revision)
+        VALUES (?, ?, ?, 'data-import', ?, ?, ?, ?, ?)`,
+      );
+      for (const { review: item, changes } of keptReviews) {
+        review.run(
+          item.id,
+          ownerId,
+          agentId,
+          threadId,
+          `data-import-episode:${item.id}`,
+          item.startedAt,
+          item.day,
+          item.status,
+          item.attempts,
+          item.errorCode,
+          item.startedAt,
+          item.finishedAt,
+          item.undoneAt,
+        );
+        for (const entry of changes)
+          reviewChange.run(
+            item.id,
+            entry.memoryId,
+            entry.action,
+            entry.afterRevision,
+            entry.beforeSupersededBy !== null && importedMemoryIds.has(entry.beforeSupersededBy)
+              ? entry.beforeSupersededBy
+              : null,
+            entry.beforeValidTo,
+            entry.createdAt,
+            entry.undoneRevision,
+          );
+      }
       const decision = database.prepare(
         `INSERT INTO decision_ledger (id, owner_id, agent_id, kind, scenario, checked_at, counts, verdict, outcome, reason_code, subject_ref, inputs, reason_ref, content_ref, push_source_key, cost_micros, duration_ms, owner_rating, rated_at, category, confidence_permille, inferred)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -591,8 +699,8 @@ export async function importPortableExport(
           );
       }
       const ruleRow = database.prepare(
-        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at, suspend_reason, review_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const ruleVersion = database.prepare(
         `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, change_reason, changed_at)
@@ -609,6 +717,8 @@ export async function importPortableExport(
           rule.source,
           rule.sourceMemoryId,
           rule.updatedAt,
+          rule.suspendReason ?? null,
+          rule.status === "needs_review" ? rule.updatedAt : null,
         );
         for (const version of versions)
           ruleVersion.run(
@@ -623,6 +733,50 @@ export async function importPortableExport(
             version.changeReason,
             version.changedAt,
           );
+      }
+      const proposal = database.prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, batch_id,
+          memory_id, superseded_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const proposalKey = database.prepare(
+        `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+        VALUES (?, ?, ?, ?, ?)`,
+      );
+      const proposalUnkeyed = database.prepare(
+        "INSERT INTO external_memory_proposal_unkeyed (proposal_id, client) VALUES (?, ?)",
+      );
+      for (const plan of proposalPlans) {
+        const item = plan.proposal;
+        proposal.run(
+          item.id,
+          ownerId,
+          agentId,
+          item.subjectRef,
+          item.client,
+          item.sourceKey,
+          plan.textSha256,
+          item.normalization,
+          plan.contentRef,
+          item.category,
+          item.classification,
+          item.status,
+          item.receivedAt,
+          item.decidedAt,
+          (item.status === "committed" && keptMemoryLink(item.memoryId) === null) ||
+            plan.contentRef === null
+            ? null
+            : item.batchId,
+          keptMemoryLink(item.memoryId),
+          item.supersededBy !== null && importedProposalIds.has(item.supersededBy)
+            ? item.supersededBy
+            : null,
+        );
+        for (const key of item.keys)
+          proposalKey.run(ownerId, agentId, key.client, key.sourceKey, item.id);
+        for (const client of item.unkeyedClients) proposalUnkeyed.run(item.id, client);
       }
       if (evidence) writeEvidence(database, ownerId, agentId, evidence, evidenceRefs);
     })

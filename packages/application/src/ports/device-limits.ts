@@ -118,6 +118,7 @@ export interface DeviceConfiguration {
   readonly signatureToleranceSeconds: number;
   readonly heartbeatSeconds: number;
   readonly connectionMaxSeconds: number;
+  readonly streamConnections: number;
   readonly limits: DeviceHardLimits;
 }
 
@@ -125,6 +126,7 @@ export const DEVICE_CONFIGURATION_DEFAULTS = Object.freeze({
   signatureToleranceSeconds: 60,
   heartbeatSeconds: 20,
   connectionMaxSeconds: 3600,
+  streamConnections: 4,
 });
 
 export function defaultDeviceHardLimits(): DeviceHardLimits {

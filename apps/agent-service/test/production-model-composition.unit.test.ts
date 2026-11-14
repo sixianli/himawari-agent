@@ -96,16 +96,15 @@ const descriptors = [primaryModel] as const;
 
 class RecordingRuntime {
   readonly models = new Map<string, unknown>();
-  readonly removedProviders: string[] = [];
+  readonly refreshes: { readonly allowNetwork?: boolean }[] = [];
 
   getModel(providerId: string, modelId: string): unknown | undefined {
     return this.models.get(`${providerId}:${modelId}`);
   }
 
-  registerProvider(providerId: string, config: Readonly<Record<string, unknown>>): void {
-    const models = config["models"];
-    if (!Array.isArray(models)) throw new Error("models missing");
-    for (const model of models) {
+  registerNativeProvider(provider: { readonly id: string; getModels(): readonly unknown[] }): void {
+    const providerId = provider.id;
+    for (const model of provider.getModels()) {
       if (model === null || typeof model !== "object" || Array.isArray(model)) {
         throw new Error("model invalid");
       }
@@ -115,10 +114,8 @@ class RecordingRuntime {
     }
   }
 
-  async setRuntimeApiKey(): Promise<void> {}
-
-  async removeRuntimeApiKey(providerId: string): Promise<void> {
-    this.removedProviders.push(providerId);
+  async refresh(options: { readonly allowNetwork?: boolean }): Promise<void> {
+    this.refreshes.push(options);
   }
 }
 
@@ -240,8 +237,9 @@ describe("production model composition", () => {
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
 
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
     await composition.close();
-    expect(runtime.removedProviders).toEqual([]);
+    expect(runtime.refreshes).toEqual([{ allowNetwork: false }]);
   });
 
   it("rejects unsafe secret sources and conflicting canonical descriptors", () => {

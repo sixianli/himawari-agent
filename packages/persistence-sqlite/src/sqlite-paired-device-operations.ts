@@ -57,6 +57,8 @@ export class SqlitePairedDeviceOperations {
         return this.readDevice(payload as string);
       case "pairedDevices.listDevices":
         return this.listDevices(payload as PairedDeviceScope);
+      case "pairedDevices.readOpenPairingCode":
+        return this.readOpenPairingCode(payload as Input<"readOpenPairingCode">);
       case "pairedDevices.confirmDevice":
         return this.confirmDevice(payload as Input<"confirmDevice">);
       case "pairedDevices.renameDevice":
@@ -77,13 +79,23 @@ export class SqlitePairedDeviceOperations {
     return value;
   }
 
-  private createPairingCode(input: Input<"createPairingCode">): void {
+  private createPairingCode(input: Input<"createPairingCode">): { readonly expiresAt: string } {
     this.assertDiskHeadroom();
     const now = this.time(input.now);
     const expiresAt = this.time(input.expiresAt);
     if (!/^[0-9a-f]{64}$/u.test(input.codeHash) || expiresAt <= now)
       this.fail("PORT_INVALID_OPERATION", "Pairing code is invalid");
-    this.database.transaction(() => {
+    return this.database.transaction(() => {
+      const open = this.database
+        .prepare(
+          `SELECT expires_at AS expiresAt FROM device_pairing_codes
+            WHERE code_hash = ? AND owner_id = ? AND agent_id = ? AND session_id = ?
+              AND used_at IS NULL AND expires_at > ?`,
+        )
+        .get(input.codeHash, input.ownerId, input.agentId, input.sessionId, now) as
+        | { expiresAt: string }
+        | undefined;
+      if (open) return { expiresAt: open.expiresAt };
       this.database
         .prepare(
           `DELETE FROM device_pairing_codes
@@ -97,6 +109,7 @@ export class SqlitePairedDeviceOperations {
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(input.codeHash, input.ownerId, input.agentId, input.sessionId, now, expiresAt);
+      return { expiresAt };
     })();
   }
 
@@ -153,6 +166,20 @@ export class SqlitePairedDeviceOperations {
         .run(now, device.id, input.codeHash);
       return { kind: "paired", device: this.requireDevice(device.id) };
     })();
+  }
+
+  private readOpenPairingCode(
+    input: Input<"readOpenPairingCode">,
+  ): { readonly expiresAt: string } | undefined {
+    const now = this.time(input.now);
+    const row = this.database
+      .prepare(
+        `SELECT expires_at AS expiresAt FROM device_pairing_codes
+          WHERE owner_id = ? AND agent_id = ? AND used_at IS NULL AND expires_at > ?
+          ORDER BY expires_at DESC LIMIT 1`,
+      )
+      .get(input.ownerId, input.agentId, now) as { expiresAt: string } | undefined;
+    return row ? { expiresAt: row.expiresAt } : undefined;
   }
 
   private readDevice(deviceId: string): PairedDevice | undefined {

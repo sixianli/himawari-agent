@@ -1,6 +1,6 @@
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v2" as const;
+export const FORMAT_VERSION = "himawari.data-export.v3" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
@@ -166,6 +166,55 @@ export const PAIRED_DEVICE_SCHEMA: JsonSchema = objectOf(
   "一台配对过的 iPhone、Apple Watch 或 Mac：名字、种类、状态。只供查看，导入时不恢复；公钥、配对码和请求随机值是凭据，不导出。",
 );
 
+export const EXTERNAL_PROPOSAL_CATEGORIES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+export const EXTERNAL_PROPOSAL_STATUSES = [
+  "pending",
+  "committed",
+  "rejected",
+  "superseded",
+] as const;
+
+export const externalProposalTextKey = (id: string): string => `externalProposal/${id}/content`;
+export const externalProposalDigestKey = (id: string): string =>
+  `externalProposal/${id}/textSha256`;
+
+export const EXTERNAL_PROPOSAL_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    subjectRef: text(1, 128),
+    client: text(1, 64),
+    sourceKey: nullable(text(1, 200)),
+    textSha256: nullable({ type: "string", pattern: "^[0-9a-f]{64}$" }),
+    normalization: text(1, 64),
+    category: enumOf(EXTERNAL_PROPOSAL_CATEGORIES),
+    classification: enumOf(["private", "sensitive"]),
+    status: enumOf(EXTERNAL_PROPOSAL_STATUSES),
+    receivedAt: timestamp,
+    decidedAt: nullable(timestamp),
+    batchId: nullable(text(1, 128)),
+    memoryId: nullable(text(1, 512)),
+    supersededBy: nullable(text(1, 128)),
+    content: nullableText,
+    keys: {
+      type: "array",
+      items: objectOf({ client: text(1, 64), sourceKey: text(1, 200) }),
+    },
+    unkeyedClients: { type: "array", items: text(1, 64) },
+  },
+  [],
+  "其他 agent 通过 MCP 提议的一条记忆和它的处理结果。content 为 null 表示正文已按规则删掉（拒绝满 30 天，或被替换）。content 被扣留时 textSha256 为 null，摘要和原文一起在密封文件里。keys 是各客户端的固定编号现在指向这一条的；unkeyedClients 是不带编号送过这段正文的客户端。",
+);
+
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 512),
@@ -200,6 +249,33 @@ export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   "一次整理（把相近的记忆合并、取代、归档，或把有冲突的新记忆标为待你确认），带每次改动和依据的记忆编号。",
 );
 
+export const CONVERSATION_REVIEW_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    day: text(10, 10),
+    status: enumOf(["running", "completed", "failed", "gave_up"]),
+    attempts: integer(1, 100),
+    errorCode: nullable(text(1, 128)),
+    startedAt: timestamp,
+    finishedAt: nullable(timestamp),
+    undoneAt: nullable(timestamp),
+    changes: {
+      type: "array",
+      items: objectOf({
+        memoryId: text(1, 512),
+        action: enumOf(["created", "superseded", "confirmed"]),
+        afterRevision: integer(1),
+        beforeSupersededBy: nullable(text(1, 512)),
+        beforeValidTo: nullable(text(1, 64)),
+        createdAt: timestamp,
+        undoneRevision: nullable(integer(2)),
+      }),
+    },
+  },
+  [],
+  "一次回看对话（后台重读一段过去的对话，补记新记忆、标出被取代的旧记忆、确认待确认的记忆），带这次改动了哪些记忆；来源对话和消息的编号不导出。",
+);
+
 export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 128),
@@ -211,6 +287,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
       "retrieval_degrade",
       "external_read",
       "rule_review",
+      "memory_review",
     ]),
     scenario: nullable(enumOf(["gmail"])),
     checkedAt: timestamp,
@@ -249,7 +326,12 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
   "一条决策记录：系统每次由模型做出的门槛决策，以及你的评价和之后的反应。成本和耗时对应模型调用部分：costMicros 是这次调用的花费（百万分之一美元），durationMs 是耗时；模型输入输出原文属于证据，默认不导出。",
 );
 
-const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
+const RULE_STATUSES = ["active", "needs_review", "suspended", "retired"] as const;
+const RULE_SUSPEND_REASONS = [
+  "source_removed",
+  "no_longer_standing",
+  "parameters_changed",
+] as const;
 export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
 export const MAXIMUM_LINE_LENGTH = 64 * 1024 * 1024;
 
@@ -267,6 +349,7 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
     ruleId: text(1, 64),
     ...ruleVersionFields,
     updatedAt: timestamp,
+    suspendReason: enumOf(RULE_SUSPEND_REASONS),
     history: {
       type: "array",
       items: objectOf(
@@ -279,8 +362,8 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
       ),
     },
   },
-  ["withheld"],
-  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。",
+  ["withheld", "suspendReason"],
+  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。status 为 suspended 时规则已暂停、不执行，suspendReason 写明原因（source_removed 出处记忆没了，no_longer_standing 主人改口不要了，parameters_changed 主人改了条件）；挂起时系统算出的建议值不导出。",
 );
 
 const payloadText = EXPORTED_TEXT_SCHEMA;
@@ -414,11 +497,14 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       pairedDevices: integer(0),
       consolidations: integer(0),
       consolidationChanges: integer(0),
+      conversationReviews: integer(0),
+      conversationReviewChanges: integer(0),
       decisions: integer(0),
       decisionSignals: integer(0),
       markdownMemories: integer(0),
       rules: integer(0),
       enforcedRules: integer(0),
+      externalProposals: integer(0),
       ruleHistoryVersions: integer(0),
       sealedOriginals: integer(0),
       sealedEvidenceRows: integer(0),
@@ -431,11 +517,14 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "pairedDevices",
       "consolidations",
       "consolidationChanges",
+      "conversationReviews",
+      "conversationReviewChanges",
       "decisions",
       "decisionSignals",
       "markdownMemories",
       "rules",
       "enforcedRules",
+      "externalProposals",
       "ruleHistoryVersions",
       "sealedOriginals",
       "sealedEvidenceRows",
@@ -461,8 +550,10 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
 export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: JsonSchema }[] =
   Object.freeze([
     { path: "schema/consolidations.schema.json", schema: CONSOLIDATION_SCHEMA },
+    { path: "schema/conversation-reviews.schema.json", schema: CONVERSATION_REVIEW_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
+    { path: "schema/external-memory-proposals.schema.json", schema: EXTERNAL_PROPOSAL_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
     { path: "schema/manifest.schema.json", schema: MANIFEST_SCHEMA },
     { path: "schema/memories.schema.json", schema: MEMORY_SCHEMA },
@@ -477,8 +568,10 @@ export const DATA_FILES = Object.freeze({
   importBatches: "data/import-batches.jsonl",
   pairedDevices: "data/paired-devices.jsonl",
   consolidations: "data/consolidations.jsonl",
+  conversationReviews: "data/conversation-reviews.jsonl",
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
+  externalProposals: "data/external-memory-proposals.jsonl",
 } as const);
 
 export const SEALED_FILE = "sealed/sealed.enc";

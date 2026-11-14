@@ -8,6 +8,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { watchPageErrors } from "./browser-page-errors.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APP = path.join(repositoryRoot, "apps/control-center");
@@ -338,6 +339,17 @@ export const SCENES = {
       await page.waitForTimeout(400);
     },
   },
+  memoryExternal: {
+    path: "/threads",
+    act: async (page, text) => {
+      await page.request.post(new URL("/__fixture/external", page.url()).href, {
+        data: { mode: "pending" },
+      });
+      await openSidebarOnPhone(page);
+      await page.getByRole("button", { name: text.memory, exact: true }).first().click();
+      await page.waitForSelector("#memory-external .external-proposal");
+    },
+  },
   reminders: {
     path: "/threads",
     act: async (page, text) => {
@@ -651,7 +663,7 @@ async function auditApp(browser, base, only) {
           ]);
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
-        page.on("pageerror", (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
+        watchPageErrors(page, (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
         await page.goto(`${base}${job.scene.path}`);
         await page.waitForTimeout(600);
         await job.scene.act(page, labels(job.locale));

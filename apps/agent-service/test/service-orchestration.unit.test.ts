@@ -287,6 +287,7 @@ beforeEach(() => {
     "capabilityInvocationResultPort",
     "memoryIndex",
     "memoryEpisodes",
+    "externalMemoryProposals",
     "memoryConsolidation",
     "threadRepository",
     "sensitiveInterceptions",
@@ -511,12 +512,45 @@ describe("agent service startup ownership", () => {
     start();
     await settle();
     expect(stdout).toContain('"event":"service.ready"');
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(await exit).toBe(1);
     expect(stdout).toContain('"signal":"AUTHORITY_LOST"');
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AGENT_AUTHORITY_LOST"/);
+    expect(stderr).toContain('"event":"authority.lost"');
+    expect(stderr).toContain('"code":"AGENT_AUTHORITY_LOST"');
+    expect(stderr).toContain('"msSinceLastRenewal":12000');
     expect(boundary.admissionStop).toHaveBeenCalledOnce();
     expect(boundary.stopWorker).toHaveBeenCalledOnce();
+  });
+});
+
+describe("signal exit diagnostics", () => {
+  it("does not report an authority loss or an error code when stopped by a signal", async () => {
+    start();
+    await settle();
+    expect(stdout).toContain('"event":"service.ready"');
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"signal":"SIGTERM"/);
+    expect(stdout).not.toMatch(/"event":"service.draining"[^\n]*"code"/);
+    expect(stderr).not.toContain('"event":"authority.lost"');
+  });
+
+  it("names an unknown loss cause instead of calling it a startup failure", async () => {
+    start();
+    await settle();
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("plain failure"), {
+      msSinceLastRenewal: null,
+    });
+    await settle();
+    expect(await exit).toBe(1);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AUTHORITY_LOSS_CODE_UNKNOWN"/);
+    expect(stderr).toContain('"code":"AUTHORITY_LOSS_CODE_UNKNOWN"');
+    expect(stderr).not.toContain('"msSinceLastRenewal"');
   });
 });
 
@@ -580,7 +614,9 @@ describe("resource recovery without web Run dispatch", () => {
         boundary.payloadStart.mockRejectedValue(new Error("PAYLOAD_STARTUP_FAILED"));
       if (stage === "authority")
         boundary.connect.mockImplementation(async () => {
-          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+            msSinceLastRenewal: 12_000,
+          });
           return { payload: { ready: true, selectedSchemaVersion: "execution.v2" } };
         });
       start();
@@ -605,7 +641,10 @@ describe("resource recovery without web Run dispatch", () => {
     await settle();
     expect(recoverPending).toHaveBeenCalledOnce();
     if (cause === "signal") signal?.();
-    else boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    else
+      boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+        msSinceLastRenewal: 12_000,
+      });
     await settle();
     expect(received?.aborted).toBe(true);
     expect(await exit).toBe(cause === "signal" ? 0 : 1);
@@ -729,9 +768,14 @@ function web() {
     "memoryBook",
     "memoryReminders",
     "ownerRules",
+    "ruleReviews",
+    "memoryReviews",
     "memoryProjectionJobs",
     "runPayloadArtifactPort",
     "capabilityStore",
+    "authorizationStore",
+    "auditLedger",
+    "runExecutionSource",
     "modelBudgetPort",
     "modelUsage",
     "decisionLedger",
@@ -1109,6 +1153,35 @@ describe("service request readiness and runtime callbacks", () => {
     expect(stdout).toContain('"event":"service.ready"');
     expect(repository.close).not.toHaveBeenCalled();
   });
+  it("[I-94] names the refusing check in a model-call failure log only for port errors", async () => {
+    web();
+    start();
+    await settle();
+    const options = boundary.runs.mock.calls[0]?.[0];
+    options.onTitleFailure(
+      Object.assign(new Error("Budget account classification is immutable"), {
+        code: "PORT_CONFLICT",
+      }),
+    );
+    const line = stderr.split("\n").find((item: string) => item.includes('"code":"PORT_CONFLICT"'));
+    expect(JSON.parse(line ?? "").site).toBe("Budget account classification is immutable");
+    options.onTitleFailure(new Error("private provider exception"));
+    expect(stderr).not.toContain("private provider exception");
+  });
+  it("[I-94] gives every model-call failure log the site field", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../src/service-main.ts", import.meta.url), "utf8");
+    for (const event of [
+      "thread-title.failed",
+      "memory-capture.failed",
+      "memory-episode.failed",
+      "memory-consolidation.failed",
+    ]) {
+      const start = source.indexOf(`event: "${event}"`);
+      expect(start).toBeGreaterThan(-1);
+      expect(source.slice(start, start + 200)).toContain("...siteField(error)");
+    }
+  });
   it("rechecks the memory worker authority at execution time", async () => {
     web();
     start();
@@ -1185,7 +1258,7 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     const early = vi.fn();
     handle.onAuthorityLost(early);
     const error = new Error("AGENT_AUTHORITY_LOST");
-    boundary.authority.mock.calls[0]?.[0].onLost(error);
+    boundary.authority.mock.calls[0]?.[0].onLost(error, { msSinceLastRenewal: 12_000 });
     await settle();
     expect(early).toHaveBeenCalledWith(error);
     const late = vi.fn();
@@ -1203,7 +1276,9 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
       throw new Error("HANDLER_FAILED");
     });
     handle.onAuthorityLost(other);
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(other).toHaveBeenCalledOnce();
     expect(stderr).toContain('"event":"authority.lost_handler_failed"');

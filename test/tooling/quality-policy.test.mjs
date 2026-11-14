@@ -245,33 +245,45 @@ describe("quality policy and dormant schedule", () => {
       },
     ],
     [
-      "unsafe upload",
+      "summary of the whole workspace",
       (value) => {
-        value.jobs.scale.steps[6].with.path = ".";
+        value.jobs.scale.steps[6].run = value.jobs.scale.steps[6].run.replace(
+          ".ci-output/public/reports",
+          ".",
+        );
       },
     ],
     [
-      "upload despite publish failure",
+      "summary despite publish failure",
       (value) => {
         value.jobs.scale.steps[6].if = "always()";
       },
     ],
     [
-      "long-lived diagnostics",
+      "diagnostics left out of the summary",
       (value) => {
-        value.jobs.scale.steps[7].with["retention-days"] = 30;
+        value.jobs.scale.steps.splice(7, 1);
       },
     ],
     [
-      "automatic handoff",
+      "GitHub artifact upload",
       (value) => {
-        value.jobs.handoff.if = value.jobs.scale.if;
+        value.jobs.scale.steps.push({
+          uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          with: { path: ".ci-output/public/reports/" },
+        });
       },
     ],
     [
-      "mixed artifact run",
+      "handoff job restored",
       (value) => {
-        value.jobs.handoff.steps[5].with["run-id"] = "latest";
+        value.jobs.handoff = { "runs-on": "ubuntu-24.04", steps: [] };
+      },
+    ],
+    [
+      "handoff input restored",
+      (value) => {
+        value.on.workflow_dispatch.inputs.ci_run_id = { type: "string", required: false };
       },
     ],
   ])("rejects workflow drift: %s", (_name, mutate) => {

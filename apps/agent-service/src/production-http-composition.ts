@@ -14,6 +14,7 @@ import {
   ApplicationPortError,
   DEVICE_CONFIGURATION_DEFAULTS,
   defaultDeviceHardLimits,
+  DEFAULT_HOME_FEED,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
@@ -26,6 +27,7 @@ import {
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
+  type RunLifecyclePort,
   readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
   ThreadCommandService,
@@ -35,8 +37,11 @@ import {
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
 } from "@himawari-agent/application";
-import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
-import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
+import {
+  isDeviceAccessText,
+  type ThreadExecutionEnvironment,
+} from "@himawari-agent/gateway-contracts";
+import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
@@ -68,6 +73,7 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -90,8 +96,20 @@ import {
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
-import { registerDataExportRoute } from "./production-data-export.js";
+import {
+  DataExportJobs,
+  PRODUCTION_DATA_EXPORT_OPERATIONS,
+  ProductionDataExportControl,
+  registerDataExportRoute,
+} from "./production-data-export.js";
+import {
+  PRODUCTION_DEVICE_OPERATIONS,
+  ProductionDeviceControl,
+} from "./production-device-control.js";
 import { type ProductionGapExport, registerGapExportRoute } from "./production-gap-export.js";
+import { PRODUCTION_HOME_OPERATIONS, ProductionHomeControl } from "./production-home.js";
+import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
@@ -122,6 +140,16 @@ import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
+import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
+import {
+  PRODUCTION_SERVER_STATUS_OPERATIONS,
+  ProductionServerStatusControl,
+} from "./production-server-status-control.js";
+import { PRODUCTION_FILES_OPERATIONS, ProductionFilesControl } from "./production-files-control.js";
+import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -186,6 +214,8 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -205,6 +235,8 @@ export interface ProductionHttpCompositionOptions {
       | "recover"
       | "archive"
     >;
+    readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly webPush?: {
@@ -242,6 +274,7 @@ export interface ProductionHttpComposition {
   readonly payloadAdmission: HttpGatewayPayloadAdmissionPort;
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
+  readonly home: Pick<ProductionHomeControl, "awaitingCount">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -464,6 +497,9 @@ export async function resolveDevicePairingAccess(
   if (!clientIdReference || !clientSecretReference) return undefined;
   const clientId = await resolve(clientIdReference.ref, clientIdReference.version);
   const clientSecret = await resolve(clientSecretReference.ref, clientSecretReference.version);
+  for (const value of [clientId, clientSecret])
+    if (!isDeviceAccessText(value))
+      compositionError(PRODUCTION_HTTP_COMPOSITION_ERROR_CODES.SECRET_MATERIAL_INVALID);
   return { clientId, clientSecret };
 }
 
@@ -705,6 +741,12 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
+        ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_DEVICE_OPERATIONS,
+        ...PRODUCTION_HOME_OPERATIONS,
+        ...PRODUCTION_DATA_EXPORT_OPERATIONS,
+        ...PRODUCTION_FILES_OPERATIONS,
+        ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1091,6 +1133,7 @@ export async function createProductionHttpComposition(
         state: repository.productMemoryState(),
         jobs: repository.memoryProjectionJobs(),
         approvals: repository.sensitiveMemoryApprovals(),
+        unitOfWork: repository.unitOfWork(),
         memory: options.memory.service,
         profile: new OwnerProfileService({
           state: repository.productMemoryState(),
@@ -1112,10 +1155,28 @@ export async function createProductionHttpComposition(
           store: repository.memoryConsolidation(),
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
+        conversationReviews: {
+          store: repository.memoryConversationReviews(),
+          undo: (reviewId) =>
+            options.memory
+              ? undoConversationReview(
+                  {
+                    store: repository.memoryConversationReviews(),
+                    state: repository.productMemoryState(),
+                    memory: options.memory.service,
+                    generationFor: async (memoryId) =>
+                      (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+                    now: clock,
+                  },
+                  reviewId,
+                )
+              : Promise.resolve(),
+        },
         reminders: repository.memoryReminders(),
         ownerRules: new ProductionOwnerRuleWriter({
           configuration,
           rules: repository.ownerRules(),
+          reviews: repository.ruleReviews(),
           memory: options.memory.service,
           memories: repository.productMemoryState(),
           book: repository.memoryBook(),
@@ -1127,6 +1188,7 @@ export async function createProductionHttpComposition(
             ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
             : {}),
         }),
+        reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         payloads: memoryPayloads,
@@ -1135,13 +1197,79 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
+        ...(options.memory.externalProposals
+          ? { externalProposals: options.memory.externalProposals }
+          : {}),
+        ...(options.memory.classifier ? { classifier: options.memory.classifier } : {}),
         onAudit: options.memory.onAudit,
       })
     : undefined;
+  const pairedDevices = new PairedDeviceService({
+    store: repository.pairedDevices(),
+    sessions: sessionsState,
+    configuration: () => deviceConfiguration,
+    ownerActive: async (scope) => {
+      if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
+      if (identityConfiguration.kind === "built-in") return true;
+      return (await identityState.readByOwner(ownerId))?.status === "active";
+    },
+    now,
+    ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+  });
+  const home = new ProductionHomeControl({
+    settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
+    ...(options.proactive ? { proactive: options.proactive } : {}),
+    ...(memoryControl ? { memory: memoryControl } : {}),
+    listApprovals: () =>
+      repository.authorizationStore().listApprovals(ownerId, agentId, { status: "pending" }),
+    runThread: async (runId) =>
+      (
+        await repository
+          .runLifecycle(ownerId, agentId, authority)
+          .readRun(runId as Parameters<RunLifecyclePort["readRun"]>[0])
+      )?.run.threadId ?? null,
+    runs: repository.runLifecycle(ownerId, agentId, authority),
+    threadTitle: async (threadId) => {
+      const thread = await threads.read(
+        ownerId,
+        agentId,
+        threadId as Parameters<typeof threads.read>[2],
+      );
+      if (!thread || thread.status !== "active") return null;
+      const payload = thread.titleRef ? await memoryPayloads.get(thread.titleRef) : undefined;
+      if (!payload || payload.contentType !== "text/plain") return { title: null };
+      return {
+        title:
+          new TextDecoder("utf-8", { fatal: true })
+            .decode(await payloadProtector.unprotect({ ownerId, agentId, payload }))
+            .trim() || null,
+      };
+    },
+    clock: { now: clock },
+    onSourceFailure: (source, error) =>
+      options.onHomeDiagnostic?.({
+        event: "home.source_failed",
+        source,
+        error:
+          error instanceof ApplicationPortError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown",
+      }),
+  });
+  const dataExportJobs = new DataExportJobs({
+    ownerId,
+    agentId,
+    databasePath: repository.databasePath,
+    protector: payloadProtector,
+    now: clock,
+  });
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
     access: threadAccess,
+    homeControl: home,
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
@@ -1169,6 +1297,40 @@ export async function createProductionHttpComposition(
       clock: { now: clock },
       beforeRead: () => flushSensitiveInterceptions(repository),
     }),
+    deviceControl: new ProductionDeviceControl({
+      configuration,
+      devices: pairedDevices,
+      deviceConfiguration: () => deviceConfiguration,
+      ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    serverStatusControl: new ProductionServerStatusControl({
+      configuration,
+      health,
+      clock: { now: clock },
+    }),
+    dataExportControl: new ProductionDataExportControl({
+      configuration,
+      jobs: dataExportJobs,
+      clock: { now: clock },
+    }),
+    filesControl: new ProductionFilesControl({
+      configuration,
+      store: repository.threadArtifacts(),
+      threadTitle: classifiedThreadTitleReader({
+        configuration,
+        threads,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+      }),
+      clock: { now: clock },
+    }),
+    loginDevicesControl: new ProductionLoginDevicesControl({
+      configuration,
+      state: repository.sessionDeviceState(),
+      recentAuthentication,
+      clock: { now: clock },
+    }),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1195,22 +1357,7 @@ export async function createProductionHttpComposition(
     threadSearch,
     files,
     devices: {
-      service: new PairedDeviceService({
-        store: repository.pairedDevices(),
-        sessions: sessionsState,
-        configuration: () => deviceConfiguration,
-        ownerActive: async (scope) => {
-          if (scope.ownerId !== ownerId || scope.agentId !== agentId) return false;
-          if (identityConfiguration.kind === "built-in") return true;
-          return (await identityState.readByOwner(ownerId))?.status === "active";
-        },
-        ownerSubject: async (scope) => {
-          if (scope.ownerId !== ownerId || scope.agentId !== agentId) return undefined;
-          const binding = await identityState.readByOwner(ownerId);
-          return binding?.status === "active" ? binding.externalSubjectRef : undefined;
-        },
-        now,
-      }),
+      service: pairedDevices,
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
@@ -1234,10 +1381,7 @@ export async function createProductionHttpComposition(
     authentication,
     sessionCookieName: httpConfiguration.sessionCookieName,
     ownerId,
-    agentId,
-    databasePath: repository.databasePath,
-    protector: payloadProtector,
-    now: clock,
+    jobs: dataExportJobs,
   });
   registerChatExportRoute(app, {
     authentication,
@@ -1276,6 +1420,7 @@ export async function createProductionHttpComposition(
     payloadAdmission,
     health,
     metrics,
+    home,
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({

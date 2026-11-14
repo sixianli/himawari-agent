@@ -1,23 +1,15 @@
 import { createHash } from "node:crypto";
-import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
-import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
-import {
-  approvalMatchesIntent,
-  isApprovalResolutionReplay,
-} from "@himawari-agent/application/action-intent-snapshot";
 import type {
   ApprovalChangeMarker,
   ApprovalRequest,
-  AutomaticReviewStart,
-  AutomaticReviewRecord,
-  AutomaticReviewFinish,
-  ReserveAuthorizationInput,
-  GovernedGrantRecord,
   AttentionDecisionCommit,
   AttentionDecisionCommitResult,
   AttentionPolicyState,
   AuditRecord,
   AuthorityFence,
+  AutomaticReviewFinish,
+  AutomaticReviewRecord,
+  AutomaticReviewStart,
   BackgroundAdmissionReservation,
   BackgroundAdmissionResult,
   BackgroundOccurrenceClaim,
@@ -37,6 +29,7 @@ import type {
   GitHubWebhookReceiptRecord,
   GovernanceMutationReceipt,
   GovernedCapabilityExecutionHandle,
+  GovernedGrantRecord,
   GrantRecord,
   OwnerIdentityBindingRecord,
   PayloadRecord,
@@ -44,6 +37,7 @@ import type {
   ProductSessionRecord,
   ReliableEvent,
   ReliableEventRecord,
+  ReserveAuthorizationInput,
   ResolveApprovalInput,
   RunDispatchScope,
   RunExecutionLeaseTransactionGuard,
@@ -54,6 +48,10 @@ import type {
   SessionDeletionRecord,
   TraceEvent,
 } from "@himawari-agent/application";
+import {
+  approvalMatchesIntent,
+  isApprovalResolutionReplay,
+} from "@himawari-agent/application/action-intent-snapshot";
 import type {
   AgentId,
   BackgroundJobState,
@@ -76,36 +74,41 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
+import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
+import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
+import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
-import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
+import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
-import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
-import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
-import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
-import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
-import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
-import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
-import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
-import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
-import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
-import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
+import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
-import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
+import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
+import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
+import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
+import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
+import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
+import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
+import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
+import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
+import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
+import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
-import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
-import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
-import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
+import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
+import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
+import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 
 export type SqliteApplicationFailure = (
   code: string,
@@ -365,9 +368,12 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
+  private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
+  private readonly memoryConversationReview: SqliteMemoryConversationReviewOperations;
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
+  private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
@@ -449,13 +455,28 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
+    this.correctionReview = new SqliteCorrectionReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.memoryCaptureBacklog = new SqliteMemoryCaptureBacklogOperations(
       database,
       fail,
       assertDiskHeadroom,
     );
     this.memoryCheckup = new SqliteMemoryCheckupOperations(database, fail, assertDiskHeadroom);
+    this.memoryConversationReview = new SqliteMemoryConversationReviewOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.reviewPrereview = new SqliteReviewPrereviewOperations(database, fail, assertDiskHeadroom);
+    this.externalMemoryProposals = new SqliteExternalMemoryProposalOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
     this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
@@ -527,7 +548,52 @@ export class SqliteDurableOperations {
     );
   }
 
+  private transactionScopeOpen = false;
+  private transactionScopeLost = false;
+
+  private transactionScopeAborted(): never {
+    this.transactionScopeLost = true;
+    return this.fail("PORT_CONFLICT", "The transaction scope was rolled back", {
+      reason: "TRANSACTION_ABORTED",
+    });
+  }
+
+  private executeTransactionScope(operation: string): null | undefined {
+    switch (operation) {
+      case "transaction.begin":
+        if (this.database.inTransaction)
+          this.fail("PORT_INVALID_OPERATION", "A transaction scope is already open");
+        this.database.exec("BEGIN IMMEDIATE");
+        this.transactionScopeLost = false;
+        this.transactionScopeOpen = true;
+        return null;
+      case "transaction.commit":
+        if (this.transactionScopeLost || !this.transactionScopeOpen || !this.database.inTransaction)
+          this.transactionScopeAborted();
+        this.transactionScopeOpen = false;
+        this.database.exec("COMMIT");
+        return null;
+      case "transaction.rollback":
+        this.transactionScopeOpen = false;
+        this.transactionScopeLost = false;
+        if (this.database.inTransaction) this.database.exec("ROLLBACK");
+        return null;
+      default:
+        return undefined;
+    }
+  }
+
   execute(operation: string, payload: unknown): unknown {
+    const scoped = this.executeTransactionScope(operation);
+    if (scoped !== undefined) return scoped;
+    if (this.transactionScopeLost) this.transactionScopeAborted();
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    const value = this.executeUnscoped(operation, payload);
+    if (this.transactionScopeOpen && !this.database.inTransaction) this.transactionScopeAborted();
+    return value;
+  }
+
+  private executeUnscoped(operation: string, payload: unknown): unknown {
     if (this.database.inTransaction || !isProcessRecordWrite(operation, payload))
       return this.executeOperation(operation, payload);
     this.database.pragma("synchronous = NORMAL");
@@ -589,10 +655,16 @@ export class SqliteDurableOperations {
       return this.memoryCaptureBacklog.execute(operation, payload);
     if (operation.startsWith("memoryCheckup."))
       return this.memoryCheckup.execute(operation, payload);
+    if (operation.startsWith("memoryConversationReview."))
+      return this.memoryConversationReview.execute(operation, payload);
     if (operation.startsWith("reviewPrereview."))
       return this.reviewPrereview.execute(operation, payload);
+    if (operation.startsWith("externalMemoryProposal."))
+      return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
+    if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
+      return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
       return this.decisionLedger.execute(operation, payload);
     if (operation.startsWith("museIntake.")) return this.museIntake.execute(operation, payload);
@@ -5018,6 +5090,18 @@ export class SqliteDurableOperations {
         .prepare(
           `UPDATE product_sessions SET revision = revision + 1, status = 'revoked', revoked_at = ?
           WHERE device_id = ? AND status = 'active'`,
+        )
+        .run(input.revokedAt, input.deviceId);
+      this.database
+        .prepare(
+          `DELETE FROM device_request_nonces WHERE device_id IN (
+             SELECT id FROM paired_devices WHERE web_device_id = ? AND status <> 'revoked')`,
+        )
+        .run(input.deviceId);
+      this.database
+        .prepare(
+          `UPDATE paired_devices SET status = 'revoked', revoked_at = ?, revision = revision + 1
+            WHERE web_device_id = ? AND status <> 'revoked'`,
         )
         .run(input.revokedAt, input.deviceId);
       return this.readProductDevice(input.deviceId);

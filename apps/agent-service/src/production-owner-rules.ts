@@ -10,6 +10,7 @@ import {
   OWNER_RULE_SUMMARY_LIMIT,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
+  type RuleReviewOwnerStorePort,
   ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -236,6 +237,8 @@ export interface ListedOwnerRule {
   readonly status: StoredOwnerRule["status"];
   readonly enforced: boolean;
   readonly updatedAt: string;
+  readonly revision: number;
+  readonly sourceMemoryId: string | null;
 }
 
 interface Proposal {
@@ -259,6 +262,7 @@ export interface RulePreview {
 export interface ProductionOwnerRuleWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly rules: OwnerRuleStorePort;
+  readonly reviews: Pick<RuleReviewOwnerStorePort, "act">;
   readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
   readonly memories: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
@@ -691,6 +695,8 @@ export class ProductionOwnerRuleWriter {
         status: row.status,
         enforced: enforceableOwnerRule(row) !== undefined,
         updatedAt: row.updatedAt,
+        revision: row.revision,
+        sourceMemoryId: row.sourceMemoryId,
       });
     });
   }
@@ -700,22 +706,28 @@ export class ProductionOwnerRuleWriter {
       throw new OwnerRuleError("RULE_NOT_FOUND");
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
-    if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (enforceableOwnerRule({ ...current, status: "active" }) === undefined)
+      throw new OwnerRuleError("RULE_UNAVAILABLE");
     const revivedMemory = current.sourceMemoryId
       ? await this.#reviveMemory(current.sourceMemoryId as MemoryId)
       : false;
-    const changed =
-      current.status === "needs_review"
-        ? await this.#options.rules.setStatus({
+    const latest = revivedMemory
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : current;
+    const restored =
+      latest && latest.status !== "active" && latest.status !== "retired"
+        ? await this.#options.reviews.act({
             ...this.#scope(),
             ruleId,
-            status: "active",
-            expectedRevision: current.revision,
-            reason: "owner_confirmed",
+            expectedRevision: latest.revision,
+            action: "restore",
             now: this.#options.clock.now(),
           })
-        : current;
-    if (!changed) {
+        : latest?.status === "active";
+    const changed = restored
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : undefined;
+    if (!changed || changed.status !== "active") {
       if (revivedMemory) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
       throw new OwnerRuleError("RULE_UNAVAILABLE");
     }
@@ -727,6 +739,8 @@ export class ProductionOwnerRuleWriter {
       status: changed.status,
       enforced: true,
       updatedAt: changed.updatedAt,
+      revision: changed.revision,
+      sourceMemoryId: changed.sourceMemoryId,
     });
   }
 
@@ -784,9 +798,17 @@ export class ProductionOwnerRuleWriter {
       status: "retired",
       enforced: false,
       updatedAt: this.#options.clock.now(),
+      revision: latest.revision,
+      sourceMemoryId: latest.sourceMemoryId,
     });
   }
 }
+
+const modelVisibleRule = ({
+  revision: _revision,
+  sourceMemoryId: _sourceMemoryId,
+  ...rule
+}: ListedOwnerRule) => rule;
 
 export class ProductionOwnerRuleTools {
   readonly #writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">;
@@ -800,13 +822,13 @@ export class ProductionOwnerRuleTools {
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
       if (names.length > 0) throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { rules: await this.#writer.list() };
+      return { rules: (await this.#writer.list()).map(modelVisibleRule) };
     }
     if (invocation.capabilityRef === RULE_UNDO_CAPABILITY_REF) {
       const ruleId = args["ruleId"];
       if (typeof ruleId !== "string" || names.some((name) => name !== "ruleId"))
         throw new OwnerRuleError("RULE_INPUT_INVALID");
-      return { undone: await this.#writer.undo(ruleId) };
+      return { undone: modelVisibleRule(await this.#writer.undo(ruleId)) };
     }
     if (invocation.capabilityRef !== RULE_SET_CAPABILITY_REF)
       throw new OwnerRuleError("RULE_INPUT_INVALID");

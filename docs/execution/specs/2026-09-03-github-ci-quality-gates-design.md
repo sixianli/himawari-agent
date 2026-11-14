@@ -85,7 +85,7 @@ date: "2026-09-03"
 | CI-A09 | 上游失败、取消、跳过、少一个矩阵成员、旧报告或空报告 | `ci/required` 不成功，且报告具体原因 |
 | CI-A10 | PR、fork、Dependabot、默认分支 push 或手动运行 | 以正确 revision 和最小权限执行；需批准的 fork 运行在批准前不成功；不向 PR 提供生产凭据或主机入口，输出符合公开可读要求 |
 | CI-A11 | 公开仓库具备规则管理权限且 Owner 授权启用强制门禁 | GitHub 只接受最新组合的必需检查；失败 PR 无法合并；只读回读与实测一致，不以账户升级为前置任务 |
-| CI-A12 | 周期质量检测运行或向 S9 提交 CI 证据 | 输出独立 artifact，绑定来源和平台，不写产品资格状态，不修改历史 evidence |
+| CI-A12 | 周期质量检测运行或向 S9 提交 CI 证据 | 检测结果写进独立的作业摘要，绑定来源和平台，不写产品资格状态，不修改历史 evidence |
 | CI-A13 | 对门禁运行受控负向样例 | 每项不合格样例均被拒绝；正向对照通过；失败退出码不能被吞掉 |
 | CI-A14 | 工具升级、检查失败、交付或恢复执行 | 有版本、复现命令、证据、耗时和未关闭项；当前事实文档与实际启用状态一致 |
 
@@ -93,7 +93,7 @@ date: "2026-09-03"
 
 ### 1. 政策、执行与结果各有一个责任方
 
-仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离和 artifact 传递。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
+仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离，以及经 CI 服务器共享目录传递作业之间的文件。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
 
 不增加产品 package、数据库表、常驻服务或 CI 专用 Agent。执行工具沿用仓库的 `.mjs` 约定，在 JSON 边界做 schema 校验，内部使用已经验证的数据。小型纯函数处理集合、状态与摘要，外部命令和文件系统调用保留在边界。
 
@@ -126,7 +126,7 @@ date: "2026-09-03"
 
 2026-11-06 起 CI 不再使用 GitHub 缓存，每个任务都从锁定的下载地址重新下载并校验，以免产生 GitHub 存储费（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）。每次仍执行锁文件安装；不跨平台传递 `node_modules`。
 
-作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。GitHub 上只留 `gate-` 汇总结论和 1 天的失败诊断。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
+作业之间的文件不经 GitHub 产物存储，放在 CI VPS 的共享目录 `/srv/gh-runner-share/<运行号-尝试号>/<作业-成员>/`（[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)）：每个作业成员用 `scripts/ci/run-share.mjs put` 放入完整报告，并把内容摘要写进作业输出；`browser`、`coverage` 用 `needs.build.outputs.linux-x64` 的摘要取构建，`ci/required` 按 `needs` 里的摘要逐个取回报告，核对不一致即失败，入口检查（草稿、上游取消）通过后，结束时不论成败删掉本次运行的目录；入口检查失败的运行由 CI 服务器每小时的清理在 6 小时后删掉（[ADR 0241](../../adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。2026-11-12 起 CI 完全不用 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）：`ci/required` 把汇总结论（几 KB 的 JSON，经 base64 编码，前后有开始和结束标记并附 SHA-256 校验值）（其中每个字符串先遮盖像密钥的内容）打印进自己的步骤日志，同时把各检查的结果表写进作业摘要（GitHub 运行页面上每个作业下方显示的一段 Markdown）；其他作业把失败诊断写进作业摘要，每个文本文件只显示最后 40 行、先遮盖像密钥的内容、每段摘要不超过 64 KiB，截图、trace 这类二进制文件只列名字和大小，读不出来或遮盖之后仍留有私钥标记的文本文件同样只列名字和大小。三个工作流用到 `actions/upload-artifact` 或 `actions/download-artifact` 时 `npm run check:ci-policy` 失败。`ci.yml` 的所有作业都只有只读权限；`main.yml` 的 `full` 作业以可复用工作流（被别的工作流整个调用的工作流）的方式调用 `ci.yml`，不单独授予权限，沿用工作流级的只读权限。被调用的工作流拿不到超过调用方的权限，`npm run check:ci-policy` 核对 `ci.yml` 每个作业要的权限都在调用方给的范围内，否则整轮会在启动前失败（事故 I-93）。
 
 文档治理运行依赖放在仓库内的固定工具目录，保留上游 Skill 来源、许可依据、完整依赖闭包和内容摘要。采用原始 `validate_docs.py`、其导入模块及必需资源，不另写文档规则。更新由显式同步工具整体完成，CI 只读验证。来源或许可未明确时该任务未完成，不能静默跳过文档检查。
 
@@ -243,11 +243,11 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 该入口只能补充批准清单列出的合成 token、机器扫描误报和依赖文档示例。token 继续核验不可变源码、字面量分类、历史范围及数量；原有条目使用目标分支的来源证据，新增条目只使用批准提交的对应证据。机器扫描器仍取目标分支版本，报告保留所有发现；批准仅匹配精确路径、规则、摘要及数量，新增、重复或消失的匹配均拒绝。依赖文档使用下述既有成员校验，不扩大为包或目录豁免。清单及评论引用已经原样合入目标分支后，后续 PR 继承该分支接受的精确范围，继续核验评论和有效期；修改清单仍需新的明确批准。既有例外不因这条补充路径延长有效期。
 
-构建归档包含锁定 npm 包原样发布的文档、测试和源映射。对其中已核实为占位值、未求值插值、认证说明或合成密码学测试材料的命中，使用 `ci/security-exceptions.json` 中或上述独立批准清单转换得到的 `published-synthetic-fixture` 精确记录；公开来源本身不构成豁免理由。记录必须绑定包名、版本、锁文件路径、官方发布包完整性摘要、归档成员路径、成员文件摘要，以及每条扫描规则、字面量摘要和准确次数，并保留用途、来源核对依据、Owner 和到期日。任意成员内容、依赖身份或命中集合变化均须重新审阅，不允许按包或目录放行。公开输出检查读取目标分支已接受的例外，并按上述独立审批合同补充精确批准条目；仅在初始化时目标分支的政策和例外均不存在，才按明确的初始化提案路径验证候选政策，并保留待 Owner 审阅状态。缺少执行上下文时不应用例外；敏感哨兵和真实凭据始终阻断。
+构建归档包含锁定 npm 包原样发布的文档、测试和源映射。对其中已核实为占位值、未求值插值、认证说明或合成密码学测试材料的命中，使用 `ci/security-exceptions.json` 中或上述独立批准清单转换得到的 `published-synthetic-fixture` 精确记录；公开来源本身不构成豁免理由。记录必须绑定包名、版本、锁文件路径、官方发布包完整性摘要、归档成员路径、成员文件摘要，以及每条扫描规则、字面量摘要和准确次数，并保留用途、来源核对依据、Owner 和到期日。任意成员内容、依赖身份或命中集合变化均须重新审阅，不允许按包或目录放行。公开输出检查读取目标分支已接受的例外，并按上述独立审批合同补充精确批准条目；候选分支只能撤掉其中的 `published-synthetic-fixture` 条目，新增或修改的条目不会生效（2026-11-12，PR 431）：被撤掉的成员按没有例外处理，仍有任何命中即失败；目标分支的例外记录本身仍须通过校验（例如没有过期），撤掉条目不能绕过这一步，这样删除多余例外的 PR 和它的合并提交不会因为目标分支的旧记录变红；仅在初始化时目标分支的政策和例外均不存在，才按明确的初始化提案路径验证候选政策，并保留待 Owner 审阅状态。缺少执行上下文时不应用例外；敏感哨兵和真实凭据始终阻断。
 
 公开仓库可使用 GitHub CodeQL/code scanning、Dependency Review 和 SARIF 接收能力，不再标记为私有仓库能力受限。功能可用不等于已配置。首期必需门禁仍采用机器密钥、Gitleaks 和 Semgrep CE 扫描，以保留本地复现与统一例外判定；GitHub 原生能力可作为后续补充，接入前需明确检查身份、启用配置、权限、失败语义与正反验证，并同步本 Spec 和 Plan。Dependency Review 的增量检查不能替代完整依赖复扫，上传 SARIF 成功也不能代替安全判定。
 
-JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。公开仓库的 Actions artifacts 可由登录且有仓库读取权限的用户下载，不是私密证据存储。上传只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
+JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。2026-11-12 起 CI 不再上传 GitHub 产物（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)），但作业日志和作业摘要同样可由有仓库读取权限的用户查看，不是私密证据存储。检查失败时，失败用例的名字和报错开头（取自 vitest 的 JSON 报告，最多 30 条）以及遮盖后的命令日志（`result.json` 登记为 `diagnostic` 的每个 `.log` 文件的最后 120 行）接在诊断后面写进作业摘要；写进摘要的内容都逐行加 `| ` 前缀打印到作业日志，供没有网页的代理通过日志 API 读取。公开目录只允许明确列出的合成测试输出、构建产物与遮盖报告，禁止打包整个工作区、环境变量转储、真实状态目录、数据库、Secret 或用户正文。遮盖覆盖日志输出和失败路径，不能只在最终归档阶段处理；需要保密的 S9 主机证据保留在另行批准的受限位置。
 
 ### 8. 汇总器必须拒绝不完整成功
 
@@ -259,7 +259,7 @@ JSON、JUnit、LCOV、日志、截图和 trace 均按公开可读材料准备。
 
 完整门禁只接受同一次 workflow attempt 的证据。仅重跑失败 job 会复用之前成功 job 的旧报告，初始设计明确不接受这种混合结果；恢复时使用完整工作流重跑。单个检查中的有界下载重试仍属于同一 attempt，必须记录次数。
 
-只有全部条件成立才输出 `passed`。报告缺失、结果 `neutral/skipped/cancelled`、上游安装错误、超时、artifact 上传失败和未执行扫描一律不成功。日志和证据上传可以在失败后执行，但不能吞掉原始退出码。
+只有全部条件成立才输出 `passed`。报告缺失、结果 `neutral/skipped/cancelled`、上游安装错误、超时、报告放入共享目录失败和未执行扫描一律不成功。诊断写进作业摘要可以在失败后执行，但不能吞掉原始退出码。
 
 ### 9. 触发、并发、权限与信任边界
 
@@ -271,7 +271,7 @@ PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout
 
 同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
 
-默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有 artifact 元数据读取需要的 job 单独申请 `actions: read`。不配置任何 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
+默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有读取运行、作业或作业日志需要的 job（`main.yml` 取回汇总结论）单独申请 `actions: read`。不配置任何 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
 
 不使用 `pull_request_target` 执行 PR 代码，不通过有写权限的 `workflow_run` 接收并执行不可信产物。PR 标题、分支和其他用户输入通过环境变量传给受控参数解析，不直接拼接进 shell。报告始终按数据解析，禁止执行其中命令或解包路径穿越条目。
 
@@ -288,12 +288,12 @@ main 路径选择器仅接受固定仓库的真实 main push。轻量确认必�
 - 当前提交是一次 merge commit，第一父提交恰好是 push.before，第二父提交是同仓库已合并 PR 的 head；squash、rebase、多次合并打包推送、直接提交走完整 CI。
 - `.github/`、`ci/`、`scripts/ci/` 在此次合并中没有变化；验证逻辑更新后的首次 main 推送仍执行全套。
 - 固定 GitHub API 返回对应 head 的成功 `pull_request` CI；完成时间不超过 24 小时，工作流路径为 `.github/workflows/ci.yml`。手动 CI 不适用。
-- 按 API 返回的不可变 artifact ID 下载该 run/attempt 的 gate，拒绝过期或重复 gate。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
+- 按 API 列出该 run/attempt 的作业，要求名字是 `ci/required` 的作业恰好一个且结论为成功，下载它的日志并取出唯一一段汇总结论，校验值不符、缺失、出现两段都拒绝（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)）。GateSummary 必须 passed，矩阵完整且唯一，无失败、缺项或失败原因。
 - gate/context 的 repository、event、runId、attempt、base/head/tested SHA、政策及工具链摘要一致。通过 GitHub commit API 独立核对被测 merge 的两个父提交和完整源码树；源码树必须等于实际 main 提交。
 
 API 不可用、下载失败、证据缺失、内容或配置不一致均选择原有完整 CI；不伪造新的完整门禁结论。路径选择本身异常时也调度完整 CI，基础设施异常仍可使外层 workflow 失败。确认 job 启动时再次核验证据；此后构建、安全或启动检查失败直接失败，不通过重跑掩盖失败。
 
-轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。上传到 GitHub 的 `main-confirmation-` 报告只含日志和 JSON，不含构建归档（`publish.mjs --artifacts omit`，[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)），归档摘要记在 `summary.json` 的 `artifactSha256`。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
+轻量确认在实际 main 提交上重新生成 Linux 构建产物，运行现有机器密钥、Gitleaks、Semgrep 检查，并使用本轮产物执行完整的 `installable-node-services.test.ts` 安装、启动、停止与恢复测试。输出独立的 `main-confirmation` 记录，引用先前 PR run/attempt；不将先前 gate 改写为当前 GateSummary，也不将 PR 产物冒充 main 发布产物。确认作业自己重新查找并取回 PR 的汇总结论再核对一遍，不从路径选择作业接收文件；确认报告写进作业摘要，只含日志和 JSON，不含构建归档（`publish.mjs --artifacts omit`，[ADR 0238](../../adr/0238-ci-job-files-stay-on-the-ci-vps.md)），归档摘要记在 `summary.json` 的 `artifactSha256`。这份确认不替代 S9 全套资格或授权生产部署；需要完整 push GateSummary 的交接仍显式运行完整 CI。
 
 npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action 复用（[ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)），每个任务都重新下载；工具每次从已验证归档重新安装。仍校验下载完整性、执行锁文件安装和原生探针；损坏下载按现有校验拒绝。
 
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。完整报告和诊断 screenshot/trace 都只在 GitHub 上保留 1 天（2026-11-06 起，原为 30 天和 7 天，见 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md)）；缺少保留能力要明确报告。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`ci.yml` 的检查失败时另加失败的用例和每个命令日志的最后 120 行；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 
@@ -354,7 +354,7 @@ Mac/Hermes 平台 conformance、六类正式浏览器、人工 WCAG、运行与�
 | --- | --- |
 | 安装、工具校验、原生加载失败 | 停止该 job，记录实际版本及稳定错误码，不换版本重试到成功 |
 | 测试、覆盖率、policy 或安全规则失败 | 保留失败报告，修复原因；不得降低规则、加大范围排除或改成功出口 |
-| 下载、runner 或 artifact 服务不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
+| 下载、runner 或 CI 服务器共享目录不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
 | UDS/listen、权限或沙箱前提不满足 | 报运行环境失败，不用 fixture 冒充真实验证，不跳过相关合同 |
 | evidence 混合 SHA、错误矩阵或篡改 | 拒绝汇总，重新生成当前组合的完整证据 |
 | GitHub 规则不可用或规则漂移 | 标明服务端门禁未生效；保留可执行检测，等待授权条件满足 |
@@ -373,7 +373,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 5. 合成 Secret 的历史提交后删除、到期例外、安全规则未加载；另验证安全入口不调用 advisory API。
 6. 新增未导入生产文件、删测降低覆盖率、同 PR 降低 baseline 和空分母伪造成功。
 7. fixture 页面交互破坏、JS 异常和自动无障碍阻断项。
-8. fork 等待批准时无成功结果，批准后与 Dependabot 分别以受限权限完成普通检查；PR head/base 变化使旧结果失效，公开日志和 artifact 无合成敏感哨兵原文。
+8. fork 等待批准时无成功结果，批准后与 Dependabot 分别以受限权限完成普通检查；PR head/base 变化使旧结果失效，公开日志和作业摘要无合成敏感哨兵原文。
 9. 真正绿色对照可满足规则，故意红色 PR 在 GitHub 无法合并；测试不实际合并或部署。
 
 仓库内正反样例在临时 fixture repo 中运行，不污染真实分支历史。涉及 GitHub 的样例 PR、push、取消运行和设置变更必须先获授权。CI 自身不可用时保留失败状态，不能以人工勾选代替负向验收。
@@ -391,7 +391,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 - [Dependency Review 可用范围](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review)。
 - [公开 fork 工作流审批](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)。
 - [fork 审批策略 API](https://docs.github.com/en/rest/actions/permissions#set-fork-pr-contributor-approval-permissions-for-a-repository)。
-- [Actions artifact 下载权限](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)。
+- [下载单个作业的日志](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run)。
 - [公开仓库标准 runner 计费与使用限制](https://docs.github.com/en/actions/concepts/billing-and-usage)。
 - [Vitest coverage 配置](https://vitest.dev/config/coverage.html)。
 - [Gitleaks](https://github.com/gitleaks/gitleaks)、[Semgrep CE](https://docs.semgrep.dev/deployment/oss-deployment)、[actionlint](https://github.com/rhysd/actionlint)、[npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit/)。

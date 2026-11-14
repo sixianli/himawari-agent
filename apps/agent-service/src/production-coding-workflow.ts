@@ -405,7 +405,14 @@ export async function executeProductionCodingRequest(
   }
   await active();
   timing.mark("prepare");
-  const permission = await services.authorize(intent, ctx.signal);
+  const display = services.approvalDisplay?.({
+    threadId: binding.threadId,
+    tool,
+    arguments: args,
+  });
+  const permission = display
+    ? await services.authorize(intent, ctx.signal, display)
+    : await services.authorize(intent, ctx.signal);
   timing.mark("authorize");
   if (permission.decision !== "ALLOW") {
     const result = runtimeToolAuthorizationResult(permission);

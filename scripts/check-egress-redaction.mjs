@@ -141,6 +141,13 @@ export const SENSITIVE_GATE_CALLS = Object.freeze([
       "数据导出：含机密的整段文字不进明文文件；正文原文只放进加密封存文件，明文层放遮盖后的文字或占位符；短文字（名称、编号）只留编号占位",
   },
   {
+    file: "apps/agent-service/src/production-mcp-memory-writer.ts",
+    calls: { scanMachineSecrets: 1 },
+    decision: KEEP,
+    reason:
+      "不是发给模型的出口：其他 agent 经 MCP 提议的记忆正文里有令牌、私钥这类机器密钥时拒收，密钥不该当成记忆存下（ADR 0228 决定 3）",
+  },
+  {
     file: "packages/platform-node/src/files/pi-output-export.ts",
     calls: { containsToolOutputSecret: 1 },
     decision: MASK,

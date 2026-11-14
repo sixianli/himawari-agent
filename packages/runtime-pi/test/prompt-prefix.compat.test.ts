@@ -50,7 +50,7 @@ afterEach(async () => {
 type Reply =
   | { readonly text: string }
   | { readonly tool: string; readonly input: string }
-  | { readonly status: number };
+  | { readonly status: number; readonly retryAfter?: string };
 
 async function readBody(incoming: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -65,7 +65,10 @@ async function loopback(reply: (index: number, body: string) => Reply) {
     const index = bodies.push(raw) - 1;
     const answer = reply(index, raw);
     if ("status" in answer) {
-      response.writeHead(answer.status, { "content-type": "application/json" });
+      response.writeHead(answer.status, {
+        "content-type": "application/json",
+        ...(answer.retryAfter === undefined ? {} : { "retry-after": answer.retryAfter }),
+      });
       response.end(JSON.stringify({ error: { message: "overloaded", type: "server_error" } }));
       return;
     }
@@ -1115,10 +1118,10 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
     ]);
   });
 
-  it("[ADR-0198] never retries a failed attempt inside Pi, so no context_edit removes it from the next request", async () => {
-    const server = await loopback((index) =>
-      index === 1 ? { status: 503 } : { text: `回答 ${index}` },
-    );
+  const retryAdapter = (
+    server: Awaited<ReturnType<typeof loopback>>,
+    extra: Partial<ConstructorParameters<typeof PiAgentRuntimeAdapter>[0]> = {},
+  ) => {
     const models = new ConfiguredPiModelBindingPort({
       descriptors: [
         {
@@ -1149,6 +1152,7 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       secretSource: { productionSuitable: true, resolve: async () => "loopback-fixture-key" },
     });
     const projection = new ConversationProjection();
+    const failureCodes: string[] = [];
     const adapter = new PiAgentRuntimeAdapter({
       egress: testModelEgress(),
       projection,
@@ -1159,24 +1163,88 @@ describe("[I-66] PROMPT-PREFIX every request only appends to the one before it",
       now: () => NOW,
       admission: async (scope) => allowAdmission(scope),
       logicalSlot: (run, ordinal) => `${run.runId}:retry:${ordinal}`,
+      ...extra,
     });
-    const outcomes: (string | undefined)[] = [];
-    for (const [index, turn] of THREE_TURNS.entries()) {
-      projection.turn = turn;
-      const events: RuntimeEvent[] = [];
-      for await (const event of adapter.run({
-        ...runRequest(`run-retry-${index + 1}`),
-        modelRef: "loopback-primary",
-      } as RuntimeRequest))
-        events.push(event);
-      outcomes.push(
-        events.find((event) => event.type === "runtime.failed")?.type ?? events.at(-1)?.type,
-      );
-    }
+    const runTurns = async (turns: readonly Turn[] = THREE_TURNS) => {
+      const outcomes: (string | undefined)[] = [];
+      failureCodes.length = 0;
+      for (const [index, turn] of turns.entries()) {
+        projection.turn = turn;
+        const events: RuntimeEvent[] = [];
+        for await (const event of adapter.run({
+          ...runRequest(`run-retry-${index + 1}`),
+          modelRef: "loopback-primary",
+        } as RuntimeRequest))
+          events.push(event);
+        const failed = events.find((event) => event.type === "runtime.failed");
+        if (failed?.type === "runtime.failed") failureCodes.push(failed.errorCode);
+        outcomes.push(failed?.type ?? events.at(-1)?.type);
+      }
+      return outcomes;
+    };
+    return { runTurns, failureCodes };
+  };
+
+  it("[ADR-0198] a failing provider is retried at the request layer with identical bytes, never inside Pi, so no context_edit removes anything from the next request", async () => {
+    const server = await loopback((index) =>
+      index >= 1 && index <= 3 ? { status: 503, retryAfter: "0" } : { text: `回答 ${index}` },
+    );
+    const adapter = retryAdapter(server);
+    const outcomes = await adapter.runTurns();
     expect(outcomes).toEqual(["runtime.completed", "runtime.failed", "runtime.completed"]);
-    expect(server.bodies).toHaveLength(3);
+    expect(adapter.failureCodes).toEqual(["PI_MODEL_UNAVAILABLE"]);
+    expect(server.bodies).toHaveLength(5);
+    expect(server.bodies[2]).toBe(server.bodies[1]);
+    expect(server.bodies[3]).toBe(server.bodies[1]);
     expect(server.bodies.join("\n")).not.toContain("context_edit");
-    expect(findPrefixBreak(server.bodies[0] ?? "", server.bodies[2] ?? "")).toBeNull();
+    expect(findPrefixBreak(server.bodies[0] ?? "", server.bodies[4] ?? "")).toBeNull();
+  });
+
+  it("[RETRY-429] a rate-limited request is resent once the provider allows it and the turn completes", async () => {
+    const server = await loopback((index) =>
+      index === 1 ? { status: 429, retryAfter: "0" } : { text: `回答 ${index}` },
+    );
+    const rejections: { status: number; retryAfter: string | null; host: string | null }[] = [];
+    const outcomes = await retryAdapter(server, {
+      onModelRequestRejected: (_request, rejection) =>
+        rejections.push({
+          status: rejection.status,
+          retryAfter: rejection.retryAfter,
+          host: rejection.host,
+        }),
+    }).runTurns();
+    expect(outcomes).toEqual(["runtime.completed", "runtime.completed", "runtime.completed"]);
+    expect(server.bodies).toHaveLength(4);
+    expect(server.bodies[2]).toBe(server.bodies[1]);
+    expect(rejections).toEqual([
+      { status: 429, retryAfter: "0", host: expect.stringMatching(/^127\.0\.0\.1:\d+$/) },
+    ]);
+  });
+
+  it("[RETRY-429] a value named as a password only in the new message is masked the same way in the first attempt and in the resend", async () => {
+    const server = await loopback((index) =>
+      index === 1 ? { status: 429, retryAfter: "0" } : { text: `回答 ${index}` },
+    );
+    const outcomes = await retryAdapter(server).runTurns([
+      { prompt: "先记一下 hunter22abc 这个词" },
+      { prompt: "密码：hunter22abc" },
+    ]);
+    expect(outcomes).toEqual(["runtime.completed", "runtime.completed"]);
+    expect(server.bodies).toHaveLength(3);
+    expect(server.bodies[2]).toBe(server.bodies[1]);
+    expect(server.bodies[1]).toContain("先记一下 hunter22abc 这个词");
+    expect(server.bodies[1]).not.toContain("密码：hunter22abc");
+  });
+
+  it("REVERSE [RETRY-429] a provider that asks for a long wait fails at once and still reports as rate limited", async () => {
+    const server = await loopback((index) =>
+      index === 1 ? { status: 429, retryAfter: "120" } : { text: `回答 ${index}` },
+    );
+    const adapter = retryAdapter(server);
+    const outcomes = await adapter.runTurns();
+    expect(outcomes).toEqual(["runtime.completed", "runtime.failed", "runtime.completed"]);
+    expect(adapter.failureCodes).toEqual(["PI_MODEL_RATE_LIMITED"]);
+    expect(server.bodies).toHaveLength(3);
   });
 
   it("REVERSE: the checker reports a system message in the middle of a request", () => {

@@ -12,6 +12,7 @@ import {
   type PairedDeviceStorePort,
   type SessionDeviceStatePort,
 } from "@himawari-agent/application";
+import { normalizeDeviceName } from "@himawari-agent/gateway-contracts";
 import {
   DEVICE_SIGNATURE_ERROR_CODES,
   DeviceSignatureError,
@@ -30,6 +31,7 @@ export const PAIRED_DEVICE_ERROR_CODES = Object.freeze({
   OWNER_INACTIVE: "DEVICE_OWNER_INACTIVE",
   NONCE_REPLAYED: "DEVICE_NONCE_REPLAYED",
   NONCE_STORE_FULL: "DEVICE_NONCE_STORE_FULL",
+  STREAM_LIMIT: "DEVICE_STREAM_LIMIT",
   PATH_NOT_ALLOWED: "DEVICE_PATH_NOT_ALLOWED",
   BODY_TOO_LARGE: "DEVICE_BODY_TOO_LARGE",
   CHALLENGE_INVALID: "DEVICE_CHALLENGE_INVALID",
@@ -69,7 +71,16 @@ export interface PairedDeviceServiceOptions {
   readonly ownerSubject?: (scope: PairedDeviceScope) => Promise<string | undefined>;
   readonly now?: () => Date;
   readonly randomBytes?: (size: number) => Buffer;
+  readonly onWarning?: (warning: PairedDeviceWarning) => void;
 }
+
+export interface PairedDeviceWarning {
+  readonly event: "device.nonce_store_full";
+  readonly deviceId: string;
+  readonly retained: number;
+}
+
+const WARNING_INTERVAL_MILLISECONDS = 60_000;
 
 export interface AuthenticatedDeviceRequest {
   readonly device: PairedDevice;
@@ -102,6 +113,7 @@ function canonicalSpki(value: string): string {
 
 export class PairedDeviceService {
   readonly #options: PairedDeviceServiceOptions;
+  readonly #warnedAt = new Map<string, number>();
   readonly #owners: PairedDeviceOwnerDirectory;
   readonly #challengeKey: Buffer;
 
@@ -127,10 +139,22 @@ export class PairedDeviceService {
   async startPairing(
     scope: PairedDeviceScope & { readonly sessionId: string },
   ): Promise<{ readonly code: string; readonly expiresAt: string }> {
+    return this.startPairingWithCode({
+      ...scope,
+      code: this.#random(16).toString("base64url"),
+    });
+  }
+
+  async startPairingWithCode(
+    input: PairedDeviceScope & { readonly sessionId: string; readonly code: string },
+  ): Promise<{ readonly code: string; readonly expiresAt: string }> {
+    if (!PAIRING_CODE_PATTERN.test(input.code) || !/[AQgw]$/u.test(input.code))
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
+    const { code } = input;
+    const scope = input;
     const now = this.#now();
-    const code = this.#random(16).toString("base64url");
     const expiresAt = new Date(now.getTime() + PAIRING_CODE_LIFETIME_MILLISECONDS).toISOString();
-    await this.#options.store.createPairingCode({
+    const created = await this.#options.store.createPairingCode({
       ownerId: scope.ownerId,
       agentId: scope.agentId,
       sessionId: scope.sessionId,
@@ -138,7 +162,7 @@ export class PairedDeviceService {
       now: now.toISOString(),
       expiresAt,
     });
-    return Object.freeze({ code, expiresAt });
+    return Object.freeze({ code, expiresAt: created.expiresAt });
   }
 
   async pair(
@@ -155,15 +179,14 @@ export class PairedDeviceService {
       "devicePublicKey",
       "confirmPublicKey",
     ];
-    const name = typeof input["name"] === "string" ? input["name"].trim() : "";
+    const name = normalizeDeviceName(input["name"]);
     if (
       !hasOnlyKeys(input, keys) ||
       typeof input["pairingCode"] !== "string" ||
       !PAIRING_CODE_PATTERN.test(input["pairingCode"]) ||
       !(PAIRED_DEVICE_KINDS as readonly unknown[]).includes(input["kind"]) ||
       !(PAIRED_DEVICE_RELEASE_CHANNELS as readonly unknown[]).includes(input["releaseChannel"]) ||
-      name.length === 0 ||
-      [...name].length > 64 ||
+      name === null ||
       typeof input["devicePublicKey"] !== "string" ||
       typeof input["confirmPublicKey"] !== "string" ||
       !SPKI_PATTERN.test(input["devicePublicKey"]) ||
@@ -197,6 +220,8 @@ export class PairedDeviceService {
       case "paired":
         return { device: result.device, replayed: false };
       case "replayed":
+        if (result.device.status === "revoked")
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED, 403);
         return { device: result.device, replayed: true };
       case "code_expired":
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_EXPIRED, 410, {
@@ -207,6 +232,10 @@ export class PairedDeviceService {
       default:
         throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_CODE_INVALID, 404);
     }
+  }
+
+  openPairing(scope: PairedDeviceScope): Promise<{ readonly expiresAt: string } | undefined> {
+    return this.#options.store.readOpenPairingCode({ ...scope, now: this.#now().toISOString() });
   }
 
   list(scope: PairedDeviceScope): Promise<readonly PairedDevice[]> {
@@ -232,13 +261,21 @@ export class PairedDeviceService {
       readonly name: string;
     },
   ): Promise<PairedDevice> {
-    return this.#options.store.renameDevice(scope);
+    const name = normalizeDeviceName(scope.name);
+    if (name === null)
+      throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PAIRING_REQUEST_INVALID, 400);
+    return this.#options.store.renameDevice({ ...scope, name });
   }
 
-  revoke(
+  async revoke(
     scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
   ): Promise<PairedDevice> {
-    return this.#options.store.revokeDevice({ ...scope, now: this.#now().toISOString() });
+    const device = await this.#options.store.revokeDevice({
+      ...scope,
+      now: this.#now().toISOString(),
+    });
+    this.#warnedAt.delete(device.id);
+    return device;
   }
 
   #challengeMac(deviceId: string, head: Buffer): Buffer {
@@ -322,8 +359,18 @@ export class PairedDeviceService {
     });
     if (nonce === "replayed")
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.NONCE_REPLAYED, 401);
-    if (nonce === "full")
+    if (nonce === "full") {
+      const warned = this.#warnedAt.get(current.id);
+      if (warned === undefined || now.getTime() - warned >= WARNING_INTERVAL_MILLISECONDS) {
+        this.#warnedAt.set(current.id, now.getTime());
+        this.#options.onWarning?.({
+          event: "device.nonce_store_full",
+          deviceId: current.id,
+          retained: configuration.limits["device.nonce.retained"],
+        });
+      }
       throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.NONCE_STORE_FULL, 429);
+    }
     const session = await this.#options.sessions.readSession(
       current.webSessionId as Parameters<SessionDeviceStatePort["readSession"]>[0],
     );

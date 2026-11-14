@@ -37,6 +37,7 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_review",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -56,7 +57,16 @@ export const DECISION_OUTCOMES = {
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
-  rule_review: ["needs_review"],
+  rule_review: [
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+  ],
+  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
@@ -64,6 +74,8 @@ export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
 export const EXTERNAL_PROPOSAL_REASON_CODES = {
   kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
   declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
+  pending: `${EXTERNAL_PROPOSAL_REASON_PREFIX}pending`,
+  superseded: `${EXTERNAL_PROPOSAL_REASON_PREFIX}superseded`,
 } as const;
 
 export const MEMORY_CAPTURE_FAILURE_OUTCOMES = [
@@ -279,6 +291,13 @@ export interface MailTrace {
   readonly museEntries: readonly MailTraceMuseEntry[];
 }
 
+export interface RuleLastUse {
+  readonly ruleId: string;
+  readonly decisionId: string;
+  readonly kind: DecisionKind;
+  readonly decidedAt: string;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -336,6 +355,9 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  lastRuleUses(
+    input: DecisionLedgerScope & { readonly ruleIds: readonly string[] },
+  ): Promise<readonly RuleLastUse[]>;
   readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
   readGapCandidates(input: {
     readonly ownerId: OwnerId;

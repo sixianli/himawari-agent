@@ -18,7 +18,12 @@ import {
   sandboxExecutionPlanV2Schema,
 } from "@himawari-agent/execution-contracts";
 import BetterSqlite3 from "better-sqlite3";
-import { LATEST_MIGRATION_SEQUENCE, readMigrationLedger } from "./migration-engine.ts";
+import {
+  bundledSchemaFingerprint,
+  LATEST_MIGRATION_SEQUENCE,
+  readMigrationLedger,
+  readSchemaIdentity,
+} from "./migration-engine.ts";
 import { RUN_RESOURCES_RELEASED_SQL } from "./sqlite-run-resource-guard.ts";
 import { appendThreadGatewayEventInTransaction } from "./sqlite-thread-operations.ts";
 import { acquireStateRootLock } from "./state-root-lock.ts";
@@ -307,7 +312,8 @@ export class SqliteSandboxReservationAdministration {
       ledger.some((row, index) => row.sequence !== index + 1) ||
       declared !== current ||
       minimum !== current ||
-      (writing && current !== LATEST_MIGRATION_SEQUENCE)
+      (writing && current !== LATEST_MIGRATION_SEQUENCE) ||
+      (writing && readSchemaIdentity(database).fingerprint !== bundledSchemaFingerprint())
     )
       fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.SCHEMA_UNSUPPORTED);
     return current;

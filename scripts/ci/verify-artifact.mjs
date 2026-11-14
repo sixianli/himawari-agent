@@ -14,6 +14,7 @@ import {
   sha256,
   validateRecord,
 } from "./contracts.mjs";
+import { hostArch, hostOs } from "./platforms.mjs";
 import { relativeModuleClosure } from "./source-inputs.mjs";
 
 const text = { type: "string", minLength: 1 };
@@ -143,7 +144,7 @@ export async function verifyExtractedArtifact(
   {
     root = repositoryRoot,
     context,
-    expectedPlatform = { os: process.platform, arch: process.arch, abi: process.versions.modules },
+    expectedPlatform = { os: hostOs(), arch: hostArch(), abi: process.versions.modules },
   } = {},
 ) {
   validateRecord("Context", context);

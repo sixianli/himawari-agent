@@ -37,6 +37,7 @@ import {
   type DevicePairingAccess,
   EnvelopePayloadProtector,
   PairedDeviceService,
+  type PairedDeviceWarning,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
 import {
@@ -88,6 +89,7 @@ export interface Harness {
   readonly configuration: { current: DeviceConfiguration };
   readonly ownerActive: { current: boolean };
   readonly webAuthentication: GatewayAuthenticationContext;
+  readonly warnings: PairedDeviceWarning[];
 }
 
 export async function harness(
@@ -241,6 +243,7 @@ export async function harness(
     } as DeviceConfiguration,
   };
   const ownerActive = { current: true };
+  const warnings: PairedDeviceWarning[] = [];
   const csrf = new SessionBoundCsrfService({ key: csrfKey, now });
   const app = buildHttpGatewayServer({
     publicOrigin,
@@ -296,6 +299,7 @@ export async function harness(
             ? (await identityState.readByOwner(ownerId))?.externalSubjectRef
             : undefined,
         now,
+        onWarning: (warning) => warnings.push(warning),
       }),
       configuration: () => configuration.current,
       audit: repository.auditLedger(),
@@ -311,6 +315,7 @@ export async function harness(
     configuration,
     ownerActive,
     webAuthentication,
+    warnings,
     webHeaders: async () => ({
       host: new URL(publicOrigin).host,
       origin: publicOrigin,

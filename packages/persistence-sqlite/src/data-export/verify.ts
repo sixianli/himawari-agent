@@ -12,13 +12,15 @@ import {
 import { validateAgainst } from "./schema.js";
 import {
   CONSOLIDATION_SCHEMA,
+  CONVERSATION_REVIEW_SCHEMA,
   DATA_FILES,
   DECISION_SCHEMA,
+  EXTERNAL_PROPOSAL_SCHEMA,
   FORMAT_VERSION,
   IMPORT_BATCH_SCHEMA,
   MANIFEST_FILE,
-  MAXIMUM_LINE_LENGTH,
   MANIFEST_SCHEMA,
+  MAXIMUM_LINE_LENGTH,
   MEMORY_SCHEMA,
   PAIRED_DEVICE_SCHEMA,
   PERSON_SCHEMA,
@@ -83,6 +85,62 @@ export interface ParsedText {
   readonly withheld?: true;
 }
 
+export interface ParsedExternalProposal {
+  readonly id: string;
+  readonly subjectRef: string;
+  readonly client: string;
+  readonly sourceKey: string | null;
+  readonly textSha256: string | null;
+  readonly normalization: string;
+  readonly category: string;
+  readonly classification: string;
+  readonly status: "pending" | "committed" | "rejected" | "superseded";
+  readonly receivedAt: string;
+  readonly decidedAt: string | null;
+  readonly batchId: string | null;
+  readonly memoryId: string | null;
+  readonly supersededBy: string | null;
+  readonly content: ParsedText | null;
+  readonly keys: readonly { readonly client: string; readonly sourceKey: string }[];
+  readonly unkeyedClients: readonly string[];
+}
+
+const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+
+export function externalProposalProblem(proposal: ParsedExternalProposal): string | null {
+  const where = `其他 agent 的提议 ${proposal.id}`;
+  if (
+    !STORED_TIME.test(proposal.receivedAt) ||
+    (proposal.decidedAt !== null && !STORED_TIME.test(proposal.decidedAt))
+  )
+    return `${where}：时间不是库里存的格式（例如 2026-11-12T00:00:00.000Z）`;
+  if ((proposal.status === "pending") !== (proposal.decidedAt === null))
+    return `${where}：只有待确认的没有处理时间`;
+  if (proposal.memoryId !== null && proposal.status !== "committed")
+    return `${where}：只有已保存的能指向记忆`;
+  if (
+    proposal.content === null &&
+    proposal.status !== "rejected" &&
+    proposal.status !== "superseded"
+  )
+    return `${where}：待确认和已保存的必须有正文`;
+  if (proposal.supersededBy !== null && proposal.status !== "superseded")
+    return `${where}：只有被替换的能指向替换它的提议`;
+  if (
+    proposal.batchId !== null &&
+    proposal.status !== "committed" &&
+    proposal.status !== "rejected"
+  )
+    return `${where}：只有已保存或已拒绝的能属于一批`;
+  if (proposal.content !== null && proposal.content.classification !== proposal.classification)
+    return `${where}：正文的分级和提议的分级不一致`;
+  if ((proposal.textSha256 === null) !== (proposal.content?.withheld === true))
+    return `${where}：只有正文被扣留时摘要才不在明文里`;
+  if (new Set(proposal.unkeyedClients).size !== proposal.unkeyedClients.length)
+    return `${where}：不带编号的客户端重复`;
+  return null;
+}
+
 export interface ParsedPerson {
   readonly id: string;
   readonly name: string;
@@ -141,6 +199,26 @@ export interface ParsedConsolidation {
   }[];
 }
 
+export interface ParsedConversationReview {
+  readonly id: string;
+  readonly day: string;
+  readonly status: string;
+  readonly attempts: number;
+  readonly errorCode: string | null;
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
+  readonly undoneAt: string | null;
+  readonly changes: readonly {
+    readonly memoryId: string;
+    readonly action: string;
+    readonly afterRevision: number;
+    readonly beforeSupersededBy: string | null;
+    readonly beforeValidTo: string | null;
+    readonly createdAt: string;
+    readonly undoneRevision: number | null;
+  }[];
+}
+
 export interface ParsedDecision {
   readonly id: string;
   readonly kind: string;
@@ -180,8 +258,10 @@ export interface ParsedPortable {
   readonly importBatches: readonly ParsedBatch[];
   readonly pairedDevices: readonly ParsedPairedDevice[];
   readonly consolidations: readonly ParsedConsolidation[];
+  readonly conversationReviews: readonly ParsedConversationReview[];
   readonly decisions: readonly ParsedDecision[];
   readonly rules: readonly PortableRule[];
+  readonly externalProposals: readonly ParsedExternalProposal[];
 }
 
 export function assertSafePath(path: string): void {
@@ -334,8 +414,18 @@ export function parsePortable(
     DATA_FILES.consolidations,
     CONSOLIDATION_SCHEMA,
   );
+  const conversationReviews = parseLines<ParsedConversationReview>(
+    files,
+    DATA_FILES.conversationReviews,
+    CONVERSATION_REVIEW_SCHEMA,
+  );
   const decisions = parseLines<ParsedDecision>(files, DATA_FILES.decisions, DECISION_SCHEMA);
   const rules = parseLines<PortableRule>(files, DATA_FILES.rules, RULE_SCHEMA);
+  const externalProposals = parseLines<ParsedExternalProposal>(
+    files,
+    DATA_FILES.externalProposals,
+    EXTERNAL_PROPOSAL_SCHEMA,
+  );
   const memoryIds = unique(
     memories.map(({ id }) => id),
     "记忆",
@@ -361,6 +451,15 @@ export function parsePortable(
     "整理改动",
   );
   unique(
+    conversationReviews.map(({ id }) => id),
+    "回看对话",
+  );
+  for (const review of conversationReviews)
+    unique(
+      review.changes.map(({ memoryId }) => memoryId),
+      `回看对话 ${review.id} 的改动`,
+    );
+  unique(
     decisions.flatMap(({ signals }) => signals.map(({ id }) => id)),
     "决策信号",
   );
@@ -385,7 +484,38 @@ export function parsePortable(
         broken(`整理改动 ${change.id} 的相关记忆`);
       for (const id of change.basis) if (!memoryIds.has(id)) broken(`整理改动 ${change.id} 的依据`);
     }
+  for (const review of conversationReviews)
+    for (const change of review.changes) {
+      if (!memoryIds.has(change.memoryId))
+        broken(`回看对话 ${review.id} 改动的记忆 ${change.memoryId}`);
+      if (change.beforeSupersededBy !== null && !memoryIds.has(change.beforeSupersededBy))
+        broken(`回看对话 ${review.id} 改动前的 supersededBy`);
+    }
   void decisionIds;
+  const proposalIds = unique(
+    externalProposals.map(({ id }) => id),
+    "其他 agent 的提议",
+  );
+  unique(
+    externalProposals.flatMap(({ keys }) =>
+      keys.map(({ client, sourceKey }) => JSON.stringify([client, sourceKey])),
+    ),
+    "其他 agent 的固定编号",
+  );
+  unique(
+    externalProposals.flatMap(({ status, textSha256 }) =>
+      status === "superseded" || textSha256 === null ? [] : [textSha256],
+    ),
+    "其他 agent 提议的正文摘要",
+  );
+  for (const proposal of externalProposals) {
+    const problem = externalProposalProblem(proposal);
+    if (problem !== null) throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
+    if (proposal.memoryId !== null && !memoryIds.has(proposal.memoryId))
+      broken(`其他 agent 的提议 ${proposal.id} 的记忆`);
+    if (proposal.supersededBy !== null && !proposalIds.has(proposal.supersededBy))
+      broken(`其他 agent 的提议 ${proposal.id} 的 supersededBy`);
+  }
   unique(
     rules.map(({ ruleId }) => ruleId),
     "规则",
@@ -423,11 +553,17 @@ export function parsePortable(
     pairedDevices: pairedDevices.length,
     consolidations: consolidations.length,
     consolidationChanges: consolidations.reduce((total, { changes }) => total + changes.length, 0),
+    conversationReviews: conversationReviews.length,
+    conversationReviewChanges: conversationReviews.reduce(
+      (total, { changes }) => total + changes.length,
+      0,
+    ),
     decisions: decisions.length,
     decisionSignals: decisions.reduce((total, { signals }) => total + signals.length, 0),
     markdownMemories: manifest.counts.markdownMemories,
     rules: rules.length,
     enforcedRules: enforcedRuleCount(rules),
+    externalProposals: externalProposals.length,
     ruleHistoryVersions: rules.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: manifest.counts.sealedOriginals,
     sealedEvidenceRows: manifest.counts.sealedEvidenceRows,
@@ -464,8 +600,10 @@ export function parsePortable(
     importBatches,
     pairedDevices,
     consolidations,
+    conversationReviews,
     decisions,
     rules,
+    externalProposals,
   };
 }
 

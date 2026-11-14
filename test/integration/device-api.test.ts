@@ -1,7 +1,20 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
-import { RecentAuthenticationGuard } from "@himawari-agent/application";
+import {
+  PAIRED_DEVICE_KINDS,
+  PAIRED_DEVICE_RELEASE_CHANNELS,
+  RecentAuthenticationGuard,
+} from "@himawari-agent/application";
 import { createSessionId } from "@himawari-agent/domain";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+} from "@himawari-agent/persistence-sqlite";
 import {
   DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES,
   devicePairingNumber,
@@ -349,6 +362,13 @@ describe("[P1-1] device pairing and signed device API", () => {
     );
     expect(full.statusCode).toBe(429);
     expect(full.json()).toMatchObject({ error: { code: "DEVICE_NONCE_STORE_FULL" } });
+    expect(
+      (await send(h, signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" })))
+        .statusCode,
+    ).toBe(429);
+    expect(h.warnings).toEqual([
+      { event: "device.nonce_store_full", deviceId: client.deviceId, retained: 2 },
+    ]);
     h.clock.advance(121_000);
     expect(
       (await send(h, signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" })))
@@ -892,7 +912,104 @@ describe("[P1-1] device client routes", () => {
     expect(otherKeys.statusCode).toBe(409);
     expect(otherKeys.json()).toMatchObject({ error: { code: "DEVICE_PAIRING_CODE_USED" } });
     expect((await web(h, "list")).body["devices"]).toHaveLength(1);
+    const device = (first.json() as { device: { id: string; revision: number } }).device;
+    const removed = await web(h, "revoke", {
+      deviceId: device.id,
+      expectedRevision: device.revision,
+    });
+    expect(removed.status).toBe(200);
+    const afterRemoval = await pairWith(keys.publicKeySpkiBase64, confirmKeys.publicKeySpkiBase64);
+    expect(afterRemoval.statusCode).toBe(403);
+    expect(afterRemoval.json()).toEqual({ error: { code: "DEVICE_REVOKED" } });
     await h.repository.close();
+  });
+
+  it("limits how many streams one device keeps open and frees a slot when a stream ends", async () => {
+    const h = await harness();
+    h.configuration.current = {
+      ...h.configuration.current,
+      connectionMaxSeconds: 1,
+      streamConnections: 1,
+    };
+    const client = await pairAndConfirm(h);
+    const other = await pairAndConfirm(h);
+    const open = async (who: PairedClient, path: string) => {
+      const request = signedRequest(h, who, { method: "GET", path });
+      const url = new URL(request.url);
+      return h.app.inject({
+        method: "GET",
+        url: url.pathname + url.search,
+        headers: request.headers,
+        payloadAsStream: true,
+      });
+    };
+    const held = await open(client, "/api/device/v1/stream");
+    expect(held.statusCode).toBe(200);
+    const ended = new Promise<void>((resolve) => {
+      const stream = held.stream();
+      stream.on("data", () => undefined);
+      stream.on("end", () => resolve());
+    });
+    const refused = await open(client, "/api/device/v1/stream");
+    expect(refused.statusCode).toBe(429);
+    const body = await new Promise<string>((resolve) => {
+      const parts: Buffer[] = [];
+      refused
+        .stream()
+        .on("data", (chunk: Buffer) => parts.push(chunk))
+        .on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
+    });
+    expect(JSON.parse(body)).toEqual({
+      error: { streamConnections: 1, code: "DEVICE_STREAM_LIMIT" },
+    });
+    const otherDevice = await open(other, "/api/device/v1/stream");
+    expect(otherDevice.statusCode).toBe(200);
+    otherDevice.stream().resume();
+    await ended;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const reopened = await open(client, "/api/device/v1/stream");
+    expect(reopened.statusCode).toBe(200);
+    reopened.stream().resume();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await h.repository.close();
+  });
+
+  it("frees a stream slot when the device drops the connection", async () => {
+    const h = await harness();
+    h.configuration.current = { ...h.configuration.current, streamConnections: 1 };
+    const client = await pairAndConfirm(h);
+    const address = await h.app.listen({ host: "127.0.0.1", port: 0 });
+    const connect = () =>
+      new Promise<{ status: number; drop: () => void }>((resolve, reject) => {
+        const request = signedRequest(h, client, { method: "GET", path: "/api/device/v1/stream" });
+        const url = new URL(request.url);
+        const outgoing = httpRequest(
+          `${address}${url.pathname}${url.search}`,
+          { method: "GET", headers: request.headers },
+          (response) => {
+            response.resume();
+            resolve({ status: response.statusCode ?? 0, drop: () => outgoing.destroy() });
+          },
+        );
+        outgoing.on("error", () => undefined);
+        outgoing.once("error", reject);
+        outgoing.end();
+      });
+    try {
+      const first = await connect();
+      expect(first.status).toBe(200);
+      const refused = await connect();
+      expect(refused.status).toBe(429);
+      refused.drop();
+      first.drop();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const again = await connect();
+      expect(again.status).toBe(200);
+      again.drop();
+    } finally {
+      await h.app.close();
+      await h.repository.close();
+    }
   });
 
   it("answers a refused stream handshake with an error body", async () => {
@@ -989,6 +1106,89 @@ describe("[P1-1] device client routes", () => {
     await h.repository.close();
   });
 
+  it("marks the paired device removed when its signed-in browser entry is revoked from the account page", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const sessions = h.repository.sessionDeviceState();
+    const stored = await h.repository.pairedDevices().readDevice(client.deviceId);
+    const browser = (await sessions.listDevices(ownerId, false)).find(
+      (device) => device.id === stored?.webDeviceId,
+    );
+    expect(browser).toBeDefined();
+    const other = await pairAndConfirm(h);
+    await sessions.revokeDevice(browser?.id as never, browser?.revision ?? -1, h.clock.now());
+    const listed = (await web(h, "list")).body["devices"] as { id: string; status: string }[];
+    expect(listed.find((device) => device.id === client.deviceId)?.status).toBe("revoked");
+    expect(listed.find((device) => device.id === other.deviceId)?.status).toBe("active");
+    const refused = await send(
+      h,
+      signedRequest(h, client, { method: "GET", path: "/api/device/v1/config" }),
+    );
+    expect(refused.statusCode).toBe(403);
+    const allowed = await send(
+      h,
+      signedRequest(h, other, { method: "GET", path: "/api/device/v1/config" }),
+    );
+    expect(allowed.statusCode).toBe(200);
+    await h.repository.close();
+  });
+
+  it("keeps the first expiry when the owner starts pairing again with the same code", async () => {
+    const h = await harness();
+    const service = new PairedDeviceService({
+      store: h.repository.pairedDevices(),
+      sessions: h.repository.sessionDeviceState(),
+      configuration: () => h.configuration.current,
+      ownerActive: async () => true,
+      now: () => new Date(h.clock.now()),
+    });
+    const scope = { ownerId, agentId, sessionId: String(h.webAuthentication.sessionId) };
+    const code = Buffer.alloc(16, 7).toString("base64url");
+    const first = await service.startPairingWithCode({ ...scope, code });
+    h.clock.advance(60_000);
+    const again = await service.startPairingWithCode({ ...scope, code });
+    expect(again.expiresAt).toBe(first.expiresAt);
+    const next = await service.startPairingWithCode({
+      ...scope,
+      code: Buffer.alloc(16, 8).toString("base64url"),
+    });
+    expect(next.expiresAt).not.toBe(first.expiresAt);
+    h.clock.advance(9 * 60_000 + 1);
+    const expired = await service.startPairingWithCode({ ...scope, code });
+    expect(Date.parse(expired.expiresAt)).toBeGreaterThan(Date.parse(next.expiresAt));
+    await h.repository.close();
+  });
+
+  it("rejects device names with hidden characters the same way as the gateway contract", async () => {
+    const h = await harness();
+    const hidden = await pair(h, "Andy\u200biPhone");
+    expect(hidden.response.statusCode).toBe(400);
+    const client = await pairAndConfirm(h);
+    for (const name of [
+      "Desk\u202eMac",
+      "Desk\u0007Mac",
+      "Desk\u061cMac",
+      "Desk\u2028Mac",
+      "Desk\u180eMac",
+      "   ",
+      "x".repeat(65),
+    ]) {
+      const renamed = await web(h, "rename", {
+        deviceId: client.deviceId,
+        expectedRevision: client.revision,
+        name,
+      });
+      expect(renamed.status, name).toBe(400);
+    }
+    const trimmed = await web(h, "rename", {
+      deviceId: client.deviceId,
+      expectedRevision: client.revision,
+      name: "  Desk Mac  ",
+    });
+    expect((trimmed.body["device"] as { name: string }).name).toBe("Desk Mac");
+    await h.repository.close();
+  });
+
   it("renames the confirmed device and its signed-in browser entry together", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
@@ -1044,5 +1244,55 @@ describe("[P1-1] device client routes", () => {
       413,
     );
     await h.repository.close();
+  });
+});
+
+describe("[P1-1] device kinds in the database", () => {
+  it("keeps the kind and release channel lists equal to the program and refuses unregistered values", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "himawari-device-kinds-"));
+    try {
+      const database = openQualifiedDatabase(path.join(directory, "product.sqlite"));
+      applyMigrations(database, await loadBundledMigrations());
+      const column = (sql: string) =>
+        (database.prepare(sql).all() as Record<string, string>[]).map(
+          (row) => Object.values(row)[0],
+        );
+      expect(column("SELECT kind FROM paired_device_kinds ORDER BY kind")).toEqual(
+        [...PAIRED_DEVICE_KINDS].sort(),
+      );
+      expect(
+        column(
+          "SELECT release_channel FROM paired_device_release_channels ORDER BY release_channel",
+        ),
+      ).toEqual([...PAIRED_DEVICE_RELEASE_CHANNELS].sort());
+      database.prepare("INSERT INTO owners (id, revision) VALUES ('owner-kinds', 0)").run();
+      database
+        .prepare(
+          "INSERT INTO agents (id, owner_id, revision) VALUES ('agent-kinds', 'owner-kinds', 0)",
+        )
+        .run();
+      const insert = (kind: string, channel: string, id: string) =>
+        database
+          .prepare(
+            `INSERT INTO paired_devices (id, owner_id, agent_id, revision, kind, name, release_channel,
+               device_public_key, confirm_public_key, status, supported_actions, paired_at)
+             VALUES (?, 'owner-kinds', 'agent-kinds', 0, ?, 'n', ?, 'a', 'b', 'pending', '[]',
+               '2026-11-14T00:00:00.000Z')`,
+          )
+          .run(id, kind, channel);
+      expect(() => insert("iphone", "direct", `dev_${"a".repeat(22)}`)).not.toThrow();
+      expect(() => insert("ipad", "direct", `dev_${"b".repeat(22)}`)).toThrow(/not registered/u);
+      expect(() => insert("mac", "sideload", `dev_${"c".repeat(22)}`)).toThrow(/not registered/u);
+      expect(() =>
+        database
+          .prepare("UPDATE paired_devices SET kind = 'tv' WHERE id = ?")
+          .run(`dev_${"a".repeat(22)}`),
+      ).toThrow(/not registered/u);
+      database.prepare("INSERT INTO paired_device_kinds (kind) VALUES ('ipad')").run();
+      expect(() => insert("ipad", "direct", `dev_${"d".repeat(22)}`)).not.toThrow();
+      database.close();
+    } finally {
+      await rm(directory, { recursive: true });
+    }
   });
 });
