@@ -44,7 +44,10 @@ describe("tooling host environment boundary", () => {
     });
     expect(
       Object.keys(tooling.env).every(
-        (name) => name.startsWith("GITHUB_") || name === "HIMAWARI_REVIEW_GATEWAY",
+        (name) =>
+          name.startsWith("GITHUB_") ||
+          name === "HIMAWARI_REVIEW_GATEWAY" ||
+          name === "HIMAWARI_REVIEW_SELFCHECK_CACHE",
       ),
     ).toBe(true);
     expect(result.projects.filter(({ name }) => name !== "tooling").every(({ env }) => !env)).toBe(
