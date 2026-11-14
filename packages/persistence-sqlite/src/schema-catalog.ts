@@ -888,6 +888,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed with its file once older than the configured media retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
+    "perception_extractions",
+    "PerceptionStorePort",
+    "one row per stretch of conversation the background extraction has picked up: status, attempts, how many records it saw, when to try again and what the model call cost; never exported",
+    "metadata_only",
+    "cascade with the stretch, Owner or Agent deletion",
+  ),
+  entry(
+    "perception_command_utterances",
+    "PerceptionStorePort",
+    "the ids of spoken sentences that already entered a conversation as a command, so extraction skips the matching speech record; never exported",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "limit_usage",
     "PerceptionStorePort",
     "how much of each daily limit is used per owner-local day; rows with a device id hold the latest number that device reported",

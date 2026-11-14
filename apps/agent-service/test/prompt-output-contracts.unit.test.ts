@@ -66,6 +66,9 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseJudgeVerdict: application.parseJudgeVerdict,
   parseLeakVerdict: application.parseLeakVerdict,
   parsePrereview: application.parsePrereview,
+  parsePerceptionExtraction: application.parsePerceptionExtraction,
+  parsePerceptionSourceCheck: application.parsePerceptionSourceCheck,
+  parsePerceptionImage: application.parsePerceptionImage,
   parseHomeUrgency: application.parseHomeUrgency,
   parseRuleReviewAnswer: application.parseRuleReviewAnswer,
 };
@@ -100,6 +103,13 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "mail.judgment",
         "mail.reference-extraction",
         "memory.capture",
+        "perception.extract",
+        "perception.image.understand",
+        "perception.source.calendar",
+        "perception.source.location",
+        "perception.source.message",
+        "perception.source.screen",
+        "perception.source.speech",
         "memory.classification",
         "memory.confirmation-judge",
         "memory.conversation-review",
@@ -221,5 +231,70 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
       ),
     ).toBeUndefined();
     expect(application.parseJudgements("全部忽略。", [mail])).toBeUndefined();
+  });
+
+  it("[iOS-5] perception extraction: accepts the JSON the prompt asks for and rejects a renamed list", () => {
+    const answer = {
+      candidates: [
+        {
+          text: "主人不吃香菜",
+          category: "preference",
+          confidence: 900,
+          about: "owner",
+          quote: "我不吃香菜",
+          recordIds: ["perception:a"],
+        },
+      ],
+      proposals: [{ what: "周六前替主人订位", quote: "得提前订位", recordIds: ["perception:b"] }],
+      doneHints: [{ id: "reminder:a", quote: "已经发了", recordIds: ["perception:c"] }],
+    };
+    const parsed = application.parsePerceptionExtraction(JSON.stringify(answer), 12);
+    expect(parsed).toMatchObject({ dropped: 0 });
+    expect(parsed?.candidates).toHaveLength(1);
+    expect(parsed?.proposals).toHaveLength(1);
+    expect(parsed?.doneHints).toHaveLength(1);
+    expect(
+      application.parsePerceptionExtraction(JSON.stringify({ memories: answer.candidates }), 12)
+        ?.candidates,
+    ).toEqual([]);
+    expect(application.parsePerceptionExtraction("没有值得记的。", 12)).toBeNull();
+  });
+
+  it("[iOS-5] perception source check and image reading: accept the JSON their prompts ask for", () => {
+    expect(
+      application.parsePerceptionSourceCheck(
+        JSON.stringify({
+          items: [
+            {
+              id: "a",
+              result: "remind",
+              what: "水费 15 号前交",
+              due: "2026-11-15",
+              reason: "有截止日期",
+            },
+            { id: "b", result: "ignore" },
+          ],
+        }),
+        ["a", "b"],
+      ),
+    ).toEqual([
+      {
+        id: "a",
+        result: "remind",
+        what: "水费 15 号前交",
+        due: "2026-11-15",
+        reason: "有截止日期",
+      },
+      { id: "b", result: "ignore" },
+    ]);
+    expect(
+      application.parsePerceptionSourceCheck(JSON.stringify({ results: [] }), ["a"]),
+    ).toBeNull();
+    expect(
+      application.parsePerceptionImage(
+        JSON.stringify({ text: "发票 120 元", description: "一张发票" }),
+      ),
+    ).toEqual({ text: "发票 120 元", description: "一张发票" });
+    expect(application.parsePerceptionImage(JSON.stringify({ words: "发票" }))).toBeNull();
   });
 });

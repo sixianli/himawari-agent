@@ -66,3 +66,28 @@ export function findConversationBreak(
   }
   return null;
 }
+
+export function findPerceptionPlacementBreak(
+  bodies: readonly string[],
+  marker: string,
+): (PrefixBreak & { request: number }) | null {
+  let previousLength = 0;
+  let seen = false;
+  for (const [request, raw] of bodies.entries()) {
+    const body = parse(raw);
+    if (JSON.stringify(body.parsed["tools"] ?? null).includes(marker))
+      return { where: "perception-in-tools", index: -1, request };
+    for (const [index, message] of body.parsed.messages.entries()) {
+      if (!JSON.stringify(message).includes(marker)) continue;
+      const role = String((message as { role?: unknown } | null)?.role);
+      if (role === "system" || role === "developer")
+        return { where: "perception-in-system", index, request };
+      if (role !== "tool") return { where: "perception-not-tool-result", index, request };
+      if (!seen && index < previousLength)
+        return { where: "perception-inserted-earlier", index, request };
+      seen = true;
+    }
+    previousLength = body.parsed.messages.length;
+  }
+  return seen ? null : { where: "perception-missing", index: -1, request: -1 };
+}

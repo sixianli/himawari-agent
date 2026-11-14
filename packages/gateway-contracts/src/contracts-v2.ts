@@ -2666,6 +2666,7 @@ export const disableCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -2675,6 +2676,7 @@ export const rollbackCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -3137,6 +3139,13 @@ export const capabilitySnapshotSchema = object({
     updateAssessment: nullable(updateAssessmentSnapshotSchema),
     rollbackVersion: nullable(machineString),
     rollbackAvailable: booleanValue,
+    lastInvalidation: nullable(
+      object({
+        lifecycle: enumeration(["disabled"]),
+        cancelledScheduledJobs: integer(0),
+        occurredAt: timestamp,
+      }),
+    ),
     lastTransition: nullable(
       object({
         fromVersion: machineString,

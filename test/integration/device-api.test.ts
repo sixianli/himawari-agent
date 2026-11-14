@@ -623,6 +623,41 @@ describe("[P1-1] device client routes", () => {
       }),
     );
 
+  it("[iOS-5] remembers which utterance a spoken command came from and refuses a malformed utterance id", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const created = await post(h, client, "threads", {
+      requestId: "device-request-0101",
+      answerLocale: "zh-CN",
+    });
+    const threadId = created.json().payload.threadId as string;
+    const message = {
+      messageId: "device-message-0101",
+      threadId,
+      expectedRevision: 1,
+      text: "帮我把明天的会改到下午",
+    };
+    const scope = { ownerId, agentId };
+    const known = () =>
+      h.repository.perception().commandUtterances({
+        ...scope,
+        utteranceIds: ["utterance-0101", "utterance-0102"],
+      });
+    expect(
+      (await post(h, client, "messages", { ...message, utteranceId: "bad id!" })).statusCode,
+    ).toBe(400);
+    expect((await post(h, client, "messages", { ...message, utteranceId: 7 })).statusCode).toBe(
+      400,
+    );
+    expect(await known()).toEqual([]);
+    const sent = await post(h, client, "messages", { ...message, utteranceId: "utterance-0101" });
+    expect(sent.statusCode, sent.body).toBe(200);
+    expect(await known()).toEqual(["utterance-0101"]);
+    const resent = await post(h, client, "messages", { ...message, utteranceId: "utterance-0101" });
+    expect(resent.statusCode, resent.body).toBe(200);
+    expect(await known()).toEqual(["utterance-0101"]);
+  });
+
   it("creates a conversation once per requestId and reads its messages and texts back", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
