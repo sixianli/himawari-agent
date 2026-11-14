@@ -44,7 +44,11 @@ vi.mock("node:child_process", async (original) => {
   };
 });
 
-import { installDependencies } from "../../scripts/ci/install-dependencies.mjs";
+import {
+  installArguments,
+  installDependencies,
+  runnerNpmCache,
+} from "../../scripts/ci/install-dependencies.mjs";
 import {
   installTools,
   loadToolchainLock,
@@ -422,5 +426,73 @@ describe("合成npm/native/SQLite子进程边界", () => {
         cacheDirectory,
       }),
     ).rejects.toThrow(/npm cache/);
+  });
+  it("runner 缓存放在 runner 的 HOME 下，跨作业保留，下一次安装是 warm", async () => {
+    const f = fixture();
+    await installTools({ root: f.root, directory: f.toolsDirectory, includeScanners: false });
+    const home = join(f.directory, "home");
+    mkdirSync(home);
+    const env = { ...process.env, GITHUB_ACTIONS: "true", HOME: home };
+    f.warmCache = true;
+    const first = await installDependencies({
+      root: f.root,
+      toolsDirectory: f.toolsDirectory,
+      evidenceDirectory: join(f.directory, "runner-first"),
+      cacheDirectory: "runner",
+      env,
+    });
+    expect(first.cache).toBe("cold");
+    const cache = join(home, ".cache/himawari-ci/npm");
+    write(join(cache, "_cacache/index"), "synthetic cached bytes");
+    const second = await installDependencies({
+      root: f.root,
+      toolsDirectory: f.toolsDirectory,
+      evidenceDirectory: join(f.directory, "runner-second"),
+      cacheDirectory: "runner",
+      env,
+    });
+    expect(second.cache).toBe("warm");
+    expect(readFileSync(join(cache, "_cacache/index"), "utf8")).toBe("synthetic cached bytes");
+  });
+  it("命令行的 --cache runner 原样传给安装，其他路径照旧转成绝对路径", () => {
+    expect(installArguments(["--tools", "t", "--evidence", "e", "--cache", "runner"])).toEqual({
+      toolsDirectory: resolve("t"),
+      evidenceDirectory: resolve("e"),
+      cacheDirectory: "runner",
+    });
+    expect(installArguments(["--cache", ".ci-output/npm-cache"]).cacheDirectory).toBe(
+      resolve(".ci-output/npm-cache"),
+    );
+  });
+  it("runner 缓存满 7 天整个清空重建", () => {
+    const home = mkdtempSync(join(tmpdir(), "runner-cache-"));
+    const env = { GITHUB_ACTIONS: "true", HOME: home };
+    const start = Date.parse("2026-11-01T00:00:00Z");
+    const cache = runnerNpmCache(env, start);
+    write(join(cache, "_cacache/index"), "old");
+    runnerNpmCache(env, start + 6 * 24 * 60 * 60 * 1000);
+    expect(existsSync(join(cache, "_cacache/index"))).toBe(true);
+    runnerNpmCache(env, start + 8 * 24 * 60 * 60 * 1000);
+    expect(existsSync(join(cache, "_cacache/index"))).toBe(false);
+    expect(existsSync(join(cache, ".himawari-created"))).toBe(true);
+    rmSync(home, { recursive: true, force: true });
+  });
+  it.each([
+    ["不在 GitHub Actions 里", { HOME: "/tmp" }],
+    ["HOME 不是绝对路径", { GITHUB_ACTIONS: "true", HOME: "relative" }],
+  ])("runner 缓存%s时拒绝", (_name, env) => {
+    expect(() => runnerNpmCache(env)).toThrow(
+      "runner npm cache 只能在 GitHub Actions runner 上使用",
+    );
+  });
+  it("runner 缓存路径里有符号链接时拒绝", () => {
+    const home = mkdtempSync(join(tmpdir(), "runner-cache-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "runner-cache-target-"));
+    symlinkSync(elsewhere, join(home, ".cache"));
+    expect(() => runnerNpmCache({ GITHUB_ACTIONS: "true", HOME: home })).toThrow(
+      "npm cache 路径不得包含符号链接",
+    );
+    rmSync(home, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
   });
 });

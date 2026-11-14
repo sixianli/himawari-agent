@@ -8,6 +8,7 @@ import {
   directPageErrorListener,
   expectedOfflineTransportError,
   findDirectPageErrorListeners,
+  findUnwatchedBrowserLaunches,
 } from "../../scripts/browser-page-errors.mjs";
 
 class Page extends EventEmitter {
@@ -161,9 +162,61 @@ it("[webkit-teardown] 扫描能找出放进目录里的直接监听，允许名�
   }
 });
 
+const screenshotOnlyLaunches = new Set([
+  "browser-page-errors.mjs",
+  "demo/record-email-decision.mjs",
+  "render-brand-assets.mjs",
+  "test-control-center-visual-v4.mjs",
+]);
+
 it("[webkit-teardown] 浏览器测试脚本一律经 browser-page-errors.mjs 收页面报错", async () => {
   const scripts = path.resolve(import.meta.dirname, "../../scripts");
+  const qualification = path.resolve(import.meta.dirname, "../qualification");
   expect(await findDirectPageErrorListeners(scripts, allowedDirectListeners)).toEqual([]);
+  expect(await findUnwatchedBrowserLaunches(scripts, screenshotOnlyLaunches)).toEqual([]);
+  expect(await findDirectPageErrorListeners(qualification, new Set())).toEqual([]);
+  expect(await findUnwatchedBrowserLaunches(qualification, new Set())).toEqual([]);
+});
+
+it("[webkit-teardown] 扫描能找出启动了浏览器却不收页面报错的脚本，只截图的允许名单不算", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "page-error-launch-"));
+  try {
+    await mkdir(path.join(root, "demo"));
+    await writeFile(path.join(root, "bare.mjs"), "const b = await chromium.launch();\n");
+    await writeFile(path.join(root, "demo", "nested.ts"), "await webkit.launch({});\n");
+    await writeFile(
+      path.join(root, "watched.mjs"),
+      "const b = await chromium.launch();\nwatchPageErrors(page, collect);\n",
+    );
+    await writeFile(
+      path.join(root, "collected.mjs"),
+      "const b = await firefox.launch();\ncollectPageErrors(page);\n",
+    );
+    await writeFile(
+      path.join(root, "imported.mjs"),
+      'import { collectPageErrors } from "./browser-page-errors.mjs";\nawait chromium.launch();\n',
+    );
+    await writeFile(
+      path.join(root, "persistent.mjs"),
+      "await chromium.launchPersistentContext(dir);\n",
+    );
+    await writeFile(path.join(root, "server.mjs"), "await chromium.launchServer ({});\n");
+    await writeFile(
+      path.join(root, "server-collected.mjs"),
+      "await chromium.launchServer();\ncollectPageErrors(page);\n",
+    );
+    await writeFile(path.join(root, "render-brand-assets.mjs"), "await chromium.launch();\n");
+    await writeFile(path.join(root, "notes.md"), "chromium.launch()\n");
+    expect(await findUnwatchedBrowserLaunches(root, new Set(["render-brand-assets.mjs"]))).toEqual([
+      "bare.mjs",
+      "demo/nested.ts",
+      "imported.mjs",
+      "persistent.mjs",
+      "server.mjs",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it("[webkit-teardown] 断网阶段只放过夹具主机上那几个路径的 access control 报错", () => {

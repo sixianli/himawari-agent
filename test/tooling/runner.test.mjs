@@ -123,7 +123,7 @@ describe("JSON公开报告的原始字节与脱敏", () => {
     const result = await runCheck({
       root,
       context,
-      checkId: "coverage",
+      checkId: "tests",
       artifact: archive,
       output: input,
       toolsDirectory: path.join(root, "missing"),
@@ -278,7 +278,7 @@ describe("受控检查与公开输出", () => {
     expect(read(path.join(root, ".ci-output/result/result.json"))).toEqual(result);
     await expect(runCheck(options)).rejects.toThrow("EXISTS");
     await expect(
-      runCheck({ ...options, checkId: "coverage", output: ".ci-output/coverage" }),
+      runCheck({ ...options, checkId: "tests", output: ".ci-output/tests" }),
     ).rejects.toThrow("ARTIFACT_REQUIRED");
     await expect(
       runCheck({ ...options, artifact: path.join(root, "missing"), output: ".ci-output/bad" }),
@@ -296,7 +296,7 @@ describe("受控检查与公开输出", () => {
       toolsDirectory: path.join(root, "missing"),
     });
     const report = path.join(input, "log.txt");
-    write(report, "Bearer " + "x".repeat(24));
+    write(report, `Bearer ${"x".repeat(24)}`);
     result.reports.push(reportEntry(report, "diagnostic", input));
     write(path.join(input, "result.json"), result);
     write(path.join(input, "environment-dump.txt"), "never publish");
@@ -355,7 +355,7 @@ describe("required 失败证据和平台 artifact ID", () => {
       env: {},
     });
     expect(summary.status).toBe("failed");
-    expect(summary.missing).toHaveLength(8);
+    expect(summary.missing).toHaveLength(9);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
     expect(read(path.join(root, ".ci-output/gate/context.json"))).toEqual(gateContext);
     expect(() =>
@@ -379,7 +379,7 @@ describe("required 失败证据和平台 artifact ID", () => {
   });
 });
 
-it("[ADR-0260] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
+it("[ADR-0266] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
   const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
   const member = (id) => policy.checks.find((check) => check.id === id).members[0];
   for (const id of ["policy", "static", "security"]) {
@@ -388,7 +388,7 @@ it("[ADR-0260] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上�
     expect(memberRunsOnHost(member(id), "darwin", "arm64")).toBe(false);
     expect(memberRunsOnHost(member(id), "linux", "ia32")).toBe(false);
   }
-  for (const id of ["build", "coverage", "required"]) {
+  for (const id of ["build", "tests", "required"]) {
     expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
     expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(false);
   }
