@@ -17,7 +17,7 @@ date: "2026-10-26"
 - [整体流程](#整体流程)
 - [数据库](#数据库)
 - [推送密钥和配置](#推送密钥和配置)
-- [三类推送来源](#三类推送来源)
+- [推送来源](#推送来源)
 - [发送规则](#发送规则)
 - [通知内容](#通知内容)
 - [网关命令和查询](#网关命令和查询)
@@ -31,7 +31,7 @@ date: "2026-10-26"
 
 ## 目标与边界
 
-- 三类事经网页推送送到 Andy 开过通知的每台设备：到期的记忆提醒、等他审批、一轮任务完成或失败；另有一条不打扰的“有建议等你看”（见[三类推送来源](#三类推送来源)里的第四类）。
+- 三类事经网页推送送到 Andy 开过通知的每台设备：到期的记忆提醒、等他审批、一轮任务完成或失败；另有一条不打扰的“有建议等你看”（见[推送来源](#推送来源)里的提议一行）。
 - 网页关着、手机锁屏也能收到；点开直接进 Himawari 对应的对话或记忆页。
 - 只要有一台设备正在看 Himawari，就不推送。
 - 同一件事对同一台设备只推一次，服务重启后也不重发。
@@ -76,7 +76,7 @@ date: "2026-10-26"
   - 同一推送地址只有一行（唯一索引 `owner_id, agent_id, endpoint`）；重复开通时更新密钥和语言。
   - `p256dh` 和 `auth` 是公开密钥，推送地址只能用来给这台设备发加密消息，所以明文存放，与其他状态表一样受数据库文件权限保护。
 - `web_push_outbox`：待推送的事，一件事一行。
-  - 列：`source_key`（主键内唯一，见[三类推送来源](#三类推送来源)）、`kind`（`reminder`、`approval`、`run`）、`source_ref`、`thread_id`、`created_at`、`expires_at`。
+  - 列：`source_key`（主键内唯一，见[推送来源](#推送来源)）、`kind`（`reminder`、`approval`、`run`）、`source_ref`、`thread_id`、`created_at`、`expires_at`。
   - 只记“是哪件事”，不记通知正文；发送时现取正文，所以记忆被删除或审批已处理时自然不再推。
 - `web_push_attempts`：一件事对一台设备的发送结果。
   - 列：`source_key`、`subscription_id`、`status`（`pending`、`sent`、`suppressed`、`expired`、`gone`、`failed`）、`attempts`、`next_attempt_at`、`last_code`、`updated_at`；主键 `owner_id, agent_id, source_key, subscription_id`。
@@ -103,17 +103,18 @@ date: "2026-10-26"
 
 [↑ 返回阅读导航](#阅读导航)
 
-## 三类推送来源
+## 推送来源
 
-推送调度器每 10 秒扫一遍下面三类来源，把新事写进待推送表；写入和游标前进在同一个数据库事务里。
+推送调度器每 10 秒扫一遍下面三类来源和一类提议，把新事写进待推送表；写入和游标前进在同一个数据库事务里。
 
 | 来源 | 怎么找 | `source_key` | 有效期 | 紧急程度 |
 | --- | --- | --- | --- | --- |
 | 记忆提醒 | `memoryReminders().listDue(now)`，只取到期不超过 6 小时的 | `reminder:<提醒 id>:<remindAt>` | 到期后 6 小时；被主人的“静默延后”规则延后时，延长到延后时刻之后 1 小时，从入队起最长 48 小时（[ADR 0244](../../adr/0244-hard-rules-step4-unified-push-gate.md)） | `high` |
 | 审批 | `authorizationStore().listApprovals()`，只取 `pending` 且未过期的 | `approval:<审批 id>` | 审批的过期时间 | `high` |
 | 一轮任务结束 | `runs` 表里状态变成 `completed` 或 `failed`、并且属于某个对话的 Run，按结束时间和 id 往后读；`cancelled` 不推，因为是 Andy 自己停的 | `run:<runId>:completed` 或 `run:<runId>:failed` | 24 小时；被主人的“静默延后”规则延后时，延长到延后时刻之后 1 小时，从入队起最长 48 小时（[ADR 0244](../../adr/0244-hard-rules-step4-unified-push-gate.md)） | `normal` |
+| 待处理的提议 | 只取最新一份待处理提议 | `proposal:<提议 id>:<proposedAt>` | 提议时间起 24 小时，不受“静默延后”规则延后 | `normal` |
 
-- 第四类是待处理的提议（[IOS-4]）：只为最新一份待处理提议入队一条，`source_key` 是 `proposal:<提议 id>:<proposedAt>`，有效期是提议时间起 24 小时（按 `proposedAt` 算，不按入队时间），紧急程度 `normal`，负载带 `silent: true`，不计入角标，也不受“不推送时段”规则延后；正文是固定的一句话，不含提议内容。读提议失败时，已入队的照常发送。
+- 待处理的提议（[IOS-4]）：只为最新一份入队一条，有效期按 `proposedAt` 算，不按入队时间，负载带 `silent: true`，不计入角标，也不受“不推送时段”规则延后；正文是固定的一句话，不含提议内容。读提议失败时，已入队的照常发送。
 - 不读对话事件表：成功的一轮在事件表里只有 `thread.message.commit_assistant`，事件行不带 Run id；普通失败也不一定写事件。`runs` 表的状态才是一轮结束的唯一记录。迁移给 `runs(owner_id, agent_id, updated_at, id)` 加索引。
 - 读取位置是“结束时间|Run id”，第一次启动时从当前时刻开始，不补推历史。
 - 审批记录里没有对话 id，通过它的 `runId` 找到所属对话。
