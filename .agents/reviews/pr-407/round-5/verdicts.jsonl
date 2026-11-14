@@ -1,0 +1,6 @@
+{"id": "r5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "worker 里有一批写操作绕过事务范围完整性检查", "valid": false, "class": "error"}
+{"id": "r5-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`capture_gave_up` 语义改成“这一轮什么都没存下”，但“提交成功但回包丢失”的控制侧审计会丢", "valid": true, "class": "error", "severity": "low", "trigger": "提交成功但回包丢失（敏感批准那条路）", "consequence": "只丢审计，数据正确；已在 ADR 0240 决定 4 写明接受", "modelSeverity": "低"}
+{"id": "r5-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说法“范围外的读写在锁外等待”与代码/ADR 不一致", "valid": false, "class": "error"}
+{"id": "r5-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`#save` 在 `has` 不可读时只保存一次而非“最多两次”", "valid": true, "class": "error", "severity": "low", "trigger": "读队列失败", "consequence": "只保存一次，保留队列行等下一轮；已写进 ADR 0240 决定 4", "modelSeverity": "低"}
+{"id": "r5-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "初始 `enqueue` 失败会直接放弃整轮，既不写记忆也不入队", "valid": false, "class": "error"}
+{"id": "r5-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "`close()`/`operationalStatus()` 绕过 `scopeGate`", "valid": true, "class": "error", "severity": "low", "trigger": "事务范围进行中调用 close()", "consequence": "正在进行的这一轮提交失败、报错，队列行留着下一轮补做，不丢数据；已改成关闭前先等范围结束，新测试在旧代码上失败", "modelSeverity": "低"}

@@ -562,7 +562,7 @@ describe("[R2-L5] Agent Loop gateway billing", () => {
         },
       },
     ]);
-    expect(f.original.mock.calls[0]?.[2]?.maxRetries).toBe(0);
+    expect(f.original.mock.calls[0]?.[2]).toMatchObject({ maxRetries: 2, maxRetryDelayMs: 10_000 });
   });
 
   it.each([32769, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(

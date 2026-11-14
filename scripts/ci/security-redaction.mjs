@@ -5,9 +5,10 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, inflateRawSync } from "node:zlib";
 import { safeRelativePath } from "./contracts.mjs";
+import { redactText } from "./redact-text.mjs";
+import { runnerTracking } from "./runner-tracking.mjs";
 import { createPublishedFixtureReview } from "./security-published-fixtures.mjs";
 import { findBuildSecrets } from "./security-source.mjs";
-import { redactText } from "./redact-text.mjs";
 
 export { redactText } from "./redact-text.mjs";
 
@@ -165,7 +166,12 @@ export async function assertPublicArtifacts({
 
 async function inspectBuildArchive(file, { python, sentinels, review }) {
   assert(python && isAbsolute(python), "PUBLIC_ARCHIVE_LOCKED_PYTHON_REQUIRED");
-  const env = { PATH: "/usr/bin:/bin", PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1" };
+  const env = {
+    PATH: "/usr/bin:/bin",
+    PYTHONNOUSERSITE: "1",
+    PYTHONDONTWRITEBYTECODE: "1",
+    ...runnerTracking(),
+  };
   const version = spawnSync(python, ["--version"], { env, encoding: "utf8" });
   assert(
     version.status === 0 && version.stdout.trim() === "Python 3.12.10",

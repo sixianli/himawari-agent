@@ -272,6 +272,7 @@ export function resolveWindow({
 }
 
 export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup | null {
+  if (row.kind === "rule_review" && row.outcome?.startsWith("owner_")) return null;
   if (row.kind === "proactive")
     return row.outcome === "silent" ? "proactive_silent" : "proactive_pushed";
   if (row.kind === "memory_candidate") {

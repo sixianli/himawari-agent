@@ -56,6 +56,31 @@ function record({
 }
 
 describe("Jarvis Test score history", () => {
+  it("summarizes and renders the proactive next-step scenario, and rejects a scenario it does not know", () => {
+    const base = record();
+    const proactive = {
+      ...base,
+      cases: [
+        ...base.cases,
+        {
+          id: "9a",
+          scenario: "proactive_next_step",
+          trials: [true, true, false],
+          jev_probability: 0.8,
+          judge_tier: "decision",
+        },
+      ],
+    };
+    expect(() => validateRecord(proactive)).not.toThrow();
+    expect(summarize(proactive).proactive_next_step).toMatchObject({ cases: 1, passAll: 0 });
+    expect(renderTrend([proactive])).toContain("#9 主动提下一步  3 次全过 0/1");
+    const unknown = {
+      ...base,
+      cases: [...base.cases, { ...proactive.cases.at(-1), scenario: "not_a_scenario" }],
+    };
+    expect(() => validateRecord(unknown)).toThrow();
+  });
+
   it("rejects records whose models are not pinned or whose judge mode disagrees", () => {
     const unpinned = record();
     unpinned.models.subject = { id: "deepseek/deepseek-v4.1-flash", version: "" };

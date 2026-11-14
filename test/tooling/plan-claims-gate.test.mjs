@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
   assertReviewed,
   buildPrompt,
@@ -16,11 +17,11 @@ import {
   reviewConfig,
   setRegisteredTestValues,
 } from "../../scripts/model-review/opencode-review.mjs";
-import { validateTask } from "../../scripts/model-review/delegate.mjs";
 import {
   claimsProblems,
-  parseClaimVerdicts,
+  locationsOf,
   parseClaims,
+  parseClaimVerdicts,
   quoteInText,
 } from "../../scripts/model-review/plan-claims.mjs";
 
@@ -123,7 +124,7 @@ const fixture = ({ adrText = `# 方案\n\n${RIGHT_SENTENCE}。\n`, withAdr = tru
     return commit(files, "claims records");
   };
   const check = (extra = {}) => assertReviewed({ repo, pr: 7, mainRef: "origin/main", ...extra });
-  return { root, repo, git, commit, writeClaims, claimsRecord, check, reviewed };
+  return { root, repo, git, commit, writeClaims, claimsRecord, check, reviewed, main };
 };
 
 const withFixture = (options, run) => {
@@ -210,6 +211,48 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("  ", text)).toBe(false);
   });
 
+  it("[claims] reads several evidence places from one location field and refuses a broken one", () => {
+    expect(locationsOf("ci/policy.json:110,127")).toEqual([
+      { path: "ci/policy.json", line: 110, commit: null },
+      { path: "ci/policy.json", line: 127, commit: null },
+    ]);
+    expect(locationsOf("a.mjs:3,b/c.mjs:9-12")).toEqual([
+      { path: "a.mjs", line: 3, commit: null },
+      { path: "b/c.mjs", line: 9, commit: null },
+    ]);
+    expect(locationsOf("a.mjs:3")).toEqual([{ path: "a.mjs", line: 3, commit: null }]);
+    expect(locationsOf("-")).toEqual([]);
+    expect(locationsOf("127,a.mjs:3")).toEqual([]);
+    expect(locationsOf("/etc/passwd:1,a.mjs:3")).toEqual([]);
+    expect(locationsOf("a.mjs:3,/etc/passwd:1")).toEqual([]);
+    expect(locationsOf("a.mjs:3,../x.mjs:1")).toEqual([]);
+  });
+
+  it("[claims] accepts several quoted fragments joined by a full-width semicolon only when every fragment is in the file in that order", () => {
+    const text = "MemoryHigh=19G\nMemoryMax=20G\nnote: 第一步；第二步\n";
+    expect(quoteInText("MemoryHigh=19G；MemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("note: 第一步；第二步", text)).toBe(true);
+    expect(quoteInText("MemoryHigh=19G；MemoryMax=21G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G；20G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G；", text)).toBe(true);
+    expect(quoteInText("MemoryHigh=19G\\nMemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("MemoryMax=20G\\nMemoryHigh=19G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G / MemoryMax=20G", text)).toBe(true);
+    expect(quoteInText("MemoryMax=20G / MemoryHigh=19G", text)).toBe(false);
+    const code = 'run([\n  "--",\n  ".github",\n]),\nnext();\n';
+    expect(quoteInText('"--", /  ".github", / ]), / next();', code)).toBe(true);
+    expect(quoteInText('"--", / ]), / ".github",', code)).toBe(false);
+    expect(quoteInText("]), / ;", code)).toBe(false);
+    expect(quoteInText("foo();；bar();", "foo();\nbar();\n")).toBe(false);
+    expect(quoteInText("；", text)).toBe(false);
+    expect(quoteInText("MemoryMax=20G；MemoryHigh=19G", text)).toBe(false);
+    expect(quoteInText("MemoryHigh=19G；MemoryHigh=19G", text)).toBe(false);
+    expect(quoteInText("MemoryMax=20G；note: 第一步", text)).toBe(true);
+    expect(quoteInText("note: 第一步；MemoryMax=20G", text)).toBe(false);
+    expect(quoteInText("note: 第一步 … MemoryMax=20G；MemoryHigh=19G", text)).toBe(true);
+    expect(quoteInText("note: 第一步 … MemoryMax=21G；MemoryHigh=19G", text)).toBe(false);
+  });
+
   it("[claims] checks the verdict file line by line", () => {
     expect(parseClaimVerdicts(modelWrongVerdict(), "v").length).toBe(1);
     const plan = JSON.stringify({
@@ -277,7 +320,7 @@ describe("plan claims check: running it", () => {
       brief: `方案文件：${ADR}\n\n${WRONG_SENTENCE}\n`,
     });
     expect(prompt).toContain(
-      "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行>|<方案原句>|<代码原文>",
+      "CLAIM|<序号>|<一致 或 不一致 或 找不到>|<文件:行 或 文件:行@完整提交哈希>|<方案原句>|<代码原文>",
     );
     expect(prompt).toContain(WRONG_SENTENCE);
     expect(prompt).not.toContain("必答问题");
@@ -383,6 +426,154 @@ describe("plan claims check: the merge gate", () => {
         `claims-evidence ${ADR} deepseek-v4.1-flash 1 code-quote-not-in-file`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 2 location-file-missing`,
         `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-line-out-of-range`,
+      ]);
+    }));
+
+  it("[claims gate] code the PR removed can be cited at the PR's base commit, only when head no longer has it", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      const old = claimLine(
+        "1",
+        "一致",
+        `${REDACTION}:3@${f.main}`,
+        "`maskSensitiveTexts` 原来输出前把占位编号去掉",
+        CODE_LINE,
+      );
+      f.writeClaims({ answer: `${old}\n` });
+      expect(claimsOnly(f.check())).toEqual([]);
+    }));
+
+  it("[claims gate] an old commit cannot stand in for code that head still has, or for a commit outside the PR", () =>
+    withFixture({}, (f) => {
+      const still = claimLine("1", "一致", `${REDACTION}:3@${f.main}`, RIGHT_SENTENCE, CODE_LINE);
+      const stranger = claimLine(
+        "2",
+        "一致",
+        `${REDACTION}:3@${"a".repeat(40)}`,
+        "第二句",
+        CODE_LINE,
+      );
+      const short = claimLine("3", "一致", `${REDACTION}:3@abc1234`, "第三句", CODE_LINE);
+      f.writeClaims({ answer: `${still}\n${stranger}\n${short}\n` });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-still-in-head`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 2 commit-not-in-pr`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-missing`,
+      ]);
+    }));
+
+  it("[claims gate] the base named in the run, and the PR's own commits, still count after main moves on and is merged in", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      f.git("checkout", "--quiet", "main");
+      const middle = f.commit({ "other.txt": "main moved\n" }, "main moves");
+      const later = f.commit({ "more.txt": "and again\n" }, "main moves again");
+      f.git("update-ref", "refs/remotes/origin/main", later);
+      f.git("checkout", "--quiet", "feature");
+      f.git("-c", "user.name=t", "-c", "user.email=t@t", "merge", "--quiet", "--no-edit", "main");
+      const atBase = claimLine(
+        "1",
+        "一致",
+        `${REDACTION}:3@${f.main}`,
+        "`maskSensitiveTexts` 原来输出前把占位编号去掉",
+        CODE_LINE,
+      );
+      const atOwn = claimLine("2", "一致", `${REDACTION}:3@${f.reviewed}`, "第二句", CODE_LINE);
+      const atMain = claimLine("3", "一致", `other.txt:1@${middle}`, "第三句", "main moved");
+      f.writeClaims({ answer: `${atBase}\n${atOwn}\n${atMain}\n` });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 commit-not-in-pr`,
+      ]);
+      f.writeClaims({
+        answer: `${atBase}\n`,
+        record: f.claimsRecord({ head: later, at: "2026-11-12T02:00:00.000Z" }),
+        topic: "plan-later",
+      });
+      expect(claimsOnly(f.check())).toContain(
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-not-in-pr`,
+      );
+    }));
+
+  it("[claims gate] a path with @ in it is still a path", () =>
+    withFixture({}, (f) => {
+      f.commit({ "packages/@scope/a.ts": "export const scoped = 1;\n" }, "scoped package");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", "packages/@scope/a.ts:1", RIGHT_SENTENCE, "export const scoped = 1;")}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+    }));
+
+  it("[claims gate] a carried judgment stops counting once its evidence is gone from head", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({ answer: wrongAnswer(), verdicts: modelWrongVerdict(), topic: "plan-a" });
+      f.writeClaims({
+        answer: `${claimLine("7", "找不到", "-", WRONG_SENTENCE, "-")}\n`,
+        record: f.claimsRecord({ at: "2026-11-12T03:00:00.000Z" }),
+        topic: "plan-b",
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+      f.commit({ [REDACTION]: "export const replaced = true;\n" }, "evidence goes away");
+      expect(claimsOnly(f.check())).toContain(
+        `claims-verdict-evidence ${ADR} deepseek-v4.1-flash 7`,
+      );
+    }));
+
+  it("[claims gate] a judgment written for the same sentence in an earlier run carries over, but only while its evidence still holds", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: wrongAnswer(),
+        verdicts: modelWrongVerdict(),
+        topic: "plan-a",
+      });
+      const flaggedAgain = [
+        claimLine("1", "一致", `${REDACTION}:3`, RIGHT_SENTENCE, CODE_LINE),
+        claimLine("7", "找不到", "-", WRONG_SENTENCE, "-"),
+        "",
+      ].join("\n");
+      f.writeClaims({
+        answer: flaggedAgain,
+        record: f.claimsRecord({ at: "2026-11-12T03:00:00.000Z" }),
+        topic: "plan-b",
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+      const different = [
+        claimLine("1", "一致", `${REDACTION}:3`, RIGHT_SENTENCE, CODE_LINE),
+        claimLine("7", "找不到", "-", "完全不同的另一句", "-"),
+        "",
+      ].join("\n");
+      f.writeClaims({
+        answer: different,
+        record: f.claimsRecord({ at: "2026-11-12T04:00:00.000Z" }),
+        topic: "plan-c",
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-unjudged ${ADR} deepseek-v4.1-flash 7 找不到`,
+      ]);
+    }));
+
+  it("[claims gate] a quote over several places must sit in one cited file, and every place must exist", () =>
+    withFixture({}, (f) => {
+      f.writeClaims({
+        answer: [
+          claimLine(
+            "1",
+            "一致",
+            `${REDACTION}:1,3`,
+            RIGHT_SENTENCE,
+            "export function maskSensitiveTexts(texts) { / const masked = mask(texts);",
+          ),
+          claimLine("2", "一致", `${REDACTION}:3,code.txt:1`, "第二句", `${CODE_LINE} / feature`),
+          claimLine("3", "一致", `${REDACTION}:3,no/such/file.ts:1`, "第三句", CODE_LINE),
+          claimLine("4", "一致", `${REDACTION}:3,99`, "第四句", CODE_LINE),
+          claimLine("5", "一致", `${REDACTION}:1,2,3,4,1,2,3,4,1`, "第五句", CODE_LINE),
+          "",
+        ].join("\n"),
+      });
+      expect(f.check().problems).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 2 code-quote-not-in-file`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 3 location-file-missing`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 4 location-line-out-of-range`,
+        `claims-evidence ${ADR} deepseek-v4.1-flash 5 too-many-places`,
       ]);
     }));
 

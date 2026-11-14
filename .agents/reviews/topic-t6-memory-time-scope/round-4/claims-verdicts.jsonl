@@ -1,0 +1,1 @@
+{"id": "31", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|31|不一致|evals/memory-time-scope/retrieval-comparison.json:148|模型在“对话摘要”上与正则持平|\"recallAt5\": 0.875,", "outcome": "plan-fixed", "change": "“对话摘要”从“与正则持平”改为“还有小幅回退”"}

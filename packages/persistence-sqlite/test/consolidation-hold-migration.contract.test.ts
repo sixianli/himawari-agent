@@ -50,17 +50,7 @@ function dump(database: Database) {
       .all(...TABLES)
       .map((row) => {
         const entry = row as { sql: string | null };
-        return {
-          ...entry,
-          sql: entry.sql
-            ?.replace(/\s+/gu, " ")
-            .replace(/, 'hold'/gu, "")
-            .replace(", 'limit_change', 'delivery_timing', 'proposal'", "")
-            .replace(
-              " OR (kind = 'limit_change' AND outcome = 'changed') OR (kind = 'delivery_timing' AND outcome IN ( 'delivered', 'deferred', 'deadline_reached', 'shown_in_app' )) OR (kind = 'proposal' AND outcome IN ( 'proposed', 'blocked', 'accepted', 'dismissed', 'expired', 'executed', 'failed', 'undone', 'not_proposed', 'superseded', 'told' ))",
-              "",
-            ),
-        };
+        return { ...entry, sql: entry.sql?.replace(/\s+/gu, " ").replace(/, 'hold'/gu, "") };
       }),
   };
 }
@@ -171,7 +161,7 @@ async function openMigrated() {
     database,
     path.join(directory, "snapshot.sqlite"),
   );
-  applyMigrations(database, migrations, { snapshot });
+  applyMigrations(database, migrations.slice(0, sequence + 1), { snapshot });
   return { database, before };
 }
 
@@ -213,9 +203,9 @@ describe("consolidation hold migration", () => {
     expect(ledger("delivery_timing", "deferred").changes).toBe(1);
     for (const outcome of DECISION_OUTCOMES.proposal)
       expect(ledger("proposal", outcome).changes).toBe(1);
-    expect(() => ledger("proposal", "changed")).toThrow(/CHECK/u);
-    expect(() => ledger("limit_change", "deferred")).toThrow(/CHECK/u);
-    expect(() => ledger("no_such_kind", "changed")).toThrow(/CHECK/u);
+    expect(() => ledger("proposal", "changed")).toThrow(/FOREIGN KEY/u);
+    expect(() => ledger("limit_change", "deferred")).toThrow(/FOREIGN KEY/u);
+    expect(() => ledger("no_such_kind", "changed")).toThrow(/FOREIGN KEY/u);
     expect(database.prepare("SELECT count(*) FROM source_insights").pluck().get()).toBe(1);
     database.prepare("DELETE FROM memory_consolidation_changes WHERE id = 'change-1'").run();
     expect(

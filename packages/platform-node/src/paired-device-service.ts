@@ -158,7 +158,7 @@ export class PairedDeviceService {
     const scope = input;
     const now = this.#now();
     const expiresAt = new Date(now.getTime() + PAIRING_CODE_LIFETIME_MILLISECONDS).toISOString();
-    await this.#options.store.createPairingCode({
+    const created = await this.#options.store.createPairingCode({
       ownerId: scope.ownerId,
       agentId: scope.agentId,
       sessionId: scope.sessionId,
@@ -166,12 +166,7 @@ export class PairedDeviceService {
       now: now.toISOString(),
       expiresAt,
     });
-    const open = await this.#options.store.readOpenPairingCode({
-      ownerId: scope.ownerId,
-      agentId: scope.agentId,
-      now: now.toISOString(),
-    });
-    return Object.freeze({ code, expiresAt: open?.expiresAt ?? expiresAt });
+    return Object.freeze({ code, expiresAt: created.expiresAt });
   }
 
   async pair(
@@ -276,10 +271,15 @@ export class PairedDeviceService {
     return this.#options.store.renameDevice({ ...scope, name });
   }
 
-  revoke(
+  async revoke(
     scope: PairedDeviceScope & { readonly deviceId: string; readonly expectedRevision: number },
   ): Promise<PairedDevice> {
-    return this.#options.store.revokeDevice({ ...scope, now: this.#now().toISOString() });
+    const device = await this.#options.store.revokeDevice({
+      ...scope,
+      now: this.#now().toISOString(),
+    });
+    this.#warnedAt.delete(device.id);
+    return device;
   }
 
   async authenticate(input: {

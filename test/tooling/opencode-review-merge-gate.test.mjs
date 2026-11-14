@@ -31,10 +31,14 @@ import {
   OWNER_STOPPED,
   parseArgs,
   parseUsage,
+  lowFixChecker,
   parseVerdicts,
+  previousProblem,
+  priorFindingsBlock,
   proxyCredentialProblems,
   RAW_FILE_SUFFIXES,
   RECORD_SECRET_RULES,
+  DEFAULT_REVIEW_MODELS,
   REVIEW_MODELS,
   REVIEW_REPORT_DISCLAIMER,
   REVIEWS_DIR,
@@ -1021,30 +1025,85 @@ describe("opencode review merge gate", () => {
     }
   });
 
-  it("[merge gate] counts a round only when both models have an ok result, reruns included", () => {
+  it("[merge gate] counts a round when every model asked for, or every default model, has an ok result, reruns included", () => {
     const f = fixture();
     try {
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
       f.writeLedger([
-        ok(1, f.reviewed, deepseek),
-        ok(1, f.reviewed, glm, { outcome: "timeout" }),
+        ok(1, f.reviewed, deepseek, { outcome: "timeout" }),
+        ok(1, f.reviewed, glm),
         ok(2, second, deepseek, { outcome: "timeout" }),
         ok(2, second, glm),
-        { cost: 0.05, round: 3, mode: "plan", model: glm, head: f.reviewed, outcome: "ok" },
+        { cost: 0.05, round: 3, mode: "plan", model: deepseek, head: second, outcome: "ok" },
       ]);
       expect(f.check().problems).toEqual(["no-complete-round"]);
       const head = f.git("rev-parse", "HEAD");
       f.git("checkout", "--quiet", head);
       f.writeLedger([
-        ok(1, f.reviewed, deepseek),
-        ok(1, f.reviewed, glm, { outcome: "timeout" }),
+        ok(1, f.reviewed, deepseek, { outcome: "timeout" }),
         ok(1, f.reviewed, glm),
+        ok(1, f.reviewed, deepseek),
         ok(2, second, deepseek, { outcome: "timeout" }),
         ok(2, second, glm),
       ]);
       const result = f.check();
       expect(result.round).toBe(1);
       expect(result.problems).toEqual(["unreviewed code.txt"]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.reviewed, glm, { outcome: "timeout" }),
+        ok(2, second, deepseek, { previous: f.reviewed }),
+      ]);
+      const defaultOnly = f.check();
+      expect(defaultOnly).toMatchObject({ round: 2, reviewed: second, problems: [] });
+      expect(defaultOnly.lines[1]).toBe("REVIEW_CHAIN round-1:default round-2:requested");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[review chain] a first round by the default model alone starts the chain, and a failed one does not", () => {
+    const f = fixture();
+    try {
+      expect(DEFAULT_REVIEW_MODELS).toEqual([deepseek]);
+      f.writeLedger([ok(1, f.reviewed, deepseek)]);
+      expect(f.check()).toMatchObject({ round: 1, reviewed: f.reviewed, problems: [] });
+      f.writeLedger([ok(1, f.reviewed, deepseek, { outcome: "api-error" })]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+      for (const stranger of [
+        ok(1, f.reviewed, "nobody/model"),
+        ok(1, f.reviewed, glm, { substitute: "true", substituteFor: deepseek }),
+        ok(1, f.reviewed, deepseek, { substitute: false }),
+      ]) {
+        f.writeLedger([stranger]);
+        expect(f.check().problems).toEqual(["no-complete-round"]);
+      }
+      f.writeLedger([ok(1, f.reviewed, glm, { substitute: true, substituteFor: deepseek })]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek, { outcome: "api-error" }),
+        ok(2, f.reviewed, glm, { substitute: true, substituteFor: deepseek }),
+      ]);
+      expect(f.check().problems).toEqual(["no-complete-round"]);
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek, { outcome: "api-error" }),
+        ok(1, f.reviewed, glm, { substitute: true, substituteFor: deepseek }),
+      ]);
+      expect(f.check()).toMatchObject({ round: 1, reviewed: f.reviewed, problems: [] });
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(1, f.main, deepseek, { substitute: false }),
+        ok(1, f.main, glm, { substitute: "true", substituteFor: deepseek }),
+      ]);
+      expect(f.check()).toMatchObject({ round: 1, reviewed: f.reviewed, problems: [] });
+      const second = f.commit({ "code.txt": "fixed\n" }, "fix");
+      f.writeLedger([
+        ok(1, f.reviewed, deepseek),
+        ok(2, second, deepseek, { previous: f.reviewed }),
+      ]);
+      const result = f.check();
+      expect(result).toMatchObject({ round: 2, reviewed: second, problems: [] });
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:requested round-2:requested");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -1061,7 +1120,7 @@ describe("opencode review merge gate", () => {
       ]);
       const result = f.check();
       expect(result).toMatchObject({ round: 2, reviewed: second, problems: [] });
-      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:deepseek");
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:requested round-2:requested");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -1072,9 +1131,11 @@ describe("opencode review merge gate", () => {
     try {
       const unreviewed = f.commit({ "code.txt": "unreviewed\n" }, "unreviewed");
       const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
-      for (const extra of [{ previous: unreviewed }, {}, { previous: null }]) {
+      f.writeLedger([...first, ok(2, unreviewed, deepseek, { previous: unreviewed })]);
+      expect(f.check().problems).toEqual([`chain-broken round=2 ${unreviewed}`]);
+      for (const extra of [{}, { previous: null }]) {
         f.writeLedger([...first, ok(2, unreviewed, deepseek, extra)]);
-        expect(f.check().problems).toEqual([`chain-broken round=2 ${unreviewed}`]);
+        expect(f.check()).toMatchObject({ round: 2, reviewed: unreviewed, problems: [] });
       }
       f.writeLedger([...first, ok(2, unreviewed, deepseek, { previous: f.main })]);
       expect(f.check()).toMatchObject({ round: 2, problems: [] });
@@ -1087,21 +1148,28 @@ describe("opencode review merge gate", () => {
       ]);
       const result = f.check();
       expect(result).toMatchObject({ round: 3, problems: [] });
-      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:deepseek round-3:both");
+      expect(result.lines[1]).toBe(
+        "REVIEW_CHAIN round-1:requested round-2:requested round-3:requested",
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
   });
 
-  it("[review chain] counts GLM alone only when it stood in for DeepSeek", () => {
+  it("[review chain] counts GLM beside a failed DeepSeek only when it stood in for DeepSeek", () => {
     const f = fixture();
     try {
       const second = f.commit({ "code.txt": "fixed\n" }, "fix");
       const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm)];
-      f.writeLedger([...first, ok(2, second, glm)]);
+      const failed = ok(2, second, deepseek, { outcome: "api-error", previous: f.reviewed });
+      f.writeLedger([...first, failed, ok(2, second, glm, { previous: f.reviewed })]);
       expect(f.check()).toMatchObject({ round: 1, problems: ["unreviewed code.txt"] });
       f.writeLedger([...first, ok(2, second, glm, { substitute: true, substituteFor: glm })]);
       expect(f.check()).toMatchObject({ round: 1, problems: ["unreviewed code.txt"] });
+      f.writeLedger([...first, ok(2, second, glm, { previous: f.reviewed })]);
+      const named = f.check();
+      expect(named).toMatchObject({ round: 2, problems: [] });
+      expect(named.lines[1]).toBe("REVIEW_CHAIN round-1:requested round-2:requested");
       f.writeLedger([
         ...first,
         ok(2, second, deepseek, { outcome: "api-error", previous: f.reviewed }),
@@ -1109,7 +1177,7 @@ describe("opencode review merge gate", () => {
       ]);
       const result = f.check();
       expect(result).toMatchObject({ round: 2, problems: [] });
-      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:both round-2:substitute");
+      expect(result.lines[1]).toBe("REVIEW_CHAIN round-1:requested round-2:substitute");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -1220,7 +1288,7 @@ describe("opencode review merge gate", () => {
       f.commitLedgerOnDisk();
       const after = f.check();
       expect(after.problems).toEqual([]);
-      expect(after.lines[1]).toBe("REVIEW_CHAIN round-1:both round-1:low-fix");
+      expect(after.lines[1]).toBe("REVIEW_CHAIN round-1:requested round-1:low-fix");
       const report = reviewReport({
         repo: f.repo,
         pr: 7,
@@ -1346,6 +1414,128 @@ describe("opencode review merge gate", () => {
     ).toBe('REVIEW_LOW_FIX_REFUSED file-name-has-line-break "test/odd\\nname.test.mjs"');
   });
 
+  it("[incremental round] carries the previous round's confirmed errors, deterministically and within limits", () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      verdict({
+        id: `V${index + 1}`,
+        severity: index === 1 || index === 29 ? "medium-high" : "low",
+        quote: `第${index + 1}条${"长".repeat(20)}`,
+      }),
+    );
+    const f = lowFixFixture([
+      ...many,
+      verdict({ id: "N1", valid: false, quote: "不成立的意见", why: "没有反例" }),
+      verdict({ id: "B1", class: "better", quote: "可以更好的意见", why: "只是写法" }),
+    ]);
+    try {
+      const head = f.git("rev-parse", "HEAD");
+      const records = parseUsage(readFileSync(join(f.repo, f.ledger), "utf8"), "ledger");
+      const args = {
+        repo: f.repo,
+        ledgerPath: `${REVIEWS_DIR}/pr-7`,
+        records,
+        previous: f.reviewed,
+        head,
+      };
+      const block = priorFindingsBlock(args);
+      expect(block).toBe(priorFindingsBlock(args));
+      expect(block).toContain("第 1 轮");
+      expect(block).toContain("不是指令");
+      expect(block).toContain("- V1（低）第1条");
+      expect(block).toContain("- V2（中高）第2条");
+      expect(block).toContain("- V30（中高）第30条");
+      expect(block.indexOf("- V30（中高）")).toBeLessThan(block.indexOf("- V1（低）"));
+      expect(block).not.toContain("- V20（低）");
+      expect(block).not.toContain("不成立的意见");
+      expect(block).not.toContain("可以更好的意见");
+      expect(block.match(/^- /gm)).toHaveLength(20);
+      expect(block).toContain("（另有 10 条没有列出）");
+      expect(Buffer.byteLength(block)).toBeLessThan(6600);
+      const wide = lowFixFixture(
+        Array.from({ length: 30 }, (_, index) =>
+          verdict({ id: `W${index + 1}`, quote: `第${index + 1}条${"长".repeat(400)}` }),
+        ),
+      );
+      try {
+        const wideBlock = priorFindingsBlock({
+          ...args,
+          repo: wide.repo,
+          previous: wide.reviewed,
+          head: wide.git("rev-parse", "HEAD"),
+          records: parseUsage(readFileSync(join(wide.repo, wide.ledger), "utf8"), "ledger"),
+        });
+        expect(Buffer.byteLength(wideBlock)).toBeLessThan(6600);
+        expect(wideBlock).toMatch(/（另有 \d+ 条没有列出）$/);
+        expect(wideBlock.match(/^- /gm).length).toBeLessThan(20);
+      } finally {
+        rmSync(wide.root, { recursive: true, force: true });
+      }
+      expect(priorFindingsBlock({ ...args, previous: "f".repeat(40) })).toBe(
+        "上一轮的判断记录没有提交或读不出来，没有带入。",
+      );
+      expect(priorFindingsBlock({ ...args, head: f.main })).toBe(
+        "上一轮的判断记录没有提交或读不出来，没有带入。",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[incremental round] the previous-round block sits after the fixed prefix and the prefix never changes", () => {
+    const questions = reviewQuestions(instructions);
+    const common = { mode: "code-review", model: REVIEW_MODELS[0], questions, base: "b" };
+    const first = buildPrompt({ ...common, head: "h1", brief: "第一轮" });
+    const later = buildPrompt({
+      ...common,
+      head: "h2",
+      previous: "h1",
+      priorFindings: "上一轮（第 1 轮）成立的意见：\n- V1（低）某句原话",
+      brief: "第二轮",
+    });
+    const fixedEnd = first.indexOf("---- 本次材料 ----");
+    expect(later.slice(0, fixedEnd)).toBe(first.slice(0, fixedEnd));
+    expect(later.indexOf("- V1（低）某句原话")).toBeGreaterThan(fixedEnd);
+    expect(later).toContain("只做三件事");
+    expect(first).not.toContain("上一轮（第 1 轮）");
+    const withoutPrevious = buildPrompt({
+      ...common,
+      head: "h2",
+      priorFindings: "上一轮（第 1 轮）成立的意见",
+      brief: "第二轮",
+    });
+    expect(withoutPrevious).not.toContain("上一轮（第 1 轮）");
+  });
+
+  it("[low fix] records why a refused --accept-low was refused", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      const refused = f.check({ acceptLow: 1 }).lines.at(-1);
+      expect(refused).toBe("REVIEW_LOW_FIX_REFUSED no-test-change");
+      const record = JSON.parse(
+        readFileSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"), "utf8").trim(),
+      );
+      expect(record).toMatchObject({ round: 1, reasons: ["no-test-change"] });
+      expect(record.head).toBe(f.git("rev-parse", "HEAD"));
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[low fix] a refusal that cannot be recorded is still a refusal, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ "code.txt": "fixed\n" }, "fix without a test");
+      mkdirSync(join(f.repo, REVIEWS_DIR, "pr-7", "low-fix-refusals.jsonl"));
+      const result = f.check({ acceptLow: 1 });
+      expect(result.lines).toContain("REVIEW_LOW_FIX_REFUSED no-test-change");
+      expect(result.lines.at(-1)).toBe("REVIEW_LOW_FIX_REFUSAL_NOT_RECORDED EISDIR");
+      expect(result.lowFixRefused).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] the report lists only low-fix records on the chain and marks the rest", () => {
     const f = lowFixFixture();
     try {
@@ -1457,7 +1647,7 @@ describe("opencode review merge gate", () => {
       "REVIEW_LOW_FIX_REFUSED no-low-errors",
     );
     expect(refusal([verdict()])).toBe("REVIEW_LOW_FIX_REFUSED nothing-unreviewed");
-  });
+  }, 60000);
 
   it("[low fix] refuses a round that is not the last one covered and a round without verdicts", () => {
     const f = lowFixFixture();
@@ -1528,6 +1718,174 @@ describe("opencode review merge gate", () => {
     }
   });
 
+  const lowFixedChain = () => {
+    const f = lowFixFixture();
+    const fixed = f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "fix");
+    const lowFix = {
+      at: "t",
+      mode: "low-fix",
+      cost: 0,
+      round: 1,
+      head: fixed,
+      from: f.reviewed,
+      files: ["code.txt", "test/code.test.mjs"],
+      findings: ["V1"],
+    };
+    const first = [ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm), lowFix];
+    const ledgerCommit = f.writeLedger(first);
+    const isAncestor = (from, to) =>
+      spawnSync("git", ["merge-base", "--is-ancestor", from, to], { cwd: f.repo }).status === 0;
+    const lowFixCheck = lowFixChecker({
+      repo: f.repo,
+      ledgerPath: `${REVIEWS_DIR}/pr-7`,
+      mainRef: "origin/main",
+      skip: new Set(),
+    });
+    const ask = (previous, { records = first, round = 2, head = ledgerCommit } = {}) =>
+      previousProblem({ records, round, head, previous, isAncestor, lowFixCheck });
+    return { ...f, fixed, first, ledgerCommit, ask };
+  };
+
+  it("[I-98] refuses a --previous that skips the accepted low-fix head and names the right one", () => {
+    const f = lowFixedChain();
+    try {
+      expect(f.ask(f.ledgerCommit)).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-broken previous=${f.ledgerCommit} use=--previous ${f.fixed}`,
+      );
+      expect(f.ask(f.fixed)).toBeNull();
+      expect(f.ask(f.reviewed)).toBeNull();
+      expect(f.ask(undefined)).toBeNull();
+      expect(f.ask(f.fixed, { records: [] })).toBe(
+        "REVIEW_PREVIOUS_REFUSED no-accepted-round use=no-previous",
+      );
+      f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })]);
+      expect(f.check().problems).toEqual([`chain-broken round=2 ${f.ledgerCommit}`]);
+      f.writeLedger([...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })]);
+      expect(f.check()).toMatchObject({ round: 2, reviewed: f.ledgerCommit, problems: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] refuses any --previous once an earlier round already broke the chain", () => {
+    const f = lowFixedChain();
+    try {
+      const broken = [...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.ledgerCommit })];
+      const later = f.commit({ "code.txt": "later\n" }, "later");
+      const ask = (previous) => f.ask(previous, { records: broken, round: 3, head: later });
+      expect(ask(f.ledgerCommit)).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=2 ${f.ledgerCommit} chain-broken use=no-previous`,
+      );
+      expect(ask(undefined)).toBeNull();
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      expect(f.ask(f.fixed, { records: invalid })).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=1 ${f.fixed} findings-differ use=no-previous`,
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] a rerun of a round must pass the --previous the round already used", () => {
+    const f = lowFixedChain();
+    try {
+      const done = [...f.first, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })];
+      expect(f.ask(f.fixed, { records: done })).toBeNull();
+      expect(f.ask(f.reviewed, { records: done })).toBe(
+        `REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=--previous ${f.fixed}`,
+      );
+      expect(f.ask(undefined, { records: done })).toBe(
+        `REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=--previous ${f.fixed}`,
+      );
+      const fresh = [...f.first, ok(2, f.ledgerCommit, deepseek)];
+      expect(f.ask(f.fixed, { records: fresh })).toBe(
+        "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=no-previous",
+      );
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      const stuck = [...invalid, ok(2, f.ledgerCommit, deepseek, { previous: f.fixed })];
+      expect(f.ask(undefined, { records: stuck })).toBe(
+        "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=new-round",
+      );
+      const split = [...done, ok(2, f.ledgerCommit, glm, { previous: f.reviewed })];
+      expect(f.ask(f.fixed, { records: split })).toBe(
+        "REVIEW_PREVIOUS_REFUSED round-previous-differs round=2 use=new-round",
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] refuses a --previous when the head does not contain the accepted point", () => {
+    const f = lowFixedChain();
+    try {
+      f.git("checkout", "--quiet", "-b", "side", f.main);
+      const side = f.commit({ "code.txt": "side\n" }, "side");
+      expect(f.ask(f.reviewed, { head: side })).toBe(
+        `REVIEW_PREVIOUS_REFUSED head-not-after-accepted ${f.fixed} head=${side} use=no-previous`,
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("[I-98] the script refuses a wrong --previous before installing opencode or spending", () => {
+    const f = lowFixedChain();
+    try {
+      const questions = readFileSync(".agents/instructions/model-review.md", "utf8");
+      const head = f.commit({ ".agents/instructions/model-review.md": questions }, "questions");
+      const brief = join(f.root, "brief.md");
+      writeFileSync(brief, "brief\n");
+      const run = (previous) =>
+        spawnSync(
+          process.execPath,
+          [
+            "scripts/model-review/opencode-review.mjs",
+            "--mode",
+            "code-review",
+            "--pr",
+            "7",
+            "--repo",
+            f.repo,
+            "--head",
+            head,
+            "--base",
+            f.main,
+            "--previous",
+            previous,
+            "--questions-ref",
+            head,
+            "--brief",
+            brief,
+          ],
+          {
+            encoding: "utf8",
+            env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+          },
+        );
+      const wrong = run(f.ledgerCommit);
+      expect(wrong.status).toBe(2);
+      expect(wrong.stderr.trim()).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-broken previous=${f.ledgerCommit} use=--previous ${f.fixed}`,
+      );
+      expect(wrong.stdout).not.toContain("REVIEW_PID");
+      const right = run(f.fixed);
+      expect(right.stderr).not.toContain("REVIEW_PREVIOUS_REFUSED");
+      expect(right.stdout).toContain("REVIEW_PID");
+      expect(readFileSync(join(f.repo, f.ledger), "utf8")).toBe(
+        f.first.map((r) => `${JSON.stringify(r)}\n`).join(""),
+      );
+      const invalid = [...f.first.slice(0, 2), { ...f.first[2], findings: ["V9"] }];
+      writeFileSync(join(f.repo, f.ledger), invalid.map((r) => `${JSON.stringify(r)}\n`).join(""));
+      const untrusted = run(f.fixed);
+      expect(untrusted.status).toBe(2);
+      expect(untrusted.stderr.trim()).toBe(
+        `REVIEW_PREVIOUS_REFUSED chain-already-broken round=1 ${f.fixed} findings-differ use=no-previous`,
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("[low fix] a refused --accept-low exits non-zero even when nothing is unreviewed", () => {
     const f = lowFixFixture();
     try {
@@ -1554,6 +1912,45 @@ describe("opencode review merge gate", () => {
       rmSync(f.root, { recursive: true, force: true });
     }
   }, 60000);
+
+  it("[ADR-0268] a malformed review ledger in the PR exits with the not-covered code, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [f.ledger]: "{not json\n" }, "broken ledger");
+      const run = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--assert-reviewed",
+          "--pr",
+          "7",
+          "--repo",
+          f.repo,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(run.stdout).toMatch(/^REVIEW_RECORD_INVALID USAGE_LEDGER_INVALID /m);
+      expect(run.status).toBe(5);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[ADR-0268] malformed verdicts at a low-fix check are a problem, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`]: "{bad\n" }, "bad verdicts");
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      const checked = f.check({ acceptLow: 1 });
+      expect(checked.overridden).toBe(false);
+      expect(checked.lines.join("\n")).toContain("VERDICTS_INVALID");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
 
   it("[low fix] checks a hand-written low-fix record again at the gate", () => {
     const f = lowFixFixture();
@@ -1589,7 +1986,7 @@ describe("opencode review merge gate", () => {
         `${JSON.stringify(ok(1, f.reviewed, deepseek))}\n${JSON.stringify(ok(1, f.reviewed, glm))}\n`,
       );
       expect(f.check().problems).toEqual(["ledger-not-committed"]);
-      f.writeLedger([ok(1, f.reviewed, deepseek)]);
+      f.writeLedger([ok(1, f.reviewed, deepseek, { outcome: "timeout" })]);
       expect(f.check().problems).toEqual(["no-complete-round"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -1749,7 +2146,7 @@ describe("opencode review merge gate", () => {
     try {
       const report = (stop, extra = {}) =>
         reviewReport({ repo: f.repo, pr: 7, mainRef: "origin/main", stop, ...extra });
-      f.writeLedger([ok(1, f.reviewed, deepseek), ok(1, f.reviewed, glm, { outcome: "timeout" })]);
+      f.writeLedger([ok(1, f.reviewed, deepseek, { outcome: "timeout" }), ok(1, f.reviewed, glm)]);
       expect(() => report("no-error")).toThrow("REPORT_STOP_INCONSISTENT no-error");
       expect(report("run-failed").at(-2)).toBe("停下的原因：有模型没跑完（outcome 不是 ok）");
       expect(() => report("three-rounds")).toThrow("REPORT_STOP_INCONSISTENT three-rounds");
@@ -1846,6 +2243,21 @@ describe("opencode review spending", () => {
         models: REVIEW_MODELS,
       }),
     ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+  });
+
+  it("gives claim checks the same one-dollar line as code review", () => {
+    const records = [record(0.12), record(0.14)];
+    expect(budgetCheck({ mode: "plan", records, models: REVIEW_MODELS })).toMatch(
+      /^BUDGET_NEEDS_APPROVAL /,
+    );
+    expect(budgetCheck({ mode: "plan-claims", records, models: REVIEW_MODELS })).toBeNull();
+    expect(
+      budgetCheck({
+        mode: "plan-claims",
+        records: [record(0.4), record(0.3)],
+        models: REVIEW_MODELS,
+      }),
+    ).toMatch(/askFirstLine=1$/);
   });
 
   it("lets a run through when Andy approved enough for the whole task", () => {
@@ -2292,21 +2704,30 @@ describe("opencode review spending", () => {
     expect(nextRound([{ cost: 0.1 }])).toBe(2);
   });
 
-  it("[review chain] needs both models in the first code-review round and defaults to DeepSeek later", () => {
+  it("[review chain] runs the configured default models in every mode and round unless --models names others", () => {
     const base = ["--head", "a", "--base", "b", "--brief", "b.md", "--pr", "7"];
-    expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
-    expect(() => parseArgs([...base, "--models", "deepseek-v4.1-flash"])).toThrow(
-      "ARG_FIRST_ROUND_NEEDS_BOTH_MODELS",
+    expect(DEFAULT_REVIEW_MODELS).toEqual([REVIEW_MODELS[0]]);
+    expect(parseArgs(base).models).toEqual(DEFAULT_REVIEW_MODELS);
+    expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
+      REVIEW_MODELS[0],
+    ]);
+    expect(parseArgs([...base, "--models", "glm-5.3-flash"]).models).toEqual([REVIEW_MODELS[1]]);
+    expect(parseArgs([...base, "--models", "deepseek-v4.1-flash,glm-5.3-flash"]).models).toEqual(
+      REVIEW_MODELS,
     );
     expect(parseArgs([...base, "--models", "glm-5.3-flash", "--round", "1"]).models).toEqual([
       REVIEW_MODELS[1],
     ]);
-    expect(parseArgs([...base, "--previous", "c"]).models).toEqual([REVIEW_MODELS[0]]);
+    expect(parseArgs([...base, "--previous", "c"]).models).toEqual(DEFAULT_REVIEW_MODELS);
     expect(
       parseArgs([...base, "--previous", "c", "--models", "deepseek-v4.1-flash,glm-5.3-flash"])
         .models,
     ).toEqual(REVIEW_MODELS);
     const plan = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"];
+    expect(parseArgs(plan).models).toEqual(DEFAULT_REVIEW_MODELS);
+    expect(parseArgs(["--mode", "plan-review", ...plan.slice(2)]).models).toEqual(
+      DEFAULT_REVIEW_MODELS,
+    );
     expect(parseArgs([...plan, "--models", "glm-5.3-flash"]).models).toEqual([REVIEW_MODELS[1]]);
     expect(
       parseArgs([
@@ -2381,6 +2802,12 @@ describe("opencode review spending", () => {
       "src/a.test.ts",
       "a.spec.mjs",
       "x/__tests__/b.js",
+      ".agents/test_opencode_models.py",
+      "scripts/delivery-mode/test_deploy.py",
+      "pkg/parse_test.py",
+      "pkg/parse_test.go",
+      "src/parse_test.rs",
+      "src/ParserTest.java",
     ])
       expect(isTestFile(path)).toBe(true);
     for (const path of [
@@ -2390,6 +2817,11 @@ describe("opencode review spending", () => {
       "latest/a.mjs",
       "test/README.md",
       "test/README.MD",
+      "src/contest.py",
+      "src/test_helper.ts",
+      "docs/test_notes.md",
+      "src/latest_test.md",
+      "src/ParserTests.java",
     ])
       expect(isTestFile(path)).toBe(false);
   });
@@ -2441,7 +2873,7 @@ describe("opencode review spending", () => {
 
   it("reruns only the models asked for", () => {
     const base = ["--mode", "plan", "--head", "a", "--brief", "b.md", "--topic", "t"];
-    expect(parseArgs(base).models).toEqual(REVIEW_MODELS);
+    expect(parseArgs(base).models).toEqual(DEFAULT_REVIEW_MODELS);
     expect(parseArgs([...base, "--models", "deepseek-v4.1-flash"]).models).toEqual([
       "opencode-go/deepseek-v4.1-flash",
     ]);

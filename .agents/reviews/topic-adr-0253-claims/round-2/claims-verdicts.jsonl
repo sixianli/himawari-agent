@@ -1,0 +1,4 @@
+{"id": "2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|2|找不到|-|它的 PR 复核留下了五条没做的意见|-", "outcome": "plan-fixed", "change": "背景出处改写，不再提交付报告"}
+{"id": "3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|3|找不到|-|`.agents/reviews/pr-420/round-1/judgments.md` 的 glm-4|-", "outcome": "plan-fixed", "change": "背景出处改写，不再提交付报告"}
+{"id": "4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|4|找不到|-|`.agents/reviews/pr-420/round-5/judgments.md` 的 ds5-5 到 ds5-7|-", "outcome": "plan-fixed", "change": "背景出处改写，不再提交付报告"}
+{"id": "5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|5|找不到|-|以及交付报告里列出的“受限记忆删掉以后摘要留在明文导出里”|-", "outcome": "plan-fixed", "change": "背景出处改写，不再提交付报告"}

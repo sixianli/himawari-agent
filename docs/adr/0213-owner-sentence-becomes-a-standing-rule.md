@@ -40,7 +40,7 @@ Andy 在 2026-11-11 定了两点：明说“以后/一律/必须”的直接生�
 1. 规则是程序执行的硬性设定，记忆只保存出处：`AGENTS.md` 的“产品愿景”一节写“Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试”。
 2. 规则手册只存参数、表达式由程序生成：[ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 决定里写“这两条的表达式不存库，由程序按存下来的参数生成，所以参数是唯一来源”。
 3. 待重审的规则照常执行：[ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 写“待重审的规则照常执行”，并把“重新确认”按钮留给后续。
-4. 工具集合变了，老对话换新一次是允许的：`.claude/rules/prompt-prefix.md` 第 6 条，“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次，并且每次都留记录”。
+4. 工具集合变了，老对话换新一次是允许的：`.agents/instructions/prompt-prefix.md` 第 6 条，“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次，并且每次都留记录”。
 5. 邮件检查原来只把主题和摘要交给规则：`packages/application/src/rules/rule-book.ts` 原 `mailItemFacts` 里 `const text = \`${item.subject}\n${item.snippet}\``。
 6. 原来的“抬升”不推送：`proactive-rules.ts` 的 `applyFloor` 把“不用管”改成“值得知道”，推送条件是 `dueSoon || (final.result === "check" && floor)`。
 

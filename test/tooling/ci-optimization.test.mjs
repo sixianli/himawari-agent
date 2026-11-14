@@ -76,7 +76,7 @@ it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部�
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
-  expect(Object.keys(workflow.jobs)).toHaveLength(7);
+  expect(Object.keys(workflow.jobs)).toHaveLength(8);
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-gate-dependencies.mjs")),
   ).toBe(true);
@@ -88,7 +88,7 @@ it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部�
   }
 });
 
-it("所有工作流都不用 GitHub 缓存，artifact 只保存 1 天", () => {
+it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物", () => {
   for (const uses of ["actions/cache@x", "actions/cache/restore@x", "actions/cache/save@x"])
     expect(usesGitHubCache({ uses })).toBe(true);
   for (const uses of ["actions/checkout@x", "actions/cachet@x", undefined])
@@ -97,10 +97,31 @@ it("所有工作流都不用 GitHub 缓存，artifact 只保存 1 天", () => {
     const workflow = parse(readFileSync(`.github/workflows/${name}`, "utf8"));
     const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
     expect(steps.filter(usesGitHubCache)).toEqual([]);
-    const uploads = steps.filter((s) => s.uses?.startsWith("actions/upload-artifact@"));
-    expect(uploads.length).toBeGreaterThan(0);
-    for (const upload of uploads) expect(upload.with["retention-days"]).toBe(1);
+    expect(steps.filter((s) => /artifact/u.test(s.uses ?? ""))).toEqual([]);
+    expect(steps.filter((s) => s.run?.includes("ci-summary.mjs")).length).toBeGreaterThan(0);
   }
+});
+
+it("main 的确认共用一个并发组、不掐正在跑的那次，所以连续合并时只留最新一次在等", () => {
+  const text = readFileSync(".github/workflows/main.yml", "utf8");
+  const tools = JSON.parse(readFileSync("ci/toolchain-lock.json", "utf8"));
+  expect(validateMainWorkflow(text, tools)).toEqual({ jobs: 3 });
+  expect(text).toContain("  group: main-confirmation\n  cancel-in-progress: false\n");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        "group: main-confirmation\n",
+        ["group: main-confirmation-$", "{{ github.run_id }}\n"].join(""),
+      ),
+      tools,
+    ),
+  ).toThrow("concurrency");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace("cancel-in-progress: false", "cancel-in-progress: true"),
+      tools,
+    ),
+  ).toThrow("concurrency");
 });
 
 it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
@@ -128,6 +149,42 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
       tools,
     ),
   ).toThrow("runtime");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        "      - name: 把 main 确认报告写进作业摘要",
+        "      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n        with:\n          path: .ci-output/main-public/\n      - name: 把 main 确认报告写进作业摘要",
+      ),
+      {
+        ...tools,
+        actions: [
+          ...tools.actions,
+          {
+            repository: "actions/upload-artifact",
+            sha: "ea165f8d65b6e75b540449e92b4886f43607fa02",
+          },
+        ],
+      },
+    ),
+  ).toThrow("github-artifact");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        "        run: node scripts/ci/main-evidence.mjs discover\n      - name: 在实际 main",
+        "        run: echo skipped\n      - name: 在实际 main",
+      ),
+      tools,
+    ),
+  ).toThrow("confirmation");
+  expect(() =>
+    validateMainWorkflow(
+      text.replace(
+        '--title "main 确认报告" --from .ci-output/main-public',
+        '--title "main 确认报告" --from .ci-output/other',
+      ),
+      tools,
+    ),
+  ).toThrow("job-summary");
 });
 
 describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job 要的权限，否则整轮 startup_failure", () => {

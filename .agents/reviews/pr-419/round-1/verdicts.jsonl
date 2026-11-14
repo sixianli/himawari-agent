@@ -1,0 +1,14 @@
+{"id": "r1ds1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "超过等待上限的错误可能归类不成“限流”", "valid": false, "class": "error"}
+{"id": "r1ds2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "反向用例名字说“仍报限流”，但没有断言错误码", "valid": true, "class": "better"}
+{"id": "r1ds3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "标题、后台、记忆等模型调用仍然 `maxRetries: 0`，与作者“现在传 2”的表述不符", "valid": true, "class": "error", "severity": "low", "trigger": "标题、邮件判断等后台调用遇到偶发 429", "consequence": "这些后台调用仍然一次失败就放弃；ADR 0245 的“每个被拒绝的响应写日志”说宽了，实际只覆盖聊天和压缩请求；不会给出错误结果，也不丢数据", "modelSeverity": "中", "reason": "聊天主路径已修；后台路径的准入、用量、缓存预热是另一条路，记忆保存已有自己的同轮重试（ADR 0222）；已在 ADR 0245 写明范围，是否扩到后台调用交 Andy 决定"}
+{"id": "r1ds4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "网关观察器在任意非 2xx 后重新开放，且没有尝试次数上限", "valid": true, "class": "better"}
+{"id": "r1ds5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "重试会重复累加敏感拦截记录的 `seen_count`", "valid": true, "class": "error", "severity": "medium-high", "trigger": "含银行卡号、密码等的请求被 429/503 重试", "consequence": "每次重试都重新遮盖并上报拦截记录，seen_count 累加成 2、3 次，审计计数被放大", "modelSeverity": "低"}
+{"id": "r1ds6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "新增拒绝日志接受未校验的供应商头部，且 `hostOf` 不识别 `Request`", "valid": true, "class": "better"}
+{"id": "r1ds7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "说明文档里仍有与新行为冲突的旧表述", "valid": true, "class": "error", "severity": "low", "trigger": "读者只读 ADR 0198 决定 7、开发指南或规则文档", "consequence": "得到“503 同一轮不会再发第二次请求”“网关只允许发一次”的旧结论；不会误导人去做破坏性的事", "modelSeverity": "低"}
+{"id": "r1gl1", "model": "opencode-go/glm-5.3-flash", "quote": "遮盖状态跨重试残留，可能让“字节完全相同的重发”不成立", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人先在前面的消息里提到一个值，之后一条消息把同一个值点名为密码或验证码，这一轮请求被 429/503 重试", "consequence": "第二次发出的请求把前面消息里的同一个值也遮掉，与第一次字节不同，偏离规则“排在点名消息前面的消息不受影响”，这次重发的缓存整段失效；已用 [RETRY-429] 用例复现（修复前失败）", "modelSeverity": "高", "reason": "模型给高；线程核对为边缘输入触发、不丢数据，但违反字节相同的陈述，拿不准按中高处理"}
+{"id": "r1gl2", "model": "opencode-go/glm-5.3-flash", "quote": "标题等后台调用不在重试和拒绝日志范围内，而事故本身包含它们", "valid": true, "class": "error", "severity": "low", "trigger": "同 r1ds3", "consequence": "同 r1ds3", "modelSeverity": "中", "reason": "同 r1ds3"}
+{"id": "r1gl3", "model": "opencode-go/glm-5.3-flash", "quote": "“Server requested …s retry delay”分类依赖 pi-ai 的确切报错文案，端到端测试不校验归类结果", "valid": true, "class": "better"}
+{"id": "r1gl4", "model": "opencode-go/glm-5.3-flash", "quote": "网关观察器对任何非 2xx 都放开重发，包括不可重试状态", "valid": true, "class": "better"}
+{"id": "r1gl5", "model": "opencode-go/glm-5.3-flash", "quote": "重试会重复上报出口遮盖 sighting、重复累计 findings", "valid": true, "class": "error", "severity": "medium-high", "trigger": "同 r1ds5", "consequence": "同 r1ds5", "modelSeverity": "低"}
+{"id": "r1gl6", "model": "opencode-go/glm-5.3-flash", "quote": "生产接线无测试；`shouldRetry` 字段无任何断言", "valid": true, "class": "better"}
+{"id": "r1gl7", "model": "opencode-go/glm-5.3-flash", "quote": "`REVERSE [RETRY-429]` 反向用例不能区分“功能被删”", "valid": true, "class": "better"}

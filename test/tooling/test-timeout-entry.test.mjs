@@ -12,6 +12,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
   ...(await original()),
   verifyInstalledTools: async ({ directory }) => ({
@@ -55,6 +58,13 @@ afterEach(() => {
 });
 
 describe("test runner timeout environment", () => {
+  it("keeps the real process architecture so native packages load their own binding", () => {
+    const real = execFileSync(process.execPath, ["-p", "process.arch"], {
+      encoding: "utf8",
+    }).trim();
+    expect(process.arch).toBe(real);
+  });
+
   it.each([undefined, "30000", "00030", "", "0", "invalid"])(
     "[R2-E3] excludes retired timeout and unrelated variables from test children for %j",
     async (value) => {
@@ -127,15 +137,19 @@ describe("test runner timeout environment", () => {
       const result = await runCheck({
         root,
         context: createContext({ root }),
-        checkId: "coverage",
-        output: ".ci-output/coverage",
+        checkId: "tests",
+        output: ".ci-output/tests",
         toolsDirectory: root,
         artifact: path.join(root, "runtime.tar.gz"),
         hosted: false,
       });
-      expect(result.status).toBe("passed");
-      expect(result.projects.map(({ id }) => id)).toEqual(Object.keys(files));
-      for (const id of Object.keys(files)) {
+      expect(
+        result.status,
+        readFileSync(path.join(root, ".ci-output/tests/details.json"), "utf8"),
+      ).toBe("passed");
+      const tested = Object.keys(files).filter((id) => id !== "tooling");
+      expect(result.projects.map(({ id }) => id)).toEqual(tested);
+      for (const id of tested) {
         expect(JSON.parse(readFileSync(path.join(root, `${id}-environment.json`), "utf8"))).toEqual(
           {
             timeout: null,

@@ -29,6 +29,7 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
+  isGatewayErrorReasonCode,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -930,7 +931,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
               ? 501
               : 409;
-      sendJson(reply, statusCode, { error: { code: error.code } });
+      sendJson(reply, statusCode, {
+        error: {
+          code: error.code,
+          ...(isGatewayErrorReasonCode(error.message) ? { reasonCode: error.message } : {}),
+        },
+      });
       return;
     }
     const statusCode =

@@ -42,7 +42,7 @@ Andy 在 2026-11-11 同意了变更清单（`/mnt/project-files/p3-5-capture-ret
 3. 决策记录的结果值有数据库检查：`packages/persistence-sqlite/src/migrations/0069_decision_ledger.sql:50`，`(kind = 'memory_candidate' AND outcome IN ('kept', 'discarded', 'pending_approval'))`。
 4. SQLite 不能直接改检查约束，要新建表、复制、删旧表、改名：<https://www.sqlite.org/lang_altertable.html>（“Making Other Kinds Of Table Schema Changes”）。决策记录表被六张表引用，迁移 0087 已按这个做法重建过一次（[ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md) 决定 4）。
 5. 模型准入（每次模型调用前的预算和执行权检查）需要当前运行的执行租约，同一个调用编号再次申请会被当成重放：`apps/agent-service/src/production-run-composition.ts`（捕获的 `generate` 经 `auxiliaryMemoryGeneration` 走同一个准入）、`packages/application/src/services/model-invocation-admission-service.ts`。
-6. 发给模型的内容只追加、后台调用固定的在前：[.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 15 条“后台调用也是固定的在前、会变的在后”。
+6. 发给模型的内容只追加、后台调用固定的在前：[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 15 条“后台调用也是固定的在前、会变的在后”。
 
 [返回阅读导航](#contents)
 
@@ -58,6 +58,8 @@ Andy 在 2026-11-11 同意了变更清单（`/mnt/project-files/p3-5-capture-ret
 6. **每次失败一条决策记录，用三个新结果值。**`capture_retrying`（模型调用失败、同轮会重试）、`capture_queued`（等下一轮补做）、`capture_gave_up`（补做 3 次仍失败，或存记忆失败）。原因码写错误码，`ruleIds` 留空。变更清单原写的是一个结果值 `capture_failed` 加原因 `retrying/queued/gave_up`；实施时改成三个结果值，因为原因码这一栏要放错误码才能看出是哪种失败，而去向只有三种，放进结果值后网页标签和周报分组直接按结果值判断，不用解析原因。数据库检查放行这三个值，所以迁移 0088 按 0087 的做法重建决策记录表和六张子表。
 7. **网页和周报。**每日评价里这三种显示成“记忆抽取失败，已重试”“记忆抽取失败，下一轮补做”“这轮没记全”（三种语言）；它们不算“已执行”，没有记忆原文可读，也不显示“内容已隐藏”。周报校准新增一组“记忆抽取失败”，校准报告和网页周报的评价选项都是“没漏掉什么”和“漏了该记的”。
 8. **不改提示词文字、系统提示和敏感内容规则。**补做走同一个模型出口和同一个准入。
+
+**后续（[ADR 0240](0240-capture-writes-in-one-transaction.md)）：**整轮写库改成一个事务后，决定 4 里“写记忆失败直接放弃、不重试、不排队”和决定 6 里“存记忆失败记 `capture_gave_up`”改为：写失败留在队列、最多共 3 次；本 ADR 其余决定不变。决定 7 里 `capture_gave_up` 的网页说明相应改为“这轮没记下”（三种语言），表示这一轮没有存下任何内容。决定 4 里“放弃后、删行前重启，这一条会再补做一次”改为：补做读到已满 3 次的行只删行、不再问模型，这时不会补写“放弃”记录，网页上这一轮没有解释行，影响只限于解释。上面决定 4 的原文保留不改。
 
 同轮重试有一个已知限制：如果这一轮的运行已经结束、租约已经交还，重试拿不到准入，这一轮就按排队处理，留给下一轮补做，而不是拖住这一轮的结束。依据是“用户主权”之后的“记忆可靠性”优先于“主动性与效率”：记忆不丢，但不让主人多等。
 

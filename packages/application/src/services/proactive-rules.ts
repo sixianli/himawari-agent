@@ -1,4 +1,4 @@
-import type { MailAmount } from "../rules/amount.js";
+import type { MailAmount, MoneyState } from "../rules/amount.js";
 import { RULE_IDS, type RuleRecord } from "../rules/rule-book.js";
 import { mailItemFacts } from "../rules/rule-book.js";
 import { RuleJudge } from "../rules/rule-judge.js";
@@ -28,8 +28,9 @@ export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 export function floorHitIds(
   item: ProactiveSourceItem,
   rules: readonly RuleRecord[],
+  money: MoneyState = "unknown",
 ): readonly FloorRuleId[] {
-  return JUDGE.decide("mail_item", mailItemFacts(item), rules)
+  return JUDGE.decide("mail_item", mailItemFacts(item, undefined, money), rules)
     .hits.filter(({ outcome }) => outcome === "raise_floor")
     .map(({ id }) => id as FloorRuleId);
 }

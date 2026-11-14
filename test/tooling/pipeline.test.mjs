@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   config: vi.fn(),
   context: vi.fn(),
 }));
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/context.mjs", () => ({
   verifyContext: mocks.context,
   outputPath: (output, root) => path.resolve(root, output),
@@ -102,7 +105,7 @@ async function fixture() {
   mocks.source.mockResolvedValue("f".repeat(64));
   mocks.policy.mockReturnValue({
     policy: {
-      checks: [{ id: "coverage", projects: ids, timeoutMinutes: 30 }],
+      checks: [{ id: "tests", projects: ids, timeoutMinutes: 30 }],
       testProjects: ids.map((id) => ({ id, include: [`test/${id}.test.ts`], exclude: [] })),
     },
   });
@@ -318,7 +321,7 @@ describe("five-project execution contract", () => {
   it.each([
     ["empty", []],
     ["missing", undefined],
-    ["outside the coverage check", ["unit", "browser"]],
+    ["outside the tests check", ["unit", "browser"]],
   ])("refuses a %s project selection before running anything", async (_name, projects) => {
     const options = await fixture();
     await expect(runTests({ ...options, projects })).rejects.toThrow(

@@ -16,6 +16,8 @@ let staticRoot = "";
 let fixture: ChildProcess;
 let pinnedFixture: ChildProcess;
 let pinnedBase = "";
+let reviewFixture: ChildProcess;
+let reviewBase = "";
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -55,7 +57,10 @@ async function build(outDir: string): Promise<void> {
   });
 }
 
-async function serve(pinned: string): Promise<{ process: ChildProcess; base: string }> {
+async function serve(
+  pinned: string,
+  extra: Record<string, string> = {},
+): Promise<{ process: ChildProcess; base: string }> {
   const port = await freePort();
   const child = spawn(process.execPath, ["test/e2e/fixtures/control-center-browser-server.mjs"], {
     cwd: repositoryRoot,
@@ -65,6 +70,7 @@ async function serve(pinned: string): Promise<{ process: ChildProcess; base: str
       HIMAWARI_BROWSER_STATIC_ROOT: staticRoot,
       HIMAWARI_MEMORY_FIXTURE: "1",
       HIMAWARI_PROFILE_PINNED_CHARACTERS: pinned,
+      ...extra,
     },
     stdio: "ignore",
   });
@@ -84,6 +90,9 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
     await build(staticRoot);
     ({ process: fixture, base } = await serve("0"));
     ({ process: pinnedFixture, base: pinnedBase } = await serve("2150"));
+    ({ process: reviewFixture, base: reviewBase } = await serve("0", {
+      HIMAWARI_MEMORY_REVIEW_FIXTURE: "1",
+    }));
     browser = await launchChromium(chromium);
   }, 120_000);
 
@@ -91,6 +100,7 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
     await browser?.close();
     fixture?.kill();
     pinnedFixture?.kill();
+    reviewFixture?.kill();
     if (staticRoot) await rm(staticRoot, { recursive: true, force: true });
   });
 
@@ -155,6 +165,35 @@ describe("[P1-1] memory page jumps to the original message in a real browser", (
       await uiExpect(page.getByTestId("memory-carry-pinned-over")).toHaveText(
         "你打开“每次对话都带上”的记忆共 2150 字，比上限 2000 字多出 150 字。它们照样每次都带上，但其他记忆就放不进来了；关掉几条可以回到上限以内。",
       );
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("[DREAM] shows a conversation review batch with the owner's words and undoes the whole batch", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+      await openMemory(page, reviewBase);
+      await page.getByRole("tab", { name: "变化记录" }).click();
+      const row = page.locator(".memory-day p", { hasText: "回看了一段对话" });
+      await uiExpect(row).toHaveCount(1);
+      await uiExpect(row).toContainText("新记住 1 条，取代旧说法 0 条，确认 0 条");
+      await uiExpect(row).toContainText("新记住：主人在学德语（原话：我最近每天晚上学一小时德语）");
+      await row.getByRole("button", { name: "撤销" }).click();
+      await uiExpect(row).toContainText("已撤销");
+      await uiExpect(row.getByRole("button", { name: "撤销" })).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("[DREAM] reverse: with no conversation review there is no review row and no batch undo", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    try {
+      await openMemory(page);
+      await page.getByRole("tab", { name: "变化记录" }).click();
+      await uiExpect(page.locator(".memory-day").first()).toBeVisible();
+      await uiExpect(page.locator(".memory-day p", { hasText: "回看了一段对话" })).toHaveCount(0);
     } finally {
       await page.close();
     }

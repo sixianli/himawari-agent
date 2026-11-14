@@ -35,6 +35,7 @@ import type {
 } from "@himawari-agent/domain";
 import { createBackupId } from "@himawari-agent/domain";
 import BetterSqlite3 from "better-sqlite3";
+import { readSchemaIdentity } from "./migration-engine.js";
 import { acquireStateRootLock } from "./state-root-lock.js";
 
 const MANIFEST_SCHEMA = "himawari.recovery-point.v1" as const;
@@ -155,6 +156,7 @@ export interface SqliteRecoveryPointAdapterOptions {
   readonly backupKey: RecoveryPointKeyDescriptor;
   readonly payloadProtector: PayloadProtectorPort;
   readonly expectedSchemaSequence?: number;
+  readonly expectedSchemaFingerprint?: string;
   readonly now?: () => string;
   readonly random?: (length: number) => Uint8Array;
   readonly fault?: (
@@ -1036,6 +1038,15 @@ export class SqliteRecoveryPointAdapter implements RecoveryPointPort {
           throw new RecoveryPointError(
             RECOVERY_POINT_ERROR_CODES.SCHEMA_MISMATCH,
             "Recovery-point schema sequence does not match its manifest",
+          );
+        }
+        if (
+          this.#options.expectedSchemaFingerprint !== undefined &&
+          readSchemaIdentity(database).fingerprint !== this.#options.expectedSchemaFingerprint
+        ) {
+          throw new RecoveryPointError(
+            RECOVERY_POINT_ERROR_CODES.SCHEMA_MISMATCH,
+            "Recovery-point applied a different set of migrations than the current runtime",
           );
         }
         if (stableJson(databaseRowCounts(database)) !== stableJson(manifest.rowCounts)) {

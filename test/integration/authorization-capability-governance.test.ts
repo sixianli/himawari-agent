@@ -16,6 +16,7 @@ import {
   ExecutionWorkerService,
   type GovernedActionIntent,
   type GovernedGrantRecord,
+  type GovernedApprovalRequest,
   type GovernedGrantScope,
   GrantService,
   type PermissionPolicy,
@@ -999,6 +1000,71 @@ describe("authorization continuity", () => {
     ]);
     expect(results[0]).toEqual(results[1]);
     expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+  });
+  it("freezes the owner-readable display facts when the Approval is requested", async () => {
+    const f = await continuityFixture([]);
+    const action = intent({ id: "display-approval" });
+    let builds = 0;
+    const ask = await f.service().evaluate(action, {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      display: async () => {
+        builds += 1;
+        return {
+          displayTitle: null,
+          bodyPreview: "ls -la",
+          origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
+        };
+      },
+    });
+    if (ask.decision !== "ASK") throw new Error("expected ASK");
+    expect(builds).toBe(1);
+    expect((ask.approvalRequest as GovernedApprovalRequest).display).toEqual({
+      displayTitle: null,
+      bodyPreview: "ls -la",
+      origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
+      askedBecause: { kind: "no_rule_allows" },
+    });
+    const stored = (await f.authorization.listApprovals(OWNER_ID, AGENT_ID))[0];
+    expect((stored as GovernedApprovalRequest).display?.askedBecause).toEqual({
+      kind: "no_rule_allows",
+    });
+  });
+  it("writes empty display facts, never an invented rule, when no display is supplied or it fails", async () => {
+    const f = await continuityFixture([]);
+    const failing = await f.service().evaluate(intent({ id: "display-failing" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      display: async () => {
+        throw new Error("thread lookup failed");
+      },
+    });
+    const bare = await f.service().evaluate(intent({ id: "display-bare" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+    });
+    for (const decision of [failing, bare]) {
+      if (decision.decision !== "ASK") throw new Error("expected ASK");
+      expect((decision.approvalRequest as GovernedApprovalRequest).display).toEqual({
+        displayTitle: null,
+        bodyPreview: null,
+        origin: null,
+        askedBecause: { kind: "no_rule_allows" },
+      });
+    }
+  });
+  it("denies instead of storing a pending Approval that expired while the display facts were built", async () => {
+    const f = await continuityFixture([]);
+    const decision = await f.service().evaluate(intent({ id: "display-slow" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      display: async () => {
+        f.clock.set(T1);
+        return { displayTitle: null, bodyPreview: "slow", origin: null };
+      },
+    });
+    expect(decision.decision).toBe("DENY");
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(0);
   });
   it("acknowledges a repeated denial without another decision or revision", async () => {
     const f = await continuityFixture([]);

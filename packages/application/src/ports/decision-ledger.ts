@@ -37,6 +37,7 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "memory_review",
   "limit_change",
   "delivery_timing",
   "proposal",
@@ -59,7 +60,16 @@ export const DECISION_OUTCOMES = {
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
-  rule_review: ["needs_review"],
+  rule_review: [
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+  ],
+  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
   limit_change: ["changed"],
   delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
   proposal: [
@@ -308,6 +318,13 @@ export interface MailTrace {
   readonly museEntries: readonly MailTraceMuseEntry[];
 }
 
+export interface RuleLastUse {
+  readonly ruleId: string;
+  readonly decisionId: string;
+  readonly kind: DecisionKind;
+  readonly decidedAt: string;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -365,6 +382,9 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  lastRuleUses(
+    input: DecisionLedgerScope & { readonly ruleIds: readonly string[] },
+  ): Promise<readonly RuleLastUse[]>;
   readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
   readGapCandidates(input: {
     readonly ownerId: OwnerId;
