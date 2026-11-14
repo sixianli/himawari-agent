@@ -43,11 +43,15 @@ export interface OwnerWordsDependencies {
 const sendable = (classification: string) =>
   classification === "public" || classification === "private";
 
+function wireBytes(text: string): number {
+  return Buffer.byteLength(JSON.stringify(text), "utf8") - 2;
+}
+
 function withinBytes(text: string, limit: number): string {
   let bytes = 0;
   let kept = "";
   for (const character of text) {
-    bytes += Buffer.byteLength(character, "utf8");
+    bytes += wireBytes(character);
     if (bytes > limit) break;
     kept += character;
   }
@@ -91,7 +95,7 @@ export async function collectOwnerWords(
     const text = (await readText(message.contentRef).catch(() => undefined))?.trim();
     if (!text || deterministicallySensitive(text)) continue;
     const kept = withinBytes(text.slice(0, MAXIMUM_WORDS_CHARACTERS), remainingBytes);
-    remainingBytes -= Buffer.byteLength(kept, "utf8");
+    remainingBytes -= wireBytes(kept);
     words.unshift(kept);
   }
   return words;

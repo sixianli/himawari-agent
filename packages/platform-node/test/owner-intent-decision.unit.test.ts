@@ -11,7 +11,10 @@ afterEach(async () => {
 });
 
 async function stub(handler: (body: Record<string, unknown>) => { status: number; body: unknown }) {
-  const seen: { headers: Record<string, unknown>; body: Record<string, unknown> }[] = [];
+  const seen: {
+    headers: Record<string, unknown>;
+    body: Record<string, unknown>;
+  }[] = [];
   server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -24,7 +27,10 @@ async function stub(handler: (body: Record<string, unknown>) => { status: number
     });
   });
   await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
-  return { seen, baseUrl: `http://127.0.0.1:${(server?.address() as AddressInfo).port}/v1` };
+  return {
+    seen,
+    baseUrl: `http://127.0.0.1:${(server?.address() as AddressInfo).port}/v1`,
+  };
 }
 
 const request = {
@@ -81,13 +87,19 @@ describe("[ADR-0257] owner intent decision", () => {
     expect(() =>
       ownerIntentRequestBody("typesafe-ai/jev", {
         ...request,
-        action: { ...request.action, parameters: { text: "字".repeat(40_000) } },
+        action: {
+          ...request.action,
+          parameters: { text: "字".repeat(40_000) },
+        },
       }),
     ).toThrow("OWNER_INTENT_INPUT_TOO_LARGE");
   });
 
   it("sends the key as a bearer token and returns the answer as verdict and confidence", async () => {
-    const { seen, baseUrl } = await stub(() => ({ status: 200, body: answer(0.97) }));
+    const { seen, baseUrl } = await stub(() => ({
+      status: 200,
+      body: answer(0.97),
+    }));
     const decision = new OwnerIntentDecision({
       model: "typesafe-ai/jev",
       apiKey: async () => "secret-key",
@@ -115,7 +127,10 @@ describe("[ADR-0257] owner intent decision", () => {
       ["OWNER_INTENT_MODEL_MISMATCH", { status: 200, body: { ...answer(0.9), model: "other" } }],
       [
         "OWNER_INTENT_ANSWER_INVALID",
-        { status: 200, body: { model: "typesafe-ai/jev", answers: [{ type: "refusal" }] } },
+        {
+          status: 200,
+          body: { model: "typesafe-ai/jev", answers: [{ type: "refusal" }] },
+        },
       ],
       [
         "OWNER_INTENT_ANSWER_INVALID",
@@ -123,7 +138,14 @@ describe("[ADR-0257] owner intent decision", () => {
           status: 200,
           body: {
             model: "typesafe-ai/jev",
-            answers: [{ type: "choice", name: "owner_intent", choice: "maybe", confidence: 0.9 }],
+            answers: [
+              {
+                type: "choice",
+                name: "owner_intent",
+                choice: "maybe",
+                confidence: 0.9,
+              },
+            ],
           },
         },
       ],
@@ -192,8 +214,8 @@ describe("[ADR-0257] owner intent answer parsing fails closed", () => {
       { choice: "explicit", confidence: 0.1, probabilities: pair(0.1, 0.9) },
     ],
     [
-      "confidence disagrees",
-      { choice: "explicit", confidence: 0.6, probabilities: pair(0.99, 0.01) },
+      "confidence out of range",
+      { choice: "explicit", confidence: 1.5, probabilities: pair(0.9, 0.1) },
     ],
   ])("rejects %s", (_name, answer) => {
     expect(() => parseOwnerIntentDecision(reply(answer), MODEL)).toThrow(
@@ -214,10 +236,27 @@ describe("[ADR-0257] owner intent answer parsing fails closed", () => {
     ).toEqual({ verdict: "explicit", confidence: 900, quote: null });
   });
 
+  it("judges by the probabilities when the confidence field differs from the top probability", () => {
+    expect(
+      parseOwnerIntentDecision(
+        reply({
+          choice: "explicit",
+          confidence: 0.95,
+          probabilities: { explicit: 1, not_explicit: 0 },
+        }),
+        MODEL,
+      ),
+    ).toEqual({ verdict: "explicit", confidence: 1000, quote: null });
+  });
+
   it("does not round a probability just under one half up to explicit", () => {
     expect(
       parseOwnerIntentDecision(
-        reply({ choice: "not_explicit", confidence: 0.5001, probabilities: pair(0.4999, 0.5001) }),
+        reply({
+          choice: "not_explicit",
+          confidence: 0.5001,
+          probabilities: pair(0.4999, 0.5001),
+        }),
         MODEL,
       ),
     ).toEqual({ verdict: "not_explicit", confidence: 500, quote: null });

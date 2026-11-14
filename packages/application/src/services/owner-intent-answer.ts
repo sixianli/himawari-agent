@@ -118,14 +118,13 @@ export function parseOwnerIntentDecision(body: unknown, model: string): OwnerInt
   const choice = answer["choice"];
   if (choice !== OWNER_INTENT_CHOICE_EXPLICIT && choice !== OWNER_INTENT_CHOICE_NOT_EXPLICIT)
     invalidAnswer();
-  const confidence = unitProbability(answer["confidence"]);
+  unitProbability(answer["confidence"]);
   const table = probabilityTable(answer["probabilities"]);
   const yes = table.get(OWNER_INTENT_CHOICE_EXPLICIT);
   const no = table.get(OWNER_INTENT_CHOICE_NOT_EXPLICIT);
   if (table.size !== 2 || yes === undefined || no === undefined) invalidAnswer();
   if (Math.abs(yes + no - 1) > 0.001) invalidAnswer();
   if ((choice === OWNER_INTENT_CHOICE_EXPLICIT ? yes : no) < Math.max(yes, no)) invalidAnswer();
-  if (Math.abs(confidence - Math.max(yes, no)) > 0.001) invalidAnswer();
   const isExplicit = yes > no;
   const explicit = Math.round(yes * 1000);
   return Object.freeze({
