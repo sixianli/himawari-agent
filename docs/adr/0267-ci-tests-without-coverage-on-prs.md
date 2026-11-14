@@ -45,6 +45,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
 
 - 2026-11-13：“那个 Oracle 的加速方案不用给我看了，方案出来之后直接实施”
 - 2026-11-14：“现在就做这个优化方案啊，不要再把那个老的 coverage 再拿去跑 60 分钟了，太耗时间了！”
+- 2026-11-14（关于依赖缓存）：“这个也直接做”
 - 2026-11-14：“那可不可以这样：覆盖率不是最耗时吗？那可不可以等晚上我睡觉之后，在夜里起一个定时任务，单独完整地跑一次主分支上的覆盖率，这样不就行了吗？平时开发就不要再被覆盖率挡住了，只在晚上闲时来做一次覆盖率检测？”
 
 <a id="decision"></a>
@@ -57,6 +58,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）里，`coverage` 作业
    - `coverage` 作业改名 `tests`，仍在 CI 服务器上、仍等 policy 和 build，跑 unit、contracts、integration、e2e、pi-compat 五个项目。`scripts/ci/run.mjs` 默认不统计覆盖率，只有传 `--coverage measure`（或者仓库还没有覆盖率基线、要生成初始基线时）才统计。`--coverage` 给别的值直接报错 `CI_COVERAGE_OPTION_INVALID`。
    - 新增 `tooling` 作业，在 Oracle 的 ARM 机器上跑，只等 policy，和 tests 并行。policy 作业不再跑任何测试。
    - `ci/required`（汇总作业）等 tests 和 tooling，去 ARM 机器取 policy、static、tooling、security 四份报告。
+   - 装依赖时 npm 的下载缓存从作业工作区（每个作业结束就清掉）挪到 runner 账号的 `~/.cache/himawari-ci/npm`，跨作业保留，满 7 天整个清空重建（`scripts/ci/install-dependencies.mjs` 的 `--cache runner`）。npm 照旧按锁文件里的摘要核对每个包，所以缓存被改坏只会让安装失败，不会装进别的东西。
    - main 上旧的 7 作业策略（policy 带 tooling 或不带、coverage 带全部测试）由 `upgradeCoverageToTests` 升级成新的 8 作业形状，摘要照旧按原始字节算；只认那一种完整写法，其他写法照样被拒。
 2. **每天夜里在 main 上统计一次覆盖率，只出报告，不挡 PR。** 定时在日本时间 03:00，用 `run.mjs --check tests --coverage measure` 跑同样的测试并统计覆盖率，和基线比较的结果写进报告。具体放在哪个工作流、报告怎样给人看，在第 2 步的 PR 里定，写进这份 ADR 的后续修订。
 

@@ -205,6 +205,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 ### 日常维护
 
 - **磁盘**：看每个 runner 各自的 `logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
+- **依赖缓存**：CI 作业装依赖时，npm 的下载缓存放在各 runner 账号自己的 `~/.cache/himawari-ci/npm`，跨作业保留，每个包照旧按锁文件里的摘要核对。满 7 天由下一个作业整个清空重建，一般不用手动管；怀疑缓存坏了时，暂停那个 runner，删掉这个目录再恢复，下一个作业会重新下载（[ADR 0267](../adr/0267-ci-tests-without-coverage-on-prs.md)）。
 - **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION`，并改 `runners.sh` 里 x64 和 arm64 两处的 `RUNNER_PACKAGE_SHA256`（两个架构的安装包各一个校验值），SHA-256 从 GitHub 的发布页核对。
 - **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `resume-runners.sh`。
 - **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service` 恢复。

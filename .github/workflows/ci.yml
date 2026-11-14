@@ -50,7 +50,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check policy --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -91,7 +91,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 安装布局检查用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
@@ -141,7 +141,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check build --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -208,7 +208,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 从 CI 服务器取本次 Linux 构建并核对摘要
         env:
           CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
@@ -256,7 +256,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 安装集成测试用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 从 CI 服务器取本次 Linux 构建并核对摘要
@@ -303,7 +303,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check tooling --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
@@ -344,7 +344,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 执行共享检查
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
