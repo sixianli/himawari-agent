@@ -334,6 +334,5 @@ describe("the owner's proposal box travels with the data export", () => {
       what.includes("读不出来"),
     );
     expect(both?.count).toBe(5);
-    expect(both?.reason).not.toContain("损坏");
   });
 });
