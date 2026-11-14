@@ -1825,8 +1825,8 @@ export class ProductionMemoryControl {
             : action === "reconfirm"
               ? (await control.reconfirm(target)).ruleId
               : action === "undo"
-              ? (await control.undo(target)).ruleId
-              : unsupportedRuleAction();
+                ? (await control.undo(target)).ruleId
+                : unsupportedRuleAction();
         return { resultRef: result ?? target, replayed: false };
       } catch (error) {
         if (error instanceof OwnerRuleError)
