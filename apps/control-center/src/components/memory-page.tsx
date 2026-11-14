@@ -17,6 +17,7 @@ import {
 } from "../memory-history.js";
 import {
   applyImportClassifications,
+  applyImportDuplicates,
   type ImportCandidate,
   type ImportParse,
   type MemoryCategory,
@@ -1986,20 +1987,33 @@ function ImportPanel({
   const [pasted, setPasted] = useState("");
   const [items, setItems] = useState<readonly ImportCandidate[]>([]);
   const [error, setError] = useState("");
-  const existing = (memory.overview?.memories ?? [])
-    .filter((item) => item.status !== "trashed")
-    .map((item) => item.text);
   const round = useRef(0);
   const load = (parsed: readonly ImportParse[]) => {
     const all = parsed.flatMap((entry) => entry.items).slice(0, MAXIMUM_IMPORT_ITEMS);
     const current = ++round.current;
     setItems(all);
     setError(all.length ? "" : message("memory.page.importEmpty"));
+    if (!all.length) return;
     const waiting = all.filter((item) => item.status === "classifying").map((item) => item.text);
-    if (!waiting.length) return;
-    void memory.classify(waiting).then((results) => {
-      if (round.current === current) setItems(applyImportClassifications(all, results));
-    });
+    void (async () => {
+      const classifications = waiting.length ? await memory.classify(waiting) : [];
+      if (round.current !== current) return;
+      const sorted = applyImportClassifications(all, classifications);
+      setItems(sorted);
+      const askable = sorted.filter((item) => !item.sensitive && item.status === "ready");
+      const answers = askable.length
+        ? await memory.importDuplicates(askable.map((item) => item.text))
+        : [];
+      if (round.current !== current) return;
+      let next = 0;
+      const verdicts = sorted.map((item) => {
+        if (item.sensitive || item.status !== "ready") return "skipped" as const;
+        const verdict = answers[next] ?? "skipped";
+        next += 1;
+        return verdict;
+      });
+      setItems(applyImportDuplicates(sorted, verdicts));
+    })();
   };
   const read = (files: FileList | null, parse: (name: string, text: string) => ImportParse) => {
     const list = [...(files ?? [])];
@@ -2019,7 +2033,9 @@ function ImportPanel({
     setPasted("");
   };
   const chosen = items.filter((item) => item.checked);
-  const classifying = items.some((item) => item.status === "classifying");
+  const classifying = items.some(
+    (item) => item.status === "classifying" || item.duplicateCheck === "pending",
+  );
   const prompt = message("memory.page.aiPrompt");
   return (
     <section className="memory-card memory-import" ref={reveal}>
@@ -2044,7 +2060,11 @@ function ImportPanel({
                   <input
                     type="checkbox"
                     checked={item.checked}
-                    disabled={item.duplicate || item.status === "classifying"}
+                    disabled={
+                      item.duplicate ||
+                      item.status === "classifying" ||
+                      item.duplicateCheck === "pending"
+                    }
                     onChange={() =>
                       setItems(
                         items.map((entry, position) =>
@@ -2063,18 +2083,23 @@ function ImportPanel({
                       {item.sensitive ||
                       item.duplicate ||
                       item.coding ||
+                      item.duplicateCheck !== "clear" ||
                       item.status === "classifying" ? (
                         <span className="memory-tag" data-kind="sensitive">
                           {message("memory.page.importFlag", {
                             f: item.duplicate
                               ? "duplicate"
-                              : item.status === "classifying"
+                              : item.status === "classifying" || item.duplicateCheck === "pending"
                                 ? "classifying"
                                 : item.status === "unclassified"
                                   ? "unclassified"
                                   : item.sensitive
                                     ? "sensitive"
-                                    : "coding",
+                                    : item.duplicateCheck === "similar"
+                                      ? "similar"
+                                      : item.duplicateCheck === "unchecked"
+                                        ? "unchecked"
+                                        : "coding",
                           })}
                         </span>
                       ) : null}
@@ -2146,11 +2171,7 @@ function ImportPanel({
                 disabled={!pasted.trim()}
                 onClick={() =>
                   load([
-                    parseMemoryText(
-                      message("memory.page.sourceTitle", { s: "assistant" }),
-                      pasted,
-                      existing,
-                    ),
+                    parseMemoryText(message("memory.page.sourceTitle", { s: "assistant" }), pasted),
                   ])
                 }
               >
@@ -2168,8 +2189,8 @@ function ImportPanel({
                 onChange={(event) =>
                   read(event.currentTarget.files, (name, text) =>
                     source === "codex"
-                      ? parseMemoryText(name, text, existing)
-                      : parseMemoryExport(name, text, existing),
+                      ? parseMemoryText(name, text)
+                      : parseMemoryExport(name, text),
                   )
                 }
               />

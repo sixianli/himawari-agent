@@ -9,6 +9,7 @@
 - [授权、上线和合并](#authorization-deploys-and-merges)
 - [模型上下文的排列](#prompt-layout-for-the-kv-cache)
 - [独立判断，不盲从](#independent-judgment)
+- [理解用户的意思交给模型，不写词表](#meaning-goes-to-the-model)
 
 <a id="money-and-models"></a>
 ## 钱和模型
@@ -40,7 +41,7 @@
 - Andy 尽量只和协调者沟通。所以他在项目聊天里对协调者说的话，由协调者附上他那条原话转给对应线程，就算他的授权。上线、回滚、停服、改配置、合并 PR 都是这样，不要让他再去别的线程重说一遍。上线和回滚的细节见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)。
 - 唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。需要时，协调者在项目聊天里直接告诉他“去 Mac 线程打什么”和为什么，不说“在这里说也行”。
 - 会删东西的上线，所有要 Andy 选的选项先选完，再上线。
-- 合并 PR 一律由做这个 PR 的线程执行，要等 Andy 说“合并”（在那个线程或项目聊天里说都算）。不让 Andy 自己去 GitHub 操作。
+- 合并 PR 一律由做这个 PR 的线程执行，要等 Andy 说“合并”（在那个线程或项目聊天里说都算）。不让 Andy 自己去 GitHub 操作。线程执行合并的方式是给 PR 加 `merge-queue` 标签，由合并队列完整测过后合进 `main`；改了 CI 自身文件的 PR 仍由线程直接合并（[ADR 0268](../../docs/adr/0268-merge-queue-and-related-tests-on-prs.md)）。
 - 合并前的模型复核由 Andy 控制：他说跳过就跳过（不论复核了几轮），说停就停，说这次用哪家服务方就用哪家；线程怎么做见[Andy 怎样控制复核](../../.agents/instructions/model-review.md#owner-control)。
 
 <a id="prompt-layout-for-the-kv-cache"></a>
@@ -54,3 +55,11 @@
 - 每个线程和协调者都要有自己的判断，不得盲从 Andy 的指示、决定，或他已经同意的方案。动手之前先核对它和现有功能、测试、已有规则有没有冲突。
 - 判断 Andy 的决定不对，或者有更好的做法时，必须明确指出：哪里不对、会出什么问题、建议怎样做，然后等他定；不得默默照做。
 - 例：让“结果未知”的轮次提前收尾，会抢掉“迟到结果恢复”。实施前只要问一句“会不会抢掉恢复”并跑一遍相关测试就能发现，却没有人问。
+
+<a id="meaning-goes-to-the-model"></a>
+## 理解用户的意思交给模型，不写词表
+
+- Andy 2026-11-12 定、2026-11-13 补充（[ADR 0249](../../docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）：判断用户一句话的意图、时效、是否明说、两句话是不是同一件事，一律交给模型，程序只做校验（原话是否逐字出自主人、格式、额度、白名单）。不得用关键词表、正则、停用词表或写死的词典去猜用户的意思，也不得“先放词表，以后再改”。
+- 门槛：`npm run check:meaning-word-lists` 找出新增的词表形状，每一处必须在 [词表登记表](../../docs/meaning-word-lists.md) 登记类别和理由。登记表里没有“理解用户意思”这一类；要加新类别，先问 Andy。
+- 做法参考 PR 423、467 和 ADR 0249、ADR 0252：独立裁判提示词、严格解析、失败走安全默认、用本机回环模型桩写自动测试，再用真模型小批量评测（花钱先按本文件“钱和模型”一节问）。
+- 起因：[I-104](../../docs/incidents-and-gates.md#incidents)，这类词表已经出现三次。

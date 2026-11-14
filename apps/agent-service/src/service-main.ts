@@ -131,6 +131,10 @@ import {
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
 import { expandMemoryReviews, findSourceMessageIds } from "./production-memory-control.js";
 import { DEFAULT_CONVERSATION_REVIEW_SETTINGS } from "./production-memory-conversation-review.js";
+import {
+  importDuplicateFailureCode,
+  productionImportDuplicateChecker,
+} from "./production-memory-import-duplicates.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -696,6 +700,7 @@ export async function startTenantRuntime(
   let webPush: ProductionWebPush | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
+  let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1877,6 +1882,16 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      memoryImportDuplicates = productionImportDuplicateChecker(
+        configuration,
+        hostModelSources(configuration).provider,
+        (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "memory.import_duplicates_failed",
+            code: importDuplicateFailureCode(error),
+          }),
+      );
       const classifierModels = modelComposition;
       if (proactiveConfiguration && proactiveDescriptor && classifierModels)
         memoryClassifier = new ProductionMemoryClassifier({
@@ -2976,6 +2991,7 @@ export async function startTenantRuntime(
             clock,
           }),
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
+          ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),
           onAudit: (record) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",

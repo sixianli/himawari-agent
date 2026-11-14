@@ -791,7 +791,7 @@ export const messages = {
   "memory.page.importAgain": "別の取り込み元",
   "memory.page.importSummary": "{all} 件中 {on} 件を選択",
   "memory.page.importFlag":
-    "{f, select, duplicate {記憶済み} classifying {分類中…} unclassified {分類できなかったため非公開・既定でオフ} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
+    "{f, select, duplicate {記憶済み} classifying {分類中…} unclassified {分類できなかったため非公開・既定でオフ} sensitive {機微な情報のため既定でオフ} similar {記憶済みの可能性があるため既定でオフ} unchecked {重複を確認できなかったため既定でオフ} other {コーディングのメモのため既定でオフ}}",
   "memory.page.importCommit": "選んだ {count} 件をインポート",
   "memory.page.importDone":
     "{count} 件をインポートしました。タイムラインからまとめて取り消せます。",

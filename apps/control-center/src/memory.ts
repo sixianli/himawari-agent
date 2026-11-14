@@ -2,7 +2,7 @@ import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gatewa
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
-import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
+import type { ImportCandidate, ImportDuplicateVerdict, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type MemoryOverview = Extract<
@@ -89,6 +89,9 @@ export interface MemoryModel {
     repeat: "none" | "yearly",
   ) => Promise<boolean>;
   readonly classify: (texts: readonly string[]) => Promise<readonly MemoryClassification[]>;
+  readonly importDuplicates: (
+    texts: readonly string[],
+  ) => Promise<readonly ImportDuplicateVerdict[]>;
   readonly create: (
     text: string,
     picked: MemoryCategory | null,
@@ -253,6 +256,30 @@ export function useMemory(input: {
     }
     return results;
   };
+  const importDuplicates = async (
+    texts: readonly string[],
+  ): Promise<readonly ImportDuplicateVerdict[]> => {
+    if (!operations.includes("memory.import.duplicates.read")) return texts.map(() => "skipped");
+    const results: ImportDuplicateVerdict[] = [];
+    for (let start = 0; start < texts.length; start += CLASSIFY_BATCH) {
+      const chunk = texts.slice(start, start + CLASSIFY_BATCH);
+      try {
+        const contentRefs = await Promise.all(chunk.map((text) => protectedRef(text, false)));
+        const result = await client.query(
+          queryMessage(configuration, "memory.import.duplicates.read", { contentRefs }),
+        );
+        if (result.type !== "memory.import.duplicates.snapshot")
+          throw new Error("IMPORT_DUPLICATES_INVALID");
+        for (const [index, ref] of contentRefs.entries()) {
+          const item = result.payload.items[index];
+          results.push(item && item.contentRef === ref ? item.verdict : "skipped");
+        }
+      } catch {
+        results.push(...chunk.map((): ImportDuplicateVerdict => "skipped"));
+      }
+    }
+    return results;
+  };
   const mutate = (item: MemoryItem, action: string) =>
     send("memory.mutate", () => ({
       memoryId: item.memoryId,
@@ -331,6 +358,7 @@ export function useMemory(input: {
         repeat,
       })),
     classify,
+    importDuplicates,
     create: async (text, picked, pinned) => {
       let category: MemoryCategory = picked ?? "other";
       const ok = await send("memory.create", async () => {

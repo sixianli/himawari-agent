@@ -65,6 +65,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.basis.snapshot",
   "memory.classify.read",
   "memory.classify.snapshot",
+  "memory.import.duplicates.read",
+  "memory.import.duplicates.snapshot",
   "decision.chain.read",
   "decision.chain.snapshot",
   "decision.email.read",
@@ -1590,6 +1592,32 @@ const memoryClassifySnapshotSchema = object({
         classification: enumeration(["private", "sensitive"]),
         topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         failed: booleanValue,
+      }),
+    ),
+  }),
+});
+export const MEMORY_IMPORT_DUPLICATES_MAXIMUM = 500;
+const memoryImportDuplicatesQuerySchema = object({
+  ...envelope("query", "memory.import.duplicates.read"),
+  payload: object({
+    contentRefs: {
+      parse(input, path = "$.payload.contentRefs") {
+        const refs = memoryClassifyRefsSchema.parse(input, path);
+        if (refs.length < 1 || refs.length > MEMORY_IMPORT_DUPLICATES_MAXIMUM)
+          throw new ContractValidationError(path, "must hold 1 to 500 refs");
+        return refs;
+      },
+    },
+  }),
+});
+const memoryImportDuplicatesSnapshotSchema = object({
+  ...envelope("snapshot", "memory.import.duplicates.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        contentRef: machineString,
+        verdict: enumeration(["same", "unsure", "different", "skipped"]),
+        memoryId: nullable(machineString),
       }),
     ),
   }),
@@ -3136,6 +3164,8 @@ const schemasByType = {
   "memory.basis.snapshot": memoryBasisSnapshotSchema,
   "memory.classify.read": memoryClassifyQuerySchema,
   "memory.classify.snapshot": memoryClassifySnapshotSchema,
+  "memory.import.duplicates.read": memoryImportDuplicatesQuerySchema,
+  "memory.import.duplicates.snapshot": memoryImportDuplicatesSnapshotSchema,
   "decision.chain.read": decisionChainQuerySchema,
   "decision.chain.snapshot": decisionChainSnapshotSchema,
   "decision.email.read": decisionEmailQuerySchema,
