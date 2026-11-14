@@ -268,4 +268,72 @@ describe("reminder proposals", () => {
     expect(listed?.requiresFullRead).toBe(true);
     expect(listed?.summary.length).toBeLessThanOrEqual(200);
   });
+  it("[P1-6][reverse] refuses to create a yearly reminder whose shown date has passed instead of rolling it to next year", async () => {
+    const { box, context, seen, clock, reminder } = await fixture();
+    const proposed = await proposeReminderCreate(context, {
+      text: "年度提醒",
+      due: "2026-11-20T15:00",
+      repeat: "yearly",
+    });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const version = await seen(proposed.proposalId);
+    clock.value = "2026-11-25T00:00:00.000Z";
+    expect(await failureOf(box.adopt(proposed.proposalId, version))).toBe("PROPOSAL_SUPERSEDED");
+    expect(
+      await reminder("reminder:memory:reminder:proposal:" + proposed.proposalId),
+    ).toBeUndefined();
+  });
+
+  it("[P1-6] keeps the conversation and external-content source on a reminder created from a proposal", async () => {
+    const { box, context, seen, reminder, memoryStatus } = await fixture();
+    const proposed = await proposeReminderCreate(
+      { ...context, threadId: THREAD_ID, externalOrigins: ["web:example.test"] },
+      { text: "周五交周报", due: "2026-11-20T15:00" },
+    );
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    const outcome = await box.adopt(proposed.proposalId, await seen(proposed.proposalId));
+    const made = await reminder(String((outcome as { detail?: unknown }).detail));
+    const memory = await memoryStatus(made?.memoryId ?? "");
+    expect(memory?.sourceThreadId).toBe(THREAD_ID);
+    expect(memory?.sourceRefs.some((ref) => ref.includes("web:example.test"))).toBe(true);
+  });
+
+  it("[P1-6] lets undo finish when the old time was already restored but the proposal still says succeeded", async () => {
+    const { box, context, writer, seen, seed, reminder } = await fixture();
+    const created = await seed();
+    const before = await reminder(created.reminderId);
+    const proposed = await proposeReminderReschedule(context, {
+      reminderId: created.reminderId,
+      due: "2026-11-20T09:40",
+    });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    await box.adopt(proposed.proposalId, await seen(proposed.proposalId));
+    const moved = await reminder(created.reminderId);
+    await writer.moveSchedule({
+      reminderId: created.reminderId,
+      expectedUpdatedAt: moved?.updatedAt ?? "",
+      dueAt: before?.dueAt ?? "",
+      remindAt: before?.remindAt ?? "",
+    });
+    expect(await box.undo(proposed.proposalId)).toEqual({ replayed: false });
+  });
+
+  it("[P1-6][reverse] reports a stable error code when undo finds the reminder changed by the owner", async () => {
+    const { box, context, writer, seen, seed, reminder } = await fixture();
+    const created = await seed();
+    const proposed = await proposeReminderReschedule(context, {
+      reminderId: created.reminderId,
+      due: "2026-11-20T09:40",
+    });
+    if (!("proposalId" in proposed)) throw new Error(proposed.refused);
+    await box.adopt(proposed.proposalId, await seen(proposed.proposalId));
+    const moved = await reminder(created.reminderId);
+    await writer.moveSchedule({
+      reminderId: created.reminderId,
+      expectedUpdatedAt: moved?.updatedAt ?? "",
+      dueAt: "2026-11-22T04:00:00.000Z",
+      remindAt: "2026-11-22T03:00:00.000Z",
+    });
+    expect(await failureOf(box.undo(proposed.proposalId))).toBe("PROPOSAL_NOT_UNDOABLE");
+  });
 });

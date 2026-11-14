@@ -382,9 +382,9 @@ export class ProductionReminderWriter {
   }
 
   async withdraw(reminderId: string): Promise<void> {
-    const reminder = await this.cancel(reminderId);
     const remove = this.#options.memory.delete;
-    if (remove === undefined) return;
+    if (remove === undefined) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const reminder = await this.cancel(reminderId);
     const generation = await this.#options.book.latestGeneration(this.#scope());
     if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
     const memory = await this.#options.state.read(reminder.memoryId);

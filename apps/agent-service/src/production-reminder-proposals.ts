@@ -5,12 +5,13 @@ import {
   type ProductionReminderWriter,
   ReminderInputError,
 } from "./production-reminder-writer.js";
-import type {
-  ProductionProposalBox,
-  ProposalActionHandler,
-  ProposalEvidence,
-  ProposalPremises,
-  ProposalSource,
+import {
+  type ProductionProposalBox,
+  type ProposalActionHandler,
+  ProposalError,
+  type ProposalEvidence,
+  type ProposalPremises,
+  type ProposalSource,
 } from "./production-proposals.js";
 
 export const REMINDER_RESCHEDULE_PROPOSAL_TYPE = "reminder.reschedule";
@@ -35,6 +36,9 @@ interface CreateData {
   readonly text: string;
   readonly due: string;
   readonly repeat: "none" | "yearly";
+  readonly dueAt: string;
+  readonly threadId: string | null;
+  readonly externalOrigins: readonly string[];
 }
 
 interface RescheduleOriginal {
@@ -61,10 +65,12 @@ function rescheduleData(value: unknown): RescheduleData | undefined {
 
 function createData(value: unknown): CreateData | undefined {
   const record = (value ?? {}) as Record<string, unknown>;
-  const { text, due, repeat } = record;
-  return isText(text) && isText(due) && (repeat === "none" || repeat === "yearly")
-    ? { text, due, repeat }
-    : undefined;
+  const { text, due, repeat, dueAt, threadId, externalOrigins } = record;
+  if (!isText(text) || !isText(due) || !isText(dueAt)) return undefined;
+  if (repeat !== "none" && repeat !== "yearly") return undefined;
+  if (threadId !== null && !isText(threadId)) return undefined;
+  if (!Array.isArray(externalOrigins) || !externalOrigins.every(isText)) return undefined;
+  return { text, due, repeat, dueAt, threadId, externalOrigins };
 }
 
 function rescheduleOriginal(value: unknown): RescheduleOriginal | undefined {
@@ -84,6 +90,16 @@ function refused(reason: string): ProposalPremises {
   return { ok: false, reason };
 }
 
+async function unlessInputError<T>(action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof ReminderInputError)
+      throw new ProposalError("PROPOSAL_NOT_UNDOABLE", error.code);
+    throw error;
+  }
+}
+
 export function registerReminderProposalHandlers(options: {
   readonly box: Pick<ProductionProposalBox, "register">;
   readonly writer: Writer;
@@ -100,7 +116,11 @@ export function registerReminderProposalHandlers(options: {
       if (found.reminder.status !== "scheduled") return refused("这条提醒已经不再生效");
       if (found.reminder.updatedAt !== parsed.expectedUpdatedAt)
         return refused("这条提醒在提议之后被改过");
-      if (Date.parse(parsed.dueAt) <= Date.parse(clock.now())) return refused("新的时间已经过了");
+      const dueAt = Date.parse(parsed.dueAt);
+      const remindAt = Date.parse(parsed.remindAt);
+      if (!Number.isFinite(dueAt) || !Number.isFinite(remindAt) || remindAt > dueAt)
+        return refused("提议里的时间不对");
+      if (dueAt <= Date.parse(clock.now())) return refused("新的时间已经过了");
       return { ok: true };
     },
     async execute({ data }) {
@@ -138,12 +158,21 @@ export function registerReminderProposalHandlers(options: {
       const parsed = rescheduleData(data);
       const before = rescheduleOriginal(original);
       if (!parsed || !before) throw new ReminderInputError("REMINDER_INPUT_INVALID");
-      await writer.moveSchedule({
-        reminderId: parsed.reminderId,
-        expectedUpdatedAt: before.updatedAt,
-        dueAt: before.dueAt,
-        remindAt: before.remindAt,
-      });
+      const current = await writer.describe(parsed.reminderId);
+      if (
+        current?.reminder.status === "scheduled" &&
+        current.reminder.dueAt === before.dueAt &&
+        current.reminder.remindAt === before.remindAt
+      )
+        return;
+      await unlessInputError(() =>
+        writer.moveSchedule({
+          reminderId: parsed.reminderId,
+          expectedUpdatedAt: before.updatedAt,
+          dueAt: before.dueAt,
+          remindAt: before.remindAt,
+        }),
+      );
     },
   };
   const create: ProposalActionHandler = {
@@ -151,7 +180,10 @@ export function registerReminderProposalHandlers(options: {
     async verify({ data }) {
       const parsed = createData(data);
       if (!parsed) return refused("提议内容不完整");
-      if (!writer.schedulePreview(parsed.due, parsed.repeat)) return refused("提醒的时间已经过了");
+      const schedule = writer.schedulePreview(parsed.due, parsed.repeat);
+      if (!schedule) return refused("提醒的时间已经过了");
+      if (schedule.dueAt !== parsed.dueAt)
+        return refused("提醒的时间已经变了，和提议时看到的不一样");
       return { ok: true };
     },
     async execute({ proposalId, data }) {
@@ -162,6 +194,8 @@ export function registerReminderProposalHandlers(options: {
         text: parsed.text,
         due: parsed.due,
         repeat: parsed.repeat,
+        sourceThreadId: parsed.threadId,
+        externalOrigins: parsed.externalOrigins,
       });
       return { original: { reminderId: created.reminderId }, detail: created.reminderId };
     },
@@ -174,7 +208,7 @@ export function registerReminderProposalHandlers(options: {
     async undo({ original }) {
       const made = createOriginal(original);
       if (!made) throw new ReminderInputError("REMINDER_INPUT_INVALID");
-      await writer.withdraw(made.reminderId);
+      await unlessInputError(() => writer.withdraw(made.reminderId));
     },
   };
   box.register(REMINDER_RESCHEDULE_PROPOSAL_TYPE, reschedule);
@@ -207,6 +241,7 @@ export interface ReminderProposalContext {
   readonly origin: "owner_said" | "inferred" | "external_agent" | "external_content";
   readonly threadId: string | null;
   readonly externalContentSeen?: boolean;
+  readonly externalOrigins?: readonly string[];
   readonly source?: ProposalSource;
   readonly reason?: string;
 }
@@ -260,7 +295,7 @@ export async function proposeReminderCreate(
   if (text.length === 0 || text.length > 500) return { refused: "REMINDER_INPUT_INVALID" };
   const schedule = context.writer.schedulePreview(input.due, repeat);
   if (!schedule) return { refused: "REMINDER_TIME_INVALID" };
-  const id = proposalId("reminder-create", [text, input.due.trim(), repeat]);
+  const id = proposalId("reminder-create", [text, input.due.trim(), repeat, schedule.dueAt]);
   const when = localTimeText(schedule.dueAt, context.timeZone);
   await context.box.propose({
     proposalId: id,
@@ -270,7 +305,14 @@ export async function proposeReminderCreate(
     origin: context.origin,
     threadId: context.threadId,
     evidence: evidenceOf(context.reason ?? `提醒原文：${text}`, []),
-    data: { text, due: input.due.trim(), repeat },
+    data: {
+      text,
+      due: input.due.trim(),
+      repeat,
+      dueAt: schedule.dueAt,
+      threadId: context.threadId,
+      externalOrigins: context.externalOrigins ?? [],
+    },
     requiresFullRead: [...text].length > FULL_READ_TEXT_LENGTH,
     ...(context.source ? { source: context.source } : {}),
     ...(context.externalContentSeen === true ? { externalContentSeen: true } : {}),
