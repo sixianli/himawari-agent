@@ -69,7 +69,10 @@ export async function findUnwatchedBrowserLaunches(root, allowed) {
     const relative = path.relative(root, file).split(path.sep).join("/");
     if (allowed.has(relative)) continue;
     const source = await readFile(file, "utf8");
-    if (/\.launch\(/u.test(source) && !/watchPageErrors|collectPageErrors/u.test(source))
+    if (
+      /\.launch(?:PersistentContext|Server)?\(/u.test(source) &&
+      !/\b(?:watchPageErrors|collectPageErrors)\s*\(/u.test(source)
+    )
       offenders.push(relative);
   }
   return offenders.sort();
