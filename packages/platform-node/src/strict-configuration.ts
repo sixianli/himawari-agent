@@ -43,6 +43,7 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type OwnerIntentCheckConfiguration,
   type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
@@ -1580,6 +1581,18 @@ function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
   });
 }
 
+function parseOwnerIntentCheck(value: unknown): OwnerIntentCheckConfiguration {
+  const field = "configuration.runPolicy.ownerIntentCheck";
+  const input = record(value, field);
+  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "modelRef"], field);
+  return Object.freeze({
+    enabled: boolean(input["enabled"], `${field}.enabled`),
+    minConfidence: integer(input["minConfidence"], `${field}.minConfidence`, 500, 1000),
+    timeoutMs: integer(input["timeoutMs"], `${field}.timeoutMs`, 500, 30000),
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -1589,6 +1602,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "timeZone",
       "approvalBodyPreviewCharacters",
       "toolRefusals",
+      "ownerIntentCheck",
       "systemInstruction",
       "freezeThreadPrompts",
       "memoryLimit",
@@ -1646,6 +1660,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["toolRefusals"] === undefined
       ? {}
       : { toolRefusals: parseToolRefusals(input["toolRefusals"]) }),
+    ...(input["ownerIntentCheck"] === undefined
+      ? {}
+      : { ownerIntentCheck: parseOwnerIntentCheck(input["ownerIntentCheck"]) }),
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
