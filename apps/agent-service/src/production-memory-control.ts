@@ -131,6 +131,13 @@ const IMPORT_POLICY_VERSION = "memory-import:v1";
 const EXTERNAL_PROPOSALS_SHOWN = 100;
 const EXTERNAL_BATCHES_SHOWN = 10;
 
+function unsupportedRuleAction(): never {
+  throw new ApplicationPortError(
+    PORT_ERROR_CODES.INVALID_OPERATION,
+    "MEMORY_RULE_ACTION_UNSUPPORTED",
+  );
+}
+
 function sensitiveTopicFor(category: MemoryCategory): SensitiveMemoryTopic {
   return category === "health" || category === "finance" ? category : "other";
 }
@@ -1847,7 +1854,9 @@ export class ProductionMemoryControl {
             ? (await control.confirm(target)).ruleId
             : action === "reconfirm"
               ? (await control.reconfirm(target)).ruleId
-              : (await control.undo(target)).ruleId;
+              : action === "undo"
+                ? (await control.undo(target)).ruleId
+                : unsupportedRuleAction();
         return { resultRef: result ?? target, replayed: false };
       } catch (error) {
         if (error instanceof OwnerRuleError)
