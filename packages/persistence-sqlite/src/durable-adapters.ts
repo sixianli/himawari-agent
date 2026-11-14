@@ -38,6 +38,7 @@ import type {
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
+  PerceptionStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
   RealEvalStorePort,
@@ -1217,6 +1218,35 @@ export class SqliteDurableAdapters {
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
       touchDevice: (input) => this.context.write("pairedDevices.touchDevice", input),
+    });
+  }
+
+  perception(): PerceptionStorePort {
+    return Object.freeze<PerceptionStorePort>({
+      readSettings: (input) => this.context.read("perception.readSettings", input),
+      writeSettings: (input) => this.context.write("perception.writeSettings", input),
+      knownRecordIds: (input) => this.context.read("perception.knownRecordIds", input),
+      releaseContent: (input) => this.context.write("perception.releaseContent", input),
+      knownMediaDigests: (input) => this.context.read("perception.knownMediaDigests", input),
+      ingestRecords: (input) => this.context.write("perception.ingestRecords", input),
+      listDay: (input) => this.context.read("perception.listDay", input),
+      countDay: (input) => this.context.read("perception.countDay", input),
+      readEpisode: (input) => this.context.read("perception.readEpisode", input),
+      setRecordStatus: (input) => this.context.write("perception.setRecordStatus", input),
+      syncMirror: (input) => this.context.write("perception.syncMirror", input),
+      listMirror: (input) => this.context.read("perception.listMirror", input),
+      insertTrackPoints: (input) => this.context.write("perception.insertTrackPoints", input),
+      countTrackPoints: (input) => this.context.read("perception.countTrackPoints", input),
+      createUploadGrant: (input) => this.context.write("perception.createUploadGrant", input),
+      readUploadGrant: (input) => this.context.read("perception.readUploadGrant", input),
+      completeUploadGrant: (input) => this.context.write("perception.completeUploadGrant", input),
+      recordMedia: (input) => this.context.write("perception.recordMedia", input),
+      listMedia: (input) => this.context.read("perception.listMedia", input),
+      readUsage: (input) => this.context.read("perception.readUsage", input),
+      reserveUsage: (input) => this.context.write("perception.reserveUsage", input),
+      reportDeviceUsage: (input) => this.context.write("perception.reportDeviceUsage", input),
+      markUsageWarned: (input) => this.context.write("perception.markUsageWarned", input),
+      prune: (input) => this.context.write("perception.prune", input),
     });
   }
 
