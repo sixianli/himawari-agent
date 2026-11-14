@@ -6,7 +6,7 @@
 <a id="when-a-thread-starts"></a>
 ## 线程开始时
 
-运行 `node scripts/check-incident-gates.mjs --open`，它只打印未结条目（状态为 `缺门槛` 或 `等 Andy`）的编号、状态、日期和一句话现象。如果这次工作涉及其中某条的领域，打开 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md) 读那一行，并在计划里说明。开工时不通读整份清单：它记的是全部事故的完整经过，大多数已经关闭，通读一次要占几万 token 的上下文。
+运行 `node scripts/check-incident-gates.mjs --open`，它只打印还没有关闭的条目的编号、状态、日期和一句话现象：未结条目（状态为 `缺门槛` 或 `等 Andy`），以及 `仓库外` 的条目（原因在仓库之外，门槛一栏写着线程要照办的替代做法）。如果这次工作涉及其中某条的领域，打开 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md) 读那一行；未结条目在计划里说明，`仓库外` 的条目照它的替代做法办。开工时不通读整份清单：它记的是全部事故的完整经过，大多数已经关闭，通读一次要占几万 token 的上下文。只有命令打印 `INCIDENT_OPEN unavailable`（清单本身格式坏了或找不到，读不出条目）时，才直接打开清单查看，并先修好清单。
 
 <a id="what-counts"></a>
 ## 什么算数
