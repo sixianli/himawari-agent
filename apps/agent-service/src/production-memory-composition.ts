@@ -1,5 +1,7 @@
 import {
   type ConfiguredEmbeddingModelDescriptor,
+  DEVICE_CONFIGURATION_DEFAULTS,
+  DEVICE_HARD_LIMITS,
   type EmbeddingProfile,
   embeddingIdentity,
   embeddingProfileFor,
@@ -11,12 +13,16 @@ import {
 } from "@himawari-agent/application";
 import {
   AI_GATEWAY_BASE_URL,
-  EgressEmbedder,
   DEFAULT_RELEVANCE_TUNING,
+  EgressEmbedder,
   type EmbeddingBoundary,
   HybridMemoryProvider,
   type HybridMemoryProviderOptions,
   LOCAL_ONNX_BASE_URL,
+  prefetchingEmbedder,
+  QueryPrefetch,
+  type QueryPrefetchLimits,
+  QWEN3_EMBEDDING_8B_COST,
 } from "@himawari-agent/memory-engine";
 import {
   assertProductionSecretSource,
@@ -29,6 +35,7 @@ import {
   resolveConfiguredModelDescriptorSet,
   resolveConfiguredSecretRequirement,
 } from "./production-model-composition.js";
+import type { MailEmbeddingContext } from "./production-run-memory.js";
 
 export interface ProductionMemoryCompositionOptions {
   readonly egress: ModelEgress;
@@ -41,6 +48,34 @@ export interface ProductionMemoryCompositionOptions {
   readonly onRelevanceUnknown?: HybridMemoryProviderOptions["onRelevanceUnknown"];
 }
 
+export interface ProductionQueryPrefetch {
+  readonly queue: QueryPrefetch;
+  embedQuery(text: string): Promise<Float32Array>;
+  estimateMicros(text: string): number;
+}
+
+export function outsideRunQueryPrefetch(
+  prefetch: ProductionQueryPrefetch,
+  embedOutsideRun: <T>(context: MailEmbeddingContext, operation: () => Promise<T>) => Promise<T>,
+  now: () => string,
+  requestTimeoutMs: number,
+): ProductionQueryPrefetch {
+  return Object.freeze({
+    queue: prefetch.queue,
+    estimateMicros: prefetch.estimateMicros,
+    embedQuery: (text: string) =>
+      embedOutsideRun(
+        {
+          deadlineAt: new Date(Date.parse(now()) + requestTimeoutMs).toISOString(),
+          signal: AbortSignal.timeout(requestTimeoutMs),
+          dataClassification: "private",
+          costMicros: 0,
+        },
+        () => prefetch.embedQuery(text),
+      ),
+  });
+}
+
 export interface ProductionMemoryComposition {
   readonly descriptor: ProductionEmbeddingModelDescriptor;
   readonly profile: EmbeddingProfile;
@@ -48,6 +83,7 @@ export interface ProductionMemoryComposition {
   readonly localRuntime: LocalOnnxEmbeddingRuntime | null;
   readonly projection: HybridMemoryProvider;
   readonly dedupeSameSource: boolean;
+  readonly queryPrefetch?: ProductionQueryPrefetch;
   bindEmbeddingBoundary(
     boundary: EmbeddingBoundary,
     timeoutMs: number,
@@ -139,9 +175,30 @@ export async function createProductionMemoryCompositionFromConfiguration(
     options.configuration.memory.minimumSimilarity ?? profile.chatMinimumSimilarity;
   let searchCancelled: (error: unknown) => boolean = () => false;
   const retrieval = options.configuration.memory.retrieval;
+  const device = options.configuration.runPolicy?.device;
+  const prefetchLimits: QueryPrefetchLimits = Object.freeze({
+    ttlMs: (device?.prefetchSeconds ?? DEVICE_CONFIGURATION_DEFAULTS.prefetchSeconds) * 1000,
+    entriesPerDevice:
+      device?.limits["device.prefetch.cache.entries"] ??
+      DEVICE_HARD_LIMITS["device.prefetch.cache.entries"].defaultValue,
+    bytesPerDevice:
+      device?.limits["device.prefetch.cache.bytes"] ??
+      DEVICE_HARD_LIMITS["device.prefetch.cache.bytes"].defaultValue,
+  });
+  const queue = new QueryPrefetch({
+    limits: () => prefetchLimits,
+    now: () => Date.now(),
+  });
+  const pricePerToken =
+    embedding.provider === GATEWAY_EMBEDDING_PROVIDER ? QWEN3_EMBEDDING_8B_COST.input : 0;
+  const queryPrefetch: ProductionQueryPrefetch = Object.freeze({
+    queue,
+    embedQuery: (text: string) => embedder.embedQuery(text),
+    estimateMicros: (text: string) => Math.ceil([...text].length * pricePerToken),
+  });
   const projection = new HybridMemoryProvider({
     index: options.index,
-    embedder,
+    embedder: prefetchingEmbedder(embedder, queue),
     minimumSimilarity,
     embeddableClassifications: embedding.allowedDataClassifications,
     now: () => new Date().toISOString(),
@@ -167,6 +224,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
     localRuntime,
     projection,
     dedupeSameSource: retrieval?.dedupeSameSource ?? true,
+    queryPrefetch,
     bindEmbeddingBoundary: (
       boundary: EmbeddingBoundary,
       timeoutMs: number,

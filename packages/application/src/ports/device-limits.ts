@@ -119,6 +119,7 @@ export interface DeviceConfiguration {
   readonly heartbeatSeconds: number;
   readonly connectionMaxSeconds: number;
   readonly streamConnections: number;
+  readonly prefetchSeconds: number;
   readonly limits: DeviceHardLimits;
 }
 
@@ -127,6 +128,7 @@ export const DEVICE_CONFIGURATION_DEFAULTS = Object.freeze({
   heartbeatSeconds: 20,
   connectionMaxSeconds: 3600,
   streamConnections: 4,
+  prefetchSeconds: 60,
 });
 
 export function defaultDeviceHardLimits(): DeviceHardLimits {
