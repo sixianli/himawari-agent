@@ -1372,6 +1372,7 @@ export async function createProductionHttpComposition(
     files,
     devices: {
       service: pairedDevices,
+      home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),

@@ -29,6 +29,7 @@ export interface HomeAction {
   readonly polarity: (typeof HOME_POLARITIES)[number];
   readonly ownerPresence: boolean;
   readonly reviewLabel: string | null;
+  readonly binding: string | null;
 }
 
 export const DEFAULT_HOME_FEED: HomeFeedConfiguration = Object.freeze({

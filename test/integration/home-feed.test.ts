@@ -836,6 +836,97 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     expect((await f.read()).awaitingCount).toBe(0);
   });
 
+  it("gives every action that runs a command a binding the server resolves back to that command, and none to the ones it cannot run", async () => {
+    const f = await fixture();
+    await f.recordMail([{ id: "bound", summary: "田中把会改到 15:00" }]);
+    await f.remind("reminder-bound", "给妈妈打电话", at(-10), at(120));
+    await f.memoryRequest("memory-request-bound", "我的血压偏高");
+    await f.createApproval("approval-bound");
+    const snapshot = await f.read();
+    const bindings = new Map<string, string | null>(
+      snapshot.items.flatMap((item) =>
+        item.actions.map((entry) => [`${item.key}/${entry.action}`, entry.binding] as const),
+      ),
+    );
+    expect([...bindings.keys()].sort()).toEqual(
+      [
+        "approval:approval-bound/approved",
+        "approval:approval-bound/denied",
+        "insight:insight-bound/done",
+        "insight:insight-bound/mute",
+        "memory_request:memory-request-bound/approved",
+        "memory_request:memory-request-bound/rejected",
+        "reminder:reminder-bound/dismiss",
+        "reminder:reminder-bound/cancel",
+        "reminder:reminder-bound/snooze",
+      ].sort(),
+    );
+    expect(new Set(bindings.values()).size).toBe(bindings.size);
+    const resolve = (key: string, action: string, binding = bindings.get(`${key}/${action}`)) =>
+      f.home.resolveAction({ key, action, binding: binding ?? "" });
+
+    expect(await resolve("insight:insight-bound", "mute")).toMatchObject({
+      ok: true,
+      type: "proactive.insight.respond",
+      payload: { insightId: "insight-bound", action: "mute", rating: null },
+      ownerPresence: false,
+    });
+    expect(await resolve("reminder:reminder-bound", "snooze")).toMatchObject({
+      ok: true,
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder-bound", action: "snooze" },
+    });
+    expect(await resolve("memory_request:memory-request-bound", "approved")).toMatchObject({
+      ok: true,
+      type: "memory.approval.respond",
+      payload: { requestId: "memory-request-bound", resolution: "approved", editedText: null },
+      dataClassification: "sensitive",
+    });
+    expect(await resolve("approval:approval-bound", "approved")).toMatchObject({
+      ok: true,
+      type: "approval.respond",
+      payload: {
+        approvalRequestId: "approval-bound",
+        expectedRevision: 1,
+        decision: "approved",
+        semanticSnapshotHash: "hash-approval-bound",
+        recentAuthenticationRef: "device",
+      },
+    });
+
+    expect(
+      await resolve("insight:insight-bound", "done", bindings.get("insight:insight-bound/mute")),
+    ).toEqual({ ok: false, reason: "binding_stale" });
+    expect(
+      await resolve(
+        "insight:insight-bound",
+        "mute",
+        bindings.get("reminder:reminder-bound/snooze"),
+      ),
+    ).toEqual({ ok: false, reason: "binding_stale" });
+    expect(await resolve("insight:insight-bound", "mute", "b1.***")).toEqual({
+      ok: false,
+      reason: "binding_invalid",
+    });
+    expect(await resolve("insight:insight-bound", "rate")).toEqual({
+      ok: false,
+      reason: "binding_invalid",
+    });
+    expect(
+      await resolve(
+        "reminder:reminder-bound",
+        "approved",
+        bindings.get("reminder:reminder-bound/snooze"),
+      ),
+    ).toEqual({ ok: false, reason: "action_not_offered" });
+    expect(
+      await resolve("reminder:gone", "dismiss", bindings.get("reminder:reminder-bound/snooze")),
+    ).toEqual({
+      ok: false,
+      reason: "item_gone",
+    });
+  });
+
   it("asks for Gmail to be reconnected in the reader's language and stops once it is connected again", async () => {
     const f = await fixture();
     const connection = {

@@ -665,6 +665,7 @@ const deviceRenameCommandSchema = object({
 export const SERVER_STATUS_OVERALL = ["healthy", "degraded", "not_ready", "not_live"] as const;
 export const SERVER_STATUS_DEPENDENCY = ["healthy", "degraded", "blocked", "unavailable"] as const;
 export const HOME_KEY_MAXIMUM = 160;
+export const HOME_BINDING_MAXIMUM = 2048;
 export const HOME_ITEM_KINDS = [
   "heads_up",
   "approval",
@@ -760,6 +761,7 @@ const homeSnapshotSchema = object({
             polarity: enumeration(HOME_POLARITIES),
             ownerPresence: booleanValue,
             reviewLabel: nullable(boundedString(64)),
+            binding: nullable(boundedString(HOME_BINDING_MAXIMUM)),
           }),
         ),
         rank: enumeration(HOME_RANKS),
