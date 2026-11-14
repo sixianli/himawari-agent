@@ -33,7 +33,7 @@ const isSha = (value) => typeof value === "string" && shaPattern.test(value);
 const isPositive = (value) => Number.isSafeInteger(value) && value > 0;
 
 export function emptyState() {
-  return { version: 1, stopped: null, candidate: null, groups: [], undecided: 0 };
+  return { version: 1, stopped: null, candidate: null, groups: [], undecided: 0, reviewBroken: 0 };
 }
 
 export function validateState(value) {
@@ -51,6 +51,10 @@ export function validateState(value) {
     "MQ_STATE_GROUPS",
   );
   assert(Number.isSafeInteger(value.undecided) && value.undecided >= 0, "MQ_STATE_UNDECIDED");
+  assert(
+    Number.isSafeInteger(value.reviewBroken) && value.reviewBroken >= 0,
+    "MQ_STATE_REVIEW_BROKEN",
+  );
   const candidate = value.candidate;
   if (candidate !== null) {
     assert(
@@ -518,8 +522,15 @@ export async function processQueue({
     if (review.broken) {
       const first = (review.output.split("\n")[0] ?? "").slice(0, 200);
       log(`MQ_REVIEW_CHECK_BROKEN #${number} ${first}`);
-      return { skip: true, halt: true };
+      const reviewBroken = state.reviewBroken + 1;
+      state = { ...state, reviewBroken };
+      if (reviewBroken >= undecidedLimit)
+        stop(
+          `复核检查连续 ${reviewBroken} 轮没有正常退出（最近一次 #${number}：${first}），像是复核脚本或机器出了问题`,
+        );
+      return { halt: true };
     }
+    state = { ...state, reviewBroken: 0 };
     if (!review.ok)
       return {
         eject: `合并前的模型复核没有覆盖最新提交：\n\n\`\`\`\n${review.output.slice(0, 1500)}\n\`\`\``,
@@ -553,7 +564,7 @@ export async function processQueue({
       const verdict = await readiness(number, main);
       if (verdict.eject) await eject(number, verdict.eject);
       if (verdict.ready) ready.push(verdict.ready);
-      if (verdict.halt) break;
+      if (verdict.halt) return;
     }
     if (ready.length === 0) {
       if (fromGroup) state = { ...state, groups: groups.slice(1) };
@@ -594,7 +605,7 @@ export async function processQueue({
 
   if (state.stopped && resume) {
     log(`MQ_RESUMED ${state.stopped.reason}`);
-    state = { ...state, stopped: null, undecided: 0 };
+    state = { ...state, stopped: null, undecided: 0, reviewBroken: 0 };
   }
   if (state.stopped) {
     log(`MQ_STOPPED ${state.stopped.reason}`);

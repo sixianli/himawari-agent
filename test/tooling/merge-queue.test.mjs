@@ -420,6 +420,7 @@ describe("合并队列 [ADR-0268]", () => {
     expect(env.fake.calls.some((c) => c[0] === "addLabel")).toBe(false);
     const created = Date.parse(state.candidate.createdAt);
     state = await step(env, { now: () => created + candidateTimeoutMs + 1 });
+    expect(state.undecided).toBe(2);
     expect(env.fake.calls.filter((c) => c[0] === "cancel")).toHaveLength(1);
     expect(state.candidate.branch).toMatch(/^mq\//);
   });
@@ -515,8 +516,38 @@ describe("合并队列 [ADR-0268]", () => {
     });
     expect(checked).toEqual([1]);
     expect(state.candidate).toBeNull();
+    expect(state.reviewBroken).toBe(1);
     expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([queueLabel]);
     expect(env.fake.calls.some((c) => c[0] === "comment")).toBe(false);
+  });
+
+  it("复核检查连续 3 轮没有正常退出时停下队列；中途正常退出一次就清零；出问题的那轮不动待测分组", async () => {
+    const env = setup();
+    env.fake.addPr(1, { "c.txt": "c\n" });
+    env.fake.addPr(2, { "d.txt": "d\n" });
+    await step(env);
+    env.fake.finish("failure");
+    let state = await step(env);
+    expect(state.groups).toEqual([[1], [2]]);
+    env.fake.finish("success");
+    state = await step(env);
+    expect(state.candidate.prs.map((pr) => pr.number)).toEqual([2]);
+    env.fake.runs.at(-1).status = "completed";
+    env.fake.runs.at(-1).conclusion = "cancelled";
+    env.fake.runs.at(-1).required = "cancelled";
+    const broken = () => ({ ok: false, broken: true, output: "killed" });
+    state = await step(env, { checkReview: broken });
+    expect(state).toMatchObject({ candidate: null, groups: [[2]], reviewBroken: 1 });
+    state = await step(env, { checkReview: broken });
+    expect(state.reviewBroken).toBe(2);
+    state = await step(env);
+    expect(state.reviewBroken).toBe(0);
+    env.fake.runs.at(-1).status = "completed";
+    env.fake.runs.at(-1).conclusion = "cancelled";
+    env.fake.runs.at(-1).required = "cancelled";
+    for (let round = 1; round <= 3; round += 1) state = await step(env, { checkReview: broken });
+    expect(state.stopped.reason).toContain("复核检查连续 3 轮");
+    expect(env.fake.prs.get(2).labels.map((l) => l.name)).toEqual([queueLabel]);
   });
 
   it("状态里没有的 mq 分支（上次推了分支却没存下状态）在建新候选前删掉，不建候选时不动", async () => {
