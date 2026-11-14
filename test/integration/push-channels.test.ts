@@ -983,12 +983,13 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     const [alert] = context.apns.ofType("alert");
     const aps = alert?.json["aps"] as Record<string, unknown>;
+    expect(alert?.headers["apns-priority"]).toBe("5");
     expect(aps["interruption-level"]).toBe("passive");
     expect(aps).not.toHaveProperty("sound");
     expect(aps).not.toHaveProperty("badge");
     expect(aps["alert"]).toEqual({ title: "有一条建议等你看", body: "不急，有空时看看。" });
     expect((alert?.json["himawari"] as { actions: unknown[] }).actions).toEqual([]);
-    expect(context.awaiting.calls).toBeGreaterThanOrEqual(0);
+    expect(context.apns.ofType("alert")).toHaveLength(1);
   });
 
   it("[IOS-4] REVERSE: sends nothing for a proposal that is was made more than a day ago", async () => {
@@ -1000,7 +1001,39 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     await context.push.tick();
     expect(context.apns.ofType("alert")).toEqual([]);
+    expect(
+      context.sql(
+        (seed) =>
+          seed
+            .prepare("SELECT count(*) AS n FROM web_push_outbox WHERE source_key LIKE 'proposal:%'")
+            .get() as { n: number },
+      ).n,
+    ).toBe(0);
     expect(context.failures).toEqual([]);
+  });
+
+  it("[IOS-4] sends one notice for the newest of many pending proposals instead of one per proposal", async () => {
+    const proposals = Array.from({ length: 30 }, (_, index) => ({
+      id: `rule-${index}`,
+      proposedAt: at(T0, -3_000 + index),
+    }));
+    const context = await setup({}, { proposals: { listReady: async () => proposals } });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(
+      context.sql(
+        (seed) =>
+          seed
+            .prepare(
+              "SELECT source_key AS key FROM web_push_outbox WHERE source_key LIKE 'proposal:%'",
+            )
+            .all() as { key: string }[],
+      ),
+    ).toEqual([{ key: `proposal:rule-29:${at(T0, -3_000 + 29)}` }]);
   });
 
   it("[IOS-4] REVERSE: a proposal source that throws does not stop other notifications", async () => {
@@ -1036,25 +1069,16 @@ describe("[IOS-4] push channels", () => {
             return [{ id: "rule-1", proposedAt: at(T0, -60) }];
           },
         },
-        gate: {
-          decide: ({ now }: { now: string }) =>
-            now < at(T0, 300)
-              ? { action: "defer", until: at(T0, 600), capped: false, ruleRefs: ["owner:night"] }
-              : { action: "deliver", failed: false },
-        } as unknown as PushGate,
-        readPushRules: async () => [],
       },
     );
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
     context.setClock(T0);
     await context.push.tick();
-    expect(context.apns.ofType("alert")).toEqual([]);
+    await context.subscribe("laptop");
     readable = false;
-    context.setClock(at(T0, 601));
+    context.setClock(at(T0, 20));
     await context.push.tick();
     await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(context.webRequests).toHaveLength(1);
   });
 
   it("[IOS-4] puts silent in the web payload for a quiet notice only", () => {

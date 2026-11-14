@@ -288,12 +288,13 @@ export class ProductionApplePush implements PushCompanionChannel {
         await this.#record(entry, now, "failed", "APNS_TOPIC_NOT_CONFIGURED", 1);
         continue;
       }
+      const locale = input.accountLocale ?? entry.registration.locale;
       await this.#sendAlert(
         entry,
         now,
         content,
-        await input.badge(),
-        input.accountLocale ?? entry.registration.locale,
+        content.build(locale).quiet === true ? undefined : await input.badge(),
+        locale,
         input.approvals,
       );
     }
@@ -379,7 +380,7 @@ export class ProductionApplePush implements PushCompanionChannel {
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" ? 5 : 10,
+      priority: item.kind === "run" || built.quiet === true ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({

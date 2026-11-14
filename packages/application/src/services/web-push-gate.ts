@@ -18,6 +18,7 @@ export type PushClass = (typeof PUSH_CLASSES)[number];
 export const PUSH_RULE_PROTECTED_CLASSES: readonly PushClass[] = Object.freeze([
   "approval",
   "muse_outage",
+  "proposal",
   "unknown",
 ]);
 

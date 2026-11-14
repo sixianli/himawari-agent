@@ -340,6 +340,7 @@ export class ProductionWebPush {
 
   async #run(): Promise<void> {
     const now = this.#options.now();
+    this.#proposalRead = undefined;
     if (!this.#resumed) {
       await this.#resumePaused(now);
       this.#resumed = true;
@@ -427,8 +428,12 @@ export class ProductionWebPush {
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
       });
-    const { rows: proposals } = await this.#readyProposals(now);
-    for (const proposal of proposals)
+    const { rows: proposalRows } = await this.#readyProposals(now);
+    const newest = proposalRows.reduce<(typeof proposalRows)[number] | undefined>(
+      (latest, row) => (latest === undefined || row.proposedAt > latest.proposedAt ? row : latest),
+      undefined,
+    );
+    for (const proposal of newest ? [newest] : [])
       items.push({
         ...scope,
         sourceKey: `proposal:${proposal.id}:${proposal.proposedAt}`,
@@ -460,27 +465,28 @@ export class ProductionWebPush {
     for (const push of proactive) await this.#options.proactive?.markEnqueued(push.id, now);
   }
 
-  #proposalRead: { readonly now: string; readonly result: Promise<ProposalRead> } | undefined;
+  #proposalRead: Promise<ProposalRead> | undefined;
 
   #readyProposals(now: string): Promise<ProposalRead> {
-    if (this.#proposalRead?.now === now) return this.#proposalRead.result;
+    this.#proposalRead ??= this.#loadProposals(now);
+    return this.#proposalRead;
+  }
+
+  async #loadProposals(now: string): Promise<ProposalRead> {
     const source = this.#options.proposals;
-    const result: Promise<ProposalRead> = source
-      ? source.listReady(now).then(
-          (rows) => ({
-            ok: true as const,
-            rows: rows.filter(
-              ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
-            ),
-          }),
-          (error: unknown) => {
-            this.#options.onFailure(error);
-            return { ok: false as const, rows: [] };
-          },
-        )
-      : Promise.resolve({ ok: true as const, rows: [] });
-    this.#proposalRead = { now, result };
-    return result;
+    if (!source) return { ok: true, rows: [] };
+    try {
+      const rows = await source.listReady(now);
+      return {
+        ok: true,
+        rows: rows.filter(
+          ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
+        ),
+      };
+    } catch (error) {
+      this.#options.onFailure(error);
+      return { ok: false, rows: [] };
+    }
   }
 
   async #runThread(runId: string): Promise<string | null> {
@@ -788,7 +794,7 @@ export class ProductionWebPush {
         auth: subscription.auth,
         payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
-        urgency: item.kind === "run" ? "normal" : "high",
+        urgency: item.kind === "run" || content.build(locale).quiet === true ? "normal" : "high",
         topic,
       });
     } catch (error) {
