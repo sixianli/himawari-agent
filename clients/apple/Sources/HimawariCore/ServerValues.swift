@@ -7,7 +7,42 @@ public protocol LenientServerValue: RawRepresentable, Codable where RawValue == 
 extension LenientServerValue {
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        self = Self(rawValue: raw) ?? Self.fallback
+        if let known = Self(rawValue: raw) {
+            self = known
+        } else {
+            ServerValueDiagnostics.shared.noteFallback(type: String(describing: Self.self), raw: raw)
+            self = Self.fallback
+        }
+    }
+}
+
+public struct UnknownServerValue: Sendable, Equatable {
+    public let type: String
+    public let raw: String
+}
+
+public final class ServerValueDiagnostics: @unchecked Sendable {
+    public static let shared = ServerValueDiagnostics()
+    public static let distinctLimit = 64
+
+    private let lock = NSLock()
+    private var seen = Set<String>()
+    private var observer: (@Sendable (UnknownServerValue) -> Void)?
+
+    public func observe(_ observer: (@Sendable (UnknownServerValue) -> Void)?) {
+        lock.withLock { self.observer = observer }
+    }
+
+    public func reset() {
+        lock.withLock { seen.removeAll() }
+    }
+
+    func noteFallback(type: String, raw: String) {
+        let report = lock.withLock { () -> (@Sendable (UnknownServerValue) -> Void)? in
+            guard let observer, seen.count < Self.distinctLimit, seen.insert("\(type)\u{0}\(raw)").inserted else { return nil }
+            return observer
+        }
+        report?(UnknownServerValue(type: type, raw: String(raw.prefix(64))))
     }
 }
 
