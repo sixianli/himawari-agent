@@ -52,7 +52,7 @@ public enum UnknownStateRecheck: Equatable {
 
 public enum ConfirmationWait {
     public static func givesUp(waitingAs status: PairedDeviceStatus, after error: Error) -> Bool {
-        guard status == .unrecognized, case let .server(code, reason?, _)? = error as? DeviceAPIError else { return false }
+        guard status == .unrecognized, case let .server(code, reason?, _, _)? = error as? DeviceAPIError else { return false }
         return code == 403 && reason != "DEVICE_PENDING"
     }
 }
