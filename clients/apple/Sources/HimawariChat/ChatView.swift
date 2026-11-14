@@ -13,10 +13,11 @@ public struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
-    public init(store: ChatStore, threadId: String?, close: @escaping () -> Void) {
+    public init(store: ChatStore, threadId: String?, draft: String = "", close: @escaping () -> Void) {
         self.store = store
         self.close = close
         _threadId = State(initialValue: threadId)
+        _draft = State(initialValue: draft)
     }
 
     private var title: String {

@@ -48,24 +48,30 @@ struct MainTabsView: View {
     let chat: ChatStore
     @State private var tab: MainTab
     @State private var openThread: OpenThread?
-    @State private var settingsOpen = false
+    @State private var settingsOpen: Bool
     @Environment(\.tabsCycleEvery) private var cycleEvery
+    private let memoryOverride: AnyView?
+    private let settingsOverride: AnyView?
 
-    init(model: AppModel, chat: ChatStore, tab: MainTab = .chats) {
+    init(model: AppModel, chat: ChatStore, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
         self.model = model
         self.chat = chat
         _tab = State(initialValue: tab)
+        _settingsOpen = State(initialValue: settings != nil)
+        memoryOverride = memory
+        settingsOverride = settings
     }
 
     struct OpenThread: Equatable {
         let threadId: String?
+        var draft = ""
         let nonce = UUID()
     }
 
     var body: some View {
         ZStack {
             if let openThread {
-                ChatView(store: chat, threadId: openThread.threadId) {
+                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft) {
                     withAnimation(.snappy) { self.openThread = nil }
                 }
                 .id(openThread.nonce)
@@ -85,8 +91,25 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { tab = next }
             }
         }
-        .fullScreenCover(isPresented: $settingsOpen) {
-            SettingsRootView(api: model.api) { settingsOpen = false }
+        .sheet(isPresented: $settingsOpen) {
+            Group {
+                if let settingsOverride {
+                    settingsOverride
+                } else {
+                    SettingsRootView(
+                        api: model.api,
+                        confirmKey: model.confirmKey,
+                        close: { settingsOpen = false },
+                        removedThisDevice: {
+                            settingsOpen = false
+                            model.removedThisDevice()
+                        }
+                    )
+                }
+            }
+                .presentationDetents([.large])
+                .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+                .presentationBackground(Color.hmBackground)
         }
     }
 
@@ -100,7 +123,17 @@ struct MainTabsView: View {
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
             }
         case .memory:
-            MemoryRootView(api: model.api)
+            if let memoryOverride {
+                memoryOverride
+            } else {
+                memoryView
+            }
+        }
+    }
+
+    private var memoryView: some View {
+        MemoryRootView(api: model.api, confirmKey: model.confirmKey) { draft in
+            withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
         }
     }
 

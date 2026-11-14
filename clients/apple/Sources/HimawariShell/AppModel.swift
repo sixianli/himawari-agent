@@ -23,6 +23,7 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -281,6 +282,10 @@ public final class AppModel {
         guard phase == .active else { return }
         chat?.reconnect()
         Task { await refreshConfiguration() }
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {

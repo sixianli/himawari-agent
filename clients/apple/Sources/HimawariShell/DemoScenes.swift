@@ -3,11 +3,27 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariManage
 import SwiftUI
 
 enum DemoScene: String, CaseIterable {
     case chatList = "03-chat-list"
     case chat = "04-chat"
+    case memory = "05-memory"
+    case memoryDetail = "06-memory-detail"
+    case memoryEdit = "18-memory-more-1-edit"
+    case rules = "18-memory-more-2-rules"
+    case ruleDetail = "18-memory-more-3-rule-detail"
+    case settings = "08-settings"
+    case device = "19-settings-more-1-device"
+    case addDevice = "19-settings-more-2-add-device"
+    case addDeviceAsking = "19-settings-more-3-new-device"
+    case addDeviceExpired = "19-settings-more-4-code-expired"
+    case files = "19-settings-more-5-files"
+    case exportPacking = "19-settings-more-6-export-packing"
+    case exportReady = "19-settings-more-7-export-ready"
+    case capabilities = "20-himawari-self-1-capabilities"
+    case loginBrowsers = "20-himawari-self-2-login-browsers"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -48,6 +64,25 @@ struct DemoSceneView: View {
 
     @ViewBuilder
     private var content: some View {
+        if let screen = ManageDemoScreen(rawValue: scene.rawValue) {
+            manage(screen)
+        } else {
+            other
+        }
+    }
+
+    @ViewBuilder
+    private func manage(_ screen: ManageDemoScreen) -> some View {
+        switch screen {
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail:
+            MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .memory, memory: AnyView(ManageDemoView(screen)))
+        default:
+            MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .today, settings: AnyView(ManageDemoView(screen)))
+        }
+    }
+
+    @ViewBuilder
+    private var other: some View {
         switch scene {
         case .chatList:
             tabs(DemoChatFixtures.chatList())
@@ -89,6 +124,9 @@ struct DemoSceneView: View {
             PairingView(model: .demo(.unpaired(.unreachable)))
         case .pairingRemoved:
             PairingView(model: .demo(.unpaired(.removed)))
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .addDevice, .addDeviceAsking,
+            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers:
+            EmptyView()
         }
     }
 

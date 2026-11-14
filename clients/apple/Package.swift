@@ -31,6 +31,7 @@ let interfaceTargets: [Target] = [
         dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage"],
         resources: [.process("Resources")]
     ),
+    .testTarget(name: "HimawariManageTests", dependencies: ["HimawariManage", "HimawariCore"]),
 ]
 let interfaceProducts: [Product] = [
     .library(name: "HimawariDesign", targets: ["HimawariDesign"]),
