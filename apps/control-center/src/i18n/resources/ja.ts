@@ -934,9 +934,9 @@ export const messages = {
   "rules.builtIn.note":
     "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
   "rules.builtIn.name":
-    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
+    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_preauthorize_owner_intent_confirmed {外部の内容を読んだ後、あなた自身が明確に求めた操作：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。} other {}}",
+    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_preauthorize_owner_intent_confirmed {例：ウェブページを読んだ後に、あなた自身の言葉で頼んだリマインダー。意図確認が有効で確信が十分高いときだけそのまま実行し、それ以外はカードで確認します。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。} other {}}",
   "rules.builtIn.examples": "例：当てはまる {hit} 件、当てはまらない {miss} 件",
   "rules.builtIn.askFirst": "毎回確認する",
   "review.title": "記憶の修正後に再確認 · {count} 件",

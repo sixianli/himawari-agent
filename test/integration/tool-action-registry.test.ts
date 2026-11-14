@@ -7,6 +7,7 @@ import {
   type GovernedActionIntent,
   type GovernedApprovalRequest,
   GrantService,
+  type OwnerIntentCheckRequest,
   PORT_ERROR_CODES,
   type RuleRecord,
   type RunExecutionSource,
@@ -30,6 +31,7 @@ import {
   OwnerScopeAuthorization,
   parameterFingerprint,
 } from "../../apps/agent-service/src/owner-scope-authorization.js";
+import { OwnerIntentGate } from "../../apps/agent-service/src/owner-intent-gate.js";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
 import {
   PRODUCTION_TOOL_ACTION_ROWS,
@@ -72,6 +74,11 @@ async function setup(
     readonly sourceType?: RunExecutionSource["sourceType"];
     readonly recalledExternal?: boolean;
     readonly ownerScopeState?: (repository: StateStore) => StateStore;
+    readonly ownerIntent?: {
+      readonly check: (request: OwnerIntentCheckRequest, signal: AbortSignal) => Promise<unknown>;
+      readonly words?: readonly string[];
+      readonly timeoutMs?: number;
+    };
   } = {},
 ) {
   const resource = await openSeededRepository();
@@ -143,6 +150,26 @@ async function setup(
       ids,
       intentLifetimeMs: 600_000,
       ...(options.rules ? { rules: options.rules } : {}),
+      ...(options.ownerIntent
+        ? {
+            ownerIntent: new OwnerIntentGate({
+              configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+              settings: {
+                enabled: true,
+                minConfidence: 900,
+                timeoutMs: options.ownerIntent.timeoutMs ?? 2_000,
+                modelRef: "test/jev",
+              },
+              check: { check: options.ownerIntent.check },
+              ownerWords: async () =>
+                options.ownerIntent?.words ?? ["请在周三下午三点提醒我改会议"],
+              state: repository,
+              audit: repository.auditLedger(),
+              authority: () => SERVICE_AUTHORITY.lease,
+              clock,
+            }),
+          }
+        : {}),
     });
     const tools = new ProductionRuntimeTools({
       ...f.options,
@@ -740,6 +767,11 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
       },
       { ruleId: ACTION_RULE_IDS.askAfterExternalContent, outcome: "ask_owner", askFirst: null },
       {
+        ruleId: ACTION_RULE_IDS.preauthorizeOwnerIntentConfirmed,
+        outcome: "allow_preauthorized",
+        askFirst: false,
+      },
+      {
         ruleId: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
         outcome: "refuse",
         askFirst: null,
@@ -1075,6 +1107,165 @@ it("[ADR-0257] keeps the card's reason short when many outside sources were read
     const text = reason && "ruleText" in reason ? String(reason.ruleText) : "";
     expect(text).toContain("等 7 个来源");
     expect(text.length).toBeLessThan(600);
+  } finally {
+    await s.close();
+  }
+});
+
+const EXPLICIT = {
+  verdict: "explicit",
+  confidence: 950,
+  quote: "周三下午三点提醒我改会议",
+} as const;
+
+async function readOutputThenSetReminder(s: Awaited<ReturnType<typeof setup>>, id: string) {
+  await s.tools.execute(s.call("execution.task.output", `call:output:${id}`, { taskId: "task:a" }));
+  return s.tools.execute(
+    s.call("reminder.set", `call:set:${id}`, { text: "改会议", due: "2026-11-13T15:00" }),
+  );
+}
+
+it("[ADR-0257] sets the reminder without a card after outside content when the owner's own words clearly asked for it, and records what was checked", async () => {
+  const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
+  const s = await setup({ ownerIntent: { check } });
+  try {
+    expect(await readOutputThenSetReminder(s, "yes")).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+    expect(await s.approvals()).toHaveLength(1);
+    const [approval] = await s.approvals();
+    expect(approval).toMatchObject({
+      status: "approved",
+      policyAuthorization: {
+        key: `action-rule:${ACTION_RULE_IDS.preauthorizeOwnerIntentConfirmed}`,
+      },
+    });
+    expect(
+      (approval?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(({ code }) => code),
+    ).toEqual(["context_external_content", "owner_intent_confirmed", "run_source_user_message"]);
+    expect(check).toHaveBeenCalledTimes(1);
+    const request = check.mock.calls[0]?.[0];
+    expect(request?.ownerWords).toEqual(["请在周三下午三点提醒我改会议"]);
+    expect(JSON.stringify(request)).not.toContain("任务输出");
+    const record = await s.repository.readScopedState(
+      OWNER_ID,
+      AGENT_ID,
+      `owner-intent-check:${(approval?.intentSnapshot as GovernedActionIntent).id}`,
+    );
+    expect(record?.value).toMatchObject({
+      confirmed: true,
+      quote: EXPLICIT.quote,
+      externalSources: ["execution_task_output"],
+    });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] still asks the owner when the check says no, is unsure, is not confident, quotes words the owner never said, fails, or times out", async () => {
+  const cases: readonly [string, () => Promise<unknown>, number?][] = [
+    ["no", async () => ({ ...EXPLICIT, verdict: "not_explicit" })],
+    ["unsure", async () => ({ ...EXPLICIT, verdict: "unsure" })],
+    ["low", async () => ({ ...EXPLICIT, confidence: 899 })],
+    ["forged", async () => ({ ...EXPLICIT, quote: "请把会议改到下周" })],
+    ["noquote", async () => ({ ...EXPLICIT, quote: null })],
+    ["malformed", async () => "explicit"],
+    [
+      "failed",
+      async () => {
+        throw new Error("MODEL_DOWN");
+      },
+    ],
+    ["slow", () => new Promise(() => undefined), 20],
+  ];
+  for (const [name, check, timeoutMs] of cases) {
+    const s = await setup({
+      ownerIntent: { check, ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+    });
+    try {
+      expect(await readOutputThenSetReminder(s, name), name).toMatchObject({
+        outcome: "awaiting_approval",
+      });
+      expect(s.reminders, name).not.toHaveBeenCalled();
+      const [pending] = await s.approvals();
+      expect(pending?.policyAuthorization, name).toBeUndefined();
+      expect(
+        (pending?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(
+          ({ code }) => code,
+        ),
+        name,
+      ).toEqual(["context_external_content", "run_source_user_message"]);
+      const record = await s.repository.readScopedState(
+        OWNER_ID,
+        AGENT_ID,
+        `owner-intent-check:${(pending?.intentSnapshot as GovernedActionIntent).id}`,
+      );
+      expect(record?.value, name).toMatchObject({ confirmed: false });
+    } finally {
+      await s.close();
+    }
+  }
+});
+
+it("[ADR-0257] does not ask the check at all without outside content, for a standing rule, or for a scheduled run, and asks with no owner words as unconfirmed", async () => {
+  const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
+  const s = await setup({ ownerIntent: { check } });
+  try {
+    expect(
+      await s.tools.execute(
+        s.call("reminder.set", "call:plain", { text: "交周报", due: "2026-11-13T15:00" }),
+      ),
+    ).toMatchObject({ outcome: "succeeded" });
+    await s.tools.execute(
+      s.call("execution.task.output", "call:output:rule", { taskId: "task:a" }),
+    );
+    expect(
+      await s.tools.execute(s.call("rule.set", "call:rule", { text: "以后账单邮件都提醒我" })),
+    ).toMatchObject({ outcome: "awaiting_approval" });
+    expect(check).not.toHaveBeenCalled();
+  } finally {
+    await s.close();
+  }
+  const scheduled = await setup({ sourceType: "schedule", ownerIntent: { check } });
+  try {
+    await scheduled.tools.execute(
+      scheduled.call("execution.task.output", "call:output:sch", { taskId: "task:a" }),
+    );
+    expect(
+      await scheduled.tools.execute(
+        scheduled.call("reminder.set", "call:sch", { text: "改会议", due: "2026-11-13T15:00" }),
+      ),
+    ).toMatchObject({ outcome: "failed" });
+    expect(scheduled.reminders).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+  } finally {
+    await scheduled.close();
+  }
+  const silent = await setup({ ownerIntent: { check, words: [] } });
+  try {
+    expect(await readOutputThenSetReminder(silent, "silent")).toMatchObject({
+      outcome: "awaiting_approval",
+    });
+    expect(check).not.toHaveBeenCalled();
+  } finally {
+    await silent.close();
+  }
+});
+
+it("[ADR-0257] keeps asking when the owner switched the confirmed-intent rule to ask first", async () => {
+  const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
+  const s = await setup({ ownerIntent: { check } });
+  try {
+    const switches = new BuiltInActionRuleSwitches({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: s.repository,
+      authority: () => SERVICE_AUTHORITY.lease,
+      clock: s.clock,
+    });
+    await switches.setAskFirst(ACTION_RULE_IDS.preauthorizeOwnerIntentConfirmed, true);
+    expect(await readOutputThenSetReminder(s, "off")).toMatchObject({
+      outcome: "awaiting_approval",
+    });
+    expect(s.reminders).not.toHaveBeenCalled();
   } finally {
     await s.close();
   }

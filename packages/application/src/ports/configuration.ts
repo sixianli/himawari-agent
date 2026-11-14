@@ -363,10 +363,18 @@ export const DEFAULT_TOOL_REFUSALS: ToolRefusalConfiguration = Object.freeze({
   total: 20,
 });
 
+export interface OwnerIntentCheckConfiguration {
+  readonly enabled: boolean;
+  readonly minConfidence: number;
+  readonly timeoutMs: number;
+  readonly modelRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
+  readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
   readonly importDuplicates?: ImportDuplicateConfiguration;

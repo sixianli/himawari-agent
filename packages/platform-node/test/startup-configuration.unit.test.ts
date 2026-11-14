@@ -2052,6 +2052,42 @@ it("accepts the approval preview length only from 1 to 2000 characters and leave
   }
 });
 
+it("[ADR-0257] reads the owner intent check settings and rejects values out of range", () => {
+  const raw = config("/tmp/himawari-owner-intent-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toBeUndefined();
+  const valid = { enabled: true, minConfidence: 900, timeoutMs: 5000, modelRef: "typesafe/jev" };
+  raw["runPolicy"] = { ...policy, ownerIntentCheck: valid };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toEqual(valid);
+  for (const ownerIntentCheck of [
+    { ...valid, minConfidence: 499 },
+    { ...valid, timeoutMs: 100 },
+    { ...valid, enabled: "yes" },
+    { ...valid, modelRef: "bad ref" },
+    { enabled: true, minConfidence: 900, timeoutMs: 5000 },
+    { ...valid, extra: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerIntentCheck };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          field: expect.stringContaining("configuration.runPolicy.ownerIntentCheck"),
+        }),
+      }),
+    );
+  }
+});
+
 it("[ADR-0257] reads the tool refusal limits from the run policy and rejects values out of range", () => {
   const raw = config("/tmp/himawari-tool-refusals-config");
   const policy = {

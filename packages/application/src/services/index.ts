@@ -47,6 +47,7 @@ export * from "./model-visibility.js";
 export * from "./owner-profile-service.js";
 export * from "./owner-rule-replay.js";
 export * from "./permission-service.js";
+export * from "./owner-intent-answer.js";
 export * from "./policy-fact-registry.js";
 export * from "./proactive-mail-body.js";
 export * from "./proactive-mail-check-service.js";
