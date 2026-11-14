@@ -715,7 +715,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "owner_proposals",
     "OwnerProposalStorePort",
-    "one row per next step proposed to the owner, of any kind: pending until adopted, refused or expired, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner and the data its handler needs stay in a protected payload the row points to",
+    "one row per next step proposed to the owner, of any kind: the owner's decision (pending until adopted, refused, expired, superseded or withdrawn) and the execution of a fixed action (not started, running under a lease, done and awaiting read-back, succeeded, failed, unknown or undone, undone being final) kept in separate columns, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner, the data its handler needs and what an execution changed (for undo) stay in protected payloads the row points to",
     "payload_reference",
     "cascade with Owner or Agent deletion; the source thread link clears with the thread",
   ),
@@ -853,6 +853,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "surroundings types are removed after their retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
+    "perception_search_terms",
+    "PerceptionStorePort",
+    "one row per keyed digest of a word in a perception record's text, so a search can find the record without reading every text; the digests cannot be turned back into words without the search key",
+    "metadata_only",
+    "cascade with its record; removed when the record is deleted; never exported",
+  ),
+  entry(
     "device_mirror_items",
     "PerceptionStorePort",
     "the server copy of calendar events, reminders, contacts and home accessories from one device, one row per item with its version",
@@ -937,9 +944,23 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "apns_registrations",
+    "ApplePushStorePort",
+    "one row per Apple push token a paired device registered: push type (alert, widgets or liveactivity), the Live Activity it belongs to when there is one, environment, app bundle ID, locale, active or disabled; never exported",
+    "metadata_only",
+    "disabled when Apple reports the token invalid or the device is revoked; removed with the device, Owner or Agent",
+  ),
+  entry(
+    "notification_action_tokens",
+    "ApplePushStorePort",
+    "one row per button on a delivered notification: only the SHA-256 of the one-time token, the action, the device it was issued to, and for approval buttons the approval revision and content fingerprint at issue time; never exported",
+    "metadata_only",
+    "marked used on first use; removed when the device is revoked, seven days after expiry, and with the device, Owner or Agent",
+  ),
+  entry(
     "web_push_attempts",
     "WebPushStorePort",
-    "pending to sent, suppressed, expired, gone or failed per device",
+    "pending to sent, suppressed, expired, gone or failed per channel (web_push or apns) and per target; subscription_id holds the web push subscription id or the Apple push registration id",
     "metadata_only",
     "cascade with its outbox row",
   ),

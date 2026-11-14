@@ -223,6 +223,7 @@ function capabilityRecord(capabilityRef, lifecycle, overrides = {}) {
     updateAssessment: null,
     rollbackVersion: lifecycle === "active" ? "0.9.0" : null,
     rollbackAvailable: lifecycle === "active",
+    lastInvalidation: null,
     lastTransition:
       lifecycle === "active"
         ? {

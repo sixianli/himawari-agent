@@ -955,7 +955,7 @@ const homeSnapshotSchema = object({
   }),
 });
 export const SEARCH_ASK_STATES = ["answered", "not_found", "suggestions"] as const;
-export const SEARCH_BASIS_KINDS = ["memory", "conversation"] as const;
+export const SEARCH_BASIS_KINDS = ["memory", "conversation", "perception"] as const;
 const searchAskQuerySchema = object({
   ...envelope("query", "search.ask.read"),
   payload: object({ query: nullable(boundedString(500)), locale: enumeration(HOME_LOCALES) }),
@@ -971,6 +971,7 @@ const searchAskSnapshotSchema = object({
       object({
         kind: enumeration(SEARCH_BASIS_KINDS),
         label: boundedString(200),
+        recordId: nullable(machineString),
         memoryId: nullable(machineString),
         threadId: nullable(machineString),
         at: timestamp,
@@ -2227,8 +2228,13 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
-export const PROPOSAL_ACTIONS = ["adopt", "reject"] as const;
-export const PROPOSAL_ORIGINS = ["owner_said", "inferred", "external_agent"] as const;
+export const PROPOSAL_ACTIONS = ["adopt", "reject", "undo"] as const;
+export const PROPOSAL_ORIGINS = [
+  "owner_said",
+  "inferred",
+  "external_agent",
+  "external_content",
+] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -2268,7 +2274,15 @@ const memoryRulesSnapshotSchema = object({
 });
 const proposalsQuerySchema = object({
   ...envelope("query", "proposals.read"),
-  payload: object({}),
+  payload: object({
+    open: nullable(
+      object({
+        proposalId: machineString,
+        expectedVersion: integer(1),
+        fingerprint: machineString,
+      }),
+    ),
+  }),
 });
 const proposalsSnapshotSchema = object({
   ...envelope("snapshot", "proposals.snapshot"),
@@ -2283,6 +2297,8 @@ const proposalsSnapshotSchema = object({
         effect: boundedString(200),
         origin: enumeration(PROPOSAL_ORIGINS),
         adoptable: booleanValue,
+        requiresFullRead: booleanValue,
+        requiresPresence: booleanValue,
         evidence: array(
           object({
             kind: boundedString(64),
@@ -2305,6 +2321,9 @@ const proposalsSnapshotSchema = object({
     pendingCount: integer(0),
     limit: integer(1),
     expiresAfterDays: integer(1),
+    opened: nullable(
+      object({ proposalId: machineString, fullReadToken: machineString, expiresAt: timestamp }),
+    ),
     generatedAt: timestamp,
   }),
 });
@@ -2315,6 +2334,8 @@ const proposalRespondCommandSchema = object({
     expectedVersion: integer(1),
     fingerprint: machineString,
     action: enumeration(PROPOSAL_ACTIONS),
+    recentAuthenticationRef: nullable(machineString),
+    fullReadToken: nullable(machineString),
   }),
 });
 const memoryRuleRespondCommandSchema = object({
@@ -2666,6 +2687,7 @@ export const disableCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -2675,6 +2697,7 @@ export const rollbackCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -3137,6 +3160,13 @@ export const capabilitySnapshotSchema = object({
     updateAssessment: nullable(updateAssessmentSnapshotSchema),
     rollbackVersion: nullable(machineString),
     rollbackAvailable: booleanValue,
+    lastInvalidation: nullable(
+      object({
+        lifecycle: enumeration(["disabled"]),
+        cancelledScheduledJobs: integer(0),
+        occurredAt: timestamp,
+      }),
+    ),
     lastTransition: nullable(
       object({
         fromVersion: machineString,

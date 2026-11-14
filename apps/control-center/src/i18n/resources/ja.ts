@@ -622,6 +622,9 @@ export const messages = {
   "governance.updateAssessment": "更新差分と評価",
   "governance.rollback": "ロールバック版",
   "governance.lastTransition": "最新のバージョン切り替え",
+  "governance.lastInvalidation": "直近の無効化",
+  "governance.lastInvalidationValue":
+    "{time}：スケジュール済みジョブ {count} 件を取り消しました（自動では復元されません）",
   "governance.rollbackBoundary": "副作用 / 製品状態のロールバック境界",
   "governance.notAvailable": "利用不可",
   "governance.capability": "機能",

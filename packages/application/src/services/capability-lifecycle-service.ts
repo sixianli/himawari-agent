@@ -655,7 +655,7 @@ export class CapabilityLifecycleService {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         `Capability ${manifest.ref} artifact verification failed`,
-        { capabilityRef: manifest.ref },
+        { capabilityRef: manifest.ref, reasons: artifact.reasonCodes.join(",") },
       );
     }
     const qualification = await this.dependencies.runtime.qualify(manifest);

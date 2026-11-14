@@ -62,6 +62,7 @@ import {
   DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
+  DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -98,9 +99,11 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
+import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
+  PRODUCTION_CAPABILITY_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
@@ -244,6 +247,7 @@ export interface ProductionHttpCompositionOptions {
     readonly hub: DeviceActionHub;
   };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
   readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
@@ -281,6 +285,7 @@ export interface ProductionHttpCompositionOptions {
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
+    readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
   readonly museIntake?: ProductionMuseIntake;
@@ -783,6 +788,7 @@ function routeOptions(
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_CAPABILITY_OPERATIONS,
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
@@ -1275,6 +1281,23 @@ export async function createProductionHttpComposition(
     },
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+    prepareRevoke: async (deviceId) => {
+      const report = (error: unknown) => options.onDevicePushFailed?.(error);
+      const wipe = await options.webPush?.applePush?.prepareWipe(deviceId).catch(report);
+      return wipe ? () => wipe().catch(report) : undefined;
+    },
+  });
+  const pushPresence = options.webPush?.presence ?? new WebPushPresence();
+  const applePush = options.webPush?.applePush;
+  const devicePush = new DevicePushService({
+    store: repository.applePush(),
+    reactions: repository.webPush(),
+    configuration: () => (applePush ? configuration.runPolicy?.applePush : undefined),
+    now,
+    onPresence: (deviceId, visible, at) => pushPresence.beat(`device:${deviceId}`, visible, at),
+    onRegistered: (_deviceId, pushType) => {
+      if (pushType === "widgets") applePush?.requestWidgetRefresh();
+    },
   });
   const home = new ProductionHomeControl({
     settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
@@ -1343,6 +1366,35 @@ export async function createProductionHttpComposition(
           : {}),
         provider: options.memory.search.provider,
         ...(options.memory.search.episodes ? { episodes: options.memory.search.episodes } : {}),
+        perception: {
+          search: async ({ query, limit }) => {
+            const found = await perception.search({
+              scope: { ownerId, agentId },
+              query,
+              limit,
+            });
+            const rows = await Promise.all(
+              found.map(async (record) => {
+                const text =
+                  record.contentRef === null
+                    ? undefined
+                    : await readPerceptionText(record.contentRef).catch(() => undefined);
+                return text === undefined
+                  ? []
+                  : [
+                      {
+                        recordId: record.id,
+                        origin: record.origin,
+                        occurredAt: new Date(record.occurredAtMs).toISOString(),
+                        dataClassification: record.dataClassification,
+                        text,
+                      },
+                    ];
+              }),
+            );
+            return rows.flat();
+          },
+        },
         state: repository.productMemoryState(),
         readText: async (record) => {
           const payload = await memoryPayloads.get(record.contentRef);
@@ -1354,6 +1406,13 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const readPerceptionText = async (contentRef: string) => {
+    const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+    if (!payload || payload.contentType !== "text/plain") return undefined;
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      await payloadProtector.unprotect({ ownerId, agentId, payload }),
+    );
+  };
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1372,6 +1431,12 @@ export async function createProductionHttpComposition(
     protectText: async (input) =>
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    searchIndex: {
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
     ...(proactiveConfiguration
       ? {
           proactiveUsage: {
@@ -1401,7 +1466,7 @@ export async function createProductionHttpComposition(
     webPushControl: new ProductionWebPushControl({
       configuration,
       store: repository.webPush(),
-      presence: options.webPush?.presence ?? new WebPushPresence(),
+      presence: pushPresence,
       push: options.webPush?.push,
       clock: { now: clock },
     }),
@@ -1411,6 +1476,7 @@ export async function createProductionHttpComposition(
     proposalControl: new ProductionProposalControl({
       configuration,
       box: proposalBox,
+      recentAuthentication,
       clock: { now: clock },
     }),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
@@ -1502,6 +1568,7 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
+      push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       perception,
