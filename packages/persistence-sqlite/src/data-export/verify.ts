@@ -136,7 +136,14 @@ export interface ParsedOwnerProposal {
 }
 
 const OWNER_PROPOSAL_ID = /^[a-z][a-z0-9-]{0,31}:[0-9a-f]{32}$/u;
-const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+const STORED_TIME_SHAPE = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+const STORED_TIME = {
+  test(value: string): boolean {
+    if (!STORED_TIME_SHAPE.test(value)) return false;
+    const parsed = new Date(value);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+  },
+};
 
 export function ownerProposalProblem(proposal: ParsedOwnerProposal): string | null {
   const where = `提给主人的提议 ${proposal.id}`;

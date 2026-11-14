@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import {
   buildPortableExport,
   DATA_EXPORT_ERROR_CODES,
   importPortableExport,
+  MANIFEST_FILE,
   type PortableFiles,
   SEALED_FILE,
 } from "@himawari-agent/persistence-sqlite";
@@ -242,10 +244,20 @@ describe("the owner's proposal box travels with the data export", () => {
         .filter((entry) => entry !== "")
         .map((entry) => JSON.parse(entry) as Record<string, unknown>);
       change(lines[0] ?? {});
-      return new Map(files).set(
-        FILE,
-        new TextEncoder().encode(`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`),
+      const bytes = new TextEncoder().encode(
+        `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
       );
+      const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE))) as {
+        files: { path: string; bytes: number; lines: number; sha256: string }[];
+      };
+      const entry = manifest.files.find((item) => item.path === FILE);
+      if (entry === undefined) throw new Error("manifest has no proposal file");
+      entry.bytes = bytes.byteLength;
+      entry.lines = lines.length;
+      entry.sha256 = createHash("sha256").update(bytes).digest("hex");
+      return new Map(files)
+        .set(FILE, bytes)
+        .set(MANIFEST_FILE, new TextEncoder().encode(JSON.stringify(manifest)));
     };
     for (const change of [
       (line: Record<string, unknown>) => {
@@ -257,9 +269,14 @@ describe("the owner's proposal box travels with the data export", () => {
       (line: Record<string, unknown>) => {
         line["decidedAt"] = "2026-11-11T01:00:00.000Z";
       },
+      (line: Record<string, unknown>) => {
+        line["proposedAt"] = "0000-00-00T00:00:00.000Z";
+      },
     ]) {
       const target = await side(`owner-proposals-tampered-${sides.length}`);
-      await expect(importInto(target, tamper(change), PASSPHRASE)).rejects.toBeInstanceOf(Error);
+      await expect(importInto(target, tamper(change), PASSPHRASE)).rejects.toMatchObject({
+        code: DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+      });
       expect(rows(target)).toEqual([]);
     }
   });
