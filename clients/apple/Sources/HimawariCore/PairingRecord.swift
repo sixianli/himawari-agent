@@ -33,7 +33,7 @@ public enum PairingProblem: Sendable, Equatable {
             return parse == .unsupportedVersion ? .codeInvalid : .unreadableCode
         }
         if error is DeviceKeyError { return .keysUnavailable }
-        if let api = error as? DeviceAPIError, case let .server(status, code, ttl) = api {
+        if let api = error as? DeviceAPIError, case let .server(status, code, ttl, _) = api {
             switch code {
             case "DEVICE_PAIRING_CODE_EXPIRED": return .codeExpired(ttlSeconds: ttl.flatMap { $0 > 0 ? $0 : nil })
             case "DEVICE_PAIRING_CODE_USED": return .codeUsed
