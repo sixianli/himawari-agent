@@ -92,9 +92,11 @@ import {
   createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
+import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
+import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -1551,8 +1553,16 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
+      const externalContent = new ContextExternalContent({
+        configuration,
+        state: repository,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        authority: () => invocationAuthority().lease,
+        clock,
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
+        externalContent,
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
         state: repository,
@@ -1578,6 +1588,7 @@ export async function startTenantRuntime(
         ownerRules: ownerRuleTools,
         toolActions,
         ownerScope,
+        externalContent,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2682,6 +2693,10 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        externalContent,
+        ...(configuration.runPolicy?.toolRefusals
+          ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
+          : {}),
         egress: createProductionModelEgress(
           configuration,
           sources,
@@ -2974,6 +2989,12 @@ export async function startTenantRuntime(
         memory: {
           service: activeDurableMemory,
           externalProposals,
+          actionRules: new BuiltInActionRuleSwitches({
+            configuration,
+            state: repository,
+            authority: () => invocationAuthority().lease,
+            clock,
+          }),
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),
           onAudit: (record) => {
@@ -3006,6 +3027,15 @@ export async function startTenantRuntime(
             component: "agent-service",
             event: "http.slow_request",
             ...request,
+          }),
+        onDeviceAuditFailed: ({ action, targetRef, outcome, error }) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "device.audit_failed",
+            action,
+            targetRef,
+            outcome,
+            code: stableErrorCode(error),
           }),
         onSearchIndexDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
