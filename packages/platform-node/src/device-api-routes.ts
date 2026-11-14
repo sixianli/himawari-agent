@@ -203,6 +203,9 @@ export function pairingAccessFields({ clientId, clientSecret }: DevicePairingAcc
   return { clientId, clientSecret };
 }
 
+const HOME_ACT_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+const HOME_ACT_REPLAY_LIMIT = 256;
+
 function stableSuffix(deviceId: string, messageId: string): string {
   return createHash("sha256").update(`${deviceId}\n${messageId}`).digest("hex").slice(0, 40);
 }
@@ -322,6 +325,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
       agentId: options.authority.agentId,
     }) as PairedDeviceScope;
   const now = () => (options.now ?? (() => new Date()))();
+  const homeActReplays = new Map<
+    string,
+    { readonly fingerprint: string; readonly response: unknown; readonly at: number }
+  >();
 
   app.register(
     async (device) => {
@@ -781,6 +788,15 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           return options.rejectBody(400);
         if (typeof binding !== "string")
           throw new DeviceGatewayError(DEVICE_GATEWAY_ERROR_CODES.HOME_ACTION_INVALID, 400);
+        const replayKey = `${authenticated.device.id}\n${requestId}`;
+        const fingerprint = JSON.stringify([key, action, binding]);
+        const replay = homeActReplays.get(replayKey);
+        if (
+          replay &&
+          replay.fingerprint === fingerprint &&
+          now().getTime() - replay.at < HOME_ACT_REPLAY_WINDOW_MS
+        )
+          return options.sendJson(reply, 200, replay.response);
         const resolved = await options.home.resolveAction({ key, action, binding });
         if (!resolved.ok)
           throw new DeviceGatewayError(
@@ -801,22 +817,25 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           risk: "low",
           payload: resolved.payload,
         });
-        return options.sendJson(
-          reply,
-          200,
-          await dispatchDeviceGatewayRequest({
-            request: { ...classified, tier: resolved.ownerPresence ? "change" : "tighten" },
-            confirmed: authenticated.confirmed,
-            pairedDeviceId: authenticated.device.id,
-            authentication: authenticated.authentication,
-            authority: options.authority,
-            gateways: options.gateways,
-            audit: options.audit,
-            auditAction: "device.home.act",
-            ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
-            now,
-          }),
-        );
+        const response = await dispatchDeviceGatewayRequest({
+          request: { ...classified, tier: resolved.ownerPresence ? "change" : "tighten" },
+          confirmed: authenticated.confirmed,
+          pairedDeviceId: authenticated.device.id,
+          authentication: authenticated.authentication,
+          authority: options.authority,
+          gateways: options.gateways,
+          audit: options.audit,
+          auditAction: "device.home.act",
+          ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
+          now,
+        });
+        homeActReplays.set(replayKey, { fingerprint, response, at: now().getTime() });
+        while (homeActReplays.size > HOME_ACT_REPLAY_LIMIT) {
+          const oldest = homeActReplays.keys().next().value;
+          if (oldest === undefined) break;
+          homeActReplays.delete(oldest);
+        }
+        return options.sendJson(reply, 200, response);
       });
 
       device.get("/stream", async (request, reply) => {
