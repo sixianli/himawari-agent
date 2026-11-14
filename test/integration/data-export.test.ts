@@ -909,3 +909,95 @@ describe("data export: determinism and the directory", () => {
     expect(() => parsePortable(files, source.migrationSequence)).not.toThrow();
   });
 });
+
+describe("data export: paired devices", () => {
+  const devicePublicKey = `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"D".repeat(86)}==`;
+  const confirmPublicKey = `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"C".repeat(86)}==`;
+  const codeHash = "e".repeat(64);
+  const nonce = "nonce-for-export-test-0001";
+  const deviceId = `dev_${"A".repeat(22)}`;
+
+  async function withDevice(): Promise<Side> {
+    const source = await seeded();
+    source.database
+      .prepare(
+        `INSERT INTO paired_devices
+           (id, owner_id, agent_id, revision, kind, name, release_channel, device_public_key,
+            confirm_public_key, status, supported_actions, paired_at, last_seen_at)
+         VALUES (?, ?, ?, 0, 'iphone', 'Andy iPhone', 'testflight', ?, ?, 'pending', '[]', ?, ?)`,
+      )
+      .run(deviceId, source.ownerId, source.agentId, devicePublicKey, confirmPublicKey, NOW, NOW);
+    source.database
+      .prepare(
+        `INSERT INTO device_pairing_codes
+           (code_hash, owner_id, agent_id, session_id, created_at, expires_at, used_at, device_id)
+         VALUES (?, ?, ?, 'session-export', ?, '2026-11-10T00:10:00.000Z', ?, ?)`,
+      )
+      .run(codeHash, source.ownerId, source.agentId, NOW, NOW, deviceId);
+    source.database
+      .prepare(
+        "INSERT INTO device_request_nonces (device_id, nonce, expires_at) VALUES (?, ?, '2026-11-10T00:02:00.000Z')",
+      )
+      .run(deviceId, nonce);
+    return source;
+  }
+
+  it("[P1-6] exports the name, kind and status of each paired device and lists credentials as left out", async () => {
+    const source = await withDevice();
+    const { files, manifest } = await exportOf(source);
+    const lines = decoder
+      .decode(files.get("data/paired-devices.jsonl"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines).toEqual([
+      {
+        id: deviceId,
+        kind: "iphone",
+        name: "Andy iPhone",
+        releaseChannel: "testflight",
+        status: "pending",
+        pairedAt: NOW,
+        confirmedAt: null,
+        revokedAt: null,
+        lastSeenAt: NOW,
+      },
+    ]);
+    expect(manifest.counts.pairedDevices).toBe(1);
+    expect(manifest.omitted.map(({ what }) => what)).toContain(
+      "配对设备的公钥、配对码和请求随机值",
+    );
+    expect(parsePortable(files, source.migrationSequence).pairedDevices).toHaveLength(1);
+  });
+
+  it("[P1-6][reverse] public keys, pairing codes and request nonces appear in no exported file, and import restores no device", async () => {
+    const source = await withDevice();
+    const { files } = await exportOf(source);
+    for (const [path, bytes] of files) {
+      const text = decoder.decode(bytes);
+      for (const credential of [devicePublicKey, confirmPublicKey, codeHash, nonce])
+        expect(text, path).not.toContain(credential);
+    }
+    const target = await side("devices-not-restored");
+    const result = await importInto(target, files, { passphrase: PASSPHRASE });
+    expect(result.imported.pairedDevices).toBe(0);
+    expect(target.database.prepare("SELECT COUNT(*) AS count FROM paired_devices").get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it("[P1-6][reverse] a device line with a public key added is refused", async () => {
+    const source = await withDevice();
+    const { files } = await exportOf(source);
+    const tampered = rehash(files, (path, bytes) =>
+      path === "data/paired-devices.jsonl"
+        ? encoder.encode(
+            decoder
+              .decode(bytes)
+              .replace('"kind"', `"devicePublicKey":"${devicePublicKey}","kind"`),
+          )
+        : bytes,
+    );
+    expect(() => parsePortable(tampered, source.migrationSequence)).toThrow(DataExportError);
+  });
+});

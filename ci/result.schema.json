@@ -243,6 +243,15 @@
             }
           },
           "minItems": 0
+        },
+        "relatedProjects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -393,6 +402,9 @@
             }
           },
           "minItems": 0
+        },
+        "scope": {
+          "enum": ["full", "related"]
         }
       }
     },

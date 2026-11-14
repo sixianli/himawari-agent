@@ -40,7 +40,7 @@ Andy 在 2026-11-12 定的 agent 开发基本原则是：理解用户的意思�
 5. 取相关邮件在判断模型调用之前、每日成本上限之外：`packages/application/src/services/proactive-mail-check-service.ts` 的 `#related` 先于 `#judge`；本 ADR 把抽取放进同一个每日上限和每次检查的时间窗。
 6. 评测题防泄露原先用 n-gram、数字重叠，再加 `chineseNumber`、`PART_OF_DAY`、`dateTokens` 这套日期时刻词典：`packages/application/src/services/real-memory-eval.ts`；[ADR 0239](0239-real-memory-eval-sets.md) 决定 2 写明了这套规则。
 7. 模型输出一律严格解析、失败走安全默认，是 OpenAI、Anthropic 结构化输出文档的通用做法：<https://developers.openai.com/api/docs/guides/structured-outputs>。
-8. 请求开头只追加：`.claude/rules/prompt-prefix.md` 第 4、6 条。本 ADR 新增的三个提示词都是后台单独调用，不改任何对话请求的系统提示和工具定义。
+8. 请求开头只追加：`.agents/instructions/prompt-prefix.md` 第 4、6 条。本 ADR 新增的三个提示词都是后台单独调用，不改任何对话请求的系统提示和工具定义。
 
 [返回阅读导航](#contents)
 
