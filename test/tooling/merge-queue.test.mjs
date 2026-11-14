@@ -47,6 +47,7 @@ function setup({ mode = "fast" } = {}) {
   git(root, ["init", "--quiet", "--bare", "-b", "main", origin]);
   const scratch = path.join(root, "scratch");
   git(root, ["clone", "--quiet", origin, scratch]);
+  git(scratch, ["config", "diff.renames", "true"]);
   git(scratch, ["checkout", "--quiet", "-B", "main"]);
   write(scratch, {
     DELIVERY_MODE: `${mode}\n`,
@@ -455,6 +456,38 @@ describe("合并队列 [ADR-0268]", () => {
     },
   );
 
+  it("候选的完整 CI 连续 3 次没有结论时停下队列，人工恢复后从零计数", async () => {
+    const env = setup();
+    env.fake.addPr(1, { "c.txt": "c\n" });
+    await step(env);
+    let state;
+    for (let round = 1; round <= 3; round += 1) {
+      env.fake.finish("startup_failure", null);
+      state = await step(env);
+      expect(state.undecided).toBe(round);
+    }
+    expect(state.stopped.reason).toContain("连续 3 次");
+    expect(state.candidate).toBeNull();
+    expect(remoteBranches(env.origin).filter((b) => b.startsWith("refs/heads/mq/"))).toEqual([]);
+    expect(env.fake.calls.filter((c) => c[0] === "dispatch")).toHaveLength(3);
+    const resumed = await step(env, { resume: true });
+    expect(resumed).toMatchObject({ stopped: null, undecided: 0 });
+    expect(resumed.candidate.prs.map((pr) => pr.number)).toEqual([1]);
+    env.fake.finish("success");
+    expect((await step(env)).undecided).toBe(0);
+  });
+
+  it("复核检查本身卡住或被杀时这一轮跳过 PR，不移出", async () => {
+    const env = setup();
+    env.fake.addPr(1, { "c.txt": "c\n" });
+    const state = await step(env, {
+      checkReview: () => ({ ok: false, broken: true, output: "" }),
+    });
+    expect(state.candidate).toBeNull();
+    expect(env.fake.prs.get(1).labels.map((l) => l.name)).toEqual([queueLabel]);
+    expect(env.fake.calls.some((c) => c[0] === "comment")).toBe(false);
+  });
+
   it("状态里没有的 mq 分支（上次推了分支却没存下状态）在建新候选前删掉", async () => {
     const env = setup();
     git(env.origin, ["update-ref", "refs/heads/mq/orphan", mainSha(env.origin)]);
@@ -516,6 +549,7 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
   it("状态文件格式不对时拒绝", () => {
     expect(() => validateState({ version: 2 })).toThrow("MQ_STATE_VERSION");
     expect(() => validateState({ ...emptyState(), groups: [[]] })).toThrow("MQ_STATE_GROUPS");
+    expect(() => validateState({ ...emptyState(), undecided: -1 })).toThrow("MQ_STATE_UNDECIDED");
     expect(() =>
       validateState({ ...emptyState(), candidate: { branch: "x", sha: "1".repeat(40) } }),
     ).toThrow("MQ_STATE_CANDIDATE");
@@ -547,16 +581,20 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
     const slow = path.join(env.root, "slow-review.mjs");
     writeFileSync(slow, "setTimeout(() => {}, 60_000);\n");
     const stuck = reviewChecker({ repo: env.repo, script: slow, timeout: 300 })(1, head, main);
-    expect(stuck.ok).toBe(false);
+    expect(stuck).toMatchObject({ ok: false, broken: true });
+    expect(reviewChecker({ repo: env.repo, script })(1, head, main).broken).toBe(false);
     expect(git(env.runner, ["worktree", "list"]).split("\n")).toHaveLength(1);
   });
 
-  it("GitHub 接口：加标签前先建标签，标签已存在（422）不算错", async () => {
+  it("GitHub 接口：加标签前先建标签，标签已存在（422 already_exists）不算错，其他 422 照样报错", async () => {
     const seen = [];
+    let labelError = "already_exists";
     const request = async (url, init) => {
       seen.push([init.method, url.replace(/^.*\/repos\/[^/]+\/[^/]+/u, ""), init.body]);
-      const status = url.endsWith("/repos/sixianli/himawari-agent/labels") ? 422 : 200;
-      return { ok: status === 200, status, text: async () => "[]" };
+      const creating = url.endsWith("/repos/sixianli/himawari-agent/labels");
+      const status = creating ? 422 : 200;
+      const body = creating ? JSON.stringify({ errors: [{ code: labelError }] }) : "[]";
+      return { ok: status === 200, status, text: async () => body };
     };
     const github = createGithub({ token: "t", repository, request });
     await github.addLabel(7, failedLabel);
@@ -565,6 +603,8 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
       ["POST", "/issues/7/labels"],
     ]);
     expect(JSON.parse(seen[0][2]).name).toBe(failedLabel);
+    labelError = "invalid";
+    await expect(github.addLabel(7, failedLabel)).rejects.toThrow(/^MQ_GITHUB_422/u);
   });
 
   it("GitHub 接口：合并遇到 405 时重试，四次都失败返回未合并；找运行只认同分支同提交的 ci.yml 手动触发", async () => {

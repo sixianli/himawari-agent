@@ -14,6 +14,7 @@ export const runGraceMs = 15 * 60_000;
 export const candidateTimeoutMs = 3 * 3600_000;
 export const requiredJobName = "ci/required";
 export const reviewTimeoutMs = 5 * 60_000;
+export const undecidedLimit = 3;
 const workflowFile = "ci.yml";
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const shaPattern = /^[a-f0-9]{40}$/u;
@@ -32,7 +33,7 @@ const isSha = (value) => typeof value === "string" && shaPattern.test(value);
 const isPositive = (value) => Number.isSafeInteger(value) && value > 0;
 
 export function emptyState() {
-  return { version: 1, stopped: null, candidate: null, groups: [] };
+  return { version: 1, stopped: null, candidate: null, groups: [], undecided: 0 };
 }
 
 export function validateState(value) {
@@ -49,6 +50,7 @@ export function validateState(value) {
       ),
     "MQ_STATE_GROUPS",
   );
+  assert(Number.isSafeInteger(value.undecided) && value.undecided >= 0, "MQ_STATE_UNDECIDED");
   const candidate = value.candidate;
   if (candidate !== null) {
     assert(
@@ -306,7 +308,11 @@ export function createGithub({ token, repository, request = fetch, sleep }) {
         allow: [404],
       }),
     async addLabel(number, label) {
-      await call("POST", "/labels", { name: label, color: "b60205" }, { allow: [422] });
+      try {
+        await call("POST", "/labels", { name: label, color: "b60205" });
+      } catch (error) {
+        if (!/^MQ_GITHUB_422 [\s\S]*"already_exists"/u.test(error.message)) throw error;
+      }
       await call("POST", `/issues/${number}/labels`, { labels: [label] });
     },
     comment: (number, body) => call("POST", `/issues/${number}/comments`, { body }),
@@ -335,7 +341,7 @@ export function reviewChecker({
         { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout },
       );
       const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-      return { ok: result.status === 0, output };
+      return { ok: result.status === 0, broken: result.status === null, output };
     });
 }
 
@@ -424,11 +430,12 @@ export async function processQueue({
       expected = after;
     }
     repo.deleteBranch(candidate.branch);
-    state = { ...state, candidate: null, groups: remainingGroups(candidate) };
+    state = { ...state, candidate: null, groups: remainingGroups(candidate), undecided: 0 };
   };
 
   const failCandidate = async (candidate, run) => {
     repo.deleteBranch(candidate.branch);
+    state = { ...state, undecided: 0 };
     const rest = remainingGroups(candidate);
     if (candidate.prs.length === 1) {
       await eject(candidate.prs[0].number, `它和当前 main 合在一起后完整 CI 没过：${run.url}`);
@@ -467,7 +474,13 @@ export async function processQueue({
       return mergeCandidate(state.candidate, run, main);
     if (run.conclusion === "failure" && required === "failure")
       return failCandidate(state.candidate, run);
-    return drop(`ci-not-judged run=${run.conclusion} required=${required}`);
+    const undecided = state.undecided + 1;
+    drop(`ci-not-judged run=${run.conclusion} required=${required}`);
+    state = { ...state, undecided };
+    if (undecided >= undecidedLimit)
+      stop(
+        `候选的完整 CI 连续 ${undecided} 次没有给出成功或失败的结论（最近一次 ${run.url}），像是 CI 本身出了问题`,
+      );
   };
 
   const readiness = async (number, main) => {
@@ -487,6 +500,10 @@ export async function processQueue({
     if (check.state !== "success")
       return { eject: `PR 最新提交上的 ci/required 没过：${check.url}` };
     const review = checkReview(number, head, main);
+    if (review.broken) {
+      log(`MQ_REVIEW_CHECK_BROKEN #${number} ${review.output.split("\n")[0] ?? ""}`);
+      return { skip: true };
+    }
     if (!review.ok)
       return {
         eject: `合并前的模型复核没有覆盖最新提交：\n\n\`\`\`\n${review.output.slice(0, 1500)}\n\`\`\``,
@@ -495,10 +512,6 @@ export async function processQueue({
   };
 
   const start = async () => {
-    for (const branch of repo.candidateBranches()) {
-      log(`MQ_ORPHAN ${branch}`);
-      repo.deleteBranch(branch);
-    }
     const main = repo.fetchMain();
     const queued = await github.listQueued();
     const queuedSet = new Set(queued);
@@ -540,6 +553,10 @@ export async function processQueue({
       if (fromGroup) state = { ...state, groups: groups.slice(1) };
       return;
     }
+    for (const orphan of repo.candidateBranches()) {
+      log(`MQ_ORPHAN ${orphan}`);
+      repo.deleteBranch(orphan);
+    }
     const branch = `${candidatePrefix}${runTag}`;
     repo.pushBranch(built.sha, branch);
     await github.dispatch(branch, main);
@@ -560,7 +577,7 @@ export async function processQueue({
 
   if (state.stopped && resume) {
     log(`MQ_RESUMED ${state.stopped.reason}`);
-    state = { ...state, stopped: null };
+    state = { ...state, stopped: null, undecided: 0 };
   }
   if (state.stopped) {
     log(`MQ_STOPPED ${state.stopped.reason}`);

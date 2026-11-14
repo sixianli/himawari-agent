@@ -176,6 +176,7 @@ describe("PR 上测试范围的选择 [ADR-0268]", () => {
         },
       }).trim();
     git("init", "--quiet");
+    git("config", "diff.renames", "true");
     mkdirSync(path.join(root, "scripts"), { recursive: true });
     writeFileSync(path.join(root, "scripts/build.mjs"), "export const x = 1;\n".repeat(20));
     git("add", "-A");
