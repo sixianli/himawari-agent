@@ -41,11 +41,13 @@ public struct SettingsRootView: View {
                 IdentityCard(subtitle: M.serverLine(store.server))
                 if store.phase == .loaded {
                     DevicesGroup(store: store, open: { path.append(.device($0.id)) }, add: { path.append(.addDevice) })
-                    SettingsGroup(label: M.general) {
-                        Button { path.append(.export) } label: {
-                            SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: true)
+                    if Self.exportDownloadAvailable {
+                        SettingsGroup(label: M.general) {
+                            Button { path.append(.export) } label: {
+                                SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: true)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                     SettingsGroup(label: M.himawariSelf) {
                         Button { path.append(.capabilities) } label: {
