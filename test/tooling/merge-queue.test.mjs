@@ -503,7 +503,7 @@ describe("合并队列 [ADR-0268]", () => {
     expect(state.stopped.reason).toContain("run-missing");
   });
 
-  it("复核检查本身卡住或被杀时这一轮跳过 PR，不移出，也不再检查后面的 PR", async () => {
+  it("复核检查没有正常退出时这一轮不建候选，不移出，也不再检查后面的 PR", async () => {
     const env = setup();
     env.fake.addPr(1, { "c.txt": "c\n" });
     env.fake.addPr(2, { "d.txt": "d\n" });
@@ -647,6 +647,19 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
     const stuck = reviewChecker({ repo: env.repo, script: slow, timeout: 300 })(1, head, main);
     expect(stuck).toMatchObject({ ok: false, broken: true });
     expect(reviewChecker({ repo: env.repo, script })(1, head, main).broken).toBe(false);
+    const exits = path.join(env.root, "exit-review.mjs");
+    writeFileSync(exits, "process.exitCode = Number(process.env.MQ_TEST_EXIT);\n");
+    const verdictFor = (code) => {
+      process.env.MQ_TEST_EXIT = String(code);
+      try {
+        return reviewChecker({ repo: env.repo, script: exits })(1, head, main);
+      } finally {
+        delete process.env.MQ_TEST_EXIT;
+      }
+    };
+    expect(verdictFor(5)).toMatchObject({ ok: false, broken: false });
+    expect(verdictFor(2)).toMatchObject({ ok: false, broken: true });
+    expect(verdictFor(1)).toMatchObject({ ok: false, broken: true });
     expect(git(env.runner, ["worktree", "list"]).split("\n")).toHaveLength(1);
   });
 
