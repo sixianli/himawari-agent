@@ -150,6 +150,14 @@ describe("review speed report", () => {
       expect(after.rounds).toBe(1);
       const [before2] = compare(loadRounds(dir), "2026-11-14T20:00:00+09:00");
       expect(before2.rounds).toBe(1);
+      const early = ledger([[9, [record({ round: 1, at: "2026-11-14T02:00:00.000Z" })]]]);
+      try {
+        const [before3, after3] = compare(loadRounds(early), "2026-11-14T10:00:00+09:00");
+        expect(before3.rounds).toBe(0);
+        expect(after3.rounds).toBe(1);
+      } finally {
+        rmSync(early, { recursive: true, force: true });
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -166,6 +174,63 @@ describe("review speed report", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("sums a multi-model round once, and keeps a split round in one cohort", () => {
+    const dir = ledger([
+      [
+        11,
+        [
+          record({ model: "a", round: 1, at: "2026-11-14T10:00:00.000Z", steps: 10, cost: 0.1 }),
+          record({ model: "b", round: 1, at: "2026-11-14T10:10:00.000Z", steps: 20, cost: 0.2 }),
+        ],
+      ],
+    ]);
+    try {
+      const rounds = loadRounds(dir);
+      const [before, after] = compare(rounds, "2026-11-14T10:05:00.000Z");
+      expect(before.rounds).toBe(0);
+      expect(after.rounds).toBe(1);
+      expect(after.stepsFull).toBe(30);
+      expect(after.costFull).toBeCloseTo(0.3);
+      expect(after.inputPerRound).toBe(200);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts failed cost of a round that never succeeded, and unreadable verdicts as missing", () => {
+    const dir = ledger([
+      [
+        12,
+        [
+          record({ round: 1, at: "2026-11-14T10:00:00.000Z", cost: 0.1 }),
+          record({ round: 2, at: "2026-11-14T10:20:00.000Z", outcome: "failed", cost: 0.3 }),
+        ],
+        {},
+      ],
+    ]);
+    mkdirSync(join(dir, "pr-12", "round-1"), { recursive: true });
+    writeFileSync(join(dir, "pr-12", "round-1", "verdicts.jsonl"), "not json\n");
+    try {
+      const rounds = loadRounds(dir);
+      const [stats] = compare(rounds, "2026-12-01T00:00:00.000Z");
+      expect(stats.costPerPr).toBeCloseTo(0.4);
+      expect(stats.mediumHighPerRound).toBeNull();
+      expect(stats.roundsWithoutVerdicts).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("recomputes csv intervals inside the kept rows", () => {
+    const rows = [
+      { pr: 1, round: 1, at: "2026-11-14T10:00:00.000Z", model: "m" },
+      { pr: 1, round: 2, at: "2026-11-14T10:30:00.000Z", model: "m" },
+    ];
+    const lines = renderCsv(rows.slice(1)).split("\n");
+    expect(lines[1].split(",")[15]).toBe("");
+    expect(renderCsv(rows).split("\n")[2].split(",")[15]).toBe(String(30 * 60_000));
   });
 
   it("returns nothing for a missing directory", () => {
