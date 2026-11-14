@@ -3002,6 +3002,15 @@ export async function startTenantRuntime(
             event: "http.slow_request",
             ...request,
           }),
+        onDeviceAuditFailed: ({ action, targetRef, outcome, error }) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "device.audit_failed",
+            action,
+            targetRef,
+            outcome,
+            code: stableErrorCode(error),
+          }),
         onSearchIndexDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",

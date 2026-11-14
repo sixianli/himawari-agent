@@ -57,6 +57,7 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
   digestIdentityCredential,
   EnvelopePayloadProtector,
@@ -211,6 +212,7 @@ export interface ProductionHttpCompositionOptions {
   ) => Promise<void>;
   readonly onCommandAccepted?: (path: string) => void;
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
+  readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
@@ -1211,6 +1213,11 @@ export async function createProductionHttpComposition(
       if (identityConfiguration.kind === "built-in") return true;
       return (await identityState.readByOwner(ownerId))?.status === "active";
     },
+    ownerSubject: async (scope) => {
+      if (scope.ownerId !== ownerId || scope.agentId !== agentId) return undefined;
+      const binding = await identityState.readByOwner(ownerId);
+      return binding?.status === "active" ? binding.externalSubjectRef : undefined;
+    },
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
   });
@@ -1357,6 +1364,8 @@ export async function createProductionHttpComposition(
     devices: {
       service: pairedDevices,
       configuration: () => deviceConfiguration,
+      audit: repository.auditLedger(),
+      ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),

@@ -35,6 +35,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.overview.read",
   "proactive.overview.snapshot",
   "proactive.settings.set",
+  "proactive.pause",
   "proactive.insight.respond",
   "proactive.decision.rate",
   "proactive.audit.respond",
@@ -981,6 +982,10 @@ const proactiveSettingsSetCommandSchema = object({
     quietHours: proactiveQuietHoursSchema,
     importantSenders: proactiveSendersSchema,
   }),
+});
+const proactivePauseCommandSchema = object({
+  ...commandEnvelope("proactive.pause"),
+  payload: object({}),
 });
 const proactiveInsightRespondCommandSchema = object({
   ...commandEnvelope("proactive.insight.respond"),
@@ -3097,6 +3102,7 @@ const schemasByType = {
   "proactive.overview.read": proactiveOverviewQuerySchema,
   "proactive.overview.snapshot": proactiveOverviewSnapshotSchema,
   "proactive.settings.set": proactiveSettingsSetCommandSchema,
+  "proactive.pause": proactivePauseCommandSchema,
   "proactive.insight.respond": proactiveInsightRespondCommandSchema,
   "proactive.decision.rate": proactiveDecisionRateCommandSchema,
   "proactive.audit.respond": proactiveAuditRespondCommandSchema,
