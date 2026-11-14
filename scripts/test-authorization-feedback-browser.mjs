@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "@playwright/test";
-import { watchPageErrors } from "./browser-page-errors.mjs";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
   const results = [];
@@ -20,7 +20,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
         failure: request.failure(),
       }),
     );
-    watchPageErrors(page, (error) => errors.push(error.message));
+    collectPageErrors(page, errors);
     let failSearchRead = true;
     let searchReads = 0;
     let approvalReads = 0;

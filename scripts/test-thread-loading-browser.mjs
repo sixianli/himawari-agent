@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chromium, expect, webkit } from "@playwright/test";
-import { watchPageErrors } from "./browser-page-errors.mjs";
+import { chromium, webkit, expect } from "@playwright/test";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 // Exercise the built product through HTTP with isolated fixture data. Only read
 // requests are delayed/failed; retries still execute the real browser client.
@@ -40,8 +40,7 @@ try {
       const context = await browser.newContext({ locale, viewport: { width, height: 850 } });
       const page = await context.newPage();
       activePage = page;
-      const errors = [];
-      watchPageErrors(page, (error) => errors.push(error.message));
+      const errors = collectPageErrors(page);
       const label = `${locale}-${width}`;
       // Each handler only intercepts one chosen query, so retry can proceed
       // while the first response remains blocked.

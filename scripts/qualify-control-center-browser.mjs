@@ -7,10 +7,11 @@ import { chromium, devices, expect, firefox, webkit } from "@playwright/test";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-import { watchPageErrors } from "./browser-page-errors.mjs";
+import { expectedOfflineTransportError, watchPageErrors } from "./browser-page-errors.mjs";
 import { createBrowserObservation } from "./ci/browser-observation.mjs";
 import { parseArguments } from "./ci/contracts.mjs";
 import { redactText } from "./ci/security-redaction.mjs";
+import { qualifyPageErrorFilter } from "./test-browser-page-errors-browser.mjs";
 import { qualifyControlCenterV4 } from "./test-control-center-v4.mjs";
 import { qualifyExecutionChainFixture } from "./test-execution-chain-browser.mjs";
 import { qualifyMobileComposer } from "./test-mobile-composer-browser.mjs";
@@ -333,6 +334,8 @@ export async function qualifyBrowser({
       ...profile.launchOptions,
     });
     const browserVersion = browser.version();
+    phase = "page-error-filter";
+    const pageErrorFilter = await qualifyPageErrorFilter(browser);
     phase = "mobile-composer";
     const mobileComposer = await qualifyMobileComposer(browser, baseUrl, reportDirectory);
     phase = "v4-startup";
@@ -1008,13 +1011,12 @@ export async function qualifyBrowser({
       .first()
       .waitFor();
     const expectedOfflineBrowserError = (error) =>
-      error.includes("access control checks") &&
-      [
+      expectedOfflineTransportError(error, baseUrl, [
         "/api/gateway/v2/events",
         "/api/gateway/thread/v3/events",
         "/api/gateway/thread/v3/execution-events",
         "/api/gateway/thread/v3/queries",
-      ].some((path) => error.includes(path));
+      ]);
     if (requestErrors.length)
       throw new Error(`CONTROL_CENTER_CRITICAL_REQUEST_FAILED:${JSON.stringify(requestErrors)}`);
     const unexpectedBrowserErrors = browserErrors.filter(
@@ -1029,6 +1031,7 @@ export async function qualifyBrowser({
 
     const report = {
       schemaVersion: 2,
+      pageErrorFilter,
       mobileComposer,
       v4Journeys,
       executionChain,

@@ -4,8 +4,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, expect, webkit } from "@playwright/test";
-import { watchPageErrors } from "./browser-page-errors.mjs";
 import { qualifyAuthorizationFeedback } from "./test-authorization-feedback-browser.mjs";
+import { collectPageErrors } from "./browser-page-errors.mjs";
 
 export async function qualifyMobileComposer(browser, baseUrl, output) {
   const results = [];
@@ -18,8 +18,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
         hasTouch: true,
       });
       const page = await context.newPage();
-      const errors = [];
-      watchPageErrors(page, (error) => errors.push(error.message));
+      const errors = collectPageErrors(page);
       const label = `${locale}-${width}`;
       await context.route("**/api/control-center/v1/config", async (route) => {
         const response = await route.fetch();
