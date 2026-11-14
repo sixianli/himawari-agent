@@ -188,6 +188,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -1209,6 +1210,16 @@ export async function createProductionHttpComposition(
       }),
       clock: { now: clock },
     });
+  registerTaskProposalHandler({
+    box: proposalBox,
+    configuration,
+    commands: threadCommands,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+    timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+  });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,

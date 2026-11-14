@@ -89,14 +89,24 @@ export type ProposalPremises =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: string };
 
+export interface ProposalSession {
+  readonly sessionId: string;
+  readonly proofRef: string;
+}
+
 export interface ProposalActionHandler {
   readonly kind: "action";
   readonly requiresPresence?: boolean;
-  verify(input: { readonly proposalId: string; readonly data: unknown }): Promise<ProposalPremises>;
+  verify(input: {
+    readonly proposalId: string;
+    readonly data: unknown;
+    readonly session?: ProposalSession;
+  }): Promise<ProposalPremises>;
   execute(input: {
     readonly proposalId: string;
     readonly leaseId: string;
     readonly data: unknown;
+    readonly session?: ProposalSession;
   }): Promise<{ readonly original: unknown; readonly detail?: string }>;
   readBack(input: {
     readonly proposalId: string;
@@ -111,6 +121,7 @@ export interface ProposalActionHandler {
 }
 
 export interface ProposalResponder {
+  readonly session?: ProposalSession;
   readonly fullReadToken?: string | null;
   readonly assertPresence?: () => Promise<void>;
 }
@@ -615,7 +626,11 @@ export class ProductionProposalBox {
     }
     const basis = await this.#readBasis(row.evidenceRef);
     if (!basis) throw new ProposalError("PROPOSAL_NOT_FOUND");
-    const premises = await handler.verify({ proposalId, data: basis.data });
+    const premises = await handler.verify({
+      proposalId,
+      data: basis.data,
+      ...(responder?.session ? { session: responder.session } : {}),
+    });
     if (!premises.ok) {
       await store
         .decide({
@@ -650,7 +665,12 @@ export class ProductionProposalBox {
     if (token !== null) this.#fullReads.delete(token);
     let executed: { readonly original: unknown; readonly detail?: string };
     try {
-      executed = await handler.execute({ proposalId, leaseId, data: basis.data });
+      executed = await handler.execute({
+        proposalId,
+        leaseId,
+        data: basis.data,
+        ...(responder?.session ? { session: responder.session } : {}),
+      });
     } catch (error) {
       const ref = await this.#recordExecution(proposalId, {
         original: null,
