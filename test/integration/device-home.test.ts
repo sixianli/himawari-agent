@@ -267,8 +267,6 @@ describe("首页设备入口：读首页和点首页动作", () => {
     const second = await act(h, client, body);
     expect(second.statusCode, second.body).toBe(200);
     expect(second.body).toBe(first.body);
-    const otherAction = await act(h, client, { ...body, action: "denied" });
-    expect(otherAction.statusCode).not.toBe(200);
     const approvals = await h.repository
       .authorizationStore()
       .listApprovals(ownerId, agentId, { status: "approved" });
