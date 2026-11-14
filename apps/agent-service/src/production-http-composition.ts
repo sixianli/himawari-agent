@@ -163,6 +163,8 @@ import {
   ProductionProposalControl,
 } from "./production-proposal-control.js";
 import { ProductionProposalBox } from "./production-proposals.js";
+import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
+import { ProductionReminderWriter } from "./production-reminder-writer.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
@@ -1179,6 +1181,24 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     clock: { now: clock },
   });
+  if (options.memory)
+    registerReminderProposalHandlers({
+      box: proposalBox,
+      writer: new ProductionReminderWriter({
+        configuration,
+        memory: options.memory.service,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        reminders: repository.memoryReminders(),
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock: { now: clock },
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+      }),
+      clock: { now: clock },
+    });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,

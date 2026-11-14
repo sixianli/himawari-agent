@@ -122,7 +122,8 @@ export function reminderToolDescriptors(): readonly RuntimeToolDescriptor[] {
 
 export interface ProductionReminderWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
-  readonly memory: Pick<DurableMemoryService, "applyProposal">;
+  readonly memory: Pick<DurableMemoryService, "applyProposal"> &
+    Partial<Pick<DurableMemoryService, "delete">>;
   readonly state: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly reminders: Pick<
@@ -334,6 +335,66 @@ export class ProductionReminderWriter {
         classificationRank(memory.dataClassification) <= classificationRank(ceiling))
       ? this.#readText(memory.contentRef)
       : undefined;
+  }
+
+  async describe(
+    reminderId: string,
+  ): Promise<{ readonly reminder: MemoryReminder; readonly text: string } | undefined> {
+    const reminder = await this.#options.reminders.read(reminderId);
+    const { ownerId, agentId } = this.#options.configuration;
+    if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId) return undefined;
+    const text = await this.#textOf(reminder);
+    return text === undefined ? undefined : { reminder, text };
+  }
+
+  schedulePreview(due: string, repeat: "none" | "yearly") {
+    return reminderSchedule(due, repeat, this.#options.clock.now(), this.#options.timeZone);
+  }
+
+  async moveSchedule(input: {
+    readonly reminderId: string;
+    readonly expectedUpdatedAt: string;
+    readonly dueAt: string;
+    readonly remindAt: string;
+  }): Promise<{ readonly updatedAt: string; readonly dueAt: string; readonly remindAt: string }> {
+    const reminder = await this.#options.reminders.read(input.reminderId);
+    const { ownerId, agentId } = this.#options.configuration;
+    if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
+      throw new ReminderInputError("REMINDER_NOT_FOUND");
+    if (reminder.status !== "scheduled" || reminder.updatedAt !== input.expectedUpdatedAt)
+      throw new ReminderInputError("REMINDER_UNAVAILABLE");
+    const now = this.#options.clock.now();
+    const updatedAt =
+      Date.parse(now) > Date.parse(reminder.updatedAt)
+        ? now
+        : new Date(Date.parse(reminder.updatedAt) + 1).toISOString();
+    const updated = await this.#options.reminders.update({
+      id: reminder.id,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      status: "scheduled",
+      dueAt: input.dueAt,
+      remindAt: input.remindAt,
+      dismissedAt: null,
+      updatedAt,
+    });
+    if (!updated) throw new ReminderInputError("REMINDER_UNAVAILABLE");
+    return { updatedAt, dueAt: input.dueAt, remindAt: input.remindAt };
+  }
+
+  async withdraw(reminderId: string): Promise<void> {
+    const reminder = await this.cancel(reminderId);
+    const remove = this.#options.memory.delete;
+    if (remove === undefined) return;
+    const generation = await this.#options.book.latestGeneration(this.#scope());
+    if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const memory = await this.#options.state.read(reminder.memoryId);
+    if (
+      memory === undefined ||
+      memory.status === "deletion_pending" ||
+      memory.status === "deleted_verified"
+    )
+      return;
+    await remove.call(this.#options.memory, reminder.memoryId, generation);
   }
 
   async cancel(reminderId: string): Promise<MemoryReminder> {
