@@ -611,6 +611,29 @@ describe("plan claims check: the merge gate", () => {
       ]);
     }));
 
+  it("[claims gate] a non-ADR file under docs/adr still counts as still in head", () =>
+    withFixture({}, (f) => {
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n" }, "remove old code");
+      f.commit({ "docs/adr/tools/old.ts": `${CODE_LINE}\n` }, "old code under docs/adr");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", `${REDACTION}:3@${f.main}`, "第一句", CODE_LINE)}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([
+        `claims-evidence ${ADR} deepseek-v4.1-flash 1 commit-quote-still-in-head`,
+      ]);
+    }));
+
+  it("[claims gate] exactly the scan limit of changed files can still be checked", () =>
+    withFixture({}, (f) => {
+      const bulk = {};
+      for (let i = 0; i < 399; i += 1) bulk[`bulk/f${i}.txt`] = `${i}\n`;
+      f.commit({ [REDACTION]: "export const removed = true;\n\n\n", ...bulk }, "bulk change");
+      f.writeClaims({
+        answer: `${claimLine("1", "一致", `${REDACTION}:3@${f.main}`, "第一句", CODE_LINE)}\n`,
+      });
+      expect(claimsOnly(f.check())).toEqual([]);
+    }));
+
   it("[claims gate] more changed files than the scan limit cannot be checked, so the old-commit citation is refused", () =>
     withFixture({}, (f) => {
       const bulk = {};

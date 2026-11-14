@@ -238,7 +238,7 @@ function headTextOf(repo, head, path) {
   return headBlobCache.get(key);
 }
 
-const isAdrPath = (path) => path.startsWith("docs/adr/");
+const isAdrPath = (path) => ADR_PATH_PATTERN.test(path);
 
 function quoteInChangedFiles(repo, commit, head, quote, skipPaths) {
   const listed = changedFilesBetween(repo, commit, head);
@@ -376,6 +376,8 @@ function carriedEvidenceHolds(repo, head, item) {
 }
 
 export function claimsProblems({ repo, head, mainRef, reviewsDir, parseUsage, looksSecret }) {
+  changedFileCache.clear();
+  headBlobCache.clear();
   const adrs = addedAdrs(repo, head, mainRef);
   const problems = [];
   const files = [];
