@@ -59,6 +59,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryClassifications: classification.parseMemoryClassifications,
   parseConversationReview: review.parseConversationReview,
   parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
+  parseOwnerIntentDecision: application.parseOwnerIntentDecision,
   parseJudgements: application.parseJudgements,
   parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
@@ -96,6 +97,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         .sort(),
     ).toEqual(
       [
+        "authorization.owner-intent-question",
         "eval.real-memory.judge",
         "eval.real-memory.leak-judge",
         "eval.real-memory.question",
