@@ -16,6 +16,7 @@ const FILE = "data/owner-proposals.jsonl";
 const policy = createDataExportTextPolicy();
 const sides: Side[] = [];
 const decoder = new TextDecoder();
+const pid = (n: number): string => `action:${n.toString(16).padStart(32, "0")}`;
 const SECRET_TEXT = `主人的银行卡号是 ${SECRET_BANK_CARD}`;
 
 afterEach(async () => {
@@ -38,6 +39,8 @@ interface Seed {
   readonly basis?: string | null;
   readonly execution?: string | null;
   readonly lease?: boolean;
+  readonly summary?: string;
+  readonly sourceVersion?: string;
   readonly requiresFullRead?: boolean;
   readonly requiresPresence?: boolean;
 }
@@ -70,7 +73,7 @@ async function seed(target: Side, item: Seed): Promise<void> {
         decided_at, proposed_count, reject_count, last_rejected_at, exec_status, lease_id,
         lease_expires_at, attempts, requires_full_read, requires_presence, executed_at,
         execution_ref
-      ) VALUES (?, ?, ?, 'action', ?, ?, 'inferred', NULL, 'reminder:r1', 'v1', 2, ?, ?, ?,
+      ) VALUES (?, ?, ?, 'action', ?, ?, 'inferred', NULL, 'reminder:r1', ?, 2, ?, ?, ?,
         '2026-11-10T01:00:00.000Z', '2026-11-20T01:00:00.000Z', ?, 1, 0, NULL, ?, ?, ?, 1, ?, ?,
         ?, ?)`,
     )
@@ -78,8 +81,9 @@ async function seed(target: Side, item: Seed): Promise<void> {
       item.id,
       target.ownerId,
       target.agentId,
-      `把提醒 ${item.id} 改到明早`,
+      item.summary ?? `把提醒 ${item.id} 改到明早`,
       "提醒时间变成明早九点",
+      item.sourceVersion ?? "v1",
       "a".repeat(64),
       basisRef,
       status,
@@ -96,22 +100,22 @@ async function seed(target: Side, item: Seed): Promise<void> {
 
 async function seeded(): Promise<Side> {
   const source = await side("owner-proposals-source");
-  await seed(source, { id: "p-pending", basis: "依据：主人说过早上才看提醒" });
+  await seed(source, { id: pid(1), basis: "依据：主人说过早上才看提醒" });
   await seed(source, {
-    id: "p-done",
+    id: pid(2),
     status: "accepted",
     execStatus: "succeeded",
     execution: '{"original":"2026-11-12T00:00:00.000Z"}',
     requiresPresence: true,
   });
   await seed(source, {
-    id: "p-running",
+    id: pid(3),
     status: "accepted",
     execStatus: "running",
     lease: true,
     requiresFullRead: true,
   });
-  await seed(source, { id: "p-secret", basis: SECRET_TEXT });
+  await seed(source, { id: pid(4), basis: SECRET_TEXT });
   return source;
 }
 
@@ -150,8 +154,8 @@ function rows(from: Side) {
     .all() as Record<string, unknown>[];
 }
 
-describe("[owner-proposals] the owner's proposal box travels with the data export", () => {
-  it("round-trips rows, keeps basis and execution payloads, and turns an in-flight run into unknown", async () => {
+describe("the owner's proposal box travels with the data export", () => {
+  it("[P1-6] round-trips rows, keeps basis and execution payloads, and turns an in-flight run into unknown", async () => {
     const source = await seeded();
     const { files, manifest } = await exportOf(source);
     expect(manifest.counts.ownerProposals).toBe(4);
@@ -161,7 +165,7 @@ describe("[owner-proposals] the owner's proposal box travels with the data expor
     expect(report.imported.ownerProposals).toBe(4);
     expect(report.skipped.ownerProposalsWithoutOriginal).toBe(0);
     const expected = rows(source).map((row) =>
-      row["id"] === "p-running" ? { ...row, exec_status: "unknown", lease_id: null } : row,
+      row["id"] === pid(3) ? { ...row, exec_status: "unknown", lease_id: null } : row,
     );
     expect(rows(target)).toEqual(expected);
     const again = await exportOf(target);
@@ -169,7 +173,7 @@ describe("[owner-proposals] the owner's proposal box travels with the data expor
     expect(lines.some((line) => line.includes('"execStatus":"unknown"'))).toBe(true);
   });
 
-  it("keeps secret-looking basis text out of plain files and skips that proposal without the passphrase", async () => {
+  it("[P1-6] keeps secret-looking basis text out of plain files and skips that proposal without the passphrase", async () => {
     const source = await seeded();
     const { files } = await exportOf(source);
     for (const [path, bytes] of files)
@@ -177,20 +181,94 @@ describe("[owner-proposals] the owner's proposal box travels with the data expor
     const line = decoder
       .decode(files.get(FILE))
       .split("\n")
-      .find((entry) => entry.includes("p-secret"));
+      .find((entry) => entry.includes(pid(4)));
     expect(JSON.parse(line ?? "{}")).toMatchObject({ basis: { withheld: true } });
     const target = await side("owner-proposals-no-passphrase");
     const report = await importInto(target, files);
     expect(report.imported.ownerProposals).toBe(3);
     expect(report.skipped.ownerProposalsWithoutOriginal).toBe(1);
-    expect(rows(target).map((row) => row["id"])).not.toContain("p-secret");
+    expect(rows(target).map((row) => row["id"])).not.toContain(pid(4));
   });
 
-  it("[reverse] refuses to import into a target that already has proposals", async () => {
+  it("[P1-6] reports the same counts for a dry run and turns executed_unverified into unknown", async () => {
+    const source = await side("owner-proposals-dry-source");
+    await seed(source, {
+      id: pid(1),
+      status: "accepted",
+      execStatus: "executed_unverified",
+      lease: true,
+    });
+    await seed(source, { id: pid(2), basis: "依据" });
+    const { files } = await exportOf(source);
+    const target = await side("owner-proposals-dry-target");
+    const dry = await importPortableExport(files, {
+      database: target.database,
+      scope: { ownerId: target.ownerId, agentId: target.agentId },
+      migrationSequence: target.migrationSequence,
+      protector: target.protector,
+      now: () => NOW,
+      dryRun: true,
+    });
+    expect(rows(target)).toEqual([]);
+    const real = await importInto(target, files);
+    expect(dry.imported.ownerProposals).toBe(real.imported.ownerProposals);
+    expect(real.imported.ownerProposals).toBe(2);
+    const unverified = rows(target).find((row) => row["id"] === pid(1));
+    expect(unverified).toMatchObject({ exec_status: "unknown", lease_id: null });
+  });
+
+  it("[P1-6] keeps placeholder numbers apart when a re-exported source version already holds one", async () => {
+    const source = await side("owner-proposals-placeholder-source");
+    await seed(source, { id: pid(1), sourceVersion: "[已扣留:1]" });
+    await seed(source, { id: pid(2), summary: SECRET_TEXT });
+    const { files } = await exportOf(source);
+    const lines = decoder
+      .decode(files.get(FILE))
+      .split("\n")
+      .filter((entry) => entry !== "")
+      .map((entry) => JSON.parse(entry));
+    const summary = lines.find((entry) => entry.id === pid(2)).summary as string;
+    expect(summary).toMatch(/^\[已扣留:\d+\]$/u);
+    expect(summary).not.toBe("[已扣留:1]");
+  });
+
+  it("[P1-6][reverse] refuses a tampered proposal file", async () => {
+    const source = await seeded();
+    const { files } = await exportOf(source);
+    const tamper = (change: (line: Record<string, unknown>) => void): PortableFiles => {
+      const lines = decoder
+        .decode(files.get(FILE))
+        .split("\n")
+        .filter((entry) => entry !== "")
+        .map((entry) => JSON.parse(entry) as Record<string, unknown>);
+      change(lines[0] ?? {});
+      return new Map(files).set(
+        FILE,
+        new TextEncoder().encode(`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`),
+      );
+    };
+    for (const change of [
+      (line: Record<string, unknown>) => {
+        line["id"] = "not-a-proposal-id";
+      },
+      (line: Record<string, unknown>) => {
+        line["proposedAt"] = "yesterday";
+      },
+      (line: Record<string, unknown>) => {
+        line["decidedAt"] = "2026-11-11T01:00:00.000Z";
+      },
+    ]) {
+      const target = await side(`owner-proposals-tampered-${sides.length}`);
+      await expect(importInto(target, tamper(change), PASSPHRASE)).rejects.toBeInstanceOf(Error);
+      expect(rows(target)).toEqual([]);
+    }
+  });
+
+  it("[P1-6][reverse] refuses to import into a target that already has proposals", async () => {
     const source = await seeded();
     const { files } = await exportOf(source);
     const target = await side("owner-proposals-busy");
-    await seed(target, { id: "p-existing" });
+    await seed(target, { id: pid(5) });
     await expect(importInto(target, files, PASSPHRASE)).rejects.toMatchObject({
       code: DATA_EXPORT_ERROR_CODES.TARGET_NOT_EMPTY,
     });

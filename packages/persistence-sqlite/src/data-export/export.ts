@@ -185,7 +185,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       snapshot.rules,
       snapshot.ruleHistory,
       exportedProposals,
-      snapshot.ownerProposals.map((row) => [row["summary"], row["effect"], row["source_ref"]]),
+      snapshot.ownerProposals.map((row) => [
+        row["summary"],
+        row["effect"],
+        row["source_ref"],
+        row["source_version"],
+      ]),
       snapshot.externalProposalKeys.filter((row) =>
         exportedProposalIds.has(str(row["proposal_id"])),
       ),

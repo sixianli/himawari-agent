@@ -135,10 +135,12 @@ export interface ParsedOwnerProposal {
   readonly execution: ParsedText | null;
 }
 
+const OWNER_PROPOSAL_ID = /^[a-z][a-z0-9-]{0,31}:[0-9a-f]{32}$/u;
 const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
 
 export function ownerProposalProblem(proposal: ParsedOwnerProposal): string | null {
   const where = `提给主人的提议 ${proposal.id}`;
+  if (!OWNER_PROPOSAL_ID.test(proposal.id)) return `${where}：编号不是提议箱用的格式`;
   for (const value of [
     proposal.proposedAt,
     proposal.expiresAt,

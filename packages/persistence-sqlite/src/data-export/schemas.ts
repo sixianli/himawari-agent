@@ -1,7 +1,7 @@
 import { DECISION_KINDS } from "@himawari-agent/application/decision-ledger";
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v3" as const;
+export const FORMAT_VERSION = "himawari.data-export.v4" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
