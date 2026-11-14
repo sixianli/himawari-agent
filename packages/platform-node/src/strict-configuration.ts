@@ -13,6 +13,7 @@ import {
   type DataClassification,
   DEFAULT_HOME_FEED,
   DEFAULT_REVIEW_PREREVIEW,
+  DEFAULT_SEARCH_ASK,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
@@ -1442,6 +1443,30 @@ function parseHomeFeed(value: unknown): NonNullable<RunPolicyConfiguration["home
   );
 }
 
+function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["searchAsk"]> {
+  const field = "configuration.runPolicy.searchAsk";
+  const input = record(value, field);
+  const bounds = {
+    candidateLimit: [1, 200],
+    basisLimit: [1, 10],
+    askLimit: [0, 20],
+    answerCharacters: [1, 2000],
+    minimumCoveragePercent: [1, 100],
+  } as const satisfies Record<keyof typeof DEFAULT_SEARCH_ASK, readonly [number, number]>;
+  const keys = Object.keys(bounds) as (keyof typeof bounds)[];
+  rejectUnknown(input, keys, field);
+  return Object.freeze(
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        input[key] === undefined
+          ? DEFAULT_SEARCH_ASK[key]
+          : integer(input[key], `${field}.${key}`, bounds[key][0], bounds[key][1]),
+      ]),
+    ) as Record<keyof typeof bounds, number>,
+  );
+}
+
 function parseRealEval(value: unknown): NonNullable<RunPolicyConfiguration["realEval"]> {
   const field = "configuration.runPolicy.realEval";
   const input = record(value, field);
@@ -1503,6 +1528,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "webPush",
       "device",
       "homeFeed",
+      "searchAsk",
       "proactive",
       "museIntake",
       "importDuplicates",
@@ -1558,6 +1584,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
+    ...(input["searchAsk"] === undefined ? {} : { searchAsk: parseSearchAsk(input["searchAsk"]) }),
     ...(input["proactive"] === undefined ? {} : { proactive: parseProactive(input["proactive"]) }),
     ...(input["realEval"] === undefined ? {} : { realEval: parseRealEval(input["realEval"]) }),
     ...(input["museIntake"] === undefined

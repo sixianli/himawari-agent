@@ -2982,6 +2982,20 @@ export async function startTenantRuntime(
         ...(museControl ? { museControl } : {}),
         ...(observation ? { observation } : {}),
         memory: {
+          ...(memoryComposition
+            ? {
+                search: {
+                  provider: {
+                    search: (input) =>
+                      (memoryComposition as ProductionMemoryComposition).projection.search(input),
+                  },
+                  episodes: {
+                    search: (input) =>
+                      runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
+                  },
+                },
+              }
+            : {}),
           service: activeDurableMemory,
           externalProposals,
           actionRules: new BuiltInActionRuleSwitches({
