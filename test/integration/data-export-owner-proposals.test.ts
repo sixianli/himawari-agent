@@ -306,4 +306,26 @@ describe("the owner's proposal box travels with the data export", () => {
       (await exportOf(clean)).manifest.omitted.some(({ what }) => what.includes("读不出来")),
     ).toBe(false);
   });
+
+  it("[P1-6][reverse] counts an unreadable execution original, and each unreadable text once", async () => {
+    const source = await seeded();
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-execution-%'",
+      )
+      .run();
+    const only = (await exportOf(source)).manifest.omitted.find(({ what }) =>
+      what.includes("读不出来"),
+    );
+    expect(only?.count).toBe(1);
+    source.database
+      .prepare(
+        "UPDATE payloads SET lifecycle_state = 'deleted_verified' WHERE ref LIKE 'payload-owner-proposal-basis-%'",
+      )
+      .run();
+    const both = (await exportOf(source)).manifest.omitted.find(({ what }) =>
+      what.includes("读不出来"),
+    );
+    expect(both?.count).toBe(3);
+  });
 });
