@@ -59,3 +59,21 @@ export async function findDirectPageErrorListeners(root, allowed) {
   }
   return offenders.sort();
 }
+
+export async function findUnwatchedBrowserLaunches(root, allowed) {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  const offenders = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(?:mjs|js|ts)$/u.test(entry.name)) continue;
+    const file = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(root, file).split(path.sep).join("/");
+    if (allowed.has(relative)) continue;
+    const source = await readFile(file, "utf8");
+    if (
+      /\.launch(?:PersistentContext|Server)?\s*\(/u.test(source) &&
+      !/\b(?:watchPageErrors|collectPageErrors)\s*\(/u.test(source)
+    )
+      offenders.push(relative);
+  }
+  return offenders.sort();
+}

@@ -7,6 +7,7 @@ import { parseDocument } from "yaml";
 import {
   activeMembers,
   armChecks,
+  armRunnerLabel,
   fileSha256,
   gateRunnerLabel,
   githubExpression,
@@ -189,7 +190,12 @@ export function upgradeRetiredTestChecks(policy) {
   return upgraded;
 }
 
-const runnerLabelFor = (checkId) => (checkId === "required" ? gateRunnerLabel : linuxRunnerLabel);
+const runnerLabelFor = (checkId) =>
+  checkId === "required"
+    ? gateRunnerLabel
+    : armChecks.includes(checkId)
+      ? armRunnerLabel
+      : linuxRunnerLabel;
 
 export function upgradeArmRunnerPolicy(policy) {
   const checks = policy?.checks ?? [];
@@ -200,7 +206,7 @@ export function upgradeArmRunnerPolicy(policy) {
       members[0].runner === linuxRunnerLabel &&
       members[0].os === "linux" &&
       members[0].arch === "x64" &&
-      !Object.hasOwn(members[0], "alternateArch")
+      [undefined, "arm64"].includes(members[0].alternateArch)
     );
   };
   if (
@@ -213,7 +219,8 @@ export function upgradeArmRunnerPolicy(policy) {
     return policy;
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
-    if (armChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
+    if (armChecks.includes(check.id))
+      Object.assign(check.members[0], { runner: armRunnerLabel, alternateArch: "arm64" });
   return upgraded;
 }
 
@@ -568,7 +575,7 @@ export function validateWorkflow(policy, source, toolchain) {
         job.steps.some(
           (step) =>
             step.run ===
-              ".ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports" &&
+              `.ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports --remote-jobs ${armChecks.join(",")}` &&
             step.env?.CI_NEEDS === githubExpression("toJSON(needs)") &&
             step.if === undefined,
         ) &&

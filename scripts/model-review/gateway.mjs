@@ -649,6 +649,7 @@ export function getJson(url, timeoutMs = 5000) {
   return new Promise((resolveGet) => {
     const request = http.get(url, { timeout: timeoutMs }, (response) => {
       let body = "";
+      response.setEncoding("utf8");
       response.on("data", (chunk) => {
         body += chunk;
       });
@@ -681,6 +682,7 @@ export function postJson(url, payload, timeoutMs = 60000) {
       },
       (response) => {
         let text = "";
+        response.setEncoding("utf8");
         response.on("data", (chunk) => {
           text += chunk;
         });
@@ -827,6 +829,7 @@ export async function startGateway({
     child.on("error", (error) => {
       spawnError = error.message;
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-4000);
     });
