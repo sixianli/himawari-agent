@@ -51,7 +51,7 @@ iOS 第 8 批“让它听”：手机一直在听，认出 Himawari 的名字就
 
 1. 2026-10-28 Andy 定过一条红线，Jev 只许判合成评测数据。来源：[ADR 0103](0103-jarvis-test-live-evaluation-and-two-tier-judge.md) 第 38 行：“Jev 只许判合成评测数据（本批全是编造的演示数据，没问题），不许用于判 Himawari 的真实个人数据——那等于把个人数据发给第三方，与「数据自持」冲突。”本 ADR 只在“是不是在叫它”这一处放开这条红线，依据是上面 16:08 的第 2 条同意。
 2. 原有的证据门槛在 `packages/application/src/services/voice-command.ts` 的 `decideVoiceCommand`，`POST /messages` 在 `packages/platform-node/src/device-api-routes.ts` 里调用它，不通过就回 409 `VOICE_COMMAND_UNCONFIRMED`。
-3. 感知每日模型费用上限已有现成的预留函数：`packages/platform-node/src/perception-service.ts` 第 218 行 `reserveModelCost(scope, amountMicros)`，用的是 `perception.model_cost.daily` 这项上限。说半句时的抢跑也用它。
+3. 感知每日模型费用上限已有现成的预留函数：`packages/platform-node/src/perception-service.ts` 里的 `reserveModelCost(scope, amountMicros)`，用的是 `perception.model_cost.daily` 这项上限。说半句时的抢跑也用它。
 4. 发往外部服务前必须遮敏感值，并在 `scripts/check-egress-redaction.mjs` 里登记；`npm run check:egress-redaction` 会拦下没登记、没遮的外部出口。
 5. Vercel 的判断接口：`POST https://ai-gateway.vercel.sh/v1/decisions`，用 AI Gateway 的 key；“是非题”（`predicate`）回答“是”的概率；请求体接受 `providerOptions.gateway.zeroDataRetention`。来源：<https://vercel.com/docs/ai-gateway/sdks-and-apis/openai-decisions>。Jev 在 Vercel 上的名字是 `typesafe-ai/jev`，每百万输入 token 0.042 美元，输出不收钱。来源：<https://vercel.com/ai-gateway/models/jev>。
 6. Vercel 自己不保留请求和回答（原话：“AI Gateway has a ZDR policy and does not retain prompts, outputs, or sensitive data.”）；TypeSafe AI 在它的零保留供应商名单里；零保留要付费账户。来源：<https://vercel.com/docs/ai-gateway/security-and-compliance/zdr>。2026-11-13 线程用 Andy 的 Vercel 账号带 `zeroDataRetention: true` 实测，返回 200，由 `typesafe-ai` 回答，DigitalOcean 因不支持零保留被跳过，往返约 0.2 秒，每次约 0.000015 美元。
