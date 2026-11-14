@@ -18,6 +18,7 @@ public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
     public let memoryId: String
     public let revision: Int
     public let text: String
+    public let dataClassification: String?
     public let inference: Bool
     public let sourceThreadId: String?
     public let sourceRefs: [String]

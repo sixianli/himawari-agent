@@ -25,6 +25,7 @@ public final class SettingsStore {
 
     public var capabilityCount: Int { waitingCapabilities.count + capabilitiesInUse.count + capabilitiesDisabled.count }
 
+    @ObservationIgnored private var loadingMoreFiles: Set<FileOrigin> = []
     @ObservationIgnored let gateway: ManageGateway
     @ObservationIgnored let identity: DeviceIdentity?
 
@@ -61,6 +62,7 @@ public final class SettingsStore {
                 "capabilityRef": .string(capability.capabilityRef),
                 "expectedRevision": .number(Double(capability.revision)),
                 "reasonCode": .string(Self.ownerDisabledReason),
+                "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
             ],
             options: ManageCommandOptions(confirmReason: reason)
         )
@@ -113,6 +115,12 @@ public final class SettingsStore {
     public func loadFiles(_ origin: FileOrigin, more: Bool = false) async {
         var shelf = more ? shelf(origin) : FileShelf()
         if more && shelf.nextCursor == nil { return }
+        if more {
+            guard loadingMoreFiles.insert(origin).inserted else { return }
+        }
+        defer {
+            if more { loadingMoreFiles.remove(origin) }
+        }
         do {
             let data = try await gateway.read(
                 .v2,

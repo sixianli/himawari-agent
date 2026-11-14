@@ -45,8 +45,10 @@ public struct SignedDeviceTransport: DeviceTransport {
                 )
             )
             return DeviceResponse(status: 200, body: body)
-        } catch let DeviceAPIError.server(status, code, _) {
-            let failure = ["error": ["code": code ?? ""]]
+        } catch let DeviceAPIError.server(status, code, _, reasonCode) {
+            var detail = ["code": code ?? ""]
+            if let reasonCode { detail["reasonCode"] = reasonCode }
+            let failure = ["error": detail]
             return DeviceResponse(status: status, body: (try? JSONEncoder().encode(failure)) ?? Data())
         }
     }

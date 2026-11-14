@@ -117,6 +117,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(payload["capabilityRef"], .string("cap-search"))
         XCTAssertEqual(payload["expectedRevision"], .number(3))
         XCTAssertEqual(payload["reasonCode"], .string("owner_disabled"))
+        XCTAssertEqual(payload["recentAuthenticationRef"], .string(ClientCapabilities.referencePlaceholder))
+        XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
