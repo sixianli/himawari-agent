@@ -172,6 +172,26 @@ describe("incident and gate list check", () => {
     expect(noTable.stdout).not.toContain("count=0");
   });
 
+  it("withholds the open list when the list can be read but fails a check", () => {
+    const root = fixture([
+      row({}),
+      row({ id: "I-02", state: "缺门槛", gate: "无", symptom: "未结的现象" }),
+      row({ id: "I-03", state: "已落门槛", gate: "`scripts/missing-gate.mjs`" }),
+    ]);
+    copyFileSync(
+      "scripts/check-incident-gates.mjs",
+      join(root, "scripts/check-incident-gates.mjs"),
+    );
+    const result = spawnSync("node", [join(root, "scripts/check-incident-gates.mjs"), "--open"], {
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("INCIDENT_GATE_PATH_MISSING I-03 scripts/missing-gate.mjs");
+    expect(result.stdout).toContain("INCIDENT_OPEN unavailable errors=1");
+    expect(result.stdout).not.toContain("I-02");
+    expect(result.stdout).not.toContain("count=");
+  });
+
   it("checks the repository's own list", () => {
     expect(checkIncidentGates().errors).toEqual([]);
   });
