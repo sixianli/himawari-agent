@@ -14,7 +14,7 @@ import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture
 
 export const PENDING_PROPOSAL_LIMIT = 20;
 export const PENDING_PROPOSAL_TTL_DAYS = 30;
-const PENDING_PROPOSAL_CEILING = 200;
+export const PENDING_PROPOSAL_CEILING = 200;
 const PENDING_PROPOSAL_TTL_CEILING_DAYS = 3650;
 const EVIDENCE_SWEEP_BATCH = 100;
 const DAY_MS = 86_400_000;

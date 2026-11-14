@@ -179,7 +179,7 @@ import {
 } from "./production-proactive.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
-import { ProductionProposalBox } from "./production-proposals.js";
+import { PENDING_PROPOSAL_CEILING, ProductionProposalBox } from "./production-proposals.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
@@ -2794,6 +2794,9 @@ export async function startTenantRuntime(
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
+            approvalCopy: async (input) => ({
+              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
+            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
@@ -2844,6 +2847,17 @@ export async function startTenantRuntime(
                 }),
               }
             : {}),
+          proposals: {
+            listReady: async (now) =>
+              (
+                await pushRepository.ownerProposals().listPending({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  now,
+                  limit: PENDING_PROPOSAL_CEILING,
+                })
+              ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
+          },
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({

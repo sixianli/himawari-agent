@@ -10,6 +10,7 @@ import {
   type ApplePushSendResult,
   type ApplePushStorePort,
   type ApprovalRequest,
+  hasVisibleText,
   type MemoryReminder,
   type NotificationAction,
   type NotificationActionTokenInput,
@@ -88,17 +89,22 @@ export function applePushAlertPayload(input: {
   readonly tag: string;
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
+  readonly quiet?: boolean;
   readonly actions: readonly ApplePushAction[];
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
       aps: {
         alert: { title, body },
-        sound: "default",
-        ...(input.badge === undefined ? {} : { badge: input.badge }),
+        ...(input.quiet ? {} : { sound: "default" }),
+        ...(input.badge === undefined || input.quiet ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
+        "interruption-level": input.quiet
+          ? "passive"
+          : input.kind === "approval"
+            ? "time-sensitive"
+            : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       himawari: {
@@ -136,6 +142,11 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
   readonly publicOrigin: string;
   readonly now: () => string;
   readonly randomBytes?: (size: number) => Buffer;
+  readonly approvalCopy?: (input: {
+    readonly approvalRequestId: string;
+    readonly semanticSnapshotHash: string;
+    readonly locale: WebPushLocale;
+  }) => Promise<{ readonly affirmLabel: string | null }>;
   readonly onDelivery?: (outcome: {
     readonly pushType: string;
     readonly kind: string;
@@ -283,12 +294,13 @@ export class ProductionApplePush implements PushCompanionChannel {
         await this.#record(entry, now, "failed", "APNS_TOPIC_NOT_CONFIGURED", 1);
         continue;
       }
+      const locale = input.accountLocale ?? entry.registration.locale;
       await this.#sendAlert(
         entry,
         now,
         content,
-        await input.badge(),
-        input.accountLocale ?? entry.registration.locale,
+        content.build(locale).quiet === true ? undefined : await input.badge(),
+        locale,
         input.approvals,
       );
     }
@@ -300,15 +312,31 @@ export class ProductionApplePush implements PushCompanionChannel {
     });
   }
 
+  async #approvalCopy(approval: ApprovalRequest, locale: WebPushLocale): Promise<string | null> {
+    const read = this.#options.approvalCopy;
+    if (!read) return null;
+    try {
+      const copy = await read({
+        approvalRequestId: approval.id,
+        semanticSnapshotHash: approval.semanticSnapshotHash,
+        locale,
+      });
+      const label = copy.affirmLabel?.trim() ?? "";
+      return hasVisibleText(label) ? label : null;
+    } catch (error) {
+      this.#options.onFailure(error);
+      return null;
+    }
+  }
+
   async #actions(
     entry: ApplePushDue,
     now: string,
     locale: WebPushLocale,
-    approvals: readonly ApprovalRequest[],
+    approval: ApprovalRequest | undefined,
+    affirmLabel: string | null,
   ): Promise<readonly ApplePushAction[]> {
-    if (entry.item.kind !== "approval") return [];
-    const approval = approvals.find(({ id }) => id === entry.item.sourceRef);
-    if (!approval) return [];
+    if (entry.item.kind !== "approval" || !approval) return [];
     const ownerPresence =
       (approval as ApprovalRequest & { recentAuthenticationRequired?: boolean })
         .recentAuthenticationRequired === true;
@@ -322,8 +350,8 @@ export class ProductionApplePush implements PushCompanionChannel {
     const actions: ApplePushAction[] = [
       {
         action: "approve",
-        label: ownerPresence ? text.approveInApp : text.approve,
-        labelBasis: "catalog",
+        label: ownerPresence ? text.approveInApp : (affirmLabel ?? text.approve),
+        labelBasis: !ownerPresence && affirmLabel !== null ? "model" : "catalog",
         polarity: "positive",
         token: random(32).toString("base64url"),
         ownerPresence,
@@ -369,12 +397,20 @@ export class ProductionApplePush implements PushCompanionChannel {
     const { item, registration, attempt } = entry;
     const tag = webPushTopic(item.sourceKey);
     const built = content.build(locale);
+    const approval =
+      item.kind === "approval" ? approvals.find(({ id }) => id === item.sourceRef) : undefined;
+    const affirmLabel =
+      approval &&
+      (approval as ApprovalRequest & { recentAuthenticationRequired?: boolean })
+        .recentAuthenticationRequired !== true
+        ? await this.#approvalCopy(approval, locale)
+        : null;
     const result = await this.#transmit("alert", item.kind, {
       token: registration.token,
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" ? 5 : 10,
+      priority: item.kind === "run" || built.quiet === true ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({
@@ -386,7 +422,8 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
-        actions: await this.#actions(entry, now, locale, approvals),
+        quiet: built.quiet === true,
+        actions: await this.#actions(entry, now, locale, approval, affirmLabel),
       }),
     });
     const attempts = (attempt?.attempts ?? 0) + 1;
