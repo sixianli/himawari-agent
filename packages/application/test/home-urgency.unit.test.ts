@@ -201,6 +201,15 @@ describe("[home-urgency] accepting a model-written button label", () => {
     expect(accept("Move it to 09:40", "en", "Decline")).toBe(true);
   });
 
+  it("[negative] rejects a label that has no visible character", () => {
+    expect(accept("\u200B", "zh-CN")).toBe(false);
+    expect(accept("\u2060\u200D", "en", "Decline")).toBe(false);
+    expect(accept("\u3164", "zh-CN")).toBe(false);
+    expect(accept("\u2800", "zh-CN")).toBe(false);
+    expect(accept("\uFE0F", "zh-CN")).toBe(false);
+    expect(accept("发出去👨‍👩‍👧", "zh-CN")).toBe(true);
+  });
+
   it("[negative] rejects a label one character over the limit of each language", () => {
     expect(accept("改到九点四十分", "zh-CN")).toBe(false);
     expect(accept("九時四十分に変更だ", "ja", "同意しない")).toBe(false);
