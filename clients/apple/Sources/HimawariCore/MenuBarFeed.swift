@@ -26,7 +26,7 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
 
     public static let shownActionLimit = 2
 
-    public var shownActions: [HomeAction] { Array(actions.prefix(Self.shownActionLimit)) }
+    public var shownActions: [HomeAction] { Array(actions.filter { $0.binding != nil }.prefix(Self.shownActionLimit)) }
 }
 
 public struct HomeSnapshot: Codable, Sendable, Equatable {
