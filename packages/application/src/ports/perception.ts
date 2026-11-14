@@ -429,6 +429,7 @@ export interface PerceptionSettings {
 }
 
 export interface PerceptionRecordInput {
+  readonly searchTerms?: readonly string[];
   readonly id: string;
   readonly type: PerceptionRecordType;
   readonly origin: PerceptionOrigin;
@@ -674,6 +675,12 @@ export interface PerceptionStorePort {
       readonly limit: number;
     },
   ): Promise<PerceptionDayPage>;
+  searchRecords(
+    input: PerceptionScope & {
+      readonly terms: readonly string[];
+      readonly limit: number;
+    },
+  ): Promise<readonly PerceptionRecord[]>;
   countDay(
     input: PerceptionScope & {
       readonly day: string;

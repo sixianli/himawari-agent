@@ -1360,6 +1360,35 @@ export async function createProductionHttpComposition(
           : {}),
         provider: options.memory.search.provider,
         ...(options.memory.search.episodes ? { episodes: options.memory.search.episodes } : {}),
+        perception: {
+          search: async ({ query, limit }) => {
+            const found = await perception.search({
+              scope: { ownerId, agentId },
+              query,
+              limit,
+            });
+            const rows = await Promise.all(
+              found.map(async (record) => {
+                const text =
+                  record.contentRef === null
+                    ? undefined
+                    : await readPerceptionText(record.contentRef).catch(() => undefined);
+                return text === undefined
+                  ? []
+                  : [
+                      {
+                        recordId: record.id,
+                        origin: record.origin,
+                        occurredAt: new Date(record.occurredAtMs).toISOString(),
+                        dataClassification: record.dataClassification,
+                        text,
+                      },
+                    ];
+              }),
+            );
+            return rows.flat();
+          },
+        },
         state: repository.productMemoryState(),
         readText: async (record) => {
           const payload = await memoryPayloads.get(record.contentRef);
@@ -1371,6 +1400,13 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const readPerceptionText = async (contentRef: string) => {
+    const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+    if (!payload || payload.contentType !== "text/plain") return undefined;
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      await payloadProtector.unprotect({ ownerId, agentId, payload }),
+    );
+  };
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1389,6 +1425,12 @@ export async function createProductionHttpComposition(
     protectText: async (input) =>
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    searchIndex: {
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
     ...(proactiveConfiguration
       ? {
           proactiveUsage: {
