@@ -22,6 +22,10 @@ import {
   MANIFEST_SCHEMA,
   MAXIMUM_LINE_LENGTH,
   MEMORY_SCHEMA,
+  PAIRED_DEVICE_SCHEMA,
+  PERCEPTION_FILE_KEYS,
+  PERCEPTION_FILE_SCHEMAS,
+  type PerceptionFileKey,
   PERSON_SCHEMA,
   RULE_SCHEMA,
 } from "./schemas.js";
@@ -159,6 +163,18 @@ export interface ParsedBatch {
   readonly undoneAt: string | null;
 }
 
+export interface ParsedPairedDevice {
+  readonly id: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly releaseChannel: string;
+  readonly status: string;
+  readonly pairedAt: string;
+  readonly confirmedAt: string | null;
+  readonly revokedAt: string | null;
+  readonly lastSeenAt: string | null;
+}
+
 export interface ParsedConsolidation {
   readonly id: string;
   readonly day: string;
@@ -243,6 +259,8 @@ export interface ParsedPortable {
   readonly memories: readonly ParsedMemory[];
   readonly people: readonly ParsedPerson[];
   readonly importBatches: readonly ParsedBatch[];
+  readonly pairedDevices: readonly ParsedPairedDevice[];
+  readonly perception: Readonly<Record<PerceptionFileKey, readonly Record<string, unknown>[]>>;
   readonly consolidations: readonly ParsedConsolidation[];
   readonly conversationReviews: readonly ParsedConversationReview[];
   readonly decisions: readonly ParsedDecision[];
@@ -381,6 +399,26 @@ export function parsePortable(
   const manifest = verifyIntegrity(files, expectedMigrationSequence);
   const memories = parseLines<ParsedMemory>(files, DATA_FILES.memories, MEMORY_SCHEMA);
   const people = parseLines<ParsedPerson>(files, DATA_FILES.people, PERSON_SCHEMA);
+  const pairedDevices = parseLines<ParsedPairedDevice>(
+    files,
+    DATA_FILES.pairedDevices,
+    PAIRED_DEVICE_SCHEMA,
+  );
+  unique(
+    pairedDevices.map(({ id }) => id),
+    "配对设备",
+  );
+  const perception = Object.fromEntries(
+    PERCEPTION_FILE_KEYS.map((key) => [
+      key,
+      parseLines<Record<string, unknown>>(files, DATA_FILES[key], PERCEPTION_FILE_SCHEMAS[key]),
+    ]),
+  ) as Record<PerceptionFileKey, Record<string, unknown>[]>;
+  for (const key of ["perceptionRecords", "perceptionEpisodes"] as const)
+    unique(
+      perception[key].map(({ id }) => String(id)),
+      DATA_FILES[key],
+    );
   const importBatches = parseLines<ParsedBatch>(
     files,
     DATA_FILES.importBatches,
@@ -527,6 +565,10 @@ export function parsePortable(
     memoryHistoryEvents: memories.reduce((total, { history }) => total + history.length, 0),
     people: people.length,
     importBatches: importBatches.length,
+    pairedDevices: pairedDevices.length,
+    ...(Object.fromEntries(
+      PERCEPTION_FILE_KEYS.map((key) => [key, perception[key].length]),
+    ) as Record<PerceptionFileKey, number>),
     consolidations: consolidations.length,
     consolidationChanges: consolidations.reduce((total, { changes }) => total + changes.length, 0),
     conversationReviews: conversationReviews.length,
@@ -574,6 +616,8 @@ export function parsePortable(
     memories,
     people,
     importBatches,
+    pairedDevices,
+    perception,
     consolidations,
     conversationReviews,
     decisions,

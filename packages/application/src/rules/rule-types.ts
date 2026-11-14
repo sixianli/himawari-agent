@@ -4,10 +4,14 @@ import {
   celStringList,
   foldText,
   mailItemFacts,
+  type QuietPeriod,
+  quietHoursExamples,
+  quietHoursExpression,
   type RuleExample,
   type RuleOutcome,
   type RuleRecord,
   type RuleStatus,
+  ruleIsEnforced,
 } from "./rule-book.js";
 
 export const OWNER_RULE_ID_PREFIX = "owner:";
@@ -40,14 +44,29 @@ export interface MailMatchParameters {
   readonly excludePhrases: readonly string[];
 }
 
+export const PUSH_QUIET_CLASSES = ["scheduled_reminder", "run_result", "mail_reminder"] as const;
+export type PushQuietClass = (typeof PUSH_QUIET_CLASSES)[number];
+export const PUSH_QUIET_DEFAULT_CLASSES: readonly PushQuietClass[] = Object.freeze([
+  "mail_reminder",
+  "run_result",
+]);
+const PUSH_QUIET_PERIOD_LIMIT = 8;
+
+export interface PushQuietParameters {
+  readonly periods: readonly QuietPeriod[];
+  readonly classes: readonly PushQuietClass[];
+}
+
+export type RuleParameters = MailMatchParameters | PushQuietParameters;
+
 export interface RuleTypeDefinition {
   readonly id: string;
   readonly gate: RuleGate;
   readonly outcome: RuleOutcome;
   readonly tests: string | null;
-  parse(value: unknown): MailMatchParameters;
-  expression(parameters: MailMatchParameters): string;
-  examples(parameters: MailMatchParameters): readonly RuleExample[];
+  parse(value: unknown): RuleParameters;
+  expression(parameters: RuleParameters): string;
+  examples(parameters: RuleParameters): readonly RuleExample[];
 }
 
 const MATCH_KEYS = [
@@ -194,8 +213,108 @@ function mailMatchType(id: string, outcome: RuleOutcome, tests: string | null): 
     outcome,
     tests,
     parse: parseMailMatch,
-    expression: mailMatchExpression,
-    examples: mailMatchExamples,
+    expression: (parameters: RuleParameters) =>
+      mailMatchExpression(parameters as MailMatchParameters),
+    examples: (parameters: RuleParameters) => mailMatchExamples(parameters as MailMatchParameters),
+  });
+}
+
+const CLOCK = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
+
+function parsePushQuiet(value: unknown): PushQuietParameters {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    invalid("规则参数必须是对象");
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record))
+    if (key !== "periods" && key !== "classes") invalid(`规则参数不认识 ${key}`);
+  const rawPeriods = record["periods"];
+  if (
+    !Array.isArray(rawPeriods) ||
+    rawPeriods.length === 0 ||
+    rawPeriods.length > PUSH_QUIET_PERIOD_LIMIT
+  )
+    invalid(`periods 必须是 1 到 ${PUSH_QUIET_PERIOD_LIMIT} 个静默时段`);
+  const periods: QuietPeriod[] = [];
+  for (const raw of rawPeriods) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+      invalid("静默时段必须是对象");
+    const item = raw as Record<string, unknown>;
+    for (const key of Object.keys(item))
+      if (key !== "days" && key !== "start" && key !== "end") invalid(`静默时段不认识 ${key}`);
+    const days = item["days"];
+    if (
+      !Array.isArray(days) ||
+      days.length === 0 ||
+      days.length > 7 ||
+      !days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    )
+      invalid("days 必须是 0（星期日）到 6（星期六）的整数列表");
+    const start = item["start"];
+    const end = item["end"];
+    if (
+      typeof start !== "string" ||
+      !CLOCK.test(start) ||
+      typeof end !== "string" ||
+      !CLOCK.test(end)
+    )
+      invalid("start 和 end 必须是 HH:MM（24 小时制）");
+    if (start === end) invalid("静默时段的开始和结束不能相同");
+    periods.push(
+      Object.freeze({
+        days: Object.freeze([...new Set(days as number[])].sort((left, right) => left - right)),
+        start,
+        end,
+      }),
+    );
+  }
+  const rawClasses = record["classes"];
+  let classes: readonly PushQuietClass[] = PUSH_QUIET_DEFAULT_CLASSES;
+  if (rawClasses !== undefined) {
+    if (
+      !Array.isArray(rawClasses) ||
+      rawClasses.length === 0 ||
+      rawClasses.length > PUSH_QUIET_CLASSES.length ||
+      !rawClasses.every((item) => (PUSH_QUIET_CLASSES as readonly unknown[]).includes(item))
+    )
+      invalid(`classes 只能从 ${PUSH_QUIET_CLASSES.join("、")} 里选`);
+    classes = Object.freeze(
+      PUSH_QUIET_CLASSES.filter((candidate) => (rawClasses as unknown[]).includes(candidate)),
+    );
+  }
+  return Object.freeze({
+    periods: Object.freeze(
+      [...periods].sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1)),
+    ),
+    classes,
+  });
+}
+
+function pushQuietExpression(parameters: PushQuietParameters): string {
+  return `push_class in ${celStringList(parameters.classes)} && (${quietHoursExpression(parameters.periods)})`;
+}
+
+function pushQuietExamples(parameters: PushQuietParameters): readonly RuleExample[] {
+  const covered = new Set<string>(parameters.classes);
+  const examples: RuleExample[] = [];
+  for (const pushClass of [...PUSH_QUIET_CLASSES, "approval", "muse_outage"] as const)
+    examples.push(
+      ...quietHoursExamples(parameters.periods, { push_class: pushClass }, (extra) =>
+        covered.has(String(extra["push_class"])),
+      ),
+    );
+  return Object.freeze(examples);
+}
+
+function pushQuietType(id: string, tests: string | null): RuleTypeDefinition {
+  return Object.freeze({
+    id,
+    gate: "push_delivery" as const,
+    outcome: "defer_to_quiet_hours" as const,
+    tests,
+    parse: parsePushQuiet,
+    expression: (parameters: RuleParameters) =>
+      pushQuietExpression(parameters as PushQuietParameters),
+    examples: (parameters: RuleParameters) => pushQuietExamples(parameters as PushQuietParameters),
   });
 }
 
@@ -209,6 +328,10 @@ export const RULE_TYPES: readonly RuleTypeDefinition[] = Object.freeze([
     "mail_read_whole_thread",
     "require_whole_thread",
     "packages/application/test/rule-type-mail-read-whole-thread.unit.test.ts",
+  ),
+  pushQuietType(
+    "push_quiet_hours",
+    "packages/application/test/rule-type-push-quiet-hours.unit.test.ts",
   ),
 ]);
 
@@ -241,7 +364,7 @@ export interface OwnerRuleRow {
 
 export interface OwnerRuleParameters {
   readonly type: string;
-  readonly params: MailMatchParameters;
+  readonly params: RuleParameters;
   readonly summary: string;
 }
 
@@ -292,16 +415,31 @@ export function ownerRuleRecord(
     examples: parsed.definition.examples(parsed.params),
   });
   if (!rule.examples.some(({ hit }) => hit))
-    invalid("排除词把所有该命中的邮件都排除了，这条规则不会生效");
+    invalid("这条规则按现在的参数不会命中任何情形，不会生效");
   assertRuleExamples(rule);
   return rule;
+}
+
+export function unreadablePushRule(
+  row: OwnerRuleRow,
+  registry: readonly RuleTypeDefinition[] = RULE_TYPES,
+): boolean {
+  if (!ruleIsEnforced(row.status) || enforceableOwnerRule(row, registry) !== undefined)
+    return false;
+  const text = typeof row.parameters === "string" ? row.parameters : JSON.stringify(row.parameters);
+  const declared =
+    typeof row.parameters === "object" && row.parameters !== null
+      ? (row.parameters as Record<string, unknown>)["type"]
+      : undefined;
+  if (typeof declared === "string" && declared.startsWith("push_")) return true;
+  return registry.some(({ id, gate }) => gate === "push_delivery" && (text ?? "").includes(id));
 }
 
 export function enforceableOwnerRule(
   row: OwnerRuleRow,
   registry: readonly RuleTypeDefinition[] = RULE_TYPES,
 ): RuleRecord | undefined {
-  if (row.status === "retired") return undefined;
+  if (!ruleIsEnforced(row.status)) return undefined;
   try {
     return ownerRuleRecord(row, registry);
   } catch (error) {

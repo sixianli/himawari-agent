@@ -15,6 +15,7 @@ import type {
   GatewayCommandResult,
   GatewayV2CommandExecution,
   GatewayV2ControlPlanePort,
+  GatewayV2QueryContext,
   GatewayV2ReadModelPort,
   GatewayV2StreamItem,
 } from "../ports/gateway.js";
@@ -209,8 +210,8 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
     this.#dependencies = dependencies;
   }
 
-  async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
-    if (!isGovernanceQuery(query)) return this.#dependencies.delegate.query(query);
+  async query(query: GatewayV2Query, context?: GatewayV2QueryContext): Promise<GatewayV2Snapshot> {
+    if (!isGovernanceQuery(query)) return this.#dependencies.delegate.query(query, context);
     this.#assertScope(query);
     switch (query.type) {
       case "approval.list": {
@@ -380,6 +381,21 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         expiresAt: approval.expiresAt,
         decidedAt: approval.decidedAt,
         grantId: approval.grantId,
+        display: approval.display
+          ? {
+              displayTitle: approval.display.displayTitle,
+              bodyPreview: approval.display.bodyPreview,
+              askedBecause:
+                approval.display.askedBecause.kind === "rule"
+                  ? {
+                      kind: "rule",
+                      ruleId: approval.display.askedBecause.ruleId,
+                      ruleText: approval.display.askedBecause.ruleText,
+                    }
+                  : { kind: "no_rule_allows", ruleId: null, ruleText: null },
+              origin: approval.display.origin,
+            }
+          : null,
         intent: {
           intentId: intent.id,
           threadId: intent.threadId,

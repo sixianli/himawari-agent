@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   auditInstalledDependencies,
   auditManifestDependencies,
@@ -25,6 +25,7 @@ import {
   validateToolchainLock,
   verifyDownload,
 } from "../../scripts/ci/install-tools.mjs";
+import { runnerTracking } from "../../scripts/ci/runner-tracking.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryDirectories = [];
@@ -77,7 +78,7 @@ describe("固定工具身份", () => {
       "ToolchainLock validation passed",
     );
   });
-  it("锁定双方平台、完整 Action SHA、扫描工具和 wheel 闭包", () => {
+  it("锁定每个平台、完整 Action SHA、扫描工具和 wheel 闭包", () => {
     const lock = loadToolchainLock(root);
     expect(validateToolchainLock(lock)).toBe(lock);
     expect(lock.actions.map((action) => action.repository).sort()).toEqual([
@@ -275,6 +276,34 @@ describe("固定工具身份", () => {
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.SEMGREP_SEND_METRICS).toBe("off");
     expect(env.PATH.split(":")[0]).toBe("/fixture/bin");
+    expect(runnerTracking({ RUNNER_TRACKING_ID: "github_fixture" })).toEqual({
+      RUNNER_TRACKING_ID: "github_fixture",
+    });
+    expect(runnerTracking({ RUNNER_TRACKING_ID: "" })).toEqual({});
+    expect(runnerTracking({})).toEqual({});
+    vi.stubEnv("RUNNER_TRACKING_ID", "github_fixture");
+    try {
+      const tracked = isolatedEnvironment(temporary(), "/fixture/bin");
+      expect(tracked.RUNNER_TRACKING_ID).toBe("github_fixture");
+      expect(
+        execFileSync(
+          process.execPath,
+          ["-e", "process.stdout.write(process.env.RUNNER_TRACKING_ID)"],
+          {
+            env: tracked,
+            encoding: "utf8",
+          },
+        ),
+      ).toBe("github_fixture");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv("RUNNER_TRACKING_ID", "");
+    try {
+      expect("RUNNER_TRACKING_ID" in isolatedEnvironment(temporary(), "/fixture/bin")).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

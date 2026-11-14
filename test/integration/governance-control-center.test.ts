@@ -2,6 +2,7 @@ import {
   ApplicationPortError,
   ApprovalService,
   actionIntentFingerprint,
+  approvalBodyPreview,
   CapabilityLifecycleService,
   type CapabilityManifest,
   type GatewayAuthenticationContext,
@@ -402,6 +403,45 @@ describe("S4 Task 11 governance Control Center boundary", () => {
     expect((await setup.authorization.getApproval(setup.approval.id))?.decidedAt).toBeNull();
   });
 
+  it("projects the display facts frozen at request time and keeps older approvals at null", async () => {
+    const setup = await fixture();
+    const intent = {
+      ...setup.approval.intentSnapshot,
+      id: "intent-display",
+      idempotencyKey: createIdempotencyKey("intent-display"),
+    };
+    await setup.authorization.createApproval({
+      ...setup.approval,
+      id: "approval-display",
+      intentId: intent.id,
+      intentSnapshot: intent,
+      semanticSnapshotHash: actionIntentFingerprint(intent),
+      display: {
+        displayTitle: null,
+        bodyPreview: approvalBodyPreview("rm -rf build\ncd ..\u001b[0m\u0000", 300),
+        askedBecause: { kind: "no_rule_allows" },
+        origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
+      },
+    } as typeof setup.approval);
+    const shown = await setup.reads.query(
+      query("approval.detail", "display-detail", { approvalRequestId: "approval-display" }),
+    );
+    expect(shown).toMatchObject({
+      payload: {
+        display: {
+          displayTitle: null,
+          bodyPreview: "rm -rf build\ncd ..\uFFFD[0m\uFFFD",
+          askedBecause: { kind: "no_rule_allows", ruleId: null, ruleText: null },
+          origin: { threadId: "thread-1", threadTitle: "周五去大阪" },
+        },
+      },
+    });
+    const legacy = await setup.reads.query(
+      query("approval.detail", "legacy-detail", { approvalRequestId: setup.approval.id }),
+    );
+    expect(legacy).toMatchObject({ payload: { display: null } });
+  });
+
   it("projects frozen Approval and Grant truth, then resolves and revokes with revision and idempotency", async () => {
     const setup = await fixture();
     const approvalBefore = await setup.reads.query(
@@ -419,6 +459,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
         semanticSnapshotHash: setup.approval.semanticSnapshotHash,
         recentAuthenticationRequired: true,
         trueResultRef: `result:${setup.approval.id}`,
+        display: null,
         intent: {
           capabilityRef: "governed-ui-tool",
           resourceRefs: ["workspace:governed-ui"],

@@ -55,6 +55,7 @@ export interface SandboxJobSessionReady {
 
 export interface SandboxJobSession {
   readonly pid: number | undefined;
+  readonly spawned: Promise<number | undefined>;
   readonly ready: Promise<SandboxJobSessionReady>;
   readonly result: Promise<JobHostResult>;
   run(input: JobHostRunInput, authorize: () => Promise<void>): SandboxJobSessionRun;
@@ -450,7 +451,10 @@ export function prepareSandboxJobSession(
   });
   send({ type: "prepare", request, session: true });
   return Object.freeze({
-    pid: child.pid,
+    get pid() {
+      return child.pid;
+    },
+    spawned: child.spawned,
     ready,
     result,
     inspect,

@@ -23,6 +23,7 @@ import {
   applyMigrations,
   loadBundledMigrations,
   openQualifiedDatabase,
+  readSchemaIdentity,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -308,6 +309,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             sourceDatabasePath: resource.databasePath,
             snapshotPath,
             schemaSequence: 25,
+            schemaFingerprint: readSchemaIdentity(database).fingerprint,
             digest: createHash("sha256")
               .update(await readFile(snapshotPath))
               .digest("hex"),
@@ -1257,7 +1259,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await expect(recovery.listClaimable({ now: LATER, limit: 1 })).resolves.toEqual([]);
         await expect(
           recovery.listReconciliationRequired({ now: LATER, limit: 1 }),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual([
+          expect.objectContaining({
+            runId: resource.runId,
+            action: "reconcile",
+            runStatus: "reconciling_external_result",
+            checkpointPhase: "reconciling_external_result",
+            runRevision: 2,
+          }),
+        ]);
         await recovery.quarantine({
           runId: resource.runId,
           expectedRunRevision: 2,

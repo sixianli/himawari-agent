@@ -54,7 +54,7 @@ function fixture() {
     mkdirSync(output, { recursive: true });
     const projects = check.projects.map((id) => ({ id, counts: count() }));
     const total = Math.max(1, projects.length);
-    const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+    const platform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       write(
@@ -176,7 +176,7 @@ describe("生产验收 CI 证据交接边界", () => {
     expect(evidence.status).toBe("ci_verified");
     expect(evidence.productQualification).toBe("not_assessed");
     expect(evidence.platforms).toHaveLength(1);
-    expect(evidence.checks).toHaveLength(8);
+    expect(evidence.checks).toHaveLength(9);
     expect(evidence.pending).toHaveLength(5);
     expect(evidence.pending).toContain("双平台运行、故障恢复与核心升级验证");
     expect(evidence.pending).toContain("Mac/Hermes 平台执行隔离验证");

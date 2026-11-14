@@ -1,0 +1,3 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "全局过滤抽取提示，顺手削弱了两条“零调用”反向断言", "valid": true, "class": "error", "severity": "low", "trigger": "以后产品在没有新邮件或提醒关闭时仍调用单号抽取", "consequence": "这两条反向测试拦不住；产品代码当前没有这个问题", "modelSeverity": "medium"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "防泄露裁判替身恒答 `false`，且没有断言它真的被调用", "valid": true, "class": "error", "severity": "low", "trigger": "以后服务漏接防泄露裁判", "consequence": "这份集成测试照样通过；单元测试已有泄露正反向用例", "modelSeverity": "low"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "合并提交不只是“CI 日志和复核记录”", "valid": false, "class": "better"}

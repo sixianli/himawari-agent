@@ -48,7 +48,9 @@ import BetterSqlite3 from "better-sqlite3";
 import {
   applyMigrations,
   createVerifiedMigrationSnapshot,
+  describeMigrationSet,
   loadBundledMigrations,
+  readSchemaIdentity,
 } from "./migration-engine.js";
 import { acquireStateRootLock } from "./state-root-lock.js";
 
@@ -783,6 +785,15 @@ export class SqliteAuthorityTransferAdapter implements AuthorityTransferPort {
           throw new AuthorityTransferError(
             AUTHORITY_TRANSFER_ERROR_CODES.SCHEMA_INCOMPATIBLE,
             "Authority-transfer package schema is newer than this runtime",
+          );
+        }
+        if (
+          currentSequence === expectedSequence &&
+          readSchemaIdentity(database).fingerprint !== describeMigrationSet(migrations).fingerprint
+        ) {
+          throw new AuthorityTransferError(
+            AUTHORITY_TRANSFER_ERROR_CODES.SCHEMA_INCOMPATIBLE,
+            "Authority-transfer package applied a different set of migrations than this runtime",
           );
         }
         if (currentSequence < expectedSequence) {

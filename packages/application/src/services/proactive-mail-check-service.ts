@@ -5,6 +5,7 @@ import {
   MAIL_JUDGMENT_MEMORIES_HEADER,
   MAIL_JUDGMENT_TENTATIVE_NOTE,
   MAIL_JUDGMENT_NOW,
+  MAIL_REFERENCE_EXTRACTION,
   MAIL_JUDGMENT_RECENT_SUMMARIES_HEADER,
   renderPrompt,
 } from "@himawari-agent/prompt-catalog";
@@ -47,6 +48,7 @@ import {
   locateMaskedValues,
   maskSensitiveText,
 } from "@himawari-agent/sensitive-capture";
+import { parseMailReferences } from "./proactive-references.js";
 import { mailBodyWindow, plainModelText, windowMailBody } from "./proactive-mail-body.js";
 import {
   applyFloor,
@@ -61,7 +63,12 @@ import {
   startOfZonedDay,
   suppressPushHits,
 } from "./proactive-rules.js";
-import { type MailAmount, parseMailAmount } from "../rules/amount.js";
+import {
+  type MailAmount,
+  type MoneyState,
+  parseMailAmount,
+  parseMailMoney,
+} from "../rules/amount.js";
 import { assertRuleExamples, type RuleRecord, ruleBookFor } from "../rules/rule-book.js";
 import { enforceableOwnerRule } from "../rules/rule-types.js";
 import type { OwnerRuleStorePort } from "../ports/owner-rules.js";
@@ -82,6 +89,7 @@ export interface ProactiveModelAuthority {
 export interface ProactiveModelInvoker {
   readonly model: ModelPort;
   readonly modelRef: string;
+  readonly allowedDataClassifications: readonly DataClassification[];
   prepare(input: {
     readonly invocationId: string;
     readonly prompt: string;
@@ -238,6 +246,7 @@ interface Judgement {
   readonly priority: ProactivePriority | null;
   readonly usedMemoryIds: readonly string[];
   readonly amount: MailAmount;
+  readonly money: MoneyState;
 }
 
 type Stop = "capped" | "capped_daily" | "failed" | null;
@@ -434,6 +443,23 @@ function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMa
   return view;
 }
 
+export function mailReferencePrompt(
+  items: readonly ProactiveSourceItem[],
+  bodyLimit: number,
+): string {
+  return [
+    MAIL_REFERENCE_EXTRACTION.text,
+    JSON.stringify(
+      items.map((item) => {
+        const { id, subject, body, snippet } = proactiveMailView(item, bodyLimit).json;
+        return { id, subject, ...(body === undefined ? { snippet } : { body }) };
+      }),
+    ),
+  ].join("\n");
+}
+
+const REFERENCE_SHARE_DENOMINATOR = 10;
+
 export function proactivePrompt(
   items: readonly ProactiveSourceItem[],
   now: string,
@@ -571,6 +597,7 @@ export function parseJudgements(
       todo: plainModelText(typeof entry["todo"] === "string" ? entry["todo"] : "", 200),
       reason: plainModelText(typeof entry["reason"] === "string" ? entry["reason"] : "", 200),
       dueAt: instant(entry["dueAt"]),
+      money: parseMailMoney(entry["money"]),
       amount: parseMailAmount(
         ["act", "know", "check"].includes(result as string) ? entry["amount"] : undefined,
         bodyComplete(item),
@@ -644,12 +671,50 @@ export class ProactiveMailCheckService {
     return rules;
   }
 
+  async #references(
+    candidates: readonly ProactiveSourceItem[],
+    deadlineAt: string,
+    signal: AbortSignal,
+    trace: CheckTrace,
+    budget: { readonly spentToday: number; readonly reserveMicros: number; costMicros: number },
+  ): Promise<ReadonlyMap<string, readonly string[]>> {
+    const references = new Map<string, readonly string[]>();
+    const perMail = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail;
+    const size = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
+    const allowance = Math.floor(
+      this.#options.limits.dailyCostMicros / REFERENCE_SHARE_DENOMINATOR,
+    );
+    let planned = 0;
+    for (let start = 0; start < candidates.length; start += size) {
+      if (signal.aborted) break;
+      const batch = candidates.slice(start, start + size);
+      const prompt = mailReferencePrompt(batch, perMail);
+      const estimate = this.#options.limits.estimateCostMicros(prompt);
+      if (planned + estimate > allowance) break;
+      planned += estimate;
+      if (
+        budget.spentToday + budget.costMicros + budget.reserveMicros + estimate >
+        this.#options.limits.dailyCostMicros
+      )
+        break;
+      try {
+        const call = await this.#invoke(prompt, "private", deadlineAt, signal, trace);
+        budget.costMicros += call.costMicros;
+        if (call.failure !== null || !call.completed) continue;
+        for (const [id, found] of parseMailReferences(call.output, batch))
+          references.set(id, found);
+      } catch {}
+    }
+    return references;
+  }
+
   async #related(
     token: string,
     allCandidates: readonly ProactiveSourceItem[],
     wholeThread: ReadonlySet<string>,
     signal: AbortSignal,
     trace: CheckTrace,
+    references: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<ReadonlyMap<string, RelatedView>> {
     const { reader, clock } = this.#options;
     const views = new Map<string, RelatedView>();
@@ -668,6 +733,7 @@ export class ProactiveMailCheckService {
         items: candidates,
         limits,
         ...(wholeThread.size > 0 ? { wholeThread } : {}),
+        references,
         signal,
       });
       requests = fetched.requests;
@@ -844,6 +910,60 @@ export class ProactiveMailCheckService {
       const hits = wholeThreadHitIds(item, rules);
       if (hits.length > 0) wholeThreadHits.set(item.messageId, hits);
     }
+    const referenceSignal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 6)),
+    ]);
+    const referenceReserveMicros =
+      candidates.length === 0
+        ? 0
+        : this.#options.limits.estimateCostMicros(
+            proactivePrompt(
+              this.#fitBatch(
+                candidates,
+                this.#options.batchSize ?? DEFAULT_BATCH_SIZE,
+                { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits },
+                new Map<string, RelatedView>(),
+              ),
+              startedAt,
+              this.#options.timeZone,
+              [],
+              { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits }.perMail,
+              new Map<string, RelatedView>(),
+              this.#summariesOff()
+                ? []
+                : [
+                    {
+                      id: "reserve",
+                      day: startedAt.slice(0, 10),
+                      text: "。".repeat(
+                        Math.max(
+                          0,
+                          { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits }
+                            .characters,
+                        ),
+                      ),
+                      dataClassification: "private",
+                    },
+                  ],
+            ),
+          );
+    const referenceBudget = {
+      spentToday,
+      reserveMicros: referenceReserveMicros,
+      costMicros: 0,
+    };
+    const references =
+      spentToday >= this.#options.limits.dailyCostMicros ||
+      this.#options.reader.related === undefined ||
+      this.#relatedLimits().perMail < 1
+        ? new Map<string, readonly string[]>()
+        : await this.#references(candidates, deadlineAt, referenceSignal, trace, referenceBudget);
+    costMicros += referenceBudget.costMicros;
+    const relatedSignal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
+    ]);
     const relatedViews =
       spentToday >= this.#options.limits.dailyCostMicros
         ? new Map<string, RelatedView>()
@@ -851,11 +971,9 @@ export class ProactiveMailCheckService {
             token,
             candidates,
             new Set(wholeThreadHits.keys()),
-            AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(Math.floor(this.#options.limits.perCheckMs / 2)),
-            ]),
+            relatedSignal,
             trace,
+            references,
           );
     const bodyLimits = { ...DEFAULT_PROACTIVE_BODY_LIMITS, ...this.#options.bodyLimits };
     let batchSize = this.#options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -874,7 +992,7 @@ export class ProactiveMailCheckService {
               this.#batchMemories(firstBatch, recalled.hits),
               bodyLimits.perMail,
               relatedViews,
-              this.#options.recentSummaries === undefined
+              this.#summariesOff()
                 ? []
                 : [
                     {
@@ -887,7 +1005,7 @@ export class ProactiveMailCheckService {
             ),
           );
     const summaryBudget = {
-      spentToday: spentToday + recalled.costMicros,
+      spentToday: spentToday + referenceBudget.costMicros + recalled.costMicros,
       reserveMicros: judgmentReserveMicros,
       costMicros: 0,
     };
@@ -969,10 +1087,12 @@ export class ProactiveMailCheckService {
     const ruleHits: Record<string, readonly string[]> = {};
     const settled = new Map<string, { readonly result: ProactiveResult; readonly sure: boolean }>();
     for (const item of candidates) {
-      const floorIds = item.sentByOwner ? [] : floorHitIds(item, rules);
+      const judgement = judged.get(item.messageId);
+      const floorIds = item.sentByOwner
+        ? []
+        : floorHitIds(item, rules, judgement?.money ?? "unknown");
       const floor = floorIds.length > 0;
       if (floor) floorHits[item.messageId] = floorIds;
-      const judgement = judged.get(item.messageId);
       if (!judgement) {
         const ruled =
           stop === "capped_daily" && !item.sentByOwner
@@ -1389,6 +1509,16 @@ export class ProactiveMailCheckService {
       costMicros,
       failure: truncated ? "MODEL_OUTPUT_TRUNCATED" : "MODEL_OUTPUT_INVALID",
     };
+  }
+
+  #summariesOff(): boolean {
+    const limits = { ...DEFAULT_PROACTIVE_SUMMARY_LIMITS, ...this.#options.summaryLimits };
+    return (
+      this.#options.recentSummaries === undefined ||
+      limits.days < 1 ||
+      limits.perCheck < 1 ||
+      limits.characters < 1
+    );
   }
 
   async #summaries(

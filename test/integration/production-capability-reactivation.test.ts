@@ -224,8 +224,7 @@ async function fixture(
         };
       },
     },
-    capabilityLifecycle,
-    capabilityReactivationAvailable: reactivation !== undefined,
+    ...(reactivation ? { capabilityReactivation: reactivation } : {}),
   });
   const authentication = {
     ownerId: OWNER_ID,

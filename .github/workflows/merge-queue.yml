@@ -1,0 +1,38 @@
+name: Merge queue
+on:
+  workflow_dispatch:
+    inputs:
+      resume:
+        description: 人工检查过停下的原因后填 true，让队列继续
+        type: boolean
+        default: false
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  checks: read
+concurrency:
+  group: merge-queue
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  queue:
+    name: merge-queue
+    runs-on: ci-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 推进合并队列
+        env:
+          HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}
+          MQ_RESUME: ${{ inputs.resume || false }}
+        run: node scripts/ci/merge-queue.mjs

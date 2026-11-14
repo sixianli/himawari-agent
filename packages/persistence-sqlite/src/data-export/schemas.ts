@@ -1,3 +1,4 @@
+import { DECISION_KINDS } from "@himawari-agent/application/decision-ledger";
 import type { JsonSchema } from "./schema.js";
 
 export const FORMAT_VERSION = "himawari.data-export.v3" as const;
@@ -150,6 +151,22 @@ export const IMPORT_BATCH_SCHEMA: JsonSchema = objectOf(
   "一次从别处导入记忆的批次。",
 );
 
+export const PAIRED_DEVICE_SCHEMA: JsonSchema = objectOf(
+  {
+    id: { type: "string", pattern: "^dev_[A-Za-z0-9_-]{22}$" },
+    kind: enumOf(["iphone", "watch", "mac"]),
+    name: text(1, 256),
+    releaseChannel: enumOf(["direct", "testflight", "app_store", "mac_direct"]),
+    status: enumOf(["pending", "active", "revoked"]),
+    pairedAt: timestamp,
+    confirmedAt: nullable(timestamp),
+    revokedAt: nullable(timestamp),
+    lastSeenAt: nullable(timestamp),
+  },
+  [],
+  "一台配对过的 iPhone、Apple Watch 或 Mac：名字、种类、状态。只供查看，导入时不恢复；公钥、配对码和请求随机值是凭据，不导出。",
+);
+
 export const EXTERNAL_PROPOSAL_CATEGORIES = [
   "identity",
   "preference",
@@ -197,6 +214,94 @@ export const EXTERNAL_PROPOSAL_SCHEMA: JsonSchema = objectOf(
   },
   [],
   "其他 agent 通过 MCP 提议的一条记忆和它的处理结果。content 为 null 表示正文已按规则删掉（拒绝满 30 天，或被替换）。content 被扣留时 textSha256 为 null，摘要和原文一起在密封文件里。keys 是各客户端的固定编号现在指向这一条的；unkeyedClients 是不带编号送过这段正文的客户端。",
+);
+
+const exportedPayload = nullable({ type: "object" });
+const scalarMap: JsonSchema = { type: "object" };
+const day: JsonSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
+
+export const PERCEPTION_RECORD_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    type: text(1, 64),
+    origin: enumOf(["owner_spoken", "other"]),
+    captureSource: text(1, 64),
+    occurredAt: timestamp,
+    deviceTime: text(1, 64),
+    localDay: day,
+    deviceId: text(1, 64),
+    confidence: permille,
+    speakerKind: nullable(text(1, 32)),
+    speakerRef: nullable(text(1, 128)),
+    episodeId: nullable(text(1, 128)),
+    classification: enumOf(CLASSIFICATIONS),
+    evidence: scalarMap,
+    content: exportedPayload,
+  },
+  [],
+  "一条感知记录：设备感知到的一件事。origin 是服务器定的，只有认出是主人亲口说的才是 owner_spoken。只供查看，导入时不恢复。",
+);
+
+export const PERCEPTION_EPISODE_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    startedAt: timestamp,
+    endedAt: timestamp,
+    localDay: day,
+    recordCount: integer(0),
+  },
+  [],
+  "一段经历：时间上连在一起的一段对话。只供查看，导入时不恢复。",
+);
+
+export const DEVICE_MIRROR_ITEM_SCHEMA: JsonSchema = objectOf(
+  {
+    deviceId: text(1, 64),
+    kind: text(1, 64),
+    externalId: text(1, 256),
+    version: integer(0),
+    updatedAt: timestamp,
+    data: scalarMap,
+  },
+  [],
+  "设备上日历、提醒事项、通讯录、家居配件在服务器的一份副本。只供查看，导入时不恢复。",
+);
+
+export const TRACK_POINT_SCHEMA: JsonSchema = objectOf(
+  {
+    deviceId: text(1, 64),
+    occurredAt: timestamp,
+    latitude: { type: "number", minimum: -90, maximum: 90 },
+    longitude: { type: "number", minimum: -180, maximum: 180 },
+    accuracyMeters: nullable({ type: "number", minimum: 0 }),
+    speedMetersPerSecond: nullable({ type: "number", minimum: 0 }),
+  },
+  [],
+  "一个轨迹点。只供查看，导入时不恢复。",
+);
+
+export const PERCEPTION_SETTINGS_SCHEMA: JsonSchema = objectOf(
+  {
+    disabledSenses: { type: "array", items: text(1, 32) },
+    pausedFrom: nullable(timestamp),
+    pausedUntil: nullable(timestamp),
+    retentionDays: scalarMap,
+    limitOverrides: scalarMap,
+    updatedAt: timestamp,
+  },
+  [],
+  "感知的设置：关掉的感官、暂停时段、保留天数、改过的上限。只供查看，导入时不恢复。",
+);
+
+export const LIMIT_USAGE_SCHEMA: JsonSchema = objectOf(
+  {
+    key: text(1, 128),
+    periodStart: timestamp,
+    deviceId: nullable(text(1, 64)),
+    used: integer(0),
+  },
+  [],
+  "某个上限在某一天的已用量；deviceId 有值的是设备自己报的数。只供查看，导入时不恢复。",
 );
 
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
@@ -263,15 +368,7 @@ export const CONVERSATION_REVIEW_SCHEMA: JsonSchema = objectOf(
 export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 128),
-    kind: enumOf([
-      "proactive",
-      "memory_candidate",
-      "consolidation",
-      "context_truncation",
-      "retrieval_degrade",
-      "external_read",
-      "rule_review",
-    ]),
+    kind: enumOf(DECISION_KINDS),
     scenario: nullable(enumOf(["gmail"])),
     checkedAt: timestamp,
     counts: { type: "object" },
@@ -309,7 +406,12 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
   "一条决策记录：系统每次由模型做出的门槛决策，以及你的评价和之后的反应。成本和耗时对应模型调用部分：costMicros 是这次调用的花费（百万分之一美元），durationMs 是耗时；模型输入输出原文属于证据，默认不导出。",
 );
 
-const RULE_STATUSES = ["active", "needs_review", "retired"] as const;
+const RULE_STATUSES = ["active", "needs_review", "suspended", "retired"] as const;
+const RULE_SUSPEND_REASONS = [
+  "source_removed",
+  "no_longer_standing",
+  "parameters_changed",
+] as const;
 export const RULE_PARAMETERS_MAXIMUM_LENGTH = 262_144;
 export const MAXIMUM_LINE_LENGTH = 64 * 1024 * 1024;
 
@@ -327,6 +429,7 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
     ruleId: text(1, 64),
     ...ruleVersionFields,
     updatedAt: timestamp,
+    suspendReason: enumOf(RULE_SUSPEND_REASONS),
     history: {
       type: "array",
       items: objectOf(
@@ -339,8 +442,8 @@ export const RULE_SCHEMA: JsonSchema = objectOf(
       ),
     },
   },
-  ["withheld"],
-  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。",
+  ["withheld", "suspendReason"],
+  "规则手册里存下来的一条规则：当前版本加全部修订历史（历史最后一版就是当前版本）。parameters 是规则参数在库里存的 JSON 原文（逐字保留，用 JSON 解析即可读）；表达式由程序按参数生成，所以不导出表达式。withheld 为 true 时参数里有机密，或者库里存的原文不是写规则的程序会写出的形式（例如带重复的键），parameters 是遮盖后的 JSON，原文在密封文件里（key 为 rule/<ruleId>/parameters 和 rule/<ruleId>/history/<revision>/parameters）。产品自带的规则随版本发布，不在这里。status 为 suspended 时规则已暂停、不执行，suspendReason 写明原因（source_removed 出处记忆没了，no_longer_standing 主人改口不要了，parameters_changed 主人改了条件）；挂起时系统算出的建议值不导出。",
 );
 
 const payloadText = EXPORTED_TEXT_SCHEMA;
@@ -471,6 +574,13 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       memoryHistoryEvents: integer(0),
       people: integer(0),
       importBatches: integer(0),
+      pairedDevices: integer(0),
+      perceptionRecords: integer(0),
+      perceptionEpisodes: integer(0),
+      deviceMirrorItems: integer(0),
+      trackPoints: integer(0),
+      perceptionSettings: integer(0),
+      limitUsage: integer(0),
       consolidations: integer(0),
       consolidationChanges: integer(0),
       conversationReviews: integer(0),
@@ -490,6 +600,13 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "memoryHistoryEvents",
       "people",
       "importBatches",
+      "pairedDevices",
+      "perceptionRecords",
+      "perceptionEpisodes",
+      "deviceMirrorItems",
+      "trackPoints",
+      "perceptionSettings",
+      "limitUsage",
       "consolidations",
       "consolidationChanges",
       "conversationReviews",
@@ -527,25 +644,66 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
     { path: "schema/consolidations.schema.json", schema: CONSOLIDATION_SCHEMA },
     { path: "schema/conversation-reviews.schema.json", schema: CONVERSATION_REVIEW_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
+    { path: "schema/device-mirror-items.schema.json", schema: DEVICE_MIRROR_ITEM_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
     { path: "schema/external-memory-proposals.schema.json", schema: EXTERNAL_PROPOSAL_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
+    { path: "schema/limit-usage.schema.json", schema: LIMIT_USAGE_SCHEMA },
     { path: "schema/manifest.schema.json", schema: MANIFEST_SCHEMA },
     { path: "schema/memories.schema.json", schema: MEMORY_SCHEMA },
+    { path: "schema/paired-devices.schema.json", schema: PAIRED_DEVICE_SCHEMA },
     { path: "schema/people.schema.json", schema: PERSON_SCHEMA },
+    { path: "schema/perception-episodes.schema.json", schema: PERCEPTION_EPISODE_SCHEMA },
+    { path: "schema/perception-records.schema.json", schema: PERCEPTION_RECORD_SCHEMA },
+    { path: "schema/perception-settings.schema.json", schema: PERCEPTION_SETTINGS_SCHEMA },
     { path: "schema/rules.schema.json", schema: RULE_SCHEMA },
+    { path: "schema/track-points.schema.json", schema: TRACK_POINT_SCHEMA },
   ]);
 
 export const DATA_FILES = Object.freeze({
   memories: "data/memories.jsonl",
   people: "data/people.jsonl",
   importBatches: "data/import-batches.jsonl",
+  pairedDevices: "data/paired-devices.jsonl",
+  perceptionRecords: "data/perception-records.jsonl",
+  perceptionEpisodes: "data/perception-episodes.jsonl",
+  deviceMirrorItems: "data/device-mirror-items.jsonl",
+  trackPoints: "data/track-points.jsonl",
+  perceptionSettings: "data/perception-settings.jsonl",
+  limitUsage: "data/limit-usage.jsonl",
   consolidations: "data/consolidations.jsonl",
   conversationReviews: "data/conversation-reviews.jsonl",
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
   externalProposals: "data/external-memory-proposals.jsonl",
 } as const);
+
+export const PERCEPTION_FILE_KEYS = [
+  "perceptionRecords",
+  "perceptionEpisodes",
+  "deviceMirrorItems",
+  "trackPoints",
+  "perceptionSettings",
+  "limitUsage",
+] as const;
+export type PerceptionFileKey = (typeof PERCEPTION_FILE_KEYS)[number];
+
+export const PERCEPTION_FILE_SCHEMAS: Readonly<Record<PerceptionFileKey, JsonSchema>> =
+  Object.freeze({
+    perceptionRecords: PERCEPTION_RECORD_SCHEMA,
+    perceptionEpisodes: PERCEPTION_EPISODE_SCHEMA,
+    deviceMirrorItems: DEVICE_MIRROR_ITEM_SCHEMA,
+    trackPoints: TRACK_POINT_SCHEMA,
+    perceptionSettings: PERCEPTION_SETTINGS_SCHEMA,
+    limitUsage: LIMIT_USAGE_SCHEMA,
+  });
+
+export const EMPTY_PERCEPTION_COUNTS: Readonly<Record<PerceptionFileKey, number>> = Object.freeze(
+  Object.fromEntries(PERCEPTION_FILE_KEYS.map((key) => [key, 0])) as Record<
+    PerceptionFileKey,
+    number
+  >,
+);
 
 export const SEALED_FILE = "sealed/sealed.enc";
 export const MANIFEST_FILE = "manifest.json";

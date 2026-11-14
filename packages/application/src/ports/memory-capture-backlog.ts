@@ -26,5 +26,6 @@ export interface MemoryCaptureBacklogPort {
     readonly errorCode: string;
     readonly updatedAt: string;
   }): Promise<number>;
+  has(generationId: string): Promise<boolean>;
   remove(generationId: string): Promise<void>;
 }

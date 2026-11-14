@@ -67,7 +67,7 @@ describe("control center information architecture inventory", () => {
     expect(isSurfaceInstalled(capabilities, [])).toBe(false);
     expect(
       CONTROL_CENTER_SURFACE_INVENTORY.filter(
-        ({ mutationsOfferedWhenInstalled }) => mutationsOfferedWhenInstalled,
+        (surface) => "mutationsOfferedWhenInstalled" in surface,
       ).map(({ id }) => id),
     ).toEqual(["capabilities-adapters"]);
   });

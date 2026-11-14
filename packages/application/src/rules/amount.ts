@@ -54,3 +54,9 @@ export function parseMailAmount(raw: unknown, bodyComplete: boolean): MailAmount
   const sure = entry["confidence"] === "sure" && bodyComplete;
   return Object.freeze({ state: sure ? "known" : "uncertain", minor, currency });
 }
+
+export type MoneyState = "yes" | "no" | "unknown";
+
+export function parseMailMoney(raw: unknown): MoneyState {
+  return raw === "yes" || raw === "no" ? raw : "unknown";
+}

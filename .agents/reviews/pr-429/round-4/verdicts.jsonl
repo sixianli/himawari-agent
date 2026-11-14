@@ -1,0 +1,5 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 中低：旧版控制中心会拒绝新增字段，作者「网页暂无消费者」的说法不完整", "valid": false, "class": "error", "reason": "同前几轮：网页和 iOS 与服务器同版本发布；已写进 PR 描述，不改"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中低：`quote` 的「回收站 / 永久删除 / 分级不可见」分支没有自动检查", "valid": false, "class": "better", "reason": "测试覆盖建议：删除分支已有用例覆盖实际路径，其余状态分支加参数化用例可以更好；不改，列给 Andy"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低：新端口只有 `decisionId` 在消费端按网关契约过滤，`at` / `kind` 未在产生端校验，且规则是重复实现", "valid": false, "class": "better", "reason": "产生端统一校验、导出 machineString 的重构建议；当前生产写入已校验，不改"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低：无 UI 消费者时，新查询已经在每次刷新做逐规则数据库扫描和记忆解密", "valid": false, "class": "better", "reason": "性能推测，同前；不改"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低 / 待产品确认：`archived` / `superseded` 来源记忆仍返回原话，`changes` 统计包含状态变化", "valid": false, "class": "better", "reason": "需产品确认：被取代、已归档来源是否隐藏原话；不改，列给 Andy"}

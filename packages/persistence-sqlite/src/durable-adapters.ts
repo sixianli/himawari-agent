@@ -17,6 +17,7 @@ import type {
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  HomeUrgencyStorePort,
   LedgerObservationPort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -27,20 +28,26 @@ import type {
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
+  MemoryReviewStorePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
   ModelUsageStorePort,
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
+  PairedDeviceStorePort,
   PayloadStorePort,
+  PerceptionStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
   RealEvalStorePort,
   ReliableEventPort,
   ReliableEventSinkPort,
   ReviewPrereviewStorePort,
+  RuleReviewOwnerStorePort,
+  RuleReviewStorePort,
   RunCheckpointStore,
   RunDispatchCandidate,
   RunDispatchPort,
@@ -174,6 +181,8 @@ export class SqliteDurableAdapters {
         }),
       listBackgroundRuns: () =>
         this.context.read("runLifecycle.listBackground", { ownerId, agentId, now: now() }),
+      listUnattendedRuns: (input) =>
+        this.context.read("runLifecycle.listUnattended", { ownerId, agentId, ...input }),
     });
   }
 
@@ -943,6 +952,7 @@ export class SqliteDurableAdapters {
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       readBasis: (changeId) => this.context.read("memoryConsolidation.readBasis", { changeId }),
       readBasisChain: (input) => this.context.read("memoryConsolidation.readBasisChain", input),
+      readDerived: (input) => this.context.read("memoryConsolidation.readDerived", input),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
     });
   }
@@ -1008,6 +1018,15 @@ export class SqliteDurableAdapters {
     });
   }
 
+  homeUrgency(): HomeUrgencyStorePort {
+    return Object.freeze<HomeUrgencyStorePort>({
+      listScores: (input) => this.context.read("homeUrgency.listScores", input),
+      listRecentFailures: (input) => this.context.read("homeUrgency.listRecentFailures", input),
+      countSince: (input) => this.context.read("homeUrgency.countSince", input),
+      recordCall: (input) => this.context.write("homeUrgency.recordCall", input),
+    });
+  }
+
   ownerRules(): OwnerRuleStorePort {
     return Object.freeze<OwnerRuleStorePort>({
       list: (input) => this.context.read("ownerRule.list", input),
@@ -1017,11 +1036,43 @@ export class SqliteDurableAdapters {
     });
   }
 
+  ownerProposals(): OwnerProposalStorePort {
+    return Object.freeze<OwnerProposalStorePort>({
+      propose: (input) => this.context.write("ownerProposal.propose", input),
+      read: (input) => this.context.write("ownerProposal.read", input),
+      listPending: (input) => this.context.write("ownerProposal.listPending", input),
+      decide: (input) => this.context.write("ownerProposal.decide", input),
+      settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
+      clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
+    });
+  }
+
+  ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
+    return Object.freeze<RuleReviewStorePort & RuleReviewOwnerStorePort>({
+      listDue: (input) => this.context.read("ruleReview.listDue", input),
+      resolve: (input) => this.context.write("ruleReview.resolve", input),
+      recordFailure: (input) => this.context.write("ruleReview.recordFailure", input),
+      listOpen: (input) => this.context.read("ruleReview.listOpen", input),
+      act: (input) => this.context.write("ruleReview.act", input),
+    });
+  }
+
+  memoryReviews(): MemoryReviewStorePort {
+    return Object.freeze<MemoryReviewStorePort>({
+      expand: (input) => this.context.write("memoryReview.expand", input),
+      listOpen: (input) => this.context.read("memoryReview.listOpen", input),
+      resolve: (input) => this.context.write("memoryReview.resolve", input),
+      reportMissed: (input) => this.context.write("memoryReview.reportMissed", input),
+      agreement: (input) => this.context.read("memoryReview.agreement", input),
+    });
+  }
+
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
     return Object.freeze<MemoryCaptureBacklogPort>({
       enqueue: (entry) => this.context.write("memoryCaptureBacklog.enqueue", { entry }),
       oldest: (input) => this.context.read("memoryCaptureBacklog.oldest", input),
       recordAttempt: (input) => this.context.write("memoryCaptureBacklog.recordAttempt", input),
+      has: (generationId) => this.context.read("memoryCaptureBacklog.has", { generationId }),
       remove: (generationId) => this.context.write("memoryCaptureBacklog.remove", { generationId }),
     });
   }
@@ -1051,6 +1102,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<MemoryReminderStorePort>({
       schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
+      countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
@@ -1060,6 +1112,7 @@ export class SqliteDurableAdapters {
     return Object.freeze<ProactiveStorePort>({
       readSettings: (input) => this.context.read("proactive.readSettings", input),
       writeSettings: (input) => this.context.write("proactive.writeSettings", input),
+      setEnabled: (input) => this.context.write("proactive.setEnabled", input),
       readConnection: (input) => this.context.read("proactive.readConnection", input),
       saveConnection: (input) => this.context.write("proactive.saveConnection", input),
       markConnection: (input) => this.context.write("proactive.markConnection", input),
@@ -1114,6 +1167,7 @@ export class SqliteDurableAdapters {
       rateMany: (input) => this.context.write("decisionLedger.rateMany", input),
       recordMuse: (input) => this.context.write("decisionLedger.recordMuse", input),
       listMuse: (input) => this.context.read("decisionLedger.listMuse", input),
+      lastRuleUses: (input) => this.context.read("decisionLedger.lastRuleUses", input),
       listSignals: (input) => this.context.read("decisionLedger.listSignals", input),
       readCalibrationRows: (input) =>
         this.context.read("decisionLedger.readCalibrationRows", input),
@@ -1166,6 +1220,60 @@ export class SqliteDurableAdapters {
     });
   }
 
+  pairedDevices(): PairedDeviceStorePort {
+    return Object.freeze<PairedDeviceStorePort>({
+      createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
+      redeemPairingCode: (input) => this.context.write("pairedDevices.redeemPairingCode", input),
+      readDevice: (deviceId) => this.context.read("pairedDevices.readDevice", deviceId),
+      listDevices: (input) => this.context.read("pairedDevices.listDevices", input),
+      readOpenPairingCode: (input) => this.context.read("pairedDevices.readOpenPairingCode", input),
+      confirmDevice: (input) => this.context.write("pairedDevices.confirmDevice", input),
+      renameDevice: (input) => this.context.write("pairedDevices.renameDevice", input),
+      revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
+      recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
+      touchDevice: (input) => this.context.write("pairedDevices.touchDevice", input),
+    });
+  }
+
+  perception(): PerceptionStorePort {
+    return Object.freeze<PerceptionStorePort>({
+      readSettings: (input) => this.context.read("perception.readSettings", input),
+      writeSettings: (input) => this.context.write("perception.writeSettings", input),
+      knownRecordIds: (input) => this.context.read("perception.knownRecordIds", input),
+      releaseContent: (input) => this.context.write("perception.releaseContent", input),
+      knownMediaDigests: (input) => this.context.read("perception.knownMediaDigests", input),
+      ingestRecords: (input) => this.context.write("perception.ingestRecords", input),
+      listDay: (input) => this.context.read("perception.listDay", input),
+      countDay: (input) => this.context.read("perception.countDay", input),
+      readEpisode: (input) => this.context.read("perception.readEpisode", input),
+      setRecordStatus: (input) => this.context.write("perception.setRecordStatus", input),
+      syncMirror: (input) => this.context.write("perception.syncMirror", input),
+      listMirror: (input) => this.context.read("perception.listMirror", input),
+      insertTrackPoints: (input) => this.context.write("perception.insertTrackPoints", input),
+      countTrackPoints: (input) => this.context.read("perception.countTrackPoints", input),
+      createUploadGrant: (input) => this.context.write("perception.createUploadGrant", input),
+      readUploadGrant: (input) => this.context.read("perception.readUploadGrant", input),
+      completeUploadGrant: (input) => this.context.write("perception.completeUploadGrant", input),
+      recordMedia: (input) => this.context.write("perception.recordMedia", input),
+      listMedia: (input) => this.context.read("perception.listMedia", input),
+      readUsage: (input) => this.context.read("perception.readUsage", input),
+      reserveUsage: (input) => this.context.write("perception.reserveUsage", input),
+      reportDeviceUsage: (input) => this.context.write("perception.reportDeviceUsage", input),
+      markUsageWarned: (input) => this.context.write("perception.markUsageWarned", input),
+      prune: (input) => this.context.write("perception.prune", input),
+      listRecordsBetween: (input) => this.context.read("perception.listRecordsBetween", input),
+      readRecords: (input) => this.context.read("perception.readRecords", input),
+      listEpisodesToExtract: (input) =>
+        this.context.read("perception.listEpisodesToExtract", input),
+      readExtraction: (input) => this.context.read("perception.readExtraction", input),
+      commandUtterances: (input) => this.context.read("perception.commandUtterances", input),
+      beginExtraction: (input) => this.context.write("perception.beginExtraction", input),
+      settleExtraction: (input) => this.context.write("perception.settleExtraction", input),
+      recordCommandUtterance: (input) =>
+        this.context.write("perception.recordCommandUtterance", input),
+    });
+  }
+
   webPush(): WebPushStorePort {
     return Object.freeze<WebPushStorePort>({
       saveSubscription: (input) => this.context.write("webPush.saveSubscription", input),
@@ -1178,6 +1286,7 @@ export class SqliteDurableAdapters {
       readCursor: (input) => this.context.read("webPush.readCursor", input),
       enqueue: (input) => this.context.write("webPush.enqueue", input),
       listDue: (input) => this.context.read("webPush.listDue", input),
+      deferItem: (input) => this.context.write("webPush.deferItem", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
