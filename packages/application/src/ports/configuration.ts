@@ -354,6 +354,11 @@ export interface McpReadConfiguration {
   readonly proposals?: true;
 }
 
+export interface OwnerProposalConfiguration {
+  readonly pendingLimit?: number;
+  readonly expiresAfterDays?: number;
+}
+
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;
   readonly total: number;
@@ -366,6 +371,7 @@ export const DEFAULT_TOOL_REFUSALS: ToolRefusalConfiguration = Object.freeze({
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly ownerProposals?: OwnerProposalConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly realEval?: RealEvalConfiguration;
