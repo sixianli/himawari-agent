@@ -57,6 +57,11 @@ export function scenes(words) {
       page,
       hand: finished(words, "outcome.serverOutdated", { kept: false }),
     },
+    "22-gaps-2j-safari-not-sent": {
+      open: { phase: "editing" },
+      page,
+      hand: finished(words, "outcome.notSent", { kept: false }),
+    },
     "22-gaps-2e-safari-entry-off": {
       open: { phase: "editing" },
       page,
