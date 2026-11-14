@@ -1,4 +1,4 @@
-import type { ProactiveSourceItem } from "@himawari-agent/application";
+import type { ProactiveMail } from "@himawari-agent/application";
 import * as application from "@himawari-agent/application";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
@@ -29,7 +29,7 @@ const captured = (output: string) =>
     ownerMessage: message,
   });
 
-const mail: ProactiveSourceItem = {
+const mail: ProactiveMail = {
   source: "gmail",
   messageId: "mail-a",
   threadId: "thread-a",

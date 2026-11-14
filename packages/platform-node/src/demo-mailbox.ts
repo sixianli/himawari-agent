@@ -1,7 +1,9 @@
-import type {
-  ProactiveFetchResult,
-  ProactiveSourceItem,
-  ProactiveSourceReader,
+import {
+  GMAIL_SOURCE,
+  mailReader,
+  type FlatMailFetchResult,
+  type ProactiveMail,
+  type ProactiveMailReader,
 } from "@himawari-agent/application";
 import {
   type DemoLocale,
@@ -35,10 +37,10 @@ function parseToken(
   return { locale, anchor, anchorMs };
 }
 
-function sourceItem(locale: DemoLocale, anchorMs: number, mail: DemoMail): ProactiveSourceItem {
+function sourceItem(locale: DemoLocale, anchorMs: number, mail: DemoMail): ProactiveMail {
   const threadId = `demo-${locale}-thread-${mail.threadKey}`;
   return Object.freeze({
-    source: "gmail" as const,
+    source: GMAIL_SOURCE.name,
     messageId: `demo-${locale}-${mail.key}`,
     threadId,
     from: `${mail.fromName} <${mail.fromAddress}>`,
@@ -61,7 +63,7 @@ function arrived(
   token: string,
   nowMs: number,
   timeZone: string | undefined,
-): { readonly anchorMs: number; readonly items: readonly ProactiveSourceItem[] } | undefined {
+): { readonly anchorMs: number; readonly items: readonly ProactiveMail[] } | undefined {
   const parsed = parseToken(token);
   if (!parsed) return undefined;
   return {
@@ -73,7 +75,7 @@ function arrived(
   };
 }
 
-function matches(item: ProactiveSourceItem, query: string): boolean {
+function matches(item: ProactiveMail, query: string): boolean {
   const quoted = /"([^"]+)"/u.exec(query)?.[1];
   if (quoted === undefined) return false;
   if (query.startsWith("subject:")) return normalizeSubject(item.subject) === quoted.toLowerCase();
@@ -83,9 +85,9 @@ function matches(item: ProactiveSourceItem, query: string): boolean {
 export function createDemoMailReader(options: {
   readonly now: () => string;
   readonly timeZone?: string;
-}): ProactiveSourceReader {
-  return Object.freeze<ProactiveSourceReader>({
-    source: "gmail",
+}): ProactiveMailReader {
+  return mailReader({
+    source: GMAIL_SOURCE.name,
     async related({ token, items, limits, wholeThread, references, signal }) {
       const pool = arrived(token, Date.parse(options.now()), options.timeZone)?.items ?? [];
       return findRelatedMail({
@@ -110,7 +112,7 @@ export function createDemoMailReader(options: {
         },
       });
     },
-    async fetch({ token, cursor, since, signal, unseen }): Promise<ProactiveFetchResult> {
+    async fetch({ token, cursor, since, signal, unseen }): Promise<FlatMailFetchResult> {
       if (signal.aborted) return { kind: "failed", step: "timeout" };
       const nowMs = Date.parse(options.now());
       const mailbox = arrived(token, nowMs, options.timeZone);

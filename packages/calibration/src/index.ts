@@ -647,6 +647,8 @@ const ISO_PATTERN = "????-??-??T??:??:??.???Z";
 
 export const EXTERNAL_PROPOSAL_REASON_PATTERN = "mcp!_proposal!_%";
 
+export const CALIBRATION_MAIL_SOURCE = "gmail";
+
 export const CALIBRATION_SQL = Object.freeze({
   badDecisionTimes: `SELECT count(*) AS n FROM decision_ledger WHERE checked_at NOT GLOB '${ISO_PATTERN}'`,
   badMuseTimes: `SELECT count(*) AS n FROM muse_reference_entries WHERE muse_at NOT GLOB '${ISO_PATTERN}'`,
@@ -682,7 +684,7 @@ export const CALIBRATION_SQL = Object.freeze({
       AND decision.checked_at >= ? AND decision.checked_at < ?
     ORDER BY signal.occurred_at, signal.id`,
   mailJudgment: `SELECT outcome, owner_rating AS ownerRating FROM proactive_processed_messages
-    WHERE owner_id = ? AND agent_id = ? AND source = 'gmail' AND message_id = ?`,
+    WHERE owner_id = ? AND agent_id = ? AND source = '${CALIBRATION_MAIL_SOURCE}' AND message_id = ?`,
 });
 
 export function assertTimestampFormat(database: CalibrationDatabase): void {

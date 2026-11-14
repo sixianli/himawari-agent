@@ -261,7 +261,7 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
   it("exports every proposal, imports it into an empty database and keeps rows, texts, keys and unkeyed clients identical", async () => {
     const source = await seeded();
     const { files, manifest } = await exportOf(source);
-    expect(manifest.format).toBe("himawari.data-export.v3");
+    expect(manifest.format).toBe("himawari.data-export.v4");
     expect(manifest.counts.externalProposals).toBe(5);
     expect(manifest.omitted.map(({ what }) => what).join("\n")).not.toContain("MCP");
     expect(files.has("schema/external-memory-proposals.schema.json")).toBe(true);
