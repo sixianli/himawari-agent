@@ -88,17 +88,22 @@ export function applePushAlertPayload(input: {
   readonly tag: string;
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
+  readonly quiet?: boolean;
   readonly actions: readonly ApplePushAction[];
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
       aps: {
         alert: { title, body },
-        sound: "default",
-        ...(input.badge === undefined ? {} : { badge: input.badge }),
+        ...(input.quiet ? {} : { sound: "default" }),
+        ...(input.badge === undefined || input.quiet ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
+        "interruption-level": input.quiet
+          ? "passive"
+          : input.kind === "approval"
+            ? "time-sensitive"
+            : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       himawari: {
@@ -283,12 +288,13 @@ export class ProductionApplePush implements PushCompanionChannel {
         await this.#record(entry, now, "failed", "APNS_TOPIC_NOT_CONFIGURED", 1);
         continue;
       }
+      const locale = input.accountLocale ?? entry.registration.locale;
       await this.#sendAlert(
         entry,
         now,
         content,
-        await input.badge(),
-        input.accountLocale ?? entry.registration.locale,
+        content.build(locale).quiet === true ? undefined : await input.badge(),
+        locale,
         input.approvals,
       );
     }
@@ -374,7 +380,7 @@ export class ProductionApplePush implements PushCompanionChannel {
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" ? 5 : 10,
+      priority: item.kind === "run" || built.quiet === true ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({
@@ -386,6 +392,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
+        quiet: built.quiet === true,
         actions: await this.#actions(entry, now, locale, approvals),
       }),
     });
