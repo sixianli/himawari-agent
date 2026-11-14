@@ -22,20 +22,13 @@ public struct VoiceEvidence: Codable, Sendable, Equatable {
 
     public static let heardNameMaximumCharacters = 64
 
-    static func normalizedHeardName(_ name: String) -> String? {
-        let scalars = name.unicodeScalars.filter { $0.properties.generalCategory != .control && $0.properties.generalCategory != .format }
-        var clipped = String(String.UnicodeScalarView(scalars.prefix(heardNameMaximumCharacters)))
-        clipped = clipped.trimmingCharacters(in: .whitespacesAndNewlines)
-        return clipped.isEmpty ? nil : clipped
-    }
-
     public init(trigger: VoiceTrigger, speakerScore: Int? = nil, inputRoute: AudioInputRoute? = nil, inEar: Bool? = nil, loudnessScore: Int? = nil, heardName: String? = nil) {
         self.trigger = trigger
         self.speakerScore = speakerScore.map(VoiceScore.clamp)
         self.inputRoute = inputRoute
         self.inEar = inEar
         self.loudnessScore = loudnessScore.map(VoiceScore.clamp)
-        self.heardName = trigger == .handsOn ? nil : heardName.flatMap(Self.normalizedHeardName)
+        self.heardName = trigger == .handsOn ? nil : heardName.map { String($0.prefix(Self.heardNameMaximumCharacters)) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

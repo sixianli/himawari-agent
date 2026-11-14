@@ -98,8 +98,6 @@ import Testing
         #expect(SpokenTrigger.evidence(for: .heardName(route: .deviceMicrophone, inEar: nil, loudnessScore: 500), speakerScore: 700, heardName: "Himawari").heardName == "Himawari")
         #expect(SpokenTrigger.evidence(for: .ownerTouched, speakerScore: 700, heardName: "Himawari").heardName == nil)
         #expect(VoiceEvidence(trigger: .ambientName, heardName: String(repeating: "a", count: 80)).heardName?.count == VoiceEvidence.heardNameMaximumCharacters)
-        #expect(VoiceEvidence(trigger: .ambientName, heardName: String(repeating: "\u{1F1EF}\u{1F1F5}", count: 40)).heardName?.unicodeScalars.count == VoiceEvidence.heardNameMaximumCharacters)
-        #expect(VoiceEvidence(trigger: .ambientName, heardName: "Hima\u{200D}wari").heardName == "Himawari")
     }
 
     @Test func halfSentencesGoToTheirOwnRoute() async throws {

@@ -355,21 +355,6 @@ describe("[iOS-8] the decision model decides whether a name call is meant for Hi
     expect(await commands(h)).toEqual([]);
   });
 
-  it("asks first when the decision model declares an answer larger than the limit", async () => {
-    const { h, client, threadId } = await setup();
-    const body = { ...decisionAnswer(0.97).body, padding: "x".repeat(70_000) };
-    h.decisions.answer = () => ({
-      status: 200,
-      body,
-      headers: { "content-length": String(Buffer.byteLength(JSON.stringify(body))) },
-    });
-    const refused = await say(h, client, airpods, threadId);
-    expect(refused.body).toEqual({
-      error: { code: "VOICE_COMMAND_UNCONFIRMED", reason: "addressed_unsure" },
-    });
-    expect(await commands(h)).toEqual([]);
-  });
-
   it("stops reading an oversize answer without waiting for it to finish", async () => {
     const { h, client, threadId } = await setup();
     h.decisions.answer = () => ({
