@@ -1441,6 +1441,13 @@ export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
   return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
 }
 
+export const REVIEW_NOT_COVERED_EXIT = 5;
+export const REVIEW_RECORD_ERRORS = [
+  "USAGE_LEDGER_INVALID",
+  "REVIEW_ROUND_HEADS_DIFFER",
+  "VERDICTS_INVALID",
+];
+
 export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnreviewed, acceptLow }) {
   const ledgerPath = `${REVIEWS_DIR}/${reviewKey({ pr })}`;
   const head = git(["rev-parse", "HEAD"], repo);
@@ -3400,10 +3407,18 @@ async function main() {
     return;
   }
   if (options.assertReviewed) {
-    const result = assertReviewed(options);
+    let result;
+    try {
+      result = assertReviewed(options);
+    } catch (error) {
+      if (!REVIEW_RECORD_ERRORS.some((code) => error.message.startsWith(`${code} `))) throw error;
+      console.log(`REVIEW_RECORD_INVALID ${error.message}`);
+      process.exitCode = REVIEW_NOT_COVERED_EXIT;
+      return;
+    }
     for (const line of result.lines) console.log(line);
     if ((result.problems.length > 0 && !result.overridden) || result.lowFixRefused)
-      process.exitCode = 5;
+      process.exitCode = REVIEW_NOT_COVERED_EXIT;
     return;
   }
   const missingProxy = gatewayRequiredProblem(options, process.env);

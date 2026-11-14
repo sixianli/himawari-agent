@@ -17,6 +17,7 @@ import {
   touchesProtected,
   validateState,
 } from "../../scripts/ci/merge-queue.mjs";
+import { REVIEW_NOT_COVERED_EXIT } from "../../scripts/model-review/opencode-review.mjs";
 
 const repository = "sixianli/himawari-agent";
 const identity = {
@@ -657,9 +658,9 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
         delete process.env.MQ_TEST_EXIT;
       }
     };
-    expect(verdictFor(5)).toMatchObject({ ok: false, broken: false });
-    expect(verdictFor(2)).toMatchObject({ ok: false, broken: true });
-    expect(verdictFor(1)).toMatchObject({ ok: false, broken: true });
+    expect(verdictFor(REVIEW_NOT_COVERED_EXIT)).toMatchObject({ ok: false, broken: false });
+    for (const code of [1, 2, 3, 4, 130, 143])
+      expect(verdictFor(code)).toMatchObject({ ok: false, broken: true });
     expect(git(env.runner, ["worktree", "list"]).split("\n")).toHaveLength(1);
   });
 

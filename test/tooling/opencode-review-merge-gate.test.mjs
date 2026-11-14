@@ -1620,6 +1620,32 @@ describe("opencode review merge gate", () => {
     }
   }, 60000);
 
+  it("[ADR-0268] a malformed review ledger in the PR exits with the not-covered code, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [f.ledger]: "{not json\n" }, "broken ledger");
+      const run = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--assert-reviewed",
+          "--pr",
+          "7",
+          "--repo",
+          f.repo,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(run.stdout).toMatch(/^REVIEW_RECORD_INVALID USAGE_LEDGER_INVALID /m);
+      expect(run.status).toBe(5);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("[low fix] checks a hand-written low-fix record again at the gate", () => {
     const f = lowFixFixture();
     try {

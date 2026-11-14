@@ -3,6 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REVIEW_NOT_COVERED_EXIT } from "../model-review/opencode-review.mjs";
 
 export const queueLabel = "merge-queue";
 export const failedLabel = "merge-queue-failed";
@@ -15,7 +16,6 @@ export const candidateTimeoutMs = 3 * 3600_000;
 export const requiredJobName = "ci/required";
 export const reviewTimeoutMs = 5 * 60_000;
 export const undecidedLimit = 3;
-export const reviewNotCoveredExit = 5;
 const workflowFile = "ci.yml";
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const shaPattern = /^[a-f0-9]{40}$/u;
@@ -359,7 +359,7 @@ export function reviewChecker({
       const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
       return {
         ok: result.status === 0,
-        broken: result.status !== 0 && result.status !== reviewNotCoveredExit,
+        broken: result.status !== 0 && result.status !== REVIEW_NOT_COVERED_EXIT,
         output,
       };
     });
