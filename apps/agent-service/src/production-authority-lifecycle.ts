@@ -512,15 +512,23 @@ export class ProductionAuthorityLifecycle {
     this.#state = "lost";
     this.#renewalTimer && clearInterval(this.#renewalTimer);
     this.#renewalTimer = undefined;
-    const lastRenewedAtMs = this.#lastRenewedAtMs;
-    const now = this.nowMs();
-    const details: ProductionAuthorityLossDetails = Object.freeze({
-      msSinceLastRenewal:
-        lastRenewedAtMs === null || !Number.isFinite(lastRenewedAtMs) || !Number.isFinite(now)
-          ? null
-          : Math.max(0, now - lastRenewedAtMs),
-    });
+    const details = this.lossDetails();
     void Promise.resolve(this.#options.onLost?.(error, details)).catch(() => undefined);
+  }
+
+  private lossDetails(): ProductionAuthorityLossDetails {
+    try {
+      const lastRenewedAtMs = this.#lastRenewedAtMs;
+      const now = this.nowMs();
+      return Object.freeze({
+        msSinceLastRenewal:
+          lastRenewedAtMs === null || !Number.isFinite(lastRenewedAtMs) || !Number.isFinite(now)
+            ? null
+            : Math.max(0, now - lastRenewedAtMs),
+      });
+    } catch {
+      return Object.freeze({ msSinceLastRenewal: null });
+    }
   }
 
   private nowMs(): number {

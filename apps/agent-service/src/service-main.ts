@@ -925,7 +925,7 @@ export async function startTenantRuntime(
             component: "agent-service",
             event: "authority.lost",
             code: lossCode(error),
-            ...(details.msSinceLastRenewal === null
+            ...(details?.msSinceLastRenewal == null
               ? {}
               : { msSinceLastRenewal: details.msSinceLastRenewal }),
             leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
