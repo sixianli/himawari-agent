@@ -23,6 +23,7 @@
 "outcome.tooLarge" = "Too large to send";
 "outcome.limitReached" = "Today's limit is reached";
 "outcome.serverOutdated" = "The server doesn't accept this yet. Update the server and try again";
+"outcome.notSent" = "Not sent. Share it again later";
 "outcome.rejected" = "Couldn't send";
 "outcome.unreadable" = "Couldn't read anything this time";
 "entry.share.title" = "Share to Himawari";
