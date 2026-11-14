@@ -76,6 +76,7 @@ import {
   SUBSTITUTES,
   selfCheckCacheDir,
   selfCheckCacheHit,
+  selfCheckCacheLabel,
   selfCheckCacheKey,
   selfCheckCacheWrite,
   selfCheckSteps,
@@ -2134,5 +2135,13 @@ describe("append-only failure message", () => {
     expect(
       firstChangedMessage(earlier, { messages: [...earlier.messages, { role: "user" }] }),
     ).toBe("");
+  });
+});
+
+describe("selfCheckCacheLabel", () => {
+  it("names off, miss and hit for the ledger", () => {
+    expect(selfCheckCacheLabel({ cacheKey: "", cached: false })).toBe("off");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: false })).toBe("miss");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: true })).toBe("hit");
   });
 });

@@ -2820,6 +2820,11 @@ export function selfCheckCacheKey({
     .digest("hex");
 }
 
+export function selfCheckCacheLabel({ cacheKey, cached }) {
+  if (!cacheKey) return "off";
+  return cached ? "hit" : "miss";
+}
+
 export function selfCheckCacheHit({ key, now = Date.now(), env = process.env }) {
   const dir = selfCheckCacheDir(env);
   if (!dir) return false;
@@ -3941,9 +3946,8 @@ async function main() {
     }
     if (cacheKey && !cached) selfCheckCacheWrite({ key: cacheKey });
     const selfCheckMs = Date.now() - selfCheckStartedAt;
-    console.log(
-      `SELF_CHECK_OK ms=${selfCheckMs} cache=${cacheKey ? (cached ? "hit" : "miss") : "off"}`,
-    );
+    const selfCheckCache = selfCheckCacheLabel({ cacheKey, cached });
+    console.log(`SELF_CHECK_OK ms=${selfCheckMs} cache=${selfCheckCache}`);
     if (options.selfCheckOnly) return;
     let liveGateway = null;
     if (gateway) {
@@ -4018,6 +4022,7 @@ async function main() {
         ...summary.usage,
         toolCalls: summary.toolCalls.length,
         selfCheckMs,
+        selfCheckCache,
         runMs,
         ...(timing ? { gatewayTiming: timing } : {}),
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
