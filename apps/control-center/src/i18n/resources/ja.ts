@@ -970,7 +970,7 @@ export const messages = {
   "memory.page.missedSaved": "記録しました。再確認リストに表示されます",
   "rules.receipt.label": "常設ルールの控え",
   "rules.receipt.status":
-    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} rejected {不要としました。有効にはなりません} other {常設ルール}}",
   "rules.receipt.trials": "試算",
   "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -979,6 +979,7 @@ export const messages = {
     "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
   "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
   "rules.receipt.confirm": "適用",
+  "proposals.reject": "不要",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",

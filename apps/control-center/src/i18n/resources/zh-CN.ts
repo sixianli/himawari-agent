@@ -911,7 +911,7 @@ export const messages = {
   "memory.page.missedSaved": "记下了，这条会出现在待重审里",
   "rules.receipt.label": "长期规则回执",
   "rules.receipt.status":
-    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",
+    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} rejected {已拒绝，不会生效} other {长期规则}}",
   "rules.receipt.trials": "试算",
   "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -920,6 +920,7 @@ export const messages = {
     "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
   "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
   "rules.receipt.confirm": "生效",
+  "proposals.reject": "不要",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",

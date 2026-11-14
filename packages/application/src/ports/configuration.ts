@@ -354,6 +354,11 @@ export interface McpReadConfiguration {
   readonly proposals?: true;
 }
 
+export interface OwnerProposalConfiguration {
+  readonly pendingLimit?: number;
+  readonly expiresAfterDays?: number;
+}
+
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;
   readonly total: number;
@@ -373,6 +378,7 @@ export interface OwnerIntentCheckConfiguration {
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly ownerProposals?: OwnerProposalConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
