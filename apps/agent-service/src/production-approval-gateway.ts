@@ -78,6 +78,7 @@ import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
+import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
@@ -87,6 +88,12 @@ export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.respond",
   "search.authorization.read",
   "search.authorization.set",
+] as const);
+
+export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
+  "capability.list",
+  "capability.detail",
+  "capability.disable",
 ] as const);
 
 export function createProductionApprovalGateway(options: {
@@ -240,7 +247,8 @@ export function createProductionApprovalGateway(options: {
       },
     },
     dependencies: {
-      listTaskRefsByCapability: unsupported,
+      listTaskRefsByCapability: async (capabilityRef) =>
+        (await capabilities.listScheduledJobRefs?.(capabilityRef)) ?? [],
       listTaskRefsByGrant: unsupported,
       trueResultRefForApproval: async (id) => {
         const approval = await authorization.getApproval(id);
@@ -296,7 +304,7 @@ export function createProductionApprovalGateway(options: {
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
         if (command.type.startsWith("proposal.") && options.proposalControl)
-          return options.proposalControl.execute(command);
+          return options.proposalControl.execute(authentication, command);
         if (command.type.startsWith("data.export.") && options.dataExportControl)
           return options.dataExportControl.execute(command);
         if (
@@ -322,6 +330,11 @@ export function createProductionApprovalGateway(options: {
     }),
     audit: repository.auditLedger(),
     recentAuthentication: options.recentAuthentication,
+    capabilityLifecycle: createProductionCapabilityLifecycle({
+      configuration: options.configuration,
+      repository,
+      clock,
+    }),
   });
   return new AgentGatewayV2Service({
     installedOperations: [
@@ -338,6 +351,7 @@ export function createProductionApprovalGateway(options: {
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...PRODUCTION_CAPABILITY_OPERATIONS,
       ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.searchControl ? PRODUCTION_SEARCH_OPERATIONS : []),

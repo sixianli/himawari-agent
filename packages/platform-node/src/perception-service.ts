@@ -33,6 +33,7 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_SPEAKER_KINDS,
   PERCEPTION_TEXT_MAXIMUM,
+  PERCEPTION_UTTERANCE_ID_PATTERN,
   type PerceptionCaptureSource,
   type PerceptionConfiguration,
   type PerceptionDayPage,
@@ -102,6 +103,10 @@ export interface PerceptionServiceOptions {
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }) => Promise<string>;
   readonly uploadDirectory: string;
+  readonly searchIndex?: {
+    readonly document: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
+    readonly query: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
+  };
   readonly ownerVoiceQualified?: () => boolean;
   readonly proactiveUsage?: {
     readonly limit: () => number;
@@ -512,7 +517,15 @@ export class PerceptionService {
                   content: record.text,
                   dataClassification: record.input.dataClassification,
                 });
-          prepared.push({ ...record.input, contentRef });
+          const searchTerms =
+            record.text === null || known.has(record.input.id) || !this.#options.searchIndex
+              ? undefined
+              : await this.#options.searchIndex.document(scope, record.text).catch(() => undefined);
+          prepared.push({
+            ...record.input,
+            contentRef,
+            ...(searchTerms ? { searchTerms } : {}),
+          });
         }
         return prepared.length === 0
           ? { outcomes: [], reached: [] }
@@ -592,6 +605,20 @@ export class PerceptionService {
       return;
     this.#prunedAt.set(scopeKey, now.getTime());
     await this.prune(scope);
+  }
+
+  async search(input: {
+    readonly scope: PerceptionScope;
+    readonly query: string;
+    readonly limit: number;
+  }) {
+    const scope = this.#scope(input.scope);
+    const terms = this.#options.searchIndex
+      ? await this.#options.searchIndex.query(scope, input.query)
+      : [];
+    return terms.length === 0
+      ? []
+      : this.#options.store.searchRecords({ ...scope, terms, limit: input.limit });
   }
 
   async prune(scope: PerceptionScope) {
@@ -1227,6 +1254,15 @@ export class PerceptionService {
       episodeId: input.episodeId,
       cursor: input.cursor,
       limit: this.#options.configuration().listPageRows,
+    });
+  }
+
+  async recordCommandUtterance(scope: PerceptionScope, utteranceId: string): Promise<void> {
+    if (!PERCEPTION_UTTERANCE_ID_PATTERN.test(utteranceId)) return invalid("utteranceId");
+    await this.#options.store.recordCommandUtterance({
+      ...this.#scope(scope),
+      utteranceId,
+      now: this.#now().toISOString(),
     });
   }
 }

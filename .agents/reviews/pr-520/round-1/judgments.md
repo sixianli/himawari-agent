@@ -1,0 +1,11 @@
+# PR 520 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高 — 原样载荷写入失败时仍可能把执行记成“成功”，之后永远无法撤销。production-proposals.ts #recordExecution 吞掉异常返回 undefined，原路径照常读回记 succeeded；已改成 ref 为空时记结果不明，并补 payloads.put 失败的反向测试；触发：execute 成功后 payloads.put 或 protector.protect 抛错（存储满、写失败）；后果：动作已执行，却记成功且没有 execution_ref，之后撤销永远报 PROPOSAL_NOT_UNDOABLE
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2. 高 — 撤销没有租约或比较交换，两个并发撤销会让处理方执行两次。production-proposals.ts undo 在 handler.undo 前没有占用，两个请求都通过 succeeded 检查；已改成同一提议的撤销在进程内排队，补并发测试验证 undo 只调用一次；触发：两台设备同时对同一提议发 undo；后果：处理方 undo 被执行两次，撤销不可逆时重复副作用
+- 3（deepseek-v4.1-flash）不成立：### 3. 中 — `failed` / `unknown` 后没有出路，且执行结果根本不返回给主人。作者材料第 3 点说明只需指出不需改；本 PR 没有网页界面，主人看不到列表的问题还不存在；失败时 adopt 当场返回 PROPOSAL_EXECUTION_FAILED，不是静默消失。结果不明的复核入口和界面显示属于后续 PR，已列入给 Andy 的说明
+- 4（deepseek-v4.1-flash）不成立：### 4. 中 — 状态机允许 `unknown → succeeded/failed`，且 `leaseId: null` 会跳过租约检查。grep moveExecution 的全部调用点（production-proposals.ts）from 只有 running、executed_unverified、succeeded，没有任何路径以 unknown 作 from 或传 leaseId:null 到非 succeeded 起点，没有可达输入；删掉两条多余转换是可选清理，建议交 Andy 定
+- 5（deepseek-v4.1-flash）不成立：### 5. 中 — 网关和客户端没有端到端对齐：`undo`、`open`、`recentAuthenticationRef`、`fullReadToken` 实际不可用。本 PR 约束写明没有网页界面；生产里还没有登记任何确定动作，也就没有 requiresPresence 或 requiresFullRead 的确定动作提议，control-center/src/memory.ts 的 respondProposal 发 null 不会走到被拒的路径；客户端接通属于后续 PR
+- 6（deepseek-v4.1-flash）成立，会出错，低：### 6. 中 — `requiresFullRead` 可由提议方传 `false` 覆盖，外部内容的全读保护可被绕过。production-proposals.ts propose 用 ?? 取默认；已改成 === true || 默认，补测试；触发：内部调用方对外部内容来源的提议显式传 requiresFullRead:false；后果：全读保护被调低；现有唯一调用方 ProductionOwnerRuleWriter 不传该参数，网关不接受该字段；判低理由：requiresFullRead 只来自进程内调用方，网关合约里提议方不能传，只有写错的内部代码才会触发
+- 7（deepseek-v4.1-flash）不成立：### 7. 低 — `propose` 遇到 `closed` 静默返回，调用方仍会报告“已提议”。propose 返回 closed 只在该编号 exec_status 非 not_started 时发生；唯一调用方 ProductionOwnerRuleWriter 用的是非 action 处理方，exec_status 永远是 not_started，到不了 closed；改 propose 返回值要动端口签名，留给登记确定动作的后续 PR
+- 8（deepseek-v4.1-flash）成立，会出错，低：### 8. 低 — 文档与代码不一致。已逐条改文档：领取时两列同时改、动作加 undo、凭据只对确定动作作废、closed 是存储层结果、被撤回是预留取值；触发：读 docs/architecture-v0.1.md 提议箱一节；后果：文档把每次只改一列、动作只有 adopt 和 reject、领取后凭据作废、closed 作为入箱结果写得比代码宽，读者会按错的说法理解；判低理由：只是文字不准，不影响运行
+- 9（deepseek-v4.1-flash）不成立：### 9. 低 — 执行原样载荷没有清理路径，异常时还会留下孤儿载荷。作者材料写明清除、导出、导入这张表留给后续 PR，execution_ref 到时一并纳入；moveExecution 在 put 成功后失败要求数据库写失败，只留一个自己的加密载荷引用，不影响正确性

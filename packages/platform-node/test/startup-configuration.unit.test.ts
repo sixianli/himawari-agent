@@ -1523,6 +1523,73 @@ it("[P3] parses every perception setting with its default and rejects unknown or
   expect(() => parse({ episodeSilenceSeconds: 600, episodeMaximumSeconds: 300 })).toThrow();
 });
 
+it("[IOS-4] accepts Apple push only with an apple-push secret, web push, Apple identifiers and listed topics", () => {
+  const raw = config("/tmp/himawari-apple-push-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    webPush: { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win" },
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "web-push-vapid", version: "v1", purpose: "web-push", scope: "agent" },
+    { ref: "apple-push-key", version: "v1", purpose: "apple-push", scope: "agent" },
+  ];
+  const base = {
+    secretRef: "apple-push-key",
+    teamId: "TEAM123456",
+    keyId: "KEY1234567",
+    topics: ["win.siyi.himawari", "win.siyi.himawari.watchkitapp"],
+    environments: ["production"],
+  };
+  const parse = (applePush: unknown, extra: Record<string, unknown> = policy) => {
+    raw["runPolicy"] = { ...extra, applePush };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.applePush;
+  };
+  expect(parse(base)).toEqual({
+    ...base,
+    widgetRefreshMinimumSeconds: 900,
+    liveActivityUpdateMinimumSeconds: 15,
+    liveActivityStartAfterSeconds: 30,
+    liveActivityStaleAfterSeconds: 600,
+    actionTokenLifetimeSeconds: 86_400,
+    requestTimeoutSeconds: 10,
+    liveActivityRegistrationsPerDevice: 8,
+  });
+  expect(
+    parse({
+      ...base,
+      widgetRefreshMinimumSeconds: 60,
+      environments: ["development", "production"],
+    }),
+  ).toMatchObject({ widgetRefreshMinimumSeconds: 60, environments: ["development", "production"] });
+  for (const applePush of [
+    { ...base, secretRef: "web-push-vapid" },
+    { ...base, secretRef: "missing-secret" },
+    { ...base, teamId: "team" },
+    { ...base, keyId: "KEY12345678" },
+    { ...base, topics: [] },
+    { ...base, topics: ["win.siyi.himawari", "win.siyi.himawari"] },
+    { ...base, topics: ["bad topic"] },
+    { ...base, topics: [`w${"a".repeat(232)}`] },
+    { ...base, environments: ["staging"] },
+    { ...base, environments: [] },
+    { ...base, widgetRefreshMinimumSeconds: 0 },
+    { ...base, liveActivityStaleAfterSeconds: 86_401 },
+    { ...base, actionTokenLifetimeSeconds: 59 },
+    { ...base, requestTimeoutSeconds: 1.5 },
+    { ...base, liveActivityRegistrationsPerDevice: 0 },
+    { ...base, liveActivityRegistrationsPerDevice: 65 },
+    { ...base, signingKey: "inline" },
+  ])
+    expect(() => parse(applePush), JSON.stringify(applePush)).toThrow();
+  const { webPush: _webPush, ...withoutWebPush } = policy;
+  expect(() => parse(base, withoutWebPush)).toThrow();
+});
+
 it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {
   const raw = config("/tmp/himawari-device-config");
   const policy = {
