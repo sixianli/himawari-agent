@@ -248,6 +248,8 @@ export interface SearchAskConfiguration {
   readonly askLimit: number;
   readonly answerCharacters: number;
   readonly minimumCoveragePercent: number;
+  readonly indexTermLimit: number;
+  readonly indexRebuildBatch: number;
 }
 
 export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
@@ -256,6 +258,8 @@ export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
   askLimit: 0,
   answerCharacters: 2000,
   minimumCoveragePercent: 50,
+  indexTermLimit: 2000,
+  indexRebuildBatch: 200,
 });
 
 export interface ProactiveGmailConfiguration {

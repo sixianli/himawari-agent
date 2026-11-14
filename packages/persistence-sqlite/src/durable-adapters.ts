@@ -1271,6 +1271,9 @@ export class SqliteDurableAdapters {
       ingestRecords: (input) => this.context.write("perception.ingestRecords", input),
       listDay: (input) => this.context.read("perception.listDay", input),
       searchRecords: (input) => this.context.read("perception.searchRecords", input),
+      listStaleSearchRecords: (input) =>
+        this.context.read("perception.listStaleSearchRecords", input),
+      replaceSearchTerms: (input) => this.context.write("perception.replaceSearchTerms", input),
       countDay: (input) => this.context.read("perception.countDay", input),
       readEpisode: (input) => this.context.read("perception.readEpisode", input),
       setRecordStatus: (input) => this.context.write("perception.setRecordStatus", input),

@@ -204,6 +204,11 @@ export async function harness(
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutAddressee?: boolean;
+    readonly indexTermLimit?: number;
+    readonly indexReadText?: (
+      contentRef: string,
+      read: (contentRef: string) => Promise<string | undefined>,
+    ) => Promise<string | undefined>;
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
   } = {},
 ): Promise<Harness> {
@@ -394,6 +399,19 @@ export async function harness(
     uploadDirectory: path.join(stateRoot, "device-uploads"),
     voiceGates: () => voiceGates.current,
     searchIndex: {
+      version: "perception-search-test:rules:2000",
+      rebuildBatch: 2,
+      termLimit: options.indexTermLimit ?? 2000,
+      readText: async (contentRef) => {
+        const read = async (ref: string) => {
+          const payload = await repository.payloadStore(ownerId, agentId).get(ref);
+          if (!payload) return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await protector.unprotect({ ownerId, agentId, payload }),
+          );
+        };
+        return options.indexReadText ? options.indexReadText(contentRef, read) : read(contentRef);
+      },
       document: (scope, text) =>
         searchTokenizer.tokenizeDocument({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
       query: (scope, text) =>
