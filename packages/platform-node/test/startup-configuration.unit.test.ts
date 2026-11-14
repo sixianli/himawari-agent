@@ -2,12 +2,17 @@
 import { chmod, lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULT_HOME_FEED, IMPORT_DUPLICATE_DEFAULTS } from "@himawari-agent/application";
+import {
+  DEFAULT_HOME_FEED,
+  DEVICE_HARD_LIMIT_KEYS,
+  IMPORT_DUPLICATE_DEFAULTS,
+} from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CONFIGURATION_ERROR_CODES,
   CONFIGURATION_SCHEMA_VERSION,
+  DEVICE_ACCESS_SECRET_PURPOSES,
   DRAIN_PHASES,
   initializeStateRoot,
   JsonFileConfigurationPort,
@@ -1459,6 +1464,36 @@ it("[WP-7] accepts web push only with a web-push secret and an https or mailto s
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
 
+it("[P1-1] parses the ten device hard limits with defaults and rejects unknown or out-of-range keys", () => {
+  const raw = config("/tmp/himawari-device-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  const parse = (device: unknown) => {
+    raw["runPolicy"] = { ...policy, device };
+    return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.device;
+  };
+  const defaults = parse({});
+  expect(defaults?.signatureToleranceSeconds).toBe(60);
+  expect(Object.keys(defaults?.limits ?? {}).sort()).toEqual([...DEVICE_HARD_LIMIT_KEYS].sort());
+  expect(defaults?.limits["device.request.body_bytes"]).toBe(1_048_576);
+  expect(defaults?.limits["device.nonce.retained"]).toBe(10_000);
+  expect(parse({ "device.track.batch_points": 5 })?.limits["device.track.batch_points"]).toBe(5);
+  for (const key of DEVICE_HARD_LIMIT_KEYS) {
+    expect(() => parse({ [key]: 0 })).toThrow();
+    expect(() => parse({ [key]: 10 ** 12 })).toThrow();
+  }
+  expect(() => parse({ "device.unknown.limit": 5 })).toThrow();
+  expect(() => parse({ heartbeatSeconds: 100, connectionMaxSeconds: 60 })).toThrow();
+  expect(defaults?.streamConnections).toBe(4);
+  expect(parse({ streamConnections: 8 })?.streamConnections).toBe(8);
+  expect(() => parse({ streamConnections: 0 })).toThrow();
+  expect(() => parse({ streamConnections: 65 })).toThrow();
+});
+
 it("[PG-12] accepts proactive Gmail checks only with a Google client secret and a private-capable model", () => {
   const raw = config("/tmp/himawari-proactive-config");
   const policy = {
@@ -1911,6 +1946,38 @@ it("[P4-5] accepts a real memory eval with a model that may see private and sens
       details: expect.objectContaining({ field: "configuration.runPolicy.realEval.modelRef" }),
     }),
   );
+});
+
+it("[P1-1] accepts the device access client id and secret only as one declared pair", () => {
+  const at = "2026-11-12T00:00:00.000Z";
+  const withAccess = (purposes: readonly string[]) => {
+    const raw = config("/tmp/himawari-device-access");
+    raw["secretReferences"] = [
+      ...(raw["secretReferences"] as Record<string, unknown>[]),
+      ...purposes.map((purpose, index) => ({
+        ref: `device-access-${index}`,
+        version: "v1",
+        purpose,
+        scope: "agent",
+      })),
+    ];
+    return () => parseProductConfiguration(raw, at);
+  };
+  expect(withAccess([])).not.toThrow();
+  expect(withAccess([...DEVICE_ACCESS_SECRET_PURPOSES])).not.toThrow();
+  for (const purposes of [
+    ["device-access-client-id"],
+    ["device-access-client-secret"],
+    [...DEVICE_ACCESS_SECRET_PURPOSES, "device-access-client-id"],
+    [...DEVICE_ACCESS_SECRET_PURPOSES, ...DEVICE_ACCESS_SECRET_PURPOSES],
+  ])
+    expect(withAccess(purposes), purposes.join(",")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          reason: expect.stringContaining("device access client id and secret"),
+        }),
+      }),
+    );
 });
 
 it("accepts the approval preview length only from 1 to 2000 characters and leaves it unset by default", () => {

@@ -3007,6 +3007,11 @@ export async function startTenantRuntime(
             component: "agent-service",
             ...diagnostic,
           }),
+        onDeviceWarning: (warning) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            ...warning,
+          }),
         onHomeDiagnostic: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
             component: "agent-service",

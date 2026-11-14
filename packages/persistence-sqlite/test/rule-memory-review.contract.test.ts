@@ -41,6 +41,7 @@ function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
         `SELECT type, name, tbl_name FROM sqlite_master
          WHERE tbl_name IN (${LEDGER_TABLES.map(() => "?").join(", ")})
            AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+           AND name NOT LIKE 'decision_ledger_known_kind%'
          ORDER BY name`,
       )
       .all(...LEDGER_TABLES),

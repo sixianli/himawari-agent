@@ -45,7 +45,7 @@ date: "2026-11-04"
    - 只有出现全新的规则类型，才要加代码和测试。
 3. **软偏好：存成文字，交给模型参考。**
    - 例子：语气、回答长短、格式。
-   - 放进发给模型的内容时，遵守 [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 的缓存规则：不放进系统提示和工具定义里会变的位置，只有两个去处可选：最后一条消息，或者跟着提示词第二步的“按对话冻结”走。“按对话冻结”是提示词第二步方案里的一部分，Andy 2026-11-04 在项目线程里对这个方案的六项待定事项逐项拍了板，但还没有实现，也还没有写进 `.claude/rules/prompt-prefix.md`；实现并改好规则之前，只能放最后一条消息。
+   - 放进发给模型的内容时，遵守 [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 的缓存规则：不放进系统提示和工具定义里会变的位置，只有两个去处可选：最后一条消息，或者跟着提示词第二步的“按对话冻结”走。“按对话冻结”是提示词第二步方案里的一部分，Andy 2026-11-04 在项目线程里对这个方案的六项待定事项逐项拍了板，但还没有实现，也还没有写进 `.agents/instructions/prompt-prefix.md`；实现并改好规则之前，只能放最后一条消息。
 4. **一句话要经过确认卡，Andy 确认后才变成长期规则。**一次性的拒绝不变成长期规则。
    - 后续：本条已被 [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md) 取代：主人明说的“以后 / 一律”直接生效并给带一键撤销的回执卡，模型推断出来的才要确认。本条原文不改。
 
@@ -77,6 +77,6 @@ date: "2026-11-04"
 - [ADR 0153](0153-adopt-product-vision-v2-3.md)：采纳现行的愿景 v2.3。
 - [ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md)：主人的设置存在服务器上，带版本号。
 - [ADR 0161](0161-keep-every-model-prompt-in-one-catalog-package.md)：提示词集中管理，第二步另出方案。
-- [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 
 [返回阅读导航](#contents)

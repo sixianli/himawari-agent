@@ -41,7 +41,7 @@
 - Andy 尽量只和协调者沟通。所以他在项目聊天里对协调者说的话，由协调者附上他那条原话转给对应线程，就算他的授权。上线、回滚、停服、改配置、合并 PR 都是这样，不要让他再去别的线程重说一遍。上线和回滚的细节见[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)。
 - 唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。需要时，协调者在项目聊天里直接告诉他“去 Mac 线程打什么”和为什么，不说“在这里说也行”。
 - 会删东西的上线，所有要 Andy 选的选项先选完，再上线。
-- 合并 PR 一律由做这个 PR 的线程执行，要等 Andy 说“合并”（在那个线程或项目聊天里说都算）。不让 Andy 自己去 GitHub 操作。
+- 合并 PR 一律由做这个 PR 的线程执行，要等 Andy 说“合并”（在那个线程或项目聊天里说都算）。不让 Andy 自己去 GitHub 操作。线程执行合并的方式是给 PR 加 `merge-queue` 标签，由合并队列完整测过后合进 `main`；改了 CI 自身文件的 PR 仍由线程直接合并（[ADR 0268](../../docs/adr/0268-merge-queue-and-related-tests-on-prs.md)）。
 - 合并前的模型复核由 Andy 控制：他说跳过就跳过（不论复核了几轮），说停就停，说这次用哪家服务方就用哪家；线程怎么做见[Andy 怎样控制复核](../../.agents/instructions/model-review.md#owner-control)。
 
 <a id="prompt-layout-for-the-kv-cache"></a>

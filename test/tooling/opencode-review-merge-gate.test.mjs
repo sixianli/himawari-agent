@@ -1620,6 +1620,45 @@ describe("opencode review merge gate", () => {
     }
   }, 60000);
 
+  it("[ADR-0268] a malformed review ledger in the PR exits with the not-covered code, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [f.ledger]: "{not json\n" }, "broken ledger");
+      const run = spawnSync(
+        process.execPath,
+        [
+          "scripts/model-review/opencode-review.mjs",
+          "--assert-reviewed",
+          "--pr",
+          "7",
+          "--repo",
+          f.repo,
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, HIMAWARI_OPENCODE_BIN: "/nonexistent/opencode" },
+        },
+      );
+      expect(run.stdout).toMatch(/^REVIEW_RECORD_INVALID USAGE_LEDGER_INVALID /m);
+      expect(run.status).toBe(5);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("[ADR-0268] malformed verdicts at a low-fix check are a problem, not a crash", () => {
+    const f = lowFixFixture();
+    try {
+      f.commit({ [`${REVIEWS_DIR}/pr-7/round-1/verdicts.jsonl`]: "{bad\n" }, "bad verdicts");
+      f.commit({ "code.txt": "fixed\n", "test/code.test.mjs": "check\n" }, "low fix");
+      const checked = f.check({ acceptLow: 1 });
+      expect(checked.overridden).toBe(false);
+      expect(checked.lines.join("\n")).toContain("VERDICTS_INVALID");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it("[low fix] checks a hand-written low-fix record again at the gate", () => {
     const f = lowFixFixture();
     try {
