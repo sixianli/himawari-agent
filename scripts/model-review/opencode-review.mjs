@@ -1247,11 +1247,15 @@ export function claimsFileRecords(repo, claimsFile, exceptKey) {
 export function dailySpend(repo, date) {
   const items = [];
   for (const key of reviewLedgers(repo)) {
-    const records = readUsage(join(repo, REVIEWS_DIR, key)).filter(
-      (record) =>
-        typeof record.at === "string" &&
-        new Date(Date.parse(record.at) + JAPAN_OFFSET_MS).toISOString().slice(0, 10) === date,
-    );
+    const records = readUsage(join(repo, REVIEWS_DIR, key)).filter((record) => {
+      if (typeof record.at !== "string") return false;
+      const ms = Date.parse(record.at);
+      if (!Number.isFinite(ms))
+        throw new Error(
+          `USAGE_LEDGER_INVALID ${join(REVIEWS_DIR, key)} at=${JSON.stringify(record.at.slice(0, 40))}`,
+        );
+      return new Date(ms + JAPAN_OFFSET_MS).toISOString().slice(0, 10) === date;
+    });
     if (records.length > 0) items.push({ key, usd: spentOf(records), records: records.length });
   }
   const total = items.reduce((sum, item) => sum + item.usd, 0);
@@ -3315,7 +3319,11 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--spend-day") options.spendDay = true;
     else if (key === "--date") {
       options.date = take();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(options.date) || Number.isNaN(Date.parse(options.date)))
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(options.date) ||
+        Number.isNaN(Date.parse(options.date)) ||
+        new Date(Date.parse(options.date)).toISOString().slice(0, 10) !== options.date
+      )
         throw new Error("ARG_INVALID --date");
     } else if (key === "--judge-skeleton") options.judgeSkeleton = true;
     else if (key === "--finish-round") options.finishRound = true;

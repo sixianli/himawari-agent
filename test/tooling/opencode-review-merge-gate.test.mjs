@@ -2157,6 +2157,9 @@ describe("opencode review spending", () => {
       expect(DAILY_SPEND_LINE_USD).toBe(5);
       expect(dailySpend(root, "2026-11-15").total).toBeCloseTo(9);
       expect(dailySpend(root, "2026-11-15").over).toBe(true);
+      write("pr-3", [{ at: "not-a-date", cost: 1, round: 1 }]);
+      expect(() => dailySpend(root, "2026-11-14")).toThrow("USAGE_LEDGER_INVALID");
+      rmSync(join(root, REVIEWS_DIR, "pr-3"), { recursive: true, force: true });
       expect(dailySpend(join(root, "missing"), "2026-11-14")).toEqual({
         date: "2026-11-14",
         total: 0,
@@ -2172,6 +2175,7 @@ describe("opencode review spending", () => {
     expect(parseArgs(["--spend-day"]).spendDay).toBe(true);
     expect(parseArgs(["--spend-day", "--date", "2026-11-14"]).date).toBe("2026-11-14");
     expect(() => parseArgs(["--spend-day", "--date", "11-14"])).toThrow("ARG_INVALID --date");
+    expect(() => parseArgs(["--spend-day", "--date", "2026-02-31"])).toThrow("ARG_INVALID --date");
     expect(() => parseArgs(["--spend-day", "--pr", "1"])).toThrow("ARG_NOT_FOR_SUBCOMMAND --pr");
     expect(() => parseArgs(["--date", "2026-11-14"])).toThrow("ARG_ONLY_FOR_SPEND_DAY --date");
   });

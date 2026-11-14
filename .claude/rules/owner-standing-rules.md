@@ -14,7 +14,7 @@
 <a id="money-and-models"></a>
 ## 钱和模型
 
-- 花钱先问：任何评测、测试、实验或批量模型调用，预计要花 Andy 的钱超过 0.5 美元时，先在项目聊天报出预计费用和用途，等 Andy 明确同意再开跑；费用说不准时，按会超过处理。例外：用 OpenCode 做的合并前代码复核和方案说法核对（`plan-claims`，把方案里关于代码现状的每句话对着代码核一遍），一个 PR 或一件方案的已花的加上这一轮预计的不超过 1 美元、全项目当天合计不超过 5 美元时不用问，超了才问；费用说不准时同样按会超过处理（Andy 2026-11-14 同意；见[代码复核](../../.agents/instructions/model-review.md#code-review)）。脚本只拦一个 PR 或一件方案的 1 美元，拦不了全项目每天 5 美元：每天的复核和核对花费由协调者用 `node scripts/model-review/opencode-review.mjs --spend-day` 汇总报给 Andy（只算已合进 `main` 的账本），当天合计会超过 5 美元时由协调者先问。
+- 花钱先问：任何评测、测试、实验或批量模型调用，预计要花 Andy 的钱超过 0.5 美元时，先在项目聊天报出预计费用和用途，等 Andy 明确同意再开跑；费用说不准时，按会超过处理。例外：用 OpenCode 做的合并前代码复核和方案说法核对（`plan-claims`，把方案里关于代码现状的每句话对着代码核一遍），一个 PR 或一件方案的已花的加上这一轮预计的不超过 1 美元、全项目当天合计不超过 5 美元时不用问，超了才问；费用说不准时同样按会超过处理（Andy 2026-11-14 同意；见[代码复核](../../.agents/instructions/model-review.md#code-review)）。脚本只拦一个 PR 或一件方案的 1 美元，拦不了全项目每天 5 美元：每天的复核和核对花费由协调者用 `node scripts/model-review/opencode-review.mjs --spend-day` 汇总报给 Andy（只算这个工作区里已有的账本，别的分支上还没合进来的不在内，所以先合最新 `main` 再看），当天合计会超过 5 美元时由协调者先问。
 - 评测用哪个 key（API 密钥），评测之前先问 Andy。评测和测试绝不和生产共用预算：曾有一次评测花光了 Vercel 账号的预算，生产因此中断。
 - 禁用贵模型：任何场景（生产、评测、裁判、测试、实验、后台任务）都不得通过按 token 付费的渠道（例如 Vercel、OpenRouter）调用 Claude、OpenAI 或同价位的模型；按量付费只用 DeepSeek V4.1 Flash 这类低价模型或免费额度。代码和评测脚本里不得写死 `anthropic/`、`openai/` 开头的模型名。
 - Andy 已付费套餐里的 token（例如 Claude Max 附带的 API 额度、OpenCode Go）不在禁用之列，而且要优先用。生产经 Magpie（装在生产机上的模型路由程序）调用模型，顺序是套餐内 token、免费额度、最后才是 Vercel 上的低价模型。
