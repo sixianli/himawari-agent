@@ -14,7 +14,8 @@ const resolve = (template: string, suffix: string) =>
   template.replace("$(HIMAWARI_ENTITLEMENTS_SUFFIX)", suffix);
 
 it("takes every signed configuration's entitlements file from the signing variant setting", () => {
-  expect(lines.length).toBeGreaterThan(0);
+  expect(templates.length).toBeGreaterThanOrEqual(3);
+  expect(lines.length).toBe(templates.length * 2);
   for (const line of lines) {
     expect(line).toContain("$(HIMAWARI_ENTITLEMENTS_SUFFIX)");
   }
@@ -37,6 +38,6 @@ it("defaults the signing variant to the full App Group build in every project-le
   const defaults = [...project.matchAll(/HIMAWARI_ENTITLEMENTS_SUFFIX = ([^;]*);/gu)].map(
     (m) => m[1],
   );
-  expect(defaults.length).toBeGreaterThan(0);
+  expect(defaults.length).toBe(2);
   expect(new Set(defaults)).toEqual(new Set(['""']));
 });
