@@ -520,6 +520,7 @@ export class SqliteDecisionLedgerOperations {
         `SELECT ${entryColumns} FROM decision_ledger
          WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
            AND (owner_rating IS NULL OR rated_at >= ?)
+           AND kind <> 'web_push'
            AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
            AND kind <> 'memory_review'
            AND NOT (kind = 'rule_review' AND substr(outcome, 1, 6) = 'owner_')

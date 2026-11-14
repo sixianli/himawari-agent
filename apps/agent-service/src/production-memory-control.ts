@@ -7,6 +7,7 @@ import {
   type DurableMemoryService,
   isModelVisible,
   isReviewChangeUndoable,
+  type MailMatchParameters,
   MEMORY_REVIEW_EXPAND_BATCH,
   MEMORY_REVIEW_LIST_LIMIT,
   type MemoryBookStorePort,
@@ -978,7 +979,9 @@ export class ProductionMemoryControl {
         suggestion: rule.suggestion ? clip(rule.suggestion.summary) : null,
         suggestionConditions: rule.suggestion
           ? RULE_CONDITION_FIELDS.flatMap((field) => {
-              const values = rule.suggestion?.params[field] ?? [];
+              const params = rule.suggestion?.params;
+              const values =
+                params && field in params ? (params as MailMatchParameters)[field] : [];
               return values.length ? [{ field, values: values.map(clip) }] : [];
             })
           : [],

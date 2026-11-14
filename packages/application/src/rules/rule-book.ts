@@ -329,7 +329,11 @@ function inQuietPeriod(period: QuietPeriod, weekday: number, minutes: number): b
   );
 }
 
-function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExample[] {
+export function quietHoursExamples(
+  periods: readonly QuietPeriod[],
+  extraFacts: Readonly<Record<string, unknown>> = {},
+  hitWhen: (extra: Readonly<Record<string, unknown>>) => boolean = () => true,
+): readonly RuleExample[] {
   const moments = new Map<string, { readonly weekday: number; readonly minutes: number }>();
   const add = (weekday: number, minutes: number) => {
     const day = (weekday + Math.floor(minutes / MINUTES_PER_DAY) + 7) % 7;
@@ -352,11 +356,13 @@ function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExamp
     [...moments.values()].map(({ weekday, minutes }) =>
       Object.freeze({
         facts: {
+          ...extraFacts,
           local_minutes: minutes,
           local_weekday: weekday,
           local_previous_weekday: (weekday + 6) % 7,
         },
-        hit: periods.some((period) => inQuietPeriod(period, weekday, minutes)),
+        hit:
+          hitWhen(extraFacts) && periods.some((period) => inQuietPeriod(period, weekday, minutes)),
       }),
     ),
   );
@@ -428,6 +434,7 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
     "require_whole_thread",
   ] as const),
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  push_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
   action: Object.freeze(["allow_preauthorized", "ask_owner", "refuse"] as const),
 });
 

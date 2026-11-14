@@ -2136,6 +2136,50 @@ describe("production memory capture", () => {
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
   });
 
+  it('[HR-4] turns "夜里别提醒我" into an enforced push_quiet_hours rule through the rule tool, and refuses periods that are not times', async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const set = (args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef: "rule.set",
+        capabilityHandleRef: null,
+        arguments: {
+          inferred: false,
+          type: "push_quiet_hours",
+          summary: "夜里 23 点到早上 7 点，任务完成和邮件提醒等到早上再推",
+          quote: sentence,
+          ...args,
+        },
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const night = { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] };
+    const created = await set({ params: night }, "call-night");
+    expect(created).toMatchObject({ status: "active", type: "push_quiet_hours", replayed: false });
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => hit)).toBe(true);
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => !hit)).toBe(true);
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: created["ruleId"] as string,
+    } as never);
+    expect(stored).toMatchObject({ status: "active" });
+    await expect(
+      set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+    await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
+      code: "RULE_PARAMETERS_INVALID",
+    });
+  });
+
   it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
     const output =
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
@@ -2546,6 +2590,38 @@ describe("production memory capture", () => {
     expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("今晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这次别提醒我")).toBe(false);
+    expect(isStandingQuote("提醒我")).toBe(false);
+    expect(isStandingQuote("现在别提醒我")).toBe(false);
+    expect(isStandingQuote("我在开会，一会别打扰我")).toBe(false);
+    expect(isStandingQuote("今夜は通知しないで")).toBe(false);
+    expect(isStandingQuote("do not disturb me right now")).toBe(false);
+    expect(isStandingQuote("从现在起夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("晚上别提醒我")).toBe(true);
+    expect(isStandingQuote("周末别打扰我")).toBe(true);
+    expect(isStandingQuote("don't remind me at night")).toBe(true);
+    expect(isStandingQuote("别提醒我")).toBe(false);
+    expect(isStandingQuote("明天别提醒我")).toBe(false);
+    expect(isStandingQuote("暂时别提醒我")).toBe(false);
+    expect(isStandingQuote("先别提醒我")).toBe(false);
+    expect(isStandingQuote("明天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me tomorrow")).toBe(false);
+    expect(isStandingQuote("这个周末别提醒我")).toBe(false);
+    expect(isStandingQuote("下周三晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("后天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("昨晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("明年夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("下个月起，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("今年先这样，以后夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("从今天开始，以后夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("本季度夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me at night this month")).toBe(false);
+    expect(isStandingQuote("don't remind me this weekend")).toBe(false);
+    expect(isStandingQuote("don't remind me next week at night")).toBe(false);
     expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
     expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
@@ -2869,6 +2945,7 @@ describe("production memory capture", () => {
     });
     const model: ProactiveModelInvoker = {
       modelRef: "stub-flash",
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
       model: {
         listAvailable: async () => [],
         async *invoke(request) {
