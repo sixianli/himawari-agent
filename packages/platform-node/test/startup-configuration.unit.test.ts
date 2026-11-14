@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DEFAULT_HOME_FEED,
+  DEFAULT_SEARCH_ASK,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
@@ -1100,6 +1101,36 @@ it("[HOME-settings] fills home feed settings from the defaults and rejects value
   }
 });
 
+it("reads the search answer limits from runPolicy.searchAsk and rejects values outside the bounds", () => {
+  const raw = config("/tmp/himawari-policy-config");
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk,
+  ).toBeUndefined();
+  raw["runPolicy"] = { ...policy, searchAsk: { askLimit: 8, basisLimit: 3 } };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk).toEqual({
+    ...DEFAULT_SEARCH_ASK,
+    askLimit: 8,
+    basisLimit: 3,
+  });
+  for (const searchAsk of [
+    { candidateLimit: 0 },
+    { basisLimit: 11 },
+    { minimumCoveragePercent: 101 },
+    { answerCharacters: 1.5 },
+    { unknownSetting: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, searchAsk };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
 it("[RULE-memory-visible] accepts the retired maxMemoryClassification key without letting it limit Memory", () => {
   const raw = config("/tmp/himawari-policy-config");
   raw["runPolicy"] = {
@@ -1779,6 +1810,32 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     heartbeatMilliseconds: 15_000,
   };
   raw["identity"] = accessIdentity;
+  for (const ownerProposals of [
+    {},
+    { pendingLimit: 1 },
+    { pendingLimit: 200, expiresAfterDays: 3650 },
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerProposals };
+    expect(
+      parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
+    ).toEqual(ownerProposals);
+  }
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
+  ).toBeUndefined();
+  for (const invalid of [
+    { pendingLimit: 0 },
+    { pendingLimit: 201 },
+    { pendingLimit: 1.5 },
+    { expiresAfterDays: 0 },
+    { expiresAfterDays: 3651 },
+    { limit: 20 },
+    20,
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerProposals: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
   for (const mcpRead of [
     { audience: "mcp-access-audience" },
     { audience: "mcp-access-audience", proposals: true },
@@ -2171,6 +2228,42 @@ it("accepts the approval preview length only from 1 to 2000 characters and leave
       expect.objectContaining({
         details: expect.objectContaining({
           field: "configuration.runPolicy.approvalBodyPreviewCharacters",
+        }),
+      }),
+    );
+  }
+});
+
+it("[ADR-0257] reads the owner intent check settings and rejects values out of range", () => {
+  const raw = config("/tmp/himawari-owner-intent-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+  };
+  raw["runPolicy"] = { ...policy };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toBeUndefined();
+  const valid = { enabled: true, minConfidence: 900, timeoutMs: 5000, modelRef: "typesafe/jev" };
+  raw["runPolicy"] = { ...policy, ownerIntentCheck: valid };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerIntentCheck,
+  ).toEqual(valid);
+  for (const ownerIntentCheck of [
+    { ...valid, minConfidence: 499 },
+    { ...valid, timeoutMs: 100 },
+    { ...valid, enabled: "yes" },
+    { ...valid, modelRef: "bad ref" },
+    { enabled: true, minConfidence: 900, timeoutMs: 5000 },
+    { ...valid, extra: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, ownerIntentCheck };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          field: expect.stringContaining("configuration.runPolicy.ownerIntentCheck"),
         }),
       }),
     );

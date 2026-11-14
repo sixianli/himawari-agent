@@ -20,16 +20,6 @@ public struct MessageRow: Sendable, Equatable {
     }
 }
 
-public struct PerceptionRecordBody: Codable, Sendable, Equatable {
-    public let id: String
-    public let type: String
-    public let captureSource: String
-    public let occurredAt: String
-    public let confidence: Int
-    public let text: String?
-    public let evidence: [String: String]
-}
-
 public struct PerceptionIngestReply: Decodable, Sendable, Equatable {
     public struct Outcome: Decodable, Sendable, Equatable {
         public let id: String
@@ -71,14 +61,14 @@ public enum MessageSensing {
         "perception:" + Hashing.sha256(Data("message.text\n\(guid)".utf8)).prefix(24).base64URLEncodedString()
     }
 
-    public static func record(_ row: MessageRow) -> PerceptionRecordBody? {
+    public static func record(_ row: MessageRow) -> PerceptionRecordUpload? {
         guard !row.guid.isEmpty, let service = service(row.service) else { return nil }
         guard let text = row.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        var evidence = ["service": service, "direction": row.fromMe ? "outgoing" : "incoming"]
+        var evidence: [String: JSONScalar] = ["service": .string(service), "direction": row.fromMe ? "outgoing" : "incoming"]
         if !row.fromMe, let sender = row.sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
-            evidence["sender"] = utf16Prefix(sender, limit: senderLimit)
+            evidence["sender"] = .string(utf16Prefix(sender, limit: senderLimit))
         }
-        return PerceptionRecordBody(
+        return PerceptionRecordUpload(
             id: recordId(guid: row.guid),
             type: recordType,
             captureSource: captureSource,
@@ -108,7 +98,7 @@ public enum PerceptionUploadError: Error, Sendable, Equatable {
 }
 
 extension DeviceAPI {
-    public func perceiveSkippingInvalid(_ records: [PerceptionRecordBody]) async throws -> [String] {
+    public func perceiveSkippingInvalid(_ records: [PerceptionRecordUpload]) async throws -> [String] {
         guard !records.isEmpty else { return [] }
         do {
             _ = try await perceive(records)
@@ -129,8 +119,8 @@ extension DeviceAPI {
         }
     }
 
-    public func perceive(_ records: [PerceptionRecordBody]) async throws -> PerceptionIngestReply {
-        struct Body: Encodable { let records: [PerceptionRecordBody] }
+    public func perceive(_ records: [PerceptionRecordUpload]) async throws -> PerceptionIngestReply {
+        struct Body: Encodable { let records: [PerceptionRecordUpload] }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try await http.send(DeviceRequest(method: "POST", path: "perception", body: try encoder.encode(Body(records: records))))

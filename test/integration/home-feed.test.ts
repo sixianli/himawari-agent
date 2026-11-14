@@ -38,6 +38,7 @@ import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/producti
 import { protectedMemoryCandidates } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import {
   ProductionWebPush,
   WebPushPresence,
@@ -167,6 +168,13 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     const ownerRules = new ProductionOwnerRuleWriter({
       configuration: scope,
       rules: repository.ownerRules(),
+      box: new ProductionProposalBox({
+        configuration: scope,
+        store: repository.ownerProposals(),
+        payloads,
+        protector,
+        clock,
+      }),
       reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),

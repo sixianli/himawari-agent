@@ -129,6 +129,21 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         return try Self.check(response)
     }
 
+    public func upload(path: String, header: String, grant: String, body: Data, contentType: String) async throws -> Data {
+        guard let credentials = currentCredentials else { throw DeviceAPIError.server(status: 401, code: "DEVICE_NOT_PAIRED") }
+        guard path.hasPrefix(Self.prefix) else { throw DeviceAPIError.invalidResponse }
+        guard let url = Self.url(origin: credentials.origin, path: String(path.dropFirst(Self.prefix.count)), rawQuery: "") else {
+            throw DeviceAPIError.invalidResponse
+        }
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.httpBody = body
+        urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(grant, forHTTPHeaderField: header)
+        Self.apply(access: credentials.access, to: &urlRequest)
+        return try Self.check(try await exchange.send(urlRequest))
+    }
+
     private func perform(_ request: DeviceRequest, allowClockRetry: Bool) async throws -> Data {
         let urlRequest = try await signed(request)
         let response = try await exchange.send(urlRequest)

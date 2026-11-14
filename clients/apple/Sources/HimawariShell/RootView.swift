@@ -4,6 +4,7 @@ import HimawariDesign
 import HimawariListen
 import HimawariListenUI
 import HimawariManage
+import HimawariShare
 import SwiftUI
 
 public struct HimawariRootView: View {
@@ -24,6 +25,8 @@ public struct HimawariRootView: View {
         #endif
     }
 
+    @State private var handoverEntry: HandoverEntryLink?
+
     private var app: some View {
         Group {
             if model.phase == .active, let chat = model.chat {
@@ -32,11 +35,24 @@ public struct HimawariRootView: View {
                 PairingView(model: model)
             }
         }
+        .onOpenURL { url in
+            handoverEntry = HandoverLink.entry(in: url).map(HandoverEntryLink.init)
+        }
+        .sheet(item: $handoverEntry) { link in
+            NavigationStack {
+                HandoverEntryRoute(link.entry, safariURL: model.vault.pairingRecord()?.origin)
+            }
+        }
         .onAppear { SerifFace.shared.prepare() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
         }
     }
+}
+
+struct HandoverEntryLink: Identifiable {
+    let entry: HandoverEntry
+    var id: String { entry.rawValue }
 }
 
 enum MainTab: Hashable {

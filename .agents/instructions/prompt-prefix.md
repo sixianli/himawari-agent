@@ -27,6 +27,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 1. **固定的在前，会变的在后。**顺序是：工具定义 → 系统提示 → 历史 → 最后一条用户消息。越靠前的越不能变，因为前面一处变了，后面全部重算。
 2. **每轮都会变的内容只放在最后一条用户消息里。**例如当前时间、本轮选中的记忆、本轮资料、工具状态、运行环境说明。系统提示和工具定义里不得出现会变的值，例如时间、日期、路径、服务商名、额度、版本号、哈希。
 3. **要告诉模型新情况时，追加一条消息，不改系统提示。**例如工具循环停止、后台命令结束、运行环境变了，都以追加消息的方式告诉模型。
+   - 设备感知到的内容（听到的话、网页、短信、屏幕上的字）只作为 `perception_read` 这一次调用的工具结果追加在末尾。不得把它放进系统提示、工具定义，也不得作为一条更早位置的消息插入。
 
 <a id="rules"></a>
 <a id="append-only"></a>
@@ -42,6 +43,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
    - 是否换新只在一轮运行开始时判断，一轮运行中途不换新。
    - 改了提示词文字，**只对新对话生效**。要让老对话也用上，必须手动换新。
 7. **工具集合尽量不变。**业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝，而不是把工具删掉或加进来（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)）。本项目目前的取舍：工具集合变了就换新一次；只有手里有执行句柄才会出现的工具不冻结，接在冻结工具的后面，并记日志统计它们出现的频率。工具定义在请求最前面，所以这类工具出现或消失的那一轮，冻结工具之后的系统提示和全部历史都要重算一次（ADR 0165 已写明这个代价）。要改变这个取舍，先出方案。
+   - `device_action`、`perception_read` 两个工具的定义是提示词目录里的固定文字，不随有没有配对设备、设备支持哪些动作而变；现在能做什么，由 `device_action` 的 `describe` 结果告诉模型。给设备加动作不得改这两个工具的定义。
 8. **同一对话中途不换模型、不换推理强度，其他请求参数也保持稳定。**每个模型的缓存是分开的，推理强度在多数模型上也会影响缓存；`tool_choice` 变了、提示里图片的有无变了，同样会让缓存失效（Anthropic 原话：“Changes to `tool_choice` or the presence/absence of images anywhere in the prompt invalidate the cache”）。确实要换的话，在对话开头换，或者用单独的辅助调用来做。
 9. **同一对话的请求送到同一个服务方。**缓存存在各服务方自己的机器上，换一家服务方就要整段重算。路由要按对话保持同一个去向：Magpie 走会话亲和（同一会话尽量送到同一处），Vercel AI Gateway 一类按配置的服务方顺序；服务方支持缓存路由键的（例如 OpenAI 的 `prompt_cache_key`），按对话传一个固定的键。本项目目前没有传缓存路由键。
 
@@ -71,7 +73,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 <a id="gate"></a>
 ## 七、检查和监控
 
-- **阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。它用真实的 Pi 适配器和真实的出口遮盖，对本机回环服务跑多轮对话：包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间、运行环境说明只在变化时发，以及按对话冻结。换新的各种条件、运行中压缩后补发运行环境说明，由 `test/integration/thread-prompt-bundles.test.ts`、`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 覆盖，它们不在这一步里。每次都检查后一次请求是否以前一次请求开头：`messages` 逐字节比，其他字段按值比（`max_tokens` 除外）。它还带反向用例：改写历史里的用户消息、让系统提示带上每轮变化的值、关掉冻结、请求中间出现 system 消息，检查都必须报告失败。另有几条用例：模型持续返回 503 时，请求层按 [ADR 0245](../../docs/adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md) 只重发字节完全相同的请求（最多 2 次），历史里没有 `context_edit`，下一轮请求仍以第一轮请求开头（Himawari 关着 Pi 的自动重试；改设置把它打开，这条用例会失败，[ADR 0198](../../docs/adr/0198-upgrade-pi-to-1-5-0.md#decision) 实施时手动验证过，没有提交成自动用例）；冻结的工具名和 Pi 能执行的工具名不一致时，一次请求都不发。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`。
+- **阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。它用真实的 Pi 适配器和真实的出口遮盖，对本机回环服务跑多轮对话：包括工具调用、搜索结果、银行卡号遮盖、附件长文本、每轮变化的记忆和时间、运行环境说明只在变化时发，以及按对话冻结。换新的各种条件、运行中压缩后补发运行环境说明，由 `test/integration/thread-prompt-bundles.test.ts`、`packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts` 覆盖，它们不在这一步里。每次都检查后一次请求是否以前一次请求开头：`messages` 逐字节比，其他字段按值比（`max_tokens` 除外）。它还带反向用例：改写历史里的用户消息、让系统提示带上每轮变化的值、关掉冻结、请求中间出现 system 消息，检查都必须报告失败。另有几条用例：模型持续返回 503 时，请求层按 [ADR 0245](../../docs/adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md) 只重发字节完全相同的请求（最多 2 次），历史里没有 `context_edit`，下一轮请求仍以第一轮请求开头（Himawari 关着 Pi 的自动重试；改设置把它打开，这条用例会失败，[ADR 0198](../../docs/adr/0198-upgrade-pi-to-1-5-0.md#decision) 实施时手动验证过，没有提交成自动用例）；冻结的工具名和 Pi 能执行的工具名不一致时，一次请求都不发。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`，名字带 `[I-66]`。同一个文件里带 `[iOS-5]` 的四条用例直接看请求的结构：感知内容只出现在最后追加的那条工具结果里；把它放进系统提示、放进工具定义、插到更早的位置或换成别的角色，检查都必须报告失败。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite，并在测试自建的 HTTPS 模型桩里收齐字节后抓取原始请求体来比对。
 - **生产监控：**
   - 对话的后续轮次请求（输入至少 1024 个 token、上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`（阈值和命中率判断见 `packages/application/src/ports/model-usage.ts`，是否后续轮次见 `apps/agent-service/src/cache-hit-monitor.ts`）。不到 1024 个 token 的请求多数服务方本来就不缓存，不算异常。
