@@ -43,7 +43,8 @@ function control(h: Harness) {
             const spoken =
               record.contentRef === null ? undefined : await h.readText(record.contentRef);
             const written = perceptionSearchEvidenceText(record.type, record.evidence);
-            const text = spoken ?? (written === "" ? undefined : written);
+            const text =
+              [spoken ?? "", written].filter((part) => part !== "").join(" · ") || undefined;
             return text === undefined
               ? []
               : [
@@ -145,5 +146,46 @@ describe("perception literal search", () => {
     expect((await ask(h, "我对什么过敏")).state).toBe("answered");
     expect((await ask(h, "Tokyo Station")).state).toBe("answered");
     expect(await h.perception.rebuildSearchIndex(perceptionScope)).toBe(0);
+  });
+
+  it("finds a record with transcript text by a window title that is not in the text", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const screen = {
+      id: `perception:${"c".repeat(32)}`,
+      type: "screen.text",
+      captureSource: "system_api",
+      occurredAt: new Date(Date.parse(h.clock.now()) - 5000).toISOString(),
+      confidence: 900,
+      text: "季度预算表格需要确认",
+      evidence: { appName: "Sheets", windowTitle: "Quarterly Roadmap" },
+    };
+    await ingest(h, client, [screen]);
+    const found = await ask(h, "Quarterly Roadmap");
+    expect(found).toMatchObject({ state: "answered" });
+    expect(found.basis[0]).toMatchObject({ kind: "perception", recordId: screen.id });
+    expect(await ask(h, "Weekly Standup")).toMatchObject({ state: "not_found", basis: [] });
+  });
+
+  it("leaves records the rebuild skipped stale for the next attempt", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const spoken = utterance(h, "我对花生过敏", { seconds: -8 });
+    await ingest(h, client, [spoken]);
+    const store = h.repository.perception();
+    const stale = await store.listStaleSearchRecords({
+      ...perceptionScope,
+      version: "another-version",
+      limit: 10,
+    });
+    expect(stale).toHaveLength(1);
+    expect(
+      await store.listStaleSearchRecords({
+        ...perceptionScope,
+        version: "another-version",
+        limit: 10,
+        excludeRecordIds: [spoken.id],
+      }),
+    ).toHaveLength(0);
   });
 });

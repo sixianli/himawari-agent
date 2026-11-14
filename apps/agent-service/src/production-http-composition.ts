@@ -1376,7 +1376,8 @@ export async function createProductionHttpComposition(
                     ? undefined
                     : await readPerceptionText(record.contentRef).catch(() => undefined);
                 const written = perceptionSearchEvidenceText(record.type, record.evidence);
-                const text = spoken ?? (written === "" ? undefined : written);
+                const text =
+                  [spoken ?? "", written].filter((part) => part !== "").join(" · ") || undefined;
                 return text === undefined
                   ? []
                   : [

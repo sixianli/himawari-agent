@@ -716,7 +716,11 @@ export interface PerceptionStorePort {
     },
   ): Promise<readonly PerceptionRecord[]>;
   listStaleSearchRecords(
-    input: PerceptionScope & { readonly version: string; readonly limit: number },
+    input: PerceptionScope & {
+      readonly version: string;
+      readonly limit: number;
+      readonly excludeRecordIds?: readonly string[];
+    },
   ): Promise<readonly PerceptionRecord[]>;
   replaceSearchTerms(
     input: PerceptionScope & {

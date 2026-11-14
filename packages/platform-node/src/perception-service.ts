@@ -656,30 +656,33 @@ export class PerceptionService {
     if (!index) return 0;
     const owned = this.#scope(scope);
     let rebuilt = 0;
+    const failed: string[] = [];
     for (;;) {
       const stale = await this.#options.store.listStaleSearchRecords({
         ...owned,
         version: index.version,
         limit: index.rebuildBatch,
+        excludeRecordIds: failed,
       });
       if (stale.length === 0) return rebuilt;
       for (const record of stale) {
-        const text =
-          record.contentRef === null
-            ? ""
-            : await index.readText(record.contentRef).catch(() => undefined);
-        const indexText = [text ?? "", perceptionSearchEvidenceText(record.type, record.evidence)]
-          .filter((part) => part !== "")
-          .join(" ");
-        const terms =
-          indexText === "" ? [] : await index.document(owned, indexText).catch(() => []);
-        await this.#options.store.replaceSearchTerms({
-          ...owned,
-          recordId: record.id,
-          version: index.version,
-          terms,
-        });
-        rebuilt += 1;
+        try {
+          const text =
+            record.contentRef === null ? undefined : await index.readText(record.contentRef);
+          const indexText = [text ?? "", perceptionSearchEvidenceText(record.type, record.evidence)]
+            .filter((part) => part !== "")
+            .join(" ");
+          const terms = indexText === "" ? [] : await index.document(owned, indexText);
+          await this.#options.store.replaceSearchTerms({
+            ...owned,
+            recordId: record.id,
+            version: index.version,
+            terms,
+          });
+          rebuilt += 1;
+        } catch {
+          failed.push(record.id);
+        }
       }
     }
   }

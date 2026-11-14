@@ -682,6 +682,7 @@ export class SqlitePerceptionOperations {
            LEFT JOIN perception_search_index_state s ON s.record_id = perception_records.id
           WHERE owner_id = @ownerId AND agent_id = @agentId AND status = 'active'
             AND (s.record_id IS NULL OR s.version <> @version)
+            AND perception_records.id NOT IN (SELECT value FROM json_each(@excluded))
           ORDER BY occurred_at_ms DESC, perception_records.id LIMIT @limit`,
       )
       .all({
@@ -689,6 +690,7 @@ export class SqlitePerceptionOperations {
         agentId: input.agentId,
         version: input.version,
         limit: input.limit,
+        excluded: JSON.stringify(input.excludeRecordIds ?? []),
       }) as RecordRow[];
     return Object.freeze(rows.map(toRecord));
   }
