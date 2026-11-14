@@ -53,6 +53,20 @@ import Testing
         #expect(WatchCard(silent)?.choice == .handOff)
     }
 
+    @Test func anActionTheServerGaveNoBindingForIsNeverAWristButton() {
+        let item = WatchItem(key: "connection:gmail", awaitsOwner: true, sentence: "要重新连接", detail: nil, deadline: nil, actions: [
+            HomeAction(action: "reconnect", label: "重连", polarity: "positive", ownerPresence: false, binding: nil),
+        ])
+        #expect(WatchCard(item)?.choice == .handOff)
+    }
+
+    @Test func aGeneratedActionRequestIdAlwaysPassesTheServerPattern() {
+        for _ in 0 ..< 500 {
+            let id = DeviceAPI.newActionRequestId()
+            #expect(id.range(of: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", options: .regularExpression) != nil)
+        }
+    }
+
     @Test func anItemWithoutASentenceIsNeverTheWristCard() throws {
         let json = """
         {"items":[{"key":"approval:9","awaitsOwner":true,"sentence":null,"actions":[]},{"key":"insight:1","awaitsOwner":true,"sentence":"  ","actions":[]}],"awaitingCount":2,"revision":"r"}

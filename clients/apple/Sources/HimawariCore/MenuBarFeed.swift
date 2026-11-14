@@ -96,6 +96,10 @@ extension DeviceAPI {
         return try decode(WatchHome.self, data)
     }
 
+    public static func newActionRequestId() -> String {
+        "act_" + OutgoingMessage.newId()
+    }
+
     public func act(on item: HomeItem, action: HomeAction, requestId: String) async throws {
         try await act(key: item.key, action: action, requestId: requestId)
     }

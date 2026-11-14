@@ -147,7 +147,7 @@ public struct WatchCard: Sendable, Equatable {
         time = item.deadline
         self.sentence = sentence
         detail = item.detail
-        let shown = Self.ordered(Array(item.actions.prefix(HomeItem.shownActionLimit)))
+        let shown = Self.ordered(Array(item.actions.filter { $0.binding != nil }.prefix(HomeItem.shownActionLimit)))
         if shown.isEmpty || shown.contains(where: \.ownerPresence) {
             choice = .handOff
         } else {

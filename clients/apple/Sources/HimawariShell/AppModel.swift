@@ -121,7 +121,7 @@ public final class AppModel {
     public func handlePairingLink(_ text: String) {
         if phase == .active {
             #if os(iOS)
-            if (try? PairingInvitation.parse(text)) != nil, watchRelay.canOffer {
+            if let invitation = try? PairingInvitation.parse(text), invitation.origin == record?.origin, watchRelay.canOffer {
                 watchOffer = text
             }
             #endif

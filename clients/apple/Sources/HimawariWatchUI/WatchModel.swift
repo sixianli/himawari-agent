@@ -299,7 +299,7 @@ public final class WatchModel {
         guard acting == nil else { return }
         acting = card.key
         let identity = [card.key, action.action, action.binding ?? ""].joined(separator: "\n")
-        let requestId = requestIds[identity] ?? OutgoingMessage.newId()
+        let requestId = requestIds[identity] ?? DeviceAPI.newActionRequestId()
         requestIds[identity] = requestId
         Task {
             do {
