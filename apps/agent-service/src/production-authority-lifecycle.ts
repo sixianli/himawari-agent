@@ -66,7 +66,14 @@ export interface ProductionAuthorityLifecycleOptions {
     readonly leaseId: string;
     readonly holderId: string;
   };
-  readonly onLost?: (error: unknown) => void | Promise<void>;
+  readonly onLost?: (
+    error: unknown,
+    details: ProductionAuthorityLossDetails,
+  ) => void | Promise<void>;
+}
+
+export interface ProductionAuthorityLossDetails {
+  readonly msSinceLastRenewal: number | null;
 }
 
 export interface ProductionAuthorityLifecycleSnapshot {
@@ -215,6 +222,7 @@ export class ProductionAuthorityLifecycle {
   #authority: ProductAuthorityFence | null = null;
   #renewalTimer: ReturnType<typeof setInterval> | undefined;
   #generation = 0;
+  #lastRenewedAtMs: number | null = null;
   #renewalInFlight: Promise<ProductionAuthorityLifecycleSnapshot> | undefined;
   #activeCheckInFlight: { readonly generation: number; readonly check: Promise<void> } | undefined;
 
@@ -365,6 +373,7 @@ export class ProductionAuthorityLifecycle {
       this.assertStartingGeneration(generation);
       this.#record = record;
       this.#authority = authority;
+      this.#lastRenewedAtMs = this.safeNowMs();
       this.#state = "active";
       return this.snapshot();
     } catch (error) {
@@ -446,6 +455,7 @@ export class ProductionAuthorityLifecycle {
       this.assertActiveGeneration(generation, record);
       this.#record = renewed;
       this.#authority = authority;
+      this.#lastRenewedAtMs = this.safeNowMs();
       return this.snapshot();
     } catch (error) {
       if (generation !== this.#generation || this.#state !== "active" || this.#record !== record) {
@@ -502,7 +512,35 @@ export class ProductionAuthorityLifecycle {
     this.#state = "lost";
     this.#renewalTimer && clearInterval(this.#renewalTimer);
     this.#renewalTimer = undefined;
-    void Promise.resolve(this.#options.onLost?.(error)).catch(() => undefined);
+    const details = this.lossDetails();
+    void Promise.resolve(this.#options.onLost?.(error, details)).catch(() => undefined);
+  }
+
+  private lossDetails(): ProductionAuthorityLossDetails {
+    try {
+      const lastRenewedAtMs = this.#lastRenewedAtMs;
+      const now = this.nowMs();
+      return Object.freeze({
+        msSinceLastRenewal:
+          lastRenewedAtMs === null || !Number.isFinite(lastRenewedAtMs) || !Number.isFinite(now)
+            ? null
+            : Math.max(0, now - lastRenewedAtMs),
+      });
+    } catch {
+      return Object.freeze({ msSinceLastRenewal: null });
+    }
+  }
+
+  private safeNowMs(): number | null {
+    try {
+      return this.nowMs();
+    } catch {
+      return null;
+    }
+  }
+
+  private nowMs(): number {
+    return new Date(this.#options.clock.now()).valueOf();
   }
 
   private assertStartingGeneration(generation: number): void {
