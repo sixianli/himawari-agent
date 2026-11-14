@@ -314,6 +314,11 @@
     "changedIn": "ADR 0219",
     "reason": "新增：真实记忆回忆评测的出题、作答、判分提示词"
   },
+  "home.urgency": {
+    "sha256": "845629e56803e841ec93a29ec735e1553db095888dc322f477f9e7b1375a2d62",
+    "changedIn": "ADR 0255",
+    "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
+  },
   "mail.judgment": {
     "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
     "changedIn": "ADR 0248",

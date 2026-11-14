@@ -19,6 +19,7 @@ import http from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import {
   binaryProblem,
   CLIENT_KEY,
@@ -49,7 +50,6 @@ import {
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
-import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -2848,6 +2848,16 @@ export function selfCheckCacheWrite({ key, now = Date.now(), env = process.env }
   } catch {}
 }
 
+export function selfCheckSteps({ cached, gateway }) {
+  return {
+    models: cached ? REVIEW_MODELS.slice(0, 1) : REVIEW_MODELS,
+    guardProbe: !cached,
+    passthroughProbe: !cached && Boolean(gateway),
+    failoverProbe: !cached && Boolean(gateway),
+    installCheck: Boolean(gateway),
+  };
+}
+
 export async function selfCheck({
   binary,
   copy,
@@ -2858,6 +2868,7 @@ export async function selfCheck({
   gateway,
   cached = false,
 }) {
+  const steps = selfCheckSteps({ cached, gateway });
   const plan = probePlan(
     workRoot,
     git(["ls-files"], copy)
@@ -2889,7 +2900,7 @@ export async function selfCheck({
       ),
     );
     const problems = [];
-    for (const model of cached ? REVIEW_MODELS.slice(0, 1) : REVIEW_MODELS) {
+    for (const model of steps.models) {
       const before = requests.length;
       const run = await runOpencode({
         binary,
@@ -2934,14 +2945,14 @@ export async function selfCheck({
     }
     live?.stop();
     live = null;
-    if (!cached)
+    if (steps.guardProbe)
       problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
-    if (gateway) {
-      if (!cached)
-        problems.push(
-          ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
-          ...(await failoverProbe({ workRoot, gateway })),
-        );
+    if (steps.passthroughProbe)
+      problems.push(
+        ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
+      );
+    if (steps.failoverProbe) problems.push(...(await failoverProbe({ workRoot, gateway })));
+    if (steps.installCheck) {
       const changed = binaryProblem(gateway.install);
       if (changed) problems.push(changed);
     }
