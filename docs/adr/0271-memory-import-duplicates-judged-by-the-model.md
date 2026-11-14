@@ -8,7 +8,7 @@ amends: "docs/adr/0249-the-model-judges-meaning-where-word-lists-guessed-it.md"
 date: "2026-11-14"
 ---
 
-# ADR 0265：导入记忆时，“是不是已经记着了”改由服务端的模型判断
+# ADR 0271：导入记忆时，“是不是已经记着了”改由服务端的模型判断
 
 <a id="contents"></a>
 

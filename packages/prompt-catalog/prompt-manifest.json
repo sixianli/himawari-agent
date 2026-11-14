@@ -694,7 +694,7 @@
   },
   "memory.import-duplicate-question": {
     "sha256": "324340a48c186039fa92a6a4d0f7bb175cadfb4d107b573b24d5916cb56c3255",
-    "changedIn": "ADR 0265",
+    "changedIn": "ADR 0271",
     "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
   },
   "review.prereview": {
