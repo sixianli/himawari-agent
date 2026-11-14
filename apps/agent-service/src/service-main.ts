@@ -2764,8 +2764,9 @@ export async function startTenantRuntime(
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
-            approvalCopy: async (input) =>
-              (await http?.home.approvalCopy(input)) ?? { sentence: null, affirmLabel: null },
+            approvalCopy: async (input) => ({
+              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
+            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",

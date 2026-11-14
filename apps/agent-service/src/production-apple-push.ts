@@ -140,7 +140,7 @@ export interface ProductionApplePushOptions extends PairedDeviceScope {
     readonly approvalRequestId: string;
     readonly semanticSnapshotHash: string;
     readonly locale: WebPushLocale;
-  }) => Promise<{ readonly sentence: string | null; readonly affirmLabel: string | null }>;
+  }) => Promise<{ readonly affirmLabel: string | null }>;
   readonly onDelivery?: (outcome: {
     readonly pushType: string;
     readonly kind: string;
@@ -305,18 +305,17 @@ export class ProductionApplePush implements PushCompanionChannel {
     });
   }
 
-  async #approvalCopy(
-    approval: ApprovalRequest,
-    locale: WebPushLocale,
-  ): Promise<{ readonly sentence: string | null; readonly affirmLabel: string | null } | null> {
+  async #approvalCopy(approval: ApprovalRequest, locale: WebPushLocale): Promise<string | null> {
     const read = this.#options.approvalCopy;
     if (!read) return null;
     try {
-      return await read({
+      const copy = await read({
         approvalRequestId: approval.id,
         semanticSnapshotHash: approval.semanticSnapshotHash,
         locale,
       });
+      const label = copy.affirmLabel?.trim() ?? "";
+      return label === "" ? null : label;
     } catch (error) {
       this.#options.onFailure(error);
       return null;
@@ -393,7 +392,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     const built = content.build(locale);
     const approval =
       item.kind === "approval" ? approvals.find(({ id }) => id === item.sourceRef) : undefined;
-    const copy =
+    const affirmLabel =
       approval &&
       (approval as ApprovalRequest & { recentAuthenticationRequired?: boolean })
         .recentAuthenticationRequired !== true
@@ -409,14 +408,14 @@ export class ProductionApplePush implements PushCompanionChannel {
       collapseId: tag,
       payload: applePushAlertPayload({
         title: built.title,
-        body: copy?.sentence ?? built.body,
+        body: built.body,
         navigate: built.navigate.startsWith(this.#options.publicOrigin)
           ? built.navigate.slice(this.#options.publicOrigin.length) || "/"
           : "/",
         tag,
         kind: item.kind,
         badge,
-        actions: await this.#actions(entry, now, locale, approval, copy?.affirmLabel ?? null),
+        actions: await this.#actions(entry, now, locale, approval, affirmLabel),
       }),
     });
     const attempts = (attempt?.attempts ?? 0) + 1;
