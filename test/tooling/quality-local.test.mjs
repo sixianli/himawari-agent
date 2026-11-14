@@ -579,7 +579,7 @@ describe("local shared-runner boundary", () => {
         ).toEqual([check]);
       }
       state.calls.length = 0;
-      for (const check of [undefined, "build", "coverage"])
+      for (const check of [undefined, "build", "tests"])
         await expect(
           runLocal({ check, output: `.ci-output/local-refused-${check}` }),
         ).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
@@ -597,13 +597,14 @@ describe("local shared-runner boundary", () => {
       "browser",
       "browser",
       "browser",
-      "coverage",
+      "tests",
+      "tooling",
       "security",
     ]);
     expect(
       calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
     ).toEqual(["chromium", "firefox", "webkit"]);
-    const consumers = calls.filter((entry) => ["browser", "coverage"].includes(entry.checkId));
+    const consumers = calls.filter((entry) => ["browser", "tests"].includes(entry.checkId));
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
     expect(calls.every((entry) => entry.hosted === false)).toBe(true);
@@ -649,35 +650,34 @@ describe("local shared-runner boundary", () => {
     );
   });
   it("selects individual checks and reuses a supplied archive without rebuilding", async () => {
-    for (const check of ["policy", "static", "build", "coverage", "security"]) {
+    for (const check of ["policy", "static", "build", "tests", "tooling", "security"]) {
       state.calls = [];
       expect((await runLocal({ check, output: `.ci-output/local-${check}` })).status).toBe(
         "local_passed",
       );
       expect(state.calls.map((entry) => entry.checkId)).toEqual(
-        check === "coverage" ? ["build", "coverage"] : [check],
+        check === "tests" ? ["build", "tests"] : [check],
       );
     }
     state.calls = [];
     await runLocal({
-      check: "coverage",
+      check: "tests",
       artifact: "/fixture/existing.tar.gz",
       output: ".ci-output/local-coverage-artifact",
     });
-    expect(state.calls.map((entry) => entry.checkId)).toEqual(["coverage"]);
+    expect(state.calls.map((entry) => entry.checkId)).toEqual(["tests"]);
     expect(state.calls[0].artifact).toBe("/fixture/existing.tar.gz");
   });
   it("does not run artifact consumers after failed build and preserves failed check outcomes", async () => {
     state.fail = "build";
     const failedBuild = await runLocal();
     expect(failedBuild.status).toBe("failed");
-    expect(state.calls.some((entry) => ["browser", "coverage"].includes(entry.checkId))).toBe(
-      false,
-    );
+    expect(state.calls.some((entry) => ["browser", "tests"].includes(entry.checkId))).toBe(false);
     expect(state.calls.map((entry) => entry.checkId)).toEqual([
       "policy",
       "static",
       "build",
+      "tooling",
       "security",
     ]);
     state.fail = "security";
@@ -716,7 +716,7 @@ describe("local shared-runner boundary", () => {
       (
         await localMain([
           "--check",
-          "coverage",
+          "tests",
           "--output",
           ".ci-output/local-cli",
           "--tools",
@@ -730,8 +730,8 @@ describe("local shared-runner boundary", () => {
     ).toBe("local_passed");
     expect(process.exitCode).toBe(0);
     vi.stubEnv("HIMAWARI_CI_TOOLS", path.join(state.root, "tools"));
-    state.fail = "coverage";
-    expect((await localMain(["--check", "coverage"])).status).toBe("failed");
+    state.fail = "tests";
+    expect((await localMain(["--check", "tests"])).status).toBe("failed");
     expect(process.exitCode).toBe(1);
   });
 });

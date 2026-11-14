@@ -80,15 +80,18 @@ export async function runCheck({
   context,
   artifact,
   baselineCandidate,
+  coverage,
   comparison,
   hosted = process.env.GITHUB_ACTIONS === "true",
 }) {
+  if (coverage !== undefined && (checkId !== "tests" || coverage !== "measure"))
+    throw new Error("CI_COVERAGE_OPTION_INVALID");
   if (
     baselineCandidate !== undefined &&
-    (checkId !== "coverage" || baselineCandidate !== "initial-only")
+    (checkId !== "tests" || baselineCandidate !== "initial-only")
   )
     throw new Error("CI_INITIAL_BASELINE_CANDIDATE_OPTION_INVALID");
-  if (["build", "browser", "coverage"].includes(checkId)) artifactPlatformKey();
+  if (["build", "browser", "tests"].includes(checkId)) artifactPlatformKey();
   const directory = outputPath(output, root);
   const source = resolvePolicySource({ root, base: context.baseSha });
   if (!source.policy.events.includes(context.event)) throw new Error("CI_EVENT_UNSUPPORTED");
@@ -96,8 +99,7 @@ export async function runCheck({
   if (existsSync(directory)) throw new Error("CI_OUTPUT_ALREADY_EXISTS");
   if (artifact && (!existsSync(artifact) || !statSync(artifact).isFile()))
     throw new Error("CI_ARTIFACT_INVALID");
-  if (["browser", "coverage"].includes(checkId) && !artifact)
-    throw new Error("CI_ARTIFACT_REQUIRED");
+  if (["browser", "tests"].includes(checkId) && !artifact) throw new Error("CI_ARTIFACT_REQUIRED");
   mkdirSync(directory, { recursive: true });
   json(path.join(directory, "context.json"), context);
   const started = performance.now();
@@ -246,6 +248,8 @@ export async function runCheck({
       await command("toolchain", tools.node, ["scripts/ci/install-tools.mjs", "--check"]);
       if (check.projects.length) await vitest(check.projects);
       else result.counts = { files: 2, executed: 2, passed: 2, failed: 0, skipped: 0 };
+    } else if (checkId === "tooling") {
+      await vitest(check.projects);
     } else if (checkId === "static") {
       await command("check", tools.node, [tools.npmCli, "run", "check"]);
       await command("actionlint", tools.actionlint, [
@@ -283,12 +287,12 @@ export async function runCheck({
         result.status = security.status;
         throw new Error("CI_SECURITY_FAILED");
       }
-    } else if (checkId === "coverage") {
+    } else if (checkId === "tests") {
       await verifyArtifact({ archive: artifact, root, context, python: tools.python });
       const retained = path.join(directory, path.basename(artifact));
       copyFileSync(artifact, retained);
       if (fileSha256(retained) !== fileSha256(artifact))
-        throw new Error("CI_COVERAGE_ARTIFACT_COPY_CHANGED");
+        throw new Error("CI_TESTS_ARTIFACT_COPY_CHANGED");
       const entry = reportEntry(retained, "artifact", directory);
       files.push({ path: retained, kind: "artifact" });
       result.artifacts.push({
@@ -308,26 +312,29 @@ export async function runCheck({
           ? path.join(directory, "initial-coverage-baseline.json")
           : undefined;
       baselineCandidatePath = candidate;
-      files.push(
-        { path: filename, kind: "json" },
-        { path: snapshot, kind: "json" },
-        { path: coverageReport, kind: "json" },
-        { path: path.join(coverageDirectory, "coverage-final.json"), kind: "json" },
-        { path: path.join(coverageDirectory, "lcov.info"), kind: "lcov" },
-      );
-      await command("coverage-snapshot", tools.node, [
-        "scripts/ci/check-coverage.mjs",
-        "--mode",
-        "snapshot",
-        "--source-state",
-        hosted ? "commit" : "working-tree",
-        "--context",
-        path.join(directory, "context.json"),
-        "--output",
-        snapshot,
-      ]);
-      const measuredProjects = check.projects.filter((id) => coverageProjects.includes(id));
-      const plainProjects = check.projects.filter((id) => !coverageProjects.includes(id));
+      const measure = coverage === "measure" || candidate !== undefined;
+      if (measure)
+        files.push(
+          { path: filename, kind: "json" },
+          { path: snapshot, kind: "json" },
+          { path: coverageReport, kind: "json" },
+          { path: path.join(coverageDirectory, "coverage-final.json"), kind: "json" },
+          { path: path.join(coverageDirectory, "lcov.info"), kind: "lcov" },
+        );
+      if (measure)
+        await command("coverage-snapshot", tools.node, [
+          "scripts/ci/check-coverage.mjs",
+          "--mode",
+          "snapshot",
+          "--source-state",
+          hosted ? "commit" : "working-tree",
+          "--context",
+          path.join(directory, "context.json"),
+          "--output",
+          snapshot,
+        ]);
+      const measuredProjects = measure ? coverageProjects : [];
+      const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));
       const collectCoverage = async () => {
         await reportedTestCommand(
           "coverage",
@@ -422,32 +429,33 @@ export async function runCheck({
         }
       };
       const measured = [
-        ...(await Promise.allSettled([collectCoverage(), compareCoverage()])),
+        ...(measure ? await Promise.allSettled([collectCoverage(), compareCoverage()]) : []),
         ...(await Promise.allSettled([runPlainProjects()])),
       ];
       const failures = measured.filter((outcome) => outcome.status === "rejected");
       if (failures.length)
         throw new AggregateError(
           failures.map((outcome) => outcome.reason),
-          "CI_COVERAGE_MEASUREMENT_FAILED",
+          measure ? "CI_COVERAGE_MEASUREMENT_FAILED" : "CI_TESTS_FAILED",
         );
-      await command("coverage-policy", tools.node, [
-        "scripts/ci/check-coverage.mjs",
-        ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
-        ...(comparison ? ["--comparison", comparison] : []),
-        "--context",
-        path.join(directory, "context.json"),
-        "--snapshot",
-        snapshot,
-        "--tests",
-        filename,
-        "--report",
-        path.join(coverageDirectory, "coverage-final.json"),
-        "--lcov",
-        path.join(coverageDirectory, "lcov.info"),
-        "--output",
-        coverageReport,
-      ]);
+      if (measure)
+        await command("coverage-policy", tools.node, [
+          "scripts/ci/check-coverage.mjs",
+          ...(candidate ? ["--mode", "measure", "--baseline-output", candidate] : []),
+          ...(comparison ? ["--comparison", comparison] : []),
+          "--context",
+          path.join(directory, "context.json"),
+          "--snapshot",
+          snapshot,
+          "--tests",
+          filename,
+          "--report",
+          path.join(coverageDirectory, "coverage-final.json"),
+          "--lcov",
+          path.join(coverageDirectory, "lcov.info"),
+          "--output",
+          coverageReport,
+        ]);
       if (candidate) {
         const measured = validateCoveragePolicy(
           readJson(existingInside(directory, path.basename(candidate))),
@@ -560,6 +568,7 @@ export async function main(argv = process.argv.slice(2)) {
     "--artifact",
     "--input",
     "--baseline-candidate",
+    "--coverage",
     "--comparison",
   ]);
   for (const key of ["--check", "--output", "--tools"])
@@ -596,6 +605,7 @@ export async function main(argv = process.argv.slice(2)) {
       context,
       artifact,
       baselineCandidate: args["--baseline-candidate"],
+      coverage: args["--coverage"],
       comparison: args["--comparison"] && path.resolve(args["--comparison"]),
     });
   } finally {

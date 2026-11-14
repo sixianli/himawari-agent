@@ -47,12 +47,12 @@ function positive() {
           ]),
         )
       : count();
-    const platform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+    const platform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const outputs = check.outputs.map((kind) => {
       const bytes = kind === "artifact" ? archive(platform) : Buffer.from(`real ${kind} report`);
       return { path: `report.${kind}`, kind, bytes: bytes.length, sha256: sha256(bytes) };
     });
-    const artifacts = ["build", "browser", "coverage"].includes(check.id)
+    const artifacts = ["build", "browser", "tests"].includes(check.id)
       ? [
           {
             role: check.id === "build" ? "produced" : "consumed",
@@ -110,7 +110,7 @@ const run = (mutate) => {
   mutate(input);
   return aggregate(input);
 };
-const selected = (input, id = "coverage", key = "default") =>
+const selected = (input, id = "tests", key = "default") =>
   input.reports.find((entry) => entry.result.checkId === id && entry.result.matrixKey === key);
 
 describe("complete-attempt gate", () => {
@@ -124,7 +124,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(8);
+    expect(result.expected).toHaveLength(9);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
@@ -399,7 +399,7 @@ describe("complete-attempt gate", () => {
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
   it("[ADR-0266] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
-    for (const id of ["policy", "static", "security"]) {
+    for (const id of ["policy", "static", "tooling", "security"]) {
       const input = positive();
       selected(input, id).result.toolchain.arch = "arm64";
       expect(aggregate(input).status).toBe("passed");
@@ -450,7 +450,7 @@ describe("complete-attempt gate", () => {
       mkdirSync(folder, { recursive: true });
       writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
       for (const report of envelope.result.reports) {
-        const platform = ["browser", "coverage"].includes(envelope.result.checkId)
+        const platform = ["browser", "tests"].includes(envelope.result.checkId)
           ? "linux-x64"
           : envelope.result.matrixKey;
         writeFileSync(
@@ -463,7 +463,7 @@ describe("complete-attempt gate", () => {
     }
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("passed");
-    writeFileSync(path.join(directory, "coverage/default/report.json"), "tampered");
+    writeFileSync(path.join(directory, "tests/default/report.json"), "tampered");
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
   });

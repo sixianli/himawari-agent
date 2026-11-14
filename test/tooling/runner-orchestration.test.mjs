@@ -173,7 +173,7 @@ vi.mock("../../scripts/ci/build.mjs", () => ({
     await cleanupCoordinator("build-work-cleanup", async () => {});
     if (state.failBuildAndCleanup)
       throw new AggregateError(
-        [new Error("primary build failure"), new Error("cleanup Bearer " + "s".repeat(32))],
+        [new Error("primary build failure"), new Error(`cleanup Bearer ${"s".repeat(32)}`)],
         "CI_BUILD_AND_CLEANUP_FAILED",
       );
     const archive = path.join(output, "runtime.tar.gz");
@@ -306,7 +306,9 @@ const run = (checkId, extra = {}) =>
     output: `.ci-output/${checkId}`,
     toolsDirectory: state.root,
     hosted: false,
-    ...(checkId === "coverage" ? { artifact: path.join(state.root, "runtime.tar.gz") } : {}),
+    ...(checkId === "tests"
+      ? { artifact: path.join(state.root, "runtime.tar.gz"), coverage: "measure" }
+      : {}),
     ...extra,
   });
 
@@ -349,7 +351,7 @@ describe("共享runner的调度、来源和失败传播", () => {
         failComparison: mode === "comparison fails",
       };
       if (mode === "candidate fails") state.fail = "coverage";
-      const pending = run("coverage");
+      const pending = run("tests");
       try {
         await state.parallel.coverageReached.promise;
         expect(state.parallel.started).toBe(true);
@@ -373,8 +375,34 @@ describe("共享runner的调度、来源和失败传播", () => {
       }
     },
   );
-  it("coverage 在缺少构建归档时拒绝启动采集", async () => {
-    await expect(run("coverage", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");
+  it("[ADR-0267] tooling 只跑 tooling 测试，不跑 policy 检查", async () => {
+    const result = await run("tooling");
+    expect(result.status).toBe("passed");
+    expect(result.projects.map((entry) => entry.id)).toEqual(["tooling"]);
+    expect(state.calls.map((entry) => entry.name)).toEqual(["vitest-tooling"]);
+  });
+  it("[ADR-0267] tests 不带 --coverage measure 时只跑测试，不量覆盖率", async () => {
+    const result = await run("tests", { coverage: undefined });
+    expect(result.status).toBe("passed");
+    expect(state.calls.map(({ name }) => name)).toEqual([]);
+    expect(result.projects.map(({ id }) => id)).toEqual([
+      "unit",
+      "contracts",
+      "integration",
+      "e2e",
+      "pi-compat",
+    ]);
+    expect(result.reports.some((entry) => entry.path.includes("coverage-final.json"))).toBe(false);
+  });
+  it.each([
+    ["policy", "measure"],
+    ["tests", "always"],
+  ])("[ADR-0267] 拒绝%s的覆盖率选项%s，不启动命令", async (checkId, coverage) => {
+    await expect(run(checkId, { coverage })).rejects.toThrow("CI_COVERAGE_OPTION_INVALID");
+    expect(state.calls).toEqual([]);
+  });
+  it("tests 在缺少构建归档时拒绝启动", async () => {
+    await expect(run("tests", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");
     expect(state.calls).toEqual([]);
   });
 
@@ -385,9 +413,9 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls).toEqual([]);
     expect(existsSync(path.join(state.root, ".ci-output/policy"))).toBe(false);
   });
-  it("rejects build, browser and coverage on linux-arm64 before creating output or executing anything", async () => {
+  it("rejects build, browser and tests on linux-arm64 before creating output or executing anything", async () => {
     await withHost("linux", "arm64", async () => {
-      for (const checkId of ["build", "browser", "coverage"]) {
+      for (const checkId of ["build", "browser", "tests"]) {
         await expect(run(checkId)).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
         expect(existsSync(path.join(state.root, `.ci-output/${checkId}`))).toBe(false);
       }
@@ -395,19 +423,19 @@ describe("共享runner的调度、来源和失败传播", () => {
     });
   });
 
-  it("coverage 在归档身份不符时失败，不开始快照或测试", async () => {
+  it("tests 在归档身份不符时失败，不开始快照或测试", async () => {
     state.artifactFailure = true;
-    const result = await run("coverage");
+    const result = await run("tests");
     expect(result.status).toBe("infrastructure_failed");
     expect(state.calls).toEqual([]);
     expect(state.verified[0].context).toEqual(context);
   });
-  it("coverage 使用已核验的归档和同次 context，记录消费摘要", async () => {
-    const result = await run("coverage");
+  it("tests 量覆盖率时使用已核验的归档和同次 context，记录消费摘要", async () => {
+    const result = await run("tests");
     expect(result.status).toBe("passed");
     const collection = state.calls.find(({ name }) => name === "coverage");
     expect(collection.env.HIMAWARI_TEST_ARTIFACT).toBe(
-      path.join(state.root, ".ci-output/coverage/runtime.tar.gz"),
+      path.join(state.root, ".ci-output/tests/runtime.tar.gz"),
     );
     expect(JSON.parse(readFileSync(collection.env.HIMAWARI_TEST_CONTEXT, "utf8"))).toEqual(context);
     expect(result.artifacts[0]).toMatchObject({
@@ -416,24 +444,20 @@ describe("共享runner的调度、来源和失败传播", () => {
     });
     expect(collection.args).toContain("integration");
   });
-  it("policy先校验固定合同，再运行tooling；子进程不继承凭据", async () => {
+  it("policy只校验固定合同，不跑测试；子进程不继承凭据", async () => {
     const result = await run("policy");
     expect(result.status).toBe("passed");
-    expect(result.projects.map((entry) => entry.id)).toEqual(["tooling"]);
-    expect(state.calls.map((entry) => entry.name)).toEqual([
-      "policy",
-      "toolchain",
-      "vitest-tooling",
-    ]);
+    expect(result.projects).toEqual([]);
+    expect(state.calls.map((entry) => entry.name)).toEqual(["policy", "toolchain"]);
     expect(state.calls[0].args).toContain(context.baseSha);
     expect(state.calls[0].env).not.toHaveProperty("OPENAI_API_KEY");
     expect(state.calls[0].env.HOME).toContain(".ci-output");
   });
   it.each(["failed", "passed", "missing", "malformed"])(
-    "保留失败进程的退出码与有效测试计数：%s",
+    "tooling 保留失败进程的退出码与有效测试计数：%s",
     async (report) => {
       state.testReportFailure = report;
-      const result = await run("policy");
+      const result = await run("tooling");
       expect(result).toMatchObject({ status: "failed", exitCode: 7 });
       const expected =
         report === "failed"
@@ -446,7 +470,7 @@ describe("共享runner的调度、来源和失败传播", () => {
         ["failed", "passed"].includes(report) ? [{ id: "tooling", counts: expected }] : [],
       );
       const details = JSON.parse(
-        readFileSync(path.join(state.root, ".ci-output/policy/details.json"), "utf8"),
+        readFileSync(path.join(state.root, ".ci-output/tooling/details.json"), "utf8"),
       );
       expect(details.failures).toContain("CI_COMMAND_FAILED:vitest-tooling");
       if (report === "malformed")
@@ -459,7 +483,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     "覆盖率进程失败时保留实际测试计数与退出码，e2e 和 pi-compat 照常执行：%s",
     async (report) => {
       state.testReportFailure = report;
-      const result = await run("coverage");
+      const result = await run("tests");
       expect(result).toMatchObject({ status: "failed", exitCode: 7 });
       expect(result.counts).toEqual(
         report === "failed"
@@ -475,7 +499,7 @@ describe("共享runner的调度、来源和失败传播", () => {
       );
       expect(state.calls.map(({ name }) => name)).toEqual(["coverage-snapshot", "coverage"]);
       const details = JSON.parse(
-        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+        readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
       );
       expect(details.failures).toContain("CI_COMMAND_FAILED:coverage");
       if (["missing", "malformed"].includes(report))
@@ -488,7 +512,7 @@ describe("共享runner的调度、来源和失败传播", () => {
   );
   it("覆盖率通过而 e2e、pi-compat 进程非零时记为测试失败并保留它的退出码", async () => {
     state.pipelineExitCode = 3;
-    const result = await run("coverage");
+    const result = await run("tests");
     expect(result).toMatchObject({ status: "failed", exitCode: 3 });
     expect(result.projects.map(({ id }) => id)).toEqual([
       "unit",
@@ -499,7 +523,7 @@ describe("共享runner的调度、来源和失败传播", () => {
       "pi-compat",
     ]);
     const details = JSON.parse(
-      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
     );
     expect(details.failures).toContain("CI_TEST_INCOMPLETE:e2e,pi-compat");
   });
@@ -513,10 +537,10 @@ describe("共享runner的调度、来源和失败传播", () => {
       failComparison: true,
     };
     state.pipelineExitCode = 3;
-    const result = await run("coverage");
+    const result = await run("tests");
     expect(result).toMatchObject({ status: "failed", exitCode: 3 });
     const details = JSON.parse(
-      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
     );
     expect(details.failures).toEqual(
       expect.arrayContaining(["CI_COMPARISON_FIXTURE_FAILED", "CI_TEST_INCOMPLETE:e2e,pi-compat"]),
@@ -525,10 +549,10 @@ describe("共享runner的调度、来源和失败传播", () => {
   it("覆盖率进程和 e2e、pi-compat 都失败时保留覆盖率进程的退出码", async () => {
     state.testReportFailure = "failed";
     state.pipelineExitCode = 3;
-    const result = await run("coverage");
+    const result = await run("tests");
     expect(result).toMatchObject({ status: "failed", exitCode: 7 });
     const details = JSON.parse(
-      readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+      readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
     );
     expect(details.failures).toEqual(
       expect.arrayContaining(["CI_COMMAND_FAILED:coverage", "CI_TEST_INCOMPLETE:e2e,pi-compat"]),
@@ -581,7 +605,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(browser.artifacts[0].role).toBe("consumed");
   });
   it("coverage先绑定源码快照，四个project合并后再判定覆盖率", async () => {
-    const result = await run("coverage");
+    const result = await run("tests");
     expect(result.status).toBe("passed");
     expect(result.projects.map((entry) => entry.id)).toEqual([
       "unit",
@@ -611,7 +635,7 @@ describe("共享runner的调度、来源和失败传播", () => {
   });
   it("initial-only仅在合法初始化中用同份报告生成并登记候选", async () => {
     const baseline = readFileSync(path.join(state.root, "ci/coverage-policy.json"));
-    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    const result = await run("tests", { baselineCandidate: "initial-only" });
     expect(result).toMatchObject({ status: "passed", initialization: true });
     expect(state.calls.map(({ name }) => name)).toEqual([
       "coverage-snapshot",
@@ -635,7 +659,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     );
     const candidatePath = arg(evaluation.args, "--baseline-output");
     expect(candidatePath).toBe(
-      path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json"),
+      path.join(state.root, ".ci-output/tests/initial-coverage-baseline.json"),
     );
     const bytes = readFileSync(candidatePath);
     expect(result.reports.find((entry) => entry.path === "initial-coverage-baseline.json")).toEqual(
@@ -654,7 +678,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     git("commit", "-qm", "accept policy");
     context = createContext({ root: state.root });
     const baseline = readFileSync(path.join(state.root, "ci/coverage-policy.json"));
-    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    const result = await run("tests", { baselineCandidate: "initial-only" });
     expect(result).toMatchObject({ status: "passed", initialization: false });
     expect(state.calls.map(({ name }) => name)).toEqual([
       "coverage-snapshot",
@@ -664,7 +688,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     expect(state.calls[2].args).not.toContain("--mode");
     expect(state.calls[2].args).not.toContain("--baseline-output");
     expect(
-      existsSync(path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json")),
+      existsSync(path.join(state.root, ".ci-output/tests/initial-coverage-baseline.json")),
     ).toBe(false);
     expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
       false,
@@ -673,14 +697,14 @@ describe("共享runner的调度、来源和失败传播", () => {
   });
   it("覆盖率判定失败保留非零退出码但不登记不存在的候选", async () => {
     state.fail = "coverage-policy";
-    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    const result = await run("tests", { baselineCandidate: "initial-only" });
     expect(result).toMatchObject({ status: "failed", exitCode: 7 });
     expect(result.reports.some((entry) => entry.path === "coverage-policy.log")).toBe(true);
     expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
       false,
     );
     expect(
-      existsSync(path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json")),
+      existsSync(path.join(state.root, ".ci-output/tests/initial-coverage-baseline.json")),
     ).toBe(false);
   });
   it.each([
@@ -688,9 +712,9 @@ describe("共享runner的调度、来源和失败传播", () => {
     ["后续临时目录清理失败", "failCleanup", "infrastructure_failed", 1],
   ])("%s时不公开已写入候选，并保留其他诊断", async (_name, failure, status, exitCode) => {
     state[failure] = true;
-    const result = await run("coverage", { baselineCandidate: "initial-only" });
+    const result = await run("tests", { baselineCandidate: "initial-only" });
     expect(result).toMatchObject({ status, exitCode });
-    const candidate = path.join(state.root, ".ci-output/coverage/initial-coverage-baseline.json");
+    const candidate = path.join(state.root, ".ci-output/tests/initial-coverage-baseline.json");
     expect(JSON.parse(readFileSync(candidate, "utf8")).baseline).not.toBeNull();
     expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
       false,
@@ -708,7 +732,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     );
     if (failure === "failCleanup") {
       const details = JSON.parse(
-        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+        readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
       );
       expect(details.failures).toContain("CI_TEMP_CLEANUP_FAILED:EPERM");
     }
@@ -717,7 +741,7 @@ describe("共享runner的调度、来源和失败传播", () => {
     "候选输出%s时，即使子进程exit0也必须失败",
     async (fault) => {
       state.candidateFault = fault;
-      const result = await run("coverage", { baselineCandidate: "initial-only" });
+      const result = await run("tests", { baselineCandidate: "initial-only" });
       expect(result.status).not.toBe("passed");
       expect(result.exitCode).not.toBe(0);
       expect(result.reports.some((entry) => entry.path === "initial-coverage-baseline.json")).toBe(
@@ -725,15 +749,15 @@ describe("共享runner的调度、来源和失败传播", () => {
       );
       expect(result.reports.some((entry) => entry.path === "coverage-check.json")).toBe(true);
       const details = JSON.parse(
-        readFileSync(path.join(state.root, ".ci-output/coverage/details.json"), "utf8"),
+        readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"),
       );
       expect(details.commands.find((entry) => entry.name === "coverage-policy").exitCode).toBe(0);
       expect(details.failures).toHaveLength(1);
     },
   );
   it.each([
-    ["coverage", "always"],
-    ["coverage", true],
+    ["tests", "always"],
+    ["tests", true],
     ["policy", "initial-only"],
   ])("拒绝%s的非法候选模式%s，不启动命令", async (checkId, baselineCandidate) => {
     await expect(run(checkId, { baselineCandidate })).rejects.toThrow(

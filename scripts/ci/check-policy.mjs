@@ -46,11 +46,13 @@ const assert = (condition, message) => {
 };
 const unique = (values, label) =>
   assert(new Set(values).size === values.length, `Duplicate ${label}`);
-const jobIds = ["policy", "static", "build", "browser", "coverage", "security", "required"];
+const jobIds = ["policy", "static", "build", "browser", "tests", "tooling", "security", "required"];
+const coverageArmChecks = ["policy", "static", "security"];
+const coverageJobIds = ["policy", "static", "build", "browser", "coverage", "security", "required"];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 export const chromiumInstall =
   ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
-const chromiumChecks = ["static", "coverage"];
+const chromiumChecks = ["static", "tests"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -174,7 +176,7 @@ export function upgradeRetiredTestChecks(policy) {
   const retired =
     sameSet(
       checks.map((check) => check.id),
-      [...jobIds, ...retiredIds],
+      [...coverageJobIds, ...retiredIds],
     ) &&
     retiredShapeChecks.every(
       (expected) =>
@@ -190,11 +192,60 @@ export function upgradeRetiredTestChecks(policy) {
   return upgraded;
 }
 
-export function upgradePolicyWithoutTests(policy) {
-  const check = policy?.checks?.find((entry) => entry.id === "policy");
-  if (!check || !sameSet(check.projects ?? [], ["tooling"])) return policy;
+export function upgradeCoverageCollection(policy) {
+  const collection = policy?.checks?.find((check) => check.id === "coverage");
+  if (!collection || !sameSet(collection.projects ?? [], ["unit", "contracts", "tooling"]))
+    return policy;
   const upgraded = structuredClone(policy);
-  upgraded.checks.find((entry) => entry.id === "policy").projects = [];
+  Object.assign(
+    upgraded.checks.find((check) => check.id === "coverage"),
+    {
+      projects: [...coverageProjects, "e2e", "pi-compat"],
+      needs: ["policy", "build"],
+      outputs: [...new Set([...collection.outputs, "artifact"])],
+    },
+  );
+  return upgraded;
+}
+
+export function upgradeCoverageToTests(policy) {
+  const checks = policy?.checks ?? [];
+  const find = (id) => checks.find((check) => check.id === id);
+  const coverage = find("coverage");
+  const accepted =
+    sameSet(
+      checks.map((check) => check.id),
+      coverageJobIds,
+    ) &&
+    [[], ["tooling"]].some((projects) => sameSet(find("policy").projects ?? [], projects)) &&
+    sameSet(
+      find("required").needs ?? [],
+      coverageJobIds.filter((id) => id !== "required"),
+    ) &&
+    sameSet(coverage.needs ?? [], ["policy", "build"]) &&
+    sameSet(coverage.projects ?? [], mainProjects) &&
+    sameSet(coverage.outputs ?? [], ["json", "lcov", "artifact"]) &&
+    coverage.timeoutMinutes === timeoutMinutesFor("coverage") &&
+    canonicalJson(coverage.members) === canonicalJson([ciVpsDefaultMember]);
+  if (!accepted) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks = upgraded.checks.flatMap((check) => {
+    if (check.id === "policy") return [{ ...check, projects: [] }];
+    if (check.id === "required")
+      return [{ ...check, needs: jobIds.filter((id) => id !== "required") }];
+    if (check.id !== "coverage") return [check];
+    return [
+      { ...check, id: "tests", projects: mainProjects.filter((id) => id !== "tooling") },
+      {
+        id: "tooling",
+        needs: ["policy"],
+        timeoutMinutes: timeoutMinutesFor("tooling"),
+        members: [{ ...ciVpsDefaultMember, runner: armRunnerLabel, alternateArch: "arm64" }],
+        projects: ["tooling"],
+        outputs: ["json"],
+      },
+    ];
+  });
   return upgraded;
 }
 
@@ -220,14 +271,14 @@ export function upgradeArmRunnerPolicy(policy) {
   if (
     !sameSet(
       checks.map((check) => check.id),
-      jobIds,
+      coverageJobIds,
     ) ||
-    !armChecks.every(onSharedRunner)
+    !coverageArmChecks.every(onSharedRunner)
   )
     return policy;
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
-    if (armChecks.includes(check.id))
+    if (coverageArmChecks.includes(check.id))
       Object.assign(check.members[0], { runner: armRunnerLabel, alternateArch: "arm64" });
   return upgraded;
 }
@@ -238,7 +289,7 @@ export function upgradeGateRunnerPolicy(policy) {
   const sharedRunner =
     sameSet(
       checks.map((check) => check.id),
-      jobIds,
+      coverageJobIds,
     ) &&
     required.members?.length === 1 &&
     required.members[0].runner === linuxRunnerLabel;
@@ -259,17 +310,7 @@ export function upgradeArtifactRetention(policy) {
   return { ...policy, retentionDays: { reports: 1, diagnostics: 1 } };
 }
 
-export function validatePolicy(
-  policy,
-  { allowLegacyCoverage = false, allowLegacyIntegration = false } = {},
-) {
-  const legacyCoverage =
-    allowLegacyCoverage &&
-    sameSet(policy.checks?.find((check) => check.id === "coverage")?.projects ?? [], [
-      "unit",
-      "contracts",
-      "tooling",
-    ]);
+export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) {
   validateRecord("CheckPolicy", policy);
   unique(policy.events, "event");
   unique(
@@ -281,7 +322,7 @@ export function validatePolicy(
       policy.checks.map((check) => check.id),
       jobIds,
     ),
-    "Policy must declare exactly seven required jobs",
+    "Policy must declare exactly eight required jobs",
   );
   unique(
     policy.testProjects.map((project) => project.id),
@@ -339,7 +380,8 @@ export function validatePolicy(
     static: ["policy"],
     build: ["policy"],
     browser: ["build"],
-    coverage: legacyCoverage ? ["policy"] : ["policy", "build"],
+    tests: ["policy", "build"],
+    tooling: ["policy"],
     security: ["policy"],
     required: jobIds.filter((id) => id !== "required"),
   };
@@ -354,11 +396,11 @@ export function validatePolicy(
     assert(sameSet(check.needs, expectedNeeds[check.id]), `Unexpected policy DAG: ${check.id}`);
     assert(check.timeoutMinutes === timeoutMinutesFor(check.id), `Unexpected timeout: ${check.id}`);
     const requiredProjects =
-      check.id === "coverage"
-        ? legacyCoverage
-          ? ["unit", "contracts", "tooling"]
-          : mainProjects
-        : [];
+      check.id === "tests"
+        ? mainProjects.filter((id) => id !== "tooling")
+        : check.id === "tooling"
+          ? ["tooling"]
+          : [];
     assert(sameSet(check.projects, requiredProjects), `Incomplete project selection: ${check.id}`);
     const requiredKeys =
       check.id === "build"
@@ -635,7 +677,7 @@ export function validateWorkflow(policy, source, toolchain) {
         `Job must expose one report digest per matrix member: ${check.id}`,
       );
     }
-    if (check.id === "coverage" || check.id === "browser") {
+    if (check.id === "tests" || check.id === "browser") {
       const fetches = job.steps.filter((step) =>
         step.run?.includes("scripts/ci/run-share.mjs get"),
       );
@@ -648,14 +690,14 @@ export function validateWorkflow(policy, source, toolchain) {
         `${check.id} must take this attempt's Linux build from the runner share by digest`,
       );
     }
-    if (check.id === "coverage") {
+    if (check.id === "tests") {
       const executions = job.steps.filter((step) => step.run?.includes("scripts/ci/run.mjs"));
       assert(
         executions.length === 1 &&
           executions[0].if === undefined &&
           executions[0].run ===
-            '.ci-output/tools/bin/node scripts/ci/run.mjs --check coverage --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json',
-        "Coverage must use the shared runner with the initial-only baseline candidate option",
+            '.ci-output/tools/bin/node scripts/ci/run.mjs --check tests --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json',
+        "Tests must use the shared runner with the initial-only baseline candidate option",
       );
     }
   }
@@ -1248,19 +1290,20 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradePolicyWithoutTests(
-      upgradeArmRunnerPolicy(
-        upgradeGateRunnerPolicy(
-          upgradeRetiredTestChecks(
-            upgradeArtifactRetention(
-              upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    upgradeCoverageToTests(
+      upgradeCoverageCollection(
+        upgradeArmRunnerPolicy(
+          upgradeGateRunnerPolicy(
+            upgradeRetiredTestChecks(
+              upgradeArtifactRetention(
+                upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+              ),
             ),
           ),
         ),
       ),
     ),
     {
-      allowLegacyCoverage: true,
       allowLegacyIntegration: true,
     },
   );
@@ -1275,12 +1318,6 @@ export function resolvePolicySource({
     integration.workerLimits.memoryMiBPerWorker === 2048
   ) {
     integration.workerLimits = { ...integrationWorkerLimits };
-  }
-  const collection = policy.checks.find((check) => check.id === "coverage");
-  if (!collection.projects.includes("integration")) {
-    collection.projects = [...coverageProjects, "e2e", "pi-compat"];
-    collection.needs = ["policy", "build"];
-    collection.outputs = [...new Set([...collection.outputs, "artifact"])];
   }
   const coverage = hasCoverage ? JSON.parse(git(["show", `${baseSha}:${coveragePath}`])) : null;
   assert(
