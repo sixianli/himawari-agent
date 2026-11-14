@@ -162,7 +162,7 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         let body = "{\"error\":{\"code\":\"PORT_CONFLICT\",\"reasonCode\":\"LOGIN_DEVICES_STILL_CHANGING\"}}"
         let exchange = RecordingExchange([HTTPExchangeResponse(status: 409, body: Data(body.utf8))])
         let (http, _) = try client(exchange)
-        await #expect(throws: DeviceAPIError.server(status: 409, code: "PORT_CONFLICT", reasonCode: "LOGIN_DEVICES_STILL_CHANGING")) {
+        await #expect(throws: DeviceAPIError.server(status: 409, code: "PORT_CONFLICT", reason: "LOGIN_DEVICES_STILL_CHANGING")) {
             _ = try await http.send(DeviceRequest(method: "POST", path: "gateway"))
         }
     }
