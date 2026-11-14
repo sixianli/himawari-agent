@@ -145,6 +145,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
   readonly transactionScopeTimeoutMs?: number;
   readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
+  readonly proactiveSources?: SqliteWorkerConfiguration["proactiveSources"];
 }
 
 export const DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS = 2000;
@@ -294,6 +295,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           minimumFreeBytes,
           warningFreeBytes,
           ...(options.qualification ? { qualification: options.qualification } : {}),
+          ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
         },
         {
           ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -309,6 +311,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
             minimumFreeBytes,
             warningFreeBytes,
             readOnly: true,
+            ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
           },
           {
             ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),

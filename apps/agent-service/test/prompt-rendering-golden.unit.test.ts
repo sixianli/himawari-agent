@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { ProactiveSourceItem } from "@himawari-agent/application";
+import type { ProactiveMail } from "@himawari-agent/application";
 import {
   EGRESS_PLACEHOLDER_LEGEND,
   EGRESS_PLACEHOLDER_LEGEND_WITH_RESTORE,
@@ -66,7 +66,7 @@ const memory = (validFrom: string) =>
     updatedAt: validFrom,
   }) as unknown as Parameters<typeof consolidationPrompt>[1][number]["memory"];
 
-const mail = (id: string): ProactiveSourceItem => ({
+const mail = (id: string): ProactiveMail => ({
   source: "gmail",
   messageId: `message-${id}`,
   threadId: `thread-${id}`,
