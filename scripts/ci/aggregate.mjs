@@ -247,12 +247,15 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
 
 export function readReportEnvelopes(directory) {
   const envelopes = [];
-  const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
+  const walk = (current, insideResult) => {
+    const entries = readdirSync(current, { withFileTypes: true });
+    const holdsResult =
+      insideResult || entries.some((entry) => entry.isFile() && entry.name === "result.json");
+    for (const entry of entries) {
       const filename = path.join(current, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Symbolic link in reports: ${filename}`);
-      if (entry.isDirectory()) walk(filename);
-      else if (entry.name === "result.json") {
+      if (entry.isDirectory()) walk(filename, holdsResult);
+      else if (entry.name === "result.json" && !insideResult) {
         const result = readJson(filename);
         let artifacts = [];
         try {
@@ -271,7 +274,7 @@ export function readReportEnvelopes(directory) {
       }
     }
   };
-  walk(directory);
+  walk(directory, false);
   return envelopes;
 }
 

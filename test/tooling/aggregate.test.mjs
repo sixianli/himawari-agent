@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -466,5 +466,43 @@ describe("complete-attempt gate", () => {
     writeFileSync(path.join(directory, "tests/default/report.json"), "tampered");
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
+  });
+  it("浏览器证据目录里自带的 result.json 不当成检查结果，检查自己的 result.json 照常读", () => {
+    const input = positive();
+    const directory = mkdtempSync(path.join(os.tmpdir(), "ci-results-"));
+    directories.push(directory);
+    for (const envelope of input.reports) {
+      const folder = path.join(
+        directory,
+        `${envelope.result.checkId}-${envelope.result.matrixKey}`,
+      );
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(path.join(folder, "result.json"), JSON.stringify(envelope.result));
+      for (const report of envelope.result.reports) {
+        const platform = ["browser", "tests"].includes(envelope.result.checkId)
+          ? "linux-x64"
+          : envelope.result.matrixKey;
+        writeFileSync(
+          path.join(folder, report.path),
+          report.kind === "artifact"
+            ? archive(platform)
+            : Buffer.from(`real ${report.kind} report`),
+        );
+      }
+    }
+    const browserFolder = readdirSync(directory).find((name) => name.startsWith("browser-"));
+    const evidence = path.join(directory, browserFolder, "browser/reports/execution-chain");
+    mkdirSync(evidence, { recursive: true });
+    writeFileSync(
+      path.join(evidence, "result.json"),
+      JSON.stringify({ cases: [], scope: "fixture" }),
+    );
+    input.reports = readReportEnvelopes(directory);
+    expect(input.reports.map((envelope) => envelope.source)).not.toContain(
+      path.join(browserFolder, "browser/reports/execution-chain/result.json"),
+    );
+    expect(aggregate(input).status).toBe("passed");
+    symlinkSync("/etc/hostname", path.join(evidence, "linked.txt"));
+    expect(() => readReportEnvelopes(directory)).toThrow("Symbolic link in reports");
   });
 });
