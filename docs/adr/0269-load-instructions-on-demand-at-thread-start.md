@@ -30,20 +30,19 @@ date: "2026-11-14"
 1. 云端线程开局自动载入仓库根目录的 `CLAUDE.md`、`.claude/CLAUDE.md` 和 `.claude/rules/`，不载入带 `paths` 前缀的规则。来源：[Claude Code 文档 Projects 一页](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)，原话“`CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/rules/` at the repository root — Loaded from every repository when the thread starts. `CLAUDE.md` files in subdirectories and path-specific rules aren't loaded”。
 2. `@` 引用的文件和引用它的 `CLAUDE.md` 一起全量载入，不省上下文。来源：[Claude Code 文档 memory 一页](https://code.claude.com/docs/en/memory)，原话“Imports help you organize a long file but don't reduce its context cost, because imported files load together with the CLAUDE.md that imports them”。
 3. 本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。
-4. 改动前，事故规则要求每个线程开工时通读事故清单：[ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 原话“每个线程开工时读，收尾时更新”。
+4. [ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 要求每个线程开工时读事故清单，原话“每个线程开工时读，收尾时更新”。
 5. 事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态），绝大多数行的状态是“已落门槛”。
 
 <a id="context"></a>
 
 ## 背景
 
-Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开一个线程，开局载入了哪些上下文、是不是全部一起载入”。分析发现：
+Andy 很在意 Claude Code 的额度，2026-11-14 让一个线程分析“每开一个线程，开局载入了哪些上下文、是不是全部一起载入”。分析发现两处可以省：
 
-- 开局自动载入的仓库内容包括 `AGENTS.md` 和 `.claude/rules/` 下的全部规则，其中只追加规则只有少数线程用得上。
-- 事故规则还要求开工通读整份事故清单，而清单记的是全部事故的完整经过；开工时真正用得上的，只有还没关闭的那几条。
-- 这些内容留在上下文里，之后每一轮请求都要重发。
+- 只追加规则只在改发给模型的内容时才用得上，大多数线程（例如改界面、改上线脚本、写文档）用不到它，却按前提 1 每次开局都载入。
+- 前提 4 要求每个线程开工时读整份事故清单，而清单的每一行都是一个事故的完整经过（前提 5）；开工时真正用得上的，只有还没关闭的那几条。
 
-只追加规则只在改发给模型的内容时才用得上，大多数线程（例如改界面、改上线脚本、写文档）用不到它。按字数估算的 token 数和提交统计写在 PR 495 的说明里，没有用分词器实测。
+开局载入的内容留在上下文里，之后每一轮请求都要重发。按字数估算的 token 数和提交统计写在 PR 495 的说明里，没有用分词器实测。
 
 <a id="owner-decisions"></a>
 
