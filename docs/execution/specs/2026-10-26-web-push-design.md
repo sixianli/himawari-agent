@@ -109,9 +109,9 @@ date: "2026-10-26"
 
 | 来源 | 怎么找 | `source_key` | 有效期 | 紧急程度 |
 | --- | --- | --- | --- | --- |
-| 记忆提醒 | `memoryReminders().listDue(now)`，只取到期不超过 6 小时的 | `reminder:<提醒 id>:<remindAt>` | 到期后 6 小时 | `high` |
+| 记忆提醒 | `memoryReminders().listDue(now)`，只取到期不超过 6 小时的 | `reminder:<提醒 id>:<remindAt>` | 到期后 6 小时；被主人的“静默延后”规则延后时，延长到延后时刻之后 1 小时，从入队起最长 48 小时（[ADR 0244](../../adr/0244-hard-rules-step4-unified-push-gate.md)） | `high` |
 | 审批 | `authorizationStore().listApprovals()`，只取 `pending` 且未过期的 | `approval:<审批 id>` | 审批的过期时间 | `high` |
-| 一轮任务结束 | `runs` 表里状态变成 `completed` 或 `failed`、并且属于某个对话的 Run，按结束时间和 id 往后读；`cancelled` 不推，因为是 Andy 自己停的 | `run:<runId>:completed` 或 `run:<runId>:failed` | 24 小时 | `normal` |
+| 一轮任务结束 | `runs` 表里状态变成 `completed` 或 `failed`、并且属于某个对话的 Run，按结束时间和 id 往后读；`cancelled` 不推，因为是 Andy 自己停的 | `run:<runId>:completed` 或 `run:<runId>:failed` | 24 小时；被主人的“静默延后”规则延后时，延长到延后时刻之后 1 小时，从入队起最长 48 小时（[ADR 0244](../../adr/0244-hard-rules-step4-unified-push-gate.md)） | `normal` |
 
 - 不读对话事件表：成功的一轮在事件表里只有 `thread.message.commit_assistant`，事件行不带 Run id；普通失败也不一定写事件。`runs` 表的状态才是一轮结束的唯一记录。迁移给 `runs(owner_id, agent_id, updated_at, id)` 加索引。
 - 读取位置是“结束时间|Run id”，第一次启动时从当前时刻开始，不补推历史。

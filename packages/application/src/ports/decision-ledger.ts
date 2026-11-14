@@ -37,6 +37,7 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "web_push",
   "memory_review",
 ] as const;
 
@@ -66,6 +67,7 @@ export const DECISION_OUTCOMES = {
     "owner_confirmed",
     "owner_restored",
   ],
+  web_push: ["deferred"],
   memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
