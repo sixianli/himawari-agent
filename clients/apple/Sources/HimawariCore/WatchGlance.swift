@@ -111,6 +111,10 @@ public struct WatchHome: Decodable, Sendable, Equatable {
         items.first { $0.awaitsOwner && $0.sentence != nil }
     }
 
+    public var awaitsOwnerWithoutCard: Bool {
+        pressing == nil && items.contains(where: \.awaitsOwner)
+    }
+
     public var countedAwaiting: Int? {
         incompleteSources.isEmpty ? max(0, awaitingCount) : nil
     }

@@ -119,13 +119,20 @@ public final class AppModel {
     }
 
     public func handlePairingLink(_ text: String) {
-        #if os(iOS)
-        if phase == .active, (try? PairingInvitation.parse(text)) != nil, watchRelay.canOffer {
-            watchOffer = text
+        if phase == .active {
+            #if os(iOS)
+            if (try? PairingInvitation.parse(text)) != nil, watchRelay.canOffer {
+                watchOffer = text
+            }
+            #endif
             return
         }
-        #endif
         pair(scanned: text)
+    }
+
+    public var watchOfferHost: String? {
+        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
+        return Self.host(invitation.origin)
     }
 
     public func sendOfferToWatch() {

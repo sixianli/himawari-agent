@@ -136,11 +136,23 @@ public final class WatchModel {
     }
 
     public func retryPairing() {
-        guard let lastLink else {
-            phase = .unpaired(nil)
-            return
+        switch phase {
+        case .unpaired(.keysUnreadable), .unpaired(.storageUnavailable):
+            restore()
+        case .unpaired(.stateUnknown):
+            if let record {
+                phase = .waitingForConfirmation(number: record.pairingNumber)
+                waitForConfirmation()
+            } else {
+                restore()
+            }
+        default:
+            guard let lastLink else {
+                phase = .unpaired(nil)
+                return
+            }
+            submit(lastLink)
         }
-        submit(lastLink)
     }
 
     public func dismissProblem() {

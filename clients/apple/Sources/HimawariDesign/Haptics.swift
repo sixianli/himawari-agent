@@ -57,6 +57,8 @@ public final class Haptics {
     private static var hardwareSupportsHaptics: Bool {
         #if canImport(CoreHaptics) && os(iOS)
         CHHapticEngine.capabilitiesForHardware().supportsHaptics
+        #elseif os(watchOS)
+        true
         #else
         false
         #endif

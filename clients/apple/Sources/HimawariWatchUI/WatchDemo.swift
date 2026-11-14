@@ -117,7 +117,7 @@ struct HomeStatic: View {
                 if let card = model.card {
                     CardView(model: model, card: card)
                 } else {
-                    QuietView(failed: model.homeFailed)
+                    QuietView(failed: model.homeFailed, waiting: model.home?.awaitsOwnerWithoutCard == true)
                 }
             }
         }

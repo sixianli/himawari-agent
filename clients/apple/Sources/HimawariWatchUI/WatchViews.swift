@@ -123,7 +123,7 @@ struct HomeView: View {
                 if let card = model.card {
                     CardView(model: model, card: card)
                 } else {
-                    QuietView(failed: model.homeFailed)
+                    QuietView(failed: model.homeFailed, waiting: model.home?.awaitsOwnerWithoutCard == true)
                 }
             }
             .toolbar {
@@ -144,12 +144,13 @@ struct HomeView: View {
 
 struct QuietView: View {
     let failed: Bool
+    let waiting: Bool
 
     var body: some View {
         VStack(spacing: 8) {
             SunflowerMark(detail: .full)
                 .frame(width: DesignTokens.Watch.markQuiet, height: DesignTokens.Watch.markQuiet)
-            Text(L.text(failed ? "offline" : "quiet"))
+            Text(L.text(failed ? "offline" : waiting ? "onIPhone.hint" : "quiet"))
                 .hmType(DesignTokens.TypeScale.watchFootnote)
                 .foregroundStyle(Color.hmMuted)
                 .multilineTextAlignment(.center)

@@ -39,6 +39,8 @@ public struct HimawariRootView: View {
         ) {
             Button(L.text("watch.offer.watch")) { model.sendOfferToWatch() }
             Button(L.text("watch.offer.cancel"), role: .cancel) { model.declineWatchOffer() }
+        } message: {
+            if let host = model.watchOfferHost { Text(host) }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }

@@ -62,6 +62,18 @@ import Testing
         #expect(home.countedAwaiting == 2)
     }
 
+    @Test func waitingItemsWithoutASentenceAreNotReportedAsNothingWaitingButARealCardIsNot() throws {
+        let silent = try home("""
+        {"items":[{"key":"approval:9","awaitsOwner":true,"sentence":null,"actions":[]}],"awaitingCount":1,"revision":"r"}
+        """)
+        #expect(silent.awaitsOwnerWithoutCard)
+        let quiet = try home("""
+        {"items":[{"key":"done:1","awaitsOwner":false,"sentence":"好了","actions":[]}],"awaitingCount":0,"revision":"r"}
+        """)
+        #expect(!quiet.awaitsOwnerWithoutCard)
+        #expect(!(try home(snapshot)).awaitsOwnerWithoutCard)
+    }
+
     @Test func theCountIsHiddenWhenTheServerCouldNotReadEverySourceLikeTheIPhoneBadge() throws {
         let json = """
         {"items":[],"awaitingCount":4,"incompleteSources":["mail"],"revision":"r"}
