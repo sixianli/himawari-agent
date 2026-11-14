@@ -41,7 +41,7 @@ date: "2026-11-11"
 4. 删除记忆会连带清掉原话：`packages/persistence-sqlite/src/sqlite-governed-deletion.ts`，`SELECT quote_ref FROM memory_history_events WHERE memory_id = ?`。
 5. 决策评价已有换算函数：`packages/calibration/src/index.ts` 的 `calibrationGroup`、`summarizeDecisions`、`proportion`（Wilson 区间，`DEFAULT_MINIMUM_SAMPLES = 5`，样本不足 5 条不出比例）。
 6. 评测和生产不共用预算、用哪个 key 先问 Andy：`.claude/rules/owner-standing-rules.md`，“评测用哪个 key（API 密钥），评测之前先问 Andy。评测和测试绝不和生产共用预算”。
-7. 后台调用的排列：`.claude/rules/prompt-prefix.md` 第 15 条，“先放固定的指令，再放这次的数据，最后放当前时间这类每次都变的值。”
+7. 后台调用的排列：`.agents/instructions/prompt-prefix.md` 第 15 条，“先放固定的指令，再放这次的数据，最后放当前时间这类每次都变的值。”
 8. LongMemEval：<https://github.com/xiaowu0162/LongMemEval>，S 档 500 题有清洗版 `longmemeval_s_cleaned.json`，官方判分用 GPT-4o；检索指标跳过 30 道拒答题。
 
 [返回阅读导航](#contents)

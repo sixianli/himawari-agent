@@ -95,4 +95,4 @@ while :; do
   [ "$(date +%s)" -lt "$DEADLINE" ] || failed 8 "not online with the $RUNNER_ARM_LABEL label after 3 minutes:$MISSING"
   sleep "${RUNNER_POLL_SECONDS:-15}"
 done
-echo "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=$RUNNER_ARM_LABEL report_account=$RUNNER_SEND_USER@${ARM#*@}; only .github/workflows/ci-arm-trial.yml uses $RUNNER_ARM_LABEL until the switch to ARM is merged"
+echo "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=$RUNNER_ARM_LABEL report_account=$RUNNER_SEND_USER@${ARM#*@}; .github/workflows/ci.yml runs policy, static and security on it"

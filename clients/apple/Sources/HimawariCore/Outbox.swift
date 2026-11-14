@@ -34,6 +34,12 @@ public enum OutboxSendResult: Sendable, Equatable {
 public actor Outbox {
     public static let maximumConflictRetries = 3
 
+    public static func unsentCount(in store: LocalStore, name: String = "outbox.json") -> Int? {
+        guard store.contains(name) else { return 0 }
+        guard let data = store.read(name), let items = try? JSONDecoder().decode([OutboxItem].self, from: data) else { return nil }
+        return items.count
+    }
+
     private let store: LocalStore
     private let name: String
     private var items: [OutboxItem]

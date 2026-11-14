@@ -6,6 +6,9 @@ import type { RuleHit, RuleJudge } from "./rule-judge.js";
 
 export const ACTION_RULE_IDS = Object.freeze({
   preauthorizeOwnerData: "action_preauthorize_owner_data",
+  preauthorizeOwnTaskCancel: "action_preauthorize_own_task_cancel",
+  askAfterExternalContent: "action_ask_after_external_content",
+  refuseBackgroundAfterExternalContent: "action_refuse_background_after_external_content",
 } as const);
 
 export const ACTION_RULE_OUTCOMES = Object.freeze([
@@ -27,6 +30,7 @@ export interface ActionGateInput {
   readonly reversible: boolean;
   readonly disclosure: GovernedActionIntent["disclosure"];
   readonly recipients: readonly string[];
+  readonly targets: readonly { readonly type: string }[];
   readonly deterministicFacts: readonly { readonly code: string }[];
 }
 
@@ -41,6 +45,7 @@ export function actionGateFacts(
     disclosure: intent.disclosure,
     recipient_count: intent.recipients.length,
     run_source: runSource,
+    target_type: intent.targets[0]?.type ?? "",
     facts: Object.freeze(intent.deterministicFacts.map(({ code }) => code).sort()),
   });
 }
@@ -58,6 +63,7 @@ function example(
         reversible: true,
         disclosure: "none",
         recipients: [],
+        targets: [{ type: "owner-reminder" }],
         deterministicFacts: [{ code: "run_source_user_message" }],
         ...overrides,
       },
@@ -103,6 +109,120 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
       example(false, { finalRisk: "HIGH" }),
       example(false, { reversible: false }),
       example(false, { disclosure: "named_recipients", recipients: ["someone@example.com"] }),
+    ]),
+  }),
+  Object.freeze({
+    id: ACTION_RULE_IDS.askAfterExternalContent,
+    revision: 1,
+    gate: "action",
+    expression:
+      'action_kind != "READ" && target_type != "managed-task" && "context_external_content" in facts',
+    outcome: "ask_owner",
+    origin: "built_in",
+    source: "ADR 0257 决定 3、4；苹果端设计“指令和数据的界线”",
+    status: "active",
+    examples: Object.freeze([
+      example(true, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(true, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+          { code: "standing_rule_change" },
+        ],
+      }),
+      example(false, {}),
+      example(false, {
+        actionKind: "READ",
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+    ]),
+  }),
+  Object.freeze({
+    id: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
+    revision: 1,
+    gate: "action",
+    expression:
+      'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts',
+    outcome: "refuse",
+    origin: "built_in",
+    source: "ADR 0257 决定 3；苹果端设计“指令和数据的界线”：后台一律不做",
+    status: "active",
+    examples: Object.freeze([
+      example(
+        true,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_schedule" },
+          ],
+        },
+        "schedule",
+      ),
+      example(
+        true,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_external_event" },
+          ],
+        },
+        "external_event",
+      ),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, { deterministicFacts: [{ code: "run_source_schedule" }] }, "schedule"),
+      example(
+        false,
+        {
+          actionKind: "READ",
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_schedule" },
+          ],
+        },
+        "schedule",
+      ),
+    ]),
+  }),
+  Object.freeze({
+    id: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
+    revision: 1,
+    gate: "action",
+    expression:
+      'target_type == "managed-task" && action_kind == "CREATE_OR_UPDATE" && reversible == 0',
+    outcome: "allow_preauthorized",
+    origin: "built_in",
+    source: "ADR 0257 第 2 步：停止这一轮自己开的任务，最坏是一件自己开的活停了，可以重开",
+    status: "active",
+    examples: Object.freeze([
+      example(true, { targets: [{ type: "managed-task" }], reversible: false }),
+      example(
+        true,
+        {
+          targets: [{ type: "managed-task" }],
+          reversible: false,
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_schedule" },
+          ],
+        },
+        "schedule",
+      ),
+      example(false, {}),
+      example(false, { targets: [{ type: "managed-task" }], reversible: true }),
+      example(false, { targets: [{ type: "managed-task" }], actionKind: "READ", finalRisk: "LOW" }),
     ]),
   }),
 ]);

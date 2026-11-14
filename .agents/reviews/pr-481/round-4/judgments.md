@@ -1,0 +1,5 @@
+# PR 481 第 4 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 低：「列不出」说明行可能出现在并非低意见未修的轮次，措辞会误导。opencode-review.mjs:1643-1657 只按 mode 和轮次挑轮次，没看 outcome；说明行本身说的是事实（没有 verdicts），报告同时给出停下原因，只是可能让人以为有低意见没列出，不会放行合并或丢掉真的低意见；触发：第 3 轮起某一轮模型没跑完（outcome 不是 ok，--finish-round 以 ROUND_NOT_OK 拒绝，不会有 verdicts.jsonl），或某一轮刚跑完还没 --finish-round 就跑 --report；后果：reviewReport 1868 把全部 code-review 记录交给 deferredLowLines，1655-1657 对这一轮打印“verdicts.jsonl 没有提交，列不出这一轮的低意见”，报告多出一节“低严重度未修”，而这一轮其实没有可列的低意见
+- 2（deepseek-v4.1-flash）不成立：### 2. 低：`finishRound` 只校验 `records[0].base`，多模型轮次的其余 base 不校验也不比对。finishRound 里只有 1803 的 NEXT 命令用到 base，用的正是 1794 取的 records[0]，1770 已校验它；其余记录的 base 在 finishRound 里不被读取，不一致也不会进入任何命令或结论，没有可达的错误结果
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：反向用例覆盖了修复本身，但没有覆盖「不该出现」的组合。test/tooling/review-round-tools.test.mjs:186-223 已证明这一轮修复（拒绝无效 base、只走账本轮次、缺失时打印说明），模型没指出现有代码在哪种输入下出错；多补多模型 + low-fix 正向用例、含中高意见轮次不打印低意见的用例能加强回归保护，属于可以更好

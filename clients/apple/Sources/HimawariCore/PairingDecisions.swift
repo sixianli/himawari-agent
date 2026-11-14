@@ -35,6 +35,28 @@ public enum ExecutionStreamPolicy {
     }
 }
 
+public enum UnknownStateRecheck: Equatable {
+    case connected
+    case removed
+    case waiting
+    case stillUnknown
+
+    public static func outcome(of error: Error?) -> UnknownStateRecheck {
+        guard let error else { return .connected }
+        guard let api = error as? DeviceAPIError else { return .stillUnknown }
+        if api.isRevoked { return .removed }
+        if api.isPending { return .waiting }
+        return .stillUnknown
+    }
+}
+
+public enum ConfirmationWait {
+    public static func givesUp(waitingAs status: PairedDeviceStatus, after error: Error) -> Bool {
+        guard status == .unrecognized, case let .server(code, reason?, _)? = error as? DeviceAPIError else { return false }
+        return code == 403 && reason != "DEVICE_PENDING"
+    }
+}
+
 extension LocalStore {
     public static var ownerName: String { "owner" }
 

@@ -28,6 +28,7 @@ const displayText = (value: string, maximum = 256): string => {
 export interface ProductionFilesControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly store: ThreadArtifactStorePort;
+  readonly threadTitle: (threadId: string) => Promise<string | null>;
   readonly clock: ClockPort;
 }
 
@@ -66,6 +67,11 @@ export class ProductionFilesControl {
           throw new ContractValidationError("payload", "file list page is invalid");
         throw error;
       });
+    const titles = new Map<string, string | null>();
+    for (const threadId of new Set(page.items.map((artifact) => artifact.threadId))) {
+      const title = await this.#options.threadTitle(threadId).catch(() => null);
+      titles.set(threadId, title === null ? null : displayText(title));
+    }
     return {
       ...query,
       kind: "snapshot",
@@ -75,6 +81,7 @@ export class ProductionFilesControl {
         files: page.items.map((artifact) => ({
           fileId: artifact.id,
           threadId: artifact.threadId,
+          threadTitle: titles.get(artifact.threadId) ?? null,
           name: displayText(artifact.path.split("/").at(-1) || artifact.path),
           kind: artifact.kind,
           origin: artifact.source === "upload" ? "uploaded" : "generated",

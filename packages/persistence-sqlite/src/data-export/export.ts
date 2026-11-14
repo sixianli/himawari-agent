@@ -9,6 +9,7 @@ import {
   enforcedRuleCount,
   type PortableRule,
   type PortableRuleVersion,
+  type RuleSuspendReason,
   RULES_INDEX_FILE,
   renderRulesMarkdown,
   ruleParametersKey,
@@ -21,6 +22,8 @@ import {
   INDEX_FILE,
   MANIFEST_FILE,
   MAXIMUM_LINE_LENGTH,
+  PERCEPTION_FILE_KEYS,
+  type PerceptionFileKey,
   RULE_PARAMETERS_MAXIMUM_LENGTH,
   SCHEMA_FILES,
   SEALED_FILE,
@@ -48,6 +51,8 @@ export interface ExportOptions extends PortableTextDependencies {
   readonly now: () => string;
   readonly sealPassphrase?: string;
   readonly withEvidence?: boolean;
+  readonly onProgress?: (textsRead: number, textsTotal: number) => void;
+  readonly signal?: AbortSignal;
 }
 
 export interface ExportResult {
@@ -92,9 +97,15 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     snapshot.restrictedMemoryTexts.map((row) => str(row["content_ref"])),
   );
   let unreadableRestricted = 0;
+  let textsRead = 0;
+  options.signal?.throwIfAborted();
+  options.onProgress?.(textsRead, snapshot.payloads.size);
   for (const [ref, payload] of snapshot.payloads) {
+    options.signal?.throwIfAborted();
+    textsRead += 1;
     if ("unavailable" in payload) {
       if (restrictedRefs.has(ref)) unreadableRestricted += 1;
+      options.onProgress?.(textsRead, snapshot.payloads.size);
       continue;
     }
     const read = async () =>
@@ -111,7 +122,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       if (text === null) unreadableRestricted += 1;
       else texts.set(ref, text);
     }
+    options.onProgress?.(textsRead, snapshot.payloads.size);
   }
+  options.signal?.throwIfAborted();
   const restrictedDigests = new Set<string>();
   for (const row of snapshot.restrictedMemoryTexts) {
     const text = texts.get(str(row["content_ref"]));
@@ -333,6 +346,86 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     undoneAt: optionalString(row["undone_at"]),
   }));
 
+  const pairedDeviceLines: JsonValue[] = snapshot.pairedDevices.map((row) => ({
+    id: str(row["id"]),
+    kind: str(row["kind"]),
+    name: safeString(str(row["name"])),
+    releaseChannel: str(row["release_channel"]),
+    status: str(row["status"]),
+    pairedAt: str(row["paired_at"]),
+    confirmedAt: optionalString(row["confirmed_at"]),
+    revokedAt: optionalString(row["revoked_at"]),
+    lastSeenAt: optionalString(row["last_seen_at"]),
+  }));
+
+  const instant = (value: unknown): string => new Date(num(value)).toISOString();
+  const scaled = (value: unknown, divisor: number): Nullable<number> =>
+    value === null ? null : num(value) / divisor;
+  const stored = (value: unknown): JsonValue => safeJson(JSON.parse(str(value)) as JsonValue);
+  const perceptionLines: Record<PerceptionFileKey, JsonValue[]> = {
+    perceptionRecords: snapshot.perception.perceptionRecords.map((row) => {
+      const id = str(row["id"]);
+      const contentRef = optionalString(row["content_ref"]);
+      return {
+        id,
+        type: str(row["type"]),
+        origin: str(row["origin"]),
+        captureSource: str(row["capture_source"]),
+        occurredAt: instant(row["occurred_at_ms"]),
+        deviceTime: str(row["occurred_at_device"]),
+        localDay: str(row["local_day"]),
+        deviceId: str(row["device_id"]),
+        confidence: num(row["confidence"]),
+        speakerKind: optionalString(row["speaker_kind"]),
+        speakerRef: safeOptional(optionalString(row["speaker_ref"])),
+        episodeId: optionalString(row["episode_id"]),
+        classification: str(row["data_classification"]),
+        evidence: stored(row["evidence"]),
+        content: contentRef === null ? null : exportedText(contentRef, `perception/${id}/content`),
+      };
+    }),
+    perceptionEpisodes: snapshot.perception.perceptionEpisodes.map((row) => ({
+      id: str(row["id"]),
+      startedAt: instant(row["started_at_ms"]),
+      endedAt: instant(row["ended_at_ms"]),
+      localDay: str(row["local_day"]),
+      recordCount: num(row["record_count"]),
+    })),
+    deviceMirrorItems: snapshot.perception.deviceMirrorItems.map((row) => ({
+      deviceId: str(row["device_id"]),
+      kind: str(row["kind"]),
+      externalId: safeString(str(row["external_id"])),
+      version: num(row["version"]),
+      updatedAt: instant(row["updated_at_ms"]),
+      data: stored(row["data"]),
+    })),
+    trackPoints: snapshot.perception.trackPoints.map((row) => ({
+      deviceId: str(row["device_id"]),
+      occurredAt: instant(row["occurred_at_ms"]),
+      latitude: num(row["latitude_e7"]) / 1e7,
+      longitude: num(row["longitude_e7"]) / 1e7,
+      accuracyMeters: scaled(row["accuracy_dm"], 10),
+      speedMetersPerSecond: scaled(row["speed_cms"], 100),
+    })),
+    perceptionSettings: snapshot.perception.perceptionSettings.map((row) => ({
+      disabledSenses: JSON.parse(str(row["disabled_senses"])) as JsonValue,
+      pausedFrom: optionalString(row["paused_from"]),
+      pausedUntil: optionalString(row["paused_until"]),
+      retentionDays: JSON.parse(str(row["retention_days"])) as JsonValue,
+      limitOverrides: JSON.parse(str(row["limit_overrides"])) as JsonValue,
+      updatedAt: str(row["updated_at"]),
+    })),
+    limitUsage: snapshot.perception.limitUsage.map((row) => ({
+      key: str(row["key"]),
+      periodStart: str(row["period_start"]),
+      deviceId: str(row["device_id"]) === "" ? null : str(row["device_id"]),
+      used: num(row["used"]),
+    })),
+  };
+  const perceptionCounts = Object.fromEntries(
+    PERCEPTION_FILE_KEYS.map((key) => [key, perceptionLines[key].length]),
+  ) as Record<PerceptionFileKey, number>;
+
   const basis = group(snapshot.basis, "change_id");
   const changesByRun = group(snapshot.changes, "consolidation_id");
   let consolidationChanges = 0;
@@ -496,6 +589,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     if (id !== null && kept === null) droppedRuleMemoryLinks += 1;
     return kept;
   };
+  let droppedRuleSuggestions = 0;
   const ruleHistory = group(snapshot.ruleHistory, "rule_id");
   const ruleLines: PortableRule[] = snapshot.rules.map((row) => {
     const ruleId = str(row["rule_id"]);
@@ -520,8 +614,12 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       sourceMemoryId: ruleMemoryLink(row["source_memory_id"]),
       updatedAt: str(row["updated_at"]),
       ...ruleParameters(row["parameters"], ruleParametersKey(ruleId), ruleId),
+      ...(row["suspend_reason"] === null || row["suspend_reason"] === undefined
+        ? {}
+        : { suspendReason: str(row["suspend_reason"]) as RuleSuspendReason }),
       history,
     };
+    if (row["suggestion"] !== null && row["suggestion"] !== undefined) droppedRuleSuggestions += 1;
     assertRuleIdentifiers(rule);
     assertRuleHistory(rule);
     return rule;
@@ -589,6 +687,9 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
   put(DATA_FILES.memories, "data", jsonLines(memoryLines), memoryLines.length);
   put(DATA_FILES.people, "data", jsonLines(peopleLines), peopleLines.length);
   put(DATA_FILES.importBatches, "data", jsonLines(batchLines), batchLines.length);
+  put(DATA_FILES.pairedDevices, "data", jsonLines(pairedDeviceLines), pairedDeviceLines.length);
+  for (const key of PERCEPTION_FILE_KEYS)
+    put(DATA_FILES[key], "data", jsonLines(perceptionLines[key]), perceptionLines[key].length);
   put(DATA_FILES.consolidations, "data", jsonLines(consolidationLines), consolidationLines.length);
   put(DATA_FILES.conversationReviews, "data", jsonLines(reviewLines), reviewLines.length);
   put(DATA_FILES.decisions, "data", jsonLines(decisionLines), decisionLines.length);
@@ -658,6 +759,16 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
         "已换成编号占位（接着库里已有占位的最大编号往后排；同一原文同一编号，不同原文不同编号）；这些是名称和编号，原文不保留，不进封存文件",
     },
     {
+      what: "规则暂停时系统算出的建议值",
+      count: droppedRuleSuggestions,
+      reason: "只是待你确认的建议，导入后规则仍是暂停状态，你可以恢复原规则或确认停用",
+    },
+    {
+      what: "等你确认的待重审记忆标记",
+      count: snapshot.openMemoryReviews,
+      reason: "是本机的待办清单，不进导出；导入后从空清单开始",
+    },
+    {
       what: "规则出处里指向未导出记忆的链接",
       count: droppedRuleMemoryLinks,
       reason: "那条记忆已删除或分级为受限，不在导出里；链接置空，规则本身照常导出",
@@ -668,6 +779,18 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "检索索引和向量",
       count: null,
       reason: "可重建的派生数据；导入后服务启动时按当时的向量模型自动补建",
+    },
+    {
+      what: "配对设备的公钥、配对码和请求随机值",
+      count: null,
+      reason:
+        "是凭据，不导出；设备的名字、种类和状态在 data/paired-devices.jsonl 里，只供查看，导入时不恢复，换库后设备要重新配对",
+    },
+    {
+      what: "上传凭据，和还没处理的原始音频、图片、屏幕画面",
+      count: null,
+      reason:
+        "上传凭据是凭据，不导出；原始材料只是等待处理的临时文件，超过配置的天数（runPolicy.perception.mediaRetentionDays）后，在下一次有设备交数据时删除，不属于长期数据。感知记录、一段经历、镜像、轨迹、感知设置和用量在 data/ 下各有一个文件，只供查看，导入时不恢复",
     },
     {
       what: "记忆评测的题库和每次评测的分数",
@@ -688,6 +811,8 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
     memoryHistoryEvents: historyEvents,
     people: peopleLines.length,
     importBatches: batchLines.length,
+    pairedDevices: pairedDeviceLines.length,
+    ...perceptionCounts,
     consolidations: consolidationLines.length,
     consolidationChanges,
     conversationReviews: reviewLines.length,

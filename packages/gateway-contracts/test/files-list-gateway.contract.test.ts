@@ -6,6 +6,7 @@ import { fixture } from "./gateway-v2.fixture.ts";
 const file = {
   fileId: "thread-artifact:01",
   threadId: "thread-1",
+  threadTitle: null,
   name: "report.pdf",
   kind: "pdf",
   origin: "uploaded",
@@ -59,6 +60,9 @@ describe("files list gateway messages", () => {
     gatewayV2MessageSchema.parse(
       snapshot({ files: [{ ...file, contentPath: `/${"a".repeat(511)}` }] }),
     );
+    gatewayV2MessageSchema.parse(
+      snapshot({ files: [{ ...file, threadTitle: `周${"五".repeat(255)}` }] }),
+    );
   });
 
   it.each([
@@ -84,6 +88,9 @@ describe("files list gateway messages", () => {
     ["a missing deleted flag", { deleted: undefined }],
     ["an extra field", { path: "secret/report.pdf" }],
     ["a content path over 512 characters", { contentPath: `/${"a".repeat(512)}` }],
+    ["a thread title over 256 characters", { threadTitle: "a".repeat(257) }],
+    ["a thread title with a control character", { threadTitle: "a\nb" }],
+    ["a missing thread title", { threadTitle: undefined }],
   ])("rejects a file with %s", (_name, overrides) => {
     rejects(snapshot({ files: [{ ...file, ...overrides }] }));
   });

@@ -46,8 +46,8 @@ import {
   MCP_PROPOSE_RULE_SAVED,
   MCP_SERVER_INSTRUCTIONS,
   MCP_START_HERE_OMITTED,
-  MCP_START_HERE_RULES_OMITTED,
   MCP_START_HERE_RULES_NOTE,
+  MCP_START_HERE_RULES_OMITTED,
   MCP_TOOL_FIND_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
@@ -57,6 +57,7 @@ import {
   MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
   renderPrompt,
+  TOOL_RESULT_RECALL_INPUT_INVALID,
 } from "@himawari-agent/prompt-catalog";
 import { maskSensitiveTexts } from "@himawari-agent/sensitive-capture";
 import {
@@ -344,6 +345,7 @@ export interface ToolOutcome {
   readonly output: Record<string, unknown>;
   readonly memoryIds: readonly string[];
   readonly summaries?: SummaryRead;
+  readonly rejected?: true;
 }
 
 const SUMMARIES_FAILED: SummaryRead = Object.freeze({
@@ -1142,8 +1144,9 @@ export class ProductionMcpRead {
     let delivered:
       | {
           readonly text: string;
-          readonly memoryIds: readonly string[];
+          readonly memoryIds: readonly string[] | undefined;
           readonly summaries?: SummaryRead;
+          readonly rejected?: true;
         }
       | undefined;
     try {
@@ -1162,8 +1165,9 @@ export class ProductionMcpRead {
       });
       delivered = {
         text: JSON.stringify(maskForExternalRead(outcome.output)),
-        memoryIds: outcome.memoryIds,
+        memoryIds: outcome.rejected ? undefined : outcome.memoryIds,
         ...(outcome.summaries ? { summaries: outcome.summaries } : {}),
+        ...(outcome.rejected ? { rejected: true as const } : {}),
       };
     } catch (error) {
       this.#options.onFailure(error);
@@ -1185,7 +1189,10 @@ export class ProductionMcpRead {
       delivered = undefined;
     }
     return delivered
-      ? { content: [{ type: "text", text: delivered.text }] }
+      ? {
+          content: [{ type: "text", text: delivered.text }],
+          ...(delivered.rejected ? { isError: true } : {}),
+        }
       : { content: [{ type: "text", text: MCP_TOOL_RESULT_FAILED.text }], isError: true };
   }
 
@@ -1320,6 +1327,17 @@ async function findMemories({
       return { output: rest, memoryIds: result.memoryIds };
     }
     return { output: result.output, memoryIds: result.memoryIds };
+  } catch (error) {
+    if (error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID")
+      return {
+        output: {
+          error: "MEMORY_RECALL_INPUT_INVALID",
+          note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+        },
+        memoryIds: [],
+        rejected: true,
+      };
+    throw error;
   } finally {
     trace.costMicros = context.costMicros;
   }
@@ -1495,6 +1513,7 @@ export const MCP_READ_TOOLS: readonly McpReadToolEntry[] = mcpReadToolRegistry([
         query: { type: "string", minLength: 1, maxLength: 500 },
         from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
         to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        includeHistory: { type: "boolean" },
         limit: { type: "integer", minimum: 1, maximum: 10 },
         auto: { type: "boolean" },
       },

@@ -29,6 +29,7 @@ vi.mock("../../scripts/ci/install-tools.mjs", async (original) => ({
 }));
 
 import {
+  commandFailure,
   runGitleaksGate,
   runSecurityChecks,
   semgrepTimeoutMs,
@@ -165,6 +166,7 @@ function securityFixture() {
       const files = args.slice(args.indexOf("--json") + 1);
       if (state.mode === "semgrep-process")
         return { status: null, signal: "SIGKILL", error: new Error("synthetic kill") };
+      if (state.mode === "semgrep-signal") return { status: null, signal: "SIGKILL" };
       const results =
         state.mode === "semgrep-finding"
           ? [
@@ -255,6 +257,17 @@ describe("安全runner的隔离外部边界", () => {
     expect(result.status).toBe("infrastructure_failed");
     expect(result.checks).toHaveLength(3);
     expect(result.checks.some((c) => c.status === "passed")).toBe(true);
+  });
+  it.each([
+    ["semgrep-process", "SECURITY_CMD_ERROR_UNKNOWN"],
+    ["semgrep-signal", "SECURITY_CMD_SIGNAL_SIGKILL"],
+  ])("%s：报告里的错误写明原因而不是笼统的不可用", async (mode, expected) => {
+    const f = securityFixture();
+    f.mode = mode;
+    const result = await runSecurityChecks(f);
+    const failed = result.checks.filter((c) => c.status === "infrastructure_failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0].error).toBe(expected);
   });
   it("缺固定扫描器时明确preflight失败", async () => {
     const f = securityFixture();
@@ -421,5 +434,17 @@ describe("归档流式协议边界（不代替真实Python归档证据）", () =
     const f = streamFixture();
     f.python = "python3";
     await expect(assertPublicArtifacts(f)).rejects.toThrow("PUBLIC_ARCHIVE_LOCKED_PYTHON_REQUIRED");
+  });
+});
+
+describe("security command failures name the cause", () => {
+  it("names the signal or error code in a short code the CI summary keeps", () => {
+    expect(commandFailure("SIGNAL", "SIGKILL")).toBe("SECURITY_CMD_SIGNAL_SIGKILL");
+    expect(commandFailure("ERROR", "ENOBUFS")).toBe("SECURITY_CMD_ERROR_ENOBUFS");
+    expect(commandFailure("ERROR", undefined)).toBe("SECURITY_CMD_ERROR_UNKNOWN");
+    const long = commandFailure("ERROR", "E".repeat(80));
+    expect(long.length).toBeLessThanOrEqual(40);
+    for (const code of [long, commandFailure("SIGNAL", "sig-term 9")])
+      expect(code).toMatch(/^[A-Z_]{1,40}$/u);
   });
 });

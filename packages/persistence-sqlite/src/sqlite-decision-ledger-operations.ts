@@ -90,6 +90,19 @@ export function validateLedgerWrite(write: DecisionLedgerWrite): string | null {
       budget.pinned > budget.used)
   )
     return "Decision ledger profile budget is invalid";
+  const change = write.inputs.limitChange ?? null;
+  const limitValue = (value: unknown) =>
+    value === null || (Number.isSafeInteger(value) && (value as number) >= 0);
+  if ((write.kind === "limit_change") !== (change !== null))
+    return "Decision ledger limit change is invalid";
+  if (
+    change !== null &&
+    (!text(change.key, 1, 128) ||
+      !limitValue(change.from) ||
+      !limitValue(change.to) ||
+      change.from === change.to)
+  )
+    return "Decision ledger limit change is invalid";
   if (
     !Number.isSafeInteger(write.costMicros) ||
     write.costMicros < 0 ||
@@ -148,6 +161,7 @@ export function insertLedgerRow(database: Database.Database, write: DecisionLedg
         batchId: write.inputs.batchId ?? null,
         resultMemoryIds: write.inputs.resultMemoryIds ?? [],
         ...(write.inputs.profileBudget ? { profileBudget: write.inputs.profileBudget } : {}),
+        ...(write.inputs.limitChange ? { limitChange: write.inputs.limitChange } : {}),
         ...(write.inputs.summaryRead === undefined
           ? {}
           : {
@@ -200,6 +214,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
     summaryRead?: "off" | "ok" | "partial" | "failed";
     summaryGenerated?: number;
     profileBudget?: DecisionInputs["profileBudget"];
+    limitChange?: DecisionInputs["limitChange"];
   };
   return Object.freeze({
     ...(row as unknown as DecisionLedgerEntry),
@@ -263,6 +278,7 @@ function entryFromRow(row: Record<string, unknown>): DecisionLedgerEntry {
       summaryRead: inputs.summaryRead ?? "off",
       summaryGenerated: inputs.summaryGenerated ?? 0,
       profileBudget: inputs.profileBudget ? Object.freeze({ ...inputs.profileBudget }) : null,
+      limitChange: inputs.limitChange ? Object.freeze({ ...inputs.limitChange }) : null,
     }),
   });
 }
@@ -520,7 +536,10 @@ export class SqliteDecisionLedgerOperations {
         `SELECT ${entryColumns} FROM decision_ledger
          WHERE owner_id = ? AND agent_id = ? AND checked_at >= ?
            AND (owner_rating IS NULL OR rated_at >= ?)
+           AND kind <> 'web_push'
            AND (kind <> 'proactive' OR verdict IN ('pushed', 'deferred', 'silent'))
+           AND kind <> 'memory_review'
+           AND NOT (kind = 'rule_review' AND substr(outcome, 1, 6) = 'owner_')
          ORDER BY checked_at DESC, id DESC LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.since, input.ratedSince, input.limit)

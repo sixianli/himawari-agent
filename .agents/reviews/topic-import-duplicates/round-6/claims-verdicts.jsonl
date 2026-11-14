@@ -1,0 +1,1 @@
+{"id": "13", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|13|找不到|-|这一处是清查词表时发现的遗漏|-|-", "outcome": "model-wrong", "evidenceFile": "docs/incidents-and-gates.md", "evidence": "已确认（读代码、读 ADR 0249 和 ADR 0252、全仓库扫描）"}

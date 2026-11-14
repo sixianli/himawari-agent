@@ -456,6 +456,50 @@ describe("HTTP Gateway contract and security boundary", () => {
     }
   });
 
+  it("passes only listed reason codes through as reasonCode", async () => {
+    const reasons = ["LOGIN_DEVICES_STILL_CHANGING", "EMBEDDING_LOCAL_NOT_READY", "disk headroom"];
+    const { app } = createFixture({
+      async request() {
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, reasons.shift() ?? "", {
+          internal: "private detail",
+        });
+      },
+      async *subscribe() {},
+    });
+    let attempt = 0;
+    const query = () => {
+      attempt += 1;
+      const idempotencyKey = `idempotency-reason-${attempt}`;
+      return app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: requestHeaders(idempotencyKey),
+        payload: {
+          ...envelope("command", "login.devices.revoke_others"),
+          schemaVersion: "gateway.v2",
+          risk: "low",
+          authorizationRef: null,
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          idempotencyKey,
+          payload: { recentAuthenticationRef: null },
+        },
+      });
+    };
+    try {
+      const machine = await query();
+      expect(machine.statusCode).toBe(409);
+      expect(machine.json()).toEqual({
+        error: { code: "PORT_CONFLICT", reasonCode: "LOGIN_DEVICES_STILL_CHANGING" },
+      });
+      for (const unlisted of [await query(), await query()]) {
+        expect(unlisted.statusCode).toBe(409);
+        expect(unlisted.json()).toEqual({ error: { code: "PORT_CONFLICT" } });
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
   const fixtures: ReturnType<typeof createFixture>[] = [];
 
   afterEach(async () => {

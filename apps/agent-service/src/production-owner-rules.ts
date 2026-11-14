@@ -10,6 +10,7 @@ import {
   OWNER_RULE_SUMMARY_LIMIT,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
+  type RuleReviewOwnerStorePort,
   ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -17,6 +18,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  PUSH_QUIET_CLASSES,
   parseOwnerRuleParameters,
   RULE_TYPES,
   type RuleRecord,
@@ -28,8 +30,10 @@ import {
   validRuleSummary,
   writableRuleType,
 } from "@himawari-agent/application";
+import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -76,6 +80,50 @@ const STANDING_MARKERS = [
   "whenever",
   "must",
 ].map(foldText);
+const QUIET_REQUEST_MARKERS = [
+  "别提醒我",
+  "不要提醒我",
+  "别通知我",
+  "不要通知我",
+  "别打扰我",
+  "不要打扰我",
+  "通知しないで",
+  "邪魔しないで",
+  "don't remind me",
+  "do not remind me",
+  "don't notify me",
+  "do not notify me",
+  "don't disturb me",
+  "do not disturb me",
+].map(foldText);
+const RECURRING_TIME_MARKERS = [
+  "夜里",
+  "夜间",
+  "夜晚",
+  "晚上",
+  "半夜",
+  "深夜",
+  "凌晨",
+  "早上",
+  "每天",
+  "每晚",
+  "平时",
+  "周末",
+  "工作日",
+  "夜は",
+  "夜間",
+  "毎晩",
+  "毎日",
+  "平日",
+  "週末",
+  "overnight",
+  "at night",
+  "nights",
+  "evenings",
+  "weekends",
+  "weekdays",
+  "daily",
+].map(foldText);
 const ONE_OFF_MARKERS = [
   "这封",
   "这一封",
@@ -90,6 +138,75 @@ const ONE_OFF_MARKERS = [
   "刚才",
   "今天",
   "今晚",
+  "现在",
+  "正在",
+  "一会",
+  "等会",
+  "待会",
+  "今夜",
+  "今晩",
+  "right now",
+  "这个月",
+  "本月",
+  "下个月",
+  "上个月",
+  "今年",
+  "明年",
+  "去年",
+  "本季",
+  "这个季度",
+  "下个季度",
+  "this month",
+  "next month",
+  "last month",
+  "this year",
+  "next year",
+  "last year",
+  "今月",
+  "来月",
+  "来年",
+  "下周",
+  "下个",
+  "下星期",
+  "这个周",
+  "这周",
+  "本周",
+  "这个星期",
+  "后天",
+  "大后天",
+  "这两天",
+  "这阵子",
+  "昨天",
+  "昨晚",
+  "上周",
+  "上个",
+  "next week",
+  "next weekend",
+  "this week",
+  "this weekend",
+  "these days",
+  "yesterday",
+  "last night",
+  "last week",
+  "来週",
+  "今週",
+  "明後日",
+  "明天",
+  "明早",
+  "明晚",
+  "明日",
+  "暂时",
+  "目前",
+  "眼下",
+  "这几天",
+  "最近",
+  "先别",
+  "tomorrow",
+  "temporarily",
+  "for the time being",
+  "しばらく",
+  "明日は",
+  "for now",
   "この",
   "今回",
   "今日",
@@ -111,6 +228,9 @@ const ONE_OFF_MARKERS = [
   "we'll see",
 ].map(foldText);
 const STANDING_STARTS = [
+  "从现在起",
+  "从现在开始",
+  "现在起",
   "从今天起",
   "从今天开始",
   "今天起",
@@ -177,6 +297,32 @@ export function ownerRuleToolDescriptors(
               phrases: list,
               words: list,
               excludePhrases: list,
+              periods: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    days: {
+                      type: "array",
+                      items: { type: "integer", minimum: 0, maximum: 6 },
+                      minItems: 1,
+                      maxItems: 7,
+                    },
+                    start: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                    end: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                  },
+                  required: ["days", "start", "end"],
+                  additionalProperties: false,
+                },
+                minItems: 1,
+                maxItems: 8,
+              },
+              classes: {
+                type: "array",
+                items: { type: "string", enum: [...PUSH_QUIET_CLASSES] },
+                minItems: 1,
+                maxItems: 3,
+              },
             },
             additionalProperties: false,
           },
@@ -248,6 +394,7 @@ interface Proposal {
   readonly quote: string;
   readonly threadId: string | null;
   readonly source?: string;
+  readonly externalOrigins?: readonly string[];
 }
 
 export interface RulePreview {
@@ -261,6 +408,7 @@ export interface RulePreview {
 export interface ProductionOwnerRuleWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly rules: OwnerRuleStorePort;
+  readonly reviews: Pick<RuleReviewOwnerStorePort, "act">;
   readonly memory: Pick<DurableMemoryService, "applyProposal" | "archive" | "recover">;
   readonly memories: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
@@ -275,7 +423,20 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
+
+function pushTrial(example: RuleRecord["examples"][number]): RuleTrial {
+  const minutes = Number(example.facts["local_minutes"] ?? 0);
+  const clock = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return Object.freeze({
+    from: String(example.facts["push_class"] ?? ""),
+    subject: `${WEEKDAY_NAMES[Number(example.facts["local_weekday"] ?? 0)] ?? ""} ${clock}`,
+    hit: example.hit,
+  });
+}
+
 function trialsOf(rule: RuleRecord): readonly RuleTrial[] {
+  if (rule.gate === "push_delivery") return rule.examples.map(pushTrial);
   return rule.examples.map((example) => {
     const text = String(example.facts["text"] ?? "");
     return Object.freeze({
@@ -294,6 +455,11 @@ function containsMarker(clause: string, marker: string): boolean {
 }
 
 export function isStandingQuote(quote: string): boolean {
+  const whole = STANDING_STARTS.reduce(
+    (text, start) => text.replaceAll(start, " | "),
+    foldText(quote).replace(/\s+/gu, " "),
+  );
+  if (ONE_OFF_MARKERS.some((marker) => containsMarker(whole, marker))) return false;
   return foldText(quote)
     .split(CLAUSE_BREAK)
     .map((clause) => clause.replace(/\s+/gu, " ").trim())
@@ -301,8 +467,9 @@ export function isStandingQuote(quote: string): boolean {
     .some((clause) => {
       const rest = STANDING_STARTS.reduce((text, start) => text.replaceAll(start, " | "), clause);
       return (
-        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) &&
-        !ONE_OFF_MARKERS.some((marker) => containsMarker(rest, marker))
+        STANDING_MARKERS.some((marker) => containsMarker(rest, marker)) ||
+        (QUIET_REQUEST_MARKERS.some((marker) => containsMarker(rest, marker)) &&
+          RECURRING_TIME_MARKERS.some((marker) => containsMarker(rest, marker)))
       );
     });
 }
@@ -324,6 +491,18 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   for (let start = 0; start + quote.length <= clauses.length; start += 1)
     if (quote.every((clause, index) => clauses[start + index] === clause)) return true;
   return false;
+}
+
+function ruleSource(proposal: Proposal): string {
+  const base = proposal.source ?? `chat:${proposal.threadId ?? "none"}`;
+  const origins = [...new Set(proposal.externalOrigins ?? [])].sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
+  return (
+    origins.length === 0
+      ? base
+      : `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${origins.join(",")}|${base}`
+  ).slice(0, 256);
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {
@@ -416,6 +595,7 @@ export class ProductionOwnerRuleWriter {
     readonly text: string;
     readonly category: "rule" | "preference";
     readonly threadId: string | null;
+    readonly externalOrigins?: readonly string[];
   }): Promise<MemoryId> {
     const generation: GenerationId | undefined = await this.#options.book.latestGeneration(
       this.#scope(),
@@ -437,7 +617,10 @@ export class ProductionOwnerRuleWriter {
           contentRef,
           dataClassification: classification as ProductMemoryRecord["dataClassification"],
           sourceThreadId: input.threadId as ProductMemoryRecord["sourceThreadId"],
-          sourceRefs: [contentRef],
+          sourceRefs: [
+            contentRef,
+            ...externalContentSourceRefs(memoryId, input.externalOrigins ?? []),
+          ],
           inference: false,
           confidencePermille: 1000,
           policyVersion: RULE_POLICY_VERSION,
@@ -478,7 +661,7 @@ export class ProductionOwnerRuleWriter {
   }
 
   async #replay(rule: RuleRecord): Promise<RuleReplay | null> {
-    if (!this.#options.replay) return null;
+    if (!this.#options.replay || rule.gate !== "mail_item") return null;
     try {
       return await this.#options.replay(rule);
     } catch {
@@ -522,13 +705,14 @@ export class ProductionOwnerRuleWriter {
       text: `${proposal.quote}\n${parsed.summary}`,
       category: "rule",
       threadId: proposal.threadId,
+      ...(proposal.externalOrigins?.length ? { externalOrigins: proposal.externalOrigins } : {}),
     });
     const outcome = await this.#options.rules
       .create({
         ...this.#scope(),
         ruleId,
         parameters: { type: parsed.type, params: parsed.params, summary: parsed.summary },
-        source: (proposal.source ?? `chat:${proposal.threadId ?? "none"}`).slice(0, 256),
+        source: ruleSource(proposal),
         sourceMemoryId: memoryId,
         now: this.#options.clock.now(),
       })
@@ -597,6 +781,7 @@ export class ProductionOwnerRuleWriter {
     readonly summary: string;
     readonly threadId: string | null;
     readonly source?: string;
+    readonly externalOrigins?: readonly string[];
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
     const summary = input.summary.trim();
@@ -611,6 +796,7 @@ export class ProductionOwnerRuleWriter {
         text: `${quote}\n${summary}`,
         category: "preference",
         threadId: input.threadId,
+        ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
       });
       return Object.freeze({
         status: "soft",
@@ -635,6 +821,7 @@ export class ProductionOwnerRuleWriter {
       quote,
       threadId: input.threadId,
       ...(input.source === undefined ? {} : { source: input.source }),
+      ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
     };
     const explicit =
       !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
@@ -704,22 +891,28 @@ export class ProductionOwnerRuleWriter {
       throw new OwnerRuleError("RULE_NOT_FOUND");
     const current = await this.#options.rules.read({ ...this.#scope(), ruleId });
     if (!current || current.status === "retired") throw new OwnerRuleError("RULE_NOT_FOUND");
-    if (enforceableOwnerRule(current) === undefined) throw new OwnerRuleError("RULE_UNAVAILABLE");
+    if (enforceableOwnerRule({ ...current, status: "active" }) === undefined)
+      throw new OwnerRuleError("RULE_UNAVAILABLE");
     const revivedMemory = current.sourceMemoryId
       ? await this.#reviveMemory(current.sourceMemoryId as MemoryId)
       : false;
-    const changed =
-      current.status === "needs_review"
-        ? await this.#options.rules.setStatus({
+    const latest = revivedMemory
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : current;
+    const restored =
+      latest && latest.status !== "active" && latest.status !== "retired"
+        ? await this.#options.reviews.act({
             ...this.#scope(),
             ruleId,
-            status: "active",
-            expectedRevision: current.revision,
-            reason: "owner_confirmed",
+            expectedRevision: latest.revision,
+            action: "restore",
             now: this.#options.clock.now(),
           })
-        : current;
-    if (!changed) {
+        : latest?.status === "active";
+    const changed = restored
+      ? await this.#options.rules.read({ ...this.#scope(), ruleId })
+      : undefined;
+    if (!changed || changed.status !== "active") {
       if (revivedMemory) await this.#archiveMemory(current.sourceMemoryId as MemoryId);
       throw new OwnerRuleError("RULE_UNAVAILABLE");
     }
@@ -809,7 +1002,10 @@ export class ProductionOwnerRuleTools {
     this.#writer = writer;
   }
 
-  async run(invocation: RuntimeToolInvocation): Promise<unknown> {
+  async run(
+    invocation: RuntimeToolInvocation,
+    provenance: { readonly externalOrigins?: readonly string[] } = {},
+  ): Promise<unknown> {
     const args = invocation.arguments;
     const names = Object.keys(args);
     if (invocation.capabilityRef === RULE_LIST_CAPABILITY_REF) {
@@ -841,6 +1037,9 @@ export class ProductionOwnerRuleTools {
       params,
       summary,
       threadId: invocation.context?.threadId ?? null,
+      ...(provenance.externalOrigins?.length
+        ? { externalOrigins: provenance.externalOrigins }
+        : {}),
     });
   }
 }

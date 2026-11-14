@@ -136,9 +136,10 @@ public struct TodayTabIcon: View {
 
     public var body: some View {
         let scale = size / Self.grid
+        let baselineOffset = Self.baseline * scale
         ZStack(alignment: Alignment(horizontal: .center, vertical: .firstTextBaseline)) {
             Icon(.calendarFrame, size: size)
-                .alignmentGuide(.firstTextBaseline) { _ in Self.baseline * scale }
+                .alignmentGuide(.firstTextBaseline) { _ in baselineOffset }
             Text(String(day))
                 .font(.system(size: Self.numberSize * scale, weight: .bold, design: .rounded))
                 .monospacedDigit()

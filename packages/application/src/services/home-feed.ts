@@ -12,6 +12,7 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import type { DataClassification } from "../ports/common.js";
 import type { HomeFeedConfiguration } from "../ports/configuration.js";
+import type { HomeUrgencyCandidate, HomeUrgencyFact } from "./home-urgency.js";
 
 export type HomeItemKind = (typeof HOME_ITEM_KINDS)[number];
 export type HomeSentenceBasis = (typeof HOME_SENTENCE_BASES)[number];
@@ -29,6 +30,7 @@ export interface HomeAction {
   readonly polarity: (typeof HOME_POLARITIES)[number];
   readonly ownerPresence: boolean;
   readonly reviewLabel: string | null;
+  readonly binding: string | null;
 }
 
 export const DEFAULT_HOME_FEED: HomeFeedConfiguration = Object.freeze({
@@ -70,9 +72,16 @@ export interface HomeCandidate {
   readonly actions: readonly HomeAction[];
   readonly ruleHit: boolean;
   readonly dataClassification: DataClassification;
+  readonly approval?: HomeApprovalDetail;
 }
 
-export interface HomeFeedItem extends Omit<HomeCandidate, "ruleHit"> {
+export interface HomeApprovalDetail {
+  readonly id: string;
+  readonly semanticSnapshotHash: string;
+  readonly facts: { readonly [key: string]: HomeUrgencyFact };
+}
+
+export interface HomeFeedItem extends Omit<HomeCandidate, "ruleHit" | "approval"> {
   readonly rank: HomeRank;
 }
 
@@ -126,30 +135,78 @@ export interface HomeFeedServiceOptions {
   readonly clock: { now(): string };
   readonly digest: (text: string) => string;
   readonly onSourceFailure: (source: HomeSourceName, error: unknown) => void;
+  readonly scores?: (
+    candidates: readonly HomeUrgencyCandidate[],
+  ) => Promise<ReadonlyMap<string, number>>;
+  readonly onScoreFailure?: (error: unknown) => void;
+}
+
+export const HOME_SCORING_LOCALE: HomeLocale = "en";
+
+export function homeUrgencyCandidate(candidate: HomeCandidate): HomeUrgencyCandidate {
+  const { approval } = candidate;
+  if (approval)
+    return {
+      key: candidate.key,
+      kind: candidate.kind,
+      deadline: candidate.deadline,
+      dataClassification: candidate.dataClassification,
+      digestBasis: approval.semanticSnapshotHash,
+      facts: approval.facts,
+      approvalRequestId: approval.id,
+    };
+  const text = candidate.sentenceBasis === "model" ? null : candidate.sentence;
+  return {
+    key: candidate.key,
+    kind: candidate.kind,
+    deadline: candidate.deadline,
+    dataClassification: candidate.dataClassification,
+    digestBasis: JSON.stringify([
+      candidate.kind,
+      candidate.sentenceBasis === "recorded" ? candidate.sentence : null,
+      candidate.deadline,
+    ]),
+    facts: {
+      text,
+      origin: candidate.source.type,
+      from: candidate.source.from,
+      label: candidate.source.label,
+      ruleHit: candidate.ruleHit,
+    },
+  };
 }
 
 const RANK_ORDER: Readonly<Record<HomeRank, number>> = {
   rule: 0,
   deadline: 1,
   unscored: 2,
-  recency: 3,
+  model: 3,
+  recency: 4,
 };
 
-function rankOf(candidate: HomeCandidate, now: string, leadMs: number): HomeRank {
+function rankOf(candidate: HomeCandidate, now: string, leadMs: number, scored: boolean): HomeRank {
   if (!candidate.awaitsOwner) return "recency";
   if (candidate.ruleHit) return "rule";
   if (candidate.deadline !== null && Date.parse(candidate.deadline) - Date.parse(now) <= leadMs)
     return "deadline";
-  return "unscored";
+  return scored ? "model" : "unscored";
 }
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function compareItems(left: HomeFeedItem, right: HomeFeedItem): number {
+function compareItems(
+  left: HomeFeedItem,
+  right: HomeFeedItem,
+  scores: ReadonlyMap<string, number>,
+): number {
   const rank = RANK_ORDER[left.rank] - RANK_ORDER[right.rank];
   if (rank !== 0) return rank;
+  if (left.rank === "model") {
+    const score = (scores.get(right.key) ?? 0) - (scores.get(left.key) ?? 0);
+    if (score !== 0) return score;
+  }
   if (left.awaitsOwner) {
     if (left.deadline !== right.deadline) {
       if (left.deadline === null) return 1;
@@ -167,6 +224,7 @@ export function orderHomeItems(
   candidates: readonly HomeCandidate[],
   now: string,
   deadlineLeadMinutes: number,
+  scores: ReadonlyMap<string, number> = new Map(),
 ): HomeFeedItem[] {
   const leadMs = deadlineLeadMinutes * 60_000;
   const seen = new Set<string>();
@@ -174,10 +232,10 @@ export function orderHomeItems(
   for (const candidate of candidates) {
     if (seen.has(candidate.key)) continue;
     seen.add(candidate.key);
-    const { ruleHit: _ruleHit, ...rest } = candidate;
-    items.push({ ...rest, rank: rankOf(candidate, now, leadMs) });
+    const { ruleHit: _ruleHit, approval: _approval, ...rest } = candidate;
+    items.push({ ...rest, rank: rankOf(candidate, now, leadMs, scores.has(candidate.key)) });
   }
-  return items.sort(compareItems);
+  return items.sort((left, right) => compareItems(left, right, scores));
 }
 
 export class HomeFeedService {
@@ -219,9 +277,30 @@ export class HomeFeedService {
 
   async awaitingCount(): Promise<number | undefined> {
     const now = this.#options.clock.now();
-    const { candidates, incomplete, unread } = await this.#collect(this.#input(now, "en"), true);
+    const { candidates, incomplete, unread } = await this.#collect(
+      this.#input(now, HOME_SCORING_LOCALE),
+      true,
+    );
     if (incomplete.length > 0) return undefined;
     return new Set(candidates.map(({ key }) => key)).size + unread;
+  }
+
+  async awaitingCandidates(): Promise<readonly HomeUrgencyCandidate[]> {
+    const now = this.#options.clock.now();
+    const { candidates } = await this.#collect(this.#input(now, HOME_SCORING_LOCALE), true);
+    return candidates.map(homeUrgencyCandidate);
+  }
+
+  async #scores(candidates: readonly HomeCandidate[]): Promise<ReadonlyMap<string, number>> {
+    const { scores } = this.#options;
+    const awaiting = candidates.filter(({ awaitsOwner }) => awaitsOwner);
+    if (!scores || awaiting.length === 0) return new Map();
+    try {
+      return await scores(awaiting.map(homeUrgencyCandidate));
+    } catch (error) {
+      this.#options.onScoreFailure?.(error);
+      return new Map();
+    }
   }
 
   async read(input: { readonly locale: HomeLocale }): Promise<HomeFeed> {
@@ -238,6 +317,7 @@ export class HomeFeedService {
       ],
       now,
       settings.deadlineLeadMinutes,
+      await this.#scores(candidates),
     );
     const awaiting = ordered.filter(({ awaitsOwner }) => awaitsOwner);
     const others = ordered.filter(({ awaitsOwner }) => !awaitsOwner);

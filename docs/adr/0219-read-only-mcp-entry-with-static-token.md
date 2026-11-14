@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
+amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md, docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md"
 date: "2026-11-11"
 ---
 
@@ -145,5 +145,6 @@ Andy 要把自己的记忆、规则和今天的情况集中放在 Himawari 一�
 - [ADR 0143：模型门槛决策的决策记录](0143-decision-ledger-for-model-gate-decisions.md)
 - [ADR 0209：规则手册用 CEL 表达式，由一个裁判计算](0209-rule-book-with-cel-expressions-and-judge.md)
 - [决策记录写入约定](../execution/specs/2026-11-09-decision-record-write-convention.md)
+- [ADR 0232](0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)：`rule_book` 里的规则可以是已暂停（`suspended`），此时不执行（后续）。
 
 [返回阅读导航](#contents)

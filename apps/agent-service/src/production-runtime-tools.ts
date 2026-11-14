@@ -50,6 +50,7 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
@@ -111,6 +112,12 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
+import {
+  type ContextExternalContent,
+  ExternalContentMarkNotWrittenError,
+  originsOf,
+  RECALLED_EXTERNAL_RECORD_ORIGIN,
+} from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
@@ -326,6 +333,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -606,6 +614,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
+  #contentOrigin(invocation: RuntimeToolInvocation): string | null {
+    if (invocation.capabilityHandleRef !== null) return `authorized:${invocation.capabilityRef}`;
+    const named = this.#codingTool(invocation);
+    const row = named
+      ? this.#registry.forTool(named)
+      : this.#registry.forCapability(invocation.capabilityRef);
+    if (row?.resultOrigin === "owner_data") return null;
+    return row?.tool ?? `unregistered:${invocation.capabilityRef}`;
+  }
+  async #provenance(
+    invocation: RuntimeToolInvocation,
+  ): Promise<{ readonly externalOrigins?: readonly string[] }> {
+    const origins = originsOf(await this.#options.externalContent?.read(invocation.runId));
+    return origins.length === 0 ? {} : { externalOrigins: origins };
+  }
+  async #markExternalContent(invocation: RuntimeToolInvocation): Promise<void> {
+    const marker = this.#options.externalContent;
+    if (!marker) return;
+    const origin = this.#contentOrigin(invocation);
+    if (origin === null) return;
+    await marker.mark(invocation.runId, origin);
+  }
   #builtinRow(invocation: RuntimeToolInvocation): ToolActionRow | undefined {
     if (invocation.capabilityHandleRef !== null) return undefined;
     const row = this.#registry.forCapability(invocation.capabilityRef);
@@ -689,7 +719,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "rule",
       gate,
-      rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
+      rules
+        ? async (call) => ({ value: await rules.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => ({
         errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
         note:
@@ -710,20 +742,23 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       gate,
       recall
         ? async (call) => {
-            const { output, contentClassification } = await recall.recallWithClassification(call);
+            const { output, contentClassification, externalContent } =
+              await recall.recallWithClassification(call);
+            if (externalContent)
+              await this.#options.externalContent?.mark(
+                call.runId,
+                RECALLED_EXTERNAL_RECORD_ORIGIN,
+              );
             return { value: output, contentClassification };
           }
         : undefined,
-      (error) => {
-        const errorCode =
-          error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
-            ? "MEMORY_RECALL_INPUT_INVALID"
-            : "MEMORY_RECALL_UNAVAILABLE";
-        return {
-          errorCode,
-          note: TOOL_RESULT_RECALL_UNAVAILABLE.text,
-        };
-      },
+      (error) =>
+        error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
+          ? {
+              errorCode: "MEMORY_RECALL_INPUT_INVALID",
+              note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+            }
+          : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
   async #reminder(
@@ -735,7 +770,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "reminder",
       gate,
-      reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
+      reminders
+        ? async (call) => ({ value: await reminders.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => {
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
         return {
@@ -1187,8 +1224,45 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     const invocation = await this.#taskStart(value);
     signal?.throwIfAborted();
+    try {
+      await this.#markExternalContent(invocation);
+    } catch (error) {
+      if (!(error instanceof ExternalContentMarkNotWrittenError)) throw error;
+      const dispatched = await this.#options.artifacts.lookup({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: `runtime-tool-intent:${digest([invocation.runId, invocation.toolCallId])}`,
+      });
+      if (dispatched) throw error;
+      await this.#options.assertRunActive(invocation.runId);
+      signal?.throwIfAborted();
+      await this.#writeJson(
+        invocation,
+        `runtime-tool-diagnostic:${digest([invocation.runId, invocation.toolCallId, "external-content-mark"])}`,
+        {
+          stage: "not_dispatched",
+          reasonCode: "external_content_mark_failed",
+          cause: error instanceof Error ? error.name : "unknown",
+        },
+      ).catch(() => undefined);
+      return {
+        dispatchState: "not_sent",
+        outcome: "failed",
+        resultRef: null,
+        errorCode: "external_content_mark_failed",
+        externalActionId: null,
+        modelContent: JSON.stringify({ error: "external_content_mark_failed" }),
+      };
+    }
+    signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
+      const taskRow = this.#registry.forCapability(invocation.capabilityRef);
+      if (taskRow?.authorization === "owner_scope") {
+        if (!this.#exposed.has(invocation.runId)) reject();
+        const stopped = await this.#ownerScopeGate(invocation, taskRow, signal)?.();
+        if (stopped) return stopped;
+      }
       if (this.#background?.manages(invocation)) {
         if (!this.#exposed.has(invocation.runId)) reject();
         const key = digest([invocation.runId, invocation.toolCallId]);

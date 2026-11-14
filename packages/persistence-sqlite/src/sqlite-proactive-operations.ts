@@ -140,6 +140,8 @@ export class SqliteProactiveOperations {
         return this.readSettings(payload as ProactiveScope);
       case "proactive.writeSettings":
         return this.writeSettings(payload as Input<"writeSettings">);
+      case "proactive.setEnabled":
+        return this.setEnabled(payload as Input<"setEnabled">);
       case "proactive.readConnection":
         return this.readConnection(payload as Input<"readConnection">);
       case "proactive.saveConnection":
@@ -299,17 +301,7 @@ export class SqliteProactiveOperations {
     )
       this.invalid("Proactive settings are invalid");
     this.database.transaction(() => {
-      const before = this.database
-        .prepare("SELECT enabled FROM proactive_settings WHERE owner_id = ? AND agent_id = ?")
-        .get(input.ownerId, input.agentId) as { enabled: number } | undefined;
-      this.database
-        .prepare(
-          `INSERT INTO proactive_settings (owner_id, agent_id, enabled, updated_at)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (owner_id, agent_id) DO UPDATE SET enabled = excluded.enabled,
-          updated_at = excluded.updated_at`,
-        )
-        .run(input.ownerId, input.agentId, input.enabled ? 1 : 0, input.now);
+      this.writeEnabled(input);
       this.writeRule(
         input,
         QUIET_HOURS_RULE_ID,
@@ -328,14 +320,35 @@ export class SqliteProactiveOperations {
         JSON.stringify({ senders: input.importantSenders }),
         "owner setting: important senders",
       );
-      if ((before?.enabled === 1) !== input.enabled)
-        insertObservationEvent(this.database, {
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          kind: input.enabled ? "proactive_enabled" : "proactive_disabled",
-          occurredAt: input.now,
-        });
     })();
+  }
+
+  private setEnabled(input: Input<"setEnabled">): void {
+    this.assertDiskHeadroom();
+    this.time(input.now);
+    if (typeof input.enabled !== "boolean") this.invalid("Proactive settings are invalid");
+    this.database.transaction(() => this.writeEnabled(input))();
+  }
+
+  private writeEnabled(input: Input<"setEnabled">): void {
+    const before = this.database
+      .prepare("SELECT enabled FROM proactive_settings WHERE owner_id = ? AND agent_id = ?")
+      .get(input.ownerId, input.agentId) as { enabled: number } | undefined;
+    this.database
+      .prepare(
+        `INSERT INTO proactive_settings (owner_id, agent_id, enabled, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (owner_id, agent_id) DO UPDATE SET enabled = excluded.enabled,
+          updated_at = excluded.updated_at`,
+      )
+      .run(input.ownerId, input.agentId, input.enabled ? 1 : 0, input.now);
+    if ((before?.enabled === 1) !== input.enabled)
+      insertObservationEvent(this.database, {
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        kind: input.enabled ? "proactive_enabled" : "proactive_disabled",
+        occurredAt: input.now,
+      });
   }
 
   private writeRule(
@@ -360,7 +373,8 @@ export class SqliteProactiveOperations {
         ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
         ON CONFLICT (owner_id, agent_id, rule_id) DO UPDATE SET revision = excluded.revision,
           parameters = excluded.parameters, status = 'active', source = excluded.source,
-          updated_at = excluded.updated_at`,
+          updated_at = excluded.updated_at, review_after = NULL, review_attempts = 0,
+          review_failure = NULL, suspend_reason = NULL, suggestion = NULL`,
       )
       .run(input.ownerId, input.agentId, ruleId, revision, parameters, source, input.now);
     this.database

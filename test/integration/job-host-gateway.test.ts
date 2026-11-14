@@ -1,17 +1,26 @@
 import { type ChildProcess, fork, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { connect, createServer } from "node:net";
+import { lstat, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { connect, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  type JobHostControlBinding,
+  type JobHostControlObservation,
+  openJobHostControl,
+  readJobHostStartEvidence,
+} from "../../packages/runtime-sandbox/src/job-host-control.ts";
+import { gatewayJobHostControlAccess } from "../../packages/runtime-sandbox/src/job-host-control-access.ts";
 import {
   type JobHostGateway,
   parseJobHostGatewayArgs,
   serveJobHostGateway,
 } from "../../packages/runtime-sandbox/src/job-host-gateway.ts";
 import { JOB_HOST_GATEWAY_FRAME_MAX_BYTES } from "../../packages/runtime-sandbox/src/job-host-gateway-frames.ts";
+import type { JobHostLaunchContext } from "../../packages/runtime-sandbox/src/job-host-launch-decision.ts";
 import type { JobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
 import {
   gatewayJobHostLauncher,
@@ -62,7 +71,11 @@ function forkFixture(args: readonly string[] = []) {
   });
 }
 
-async function startGateway(idleExitMs = 60000, childArgs: readonly string[] = []) {
+async function startGateway(
+  idleExitMs = 60000,
+  childArgs: readonly string[] = [],
+  controlRoot?: string,
+) {
   const socketPath = path.join(await directory(), "gateway.sock");
   const server = createServer();
   const onIdle = vi.fn(() => server.close());
@@ -70,6 +83,7 @@ async function startGateway(idleExitMs = 60000, childArgs: readonly string[] = [
   const gateway = serveJobHostGateway(server, {
     idleExitMs,
     onIdle,
+    ...(controlRoot === undefined ? {} : { controlRoot }),
     fork: () => {
       const child = forkFixture(childArgs);
       forks.push(child);
@@ -387,22 +401,34 @@ describe("Job Host gateway", () => {
 });
 
 describe("Job Host gateway arguments", () => {
-  it("requires an idle exit time and one listening source", () => {
-    expect(() => parseJobHostGatewayArgs(["--socket", "/s"], {}, 10)).toThrow(
+  const root = ["--control-root", "/r"];
+  it("requires an idle exit time, a control root and one listening source", () => {
+    expect(() => parseJobHostGatewayArgs([...root, "--socket", "/s"], {}, 10)).toThrow(
       "JOB_HOST_GATEWAY_IDLE_EXIT_INVALID",
     );
     expect(() =>
-      parseJobHostGatewayArgs(["--idle-exit-ms", "0", "--socket", "/s"], {}, 10),
+      parseJobHostGatewayArgs([...root, "--idle-exit-ms", "0", "--socket", "/s"], {}, 10),
     ).toThrow("JOB_HOST_GATEWAY_IDLE_EXIT_INVALID");
-    expect(() => parseJobHostGatewayArgs(["--idle-exit-ms", "100"], {}, 10)).toThrow(
+    expect(() =>
+      parseJobHostGatewayArgs(["--idle-exit-ms", "100", "--socket", "/s"], {}, 10),
+    ).toThrow("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
+    for (const invalid of ["relative", "/r/../x", "/r/"])
+      expect(() =>
+        parseJobHostGatewayArgs(
+          ["--control-root", invalid, "--idle-exit-ms", "100", "--socket", "/s"],
+          {},
+          10,
+        ),
+      ).toThrow("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
+    expect(() => parseJobHostGatewayArgs([...root, "--idle-exit-ms", "100"], {}, 10)).toThrow(
       "JOB_HOST_GATEWAY_SOCKET_MISSING",
     );
     expect(() =>
-      parseJobHostGatewayArgs(["--idle-exit-ms", "100", "--extra", "x"], {}, 10),
+      parseJobHostGatewayArgs([...root, "--idle-exit-ms", "100", "--extra", "x"], {}, 10),
     ).toThrow("JOB_HOST_GATEWAY_ARGS_INVALID");
     expect(() =>
       parseJobHostGatewayArgs(
-        ["--idle-exit-ms", "100", "--socket", "/s"],
+        [...root, "--idle-exit-ms", "100", "--socket", "/s"],
         {
           LISTEN_PID: "10",
           LISTEN_FDS: "1",
@@ -411,13 +437,24 @@ describe("Job Host gateway arguments", () => {
       ),
     ).toThrow("JOB_HOST_GATEWAY_ARGS_INVALID");
     expect(
-      parseJobHostGatewayArgs(["--idle-exit-ms", "100"], { LISTEN_PID: "10", LISTEN_FDS: "1" }, 10),
-    ).toEqual({ idleExitMs: 100, listen: { fd: 3 } });
+      parseJobHostGatewayArgs(
+        [...root, "--idle-exit-ms", "100"],
+        { LISTEN_PID: "10", LISTEN_FDS: "1" },
+        10,
+      ),
+    ).toEqual({ idleExitMs: 100, controlRoot: "/r", listen: { fd: 3 } });
     expect(() =>
-      parseJobHostGatewayArgs(["--idle-exit-ms", "100"], { LISTEN_PID: "11", LISTEN_FDS: "1" }, 10),
+      parseJobHostGatewayArgs(
+        [...root, "--idle-exit-ms", "100"],
+        { LISTEN_PID: "11", LISTEN_FDS: "1" },
+        10,
+      ),
     ).toThrow("JOB_HOST_GATEWAY_SOCKET_MISSING");
-    expect(parseJobHostGatewayArgs(["--idle-exit-ms", "100", "--socket", "/s"], {}, 10)).toEqual({
+    expect(
+      parseJobHostGatewayArgs([...root, "--idle-exit-ms", "100", "--socket", "/s"], {}, 10),
+    ).toEqual({
       idleExitMs: 100,
+      controlRoot: "/r",
       listen: { path: "/s" },
     });
   });
@@ -428,7 +465,15 @@ describe("Job Host gateway process", () => {
     const socketPath = path.join(await directory(), "gateway.sock");
     const gateway = spawn(
       process.execPath,
-      [gatewayMain, "--socket", socketPath, "--idle-exit-ms", "300"],
+      [
+        gatewayMain,
+        "--socket",
+        socketPath,
+        "--idle-exit-ms",
+        "300",
+        "--control-root",
+        path.dirname(socketPath),
+      ],
       { stdio: ["ignore", "ignore", "pipe"] },
     );
     cleanups.push(() => {
@@ -442,5 +487,260 @@ describe("Job Host gateway process", () => {
     expect(await seen.closed).toEqual({ exitCode: null, signal: null });
     expect(seen.errored()).toBe(true);
     expect(await exited).toBe(0);
+  });
+  it.each(["symbolic link", "missing directory"] as const)(
+    "refuses to start when the control root is a %s",
+    async (kind) => {
+      const parent = await realpath(await directory());
+      const socketPath = path.join(parent, "gateway.sock");
+      const target = path.join(parent, "target");
+      const controlRoot = path.join(parent, "root");
+      if (kind === "symbolic link") {
+        await mkdir(target);
+        await symlink(target, controlRoot);
+      }
+      const gateway = spawn(
+        process.execPath,
+        [
+          gatewayMain,
+          "--socket",
+          socketPath,
+          "--idle-exit-ms",
+          "300",
+          "--control-root",
+          controlRoot,
+        ],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      cleanups.push(() => {
+        if (gateway.exitCode === null) gateway.kill("SIGKILL");
+      });
+      let stderr = "";
+      gateway.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      expect(await new Promise((resolve) => gateway.once("exit", resolve))).toBe(1);
+      expect(stderr).toContain("JOB_HOST_GATEWAY_CONTROL_ROOT_INVALID");
+      expect(existsSync(socketPath)).toBe(false);
+    },
+  );
+});
+
+describe("Job Host gateway control", () => {
+  const name = `control-${"0".repeat(20)}`;
+  async function controlGateway() {
+    const root = await realpath(await directory());
+    const started = await startGateway(60000, [], root);
+    return { ...started, root, access: gatewayJobHostControlAccess(started.socketPath) };
+  }
+  function binding(directoryPath: string): JobHostControlBinding {
+    return {
+      directory: directoryPath,
+      token: "b".repeat(64),
+      sessionId: randomUUID(),
+      jobId: "job",
+      attemptId: "attempt",
+    };
+  }
+  function observation(control: JobHostControlBinding, phase: JobHostControlObservation["phase"]) {
+    return {
+      sessionId: control.sessionId,
+      jobId: control.jobId,
+      attemptId: control.attemptId,
+      bootId: randomUUID(),
+      processIdentityRef: `job-host-process:${randomUUID()}`,
+      processId: process.pid,
+      processStartedAt: new Date().toISOString(),
+      observedAt: new Date().toISOString(),
+      sequence: 1,
+      phase,
+      policyDigest: "c".repeat(64),
+      privateDirectoryRef: `sandbox-private:${"d".repeat(64)}`,
+      linuxNamespace: null,
+      taskStarted: true,
+      taskProcessExited: false,
+      stdioClosed: false,
+      srtReset: false,
+      resources: null,
+      processStartToken: "start-token",
+      taskProcessGroup: { processGroupId: process.pid, startToken: "group-token" },
+    } satisfies JobHostControlObservation;
+  }
+
+  it("creates and describes control directories only inside its own control root", async () => {
+    const { root, access } = await controlGateway();
+    const prepared = await access.prepareDirectory(name);
+    const metadata = await lstat(prepared.directory);
+    expect(prepared).toEqual({
+      directory: path.join(root, name),
+      device: String(metadata.dev),
+      inode: String(metadata.ino),
+    });
+    expect(metadata.mode & 0o777).toBe(0o700);
+    expect(await access.describeDirectory(prepared.directory)).toEqual({
+      canonical: true,
+      directory: true,
+      private: true,
+      device: prepared.device,
+      inode: prepared.inode,
+    });
+    await expect(access.prepareDirectory(name)).rejects.toMatchObject({ code: "EEXIST" });
+    await expect(access.prepareDirectory("../control")).rejects.toThrow(
+      "JOB_HOST_CONTROL_DIRECTORY_NAME_INVALID",
+    );
+    const elsewhere = path.join(await realpath(await directory()), name);
+    await expect(access.describeDirectory(elsewhere)).rejects.toThrow(
+      "JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT",
+    );
+    await expect(access.readFinalEvidence(binding(elsewhere))).rejects.toThrow(
+      "JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT",
+    );
+    await expect(access.describeDirectory(`${prepared.directory}/`)).rejects.toThrow(
+      "JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT",
+    );
+    await expect(
+      access.blockLaunch(
+        {
+          plan: {} as JobHostLaunchContext["plan"],
+          control: binding(elsewhere),
+          policyDigest: "c".repeat(64),
+          directoryDevice: prepared.device,
+          directoryInode: prepared.inode,
+        },
+        new Date().toISOString(),
+      ),
+    ).rejects.toThrow("JOB_HOST_GATEWAY_CONTROL_OUTSIDE_ROOT");
+    await expect(
+      access.describeDirectory(path.join(root, `control-${"1".repeat(20)}`)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("relays signed control answers and evidence that the caller verifies itself", async () => {
+    const { access } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    let phase: JobHostControlObservation["phase"] = "running";
+    const stops: string[] = [];
+    const server = await openJobHostControl(
+      control,
+      () => observation(control, phase),
+      () => {
+        stops.push("stop");
+        phase = "stopping";
+      },
+    );
+    await expect(access.readStartEvidence(control)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await access.query(control, "inspect")).toMatchObject({ phase: "running" });
+    expect(await access.query(control, "stop")).toMatchObject({ phase: "stopping" });
+    expect(stops).toEqual(["stop"]);
+    await server.recordStart();
+    expect(await access.readStartEvidence(control)).toEqual(
+      await readJobHostStartEvidence(control),
+    );
+    phase = "finished";
+    await server.finish();
+    expect(await access.readFinalEvidence(control)).toMatchObject({ phase: "finished" });
+    await expect(access.query(control, "inspect")).rejects.toThrow();
+    await expect(access.readFinalEvidence({ ...control, token: "e".repeat(64) })).rejects.toThrow(
+      "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+    );
+    await writeFile(
+      path.join(control.directory, "final.json"),
+      JSON.stringify({
+        body: JSON.stringify(observation(control, "finished")),
+        signature: "f".repeat(64),
+      }),
+      { mode: 0o600 },
+    );
+    await expect(access.readFinalEvidence(control)).rejects.toThrow(
+      "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+    );
+  });
+
+  it("lets the caller reject a forged control answer and never reports an unreachable gateway as missing evidence", async () => {
+    const { access, root } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    const forged = createServer((socket) => {
+      socket.resume();
+      socket.end(
+        JSON.stringify({
+          body: JSON.stringify(observation(control, "running")),
+          signature: "f".repeat(64),
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      forged.listen(path.join(control.directory, "control.sock"), resolve),
+    );
+    cleanups.push(() => new Promise<void>((resolve) => forged.close(() => resolve())));
+    await expect(access.query(control, "inspect")).rejects.toThrow(/^JOB_HOST_CONTROL_[A-Z_]+$/);
+    const unreachable = gatewayJobHostControlAccess(path.join(root, "missing.sock"));
+    const failure = await unreachable.readFinalEvidence(control).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("JOB_HOST_GATEWAY_UNAVAILABLE");
+    expect(failure).not.toHaveProperty("code");
+  });
+
+  it("refuses a FIFO in place of evidence without blocking the gateway", async () => {
+    const { access } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    const fifo = spawn("mkfifo", ["-m", "600", path.join(control.directory, "final.json")]);
+    expect(await new Promise((resolve) => fifo.once("exit", resolve))).toBe(0);
+    await expect(access.readFinalEvidence(control)).rejects.toThrow(
+      "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+    );
+    await expect(access.describeDirectory(control.directory)).resolves.toMatchObject({
+      directory: true,
+    });
+  });
+
+  it("stops asking the Job Host when the caller gives up", async () => {
+    const { access } = await controlGateway();
+    const control = binding((await access.prepareDirectory(name)).directory);
+    const connections = new Set<Socket>();
+    let closed = 0;
+    const stalled = createServer({ allowHalfOpen: true }, (socket) => {
+      connections.add(socket);
+      socket.resume();
+      socket.on("error", () => {});
+      socket.on("close", () => {
+        connections.delete(socket);
+        closed++;
+      });
+    });
+    await new Promise<void>((resolve) =>
+      stalled.listen(path.join(control.directory, "control.sock"), resolve),
+    );
+    cleanups.push(async () => {
+      for (const socket of connections) socket.destroy();
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+    });
+    const aborted = new AbortController();
+    const asked = access.query(control, "inspect", 30000, aborted.signal);
+    await until(() => connections.size === 1);
+    aborted.abort();
+    await expect(asked).rejects.toThrow("JOB_HOST_CONTROL_ABORTED");
+    await until(() => {
+      for (const socket of connections) if (!socket.destroyed) socket.write("x");
+      return closed === 1;
+    }, 2000);
+  });
+
+  it("refuses control requests without a control root and a second frame on one connection", async () => {
+    const { socketPath } = await startGateway();
+    await expect(gatewayJobHostControlAccess(socketPath).prepareDirectory(name)).rejects.toThrow(
+      "JOB_HOST_GATEWAY_CONTROL_UNAVAILABLE",
+    );
+    const { socketPath: rooted } = await controlGateway();
+    const socket = connect(rooted);
+    let received = "";
+    socket.on("data", (chunk: Buffer) => {
+      received += chunk.toString();
+    });
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+    socket.write(
+      `${JSON.stringify({ type: "control", op: "prepare", name })}\n${JSON.stringify({ type: "kill" })}\n`,
+    );
+    await closed;
+    expect(received).toBe("");
   });
 });

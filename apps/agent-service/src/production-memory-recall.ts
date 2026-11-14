@@ -1,7 +1,7 @@
 import {
+  classificationRank,
   type DataClassification,
   highestClassification,
-  classificationRank,
   type MemoryProviderProjectionPort,
   type MemoryTimeScope,
   modelVisibleClassifications,
@@ -12,13 +12,14 @@ import {
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import { type MemoryEpisodeService, parseTimeScope } from "@himawari-agent/memory-engine";
+import { type MemoryEpisodeService, requestedTimeScope } from "@himawari-agent/memory-engine";
 import {
   TOOL_RECALL,
   TOOL_RESULT_RECALL_EMPTY,
   TOOL_RESULT_RECALL_HISTORY,
   TOOL_RESULT_RECALL_TENTATIVE,
 } from "@himawari-agent/prompt-catalog";
+import { carriesExternalContent } from "./context-external-content.js";
 
 export const MEMORY_RECALL_CAPABILITY_REF = "memory.recall";
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
@@ -62,33 +63,6 @@ export interface ProductionMemoryRecallOptions {
   readonly dedupeSameSource?: boolean;
 }
 
-function startOfDay(day: string, timeZone: string): string {
-  const guess = Date.parse(`${day}T00:00:00.000Z`);
-  const local = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-  })
-    .formatToParts(new Date(guess))
-    .reduce<Record<string, number>>((parts, { type, value }) => {
-      parts[type] = Number(value);
-      return parts;
-    }, {});
-  const offset =
-    Date.UTC(
-      local["year"] ?? 1970,
-      (local["month"] ?? 1) - 1,
-      local["day"] ?? 1,
-      local["hour"] ?? 0,
-      local["minute"] ?? 0,
-    ) - guess;
-  return new Date(guess - offset).toISOString();
-}
-
 function argumentsOf(args: RuntimeToolInvocation["arguments"]) {
   const query = typeof args["query"] === "string" ? args["query"].trim() : "";
   const from = args["from"];
@@ -122,6 +96,7 @@ export interface RecallResult {
   readonly output: Record<string, unknown>;
   readonly contentClassification: DataClassification;
   readonly memoryIds: readonly string[];
+  readonly externalContent?: boolean;
 }
 
 export class ProductionMemoryRecall {
@@ -158,42 +133,21 @@ export class ProductionMemoryRecall {
     const input = argumentsOf(args);
     const timeZone = this.#options.timeZone ?? "UTC";
     const now = this.#options.now();
-    const parsed = parseTimeScope(input.query, now, timeZone);
-    const explicit = input.from !== undefined || input.to !== undefined;
-    const from = input.from ?? input.to;
-    const to = input.to ?? input.from;
-    const scope: MemoryTimeScope = explicit
-      ? {
-          includeHistory: true,
-          from: from ? startOfDay(from, timeZone) : null,
-          to: to
-            ? new Date(
-                Date.parse(
-                  startOfDay(
-                    new Date(Date.parse(`${to}T00:00:00.000Z`) + 86_400_000)
-                      .toISOString()
-                      .slice(0, 10),
-                    timeZone,
-                  ),
-                ) - 1,
-              ).toISOString()
-            : null,
-        }
-      : {
-          includeHistory: input.includeHistory || parsed?.includeHistory === true,
-          from: parsed?.from ?? null,
-          to: parsed?.to ?? null,
-        };
+    let scope: MemoryTimeScope;
+    try {
+      scope = requestedTimeScope(input, timeZone);
+    } catch (error) {
+      if (error instanceof RangeError && error.message === "MEMORY_TIME_SCOPE_INVALID")
+        throw new Error("MEMORY_RECALL_INPUT_INVALID");
+      throw error;
+    }
     const allowed = modelVisibleClassifications().filter(
       (classification) =>
         ceiling === undefined || classificationRank(classification) <= classificationRank(ceiling),
     );
     const shown: DataClassification[] = [];
     const shownIds: string[] = [];
-    const searchScope = {
-      ...scope,
-      includeHistory: scope.includeHistory || input.includeHistory,
-    };
+    let externalContent = false;
     const tentativeLimit = Math.floor(input.limit / 2);
     const [confirmed, tentativeHits] = await Promise.all([
       within("memory-recall", () =>
@@ -202,7 +156,7 @@ export class ProductionMemoryRecall {
           agentId: this.#options.agentId,
           query: input.query,
           limit: input.limit * 3,
-          scope: searchScope,
+          scope,
           relevanceCutoff: true,
         }),
       ).then(
@@ -217,7 +171,7 @@ export class ProductionMemoryRecall {
               agentId: this.#options.agentId,
               query: input.query,
               limit: input.limit * 3,
-              scope: searchScope,
+              scope,
               relevanceCutoff: true,
               includeTentative: true,
               tentativeOnly: true,
@@ -307,6 +261,7 @@ export class ProductionMemoryRecall {
     const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
       shown.push(memory.dataClassification);
       shownIds.push(memory.id);
+      if (carriesExternalContent(memory.sourceRefs)) externalContent = true;
       const attributes = memory.attributes;
       const validTo = attributes?.validTo ?? null;
       return {
@@ -358,6 +313,7 @@ export class ProductionMemoryRecall {
       output,
       contentClassification,
       memoryIds: shownIds,
+      externalContent,
     };
   }
 }

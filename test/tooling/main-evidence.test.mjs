@@ -162,6 +162,17 @@ describe("main 轻量路径的完整证据", () => {
     change(f);
     expect(() => verifyGate(f)).toThrow(/^MAIN_/);
   });
+  it("[ADR-0268] PR 上只跑了相关测试的验收不能当 main 的证据，标成 full 的可以", () => {
+    const related = fixture();
+    related.summary.scope = "related";
+    expect(() => verifyGate(related)).toThrow("MAIN_GATE_RELATED_SCOPE");
+    const full = fixture();
+    full.summary.scope = "full";
+    expect(verifyGate(full)).toMatchObject({ mode: "light" });
+    const unknown = fixture();
+    unknown.summary.scope = "partial";
+    expect(() => verifyGate(unknown)).toThrow("MAIN_GATE_RELATED_SCOPE");
+  });
 });
 function apiData() {
   return [

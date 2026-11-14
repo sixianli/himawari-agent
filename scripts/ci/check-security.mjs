@@ -38,6 +38,7 @@ export {
   validateSecurityExceptions,
 } from "./security-exceptions.mjs";
 
+import { runnerTracking } from "./runner-tracking.mjs";
 import { assertPublicArtifacts, redactText } from "./security-redaction.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -53,6 +54,15 @@ function assert(condition, code) {
   if (!condition) throw new Error(code);
 }
 
+export function commandFailure(kind, detail) {
+  const suffix = String(detail ?? "UNKNOWN")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/[0-9]/g, "")
+    .replace(/^_+|_+$/g, "");
+  return `SECURITY_CMD_${kind}_${suffix || "UNKNOWN"}`.slice(0, 40).replace(/_+$/, "");
+}
+
 function execute(command, args, { root, env, timeout = 120_000 }) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -61,10 +71,9 @@ function execute(command, args, { root, env, timeout = 120_000 }) {
     maxBuffer: 64 * 1024 * 1024,
     timeout,
   });
-  assert(
-    !result.error && result.signal === null && Number.isInteger(result.status),
-    "SECURITY_COMMAND_UNAVAILABLE",
-  );
+  assert(!result.error, commandFailure("ERROR", result.error?.code));
+  assert(result.signal === null, commandFailure("SIGNAL", result.signal));
+  assert(Number.isInteger(result.status), "SECURITY_COMMAND_UNAVAILABLE");
   return { exitCode: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -76,6 +85,7 @@ function git(root, args) {
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_PAGER: "cat",
+      ...runnerTracking(),
     },
   });
   assert(result.exitCode === 0, "SECURITY_GIT_COMMAND_FAILED");

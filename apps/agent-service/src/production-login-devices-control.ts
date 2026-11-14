@@ -9,6 +9,7 @@ import {
   type SessionDeviceStatePort,
 } from "@himawari-agent/application";
 import type {
+  GatewayErrorReasonCode,
   GatewayV2Command,
   GatewayV2Query,
   GatewayV2Snapshot,
@@ -17,6 +18,7 @@ import type {
 export const PRODUCTION_LOGIN_DEVICE_OPERATIONS = Object.freeze([
   "login.devices.read",
   "login.device.revoke",
+  "login.devices.revoke_others",
 ] as const);
 
 export interface ProductionLoginDevicesControlOptions {
@@ -25,6 +27,9 @@ export interface ProductionLoginDevicesControlOptions {
   readonly recentAuthentication: RecentAuthenticationGuardPort;
   readonly clock: ClockPort;
 }
+
+const REVOKE_OTHERS_ATTEMPTS = 3;
+const LOGIN_DEVICES_STILL_CHANGING: GatewayErrorReasonCode = "LOGIN_DEVICES_STILL_CHANGING";
 
 const singleLine = (value: string): string => {
   let text = "";
@@ -93,6 +98,46 @@ export class ProductionLoginDevicesControl {
     readonly command: GatewayV2Command;
   }): Promise<{ resultRef: string; replayed: boolean }> {
     const { authentication, command } = input;
+    if (command.type === "login.devices.revoke_others") {
+      const ownerId = this.#owner(authentication, command.scope);
+      const others = (await this.#options.state.listDevices(ownerId, false)).filter(
+        (device) => device.id !== authentication.deviceId,
+      );
+      if (others.length === 0) return { resultRef: authentication.deviceId, replayed: true };
+      await this.#options.recentAuthentication.assertRecentAuthentication({
+        authentication,
+        expectedAuthenticationRef: command.payload.recentAuthenticationRef,
+      });
+      const revokedAt = this.#options.clock.now();
+      let remaining = others;
+      for (
+        let attempt = 0;
+        attempt < REVOKE_OTHERS_ATTEMPTS && remaining.length > 0;
+        attempt += 1
+      ) {
+        const conflicts = new Map<string, { revision: number; error: unknown }>();
+        for (const device of remaining)
+          await this.#options.state
+            .revokeDevice(device.id, device.revision, revokedAt)
+            .catch((error: unknown) => {
+              if (
+                !(error instanceof ApplicationPortError && error.code === PORT_ERROR_CODES.CONFLICT)
+              )
+                throw error;
+              conflicts.set(device.id, { revision: device.revision, error });
+            });
+        remaining = (await this.#options.state.listDevices(ownerId, false)).filter(
+          (device) => device.id !== authentication.deviceId,
+        );
+        for (const device of remaining) {
+          const conflict = conflicts.get(device.id);
+          if (conflict && conflict.revision === device.revision) throw conflict.error;
+        }
+      }
+      if (remaining.length > 0)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, LOGIN_DEVICES_STILL_CHANGING);
+      return { resultRef: authentication.deviceId, replayed: false };
+    }
     if (command.type !== "login.device.revoke")
       throw new Error("LOGIN_DEVICES_OPERATION_NOT_INSTALLED");
     const ownerId = this.#owner(authentication, command.scope);

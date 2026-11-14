@@ -63,7 +63,7 @@ date: "2026-11-11"
 ## 业界怎么做
 
 - 前缀缓存要求固定内容在前、会变的在后，开头逐字节相同才能命中：[Anthropic](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)、[OpenAI](https://developers.openai.com/api/docs/guides/prompt-caching)、[DeepSeek](https://api-docs.deepseek.com/guides/kv_cache)。所以摘要块放在每批都会变的邮件之前、固定说明之后。
-- 把最近的对话摘要作为背景资料放进后台任务的输入，而不是改系统提示，和本项目 [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 2、15 条一致。
+- 把最近的对话摘要作为背景资料放进后台任务的输入，而不是改系统提示，和本项目 [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 2、15 条一致。
 
 [返回阅读导航](#contents)
 
@@ -87,7 +87,7 @@ date: "2026-11-11"
 - 补生成只在最近两天有过消息的对话里找没摘要的段落（`listUnsummarized` 的 `activeSince`，往前多留一小时防夏令时），所以很久以前积压的、一直没摘要的对话不会占掉名额，让昨天的对话补不上。仍然留下的情况：最近两天聊过、但更早还有段落没摘要的对话，每个对话先返回最早那一段，被日期过滤丢掉后仍占一个候选名额（每次检查最多看 48 个对话、取出 12 段再按日期过滤）；要有 12 段以上这样的旧段落才会让昨天的段落这次补不上，之后的聊天 run 会把旧段落补完。
 - 某个对话还有更早的段落没摘要时，它最近两天的段落排在后面，Gmail 检查不补（只补日期落在这两天的段落）。
 - 补生成写下的日摘要和聊天 run 写的一样是那一段的正式摘要，之后不会被聊天 run 重写；判断模型写得不好时，目前没有自动重写的办法。
-- 同一条提示里，出口遮盖认出的密码或验证码值会在整条消息里遮掉，所以某一批的记忆或邮件里点名了一个值、而摘要里也单独出现这个值时，这一批的摘要块会和别的批不同，那一批缓存不命中；这是一条消息内遮盖的既有规则（[.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 11 条），带记忆的做法同样如此，不单独处理。
+- 同一条提示里，出口遮盖认出的密码或验证码值会在整条消息里遮掉，所以某一批的记忆或邮件里点名了一个值、而摘要里也单独出现这个值时，这一批的摘要块会和别的批不同，那一批缓存不命中；这是一条消息内遮盖的既有规则（[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 11 条），带记忆的做法同样如此，不单独处理。
 - 没有新邮件的检查不多读一次数据库；聊天 run 不读也不生成这些摘要。
 - 门槛：`test/integration/proactive-mail-check.test.ts` 的 `[P3-6]` 组（正向、反向、敏感分级、无新邮件不读、读失败、补生成、字数上限、同一次检查各批字节相同、按东京时区算昨天、写入校验拒绝坏值）；`test/integration/memory-episodes.test.ts` 的 `[P3-6]` 用例（worker 和 direct 两种执行方式、按日列出、分级过滤、坏输入拒绝）；`apps/agent-service/test/proactive-summaries-scope.unit.test.ts`（摘要块、读取器和接线只出现在 Gmail 检查的文件里）；提示词目录清单和 `mail.judgment.recent-summaries` 定稿文件。
 
@@ -101,6 +101,6 @@ date: "2026-11-11"
 - [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)：Gmail 检查带相关记忆，提示词顺序。
 - [ADR 0161](0161-keep-every-model-prompt-in-one-catalog-package.md)：提示词目录。
 - [ADR 0193](0193-memory-is-visible-to-the-model.md)：模型可见的分级。
-- [.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md)：发给模型的内容只追加。
+- [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 
 [返回阅读导航](#contents)
