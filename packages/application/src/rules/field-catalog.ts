@@ -139,6 +139,12 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         description: "这一轮是谁发起的：user_message、schedule 或 external_event",
       }),
       Object.freeze({
+        name: "target_type",
+        type: "string",
+        description:
+          "动作对象的种类，取自工具动作登记表，例如 owner-reminder、owner-rule、managed-task",
+      }),
+      Object.freeze({
         name: "facts",
         type: "list<string>",
         description: "动作意图里的事实代码，按代码排序，例如 context_external_content",

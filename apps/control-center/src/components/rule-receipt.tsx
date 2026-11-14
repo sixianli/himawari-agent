@@ -220,3 +220,58 @@ export function OwnerRulesSection({
     </section>
   );
 }
+
+export function BuiltInActionRulesSection({
+  memory,
+  message,
+}: {
+  memory: Pick<MemoryModel, "builtInRules" | "respondRule" | "busy">;
+  message: Message;
+}) {
+  if (!memory.builtInRules.length) return null;
+  const title = message("rules.builtIn.title", { count: memory.builtInRules.length });
+  return (
+    <section id="memory-built-in-rules" className="memory-confirm" aria-label={title}>
+      <h4>{title}</h4>
+      <p className="settings-note">{message("rules.builtIn.note")}</p>
+      {memory.builtInRules.map((rule) => (
+        <section
+          className="memory-card"
+          key={rule.ruleId}
+          data-built-in-rule={rule.ruleId}
+          data-outcome={rule.outcome}
+        >
+          <p className="memory-text">{message("rules.builtIn.name", { id: rule.ruleId })}</p>
+          <small>{message("rules.builtIn.when", { id: rule.ruleId })}</small>
+          <small>
+            {" "}
+            {message("rules.builtIn.examples", {
+              hit: rule.examplesHit,
+              miss: rule.examplesMiss,
+            })}
+          </small>
+          {rule.askFirst === null ? null : (
+            <div className="actions">
+              <label className="memory-switch">
+                {message("rules.builtIn.askFirst")}
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-checked={rule.askFirst}
+                  checked={rule.askFirst}
+                  disabled={memory.busy}
+                  onChange={() =>
+                    void memory.respondRule(
+                      rule.ruleId,
+                      rule.askFirst ? "allow_directly" : "ask_first",
+                    )
+                  }
+                />
+              </label>
+            </div>
+          )}
+        </section>
+      ))}
+    </section>
+  );
+}

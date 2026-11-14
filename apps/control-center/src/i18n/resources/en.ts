@@ -924,6 +924,15 @@ export const messages = {
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
+  "rules.builtIn.title": "Built-in rules · {count}",
+  "rules.builtIn.note":
+    "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
+  "rules.builtIn.name":
+    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
+  "rules.builtIn.when":
+    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded.} other {}}",
+  "rules.builtIn.examples": "Examples: {hit} should match, {miss} should not",
+  "rules.builtIn.askFirst": "Ask me every time",
   "review.title": "To recheck after memory edits · {count}",
   "review.note":
     "When you edit or delete a memory, memories inferred from it and rules set from it are listed here. They are only flagged; memory text is never changed for you, and paused rules do not run until you decide.",
