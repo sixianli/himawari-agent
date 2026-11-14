@@ -480,6 +480,11 @@ function servesStaticFile(requestPath: string): boolean {
   );
 }
 
+function lossCode(error: unknown): string {
+  const code = stableErrorCode(error);
+  return code === SERVICE_RUNTIME_ERROR_CODES.STARTUP_FAILED ? "AUTHORITY_LOSS_CODE_UNKNOWN" : code;
+}
+
 function failureReasonField(error: unknown): { reason?: string } {
   const reason = failureReason(error);
   return reason === undefined ? {} : { reason };
@@ -639,7 +644,7 @@ export async function runAgentService(
       component: "agent-service",
       event: "service.draining",
       signal,
-      ...(termination.kind === "signal" ? {} : { code: stableErrorCode(lossError) }),
+      ...(termination.kind === "signal" ? {} : { code: lossCode(lossError) }),
     });
     await started.stop();
     writeServiceDiagnostic(output, {
@@ -910,21 +915,23 @@ export async function startTenantRuntime(
         write: (deployment) => writeAuthorityFile(layout, deployment),
       },
       onLost: (error, details) => {
-        writeServiceDiagnostic(errorOutput, {
-          component: "agent-service",
-          event: "authority.lost",
-          code: stableErrorCode(error),
-          ...(details.msSinceLastRenewal === null
-            ? {}
-            : { msSinceLastRenewal: details.msSinceLastRenewal }),
-          leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
-          renewalIntervalMs: AUTHORITY_RENEWAL_INTERVAL_MS,
-        });
         health?.setAuthorityActive(false);
         authorityLost = true;
         authorityLossError = error;
         resolveAuthorityLoss?.();
         void stopReverseServices();
+        try {
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "authority.lost",
+            code: lossCode(error),
+            ...(details.msSinceLastRenewal === null
+              ? {}
+              : { msSinceLastRenewal: details.msSinceLastRenewal }),
+            leaseDurationMs: AUTHORITY_LEASE_DURATION_MS,
+            renewalIntervalMs: AUTHORITY_RENEWAL_INTERVAL_MS,
+          });
+        } catch {}
       },
     });
     await authorityLifecycle.start();

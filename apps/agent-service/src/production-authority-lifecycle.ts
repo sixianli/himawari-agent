@@ -516,7 +516,9 @@ export class ProductionAuthorityLifecycle {
     const now = this.nowMs();
     const details: ProductionAuthorityLossDetails = Object.freeze({
       msSinceLastRenewal:
-        lastRenewedAtMs === null || Number.isNaN(now) ? null : Math.max(0, now - lastRenewedAtMs),
+        lastRenewedAtMs === null || !Number.isFinite(lastRenewedAtMs) || !Number.isFinite(now)
+          ? null
+          : Math.max(0, now - lastRenewedAtMs),
     });
     void Promise.resolve(this.#options.onLost?.(error, details)).catch(() => undefined);
   }

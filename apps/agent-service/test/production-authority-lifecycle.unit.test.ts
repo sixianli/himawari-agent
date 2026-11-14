@@ -192,6 +192,34 @@ describe("ProductionAuthorityLifecycle", () => {
     expect(losses[0]?.details).toEqual({ msSinceLastRenewal: 41_000 });
   });
 
+  it("reports no elapsed time when the clock returned an invalid instant at the last renewal", async () => {
+    const deploymentStore = new DeploymentFixture();
+    const leases = new LeaseFixture(deploymentStore);
+    let clockValue = "not-a-date";
+    const losses: unknown[] = [];
+    const service = new ProductionAuthorityLifecycle({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      deploymentId: DEPLOYMENT_ID,
+      deployment: deploymentStore,
+      leases,
+      clock: { now: () => clockValue },
+      leaseDurationMs: 30_000,
+      nextAuthorityIdentity: () => ({
+        leaseId: "authority-lease-production",
+        holderId: "authority-holder-production",
+      }),
+      onLost: (_error, details) => {
+        losses.push(details);
+      },
+    });
+    await service.start();
+    clockValue = NOW;
+    leases.currentRecord = undefined;
+    await expect(service.renew()).rejects.toMatchObject({ code: "PRODUCTION_AUTHORITY_LOST" });
+    expect(losses).toEqual([{ msSinceLastRenewal: null }]);
+  });
+
   it("does not report a loss while renewals keep succeeding", async () => {
     const deploymentStore = new DeploymentFixture();
     const leases = new LeaseFixture(deploymentStore);

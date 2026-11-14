@@ -521,9 +521,36 @@ describe("agent service startup ownership", () => {
     expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AGENT_AUTHORITY_LOST"/);
     expect(stderr).toContain('"event":"authority.lost"');
     expect(stderr).toContain('"code":"AGENT_AUTHORITY_LOST"');
-    expect(stderr).toContain('"msSinceLastRenewal"');
+    expect(stderr).toContain('"msSinceLastRenewal":12000');
     expect(boundary.admissionStop).toHaveBeenCalledOnce();
     expect(boundary.stopWorker).toHaveBeenCalledOnce();
+  });
+});
+
+describe("signal exit diagnostics", () => {
+  it("does not report an authority loss or an error code when stopped by a signal", async () => {
+    start();
+    await settle();
+    expect(stdout).toContain('"event":"service.ready"');
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"signal":"SIGTERM"/);
+    expect(stdout).not.toMatch(/"event":"service.draining"[^\n]*"code"/);
+    expect(stderr).not.toContain('"event":"authority.lost"');
+  });
+
+  it("names an unknown loss cause instead of calling it a startup failure", async () => {
+    start();
+    await settle();
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("plain failure"), {
+      msSinceLastRenewal: null,
+    });
+    await settle();
+    expect(await exit).toBe(1);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AUTHORITY_LOSS_CODE_UNKNOWN"/);
+    expect(stderr).toContain('"code":"AUTHORITY_LOSS_CODE_UNKNOWN"');
+    expect(stderr).not.toContain('"msSinceLastRenewal"');
   });
 });
 
