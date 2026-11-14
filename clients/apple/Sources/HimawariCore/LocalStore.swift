@@ -3,6 +3,7 @@ import Foundation
 public protocol LocalStore: Sendable {
     func read(_ name: String) -> Data?
     func contains(_ name: String) -> Bool
+    func names() -> [String]
     func write(_ name: String, _ data: Data?) throws
     func removeAll() throws
 }
@@ -32,6 +33,10 @@ public final class FileLocalStore: LocalStore, @unchecked Sendable {
 
     public func contains(_ name: String) -> Bool {
         lock.withLock { FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) }
+    }
+
+    public func names() -> [String] {
+        lock.withLock { (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] }
     }
 
     public func write(_ name: String, _ data: Data?) throws {
@@ -78,6 +83,10 @@ public final class MemoryLocalStore: LocalStore, @unchecked Sendable {
 
     public func contains(_ name: String) -> Bool {
         lock.withLock { files[name] != nil }
+    }
+
+    public func names() -> [String] {
+        lock.withLock { Array(files.keys) }
     }
 
     public func write(_ name: String, _ data: Data?) throws {
