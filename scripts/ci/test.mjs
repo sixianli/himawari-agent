@@ -27,7 +27,7 @@ export async function runTests({
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination, { recursive: false });
   const policy = resolvePolicySource({ root, base: context.baseSha }).policy;
-  const check = policy.checks.find((entry) => entry.id === "coverage");
+  const check = policy.checks.find((entry) => entry.id === "tests");
   const budgetMs = Math.min(check.timeoutMinutes * 60_000, remainingBudgetMs ?? Infinity);
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) throw new Error("CI_TEST_CHECK_TIMEOUT");
   const config = await import(pathToFileURL(path.join(root, "vitest.workspace.ts")).href);

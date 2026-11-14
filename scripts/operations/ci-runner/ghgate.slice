@@ -4,7 +4,7 @@ Before=slices.target
 
 [Slice]
 MemoryMin=2G
-MemoryHigh=2G
-MemoryMax=2G
+MemoryHigh=3G
+MemoryMax=4G
 MemorySwapMax=0
 TasksMax=1024

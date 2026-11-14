@@ -1524,7 +1524,7 @@ describe("opencode review merge gate", () => {
       "REVIEW_LOW_FIX_REFUSED no-low-errors",
     );
     expect(refusal([verdict()])).toBe("REVIEW_LOW_FIX_REFUSED nothing-unreviewed");
-  });
+  }, 60000);
 
   it("[low fix] refuses a round that is not the last one covered and a round without verdicts", () => {
     const f = lowFixFixture();

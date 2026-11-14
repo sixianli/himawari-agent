@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0068-deepseek-only-codebuddy-fallback.md"
-amended_by: "docs/adr/0259-review-models-default-to-deepseek.md"
+amended_by: "docs/adr/0259-review-models-default-to-deepseek.md, docs/adr/0263-cheaper-claude-side-of-code-review.md"
 date: "2026-11-06"
 ---
 
