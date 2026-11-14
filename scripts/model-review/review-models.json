@@ -3,5 +3,6 @@
   "default": ["opencode-go/deepseek-v4.1-flash"],
   "substitutes": {
     "opencode-go/deepseek-v4.1-flash": "opencode-go/glm-5.3-flash"
-  }
+  },
+  "lowDeferFromRound": 3
 }
