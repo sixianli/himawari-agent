@@ -12,6 +12,7 @@ import {
   type ProactiveModelInvoker,
   type ProductMemoryRecord,
   RuleReviewService,
+  type RunExecutionSourcePort,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -25,6 +26,7 @@ import {
 import {
   gatewayV2MessageSchema,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  memorySourceState,
 } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
@@ -35,7 +37,12 @@ import {
 import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ContextExternalContent,
+  externalContentKey,
+  runExternalOrigins,
+} from "../../apps/agent-service/src/context-external-content.ts";
 import {
   type MemoryCaptureCall,
   memoryCapturePrompt,
@@ -215,26 +222,56 @@ describe("production memory capture", () => {
     const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
-    const capture = new ProductionMemoryCapture({
-      sources: {
-        read: async (runId) => {
-          const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
-          if (!owner) return undefined;
-          return {
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            runId,
-            sessionId: "session" as never,
-            threadId: THREAD_ID,
-            triggerId: "trigger" as never,
-            sourceType: "user_message",
-            sourceId: owner.id,
-            payloadRef: owner.contentRef,
-            dataClassification: "private",
-            occurredAt: T0,
-          };
+    const externalMarks = new Map<string, readonly string[]>();
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async (_owner, _agent, key) => {
+          const origins = externalMarks.get(key);
+          return origins
+            ? ({
+                revision: 1,
+                value: {
+                  sources: origins.map((origin) => ({
+                    origin,
+                    firstRunId: "run-earlier",
+                    firstSeenAt: T0,
+                  })),
+                },
+              } as never)
+            : undefined;
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("marks are seeded directly in this test");
         },
       },
+      source: { read: (runId) => runSources.read(runId) },
+      authority: () => {
+        throw new Error("marks are seeded directly in this test");
+      },
+      clock: { now: () => T0 },
+    });
+    const runSources: RunExecutionSourcePort = {
+      read: async (runId) => {
+        const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
+        if (!owner) return undefined;
+        return {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId,
+          sessionId: "session" as never,
+          threadId: THREAD_ID,
+          triggerId: "trigger" as never,
+          sourceType: "user_message",
+          sourceId: owner.id,
+          payloadRef: owner.contentRef,
+          dataClassification: "private",
+          occurredAt: T0,
+        };
+      },
+    };
+    const capture = new ProductionMemoryCapture({
+      sources: runSources,
       threads: {
         listMessages: async (_owner, _agent, _thread, afterSequence, limit) =>
           messages.filter(({ sequence }) => sequence > afterSequence).slice(0, limit),
@@ -244,6 +281,7 @@ describe("production memory capture", () => {
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
       relevantMemoryIds: () => relevant as never,
+      externalOrigins: runExternalOrigins(externalContent),
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
@@ -291,6 +329,19 @@ describe("production memory capture", () => {
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
     });
+    const actionRules = {
+      list: vi.fn(async () => [
+        {
+          ruleId: "action_preauthorize_owner_data",
+          revision: 1,
+          outcome: "allow_preauthorized" as const,
+          examplesHit: 2,
+          examplesMiss: 6,
+          askFirst: false,
+        },
+      ]),
+      setAskFirst: vi.fn(async () => undefined),
+    };
     const classifyOutputs: string[] = [];
     const classifyPrompts: string[] = [];
     const classifyFailures: unknown[] = [];
@@ -335,6 +386,7 @@ describe("production memory capture", () => {
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      actionRules,
       unitOfWork: repository.unitOfWork(),
       memory,
       reminders: repository.memoryReminders(),
@@ -423,6 +475,10 @@ describe("production memory capture", () => {
       plaintext,
       capture,
       control,
+      actionRules,
+      markThread: (threadId: string, origins: readonly string[]) => {
+        externalMarks.set(externalContentKey({ threadId, runId: "" }), origins);
+      },
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
       protect,
@@ -2078,6 +2134,138 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().read(withPassword["memoryId"] as never),
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
+  });
+
+  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
+    const output =
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
+    const marked = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    marked.markThread(THREAD_ID, ["web_fetch"]);
+    await marked.capture.start(marked.request);
+    await marked.capture.stop();
+    const [captured] = await marked.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(captured?.sourceRefs).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^external-content:.*\|web_fetch$/u)]),
+    );
+    const plain = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    plain.markThread("thread-elsewhere", ["web_fetch"]);
+    await plain.capture.start(plain.request);
+    await plain.capture.stop();
+    const [unmarked] = await plain.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(unmarked?.sourceRefs.some((ref) => ref.startsWith("external-content:"))).toBe(false);
+  });
+
+  it("[ADR-0257] marks a reminder and a rule written with external content in context, and keeps the reminder's source readable", async () => {
+    const sentence = "以后扣款邮件必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const invocation = (capabilityRef: string, toolCallId: string, args: unknown) =>
+      ({
+        runId: createRunId("run-external-marks"),
+        toolCallId,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      }) as never;
+    const provenance = { externalOrigins: ["web_fetch", "execution_task_output"] };
+    const reminder = (await context.reminderTools.run(
+      invocation("reminder.set", "call-external", { text: "改会议", due: "2026-10-30T15:00" }),
+      provenance,
+    )) as Record<string, unknown>;
+    const reminderMemory = await context.repository
+      .productMemoryState()
+      .read((reminder["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(reminderMemory?.sourceRefs).toEqual([
+      `external-content:${reminderMemory?.id}|execution_task_output`,
+      `external-content:${reminderMemory?.id}|web_fetch`,
+      expect.stringMatching(/^memory-content:reminder:/u),
+    ]);
+    expect(
+      memorySourceState({
+        memoryId: reminderMemory?.id ?? "",
+        importBatchId: null,
+        sourceThreadId: THREAD_ID,
+        sourceMessageId: null,
+        sourceRefs: reminderMemory?.sourceRefs ?? [],
+        history: [],
+      }),
+    ).toBe("reminder");
+
+    const rule = (await context.ruleTools.run(
+      invocation("rule.set", "call-external-rule", {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "扣款邮件一律提醒",
+        params: { phrases: ["扣款"] },
+      }),
+      provenance,
+    )) as Record<string, unknown>;
+    expect(rule).toMatchObject({ status: "active" });
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: rule["ruleId"] as string,
+    } as never);
+    expect(stored?.source).toBe(
+      `external-content:execution_task_output,web_fetch|chat:${THREAD_ID}`,
+    );
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(rule["memoryId"] as never);
+    expect(ruleMemory?.sourceRefs).toContain(
+      `external-content:${ruleMemory?.id}|execution_task_output`,
+    );
+
+    const plain = (await context.reminderTools.run(
+      invocation("reminder.set", "call-plain", { text: "交周报", due: "2026-10-30T16:00" }),
+    )) as Record<string, unknown>;
+    const plainMemory = await context.repository
+      .productMemoryState()
+      .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+  });
+
+  it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.rules.read",
+      payload: {},
+    } as never);
+    if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+    const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+    gatewayV2MessageSchema.parse(parsable);
+    expect(snapshot.payload.builtIn).toEqual([
+      expect.objectContaining({ ruleId: "action_preauthorize_owner_data", askFirst: false }),
+    ]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "ask_first" },
+      "ask-first",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "allow_directly" },
+      "allow-directly",
+    );
+    expect(context.actionRules.setAskFirst.mock.calls).toEqual([
+      ["action_preauthorize_owner_data", true],
+      ["action_preauthorize_owner_data", false],
+    ]);
   });
 
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
