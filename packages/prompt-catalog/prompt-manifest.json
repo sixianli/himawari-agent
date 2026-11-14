@@ -702,6 +702,76 @@
     "changedIn": "ADR 0271",
     "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
   },
+  "perception.data-notice": {
+    "sha256": "da76be06e6177f16d79d1d00289481149234b0e618e9c71b703dee79dba2eeb2",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.extract": {
+    "sha256": "a733d4be5215106cf9e68aa742d122707d55563f2e596b0fab83e74975ac194c",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.extract.calendar-header": {
+    "sha256": "62e60932c45d5d6a400ac46e914ee2a27932490be68a80e6006d86fc4ff28698",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.extract.continued-note": {
+    "sha256": "6442d0c93d5efae1a0d1d1e845f733a979ce25da88aeb0f4d0d833e5f50bf94e",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.extract.open-todos-header": {
+    "sha256": "2f05f1c93c2b7170b1ea84996d9e12923eb9337a280a6149f512db408cd3e804",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.extract.records-header": {
+    "sha256": "45092b26cad3556dddea528e908310e8cb5ff83be2f0d247df446259148d0d0f",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.image.understand": {
+    "sha256": "c5657895b67fc6947bb78b8bf15e0d85ca45fabc926fe9139b9d0322b916696f",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.now-header": {
+    "sha256": "717130edd1cf2ec9b6ba5f1d0bdb3f20f86384e6745586712f1e053a7aa7918e",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.calendar": {
+    "sha256": "eb77d4cb7c6254e07b24aafb66a5b247f600d856bf75c97d628d87e01029830d",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.items-header": {
+    "sha256": "b372be4acbdf2e4cc1467754cce9833a87a067453438261807647c6d09de0273",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.location": {
+    "sha256": "1921f31349109f4d2929ea12df3f591fca857dca09cd1944790d92aae91c9412",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.message": {
+    "sha256": "dfad03d71a06d0c13e43356748558f0c8ddf4d3fa457e360b698677fcb3c6614",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.screen": {
+    "sha256": "387323bac164bef1cb6535cabca113c77892b5e40a981b3d474845457a04f743",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "perception.source.speech": {
+    "sha256": "d17c642a7acbc011b22fcad50912d547c7a62b3b3e5029ce178e0d8b0db5a9c7",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -842,6 +912,26 @@
     "changedIn": "ADR 0166",
     "reason": "W-15：去掉“受限 Worker、输出披露”等行话；bash 改用 tools.builtin.bash，这条只接在 write、edit 后面"
   },
+  "tools.device-action": {
+    "sha256": "502103b2555dc8d9d9cebecaeba345fb612f968ea5a02e63940c40cfa38e29fb",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.device-action.action": {
+    "sha256": "1c0a39432b9056d8e87471848502835a32a47a802feb20cc04613960800249ac",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.device-action.arguments": {
+    "sha256": "368907ce8354af39d5c225ec6a493b2a321df7f429e380d68da79eaa41124aa8",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.device-action.device": {
+    "sha256": "314a6fd3914144f4e61a0f985a3a6be36b8dfbb9188c378d4d6f581767be1526",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
   "tools.execution-task-cancel": {
     "sha256": "a5804e88d5cb351804fc32276d6cb9a5d40f4ac17dccdaab0b5dd8a83a1b2e18",
     "changedIn": "ADR 0166",
@@ -889,6 +979,36 @@
       ],
       "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
     }
+  },
+  "tools.perception-read": {
+    "sha256": "52a384947d102d95e7b068169bdbc4f0363417cab34ae51f7e557de61ad7e3a1",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.perception-read.detail": {
+    "sha256": "e48ec6bd6de645c7fe4c3e522dc0e344e69ca80a55226ba21599317426f2273d",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.perception-read.from": {
+    "sha256": "3302a922bfcfcc991d2159fe5c41b623b6aee3f68b9321c64fd459ae47d80903",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.perception-read.kinds": {
+    "sha256": "66bc2fb530ceb617d2a68b7a26c42a21e46086361b03a478889aa1f674578756",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.perception-read.query": {
+    "sha256": "8fe8cccbcc8d9a7009dc280993737cd1557c096e0cf9fbeaac61043566c02d78",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.perception-read.to": {
+    "sha256": "516e64eb2730126ff8848c17dc1df6c6ae86d21d31678596107bb9d9b27857fc",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
   "tools.policy-blocked.file-authorization": {
     "sha256": "7c4dc0b70eb7c780f932329cdbfc8a0218ff3c0f643c11581b4df452ef8c13b1",
@@ -944,6 +1064,111 @@
     "sha256": "052bba8325aa7a15c5bfa6afce2e0085d2c1e198b68889285b05339f72690794",
     "changedIn": "ADR 0166",
     "reason": "W-09、W-13：写明有钟点的最多提前 1 小时、只有日期的当天 9 点（Andy 2026-11-05 定 D8）；失败时怎么说只留在身份说明里；复核第 2 轮：写明 yearly 的过去日期会顺延到下一次，不会被拒绝（reminderSchedule）"
+  },
+  "tools.result.device-action.describe": {
+    "sha256": "23c31ae00ba70a34a1d2f83751f6de2c07a62d1d9e193ca9819e68508c1b4f7c",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.expired": {
+    "sha256": "b0fa7a4fdf5933178c26c5cae04050de30f93d33a32ec74b716a5dfee3927732",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.failed": {
+    "sha256": "95d440cb6bb4bca22485608a2e21f7bc6a7e3e154c3585fb00a7b63a51deb5e5",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.invalid": {
+    "sha256": "701188b88ed074f3fc77c77d3e8815579298b0f12791a23dda72fd0479edcf60",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.no-device": {
+    "sha256": "85656789e182a839281721cdaf358d42b64fd8ccba0eb67b4db193ad2b5d76d5",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.queued": {
+    "sha256": "a156383abd8e27ee2d6418ee93011dfafb813259199105273c8307ed59c29942",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.rejected": {
+    "sha256": "d2dbc0bffcbeedaceb491d41fdc82dfc7b4dfbe836ea0c0ed3fb595e8d5f110a",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.result-unknown": {
+    "sha256": "6d2b2d6fcd4c6715ef65a229f5780525cfbe8226c1895a5e5638b8f606326e0f",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.succeeded": {
+    "sha256": "239da62ff3d1e7c7e20d1e007606e1f443b1aeef17ccb6ec1c9fa79dce517793",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.unavailable": {
+    "sha256": "5cedefd301fc808bc637a50faec1a44486324195c46e538d1c72ea04107c44fc",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.unconfirmed": {
+    "sha256": "e05f02c1fb9c18595955c2af9d3bf3e7ad0a7e5712cf15c4bebc2b65a46e53a8",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.unknown-action": {
+    "sha256": "b5af85ce1d1ee305d9e513cc2576b8fd8f946eeec941b9da26c820da8d89fb53",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.unsupported": {
+    "sha256": "5cd885aa95e3b11c7a145bfd6ca25818812f88735beefcc1f7a35a85e329ed9e",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.waiting-owner": {
+    "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.empty": {
+    "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.hidden": {
+    "sha256": "88dabd0971cc71994b5d4e76b92286044172b4f0bbacc1c21353979c7fed8243",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.invalid": {
+    "sha256": "d493b32b8fe13e31b65d724d3ab825700cc0bfe7ef178b8e7297cca3fac451de",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.truncated": {
+    "sha256": "1ccb7a91d63a67982a9b51e8c4c07f6c46d45998a00b99fd430a953e2c72ecef",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.unavailable": {
+    "sha256": "36c597463358add3b336d6a1779234ed95b6ceb0155dddc53933bff27e5d1330",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.unexamined": {
+    "sha256": "34c06447a5943f463cea56ffdd370cd54e0765f877ed70e560e60bb435165591",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.perception-read.unknown-kinds": {
+    "sha256": "47c227d179d2b590592d1fa6324aedcd4ae6eebbf0e8ab511041f2d1b5334d2e",
+    "changedIn": "ADR 0230",
+    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
   "tools.rule-list": {
     "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",

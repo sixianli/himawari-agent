@@ -486,6 +486,17 @@ function GovernanceDetails({
               }
             />
             <Row
+              label={message("governance.lastInvalidation")}
+              value={
+                snapshot.payload.lastInvalidation
+                  ? message("governance.lastInvalidationValue", {
+                      count: snapshot.payload.lastInvalidation.cancelledScheduledJobs,
+                      time: snapshot.payload.lastInvalidation.occurredAt,
+                    })
+                  : "—"
+              }
+            />
+            <Row
               label={message("governance.rollbackBoundary")}
               value={
                 snapshot.payload.lastTransition ? (
@@ -756,6 +767,7 @@ export function useGovernanceControlCenter({
               capabilityRef: action.snapshot.payload.capabilityRef,
               expectedRevision: action.snapshot.payload.revision,
               reasonCode: "owner_disabled_from_control_center",
+              recentAuthenticationRef: configuration.recentAuthenticationRef ?? null,
             },
             { risk, authorizationRef, idempotencyKey },
           );
@@ -768,6 +780,7 @@ export function useGovernanceControlCenter({
               capabilityRef: action.snapshot.payload.capabilityRef,
               expectedRevision: action.snapshot.payload.revision,
               reasonCode: "owner_rollback_from_control_center",
+              recentAuthenticationRef: configuration.recentAuthenticationRef ?? null,
             },
             { risk, authorizationRef, idempotencyKey },
           );
@@ -803,9 +816,15 @@ export function useGovernanceControlCenter({
 
   const itemRefs =
     listSnapshot?.type === "collection.snapshot" ? listSnapshot.payload.itemRefs : [];
+  const installedOperations = configuration?.installedGatewayV2Operations;
   const actions = useMemo(
-    () => (detailSnapshot ? detailActions(detailSnapshot) : []),
-    [detailSnapshot],
+    () =>
+      (detailSnapshot ? detailActions(detailSnapshot) : []).filter(
+        (candidate) =>
+          installedOperations === undefined ||
+          installedOperations.includes(actionIdentity(candidate).commandType),
+      ),
+    [detailSnapshot, installedOperations],
   );
 
   const list = (
