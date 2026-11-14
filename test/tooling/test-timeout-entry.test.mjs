@@ -137,18 +137,19 @@ describe("test runner timeout environment", () => {
       const result = await runCheck({
         root,
         context: createContext({ root }),
-        checkId: "coverage",
-        output: ".ci-output/coverage",
+        checkId: "tests",
+        output: ".ci-output/tests",
         toolsDirectory: root,
         artifact: path.join(root, "runtime.tar.gz"),
         hosted: false,
       });
       expect(
         result.status,
-        readFileSync(path.join(root, ".ci-output/coverage/details.json"), "utf8"),
+        readFileSync(path.join(root, ".ci-output/tests/details.json"), "utf8"),
       ).toBe("passed");
-      expect(result.projects.map(({ id }) => id)).toEqual(Object.keys(files));
-      for (const id of Object.keys(files)) {
+      const tested = Object.keys(files).filter((id) => id !== "tooling");
+      expect(result.projects.map(({ id }) => id)).toEqual(tested);
+      for (const id of tested) {
         expect(JSON.parse(readFileSync(path.join(root, `${id}-environment.json`), "utf8"))).toEqual(
           {
             timeout: null,

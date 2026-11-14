@@ -514,6 +514,7 @@ describe("opencode review model list", () => {
     allowed: ["a/one", "a/two"],
     default: ["a/one"],
     substitutes: { "a/one": "a/two" },
+    lowDeferFromRound: 3,
   };
   const changed = (change) => Object.assign({}, valid, change);
 
@@ -545,6 +546,9 @@ describe("opencode review model list", () => {
       [changed({ substitutes: { "a/one": "a/three" } }), "substitutes"],
       [changed({ substitutes: { "a/one": "a/one" } }), "substitutes"],
       [changed({ substitutes: undefined }), "substitutes"],
+      [changed({ lowDeferFromRound: undefined }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: 1 }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: "3" }), "lowDeferFromRound"],
       [null, "allowed"],
     ];
     for (const [config, problem] of bad) expect(reviewModelsProblems(config)).toContain(problem);
