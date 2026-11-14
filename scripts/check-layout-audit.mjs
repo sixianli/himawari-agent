@@ -8,6 +8,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { watchPageErrors } from "./browser-page-errors.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APP = path.join(repositoryRoot, "apps/control-center");
@@ -662,7 +663,7 @@ async function auditApp(browser, base, only) {
           ]);
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
-        page.on("pageerror", (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
+        watchPageErrors(page, (error) => problems.push(`${where}: PAGE_ERROR ${error.message}`));
         await page.goto(`${base}${job.scene.path}`);
         await page.waitForTimeout(600);
         await job.scene.act(page, labels(job.locale));

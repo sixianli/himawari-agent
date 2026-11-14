@@ -96,9 +96,11 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
       fail(checkId, matrixKey, source, `Command exit code is ${result.exitCode}`);
     for (const reason of countsProblems(result.counts)) fail(checkId, matrixKey, source, reason);
     const { check, member } = expectation;
-    for (const field of ["node", "os", "arch"])
+    for (const field of ["node", "os"])
       if (result.toolchain[field] !== member[field])
         fail(checkId, matrixKey, source, `Actual toolchain differs from matrix: ${field}`);
+    if (![member.arch, member.alternateArch].includes(result.toolchain.arch))
+      fail(checkId, matrixKey, source, "Actual toolchain differs from matrix: arch");
     if (result.toolchain.npm !== toolchainLock.npm.version)
       fail(checkId, matrixKey, source, "Actual npm differs from toolchain lock");
     if (result.toolchain.abi !== "127")
@@ -197,7 +199,7 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const entry = entries.get(id);
     if (!entry) continue;
     const { result, source } = entry;
-    if (["browser", "coverage"].includes(check.id)) {
+    if (["browser", "tests"].includes(check.id)) {
       const platform = "linux-x64";
       const matching = result.artifacts.filter(
         (artifact) => artifact.role === "consumed" && artifact.platform === platform,
@@ -245,12 +247,15 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
 
 export function readReportEnvelopes(directory) {
   const envelopes = [];
-  const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
+  const walk = (current, insideResult) => {
+    const entries = readdirSync(current, { withFileTypes: true });
+    const holdsResult =
+      insideResult || entries.some((entry) => !entry.isDirectory() && entry.name === "result.json");
+    for (const entry of entries) {
       const filename = path.join(current, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Symbolic link in reports: ${filename}`);
-      if (entry.isDirectory()) walk(filename);
-      else if (entry.name === "result.json") {
+      if (entry.isDirectory()) walk(filename, holdsResult);
+      else if (entry.name === "result.json" && !insideResult) {
         const result = readJson(filename);
         let artifacts = [];
         try {
@@ -269,7 +274,7 @@ export function readReportEnvelopes(directory) {
       }
     }
   };
-  walk(directory);
+  walk(directory, false);
   return envelopes;
 }
 
