@@ -711,7 +711,13 @@ export class SqlitePerceptionOperations {
               )
               .run(now, ...key, input.syncId).changes
           : 0;
-      return Object.freeze({ applied, stale, removed });
+      const { active } = this.database
+        .prepare(
+          `SELECT count(*) AS active FROM device_mirror_items
+            WHERE owner_id = ? AND agent_id = ? AND device_id = ? AND kind = ? AND deleted = 0`,
+        )
+        .get(...key) as { active: number };
+      return Object.freeze({ applied, stale, removed, active });
     })();
   }
 

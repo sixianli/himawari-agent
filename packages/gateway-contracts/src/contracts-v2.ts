@@ -707,7 +707,15 @@ const perceptionStatusSnapshotSchema = object({
     day: perceptionDaySchema,
     todayCount: integer(0),
     availableSenses: array(machineString),
-    retention: array(object({ key: machineString, days: integer(1), defaultDays: integer(1) })),
+    retention: array(
+      object({
+        key: machineString,
+        days: integer(1),
+        defaultDays: integer(1),
+        minDays: integer(1),
+        maxDays: integer(1),
+      }),
+    ),
     pauseMaximumSeconds: integer(1),
     revision: integer(0),
     generatedAt: timestamp,
