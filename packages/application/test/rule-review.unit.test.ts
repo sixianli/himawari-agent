@@ -34,9 +34,8 @@ describe("[P4-1] judgeRuleReview", () => {
       params: { senderAddresses: ["boss@b.com"] },
     });
     expect(verdict.kind).toBe("changed");
-    expect(verdict.kind === "changed" && verdict.suggestion.params.senderAddresses).toEqual([
-      "boss@b.com",
-    ]);
+    const params = verdict.kind === "changed" ? verdict.suggestion.params : undefined;
+    expect(params && "senderAddresses" in params && params.senderAddresses).toEqual(["boss@b.com"]);
   });
 
   it("reports a rule the owner no longer wants", () => {

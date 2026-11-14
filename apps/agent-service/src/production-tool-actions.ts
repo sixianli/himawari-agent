@@ -128,7 +128,8 @@ function taskManagement(action: (typeof MANAGED_TASK_ACTIONS)[number]): ToolActi
     sideEffect: action === "cancel" ? "irreversible" : "none",
     disclosure: "none",
     targetType: "managed-task",
-    resultOrigin: "external",
+    resultOrigin: action === "cancel" ? "owner_data" : "external",
+    ...(action === "cancel" ? { authorization: "owner_scope" as const } : {}),
     executor: "managed_tasks",
     deduplication: "task_resource_authority",
     detail: detail(wording[action], "resourceRef"),
@@ -328,7 +329,7 @@ export function builtInCapabilityFacts(
   capabilityRef: string,
 ): CapabilityAuthorizationFacts | undefined {
   const row = registry.forCapability(capabilityRef);
-  if (!row || row.family !== "builtin") return undefined;
+  if (!row || (row.family !== "builtin" && row.authorization !== "owner_scope")) return undefined;
   return Object.freeze({
     lifecycle: "active",
     manifest: Object.freeze({

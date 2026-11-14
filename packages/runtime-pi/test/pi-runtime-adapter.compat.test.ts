@@ -3588,6 +3588,123 @@ it("summarizes confirmed results once after a loop without declaring task succes
   expect(projection.finalAnswers).toHaveLength(0);
 });
 
+it("[ADR-0257] stops the run after the configured refusals in a row, even when each call asks for something different", async () => {
+  const calls = Array.from({ length: 3 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `refused-${index}`,
+    arguments: { query: `different request ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "The owner should decide; nothing was done",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const projection = new HistoryRecordingProjection();
+  const tools = new RecordingRuntimeTools();
+  tools.execute.mockImplementation(async () => ({
+    outcome: "failed" as const,
+    refused: true as const,
+    dispatchState: "not_sent" as const,
+    resultRef: null,
+    errorCode: "action_rule_refused",
+    externalActionId: null,
+    modelContent: "操作未执行：action_rule_refused",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection,
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `refused:${ordinal}`,
+    toolRefusalLimits: { consecutive: 3, total: 20 },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(tools.execute).toHaveBeenCalledTimes(3);
+  expectLoopStoppedByAppendedMessage(model.observed);
+  expect(JSON.stringify(projection.captures)).toContain("The owner should decide");
+});
+
+it("[ADR-0257] counts a call the tool layer refuses before dispatch toward the refusal limit", async () => {
+  const calls = Array.from({ length: 3 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `preflight-refused-${index}`,
+    arguments: { query: `different request ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "Nothing was allowed",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  tools.preflight.mockImplementation(async () => ({
+    allowed: false,
+    permissionDecisionRef: "denied",
+    reasonCode: "OWNER_SCOPE",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new HistoryRecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `preflight-refused:${ordinal}`,
+    toolRefusalLimits: { consecutive: 3, total: 20 },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(tools.preflight).toHaveBeenCalledTimes(3);
+  expect(tools.execute).not.toHaveBeenCalled();
+});
+
+it("[ADR-0257] keeps going below the refusal limit", async () => {
+  const calls = Array.from({ length: 2 }, (_, index) => ({
+    name: "restaurant_search",
+    id: `refused-below-${index}`,
+    arguments: { query: `different request ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "Told the owner what was refused",
+    calls[0],
+    calls.slice(1).map((call) => [call]),
+  );
+  const tools = new RecordingRuntimeTools();
+  tools.execute.mockImplementation(async () => ({
+    outcome: "failed" as const,
+    refused: true as const,
+    dispatchState: "not_sent" as const,
+    resultRef: null,
+    errorCode: "action_rule_refused",
+    externalActionId: null,
+    modelContent: "操作未执行：action_rule_refused",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    egress: testModelEgress(),
+    projection: new HistoryRecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `refused-below:${ordinal}`,
+    toolRefusalLimits: { consecutive: 3, total: 20 },
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  expect(tools.execute).toHaveBeenCalledTimes(2);
+});
+
 it.each([
   "matching-id",
   "worker-id",

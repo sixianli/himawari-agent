@@ -1,0 +1,6 @@
+{"id": "r4-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "带范围词的一次性静默请求会被自动立成长期规则", "valid": true, "class": "error", "severity": "medium-high", "trigger": "主人说“这个周末别提醒我”", "consequence": "立成长期规则", "modelSeverity": "高"}
+{"id": "r4-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "unreadablePushRule 用整段序列化文本是否包含类型 id 判断", "valid": true, "class": "better", "severity": "low", "modelSeverity": "中"}
+{"id": "r4-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "规则刚被撤销时，正在进行的延后写入可能把推送重新扣住到 until", "valid": true, "class": "error", "severity": "medium-high", "trigger": "读规则后、写延后前规则被撤销", "consequence": "最长扣 24 小时", "modelSeverity": "中"}
+{"id": "r4-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ruleRefs 只记录此刻命中的规则", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}
+{"id": "r4-5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "自动检查反向用例覆盖仍有缺口", "valid": true, "class": "error", "severity": "low", "trigger": "竞态和范围词没有反向用例", "consequence": "回退时抓不到", "modelSeverity": "低"}
+{"id": "r4-6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "全时段静默规则会让每个 tick 做 1440 次逐分钟判断", "valid": true, "class": "better", "severity": "low", "modelSeverity": "低"}
