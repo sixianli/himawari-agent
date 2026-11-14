@@ -1,4 +1,5 @@
 import { DECISION_KINDS } from "@himawari-agent/application/decision-ledger";
+import { PROACTIVE_SOURCE_NAME_PATTERN } from "@himawari-agent/application/proactive-sources";
 import type { JsonSchema } from "./schema.js";
 
 export const FORMAT_VERSION = "himawari.data-export.v4" as const;
@@ -45,6 +46,10 @@ const integer = (minimum = 0, maximum = Number.MAX_SAFE_INTEGER): JsonSchema => 
 });
 const permille: JsonSchema = integer(0, 1000);
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: "string", enum: values });
+const proactiveSourceName: JsonSchema = {
+  type: "string",
+  pattern: PROACTIVE_SOURCE_NAME_PATTERN.source,
+};
 const bool: JsonSchema = { type: "boolean" };
 const timestamp: JsonSchema = { type: "string", minLength: 20, maxLength: 40 };
 const objectOf = (
@@ -426,7 +431,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 128),
     kind: enumOf(DECISION_KINDS),
-    scenario: nullable(enumOf(["gmail"])),
+    scenario: nullable(proactiveSourceName),
     checkedAt: timestamp,
     counts: { type: "object" },
     verdict: nullable(
@@ -520,7 +525,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
       type: "array",
       items: objectOf({
         id: text(1, 128),
-        source: enumOf(["gmail"]),
+        source: proactiveSourceName,
         threadId: text(1, 256),
         lastMessageId: text(1, 256),
         result: enumOf(["act", "know", "check"]),
@@ -540,7 +545,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     processedMessages: {
       type: "array",
       items: objectOf({
-        source: enumOf(["gmail"]),
+        source: proactiveSourceName,
         messageId: text(1, 256),
         threadId: text(1, 256),
         decisionId: text(1, 128),
@@ -574,7 +579,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
       items: objectOf({
         id: text(1, 128),
         decisionId: nullable(text(1, 128)),
-        mailSource: nullable(enumOf(["gmail"])),
+        mailSource: nullable(proactiveSourceName),
         messageId: nullable(text(1, 256)),
         group: enumOf([
           "proactive_pushed",

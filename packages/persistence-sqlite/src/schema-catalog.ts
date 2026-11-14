@@ -1000,6 +1000,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "retain with the Agent; update and deletion are forbidden while the Agent exists",
   ),
   entry(
+    "proactive_source_settings",
+    "ProactiveStorePort",
+    "one row per registered proactive source the owner has changed: its switch and its two safety limits (items per day, items per check); sources without a row use the defaults in the source registry; not exported, so a restored Agent starts from those defaults",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "proactive_connections",
     "ProactiveStorePort",
     "one row per connected source; the account and the refresh token live only in protected payloads",
@@ -1149,9 +1156,9 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "proactive_push_backoff",
     "ProactiveStorePort",
-    "per sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
+    "per source and sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
     "metadata_only",
-    "removed with its Owner or Agent, when the owner deletes proactive records, or when the source is disconnected",
+    "removed with its Owner or Agent, when the owner deletes that source's proactive records, or when that source is disconnected",
   ),
   entry(
     "proactive_processed_messages",

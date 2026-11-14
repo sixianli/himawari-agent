@@ -1,4 +1,4 @@
-import type { ProactiveSourceItem } from "@himawari-agent/application";
+import type { ProactiveMail } from "@himawari-agent/application";
 import * as application from "@himawari-agent/application";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
@@ -29,7 +29,7 @@ const captured = (output: string) =>
     ownerMessage: message,
   });
 
-const mail: ProactiveSourceItem = {
+const mail: ProactiveMail = {
   source: "gmail",
   messageId: "mail-a",
   threadId: "thread-a",
@@ -59,6 +59,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseMemoryClassifications: classification.parseMemoryClassifications,
   parseConversationReview: review.parseConversationReview,
   parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
+  parseOwnerIntentDecision: application.parseOwnerIntentDecision,
   parseJudgements: application.parseJudgements,
   parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
@@ -96,6 +97,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         .sort(),
     ).toEqual(
       [
+        "authorization.owner-intent-question",
         "eval.real-memory.judge",
         "eval.real-memory.leak-judge",
         "eval.real-memory.question",

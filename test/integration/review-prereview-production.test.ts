@@ -671,7 +671,7 @@ describe("[P4-8] model pre-rating in the running service", () => {
     expect(
       h.raw.prepare("SELECT COUNT(*) FROM decision_prereviews WHERE id = 'mail-pre'").pluck().get(),
     ).toBe(1);
-    await h.store.clearRecords(scope);
+    await h.store.clearRecords({ ...scope, source: "gmail" });
     expect(
       h.raw.prepare("SELECT COUNT(*) FROM decision_prereviews WHERE id = 'mail-pre'").pluck().get(),
     ).toBe(0);

@@ -15,6 +15,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
+  proactiveSourceName,
 } from "./validation.js";
 
 export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
@@ -45,6 +46,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
+  "proactive.sources.read",
+  "proactive.sources.snapshot",
+  "proactive.source.settings.set",
+  "proactive.source.switch_off",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
@@ -435,7 +440,7 @@ const proactiveOverviewQuerySchema = object({
 const proactiveOverviewSnapshotSchema = object({
   ...envelope("snapshot", "proactive.overview.snapshot"),
   payload: object({
-    source: enumeration(["gmail"]),
+    source: proactiveSourceName,
     connection: object({
       status: enumeration(["disconnected", "connected", "needs_reconnect"]),
       account: nullable(boundedString(320)),
@@ -1310,13 +1315,62 @@ const proactiveReviewCheckupCommandSchema = object({
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
   payload: object({
-    source: enumeration(["gmail"]),
+    source: proactiveSourceName,
     action: enumeration(["disconnect", "clear_records"]),
   }),
 });
 const proactiveBackoffRestoreCommandSchema = object({
   ...commandEnvelope("proactive.backoff.restore"),
   payload: object({ classKey: nullable(boundedString(128)) }),
+});
+const proactiveSafetyLimitShape = {
+  limit: integer(1),
+  defaultLimit: integer(1),
+  minimum: integer(1),
+  maximum: integer(1),
+};
+const proactiveSourcesQuerySchema = object({
+  ...envelope("query", "proactive.sources.read"),
+  payload: object({}),
+});
+const proactiveSourcesSnapshotSchema = object({
+  ...envelope("snapshot", "proactive.sources.snapshot"),
+  payload: object({
+    sources: array(
+      object({
+        source: proactiveSourceName,
+        intake: enumeration(["reader", "written_by_program"]),
+        trust: enumeration(["owner", "external"]),
+        enabled: booleanValue,
+        perDay: object({
+          ...proactiveSafetyLimitShape,
+          used: integer(0),
+          resetsAt: timestamp,
+          onReach: literal("hold_until_reset"),
+        }),
+        perCheck: object({
+          ...proactiveSafetyLimitShape,
+          onReach: literal("hold_until_next_check"),
+        }),
+        dailyLimitReached: booleanValue,
+        updatedAt: nullable(timestamp),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveSourceSettingsSetCommandSchema = object({
+  ...commandEnvelope("proactive.source.settings.set"),
+  payload: object({
+    source: proactiveSourceName,
+    enabled: booleanValue,
+    perDay: integer(1),
+    perCheck: integer(1),
+  }),
+});
+const proactiveSourceSwitchOffCommandSchema = object({
+  ...commandEnvelope("proactive.source.switch_off"),
+  payload: object({ source: proactiveSourceName }),
 });
 const museOverviewQuerySchema = object({
   ...envelope("query", "muse.overview.read"),
@@ -3417,6 +3471,10 @@ const schemasByType = {
   "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
+  "proactive.sources.read": proactiveSourcesQuerySchema,
+  "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
+  "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
+  "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,
   "muse.item.rate": museItemRateCommandSchema,
