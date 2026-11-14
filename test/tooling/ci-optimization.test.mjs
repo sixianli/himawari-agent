@@ -76,7 +76,7 @@ it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部�
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
-  expect(Object.keys(workflow.jobs)).toHaveLength(7);
+  expect(Object.keys(workflow.jobs)).toHaveLength(8);
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-gate-dependencies.mjs")),
   ).toBe(true);

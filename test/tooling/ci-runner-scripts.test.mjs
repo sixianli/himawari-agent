@@ -808,10 +808,10 @@ describe("runner units and shared limits", () => {
 
   const gateSlice = () => unitSettings(readFileSync(path.join(scripts, "ghgate.slice"), "utf8"));
 
-  it("gives the three check runners all cores and 18 GB together with default priority on a CI-only host", () => {
+  it("gives the three check runners all cores and 16 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
-      MemoryHigh: "17G",
-      MemoryMax: "18G",
+      MemoryHigh: "15G",
+      MemoryMax: "16G",
       MemorySwapMax: "0",
       TasksMax: "6144",
     });
@@ -821,11 +821,11 @@ describe("runner units and shared limits", () => {
     expect(bytes(slice().MemoryHigh)).toBeLessThan(bytes(slice().MemoryMax));
   });
 
-  it("reserves 2 GB for the gate runner outside the check runners' pool, and both pools fit in the 22 GB host", () => {
+  it("reserves 2 GB and allows up to 4 GB for the gate runner outside the check runners' pool, and both pools fit in the 22 GB host", () => {
     expect(gateSlice()).toMatchObject({
       MemoryMin: "2G",
-      MemoryHigh: "2G",
-      MemoryMax: "2G",
+      MemoryHigh: "3G",
+      MemoryMax: "4G",
       MemorySwapMax: "0",
       TasksMax: "1024",
     });
@@ -839,8 +839,8 @@ describe("runner units and shared limits", () => {
       Group: "gh-runner-gate",
       WorkingDirectory: "/srv/gh-runner-gate/runner",
       MemoryMin: "2G",
-      MemoryHigh: "2G",
-      MemoryMax: "2G",
+      MemoryHigh: "3G",
+      MemoryMax: "4G",
       MemorySwapMax: "0",
       TasksMax: "1024",
       ReadWritePaths:
