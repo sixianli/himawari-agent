@@ -1,4 +1,5 @@
 import type {
+  ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
   AuthorityFence,
@@ -1235,6 +1236,25 @@ export class SqliteDurableAdapters {
       revokeDevice: (input) => this.context.write("pairedDevices.revokeDevice", input),
       recordNonce: (input) => this.context.write("pairedDevices.recordNonce", input),
       touchDevice: (input) => this.context.write("pairedDevices.touchDevice", input),
+    });
+  }
+
+  applePush(): ApplePushStorePort {
+    return Object.freeze<ApplePushStorePort>({
+      saveRegistration: (input) => this.context.write("applePush.saveRegistration", input),
+      removeRegistration: (input) => this.context.write("applePush.removeRegistration", input),
+      listRegistrations: (input) => this.context.read("applePush.listRegistrations", input),
+      markRegistration: (input) => this.context.write("applePush.markRegistration", input),
+      routeOutbox: (input) => this.context.write("applePush.routeOutbox", input),
+      listDue: (input) => this.context.read("applePush.listDue", input),
+      recordAttempt: (input) => this.context.write("applePush.recordAttempt", input),
+      issueActionTokens: (input) => this.context.write("applePush.issueActionTokens", input),
+      readActionToken: (input) => this.context.read("applePush.readActionToken", input),
+      consumeActionToken: (input) => this.context.write("applePush.consumeActionToken", input),
+      setCompanion: (input) => this.context.write("applePush.setCompanion", input),
+      listActivityRuns: (input) => this.context.read("applePush.listActivityRuns", input),
+      readActivityRuns: (input) => this.context.read("applePush.readActivityRuns", input),
+      prune: (input) => this.context.write("applePush.prune", input),
     });
   }
 
