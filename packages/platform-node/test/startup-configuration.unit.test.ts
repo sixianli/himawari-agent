@@ -1990,7 +1990,10 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
       stalledAfterMinutes: 1440,
       maxAttempts: 20,
       summaryCharacters: 4000,
+      idleSeconds: 86400,
+      runTimeoutMinutes: 120,
     },
+    { idleSeconds: 5, runTimeoutMinutes: 1 },
   ]) {
     raw["runPolicy"] = { ...policy, thinkInbox };
     expect(
@@ -2047,6 +2050,8 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     { dailyLimit: 10001 },
     { maxAttempts: 21 },
     { summaryCharacters: 99 },
+    { idleSeconds: 4 },
+    { runTimeoutMinutes: 121 },
     { queueLimit: 1.5 },
     { unknownKey: 1 },
   ]) {

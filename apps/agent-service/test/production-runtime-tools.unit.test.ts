@@ -391,6 +391,22 @@ describe("ProductionRuntimeTools", () => {
     });
   });
 
+  it("offers a think run no tool that is not read-only, and other runs keep theirs", async () => {
+    const f = fixture();
+    const asked: string[] = [];
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      readOnlyRun: async (runId) => {
+        asked.push(runId);
+        return runId === invocation.runId;
+      },
+    });
+    expect(await tool.listAuthorized(invocation.runId, [])).toEqual([]);
+    expect(asked).toEqual([invocation.runId]);
+    const other = await f.tool().listAuthorized(invocation.runId, []);
+    expect(other.map((item) => item.name)).toEqual(["read"]);
+  });
+
   it("does not mistake model-provided approval fields for execution authority", async () => {
     const f = fixture();
     const tool = await exposed(f);

@@ -15,6 +15,7 @@ export * from "./conversation.js";
 export * from "./coordination.js";
 export * from "./decision-ledger.js";
 export * from "./delegation.js";
+export * from "./delivery-timing-settings.js";
 export * from "./device-limits.js";
 export * from "./durability.js";
 export * from "./execution-backend.js";

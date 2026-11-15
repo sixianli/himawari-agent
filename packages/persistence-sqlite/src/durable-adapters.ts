@@ -12,6 +12,8 @@ import type {
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   DecisionLedgerPort,
+  DeliveryTimingSettingsStorePort,
+  DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
   GapCaseMarkPort,
@@ -37,9 +39,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
-  ThinkInboxStorePort,
   OwnerRuleStorePort,
-  DeviceActionStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
   PerceptionStorePort,
@@ -69,6 +69,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
+  ThinkInboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -1064,6 +1065,8 @@ export class SqliteDurableAdapters {
       settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
       summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
       clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
+      readSettings: (input) => this.context.write("thinkInbox.readSettings", input),
+      changeSettings: (input) => this.context.write("thinkInbox.changeSettings", input),
     });
   }
 
@@ -1164,6 +1167,13 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
+  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
+    return Object.freeze<DeliveryTimingSettingsStorePort>({
+      read: (input) => this.context.read("deliveryTimingSettings.read", input),
+      write: (input) => this.context.write("deliveryTimingSettings.write", input),
+    });
+  }
+
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),

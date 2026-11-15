@@ -2,6 +2,7 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   DEVICE_ACTION_RECORD_STATES,
+  DEVICE_ACTION_REGISTRY,
   DEVICE_ACTION_REGISTRATIONS,
   type DeviceActionAuthorizationPort,
   type DeviceActionIntent,
@@ -161,9 +162,10 @@ async function mirror(
   expect(result.status, JSON.stringify(result.body)).toBe(200);
 }
 
-async function changePolicy(
+async function confirmablePost(
   h: Harness,
   client: PairedClient,
+  path: string,
   body: Record<string, unknown>,
   confirmed: boolean,
 ) {
@@ -185,12 +187,24 @@ async function changePolicy(
     h,
     signedRequest(h, client, {
       method: "POST",
-      path: "/api/device/v1/actions/policy",
+      path: `/api/device/v1/${path}`,
       body: JSON.stringify(body),
       ...(nonce === undefined ? {} : { confirmKey: client.confirmKeys.privateKey, nonce }),
     }),
   );
-  return { status: response.statusCode, body: response.json() as Record<string, unknown> };
+  return {
+    status: response.statusCode,
+    body: response.json() as Record<string, unknown>,
+  };
+}
+
+async function changePolicy(
+  h: Harness,
+  client: PairedClient,
+  body: Record<string, unknown>,
+  confirmed: boolean,
+) {
+  return confirmablePost(h, client, "actions/policy", body, confirmed);
 }
 
 function noWaiting(h: Harness) {
@@ -200,9 +214,18 @@ function noWaiting(h: Harness) {
   };
 }
 
-const LAMP = { externalId: "lamp-1", data: { name: "落地灯", category: "light", room: "客厅" } };
-const LOCK = { externalId: "lock-1", data: { name: "大门锁", category: "lock", room: "玄关" } };
-const ODD = { externalId: "odd-1", data: { name: "新设备", category: "mystery_box" } };
+const LAMP = {
+  externalId: "lamp-1",
+  data: { name: "落地灯", category: "light", room: "客厅" },
+};
+const LOCK = {
+  externalId: "lock-1",
+  data: { name: "大门锁", category: "lock", room: "玄关" },
+};
+const ODD = {
+  externalId: "odd-1",
+  data: { name: "新设备", category: "mystery_box" },
+};
 const DENTIST = {
   externalId: "evt-1",
   data: {
@@ -235,10 +258,17 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
     ).toEqual(["alarm.set", "device_reminder.create", "home.read"]);
     const described = (await act("run-1", { action: "describe" })) as {
       devices: { device: string; actions: string[] }[];
-      actions: { name: string; confirm: boolean; parameters: Record<string, unknown> }[];
+      actions: {
+        name: string;
+        confirm: boolean;
+        parameters: Record<string, unknown>;
+      }[];
     };
     expect(described.devices).toMatchObject([
-      { device: client.deviceId, actions: ["alarm.set", "device_reminder.create", "home.read"] },
+      {
+        device: client.deviceId,
+        actions: ["alarm.set", "device_reminder.create", "home.read"],
+      },
     ]);
     expect(described.actions.map(({ name, confirm }) => [name, confirm])).toEqual([
       ["alarm.set", true],
@@ -275,8 +305,14 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
     await supports(h, client, ["home.read", "calendar.delete"]);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    const refused = await act("run-1", { action: "lights.explode", arguments: {} });
-    expect(refused).toMatchObject({ done: false, note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text });
+    const refused = await act("run-1", {
+      action: "lights.explode",
+      arguments: {},
+    });
+    expect(refused).toMatchObject({
+      done: false,
+      note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text,
+    });
     const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
     expect(
@@ -290,9 +326,15 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
       }),
     ).toEqual({ kind: "invalid", note: null });
     await expect(
-      act("run-1", { action: "home.read", arguments: { room: "客厅", everything: true } }),
+      act("run-1", {
+        action: "home.read",
+        arguments: { room: "客厅", everything: true },
+      }),
     ).rejects.toBeInstanceOf(PerceptionToolError);
-    const guessed = act("run-1", { action: "calendar.delete", arguments: { eventId: "guess" } });
+    const guessed = act("run-1", {
+      action: "calendar.delete",
+      arguments: { eventId: "guess" },
+    });
     await expect(guessed).rejects.toMatchObject({
       code: "DEVICE_ACTION_INPUT_INVALID",
       note: TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN.text,
@@ -310,7 +352,9 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
           name: "test.echo",
           schemaVersion: 1,
           deviceKinds: ["iphone"],
-          parameters: { word: { type: "string", required: true, maxLength: 20 } },
+          parameters: {
+            word: { type: "string", required: true, maxLength: 20 },
+          },
           target: null,
           actionKind: "READ",
           escalation: null,
@@ -345,9 +389,19 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
       readBack: false,
       evidence: { heard: (delivery["arguments"] as { word: string }).word },
     }));
-    const result = await act("run-1", { action: "test.echo", arguments: { word: "你好" } });
-    expect(result).toMatchObject({ done: true, state: "succeeded", evidence: { heard: "你好" } });
-    expect(device.claimed[0]).toMatchObject({ action: "test.echo", detail: { en: "Echo: 你好" } });
+    const result = await act("run-1", {
+      action: "test.echo",
+      arguments: { word: "你好" },
+    });
+    expect(result).toMatchObject({
+      done: true,
+      state: "succeeded",
+      evidence: { heard: "你好" },
+    });
+    expect(device.claimed[0]).toMatchObject({
+      action: "test.echo",
+      detail: { en: "Echo: 你好" },
+    });
     expect(JSON.stringify(perceptionToolDescriptors())).toBe(plain);
     await device.close();
     await h.repository.close();
@@ -413,7 +467,9 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
       "queued",
       "succeeded",
     ]);
-    expect((await deviceGet(h, client, "actions")).body).toEqual({ actions: [] });
+    expect((await deviceGet(h, client, "actions")).body).toEqual({
+      actions: [],
+    });
     const replay = await devicePost(h, client, "actions/result", {
       id: record?.id,
       outcome: "failed",
@@ -430,15 +486,25 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
     const client = await pairAndConfirm(h);
     await supports(h, client, ["calendar.create", "home.control", "device_reminder.create"]);
     await mirror(h, client, "home_accessory", [LAMP]);
-    const device = await connectDevice(h, client, () => ({ outcome: "succeeded", readBack: true }));
+    const device = await connectDevice(h, client, () => ({
+      outcome: "succeeded",
+      readBack: true,
+    }));
     const { act } = setup(h);
     await addRun(h, "run-1");
     const attempts = [
       {
         action: "calendar.create",
-        arguments: { title: "复诊", start: "2026-11-13T15:00", end: "2026-11-13T16:00" },
+        arguments: {
+          title: "复诊",
+          start: "2026-11-13T15:00",
+          end: "2026-11-13T16:00",
+        },
       },
-      { action: "home.control", arguments: { accessoryId: "lamp-1", on: true } },
+      {
+        action: "home.control",
+        arguments: { accessoryId: "lamp-1", on: true },
+      },
       { action: "device_reminder.create", arguments: { title: "买牛奶" } },
     ];
     for (const attempt of attempts) {
@@ -480,7 +546,9 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
     expect((await report(first, { outcome: "failed", readBack: false })).body).toEqual({
       code: "DEVICE_ACTION_NOT_DELIVERED",
     });
-    expect((await devicePost(h, second, "actions/claim", {})).body).toEqual({ actions: [] });
+    expect((await devicePost(h, second, "actions/claim", {})).body).toEqual({
+      actions: [],
+    });
     const claimed = await devicePost(h, first, "actions/claim", {});
     expect(claimed.body["actions"]).toMatchObject([{ id: record?.id, mode: "perform" }]);
     expect((await report(second, { outcome: "succeeded", readBack: true })).status).toBe(404);
@@ -494,10 +562,18 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
     expect(failed.body).toEqual({ state: "failed", replayed: false });
     const again = await act(
       "run-1",
-      { action: "device_reminder.create", device: first.deviceId, arguments: { title: "买牛奶" } },
+      {
+        action: "device_reminder.create",
+        device: first.deviceId,
+        arguments: { title: "买牛奶" },
+      },
       "call:1",
     );
-    expect(again).toMatchObject({ done: false, state: "failed", reason: "提醒事项的权限被关了" });
+    expect(again).toMatchObject({
+      done: false,
+      state: "failed",
+      reason: "提醒事项的权限被关了",
+    });
     await h.repository.close();
   });
 });
@@ -532,9 +608,15 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
     });
     const recorded = await rows(h);
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]).toMatchObject({ state: "result_unknown", reasonCode: "report_missing" });
+    expect(recorded[0]).toMatchObject({
+      state: "result_unknown",
+      reasonCode: "report_missing",
+    });
     await until(() => device.claimed.length >= 2);
-    expect(device.claimed[1]).toMatchObject({ id: device.claimed[0]?.["id"], mode: "verify" });
+    expect(device.claimed[1]).toMatchObject({
+      id: device.claimed[0]?.["id"],
+      mode: "verify",
+    });
     expect(device.claimed.filter(({ mode }) => mode === "perform")).toHaveLength(1);
     const id = recorded[0]?.id;
     const blind = await devicePost(h, client, "actions/result", {
@@ -574,11 +656,17 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
     noWaiting(h);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    await act("run-1", { action: "device_reminder.create", arguments: { title: "交房租" } });
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "交房租" },
+    });
     const claimed = await devicePost(h, client, "actions/claim", {});
     expect(claimed.body["actions"]).toHaveLength(1);
     h.clock.advance(1000);
-    await act("run-1", { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } });
+    await act("run-1", {
+      action: "alarm.set",
+      arguments: { time: "2026-11-13T07:00" },
+    });
     const reopened = await devicePost(h, client, "actions/open", {});
     expect(reopened.body["actions"]).toMatchObject([
       { action: "device_reminder.create", mode: "verify" },
@@ -651,7 +739,10 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     const { act } = setup(h);
     await addRun(h, "run-1");
     const update = (phones: string[]) =>
-      act("run-1", { action: "contact.update", arguments: { contactId: "c-1", phones } });
+      act("run-1", {
+        action: "contact.update",
+        arguments: { contactId: "c-1", phones },
+      });
     await update(["+81 90 1111 2222", "+81 3 3333 4444"]);
     await until(() => device.claimed.length === 1);
     h.clock.advance(601_000);
@@ -728,8 +819,13 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     noWaiting(h);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    const request = { action: "device_reminder.complete", arguments: { reminderId: "rem-1" } };
-    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "queued" });
+    const request = {
+      action: "device_reminder.complete",
+      arguments: { reminderId: "rem-1" },
+    };
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({
+      state: "queued",
+    });
     const removed = await devicePost(h, client, "mirror", {
       kind: "reminder",
       mode: "delta",
@@ -738,7 +834,9 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
       items: [{ externalId: "rem-1", version: 2, deleted: true }],
     });
     expect(removed.status).toBe(200);
-    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "queued" });
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({
+      state: "queued",
+    });
     await expect(act("run-1", request, "call:other")).rejects.toMatchObject({
       note: TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN.text,
     });
@@ -753,7 +851,10 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     h.actions.authorization.current = ownerAllows(false);
     const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
-    await web(h, "revoke", { deviceId: client.deviceId, expectedRevision: device.revision });
+    await web(h, "revoke", {
+      deviceId: client.deviceId,
+      expectedRevision: device.revision,
+    });
     await addRun(h, "run-1");
     await expect(
       h.actions.service.request({
@@ -788,13 +889,21 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
     const device = await connectDevice(h, client);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    const request = { action: "device_reminder.create", arguments: { title: "买牛奶" } };
+    const request = {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    };
     await act("run-1", request, "call:fixed");
     await until(() => device.claimed.length === 1);
     h.clock.advance(601_000);
-    expect(await act("run-1", request, "call:fixed")).toMatchObject({ state: "result_unknown" });
+    expect(await act("run-1", request, "call:fixed")).toMatchObject({
+      state: "result_unknown",
+    });
     await until(() => device.claimed.length >= 2);
-    expect(device.claimed[1]).toMatchObject({ id: device.claimed[0]?.["id"], mode: "verify" });
+    expect(device.claimed[1]).toMatchObject({
+      id: device.claimed[0]?.["id"],
+      mode: "verify",
+    });
     await expect(
       act("run-1", { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } }, "call:fixed"),
     ).rejects.toMatchObject({ code: "DEVICE_ACTION_INPUT_INVALID" });
@@ -811,7 +920,10 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
     noWaiting(h);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } });
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    });
     expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(1);
     const [record] = await rows(h);
     const secondRoot = path.join(h.stateRoot, "full-disk-view");
@@ -855,7 +967,10 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
     } finally {
       database.close();
     }
-    expect((await rows(h))[0]).toMatchObject({ state: "delivered", resultRef: null });
+    expect((await rows(h))[0]).toMatchObject({
+      state: "delivered",
+      resultRef: null,
+    });
     await h.repository.close();
   });
 
@@ -868,7 +983,10 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
     const { act } = setup(h);
     await addRun(h, "run-1");
     for (const title of ["买牛奶", "交房租", "取快递"]) {
-      await act("run-1", { action: "device_reminder.create", arguments: { title } });
+      await act("run-1", {
+        action: "device_reminder.create",
+        arguments: { title },
+      });
       h.clock.advance(1000);
     }
     expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(3);
@@ -960,7 +1078,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     const { act } = setup(h);
     await addRun(h, "run-1");
     await addRun(h, "run-2");
-    const request = { action: "calendar.delete", arguments: { eventId: "evt-1" } };
+    const request = {
+      action: "calendar.delete",
+      arguments: { eventId: "evt-1" },
+    };
     const seen: DeviceActionIntent[] = [];
     h.actions.authorization.current = ownerIsAsked(seen);
     await act("run-1", request);
@@ -968,6 +1089,326 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await act("run-2", request);
     expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([false, true]);
     await h.repository.close();
+  });
+
+  it("[undo] offers an undo only when the device reported what it changed, and queues the reverse action", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update", "device_reminder.create"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    const views = async () =>
+      (
+        (await deviceGet(h, client, "actions?finishedSince=1970-01-01T00:00:00.000Z")).body[
+          "actions"
+        ] as { id: string; action: string; undo: string }[]
+      ).map(({ id, action, undo }) => ({ id, action, undo }));
+    const finish = async (evidence: Record<string, unknown>) => {
+      const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+        id: string;
+      }[];
+      const id = claimed[0]?.id;
+      expect(
+        (
+          await devicePost(h, client, "actions/result", {
+            id,
+            outcome: "succeeded",
+            readBack: true,
+            evidence,
+          })
+        ).body,
+      ).toEqual({ state: "succeeded", replayed: false });
+      return id as string;
+    };
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const changed = await finish({ before: { title: "牙医复诊" } });
+    h.clock.advance(1000);
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    });
+    const reminder = await finish({ reminderId: "r-1" });
+    expect(await views()).toEqual(
+      expect.arrayContaining([
+        { id: changed, action: "calendar.update", undo: "available" },
+        { id: reminder, action: "device_reminder.create", undo: "none" },
+      ]),
+    );
+    expect((await devicePost(h, client, "actions/undo", { id: reminder })).status).toBe(409);
+    expect(
+      (
+        await devicePost(h, client, "actions/undo", {
+          id: "dact_" + "0".repeat(32),
+        })
+      ).status,
+    ).toBe(404);
+    const undone = await confirmablePost(h, client, "actions/undo", { id: changed }, true);
+    expect(undone.body).toMatchObject({ state: "queued" });
+    expect((await views()).find(({ id }) => id === changed)?.undo).toBe("pending");
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      arguments: Record<string, unknown>;
+    }[];
+    expect(claimed).toMatchObject([
+      { arguments: { eventId: "evt-1", title: "牙医复诊" }, mode: "perform" },
+    ]);
+    const reverse = (await rows(h)).find(({ state }) => state === "delivered");
+    await devicePost(h, client, "actions/result", {
+      id: reverse?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: {},
+    });
+    expect((await views()).find(({ id }) => id === changed)?.undo).toBe("done");
+    await h.repository.close();
+  });
+
+  it("[undo] never offers an undo when the device kept no before-image, and hands an undo to the owner's approval", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update", "calendar.delete"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    await devicePost(h, client, "actions/result", {
+      id: claimed[0]?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: {},
+    });
+    expect(await devicePost(h, client, "actions/undo", { id: claimed[0]?.id })).toMatchObject({
+      status: 409,
+    });
+    const seen: DeviceActionIntent[] = [];
+    h.clock.advance(1000);
+    await addRun(h, "run-2");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-2", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "再改" },
+    });
+    const second = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    await devicePost(h, client, "actions/result", {
+      id: second[0]?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: { before: { title: "新标题" } },
+    });
+    h.actions.authorization.current = ownerIsAsked(seen);
+    h.clock.advance(1000);
+    const undone = await confirmablePost(
+      h,
+      client,
+      "actions/undo",
+      { id: second[0]?.id as string },
+      true,
+    );
+    expect(undone.body).toMatchObject({ state: "waiting_owner" });
+    expect(seen).toMatchObject([
+      {
+        action: "calendar.update",
+        readUntrustedContent: false,
+        arguments: { title: "新标题" },
+      },
+    ]);
+    await h.repository.close();
+  });
+
+  it("[undo] only an undo confirmed with the confirmation key counts as the owner clicking it", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    const targets: string[] = [];
+    for (const title of ["新标题", "再改"]) {
+      h.clock.advance(1000);
+      await act(
+        "run-1",
+        {
+          action: "calendar.update",
+          arguments: { eventId: "evt-1", title },
+        },
+        `call:${targets.length}`,
+      );
+      const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+        id: string;
+      }[];
+      await devicePost(h, client, "actions/result", {
+        id: claimed[0]?.id,
+        outcome: "succeeded",
+        readBack: true,
+        evidence: { before: { title: "牙医复诊" } },
+      });
+      targets.push(claimed[0]?.id as string);
+    }
+    await h.externalContent.mark(createRunId("run-1"), "perception_read");
+    const seen: DeviceActionIntent[] = [];
+    h.actions.authorization.current = ownerIsAsked(seen);
+    await confirmablePost(h, client, "actions/undo", { id: targets[0] as string }, false);
+    await confirmablePost(h, client, "actions/undo", { id: targets[1] as string }, true);
+    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([true, false]);
+    await h.repository.close();
+  });
+
+  it("[undo] an unconfirmed undo refused for untrusted content does not block the same action's confirmed undo", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    const id = claimed[0]?.id as string;
+    await devicePost(h, client, "actions/result", {
+      id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: { before: { title: "牙医复诊" } },
+    });
+    await h.externalContent.mark(createRunId("run-1"), "perception_read");
+    h.actions.authorization.current = {
+      authorize: async (intent) =>
+        intent.readUntrustedContent
+          ? { decision: "deny", reasonCode: "authorization_denied" }
+          : { decision: "approval", approvalId: "approval-owner" },
+    };
+    await confirmablePost(h, client, "actions/undo", { id }, false);
+    const confirmed = await confirmablePost(h, client, "actions/undo", { id }, true);
+    expect(confirmed.body).not.toMatchObject({ state: "rejected" });
+    expect(confirmed.status).toBe(200);
+    await h.repository.close();
+  });
+
+  it("[undo] a failed reverse action is not retried, a second device cannot undo, and an action that did not succeed cannot be undone", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const other = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新" },
+    });
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    const id = claimed[0]?.id as string;
+    expect((await devicePost(h, client, "actions/undo", { id })).status).toBe(409);
+    await devicePost(h, client, "actions/result", {
+      id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: { before: { title: "牙医复诊" } },
+    });
+    expect((await devicePost(h, other, "actions/undo", { id })).status).toBe(404);
+    expect((await devicePost(h, client, "actions/undo", { id })).body).toMatchObject({
+      state: "queued",
+    });
+    const reverse = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    await devicePost(h, client, "actions/result", {
+      id: reverse[0]?.id,
+      outcome: "failed",
+      readBack: false,
+    });
+    const before = (await rows(h)).length;
+    const again = await devicePost(h, client, "actions/undo", { id });
+    expect(again.body).toEqual({ id: reverse[0]?.id, state: "failed" });
+    expect((await rows(h)).length).toBe(before);
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toEqual([]);
+    await h.repository.close();
+  });
+
+  it("[undo] derives the reverse action only from what the device reported", () => {
+    const plan = (
+      action: string,
+      args: Record<string, unknown>,
+      evidence: Record<string, unknown>,
+    ) => DEVICE_ACTION_REGISTRY.get(action)?.undo?.(args, evidence) ?? null;
+    expect(plan("calendar.create", { title: "x" }, { eventId: "evt-9" })).toEqual({
+      action: "calendar.delete",
+      arguments: { eventId: "evt-9" },
+    });
+    expect(plan("calendar.create", { title: "x" }, {})).toBeNull();
+    const before = {
+      title: "牙医复诊",
+      start: "2026-11-13T15:00",
+      end: "2026-11-13T16:00",
+      allDay: false,
+    };
+    expect(plan("calendar.delete", { eventId: "evt-1" }, { before })).toEqual({
+      action: "calendar.create",
+      arguments: before,
+    });
+    expect(
+      plan(
+        "calendar.delete",
+        { eventId: "evt-1", occurrenceStart: "2026-11-13T15:00" },
+        { before },
+      ),
+    ).toBeNull();
+    expect(plan("calendar.delete", { eventId: "evt-1" }, {})).toBeNull();
+    expect(
+      plan(
+        "calendar.update",
+        { eventId: "evt-1", title: "新", location: "东京" },
+        { before: { title: "旧" } },
+      ),
+    ).toBeNull();
+    expect(
+      plan(
+        "calendar.update",
+        { eventId: "evt-1", occurrenceStart: "2026-11-13T15:00", title: "新" },
+        { before: { title: "旧", notes: "无关" } },
+      ),
+    ).toEqual({
+      action: "calendar.update",
+      arguments: {
+        eventId: "evt-1",
+        occurrenceStart: "2026-11-13T15:00",
+        title: "旧",
+      },
+    });
+    expect(
+      plan(
+        "contact.update",
+        { contactId: "c-1", organization: "新公司" },
+        { before: { organization: "旧公司" } },
+      ),
+    ).toEqual({
+      action: "contact.update",
+      arguments: { contactId: "c-1", organization: "旧公司" },
+    });
+    expect(plan("alarm.set", { time: "2026-11-13T07:00" }, { alarmId: "a-1" })).toBeNull();
+    expect(plan("home.control", { accessoryId: "lamp-1" }, { before: { on: false } })).toBeNull();
   });
 
   it("[approval] moves a waiting action on once the unified approval is answered, and rejects it when the owner says no", async () => {
@@ -986,15 +1427,25 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       }),
       resolve: async (approvalId) => answers.get(approvalId) ?? { decision: "pending" },
     };
-    const request = { action: "calendar.delete", arguments: { eventId: "evt-1" } };
-    expect(await act("run-1", request)).toMatchObject({ state: "waiting_owner" });
+    const request = {
+      action: "calendar.delete",
+      arguments: { eventId: "evt-1" },
+    };
+    expect(await act("run-1", request)).toMatchObject({
+      state: "waiting_owner",
+    });
     await h.actions.service.reconcile();
     expect((await rows(h)).map(({ state }) => state)).toEqual(["waiting_owner"]);
-    answers.set("approval:run-1", { decision: "deny", reasonCode: "owner_denied" });
+    answers.set("approval:run-1", {
+      decision: "deny",
+      reasonCode: "owner_denied",
+    });
     await h.actions.service.reconcile();
     expect((await rows(h)).map(({ state }) => state)).toEqual(["rejected"]);
     h.clock.advance(1000);
-    expect(await act("run-2", request)).toMatchObject({ state: "waiting_owner" });
+    expect(await act("run-2", request)).toMatchObject({
+      state: "waiting_owner",
+    });
     answers.set("approval:run-2", { decision: "allow", ownerPresent: true });
     await h.actions.service.reconcile();
     expect((await rows(h)).map(({ state }) => state).sort()).toEqual(["queued", "rejected"]);
@@ -1010,7 +1461,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       h,
       client,
       "calendar_event",
-      Array.from({ length: total }, (_, index) => ({ ...DENTIST, externalId: `evt-${index}` })),
+      Array.from({ length: total }, (_, index) => ({
+        ...DENTIST,
+        externalId: `evt-${index}`,
+      })),
     );
     const { act } = setup(h);
     const answers = new Map<string, DeviceActionResolution>();
@@ -1029,7 +1483,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         arguments: { eventId: `evt-${index}` },
       });
     }
-    answers.set(`approval:run-${total - 1}`, { decision: "allow", ownerPresent: true });
+    answers.set(`approval:run-${total - 1}`, {
+      decision: "allow",
+      ownerPresent: true,
+    });
     await h.actions.service.reconcile(`approval:run-${total - 1}`);
     const answered = await h.repository.deviceActions().list({
       ...perceptionScope,
@@ -1056,7 +1513,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await mirror(h, client, "calendar_event", [DENTIST]);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    const request = { action: "calendar.delete", arguments: { eventId: "evt-1" } };
+    const request = {
+      action: "calendar.delete",
+      arguments: { eventId: "evt-1" },
+    };
     h.actions.authorization.current = ownerAllows(false);
     expect(await act("run-1", request)).toMatchObject({
       done: false,
@@ -1066,7 +1526,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     const seen: DeviceActionIntent[] = [];
     h.clock.advance(1000);
     h.actions.authorization.current = ownerIsAsked(seen);
-    expect(await act("run-1", request)).toMatchObject({ done: false, state: "waiting_owner" });
+    expect(await act("run-1", request)).toMatchObject({
+      done: false,
+      state: "waiting_owner",
+    });
     expect(seen[0]).toMatchObject({
       action: "calendar.delete",
       actionKind: "DELETE",
@@ -1078,16 +1541,29 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     });
     const waiting = (await rows(h)).find(({ state }) => state === "waiting_owner");
     if (!waiting) throw new Error("waiting action missing");
-    expect(waiting).toMatchObject({ approvalId: "approval-1", ownerPresence: true });
+    expect(waiting).toMatchObject({
+      approvalId: "approval-1",
+      ownerPresence: true,
+    });
     expect(
-      await h.actions.service.decide({ actionId: waiting.id, approved: true, ownerPresent: false }),
+      await h.actions.service.decide({
+        actionId: waiting.id,
+        approved: true,
+        ownerPresent: false,
+      }),
     ).toBe("rejected");
     h.clock.advance(1000);
-    expect(await act("run-1", request)).toMatchObject({ state: "waiting_owner" });
+    expect(await act("run-1", request)).toMatchObject({
+      state: "waiting_owner",
+    });
     const second = (await rows(h)).find(({ state }) => state === "waiting_owner");
     if (!second) throw new Error("second waiting action missing");
     expect(
-      await h.actions.service.decide({ actionId: second.id, approved: true, ownerPresent: true }),
+      await h.actions.service.decide({
+        actionId: second.id,
+        approved: true,
+        ownerPresent: true,
+      }),
     ).toBe("queued");
     expect(h.actions.openRequests.map(({ id }) => id)).toEqual([second.id]);
     const cut = h.clock.now();
@@ -1110,7 +1586,9 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       },
     ]);
     h.clock.advance(121_000);
-    expect((await devicePost(h, client, "actions/claim", {})).body).toEqual({ actions: [] });
+    expect((await devicePost(h, client, "actions/claim", {})).body).toEqual({
+      actions: [],
+    });
     expect(
       (await rows(h)).map(({ state, reasonCode, deliveredAt }) => [state, reasonCode, deliveredAt]),
     ).toEqual([
@@ -1130,7 +1608,9 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       "rejected",
       "expired",
     ]);
-    expect((await deviceGet(h, client, "actions")).body).toEqual({ actions: [] });
+    expect((await deviceGet(h, client, "actions")).body).toEqual({
+      actions: [],
+    });
     for (const bad of [
       "actions?finishedSince=yesterday",
       "actions?finishedSince=2026-13-45T99:99:99.999Z",
@@ -1150,12 +1630,21 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     const { act } = setup(h);
     await addRun(h, "run-1");
     const control = (accessoryId: string, change: Record<string, unknown>) =>
-      act("run-1", { action: "home.control", arguments: { accessoryId, ...change } });
-    expect(await control("lamp-1", { on: true })).toMatchObject({ state: "queued" });
+      act("run-1", {
+        action: "home.control",
+        arguments: { accessoryId, ...change },
+      });
+    expect(await control("lamp-1", { on: true })).toMatchObject({
+      state: "queued",
+    });
     h.clock.advance(1000);
-    expect(await control("lock-1", { locked: false })).toMatchObject({ state: "rejected" });
+    expect(await control("lock-1", { locked: false })).toMatchObject({
+      state: "rejected",
+    });
     h.clock.advance(1000);
-    expect(await control("odd-1", { on: true })).toMatchObject({ state: "rejected" });
+    expect(await control("odd-1", { on: true })).toMatchObject({
+      state: "rejected",
+    });
     expect(
       (await rows(h)).map(({ actionKind, risk, ownerPresence, state }) => ({
         actionKind,
@@ -1164,9 +1653,24 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         state,
       })),
     ).toEqual([
-      { actionKind: "CREATE_OR_UPDATE", risk: "MEDIUM", ownerPresence: false, state: "queued" },
-      { actionKind: "PHYSICAL_SAFETY", risk: "CRITICAL", ownerPresence: true, state: "rejected" },
-      { actionKind: "PHYSICAL_SAFETY", risk: "CRITICAL", ownerPresence: true, state: "rejected" },
+      {
+        actionKind: "CREATE_OR_UPDATE",
+        risk: "MEDIUM",
+        ownerPresence: false,
+        state: "queued",
+      },
+      {
+        actionKind: "PHYSICAL_SAFETY",
+        risk: "CRITICAL",
+        ownerPresence: true,
+        state: "rejected",
+      },
+      {
+        actionKind: "PHYSICAL_SAFETY",
+        risk: "CRITICAL",
+        ownerPresence: true,
+        state: "rejected",
+      },
     ]);
     await h.repository.close();
   });
@@ -1217,7 +1721,11 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
         },
         {
           name: "home.read",
-          title: { "zh-CN": "读取家居状态", en: "Read home state", ja: "家の状態を読む" },
+          title: {
+            "zh-CN": "读取家居状态",
+            en: "Read home state",
+            ja: "家の状態を読む",
+          },
           allowed: true,
         },
       ],
@@ -1252,7 +1760,10 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       {
         revision: 1,
         actions: [
-          expect.objectContaining({ name: "device_reminder.create", allowed: true }),
+          expect.objectContaining({
+            name: "device_reminder.create",
+            allowed: true,
+          }),
           expect.objectContaining({ name: "home.read", allowed: false }),
         ],
       },
@@ -1293,21 +1804,33 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
     const { act } = setup(h);
     await addRun(h, "run-1");
     expect(
-      await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } }),
+      await act("run-1", {
+        action: "device_reminder.create",
+        arguments: { title: "买牛奶" },
+      }),
     ).toMatchObject({ state: "queued" });
     h.clock.advance(1000);
     await changePolicy(
       h,
       client,
-      { expectedRevision: 0, blockedActions: ["home.read", "device_reminder.create"] },
+      {
+        expectedRevision: 0,
+        blockedActions: ["home.read", "device_reminder.create"],
+      },
       true,
     );
-    const device = await connectDevice(h, client, () => ({ outcome: "succeeded", readBack: true }));
+    const device = await connectDevice(h, client, () => ({
+      outcome: "succeeded",
+      readBack: true,
+    }));
     expect(await act("run-1", { action: "lights.explode" })).toMatchObject({
       done: false,
       availableActions: [],
     });
-    const refused = await act("run-1", { action: "home.read", arguments: { room: "客厅" } });
+    const refused = await act("run-1", {
+      action: "home.read",
+      arguments: { room: "客厅" },
+    });
     expect(refused).toMatchObject({
       done: false,
       state: "rejected",
@@ -1338,10 +1861,16 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
     noWaiting(h);
     const { act } = setup(h);
     await addRun(h, "run-1");
-    await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } });
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    });
     expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(1);
     h.clock.advance(1000);
-    await act("run-1", { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } });
+    await act("run-1", {
+      action: "alarm.set",
+      arguments: { time: "2026-11-13T07:00" },
+    });
     const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
     const revoked = await web(h, "revoke", {
@@ -1412,7 +1941,10 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
     }));
     const { act } = setup(h);
     await addRun(h, "run-1");
-    await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } });
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    });
     await device.close();
     await changePolicy(h, client, { expectedRevision: 0, blockedActions: ["home.read"] }, true);
     const { files, manifest } = await exported(h);
@@ -1443,7 +1975,10 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
         updatedAt: h.clock.now(),
       },
     ]);
-    expect(manifest.counts).toMatchObject({ deviceActions: 1, devicePolicies: 1 });
+    expect(manifest.counts).toMatchObject({
+      deviceActions: 1,
+      devicePolicies: 1,
+    });
     const parsed = parsePortable(files, LATEST_MIGRATION_SEQUENCE);
     expect(parsed.perception.deviceActions).toHaveLength(1);
     expect(parsed.perception.devicePolicies).toHaveLength(1);
@@ -1459,9 +1994,15 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
     const { act } = setup(h);
     await addRun(h, "run-1");
     await addRun(h, "run-2");
-    await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } });
+    await act("run-1", {
+      action: "device_reminder.create",
+      arguments: { title: "买牛奶" },
+    });
     h.clock.advance(1000);
-    await act("run-2", { action: "device_reminder.create", arguments: { title: "交房租" } });
+    await act("run-2", {
+      action: "device_reminder.create",
+      arguments: { title: "交房租" },
+    });
     const before = await rows(h);
     expect(before.map(({ runId }) => runId).sort()).toEqual(["run-1", "run-2"]);
     const gone = before.find(({ runId }) => runId === "run-1");

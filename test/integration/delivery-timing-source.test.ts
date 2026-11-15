@@ -72,7 +72,7 @@ async function source(h: Harness, baseUrl: string) {
       apiKey: async () => "test-key",
       baseUrl,
     }),
-    configuration: DELIVERY_TIMING_DEFAULTS,
+    configuration: () => DELIVERY_TIMING_DEFAULTS,
     store: h.repository.perception(),
     scope: perceptionScope,
     reserve: (micros) => h.perception.reserveModelCost(perceptionScope, micros),
