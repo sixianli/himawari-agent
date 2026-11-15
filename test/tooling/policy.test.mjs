@@ -781,6 +781,14 @@ describe("CI policy contract", () => {
   it.each([
     ["after the checks", (steps, index) => steps.push(...steps.splice(index, 1))],
     ["with a condition", (steps, index) => Object.assign(steps[index], { if: "false" })],
+    [
+      "without a check step",
+      (steps) =>
+        steps.splice(
+          steps.findIndex((step) => step.run?.includes("scripts/ci/run.mjs")),
+          1,
+        ),
+    ],
   ])("rejects a tooling Chromium install %s", (_name, change) => {
     const value = workflow();
     const steps = value.jobs.tooling.steps;
@@ -791,6 +799,12 @@ describe("CI policy contract", () => {
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       "Chromium must install unconditionally before the checks run: tooling",
     );
+  });
+  it("accepts a Chromium install that states it may not fail", () => {
+    const value = workflow();
+    const steps = value.jobs.tooling.steps;
+    steps.find((step) => step.run === chromiumInstall)["continue-on-error"] = false;
+    expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
   it.each([
     "missing option",

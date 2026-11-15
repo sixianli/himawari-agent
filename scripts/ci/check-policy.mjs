@@ -615,9 +615,9 @@ export function validateWorkflow(policy, source, toolchain) {
       assert(install >= 0, `Job runs browser tests without installing Chromium: ${check.id}`);
       const step = job.steps[install];
       assert(
-        (run < 0 || install < run) &&
+        (run < 0 ? check.id === "tests" : install < run) &&
           step.if === undefined &&
-          step["continue-on-error"] === undefined,
+          step["continue-on-error"] !== true,
         `Chromium must install unconditionally before the checks run: ${check.id}`,
       );
     }
