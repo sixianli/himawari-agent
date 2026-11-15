@@ -186,6 +186,12 @@
   --type-secondary-size: 15px;
   --type-secondary-weight: 400;
   --type-secondary-line-height: 1.45;
+  --type-sense-time-size: 15px;
+  --type-sense-time-weight: 600;
+  --type-sense-time-line-height: normal;
+  --type-sense-title-size: 26px;
+  --type-sense-title-weight: 600;
+  --type-sense-title-line-height: 1.4;
   --type-sheet-title-size: 18px;
   --type-sheet-title-weight: 700;
   --type-sheet-title-line-height: normal;
