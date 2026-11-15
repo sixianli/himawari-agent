@@ -1892,7 +1892,7 @@ describe("production Thread access scope", () => {
           message: {
             ...message,
             payload: { ...message.payload, sessionId: "session" },
-          } as typeof message,
+          } as unknown as typeof message,
         }),
       ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
     },
