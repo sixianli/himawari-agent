@@ -93,11 +93,11 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 <a id="wordmark"></a>
 ## himawari 字样
 
-“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Icons.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
+“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
 
 ```bash
 mkdir -p /tmp/cormorant && cd /tmp/cormorant && npm pack @fontsource/cormorant-garamond@5.2.6 && tar xzf fontsource-cormorant-garamond-5.2.6.tgz && cd -
-python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Icons.xcassets/wordmark.imageset/wordmark.svg
+python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg
 ```
 
 旁边的向日葵不是图片，是照原型的画法（`flower.js`）用代码画的：花瓣、花盘和种子的位置在 `Sources/HimawariCore/CornerFlower.swift`，`Tests/HimawariCoreTests/CornerFlowerTests.swift` 核对每片花瓣的尖和原型算出来的一样。
