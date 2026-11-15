@@ -35,7 +35,7 @@ date: "2026-11-15"
 
 1. 同意后开的运行记成 `external_event`：`apps/agent-service/src/production-task-proposals.ts` 里的原文是 `triggerSource: "external_event",`，来源凭据是 `` sourceProofRef: `proposal:${proposalId}:${session.proofRef}`, ``。
 2. “想一想”自己的运行也记成 `external_event`，但来源凭据不同：`apps/agent-service/src/production-think-runner.ts` 里的原文是 `` sourceProofRef: `think:${entry.id}`, ``。
-3. 内置规则 `refuseBackgroundAfterExternalContent` 对运行来源不是 `user_message`、带外部内容、目标不是 `managed-task`、也不带 `run_source_owner_approved_task` 的非读取动作给出 `refuse`；`askAfterExternalContent` 对带外部内容、目标不是 `managed-task` 的非读取动作给出 `ask_owner`，只有运行来源是 `user_message`、主人确认过意图的低风险可撤回写入除外：见 `packages/application/src/rules/action-rules.ts`。两条同时命中时取更严的一条。
+3. 内置规则 `refuseBackgroundAfterExternalContent` 对运行来源不是 `user_message`、带外部内容、目标不是 `managed-task`、也不带 `run_source_owner_approved_task` 的非读取动作给出 `refuse`；`askAfterExternalContent` 对带外部内容、目标不是 `managed-task` 的非读取动作给出 `ask_owner`，只有运行来源是 `user_message`、主人确认过意图、风险为中等、可撤回、不对外的写入除外：见 `packages/application/src/rules/action-rules.ts`。两条同时命中时取更严的一条。
 4. 工具读到的内容不是主人自己的数据时（例如 `web_search`、`web_fetch`，登记表里 `resultOrigin: "external"`），这次运行会被标上外部内容：`apps/agent-service/src/production-runtime-tools.ts` 的 `#markExternalContent`。
 5. 方案原文在 `.agents/plan-drafts/think-step-plan.md`，标题是“修订 v2（2026-11-15，Andy 答复之后；和下文冲突时听这里的）”，其中写着“A'：同意过的任务，读到外部内容之后，写操作由“直接拒绝”改成“要主人批准””。Andy 2026-11-15 在项目聊天回这份方案的原话是：“这里按照你的建议来”。
 
@@ -74,4 +74,4 @@ Anthropic 的 Claude for Chrome 说明里写着“Claude asks users before takin
 - `task.run` 提议没有撤销入口：主人同意时领取就把它标成“已同意”，之后没有代码再改它的状态（开运行失败只把执行状态记成失败），所以这次运行一直带着标记。数据库里核对“已同意”，管的是来源凭据指向另一条还没同意的提议的情况，这时不带标记。
 - 一封精心构造的网页或邮件仍可能诱导任务去提出一个写操作，挡住它的是主人的审批。新事实的代码 `run_source_owner_approved_task` 记在动作意图里，控制中心的治理页列出的是这个代码本身，不显示它的说明文字“这一轮是你同意过的一件任务”；审批卡片本身这次没有改。
 - 设备动作里不允许外部内容引出的那些（例如日历、联系人、家居），读过外部内容后仍直接拒绝，和主人自己发起的运行一样，这个改动不放宽它们。
-- 回归测试：`test/integration/tool-action-registry.test.ts`（没读外部内容可写、读后改成问主人、没有标记仍拒绝），`test/integration/task-proposals.test.ts`（同意后来源带标记；来源凭据改指一条还在待定的 `task.run` 提议后不带），`test/integration/thread-run-lifecycle.test.ts` 和 `packages/application/test/frozen-run-source-identity.unit.test.ts`（冻结快照里没有 `ownerApprovedTask`、重新读出的来源有，运行照常恢复，过了截止时间照常经 `createProductionRunExpiry` 结算；来源的其他字段不同仍被拒；快照里的来源缺失或不是对象时，仍报原来的“快照不一致”错误）。
+- 回归测试：`test/integration/tool-action-registry.test.ts`（没读外部内容可写、读后改成问主人、没有标记仍拒绝），`test/integration/task-proposals.test.ts`（同意后来源带标记；来源凭据改指一条还在待定的 `task.run` 提议后不带），`test/integration/thread-run-lifecycle.test.ts` 和 `packages/application/test/frozen-run-source-identity.unit.test.ts`（冻结快照里没有 `ownerApprovedTask`、重新读出的来源有，运行照常恢复，过了截止时间照常经 `createProductionRunExpiry` 结算；来源的其他字段不同仍被拒；快照里的来源缺失或不是对象时，单元测试核对它和重新读出的来源比对为不一致，没有端到端核对错误码）。
