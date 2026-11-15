@@ -7,6 +7,7 @@ struct SearchPage: View {
     let close: () -> Void
     let openSource: (SearchBasis) -> Void
     @State private var fullText: String?
+    @State private var shortHeight: CGFloat = 0
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -64,18 +65,27 @@ struct SearchPage: View {
 
     @ViewBuilder
     private func answerText(_ text: String) -> some View {
-        let short = Text(text).hmType(DesignTokens.TypeScale.todayTop)
-        let long = Text(text).hmType(DesignTokens.TypeScale.body).lineLimit(6)
+        let top = DesignTokens.TypeScale.todayTop
+        let short = shortHeight <= (top.lineHeight ?? top.size * 1.5) * 3 + 1
         Button { fullText = text } label: {
-            ViewThatFits(in: .vertical) {
-                short.lineLimit(3).fixedSize(horizontal: false, vertical: true)
-                long
-            }
-            .foregroundStyle(Color.hmText)
-            .multilineTextAlignment(.leading)
-            .padding(.horizontal, DesignTokens.Search.answerInset)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            Text(text)
+                .hmType(short ? top : DesignTokens.TypeScale.body)
+                .lineLimit(short ? nil : 6)
+                .foregroundStyle(Color.hmText)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, DesignTokens.Search.answerInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alignment: .topLeading) {
+                    Text(text)
+                        .hmType(top)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, DesignTokens.Search.answerInset)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortHeight = $0 }
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .sheet(isPresented: Binding(get: { fullText != nil }, set: { if !$0 { fullText = nil } })) {

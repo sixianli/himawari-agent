@@ -53,11 +53,13 @@ public final class SearchModel {
             answer = try await source.ask(question)
             failed = false
         } catch {
+            answer = nil
             failed = true
         }
     }
 
     public func reset() {
+        suggestions = []
         answer = nil
         failed = false
         text = ""

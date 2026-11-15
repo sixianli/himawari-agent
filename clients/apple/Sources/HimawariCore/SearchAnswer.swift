@@ -14,7 +14,7 @@ public struct SearchBasis: Decodable, Sendable, Equatable, Identifiable {
     public let at: String?
     public let label: String
 
-    public var id: String { [kind.rawValue, memoryId, threadId, recordId, label].compactMap { $0 }.joined(separator: ":") }
+    public var id: String { [kind.rawValue, memoryId, threadId, recordId, at, label].compactMap { $0 }.joined(separator: ":") }
 
     public init(kind: Kind, memoryId: String? = nil, threadId: String? = nil, recordId: String? = nil, at: String? = nil, label: String) {
         self.kind = kind
