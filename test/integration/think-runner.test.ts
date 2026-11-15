@@ -651,16 +651,18 @@ describe("think runner", () => {
     expect(contentRefs.length).toBeGreaterThan(0);
     const clock = { value: START };
     let overrides: Record<string, number> = {};
+    const adapter = () =>
+      new SqliteGovernedDeletionAdapter({
+        stateRoot,
+        databasePath: file,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => clock.value,
+      });
     const retention = new ThinkThreadRetention({
       deletion: {
-        deleteExpiredThinkThreads: (input) =>
-          new SqliteGovernedDeletionAdapter({
-            stateRoot,
-            databasePath: file,
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            now: () => clock.value,
-          }).deleteExpiredThinkThreads(input),
+        deleteExpiredThinkThreads: (input) => adapter().deleteExpiredThinkThreads(input),
+        retryIncompleteThreadDeletions: (input) => adapter().retryIncompleteThreadDeletions(input),
       },
       settings: { overrides: async () => overrides, defaultValue: () => 7 },
       clock: { now: () => clock.value },
@@ -688,5 +690,102 @@ describe("think runner", () => {
     expect(sql("SELECT id FROM threads").map((row) => row["id"])).toEqual([
       "thread:think:owner-made",
     ]);
+  });
+  it("skips a thinking thread that became busy after it was picked, and finishes a deletion whose payload step failed on a later pass", async () => {
+    const { think, file, stateRoot } = await fixture({
+      status: "completed",
+      text: JSON.stringify({ action: "none", reason: "只是通知" }),
+    });
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "nothing_to_propose" });
+    const sql = (statement: string, ...parameters: unknown[]) => {
+      const db = openQualifiedDatabase(file);
+      try {
+        const prepared = db.prepare(statement);
+        if (prepared.reader) return prepared.all(...parameters) as Record<string, unknown>[];
+        prepared.run(...parameters);
+        return [];
+      } finally {
+        db.close();
+      }
+    };
+    const [thinking] = sql("SELECT id FROM threads WHERE origin = 'think'");
+    const thinkId = String(thinking?.["id"]);
+    sql("UPDATE runs SET status = 'completed' WHERE thread_id = ?", thinkId);
+    const now = new Date(Date.parse(START) + 30 * 86_400_000).toISOString();
+    const input = { archivedBefore: now, activeBefore: now, limit: 50 };
+    let becomeBusy = true;
+    const racing = new SqliteGovernedDeletionAdapter({
+      stateRoot,
+      databasePath: file,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      now: () => {
+        if (becomeBusy) {
+          becomeBusy = false;
+          sql("UPDATE runs SET status = 'running' WHERE thread_id = ?", thinkId);
+        }
+        return now;
+      },
+    });
+    expect(await racing.deleteExpiredThinkThreads(input)).toEqual([]);
+    expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toHaveLength(1);
+    expect(sql("SELECT id FROM deletion_tombstones WHERE object_id = ?", thinkId)).toEqual([]);
+    sql("UPDATE runs SET status = 'completed' WHERE thread_id = ?", thinkId);
+    const failing = new SqliteGovernedDeletionAdapter({
+      stateRoot,
+      databasePath: file,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      now: () => now,
+      fault: (target) => {
+        if (target === "payload") throw new Error("disk-busy");
+      },
+    });
+    const [failed] = await failing.deleteExpiredThinkThreads(input);
+    expect(failed?.lifecycle).toBe("deletion_pending");
+    expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toEqual([]);
+    const diagnostics: Record<string, string>[] = [];
+    const healthy = () =>
+      new SqliteGovernedDeletionAdapter({
+        stateRoot,
+        databasePath: file,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => now,
+      });
+    const retention = new ThinkThreadRetention({
+      deletion: {
+        deleteExpiredThinkThreads: (next) => healthy().deleteExpiredThinkThreads(next),
+        retryIncompleteThreadDeletions: (next) => healthy().retryIncompleteThreadDeletions(next),
+      },
+      settings: { overrides: async () => ({}), defaultValue: () => 7 },
+      clock: { now: () => now },
+      onDiagnostic: (event) => diagnostics.push(event),
+    });
+    expect(await retention.runOnce()).toBe(0);
+    expect(
+      sql("SELECT status FROM deletion_tombstones WHERE object_id = ?", thinkId).map(
+        (row) => row["status"],
+      ),
+    ).toEqual(["verified"]);
+    expect(diagnostics).toEqual([]);
+    expect(await healthy().retryIncompleteThreadDeletions({ limit: 50 })).toEqual([]);
+  });
+  it("keeps the service shutdown clean when the cleanup and its diagnostic both fail", async () => {
+    const retention = new ThinkThreadRetention({
+      deletion: {
+        deleteExpiredThinkThreads: async () => {
+          throw new Error("database-gone");
+        },
+        retryIncompleteThreadDeletions: async () => [],
+      },
+      settings: { overrides: async () => ({}), defaultValue: () => 7 },
+      clock: { now: () => START },
+      onDiagnostic: () => {
+        throw new Error("output-closed");
+      },
+    });
+    retention.start();
+    await expect(retention.stop()).resolves.toBeUndefined();
   });
 });

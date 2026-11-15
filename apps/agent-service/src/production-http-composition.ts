@@ -1273,16 +1273,19 @@ export async function createProductionHttpComposition(
     configuration: configuration.runPolicy?.thinkInbox,
     clock: { now: clock },
   });
+  const retentionDeletion = () =>
+    new SqliteGovernedDeletionAdapter({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+      ownerId,
+      agentId,
+      now: clock,
+    });
   const thinkRetention = new ThinkThreadRetention({
     deletion: {
-      deleteExpiredThinkThreads: (input) =>
-        new SqliteGovernedDeletionAdapter({
-          stateRoot: configuration.stateRoot,
-          databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
-          ownerId,
-          agentId,
-          now: clock,
-        }).deleteExpiredThinkThreads(input),
+      deleteExpiredThinkThreads: (input) => retentionDeletion().deleteExpiredThinkThreads(input),
+      retryIncompleteThreadDeletions: (input) =>
+        retentionDeletion().retryIncompleteThreadDeletions(input),
     },
     settings: thinkSettings,
     clock: { now: clock },

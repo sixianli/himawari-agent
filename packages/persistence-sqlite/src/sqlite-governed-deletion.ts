@@ -491,27 +491,60 @@ export class SqliteGovernedDeletionAdapter {
     const database = this.#database();
     database.pragma("busy_timeout = 5000");
     try {
-      const expired = this.#values(
+      const expired = this.#expiredThinkThreadIds(database, input, null);
+      const reports: GovernedDeletionReport[] = [];
+      for (const threadId of expired) {
+        const objectId = safeIdentity(threadId, "thread ID");
+        try {
+          reports.push(
+            await this.#deleteOpen(database, "thread", objectId, (current) => {
+              if (this.#expiredThinkThreadIds(current, input, objectId).length === 0) {
+                throw new GovernedDeletionError(
+                  GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                  "Think thread is no longer eligible for retention deletion",
+                  { objectId },
+                );
+              }
+            }),
+          );
+        } catch (error) {
+          if (
+            error instanceof GovernedDeletionError &&
+            error.code === GOVERNED_DELETION_ERROR_CODES.CONFLICT
+          )
+            continue;
+          throw error;
+        }
+      }
+      return Object.freeze(reports);
+    } finally {
+      database.close();
+    }
+  }
+
+  async retryIncompleteThreadDeletions(input: {
+    readonly limit: number;
+  }): Promise<readonly GovernedDeletionReport[]> {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+      throw new GovernedDeletionError(
+        GOVERNED_DELETION_ERROR_CODES.INVALID_INPUT,
+        "Thread deletion retry input is invalid",
+      );
+    }
+    const database = this.#database();
+    database.pragma("busy_timeout = 5000");
+    try {
+      const incomplete = this.#values(
         database,
-        `SELECT t.id FROM threads t
-        WHERE t.owner_id = ? AND t.agent_id = ? AND t.origin = 'think' AND t.status = 'open'
-          AND ((t.archived_at IS NOT NULL AND t.archived_at <= ?)
-            OR (t.archived_at IS NULL AND t.updated_at <= ?))
-          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.thread_id = t.id
-            AND r.status NOT IN ('completed', 'failed', 'cancelled'))
-          AND NOT EXISTS (SELECT 1 FROM scheduled_jobs j WHERE j.thread_id = t.id
-            AND j.status = 'active')
-        ORDER BY COALESCE(t.archived_at, t.updated_at), t.id LIMIT ?`,
-        [
-          this.#options.ownerId,
-          this.#options.agentId,
-          input.archivedBefore,
-          input.activeBefore,
-          input.limit,
-        ],
+        `SELECT d.object_id FROM deletion_tombstones d
+        WHERE d.owner_id = ? AND d.agent_id = ? AND d.object_type = 'thread'
+          AND d.status = 'incomplete' AND d.purge_deadline_at <= ?
+          AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.id = d.object_id)
+        ORDER BY d.requested_at, d.id LIMIT ?`,
+        [this.#options.ownerId, this.#options.agentId, this.#now(), input.limit],
       );
       const reports: GovernedDeletionReport[] = [];
-      for (const threadId of expired)
+      for (const threadId of incomplete)
         reports.push(
           await this.#deleteOpen(database, "thread", safeIdentity(threadId, "thread ID")),
         );
@@ -521,10 +554,44 @@ export class SqliteGovernedDeletionAdapter {
     }
   }
 
+  #expiredThinkThreadIds(
+    database: InstanceType<typeof BetterSqlite3>,
+    input: {
+      readonly archivedBefore: string;
+      readonly activeBefore: string;
+      readonly limit: number;
+    },
+    threadId: string | null,
+  ): readonly string[] {
+    return this.#values(
+      database,
+      `SELECT t.id FROM threads t
+      WHERE t.owner_id = ? AND t.agent_id = ? AND t.origin = 'think' AND t.status = 'open'
+        AND (? IS NULL OR t.id = ?)
+        AND ((t.archived_at IS NOT NULL AND t.archived_at <= ?)
+          OR (t.archived_at IS NULL AND t.updated_at <= ?))
+        AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.thread_id = t.id
+          AND r.status NOT IN ('completed', 'failed', 'cancelled'))
+        AND NOT EXISTS (SELECT 1 FROM scheduled_jobs j WHERE j.thread_id = t.id
+          AND j.status = 'active')
+      ORDER BY COALESCE(t.archived_at, t.updated_at), t.id LIMIT ?`,
+      [
+        this.#options.ownerId,
+        this.#options.agentId,
+        threadId,
+        threadId,
+        input.archivedBefore,
+        input.activeBefore,
+        input.limit,
+      ],
+    );
+  }
+
   async #deleteOpen(
     database: InstanceType<typeof BetterSqlite3>,
     objectType: GovernedDeletionObjectType,
     objectId: string,
+    stillEligible?: (database: InstanceType<typeof BetterSqlite3>) => void,
   ): Promise<GovernedDeletionReport> {
     const input = { objectType, objectId };
     const now = this.#now();
@@ -613,6 +680,7 @@ export class SqliteGovernedDeletionAdapter {
     }
     const prepared = database
       .transaction(() => {
+        stillEligible?.(database);
         this.#upsertTombstone(database, base, "incomplete", null);
         const core = this.#deleteCore(database, input.objectType, objectId, previous !== undefined);
         const next: StoredDeletionRecord = Object.freeze({

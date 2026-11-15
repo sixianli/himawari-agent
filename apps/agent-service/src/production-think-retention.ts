@@ -5,12 +5,19 @@ const BATCH = 50;
 const BATCHES_PER_PASS = 20;
 const INTERVAL_MS = 3_600_000;
 
+interface ThinkRetentionReport {
+  readonly lifecycle: string;
+}
+
 export interface ThinkRetentionDeletion {
   deleteExpiredThinkThreads(input: {
     readonly archivedBefore: string;
     readonly activeBefore: string;
     readonly limit: number;
-  }): Promise<readonly unknown[]>;
+  }): Promise<readonly ThinkRetentionReport[]>;
+  retryIncompleteThreadDeletions(input: {
+    readonly limit: number;
+  }): Promise<readonly ThinkRetentionReport[]>;
 }
 
 export interface ThinkRetentionOptions {
@@ -54,6 +61,8 @@ export class ThinkThreadRetention {
     const now = Date.parse(this.#options.clock.now());
     const archivedBefore = new Date(now - days * DAY_MS).toISOString();
     const activeBefore = new Date(now - (days + 1) * DAY_MS).toISOString();
+    const retried = await this.#options.deletion.retryIncompleteThreadDeletions({ limit: BATCH });
+    let incomplete = retried.filter((report) => report.lifecycle !== "deleted_verified").length;
     let deleted = 0;
     for (let batch = 0; batch < BATCHES_PER_PASS; batch += 1) {
       const reports = await this.#options.deletion.deleteExpiredThinkThreads({
@@ -62,9 +71,20 @@ export class ThinkThreadRetention {
         limit: BATCH,
       });
       deleted += reports.length;
+      incomplete += reports.filter((report) => report.lifecycle !== "deleted_verified").length;
       if (reports.length < BATCH) break;
     }
+    if (incomplete > 0)
+      this.#diagnose({ code: "think.retention_incomplete", count: String(incomplete) });
     return deleted;
+  }
+
+  #diagnose(event: Record<string, string>): void {
+    try {
+      this.#options.onDiagnostic?.(event);
+    } catch {
+      return;
+    }
   }
 
   start(): void {
@@ -73,7 +93,7 @@ export class ThinkThreadRetention {
       if (this.#running) return;
       this.#running = this.runOnce()
         .catch((error: unknown) => {
-          this.#options.onDiagnostic?.({
+          this.#diagnose({
             code: "think.retention_failed",
             error: error instanceof Error ? error.name : "unknown",
           });
