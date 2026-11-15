@@ -239,6 +239,26 @@ describe("think settings", () => {
       "runTimeoutMinutes",
       "threadRetentionDays",
     ]);
+    const expectedByUnit: Record<string, { kind: string; storageUnit: string }> = {
+      permille: { kind: "ratio", storageUnit: "permille" },
+      count: { kind: "count", storageUnit: "count" },
+      times: { kind: "count", storageUnit: "count" },
+      characters: { kind: "count", storageUnit: "count" },
+      hours: { kind: "duration", storageUnit: "h" },
+      minutes: { kind: "duration", storageUnit: "min" },
+      seconds: { kind: "duration", storageUnit: "s" },
+      days: { kind: "duration", storageUnit: "d" },
+    };
+    for (const entry of snapshot.payload.items) {
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(
+        expectedByUnit[entry.unit],
+      );
+    }
+    for (const invalid of [{ kind: "percent" }, { storageUnit: "seconds" }]) {
+      const broken = JSON.parse(JSON.stringify(snapshot));
+      Object.assign(broken.payload.items[0], invalid);
+      expect(() => gatewayV2MessageSchema.parse(broken)).toThrow();
+    }
     expect(snapshot.payload.items[10]).toMatchObject({
       value: 7,
       minimum: 1,

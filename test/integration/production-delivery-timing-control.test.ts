@@ -143,9 +143,24 @@ describe("delivery timing settings live on the server", () => {
     });
     expect(item(payload, "timeoutMs")).toMatchObject({ kind: "duration", storageUnit: "ms" });
     expect(item(payload, "perMinute")).toMatchObject({ kind: "count", storageUnit: "count" });
+    const seconds = { kind: "duration", storageUnit: "s" };
+    const expected: Record<string, { kind: string; storageUnit: string }> = {
+      busyAtLeastPermille: { kind: "ratio", storageUnit: "permille" },
+      recheckSeconds: seconds,
+      timeoutMs: { kind: "duration", storageUnit: "ms" },
+      perMinute: { kind: "count", storageUnit: "count" },
+      reminderMaximumDeferSeconds: seconds,
+      maximumDeferSeconds: seconds,
+      speechFreshSeconds: seconds,
+      motionFreshSeconds: seconds,
+      sleepFreshSeconds: seconds,
+      focusFreshSeconds: seconds,
+      connectivityFreshSeconds: seconds,
+      macPresenceSeconds: seconds,
+    };
+    expect(payload.items).toHaveLength(Object.keys(expected).length);
     for (const entry of payload.items) {
-      expect(["ratio", "duration", "count"]).toContain(entry.kind);
-      expect(["permille", "ms", "s", "count"]).toContain(entry.storageUnit);
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(expected[entry.key]);
     }
   });
 
