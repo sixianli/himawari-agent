@@ -240,6 +240,108 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
         rejects('__PKT_LABEL_UPPER___PACKET_DIRECTORY_UNSAFE', lambda: transport.receive_archive(io.BytesIO(good), loose / 'target', freeze, uid, gid, common))
     case('receiver requires a private 0700 upload parent', unsafe_parent)
 
+    cache_root = root / 'material-cache'
+    entries = cache_root / 'sha256'
+    material = 'materials/immutable.tar.gz'
+    material_sha = sha((packet / material).read_bytes())
+    small = transport.CHUNK
+
+    def spec(fill=(), max_bytes=1 << 30):
+        return {'fill': list(fill), 'minBytes': small, 'maxBytes': max_bytes}
+
+    def receive_cached(archive_bytes, target_name, fill=(), max_bytes=1 << 30):
+        return transport.receive_archive(io.BytesIO(archive_bytes), upload_parent / target_name, freeze, uid, gid, common, cache_root, spec(fill, max_bytes))
+
+    def without(*names):
+        return rewritten(lambda name, payload: [] if name in names else [(name, payload)])
+
+    def stores_large_members():
+        result = receive_cached(good, 'cache-store')
+        stored = entries / material_sha
+        assert result['cache']['stored'] == [material_sha], result
+        assert stored.read_bytes() == (packet / material).read_bytes()
+        assert stat.S_IMODE(stored.stat().st_mode) == 0o600 and stat.S_IMODE(cache_root.stat().st_mode) == 0o700
+        assert not any(name.startswith('.incoming-') for name in os.listdir(entries))
+    case('receiver stores large frozen members in a private content-addressed cache', stores_large_members)
+
+    def fills_from_cache():
+        result = receive_cached(without(material), 'cache-fill', [material])
+        assert result['passed'] and result['cacheFilled'] == [material], result
+        assert (upload_parent / 'cache-fill' / material).read_bytes() == (packet / material).read_bytes()
+        assert stat.S_IMODE((upload_parent / 'cache-fill' / material).stat().st_mode) == 0o640
+    case('receiver fills a declared member from the cache and still checks the whole freeze', fills_from_cache)
+
+    case('receiver still rejects a member that is missing and not declared', lambda: rejects('__PKT_LABEL_UPPER___TRANSPORT_MEMBERS_INCOMPLETE', lambda: receive_cached(without(material, 'steps/run-step.py'), 'cache-undeclared', [material])))
+    case('receiver rejects a declared member that is also streamed', lambda: rejects('__PKT_LABEL_UPPER___TRANSPORT_UNEXPECTED_MEMBER', lambda: receive_cached(good, 'cache-twice', [material])))
+    case('receiver rejects a declared member that is not frozen', lambda: rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_FILL_NOT_FROZEN', lambda: receive_cached(without(material), 'cache-unfrozen', ['materials/other.tar.gz'])))
+
+    def tampered_entry_is_dropped():
+        stored = entries / material_sha
+        data = bytearray(stored.read_bytes())
+        data[-1] ^= 1
+        stored.write_bytes(bytes(data))
+        rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_ENTRY_INVALID', lambda: receive_cached(without(material), 'cache-tampered', [material]))
+        assert not os.path.lexists(stored)
+        result = receive_cached(good, 'cache-refill')
+        assert result['passed'] and stored.read_bytes() == (packet / material).read_bytes()
+    case('a changed cache entry is refused and removed so the next transport sends it in full', tampered_entry_is_dropped)
+
+    def linked_entry_is_dropped():
+        stored = entries / material_sha
+        real = root / 'elsewhere.bin'
+        shutil.copyfile(stored, real)
+        stored.unlink()
+        stored.symlink_to(real)
+        rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_ENTRY_INVALID', lambda: receive_cached(without(material), 'cache-link', [material]))
+        assert not os.path.lexists(stored) and real.exists()
+    case('a cache entry that is a symbolic link is refused and removed', linked_entry_is_dropped)
+
+    case('a declared member missing from the cache fails the transport', lambda: rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_MISS_AFTER_QUERY', lambda: receive_cached(without(material), 'cache-miss', [material])))
+
+    def prunes_old_entries():
+        receive_cached(good, 'cache-prune-seed')
+        old = entries / ('f' * 64)
+        old.write_bytes(b'x' * (2 * small))
+        os.chmod(old, 0o600)
+        os.utime(old, (1, 1))
+        size = (packet / material).stat().st_size
+        result = receive_cached(good, 'cache-prune', max_bytes=size + 1)
+        assert not old.exists() and (entries / material_sha).exists(), result
+        assert result['cache']['removed'] == ['f' * 64]
+    case('the cache drops the oldest entries the current packet does not use once it is over its byte limit', prunes_old_entries)
+
+    def unsafe_cache_directory():
+        os.chmod(cache_root, 0o755)
+        try:
+            result = receive_cached(good, 'cache-unsafe')
+            assert result['passed'] and 'CACHE_DIRECTORY_UNSAFE' in result['cacheStoreError'], result
+            rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_DIRECTORY_UNSAFE', lambda: receive_cached(without(material), 'cache-unsafe-fill', [material]))
+        finally:
+            os.chmod(cache_root, 0o700)
+    case('an unsafe cache directory never blocks a full transport but refuses to fill from it', unsafe_cache_directory)
+
+    def cache_spec_checked():
+        encoded = lambda value: __import__('base64').b64encode(json.dumps(value).encode()).decode()
+        assert transport.cache_spec(encoded(spec([material]))) == spec([material])
+        for broken in ({'fill': ['../x'], 'minBytes': 1, 'maxBytes': 1}, {'fill': [material, material], 'minBytes': 1, 'maxBytes': 1}, {'fill': [], 'minBytes': 0, 'maxBytes': 1}, {'fill': []}):
+            rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_SPEC_INVALID', lambda broken=broken: transport.cache_spec(encoded(broken)))
+        rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_SPEC_INVALID', lambda: transport.cache_spec('not base64!'))
+    case('the cache instructions passed to the receiver are validated', cache_spec_checked)
+
+    def local_side_skips_cached_members():
+        local = load('packet_local_step', packet / 'steps/run-local-step.py')
+        frozen = common.verify_frozen(packet, common.APPROVED_REF, os.getuid())
+        output = io.BytesIO()
+        local.stream_packet(output, frozen, [material])
+        output.seek(0)
+        with tarfile.open(fileobj=output, mode='r:') as archive:
+            names = archive.getnames()
+        assert material not in names and names[0] == 'freeze-manifest.json' and len(names) == len(frozen['members'])
+        relative, remote = local.remote_command('S1_TRANSPORT', frozen, spec([material]))
+        assert transport.cache_spec(__import__('shlex').split(remote)[-1]) == spec([material])
+        assert local.remote_command('S1_TRANSPORT', frozen)[1].endswith(' ' + freeze)
+    case('the local side leaves cached members out of the stream and tells the receiver which ones', local_side_skips_cached_members)
+
     def local_tamper():
         (packet / 'steps/run-step.py').write_text((packet / 'steps/run-step.py').read_text() + '\n')
         before = sorted(logs.glob('*.json'))

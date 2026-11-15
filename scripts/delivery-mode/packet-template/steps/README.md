@@ -45,6 +45,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 - 第一个成员必须是冻结清单，且 SHA 等于参数；
 - 独占新建 `/var/tmp/__PKT_LABEL__-packet-upload/__PKT_DATE__-__PKT_LABEL__-change-packet-01`（root:0700，父目录也必须是 root:0700）；目录已存在就拒绝；
 - 每个文件边写边算 SHA，字节数和 SHA 与清单不符、多出成员、重复成员、路径越界或缺成员都失败；
+- 依赖缓存：包参数 `MATERIAL_CACHE_JSON`（来自实例文件的 `materialCache`）不为空时，包装先经 SSH 只读查一次服务器上的 `/opt/himawari/material-cache/sha256/<SHA>` 里有哪些不小于 `minBytes` 的成员，tar 流里不再放这些成员，并把它们的路径作为命令最后一个参数告诉接收端。接收端只允许这些成员不在流里：从缓存逐个核对大小和 SHA 后复制进上传目录，核对不符就把这条缓存删掉并失败，下次自动整包传；没声明的缺成员照旧失败。传完后把不小于 `minBytes` 的成员存进缓存（root:0700 目录，0600 文件），总量超过 `maxBytes` 时先删本次没用到的最旧条目。缓存目录不安全时，整包传输照常进行，只是不读也不写缓存；
 - 写完后重新读回整个目录，确认与清单完全一致；
 - 在父目录留下 `transport-<时间>-started.json` 和 `-result.json`。失败时保留不完整目录供检查，不自动删除。
 

@@ -24,7 +24,7 @@ MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
 ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
-    'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs',
+    'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs', 'steps/transport-packet.py', 'steps/packet-common.py',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
@@ -612,6 +612,14 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(packet_maker.deploy_failure_choice({}), 'rollback')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
             packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
+
+    def test_material_cache_settings_come_from_the_instance_file(self):
+        self.assertEqual(json.loads(packet_maker.material_cache(INSTANCE)), INSTANCE['materialCache'])
+        self.assertEqual(json.loads(packet_maker.material_cache({'materialCache': {'minBytes': 5, 'maxBytes': 9}})), {'minBytes': 5, 'maxBytes': 9})
+        self.assertIsNone(json.loads(packet_maker.material_cache({})))
+        for broken in ({'minBytes': 0, 'maxBytes': 9}, {'minBytes': 10, 'maxBytes': 9}, {'minBytes': '1', 'maxBytes': 9}, {'minBytes': 1}, {'minBytes': 1, 'maxBytes': 9, 'path': '/tmp'}, 'on'):
+            with self.subTest(broken=broken), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MATERIAL_CACHE_INVALID'):
+                packet_maker.material_cache({'materialCache': broken})
 
     def test_history_comparison_off_lets_a_migration_touch_preserved_tables(self):
         derived = packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30, 'HISTORY_COMPARISON': 'off'}, {'schema': {'current': 29, 'minimumWriter': 29}})

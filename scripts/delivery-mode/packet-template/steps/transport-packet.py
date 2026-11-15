@@ -1,9 +1,12 @@
+import base64
 import datetime
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import tarfile
 import time
@@ -50,7 +53,114 @@ def write_member(archive, member, filename, expected, uid, gid, common):
     require(common.record(filename, uid) == {key: expected[key] for key in ('bytes', 'sha256')}, '__PKT_LABEL_UPPER___TRANSPORT_MEMBER_READBACK_CHANGED:' + member.name)
 
 
-def receive_archive(stream, target, expected_freeze, uid, gid, common):
+def cache_spec(encoded):
+    try:
+        spec = json.loads(base64.b64decode(encoded, validate=True))
+    except ValueError:
+        raise RuntimeError('__PKT_LABEL_UPPER___TRANSPORT_CACHE_SPEC_INVALID') from None
+    require(isinstance(spec, dict) and set(spec) == {'fill', 'minBytes', 'maxBytes'} and isinstance(spec['fill'], list) and all(safe_relative(name) for name in spec['fill']) and len(set(spec['fill'])) == len(spec['fill']) and type(spec['minBytes']) is int and spec['minBytes'] > 0 and type(spec['maxBytes']) is int and spec['maxBytes'] > 0, '__PKT_LABEL_UPPER___TRANSPORT_CACHE_SPEC_INVALID')
+    return spec
+
+
+def cache_directories(root, uid, gid):
+    entries = root / 'sha256'
+    for directory in (root, entries):
+        if not os.path.lexists(directory):
+            directory.mkdir(mode=0o700)
+            os.chown(directory, uid, gid)
+            os.chmod(directory, 0o700)
+        info = directory.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == uid and stat.S_IMODE(info.st_mode) == 0o700 and directory.resolve() == directory, '__PKT_LABEL_UPPER___TRANSPORT_CACHE_DIRECTORY_UNSAFE')
+    return entries
+
+
+def copy_verified(source_descriptor, filename, expected, uid, gid, mode):
+    digest = hashlib.sha256()
+    written = 0
+    with filename.open('xb') as output:
+        os.fchmod(output.fileno(), mode)
+        os.fchown(output.fileno(), uid, gid)
+        while True:
+            chunk = os.read(source_descriptor, CHUNK)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > expected['bytes']:
+                break
+            digest.update(chunk)
+            output.write(chunk)
+        output.flush()
+        os.fsync(output.fileno())
+    return written == expected['bytes'] and digest.hexdigest() == expected['sha256']
+
+
+def fill_from_cache(entries, expected, filename, uid, gid, common):
+    source = entries / expected['sha256']
+    try:
+        before = source.lstat()
+    except FileNotFoundError:
+        raise RuntimeError('__PKT_LABEL_UPPER___TRANSPORT_CACHE_MISS_AFTER_QUERY:' + expected['path']) from None
+    if not (stat.S_ISREG(before.st_mode) and before.st_uid == uid and before.st_nlink == 1 and not stat.S_IMODE(before.st_mode) & 0o077 and before.st_size == expected['bytes']):
+        os.unlink(source)
+        raise RuntimeError('__PKT_LABEL_UPPER___TRANSPORT_CACHE_ENTRY_INVALID:' + expected['path'])
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        require(common.identity(os.fstat(descriptor)) == common.identity(before), '__PKT_LABEL_UPPER___TRANSPORT_CACHE_ENTRY_CHANGED:' + expected['path'])
+        matched = copy_verified(descriptor, filename, expected, uid, gid, 0o640)
+    finally:
+        os.close(descriptor)
+    if not matched:
+        os.unlink(source)
+        raise RuntimeError('__PKT_LABEL_UPPER___TRANSPORT_CACHE_ENTRY_INVALID:' + expected['path'])
+    require(common.record(filename, uid) == {key: expected[key] for key in ('bytes', 'sha256')}, '__PKT_LABEL_UPPER___TRANSPORT_MEMBER_READBACK_CHANGED:' + expected['path'])
+
+
+def store_in_cache(entries, target, members, spec, uid, gid):
+    kept = set()
+    for name, expected in sorted(members.items()):
+        if expected['bytes'] < spec['minBytes']:
+            continue
+        kept.add(expected['sha256'])
+        final = entries / expected['sha256']
+        if os.path.lexists(final):
+            os.utime(final, follow_symlinks=False)
+            continue
+        temporary = entries / ('.incoming-' + expected['sha256'] + '-' + str(os.getpid()))
+        descriptor = os.open(target / name, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            matched = copy_verified(descriptor, temporary, expected, uid, gid, 0o600)
+        finally:
+            os.close(descriptor)
+        if not matched:
+            os.unlink(temporary)
+            raise RuntimeError('__PKT_LABEL_UPPER___TRANSPORT_CACHE_STORE_CHANGED:' + name)
+        os.replace(temporary, final)
+    for name in os.listdir(entries):
+        if name.startswith('.incoming-'):
+            os.unlink(entries / name)
+    present = []
+    for name in os.listdir(entries):
+        info = (entries / name).lstat()
+        present.append((info.st_mtime_ns, name, info.st_size))
+    total = sum(size for mtime, name, size in present)
+    removed = []
+    for mtime, name, size in sorted(present):
+        if total <= spec['maxBytes']:
+            break
+        if name in kept:
+            continue
+        os.unlink(entries / name)
+        total -= size
+        removed.append(name)
+    descriptor = os.open(entries, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return {'stored': sorted(kept), 'removed': removed, 'bytes': total}
+
+
+def receive_members(stream, target, expected_freeze, uid, gid, common, entries, fill):
     require(not os.path.lexists(target), '__PKT_LABEL_UPPER___TRANSPORT_TARGET_NOT_EXCLUSIVE')
     common.directory(target.parent, uid, 0o700)
     with tarfile.open(fileobj=stream, mode='r|') as archive:
@@ -75,6 +185,12 @@ def receive_archive(stream, target, expected_freeze, uid, gid, common):
         os.chmod(target, 0o700)
         common.publish(target / 'freeze-manifest.json', manifest_bytes, uid, gid, 0o640)
         seen = set()
+        for name in fill:
+            require(name in members, '__PKT_LABEL_UPPER___TRANSPORT_CACHE_FILL_NOT_FROZEN')
+            filename = target / name
+            common.make_parents(filename.parent, target, uid, gid, 0o750)
+            fill_from_cache(entries, {**members[name], 'path': name}, filename, uid, gid, common)
+            seen.add(name)
         while True:
             member = archive.next()
             if member is None:
@@ -90,15 +206,38 @@ def receive_archive(stream, target, expected_freeze, uid, gid, common):
     for parent, directories, filenames in os.walk(target):
         common.sync_directory(Path(parent))
     common.sync_directory(target.parent)
-    return {'passed': True, 'target': str(target), 'approvalRef': common.APPROVED_REF, 'freezeSha256': verified['freezeSha256'], 'bindingsSha256': verified['bindingsSha256'], 'members': len(members)}
+    return {'passed': True, 'target': str(target), 'approvalRef': common.APPROVED_REF, 'freezeSha256': verified['freezeSha256'], 'bindingsSha256': verified['bindingsSha256'], 'members': len(members)}, members
 
+
+def receive_archive(stream, target, expected_freeze, uid, gid, common, cache=None, spec=None):
+    if spec is None:
+        return receive_members(stream, target, expected_freeze, uid, gid, common, None, [])[0]
+    try:
+        entries = cache_directories(cache, uid, gid)
+    except RuntimeError as error:
+        require(not spec['fill'], str(error))
+        result = receive_members(stream, target, expected_freeze, uid, gid, common, None, [])[0]
+        result['cacheStoreError'] = str(error)
+        return result
+    lock = os.open(cache / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        result, members = receive_members(stream, target, expected_freeze, uid, gid, common, entries, spec['fill'])
+        result['cacheFilled'] = sorted(spec['fill'])
+        try:
+            result['cache'] = store_in_cache(entries, target, members, spec, uid, gid)
+        except Exception as error:
+            result['cacheStoreError'] = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        return result
+    finally:
+        os.close(lock)
 
 def production_main(expected_freeze, common):
     import pwd
     import shutil
     import socket
     os.umask(0o077)
-    require(sys.argv[1:] == ['--approved-r2l13-__PKT_LABEL__-transport', expected_freeze] and re.fullmatch('[a-f0-9]{64}', expected_freeze) and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.getuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__', '__PKT_LABEL_UPPER___TRANSPORT_EXPLICIT_APPROVAL_REQUIRED')
+    require(sys.argv[1:3] == ['--approved-r2l13-__PKT_LABEL__-transport', expected_freeze] and len(sys.argv) in (3, 4) and re.fullmatch('[a-f0-9]{64}', expected_freeze) and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.getuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__', '__PKT_LABEL_UPPER___TRANSPORT_EXPLICIT_APPROVAL_REQUIRED')
     account = pwd.getpwnam('himawari-prod')
     require((account.pw_uid, account.pw_gid) == (999, 988), '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_ACCOUNT_CHANGED')
     parent = common.UPLOAD.parent
@@ -111,7 +250,7 @@ def production_main(expected_freeze, common):
     prefix = parent / ('transport-' + str(time.time_ns()))
     common.publish(Path(str(prefix) + '-started.json'), (json.dumps(report, indent=2) + '\n').encode(), 0, 0, 0o600)
     try:
-        report.update(receive_archive(sys.stdin.buffer, common.UPLOAD, expected_freeze, 0, 0, common))
+        report.update(receive_archive(sys.stdin.buffer, common.UPLOAD, expected_freeze, 0, 0, common, common.MATERIAL_CACHE, cache_spec(sys.argv[3]) if len(sys.argv) == 4 else None))
         report['passed'] = True
     except Exception as error:
         report['passed'] = False
