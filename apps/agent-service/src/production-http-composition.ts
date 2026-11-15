@@ -71,7 +71,9 @@ import {
   DEVICE_ACCESS_SECRET_PURPOSES,
   type DeviceActionHub,
   type DeviceGatewayAuditFailure,
+  type DeviceNotificationHub,
   type DevicePairingAccess,
+  type DevicePresence,
   DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
@@ -273,6 +275,11 @@ export interface ProductionHttpCompositionOptions {
   readonly deviceActions?: {
     readonly service: DeviceActionService;
     readonly hub: DeviceActionHub;
+  };
+  readonly deviceNotifications?: {
+    readonly hub: DeviceNotificationHub;
+    readonly presence: DevicePresence;
+    readonly settled: (ids: readonly string[]) => Promise<readonly string[]>;
   };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
@@ -1708,6 +1715,18 @@ export async function createProductionHttpComposition(
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
+      ...(options.deviceNotifications
+        ? {
+            notifications: {
+              hub: options.deviceNotifications.hub,
+              presence: options.deviceNotifications.presence,
+              settled: async ({ scope, ids }) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? ((await options.deviceNotifications?.settled(ids)) ?? [])
+                  : [],
+            },
+          }
+        : {}),
       ...(options.deviceActions
         ? {
             actions: {
