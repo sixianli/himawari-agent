@@ -44,7 +44,21 @@ it("defaults the signing variant to the full App Group build in every project-le
   expect(new Set(defaults)).toEqual(new Set(['""']));
 });
 
-it("leaves HIMAWARI_APP_GROUP only at project level so clearing it reaches every target", () => {
-  const all = [...project.matchAll(/HIMAWARI_APP_GROUP = ([^;]*);/gu)];
-  expect(all.length).toBe(2);
+it("covers exactly the five signed targets, each configuration declaring the entitlements key once", () => {
+  expect(new Set(templates.map((t) => t.split("/")[0]))).toEqual(
+    new Set(["iOS", "ShareExtension", "SafariExtension", "Watch", "WatchWidgets"]),
+  );
+  expect([...project.matchAll(/CODE_SIGN_ENTITLEMENTS =/gu)].length).toBe(lines.length);
+});
+
+it("leaves HIMAWARI_APP_GROUP only in the project-level configurations so clearing it reaches every target", () => {
+  const blocks = [...project.matchAll(/buildSettings = \{([\s\S]*?)\n\t\t\t\};/gu)].map(
+    (m) => m[1] ?? "",
+  );
+  const withGroup = blocks.filter((b) => /HIMAWARI_APP_GROUP =/u.test(b));
+  expect(withGroup.length).toBe(2);
+  for (const block of withGroup) {
+    expect(block).toContain("HIMAWARI_ENTITLEMENTS_SUFFIX");
+    expect(block).not.toContain("CODE_SIGN_ENTITLEMENTS");
+  }
 });
