@@ -45,7 +45,7 @@ struct TuningListPage: View {
     }
 
     private func valueText(_ item: TuningItem) -> String {
-        item.isSwitch ? (item.value == 1 ? M.on : M.off) : "\(item.value)" + (item.unit.isEmpty ? "" : " \(item.unit)")
+        item.isSwitch ? (item.value == 1 ? M.on : M.off) : item.text(item.value)
     }
 }
 
@@ -74,12 +74,16 @@ struct TuningEditPage: View {
                         Toggle("", isOn: Binding(get: { current == 1 }, set: { draft = $0 ? 1 : 0 }))
                             .labelsHidden().tint(Color.hmSuccess)
                     } else {
-                        Text("\(current)" + (item.unit.isEmpty ? "" : " \(item.unit)"))
+                        Text(item.text(current))
                             .hmType(TL.value).foregroundStyle(Color.hmText)
-                        Stepper("", value: Binding(get: { current }, set: { draft = $0 }), in: item.minimum...item.maximum, step: item.step)
-                            .labelsHidden()
+                        Stepper(
+                            "",
+                            onIncrement: { draft = item.stepUp(from: current) },
+                            onDecrement: { draft = item.stepDown(from: current) }
+                        )
+                        .labelsHidden()
                     }
-                    Text(M.tuningDefault(item.defaultValue, unit: item.isSwitch || item.unit.isEmpty ? nil : item.unit))
+                    Text(M.tuningDefault(item.isSwitch ? "\(item.defaultValue)" : item.text(item.defaultValue)))
                         .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     if failed {
                         Text(M.tuningSaveFailed).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmDanger)

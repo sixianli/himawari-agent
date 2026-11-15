@@ -277,9 +277,8 @@ enum M {
     static var tuningSave: String { text("保存", ja: "保存", en: "Save") }
     static var tuningRestore: String { text("恢复默认", ja: "初期値に戻す", en: "Restore default") }
     static var tuningSaveFailed: String { text("没能保存", ja: "保存できませんでした", en: "Couldn't save") }
-    static func tuningDefault(_ value: Int, unit: String?) -> String {
-        let tail = unit.map { " \($0)" } ?? ""
-        return text("默认 \(value)\(tail)", ja: "初期値 \(value)\(tail)", en: "Default \(value)\(tail)")
+    static func tuningDefault(_ value: String) -> String {
+        text("默认 \(value)", ja: "初期値 \(value)", en: "Default \(value)")
     }
     static func confirmTuning(_ name: String) -> String {
         text("修改“\(name)”", ja: "「\(name)」を変更", en: "Change \(name)")

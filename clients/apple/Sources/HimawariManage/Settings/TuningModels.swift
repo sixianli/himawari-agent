@@ -59,6 +59,8 @@ public struct TuningItem: Decodable, Sendable, Hashable, Identifiable {
     public let name: String
     public let note: String
     public let unit: String
+    let kind: TuningValueKind?
+    let storageUnit: TuningStorageUnit?
 
     public var id: String { key }
 
@@ -72,7 +74,7 @@ public struct TuningItem: Decodable, Sendable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case key, value, defaultValue, minimum, maximum, overridden, label, description, unit, unitLabel
+        case key, value, defaultValue, minimum, maximum, overridden, label, description, unit, unitLabel, kind, storageUnit
     }
 
     public init(from decoder: Decoder) throws {
@@ -87,6 +89,8 @@ public struct TuningItem: Decodable, Sendable, Hashable, Identifiable {
         note = (try container.decodeIfPresent(LocalizedText.self, forKey: .description))?.value ?? ""
         let label = try container.decodeIfPresent(LocalizedText.self, forKey: .unitLabel)
         unit = label?.value ?? (try? container.decode(LocalizedText.self, forKey: .unit))?.value ?? ""
+        kind = (try? container.decodeIfPresent(String.self, forKey: .kind)).flatMap(TuningValueKind.init(rawValue:))
+        storageUnit = (try? container.decodeIfPresent(String.self, forKey: .storageUnit)).flatMap(TuningStorageUnit.init(rawValue:))
     }
 }
 

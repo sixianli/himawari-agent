@@ -202,7 +202,14 @@ enum ManageDemo {
                 ("maximumDeferSeconds", "其余通知最多扣多久", "其余通知最多往后扣这么久", "秒", 1800, 1800, 0, 86400, true),
             ]
         let items = rows.map { key, label, note, unit, value, def, low, high, overridden in
-            #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
+            let (kind, storage) = switch unit {
+            case "千分比": ("ratio", "permille")
+            case "秒": ("duration", "s")
+            case "毫秒": ("duration", "ms")
+            case "小时": ("duration", "h")
+            default: ("count", "count")
+            }
+            return #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","kind":"\#(kind)","storageUnit":"\#(storage)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
         }
         let enabled = think ? #""enabled":true,"# : ""
         return #"{"payload":{"revision":4,\#(enabled)"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#

@@ -105,7 +105,7 @@ final class SettingsStoreTests: XCTestCase {
         case "files.list.read":
             return files(origin: payloadString(body, "origin") ?? "", before: payloadString(body, "before"))
         case "think.settings.read":
-            return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","overridden":false,"label":{"zh-CN":"排队上限","en":"Queue limit","ja":"待ち行列の上限"},"description":{"zh-CN":"最多同时排几件","en":"Most items waiting at once","ja":"同時に並べられる件数"},"unitLabel":{"zh-CN":"件","en":"items","ja":"件"}},{"key":"unnamed","value":5,"defaultValue":5,"minimum":0,"maximum":9,"unit":"count","overridden":false,"label":{"zh-CN":"","en":"","ja":""},"description":{"zh-CN":"","en":"","ja":""},"unitLabel":{"zh-CN":"","en":"","ja":""}}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
+            return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","kind":"count","storageUnit":"count","overridden":false,"label":{"zh-CN":"排队上限","en":"Queue limit","ja":"待ち行列の上限"},"description":{"zh-CN":"最多同时排几件","en":"Most items waiting at once","ja":"同時に並べられる件数"},"unitLabel":{"zh-CN":"件","en":"items","ja":"件"}},{"key":"unnamed","value":5,"defaultValue":5,"minimum":0,"maximum":9,"unit":"count","overridden":false,"label":{"zh-CN":"","en":"","ja":""},"description":{"zh-CN":"","en":"","ja":""},"unitLabel":{"zh-CN":"","en":"","ja":""}}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
         case "server.status.read":
             return #"{"payload":{"live":true,"ready":false,"status":"not_ready","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         default:
@@ -158,6 +158,47 @@ final class SettingsStoreTests: XCTestCase {
         guard case .object(let first)? = sent[0]["payload"], case .object(let second)? = sent[1]["payload"] else { return XCTFail() }
         XCTAssertEqual(first, ["expectedRevision": .number(4), "key": .string("queueLimit"), "value": .number(30)])
         XCTAssertEqual(second["value"], .null)
+    }
+
+    private func tuningItem(_ unit: String, kind: String?, storage: String?, value: Int, minimum: Int, maximum: Int) throws -> TuningItem {
+        let extra = (kind.map { #","kind":"\#($0)""# } ?? "") + (storage.map { #","storageUnit":"\#($0)""# } ?? "")
+        let json = #"{"key":"k","value":\#(value),"defaultValue":\#(value),"minimum":\#(minimum),"maximum":\#(maximum),"unit":"\#(unit)","overridden":false,"label":{"zh-CN":"名","en":"n","ja":"名"},"description":{"zh-CN":"","en":"","ja":""}\#(extra)}"#
+        return try JSONDecoder().decode(TuningItem.self, from: Data(json.utf8))
+    }
+
+    func testRatioShowsAsPercentAndStepsByFivePercent() throws {
+        let item = try tuningItem("千分比", kind: "ratio", storage: "permille", value: 700, minimum: 501, maximum: 1000)
+        XCTAssertEqual(item.text(700), "70%")
+        XCTAssertEqual(item.text(705), "70.5%")
+        XCTAssertEqual(item.stepUp(from: 700), 750)
+        XCTAssertEqual(item.stepUp(from: 1000), 1000)
+        XCTAssertEqual(item.stepDown(from: 520), 501)
+    }
+
+    func testDurationShowsInTheNaturalUnitAndStepsByThatUnit() throws {
+        let seconds = try tuningItem("秒", kind: "duration", storage: "s", value: 600, minimum: 60, maximum: 86_400)
+        XCTAssertFalse(seconds.text(600).contains("600"))
+        XCTAssertTrue(seconds.text(600).contains("10"))
+        XCTAssertEqual(seconds.stepUp(from: 600), 660)
+        XCTAssertEqual(seconds.stepUp(from: 30), 31)
+        XCTAssertEqual(seconds.stepDown(from: 3600), 3540)
+        XCTAssertEqual(seconds.stepDown(from: 60), 60)
+        let millis = try tuningItem("毫秒", kind: "duration", storage: "ms", value: 4000, minimum: 200, maximum: 10_000)
+        XCTAssertFalse(millis.text(4000).contains("4000"))
+        XCTAssertEqual(millis.stepUp(from: 4000), 5000)
+        XCTAssertEqual(millis.text(250), "250 毫秒")
+        let hours = try tuningItem("小时", kind: "duration", storage: "h", value: 48, minimum: 1, maximum: 8760)
+        XCTAssertEqual(hours.stepUp(from: 48), 72)
+    }
+
+    func testWithoutAKindTheValueIsShownAsTheServerGaveIt() throws {
+        let plain = try tuningItem("件", kind: nil, storage: nil, value: 20, minimum: 1, maximum: 1000)
+        XCTAssertEqual(plain.text(20), "20 件")
+        let unknown = try tuningItem("件", kind: "weight", storage: "kg", value: 20, minimum: 1, maximum: 1000)
+        XCTAssertEqual(unknown.text(20), "20 件")
+        let count = try tuningItem("件", kind: "count", storage: "count", value: 20, minimum: 1, maximum: 1000)
+        XCTAssertEqual(count.text(20), "20 件")
+        XCTAssertEqual(count.stepUp(from: 20), 30)
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
