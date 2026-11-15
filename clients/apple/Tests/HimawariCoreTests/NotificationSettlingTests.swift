@@ -123,7 +123,8 @@ final class FakeSettlement: NotificationSettlementSource, @unchecked Sendable {
         let request = try #require(exchange.requests.first)
         #expect(request.url?.path == "/api/device/v1/notifications/settled")
         #expect(request.httpMethod == "POST")
-        let body = try #require(JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any])
+        let data = try #require(request.httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(body["ids"] as? [String] == ["n1", "n2"])
     }
 }
