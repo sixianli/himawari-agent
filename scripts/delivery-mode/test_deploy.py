@@ -527,10 +527,10 @@ class DeployHarness(unittest.TestCase):
         root = Path(self.directory.name)
         self.scripts = root / 'scripts'
         self.scripts.mkdir()
-        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py', 'sandbox-command-links.py', 'embedding-artifact-check.py'):
+        for name in ('deploy.sh', 'deploy-preflight.py', 'deploy-target-paths.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py', 'script-checkout-gate.py', 'sandbox-command-links.py', 'embedding-artifact-check.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
-        (self.scripts / 'release-cleanup.py').write_text('import sys\nopen(' + repr(str(root / 'calls')) + ', "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\n')
+        (self.scripts / 'release-cleanup.py').write_text('import os, sys\nfrom pathlib import Path\ncalls = Path(' + repr(str(root / 'calls')) + ')\nfirst = not calls.exists() or "cleanup-" not in calls.read_text()\nopen(calls, "a").write("cleanup-" + sys.argv[2] + "\\n")\nopen(' + repr(str(root / 'keeps')) + ', "a").write(" ".join(sys.argv[3:]) + "\\n")\nsys.exit(int(os.environ.get("FAKE_CLEANUP_BEFORE_EXIT" if first else "FAKE_CLEANUP_AFTER_EXIT", "0")))\n')
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
         (root / 'disk-hygiene').mkdir()
         shutil.copy(HERE.parent / 'disk-hygiene' / 'prune-rebuildable.py', root / 'disk-hygiene' / 'prune-rebuildable.py')
@@ -784,6 +784,18 @@ class ProductionCleanupFlowTest(DeployHarness):
         self.calls.unlink()
         self.deploy_with_cleanup(FAKE_FAIL_AT='S7_SWITCH_START')
         self.assertEqual((self.calls.parent / 'keeps').read_text().split('\n')[:-1], ['1', '1'])
+
+    def test_target_paths_left_after_the_cleanup_stop_the_deploy_before_the_preflight(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_BEFORE_EXIT='3')
+        self.assertEqual((code, result['result'], result['stoppedAt'], calls), (4, 'target-paths-left', 'PREFLIGHT', ['cleanup-apply']))
+
+    def test_other_cleanup_failures_before_the_preflight_do_not_stop_the_deploy(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_BEFORE_EXIT='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_target_paths_left_after_a_passed_deploy_do_not_change_its_result(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_AFTER_EXIT='3')
+        self.assertEqual((code, result['result']), (0, 'passed'))
 
     def test_failure_before_the_service_stop_cleans_the_failed_attempt(self):
         code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')

@@ -13,7 +13,15 @@ exec > >(tee -a "$log") 2>&1
 
 cleanup() {
   echo "DEPLOY_CLEANUP_START $1 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  /usr/bin/python3 -I "$here/release-cleanup.py" "$packet" apply "$2" || echo "DEPLOY_CLEANUP_FAILED $1: the deployment result is unchanged; run python3 $here/release-cleanup.py $packet plan to see what is left" >&2
+  /usr/bin/python3 -I "$here/release-cleanup.py" "$packet" apply "$2"
+  code=$?
+  if [[ "$code" -eq 3 && "$1" == before ]]; then
+    echo "DEPLOY_CLEANUP_TARGET_PATHS_LEFT: paths this release needs are held by the serving release, a running process or the database (see CLEANUP_TARGET_PATH_LEFT above); the running release was not changed" >&2
+    result target-paths-left PREFLIGHT 4
+  fi
+  if [[ "$code" -ne 0 ]]; then
+    echo "DEPLOY_CLEANUP_FAILED $1: the deployment result is unchanged; run python3 $here/release-cleanup.py $packet plan to see what is left" >&2
+  fi
 }
 
 result() {

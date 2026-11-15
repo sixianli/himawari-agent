@@ -86,7 +86,7 @@ def serving(plan):
     paths = binding['paths']
     if paths['newPrefix'] != prefix or paths['newOperations'] != operations:
         fail('CLEANUP_SERVING_BINDING_MISMATCH')
-    return {'prefix': prefix, 'operations': operations, 'rollbackPrefix': paths['oldPrefix'], 'stage': str(Path(paths['transportRoot']).parent), 'evidence': paths['evidenceRoot']}
+    return {'prefix': prefix, 'operations': operations, 'rollbackPrefix': paths['oldPrefix'], 'stage': str(Path(paths['transportRoot']).parent), 'evidence': paths['evidenceRoot'], 'qualification': binding['service'].get('newQualificationEvidenceRoot')}
 
 
 def configuration_text(plan):
@@ -253,9 +253,7 @@ def cleanup(plan, apply, references, stamp):
             keep(target, 'not-a-directory')
         elif in_use(target):
             keep(target, in_use(target))
-        elif os.listdir(target):
-            keep(target, 'qualification-not-empty')
-        else:
+        elif not os.listdir(target):
             remove(target, 'empty-qualification-leftover')
     preserved_root = Path(plan['archiveRoot']) / 'failed-acceptance'
     for path in children(preserved_root)[:-plan.get('keepFailedAcceptance', 2)]:
@@ -315,8 +313,47 @@ def cleanup(plan, apply, references, stamp):
             else:
                 remove(path, 'old-state-copy')
 
+    clear_target_paths(plan, current, result, named_by_database, in_use, remove, keep, apply, stamp)
     result['freedBytes'] = sum(item['bytes'] for item in result['deleted'] + result['trimmed'])
     return result
+
+
+def valid_target_path(path, parents):
+    return os.path.isabs(path) and os.path.normpath(path) == path and str(Path(path).parent) in parents and Path(path).name not in ('', '.', '..')
+
+
+def clear_target_paths(plan, current, result, named_by_database, in_use, remove, keep, apply, stamp):
+    parents = set(plan['targetParents'])
+    if any(not os.path.isabs(parent) or os.path.normpath(parent) != parent or parent == '/' for parent in parents):
+        fail('CLEANUP_TARGET_PARENT_INVALID')
+    handled = {item['path'] for item in result['deleted']} | {item['from'] for item in result['renamed']}
+    protected = {current['prefix']: 'serving', current['operations']: 'serving', current['stage']: 'serving', current['evidence']: 'serving', current['rollbackPrefix']: 'rollback-target'}
+    if current.get('qualification'):
+        protected[current['qualification']] = 'serving'
+    failed_root = Path(plan['archiveRoot']) / 'failed-attempts'
+    result['targetPathsLeft'] = []
+    for path in plan['targetPaths']:
+        if not valid_target_path(path, parents):
+            fail('CLEANUP_TARGET_PATH_INVALID')
+        if path in handled or not os.path.lexists(path):
+            continue
+        if os.path.islink(path) or not os.path.isdir(path):
+            reason = 'not-a-directory'
+        else:
+            reason = protected.get(path) or in_use(path) or ('named-by-database:' + named_by_database[path] if path in named_by_database else None)
+        if reason:
+            keep(path, reason)
+            result['targetPathsLeft'].append({'path': path, 'reason': reason})
+            continue
+        destination = str(failed_root / stamp) + str(Path(path).parent)
+        result['archived'] += archive_small_files(path, destination, plan['smallFileBytes'], apply)
+        remove(path, 'failed-attempt-target-path')
+    attempts = children(failed_root)
+    total = 0
+    for position, path in enumerate(sorted(attempts, reverse=True)):
+        total += allocated(path)
+        if position >= plan['keepFailedAttempts'] or (position > 0 and total > plan['failedAttemptBytes']):
+            remove(path, 'old-failed-attempt')
 
 
 def stale_transports(freeze_sha, own_pid, proc_root='/proc'):
