@@ -203,7 +203,7 @@ class InstallScriptTest(unittest.TestCase):
         child = self.run_script("install", stdin=PING + "\n")
         self.assertEqual(child.returncode, 0, child.stderr)
         self.assertIn("HEARTBEAT_INSTALLED", child.stdout)
-        url = self.root / "etc/himawari/healthcheck-url"
+        url = self.root / "etc/himawari-heartbeat/healthcheck-url"
         self.assertEqual(url.read_text(), PING + "\n")
         self.assertEqual(stat.S_IMODE(url.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE((self.root / "usr/local/sbin/himawari-heartbeat").stat().st_mode), 0o755)
@@ -215,6 +215,19 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(self.calls.read_text().splitlines(), ["daemon-reload", "enable --now himawari-heartbeat.timer"])
         self.assertNotIn(PING, child.stdout + child.stderr)
 
+    def test_url_file_lives_in_a_directory_only_root_owns_and_the_old_copy_is_removed(self):
+        self.assertEqual(heartbeat.DEFAULT_URL_FILE, "/etc/himawari-heartbeat/healthcheck-url")
+        self.assertFalse(heartbeat.DEFAULT_URL_FILE.startswith("/etc/himawari/"))
+        legacy = self.root / "etc/himawari/healthcheck-url"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(PING + "\n")
+        self.assertEqual(self.run_script("install", stdin=PING + "\n").returncode, 0)
+        self.assertFalse(legacy.exists())
+        self.assertEqual(stat.S_IMODE((self.root / "etc/himawari-heartbeat").stat().st_mode), 0o700)
+        service = (self.root / "etc/systemd/system/himawari-heartbeat.service").read_text()
+        self.assertIn("CapabilityBoundingSet=\n", service)
+        self.assertNotIn("/etc/himawari/", service)
+
     def test_install_refuses_an_invalid_url_and_changes_nothing(self):
         for text in ("", "https://example.com/x\n", "http://hc-ping.com/x\n"):
             child = self.run_script("install", stdin=text)
@@ -225,13 +238,13 @@ class InstallScriptTest(unittest.TestCase):
     def test_install_is_idempotent_and_keep_url_keeps_the_stored_url(self):
         self.run_script("install", stdin=PING + "\n")
         self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
-        self.assertEqual((self.root / "etc/himawari/healthcheck-url").read_text(), PING + "\n")
+        self.assertEqual((self.root / "etc/himawari-heartbeat/healthcheck-url").read_text(), PING + "\n")
         self.assertEqual(self.run_script("install", stdin="https://hc-ping.com/newkey\n").returncode, 0)
-        self.assertEqual((self.root / "etc/himawari/healthcheck-url").read_text(), "https://hc-ping.com/newkey\n")
+        self.assertEqual((self.root / "etc/himawari-heartbeat/healthcheck-url").read_text(), "https://hc-ping.com/newkey\n")
 
     def test_keep_url_repairs_loose_permissions_on_the_stored_url(self):
         self.run_script("install", stdin=PING + "\n")
-        url = self.root / "etc/himawari/healthcheck-url"
+        url = self.root / "etc/himawari-heartbeat/healthcheck-url"
         url.chmod(0o644)
         self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
         self.assertEqual(stat.S_IMODE(url.stat().st_mode), 0o600)
@@ -252,14 +265,14 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(self.run_script("remove").returncode, 0)
         self.assertFalse((self.root / "etc/systemd/system/himawari-heartbeat.timer").exists())
         self.assertFalse((self.root / "usr/local/sbin/himawari-heartbeat").exists())
-        self.assertTrue((self.root / "etc/himawari/healthcheck-url").exists())
+        self.assertTrue((self.root / "etc/himawari-heartbeat/healthcheck-url").exists())
         self.assertEqual(self.run_script("remove", "--purge").returncode, 0)
-        self.assertFalse((self.root / "etc/himawari/healthcheck-url").exists())
+        self.assertFalse((self.root / "etc/himawari-heartbeat/healthcheck-url").exists())
 
     def test_installed_script_runs_against_the_stored_url(self):
         self.run_script("install", stdin=PING + "\n")
         installed = self.root / "usr/local/sbin/himawari-heartbeat"
-        child = subprocess.run(["python3", "-I", str(installed), "--url-file", str(self.root / "etc/himawari/healthcheck-url"), "--check-url-file"], capture_output=True, text=True, check=False)
+        child = subprocess.run(["python3", "-I", str(installed), "--url-file", str(self.root / "etc/himawari-heartbeat/healthcheck-url"), "--check-url-file"], capture_output=True, text=True, check=False)
         self.assertEqual((child.returncode, child.stdout.strip()), (0, "HEARTBEAT_URL_OK"))
 
 
