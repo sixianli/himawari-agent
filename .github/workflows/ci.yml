@@ -304,6 +304,8 @@ jobs:
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 安装工具测试用的 Chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
         run: .ci-output/tools/bin/node scripts/ci/run.mjs --check tooling --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check
       - name: 核验公开输出白名单
