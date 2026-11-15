@@ -549,6 +549,18 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(packet_maker.added_column_backfills('other.sql', sql, ['threads']), [])
         self.assertEqual(packet_maker.added_column_backfills(name, sql, ['messages']), [])
         self.assertEqual(packet_maker.history_ignored_columns(), {'thread_origin': {'threads': ('origin',)}})
+        with unittest.mock.patch.dict(packet_maker.ADDED_COLUMN_BACKFILLS, {'0099_old_style.sql': (hashlib.sha256(sql.strip().encode()).hexdigest(), {'threads': 'origin'})}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ADDED_COLUMN_BACKFILL_NAME_INVALID'):
+                packet_maker.added_column_backfills('0099_old_style.sql', sql, ['threads'])
+
+    def test_history_fixtures_pass_in_a_packet_whose_ledger_applies_thread_origin(self):
+        ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
+        for packet in (self.render(MIGRATION_LEDGER=ledger), self.render()):
+            scratch = self.root / ('fixture-temp-' + packet.name)
+            scratch.mkdir()
+            result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):

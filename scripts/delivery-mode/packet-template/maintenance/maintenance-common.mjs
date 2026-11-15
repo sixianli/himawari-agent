@@ -785,7 +785,11 @@ export const currentSchema = __PKT_CURRENT_SCHEMA__;
 export const targetSchema = __PKT_TARGET_SCHEMA__;
 export const migrationExpectedLedger = Object.freeze(__PKT_MIGRATION_LEDGER__.map((row) => Object.freeze(row)));
 export const addedColumnBackfills = Object.freeze({ thread_origin: Object.freeze({ threads: Object.freeze(["origin"]) }) });
-export const historyIgnoredColumnsFor = (ledger) => Object.freeze(Object.assign({}, ...ledger.map((row) => addedColumnBackfills[row.name] ?? {})));
+export function historyIgnoredColumnsFor(ledger) {
+  const merged = {};
+  for (const row of ledger) for (const [table, columns] of Object.entries(addedColumnBackfills[row.name] ?? {})) merged[table] = [...new Set([...(merged[table] ?? []), ...columns])];
+  return Object.freeze(Object.fromEntries(Object.entries(merged).map(([table, columns]) => [table, Object.freeze(columns)])));
+}
 export const historyIgnoredColumns = historyIgnoredColumnsFor(migrationExpectedLedger);
 export const migrationComparedSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
 

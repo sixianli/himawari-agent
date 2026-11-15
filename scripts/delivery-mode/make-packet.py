@@ -192,7 +192,10 @@ def added_column_backfills(file_name, sql, touched):
     digest, columns = ADDED_COLUMN_BACKFILLS.get(file_name, (None, {}))
     if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
         return []
-    ignored = history_ignored_columns().get(TIMESTAMP_MIGRATION.fullmatch(file_name).group(2), {})
+    named = TIMESTAMP_MIGRATION.fullmatch(file_name)
+    if not named:
+        refuse('PACKET_ADDED_COLUMN_BACKFILL_NAME_INVALID', file_name)
+    ignored = history_ignored_columns().get(named.group(2), {})
     return [table for table in touched if table in columns and columns[table] in ignored.get(table, ())]
 
 
