@@ -1,0 +1,1 @@
+{"id": "18", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|18|找不到|-|云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）|-", "outcome": "model-wrong", "evidenceFile": "scripts/ci/merge-queue.mjs", "evidence": "fetchPull: (number) => fetchRef(`refs/pull/${number}/head`, `refs/mq/pull/${number}`)"}
