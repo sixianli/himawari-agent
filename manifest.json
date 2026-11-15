@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "pr": 555,
+  "batch": "undo-client",
+  "files": [
+    {
+      "path": "01-today-device-actions-dark.png",
+      "bytes": 575020,
+      "sha256": "b11532a2ab496e6c6d13816c5e686e30b2b9347290406e649855c22b808febf1"
+    },
+    {
+      "path": "01-today-device-actions-light.png",
+      "bytes": 794475,
+      "sha256": "d4b2d0a7f38c387f2af49884a115b9a0f2d10b155bc9767423edbc4a59dae8d8"
+    }
+  ]
+}
