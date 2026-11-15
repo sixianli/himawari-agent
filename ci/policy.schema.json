@@ -81,6 +81,29 @@
                 },
                 "browser": {
                   "enum": ["chromium", "firefox", "webkit"]
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "shard": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["index", "count"],
+                  "properties": {
+                    "index": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 2
+                    }
+                  }
                 }
               }
             },

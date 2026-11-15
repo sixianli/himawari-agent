@@ -351,7 +351,9 @@ export async function runCheck({
           snapshot,
         ]);
       const measuredProjects = measure ? coverageProjects : [];
-      const plainProjects = check.projects.filter((id) => !measuredProjects.includes(id));
+      const plainProjects = (measure ? check.projects : (member.projects ?? check.projects)).filter(
+        (id) => !measuredProjects.includes(id),
+      );
       const related = measure ? new Map() : relatedScope(plainProjects);
       let measuredCounts;
       const collectCoverage = async () => {
@@ -431,6 +433,7 @@ export async function runCheck({
             context,
             projects: plainProjects,
             related,
+            shard: measure ? undefined : member.shard,
             remainingBudgetMs: check.timeoutMinutes * 60_000 - (performance.now() - started),
           });
         } finally {
@@ -530,9 +533,10 @@ export async function runCheck({
         process.env = previous;
       }
     }
+    const memberProjects = member.projects ?? check.projects;
     const allRelatedEmpty =
-      check.projects.length > 0 &&
-      check.projects.every((id) => result.relatedProjects?.includes(id)) &&
+      memberProjects.length > 0 &&
+      memberProjects.every((id) => result.relatedProjects?.includes(id)) &&
       result.counts.files === 0;
     if (
       (!allRelatedEmpty && (result.counts.files < 1 || result.counts.executed < 1)) ||

@@ -40,6 +40,8 @@ import {
   IMPORT_DUPLICATE_RANGES,
   type ImportDuplicateConfiguration,
   type ImportDuplicateTuning,
+  THINK_WORTH_DEFAULTS,
+  type ThinkWorthConfiguration,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
@@ -1395,12 +1397,45 @@ function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["th
     maxAttempts: [1, 20],
     summaryCharacters: [100, 4000],
   } as const;
-  rejectUnknown(input, Object.keys(ranges), field);
+  rejectUnknown(input, [...Object.keys(ranges), "worth"], field);
   const parsed: Record<string, number> = {};
   for (const [key, [low, high]] of Object.entries(ranges)) {
     if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
   }
-  return Object.freeze(parsed);
+  return Object.freeze({
+    ...parsed,
+    ...(input["worth"] === undefined ? {} : { worth: parseThinkWorth(input["worth"]) }),
+  });
+}
+
+function parseThinkWorth(value: unknown): ThinkWorthConfiguration {
+  const field = "configuration.runPolicy.thinkInbox.worth";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["model", "secretRef", "yesAtLeastPermille", "noAtMostPermille", "requestTimeoutMs"],
+    field,
+  );
+  const yesAtLeastPermille =
+    input["yesAtLeastPermille"] === undefined
+      ? THINK_WORTH_DEFAULTS.yesAtLeastPermille
+      : integer(input["yesAtLeastPermille"], `${field}.yesAtLeastPermille`, 501, 1000);
+  const noAtMostPermille =
+    input["noAtMostPermille"] === undefined
+      ? THINK_WORTH_DEFAULTS.noAtMostPermille
+      : integer(input["noAtMostPermille"], `${field}.noAtMostPermille`, 0, 499);
+  if (noAtMostPermille >= yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    yesAtLeastPermille,
+    noAtMostPermille,
+    requestTimeoutMs:
+      input["requestTimeoutMs"] === undefined
+        ? THINK_WORTH_DEFAULTS.requestTimeoutMs
+        : integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 500, 120_000),
+  });
 }
 
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
@@ -2205,6 +2240,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       runPolicy.importDuplicates.secretRef,
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
+    );
+  if (runPolicy?.thinkInbox?.worth)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.thinkInbox.worth.secretRef,
+      "model-auth",
+      "configuration.runPolicy.thinkInbox.worth.secretRef",
     );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(

@@ -100,11 +100,30 @@
       "timeoutMinutes": 60,
       "members": [
         {
-          "key": "default",
+          "key": "integration-1",
           "runner": "ci-vps",
           "os": "linux",
           "arch": "x64",
-          "node": "22.22.3"
+          "node": "22.22.3",
+          "projects": ["integration"],
+          "shard": { "index": 1, "count": 2 }
+        },
+        {
+          "key": "integration-2",
+          "runner": "ci-vps",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3",
+          "projects": ["integration"],
+          "shard": { "index": 2, "count": 2 }
+        },
+        {
+          "key": "others",
+          "runner": "ci-vps",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3",
+          "projects": ["unit", "contracts", "e2e", "pi-compat"]
         }
       ],
       "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],

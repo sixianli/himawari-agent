@@ -38,6 +38,7 @@ export * from "./identity-gateway.js";
 export * from "./local-onnx-embedding.js";
 export * from "./memory-import-duplicate-decision.js";
 export * from "./owner-intent-decision.js";
+export * from "./think-worth-decision.js";
 export * from "./paired-device-service.js";
 export * from "./payload-protector.js";
 export * from "./payload-uds-transport.js";

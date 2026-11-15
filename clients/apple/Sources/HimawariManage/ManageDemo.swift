@@ -12,6 +12,7 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case ruleDetail = "18-memory-more-3-rule-detail"
     case settings = "08-settings"
     case device = "19-settings-more-1-device"
+    case deviceAbilities = "19-settings-more-1-abilities"
     case addDevice = "19-settings-more-2-add-device"
     case addDeviceAsking = "19-settings-more-3-new-device"
     case addDeviceExpired = "19-settings-more-4-code-expired"
@@ -45,6 +46,8 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore()) {}
         case .device:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.device(ManageDemo.macId)]) {}
+        case .deviceAbilities:
+            SettingsRootView(store: ManageDemo.settingsStore(), actions: .demo(), path: [.device(ManageDemo.phoneId)]) {}
         case .capabilities:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.capabilities]) {}
         case .files:
