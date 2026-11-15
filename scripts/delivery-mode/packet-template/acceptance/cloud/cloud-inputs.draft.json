@@ -119,7 +119,7 @@
   "evidenceRoot": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/acceptance",
   "cleanupHelper": {
     "path": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet/acceptance/helpers/check-p5-scratch-cleanup.py",
-    "sha256": "4dd065f51420a0cb63911f62e37dbda95f15f8c5afa2b66327007e3afe9f4bb9"
+    "sha256": "172b94f4f56a257c76d64a5e4fff076ca9cfa129635f2f6a5e0352192b5213ef"
   },
   "bwrapPaths": {
     "srt": "/usr/bin/bwrap",

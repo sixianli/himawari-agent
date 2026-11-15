@@ -12,6 +12,8 @@
     "packages/runtime-sandbox/scripts/probe-network-boundary.mjs": 1,
     "packages/runtime-sandbox/scripts/probe-public-search.mjs": 1,
     "packages/runtime-sandbox/scripts/probe-workspace-access.mjs": 1,
+    "packages/testing/src/read-only-toolchain.mjs": 1,
+    "packages/testing/test/read-only-toolchain.unit.test.ts": 9,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-authorized-network.mjs": 1,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-foreground.mjs": 1,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-linux-worker-loss.mjs": 1,

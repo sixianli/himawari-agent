@@ -29,7 +29,7 @@ export const EXECUTION_WORKER_SERVICE_ERROR_CODES = Object.freeze({
   STARTUP_TIMEOUT: "WORKER_STARTUP_TIMEOUT",
 } as const);
 
-const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = 45_000;
+const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = 105_000;
 const DEFAULT_STARTUP_RETRY_DELAY_MS = 50;
 
 export type ExecutionWorkerServiceDependencies = Readonly<{

@@ -40,6 +40,7 @@ import {
   RestrictedSecretFileSource,
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
+import { resolveReadOnlyToolchainPaths } from "@himawari-agent/testing/read-only-toolchain";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import Database from "better-sqlite3";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
@@ -1590,15 +1591,9 @@ async function writeCodingSnapshot(input: {
   const metadata = await stat(input.workspace);
   const now = new Date().toISOString();
   const supportedExecutions = [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }];
-  const readOnlyToolchainPaths = [
-    ...new Set(
-      await Promise.all(
-        productPathToolchainPaths({ platform: process.platform, runtimeRoot, executable }).map(
-          (entry) => realpath(entry),
-        ),
-      ),
-    ),
-  ];
+  const readOnlyToolchainPaths = await resolveReadOnlyToolchainPaths(
+    productPathToolchainPaths({ platform: process.platform, runtimeRoot, executable }),
+  );
   const evidenceDigest = createHash("sha256")
     .update("product-path-test-qualification-not-production")
     .digest("hex");

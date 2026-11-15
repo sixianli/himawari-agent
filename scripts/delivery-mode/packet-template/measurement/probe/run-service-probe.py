@@ -33,26 +33,38 @@ helper = base.parents[1] / 'acceptance/helpers/check-p5-scratch-cleanup.py'
 if helper.resolve() != helper or helper.is_symlink() or not helper.is_file():
     raise RuntimeError('BOUND_CLEANUP_HELPER_REQUIRED')
 registry = evidence / 'owned-processes.json'
-record = {'schema': 'himawari-__PKT_LABEL__-service-read-run.v1', 'profile': 'hermes-rehearsal' if rehearsal else 'production-service-environment', 'systemdPropertiesProven': False, 'passed': False, 'errors': [], 'rootFreeBeforeBytes': shutil.disk_usage('/').free, 'scratchCleanupPending': True, 'environment': {'uid': os.getuid(), 'gid': os.getgid(), 'HOME': os.environ.get('HOME'), 'PATH': os.environ.get('PATH'), 'TMPDIR': os.environ.get('TMPDIR'), 'umask': '0022', 'protection': protection}, 'runtime': str(runtime), 'nodeSha256': hashlib.sha256(node.read_bytes()).hexdigest()}
+record = {'schema': 'himawari-__PKT_LABEL__-service-read-run.v1', 'profile': 'hermes-rehearsal' if rehearsal else 'production-service-environment', 'systemdPropertiesProven': False, 'passed': False, 'errors': [], 'resourceSamplingWarnings': [], 'rootFreeBeforeBytes': shutil.disk_usage('/').free, 'scratchCleanupPending': True, 'environment': {'uid': os.getuid(), 'gid': os.getgid(), 'HOME': os.environ.get('HOME'), 'PATH': os.environ.get('PATH'), 'TMPDIR': os.environ.get('TMPDIR'), 'umask': '0022', 'protection': protection}, 'runtime': str(runtime), 'nodeSha256': hashlib.sha256(node.read_bytes()).hexdigest()}
 scratch = None
 monitor_stop = threading.Event()
 peak = 0
 lowest = record['rootFreeBeforeBytes']
 
+def file_bytes(path):
+    try:
+        return path.lstat().st_size
+    except FileNotFoundError:
+        return 0
+
+def tree_bytes(directory):
+    return sum(file_bytes(Path(parent) / name) for parent, directories, names in os.walk(directory) for name in names)
+
 def sample():
     global peak, lowest
-    size = sum((Path(parent) / name).lstat().st_size for parent, directories, names in os.walk(scratch) for name in names) if scratch and scratch.exists() else 0
+    size = tree_bytes(scratch) if scratch and scratch.exists() else 0
     free = shutil.disk_usage('/').free
     peak, lowest = max(peak, size), min(lowest, free)
     with (evidence / 'resources.jsonl').open('a') as output:
         output.write(json.dumps({'at': time.time(), 'scratchBytes': size, 'rootFreeBytes': free}) + '\n')
 
+def sample_or_warn():
+    try:
+        sample()
+    except Exception as error:
+        record['resourceSamplingWarnings'].append({'phase': 'resource-sampling', 'type': type(error).__name__, 'message': str(error)})
+
 def observe():
     while not monitor_stop.wait(1):
-        try:
-            sample()
-        except Exception as error:
-            record['errors'].append({'phase': 'resource-sampling', 'type': type(error).__name__})
+        sample_or_warn()
 
 try:
     scratch = Path(subprocess.check_output(['/usr/bin/python3', '-I', str(helper), '--create-scratch', '--evidence', str(evidence), '--owned-processes', str(registry), '--controller-pid', str(os.getpid())], text=True, timeout=15).strip())
@@ -99,7 +111,7 @@ finally:
     if 'observer' in locals():
         observer.join(timeout=5)
     if scratch:
-        sample()
+        sample_or_warn()
         info = scratch.lstat()
         if (info.st_dev, info.st_ino, info.st_uid) != scratch_identity:
             record['errors'].append({'phase': 'cleanup', 'code': 'SCRATCH_IDENTITY_CHANGED'})
@@ -121,7 +133,7 @@ finally:
     record['scratchPeakBytes'] = peak
     record['rootLowestFreeBytes'] = lowest
     record['rootFreeAfterBytes'] = shutil.disk_usage('/').free
-    record['retainedEvidenceBytes'] = sum((Path(parent) / name).lstat().st_size for parent, directories, names in os.walk(evidence) for name in names)
+    record['retainedEvidenceBytes'] = tree_bytes(evidence)
     record['rootFreeShortfallBytes'] = record['rootFreeBeforeBytes'] - record['rootFreeAfterBytes']
     record['passed'] = record['passed'] and not record['errors'] and not record['scratchCleanupPending']
     target = evidence / 'probe-run.json'
