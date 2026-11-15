@@ -9,21 +9,26 @@ import {
   INCREMENT_END,
   incrementRecordValid,
   parseIncrementConfig,
+  shadowCommand,
   shadowRunsDone,
   toolSummary,
   toolSummaryValid,
 } from "../../scripts/model-review/increment.mjs";
 import {
+  budgetCheck,
   buildPrompt,
   dailySpend,
+  linkedLedgerRecords,
   parseArgs,
   parseUsage,
   planIncrement,
   rawDir,
   resultLine,
   reviewQuestions,
+  withIncrement,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
+  backfillIncrements,
   bucketLabel,
   bucketStats,
   renderCsv,
@@ -213,6 +218,63 @@ describe("increment scope from real git history", () => {
       expect(plan(repo, previous, head, { promptBytes: 99990 }).record.fallback).toBe("too-large");
     });
   });
+
+  it("[ADR 0280] falls back when main and the PR share no merge base", () => {
+    sandbox(({ repo, git, write, commit, previous }) => {
+      git("checkout", "--quiet", "--orphan", "unrelated");
+      git("rm", "-rq", "--cached", ".");
+      write("other.txt", "x\n");
+      git("add", "other.txt");
+      git("commit", "--quiet", "-m", "unrelated root");
+      git("checkout", "--quiet", "-f", "pr");
+      write("pr.txt", "a\nb\n");
+      const head = commit("change");
+      expect(plan(repo, previous, head, { mainRef: "unrelated" }).record.fallback).toBe(
+        "merge-base-failed",
+      );
+    });
+  });
+
+  it("[ADR 0280] inlines every file that fits once the truncation list shrinks", () => {
+    sandbox(({ repo, write, commit, previous }) => {
+      for (let index = 0; index < 3; index += 1)
+        write(`mid-${index}.txt`, `${"y".repeat(60)}\n`.repeat(15));
+      const head = commit("three files");
+      const full = plan(repo, previous, head);
+      expect(full.record.truncated).toBe(false);
+      const tight = plan(repo, previous, head, {
+        promptBytes: 100000 - 1 - Buffer.byteLength(full.block),
+      });
+      expect(tight.record.truncated).toBe(false);
+      expect(tight.block).toBe(full.block);
+    });
+  });
+
+  it("[ADR 0280] leaves plan-claims records out of the increment like the merge check does", () => {
+    sandbox(({ repo, write, commit, previous }) => {
+      write(".agents/reviews/claims-x/usage.jsonl", "{}\n");
+      const head = commit("claims record");
+      expect(plan(repo, previous, head).empty).toBeUndefined();
+      expect(
+        plan(repo, previous, head, {
+          skip: () => new Set([".agents/reviews/claims-x/usage.jsonl"]),
+        }),
+      ).toEqual({ empty: true });
+    });
+  });
+
+  it("[ADR 0280] falls back instead of failing when the scoped prompt passes the limit", () => {
+    const planned = { record: { files: 1 }, block: "B" };
+    const prompts = { m: "old" };
+    const big = withIncrement({
+      planned,
+      prompts,
+      promptsWith: () => ({ m: "x".repeat(100001) }),
+    });
+    expect(big).toEqual({ planned: { record: { fallback: "too-large" }, block: null }, prompts });
+    const fits = withIncrement({ planned, prompts, promptsWith: () => ({ m: "new" }) });
+    expect(fits).toEqual({ planned, prompts: { m: "new" } });
+  });
 });
 
 describe("increment prompt", () => {
@@ -280,6 +342,8 @@ describe("increment ledger fields", () => {
       { toolSummary: { byTool: { read: -1 }, topReads: [] } },
       { toolSummary: { byTool: {}, topReads: [["a\nb", 1]] } },
       { toolSummary: { byTool: {}, topReads: [["a", 0]] } },
+      { toolSummary: { byTool: {}, topReads: [["a\u0007", 1]] } },
+      { toolSummary: { byTool: { "Bad Tool!": 1 }, topReads: [] } },
       { shadow: false },
     ];
     for (const extra of bad)
@@ -392,9 +456,69 @@ describe("shadow full review", () => {
       const day = dailySpend(repo, "2026-11-15");
       expect(day.total).toBeCloseTo(0.17);
       expect(day.items.map((item) => item.key)).toEqual(["pr-7", "pr-7/shadow"]);
+      writeFileSync(
+        join(dir, "shadow", "usage.jsonl"),
+        [
+          { round: 1, model: "a" },
+          { round: 1, model: "b" },
+          { round: 2, model: "a" },
+        ]
+          .map((item) => JSON.stringify({ outcome: "ok", cost: 0, ...item }))
+          .join("\n"),
+      );
+      expect(shadowRunsDone(join(repo, ".agents", "reviews"))).toBe(2);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
+  });
+});
+
+describe("shadow spend and command", () => {
+  it("[ADR 0280] counts the shadow ledger in the next ordinary round's budget", () => {
+    const root = mkdtempSync(join(tmpdir(), "review-shadow-budget-"));
+    try {
+      const out = join(root, "pr-7");
+      mkdirSync(join(out, "shadow"), { recursive: true });
+      writeFileSync(join(out, "usage.jsonl"), "");
+      writeFileSync(
+        join(out, "shadow", "usage.jsonl"),
+        `${JSON.stringify({ mode: "code-review", head: "b".repeat(40), model: "m", outcome: "ok", cost: 0.15, shadow: true })}\n`,
+      );
+      const linked = linkedLedgerRecords({ out });
+      expect(linked.map((record) => record.cost)).toEqual([0.15]);
+      expect(linkedLedgerRecords({ out, selfCheckOnly: true })).toEqual([]);
+      const parent = [{ cost: 0.7, round: 1 }];
+      const models = ["opencode-go/deepseek-v4.1-flash"];
+      expect(budgetCheck({ mode: "code-review", records: parent, models })).toBeNull();
+      expect(budgetCheck({ mode: "code-review", records: [...parent, ...linked], models })).toMatch(
+        /^BUDGET_NEEDS_APPROVAL /,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[ADR 0280] the suggested shadow command keeps the brief path whole and the run's choices", () => {
+    const command = shadowCommand({
+      pr: 7,
+      base: "b",
+      head: "h",
+      brief: "/tmp/my brief; it's.md",
+      gateway: "magpie",
+      models: ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3-flash"],
+      providers: ["p1"],
+      approvedUsd: 1.5,
+    });
+    const argv = spawnSync("sh", ["-c", `set -- ${command}; printf '%s\\n' "$@"`], {
+      encoding: "utf8",
+    }).stdout.split("\n");
+    expect(argv[argv.indexOf("--brief") + 1]).toBe("/tmp/my brief; it's.md");
+    expect(argv[argv.indexOf("--models") + 1]).toBe(
+      "opencode-go/deepseek-v4.1-flash,opencode-go/glm-5.3-flash",
+    );
+    expect(argv[argv.indexOf("--providers") + 1]).toBe("p1");
+    expect(argv[argv.indexOf("--approved-usd") + 1]).toBe("1.5");
+    expect(argv[argv.indexOf("--gateway") + 1]).toBe("magpie");
   });
 });
 
@@ -431,5 +555,17 @@ describe("speed report by increment size", () => {
     });
     expect(stats.rows[2].after.rounds).toBe(0);
     expect(renderCsv(rounds).split("\n")[0]).toContain("incrementLines");
+  });
+
+  it("[ADR 0280] does not backfill a round that fell back to the old full-range prompt", () => {
+    sandbox(({ repo, write, commit, previous }) => {
+      write("pr.txt", "a\nb\n");
+      const head = commit("change");
+      const fellBack = round({ head, previous, increment: { fallback: "too-large" } });
+      const old = round({ head, previous });
+      backfillIncrements([fellBack, old], repo, "main");
+      expect(fellBack.backfilledLines).toBeUndefined();
+      expect(old.backfilledLines).toBe(1);
+    });
   });
 });

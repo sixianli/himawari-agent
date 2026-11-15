@@ -41,6 +41,18 @@ import {
   workbuddyAccountUid,
 } from "./gateway.mjs";
 import {
+  incrementBlock,
+  incrementRecord,
+  incrementRecordValid,
+  incrementScope,
+  readIncrementConfig,
+  SHADOW_DIR,
+  shadowCommand,
+  shadowRunsDone,
+  toolSummary,
+  toolSummaryValid,
+} from "./increment.mjs";
+import {
   CLAIM_PROBLEM_VERDICTS,
   CLAIMS_LINE_FORMAT,
   blobAt as claimsBlobAt,
@@ -50,17 +62,6 @@ import {
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
-import {
-  incrementBlock,
-  incrementRecord,
-  incrementRecordValid,
-  incrementScope,
-  readIncrementConfig,
-  shadowCommand,
-  shadowRunsDone,
-  toolSummary,
-  toolSummaryValid,
-} from "./increment.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -1240,6 +1241,13 @@ export function readUsage(out) {
   return parseUsage(readFileSync(path, "utf8"), path);
 }
 
+export function linkedLedgerRecords(options) {
+  if (options.selfCheckOnly) return [];
+  return options.shadow
+    ? readUsage(dirname(options.out))
+    : readUsage(join(options.out, SHADOW_DIR));
+}
+
 export const DAILY_SPEND_LINE_USD = 5;
 const JAPAN_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -1689,12 +1697,16 @@ export function planIncrement({
   ledgerPath,
   promptBytes,
   mainRef = "origin/main",
+  skip = () => new Set(),
 }) {
   const fallback = (reason) => ({ record: { fallback: reason }, block: null });
   if (!config) return fallback("config-missing");
   let files;
   try {
-    files = unreviewedFiles(repo, commits.previous, commits.head, ledgerPath, mainRef);
+    const owned = skip();
+    files = unreviewedFiles(repo, commits.previous, commits.head, ledgerPath, mainRef).filter(
+      (file) => !owned.has(file),
+    );
   } catch {
     return fallback("diff-failed");
   }
@@ -1719,6 +1731,14 @@ export function planIncrement({
   });
   if (!built) return fallback("too-large");
   return { record: incrementRecord(scope, built), block: built.block };
+}
+
+export function withIncrement({ planned, prompts, promptsWith }) {
+  if (!planned?.block) return { planned, prompts };
+  const scoped = promptsWith(planned.block);
+  if (Object.values(scoped).some((prompt) => Buffer.byteLength(prompt) > PROMPT_MAX_BYTES))
+    return { planned: { record: { fallback: "too-large" }, block: null }, prompts };
+  return { planned, prompts: scoped };
 }
 
 export const REVIEW_RECORD_ERRORS = ["USAGE_LEDGER_INVALID", "REVIEW_ROUND_HEADS_DIFFER"];
@@ -3245,7 +3265,7 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
 }
 
 export const REVIEWS_DIR = ".agents/reviews";
-export const SHADOW_DIR = "shadow";
+export { SHADOW_DIR };
 export const TOPIC_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
 export function reviewKey({ pr, topic }) {
@@ -3942,13 +3962,28 @@ async function main() {
       ]),
     );
   let prompts = promptsWith(null);
-  const planned =
+  let claimsOwned;
+  const claimsSkip = () => {
+    claimsOwned ??= new Set(
+      claimsProblems({
+        repo: options.repo,
+        head: commits.head,
+        mainRef: "origin/main",
+        reviewsDir: REVIEWS_DIR,
+        parseUsage,
+        looksSecret: claimsFileSecretLike,
+      }).files,
+    );
+    return claimsOwned;
+  };
+  let planned =
     reviewRun && commits.previous
       ? planIncrement({
           repo: options.repo,
           commits,
           config: incrementConfig,
           ledgerPath: `${REVIEWS_DIR}/${reviewKey(options)}`,
+          skip: claimsSkip,
           promptBytes: Math.max(
             ...Object.values(prompts).map((prompt) => Buffer.byteLength(prompt)),
           ),
@@ -3958,19 +3993,19 @@ async function main() {
     console.log(`REVIEW_INCREMENT_EMPTY ${commits.previous}..${commits.head}`);
     return;
   }
+  ({ planned, prompts } = withIncrement({ planned, prompts, promptsWith }));
   if (planned?.record.fallback) console.log(`REVIEW_INCREMENT_FALLBACK ${planned.record.fallback}`);
   if (planned?.block) {
-    prompts = promptsWith(planned.block);
     console.log(
       `REVIEW_INCREMENT files=${planned.record.files} lines=${planned.record.lines} rawLines=${planned.record.rawLines} inlineBytes=${planned.record.inlineBytes} truncated=${planned.record.truncated}`,
     );
   }
   for (const prompt of Object.values(prompts))
-    if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
+    if (Buffer.byteLength(prompt) > PROMPT_MAX_BYTES) throw new Error("PROMPT_TOO_LARGE");
   const proxyProblems = proxyCredentialProblems(process.env);
   if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
-  const parentRecords = options.shadow ? readUsage(dirname(options.out)) : [];
+  const linkedRecords = linkedLedgerRecords(options);
   const sameFileRecords =
     options.selfCheckOnly || options.mode !== "plan-claims"
       ? []
@@ -3979,7 +4014,7 @@ async function main() {
     ? null
     : budgetCheck({
         mode: options.mode,
-        records: [...records, ...sameFileRecords, ...parentRecords],
+        records: [...records, ...sameFileRecords, ...linkedRecords],
         models: options.models,
         approvedUsd: options.approvedUsd,
       });
@@ -4005,20 +4040,7 @@ async function main() {
       });
   if (options.mode === "code-review" && !options.selfCheckOnly && !options.shadow) {
     const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
-    let claimsOwned;
-    const skip = () => {
-      claimsOwned ??= new Set(
-        claimsProblems({
-          repo: options.repo,
-          head: commits.head,
-          mainRef: "origin/main",
-          reviewsDir: REVIEWS_DIR,
-          parseUsage,
-          looksSecret: claimsFileSecretLike,
-        }).files,
-      );
-      return claimsOwned;
-    };
+    const skip = claimsSkip;
     const refused = previousProblem({
       records,
       round,
@@ -4262,7 +4284,7 @@ async function main() {
         }
       }
     }
-    const totalSpent = spentOf(readUsage(options.out));
+    const totalSpent = spentOf([...readUsage(options.out), ...linkedRecords]);
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
     if (
       planned?.block &&
@@ -4270,7 +4292,7 @@ async function main() {
       shadowRunsDone(join(options.repo, REVIEWS_DIR)) < incrementConfig.shadowFullTotal
     )
       console.log(
-        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.brief, gateway: options.gateway })}`,
+        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.brief, gateway: options.gateway, models: options.models, providers: options.providers, approvedUsd: options.approvedUsd })}`,
       );
     const covered = results.some((record) => record.substitute && record.outcome === "ok");
     if (

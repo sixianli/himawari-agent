@@ -278,7 +278,7 @@ export function incrementLinesOf(round) {
 export function backfillIncrements(rounds, repo, mainRef = "origin/main") {
   const cache = new Map();
   for (const round of rounds) {
-    if (!round.previous || round.increment?.lines !== undefined) continue;
+    if (!round.previous || round.increment !== undefined) continue;
     const key = `${round.pr}\0${round.previous}\0${round.head}`;
     if (!cache.has(key)) {
       let lines = null;
