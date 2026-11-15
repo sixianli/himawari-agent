@@ -1,12 +1,12 @@
 import Foundation
 
-public enum JSONValue: Codable, Sendable, Equatable, Hashable {
+public enum DeviceActionValue: Codable, Sendable, Equatable, Hashable {
     case null
     case bool(Bool)
     case number(Double)
     case string(String)
-    case array([JSONValue])
-    case object([String: JSONValue])
+    case array([DeviceActionValue])
+    case object([String: DeviceActionValue])
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -18,10 +18,10 @@ public enum JSONValue: Codable, Sendable, Equatable, Hashable {
             self = .number(value)
         } else if let value = try? container.decode(String.self) {
             self = .string(value)
-        } else if let value = try? container.decode([JSONValue].self) {
+        } else if let value = try? container.decode([DeviceActionValue].self) {
             self = .array(value)
         } else {
-            self = .object(try container.decode([String: JSONValue].self))
+            self = .object(try container.decode([String: DeviceActionValue].self))
         }
     }
 
@@ -68,10 +68,10 @@ public enum JSONValue: Codable, Sendable, Equatable, Hashable {
         return values.count == items.count ? values : nil
     }
 
-    public var object: [String: JSONValue]? {
+    public var object: [String: DeviceActionValue]? {
         if case let .object(value) = self { return value }
         return nil
     }
 }
 
-public typealias JSONObject = [String: JSONValue]
+public typealias JSONObject = [String: DeviceActionValue]

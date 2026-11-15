@@ -109,7 +109,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
         let key: String
         let target: String
         let current: String
-        let encode: (JSONValue) -> Any?
+        let encode: (DeviceActionValue) -> Any?
     }
 
     static var controls: [Control] {
@@ -133,7 +133,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
         if delivery.action == "home.read" { return try await read(delivery) }
         guard let accessory = try await accessory(delivery) else { throw DeviceActionFailure(.targetMissing) }
         guard accessory.isReachable else { throw DeviceActionFailure(.targetMissing) }
-        var writes: [(key: String, value: JSONValue, characteristic: HMCharacteristic, encoded: Any)] = []
+        var writes: [(key: String, value: DeviceActionValue, characteristic: HMCharacteristic, encoded: Any)] = []
         for (key, value) in delivery.arguments.sorted(by: { $0.key < $1.key }) where key != "accessoryId" {
             guard let control = Self.controls.first(where: { $0.key == key && Self.characteristic(accessory, $0.target) != nil }),
                   let characteristic = Self.characteristic(accessory, control.target),
@@ -186,7 +186,7 @@ public final class HomeActions: DeviceActionHandler, @unchecked Sendable {
             return true
         }
         if wantedId != nil, chosen.isEmpty { throw DeviceActionFailure(.targetMissing) }
-        var items: [JSONValue] = []
+        var items: [DeviceActionValue] = []
         for accessory in chosen { items.append(.object(await Self.state(accessory))) }
         return ["accessories": .array(items)]
     }
