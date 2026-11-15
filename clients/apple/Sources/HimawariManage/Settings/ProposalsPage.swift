@@ -94,7 +94,6 @@ struct ProposalRow: View {
                         Icon(.chevronRight, size: PL.chevron).foregroundStyle(Color.hmMuted)
                             .rotationEffect(.degrees(open ? -90 : 90))
                     }
-                    .frame(minHeight: DesignTokens.Size.minTapTarget, alignment: .top)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
