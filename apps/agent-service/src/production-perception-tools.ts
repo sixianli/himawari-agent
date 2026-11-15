@@ -39,7 +39,6 @@ import {
   TOOL_RESULT_DEVICE_ACTION_RESULT_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_SUCCEEDED,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
-  TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED,
   TOOL_RESULT_DEVICE_ACTION_UNKNOWN,
   TOOL_RESULT_DEVICE_ACTION_UNSUPPORTED,
   TOOL_RESULT_DEVICE_ACTION_WAITING_OWNER,
@@ -67,7 +66,6 @@ const ACTION_ARGUMENTS = ["action", "device", "arguments"];
 const LOCAL_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/u;
 const DAY_MS = 86_400_000;
 const SCAN_PAGE = 500;
-export const DEVICE_ACTION_UNCONFIRMED_CODE = "DEVICE_ACTION_CONFIRMATION_REQUIRED";
 
 export const DEVICE_ACTION_STATES = [
   "queued",
@@ -146,6 +144,7 @@ export interface DeviceActionDefinition {
   readonly reads: boolean;
   readonly confirm: boolean;
   readonly parameters: Readonly<Record<string, unknown>>;
+  readonly usage?: string;
 }
 
 export interface DeviceActionRequest {
@@ -168,8 +167,8 @@ export interface ProductionPerceptionToolsOptions {
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly configuration: () => PerceptionConfiguration;
   readonly actions?: () => readonly DeviceActionDefinition[];
+  readonly offered?: (device: PairedDevice) => Promise<readonly string[]>;
   readonly perform?: (request: DeviceActionRequest) => Promise<DeviceActionOutcome>;
-  readonly confirm?: (request: DeviceActionRequest) => Promise<boolean>;
   readonly timeZone?: string;
   readonly now: () => string;
 }
@@ -447,8 +446,14 @@ export class ProductionPerceptionTools {
     const registry = [...(this.#options.actions?.() ?? [])].sort((left, right) =>
       left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
     );
+    const allowed = new Map<string, readonly string[]>();
+    for (const target of devices)
+      allowed.set(
+        target.id,
+        this.#options.offered ? await this.#options.offered(target) : target.supportedActions,
+      );
     const offered = (target: PairedDevice) =>
-      registry.filter(({ name }) => target.supportedActions.includes(name));
+      registry.filter(({ name }) => (allowed.get(target.id) ?? []).includes(name));
     if (action === DEVICE_ACTION_DESCRIBE) {
       if (devices.length === 0)
         return {
@@ -465,7 +470,12 @@ export class ProductionPerceptionTools {
           })),
           actions: registry
             .filter(({ name }) => used.has(name))
-            .map(({ name, confirm, parameters: shape }) => ({ name, confirm, parameters: shape })),
+            .map(({ name, confirm, parameters: shape, usage }) => ({
+              name,
+              confirm,
+              parameters: shape,
+              ...(usage === undefined ? {} : { usage }),
+            })),
           note: TOOL_RESULT_DEVICE_ACTION_DESCRIBE.text,
         },
       };
@@ -479,12 +489,17 @@ export class ProductionPerceptionTools {
         value: {
           done: false,
           availableActions: registry
-            .filter(({ name }) => devices.some((target) => target.supportedActions.includes(name)))
+            .filter(({ name }) =>
+              devices.some((target) => (allowed.get(target.id) ?? []).includes(name)),
+            )
             .map(({ name }) => name),
           note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text,
         },
       };
-    const target = device === undefined ? capable[0] : devices.find(({ id }) => id === device);
+    const target =
+      device === undefined
+        ? (capable.find(({ id }) => (allowed.get(id) ?? []).includes(action)) ?? capable[0])
+        : devices.find(({ id }) => id === device);
     if (!target || !target.supportedActions.includes(action))
       return {
         value: {
@@ -506,17 +521,7 @@ export class ProductionPerceptionTools {
       action: definition,
       arguments: parameters as Readonly<Record<string, unknown>>,
     };
-    if (definition.confirm && !this.#options.confirm)
-      throw new PerceptionToolError(
-        "DEVICE_ACTION_UNAVAILABLE",
-        TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
-      );
     if (!definition.reads) await hooks.authorize();
-    if (definition.confirm && (await this.#options.confirm?.(request)) !== true)
-      throw new PerceptionToolError(
-        DEVICE_ACTION_UNCONFIRMED_CODE,
-        TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED.text,
-      );
     const outcome = await this.#options.perform(request);
     return {
       value: {
