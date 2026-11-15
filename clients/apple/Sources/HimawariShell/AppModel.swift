@@ -30,6 +30,7 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
@@ -73,7 +74,9 @@ public final class AppModel {
         keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
-        api = DeviceAPI(http: DeviceHTTPClient())
+        let api = DeviceAPI(http: DeviceHTTPClient())
+        self.api = api
+        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -277,6 +280,7 @@ public final class AppModel {
         chat?.stop()
         chat = nil
         actions = nil
+        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -470,7 +474,15 @@ public final class AppModel {
         chat?.reconnect()
         actions?.deviceActionsChanged()
         deliverWaitingHandovers()
+        removeSettledNotifications()
         Task { await refreshConfiguration() }
+    }
+
+    private func removeSettledNotifications() {
+        #if canImport(UserNotifications)
+        let settler = NotificationSettler(center: SystemDeliveredNotifications(), source: api)
+        Task { await settler.reconcile() }
+        #endif
     }
 
     public func removedThisDevice() {
