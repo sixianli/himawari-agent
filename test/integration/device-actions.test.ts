@@ -11,6 +11,7 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
 } from "@himawari-agent/application";
 import { createRunId } from "@himawari-agent/domain";
+import { validateDeviceActionArguments } from "../../packages/application/src/services/device-action-registry.ts";
 import {
   buildPortableExport,
   LATEST_MIGRATION_SEQUENCE,
@@ -1368,6 +1369,11 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       action: "calendar.create",
       arguments: before,
     });
+    const create = DEVICE_ACTION_REGISTRY.get("calendar.create");
+    expect(create && validateDeviceActionArguments(create.parameters, before)).toBeDefined();
+    expect(
+      create && validateDeviceActionArguments(create.parameters, { ...before, location: "" }),
+    ).toBeUndefined();
     expect(
       plan(
         "calendar.delete",

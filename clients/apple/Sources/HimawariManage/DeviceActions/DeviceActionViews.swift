@@ -82,6 +82,8 @@ enum ApprovalWords {
 
 struct DeviceActionResultRow: View {
     let view: DeviceActionView
+    var busy = false
+    var undo: () -> Void = {}
 
     var body: some View {
         let kind = DeviceActionResultKind(view)
@@ -96,11 +98,46 @@ struct DeviceActionResultRow: View {
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.leading)
+                if view.undo == .failed {
+                    Text(Self.undoFailure(view))
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmDanger)
+                        .multilineTextAlignment(.leading)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            undoControl
         }
         .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var undoControl: some View {
+        switch view.undo {
+        case .available:
+            Button(action: undo) {
+                if busy { spinner } else { Text(L.text("result.undo")) }
+            }
+            .buttonStyle(RowPillButtonStyle(filled: true))
+            .disabled(busy)
+        case .pending:
+            Button(action: {}) { spinner }
+                .buttonStyle(RowPillButtonStyle(filled: true))
+                .disabled(true)
+        case .done, .failed, .none:
+            EmptyView()
+        }
+    }
+
+    private var spinner: some View {
+        Text(L.text("result.undo"))
+            .hidden()
+            .overlay { ProgressView().controlSize(.small).tint(Color.hmMuted) }
+    }
+
+    static func undoFailure(_ view: DeviceActionView) -> String {
+        L.text("result.undo.failed")
     }
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
@@ -113,6 +150,7 @@ struct DeviceActionResultRow: View {
     static func headline(_ kind: DeviceActionResultKind) -> String {
         switch kind {
         case .done: "result.done"
+        case .undone: "result.undone"
         case .notDone: "result.notDone"
         case .checking: "result.checking"
         case .waiting: "result.waiting"
@@ -124,6 +162,7 @@ struct DeviceActionResultRow: View {
     private func icon(_ kind: DeviceActionResultKind) -> some View {
         switch kind {
         case .done: Icon(.circleCheck, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSuccess)
+        case .undone: Icon(.arrowBackUp, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
         case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
         case .checking: ProgressView().tint(Color.hmMuted)
         case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)
@@ -158,11 +197,20 @@ public struct TodayDeviceActionsCard: View {
             if !results.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(results.enumerated()), id: \.element.id) { index, view in
-                        DeviceActionResultRow(view: view)
+                        DeviceActionResultRow(view: view, busy: model.busy.contains(view.id)) {
+                            Task { await model.undo(view) }
+                        }
                         if index < results.count - 1 { RowSeparator() }
                     }
                 }
                 .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
+            }
+            if let problem = model.problem {
+                Text(problem)
+                    .hmType(DesignTokens.TypeScale.caption)
+                    .foregroundStyle(Color.hmDanger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
             }
         }
     }

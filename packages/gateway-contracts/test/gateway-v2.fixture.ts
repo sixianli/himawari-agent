@@ -1132,6 +1132,43 @@ export const governanceMessages = [
         },
       ],
     },
+    mcpSync: {
+      entriesTotal: 1,
+      entries: [
+        {
+          entryId: "entry-0123456789abcdef01234567",
+          connectionName: "Muse",
+          projectName: "Himawari",
+          category: "project",
+          classification: "private",
+          state: "awaiting_project_approval",
+          version: 2,
+          text: "Himawari 的首页改成信息流",
+          previousText: "Himawari 的首页是仪表盘",
+          sourceDeleted: false,
+          lastSyncedAt: "2026-09-11T00:00:00.000Z",
+        },
+      ],
+      projects: [
+        {
+          connectionId: "conn-muse",
+          projectId: "proj-0123456789abcdef01234567",
+          connectionName: "Muse",
+          projectName: "Himawari",
+          approval: "pending",
+        },
+      ],
+      attention: [
+        {
+          attentionId: "attn-0123456789abcdef01234567",
+          connectionName: "Muse",
+          projectName: "Himawari",
+          heldEntries: 3,
+          baseline: 4,
+          createdAt: "2026-09-11T00:00:00.000Z",
+        },
+      ],
+    },
     tidyUps: [
       {
         changeId: "memory-consolidation:agent-01:2026-09-11:c1",
@@ -1400,6 +1437,19 @@ export const governanceMessages = [
     ],
   }),
   fixture("command", "memory.external.undo", { batchId: "external-batch-01" }),
+  fixture("command", "memory.mcpSync.projectDecide", {
+    connectionId: "conn-muse",
+    projectId: "proj-0123456789abcdef01234567",
+    decision: "approve",
+  }),
+  fixture("command", "memory.mcpSync.noteDecide", {
+    entryId: "entry-0123456789abcdef01234567",
+    decision: "confirm",
+  }),
+  fixture("command", "memory.mcpSync.attentionResolve", {
+    attentionId: "attn-0123456789abcdef01234567",
+    decision: "keep",
+  }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",
     resolution: "approved",

@@ -1,0 +1,6 @@
+# PR 596 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 中：刹车待办的“当天开始基数”仍可能取自另一天，上一轮第 7 条没有修。sqlite-mcp-memory-sync-operations.ts attention 查询按 d.day DESC 取最近一天的 baseline，attention 表没有 day 列；与第 1 轮第 7 条相同；触发：刹车待办跨天未处理，之后同一项目又有新一天的删除记录；后果：待办上显示的当天开始基数可能是另一天的，只影响一个显示数字，不改数据；判低理由：判低：沿用第 1 轮第 7 条原判，代码未改；只是显示数字，不改数据也不影响刹车判断；按创建日绑定要处理时区并改表，本轮不改
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低：上一轮第 3 条的回归测试用“接入名 = connectionId”，旧实现也会通过。属实：测试里接入名等于 id，旧实现也通过；已把测试接入名改为“接入-<id>”，旧实现退回 connectionId 会失败；生产代码没有错，不会出错，属于可以更好
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低：作者说明与改后文档/代码不一致；`refused` 的“关于主人”条目即使出现，页面也无法处理。overview 的 OR state=refused 与 decideNote 的 kind=project_note 不一致；已把 overview 的 total 和 entries 过滤改成只取 kind=project_note（sqlite-mcp-memory-sync-operations.ts），集成测试 27 条通过；作者说明里“只有被拒的会出现在列表里”由主线程更正；触发：将来有路径把关于主人的条目写成 refused；当前没有这样的路径；后果：列表里看得到但 noteDecide 报 MEMORY_MCP_SYNC_TARGET_NOT_FOUND；现在不可达
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低（需产品确认）：`projectDecide approve` 仍会把 `refused` 笔记一并复活，与文档只写“等批准的笔记”不完全一致。decideProject 查询集合含 STATE_REFUSED，批准时非敏感的 refused 变 active；这是 PR 588 既有的“被拒的可恢复”设计，本 PR 增量没有改批准一侧；区分“因项目被拒而拒”和“逐条拒”要加列，交 Andy 决定；触发：主人逐条拒绝了某条非敏感笔记，之后对同一项目再点批准；后果：逐条拒绝的笔记被一并恢复为已存；需要主人确认产品语义，不是现在改代码就能定的

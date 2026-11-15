@@ -118,6 +118,30 @@ export function boundedString(maximum = 2048): Schema<string> {
   };
 }
 
+export function codePointString(
+  maximum: number,
+  options: { readonly allowLineBreaks?: boolean } = {},
+): Schema<string> {
+  return {
+    parse(input, path = "$") {
+      if (typeof input !== "string") fail(path, `expected a 1-${maximum} character string`);
+      const characters = [...(input as string)];
+      if (
+        characters.length === 0 ||
+        characters.length > maximum ||
+        characters.some((character) => {
+          const code = character.charCodeAt(0);
+          if (options.allowLineBreaks === true && (code === 0x0a || code === 0x09)) return false;
+          return code < 0x20 || code === 0x7f;
+        })
+      ) {
+        fail(path, `expected a 1-${maximum} character string without control characters`);
+      }
+      return input as string;
+    },
+  };
+}
+
 export const booleanValue: Schema<boolean> = {
   parse(input, path = "$") {
     if (typeof input !== "boolean") fail(path, "expected a boolean");
