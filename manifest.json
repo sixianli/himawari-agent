@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "pr": 561,
+  "batch": "tuning-settings",
+  "files": [
+    {
+      "path": "08-settings-dark.png",
+      "bytes": 328524,
+      "sha256": "fd45c6e8ab08d8e5cf81df4c74cd6e8107796f11fbb95aa8e399fbfd3889420d"
+    },
+    {
+      "path": "08-settings-light.png",
+      "bytes": 519991,
+      "sha256": "ccebed284c0a85639f203ee67166826609634f697eb32aacc1e3e762cf37003b"
+    },
+    {
+      "path": "19-settings-more-4-notifications-dark.png",
+      "bytes": 311343,
+      "sha256": "1d4ada5d6aebc50347b215d2beec991dac3d9c494eb09301f54eefa3cd26ffe1"
+    },
+    {
+      "path": "19-settings-more-4-notifications-edit-dark.png",
+      "bytes": 140541,
+      "sha256": "94286b91fc4eb1c9bef162866aa9f08858db6e8b27604f4ed2658fd090295c2d"
+    },
+    {
+      "path": "19-settings-more-4-notifications-edit-light.png",
+      "bytes": 144676,
+      "sha256": "fca9960ab399929cd988b596c28efe61d70b79e4e86b91eeef2aceba62d36523"
+    },
+    {
+      "path": "19-settings-more-4-notifications-light.png",
+      "bytes": 470920,
+      "sha256": "5c12e918960e2f13adc2481f8f9a0debcf259f43ffed1cda3f26f84e0679ba77"
+    },
+    {
+      "path": "20-himawari-self-4-think-dark.png",
+      "bytes": 268112,
+      "sha256": "09a4ee6500623fe9ed643bc907e46812f9d5d848d732d57eb60232f2973b3af3"
+    },
+    {
+      "path": "20-himawari-self-4-think-light.png",
+      "bytes": 401209,
+      "sha256": "41e7aa4b927ca6db3d7babd2fed3867f045708429e250160b645c02ee6923f46"
+    }
+  ]
+}
