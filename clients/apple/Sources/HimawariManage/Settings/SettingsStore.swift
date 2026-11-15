@@ -15,13 +15,18 @@ public final class SettingsStore {
     public private(set) var waitingCapabilities: [CapabilitySummary] = []
     public private(set) var capabilitiesInUse: [CapabilitySummary] = []
     public private(set) var capabilitiesDisabled: [CapabilitySummary] = []
+    public private(set) var reactivationFailure: [String: String] = [:]
+    @ObservationIgnored private var reactivating: Set<String> = []
 
     public private(set) var devices: [PairedDevice] = []
     public private(set) var server: ServerReach?
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
     public private(set) var proposals: ProposalList?
+<<<<<<< HEAD
     public private(set) var grants: [GrantSummary]?
+=======
+>>>>>>> origin/main
     public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
@@ -46,10 +51,7 @@ public final class SettingsStore {
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
-            let all = try await capabilities
-            waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
-            capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
-            capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+            applyCapabilities(try await capabilities)
             devices = try await listed.devices
             phase = .loaded
         } catch {
@@ -78,12 +80,60 @@ public final class SettingsStore {
     }
 
     static let ownerDisabledReason = "owner_disabled"
+    static let ownerReactivatedReason = "owner_reactivated"
+
+    public func reactivate(_ capability: CapabilitySummary, reason: String) async throws {
+        do {
+            try await sendReactivation(capability, reason: reason)
+        } catch {
+            await reloadCapabilities()
+            throw error
+        }
+        await reloadCapabilities()
+    }
+
+    private func sendReactivation(_ capability: CapabilitySummary, reason: String) async throws {
+        _ = try await gateway.command(
+            .v2,
+            "capability.reactivate",
+            payload: [
+                "capabilityRef": .string(capability.capabilityRef),
+                "expectedRevision": .number(Double(capability.revision)),
+                "reasonCode": .string(Self.ownerReactivatedReason),
+                "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
+
+    public func noteReactivationFailure(_ message: String?, for ref: String) {
+        reactivationFailure[ref] = message
+    }
+
+    public func beginReactivation(_ ref: String) -> Bool {
+        reactivating.insert(ref).inserted
+    }
+
+    public func endReactivation(_ ref: String) {
+        reactivating.remove(ref)
+    }
+
+    public static func isDeclined(_ error: Error) -> Bool {
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError
+            || error is URLError || error is HTTPExchangeError)
+    }
 
     public func reloadCapabilities() async {
         guard let all = try? await loadCapabilities() else { return }
+        applyCapabilities(all)
+    }
+
+    private func applyCapabilities(_ all: [CapabilitySummary]) {
         waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
         capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
         capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+        let disabledRefs = Set(capabilitiesDisabled.map(\.capabilityRef))
+        reactivationFailure = reactivationFailure.filter { disabledRefs.contains($0.key) }
     }
 
     public func reloadLoginDevices() async {
@@ -143,6 +193,7 @@ public final class SettingsStore {
         )
     }
 
+<<<<<<< HEAD
     public func reloadGrants() async {
         if let listed = try? await loadGrants() { grants = listed }
     }
@@ -181,6 +232,8 @@ public final class SettingsStore {
         return result.filter(\.isActive)
     }
 
+=======
+>>>>>>> origin/main
     public func reloadProposals() async {
         if let listed = try? await loadProposals() { proposals = listed }
     }

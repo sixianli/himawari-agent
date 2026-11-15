@@ -219,3 +219,26 @@ export const DELIVERY_TIMING_COPY: Readonly<Record<keyof DeliveryTimingConfigura
       },
     },
   });
+
+export const DELIVERY_TIMING_VALUE: Readonly<
+  Record<
+    keyof DeliveryTimingConfiguration,
+    {
+      readonly kind: "ratio" | "duration" | "count";
+      readonly storageUnit: "permille" | "ms" | "s" | "count";
+    }
+  >
+> = Object.freeze({
+  busyAtLeastPermille: { kind: "ratio", storageUnit: "permille" },
+  recheckSeconds: { kind: "duration", storageUnit: "s" },
+  timeoutMs: { kind: "duration", storageUnit: "ms" },
+  perMinute: { kind: "count", storageUnit: "count" },
+  reminderMaximumDeferSeconds: { kind: "duration", storageUnit: "s" },
+  maximumDeferSeconds: { kind: "duration", storageUnit: "s" },
+  speechFreshSeconds: { kind: "duration", storageUnit: "s" },
+  motionFreshSeconds: { kind: "duration", storageUnit: "s" },
+  sleepFreshSeconds: { kind: "duration", storageUnit: "s" },
+  focusFreshSeconds: { kind: "duration", storageUnit: "s" },
+  connectivityFreshSeconds: { kind: "duration", storageUnit: "s" },
+  macPresenceSeconds: { kind: "duration", storageUnit: "s" },
+});

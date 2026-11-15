@@ -219,7 +219,15 @@ describe("think settings", () => {
       payload: {
         revision: number;
         enabled: boolean;
-        items: { key: string; value: number; defaultValue: number; overridden: boolean }[];
+        items: {
+          key: string;
+          value: number;
+          defaultValue: number;
+          overridden: boolean;
+          unit: string;
+          kind: string;
+          storageUnit: string;
+        }[];
       };
     };
     expect(snapshot.type).toBe("think.settings.snapshot");
@@ -237,7 +245,40 @@ describe("think settings", () => {
       "summaryCharacters",
       "idleSeconds",
       "runTimeoutMinutes",
+      "threadRetentionDays",
     ]);
+    const expectedByUnit: Record<string, { kind: string; storageUnit: string }> = {
+      permille: { kind: "ratio", storageUnit: "permille" },
+      count: { kind: "count", storageUnit: "count" },
+      times: { kind: "count", storageUnit: "count" },
+      characters: { kind: "count", storageUnit: "count" },
+      hours: { kind: "duration", storageUnit: "h" },
+      minutes: { kind: "duration", storageUnit: "min" },
+      seconds: { kind: "duration", storageUnit: "s" },
+      days: { kind: "duration", storageUnit: "d" },
+    };
+    for (const entry of snapshot.payload.items) {
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(
+        expectedByUnit[entry.unit],
+      );
+    }
+    for (const invalid of [{ kind: "percent" }, { storageUnit: "seconds" }]) {
+      const broken = JSON.parse(JSON.stringify(snapshot));
+      Object.assign(broken.payload.items[0], invalid);
+      expect(() => gatewayV2MessageSchema.parse(broken)).toThrow();
+    }
+    expect(snapshot.payload.items[10]).toMatchObject({
+      value: 7,
+      minimum: 1,
+      maximum: 90,
+      unit: "days",
+      kind: "duration",
+      storageUnit: "d",
+      unitLabel: { "zh-CN": "天", en: "days", ja: "日" },
+    });
+    expect(snapshot.payload.items[0]).toMatchObject({ kind: "ratio", storageUnit: "permille" });
+    expect(snapshot.payload.items[2]).toMatchObject({ kind: "count", storageUnit: "count" });
+    expect(snapshot.payload.items[6]).toMatchObject({ kind: "count", storageUnit: "count" });
     expect(snapshot.payload.items[0]).toMatchObject({
       value: 800,
       defaultValue: 800,

@@ -56,14 +56,20 @@ export function one(database, sql, values = []) {
   return rows[0];
 }
 
-export function historyDigests(database) {
+export function historyRow(table, row, ignoredColumns = {}) {
+  const ignored = ignoredColumns[table];
+  if (!ignored) return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !ignored.includes(key)));
+}
+
+export function historyDigests(database, ignoredColumns = {}) {
   const tables = new Set(database.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name));
   return Object.fromEntries(historyTables.map((table) => {
     assert(tables.has(table), "__PKT_LABEL_UPPER___DB_HISTORY_TABLE_MISSING");
     const hash = createHash("sha256");
     let rows = 0;
     for (const row of database.prepare(`SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`).iterate()) {
-      hash.update(`${canonicalJson(row)}\n`);
+      hash.update(`${canonicalJson(historyRow(table, row, ignoredColumns))}\n`);
       rows += 1;
     }
     return [table, { rows, sha256: hash.digest("hex") }];
@@ -72,7 +78,7 @@ export function historyDigests(database) {
 
 export const ledgerMigrationId = (row) => row.id ?? String(row.sequence).padStart(4, "0");
 
-export function readS0State(database, expected) {
+export function readS0State(database, expected, ignoredColumns = {}) {
   assert.equal(database.pragma("query_only", { simple: true }), 1, "__PKT_LABEL_UPPER___DB_QUERY_ONLY_REQUIRED");
   const current = Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value);
   const minimumWriter = Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value);
@@ -100,7 +106,7 @@ export function readS0State(database, expected) {
       unresolvedReservedCount: one(database, unresolvedQuery).count,
       nonTerminalRunCount: one(database, "SELECT count(*) AS count FROM runs WHERE status NOT IN ('completed','failed','cancelled')").count,
     },
-    history: historyDigests(database),
+    history: historyDigests(database, ignoredColumns),
   };
 }
 

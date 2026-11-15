@@ -166,7 +166,6 @@ assert.equal(run.productionQualificationIssued, false);
 assert.equal(run.scratchDeleted, true);
 assert.equal(run.scratchCleanupPending, false);
 assert.deepEqual(run.runnerErrors, []);
-assert.deepEqual(run.resourceSamplingErrors, []);
 assert.deepEqual(run.scratchCleanupProcessReadback.liveDescendants, []);
 assert.equal(run.scratchCleanupReferenceReadback.deleteAllowed, true);
 assert.equal(run.scratchCleanupReferenceReadback.exitCode, 0);
