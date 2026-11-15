@@ -133,6 +133,9 @@ export interface WebPushStorePort {
   listDue(
     input: WebPushScope & { readonly now: string; readonly limit: number },
   ): Promise<readonly WebPushDue[]>;
+  listRecent(
+    input: WebPushScope & { readonly since: string; readonly limit: number },
+  ): Promise<readonly WebPushOutboxItem[]>;
   deferItem(
     input: WebPushScope & {
       readonly sourceKey: string;
