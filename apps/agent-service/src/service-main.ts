@@ -141,6 +141,7 @@ import {
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
+import { ProductionMcpSync } from "./production-mcp-sync.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
 import {
@@ -2622,6 +2623,7 @@ export async function startTenantRuntime(
       } else if (gapExportRef !== undefined && museIntakeConfiguration?.enabled === true) {
         throw new Error("GAP_EXPORT_RUNTIME_UNAVAILABLE");
       }
+      const mcpSyncStore = repository.mcpMemorySync();
       const externalProposals = new ProductionMcpMemoryWriter({
         configuration,
         memory: durableMemory,
@@ -2629,9 +2631,23 @@ export async function startTenantRuntime(
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         proposals: repository.externalMemoryProposals(),
+        replaced: (proposalId) =>
+          mcpSyncStore.replacedMemory({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            proposalId,
+          }),
         payloads,
         protector: recallProtector,
         clock: { now: () => clock.now() },
+      });
+      const mcpSync = new ProductionMcpSync({
+        configuration,
+        store: mcpSyncStore,
+        payloads,
+        protector: recallProtector,
+        clock: { now: () => clock.now() },
+        timeZone: configuration.runPolicy?.timeZone ?? "UTC",
       });
       const mcpReadConfiguration = configuration.runPolicy?.mcpRead;
       const mcpIdentity =
@@ -2669,6 +2685,7 @@ export async function startTenantRuntime(
             ? {
                 write: {
                   proposals: externalProposals,
+                  sync: mcpSync,
                   rules: new ProductionMcpRuleWriter({
                     configuration,
                     rules: ownerRuleWriter,

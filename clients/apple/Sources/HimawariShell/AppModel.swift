@@ -33,13 +33,16 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
     @ObservationIgnored private let kind: DeviceKind
-    @ObservationIgnored private var store: FileLocalStore?
+    @ObservationIgnored private var store: FileLocalStore? {
+        didSet { if store !== oldValue { onDeviceStoreChange?(store) } }
+    }
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
     @ObservationIgnored private let pushSync: PushTokenSync
@@ -93,6 +96,7 @@ public final class AppModel {
         #if os(iOS)
         PushBridge.sync = pushSync
         #endif
+        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -187,6 +191,14 @@ public final class AppModel {
 
     @ObservationIgnored var demoHost: String?
 
+    @ObservationIgnored public var onDeviceNotification: (@MainActor (DeviceStreamEvent) -> Void)? {
+        didSet { chat?.onNotification = onDeviceNotification }
+    }
+
+    @ObservationIgnored public var onDeviceStoreChange: (@MainActor (FileLocalStore?) -> Void)?
+
+    public var deviceStore: FileLocalStore? { store }
+
     public func ownerPresence(reason: String) -> OwnerPresenceSigner {
         OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
     }
@@ -202,6 +214,10 @@ public final class AppModel {
         model.phase = phase
         model.demoHost = host
         return model
+    }
+
+    public func useDemoDeviceStore(_ store: FileLocalStore?) {
+        self.store = store
     }
     #endif
 
@@ -284,6 +300,7 @@ public final class AppModel {
         chat?.stop()
         chat = nil
         actions = nil
+        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -396,6 +413,7 @@ public final class AppModel {
                 onSessionInvalid: { [weak self] in self?.checkRevoked() },
                 onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
+            chat.onNotification = onDeviceNotification
             self.chat = chat
             phase = .active
             chat.start()

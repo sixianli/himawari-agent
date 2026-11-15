@@ -1,0 +1,10 @@
+# PR 489 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1 高 `HomeFeedAction` 丢掉服务器下发的 `binding`，`HomeFeedSource.act` 也没有请求编号，真实 home/act 无法通过校验且不幂等。已核对：HomeFeedAction 无 binding（HomeFeed.swift 原 22-43），/home/act 要求（device-api-routes.ts:1417）；已修：补 binding，新增 DeviceHomeSource 复用 Mac 的 act 路径，同一动作复用 requestId；触发：首页条目里的非审批动作需要 binding 和 requestId 才能发给 /home/act；类型丢了 binding，协议也没有请求编号；后果：接上后动作被服务器以 binding 校验拒绝，超时重试还可能重复执行
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2 中 `HomeFeedSnapshot.decode` 要网关信封，但现有设备 `/home` 返回裸 payload，接上现有接口会解码失败。已核对：device-api-routes.ts:1398 返回 result.payload；已修：decode 只收裸 payload，夹具改成裸 payload，新增 DeviceAPI.homeFeed 走 GET /home，并有拒绝信封的反向测试；触发：用现有 GET /home 的裸 payload 解码；后果：解码恒失败，首页永远出不来
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3 中 只要存在 home 快照，`TodayPage` 就不再渲染设备动作卡；审批来源读取失败时待审批设备动作会从页面上消失。已核对：TodayPage 原 91 行分支不含设备动作卡，badge 在 incompleteSources 非空时为 nil；已修：该情况下仍显示设备动作卡，角标回退到 waitingCount；触发：快照的 incompleteSources 非空（审批来源读失败）而设备上有待审批动作；后果：页面没有审批卡、角标也为空，待审批的设备动作被漏掉
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4 中 `HomeChoice` 在正、负动作都存在时静默丢弃中性动作，服务器提醒的 `snooze` 永远无法从今天页触发。服务器提醒带三个动作时今天页只给两个按钮是已批准原型的设计（两枚胶囊按钮），不是实现错；稍后提醒入口要不要加，是设计决定，列给 Andy
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5 中 `HomeFeedModel` 的 `decide`/`undo`、审批分流和失败路径没有自动检查，反向用例覆盖不到最危险的新值。测试缺口不是运行时错误；但已补：新增 HimawariShellTests/HomeFeedModelTests.swift（动作成功、失败、本人确认被取消、无来源），Linux 不能编译，由 Mac 跑；另补 binding 和信封拒绝的 Core 测试
+- 6（deepseek-v4.1-flash）成立，会出错，低：### 6 中 `failed` 只写不读，动作/撤销失败对用户不可见，撤销失败后条目还会继续被隐藏。HomeFeedModel 原 102-104、117-119 只写 failed；已修：失败时显示“没做成，请再试一次”提示；触发：动作或撤销请求失败；后果：用户得不到失败提示（动作失败时条目仍留在页面上，撤销失败时动作已生效、条目仍隐藏，状态与服务器一致）；判低理由：失败时条目不会被错误地隐藏：未成功的动作不进 settled，撤销失败时服务器上动作已生效，刷新后与服务器一致，只缺提示
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7 低 `TodayPage` 仍有硬编码布局数字，`check-design` 的规则匹配不到，因此“界面不写死颜色和数字（check-design 通过）”不能被这次检查证明。TodayPage 原 312、315、331、361 行；已修：四个值进 tokens.json 的 home，检查脚本规则不动；触发：看页面代码；后果：间距数字写死，check-design 的规则没覆盖
+- 8（deepseek-v4.1-flash）成立，可以更好：### 8 低 新增的若干值没有消费者或没有实际用途，容易让后续接线误以为已经接好。rowIconBox、whyChevron 是原型里的值，等“为什么告诉你”接上服务器字段后使用，现在留着不影响行为；awaitingTruncated、revision 是服务器契约字段，保持解码
