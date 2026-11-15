@@ -2981,7 +2981,13 @@ describe("runner machine preparation", () => {
     }
     expect(profile(arm)).toBeDefined();
     expect(profile(arm)).toBe(profile(vps));
-    expect(arm).toContain('apparmor_parser -r "$APPARMOR_PROFILE"');
+    expect(value(arm, "APPARMOR_PROFILE")).toBe(value(vps, "APPARMOR_PROFILE"));
+    expect(arm).toContain(
+      '[ "$(cat "$APPARMOR_PROFILE")" = "$profile_text" ] || fail "$APPARMOR_PROFILE exists with other content" 75',
+    );
+    expect(arm).toContain(
+      'apparmor_parser -r "$APPARMOR_PROFILE" || fail "could not load $APPARMOR_PROFILE" 76',
+    );
     expect(arm).toMatch(/^for tool in .*\bbwrap socat rg\b/mu);
   });
 });

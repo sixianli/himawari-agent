@@ -51,7 +51,7 @@ if [ -e "$APPARMOR_PROFILE" ]; then
 else
   printf '%s\n' "$profile_text" > "$APPARMOR_PROFILE"
 fi
-apparmor_parser -r "$APPARMOR_PROFILE"
+apparmor_parser -r "$APPARMOR_PROFILE" || fail "could not load $APPARMOR_PROFILE" 76
 
 work=$(mktemp -d /tmp/ci-arm-prepare.XXXXXX)
 trap 'rm -rf "$work"' EXIT
