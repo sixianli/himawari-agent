@@ -51,6 +51,16 @@ function fixture() {
     "scripts/scan-machine-secrets.mjs",
     "console.error('SECRETS_STUB_RAN');\nprocess.exit(0);\n",
   );
+  write(
+    root,
+    "scripts/check-repo-hygiene.mjs",
+    "console.error('HYGIENE_STUB_RAN');\nprocess.exit(0);\n",
+  );
+  write(
+    root,
+    "scripts/check-conflict-markers.mjs",
+    "console.error('MARKERS_STUB_RAN');\nprocess.exit(0);\n",
+  );
   write(root, "DELIVERY_MODE", "fast\n");
   write(
     root,
@@ -165,6 +175,7 @@ describe("Layer 0 hooks from the repository", () => {
     expect(scripts["format:check"]).toBe("node scripts/check-format.mjs");
     expect(scripts.lint).toBe("node scripts/check-lint.mjs");
     expect(scripts["check:secrets"]).toBe("node scripts/scan-machine-secrets.mjs");
+    expect(scripts["check:conflict-markers"]).toContain("node scripts/check-conflict-markers.mjs");
   });
 
   const biomeRoot = (script, entry) => {
@@ -230,6 +241,7 @@ describe("Layer 0 hooks from the repository", () => {
     ["scripts/check-format.mjs", "PUSH_FORMAT_CHECK_FAILED"],
     ["scripts/check-lint.mjs", "PUSH_LINT_CHECK_FAILED"],
     ["scripts/scan-machine-secrets.mjs", "PUSH_SECRET_SCAN_FAILED"],
+    ["scripts/check-conflict-markers.mjs", "PUSH_CONFLICT_MARKERS_FAILED"],
   ]) {
     it(`refuses at push when ${script} fails or is missing`, () => {
       const failing = fixture();

@@ -586,25 +586,10 @@ class DerivedExpectationsTest(RenderedPacket):
             self.assertEqual(result.returncode, 0, result.stderr[-2000:])
             self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
 
-    def history_fixtures(self, packet):
-        scratch = self.root / ('fixture-temp-' + packet.name)
-        scratch.mkdir()
-        return subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
-
-    def history_off(self, release='twelfth'):
-        comparison = {'mode': 'off', 'reason': INSTANCE['historyComparison']['reason'], 'authorizedBy': INSTANCE['historyComparison']['authorizedBy'], 'release': release}
-        return {'HISTORY_COMPARISON': 'off', 'HISTORY_COMPARISON_JSON': json.dumps(comparison, sort_keys=True, separators=(',', ':'), ensure_ascii=True)}
-
-    def test_twentyninth_history_comparison_is_off_only_for_that_release(self):
-        decision = INSTANCE['historyComparison']
-        self.assertEqual(packet_maker.history_comparison(INSTANCE, 'twentyninth'), {'mode': 'off', 'reason': decision['reason'], 'authorizedBy': 'cmsg_01EE1hey9cboYNfwFnBv5dgr57gFLC1LwkkuA5Tm38FypH', 'release': 'twentyninth'})
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE'):
-            packet_maker.history_comparison(INSTANCE, 'thirtieth')
-        self.assertEqual(packet_maker.history_comparison({}, 'thirtieth'), {'mode': 'on'})
-        self.assertEqual(packet_maker.history_comparison({'historyComparison': {'mode': 'on'}}, 'thirtieth'), {'mode': 'on'})
-        for broken in ({'mode': 'partial'}, {**decision, 'reason': ' '}, {**decision, 'authorizedBy': 'Andy'}, {**decision, 'tables': ['model_budget_accounts']}, {'mode': 'off', 'release': 'twentyninth'}, 'off'):
-            with self.subTest(broken=broken), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_INVALID'):
-                packet_maker.history_comparison({'historyComparison': broken}, 'twentyninth')
+    def test_the_instance_file_cannot_switch_history_comparison_off(self):
+        self.assertNotIn('historyComparison', INSTANCE)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_SWITCH_REMOVED'):
+            packet_maker.base_parameters({**INSTANCE, 'historyComparison': {'mode': 'off'}}, TWELFTH_COMMIT, '2026-11-15', {'LABEL': 'thirtieth'})
 
     def test_andy_production_keeps_a_failed_deploy_and_other_instances_roll_back(self):
         self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'keep')
@@ -612,33 +597,22 @@ class DerivedExpectationsTest(RenderedPacket):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
             packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
 
-    def test_history_comparison_off_lets_a_migration_touch_preserved_tables(self):
-        derived = packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30, 'HISTORY_COMPARISON': 'off'}, {'schema': {'current': 29, 'minimumWriter': 29}})
-        self.assertEqual(json.loads(derived['MIGRATION_LEDGER']), [{'sequence': 30, 'name': 'run_model_selection', 'phase': 'expand'}])
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES'):
-            packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30, 'HISTORY_COMPARISON': 'on'}, {'schema': {'current': 29, 'minimumWriter': 29}})
-
-    def test_history_fixtures_pass_with_comparison_off_and_changed_history_rows(self):
-        ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
-        for packet in (self.render(MIGRATION_LEDGER=ledger, TARGET_SCHEMA=57, **self.history_off()), self.render(**self.history_off())):
-            result = self.history_fixtures(packet)
-            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-            record = json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertTrue(record['passed'])
-            self.assertGreaterEqual(record['counts']['historyComparisonOff'], 2)
-            self.assertIn("history_comparison = 'off'", (packet / 'systemd' / 'S7-switch-start-readback.py').read_text())
-            self.assertIn('...historyComparisonEvidence(), passed: false', (packet / 'maintenance' / 'run-maintenance.mjs').read_text())
-        self.assertIn("history_comparison = 'on'", (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
-
-    def test_s9_restore_compares_history_even_when_the_release_switch_is_off(self):
-        runner = (self.render(**self.history_off()) / 'maintenance' / 'run-maintenance.mjs').read_text()
+    def test_history_is_compared_only_while_the_service_is_stopped(self):
+        packet = self.render()
+        runner = (packet / 'maintenance' / 'run-maintenance.mjs').read_text()
+        common = (packet / 'maintenance' / 'maintenance-common.mjs').read_text()
+        for gone in ('compareHistoryRows', 'verifyHistoryAgainstRecoveryPoint', 'startupRecoveryColumns', 'historyComparison', 'HISTORY_COMPARISON'):
+            self.assertNotIn(gone, runner + common)
+        s8 = runner[runner.index('action === "S8_READBACK"'):runner.index('action === "S9_SIDECAR_TIDY"')]
+        history_lines = [line.strip() for line in s8.splitlines() if 'istory' in line]
+        self.assertEqual(len(history_lines), 1, history_lines)
+        self.assertIn('jsonFile(`${evidenceRoot}/s3-copy-after', history_lines[0])
+        self.assertIn('s7-catalog-after', history_lines[0])
+        switch = (packet / 'systemd' / 'S7-switch-start-readback.py').read_text()
+        self.assertIn("if upgraded_state['history'] != state['history']:", switch)
+        self.assertNotIn('history_comparison', switch)
         restore = runner[runner.index('const reference = retained.reference;'):]
-        self.assertTrue(restore.splitlines()[1].strip().startswith('verifyHistoryUnchanged(reference, state, Object.freeze({ mode: "on" }))'))
-
-    def test_a_packet_whose_history_switch_names_another_release_refuses_to_load(self):
-        result = self.history_fixtures(self.render(**self.history_off(release='twentyninth')))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('TWELFTH_MAINTENANCE_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE', result.stderr)
+        self.assertTrue(restore.splitlines()[1].strip().startswith('verifyHistoryUnchanged(reference, state)'))
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):

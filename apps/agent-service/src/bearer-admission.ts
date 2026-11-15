@@ -11,16 +11,23 @@ export class AdmissionWindows {
   private readonly authorized: number[] = [];
   private readonly unauthorized: number[] = [];
   private readonly clock: ClockPort;
+  private readonly authorizedPerMinute: number;
 
-  constructor(clock: ClockPort) {
+  constructor(clock: ClockPort, authorizedPerMinute = AUTHORIZED_PER_MINUTE) {
     this.clock = clock;
+    this.authorizedPerMinute = authorizedPerMinute;
+  }
+
+  used(): number {
+    const now = Date.parse(this.clock.now());
+    return this.authorized.filter((at) => now - at < WINDOW_MS).length;
   }
 
   admit(matches: boolean): BearerAdmission {
     const now = Date.parse(this.clock.now());
     const window = matches ? this.authorized : this.unauthorized;
     while (window.length > 0 && now - (window[0] as number) >= WINDOW_MS) window.shift();
-    if (window.length >= (matches ? AUTHORIZED_PER_MINUTE : UNAUTHORIZED_PER_MINUTE))
+    if (window.length >= (matches ? this.authorizedPerMinute : UNAUTHORIZED_PER_MINUTE))
       return "rate_limited";
     window.push(now);
     return matches ? "ok" : "unauthorized";

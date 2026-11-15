@@ -1,0 +1,5 @@
+# PR 580 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 中 — Swift 解析只认“单行、无注释、一个 case”，合法的多 case/注释/反引号写法会被漏掉，可能让漏配的图标通过。test/tooling/apple-icon-consistency.test.mjs:19 的整行正则；已加 case 记号计数断言，临时把 bell 改成 'case bell, bolt2' 实测失败，还原后通过；触发：Icon.swift 里有人把新图标写成一行多个 case、行尾带注释或反引号标识符，且 icons.json 和资源目录也漏配；后果：解析正则漏掉该 case，三处都不含它，测试静默通过，守不住本 PR 要防的漏配；判低理由：当前 Icon.swift:5-88 全是一行一个 case，只有改变写法才触发，且触发时需三处同时漏配；不是正常使用路径
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低 — 只比较 `.imageset` 目录名，不检查目录里的 SVG 和 Contents.json，资源残缺仍会通过。只是给测试加更多断言，不改变现有行为；临时用 shell 逐个检查 85 个条目，每个 .imageset 都有 <name>.svg 和 Contents.json，加这类断言用现在的代码也通过；任务范围是三处名字集合一致，资源文件内容由 make-icons.mjs 生成
+- 3（deepseek-v4.1-flash）不成立：### 3. 低 — 材料给的对比基准混入了 PR #561 的整体回退，容易被误当成 PR 580 的改动。意见针对材料基准而不是代码：git merge-base origin/main HEAD 为 a42387e69，而 origin/main 已是 ec350d9（含并行 PR #561），所以 origin/main..HEAD 之外的差异不是本 PR 改动；本 PR 实际只改 package.json 和测试文件，没有代码可改
