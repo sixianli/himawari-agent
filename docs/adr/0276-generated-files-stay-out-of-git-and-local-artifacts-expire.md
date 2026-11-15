@@ -27,6 +27,8 @@ date: "2026-11-15"
 
 ## 背景
 
+本节的大小、个数和提交数都是 2026-11-15 在 Mac 和云端实测的结果，不是代码现状，未经代码核对；讲代码现状的句子在[前提和来源](#premises)一节，那些已对着代码核过。
+
 Andy 问为什么 himawari-agent 这么大。他 Mac 上的克隆一共 16G，但仓库本身只占约 0.5G，其余约 15G 都是本机产生、git 不跟踪的东西（2026-11-15 在 Mac 上只读统计，云端完整克隆核对仓库部分）。
 
 仓库本身：
@@ -52,7 +54,7 @@ Mac 克隆里的本机产物：
 4. 删除 Andy Mac 上的文件只认他在 Mac 线程亲手打的字。`.claude/rules/owner-standing-rules.md:42`：“唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。”
 5. 现有清理只认四种文件名。`scripts/disk-hygiene/prune-rebuildable.py:12`：`REBUILDABLE_FILES = ('*.bundle', 'node-modules.tar.gz', '*-abi[0-9]*-*.tar.gz', 'python-[0-9]*.tar.gz')`；第 53 行跳过 `.ci-output/tools`：`if name == 'tools' and current.name == '.ci-output':`。
 6. 现有定时任务每天 04:00 跑。`scripts/disk-hygiene/install-schedule.sh:88`：`<key>Hour</key><integer>4</integer>`。
-7. 截图脚本把截图和编译缓存都写在仓库目录里。`clients/apple/scripts/ui-review.sh:6`：`out="$root/ui-review/latest"`；第 11 行：`derived="$root/ui-review/DerivedData"`；`clients/apple/scripts/mac-ui-review.sh:6`：`derived="$root/ui-review/DerivedData-mac"`。
+7. 本 PR 之前，截图脚本把截图和编译缓存都写在仓库目录 `clients/apple/ui-review/` 下（`latest`、`DerivedData`、`DerivedData-mac`）；本 PR 改为写到仓库外的缓存目录：`clients/apple/scripts/ui-review.sh:7`：`out="$himawari_apple_cache/ui-review/latest"`，`clients/apple/scripts/mac-ui-review.sh:6`：`out="$himawari_apple_cache/ui-review/mac-latest"`。
 8. 本 PR 之前，`--check` 的临时截图目录（`shots="$(mktemp -d)"`）没有删除它的语句；本 PR 改为检查通过就删，失败才留下并打印 `UI_REVIEW_CHECK_KEPT`。
 9. 截图目录已写进忽略清单。`clients/apple/ui-review/.gitignore:2`：`latest/`；第 6 行：`mac-latest/`。
 10. 本 PR 之前，根 `.gitignore` 没有忽略工作副本目录（`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出，2026-11-15 云端运行）；本 PR 在根 `.gitignore` 加了 `.claude/worktrees/`、`.agents/local/`、`.cb-delegate/`。
@@ -87,8 +89,8 @@ Mac 克隆里的本机产物：
 4. 截图脚本的输出和编译缓存移出仓库目录：默认放在 `~/Library/Caches/himawari/`（可用环境变量改）。`--check` 的临时截图目录成功时在退出时删除，失败时保留并打印路径，留作诊断。`--approve` 先写到临时目录，全部场景齐了再整体替换快照，不再先删后拷。
 5. 新增阻断检查 `npm run check:repo-hygiene`（进 `npm run check` 的步骤列表，CI 的 static 作业和推送前钩子都会跑）：
    - 新增或改动的单个文件超过上限就失败，一次改动新增的总量超过上限也失败；默认单文件 500KB、总量 5MB，写在配置文件里可改。确实需要的大文件（例如快照基准、已有的证据包）在同一配置里按精确路径登记理由，不接受整目录通配。
-   - 比较基准：推送前钩子用待推送的提交，CI 用传入的基准提交算 `base...head`；拿不到基准就失败，不跳过。
-   - 截图输出目录、编译缓存目录、`*.mp4`、`*.mov` 被跟踪就失败（用 `git check-ignore --no-index` 才查得到已被强制加入的文件）。
+   - 比较基准：推送前钩子和 CI 都检查当前签出的 `HEAD`，基准是它和 `origin/main` 的共同祖先（可用环境变量 `HIMAWARI_REPO_HYGIENE_BASE` 换成别的基准），算 `base...HEAD`；拿不到基准就失败，不跳过。推送没签出的分支时钩子查不到那个分支，由 CI 拦。
+   - 截图输出目录、编译缓存目录、`*.mp4`、`*.mov` 被跟踪就失败（用 `git ls-files` 列出被跟踪的文件，已被强制加入的也查得到）。
    - `.claude/worktrees/`、`.agents/local/`、`.cb-delegate/` 没有被忽略就失败；同时把它们加进根 `.gitignore`。
 6. 不改写历史。已经在历史里的 153M 留着，见[要 Andy 定的事](#owner-decisions)第 3 项。
 
@@ -96,17 +98,17 @@ Mac 克隆里的本机产物：
 
 ### 二、开发机上的产物：按期限自动回收
 
-所有期限和保留个数写在 `scripts/disk-hygiene/retention.json`，脚本启动时读并校验（缺失、版本不对、值不在合理范围就停下，不猜默认值），不写死；仍由现有的每天 04:00 定时任务和 `deploy.sh` 触发，截图脚本结束时也跑一次。整轮开始前沿用现有的“有构建或测试在跑就跳过”，进程名单加上 `xcodebuild`、`simctl`（iOS 模拟器命令）、`swiftc`。`install-schedule.sh` 改成把新脚本和配置一起复制过去，并在日志里打印脚本和配置的摘要，免得定时任务一直跑旧副本。
+所有期限和保留个数写在 `scripts/disk-hygiene/retention.json`，脚本启动时读并校验（缺失、版本不对、值不在合理范围就停下，不猜默认值），不写死；由 `install-schedule.sh` 装的每天 04:10 定时任务触发（`deploy.sh` 照旧只跑 `prune-rebuildable.py`）。整轮开始前沿用现有的“有构建或测试在跑就跳过”，进程名单加上 `xcodebuild`、`simctl`（iOS 模拟器命令）、`swiftc`、`swift-frontend`。`install-schedule.sh` 改成把新脚本和配置一起复制过去，并在日志里打印脚本和配置的摘要，免得定时任务一直跑旧副本。
 
 | 产物 | 回收规则 | 默认值 |
 | --- | --- | --- |
 | Xcode 编译缓存 | 所有 Xcode 编译统一走一个包装脚本，缓存按平台固定在 `~/Library/Caches/himawari/DerivedData/<ios、mac、watch>`，跨 PR 复用（增量编译也更快）；包装脚本对每个平台加文件锁，两个编译不会同时写同一份缓存。不再每个 PR 新建 `dd-*`。超过期限没用过、也没有被锁住的缓存目录，和遗留的 `$TMPDIR/dd-*`、仓库里的 `ui-review/DerivedData*`，由回收脚本删掉 | 7 天 |
 | git 工作副本 | 先 `git worktree prune`；其余用 `git worktree list --porcelain -z` 逐个判断，只有同时满足以下全部条件才 `git worktree remove`（不加 `--force`）：没加锁；没有未提交和未跟踪的改动，被忽略的文件只有 `node_modules`、`dist`、`coverage` 这类可重建目录；分支的提交都已在 `origin/main` 里；超过期限没改动；没有进程以它为当前目录；不在保留清单里（上线用的 `../himawari-deploy-wt`、`.ci-output/worktrees` 默认在清单里）。不满足的只列出，不删。不是 git 登记过的副本（例如 `.cb-delegate` 下的目录若不是）只列出 | 3 天 |
-| 旧上线包 | 每个 `production/` 下按日期最新的几个上线包完整保留（当前在服务的和它的回滚目标是最近上线的两个，默认多留一个给“已打包还没上线”的）；更旧的只删大于上限、又不是日志和报告（`.log`、`.md`、`.txt`）的文件，24 小时内改过的不动（照服务器上 `release-cleanup.py` 删大证据文件的做法） | 保留 3 个，大文件线 1MB |
+| 旧上线包 | 每个 `production/` 下按日期最新的几个上线包完整保留（当前在服务的和它的回滚目标是最近上线的两个，默认多留一个给“已打包还没上线”的）；另外，`run-logs/deploy-*.log` 里有 `DEPLOY_RESULT {"result":"passed"` 的包按日期最新的两个也完整保留（它们是在服务的版本和回滚目标，`rollback.sh` 要用同一个包目录），不管后面又打了多少个没上线的包；更旧的只删大于上限、又不是日志和报告（`.log`、`.md`、`.txt`）的文件，24 小时内改过的不动（照服务器上 `release-cleanup.py` 删大证据文件的做法） | 保留 3 个，大文件线 1MB |
 | `.ci-output/handoff`、`tool-execution-audit` 等证据目录 | 只报告大小、日期、有没有被文档引用，不自动删；删不删由 Andy 定（见下一节第 2 项）。`handoff/scripts` 永远不动 | — |
 | `.ci-output/tools` 工具缓存 | 不动：每次检查都要用 | — |
 
-每次运行把删了什么、释放多少、留下了哪些大的、为什么留，写成一行 `PRUNE_RESULT` 进日志。删除前对每个路径再确认一次：不是符号链接、解析后仍在允许的根目录下。第一次装好后先只预演（不带 `--apply`），把会删的清单给 Andy 看，他在 Mac 线程点头后才开始真删。`.agents/instructions/disk-space-hygiene.md` 和 `clients/apple/README.md` 跟着改成新规则。
+每次运行把删了什么、释放多少、留下了哪些大的、为什么留，写成一行 `PRUNE_LOCAL_RESULT` 进日志。配置里的路径在启动时校验：`legacyXcodeDirs` 只能是仓库内的相对路径（不许绝对路径和 `..`），`appleCache` 必须是绝对路径、不能是根目录或主目录本身。删除前对每个路径再确认一次：不是符号链接、解析后仍在允许的根目录下；`--repo` 指向的目录本身（或包含它的工作副本）永远不当作可删的工作副本。第一次装好后先只预演（不带 `--apply`），把会删的清单给 Andy 看，他在 Mac 线程点头后才开始真删。`.agents/instructions/disk-space-hygiene.md` 和 `clients/apple/README.md` 跟着改成新规则。
 
 <a id="options"></a>
 

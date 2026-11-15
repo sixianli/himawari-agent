@@ -8,7 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 platform="$1"
 shift
 for argument in "$@"; do
-  case "$argument" in -derivedDataPath) echo "XCODE_BUILD_DERIVED_DATA_GIVEN the cache path is chosen by this script; leave -derivedDataPath out" >&2; exit 2 ;; esac
+  case "$argument" in -derivedDataPath | -derivedDataPath=*) echo "XCODE_BUILD_DERIVED_DATA_GIVEN the cache path is chosen by this script; leave -derivedDataPath out" >&2; exit 2 ;; esac
 done
 
 trap himawari_release_lock EXIT

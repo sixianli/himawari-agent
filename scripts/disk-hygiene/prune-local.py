@@ -14,6 +14,8 @@ HERE = Path(__file__).resolve().parent
 DATED_PACKET = re.compile(r'^\d{4}-\d{2}-\d{2}-')
 XCODE_BUSY_PATTERN = r'xcodebuild|simctl|swift-frontend|swiftc'
 DAY = 86400
+DEPLOY_PASSED = 'DEPLOY_RESULT {"result":"passed"'
+DEPLOYED_PACKETS_KEPT = 2
 
 
 def load_rebuildable():
@@ -29,6 +31,11 @@ def positive_number(value):
 
 def string_list(value):
     return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+
+
+def relative_inside(value):
+    path = Path(value)
+    return not path.is_absolute() and '..' not in path.parts and value.strip('/.') != ''
 
 
 def load_config(path):
@@ -52,6 +59,14 @@ def load_config(path):
     for key in ('appleCache', 'tmpXcodePrefix'):
         if not isinstance(config.get(key), str) or not config[key]:
             problems.append(key)
+    if 'legacyXcodeDirs' not in problems and not all(relative_inside(item) for item in config['legacyXcodeDirs']):
+        problems.append('legacyXcodeDirs')
+    if 'appleCache' not in problems:
+        cache = Path(os.path.expanduser(config['appleCache']))
+        if not cache.is_absolute() or '..' in cache.parts or cache == Path(cache.anchor) or cache == Path.home():
+            problems.append('appleCache')
+    if 'tmpXcodePrefix' not in problems and '/' in config['tmpXcodePrefix']:
+        problems.append('tmpXcodePrefix')
     if problems:
         raise SystemExit(f'PRUNE_CONFIG_INVALID {path} {",".join(problems)}')
     return config
@@ -157,14 +172,17 @@ def prune_xcode(run, config, repo, tmp, now, busy):
     candidates = []
     cache = Path(os.path.expanduser(config['appleCache'])) / 'DerivedData'
     if cache.is_dir():
-        candidates += [child for child in cache.iterdir() if child.is_dir() and not child.name.endswith('.lock')]
+        candidates += [(child, cache) for child in cache.iterdir() if child.is_dir() and not child.name.endswith('.lock')]
     if repo:
-        candidates += [repo / relative for relative in config['legacyXcodeDirs'] if (repo / relative).is_dir()]
+        candidates += [(repo / relative, repo) for relative in config['legacyXcodeDirs'] if (repo / relative).is_dir()]
     if tmp and Path(tmp).is_dir():
-        candidates += [child for child in Path(tmp).iterdir() if child.name.startswith(config['tmpXcodePrefix']) and child.is_dir()]
-    for path in sorted(candidates):
+        candidates += [(child, Path(tmp)) for child in Path(tmp).iterdir() if child.name.startswith(config['tmpXcodePrefix']) and child.is_dir()]
+    for path, root in sorted(candidates):
         if path.is_symlink():
             run.keep('xcode', path, 'symlink')
+            continue
+        if not inside(path, root) or path.resolve() == root.resolve():
+            run.keep('xcode', path, 'outside-allowed-root')
             continue
         if Path(f'{path}.lock').exists():
             run.keep('xcode', path, 'locked')
@@ -235,7 +253,11 @@ def prune_worktrees(run, config, repo, now, process_dirs):
         registered.add(path.resolve() if path.exists() else path)
         if 'prunable' in entry or not path.exists():
             continue
-        if any(path.resolve() == kept or inside(path, kept) for kept in keep):
+        if path.is_symlink():
+            reason = 'symlink'
+        elif path.resolve() == repo or inside(repo, path):
+            reason = 'current-repo'
+        elif any(path.resolve() == kept or inside(path, kept) for kept in keep):
             reason = 'keep-list'
         elif 'locked' in entry:
             reason = 'locked'
@@ -265,6 +287,19 @@ def prune_worktrees(run, config, repo, now, process_dirs):
                 run.keep('worktree', child, 'not-a-registered-worktree', tree_size(child))
 
 
+def deployed(packet):
+    logs = packet / 'run-logs'
+    if not logs.is_dir():
+        return False
+    for log in logs.glob('deploy-*.log'):
+        try:
+            if DEPLOY_PASSED in log.read_text(errors='replace'):
+                return True
+        except OSError:
+            return True
+    return False
+
+
 def prune_packets(run, config, roots, now):
     cutoff = now - config['minAgeHours'] * 3600
     suffixes = tuple(config['packetKeepSuffixes'])
@@ -274,7 +309,12 @@ def prune_packets(run, config, roots, now):
                 continue
             packets = [child for child in production.iterdir() if child.is_dir() and not child.is_symlink() and DATED_PACKET.match(child.name)]
             packets.sort(key=lambda child: (child.name[:10], child.stat().st_mtime), reverse=True)
-            for packet in packets[config['keepPackets']:]:
+            protected = set(packets[:config['keepPackets']])
+            for packet in [packet for packet in packets if deployed(packet)][:DEPLOYED_PACKETS_KEPT]:
+                if packet not in protected:
+                    run.keep('packet', packet, 'deployed')
+                protected.add(packet)
+            for packet in [packet for packet in packets if packet not in protected]:
                 for directory, subdirectories, files in os.walk(packet):
                     subdirectories[:] = [name for name in subdirectories if not (Path(directory) / name).is_symlink()]
                     for name in files:
@@ -311,7 +351,7 @@ def main(argv=None):
     script_text = Path(__file__).read_bytes()
     print('PRUNE_LOCAL_VERSION ' + json.dumps({'script': hashlib.sha256(script_text).hexdigest()[:12], 'config': hashlib.sha256(config_text).hexdigest()[:12]}))
     if options.skip_if_busy:
-        host, _ = rebuildable.busy_processes(rebuildable.BUSY_PATTERN, options.proc_root)
+        host, _ = rebuildable.busy_processes(f'{rebuildable.BUSY_PATTERN}|{XCODE_BUSY_PATTERN}', options.proc_root)
         if host:
             print('PRUNE_SKIPPED_BUSY: a build or test is running')
             print('PRUNE_LOCAL_RESULT ' + json.dumps({'mode': 'skipped-busy', 'bytes': 0}))

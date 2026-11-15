@@ -4,9 +4,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  lstatSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,9 +53,10 @@ function sha256(buffer) {
 
 export function publish({ cwd, remote, pr, batch, dir }) {
   const ref = artifactRef(pr, batch);
-  const names = readdirSync(dir)
-    .filter((name) => statSync(join(dir, name)).isFile())
-    .sort();
+  const entries = readdirSync(dir).sort();
+  const linked = entries.filter((name) => lstatSync(join(dir, name)).isSymbolicLink());
+  if (linked.length > 0) throw new Error(`UI_REVIEW_ARTIFACT_SYMLINK_REJECTED ${linked.join(",")}`);
+  const names = entries.filter((name) => lstatSync(join(dir, name)).isFile());
   const rejected = names.filter((name) => !FILE_NAME.test(name));
   if (rejected.length > 0)
     throw new Error(`UI_REVIEW_ARTIFACT_FILE_REJECTED ${rejected.join(",")}`);
@@ -129,14 +130,16 @@ export function fetchArtifacts({ cwd, remote, pr, batch, out }) {
       );
     mkdirSync(out, { recursive: true });
     if (readdirSync(out).length > 0) throw new Error(`UI_REVIEW_ARTIFACT_OUT_NOT_EMPTY ${out}`);
+    const verified = [];
     for (const file of manifest.files) {
       if (!FILE_NAME.test(file.path))
         throw new Error(`UI_REVIEW_ARTIFACT_FILE_REJECTED ${file.path}`);
       const content = git(cwd, ["show", `${local}:${file.path}`], { binary: true });
       if (content.length !== file.bytes || sha256(content) !== file.sha256)
         throw new Error(`UI_REVIEW_MANIFEST_MISMATCH ${file.path}`);
-      writeFileSync(join(out, file.path), content);
+      verified.push({ path: file.path, content });
     }
+    for (const file of verified) writeFileSync(join(out, file.path), file.content);
     return { ref, files: manifest.files.length, out };
   } finally {
     git(cwd, ["update-ref", "-d", local]);

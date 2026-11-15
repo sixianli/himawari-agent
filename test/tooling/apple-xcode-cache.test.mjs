@@ -73,6 +73,9 @@ describe("Xcode build cache (ADR 0276)", () => {
     expect(build(env, "ios", "-derivedDataPath", "/tmp/dd-518-ios", "build").output).toContain(
       "XCODE_BUILD_DERIVED_DATA_GIVEN",
     );
+    const joined = build(env, "ios", "-derivedDataPath=/tmp/dd-518-ios", "build");
+    expect(joined.status).toBe(2);
+    expect(joined.output).toContain("XCODE_BUILD_DERIVED_DATA_GIVEN");
     const unknown = build(env, "tvos", "build");
     expect(unknown.status).not.toBe(0);
     expect(unknown.output).toContain("XCODE_CACHE_PLATFORM_INVALID tvos");

@@ -184,6 +184,59 @@ class PruneLocalTest(unittest.TestCase):
         self.assertFalse((production / '2026-10-01-a/materials/source.tar.gz').exists())
         self.assertTrue((production / '2026-10-02-b/materials/source.tar.gz').exists())
 
+    def test_a_deployed_packet_keeps_its_files_however_many_packets_follow_it(self):
+        production = self.repo / '.ci-output/production'
+        names = ['2026-10-01-a', '2026-10-02-b', '2026-10-03-c', '2026-10-04-d', '2026-10-05-e']
+        for name in names:
+            write(production / name / 'materials/source.tar.gz', 2 * 1024 * 1024)
+        write(production / '2026-10-02-b/run-logs/deploy-20261002T000000Z.log').write_text('DEPLOY_RESULT {"result":"passed","stoppedAt":"","exit":0}\n')
+        write(production / '2026-10-01-a/run-logs/deploy-20261001T000000Z.log').write_text('DEPLOY_RESULT {"result":"recovered","stoppedAt":"S3","exit":1}\n')
+        _, output = self.run_prune('--apply')
+        self.assertIn(f'KEEP packet deployed {production / "2026-10-02-b"}', output)
+        self.assertTrue((production / '2026-10-02-b/materials/source.tar.gz').exists())
+        self.assertFalse((production / '2026-10-01-a/materials/source.tar.gz').exists())
+
+    def test_the_repository_given_as_repo_is_never_removed_as_a_worktree(self):
+        linked = self.worktree('self')
+        age(linked)
+        age(self.repo / '.git/worktrees/self')
+        child = subprocess.run(
+            [sys.executable, '-I', str(SCRIPT), '--config', str(self.config), '--repo', str(linked), '--tmp', str(self.tmp), '--apply', '--now', str(NOW)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+        self.assertIn(f'KEEP worktree current-repo {linked}', child.stdout)
+        self.assertTrue(linked.exists())
+
+    def test_a_running_xcode_build_skips_the_whole_round(self):
+        done = self.worktree('done')
+        age(done)
+        age(self.repo / '.git/worktrees/done')
+        marker = 'xcodebuild-prune-local-test-' + str(os.getpid())
+        sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', marker])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        deadline = time.time() + 5
+        while marker not in Path('/proc', str(sleeper.pid), 'cmdline').read_text() and time.time() < deadline:
+            time.sleep(0.02)
+        result, _ = self.run_prune('--apply', '--skip-if-busy', '--now', str(NOW), '--proc-root', str(self.base / 'proc'))
+        self.assertEqual(result['mode'], 'skipped-busy')
+        self.assertTrue(done.exists())
+
+    def test_config_paths_that_leave_their_root_are_refused(self):
+        outside = write(self.base / 'outside/Build/a.o').parents[1]
+        age(outside)
+        for key, value in (('legacyXcodeDirs', ['../outside']), ('legacyXcodeDirs', ['/tmp']), ('appleCache', '~'), ('appleCache', 'relative/cache'), ('tmpXcodePrefix', '../dd-')):
+            with self.subTest(key=key, value=value):
+                config = json.loads((HERE / 'retention.json').read_text())
+                config['appleCache'] = str(self.cache)
+                config[key] = value
+                self.config.write_text(json.dumps(config))
+                child = subprocess.run([sys.executable, '-I', str(SCRIPT), '--config', str(self.config), '--repo', str(self.repo), '--tmp', str(self.tmp), '--apply'], capture_output=True, text=True, check=False)
+                self.assertNotEqual(child.returncode, 0)
+                self.assertIn(f'PRUNE_CONFIG_INVALID {self.config} {key}', child.stderr)
+                self.assertTrue(outside.exists())
+
     def test_bad_config_stops_before_touching_anything(self):
         old = write(self.tmp / 'dd-1-ios/a.o').parent
         age(old)

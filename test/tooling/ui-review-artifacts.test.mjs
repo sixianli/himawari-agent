@@ -1,5 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,12 +86,18 @@ describe("ui-review artifacts (ADR 0276)", () => {
   });
 
   it("refuses files other than png and mp4, and bad pr or batch names", () => {
-    const { mac, shots } = setup();
+    const { root, mac, shots } = setup();
     writeFileSync(join(shots, "notes.txt"), "x");
     expect(run(mac, "publish", "--pr", "1", "--batch", "b1", "--dir", shots).output).toContain(
       "UI_REVIEW_ARTIFACT_FILE_REJECTED notes.txt",
     );
     rmSync(join(shots, "notes.txt"));
+    writeFileSync(join(root, "secret"), "not a screenshot");
+    symlinkSync(join(root, "secret"), join(shots, "secret.png"));
+    expect(run(mac, "publish", "--pr", "1", "--batch", "b1", "--dir", shots).output).toContain(
+      "UI_REVIEW_ARTIFACT_SYMLINK_REJECTED secret.png",
+    );
+    rmSync(join(shots, "secret.png"));
     expect(run(mac, "publish", "--pr", "1", "--batch", "../main", "--dir", shots).output).toContain(
       "UI_REVIEW_ARTIFACT_BATCH_INVALID",
     );
@@ -99,14 +114,22 @@ describe("ui-review artifacts (ADR 0276)", () => {
     git(scratch, "config", "user.name", "test");
     git(scratch, "checkout", "-q", "--orphan", "forge");
     git(scratch, "rm", "-q", "-rf", ".");
-    writeFileSync(join(scratch, "a.png"), "changed");
+    writeFileSync(join(scratch, "a.png"), "good");
+    writeFileSync(join(scratch, "b.png"), "changed");
     writeFileSync(
       join(scratch, "manifest.json"),
       JSON.stringify({
         schemaVersion: 1,
         pr: 7,
         batch: "b1",
-        files: [{ path: "a.png", bytes: 3, sha256: "0".repeat(64) }],
+        files: [
+          {
+            path: "a.png",
+            bytes: 4,
+            sha256: createHash("sha256").update("good").digest("hex"),
+          },
+          { path: "b.png", bytes: 3, sha256: "0".repeat(64) },
+        ],
       }),
     );
     git(scratch, "add", "-A");
@@ -115,7 +138,8 @@ describe("ui-review artifacts (ADR 0276)", () => {
     const out = join(root, "received");
     const result = run(mac, "fetch", "--pr", "7", "--batch", "b1", "--out", out);
     expect(result.status).toBe(1);
-    expect(result.output).toContain("UI_REVIEW_MANIFEST_MISMATCH a.png");
+    expect(result.output).toContain("UI_REVIEW_MANIFEST_MISMATCH b.png");
     expect(readdirSync(out)).toEqual([]);
+    expect(git(mac, "for-each-ref")).not.toContain("ui-review-fetch");
   });
 });
