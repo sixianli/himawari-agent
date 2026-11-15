@@ -8,11 +8,18 @@ import {
   MCP_SYNC_PROJECT_ID_PREFIX,
   MCP_SYNC_RESERVED_PROJECT_ID,
   type McpProjectNote,
+  type McpSyncAttentionDecision,
+  type McpSyncAttentionView,
   type McpSyncClassification,
   type McpSyncDeleteResult,
   type McpSyncItemResult,
   type McpSyncItemStatus,
   type McpSyncLimits,
+  type McpSyncNoteDecision,
+  type McpSyncOverview,
+  type McpSyncPendingEntry,
+  type McpSyncProjectDecision,
+  type McpSyncProjectView,
   type McpSyncPushDelete,
   type McpSyncPushInput,
   type McpSyncPushItem,
@@ -20,8 +27,8 @@ import {
   type McpSyncScope,
 } from "@himawari-agent/application/mcp-memory-sync";
 import type Database from "better-sqlite3";
-import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.ts";
+import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 
 type Scope = McpSyncScope;
 
@@ -107,6 +114,29 @@ export class SqliteMcpMemorySyncOperations {
         );
       case "mcpMemorySync.replacedMemory":
         return this.replacedMemory(payload as Scope & { proposalId: string });
+      case "mcpMemorySync.overview":
+        return this.overview(payload as Scope & { limit: number });
+      case "mcpMemorySync.decideProject":
+        return this.decideProject(
+          payload as Scope & {
+            connectionId: string;
+            projectId: string;
+            decision: McpSyncProjectDecision;
+            now: string;
+          },
+        );
+      case "mcpMemorySync.decideNote":
+        return this.decideNote(
+          payload as Scope & { entryId: string; decision: McpSyncNoteDecision; now: string },
+        );
+      case "mcpMemorySync.resolveAttention":
+        return this.resolveAttention(
+          payload as Scope & {
+            attentionId: string;
+            decision: McpSyncAttentionDecision;
+            now: string;
+          },
+        );
       default:
         return this.fail(
           "PORT_INVALID_OPERATION",
@@ -242,9 +272,7 @@ export class SqliteMcpMemorySyncOperations {
         this.database
           .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
           .run(ref, input.ownerId, input.agentId);
-      } catch {
-        continue;
-      }
+      } catch {}
     }
   }
 
@@ -464,7 +492,7 @@ export class SqliteMcpMemorySyncOperations {
     for (const row of entries) link.run(id, row.entryId);
   }
 
-  private deleteEntry(input: McpSyncPushInput, row: EntryRow): void {
+  private deleteEntry(input: Scope & { readonly now: string }, row: EntryRow): void {
     const proposal = this.proposal(input, row.proposalId);
     if (row.kind === "owner" && proposal?.status === "committed") {
       this.database
@@ -767,5 +795,219 @@ export class SqliteMcpMemorySyncOperations {
       );
     this.writeVersion(input, item, existing.entryId, version, null);
     return this.result(itemStatus(true), item, existing.entryId, projectId);
+  }
+
+  private projectName(scope: Scope, projectId: string): string | null {
+    if (projectId === MCP_SYNC_RESERVED_PROJECT_ID) return null;
+    return (
+      (this.database
+        .prepare(
+          "SELECT display_name FROM mcp_projects WHERE owner_id = ? AND agent_id = ? AND id = ?",
+        )
+        .pluck()
+        .get(scope.ownerId, scope.agentId, projectId) as string | undefined) ?? null
+    );
+  }
+
+  private overview(input: Scope & { limit: number }): McpSyncOverview {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000) this.invalid();
+    const pendingStates = [STATE_AWAITING_APPROVAL, STATE_AWAITING_CONFIRMATION, STATE_REFUSED];
+    const marks = pendingStates.map(() => "?").join(", ");
+    const total = this.database
+      .prepare(
+        `SELECT COUNT(*) FROM mcp_sync_entries
+         WHERE owner_id = ? AND agent_id = ? AND state IN (${marks})
+           AND (kind = 'project_note' OR state = ?)`,
+      )
+      .pluck()
+      .get(input.ownerId, input.agentId, ...pendingStates, STATE_REFUSED) as number;
+    const rows = this.database
+      .prepare(
+        `SELECT e.entry_id AS entryId, e.connection_id AS connectionId,
+           c.name AS connectionName, e.project_id AS projectId, e.kind, e.category,
+           e.classification, e.state, e.version, e.content_ref AS contentRef,
+           e.source_deleted_at AS sourceDeletedAt, e.last_synced_at AS lastSyncedAt,
+           (SELECT v.content_ref FROM mcp_sync_versions v
+             WHERE v.entry_id = e.entry_id AND v.version < e.version
+             ORDER BY v.version DESC LIMIT 1) AS previousContentRef
+         FROM mcp_sync_entries e JOIN mcp_connections c ON c.id = e.connection_id
+         WHERE e.owner_id = ? AND e.agent_id = ? AND e.state IN (${marks})
+           AND (e.kind = 'project_note' OR e.state = ?)
+         ORDER BY e.connection_id, e.project_id, e.last_synced_at DESC, e.entry_id
+         LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, ...pendingStates, STATE_REFUSED, input.limit) as {
+      entryId: string;
+      connectionId: string;
+      connectionName: string;
+      projectId: string;
+      kind: McpSyncPendingEntry["kind"];
+      category: string;
+      classification: McpSyncPendingEntry["classification"];
+      state: McpSyncPendingEntry["state"];
+      version: number;
+      contentRef: string;
+      sourceDeletedAt: string | null;
+      lastSyncedAt: string;
+      previousContentRef: string | null;
+    }[];
+    const entries: McpSyncPendingEntry[] = rows.map(({ sourceDeletedAt, ...row }) => ({
+      ...row,
+      projectName: this.projectName(input, row.projectId),
+      sourceDeleted: sourceDeletedAt !== null,
+    }));
+    const projects = (
+      this.database
+        .prepare(
+          `SELECT connection_id AS connectionId, project_id AS projectId, status AS approval
+           FROM mcp_project_approvals WHERE owner_id = ? AND agent_id = ?
+           ORDER BY connection_id, project_id`,
+        )
+        .all(input.ownerId, input.agentId) as {
+        connectionId: string;
+        projectId: string;
+        approval: McpSyncProjectView["approval"];
+      }[]
+    ).map((row) => ({ ...row, projectName: this.projectName(input, row.projectId) }));
+    const attention = (
+      this.database
+        .prepare(
+          `SELECT a.id AS attentionId, a.connection_id AS connectionId, a.project_id AS projectId,
+             a.created_at AS createdAt,
+             (SELECT COUNT(*) FROM mcp_sync_attention_entries x WHERE x.attention_id = a.id)
+               AS heldEntries,
+             COALESCE((SELECT d.baseline FROM mcp_sync_deletion_days d
+               WHERE d.owner_id = a.owner_id AND d.agent_id = a.agent_id
+                 AND d.connection_id = a.connection_id AND d.project_id = a.project_id
+               ORDER BY d.day DESC LIMIT 1), 0) AS baseline
+           FROM mcp_sync_attention a
+           WHERE a.owner_id = ? AND a.agent_id = ? AND a.status = 'open'
+           ORDER BY a.created_at, a.id`,
+        )
+        .all(input.ownerId, input.agentId) as Omit<McpSyncAttentionView, "projectName">[]
+    ).map((row) => ({ ...row, projectName: this.projectName(input, row.projectId) }));
+    return { projects, entries, entriesTotal: total, attention };
+  }
+
+  private decideProject(
+    input: Scope & {
+      connectionId: string;
+      projectId: string;
+      decision: McpSyncProjectDecision;
+      now: string;
+    },
+  ): { found: boolean; changed: number } {
+    if (!instant(input.now) || (input.decision !== "approve" && input.decision !== "decline"))
+      this.invalid();
+    const status = input.decision === "approve" ? "approved" : "declined";
+    const found = this.database
+      .prepare(
+        `UPDATE mcp_project_approvals SET status = ?, decided_at = ?
+         WHERE owner_id = ? AND agent_id = ? AND connection_id = ? AND project_id = ?`,
+      )
+      .run(status, input.now, input.ownerId, input.agentId, input.connectionId, input.projectId);
+    if (found.changes === 0) return { found: false, changed: 0 };
+    const rows = this.database
+      .prepare(
+        `SELECT entry_id AS entryId, classification FROM mcp_sync_entries
+         WHERE owner_id = ? AND agent_id = ? AND connection_id = ? AND project_id = ?
+           AND kind = 'project_note' AND state IN (?, ?)`,
+      )
+      .all(
+        input.ownerId,
+        input.agentId,
+        input.connectionId,
+        input.projectId,
+        STATE_AWAITING_APPROVAL,
+        STATE_REFUSED,
+      ) as { entryId: string; classification: string }[];
+    const move = this.database.prepare(
+      "UPDATE mcp_sync_entries SET state = ? WHERE entry_id = ? AND state IN (?, ?)",
+    );
+    let changed = 0;
+    for (const row of rows) {
+      const state =
+        input.decision === "decline"
+          ? STATE_REFUSED
+          : row.classification === "sensitive"
+            ? STATE_AWAITING_CONFIRMATION
+            : STATE_ACTIVE;
+      changed += move.run(state, row.entryId, STATE_AWAITING_APPROVAL, STATE_REFUSED).changes;
+    }
+    return { found: true, changed };
+  }
+
+  private decideNote(
+    input: Scope & { entryId: string; decision: McpSyncNoteDecision; now: string },
+  ): { found: boolean; state: string | null } {
+    if (
+      !instant(input.now) ||
+      !["confirm", "refuse", "restore"].includes(input.decision) ||
+      typeof input.entryId !== "string"
+    )
+      this.invalid();
+    const row = this.database
+      .prepare(
+        `SELECT state, connection_id AS connectionId, project_id AS projectId
+         FROM mcp_sync_entries
+         WHERE owner_id = ? AND agent_id = ? AND entry_id = ? AND kind = 'project_note'`,
+      )
+      .get(input.ownerId, input.agentId, input.entryId) as
+      | { state: string; connectionId: string; projectId: string }
+      | undefined;
+    if (row === undefined) return { found: false, state: null };
+    let next: string = row.state;
+    if (input.decision === "confirm" && row.state === STATE_AWAITING_CONFIRMATION)
+      next = STATE_ACTIVE;
+    else if (
+      input.decision === "refuse" &&
+      (row.state === STATE_AWAITING_CONFIRMATION || row.state === STATE_ACTIVE)
+    )
+      next = STATE_REFUSED;
+    else if (input.decision === "restore" && row.state === STATE_REFUSED) {
+      const approval = this.database
+        .prepare(
+          `SELECT status FROM mcp_project_approvals
+           WHERE owner_id = ? AND agent_id = ? AND connection_id = ? AND project_id = ?`,
+        )
+        .pluck()
+        .get(input.ownerId, input.agentId, row.connectionId, row.projectId) as string | undefined;
+      next = approval === "approved" ? STATE_AWAITING_CONFIRMATION : STATE_AWAITING_APPROVAL;
+    }
+    if (next !== row.state)
+      this.database
+        .prepare("UPDATE mcp_sync_entries SET state = ? WHERE entry_id = ?")
+        .run(next, input.entryId);
+    return { found: true, state: next };
+  }
+
+  private resolveAttention(
+    input: Scope & { attentionId: string; decision: McpSyncAttentionDecision; now: string },
+  ): { found: boolean; released: number } {
+    if (!instant(input.now) || (input.decision !== "release" && input.decision !== "keep"))
+      this.invalid();
+    const open = this.database
+      .prepare(
+        `SELECT id FROM mcp_sync_attention
+         WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'open'`,
+      )
+      .get(input.attentionId, input.ownerId, input.agentId);
+    if (open === undefined) return { found: false, released: 0 };
+    let released = 0;
+    if (input.decision === "release") {
+      const rows = this.database
+        .prepare(
+          `${ENTRY_SELECT} WHERE entry_id IN (
+             SELECT entry_id FROM mcp_sync_attention_entries WHERE attention_id = ?)
+           AND state NOT IN (?, ?) AND source_deleted_at IS NULL`,
+        )
+        .all(input.attentionId, STATE_DELETED, STATE_OWNER_DELETED) as EntryRow[];
+      for (const row of rows) this.deleteEntry(input, row);
+      released = rows.length;
+    }
+    this.database
+      .prepare("UPDATE mcp_sync_attention SET status = 'resolved', resolved_at = ? WHERE id = ?")
+      .run(input.now, input.attentionId);
+    return { found: true, released };
   }
 }

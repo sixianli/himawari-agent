@@ -104,6 +104,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.import.undo",
   "memory.external.respond",
   "memory.external.undo",
+  "memory.mcpSync.projectDecide",
+  "memory.mcpSync.noteDecide",
+  "memory.mcpSync.attentionResolve",
   "github.monitor.set_state",
   "memory.mutate",
   "grant.revoke",
@@ -2013,6 +2016,7 @@ export const MEMORY_EXTERNAL_CATEGORY_NAMES = MEMORY_CATEGORY_NAMES.filter(
     category !== "rule",
 );
 export const MEMORY_EXTERNAL_RESPOND_MAXIMUM = 500;
+export const MCP_SYNC_NOTE_TEXT_MAXIMUM = 60_000;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -2475,6 +2479,43 @@ const memoryOverviewSnapshotSchema = object({
         }),
       ),
     }),
+    mcpSync: object({
+      entriesTotal: integer(0),
+      entries: array(
+        object({
+          entryId: machineString,
+          connectionName: boundedString(64),
+          projectName: nullable(boundedString(256)),
+          category: boundedString(32),
+          classification: enumeration(["private", "sensitive"]),
+          state: enumeration(["awaiting_project_approval", "awaiting_confirmation", "refused"]),
+          version: integer(1),
+          text: boundedString(MCP_SYNC_NOTE_TEXT_MAXIMUM),
+          previousText: nullable(boundedString(MCP_SYNC_NOTE_TEXT_MAXIMUM)),
+          sourceDeleted: booleanValue,
+          lastSyncedAt: timestamp,
+        }),
+      ),
+      projects: array(
+        object({
+          connectionId: machineString,
+          projectId: machineString,
+          connectionName: boundedString(64),
+          projectName: nullable(boundedString(256)),
+          approval: enumeration(["pending", "approved", "declined"]),
+        }),
+      ),
+      attention: array(
+        object({
+          attentionId: machineString,
+          connectionName: boundedString(64),
+          projectName: nullable(boundedString(256)),
+          heldEntries: integer(0),
+          baseline: integer(0),
+          createdAt: timestamp,
+        }),
+      ),
+    }),
     generatedAt: timestamp,
   }),
 });
@@ -2799,6 +2840,28 @@ const memoryExternalRespondCommandSchema = object({
 const memoryExternalUndoCommandSchema = object({
   ...commandEnvelope("memory.external.undo"),
   payload: object({ batchId: machineString }),
+});
+const memoryMcpSyncProjectDecideCommandSchema = object({
+  ...commandEnvelope("memory.mcpSync.projectDecide"),
+  payload: object({
+    connectionId: machineString,
+    projectId: machineString,
+    decision: enumeration(["approve", "decline"]),
+  }),
+});
+const memoryMcpSyncNoteDecideCommandSchema = object({
+  ...commandEnvelope("memory.mcpSync.noteDecide"),
+  payload: object({
+    entryId: machineString,
+    decision: enumeration(["confirm", "refuse", "restore"]),
+  }),
+});
+const memoryMcpSyncAttentionResolveCommandSchema = object({
+  ...commandEnvelope("memory.mcpSync.attentionResolve"),
+  payload: object({
+    attentionId: machineString,
+    decision: enumeration(["release", "keep"]),
+  }),
 });
 const memoryApprovalRespondCommandSchema = object({
   ...commandEnvelope("memory.approval.respond"),
@@ -3819,6 +3882,9 @@ const schemasByType = {
   "memory.import.undo": memoryImportUndoCommandSchema,
   "memory.external.respond": memoryExternalRespondCommandSchema,
   "memory.external.undo": memoryExternalUndoCommandSchema,
+  "memory.mcpSync.projectDecide": memoryMcpSyncProjectDecideCommandSchema,
+  "memory.mcpSync.noteDecide": memoryMcpSyncNoteDecideCommandSchema,
+  "memory.mcpSync.attentionResolve": memoryMcpSyncAttentionResolveCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,
   "memory.mutate": mutateMemoryCommandSchema,
   "grant.revoke": revokeGrantCommandSchema,

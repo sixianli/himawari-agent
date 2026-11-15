@@ -8,6 +8,7 @@ import {
   isModelVisible,
   isReviewChangeUndoable,
   type MailMatchParameters,
+  type McpMemorySyncStorePort,
   MEMORY_REVIEW_EXPAND_BATCH,
   MEMORY_REVIEW_LIST_LIMIT,
   type MemoryBookStorePort,
@@ -105,6 +106,9 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.import.undo",
   "memory.external.respond",
   "memory.external.undo",
+  "memory.mcpSync.projectDecide",
+  "memory.mcpSync.noteDecide",
+  "memory.mcpSync.attentionResolve",
 ] as const);
 const SENSITIVE_JUDGMENTS_KEPT = 5000;
 const PINNABLE_CATEGORIES: ReadonlySet<MemoryCategory> = new Set([
@@ -130,6 +134,7 @@ const OWNER_MEMORY_IMPORTANCE = 500;
 const IMPORT_POLICY_VERSION = "memory-import:v1";
 const EXTERNAL_PROPOSALS_SHOWN = 100;
 const EXTERNAL_BATCHES_SHOWN = 10;
+const MCP_SYNC_ENTRIES_SHOWN = 200;
 
 function unsupportedRuleAction(): never {
   throw new ApplicationPortError(
@@ -276,6 +281,7 @@ export class ProductionMemoryControl {
       ProductionMcpMemoryWriter,
       "listPending" | "pendingSummary" | "listBatches" | "undoBatch" | "respond"
     >;
+    readonly mcpSync?: McpMemorySyncStorePort;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: Pick<ProductionImportDuplicateChecker, "check" | "existingLimit">;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
@@ -772,6 +778,107 @@ export class ProductionMemoryControl {
         }),
       ),
     };
+  }
+
+  async #mcpSyncView() {
+    const store = this.options.mcpSync;
+    if (!store) return { entriesTotal: 0, entries: [], projects: [], attention: [] };
+    const { ownerId, agentId } = this.options.configuration;
+    const overview = await store.overview({ ownerId, agentId, limit: MCP_SYNC_ENTRIES_SHOWN });
+    const names = new Map<string, string>();
+    for (const row of overview.entries) names.set(row.connectionId, row.connectionName);
+    const entries = [];
+    for (const row of overview.entries) {
+      let text: string;
+      try {
+        text = await this.readText(row.contentRef);
+      } catch {
+        continue;
+      }
+      let previousText: string | null = null;
+      if (row.previousContentRef !== null)
+        try {
+          previousText = await this.readText(row.previousContentRef);
+        } catch {
+          previousText = null;
+        }
+      entries.push({
+        entryId: row.entryId,
+        connectionName: row.connectionName,
+        projectName: row.projectName,
+        category: row.category,
+        classification: row.classification,
+        state: row.state,
+        version: row.version,
+        text,
+        previousText,
+        sourceDeleted: row.sourceDeleted,
+        lastSyncedAt: row.lastSyncedAt,
+      });
+    }
+    return {
+      entriesTotal: overview.entriesTotal,
+      entries,
+      projects: overview.projects.map((project) => ({
+        connectionId: project.connectionId,
+        projectId: project.projectId,
+        connectionName: names.get(project.connectionId) ?? project.connectionId,
+        projectName: project.projectName,
+        approval: project.approval,
+      })),
+      attention: overview.attention.map(
+        ({ attentionId, projectName, heldEntries, baseline, createdAt, connectionId }) => ({
+          attentionId,
+          connectionName: names.get(connectionId) ?? connectionId,
+          projectName,
+          heldEntries,
+          baseline,
+          createdAt,
+        }),
+      ),
+    };
+  }
+
+  async #mcpSyncCommand(
+    command: Command<
+      | "memory.mcpSync.projectDecide"
+      | "memory.mcpSync.noteDecide"
+      | "memory.mcpSync.attentionResolve"
+    >,
+  ) {
+    const store = this.options.mcpSync;
+    if (!store)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "MEMORY_OPERATION_NOT_INSTALLED",
+      );
+    const { ownerId, agentId } = this.options.configuration;
+    const now = this.options.clock.now();
+    const missing = () =>
+      new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_MCP_SYNC_TARGET_NOT_FOUND");
+    if (command.type === "memory.mcpSync.projectDecide") {
+      const { connectionId, projectId, decision } = command.payload;
+      const result = await store.decideProject({
+        ownerId,
+        agentId,
+        connectionId,
+        projectId,
+        decision,
+        now,
+      });
+      if (!result.found) throw missing();
+      return { resultRef: projectId, replayed: false };
+    }
+    if (command.type === "memory.mcpSync.noteDecide") {
+      const { entryId, decision } = command.payload;
+      const result = await store.decideNote({ ownerId, agentId, entryId, decision, now });
+      if (!result.found) throw missing();
+      return { resultRef: entryId, replayed: false };
+    }
+    const { attentionId, decision } = command.payload;
+    const result = await store.resolveAttention({ ownerId, agentId, attentionId, decision, now });
+    if (!result.found) throw missing();
+    return { resultRef: attentionId, replayed: false };
   }
 
   async #dueReminders() {
@@ -1300,6 +1407,7 @@ export class ProductionMemoryControl {
       undone: undoneAt !== null,
     }));
     const externalProposals = await this.#externalProposals(EXTERNAL_PROPOSALS_SHOWN);
+    const mcpSync = await this.#mcpSyncView();
     const { capturePaused, lastViewedAt } = await this.options.book.readSettings(scope);
     const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
@@ -1311,6 +1419,7 @@ export class ProductionMemoryControl {
         profile,
         pending,
         externalProposals,
+        mcpSync,
         tidyUps,
         conversationReviews,
         reminders,
@@ -1691,6 +1800,12 @@ export class ProductionMemoryControl {
     if (command.type === "memory.import.undo") return this.#importUndo(command);
     if (command.type === "memory.external.respond") return this.#externalRespond(command);
     if (command.type === "memory.external.undo") return this.#externalUndo(command);
+    if (
+      command.type === "memory.mcpSync.projectDecide" ||
+      command.type === "memory.mcpSync.noteDecide" ||
+      command.type === "memory.mcpSync.attentionResolve"
+    )
+      return this.#mcpSyncCommand(command);
     if (command.type === "memory.settings.set") {
       await this.options.book.writeSettings({
         ...this.#scope(),

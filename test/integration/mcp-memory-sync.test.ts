@@ -664,4 +664,180 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       deletes_not_accepted: 1,
     });
   });
+  describe("owner decisions", () => {
+    const stateOf = (raw: {
+      prepare: (sql: string) => { pluck: () => { all: () => unknown[] } };
+    }) => raw.prepare("SELECT state FROM mcp_sync_entries ORDER BY stable_id").pluck().all();
+
+    async function pendingNotes() {
+      const harness = await setup();
+      await harness.sync.sync(
+        { id: harness.first, entry: OAUTH },
+        {
+          entries: [note("n1", "项目甲的第一条笔记", "甲"), note("n2", "项目甲的第二条笔记", "甲")],
+        },
+      );
+      const store = harness.repository.mcpMemorySync();
+      const overview = await store.overview({ ...scope, limit: 50 });
+      return { ...harness, store, overview };
+    }
+
+    it("lists notes waiting for the project approval, grouped with their connection and project", async () => {
+      const { overview, first } = await pendingNotes();
+      expect(overview.entriesTotal).toBe(2);
+      expect(overview.entries.map((entry) => entry.state)).toEqual([
+        "awaiting_project_approval",
+        "awaiting_project_approval",
+      ]);
+      expect(overview.entries[0]).toMatchObject({
+        connectionId: first,
+        connectionName: first,
+        projectName: "甲",
+        kind: "project_note",
+        previousContentRef: null,
+        sourceDeleted: false,
+      });
+      expect(overview.projects).toEqual([
+        {
+          connectionId: first,
+          projectId: overview.entries[0]?.projectId,
+          projectName: "甲",
+          approval: "pending",
+        },
+      ]);
+    });
+
+    it("approving a project activates its notes and later pushes land active", async () => {
+      const { store, overview, first, sync, raw } = await pendingNotes();
+      const projectId = overview.entries[0]?.projectId as string;
+      expect(
+        await store.decideProject({
+          ...scope,
+          connectionId: first,
+          projectId,
+          decision: "approve",
+          now: NOW,
+        }),
+      ).toEqual({ found: true, changed: 2 });
+      expect(stateOf(raw)).toEqual(["active", "active"]);
+      await sync.sync({ id: first, entry: OAUTH }, { entries: [note("n3", "第三条", "甲")] });
+      expect(stateOf(raw)).toEqual(["active", "active", "active"]);
+      expect((await store.overview({ ...scope, limit: 50 })).entriesTotal).toBe(0);
+    });
+
+    it("declining refuses the notes, keeps them listed and lets the owner restore one", async () => {
+      const { store, overview, first, raw } = await pendingNotes();
+      const projectId = overview.entries[0]?.projectId as string;
+      await store.decideProject({
+        ...scope,
+        connectionId: first,
+        projectId,
+        decision: "decline",
+        now: NOW,
+      });
+      const refused = await store.overview({ ...scope, limit: 50 });
+      expect(refused.entries.map((entry) => entry.state)).toEqual(["refused", "refused"]);
+      const entryId = refused.entries[0]?.entryId as string;
+      expect(await store.decideNote({ ...scope, entryId, decision: "restore", now: NOW })).toEqual({
+        found: true,
+        state: "awaiting_project_approval",
+      });
+      await store.decideProject({
+        ...scope,
+        connectionId: first,
+        projectId,
+        decision: "approve",
+        now: NOW,
+      });
+      expect(stateOf(raw)).toEqual(["active", "active"]);
+    });
+
+    it("answers not found for a project or note that is not there or belongs to nothing", async () => {
+      const { store, first } = await pendingNotes();
+      expect(
+        await store.decideProject({
+          ...scope,
+          connectionId: first,
+          projectId: "proj-nope",
+          decision: "approve",
+          now: NOW,
+        }),
+      ).toEqual({ found: false, changed: 0 });
+      expect(
+        await store.decideNote({ ...scope, entryId: "entry-nope", decision: "refuse", now: NOW }),
+      ).toEqual({
+        found: false,
+        state: null,
+      });
+      expect(
+        await store.resolveAttention({
+          ...scope,
+          attentionId: "attn-nope",
+          decision: "keep",
+          now: NOW,
+        }),
+      ).toEqual({
+        found: false,
+        released: 0,
+      });
+    });
+
+    it("lists a brake hold and either releases the held deletions or keeps the entries", async () => {
+      for (const decision of ["release", "keep"] as const) {
+        const harness = await setup();
+        const pushed = await harness.sync.sync(
+          { id: harness.first, entry: HOOK },
+          {
+            entries: ["a", "b", "c", "d"].map((id) =>
+              owner(id, `关于主人的内容 ${id}`, { project: "P" }),
+            ),
+          },
+        );
+        const tags = pushed.entries.map((entry) => entry.versionTag as string);
+        const held = await harness.sync.sync(
+          { id: harness.first, entry: HOOK },
+          {
+            deletes: ["a", "b", "c"].map((id, index) => ({
+              id,
+              project: "P",
+              versionTag: tags[index] as string,
+            })),
+          },
+        );
+        expect(held.deletes.map(({ status }) => status)).toEqual([
+          "awaiting_owner",
+          "awaiting_owner",
+          "awaiting_owner",
+        ]);
+        const store = harness.repository.mcpMemorySync();
+        const { attention } = await store.overview({ ...scope, limit: 50 });
+        expect(attention).toHaveLength(1);
+        expect(attention[0]).toMatchObject({ heldEntries: 3, baseline: 4, projectName: "P" });
+        const result = await store.resolveAttention({
+          ...scope,
+          attentionId: attention[0]?.attentionId as string,
+          decision,
+          now: NOW,
+        });
+        expect(result).toEqual({ found: true, released: decision === "release" ? 3 : 0 });
+        expect((await store.overview({ ...scope, limit: 50 })).attention).toEqual([]);
+        expect(
+          harness.raw
+            .prepare(
+              "SELECT COUNT(*) FROM mcp_sync_entries WHERE state = 'deleted' OR source_deleted_at IS NOT NULL",
+            )
+            .pluck()
+            .get(),
+        ).toBe(decision === "release" ? 3 : 0);
+        expect(
+          await store.resolveAttention({
+            ...scope,
+            attentionId: attention[0]?.attentionId as string,
+            decision,
+            now: NOW,
+          }),
+        ).toEqual({ found: false, released: 0 });
+      }
+    });
+  });
 });

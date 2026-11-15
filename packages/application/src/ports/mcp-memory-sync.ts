@@ -67,6 +67,51 @@ export interface McpSyncScope {
   readonly agentId: AgentId;
 }
 
+export type McpSyncProjectDecision = "approve" | "decline";
+export type McpSyncNoteDecision = "confirm" | "refuse" | "restore";
+export type McpSyncAttentionDecision = "release" | "keep";
+
+export interface McpSyncPendingEntry {
+  readonly entryId: string;
+  readonly connectionId: string;
+  readonly connectionName: string;
+  readonly projectId: string;
+  readonly projectName: string | null;
+  readonly kind: McpSyncKind;
+  readonly category: string;
+  readonly classification: McpSyncClassification;
+  readonly state: "awaiting_project_approval" | "awaiting_confirmation" | "refused";
+  readonly version: number;
+  readonly contentRef: string;
+  readonly previousContentRef: string | null;
+  readonly sourceDeleted: boolean;
+  readonly lastSyncedAt: string;
+}
+
+export interface McpSyncProjectView {
+  readonly connectionId: string;
+  readonly projectId: string;
+  readonly projectName: string | null;
+  readonly approval: "pending" | "approved" | "declined";
+}
+
+export interface McpSyncAttentionView {
+  readonly attentionId: string;
+  readonly connectionId: string;
+  readonly projectId: string;
+  readonly projectName: string | null;
+  readonly createdAt: string;
+  readonly heldEntries: number;
+  readonly baseline: number;
+}
+
+export interface McpSyncOverview {
+  readonly projects: readonly McpSyncProjectView[];
+  readonly entries: readonly McpSyncPendingEntry[];
+  readonly entriesTotal: number;
+  readonly attention: readonly McpSyncAttentionView[];
+}
+
 export interface McpSyncPushItem {
   readonly index: number;
   readonly projectName: string | null;
@@ -140,4 +185,27 @@ export interface McpMemorySyncStorePort {
     },
   ): Promise<{ readonly found: boolean; readonly notes: readonly McpProjectNote[] }>;
   replacedMemory(input: McpSyncScope & { readonly proposalId: string }): Promise<string | null>;
+  overview(input: McpSyncScope & { readonly limit: number }): Promise<McpSyncOverview>;
+  decideProject(
+    input: McpSyncScope & {
+      readonly connectionId: string;
+      readonly projectId: string;
+      readonly decision: McpSyncProjectDecision;
+      readonly now: string;
+    },
+  ): Promise<{ readonly found: boolean; readonly changed: number }>;
+  decideNote(
+    input: McpSyncScope & {
+      readonly entryId: string;
+      readonly decision: McpSyncNoteDecision;
+      readonly now: string;
+    },
+  ): Promise<{ readonly found: boolean; readonly state: string | null }>;
+  resolveAttention(
+    input: McpSyncScope & {
+      readonly attentionId: string;
+      readonly decision: McpSyncAttentionDecision;
+      readonly now: string;
+    },
+  ): Promise<{ readonly found: boolean; readonly released: number }>;
 }
