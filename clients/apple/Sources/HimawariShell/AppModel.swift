@@ -423,7 +423,15 @@ public final class AppModel {
         chat?.reconnect()
         actions?.deviceActionsChanged()
         deliverWaitingHandovers()
+        removeSettledNotifications()
         Task { await refreshConfiguration() }
+    }
+
+    private func removeSettledNotifications() {
+        #if canImport(UserNotifications)
+        let settler = NotificationSettler(center: SystemDeliveredNotifications(), source: api)
+        Task { await settler.reconcile() }
+        #endif
     }
 
     public func removedThisDevice() {
