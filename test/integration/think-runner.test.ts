@@ -16,6 +16,7 @@ import {
 import {
   loadBundledMigrations,
   openQualifiedDatabase,
+  SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
@@ -23,6 +24,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { registerTaskProposalHandler } from "../../apps/agent-service/src/production-task-proposals.ts";
 import { thinkActions } from "../../apps/agent-service/src/production-think-actions.ts";
+import { ThinkThreadRetention } from "../../apps/agent-service/src/production-think-retention.ts";
 import {
   isThinkRunSource,
   THINK_MESSAGE_PREFIX,
@@ -264,6 +266,7 @@ describe("think runner", () => {
       payloads,
       protector,
       file,
+      stateRoot,
     };
   }
 
@@ -602,5 +605,89 @@ describe("think runner", () => {
     const before = await service.create(request);
     const after = await service.create({ ...request, origin: "think" });
     expect(after.thread.id).toBe(before.thread.id);
+  });
+  it("deletes a finished thinking thread and everything it holds once the kept days pass, and nothing else", async () => {
+    const { think, service, payloads, protector, file, stateRoot } = await fixture({
+      status: "completed",
+      text: JSON.stringify({ action: "none", reason: "只是通知" }),
+    });
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "nothing_to_propose" });
+    await payloads.put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "owner-old-text",
+        contentType: "text/plain",
+        dataClassification: "private",
+        plaintext: new TextEncoder().encode("很久以前的对话"),
+        createdAt: START,
+      }),
+    );
+    await service.create({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: "thread:think:owner-made" as never,
+      idempotencyKey: "owner-old",
+      resultRef: "owner-old-text" as never,
+    });
+    const sql = (statement: string, ...parameters: unknown[]) => {
+      const db = openQualifiedDatabase(file);
+      try {
+        const prepared = db.prepare(statement);
+        if (prepared.reader)
+          return prepared.all(...parameters) as Record<string, unknown>[];
+        prepared.run(...parameters);
+        return [];
+      } finally {
+        db.close();
+      }
+    };
+    sql("UPDATE threads SET archived_at = ? WHERE origin = 'owner'", "2020-01-01T00:00:00.000Z");
+    const [thinking] = sql("SELECT id FROM threads WHERE origin = 'think'");
+    const thinkId = String(thinking?.["id"]);
+    const contentRefs = sql(
+      "SELECT content_ref AS ref FROM thread_messages WHERE thread_id = ?",
+      thinkId,
+    ).map((row) => String(row["ref"]));
+    expect(contentRefs.length).toBeGreaterThan(0);
+    const clock = { value: START };
+    let overrides: Record<string, number> = {};
+    const retention = new ThinkThreadRetention({
+      deletion: {
+        deleteExpiredThinkThreads: (input) =>
+          new SqliteGovernedDeletionAdapter({
+            stateRoot,
+            databasePath: file,
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            now: () => clock.value,
+          }).deleteExpiredThinkThreads(input),
+      },
+      settings: { overrides: async () => overrides, defaultValue: () => 7 },
+      clock: { now: () => clock.value },
+    });
+    const later = (days: number) => new Date(Date.parse(START) + days * 86_400_000).toISOString();
+    clock.value = later(30);
+    expect(await retention.runOnce()).toBe(0);
+    sql("UPDATE runs SET status = 'completed' WHERE thread_id = ?", thinkId);
+    clock.value = later(3);
+    expect(await retention.runOnce()).toBe(0);
+    overrides = { threadRetentionDays: 500 };
+    expect(await retention.retentionDays()).toBe(7);
+    overrides = { threadRetentionDays: 2 };
+    expect(await retention.runOnce()).toBe(1);
+    expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toEqual([]);
+    expect(sql("SELECT id FROM thread_messages WHERE thread_id = ?", thinkId)).toEqual([]);
+    expect(sql("SELECT id FROM runs WHERE thread_id = ?", thinkId)).toEqual([]);
+    for (const ref of contentRefs)
+      expect(sql("SELECT ref FROM payloads WHERE ref = ?", ref)).toEqual([]);
+    expect(sql("SELECT id FROM threads").map((row) => row["id"])).toEqual([
+      "thread:think:owner-made",
+    ]);
+    clock.value = later(400);
+    expect(await retention.runOnce()).toBe(0);
+    expect(sql("SELECT id FROM threads").map((row) => row["id"])).toEqual([
+      "thread:think:owner-made",
+    ]);
   });
 });
