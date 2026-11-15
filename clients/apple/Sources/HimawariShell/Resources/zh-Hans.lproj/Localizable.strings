@@ -45,3 +45,6 @@
 "pairing.startOver.confirm" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢。";
 "pairing.startOver.confirmUnsent" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；但还有 %d 条消息没发出去，会一起删掉。";
 "pairing.startOver.confirmUnknown" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；这台 iPhone 上如果有还没发出去的消息，会一起删掉。";
+"watch.offer.title" = "给这块 Apple Watch 用吗";
+"watch.offer.watch" = "给手表用";
+"watch.offer.cancel" = "不用";
