@@ -25,7 +25,7 @@ date: "2026-11-15"
 
 ## 背景
 
-“主动提议下一步”的提议箱已经能存提议、让主人采纳、执行确定动作（改提醒时间、新建提醒）和开一次“去办一件事”的运行（[ADR 0272](0272-owner-proposals-join-the-data-export-format-v4.md) 之前的 PR 520、533、534）。缺的是“谁来提议”：Himawari 新知道一件事（一封邮件、一条新存下的记忆、一个提醒）时，没有统一的地方判断“要不要主动对主人说一句”。如果每个来源各写一套判断和提议代码，来源一多就按场景堆规则。这个决定给出一个入口：来源只往入口里写一条记录，入口负责去重、限量、判断和想。
+“主动提议下一步”的提议箱已经能存提议、让主人采纳、执行确定动作（改提醒时间、新建提醒）和开一次“去办一件事”的运行（[ADR 0272](0272-owner-proposals-join-the-data-export-format-v4.md) 之前的 PR 520、533、534）。缺的是“谁来提议”：Himawari 新知道一件事（一封邮件、一条新存下的记忆、一个提醒）时，要有一个统一的地方判断“要不要主动对主人说一句”。如果每个来源各写一套判断和提议代码，来源一多就按场景堆规则。这个决定给出一个入口：来源只往入口里写一条记录，入口负责去重、限量、判断和想。
 
 Andy 2026-11-15 的答复（经协调者转来）：同意新增后台模型调用；第一版要带工具，需要上网就去查；这里按方案线程的建议来，复核都同意。
 
@@ -38,11 +38,11 @@ Andy 2026-11-15 的答复（经协调者转来）：同意新增后台模型调�
 1. 提议箱已有两类处理方，动作类处理方有核对、领取、执行、读回、撤销五步：`apps/agent-service/src/production-proposals.ts` 的 `ProposalActionHandler`（接口里的 `verify`、`execute`、`readBack`、`undo`）。
 2. 同意后开的运行记成 `external_event`：`apps/agent-service/src/production-task-proposals.ts` 的 `execute` 调 `admitOwnerMessage` 时传 `triggerSource: "external_event"`（PR 534）。
 3. 触发表的来源只允许三种，所以不用新迁移：`packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql:133`（`CHECK (source_type IN ('user_message', 'schedule', 'external_event'))`）。
-4. 后台运行里任何非读取的动作会被内置规则拒绝：`packages/application/src/rules/action-rules.ts:238` 的 `refuseBackgroundAfterExternalContent`；`external_event` 来源的运行一律被标成有外来内容：`apps/agent-service/src/owner-scope-authorization.ts:249`。所以由入口开出的“想一想”运行即使拿到写工具，也做不了写操作。
+4. 来源不是主人消息的运行，读到外部内容之后，非读取、也不是管理任务的动作会被内置规则拒绝：`packages/application/src/rules/action-rules.ts:238` 的 `refuseBackgroundAfterExternalContent`；`external_event` 来源的运行一律被标成有外来内容：`apps/agent-service/src/owner-scope-authorization.ts:249`。所以由入口开出的“想一想”运行即使拿到写工具，也做不了写操作。
 5. 一轮运行出工具的地方不按运行来源收窄：`apps/agent-service/src/production-runtime-tools.ts` 里给一轮运行出工具的函数先放读、编码工具，再按配置逐个追加联网搜索、读网页、记忆检索、提醒、规则、感知工具，没有读运行来源的分支。
-6. 动作登记表里每个工具有动作类别：`apps/agent-service/src/production-tool-actions.ts` 的 `READ_DEFAULTS`、`codingRead` 等行带 `actionKind: "READ"`，写类行是 `CREATE_OR_UPDATE`。
+6. 动作登记表里每个工具有动作类别：`apps/agent-service/src/production-tool-actions.ts` 的 `READ_DEFAULTS`、`codingRead` 等行带 `actionKind: "READ"`；写文件、执行命令等行的 `actionKind` 不是 `READ`（例如 `CREATE_OR_UPDATE`、`INSTALL_OR_EXECUTE_CODE`）。
 7. 是非题的判断已有 Jev 的三处现成调用：`packages/platform-node/src/memory-import-duplicate-decision.ts`、`owner-intent-decision.ts`、`voice-addressee-decision.ts`，都走 `POST {gateway}/decisions`，带 `providerOptions: { gateway: { zeroDataRetention: true } }`，每道选择题返回 `choice`、`confidence` 和各选项的 `probabilities`。Andy 2026-11-14 定：是非和多选一类判断优先用 Jev。
-8. 发给外部服务的文字必须先过出口遮盖：`scripts/check-egress-redaction.mjs`，调用 `redactForExternalText`。
+8. 发给外部服务的文字必须先过出口遮盖：`scripts/check-egress-redaction.mjs` 里登记了每个对外发文字的文件，并要求这些文件里有 `redactForExternalText(` 调用。
 9. 模型要看的提示词都登记在目录里，并有摘要登记：`packages/prompt-catalog/prompt-manifest.json`，`apps/agent-service/test/prompt-catalog.unit.test.ts` 检查每条提示词有登记、摘要对得上。
 10. 规则：理解用户意思交给模型，程序只校验（[ADR 0249](0249-the-model-judges-meaning-where-word-lists-guessed-it.md)）。
 
