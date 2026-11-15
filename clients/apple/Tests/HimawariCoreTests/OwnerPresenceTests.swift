@@ -194,6 +194,37 @@ import Testing
         #expect(oldestSeenByServer + networkAllowance <= PresenceReportPolicy.shortestServerWindow)
     }
 
+    @Test func inputRightAfterAKeepAliveOfAnOldReadingIsReportedAtTheNextCheck() {
+        let idleSince = start
+        let keepAlive = PresenceReport(lastInputAt: idleSince, sentAt: start.addingTimeInterval(240))
+        let resumed = start.addingTimeInterval(241)
+        #expect(policy.shouldReport(lastInputAt: resumed, now: resumed, lastReport: keepAlive, streamConnected: true))
+    }
+
+    @Test func onceTheOwnerIsBackTheServerSeesFreshInputWithinOneCheck() {
+        let networkAllowance: TimeInterval = 10
+        let check = policy.secondsUntilNextCheck(now: start, lastReport: nil)
+        for idle in [5.0, 14, 16, 29, 31, 120, 239, 240, 241, 250, 400] {
+            for offset in stride(from: 0.0, to: 20, by: 0.25) {
+                let back = start.addingTimeInterval(idle + offset)
+                var now = start
+                var lastReport: PresenceReport?
+                var oldestSeenByServer: TimeInterval = 0
+                while now < back.addingTimeInterval(120) {
+                    let lastInputAt = now < back ? start : now
+                    if let lastReport, now >= back.addingTimeInterval(check) {
+                        oldestSeenByServer = max(oldestSeenByServer, now.timeIntervalSince(lastReport.lastInputAt))
+                    }
+                    if policy.shouldReport(lastInputAt: lastInputAt, now: now, lastReport: lastReport, streamConnected: true) {
+                        lastReport = PresenceReport(lastInputAt: lastInputAt, sentAt: now)
+                    }
+                    now = now.addingTimeInterval(policy.secondsUntilNextCheck(now: now, lastReport: lastReport))
+                }
+                #expect(oldestSeenByServer + networkAllowance <= PresenceReportPolicy.shortestServerWindow, "idle \(idle)s, back after \(offset)s more")
+            }
+        }
+    }
+
     @Test func anUnreadableIdleTimeIsNotTakenAsInputJustNow() {
         #expect(PresenceReport.lastInput(secondsSinceInput: -1, now: start) == nil)
         #expect(PresenceReport.lastInput(secondsSinceInput: .nan, now: start) == nil)

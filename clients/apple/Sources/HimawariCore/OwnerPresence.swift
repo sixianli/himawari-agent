@@ -99,10 +99,10 @@ public struct PresenceReportPolicy: Sendable, Equatable {
 
     public func shouldReport(lastInputAt: Date, now: Date, lastReport: PresenceReport?, streamConnected: Bool) -> Bool {
         guard let lastReport else { return true }
-        let elapsed = now.timeIntervalSince(lastReport.sentAt)
-        if elapsed < minimumInterval { return false }
-        if PresenceReport.wholeSeconds(lastInputAt) != lastReport.lastInputAt { return true }
-        return streamConnected && elapsed >= keepAliveInterval
+        if PresenceReport.wholeSeconds(lastInputAt) != lastReport.lastInputAt {
+            return now.timeIntervalSince(lastReport.lastInputAt) >= minimumInterval
+        }
+        return streamConnected && now.timeIntervalSince(lastReport.sentAt) >= keepAliveInterval
     }
 
     public func secondsUntilNextCheck(now: Date, lastReport: PresenceReport?) -> TimeInterval {

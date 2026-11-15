@@ -130,6 +130,47 @@ import Testing
         #expect(menu.revealedNotice == nil)
     }
 
+    private func temporaryStore() throws -> FileLocalStore {
+        try FileLocalStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true))
+    }
+
+    private func settledIds(in store: FileLocalStore) -> [String] {
+        store.read(PendingNotifications.settledName).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+    }
+
+    @Test func noticesSettledBeforeTheFirstStoreAreSavedInIt() throws {
+        let menu = model()
+        menu.receive(.notificationWithdraw(id: "before-ready"))
+        let store = try temporaryStore()
+        menu.settle(in: store)
+        #expect(settledIds(in: store) == ["before-ready"])
+    }
+
+    @Test func pairingAgainStartsTheNewDeviceWithNoneOfTheOldNoticesOrSettledIds() throws {
+        let menu = model()
+        var removed: [String] = []
+        var shown: [String] = []
+        menu.removeNotice = { removed.append($0) }
+        menu.showNotice = { shown.append($0.id) }
+        let old = try temporaryStore()
+        menu.settle(in: old)
+        menu.receive(.notificationDeliver(DeviceNotification(id: "old-1", kind: "run_result", title: "a", body: "", homeKey: nil, createdAt: "2026-11-15T01:00:00.000Z")))
+        menu.receive(.notificationDeliver(DeviceNotification(id: "old-2", kind: "run_result", title: "b", body: "", homeKey: nil, createdAt: "2026-11-15T02:00:00.000Z")))
+        menu.receive(.notificationWithdraw(id: "old-settled"))
+        menu.reveal("old-1")
+        removed = []
+        let fresh = try temporaryStore()
+        menu.settle(in: fresh)
+        #expect(menu.shownNotices.isEmpty)
+        #expect(Set(removed) == ["old-1", "old-2"])
+        #expect(menu.revealedNotice == nil)
+        #expect(!menu.noticesExpanded)
+        #expect(settledIds(in: fresh).isEmpty)
+        menu.receive(.notificationDeliver(DeviceNotification(id: "old-settled", kind: "run_result", title: "c", body: "", homeKey: nil, createdAt: "2026-11-15T03:00:00.000Z")))
+        #expect(shown.last == "old-settled")
+        #expect(settledIds(in: old) == ["old-settled"])
+    }
+
     @Test func theSystemIdleTimeCanBeRead() throws {
         let seconds = try #require(PresenceSensor.secondsSinceInput())
         #expect(seconds >= 0)

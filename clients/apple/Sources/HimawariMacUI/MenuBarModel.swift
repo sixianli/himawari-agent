@@ -52,6 +52,7 @@ final class MenuBarModel {
     @ObservationIgnored private var actionRequestIds: [String: String] = [:]
     @ObservationIgnored private var demoShowsStop = false
     @ObservationIgnored private weak var settledStore: FileLocalStore?
+    @ObservationIgnored private var hasSettledStore = false
 
     init(app: AppModel, settings: MacSettingsStore) {
         self.app = app
@@ -123,9 +124,21 @@ final class MenuBarModel {
     }
 
     private func rememberSettled() {
-        guard let store = app.deviceStore, store !== settledStore else { return }
-        notices.remember(in: store)
+        settle(in: app.deviceStore)
+    }
+
+    func settle(in store: FileLocalStore?) {
+        guard let store, store !== settledStore else { return }
+        if hasSettledStore {
+            for notice in notices.items { removeNotice?(notice.id) }
+            notices = PendingNotifications(rememberingIn: store)
+            revealedNotice = nil
+            noticesExpanded = false
+        } else {
+            notices.remember(in: store)
+        }
         settledStore = store
+        hasSettledStore = true
     }
 
     var mostPressing: HomeItem? { home?.mostPressing }
