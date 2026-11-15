@@ -32,6 +32,7 @@ public struct OutgoingMessage: Codable, Sendable, Equatable, Identifiable {
 
 public final class DeviceAPI: Sendable {
     public let http: DeviceHTTPClient
+    let pendingActions = PendingActionIdentities()
 
     public init(http: DeviceHTTPClient) {
         self.http = http

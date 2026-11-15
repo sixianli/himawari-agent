@@ -1,0 +1,8 @@
+# PR 592 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1、高：回答语言只写进 thread 元数据，没有模型侧消费者，菜单实际不改变回答语言。iOS 发出的 thread.set_answer_locale 与 gateway-contracts 的 thread-v3 合约一致（ThreadManagement.swift setThreadAnswerLocale）；模型侧没有消费者是服务端既有缺口：thread.create 写入的 answerLocale 同样走不到 answerLocalePolicy（packages/application 里 answerLocalePolicy 只在 run-execution-input-service.ts:183 透传、生产无产生处）。不是本 PR 引入也不在其范围，需 Andy 定是否接线。
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2、高：幂等键、messageId、fork 的 targetThreadId 每次重新生成，未知结果后的重试会重复执行。ThreadManagement.swift 原 gatewayIdentifier 每次随机生成 messageId/idempotencyKey/targetThreadId；网页用生成一次持久到结果确定的 key（thread-control-center.tsx:1017-1123）。已改为按动作描述保留待定身份，成功才清除。；触发：fork/改名/置顶/归档响应丢失后用户再点一次；后果：每次重试都是新 idempotencyKey 和新 targetThreadId，fork 会产生第二条对话，改名等重复执行
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3、中：删除流程在“暂停任务”和“trash”之间不是原子的，失败会留下已暂停任务且客户端没有恢复入口。ChatStore+Manage.swift delete：暂停是用户在确认页同意的；暂停后 trash 失败，再点删除会重查 impact，已无活动任务直接继续，不会卡死；网页本无暂停任务路径。属体验改进，原子命令需服务端支持。
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4、中：新增的 ChatStore/UI 编排没有自动检查，Linux 的 314 项测试完全没有编译 HimawariChat。Package.swift:21 Linux 下 interfaceTargets 为空，HimawariChat 在 Linux 不参与构建，是仓库既有结构；ChatStore 级测试需 Mac 上的 Xcode，本环境无法加。核心请求体已由 ThreadManagementTests 覆盖。
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5、低：fork 选源把所有角色都算进去，可能在回答进行中从 owner 消息分出无回答的新对话；网页只在已回答轮次、从 agent 消息分出。ThreadForkSource.latest 原本不看角色；已限定 role == .agent 并补测试（forkSourceIsTheNewestCommittedAgentMessageWithATurn）。；触发：回答进行中对该对话点分出；后果：从尚无回答的 owner 消息分出，新对话只有问题；只是体验差，不丢数据
+- 6（deepseek-v4.1-flash）成立，可以更好：### 6、低：作者关于“服务端搜索设备路由没有”的说法与代码不符；彻底删除也只是本 PR 没做，服务端已有 change 档。client-capabilities.ts:274 确有 thread.search 查询；作者说明“设备路由没有”不准确，本机搜索是产品取舍。只影响 PR 描述文字，代码无误。

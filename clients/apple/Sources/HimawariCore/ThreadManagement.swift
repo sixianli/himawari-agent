@@ -49,7 +49,7 @@ public enum ThreadGatewayCommand {
 
 public enum ThreadForkSource {
     public static func latest(in messages: [ThreadMessage]) -> (turnId: String, watermark: Int)? {
-        guard let last = messages.filter({ $0.status == .committed && $0.turnId != nil }).max(by: { $0.sequence < $1.sequence }),
+        guard let last = messages.filter({ $0.role == .agent && $0.status == .committed && $0.turnId != nil }).max(by: { $0.sequence < $1.sequence }),
               let turnId = last.turnId
         else { return nil }
         return (turnId, last.sequence)
@@ -79,24 +79,31 @@ extension DeviceAPI {
         prefix + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
-    public func protectedText(_ content: String) async throws -> String {
+    func runAction(_ descriptor: String, _ send: (String) async throws -> CommandOutcome) async throws -> CommandOutcome {
+        let identity = pendingActions.identity(for: descriptor)
+        let outcome = try await send(identity)
+        pendingActions.settle(descriptor)
+        return outcome
+    }
+
+    func protectedText(_ content: String, identity: String = DeviceAPI.gatewayIdentifier(""), slot: Int = 0) async throws -> String {
         struct Body: Encodable {
             let idempotencyKey: String
             let content: String
             let dataClassification: String
         }
         struct Created: Decodable { let payloadRef: String }
-        let body = Body(idempotencyKey: Self.gatewayIdentifier("device-text-"), content: content, dataClassification: "private")
+        let body = Body(idempotencyKey: "device-text-\(identity)-\(slot)", content: content, dataClassification: "private")
         let data = try await http.send(DeviceRequest(method: "POST", path: "payloads/text/new", body: try JSONEncoder().encode(body)))
         return try decode(Created.self, data).payloadRef
     }
 
-    public func threadCommand<Payload: Encodable>(_ type: String, payload: Payload) async throws -> CommandOutcome {
+    func threadCommand<Payload: Encodable>(_ type: String, payload: Payload, identity: String = DeviceAPI.gatewayIdentifier("")) async throws -> CommandOutcome {
         let body = ThreadGatewayRequest(
             gateway: ThreadGatewayQuery.gateway,
             type: type,
-            messageId: Self.gatewayIdentifier("device-"),
-            idempotencyKey: Self.gatewayIdentifier("device-"),
+            messageId: "device-m-\(identity)",
+            idempotencyKey: "device-k-\(identity)",
             payload: payload
         )
         let data = try await http.send(DeviceRequest(method: "POST", path: "gateway", body: try JSONEncoder().encode(body)))
@@ -180,12 +187,15 @@ extension DeviceAPI {
             let titleSource: String
             let resultRef: String
         }
-        let titleRef = try await protectedText(title)
-        let resultRef = try await protectedText("thread-action:rename")
-        return try await threadCommand(
-            ThreadGatewayCommand.rename,
-            payload: Payload(threadId: threadId, expectedRevision: expectedRevision, titleRef: titleRef, titleSource: "owner", resultRef: resultRef)
-        )
+        return try await runAction("rename|\(threadId)|\(expectedRevision)|\(title)") { identity in
+            let titleRef = try await protectedText(title, identity: identity, slot: 0)
+            let resultRef = try await protectedText("thread-action:rename", identity: identity, slot: 1)
+            return try await threadCommand(
+                ThreadGatewayCommand.rename,
+                payload: Payload(threadId: threadId, expectedRevision: expectedRevision, titleRef: titleRef, titleSource: "owner", resultRef: resultRef),
+                identity: identity
+            )
+        }
     }
 
     public func pinThread(_ threadId: String, expectedRevision: Int, pinOrder: Int?) async throws -> CommandOutcome {
@@ -203,11 +213,14 @@ extension DeviceAPI {
             }
             enum Keys: String, CodingKey { case threadId, expectedRevision, pinOrder, resultRef }
         }
-        let resultRef = try await protectedText("thread-action:pin")
-        return try await threadCommand(
-            ThreadGatewayCommand.pin,
-            payload: Payload(threadId: threadId, expectedRevision: expectedRevision, pinOrder: pinOrder, resultRef: resultRef)
-        )
+        return try await runAction("pin|\(threadId)|\(expectedRevision)|\(pinOrder.map(String.init) ?? "-")") { identity in
+            let resultRef = try await protectedText("thread-action:pin", identity: identity)
+            return try await threadCommand(
+                ThreadGatewayCommand.pin,
+                payload: Payload(threadId: threadId, expectedRevision: expectedRevision, pinOrder: pinOrder, resultRef: resultRef),
+                identity: identity
+            )
+        }
     }
 
     public func lifecycleThread(_ type: String, threadId: String, expectedRevision: Int) async throws -> CommandOutcome {
@@ -217,11 +230,14 @@ extension DeviceAPI {
             let reasonCode: String
             let resultRef: String
         }
-        let resultRef = try await protectedText("thread-action:\(type.dropFirst("thread.".count))")
-        return try await threadCommand(
-            type,
-            payload: Payload(threadId: threadId, expectedRevision: expectedRevision, reasonCode: Self.managedReasonCode, resultRef: resultRef)
-        )
+        return try await runAction("\(type)|\(threadId)|\(expectedRevision)") { identity in
+            let resultRef = try await protectedText("thread-action:\(type.dropFirst("thread.".count))", identity: identity)
+            return try await threadCommand(
+                type,
+                payload: Payload(threadId: threadId, expectedRevision: expectedRevision, reasonCode: Self.managedReasonCode, resultRef: resultRef),
+                identity: identity
+            )
+        }
     }
 
     public func setThreadAnswerLocale(_ threadId: String, expectedRevision: Int, locale: AnswerLocale) async throws -> CommandOutcome {
@@ -231,11 +247,14 @@ extension DeviceAPI {
             let answerLocale: AnswerLocale
             let resultRef: String
         }
-        let resultRef = try await protectedText("thread-action:set_answer_locale")
-        return try await threadCommand(
-            ThreadGatewayCommand.setAnswerLocale,
-            payload: Payload(threadId: threadId, expectedRevision: expectedRevision, answerLocale: locale, resultRef: resultRef)
-        )
+        return try await runAction("locale|\(threadId)|\(expectedRevision)|\(locale.rawValue)") { identity in
+            let resultRef = try await protectedText("thread-action:set_answer_locale", identity: identity)
+            return try await threadCommand(
+                ThreadGatewayCommand.setAnswerLocale,
+                payload: Payload(threadId: threadId, expectedRevision: expectedRevision, answerLocale: locale, resultRef: resultRef),
+                identity: identity
+            )
+        }
     }
 
     public func forkThread(from threadId: String, turnId: String, watermark: Int) async throws -> CreatedThread {
@@ -248,8 +267,10 @@ extension DeviceAPI {
             let policyRefs: [String]
             let resultRef: String
         }
-        let resultRef = try await protectedText("thread-action:fork")
-        let targetThreadId = Self.gatewayIdentifier("thread-fork:")
+        let descriptor = "fork|\(threadId)|\(turnId)|\(watermark)"
+        let identity = pendingActions.identity(for: descriptor)
+        let targetThreadId = "thread-fork:\(identity)"
+        let resultRef = try await protectedText("thread-action:fork", identity: identity)
         let outcome = try await threadCommand(
             ThreadGatewayCommand.fork,
             payload: Payload(
@@ -260,8 +281,10 @@ extension DeviceAPI {
                 summaryRefs: [],
                 policyRefs: [],
                 resultRef: resultRef
-            )
+            ),
+            identity: identity
         )
+        pendingActions.settle(descriptor)
         guard case let .accepted(revision, _) = outcome else { throw DeviceAPIError.invalidResponse }
         return CreatedThread(threadId: targetThreadId, threadRevision: revision)
     }
@@ -287,18 +310,41 @@ extension DeviceAPI {
             }
             enum Keys: String, CodingKey { case threadId, taskId, expectedTaskRevision, action, targetThreadId, reasonCode, resultRef }
         }
-        let resultRef = try await protectedText("thread-action:task.resolve")
-        return try await threadCommand(
-            ThreadGatewayCommand.resolveTask,
-            payload: Payload(
-                threadId: threadId,
-                taskId: task.taskId,
-                expectedTaskRevision: task.revision,
-                action: "pause",
-                targetThreadId: nil,
-                reasonCode: Self.managedReasonCode,
-                resultRef: resultRef
+        return try await runAction("pause|\(threadId)|\(task.taskId)|\(task.revision)") { identity in
+            let resultRef = try await protectedText("thread-action:task.resolve", identity: identity)
+            return try await threadCommand(
+                ThreadGatewayCommand.resolveTask,
+                payload: Payload(
+                    threadId: threadId,
+                    taskId: task.taskId,
+                    expectedTaskRevision: task.revision,
+                    action: "pause",
+                    targetThreadId: nil,
+                    reasonCode: Self.managedReasonCode,
+                    resultRef: resultRef
+                ),
+                identity: identity
             )
-        )
+        }
+    }
+}
+
+final class PendingActionIdentities: @unchecked Sendable {
+    private let lock = NSLock()
+    private var identities: [String: String] = [:]
+
+    func identity(for descriptor: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = identities[descriptor] { return existing }
+        let created = DeviceAPI.gatewayIdentifier("")
+        identities[descriptor] = created
+        return created
+    }
+
+    func settle(_ descriptor: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        identities[descriptor] = nil
     }
 }

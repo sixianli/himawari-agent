@@ -152,22 +152,47 @@ import Testing
         #expect(text.range(of: "^[A-Za-z0-9_-]{16,64}$", options: .regularExpression) != nil)
     }
 
-    private func message(_ id: String, _ sequence: Int, turn: String?, status: MessageStatus = .committed) throws -> ThreadMessage {
+    private func message(_ id: String, _ sequence: Int, turn: String?, status: MessageStatus = .committed, role: String = "agent") throws -> ThreadMessage {
         let turnJSON = turn.map { "\"\($0)\"" } ?? "null"
-        let text = #"{"messageId":"\#(id)","sequence":\#(sequence),"role":"owner","contentRef":"c","status":"\#(status.rawValue)","turnId":\#(turnJSON),"runId":null,"committedAt":"2026-11-15T00:00:00Z"}"#
+        let text = #"{"messageId":"\#(id)","sequence":\#(sequence),"role":"\#(role)","contentRef":"c","status":"\#(status.rawValue)","turnId":\#(turnJSON),"runId":null,"committedAt":"2026-11-15T00:00:00Z"}"#
         return try JSONDecoder().decode(ThreadMessage.self, from: Data(text.utf8))
     }
 
-    @Test func forkSourceIsTheNewestCommittedMessageWithATurn() throws {
+    @Test func forkSourceIsTheNewestCommittedAgentMessageWithATurn() throws {
         let messages = [
             try message("m1", 1, turn: "turn-1"),
             try message("m2", 2, turn: "turn-1"),
             try message("m3", 3, turn: nil),
             try message("m4", 4, turn: "turn-2", status: .partial),
+            try message("m5", 5, turn: "turn-3", role: "owner"),
         ]
         let source = try #require(ThreadForkSource.latest(in: messages))
         #expect(source.turnId == "turn-1")
         #expect(source.watermark == 2)
+    }
+
+    @Test func retryingAfterAnUnknownResultReusesTheSameIdentity() async throws {
+        let exchange = RecordingExchange([
+            reply(textCreated), HTTPExchangeResponse(status: 503, body: Data()),
+            reply(textCreated), reply(accepted),
+        ])
+        let service = try api(exchange)
+        await #expect(throws: (any Error).self) { _ = try await service.forkThread(from: "t1", turnId: "turn-9", watermark: 12) }
+        let created = try await service.forkThread(from: "t1", turnId: "turn-9", watermark: 12)
+        let first = try json(exchange.requests[1])
+        let second = try json(exchange.requests[3])
+        #expect(first["idempotencyKey"] as? String == second["idempotencyKey"] as? String)
+        #expect(first["messageId"] as? String == second["messageId"] as? String)
+        #expect((first["payload"] as? [String: Any])?["targetThreadId"] as? String == created.threadId)
+        #expect((second["payload"] as? [String: Any])?["targetThreadId"] as? String == created.threadId)
+    }
+
+    @Test func aNewActionAfterAnAcceptedOneGetsANewIdentity() async throws {
+        let exchange = RecordingExchange([reply(textCreated), reply(accepted), reply(textCreated), reply(accepted)])
+        let service = try api(exchange)
+        _ = try await service.pinThread("t1", expectedRevision: 3, pinOrder: 0)
+        _ = try await service.pinThread("t1", expectedRevision: 3, pinOrder: 0)
+        #expect(try json(exchange.requests[1])["idempotencyKey"] as? String != json(exchange.requests[3])["idempotencyKey"] as? String)
     }
 
     @Test func forkSourceIsAbsentWithoutAnyTurn() throws {
