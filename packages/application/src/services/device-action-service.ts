@@ -174,6 +174,8 @@ function plainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const RECONCILE_BATCH = 100;
+
 export class ReadOnlyDeviceActionAuthorization implements DeviceActionAuthorizationPort {
   async authorize(intent: DeviceActionIntent): Promise<DeviceActionAuthorization> {
     if (intent.actionKind === "READ" && intent.risk === "LOW" && !intent.ownerPresence)
@@ -284,7 +286,31 @@ export class DeviceActionService {
     });
   }
 
+  async reconcile(approvalId?: string): Promise<void> {
+    const { authorization, store, scope } = this.#options;
+    const resolve = authorization.resolve?.bind(authorization);
+    if (!resolve) return;
+    const waiting = await store.list({
+      ...scope,
+      deviceId: null,
+      states: ["waiting_owner"],
+      limit: RECONCILE_BATCH,
+      ...(approvalId === undefined ? {} : { approvalId }),
+    });
+    for (const record of waiting) {
+      if (record.approvalId === null) continue;
+      const outcome = await resolve(record.approvalId);
+      if (outcome.decision === "pending") continue;
+      await this.#apply({
+        actionId: record.id,
+        approved: outcome.decision === "allow",
+        ownerPresent: outcome.decision === "allow" && outcome.ownerPresent,
+      });
+    }
+  }
+
   async settle(): Promise<void> {
+    await this.reconcile();
     const settled = await this.#options.store.settleDue({
       ...this.#options.scope,
       now: this.#options.now(),
@@ -385,6 +411,8 @@ export class DeviceActionService {
       ownerPresence,
       untrustedOriginAllowed: registration.untrustedOriginAllowed,
       readUntrustedContent: await this.#options.readUntrustedContent(input.runId),
+      title: registration.title,
+      detail,
       dataClassification: input.dataClassification,
       requestedAt: now,
       expiresAt,
@@ -754,6 +782,14 @@ export class DeviceActionService {
     readonly ownerPresent: boolean;
   }): Promise<DeviceActionRecordState | undefined> {
     await this.settle();
+    return this.#apply(input);
+  }
+
+  async #apply(input: {
+    readonly actionId: string;
+    readonly approved: boolean;
+    readonly ownerPresent: boolean;
+  }): Promise<DeviceActionRecordState | undefined> {
     const { store, scope } = this.#options;
     const before = await store.read({ ...scope, id: input.actionId });
     if (!before) return undefined;

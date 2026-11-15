@@ -1525,6 +1525,13 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(options.deviceActions
+      ? {
+          onApprovalResolved: async (approval) => {
+            await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
     ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
     ...(memoryControl ? { memoryControl } : {}),

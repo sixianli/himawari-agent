@@ -3,6 +3,8 @@ import {
   ACTION_KIND_RISK_BASELINE,
   ACTION_RULE_IDS,
   type ApprovalAskedBecause,
+  type ApprovalDisplayInput,
+  type ApprovalRequest,
   ActionPolicyService,
   actionGateFacts,
   type AuditLedgerPort,
@@ -57,6 +59,12 @@ export interface OwnerScopeDecisionContext {
   readonly tool: string;
   readonly parameterFingerprint: string;
   readonly externalSources: readonly string[];
+  readonly display?: () => Promise<ApprovalDisplayInput>;
+}
+
+export interface OwnerScopeIntentExtras {
+  readonly targets?: readonly { readonly type: string; readonly ref: string }[];
+  readonly display?: () => Promise<ApprovalDisplayInput>;
 }
 
 const ASKED_BECAUSE_SOURCES = 5;
@@ -138,6 +146,7 @@ export class OwnerScopeAuthorization {
     row: ToolActionRow,
     freeze: OwnerScopeFreeze,
     signal?: AbortSignal,
+    extras: OwnerScopeIntentExtras = {},
   ): Promise<PermissionDecision> {
     signal?.throwIfAborted();
     const { configuration, clock } = this.#options;
@@ -188,6 +197,7 @@ export class OwnerScopeAuthorization {
           { type: row.targetType, ref: configuration.ownerId },
           { type: "tool", ref: row.tool },
           { type: "input-digest", ref: inputDigest },
+          ...(extras.targets ?? []),
         ],
         dataClassification: invocation.dataClassification,
         sideEffect: row.sideEffect,
@@ -237,6 +247,7 @@ export class OwnerScopeAuthorization {
       tool: row.tool,
       parameterFingerprint: parameterFingerprint(invocation.arguments),
       externalSources,
+      ...(extras.display ? { display: extras.display } : {}),
     });
   }
 
@@ -250,6 +261,51 @@ export class OwnerScopeAuthorization {
       await marks.mark(invocation.runId, "external_event");
     const found: ExternalContentSource[] = [...(await marks.read(invocation.runId))];
     return [...new Set(found.map(({ origin }) => origin))].sort();
+  }
+
+  async approvalOutcome(
+    approvalId: string,
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly kind: "unknown" | "pending" }
+    | { readonly kind: "denied" | "expired" }
+    | { readonly kind: "allowed"; readonly recentlyAuthenticated: boolean }
+    | { readonly kind: "refused"; readonly reasonCode: string }
+  > {
+    const { configuration, clock, store } = this.#options;
+    const approval = await store.getApproval(approvalId);
+    if (
+      !approval ||
+      approval.ownerId !== configuration.ownerId ||
+      approval.agentId !== configuration.agentId ||
+      !("contractVersion" in approval.intentSnapshot)
+    )
+      return { kind: "unknown" };
+    if (approval.status === "pending")
+      return clock.now() >= approval.expiresAt ? { kind: "expired" } : { kind: "pending" };
+    if (approval.status === "denied" || approval.status === "expired")
+      return { kind: approval.status };
+    const source = await this.#options.source.read(approval.runId);
+    if (!source) return { kind: "refused", reasonCode: "run_source_unavailable" };
+    const decision = await this.decide(
+      approval.intentSnapshot as GovernedActionIntent,
+      source.sourceType,
+      signal,
+    );
+    if (decision.decision !== "ALLOW")
+      return {
+        kind: "refused",
+        reasonCode: decision.decision === "DENY" ? decision.reasonCode : "approval_pending",
+      };
+    const governed = approval as ApprovalRequest & {
+      readonly recentAuthenticationRef?: string | null;
+    };
+    return {
+      kind: "allowed",
+      recentlyAuthenticated:
+        typeof governed.recentAuthenticationRef === "string" &&
+        governed.recentAuthenticationRef !== "",
+    };
   }
 
   async decide(
@@ -293,6 +349,7 @@ export class OwnerScopeAuthorization {
     return this.#policy.evaluate(intent, {
       uiAvailable: true,
       approvalExpiresAt: intent.expiresAt,
+      ...(context?.display ? { display: context.display } : {}),
       ...(rule.outcome === "ask_owner" && rule.hit
         ? { askedBecause: askedBecause(rule.hit, context?.externalSources ?? []) }
         : {}),
