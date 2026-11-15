@@ -22,6 +22,7 @@ import {
   ruleBookFor,
 } from "@himawari-agent/application";
 import {
+  MCP_FIND_PROJECT_NOTES_LABEL,
   MCP_PROPOSE_MEMORIES_RESULT,
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
@@ -58,7 +59,12 @@ import {
   MCP_TOOL_PROPOSE_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
   MCP_TOOL_PROPOSE_RULE,
+  MCP_TOOL_SYNC_MEMORIES,
   MCP_TOOL_RESULT_FAILED,
+  MCP_SYNC_MEMORIES_FAILED,
+  MCP_SYNC_MEMORIES_FULL,
+  MCP_SYNC_MEMORIES_INVALID,
+  MCP_SYNC_MEMORIES_RESULT,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
@@ -113,6 +119,14 @@ import {
   type ExternalRuleProposal,
   type ExternalRuleType,
 } from "./production-mcp-rule-writer.js";
+import { checkProjectName } from "./mcp-project-name.js";
+import {
+  MCP_SYNC_BATCH_TOO_LARGE,
+  MCP_SYNC_FULL,
+  MCP_SYNC_KIND_NAMES,
+  type McpSyncOutcome,
+  type ProjectNotesFound,
+} from "./production-mcp-sync.js";
 import type { RecallResult } from "./production-memory-recall.js";
 import type { RulePreview } from "./production-owner-rules.js";
 import type { ListedReminder } from "./production-reminder-writer.js";
@@ -126,7 +140,12 @@ const MCP_CONNECTION_PAUSED = Object.freeze({ code: "MCP_CONNECTION_PAUSED" });
 export const MCP_HOOK_READS_PER_MINUTE = 60;
 
 export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
-export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_memories", "propose_rule"] as const;
+export const MCP_WRITE_TOOL_NAMES = [
+  "propose_memory",
+  "propose_memories",
+  "sync_memories",
+  "propose_rule",
+] as const;
 export const MCP_PROPOSE_MEMORIES_MAXIMUM = 50;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
@@ -202,6 +221,11 @@ export interface McpCeilingReader {
   }) => Promise<FoundSummaries | undefined>;
   readonly ownerRules: () => Promise<readonly StoredOwnerRule[]>;
   readonly builtInRules: () => Promise<readonly SharedRule[]>;
+  readonly projectNotes: (input: {
+    readonly project: string;
+    readonly query: string;
+    readonly limit: number;
+  }) => Promise<ProjectNotesFound>;
 }
 
 export type McpReadSourceName = keyof McpCeilingReader;
@@ -213,6 +237,7 @@ const MCP_READ_SOURCE_NAMES: readonly McpReadSourceName[] = Object.freeze([
   "summaries",
   "ownerRules",
   "builtInRules",
+  "projectNotes",
 ]);
 
 export interface McpReadContext {
@@ -308,9 +333,21 @@ export interface McpRuleProposals {
   readonly accept: (proposal: ExternalRuleProposal) => Promise<string>;
 }
 
+export interface McpSyncAccess {
+  readonly sync: (
+    connection: { readonly id: string; readonly entry: McpConnectionEntry },
+    args: unknown,
+  ) => Promise<McpSyncOutcome>;
+  readonly projectNotes: (
+    input: { readonly project: string; readonly query: string; readonly limit: number },
+    ceiling: McpReadCeiling,
+  ) => Promise<ProjectNotesFound>;
+}
+
 export interface McpWriteAccess {
   readonly proposals: McpMemoryProposals;
   readonly rules: McpRuleProposals;
+  readonly sync?: McpSyncAccess;
 }
 
 export interface McpAccessVerifier {
@@ -848,6 +885,58 @@ export class ProductionMcpRead {
         },
       );
     }
+    const sync = this.#options.write?.sync;
+    if (sync && context.authInfo?.scopes.includes(WRITE_ACCESS) === true) {
+      const text = { type: "string" };
+      server.registerTool(
+        "sync_memories",
+        {
+          description: MCP_TOOL_SYNC_MEMORIES.text,
+          inputSchema: fromJsonSchema<JsonObject>({
+            type: "object",
+            properties: {
+              entries: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: text,
+                    text,
+                    kind: { type: "string", enum: [...MCP_SYNC_KIND_NAMES] },
+                    category: { type: "string" },
+                    project: { type: "string" },
+                  },
+                  required: ["id", "text", "kind"],
+                  additionalProperties: false,
+                },
+              },
+              deletes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { id: text, project: { type: "string" }, versionTag: text },
+                  required: ["id", "versionTag"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            additionalProperties: false,
+          } as never),
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+        },
+        async (args: JsonObject, handlerContext) => {
+          const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
+          return this.#counted(connection, "sync_memories", client, () =>
+            this.#syncMemories(sync, connection, args),
+          );
+        },
+      );
+    }
     const rules = this.#options.write?.rules;
     if (
       rules &&
@@ -896,6 +985,43 @@ export class ProductionMcpRead {
       );
     }
     return server;
+  }
+
+  async #syncMemories(
+    sync: McpSyncAccess,
+    connection: ConnectionRef,
+    args: JsonObject,
+  ): Promise<CallToolResult> {
+    try {
+      const outcome = await sync.sync({ id: connection.id, entry: connection.entry }, args);
+      await recordMcpUsage(this.#usage, {
+        connectionId: connection.id,
+        entry: connection.entry,
+        tool: "sync_memories",
+        auto: false,
+        counts: outcome.counts,
+      });
+      return proposalReply(
+        JSON.stringify({
+          note: MCP_SYNC_MEMORIES_RESULT.text,
+          entries: outcome.entries,
+          deletes: outcome.deletes,
+        }),
+        false,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === MCP_SYNC_BATCH_TOO_LARGE)
+        return proposalReply(
+          JSON.stringify({ error: "batch_too_large", note: MCP_SYNC_MEMORIES_INVALID.text }),
+          true,
+        );
+      if (error instanceof Error && error.message === MCP_SYNC_FULL)
+        return proposalReply(MCP_SYNC_MEMORIES_FULL.text, true);
+      if (error instanceof Error && error.message === "MCP_SYNC_REQUEST_INVALID")
+        return proposalReply(MCP_SYNC_MEMORIES_INVALID.text, true);
+      this.#options.onFailure(error);
+      return proposalReply(MCP_SYNC_MEMORIES_FAILED.text, true);
+    }
   }
 
   async #proposeRule(
@@ -1370,11 +1496,18 @@ export class ProductionMcpRead {
       ownerRules: () => ownerRulesWithin(sources, ceiling),
       builtInRules: async () =>
         sharedRulesWithin((sources.ruleBook ?? ruleBookFor)(await sources.settings()), ceiling),
+      projectNotes: async (input) =>
+        (await this.#options.write?.sync?.projectNotes(input, ceiling)) ?? {
+          found: false,
+          notes: [],
+          more: false,
+        },
     };
     const reader: Partial<Record<McpReadSourceName, unknown>> = {};
     for (const name of declared) {
       if (name === "profile" && !profile) continue;
       if (name === "summaries" && !summaries) continue;
+      if (name === "projectNotes" && !this.#options.write?.sync) continue;
       reader[name] = full[name];
     }
     return reader as Partial<McpCeilingReader>;
@@ -1588,6 +1721,52 @@ function declaredSource<K extends McpReadSourceName>(
   return source as McpCeilingReader[K];
 }
 
+const PROJECT_NOTES_DEFAULT_LIMIT = 5;
+const PROJECT_NOTES_NAME_MAXIMUM = 256;
+
+async function findProjectNotes(
+  read: Partial<McpCeilingReader>,
+  project: unknown,
+  recallArgs: JsonObject,
+  auto: boolean,
+): Promise<ToolOutcome> {
+  const name = checkProjectName(project, PROJECT_NOTES_NAME_MAXIMUM);
+  const query = recallArgs["query"];
+  if (!name.ok || name.value === null || typeof query !== "string" || query.length === 0)
+    return {
+      output: {
+        error: "MEMORY_RECALL_INPUT_INVALID",
+        note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+      },
+      memoryIds: [],
+      rejected: true,
+    };
+  const requested = recallArgs["limit"];
+  const limit = Math.min(
+    typeof requested === "number" ? requested : PROJECT_NOTES_DEFAULT_LIMIT,
+    auto ? AUTO_FIND_LIMIT : PROJECT_NOTES_DEFAULT_LIMIT * 2,
+  );
+  const found = await declaredSource(
+    read,
+    "projectNotes",
+  )({
+    project: name.value,
+    query,
+    limit,
+  });
+  const empty = found.notes.length === 0;
+  return {
+    output: {
+      note: MCP_FIND_PROJECT_NOTES_LABEL.text,
+      project: name.value,
+      notes: found.notes,
+      ...(found.more ? { more: true } : {}),
+    },
+    memoryIds: [],
+    empty,
+  };
+}
+
 async function findMemories({
   args,
   signal,
@@ -1595,8 +1774,9 @@ async function findMemories({
   read,
   context: options,
 }: McpReadRequest): Promise<ToolOutcome> {
+  const { auto, project, ...recallArgs } = args;
+  if (project !== undefined) return findProjectNotes(read, project, recallArgs, auto === true);
   const recall = declaredSource(read, "recall");
-  const { auto, ...recallArgs } = args;
   const requested = recallArgs["limit"];
   const forwarded: JsonObject =
     auto === true
@@ -1814,11 +1994,12 @@ export const MCP_READ_TOOLS: readonly McpReadToolEntry[] = mcpReadToolRegistry([
         includeHistory: { type: "boolean" },
         limit: { type: "integer", minimum: 1, maximum: 10 },
         auto: { type: "boolean" },
+        project: { type: "string", minLength: 1, maxLength: 256 },
       },
       required: ["query"],
       additionalProperties: false,
     },
-    readCeiling: { sources: ["recall"] },
+    readCeiling: { sources: ["recall", "projectNotes"] },
     run: findMemories,
   },
   {
