@@ -16,9 +16,12 @@ function configNames() {
 function swiftNames() {
   const source = readFileSync(new URL("Icon.swift", design), "utf8");
   const body = source.slice(source.indexOf("enum IconName"), source.indexOf("public struct Icon"));
-  return [...body.matchAll(/^\s*case\s+(\w+)(?:\s*=\s*"([^"]+)")?\s*$/gmu)].map(
+  const names = [...body.matchAll(/^\s*case\s+(\w+)(?:\s*=\s*"([^"]+)")?\s*$/gmu)].map(
     (match) => match[2] ?? match[1],
   );
+  const caseTokens = body.match(/\bcase\b/gu) ?? [];
+  expect(caseTokens.length, "Icon.swift has a case line the test cannot parse").toBe(names.length);
+  return names;
 }
 
 function catalogNames() {
