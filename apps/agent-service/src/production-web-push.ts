@@ -39,6 +39,8 @@ const RUN_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const MAX_PAYLOAD_BYTES = 3_072;
+const MAC_TITLE_BYTES = 256;
+const MAC_BODY_BYTES = 2_048;
 const SEND_BATCH = 50;
 const FINISHED_RUN_BATCH = 100;
 
@@ -536,7 +538,9 @@ export class ProductionWebPush {
       if (built.expired) this.#options.placement?.withdraw(webPushTopic(item.sourceKey));
       return built;
     };
+    this.#options.placement?.withdrawExpired();
     const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
+      if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
       if (await this.#deferred(item, now, gated, decisions)) return true;
       return !visible && (await this.#place(item, contentOf, accountLocale));
     };
@@ -599,14 +603,17 @@ export class ProductionWebPush {
       const content = await contentOf(item);
       if (content.expired) return false;
       const built = content.build(accountLocale ?? "en");
-      return placement.place({
-        id: webPushTopic(item.sourceKey),
-        kind: item.kind,
-        title: built.title,
-        body: built.body,
-        homeKey: item.threadId,
-        createdAt: item.createdAt,
-      });
+      return placement.place(
+        {
+          id: webPushTopic(item.sourceKey),
+          kind: item.kind,
+          title: clip(built.title, MAC_TITLE_BYTES),
+          body: clip(built.body, MAC_BODY_BYTES),
+          homeKey: item.threadId,
+          createdAt: item.createdAt,
+        },
+        Date.parse(item.expiresAt),
+      );
     } catch (error) {
       this.#options.onFailure(error);
       return false;

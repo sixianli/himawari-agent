@@ -869,10 +869,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
 
       device.post("/presence", async (request, reply) => {
         const authenticated = await authenticate(request);
+        if (authenticated.device.kind !== "mac") options.rejectNotAllowed();
         const notifications = options.notifications;
         if (!notifications)
           return options.sendJson(reply, 200, { ok: false, reason: "unavailable" });
-        if (authenticated.device.kind !== "mac") options.rejectNotAllowed();
         const body = json(request);
         const lastInputAt = body["lastInputAt"];
         if (

@@ -113,6 +113,7 @@ export class DevicePresence {
   recent(nowMs: number, windowMs: number): readonly string[] {
     return [...this.#lastInput]
       .filter(([, at]) => nowMs - at <= windowMs)
+      .sort((left, right) => right[1] - left[1])
       .map(([deviceId]) => deviceId);
   }
 }

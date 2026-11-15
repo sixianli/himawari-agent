@@ -139,14 +139,14 @@ date: "2026-11-15"
 
 起因：Mac 和 iPhone 都装了的时候，同一条提醒会两处同时响。这里记服务器这一半，客户端那一半由 Mac 和 iPhone 的客户端批次做（方案见 `/mnt/project-files/plans/push-followup-proposal.md` 第 2 节）。
 
-- 判断谁来响：一条通知放行后（已过推送规则和送达时机），如果有一台 Mac 同时满足“有一条打开着的事件流”和“最近 `macPresenceSeconds` 秒内有过键鼠输入”，就只发给这台 Mac，不再发给 iPhone 和网页；否则照旧发给 iPhone。`macPresenceSeconds` 是送达时机设置的第 12 项，默认 300 秒，范围 30 到 3600 秒，和另外 11 项一样能在 App 里改（没配 `runPolicy.deliveryTiming` 时用默认值）。
+- 判断谁来响：一条通知放行后（已过推送规则和送达时机），如果有一台 Mac 同时满足“有一条打开着的事件流”和“最近 `macPresenceSeconds` 秒内有过键鼠输入”，就只发给这台 Mac（同时有几台满足时，选最近一次有输入的那一台），不再发给 iPhone 和网页；否则照旧发给 iPhone。`macPresenceSeconds` 是送达时机设置的第 12 项，默认 300 秒，范围 30 到 3600 秒，和另外 11 项一样能在 App 里改（没配 `runPolicy.deliveryTiming` 时用默认值）。
 - Mac 报在场：`POST /api/device/v1/presence`，请求体只有 `lastInputAt`（毫秒精度的 ISO 时间）；只有 Mac 能调（其他设备得到 404）；服务器把它夹在服务器当前时间以内，防止设备时钟偏快；返回 `{ok, serverTime}`。
 - Mac 收通知：Mac 的事件流里多两种事件 `notification.deliver`（带 `id`、`kind`、`title`、`body`、`homeKey`、`createdAt`）和 `notification.withdraw`（带 `id`）。这两种事件不带 `id:` 行，因为客户端把 `id:` 当作断点续传的游标。Mac 上打开事件流不再算“应用正在屏幕上”，否则一开着 Mac 就把 iPhone 的推送压住了。
-- 撤回：一条事项已经办结（提醒被划掉或完成、审批已处理）时，服务器给收过它的 Mac 发 `notification.withdraw`。
+- 撤回：一条事项已经办结（提醒被划掉或完成、审批已处理），或者它的有效期已过时，服务器给收过它的 Mac 发 `notification.withdraw`；`settled` 对账同样把有效期已过的算作已结束。
 - iPhone 对账：`POST /api/device/v1/notifications/settled`，请求体 `{ids}`（最多 200 个，每个只含字母、数字、下划线、连字符，最长 64），返回 `{settledIds}`；只返回服务器确认已办结的，认不得的或还有效的不返回，iPhone 据此撤掉已经没用的通知。iPhone 的推送载荷顶层带 `notificationId`，值就是上面的 `id`。
 - 通知 `id` 就是推送的 tag（对来源键做哈希），三处用同一个值。
 
-没做：Mac 在场信号在服务重启后清空（进程内存），Mac 下一次上报前通知会退回 iPhone；这是故意的，宁可多响一处也不漏。
+没做：Mac 在场信号在服务重启后清空（进程内存），Mac 下一次上报前通知会退回 iPhone；这是故意的，宁可多响一处也不漏。同样，哪台 Mac 收过哪条通知也只记在进程内存里，服务重启后，重启前已放置还没过期的通知会退回 iPhone，Mac 上那条也收不到撤回。
 
 <a id="references"></a>
 

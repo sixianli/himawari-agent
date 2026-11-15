@@ -1580,6 +1580,45 @@ describe("[IOS-4] push channels", () => {
     ]);
   });
 
+  it("[IOS-9] sends to only the Mac with the newest input when two Macs qualify", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("two");
+    context.setClock(T0);
+    mac.connect("dev_old");
+    mac.connect("dev_new");
+    mac.presence.record("dev_old", Date.parse(T0) - 200_000);
+    mac.presence.record("dev_new", Date.parse(T0) - 5_000);
+    await context.push.tick();
+    await settle();
+    expect(mac.frames).toHaveLength(1);
+    expect(context.apns.ofType("alert")).toEqual([]);
+  });
+
+  it("[IOS-9] tells the Mac to withdraw when the notification life ends while the reminder is still open", async () => {
+    let nowMs = Date.parse(T0);
+    const mac = macSetup(() => nowMs);
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("stale");
+    context.setClock(T0);
+    mac.connect("dev_mac");
+    mac.presence.record("dev_mac", nowMs - 1_000);
+    await context.push.tick();
+    await settle();
+    nowMs += 7 * 3_600_000;
+    context.setClock(new Date(nowMs).toISOString());
+    await context.push.tick();
+    await settle();
+    expect(mac.frames.map((frame) => frame.event)).toEqual([
+      "notification.deliver",
+      "notification.withdraw",
+    ]);
+  });
+
   it("[IOS-9] answers which notification ids are settled, and leaves live and unknown ids out", async () => {
     const context = await setup();
     context.device(IPHONE, "iphone");

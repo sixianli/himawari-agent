@@ -74,6 +74,8 @@ describe("[IOS-9] device presence", () => {
     presence.record("b", 100);
     expect(presence.recent(1_200, 300)).toEqual(["a"]);
     expect(presence.recent(1_200, 2_000)).toEqual(["a", "b"]);
+    presence.record("b", 1_100);
+    expect(presence.recent(1_200, 2_000)).toEqual(["b", "a"]);
     presence.forget("a");
     expect(presence.recent(1_200, 2_000)).toEqual(["b"]);
   });
