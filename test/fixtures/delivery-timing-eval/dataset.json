@@ -1,0 +1,679 @@
+{
+  "cases": [
+    {
+      "id": "busy-driving-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "driving",
+          "secondsAgo": 15
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-driving-2",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "driving",
+          "secondsAgo": 200
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-driving-3",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "driving",
+          "secondsAgo": 60
+        },
+        {
+          "signal": "car_connection",
+          "value": "connected",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-carplay-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "car_connection",
+          "value": "connected",
+          "secondsAgo": 20
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-carplay-2",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "car_connection",
+          "value": "connected",
+          "secondsAgo": 120
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 100
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-cycling",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "cycling",
+          "secondsAgo": 40
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-running",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "running",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-asleep-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "asleep",
+          "secondsAgo": 300
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-asleep-2",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "asleep",
+          "secondsAgo": 900
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 200
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-asleep-3",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "asleep",
+          "secondsAgo": 60
+        },
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 120
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-focus-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-focus-2",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 400
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 100
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-focus-3",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 20
+        },
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 90
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-talk-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "speech",
+          "value": "owner_and_others",
+          "secondsAgo": 20
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-talk-2",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "speech",
+          "value": "owner_and_others",
+          "secondsAgo": 90
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-talk-3",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "speech",
+          "value": "owner_and_others",
+          "secondsAgo": 45
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 100
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-mixed-1",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "driving",
+          "secondsAgo": 30
+        },
+        {
+          "signal": "speech",
+          "value": "owner_and_others",
+          "secondsAgo": 15
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-mixed-2",
+      "category": "busy",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "asleep",
+          "secondsAgo": 100
+        },
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 100
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-mixed-3",
+      "category": "busy",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 30
+        },
+        {
+          "signal": "motion",
+          "value": "driving",
+          "secondsAgo": 60
+        },
+        {
+          "signal": "car_connection",
+          "value": "connected",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "busy-mixed-4",
+      "category": "busy",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "asleep",
+          "secondsAgo": 1200
+        },
+        {
+          "signal": "focus",
+          "value": "on",
+          "secondsAgo": 500
+        }
+      ],
+      "expect": "yes"
+    },
+    {
+      "id": "clear-still-1",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-still-2",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 200
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-walking-1",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "walking",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-walking-2",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "walking",
+          "secondsAgo": 250
+        },
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-awake-1",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "awake",
+          "secondsAgo": 300
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-awake-2",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "awake",
+          "secondsAgo": 1500
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 120
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-focus-off-1",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-focus-off-2",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 400
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 50
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-car-off-1",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-car-off-2",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 200
+        },
+        {
+          "signal": "motion",
+          "value": "walking",
+          "secondsAgo": 100
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-alone-1",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-alone-2",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 100
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 60
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-all-quiet-1",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 20
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 60
+        },
+        {
+          "signal": "sleep",
+          "value": "awake",
+          "secondsAgo": 300
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-all-quiet-2",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "walking",
+          "secondsAgo": 40
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 100
+        },
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 40
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-all-quiet-3",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "awake",
+          "secondsAgo": 200
+        },
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 110
+        },
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-all-quiet-4",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 250
+        },
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 250
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 500
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-recovered-1",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 10
+        },
+        {
+          "signal": "car_connection",
+          "value": "not_connected",
+          "secondsAgo": 15
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-recovered-2",
+      "category": "clear",
+      "pushClass": "scheduled_reminder",
+      "facts": [
+        {
+          "signal": "sleep",
+          "value": "awake",
+          "secondsAgo": 30
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-walk-talk-alone",
+      "category": "clear",
+      "pushClass": "mail_reminder",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "walking",
+          "secondsAgo": 20
+        },
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 30
+        }
+      ],
+      "expect": "no"
+    },
+    {
+      "id": "clear-still-focus-off",
+      "category": "clear",
+      "pushClass": "run_result",
+      "facts": [
+        {
+          "signal": "motion",
+          "value": "stationary",
+          "secondsAgo": 100
+        },
+        {
+          "signal": "focus",
+          "value": "off",
+          "secondsAgo": 20
+        },
+        {
+          "signal": "speech",
+          "value": "owner_only",
+          "secondsAgo": 50
+        }
+      ],
+      "expect": "no"
+    }
+  ]
+}

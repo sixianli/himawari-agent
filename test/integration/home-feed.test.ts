@@ -33,11 +33,12 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet, DeterministicIdGenerator } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import { HOME_TEXT, ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
+import { ProductionMcpMemoryWriter } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import { protectedMemoryCandidates } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import {
   ProductionWebPush,
   WebPushPresence,
@@ -167,6 +168,13 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     const ownerRules = new ProductionOwnerRuleWriter({
       configuration: scope,
       rules: repository.ownerRules(),
+      box: new ProductionProposalBox({
+        configuration: scope,
+        store: repository.ownerProposals(),
+        payloads,
+        protector,
+        clock,
+      }),
       reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
@@ -654,6 +662,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       remind,
       memoryRequest,
       memory,
+      control,
       push,
       sender,
       failures,
@@ -836,6 +845,97 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
     expect((await f.read()).awaitingCount).toBe(0);
   });
 
+  it("gives every action that runs a command a binding the server resolves back to that command, and none to the ones it cannot run", async () => {
+    const f = await fixture();
+    await f.recordMail([{ id: "bound", summary: "田中把会改到 15:00" }]);
+    await f.remind("reminder-bound", "给妈妈打电话", at(-10), at(120));
+    await f.memoryRequest("memory-request-bound", "我的血压偏高");
+    await f.createApproval("approval-bound");
+    const snapshot = await f.read();
+    const bindings = new Map<string, string | null>(
+      snapshot.items.flatMap((item) =>
+        item.actions.map((entry) => [`${item.key}/${entry.action}`, entry.binding] as const),
+      ),
+    );
+    expect([...bindings.keys()].sort()).toEqual(
+      [
+        "approval:approval-bound/approved",
+        "approval:approval-bound/denied",
+        "insight:insight-bound/done",
+        "insight:insight-bound/mute",
+        "memory_request:memory-request-bound/approved",
+        "memory_request:memory-request-bound/rejected",
+        "reminder:reminder-bound/dismiss",
+        "reminder:reminder-bound/cancel",
+        "reminder:reminder-bound/snooze",
+      ].sort(),
+    );
+    expect(new Set(bindings.values()).size).toBe(bindings.size);
+    const resolve = (key: string, action: string, binding = bindings.get(`${key}/${action}`)) =>
+      f.home.resolveAction({ key, action, binding: binding ?? "" });
+
+    expect(await resolve("insight:insight-bound", "mute")).toMatchObject({
+      ok: true,
+      type: "proactive.insight.respond",
+      payload: { insightId: "insight-bound", action: "mute", rating: null },
+      ownerPresence: false,
+    });
+    expect(await resolve("reminder:reminder-bound", "snooze")).toMatchObject({
+      ok: true,
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder-bound", action: "snooze" },
+    });
+    expect(await resolve("memory_request:memory-request-bound", "approved")).toMatchObject({
+      ok: true,
+      type: "memory.approval.respond",
+      payload: { requestId: "memory-request-bound", resolution: "approved", editedText: null },
+      dataClassification: "sensitive",
+    });
+    expect(await resolve("approval:approval-bound", "approved")).toMatchObject({
+      ok: true,
+      type: "approval.respond",
+      payload: {
+        approvalRequestId: "approval-bound",
+        expectedRevision: 1,
+        decision: "approved",
+        semanticSnapshotHash: "hash-approval-bound",
+        recentAuthenticationRef: "device",
+      },
+    });
+
+    expect(
+      await resolve("insight:insight-bound", "done", bindings.get("insight:insight-bound/mute")),
+    ).toEqual({ ok: false, reason: "binding_stale" });
+    expect(
+      await resolve(
+        "insight:insight-bound",
+        "mute",
+        bindings.get("reminder:reminder-bound/snooze"),
+      ),
+    ).toEqual({ ok: false, reason: "binding_stale" });
+    expect(await resolve("insight:insight-bound", "mute", "b1.***")).toEqual({
+      ok: false,
+      reason: "binding_invalid",
+    });
+    expect(await resolve("insight:insight-bound", "rate")).toEqual({
+      ok: false,
+      reason: "binding_invalid",
+    });
+    expect(
+      await resolve(
+        "reminder:reminder-bound",
+        "approved",
+        bindings.get("reminder:reminder-bound/snooze"),
+      ),
+    ).toEqual({ ok: false, reason: "action_not_offered" });
+    expect(
+      await resolve("reminder:gone", "dismiss", bindings.get("reminder:reminder-bound/snooze")),
+    ).toEqual({
+      ok: false,
+      reason: "item_gone",
+    });
+  });
+
   it("asks for Gmail to be reconnected in the reader's language and stops once it is connected again", async () => {
     const f = await fixture();
     const connection = {
@@ -920,6 +1020,31 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       source: { type: "rule", label: "日本入管局相关的邮件一律提醒" },
       actions: [{ action: "reconfirm" }, { action: "undo" }],
     });
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET classification = 'sensitive' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET classification = 'private' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("private");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE memory_records SET status = 'trashed' WHERE id = ?")
+        .run("memory-rule-immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
+    f.sql((handle) =>
+      handle
+        .prepare("UPDATE rule_book_rules SET source_memory_id = NULL WHERE rule_id = ?")
+        .run("owner:immigration"),
+    );
+    expect((await f.control.rulesNeedingReview())[0]?.dataClassification).toBe("sensitive");
   });
 
   it("shows unattended runs and failures without counting them, and never an empty sentence", async () => {

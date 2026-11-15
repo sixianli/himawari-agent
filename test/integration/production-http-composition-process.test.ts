@@ -14,6 +14,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
@@ -63,6 +64,7 @@ let providerAvailable = true;
 let dropEmbeddingConnections = false;
 let embeddingCostAvailable = true;
 let rejectEmbeddingsOverBudget = false;
+let embedByCharacters = false;
 let mainDiagnostics = "";
 let providerSubject = subject;
 const providerRequests: Array<{
@@ -80,6 +82,17 @@ const answerFailedRead = (response: ServerResponse) => () => {
   if (!response.headersSent) response.writeHead(500);
   response.end();
 };
+
+function characterVector(input: unknown, dimensions: number): number[] {
+  const text =
+    (Array.isArray(input) ? String(input[0]) : String(input)).split("Query:").at(-1) ?? "";
+  const vector = Array<number>(dimensions).fill(0);
+  for (const character of text) {
+    const slot = createHash("sha256").update(character).digest().readUInt32BE(0) % dimensions;
+    vector[slot] = (vector[slot] ?? 0) + 1;
+  }
+  return vector;
+}
 
 type HttpResult = {
   readonly status: number;
@@ -208,7 +221,13 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
               object: "list",
               model: input.model,
               data: [
-                { object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) },
+                {
+                  object: "embedding",
+                  index: 0,
+                  embedding: embedByCharacters
+                    ? characterVector(input.input, input.dimensions)
+                    : Array(input.dimensions).fill(0.1),
+                },
               ],
               usage: { prompt_tokens: 8, total_tokens: 8 },
               ...(embeddingCostAvailable
@@ -1481,11 +1500,17 @@ async function openInstalledMain(
       occurredAt: new Date().toISOString(),
       resultRef: await upload(`${input.name}-submit-payload`, "submit"),
     });
+  const web = (action: string, body: object) =>
+    httpRequest(running.address, `/api/devices/v1/${action}`, {
+      ...jsonRequestBody(body),
+      headers: requestHeaders(token, cookie, browserConfig.csrfToken),
+    });
   return {
     browser,
     upload,
     command,
     query,
+    web,
     readAnswer,
     submit,
     running: () => running,
@@ -2269,6 +2294,208 @@ it("[PR-B] renews the frozen prompt once when web search is turned on and once w
       { runId: "run:renewal-fourth" },
     ]);
   } finally {
+    await service.stop();
+  }
+}, 180_000);
+
+const turnTime = /本轮请求时间（UTC）：[^。]+。配置时区 (\S+) 的当地时间：[^，]+，[^。]+。/gu;
+const withoutTurnTime = (raw: string) =>
+  raw.replace(turnTime, "本轮请求时间（UTC）：<time>。配置时区 $1 的当地时间：<time>。");
+
+async function pairInstalledDevice(service: Awaited<ReturnType<typeof openInstalledMain>>) {
+  const started = await service.web("pairing-codes", {});
+  expect(started.status, started.raw).toBe(201);
+  const code = (
+    JSON.parse(
+      Buffer.from(
+        String((started.body as { pairingUri: string }).pairingUri).replace(/^himawari-pair:/u, ""),
+        "base64url",
+      ).toString("utf8"),
+    ) as { code: string }
+  ).code;
+  const keys = generateDeviceTestKeyPair();
+  const confirmKeys = generateDeviceTestKeyPair();
+  const paired = await httpRequest(service.running().address, "/api/device/v1/pair", {
+    method: "POST",
+    body: JSON.stringify({
+      pairingCode: code,
+      kind: "iphone",
+      name: "Andy iPhone",
+      releaseChannel: "direct",
+      devicePublicKey: keys.publicKeySpkiBase64,
+      confirmPublicKey: confirmKeys.publicKeySpkiBase64,
+    }),
+  });
+  expect(paired.status, paired.raw).toBe(201);
+  const device = (paired.body as { device: { id: string; revision: number } }).device;
+  const confirmed = await service.web("confirm", {
+    deviceId: device.id,
+    expectedRevision: device.revision,
+  });
+  expect(confirmed.status, confirmed.raw).toBe(200);
+  return async (route: string, body: object) => {
+    const signed = buildDeviceTestRequest({
+      origin: publicOrigin,
+      deviceId: device.id,
+      deviceKey: keys.privateKey,
+      method: "POST",
+      path: `/api/device/v1/${route}`,
+      body: JSON.stringify(body),
+    });
+    return httpRequest(service.running().address, `/api/device/v1/${route}`, {
+      method: "POST",
+      headers: signed.headers,
+      body: signed.body?.toString("utf8") ?? "",
+    });
+  };
+}
+
+async function waitForThreadRun(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  threadId: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const detail = await service.query("thread.detail", {
+          threadId,
+          afterSequence: 0,
+          limit: 100,
+        });
+        return (detail.body as { payload: { runs: { status: string }[] } }).payload.runs.map(
+          ({ status }) => status,
+        );
+      },
+      { timeout: 30_000, interval: 200 },
+    )
+    .toEqual(["completed"]);
+}
+
+it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the model the same bytes, memories and order as no preparation", async () => {
+  const service = await openInstalledMain();
+  const capture = (memories: readonly object[]) => (input: Readonly<Record<string, unknown>>) =>
+    JSON.stringify(input["messages"]).includes(MEMORY_CAPTURE.text.slice(0, 24))
+      ? { text: JSON.stringify({ memories }) }
+      : { text: "安装后的持久回答" };
+  const remembered = [
+    "主人想把每周的会都改到下午开",
+    "主人想把明天的例会改到下午三点",
+    "主人的牙医是樱井医生",
+  ];
+  embedByCharacters = true;
+  try {
+    await service.command("thread.create", "prefetch-bytes-seed-create", {
+      threadId: "thread-prefetch-bytes-seed",
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("prefetch-bytes-seed-payload", "create"),
+    });
+    for (const [index, text] of remembered.entries()) {
+      const quote = `请记住，${text.replace("主人", "我")}`;
+      chatReply = capture([
+        {
+          kind: "durable_fact",
+          decision: "create",
+          text,
+          classification: "private",
+          confidence: 950,
+          explicit: true,
+          category: "schedule",
+          quote,
+        },
+      ]);
+      expect(
+        (
+          await submitTurn(
+            service,
+            "thread-prefetch-bytes-seed",
+            `prefetch-bytes-seed-${index}`,
+            quote,
+          )
+        ).run?.status,
+      ).toBe("completed");
+    }
+    await expect
+      .poll(
+        () => {
+          const database = openQualifiedDatabase(databasePath);
+          try {
+            return database
+              .prepare(
+                "SELECT count(*) AS indexed FROM memory_search_index WHERE embedding IS NOT NULL",
+              )
+              .get();
+          } finally {
+            database.close();
+          }
+        },
+        { timeout: 30_000 },
+      )
+      .toEqual({ indexed: remembered.length });
+    chatReply = capture([]);
+    const device = await pairInstalledDevice(service);
+    const finalWords = "帮我把明天的会改到下午。";
+    const spoken = async (name: string, partial: string | null) => {
+      const created = await device("threads", {
+        requestId: `device-request-${name}-0001`,
+        answerLocale: "zh-CN",
+      });
+      expect(created.status, created.raw).toBe(200);
+      const threadId = (created.body as { payload: { threadId: string } }).payload.threadId;
+      const start = providerRequests.length;
+      if (partial !== null) {
+        const prepared = await device("utterances/partial", {
+          utteranceId: `utt-${name}`,
+          text: partial,
+        });
+        expect(prepared.body).toEqual({ prepared: true, reason: null });
+      }
+      const afterPartial = providerRequests.length;
+      const sent = await device("messages", {
+        messageId: `device-message-${name}-0001`,
+        threadId,
+        expectedRevision: 1,
+        text: finalWords,
+        utteranceId: `utt-${name}`,
+      });
+      expect(sent.status, sent.raw).toBe(200);
+      await waitForThreadRun(service, threadId);
+      const embedded = (from: number, to?: number) =>
+        providerRequests
+          .slice(from, to)
+          .filter(({ path: route }) => route === "/v1/embeddings")
+          .map(({ body }) => String(body?.["input"]).split("Query:").at(-1));
+      const request = agentRequests(afterPartial)[0];
+      if (!request) throw new Error("AGENT_REQUEST_MISSING");
+      return {
+        request,
+        whilePreparing: embedded(start, afterPartial),
+        afterFinal: embedded(afterPartial),
+      };
+    };
+    const cold = await spoken("prefetch-bytes-cold", null);
+    const warm = await spoken("prefetch-bytes-warm", "帮我把明天的会改到下午");
+
+    expect(cold.whilePreparing).toEqual([]);
+    expect(cold.afterFinal).toEqual(["帮我把明天的会改到下午"]);
+    expect(warm.whilePreparing).toEqual(["帮我把明天的会改到下午"]);
+    expect(warm.afterFinal).toEqual([]);
+
+    const lastCold = lastMessage(cold.request);
+    const order = (message: string) =>
+      remembered
+        .map((text) => [text, message.indexOf(text)] as const)
+        .filter(([, at]) => at >= 0)
+        .sort((a, b) => a[1] - b[1])
+        .map(([text]) => text);
+    expect(order(lastCold).length).toBeGreaterThanOrEqual(2);
+    expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
+    expect(order(lastMessage(warm.request))).toEqual(order(lastCold));
+    expect(lastCold).toContain(finalWords);
+    expect(withoutTurnTime(warm.request.raw)).toBe(withoutTurnTime(cold.request.raw));
+    expect(warm.request.raw.match(turnTime)).toHaveLength(1);
+  } finally {
+    chatReply = undefined;
+    embedByCharacters = false;
     await service.stop();
   }
 }, 180_000);

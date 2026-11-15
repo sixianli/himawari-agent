@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   failSecurity: false,
   testReportFailure: "",
   empty: false,
+  emptyShard: false,
   pipelineExitCode: 0,
   writtenCandidateFailure: false,
   failCleanup: false,
@@ -200,7 +201,9 @@ vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
   },
 }));
 vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact, projects }) => {
+  runTests: async ({ output, artifact, projects, related, shard }) => {
+    state.related = related;
+    state.shard = shard;
     const report = path.join(output, "tests.json");
     write(report, { status: "passed" });
     return {
@@ -215,7 +218,9 @@ vi.mock("../../scripts/ci/test.mjs", () => ({
       },
       projects: projects.map((id) => ({
         id,
-        counts: counts(),
+        counts: state.emptyShard
+          ? { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 }
+          : counts(),
       })),
       reports: [{ path: report, kind: "json" }],
     };
@@ -274,6 +279,7 @@ beforeEach(() => {
   state.failSecurity = false;
   state.testReportFailure = "";
   state.empty = false;
+  state.emptyShard = false;
   state.pipelineExitCode = 0;
   state.writtenCandidateFailure = false;
   state.failCleanup = false;
@@ -307,7 +313,11 @@ const run = (checkId, extra = {}) =>
     toolsDirectory: state.root,
     hosted: false,
     ...(checkId === "tests"
-      ? { artifact: path.join(state.root, "runtime.tar.gz"), coverage: "measure" }
+      ? {
+          matrixKey: "others",
+          artifact: path.join(state.root, "runtime.tar.gz"),
+          coverage: "measure",
+        }
       : {}),
     ...extra,
   });
@@ -385,13 +395,8 @@ describe("共享runner的调度、来源和失败传播", () => {
     const result = await run("tests", { coverage: undefined });
     expect(result.status).toBe("passed");
     expect(state.calls.map(({ name }) => name)).toEqual([]);
-    expect(result.projects.map(({ id }) => id)).toEqual([
-      "unit",
-      "contracts",
-      "integration",
-      "e2e",
-      "pi-compat",
-    ]);
+    expect(result.projects.map(({ id }) => id)).toEqual(["unit", "contracts", "e2e", "pi-compat"]);
+    expect(state.shard).toBeUndefined();
     expect(result.reports.some((entry) => entry.path.includes("coverage-final.json"))).toBe(false);
     const declared = JSON.parse(readFileSync("ci/policy.json", "utf8")).checks.find(
       (check) => check.id === "tests",
@@ -399,12 +404,86 @@ describe("共享runner的调度、来源和失败传播", () => {
     for (const kind of declared)
       expect([kind, result.reports.some((entry) => entry.kind === kind)]).toEqual([kind, true]);
   });
+  it("[ADR-0268] PR 上 tooling 没有相关测试时不启动 vitest，结果记下相关范围和零计数", async () => {
+    const result = await run("tooling", {
+      planScope: () => ({ related: new Map([["tooling", []]]), reason: "related" }),
+    });
+    expect(
+      JSON.parse(readFileSync(path.join(state.root, ".ci-output/tooling/details.json"), "utf8")),
+    ).toMatchObject({ failures: [] });
+    expect(result.status).toBe("passed");
+    expect(state.calls).toEqual([]);
+    expect(result.relatedProjects).toEqual(["tooling"]);
+    expect(result.projects).toEqual([
+      { id: "tooling", counts: { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 } },
+    ]);
+  });
+  it("[ADR-0268] tooling 只把相关测试文件交给 vitest；不是相关范围时不带文件", async () => {
+    await run("tooling", {
+      planScope: () => ({
+        related: new Map([["tooling", ["test/tooling/example.test.mjs"]]]),
+        reason: "related",
+      }),
+    });
+    expect(state.calls[0].args.at(-1)).toBe("test/tooling/example.test.mjs");
+    state.calls.length = 0;
+    const full = await run("tooling", {
+      output: ".ci-output/tooling-full",
+      planScope: () => ({ related: new Map(), reason: "full-event" }),
+    });
+    expect(state.calls[0].args.at(-1)).toMatch(/^--outputFile\.junit=/);
+    expect(full.relatedProjects).toBeUndefined();
+  });
+  it("[ADR-0268] tests 不量覆盖率时把相关范围交给 runTests，量覆盖率时不选范围", async () => {
+    const asked = [];
+    const planScope = ({ projects }) => {
+      asked.push(projects);
+      return { related: new Map([["integration", []]]), reason: "related" };
+    };
+    const plain = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope,
+    });
+    expect(asked).toEqual([["integration"]]);
+    expect([...state.related]).toEqual([["integration", []]]);
+    expect(state.shard).toEqual({ index: 2, count: 2 });
+    expect(plain.relatedProjects).toEqual(["integration"]);
+    await run("tests", {
+      output: ".ci-output/tests-measure",
+      matrixKey: "integration-2",
+      planScope,
+    });
+    expect(asked).toHaveLength(1);
+    expect(state.related.size).toBe(0);
+    expect(state.shard).toBeUndefined();
+  });
   it.each([
     ["policy", "measure"],
     ["tests", "always"],
   ])("[ADR-0267] 拒绝%s的覆盖率选项%s，不启动命令", async (checkId, coverage) => {
     await expect(run(checkId, { coverage })).rejects.toThrow("CI_COVERAGE_OPTION_INVALID");
     expect(state.calls).toEqual([]);
+  });
+  it("[ADR-0275] 全量运行里一份分到零个文件时失败，相关范围下分到零个文件时通过", async () => {
+    state.emptyShard = true;
+    const full = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope: () => ({ related: new Map(), reason: "full-event" }),
+    });
+    expect(full.status).not.toBe("passed");
+    expect(
+      JSON.parse(readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"))
+        .failures,
+    ).toContain("CI_INCOMPLETE_EXECUTION");
+    const related = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      output: ".ci-output/tests-related",
+      planScope: () => ({ related: new Map([["integration", []]]), reason: "related" }),
+    });
+    expect(related.status).toBe("passed");
   });
   it("tests 在缺少构建归档时拒绝启动", async () => {
     await expect(run("tests", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");

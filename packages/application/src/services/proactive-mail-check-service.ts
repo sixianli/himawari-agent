@@ -32,13 +32,22 @@ import type {
   ProactiveScope,
   ProactiveSealPort,
   ProactiveSettings,
-  ProactiveSourceItem,
-  ProactiveSourceReader,
+  ProactiveMailReader,
+  ProactiveObservation,
+  ProactiveObservationPort,
   ProactiveStorePort,
   ProactiveSummaryReadStatus,
   ProactiveVerdict,
   ProactiveWholeThread,
 } from "../ports/proactive-checks.js";
+import {
+  GMAIL_SOURCE,
+  mailItem,
+  mailOf,
+  type ProactiveMail,
+  type ProactiveMailExtra,
+  type ProactiveSourceDefinition,
+} from "../ports/proactive-sources.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { DataClassification } from "../ports/common.js";
 import { highestClassification } from "./model-visibility.js";
@@ -55,6 +64,7 @@ import {
   floorHitIds,
   floorHitRefs,
   mustNotifyHitIds,
+  isReminderWorthy,
   wholeThreadHitIds,
   senderDomain,
   keepOffReminderPage,
@@ -89,6 +99,7 @@ export interface ProactiveModelAuthority {
 export interface ProactiveModelInvoker {
   readonly model: ModelPort;
   readonly modelRef: string;
+  readonly allowedDataClassifications: readonly DataClassification[];
   prepare(input: {
     readonly invocationId: string;
     readonly prompt: string;
@@ -109,7 +120,12 @@ export interface ProactiveMailCheckOptions {
   readonly scope: ProactiveScope;
   readonly store: ProactiveStorePort;
   readonly seal: ProactiveSealPort;
-  readonly reader: ProactiveSourceReader;
+  readonly reader: ProactiveMailReader;
+  readonly definition?: Pick<
+    ProactiveSourceDefinition<string, ProactiveMailExtra>,
+    "trust" | "provenance" | "dedupKey" | "groupKey"
+  >;
+  readonly observations?: ProactiveObservationPort;
   readonly model: ProactiveModelInvoker;
   readonly limits: ProactiveLimits;
   readonly timeZone: string;
@@ -174,7 +190,7 @@ export const DEFAULT_PROACTIVE_RELATED_LIMITS: ProactiveRelatedServiceLimits = O
 });
 
 interface RelatedView {
-  readonly mails: readonly ProactiveSourceItem[];
+  readonly mails: readonly ProactiveMail[];
   readonly json: readonly Record<string, unknown>[];
   readonly unavailable: boolean;
   readonly wholeThreadComplete?: boolean;
@@ -308,7 +324,7 @@ interface ProactiveMailView {
   readonly size: number;
 }
 
-const mailViews = new WeakMap<ProactiveSourceItem, Map<number, ProactiveMailView>>();
+const mailViews = new WeakMap<ProactiveMail, Map<number, ProactiveMailView>>();
 
 function sentBodyValues(body: string, limit: number): readonly EgressRedactionSighting[] {
   const located = locateMaskedValues(body);
@@ -340,12 +356,12 @@ function masked(value: string): string {
 }
 
 function relatedMailView(
-  mails: readonly ProactiveSourceItem[],
+  mails: readonly ProactiveMail[],
   unavailable: boolean,
   limits: ProactiveRelatedServiceLimits,
   wholeThread?: ProactiveWholeThread,
 ): RelatedView {
-  const chosen: { mail: ProactiveSourceItem; json: Record<string, unknown> }[] = [];
+  const chosen: { mail: ProactiveMail; json: Record<string, unknown> }[] = [];
   let total = 0;
   const newestFirst = [...mails].sort(
     (left, right) =>
@@ -398,7 +414,7 @@ function relatedMailView(
 }
 
 export function proactiveMailView(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   bodyLimit: number,
   related?: RelatedView,
 ): ProactiveMailView {
@@ -412,7 +428,7 @@ export function proactiveMailView(
   return Object.freeze({ json, size: JSON.stringify(json).length });
 }
 
-function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMailView {
+function baseMailView(item: ProactiveMail, bodyLimit: number): ProactiveMailView {
   const byLimit = mailViews.get(item) ?? new Map<number, ProactiveMailView>();
   const cached = byLimit.get(bodyLimit);
   if (cached) return cached;
@@ -442,10 +458,7 @@ function baseMailView(item: ProactiveSourceItem, bodyLimit: number): ProactiveMa
   return view;
 }
 
-export function mailReferencePrompt(
-  items: readonly ProactiveSourceItem[],
-  bodyLimit: number,
-): string {
+export function mailReferencePrompt(items: readonly ProactiveMail[], bodyLimit: number): string {
   return [
     MAIL_REFERENCE_EXTRACTION.text,
     JSON.stringify(
@@ -460,7 +473,7 @@ export function mailReferencePrompt(
 const REFERENCE_SHARE_DENOMINATOR = 10;
 
 export function proactivePrompt(
-  items: readonly ProactiveSourceItem[],
+  items: readonly ProactiveMail[],
   now: string,
   timeZone: string,
   memories: readonly PromptMemory[] = [],
@@ -557,14 +570,14 @@ function salvagedEntries(output: string): readonly Record<string, unknown>[] | u
   return entries;
 }
 
-function bodyReadInFull(item: ProactiveSourceItem): boolean {
+function bodyReadInFull(item: ProactiveMail): boolean {
   return item.body !== null && !item.bodyTruncated;
 }
 
 export function parseJudgements(
   output: string,
-  items: readonly ProactiveSourceItem[],
-  bodyComplete: (item: ProactiveSourceItem) => boolean = bodyReadInFull,
+  items: readonly ProactiveMail[],
+  bodyComplete: (item: ProactiveMail) => boolean = bodyReadInFull,
 ): ReadonlyMap<string, Judgement> | undefined {
   const entries = completeEntries(output);
   if (entries === undefined) return undefined;
@@ -609,16 +622,90 @@ export function parseJudgements(
   return judgements.size > 0 ? judgements : undefined;
 }
 
+export interface FlatRelatedFetch {
+  readonly byMail: ReadonlyMap<string, readonly ProactiveMail[]>;
+  readonly failed: ReadonlyMap<string, string>;
+  readonly requests: number;
+  readonly wholeThread?: ReadonlyMap<string, ProactiveWholeThread>;
+}
+
+export type FlatMailFetchResult =
+  | {
+      readonly kind: "items";
+      readonly items: readonly ProactiveMail[];
+      readonly cursor: string | null;
+    }
+  | { readonly kind: "unauthorized" }
+  | { readonly kind: "failed"; readonly step: string };
+
+export interface FlatMailReader {
+  readonly source: ProactiveMailReader["source"];
+  readonly related?:
+    | ((
+        input: Omit<Parameters<NonNullable<ProactiveMailReader["related"]>>[0], "items"> & {
+          readonly items: readonly ProactiveMail[];
+        },
+      ) => Promise<FlatRelatedFetch>)
+    | undefined;
+  fetch(input: Parameters<ProactiveMailReader["fetch"]>[0]): Promise<FlatMailFetchResult>;
+}
+
+const mapMails = <From, To>(
+  byMail: ReadonlyMap<string, readonly From[]>,
+  convert: (mail: From) => To,
+): Map<string, To[]> =>
+  new Map([...byMail].map(([messageId, mails]) => [messageId, mails.map(convert)]));
+
+export function flatMailReader(reader: ProactiveMailReader): FlatMailReader {
+  return {
+    source: reader.source,
+    get related() {
+      const related = reader.related;
+      if (related === undefined) return undefined;
+      return async (input: Parameters<NonNullable<FlatMailReader["related"]>>[0]) => {
+        const fetched = await related({ ...input, items: input.items.map(mailItem) });
+        return { ...fetched, byMail: mapMails(fetched.byMail, mailOf) };
+      };
+    },
+    async fetch(input) {
+      const fetched = await reader.fetch(input);
+      return fetched.kind === "items" ? { ...fetched, items: fetched.items.map(mailOf) } : fetched;
+    },
+  };
+}
+
+export function mailReader(flat: FlatMailReader): ProactiveMailReader {
+  return {
+    source: flat.source,
+    get related() {
+      const related = flat.related;
+      if (related === undefined) return undefined;
+      return async (input: Parameters<NonNullable<ProactiveMailReader["related"]>>[0]) => {
+        const fetched = await related({ ...input, items: input.items.map(mailOf) });
+        return { ...fetched, byMail: mapMails(fetched.byMail, mailItem) };
+      };
+    },
+    async fetch(input) {
+      const fetched = await flat.fetch(input);
+      return fetched.kind === "items"
+        ? { ...fetched, items: fetched.items.map(mailItem) }
+        : fetched;
+    },
+  };
+}
+
 export class ProactiveMailCheckService {
-  readonly #options: ProactiveMailCheckOptions;
+  readonly #options: Omit<ProactiveMailCheckOptions, "reader"> & {
+    readonly reader: FlatMailReader;
+  };
 
   constructor(options: ProactiveMailCheckOptions) {
     for (const rule of options.ownerRules ?? []) assertRuleExamples(rule);
-    this.#options = options;
+    this.#options = { ...options, reader: flatMailReader(options.reader) };
   }
 
   #reportMasked(
-    batch: readonly ProactiveSourceItem[],
+    batch: readonly ProactiveMail[],
     bodyLimit: number,
     related: ReadonlyMap<string, RelatedView>,
   ): void {
@@ -671,7 +758,7 @@ export class ProactiveMailCheckService {
   }
 
   async #references(
-    candidates: readonly ProactiveSourceItem[],
+    candidates: readonly ProactiveMail[],
     deadlineAt: string,
     signal: AbortSignal,
     trace: CheckTrace,
@@ -709,7 +796,7 @@ export class ProactiveMailCheckService {
 
   async #related(
     token: string,
-    allCandidates: readonly ProactiveSourceItem[],
+    allCandidates: readonly ProactiveMail[],
     wholeThread: ReadonlySet<string>,
     signal: AbortSignal,
     trace: CheckTrace,
@@ -886,7 +973,7 @@ export class ProactiveMailCheckService {
     );
     const items = fetched.items.filter(({ messageId }) => fresh.has(messageId));
     const processed: ProactiveCheckProcessed[] = [];
-    const candidates: ProactiveSourceItem[] = [];
+    const candidates: ProactiveMail[] = [];
     for (const item of items) {
       if (item.categories.includes("spam")) processed.push(this.#skip(item, "category"));
       else candidates.push(item);
@@ -1238,12 +1325,12 @@ export class ProactiveMailCheckService {
   }
 
   #fitBatch(
-    queue: readonly ProactiveSourceItem[],
+    queue: readonly ProactiveMail[],
     batchSize: number,
     bodyLimits: ProactiveBodyLimits,
     related: ReadonlyMap<string, RelatedView>,
-  ): readonly ProactiveSourceItem[] {
-    const batch: ProactiveSourceItem[] = [];
+  ): readonly ProactiveMail[] {
+    const batch: ProactiveMail[] = [];
     let size = 0;
     for (const item of queue.slice(0, batchSize)) {
       const next = proactiveMailView(item, bodyLimits.perMail, related.get(item.messageId)).size;
@@ -1255,11 +1342,11 @@ export class ProactiveMailCheckService {
   }
 
   #repliedThreads(
-    items: readonly ProactiveSourceItem[],
-    candidates: readonly ProactiveSourceItem[],
+    items: readonly ProactiveMail[],
+    candidates: readonly ProactiveMail[],
     settled: ReadonlyMap<string, { readonly result: ProactiveResult; readonly sure: boolean }>,
   ): readonly { readonly threadId: string; readonly receivedAt: string }[] {
-    const latestOwn = new Map<string, ProactiveSourceItem>();
+    const latestOwn = new Map<string, ProactiveMail>();
     for (const item of items) {
       if (!item.sentByOwner || item.categories.includes("spam")) continue;
       const previous = latestOwn.get(item.threadId);
@@ -1318,6 +1405,7 @@ export class ProactiveMailCheckService {
       return { insights, writes: [], steppedUp: false, suppressed: 0 };
     const previews = await this.#options.store.previewBackoff({
       ...this.#options.scope,
+      source: this.#options.reader.source,
       classKeys,
       settings,
       now: startedAt,
@@ -1352,7 +1440,7 @@ export class ProactiveMailCheckService {
     };
   }
 
-  #base(item: ProactiveSourceItem) {
+  #base(item: ProactiveMail) {
     return {
       source: item.source,
       messageId: item.messageId,
@@ -1361,7 +1449,7 @@ export class ProactiveMailCheckService {
     };
   }
 
-  #skip(item: ProactiveSourceItem, reason: ProactiveCheckProcessed["skipReason"]) {
+  #skip(item: ProactiveMail, reason: ProactiveCheckProcessed["skipReason"]) {
     return {
       ...this.#base(item),
       outcome: "skipped" as const,
@@ -1441,7 +1529,7 @@ export class ProactiveMailCheckService {
   }
 
   async #judge(
-    batch: readonly ProactiveSourceItem[],
+    batch: readonly ProactiveMail[],
     prompt: string,
     deadlineAt: string,
     signal: AbortSignal,
@@ -1597,7 +1685,7 @@ export class ProactiveMailCheckService {
   }
 
   async #recall(
-    candidates: readonly ProactiveSourceItem[],
+    candidates: readonly ProactiveMail[],
     deadlineAt: string,
     signal: AbortSignal,
     trace: CheckTrace,
@@ -1637,7 +1725,7 @@ export class ProactiveMailCheckService {
   }
 
   #batchMemories(
-    batch: readonly ProactiveSourceItem[],
+    batch: readonly ProactiveMail[],
     hits: ReadonlyMap<string, readonly ProactiveMemoryHit[]>,
   ): readonly PromptMemory[] {
     const limits = { ...DEFAULT_PROACTIVE_MEMORY_LIMITS, ...this.#options.memoryLimits };
@@ -1800,10 +1888,28 @@ export class ProactiveMailCheckService {
             summaryGenerated: trace.summaryGenerated,
           }),
     });
+    const definition = this.#options.definition ?? GMAIL_SOURCE;
+    const observed = input.insights
+      .map((insight, index) => ({ insight, write: writes[index] as ProactiveInsightWrite }))
+      .filter(
+        ({ insight }) =>
+          insight.result === "act" &&
+          isReminderWorthy(
+            insight.result,
+            insight.priority,
+            insight.floorRaised || insight.floorHit,
+          ),
+      );
     const result = await store.record({
       ...scope,
       decision,
-      inputs,
+      inputs: {
+        ...inputs,
+        observations: {
+          handedOff: observed.length,
+          sink: this.#options.observations ? "port" : "not_connected",
+        },
+      },
       modelPayloads: trace.payloads,
       processed: input.processed,
       insights: writes,
@@ -1815,6 +1921,30 @@ export class ProactiveMailCheckService {
     trace.recorded = true;
     if (result.releasedRefs.length > 0)
       await this.#options.seal.release({ ...scope, refs: result.releasedRefs });
+    if (this.#options.observations && observed.length > 0) {
+      const insightIdOf = new Map(
+        writes.map((write, index) => [write, result.insightIds[index] ?? write.id]),
+      );
+      const observations: ProactiveObservation[] = observed.map(({ insight, write }) => {
+        const item = mailItem(insight.item);
+        return {
+          source: this.#options.reader.source,
+          sourceId: definition.groupKey(item),
+          sourceVersion: definition.dedupKey(item),
+          trust: definition.trust,
+          provenance: definition.provenance(item),
+          what: insight.summary,
+          contentRef: write.contentRef,
+          insightId: insightIdOf.get(write) ?? write.id,
+          decisionId: decision.id,
+          observedAt: input.startedAt,
+        };
+      });
+      const sink = this.#options.observations;
+      void Promise.resolve()
+        .then(() => sink.receive(observations))
+        .catch(() => undefined);
+    }
     return decision;
   }
 }
@@ -1825,7 +1955,7 @@ type ProactiveCheckProcessed = Omit<
 > & { readonly receivedAt: string };
 
 interface ProactiveCheckInsight {
-  readonly item: ProactiveSourceItem;
+  readonly item: ProactiveMail;
   readonly result: ProactiveResult;
   readonly floorRaised: boolean;
   readonly floorHit: boolean;

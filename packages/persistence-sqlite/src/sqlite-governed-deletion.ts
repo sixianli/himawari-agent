@@ -780,6 +780,7 @@ export class SqliteGovernedDeletionAdapter {
         );
         database.prepare("DELETE FROM memory_episodes WHERE thread_id = ?").run(objectId);
         this.#detachThreadTasks(database, objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, runIds));
         database.prepare("DELETE FROM runs WHERE thread_id = ?").run(objectId);
         if (triggerIds.length > 0) {
           database
@@ -803,6 +804,7 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_provenance SET source_deleted = 1 WHERE source_id = ?")
           .run(objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, [objectId]));
         database.prepare("DELETE FROM runs WHERE id = ?").run(objectId);
         database.prepare("DELETE FROM triggers WHERE id = ?").run(run.triggerId);
       }
@@ -841,6 +843,7 @@ export class SqliteGovernedDeletionAdapter {
             .run(...runIds);
         }
         database.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, runIds));
         if (runIds.length > 0) {
           database.prepare(`DELETE FROM runs WHERE id IN (${placeholders(runIds)})`).run(...runIds);
         }
@@ -1020,6 +1023,27 @@ export class SqliteGovernedDeletionAdapter {
     }
   }
 
+  #removeDeviceActions(
+    database: InstanceType<typeof BetterSqlite3>,
+    runIds: readonly string[],
+  ): readonly string[] {
+    if (runIds.length === 0) return [];
+    const scope = [this.#options.ownerId, this.#options.agentId, ...runIds];
+    const where = `owner_id = ? AND agent_id = ? AND run_id IN (${placeholders(runIds)})`;
+    const refs = (
+      database
+        .prepare(
+          `SELECT arguments_ref AS argumentsRef, result_ref AS resultRef
+          FROM device_actions WHERE ${where}`,
+        )
+        .all(...scope) as Array<{ argumentsRef: string; resultRef: string | null }>
+    ).flatMap(({ argumentsRef, resultRef }) =>
+      resultRef === null ? [argumentsRef] : [argumentsRef, resultRef],
+    );
+    database.prepare(`DELETE FROM device_actions WHERE ${where}`).run(...scope);
+    return unique(refs);
+  }
+
   #runPayloadRefs(
     database: InstanceType<typeof BetterSqlite3>,
     runIds: readonly string[],
@@ -1057,6 +1081,16 @@ export class SqliteGovernedDeletionAdapter {
         ),
       );
     }
+    refs.push(
+      ...this.#values(
+        database,
+        `SELECT sentence_ref FROM home_item_scores
+        WHERE sentence_ref IS NOT NULL AND approval_request_id IN (
+          SELECT id FROM approval_requests WHERE run_id IN (${placeholders(runIds)})
+        )`,
+        runIds,
+      ),
+    );
     return unique(refs);
   }
 

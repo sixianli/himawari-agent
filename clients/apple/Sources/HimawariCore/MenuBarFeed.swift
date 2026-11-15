@@ -6,6 +6,14 @@ public struct HomeAction: Codable, Sendable, Equatable {
     public let polarity: String
     public let ownerPresence: Bool
     public let binding: String?
+
+    public init(action: String, label: String, polarity: String, ownerPresence: Bool, binding: String?) {
+        self.action = action
+        self.label = label
+        self.polarity = polarity
+        self.ownerPresence = ownerPresence
+        self.binding = binding
+    }
 }
 
 public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
@@ -16,7 +24,9 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
     public let actions: [HomeAction]
     public var id: String { key }
 
-    public var shownActions: [HomeAction] { Array(actions.prefix(2)) }
+    public static let shownActionLimit = 2
+
+    public var shownActions: [HomeAction] { Array(actions.filter { $0.binding != nil }.prefix(Self.shownActionLimit)) }
 }
 
 public struct HomeSnapshot: Codable, Sendable, Equatable {
@@ -25,7 +35,7 @@ public struct HomeSnapshot: Codable, Sendable, Equatable {
     public let revision: String
 
     public var mostPressing: HomeItem? {
-        items.first { $0.awaitsOwner && $0.sentence?.isEmpty == false }
+        items.first { $0.awaitsOwner && $0.sentence?.isEmpty == false && !$0.shownActions.isEmpty }
     }
 }
 
@@ -81,15 +91,76 @@ extension DeviceAPI {
         return try decode(HomeSnapshot.self, data)
     }
 
-    public func act(on item: HomeItem, action: HomeAction, requestId: String) async throws {
+    public func watchHome(locale: String) async throws -> WatchHome {
+        let data = try await http.send(DeviceRequest(method: "GET", path: "home", query: [URLQueryItem(name: "locale", value: locale)]))
+        return try decode(WatchHome.self, data)
+    }
+
+    public static func newActionRequestId() -> String {
+        "act_" + OutgoingMessage.newId()
+    }
+
+    public func confirmChallenge() async throws -> String {
+        struct Reply: Decodable { let challenge: String }
+        let data = try await http.send(DeviceRequest(method: "POST", path: "approvals/challenge", body: Data("{}".utf8)))
+        return try decode(Reply.self, data).challenge
+    }
+
+    public func act(on item: HomeItem, action: HomeAction, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
+        try await act(key: item.key, action: action, requestId: requestId, presence: presence)
+    }
+
+    public func act(key: String, action: HomeAction, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
         struct Body: Encodable {
             let key: String
             let action: String
             let binding: String?
             let requestId: String
         }
-        let body = try JSONEncoder().encode(Body(key: item.key, action: action.action, binding: action.binding, requestId: requestId))
-        _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
+        let body = try JSONEncoder().encode(Body(key: key, action: action.action, binding: action.binding, requestId: requestId))
+        guard action.ownerPresence else {
+            _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
+            return
+        }
+        guard let presence else { throw OwnerPresenceError.unavailable }
+        let challenge = try await confirmChallenge()
+        _ = try await http.send(DeviceRequest(
+            method: "POST",
+            path: "home/act",
+            body: body,
+            nonce: challenge,
+            confirmSigner: presence,
+            confirmReason: presence.reason
+        ))
+    }
+}
+
+public enum OwnerPresenceError: Error, Equatable, Sendable {
+    case unavailable
+    case declined
+}
+
+public struct OwnerPresenceSigner: DeviceKeySigner {
+    public let key: DeviceKeySigner
+    public let reason: String
+
+    public init(key: DeviceKeySigner, reason: String) {
+        self.key = key
+        self.reason = reason
+    }
+
+    public func publicKeySPKI() throws -> Data {
+        try key.publicKeySPKI()
+    }
+
+    public func sign(_ message: Data, reason: String?) async throws -> Data {
+        do {
+            return try await key.sign(message, reason: reason ?? self.reason)
+        } catch let error as DeviceKeyError {
+            throw error
+        } catch {
+            throw OwnerPresenceError.declined
+        }
     }
 }
 

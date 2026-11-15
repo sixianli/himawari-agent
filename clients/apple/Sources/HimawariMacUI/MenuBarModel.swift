@@ -122,13 +122,18 @@ final class MenuBarModel {
         acting = item.key
         failedItem = nil
         let key = [item.key, action.action, action.binding ?? ""].joined(separator: "\n")
-        let requestId = actionRequestIds[key] ?? OutgoingMessage.newId()
+        let requestId = actionRequestIds[key] ?? DeviceAPI.newActionRequestId()
         actionRequestIds[key] = requestId
+        let presence = action.ownerPresence ? app.ownerPresence(reason: L.text("panel.presenceReason")) : nil
         Task {
             do {
-                try await app.api.act(on: item, action: action, requestId: requestId)
+                try await app.api.act(on: item, action: action, requestId: requestId, presence: presence)
                 actionRequestIds[key] = nil
-            } catch let DeviceAPIError.server(status, _, _) where (400 ..< 500).contains(status) {
+            } catch OwnerPresenceError.declined {
+                actionRequestIds[key] = nil
+                acting = nil
+                return
+            } catch let DeviceAPIError.server(status, _, _, _) where (400 ..< 500).contains(status) {
                 actionRequestIds[key] = nil
                 failedItem = item.key
             } catch {

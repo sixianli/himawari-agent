@@ -62,7 +62,8 @@ type GovernanceCommand = Extract<
       | "capability.install.approve"
       | "capability.update.respond"
       | "capability.disable"
-      | "capability.rollback";
+      | "capability.rollback"
+      | "capability.reactivate";
   }
 >;
 
@@ -83,6 +84,7 @@ const GOVERNANCE_COMMAND_TYPES = new Set<GatewayV2Command["type"]>([
   "capability.update.respond",
   "capability.disable",
   "capability.rollback",
+  "capability.reactivate",
 ]);
 
 const CLASSIFICATION_ORDER = ["public", "private", "sensitive", "restricted"] as const;
@@ -491,6 +493,7 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
           : null,
         rollbackVersion: record.rollbackDeclaration?.version ?? null,
         rollbackAvailable: record.rollbackDeclaration !== null,
+        lastInvalidation: record.lastInvalidation ?? null,
         lastTransition: record.lastVersionTransition
           ? {
               fromVersion: record.lastVersionTransition.fromVersion,
@@ -592,6 +595,7 @@ export interface GovernanceGatewayV2ControlPlaneDependencies {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly recentAuthentication?: RecentAuthenticationGuardPort;
+  readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }
 
 interface ReceiptAttempt {
@@ -610,6 +614,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
   async execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult> {
     if (!isGovernanceCommand(input.command)) return this.#dependencies.delegate.execute(input);
     this.#assertCommand(input.authentication, input.command);
+    await this.#authenticateBeforeFirstReceipt(input.authentication, input.command);
     const attempt = await this.#begin(input.command);
     if (attempt.completedResult) return attempt.completedResult;
 
@@ -629,6 +634,25 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       resultRef: completed.resultRef as string,
       replayed: attempt.recovering,
     });
+  }
+
+  async #authenticateBeforeFirstReceipt(
+    authentication: GatewayAuthenticationContext,
+    command: GovernanceCommand,
+  ): Promise<void> {
+    if (
+      command.type !== "capability.disable" &&
+      command.type !== "capability.rollback" &&
+      command.type !== "capability.reactivate"
+    )
+      return;
+    const existing = await this.#dependencies.receipts.get(
+      this.#dependencies.ownerId,
+      this.#dependencies.agentId,
+      command.idempotencyKey,
+    );
+    if (existing) return;
+    await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
   }
 
   #assertCommand(authentication: GatewayAuthenticationContext, command: GovernanceCommand): void {
@@ -738,9 +762,11 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       case "capability.update.respond":
         return this.#respondCapabilityUpdate(command, recovering);
       case "capability.disable":
-        return this.#disableCapability(command, recovering);
+        return this.#disableCapability(authentication, command, recovering);
       case "capability.rollback":
-        return this.#rollbackCapability(command, recovering);
+        return this.#rollbackCapability(authentication, command, recovering);
+      case "capability.reactivate":
+        return this.#reactivateCapability(authentication, command, recovering);
     }
   }
 
@@ -776,6 +802,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.status === command.payload.decision &&
       current.semanticSnapshotHash === command.payload.semanticSnapshotHash
     ) {
+      await this.#dependencies.onApprovalResolved?.(current).catch(() => undefined);
       return `approval:${current.id}:revision-${current.revision}`;
     }
     if (command.payload.decision === "approved" && current.recentAuthenticationRequired) {
@@ -842,6 +869,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
         throw error;
       resolved = winner;
     }
+    await this.#dependencies.onApprovalResolved?.(resolved).catch(() => undefined);
     return `approval:${resolved.id}:revision-${resolved.revision}`;
   }
 
@@ -981,6 +1009,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
   }
 
   async #disableCapability(
+    authentication: GatewayAuthenticationContext,
     command: Extract<GovernanceCommand, { readonly type: "capability.disable" }>,
     recovering: boolean,
   ): Promise<string> {
@@ -992,6 +1021,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
+    await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
     const disabled = await this.#capabilityLifecycle().disable(
       current.ref,
       command.payload.expectedRevision,
@@ -1000,6 +1030,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
   }
 
   async #rollbackCapability(
+    authentication: GatewayAuthenticationContext,
     command: Extract<GovernanceCommand, { readonly type: "capability.rollback" }>,
     recovering: boolean,
   ): Promise<string> {
@@ -1012,11 +1043,33 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
     ) {
       return this.#capabilityResult(current);
     }
+    await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
     const rolledBack = await this.#capabilityLifecycle().rollback(
       current.ref,
       command.payload.expectedRevision,
     );
     return this.#capabilityResult(rolledBack);
+  }
+
+  async #reactivateCapability(
+    authentication: GatewayAuthenticationContext,
+    command: Extract<GovernanceCommand, { readonly type: "capability.reactivate" }>,
+    recovering: boolean,
+  ): Promise<string> {
+    const current = await this.#requireCapability(command.payload.capabilityRef);
+    if (
+      recovering &&
+      current.revision === command.payload.expectedRevision + 1 &&
+      current.lifecycle === "active"
+    ) {
+      return this.#capabilityResult(current);
+    }
+    await this.#assertRecentAuthentication(authentication, command.payload.recentAuthenticationRef);
+    const reactivated = await this.#capabilityLifecycle().reactivate(
+      current.ref,
+      command.payload.expectedRevision,
+    );
+    return this.#capabilityResult(reactivated);
   }
 
   async #requireCapability(capabilityRef: string): Promise<CapabilityRegistryRecord> {

@@ -1,0 +1,7 @@
+# PR 512 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 中高：转交确认框已显示主机，但仍不校验链接 origin，伪造链接仍可把表带到别的服务器。成立。AppModel.handlePairingLink 原先不比较 invitation.origin 与 record.origin。已改：只有 origin 相同才弹转交问话，加判断 invitation.origin == record?.origin。无法在 Linux 编译 iOS 分支，未验证。；触发：已配对且连着手表的 iPhone 收到指向别的服务器的合法格式 himawari-pair: 链接，用户点“给手表用”；后果：手表被配到与这台 iPhone 不同的服务器
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2. 中：手表生成的 `home/act` 请求号可能以 `-` 或 `_` 开头，约 3% 的动作会被服务端 400 拒绝。成立。DeviceAPI.newId 无前缀，device-api-routes.ts:117 要求首字符字母数字。已改：新增 DeviceAPI.newActionRequestId（act_ 前缀），手表和 Mac 菜单栏都改用；加 500 次随机的 Linux 用例。；触发：手表点任何动作，随机 requestId 首字符为 - 或 _（约 1/32 概率：base64url 64 个字符里 2 个）；后果：服务端 MACHINE_STRING 校验返回 400，动作偶尔点了没反应
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3. 中：`connection` 项的 `reconnect` 动作绑定串为空，手表仍显示按钮，点击必然 400。成立。production-home.ts:151,327 binding 为 null，device-api-routes.ts:1014 要求字符串。已改：WatchCard 只把有 binding 的动作当按钮，没有就按“在 iPhone 上看”；加 Linux 用例；README 已写。；触发：Gmail 账号 needs_reconnect，服务器给出 binding 为 null 的 reconnect 动作；后果：手表显示一个点了必然 400 的按钮
+- 4（deepseek-v4.1-flash）不成立：### 4. 低：上一轮第 6 条的通知问题没有在代码层修复，只是把 README 改成描述现状。不成立，沿用第 1 轮第 7 条原判：通知深链接是新功能不在本批，README 已改成描述现状（点开通知打开 Himawari，显示当时最要紧的一件），代码行为无害。
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5. 低：README 与作者说法仍有几处和代码不一致。成立（仅第 2 点）。已改 README 写明没连手表或服务器不同时什么也不提示。第 1 点“作者说法”是 brief 里的话，不在仓库文件里，README 的“服务器还没有入口”已改；第 3 点测试条数同第 1 轮第 11 条原判，不影响代码行为。判低理由：只是文字不准，代码无害。；触发：用户读 README 想知道没连手表时收到链接会怎样；后果：文字与代码不符，README 说只会问这一句，实际没连手表时什么都不提示

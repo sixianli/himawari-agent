@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "n
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolvePolicySource, validatePolicy } from "./check-policy.mjs";
+import { relatedEligibleProjects, zeroCounts } from "./test-scope.mjs";
 import {
   contextIdentity,
   existingInside,
@@ -37,6 +38,7 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
   const failures = [];
   const observed = [];
   const entries = new Map();
+  let relatedScope = false;
   const fail = (checkId, matrixKey, source, reason) =>
     failures.push({ checkId, matrixKey, source, reason });
   const expectedJobs = policy.checks
@@ -94,8 +96,21 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
       fail(checkId, matrixKey, source, `Terminal status is ${result.status}`);
     if (result.exitCode !== 0)
       fail(checkId, matrixKey, source, `Command exit code is ${result.exitCode}`);
-    for (const reason of countsProblems(result.counts)) fail(checkId, matrixKey, source, reason);
     const { check, member } = expectation;
+    const memberProjects = member.projects ?? check.projects;
+    const related = new Set(result.relatedProjects ?? []);
+    if (related.size) {
+      relatedScope = true;
+      if (context.event !== "pull_request")
+        fail(checkId, matrixKey, source, "Related test scope outside pull_request");
+      for (const id of related)
+        if (!memberProjects.includes(id) || !relatedEligibleProjects.includes(id))
+          fail(checkId, matrixKey, source, `Related test scope for ${id} is not allowed`);
+    }
+    const skipped = (counts) =>
+      related.size > 0 && JSON.stringify(counts) === JSON.stringify(zeroCounts());
+    if (!(skipped(result.counts) && memberProjects.every((id) => related.has(id))))
+      for (const reason of countsProblems(result.counts)) fail(checkId, matrixKey, source, reason);
     for (const field of ["node", "os"])
       if (result.toolchain[field] !== member[field])
         fail(checkId, matrixKey, source, `Actual toolchain differs from matrix: ${field}`);
@@ -108,11 +123,12 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const projectIds = result.projects.map((project) => project.id);
     if (new Set(projectIds).size !== projectIds.length)
       fail(checkId, matrixKey, source, "Duplicate project counts");
-    if (JSON.stringify([...projectIds].sort()) !== JSON.stringify([...check.projects].sort()))
+    if (JSON.stringify([...projectIds].sort()) !== JSON.stringify([...memberProjects].sort()))
       fail(checkId, matrixKey, source, "Project count set differs from policy");
     for (const project of result.projects)
-      for (const reason of countsProblems(project.counts))
-        fail(checkId, matrixKey, source, `${project.id}: ${reason}`);
+      if (!(related.has(project.id) && skipped(project.counts)))
+        for (const reason of countsProblems(project.counts))
+          fail(checkId, matrixKey, source, `${project.id}: ${reason}`);
     if (result.projects.length)
       for (const field of ["files", "executed", "passed", "failed", "skipped"]) {
         const sum = result.projects.reduce((total, project) => total + project.counts[field], 0);
@@ -223,6 +239,7 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     schemaVersion: 1,
     ...contextIdentity(context),
     status: failures.length ? "failed" : "passed",
+    scope: relatedScope ? "related" : "full",
     expected: expected.map(({ id }) => id),
     observed,
     missing,

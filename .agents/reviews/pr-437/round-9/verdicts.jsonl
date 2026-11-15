@@ -1,0 +1,1 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 低 — 身份不匹配回归用例只覆盖 `id`，没有覆盖 `ownerId`/`agentId`", "valid": true, "class": "error", "severity": "low", "modelSeverity": "低", "trigger": "以后有人误删 ownerId 或 agentId 的比较", "consequence": "测试仍通过，身份不符时旧记录被删", "reason": "只缺测试，运行行为正确；已改成 id、ownerId、agentId 三个用例"}

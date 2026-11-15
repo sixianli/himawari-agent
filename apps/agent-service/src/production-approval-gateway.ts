@@ -1,10 +1,16 @@
+import {
+  PRODUCTION_THINK_OPERATIONS,
+  type ProductionThinkControl,
+} from "./production-think-settings.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
   ApplicationPortError,
+  type ApprovalRequest,
   ApprovalService,
   type AuthorityFence,
+  type CapabilityReactivationVerifierPort,
   type ClockPort,
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
@@ -20,7 +26,28 @@ import {
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
+import {
+  PRODUCTION_DATA_EXPORT_OPERATIONS,
+  type ProductionDataExportControl,
+} from "./production-data-export.js";
+import {
+  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
+  type ProductionDeliveryTimingControl,
+} from "./production-delivery-timing-control.js";
+import {
+  PRODUCTION_DEVICE_OPERATIONS,
+  type ProductionDeviceControl,
+} from "./production-device-control.js";
+import {
+  PRODUCTION_FILES_OPERATIONS,
+  type ProductionFilesControl,
+} from "./production-files-control.js";
 import { PRODUCTION_HOME_OPERATIONS, type ProductionHomeControl } from "./production-home.js";
+import {
+  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+  type ProductionLoginDevicesControl,
+} from "./production-login-devices-control.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   type ProductionMemoryControl,
@@ -38,25 +65,22 @@ import {
   type ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
 import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  type ProductionPerceptionControl,
+} from "./production-perception-control.js";
+import {
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
 import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  type ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { PRODUCTION_SEARCH_OPERATIONS, type ProductionSearchControl } from "./production-search.js";
+import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   type ProductionSensitiveInterceptionsControl,
 } from "./production-sensitive-interceptions-control.js";
-import {
-  PRODUCTION_DATA_EXPORT_OPERATIONS,
-  type ProductionDataExportControl,
-} from "./production-data-export.js";
-import {
-  PRODUCTION_FILES_OPERATIONS,
-  type ProductionFilesControl,
-} from "./production-files-control.js";
-import {
-  PRODUCTION_LOGIN_DEVICE_OPERATIONS,
-  type ProductionLoginDevicesControl,
-} from "./production-login-devices-control.js";
 import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   type ProductionServerStatusControl,
@@ -76,6 +100,16 @@ export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "search.authorization.set",
 ] as const);
 
+export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
+  "capability.list",
+  "capability.detail",
+  "capability.disable",
+] as const);
+
+export const PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS = Object.freeze([
+  "capability.reactivate",
+] as const);
+
 export function createProductionApprovalGateway(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> &
     Partial<Pick<ProductConfiguration, "modelDescriptors" | "runPolicy">>;
@@ -92,12 +126,20 @@ export function createProductionApprovalGateway(options: {
   readonly museControl?: Pick<ProductionMuseControl, "query" | "execute">;
   readonly observationControl?: Pick<ProductionObservation, "query" | "execute">;
   readonly ownerPreferencesControl?: ProductionOwnerPreferencesControl;
+  readonly deliveryTimingControl?: ProductionDeliveryTimingControl;
+  readonly proposalControl?: Pick<ProductionProposalControl, "query" | "execute">;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
+  readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
+  readonly searchControl?: Pick<ProductionSearchControl, "query">;
   readonly dataExportControl?: ProductionDataExportControl;
   readonly filesControl?: ProductionFilesControl;
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
+  readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
+  readonly thinkControl?: Pick<ProductionThinkControl, "query" | "execute">;
+  readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -127,32 +169,47 @@ export function createProductionApprovalGateway(options: {
           ? options.loginDevicesControl.query(query, context)
           : query.type === "home.read" && options.homeControl
             ? options.homeControl.query(query)
-            : (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
-                options.memoryControl
-              ? options.memoryControl.query(query)
-              : query.type.startsWith("push.") && options.webPushControl
-                ? options.webPushControl.query(query)
-                : (query.type === "proactive.weekly.read" ||
-                      query.type === "decision.email.read") &&
-                    options.observationControl
-                  ? options.observationControl.query(query)
-                  : query.type.startsWith("proactive.") && options.proactiveControl
-                    ? options.proactiveControl.query(query)
-                    : query.type.startsWith("muse.") && options.museControl
-                      ? options.museControl.query(query)
-                      : query.type.startsWith("owner.preferences.") &&
-                          options.ownerPreferencesControl
-                        ? options.ownerPreferencesControl.query(query)
-                        : query.type.startsWith("sensitive.interceptions.") &&
-                            options.sensitiveInterceptionsControl
-                          ? options.sensitiveInterceptionsControl.query(query)
-                          : query.type.startsWith("server.status.") && options.serverStatusControl
-                            ? options.serverStatusControl.query(query)
-                            : query.type.startsWith("data.export.") && options.dataExportControl
-                              ? options.dataExportControl.query(query)
-                              : query.type.startsWith("files.") && options.filesControl
-                                ? options.filesControl.query(query, context)
-                                : searchAuthorization.query(query),
+            : query.type === "search.ask.read" && options.searchControl
+              ? options.searchControl.query(query)
+              : (query.type.startsWith("memory.") || query.type.startsWith("decision.chain.")) &&
+                  options.memoryControl
+                ? options.memoryControl.query(query)
+                : query.type.startsWith("push.") && options.webPushControl
+                  ? options.webPushControl.query(query)
+                  : (query.type === "proactive.weekly.read" ||
+                        query.type === "decision.email.read") &&
+                      options.observationControl
+                    ? options.observationControl.query(query)
+                    : query.type.startsWith("proactive.") && options.proactiveControl
+                      ? options.proactiveControl.query(query)
+                      : query.type.startsWith("muse.") && options.museControl
+                        ? options.museControl.query(query)
+                        : query.type.startsWith("delivery_timing.") && options.deliveryTimingControl
+                          ? options.deliveryTimingControl.query(query)
+                          : query.type.startsWith("owner.preferences.") &&
+                              options.ownerPreferencesControl
+                            ? options.ownerPreferencesControl.query(query)
+                            : query.type.startsWith("proposals.") && options.proposalControl
+                              ? options.proposalControl.query(query)
+                              : query.type.startsWith("sensitive.interceptions.") &&
+                                  options.sensitiveInterceptionsControl
+                                ? options.sensitiveInterceptionsControl.query(query)
+                                : query.type.startsWith("server.status.") &&
+                                    options.serverStatusControl
+                                  ? options.serverStatusControl.query(query)
+                                  : query.type.startsWith("data.export.") &&
+                                      options.dataExportControl
+                                    ? options.dataExportControl.query(query)
+                                    : query.type.startsWith("files.") && options.filesControl
+                                      ? options.filesControl.query(query, context)
+                                      : query.type.startsWith("device.") && options.deviceControl
+                                        ? options.deviceControl.query(query)
+                                        : query.type.startsWith("perception.") &&
+                                            options.perceptionControl
+                                          ? options.perceptionControl.query(query)
+                                          : query.type.startsWith("think.") && options.thinkControl
+                                            ? options.thinkControl.query(query)
+                                            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -201,7 +258,10 @@ export function createProductionApprovalGateway(options: {
             };
           }
           try {
-            await wait(1000, undefined, { ...(signal ? { signal } : {}), ref: false });
+            await wait(1000, undefined, {
+              ...(signal ? { signal } : {}),
+              ref: false,
+            });
           } catch (error) {
             if (signal?.aborted) return;
             throw error;
@@ -210,7 +270,8 @@ export function createProductionApprovalGateway(options: {
       },
     },
     dependencies: {
-      listTaskRefsByCapability: unsupported,
+      listTaskRefsByCapability: async (capabilityRef) =>
+        (await capabilities.listScheduledJobRefs?.(capabilityRef)) ?? [],
       listTaskRefsByGrant: unsupported,
       trueResultRefForApproval: async (id) => {
         const approval = await authorization.getApproval(id);
@@ -225,6 +286,7 @@ export function createProductionApprovalGateway(options: {
     },
   });
   const controlPlane = new GovernanceGatewayV2ControlPlane({
+    ...(options.onApprovalResolved ? { onApprovalResolved: options.onApprovalResolved } : {}),
     ownerId,
     agentId,
     authorization,
@@ -241,7 +303,10 @@ export function createProductionApprovalGateway(options: {
         if (command.type.startsWith("memory.") && options.memoryControl)
           return options.memoryControl.execute(command);
         if (command.type.startsWith("login.") && options.loginDevicesControl)
-          return options.loginDevicesControl.execute({ authentication, command });
+          return options.loginDevicesControl.execute({
+            authentication,
+            command,
+          });
         if (
           (command.type.startsWith("push.") || command.type === "presence.heartbeat") &&
           options.webPushControl
@@ -260,8 +325,12 @@ export function createProductionApprovalGateway(options: {
           return options.proactiveControl.execute(command);
         if (command.type.startsWith("muse.") && options.museControl)
           return options.museControl.execute(command);
+        if (command.type.startsWith("delivery_timing.") && options.deliveryTimingControl)
+          return options.deliveryTimingControl.execute(command);
         if (command.type.startsWith("owner.preferences.") && options.ownerPreferencesControl)
           return options.ownerPreferencesControl.execute(command);
+        if (command.type.startsWith("proposal.") && options.proposalControl)
+          return options.proposalControl.execute(authentication, command);
         if (command.type.startsWith("data.export.") && options.dataExportControl)
           return options.dataExportControl.execute(command);
         if (
@@ -269,6 +338,12 @@ export function createProductionApprovalGateway(options: {
           options.sensitiveInterceptionsControl
         )
           return options.sensitiveInterceptionsControl.execute(command);
+        if (command.type.startsWith("device.") && options.deviceControl)
+          return options.deviceControl.execute(authentication, command);
+        if (command.type.startsWith("perception.") && options.perceptionControl)
+          return options.perceptionControl.execute(command);
+        if (command.type.startsWith("think.") && options.thinkControl)
+          return options.thinkControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -283,7 +358,14 @@ export function createProductionApprovalGateway(options: {
     }),
     audit: repository.auditLedger(),
     recentAuthentication: options.recentAuthentication,
+    capabilityLifecycle: createProductionCapabilityLifecycle({
+      configuration: options.configuration,
+      repository,
+      clock,
+      ...(options.capabilityReactivation ? { reactivation: options.capabilityReactivation } : {}),
+    }),
   });
+  const capabilityReactivationAvailable = options.capabilityReactivation !== undefined;
   return new AgentGatewayV2Service({
     installedOperations: [
       ...PRODUCTION_APPROVAL_OPERATIONS,
@@ -294,14 +376,22 @@ export function createProductionApprovalGateway(options: {
       ...(options.museControl ? PRODUCTION_MUSE_OPERATIONS : []),
       ...(options.observationControl ? PRODUCTION_OBSERVATION_OPERATIONS : []),
       ...(options.ownerPreferencesControl ? PRODUCTION_OWNER_PREFERENCE_OPERATIONS : []),
+      ...(options.deliveryTimingControl ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
+      ...(options.proposalControl ? PRODUCTION_PROPOSAL_OPERATIONS : []),
       ...(options.sensitiveInterceptionsControl
         ? PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
+      ...PRODUCTION_CAPABILITY_OPERATIONS,
+      ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
+      ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
+      ...(options.searchControl ? PRODUCTION_SEARCH_OPERATIONS : []),
       ...(options.dataExportControl ? PRODUCTION_DATA_EXPORT_OPERATIONS : []),
       ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),
       ...(options.loginDevicesControl ? PRODUCTION_LOGIN_DEVICE_OPERATIONS : []),
+      ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
+      ...(options.thinkControl ? PRODUCTION_THINK_OPERATIONS : []),
     ],
     reads,
     controlPlane,

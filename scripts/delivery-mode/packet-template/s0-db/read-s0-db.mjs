@@ -56,25 +56,37 @@ export function one(database, sql, values = []) {
   return rows[0];
 }
 
-export function historyDigests(database) {
+export function historyRow(table, row, ignoredColumns = {}) {
+  const ignored = ignoredColumns[table];
+  if (!ignored) return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !ignored.includes(key)));
+}
+
+export function historyDigests(database, ignoredColumns = {}) {
   const tables = new Set(database.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name));
   return Object.fromEntries(historyTables.map((table) => {
     assert(tables.has(table), "__PKT_LABEL_UPPER___DB_HISTORY_TABLE_MISSING");
     const hash = createHash("sha256");
     let rows = 0;
     for (const row of database.prepare(`SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`).iterate()) {
-      hash.update(`${canonicalJson(row)}\n`);
+      hash.update(`${canonicalJson(historyRow(table, row, ignoredColumns))}\n`);
       rows += 1;
     }
     return [table, { rows, sha256: hash.digest("hex") }];
   }));
 }
 
-export function readS0State(database, expected) {
+export const ledgerMigrationId = (row) => row.id ?? String(row.sequence).padStart(4, "0");
+
+export function readS0State(database, expected, ignoredColumns = {}) {
   assert.equal(database.pragma("query_only", { simple: true }), 1, "__PKT_LABEL_UPPER___DB_QUERY_ONLY_REQUIRED");
   const current = Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value);
   const minimumWriter = Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value);
   const ledger = database.prepare("SELECT sequence,name,phase,digest,applied_at FROM schema_migration_ledger ORDER BY sequence").all();
+  const hasIdColumn = database.prepare("SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'").get() !== undefined;
+  const migrationIds = (hasIdColumn ? database.prepare("SELECT sequence,migration_id AS id FROM schema_migration_ledger ORDER BY sequence").all() : ledger).map(ledgerMigrationId);
+  const migrationDigests = ledger.map((row) => row.digest);
+  const migrationNames = ledger.map((row) => row.name);
   assert(Number.isSafeInteger(current) && current > 0 && minimumWriter === current, "__PKT_LABEL_UPPER___DB_SCHEMA_UNSUPPORTED");
   assert(ledger.length === current && ledger.every((row, index) => row.sequence === index + 1), "__PKT_LABEL_UPPER___DB_LEDGER_INVALID");
   const deployment = one(database, "SELECT id,status,authority_epoch,fencing_token FROM deployments WHERE id=? AND owner_id=? AND agent_id=?", [expected.deploymentId, expected.ownerId, expected.agentId]);
@@ -84,6 +96,9 @@ export function readS0State(database, expected) {
     schemaVersion: "himawari.__PKT_LABEL__-change-s0-db.v1",
     checkedAt: new Date().toISOString(),
     schema: { current, minimumWriter, ledgerCount: ledger.length, ledgerMax: ledger.at(-1).sequence },
+    migrationIds,
+    migrationDigests,
+    migrationNames,
     identity: { deploymentId: deployment.id, ownerId: expected.ownerId, agentId: expected.agentId, hostId: expected.hostId },
     authority: { deploymentId: deployment.id, ownerId: expected.ownerId, agentId: expected.agentId, status: deployment.status, authorityEpoch: deployment.authority_epoch, fencingToken: deployment.fencing_token },
     gate: {
@@ -91,7 +106,7 @@ export function readS0State(database, expected) {
       unresolvedReservedCount: one(database, unresolvedQuery).count,
       nonTerminalRunCount: one(database, "SELECT count(*) AS count FROM runs WHERE status NOT IN ('completed','failed','cancelled')").count,
     },
-    history: historyDigests(database),
+    history: historyDigests(database, ignoredColumns),
   };
 }
 

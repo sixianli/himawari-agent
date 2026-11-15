@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -23,8 +23,8 @@ import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAdminCli } from "../../apps/admin-cli/src/index.ts";
 import { LATEST_MIGRATION_SEQUENCE } from "../../packages/persistence-sqlite/src/migration-engine.ts";
-import { RUN_RESOURCES_RELEASED_SQL } from "../../packages/persistence-sqlite/src/sqlite-run-resource-guard.ts";
 import { SqliteRunDispatchOperations } from "../../packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts";
+import { RUN_RESOURCES_RELEASED_SQL } from "../../packages/persistence-sqlite/src/sqlite-run-resource-guard.ts";
 import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
@@ -220,8 +220,13 @@ async function fixture(
         .transaction(() => {
           for (const table of tables) {
             const rows = source.prepare(`SELECT * FROM ${table}`).all() as Row[];
+            const legacyColumns = new Set(
+              (legacy.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+                ({ name }) => name,
+              ),
+            );
             for (const row of rows) {
-              const columns = Object.keys(row);
+              const columns = Object.keys(row).filter((column) => legacyColumns.has(column));
               legacy
                 .prepare(`INSERT INTO ${table} (${columns.join(",")})
               VALUES (${columns.map(() => "?").join(",")})`)
@@ -751,7 +756,13 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const migrated = snapshot(f);
     for (const [table, rows] of Object.entries(before)) {
       if (table !== "schema_migration_ledger" && table !== "schema_metadata")
-        expect(migrated[table]).toEqual(rows);
+        expect(
+          migrated[table]?.map((row) =>
+            table === "threads"
+              ? Object.fromEntries(Object.entries(row).filter(([column]) => column !== "origin"))
+              : row,
+          ),
+        ).toEqual(rows);
     }
     withDatabase(f, (database) => {
       expect(
@@ -849,6 +860,21 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       WHERE key IN ('current_sequence','minimum_writer_sequence')`),
     );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED");
+    await rejectsUnchanged(
+      f,
+      confirmArgs(f, listed.digest),
+      "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED",
+    );
+  });
+
+  it("refuses to write when the applied migrations are a different set of the same size", async () => {
+    const f = await fixture();
+    const listed = await inspect(f);
+    withDatabase(f, (database) =>
+      database.exec(
+        `UPDATE schema_migration_ledger SET digest='${"f".repeat(64)}' WHERE sequence=1`,
+      ),
+    );
     await rejectsUnchanged(
       f,
       confirmArgs(f, listed.digest),

@@ -66,7 +66,7 @@ date: "2026-11-11"
 8. 系统主动提醒只有 Gmail 一个来源，而且写死在多处。来源 `packages/application/src/ports/proactive-checks.ts:4` `export type ProactiveSource = "gmail";`；`packages/persistence-sqlite/src/sqlite-proactive-operations.ts:29` `const SOURCES = ["gmail"] as const;`；`packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql:15` `CHECK (source IN ('gmail'))`（`0069`、`0087`、`0088`、`0089` 四份迁移里同样）；`packages/persistence-sqlite/src/data-export/schemas.ts:253` `source: enumOf(["gmail"]),`。
 9. 现在已有不推送时段和顺延。来源 `docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md:124-125` 原话：“顺延到时段结束，再合成一条”“Andy 正开着 Himawari 网页时不弹推送”。
 10. 删掉来源现在只打标记，记忆还在，而且只按编号匹配。来源 `packages/persistence-sqlite/src/sqlite-governed-deletion.ts:762-764` 原话：`UPDATE memory_provenance SET source_deleted = 1 WHERE source_id IN (...)`。
-11. 发给模型的内容只追加；每轮会变的内容只放在最后一条消息里；工具首选一直在列表里。来源 `.claude/rules/prompt-prefix.md` 第 2、4、7 条原话：“每轮都会变的内容只放在最后一条用户消息里。”“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。”“业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝”。
+11. 发给模型的内容只追加；每轮会变的内容只放在最后一条消息里；工具首选一直在列表里。来源 `.agents/instructions/prompt-prefix.md` 第 2、4、7 条原话：“每轮都会变的内容只放在最后一条用户消息里。”“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。”“业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝”。
 12. 后台调用也是固定的在前、会变的在后。来源同文件第 15 条原话：“先放固定的指令，再放这次的数据，最后放当前时间这类每次都变的值。”
 13. 界面上每个数字要有可验证的定义。来源 `.claude/rules/owner-standing-rules.md` 原话：“界面上给 Andy 看的每个数字和判断词……都要有可以验证的定义和门槛，没有就不显示”。
 14. 现行决定是界面不显示费用。来源 `docs/adr/0106-proactive-loop-v1-gmail-read-only.md:47` 原话：“每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。”
@@ -128,7 +128,7 @@ date: "2026-11-11"
 
 ## 业界怎么做
 
-- 把大量外部内容放在对话之外、要用时由模型调用工具去取，是公开的常见做法：Manus 把文件系统当外部记忆，只在上下文里留路径，原话：“using the file system not just as storage, but as structured, externalized memory”“the content of a web page can be dropped from the context as long as the URL is preserved”（<https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus>）。让工具一直在列表里、由执行端拒绝，是 `.claude/rules/prompt-prefix.md` 第 7 条引的三家做法。本 ADR 的第 2 条照这两点做。
+- 把大量外部内容放在对话之外、要用时由模型调用工具去取，是公开的常见做法：Manus 把文件系统当外部记忆，只在上下文里留路径，原话：“using the file system not just as storage, but as structured, externalized memory”“the content of a web page can be dropped from the context as long as the URL is preserved”（<https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus>）。让工具一直在列表里、由执行端拒绝，是 `.agents/instructions/prompt-prefix.md` 第 7 条引的三家做法。本 ADR 的第 2 条照这两点做。
 - 外来内容当数据不当指令，是各家对“提示注入”的共同防线；这里更进一步，把“别人写的内容不能产生动作”写在代码里，不只靠提示词。这一条是线程的判断，没有逐个找一手来源。
 - 开源项目 TaoSheng（一直听并整理待办的 iOS App，线程读的提交是 `d82cc55`，笔记在 `/mnt/project-files/ios-app-eval/taosheng-notes.md`）的做法里采用的：给模型一张日历表查日期，不让它自己算；宁缺毋滥；主人忽略过的条目回传给模型归纳“这一类不要再提”；外放的视频音乐不提取；每条都能点回原话。
 - ChatGPT 和 Claude 的记忆只从对话里来，不从环境里来。这块没有可以照搬的成熟产品做法，所以用评测集和反向验收来守。
@@ -159,10 +159,10 @@ date: "2026-11-11"
   - 存储和模型费增加，所以每种感官都有上限并显示出来。
   - 记忆多了一类由感知推断的条目；错认主人声音时会把别人的话当成主人说的，所以认人达标之前一律当线索。
   - 系统主动提醒的四张表要重建一次（SQLite 改不了表约束），要排进改表队列；运行的那段程序现在是按 Gmail 一条线写的，要改成按登记表逐个来源跑。
-  - 新加的提示词会让老对话的遮盖结果变一次（`.claude/rules/prompt-prefix.md` 第 11 条写明的已知代价）。
+  - 新加的提示词会让老对话的遮盖结果变一次（`.agents/instructions/prompt-prefix.md` 第 11 条写明的已知代价）。
   - 用量页显示模型费，和 ADR 0106 那一句不同；ADR 0106 的其余决定不变。
 - 未验证：每种语言转写的准确率、认人的错认率、一天的模型费，都要等评测集和真机实测。评测要花模型费，超过 0.5 美元时先问 Andy。
-- 这份 ADR 被接受后要跟着改的文档：`.claude/rules/prompt-prefix.md` 在“检查和监控”里加上感知记录的那条检查；`docs/glossary.md` 加“感知记录”一行。两处都等对应代码合并时一起改。
+- 这份 ADR 被接受后要跟着改的文档：`.agents/instructions/prompt-prefix.md` 在“检查和监控”里加上感知记录的那条检查；`docs/glossary.md` 加“感知记录”一行。两处都等对应代码合并时一起改。
 
 [返回阅读导航](#contents)
 

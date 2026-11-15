@@ -14,6 +14,10 @@ import {
   RULE_UNDO_CAPABILITY_REF,
 } from "./production-owner-rules.js";
 import {
+  DEVICE_ACTION_CAPABILITY_REF,
+  PERCEPTION_READ_CAPABILITY_REF,
+} from "./production-perception-tools.js";
+import {
   REMINDER_CANCEL_CAPABILITY_REF,
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
@@ -128,7 +132,8 @@ function taskManagement(action: (typeof MANAGED_TASK_ACTIONS)[number]): ToolActi
     sideEffect: action === "cancel" ? "irreversible" : "none",
     disclosure: "none",
     targetType: "managed-task",
-    resultOrigin: "external",
+    resultOrigin: action === "cancel" ? "owner_data" : "external",
+    ...(action === "cancel" ? { authorization: "owner_scope" as const } : {}),
     executor: "managed_tasks",
     deduplication: "task_resource_authority",
     detail: detail(wording[action], "resourceRef"),
@@ -315,6 +320,34 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     standingRuleChange: true,
     detail: detail({ zh: "撤销规则", en: "Undo rule", ja: "ルールを取り消す" }, "ruleId"),
   },
+  {
+    ...READ_DEFAULTS,
+    tool: "perception_read",
+    family: "builtin",
+    capabilityRef: PERCEPTION_READ_CAPABILITY_REF,
+    operation: "read",
+    targetType: "owner-perception",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "查感知记录", en: "Read perception records", ja: "感知の記録を調べる" },
+      "query",
+    ),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "device_action",
+    capabilityRef: DEVICE_ACTION_CAPABILITY_REF,
+    operation: "act",
+    targetType: "owner-perception",
+    standingRuleChange: false,
+    detail: detail(
+      { zh: "让设备做一件事", en: "Ask a device to act", ja: "デバイスに操作を依頼" },
+      "action",
+    ),
+  },
 ] satisfies ToolActionRow[]);
 
 export function productionToolActionRegistry(
@@ -328,7 +361,7 @@ export function builtInCapabilityFacts(
   capabilityRef: string,
 ): CapabilityAuthorizationFacts | undefined {
   const row = registry.forCapability(capabilityRef);
-  if (!row || row.family !== "builtin") return undefined;
+  if (!row || (row.family !== "builtin" && row.authorization !== "owner_scope")) return undefined;
   return Object.freeze({
     lifecycle: "active",
     manifest: Object.freeze({

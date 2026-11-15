@@ -59,7 +59,7 @@ afterEach(() => {
 
 function positive() {
   const reports = expectedMembers(policy).map(({ check, member }) => {
-    const projects = check.projects.map((id) => ({ id, counts: count() }));
+    const projects = (member.projects ?? check.projects).map((id) => ({ id, counts: count() }));
     const counts = projects.length
       ? Object.fromEntries(
           Object.keys(count()).map((key) => [
@@ -131,8 +131,110 @@ const run = (mutate) => {
   mutate(input);
   return aggregate(input);
 };
-const selected = (input, id = "tests", key = "default") =>
+const selected = (input, id = "tests", key = id === "tests" ? "others" : "default") =>
   input.reports.find((entry) => entry.result.checkId === id && entry.result.matrixKey === key);
+
+describe("PR 上只跑相关测试时的汇总 [ADR-0268]", () => {
+  const zero = () => ({ files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 });
+  const relate = (input, id, projectIds) => {
+    for (const check of input.reports.filter((entry) => entry.result.checkId === id)) {
+      const owned = projectIds.filter((projectId) =>
+        check.result.projects.some((project) => project.id === projectId),
+      );
+      if (!owned.length) continue;
+      check.result.relatedProjects = owned;
+      for (const project of check.result.projects)
+        if (owned.includes(project.id)) project.counts = zero();
+      check.result.counts = Object.fromEntries(
+        Object.keys(zero()).map((key) => [
+          key,
+          check.result.projects.reduce((sum, project) => sum + project.counts[key], 0),
+        ]),
+      );
+    }
+  };
+  it("PR 上相关测试为零的项目和整个 tooling 检查算通过，汇总标成 related", () => {
+    const result = run((input) => {
+      relate(input, "tests", ["integration", "e2e", "pi-compat"]);
+      relate(input, "tooling", ["tooling"]);
+    });
+    expect(result.failures).toEqual([]);
+    expect(result.scope).toBe("related");
+    expect(validateRecord("GateSummary", result)).toBe(result);
+  });
+  it("没有相关范围的完整运行标成 full", () => {
+    expect(aggregate(positive()).scope).toBe("full");
+  });
+  it.each([
+    [
+      "不是 PR 的运行",
+      (input) => {
+        input.context.event = "workflow_dispatch";
+      },
+      "Related test scope outside pull_request",
+    ],
+    [
+      "unit 只跑相关测试",
+      (input) => relate(input, "tests", ["unit"]),
+      "Related test scope for unit is not allowed",
+    ],
+  ])("反向：%s带相关范围时被拒", (_name, mutate, reason) => {
+    const result = run((input) => {
+      for (const report of input.reports) report.result.event = input.context.event;
+      relate(input, "tests", ["integration"]);
+      mutate(input);
+      for (const report of input.reports) report.result.event = input.context.event;
+    });
+    expect(result.status).toBe("failed");
+    expect(result.failures.map((failure) => failure.reason)).toContain(reason);
+  });
+  it("反向：没声明相关范围的项目计数为零照样被拒", () => {
+    const result = run((input) => {
+      const check = selected(input, "tests", "integration-1");
+      check.result.projects.find((project) => project.id === "integration").counts = zero();
+    });
+    expect(result.status).toBe("failed");
+  });
+});
+
+describe("tests 拆成三台并行时的汇总 [ADR-0275]", () => {
+  it("每台只报自己那几个项目时通过", () => {
+    const input = positive();
+    expect(
+      input.reports
+        .filter((entry) => entry.result.checkId === "tests")
+        .map((entry) => [entry.result.matrixKey, entry.result.projects.map((p) => p.id)]),
+    ).toEqual([
+      ["integration-1", ["integration"]],
+      ["integration-2", ["integration"]],
+      ["others", ["unit", "contracts", "e2e", "pi-compat"]],
+    ]);
+    expect(aggregate(input).status).toBe("passed");
+  });
+  it("反向：分片那台把别的项目也报上来，或者少报一台，被拒", () => {
+    const extra = run((input) => {
+      const shard = selected(input, "tests", "integration-1").result;
+      shard.projects.push({ id: "unit", counts: count() });
+      shard.counts = Object.fromEntries(
+        Object.keys(count()).map((key) => [
+          key,
+          shard.projects.reduce((sum, project) => sum + project.counts[key], 0),
+        ]),
+      );
+    });
+    expect(extra.failures.map((failure) => failure.reason)).toContain(
+      "Project count set differs from policy",
+    );
+    const missing = run((input) => {
+      input.reports = input.reports.filter(
+        (entry) =>
+          !(entry.result.checkId === "tests" && entry.result.matrixKey === "integration-2"),
+      );
+    });
+    expect(missing.status).toBe("failed");
+    expect(missing.missing).toContain("tests/integration-2");
+  });
+});
 
 describe("complete-attempt gate", () => {
   it("rejects a scheduled quality context even when all required results claim success", () => {
@@ -145,7 +247,7 @@ describe("complete-attempt gate", () => {
   it("accepts the complete positive control and emits a closed GateSummary", () => {
     const result = aggregate(positive());
     expect(result.status).toBe("passed");
-    expect(result.expected).toHaveLength(9);
+    expect(result.expected).toHaveLength(11);
     expect(result.failures).toEqual([]);
     expect(validateRecord("GateSummary", result)).toBe(result);
   });
@@ -472,7 +574,7 @@ describe("complete-attempt gate", () => {
     }
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("passed");
-    writeFileSync(path.join(directory, "tests/default/report.json"), "tampered");
+    writeFileSync(path.join(directory, "tests/others/report.json"), "tampered");
     input.reports = readReportEnvelopes(directory);
     expect(aggregate(input).status).toBe("failed");
   });

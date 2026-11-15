@@ -1,0 +1,5 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. [中] 启动清理在 authority 身份校验之前执行，错误路径可能删掉别的部署的合格记录", "valid": true, "class": "error", "severity": "medium", "modelSeverity": "中", "trigger": "执行进程被配到别的部署的状态目录启动", "consequence": "先删了那个部署的合格记录再因身份不符退出，那个部署重新启用会一直失败到它重启", "reason": "读了代码，清理确实排在身份核对之前"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. [低] 重新启用的六种核验原因码到不了 HTTP 客户端", "valid": true, "class": "better", "reason": "不影响对错，客户端只拿到通用 403；手机按钮在第 11 批做时再决定"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. [低] “完整启动成功后写出记录”与代码不符", "valid": true, "class": "better", "reason": "ADR 的写法准确，只是说明措辞，代码不变"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. [低] 核验入口存在时，HTTP 已安装清单包含 `capability.reactivate` 的正向路径没有自动测试", "valid": true, "class": "better", "reason": "集成测试已覆盖网关两种情况，组合层只缺正向用例"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. [低] 16384 字节上限是 `lstat` 后 `readFile`", "valid": true, "class": "better", "reason": "和前几轮同一条，需要先能写服务账号的 0700 目录"}
