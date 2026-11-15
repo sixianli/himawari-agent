@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, renameSync 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
+import { historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
 import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
@@ -25,6 +25,8 @@ const rejectAll = (group, base, cases, check) => {
   }
 };
 assert(typeof process.env.HIMAWARI_TEST_TEMP_ROOT === "string", "FIXTURE_OWNED_TEMP_ROOT_REQUIRED");
+assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }), { __rowid: 1, id: "thread:1" }, "HISTORY_ROW_THREAD_ORIGIN_IGNORED");
+assert.deepEqual(historyRow("messages", { __rowid: 1, origin: "x" }), { __rowid: 1, origin: "x" }, "HISTORY_ROW_OTHER_TABLES_KEEP_EVERY_COLUMN");
 
 const releaseWithoutMigrationIds = [{ sequence: 1, name: "a" }, { sequence: 78, name: "b" }];
 const releaseWithMigrationIds = [{ sequence: 1, id: "0001", name: "a" }, { sequence: 78, id: "0078", name: "b" }, { sequence: 96, id: "20261114120000", name: "c" }];

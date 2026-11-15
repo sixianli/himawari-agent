@@ -56,6 +56,14 @@ export function one(database, sql, values = []) {
   return rows[0];
 }
 
+export const historyIgnoredColumns = Object.freeze({ threads: Object.freeze(["origin"]) });
+
+export function historyRow(table, row) {
+  const ignored = historyIgnoredColumns[table];
+  if (!ignored) return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !ignored.includes(key)));
+}
+
 export function historyDigests(database) {
   const tables = new Set(database.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name));
   return Object.fromEntries(historyTables.map((table) => {
@@ -63,7 +71,7 @@ export function historyDigests(database) {
     const hash = createHash("sha256");
     let rows = 0;
     for (const row of database.prepare(`SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`).iterate()) {
-      hash.update(`${canonicalJson(row)}\n`);
+      hash.update(`${canonicalJson(historyRow(table, row))}\n`);
       rows += 1;
     }
     return [table, { rows, sha256: hash.digest("hex") }];

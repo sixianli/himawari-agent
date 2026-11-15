@@ -541,6 +541,15 @@ class DerivedExpectationsTest(RenderedPacket):
     def test_the_owner_lost_rebuild_is_allowed_through_the_migration_ledger_as_the_packet_maker_reads_it_from_git(self):
         self.assertEqual(packet_maker.migration_ledger('HEAD', 82, 83), [{'sequence': 83, 'name': 'model_invocation_owner_lost', 'phase': 'expand'}])
 
+    def test_the_thread_origin_backfill_is_allowed_only_with_its_exact_text_and_the_ignored_history_column(self):
+        name = '20261115045512_thread_origin.sql'
+        sql = packet_maker.git('show', 'HEAD:' + packet_maker.MIGRATIONS + '/' + name)
+        self.assertEqual(packet_maker.added_column_backfills(name, sql, ['threads']), ['threads'])
+        self.assertEqual(packet_maker.added_column_backfills(name, sql + '\nDELETE FROM threads;', ['threads']), [])
+        self.assertEqual(packet_maker.added_column_backfills('other.sql', sql, ['threads']), [])
+        self.assertEqual(packet_maker.added_column_backfills(name, sql, ['messages']), [])
+        self.assertEqual(packet_maker.history_ignored_columns(), {'threads': ('origin',)})
+
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
             packet_maker.schema_parameters({'COMMIT': TWELFTH_COMMIT, 'TARGET_SCHEMA': 56}, {'schema': {'current': 57, 'minimumWriter': 57}})

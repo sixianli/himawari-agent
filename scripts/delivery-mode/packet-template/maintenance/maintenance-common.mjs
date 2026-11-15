@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -962,13 +962,14 @@ export function compareHistoryRows(reference, current) {
   for (const table of historyTables) {
     const allowed = new Set(startupRecoveryColumns[table] ?? []);
     const query = `SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`;
-    const live = current.prepare(query).iterate();
+    const live = (function* () { for (const row of current.prepare(query).iterate()) yield historyRow(table, row); })();
     let referenceRows = 0;
     let liveRows = 0;
     const recoveryUpdatedRowids = [];
     try {
       let next = live.next();
-      for (const row of reference.prepare(query).iterate()) {
+      for (const raw of reference.prepare(query).iterate()) {
+        const row = historyRow(table, raw);
         while (!next.done && next.value.__rowid < row.__rowid) {
           liveRows += 1;
           next = live.next();
