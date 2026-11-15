@@ -25,3 +25,44 @@ ARM 机器是 4 核 24 GB（`docs/runbooks/ci-vps-runner-runbook.md` 第 180 行
 - 上一次：run 43657965830 的 `full / tooling` 作业，`artifact.test.mjs`、`prod-read.test.mjs` 各一条测试超过 vitest 的 5 秒默认超时而失败。
 - 这一次：run 43662602059 的 `full / tooling` 作业日志，失败的两条是 `prod-read.test.mjs > prod-read.sh lists capabilities as metadata only, running the script read-only` 和 `srt-version.test.mjs > SRT version single source passes the repository as checked in`，两条都是 `Error: STACK_TRACE_ERROR`。
 - 两次都各有两条测试超时，失败的测试不全相同：两次都有 `prod-read.test.mjs`，另一条一次是 `artifact.test.mjs`、一次是 `srt-version.test.mjs`。
+- 再下一次：run 43666353293（main 上 1baa489cf）的 `full / tooling` 作业没有任何测试失败，结论是 `success`，所以这些测试不是卡住，只是有时超过 5 秒。
+- `test/tooling/` 下 101 个测试文件里，59 个起子进程（用 `spawnSync` 或 `execFileSync`），29 个建临时 git 仓库（`git init`），例如 `test/tooling/srt-version.test.mjs` 第 66 行 `execFileSync("git", ["init", "-q"], { cwd: root });`、`test/tooling/prod-read.test.mjs` 第 62 行 `const child = spawnSync("bash", [script, ...args], {`。
+
+## 拆分前的写法（main 上 1baa489cf）
+
+这个 PR 改掉了下面几处，原文抄在这里，供核对“拆分前”的说法。
+
+`ci/policy.json` 第 98–110 行，tests 只有一个成员 `default`，依次跑五个项目：
+
+```json
+      "id": "tests",
+      "needs": ["policy", "build"],
+      "timeoutMinutes": 60,
+      "members": [
+        {
+          "key": "default",
+          "runner": "ci-vps",
+          "os": "linux",
+          "arch": "x64",
+          "node": "22.22.3"
+        }
+      ],
+      "projects": ["unit", "contracts", "integration", "e2e", "pi-compat"],
+```
+
+`.github/workflows/ci.yml` 第 233–236 行，tests 作业写死在一个 runner 上：
+
+```yaml
+  tests:
+    name: tests
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: ci-vps
+```
+
+`vitest.workspace.ts` 第 39–41 行，只有 integration 带 30 秒超时：
+
+```ts
+          ...(project.id === "integration"
+            ? {
+                testTimeout: 30_000,
+```

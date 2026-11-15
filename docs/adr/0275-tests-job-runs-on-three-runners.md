@@ -25,7 +25,7 @@ date: "2026-11-15"
 
 ## 背景
 
-按 [ADR 0267](0267-ci-tests-without-coverage-on-prs.md)，`ci.yml` 的 `tests` 作业在 CI 服务器的一个 runner（替 GitHub 执行 CI 任务的程序）上依次跑 unit、contracts、integration、e2e、pi-compat 五个测试项目。main 上一次完整运行里这个作业用了约 50 分钟，其中 integration 一项就 34 分钟，是整次 CI 最慢的一段；同一台机器上的另外两个检查 runner 在 browser 作业跑完后就空着（用时见 `.agents/evidence/ci-tests-split-2026-11-15.md`）。
+按 [ADR 0267](0267-ci-tests-without-coverage-on-prs.md)，`ci.yml` 的 `tests` 作业在 CI 服务器的一个 runner（替 GitHub 执行 CI 任务的程序）上依次跑 unit、contracts、integration、e2e、pi-compat 五个测试项目（拆分前的原文抄在 `.agents/evidence/ci-tests-split-2026-11-15.md` 的“拆分前的写法”一节）。main 上一次完整运行里这个作业用了约 50 分钟，其中 integration 一项就 34 分钟，是整次 CI 最慢的一段；同一台机器上的另外两个检查 runner 在 browser 作业跑完后就空着（用时见 `.agents/evidence/ci-tests-split-2026-11-15.md`）。
 
 另外，ARM 机器上的 `tooling` 检查连续两次 main 运行各有两条测试因为超过 vitest 的 5 秒默认超时而失败，两次失败的测试不全相同（同一份证据文件的“ARM 上 tooling 测试超时”一节）。
 
@@ -34,13 +34,13 @@ date: "2026-11-15"
 ## 前提和来源
 
 1. 拆分前 tests 作业的用时：integration 2021 秒、unit 596 秒、contracts 110 秒、pi-compat 35 秒、e2e 6 秒，整个作业约 50 分钟。来源：`.agents/evidence/ci-tests-split-2026-11-15.md`，原话 `"durationMs":2021486`、“共约 50 分钟”。
-2. 拆分前 tests 只有一个矩阵成员。来源：main 上 `ci/policy.json` 第 98–109 行，原话 `"id": "tests"` 下的 `"key": "default"`。
+2. 拆分前 tests 只有一个矩阵成员。来源：`.agents/evidence/ci-tests-split-2026-11-15.md` 的“拆分前的写法”一节抄录的 main 上 `ci/policy.json`，原话 `"id": "tests"` 下只有 `"key": "default"` 一个成员。
 3. CI 服务器有三个检查 runner，共用 8 个 vCPU、22 GB 内存，三个合计内存上限 16 GB。来源：`docs/runbooks/ci-vps-runner-runbook.md` 第 17 行原话“8 个 vCPU，22 GB 内存”，第 67 行原话“合计内存最多 16 GB”。
 4. integration 每次最多开 3 个 worker（同时跑测试的子进程），其他项目只开 1 个。来源：`scripts/ci/test-concurrency.mjs` 第 4 行 `maximum: 3`，以及同一文件 `if (!project.fileParallelism || !project.workerLimits) return 1;`。
 5. vitest 官方的拆分做法是按测试文件分份、每份放一台机器，用 GitHub Actions 矩阵跑。来源：https://vitest.dev/guide/improving-performance ，原话 “Vitest splits your test files, not your test cases, into shards.”，示例矩阵 `shardIndex: [1, 2, 3, 4]`。
 6. 每次跑完，`scripts/ci/test.mjs` 都核对 vitest 实际跑的文件是不是正好等于该跑的文件，不等就失败。来源：`scripts/ci/test.mjs`，原话 ``throw new Error(`CI_TEST_FILE_SET_MISMATCH:${id}`);``。
 7. PR 和 main 上的 CI 都按基准提交上的 `ci/policy.json` 执行，旧写法要靠 `upgrade…` 函数一次性换成新写法。来源：`scripts/ci/check-policy.mjs` 的 `resolvePolicySource`，原话 ``git(["show", `${baseSha}:${policyPath}`])``，后面依次调用 `upgradeCoverageToTests(`、`upgradeArmRunnerPolicy(` 等。
-8. vitest 默认每条测试 5 秒超时；仓库只给 integration 设了 30 秒。来源：main 上 `vitest.workspace.ts` 第 41 行 `testTimeout: 30_000,`（只在 `project.id === "integration"` 分支里）；vitest 默认值见 https://vitest.dev/config/testtimeout ，原话 “Default: `5_000` in Node.js”。
+8. vitest 默认每条测试 5 秒超时；仓库只给 integration 设了 30 秒。来源：`.agents/evidence/ci-tests-split-2026-11-15.md` 的“拆分前的写法”一节抄录的 main 上 `vitest.workspace.ts`，`testTimeout: 30_000,` 只在 `project.id === "integration"` 分支里；vitest 默认值见 https://vitest.dev/config/testtimeout ，原话 “Default: `5_000` in Node.js”。
 9. ARM 上连续两次各有两条 tooling 测试报超时，两次失败的测试不全相同。来源：上一次是 run 43657965830 的 `full / tooling` 作业（`artifact.test.mjs`、`prod-read.test.mjs` 各一条），这一次是 run 43662602059 的 `full / tooling` 作业日志，原话 `prod-read.test.mjs > prod-read.sh lists capabilities as metadata only, running the script read-only` 和 `srt-version.test.mjs > SRT version single source passes the repository as checked in`，两条都是 `Error: STACK_TRACE_ERROR`。
 
 <a id="decision"></a>
@@ -59,7 +59,7 @@ date: "2026-11-15"
 
 ### tooling 测试超时放到 30 秒
 
-`vitest.workspace.ts` 给 tooling 项目也设 `testTimeout: 30_000`，和 integration 一样。tooling 里不少测试会起子进程、建临时 git 仓库，在 4 核的 ARM 机器上和 static 检查同时跑时会超过 5 秒；这些测试没有卡住，只是慢，所以放宽超时，而不是改测试本身。
+`vitest.workspace.ts` 给 tooling 项目也设 `testTimeout: 30_000`，和 integration 一样。tooling 里不少测试会起子进程、建临时 git 仓库（文件数见同一份证据文件），在 4 核的 ARM 机器上和 static 检查同时跑时会超过 5 秒；这些测试没有卡住，只是慢，所以放宽超时，而不是改测试本身。
 
 <a id="options"></a>
 
