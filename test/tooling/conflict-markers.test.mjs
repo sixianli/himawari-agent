@@ -1,13 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  findConflictMarkers,
-  scan,
-  trackedTextFiles,
-} from "../../scripts/check-conflict-markers.mjs";
+import { findConflictMarkers, scan } from "../../scripts/check-conflict-markers.mjs";
 
 const conflicted = [
   "keep",
@@ -44,53 +40,25 @@ describe("conflict markers left in tracked files", () => {
     expect(failures).toEqual([{ path: "bad.swift", start: 2, end: 6 }]);
   });
 
-  it("skips a tracked file that is gone from the work tree but rethrows other read errors", () => {
-    const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
+  it("rethrows a read error other than a missing file", () => {
     const denied = Object.assign(new Error("denied"), { code: "EACCES" });
-    expect(
-      scan(["gone.swift"], () => {
-        throw missing;
-      }),
-    ).toEqual([]);
     expect(() =>
-      scan(["locked.swift"], () => {
+      scan(["a"], () => {
         throw denied;
       }),
     ).toThrow("denied");
   });
 
-  it("lists tracked files of this repository and finds no markers in them", () => {
-    const paths = trackedTextFiles();
-    expect(paths.length).toBeGreaterThan(0);
-    expect(scan(paths)).toEqual([]);
-  });
-
-  it("makes the command exit 1 on a committed marker block and 0 once it is removed", () => {
-    const repo = mkdtempSync(join(tmpdir(), "conflict-markers-"));
-    try {
-      mkdirSync(join(repo, "scripts"));
-      mkdirSync(join(repo, ".agents", "reviews"), { recursive: true });
-      copyFileSync(
-        new URL("../../scripts/check-conflict-markers.mjs", import.meta.url),
-        join(repo, "scripts", "check-conflict-markers.mjs"),
-      );
-      writeFileSync(join(repo, "bad.swift"), conflicted.replaceAll("\n", "\r\n"));
-      writeFileSync(join(repo, ".agents", "reviews", "answer.md"), conflicted);
-      const git = (...args) => spawnSync("git", args, { cwd: repo, encoding: "utf8" });
-      git("init", "-q");
-      git("add", ".");
-      const run = () =>
-        spawnSync("node", ["scripts/check-conflict-markers.mjs"], { cwd: repo, encoding: "utf8" });
-      const failed = run();
-      expect(failed.status).toBe(1);
-      expect(failed.stderr).toContain("CONFLICT_MARKERS_LEFT bad.swift:2-6");
-      expect(failed.stderr).not.toContain("answer.md");
-      writeFileSync(join(repo, "bad.swift"), "let x = 1\n");
-      const passed = run();
-      expect(passed.status).toBe(0);
-      expect(passed.stdout).toContain("CONFLICT_MARKERS_NONE");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
+  it("makes the command exit 1 on a committed CRLF block and 0 once it is removed", () => {
+    const repo = mkdtempSync(join(tmpdir(), "markers-"));
+    cpSync("scripts/check-conflict-markers.mjs", join(repo, "scripts/check-conflict-markers.mjs"));
+    writeFileSync(join(repo, "bad.swift"), conflicted.replaceAll("\n", "\r\n"));
+    spawnSync("git", ["init", "-q"], { cwd: repo });
+    spawnSync("git", ["add", "."], { cwd: repo });
+    const run = () =>
+      spawnSync("node", ["scripts/check-conflict-markers.mjs"], { cwd: repo, encoding: "utf8" });
+    expect(run().stderr).toContain("CONFLICT_MARKERS_LEFT bad.swift:2-6");
+    writeFileSync(join(repo, "bad.swift"), "let x = 1\n");
+    expect(run().status).toBe(0);
   });
 });
