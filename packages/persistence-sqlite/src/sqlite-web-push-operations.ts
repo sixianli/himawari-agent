@@ -82,6 +82,8 @@ export class SqliteWebPushOperations {
         return this.enqueue(payload as Input<"enqueue">);
       case "webPush.listDue":
         return this.listDue(payload as Input<"listDue">);
+      case "webPush.listRecent":
+        return this.listRecent(payload as Input<"listRecent">);
       case "webPush.deferItem":
         return this.deferItem(payload as Input<"deferItem">);
       case "webPush.recordDeliveryTiming":
@@ -317,6 +319,22 @@ export class SqliteWebPushOperations {
       !valid(item.expiresAt)
     )
       this.fail("PORT_INVALID_OPERATION", "Web push item is invalid");
+  }
+
+  private listRecent(input: Input<"listRecent">): readonly WebPushOutboxItem[] {
+    this.time(input.since);
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `SELECT owner_id AS ownerId, agent_id AS agentId, source_key AS sourceKey, kind,
+           source_ref AS sourceRef, thread_id AS threadId, created_at AS createdAt,
+           expires_at AS expiresAt
+         FROM web_push_outbox
+         WHERE owner_id = ? AND agent_id = ? AND created_at >= ?
+         ORDER BY created_at DESC, source_key
+         LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.since, input.limit) as WebPushOutboxItem[];
   }
 
   private listDue(input: Input<"listDue">): readonly WebPushDue[] {

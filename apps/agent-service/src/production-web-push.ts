@@ -23,6 +23,7 @@ import {
   type WebPushSendResult,
   type WebPushStorePort,
 } from "@himawari-agent/application";
+import type { NotificationPlacement } from "./mac-placement.js";
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
@@ -223,6 +224,7 @@ export interface ProductionWebPushOptions {
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
   readonly timing?: DeliveryTimingSource;
+  readonly placement?: NotificationPlacement;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
@@ -264,6 +266,8 @@ export interface ProactivePushSource {
 }
 
 type Content = PushContent;
+
+const SETTLED_LOOKUP_LIMIT = 500;
 
 export class ProductionWebPush {
   readonly #options: ProductionWebPushOptions;
@@ -529,7 +533,12 @@ export class ProductionWebPush {
       if (cached) return cached;
       const built = await this.#content(item, approvals, now);
       contents.set(item.sourceKey, built);
+      if (built.expired) this.#options.placement?.withdraw(webPushTopic(item.sourceKey));
       return built;
+    };
+    const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
+      if (await this.#deferred(item, now, gated, decisions)) return true;
+      return !visible && (await this.#place(item, contentOf, accountLocale));
     };
     let counted: Promise<number | undefined> | undefined;
     const awaiting = () => {
@@ -545,7 +554,7 @@ export class ProductionWebPush {
         accountLocale,
         visible,
         content: contentOf,
-        deferred: (item) => this.#deferred(item, now, gated, decisions),
+        deferred: gate,
       })
       .catch(this.#options.onFailure);
     const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
@@ -564,7 +573,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
-      if (await this.#deferred(entry.item, now, gated, decisions)) continue;
+      if (await gate(entry.item)) continue;
       if (visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;
@@ -577,6 +586,51 @@ export class ProductionWebPush {
         accountLocale ?? entry.subscription.locale,
       );
     }
+  }
+
+  async #place(
+    item: WebPushOutboxItem,
+    contentOf: (item: WebPushOutboxItem) => Promise<Content>,
+    accountLocale: WebPushLocale | null,
+  ): Promise<boolean> {
+    const placement = this.#options.placement;
+    if (!placement) return false;
+    try {
+      const content = await contentOf(item);
+      if (content.expired) return false;
+      const built = content.build(accountLocale ?? "en");
+      return placement.place({
+        id: webPushTopic(item.sourceKey),
+        kind: item.kind,
+        title: built.title,
+        body: built.body,
+        homeKey: item.threadId,
+        createdAt: item.createdAt,
+      });
+    } catch (error) {
+      this.#options.onFailure(error);
+      return false;
+    }
+  }
+
+  async settled(ids: readonly string[]): Promise<readonly string[]> {
+    const wanted = new Set(ids);
+    if (wanted.size === 0) return [];
+    const { ownerId, agentId, store } = this.#options;
+    const now = this.#options.now();
+    const since = new Date(Date.parse(now) - PUSH_TOTAL_LIFE_MS).toISOString();
+    const recent = await store.listRecent({ ownerId, agentId, since, limit: SETTLED_LOOKUP_LIMIT });
+    const approvals = await this.#options.listApprovals();
+    const settled: string[] = [];
+    for (const item of recent) {
+      const id = webPushTopic(item.sourceKey);
+      if (!wanted.has(id)) continue;
+      const expired =
+        Date.parse(now) >= Date.parse(item.expiresAt) ||
+        (await this.#content(item, approvals, now)).expired;
+      if (expired) settled.push(id);
+    }
+    return settled;
   }
 
   async #deferred(

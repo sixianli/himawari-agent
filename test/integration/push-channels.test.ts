@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   APPLE_PUSH_CONFIGURATION_DEFAULTS,
-  DELIVERY_TIMING_DEFAULTS,
   type ApplePushConfiguration,
   type ApprovalRequest,
+  DELIVERY_TIMING_DEFAULTS,
   type DeliveryTimingJudgement,
   type DeviceActionRecord,
   type MemoryReminder,
@@ -30,10 +30,14 @@ import {
 import {
   createApplePushSender,
   createWebPushSender,
+  type DeviceNotificationFrame,
+  DeviceNotificationHub,
+  DevicePresence,
   notificationActionHash,
 } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { MacPlacement } from "../../apps/agent-service/src/mac-placement.ts";
 import {
   applePushAlertPayload,
   ProductionApplePush,
@@ -1482,5 +1486,124 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(calls).toEqual([]);
     expect(context.apns.requests).toEqual([]);
+  });
+
+  function macSetup(nowMs: () => number = () => Date.parse(T0)) {
+    const hub = new DeviceNotificationHub();
+    const presence = new DevicePresence();
+    const frames: DeviceNotificationFrame[] = [];
+    const placement = new MacPlacement({
+      hub,
+      presence,
+      windowMilliseconds: () => 300_000,
+      nowMilliseconds: nowMs,
+    });
+    const connect = (deviceId: string) => {
+      const listening = hub.listen(deviceId);
+      void (async () => {
+        while (true) frames.push(await listening.next());
+      })();
+      closers.push(async () => listening.close());
+    };
+    return { hub, presence, frames, placement, connect };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it("[IOS-9] rings only the Mac when it is connected and had input recently, and not the iPhone", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("mac");
+    context.setClock(T0);
+    mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 60_000);
+    await context.push.tick();
+    await context.push.tick();
+    await settle();
+    expect(context.apns.ofType("alert")).toEqual([]);
+    expect(mac.frames).toHaveLength(1);
+    expect(mac.frames[0]).toMatchObject({
+      event: "notification.deliver",
+      data: { id: webPushTopic(`reminder:mac:${T0}`), kind: "reminder" },
+    });
+  });
+
+  it("[IOS-9] REVERSE: sends to the iPhone when the Mac is connected but had no input within the window", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("away");
+    context.setClock(T0);
+    mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 600_000);
+    await context.push.tick();
+    await settle();
+    expect(mac.frames).toEqual([]);
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+
+  it("[IOS-9] REVERSE: sends to the iPhone when the Mac had input but has no open stream", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("closed");
+    context.setClock(T0);
+    mac.presence.record("dev_mac", Date.parse(T0) - 10_000);
+    await context.push.tick();
+    await settle();
+    expect(mac.frames).toEqual([]);
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+  });
+
+  it("[IOS-9] tells the Mac to withdraw a notification once the reminder is settled", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("gone");
+    context.setClock(T0);
+    mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 1_000);
+    await context.push.tick();
+    await settle();
+    expect(mac.frames).toHaveLength(1);
+    const [reminder] = context.reminders;
+    if (reminder) Object.assign(reminder, { status: "done" });
+    await context.push.tick();
+    await settle();
+    expect(mac.frames.map((frame) => frame.event)).toEqual([
+      "notification.deliver",
+      "notification.withdraw",
+    ]);
+  });
+
+  it("[IOS-9] answers which notification ids are settled, and leaves live and unknown ids out", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("live");
+    context.reminder("done");
+    context.setClock(T0);
+    await context.push.tick();
+    const liveId = webPushTopic(`reminder:live:${T0}`);
+    const doneId = webPushTopic(`reminder:done:${T0}`);
+    const reminder = context.reminders.find(({ id }) => id === "done");
+    if (reminder) Object.assign(reminder, { status: "done" });
+    expect(await context.push.settled([liveId, doneId, "unknown_id"])).toEqual([doneId]);
+    expect(await context.push.settled([])).toEqual([]);
+  });
+
+  it("[IOS-9] puts the notification id at the top level of an alert push", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("id");
+    context.setClock(T0);
+    await context.push.tick();
+    const [alert] = context.apns.ofType("alert");
+    expect(alert?.json["notificationId"]).toBe(webPushTopic(`reminder:id:${T0}`));
   });
 });

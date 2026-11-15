@@ -114,6 +114,7 @@ export function applePushAlertPayload(input: {
             : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
+      notificationId: input.tag,
       himawari: {
         v: 1,
         tag: input.tag,

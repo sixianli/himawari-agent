@@ -125,7 +125,7 @@ date: "2026-11-15"
 
 ## 追加（2026-11-15）：各项数值可在 App 里改
 
-项目规则不许写死。第一版里复查间隔、最长扣多久、各类状态多新算新、判忙的门槛、每分钟次数这 11 项只能改服务器配置文件，主人在 App 里看不到也改不了。
+项目规则不许写死。第一版里复查间隔、最长扣多久、各类状态多新算新、判忙的门槛、每分钟次数这 11 项（后来加了第 12 项 `macPresenceSeconds`）只能改服务器配置文件，主人在 App 里看不到也改不了。
 
 追加的做法：服务器新增两个网关操作，沿用主人设置同样的“版本号 + 旧设备不能覆盖新值”规则（[ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md)）。
 
@@ -134,6 +134,19 @@ date: "2026-11-15"
 - 主人改过的值存在新表 `delivery_timing_settings`（一个账号一行，JSON 加版本号），改后马上对运行中的服务生效，不用重启（配置立即替换；已经判过的同一组事实，判断结果最多沿用到复查间隔，所以判忙门槛、超时、每分钟次数的新值对这类已判过的事实要等到复查间隔过后才起作用）。
 - 只有配置文件里配了 `runPolicy.deliveryTiming`（送达时机已启用）、并且网页推送（`runPolicy.webPush`、它的密钥和 episode 保护）可用时，这两个操作才会装进网关。
 - 设置页的界面由客户端第 11 批做。
+
+## 追加（2026-11-15）：一处只响，服务器部分
+
+起因：Mac 和 iPhone 都装了的时候，同一条提醒会两处同时响。这里记服务器这一半，客户端那一半由 Mac 和 iPhone 的客户端批次做（方案见 `/mnt/project-files/plans/push-followup-proposal.md` 第 2 节）。
+
+- 判断谁来响：一条通知放行后（已过推送规则和送达时机），如果有一台 Mac 同时满足“有一条打开着的事件流”和“最近 `macPresenceSeconds` 秒内有过键鼠输入”，就只发给这台 Mac，不再发给 iPhone 和网页；否则照旧发给 iPhone。`macPresenceSeconds` 是送达时机设置的第 12 项，默认 300 秒，范围 30 到 3600 秒，和另外 11 项一样能在 App 里改（没配 `runPolicy.deliveryTiming` 时用默认值）。
+- Mac 报在场：`POST /api/device/v1/presence`，请求体只有 `lastInputAt`（毫秒精度的 ISO 时间）；只有 Mac 能调（其他设备得到 404）；服务器把它夹在服务器当前时间以内，防止设备时钟偏快；返回 `{ok, serverTime}`。
+- Mac 收通知：Mac 的事件流里多两种事件 `notification.deliver`（带 `id`、`kind`、`title`、`body`、`homeKey`、`createdAt`）和 `notification.withdraw`（带 `id`）。这两种事件不带 `id:` 行，因为客户端把 `id:` 当作断点续传的游标。Mac 上打开事件流不再算“应用正在屏幕上”，否则一开着 Mac 就把 iPhone 的推送压住了。
+- 撤回：一条事项已经办结（提醒被划掉或完成、审批已处理）时，服务器给收过它的 Mac 发 `notification.withdraw`。
+- iPhone 对账：`POST /api/device/v1/notifications/settled`，请求体 `{ids}`（最多 200 个，每个只含字母、数字、下划线、连字符，最长 64），返回 `{settledIds}`；只返回服务器确认已办结的，认不得的或还有效的不返回，iPhone 据此撤掉已经没用的通知。iPhone 的推送载荷顶层带 `notificationId`，值就是上面的 `id`。
+- 通知 `id` 就是推送的 tag（对来源键做哈希），三处用同一个值。
+
+没做：Mac 在场信号在服务重启后清空（进程内存），Mac 下一次上报前通知会退回 iPhone；这是故意的，宁可多响一处也不漏。
 
 <a id="references"></a>
 
