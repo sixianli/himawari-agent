@@ -43,6 +43,31 @@ private actor ConflictTransport: DeviceTransport {
     }
 }
 
+private actor GoneGrantTransport: DeviceTransport {
+    private var revoked = false
+    nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
+        if path == ManageGateway.challengePath {
+            return DeviceResponse(status: 201, body: Data(#"{"challenge":"c","expiresAt":"2026-11-12T00:00:30.000Z"}"#.utf8))
+        }
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
+        let type = { if case .string(let value)? = body["type"] { value } else { "" } }()
+        switch type {
+        case "grant.revoke":
+            await markRevoked()
+            return DeviceResponse(status: 409, body: Data(#"{"error":{"code":"PORT_CONFLICT"}}"#.utf8))
+        case "grant.list":
+            let refs = await isRevoked() ? "" : #""g1""#
+            return DeviceResponse(status: 200, body: Data(#"{"payload":{"itemRefs":[\#(refs)],"nextCursor":null}}"#.utf8))
+        case "grant.detail":
+            return DeviceResponse(status: 200, body: Data(#"{"payload":{"grantId":"g1","revision":2,"status":"active","capabilityRef":"cap-search","validFrom":"2026-11-10T00:00:00Z","expiresAt":"2026-12-12T00:00:00Z","uses":0,"affectedTaskRefs":[],"label":null,"detail":{"zh-CN":[],"en":[],"ja":[]}}}"#.utf8))
+        default:
+            return DeviceResponse(status: 200, body: Data("{}".utf8))
+        }
+    }
+    private func markRevoked() { revoked = true }
+    private func isRevoked() -> Bool { revoked }
+}
+
 private actor SlowSecondPageTransport: DeviceTransport {
     private var served = 0
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
@@ -68,7 +93,7 @@ private func payloadString(_ body: [String: JSONValue], _ key: String) -> String
 
 @MainActor
 final class SettingsStoreTests: XCTestCase {
-    private func store(_ transport: ScriptedTransport) -> SettingsStore {
+    private func store(_ transport: some DeviceTransport) -> SettingsStore {
         SettingsStore(
             gateway: ManageGateway(transport: transport, makeIdentifier: { "0123456789abcdef0123" }),
             identity: DeviceIdentity(deviceId: "dev_phone", origin: URL(string: "https://h.example")!, access: nil)
@@ -104,6 +129,13 @@ final class SettingsStoreTests: XCTestCase {
             return #"{"payload":{"devices":[{"deviceId":"login_web","label":"Mac 上的 Safari","firstSeenAt":"2026-11-01T00:00:00Z","lastSeenAt":"2026-11-12T00:00:00Z","current":true},{"deviceId":"login_old","label":"Windows 上的 Chrome","firstSeenAt":"2026-10-01T00:00:00Z","lastSeenAt":"2026-11-09T00:00:00Z","current":false}],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "files.list.read":
             return files(origin: payloadString(body, "origin") ?? "", before: payloadString(body, "before"))
+        case "grant.list":
+            return #"{"payload":{"itemRefs":["g1","g2"],"nextCursor":null}}"#
+        case "grant.detail":
+            let id = payloadString(body, "grantId") ?? ""
+            let status = id == "g1" ? "active" : "exhausted"
+            let label = id == "g1" ? #""给田中发邮件不用再问""# : "null"
+            return #"{"payload":{"grantId":"\#(id)","revision":2,"status":"\#(status)","capabilityRef":"cap-search","validFrom":"2026-11-10T00:00:00Z","expiresAt":"2026-12-12T00:00:00Z","uses":0,"affectedTaskRefs":["t1","t2"],"label":\#(label),"detail":{"zh-CN":["已用 0/1 次"],"en":["Used 0 of 1"],"ja":["0/1 回使用"]}}}"#
         case "think.settings.read":
             return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","overridden":false,"label":{"zh-CN":"排队上限","en":"Queue limit","ja":"待ち行列の上限"},"description":{"zh-CN":"最多同时排几件","en":"Most items waiting at once","ja":"同時に並べられる件数"},"unitLabel":{"zh-CN":"件","en":"items","ja":"件"}},{"key":"unnamed","value":5,"defaultValue":5,"minimum":0,"maximum":9,"unit":"count","overridden":false,"label":{"zh-CN":"","en":"","ja":""},"description":{"zh-CN":"","en":"","ja":""},"unitLabel":{"zh-CN":"","en":"","ja":""}}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
         case "server.status.read":
@@ -158,6 +190,39 @@ final class SettingsStoreTests: XCTestCase {
         guard case .object(let first)? = sent[0]["payload"], case .object(let second)? = sent[1]["payload"] else { return XCTFail() }
         XCTAssertEqual(first, ["expectedRevision": .number(4), "key": .string("queueLimit"), "value": .number(30)])
         XCTAssertEqual(second["value"], .null)
+    }
+
+    func testOnlyActiveGrantsAreListedWithTheirLabelAndDetail() async {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        XCTAssertEqual(settings.grants?.map(\.grantId), ["g1"])
+        XCTAssertEqual(settings.grants?.first?.label, "给田中发邮件不用再问")
+        XCTAssertFalse(settings.grants?.first?.detailLines.isEmpty ?? true)
+        let listed = await transport.sent.first { $0["type"] == "grant.list" }
+        guard case .object(let payload)? = listed?["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload["includeRevoked"], .bool(false))
+    }
+
+    func testRevokingSendsTheRevisionAndReportsHowManyTasksAreAffected() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        let grant = try XCTUnwrap(settings.grants?.first)
+        let outcome = try await settings.revoke(grant, reason: "撤回")
+        XCTAssertEqual(outcome, .revoked(affectedTasks: 2))
+        let sent = await transport.sent.first { $0["type"] == "grant.revoke" }
+        guard case .object(let payload)? = sent?["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload, ["grantId": .string("g1"), "expectedRevision": .number(2), "reasonCode": .string("owner_revoked")])
+    }
+
+    func testRevokingAGrantThatIsAlreadyGoneSaysSoInsteadOfFailing() async throws {
+        let settings = store(GoneGrantTransport())
+        await settings.load()
+        let grant = try XCTUnwrap(settings.grants?.first)
+        let outcome = try await settings.revoke(grant, reason: "撤回")
+        XCTAssertEqual(outcome, .gone)
+        XCTAssertEqual(settings.grants?.count, 0)
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {

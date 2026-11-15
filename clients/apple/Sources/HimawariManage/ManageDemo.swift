@@ -25,6 +25,10 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case grants = "20-himawari-self-5-grants"
+    case grantsOpen = "20-himawari-self-5b-grants-open"
+    case grantsRevoked = "20-himawari-self-5c-grants-revoked"
+    case grantsEmpty = "20-himawari-self-5d-grants-empty"
 }
 
 public struct ManageDemoView: View {
@@ -70,6 +74,14 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
+        case .grants:
+            grantsPage(.all)
+        case .grantsOpen:
+            grantsPage(.all, opening: "g1")
+        case .grantsRevoked:
+            grantsPage(.withoutFirst, notice: M.grantRevoked(affected: 2))
+        case .grantsEmpty:
+            grantsPage(.none)
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -82,6 +94,13 @@ public struct ManageDemoView: View {
     private func exporting(_ stage: DataExportStage) -> some View {
         NavigationStack {
             DataExportPage(session: DataExportSession(gateway: ManageDemo.gateway(), fixed: stage)) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
+        }
+    }
+
+    private func grantsPage(_ grants: ManageDemo.Grants, opening: String? = nil, notice: String? = nil) -> some View {
+        NavigationStack {
+            GrantsPage(store: ManageDemo.settingsStore(grants: grants), opening: opening, notice: notice) {}
                 .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
@@ -121,9 +140,15 @@ enum ManageDemo {
         MemoryStore(gateway: gateway())
     }
 
-    @MainActor static func settingsStore() -> SettingsStore {
+    enum Grants: Sendable {
+        case all
+        case withoutFirst
+        case none
+    }
+
+    @MainActor static func settingsStore(grants: Grants = .all) -> SettingsStore {
         SettingsStore(
-            gateway: gateway(),
+            gateway: gateway(grants: grants),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
         )
     }
@@ -139,8 +164,8 @@ enum ManageDemo {
         expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
-    static func gateway() -> ManageGateway {
-        ManageGateway(transport: DemoTransport(), makeIdentifier: { UUID().uuidString })
+    static func gateway(grants: Grants = .all) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(grants: grants), makeIdentifier: { UUID().uuidString })
     }
 
     static func answer(_ type: String) -> String {
@@ -169,6 +194,37 @@ enum ManageDemo {
         }
         let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
         return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":1\#(assessment)}}"#
+    }
+
+    static func grantRefs(_ grants: Grants) -> String {
+        let refs = switch grants {
+        case .all: #""g1","g2","g3""#
+        case .withoutFirst: #""g2","g3""#
+        case .none: ""
+        }
+        return #"{"payload":{"itemRefs":[\#(refs)],"nextCursor":null}}"#
+    }
+
+    static func grant(_ id: String) -> String {
+        let day: Double = 86_400
+        let (label, from, until, uses, tasks, lines): (String, Double, Double, Int, Int, String) = switch id {
+        case "g1": (
+            "给田中发邮件不用再问", 0, 27 * day, 0, 2,
+            #"{"zh-CN":["范围：1 项","收件对象：1 个","已用 0/20 次","到期：2026-12-12","会影响 2 个任务"],"en":["Scope: 1 item","Recipients: 1","Used 0 of 20","Expires: 2026-12-12","Affects 2 tasks"],"ja":["範囲：1 件","宛先：1 件","0/20 回使用","期限：2026-12-12","2 件のタスクに影響"]}"#
+        )
+        case "g2": (
+            "每天早上查一次天气", -26 * day, 4 * day, 3, 0,
+            #"{"zh-CN":["已用 3/30 次","到期：2026-11-19"],"en":["Used 3 of 30","Expires: 2026-11-19"],"ja":["3/30 回使用","期限：2026-11-19"]}"#
+        )
+        default: (
+            "", -3 * day, 30 * day, 0, 0,
+            #"{"zh-CN":["范围：2 项","已用 0/5 次","费用上限 $1.00，已花 $0.00","到期：2026-12-15"],"en":["Scope: 2 items","Used 0 of 5","Cost limit $1.00, spent $0.00","Expires: 2026-12-15"],"ja":["範囲：2 件","0/5 回使用","費用上限 $1.00、使用済み $0.00","期限：2026-12-15"]}"#
+        )
+        }
+        let iso = ISO8601DateFormatter()
+        let labelJSON = label.isEmpty ? "null" : #""\#(label)""#
+        let taskRefs = (0..<tasks).map { #""task-\#($0)""# }.joined(separator: ",")
+        return #"{"payload":{"grantId":"\#(id)","revision":1,"kind":"long_term","status":"active","capabilityRef":"cap-mail","validFrom":"\#(iso.string(from: frozenNow.addingTimeInterval(from)))","expiresAt":"\#(iso.string(from: frozenNow.addingTimeInterval(until)))","uses":\#(uses),"maxUses":30,"affectedTaskRefs":[\#(taskRefs)],"label":\#(labelJSON),"detail":\#(lines),"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
     }
 
     static func files(origin: String) -> String {
@@ -269,6 +325,12 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
+    let grants: ManageDemo.Grants
+
+    init(grants: ManageDemo.Grants = .all) {
+        self.grants = grants
+    }
+
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
@@ -277,6 +339,12 @@ private actor DemoTransport: DeviceTransport {
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }
         if type == "capability.detail", case .object(let payload)? = body["payload"], case .string(let ref)? = payload["capabilityRef"] {
             return DeviceResponse(status: 200, body: Data(ManageDemo.capability(ref).utf8))
+        }
+        if type == "grant.list" {
+            return DeviceResponse(status: 200, body: Data(ManageDemo.grantRefs(grants).utf8))
+        }
+        if type == "grant.detail", case .object(let payload)? = body["payload"], case .string(let id)? = payload["grantId"] {
+            return DeviceResponse(status: 200, body: Data(ManageDemo.grant(id).utf8))
         }
         if type == "files.list.read", case .object(let payload)? = body["payload"], case .string(let origin)? = payload["origin"] {
             return DeviceResponse(status: 200, body: Data(ManageDemo.files(origin: origin).utf8))

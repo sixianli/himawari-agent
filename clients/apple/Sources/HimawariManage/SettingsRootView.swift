@@ -11,6 +11,7 @@ public struct SettingsRootView: View {
         case loginBrowsers
         case export
         case proposals
+        case grants
         case approvals
         case tuningList(TuningKind)
         case tuningEdit(TuningKind, String)
@@ -100,6 +101,17 @@ public struct SettingsRootView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if let grants = store.grants {
+                            Button { path.append(.grants) } label: {
+                                SettingsRow(
+                                    icon: .shieldLock,
+                                    title: M.grantsTitle,
+                                    value: grants.isEmpty ? M.proposalsNone : "\(grants.count)",
+                                    chevron: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if let think = store.tuning[.think] {
                             Button { path.append(.tuningList(.think)) } label: {
                                 SettingsRow(
@@ -148,6 +160,7 @@ public struct SettingsRootView: View {
                 case .files: StoredFilesPage(store: store) { path.removeLast() }
                 case .loginBrowsers: LoginDevicesPage(store: store) { path.removeLast() }
                 case .proposals: ProposalsPage(store: store) { path.removeLast() }
+                case .grants: GrantsPage(store: store) { path.removeLast() }
                 case .export: DataExportPage(session: store.export) { path.removeLast() }
                 case .tuningList(let kind):
                     TuningListPage(store: store, kind: kind, open: { path.append(.tuningEdit(kind, $0)) }) { path.removeLast() }

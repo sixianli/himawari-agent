@@ -74,6 +74,43 @@ enum M {
     static func confirmDisableCapability(_ name: String) -> String {
         text("停用“\(name)”", ja: "「\(name)」を停止", en: "Turn off \"\(name)\"")
     }
+    static var grantsTitle: String { text("你答应过的事", ja: "承認済みのこと", en: "What you've approved") }
+    static var noGrants: String { text("没有你答应过的事", ja: "承認済みのことはありません", en: "Nothing you've approved") }
+    static var grantRevoke: String { text("撤回", ja: "取り消す", en: "Revoke") }
+    static var grantRevokeFailed: String { text("没能撤回", ja: "取り消せませんでした", en: "Couldn't revoke") }
+    static var grantGone: String { text("这一条已经不在了", ja: "この項目はもうありません", en: "This one is already gone") }
+    static func grantRevoked(affected: Int) -> String {
+        let base = text("已撤回。以后它做这件事会先问你", ja: "取り消しました。今後これをする前に確認します", en: "Revoked. It will ask you first from now on")
+        guard affected > 0 else { return base }
+        let extra = text("有 \(affected) 个任务会受影响", ja: "\(affected) 件のタスクに影響します", en: "\(affected) task\(affected == 1 ? "" : "s") will be affected")
+        return text("\(base)。\(extra)", ja: "\(base)。\(extra)", en: "\(base). \(extra)")
+    }
+    static func grantTitle(label: String?, capability: String?) -> String {
+        if let label, !label.isEmpty { return label }
+        guard let capability else { return text("一项授权", ja: "承認の一件", en: "An approval") }
+        return text("\(capability)的一项授权", ja: "\(capability)の承認", en: "An approval for \(capability)")
+    }
+    static func grantSubtitle(grantedAt: Date?, endsAt: Date?, uses: Int, now: Date, calendar: Calendar = .current) -> String {
+        var parts: [String] = []
+        if let grantedAt {
+            if calendar.isDate(grantedAt, inSameDayAs: now) {
+                parts.append(text("今天答应的", ja: "今日承認", en: "Approved today"))
+            } else {
+                let day = pairedDay(grantedAt)
+                parts.append(text("\(day)答应的", ja: "\(day)に承認", en: "Approved \(day)"))
+            }
+        }
+        if uses > 0 {
+            parts.append(text("用过 \(uses) 次", ja: "\(uses) 回使用", en: "Used \(uses) time\(uses == 1 ? "" : "s")"))
+        } else if let endsAt {
+            let day = pairedDay(endsAt)
+            parts.append(text("到 \(day)", ja: "\(day)まで", en: "Until \(day)"))
+        }
+        return parts.joined(separator: " · ")
+    }
+    static func confirmRevokeGrant(_ title: String) -> String {
+        text("撤回“\(title)”", ja: "「\(title)」を取り消す", en: "Revoke \"\(title)\"")
+    }
     static var noCapabilities: String { text("还没有装上的本事", ja: "まだ何も入っていません", en: "Nothing installed yet") }
     static var confirmAdopt: String { text("采纳这条改进", ja: "この改善を採用", en: "Adopt this improvement") }
     static var confirmReject: String { text("不要这条改进", ja: "この改善を見送る", en: "Turn down this improvement") }

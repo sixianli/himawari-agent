@@ -21,6 +21,7 @@ public final class SettingsStore {
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
     public private(set) var proposals: ProposalList?
+    public private(set) var grants: [GrantSummary]?
     public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
@@ -41,6 +42,7 @@ public final class SettingsStore {
         async let status = loadServerReach()
         async let logins = try? loadLoginDevices()
         async let listedProposals = try? loadProposals()
+        async let listedGrants = try? loadGrants()
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
@@ -57,6 +59,7 @@ public final class SettingsStore {
         server = await status
         loginDevices = await logins
         proposals = await listedProposals
+        grants = await listedGrants
     }
 
     public func disable(_ capability: CapabilitySummary, reason: String) async throws {
@@ -138,6 +141,44 @@ public final class SettingsStore {
             ],
             options: ManageCommandOptions(confirmReason: reason)
         )
+    }
+
+    public func reloadGrants() async {
+        if let listed = try? await loadGrants() { grants = listed }
+    }
+
+    public func revoke(_ grant: GrantSummary, reason: String) async throws -> GrantRevokeOutcome {
+        do {
+            _ = try await gateway.command(
+                .v2,
+                "grant.revoke",
+                payload: [
+                    "grantId": .string(grant.grantId),
+                    "expectedRevision": .number(Double(grant.revision)),
+                    "reasonCode": .string(Self.ownerRevokedReason),
+                ],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+            await reloadGrants()
+            return .revoked(affectedTasks: grant.affectedTaskRefs.count)
+        } catch let error as ManageGatewayError {
+            guard case .rejected(let status, _, _) = error, status != 401, status != 403 else { throw error }
+            guard let listed = try? await loadGrants() else { throw error }
+            grants = listed
+            guard !listed.contains(where: { $0.grantId == grant.grantId }) else { throw error }
+            return .gone
+        }
+    }
+
+    static let ownerRevokedReason = "owner_revoked"
+
+    private func loadGrants() async throws -> [GrantSummary] {
+        var result: [GrantSummary] = []
+        for ref in try await refs("grant.list", filter: "includeRevoked", value: .bool(false)) {
+            let data = try await gateway.read(.v2, "grant.detail", payload: ["grantId": .string(ref)])
+            result.append(try JSONDecoder().decode(Snapshot<GrantSummary>.self, from: data).payload)
+        }
+        return result.filter(\.isActive)
     }
 
     public func reloadProposals() async {
@@ -297,7 +338,7 @@ public final class SettingsStore {
         return status.payload.ready ? .connected : .notReady
     }
 
-    private func refs(_ type: String, filter: String, value: String?) async throws -> [String] {
+    private func refs(_ type: String, filter: String, value: JSONValue) async throws -> [String] {
         var refs: [String] = []
         var cursor: String?
         repeat {
@@ -305,7 +346,7 @@ public final class SettingsStore {
                 .v2,
                 type,
                 payload: [
-                    filter: value.map(JSONValue.string) ?? .null,
+                    filter: value,
                     "afterCursor": cursor.map(JSONValue.string) ?? .null,
                     "limit": 100,
                 ]
@@ -319,7 +360,7 @@ public final class SettingsStore {
 
     private func loadCapabilities() async throws -> [CapabilitySummary] {
         var result: [CapabilitySummary] = []
-        for ref in try await refs("capability.list", filter: "lifecycle", value: nil) {
+        for ref in try await refs("capability.list", filter: "lifecycle", value: .null) {
             let data = try await gateway.read(.v2, "capability.detail", payload: ["capabilityRef": .string(ref)])
             result.append(try JSONDecoder().decode(Snapshot<CapabilitySummary>.self, from: data).payload)
         }
