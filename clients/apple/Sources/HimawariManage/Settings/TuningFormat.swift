@@ -78,6 +78,20 @@ extension TuningItem {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: ManageLanguage.current.serverTag)
         formatter.calendar = calendar
-        return formatter.string(from: seconds)
+        guard let text = formatter.string(from: seconds) else { return nil }
+        return ManageLanguage.current == .zh ? spacedChinese(text) : text
+    }
+
+    static func spacedChinese(_ text: String) -> String {
+        var result = ""
+        var previous: Character?
+        for character in text.replacingOccurrences(of: "秒钟", with: "秒") {
+            if let before = previous, before != " ", character != " ", before.isASCII != character.isASCII, before.isNumber || character.isNumber {
+                result.append(" ")
+            }
+            result.append(character)
+            previous = character
+        }
+        return result
     }
 }

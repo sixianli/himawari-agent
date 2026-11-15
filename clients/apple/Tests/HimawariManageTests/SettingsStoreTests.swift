@@ -191,6 +191,13 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(hours.stepUp(from: 48), 72)
     }
 
+    func testChineseDurationHasASpaceBetweenNumberAndUnit() {
+        XCTAssertEqual(TuningItem.spacedChinese("4秒钟"), "4 秒")
+        XCTAssertEqual(TuningItem.spacedChinese("2分钟"), "2 分钟")
+        XCTAssertEqual(TuningItem.spacedChinese("2小时30分钟"), "2 小时 30 分钟")
+        XCTAssertEqual(TuningItem.spacedChinese("2天"), "2 天")
+    }
+
     func testWithoutAKindTheValueIsShownAsTheServerGaveIt() throws {
         let plain = try tuningItem("件", kind: nil, storage: nil, value: 20, minimum: 1, maximum: 1000)
         XCTAssertEqual(plain.text(20), "20 件")
