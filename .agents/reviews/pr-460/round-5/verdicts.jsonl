@@ -1,0 +1,4 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "ADR 的“后果”仍写着 x64 沙箱运行时摘要和整个上线包哈希会变，但本 PR 没有改任何生产运行时文件", "valid": true, "class": "error", "modelSeverity": "低", "reason": "已改：ADR 后果一条改为新函数在测试包里、不进上线包，x64 运行时摘要和上线包不变", "severity": "low", "trigger": "读 ADR 0253 后果一节的人", "consequence": "误以为这个 PR 改了上线包、需要重做上线包相关的核对"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "作者说“测试库改为不落盘”，代码里数据库仍然落盘", "valid": true, "class": "better", "modelSeverity": "低", "reason": "说法问题，不改代码：准确说法是日志放内存、关同步、批量插入一个事务；PR 描述按这个写"}
+{"id": "ds-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "“四个调用方都用它”的检查只做字符串包含，不能发现参数用错", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：四个调用方的参数复核时已逐个核对是对的"}
+{"id": "ds-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "可选路径按原始字符串精确匹配", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：精确匹配是有意的，第 1 轮的反向用例就是防止按子串把必选项当可选"}

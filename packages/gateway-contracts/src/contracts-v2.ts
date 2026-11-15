@@ -3329,6 +3329,13 @@ export const capabilitySnapshotSchema = object({
   }),
 });
 
+const grantDetailLinesSchema = array(boundedString(300));
+const grantDetailSchema = object({
+  "zh-CN": grantDetailLinesSchema,
+  en: grantDetailLinesSchema,
+  ja: grantDetailLinesSchema,
+});
+
 export const grantSnapshotSchema = object({
   ...envelope("snapshot", "grant.snapshot"),
   payload: object({
@@ -3358,6 +3365,8 @@ export const grantSnapshotSchema = object({
     revokedAt: nullable(timestamp),
     revocationReasonCode: nullable(machineString),
     affectedTaskRefs: array(machineString),
+    label: nullable(approvalDisplayText(301)),
+    detail: grantDetailSchema,
     generatedAt: timestamp,
   }),
 });
