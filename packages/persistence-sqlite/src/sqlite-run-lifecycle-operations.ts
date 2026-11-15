@@ -953,7 +953,10 @@ export class SqliteRunLifecycleOperations {
         FROM runs r
         JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
           AND t.agent_id = r.agent_id
-        WHERE r.owner_id = @ownerId AND r.agent_id = @agentId AND (
+        WHERE r.owner_id = @ownerId AND r.agent_id = @agentId
+          AND NOT EXISTS (SELECT 1 FROM threads hidden
+            WHERE hidden.id = r.thread_id AND hidden.origin = 'think')
+          AND (
           (r.status NOT IN ('completed', 'failed', 'cancelled')
             AND t.source_type != 'user_message')
           OR EXISTS (SELECT 1 FROM run_background_holds h WHERE h.owner_id = r.owner_id

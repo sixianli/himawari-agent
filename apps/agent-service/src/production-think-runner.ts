@@ -193,6 +193,7 @@ export class ThreadThinkRunner implements ThinkRunner {
       agentId,
       threadId: id.threadId,
       idempotencyKey: `think-thread:${entry.id}`,
+      origin: "think",
       resultRef: id.contentRef as never,
     });
     await commands.admitOwnerMessage({
