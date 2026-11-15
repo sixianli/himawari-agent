@@ -1,0 +1,9 @@
+# PR 541 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 低 — 已取消的调用仍会先领条目，白白消耗一次 `attempts` 并把条目卡在 `thinking` 三十分钟。production-think-worker.ts:62-68 先 maintain、claimNext，85/100 才看 signal.aborted；已核对成立，改为进门先查取消并返回 aborted，补已取消信号不领条目的用例；触发：调用方用已经取消的信号调用 runOnce；后果：仍领一条、attempts 加一，条目停在 thinking 等 recoverStalled，反复如此会被记 failed/stalled
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低 — `finish` 抛错时最终 catch 返回 `done`，但条目实际可能仍是 `thinking`。production-think-worker.ts:101-106 settle 失败被吞成 done；已核对成立，改为返回 unsettled，补 finish 抛错的用例；触发：store.finish 因存储错误抛错；后果：runOnce 报 done/failed，条目实际仍在 thinking，调用方被误导
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低 — 取消仍会调用 `onFailure`；`onFailure` 自己抛错还会让 `runOnce` 抛出。production-think-worker.ts:78-82、98-100 先调 onFailure 再看取消，且未包 try；已核对成立，取消时不上报、回调异常吞掉，补回调抛错的用例；触发：调用方取消，或 onFailure 回调自己抛错；后果：正常取消被上报为失败；回调抛错时 runOnce 抛出、条目留在 thinking
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低 — 密钥用途对账的新用例只覆盖“引用不存在”，不覆盖“引用存在但用途不是 `model-auth`”。startup-configuration.unit.test.ts:1958-1967 只测引用不存在；已补引用存在但用途是 payload-encryption 的反向用例；触发：以后删掉 assertIdentitySecretReference 的用途比较；后果：用途写错的 worth.secretRef 不再被拒，现有测试抓不到
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5. 低 — 新提示词加入 `TRUSTED_PROMPT_TEXTS` 没有能被现有检查抓住的反向用例。trusted-prompt-egress 测试用的提示词不含会被遮的内容，去掉也不失败；已在 think-worth-decision.unit.test.ts 补断言 TRUSTED_PROMPT_TEXTS 含 THINK_WORTH_QUESTION.text；触发：以后从 TRUSTED_PROMPT_TEXTS 去掉 think 模块；后果：新提示词不再被出口遮盖信任，现有测试抓不到
+- 6（deepseek-v4.1-flash）成立，会出错，低：### 6. 低 — 响应体取消的修复没有自动用例。think-worth-decision.unit.test.ts 只断言 503 会抛错；已补注入 fetch 的用例，断言 503 和超大 content-length 两条路径都取消了响应体；触发：以后删掉非 2xx 或声明超限路径的 body.cancel；后果：响应体不取消，现有测试抓不到
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7. 低 — ADR 和作者说法没有写取消分支，代码新增了 `aborted`/留在 `thinking` 的语义。ADR 0274 第 5 点只列 proposed/skipped/failed，代码 production-think-worker.ts:53 有 aborted；已核对成立，在 ADR 第 5 点补取消和结算失败两句；触发：读 ADR 0274 第 4、5 点了解工人结果；后果：不知道调用方取消时条目不结算、留在 thinking 由 recoverStalled 处理
