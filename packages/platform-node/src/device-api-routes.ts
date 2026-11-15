@@ -32,6 +32,7 @@ import {
   type VoiceTrigger,
 } from "@himawari-agent/application";
 import {
+  DATA_EXPORT_ID_PATTERN,
   HOME_LOCALES,
   THREAD_GATEWAY_SCHEMA_VERSION,
   type ThreadExecutionEventsSubscription,
@@ -69,6 +70,7 @@ export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
 
 const THREAD_ID_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+const FILE_ID_SEGMENT = "[A-Za-z0-9](?:[A-Za-z0-9._:-]|%3[Aa]){0,127}";
 
 export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "pair", signed: false },
@@ -97,6 +99,8 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "track", signed: true, uploadPurpose: "track" },
   { method: "POST", path: "mirror", signed: true },
   { method: "GET", path: "usage", signed: true },
+  { method: "GET", path: "data-export/archive", signed: true },
+  { method: "GET", path: "files/content/{fileId}", signed: true },
   { method: "POST", path: "usage/report", signed: true },
   { method: "GET", path: "actions", signed: true },
   { method: "POST", path: "actions/claim", signed: true },
@@ -118,7 +122,7 @@ const DEVICE_UPLOAD_PURPOSES: ReadonlyMap<string, UploadGrantPurpose> = new Map(
 const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
   method: route.method,
   pattern: new RegExp(
-    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT)}$`,
+    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT).replace("{fileId}", FILE_ID_SEGMENT)}$`,
     "u",
   ),
 }));
@@ -240,6 +244,12 @@ export interface DeviceHomePort {
   }) => Promise<DeviceHomeResolution>;
 }
 
+export interface DeviceDownload {
+  readonly bytes: Uint8Array;
+  readonly mediaType: string;
+  readonly fileName: string;
+}
+
 export interface DeviceApiRouteOptions {
   readonly home?: DeviceHomePort;
   readonly pairingAccess?: DevicePairingAccess;
@@ -285,6 +295,14 @@ export interface DeviceApiRouteOptions {
     readonly dataClassification: string;
     readonly contentType: string;
   }>;
+  readonly exportArchive?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly exportId: string;
+  }) => DeviceDownload | undefined;
+  readonly readFile?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly fileId: string;
+  }) => Promise<DeviceDownload>;
   readonly streamExecution?: (input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly subscription: ThreadExecutionEventsSubscription;
@@ -312,6 +330,11 @@ function header(request: FastifyRequest, name: string): string | undefined {
 function rawQuery(request: FastifyRequest): string {
   const index = request.url.indexOf("?");
   return index < 0 ? "" : request.url.slice(index + 1);
+}
+
+function downloadDisposition(fileName: string): string {
+  const ascii = fileName.replace(/[^\x20-\x7e]|["\\]/gu, "_") || "file";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
 function requestPath(request: FastifyRequest): string {
@@ -738,6 +761,45 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           reply,
           200,
           await perception().usage(scope(authenticated.authentication)),
+        );
+      });
+
+      const sendDownload = (reply: FastifyReply, download: DeviceDownload): FastifyReply =>
+        reply
+          .code(200)
+          .header("cache-control", "no-store")
+          .header("referrer-policy", "no-referrer")
+          .header("x-content-type-options", "nosniff")
+          .header("content-disposition", downloadDisposition(download.fileName))
+          .type(download.mediaType)
+          .send(Buffer.from(download.bytes));
+
+      device.get("/data-export/archive", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const exportArchive = options.exportArchive ?? options.rejectNotAllowed();
+        const query = new URLSearchParams(rawQuery(request));
+        const exportId = query.get("exportId");
+        if (
+          [...query.keys()].some((key) => key !== "exportId") ||
+          query.getAll("exportId").length !== 1 ||
+          exportId === null ||
+          !DATA_EXPORT_ID_PATTERN.test(exportId)
+        )
+          return options.rejectBody(400);
+        const download = exportArchive({ authentication: authenticated.authentication, exportId });
+        if (!download)
+          throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Data export was not found");
+        return sendDownload(reply, download);
+      });
+
+      device.get("/files/content/:fileId", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const readFile = options.readFile ?? options.rejectNotAllowed();
+        if (rawQuery(request) !== "") return options.rejectBody(400);
+        const fileId = (request.params as { readonly fileId: string }).fileId;
+        return sendDownload(
+          reply,
+          await readFile({ authentication: authenticated.authentication, fileId }),
         );
       });
 
