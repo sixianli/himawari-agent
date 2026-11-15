@@ -14,6 +14,7 @@ enum L {
 enum DeviceActionsText {
     static var changed: String { L.text("actions.changed") }
     static var notSent: String { L.text("actions.notSent") }
+    static var cannotUndo: String { L.text("actions.cannotUndo") }
     static var needsFace: String { L.text("actions.needsFace") }
     static var policyReason: String { L.text("actions.policyReason") }
 }
