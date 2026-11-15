@@ -32,7 +32,7 @@ date: "2026-11-15"
 ## 前提
 
 1. 预检要求一组目标路径都不存在，清单现在由预检和清理共用：`scripts/delivery-mode/deploy-target-paths.py` 第 4 行 `def target_paths(binding):`。
-2. 改动前，清理遇到有内容的资格目录只保留，所以同名路径下次必然过不了预检：改动前的 `release-cleanup-remote.py` 原文是 `keep(target, 'qualification-not-empty')`（I-56，`docs/incidents-and-gates.md`）。
+2. 改动前，清理遇到有内容的资格目录只保留，所以同名路径下次必然过不了预检：`docs/incidents-and-gates.md` 第 93 行 I-56 原文“清理按当时的规则保留（`qualification-not-empty`）”。
 3. 项目规则不许只给失败产物改名了事：`.agents/instructions/disk-space-hygiene.md` 第 8 行原文“也绝不能只是给它们改名了事”。
 4. 上线包里的文件不许是硬链接：`scripts/delivery-mode/packet-template/steps/packet-common.py` 第 42 行要求 `before.st_nlink == 1`。所以缓存复用只能核对后复制。
 5. 依赖包每次出包字节都不同：11-15 四个包的 `NODE_MODULES_TAR_SHA256` 各不相同而锁文件没变；第 3、4 个包的 `node-modules.json` 37,581 个文件只差 `node_modules/.vite/vitest/…/results.json`，是 vitest（测试运行器）写进 node_modules 的测试结果缓存。这一条来自 Mac 上的包文件比对，仓库里没有原件。
