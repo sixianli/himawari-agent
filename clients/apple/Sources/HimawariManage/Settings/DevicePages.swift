@@ -87,6 +87,7 @@ struct DeviceRow: View {
 struct DevicePage: View {
     let store: SettingsStore
     let deviceId: String
+    var actions: DeviceActionsModel? = nil
     let removedThisDevice: () -> Void
     let back: () -> Void
     @State private var renaming = false
@@ -113,6 +114,9 @@ struct DevicePage: View {
                     if let channel {
                         SettingsRow(icon: nil, title: M.deviceVersion, value: channel, last: true)
                     }
+                }
+                if let actions, store.isThisDevice(device) {
+                    DeviceAbilitiesSection(model: actions)
                 }
                 Button {
                     Task {

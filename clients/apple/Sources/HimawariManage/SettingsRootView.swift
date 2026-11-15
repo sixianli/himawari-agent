@@ -10,14 +10,24 @@ public struct SettingsRootView: View {
         case files
         case loginBrowsers
         case export
+        case approvals
     }
 
     @State private var store: SettingsStore
     @State private var path: [Page] = []
     private let close: () -> Void
     private let removedThisDevice: () -> Void
+    private let actions: DeviceActionsModel?
+    private let openThread: ((String) -> Void)?
 
-    public init(api: DeviceAPI, confirmKey: DeviceKeySigner, close: @escaping () -> Void, removedThisDevice: @escaping () -> Void) {
+    public init(
+        api: DeviceAPI,
+        confirmKey: DeviceKeySigner,
+        actions: DeviceActionsModel? = nil,
+        openThread: ((String) -> Void)? = nil,
+        close: @escaping () -> Void,
+        removedThisDevice: @escaping () -> Void
+    ) {
         let gateway = ManageGateway(transport: SignedDeviceTransport(http: api.http, confirmKey: confirmKey))
         let identity = api.http.currentCredentials.map {
             DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access)
@@ -25,13 +35,17 @@ public struct SettingsRootView: View {
         _store = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
         self.close = close
         self.removedThisDevice = removedThisDevice
+        self.actions = actions
+        self.openThread = openThread
     }
 
-    init(store: SettingsStore, path: [Page] = [], close: @escaping () -> Void) {
+    init(store: SettingsStore, actions: DeviceActionsModel? = nil, path: [Page] = [], close: @escaping () -> Void) {
         _store = State(initialValue: store)
         _path = State(initialValue: path)
         self.close = close
         removedThisDevice = {}
+        self.actions = actions
+        openThread = nil
     }
 
     static let exportDownloadAvailable = false
@@ -41,6 +55,14 @@ public struct SettingsRootView: View {
             SettingsPage(gap: SL.rootGap) {
                 SheetHeader(title: M.settings, leading: .close, action: close)
                 IdentityCard(subtitle: M.serverLine(store.server))
+                if let actions {
+                    SettingsGroup(label: nil) {
+                        Button { path.append(.approvals) } label: {
+                            ApprovalsEntryRow(count: actions.waitingCount)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 if store.phase == .loaded {
                     DevicesGroup(store: store, open: { path.append(.device($0.id)) }, add: { path.append(.addDevice) })
                     if Self.exportDownloadAvailable {
@@ -88,11 +110,13 @@ public struct SettingsRootView: View {
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .capabilities: CapabilitiesPage(store: store) { path.removeLast() }
-                case .device(let id): DevicePage(store: store, deviceId: id, removedThisDevice: removedThisDevice) { path.removeLast() }
+                case .device(let id): DevicePage(store: store, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .addDevice: AddDevicePage(store: store) { path.removeLast() }
                 case .files: StoredFilesPage(store: store) { path.removeLast() }
                 case .loginBrowsers: LoginDevicesPage(store: store) { path.removeLast() }
                 case .export: DataExportPage(session: store.export) { path.removeLast() }
+                case .approvals:
+                    if let actions { ApprovalsView(model: actions, openThread: openThread) { path.removeLast() } }
                 }
             }
         }

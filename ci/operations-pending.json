@@ -7,7 +7,6 @@
     "delivery_timing.settings.change": "送达时机设置：服务器后端、测试已实现（delivery_timing 控制），App 设置页由客户端第 11 批做（缺：调用方）；设置页做完时移出名单",
     "delivery_timing.settings.read": "送达时机设置：服务器后端、测试已实现（delivery_timing 控制），App 设置页由客户端第 11 批做（缺：调用方）；设置页做完时移出名单",
     "github.monitor.set_state": "GitHub 监控开关：integration-github 的 monitor-control 已实现并有测试，生产没有装配，前端没有页面（缺：调用方）。做监控页面时移出名单",
-    "home.read": "首页条目读取（方案 home-feed-plan 第 1 步）：处理程序已实现并有测试，网页推送角标已改用同一个件数函数；调用方是苹果端“今天”页，经设备接口 GET /api/device/v1/home 接上，那是第 3 步，等 PR 404（缺：调用方）。第 3 步合并后移出名单",
     "host.directory.detail": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "host.file.execute": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "host.file.prepare": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
