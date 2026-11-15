@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  DEVICE_ACTION_ID_PATTERN,
   DEVICE_ACTION_OPEN_STATES,
   DEVICE_ACTION_RECORD_STATES,
   type AuditLedgerPort,
@@ -107,6 +108,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "actions/result", signed: true },
   { method: "POST", path: "actions/open", signed: true },
   { method: "POST", path: "actions/supported", signed: true },
+  { method: "POST", path: "actions/undo", signed: true },
   { method: "GET", path: "actions/policy", signed: true },
   { method: "POST", path: "actions/policy", signed: true },
 ] as const);
@@ -866,6 +868,26 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, result.kind === "not_found" ? 404 : 409, {
           code: `DEVICE_ACTION_${result.kind.toUpperCase()}`,
         });
+      });
+
+      device.post("/actions/undo", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["id"]);
+        if (typeof body["id"] !== "string" || !DEVICE_ACTION_ID_PATTERN.test(body["id"]))
+          return options.rejectBody(400);
+        const outcome = await actions(authenticated).undo({
+          device: authenticated.device,
+          actionId: body["id"],
+          ownerPresent: authenticated.confirmed,
+        });
+        if (outcome.kind === "not_found" || outcome.kind === "not_undoable")
+          return options.sendJson(reply, outcome.kind === "not_found" ? 404 : 409, {
+            code: `DEVICE_ACTION_${outcome.kind.toUpperCase()}`,
+          });
+        if (outcome.kind !== "recorded")
+          return options.sendJson(reply, 409, { code: "DEVICE_ACTION_NOT_UNDOABLE" });
+        return options.sendJson(reply, 200, { id: outcome.actionId, state: outcome.state });
       });
 
       device.post("/actions/supported", async (request, reply) => {
