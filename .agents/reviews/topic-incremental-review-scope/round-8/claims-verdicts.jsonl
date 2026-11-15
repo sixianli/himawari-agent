@@ -1,0 +1,1 @@
+{"id": "29", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|29|找不到|-|别的 PR 的原始调用记录只存在各线程容器的临时目录里，已经没有了|未核实", "outcome": "model-wrong", "evidenceFile": "scripts/model-review/opencode-review.mjs", "evidence": "join(tmpdir(), \"himawari-review-raw\")"}
