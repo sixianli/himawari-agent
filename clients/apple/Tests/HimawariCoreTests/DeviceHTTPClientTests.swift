@@ -258,30 +258,80 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         }
     }
 
-    @Test func approvingAnOwnerPresenceActionUsesTheServersChallengeAsTheNonce() async throws {
+    func body(_ request: URLRequest) throws -> [String: Any] {
+        let data = try #require(request.httpBody)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    @Test func respondingToAnApprovalGoesThroughTheGatewayWithTheServersChallengeAsTheNonce() async throws {
         let exchange = RecordingExchange([
             HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
-            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"approved"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8)),
         ])
         let reply = try await api(exchange).respond(to: approval(presence: true), approved: true, confirm: try SoftwareKeySigner(), reason: "r")
         #expect(reply == .recorded(status: "approved"))
         #expect(exchange.requests.count == 2)
         #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
-        #expect(exchange.requests[1].url?.path.hasSuffix("approvals/apr_1/respond") == true)
+        #expect(exchange.requests[1].url?.path == "/api/device/v1/gateway")
         #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+        let sent = try body(exchange.requests[1])
+        #expect(sent["gateway"] as? String == "v2")
+        #expect(sent["type"] as? String == "approval.respond")
+        #expect(sent["risk"] as? String == "high")
+        #expect(sent["idempotencyKey"] is String)
+        let payload = try #require(sent["payload"] as? [String: Any])
+        #expect(payload["approvalRequestId"] as? String == "apr_1")
+        #expect(payload["decision"] as? String == "approved")
+        #expect(payload["recentAuthenticationRef"] as? String == "device")
+        #expect(payload["editedPayloadRef"] is NSNull)
     }
 
-    @Test func decliningOrApprovingWithoutPresenceAsksForNoChallenge() async throws {
+    @Test func decliningAnApprovalIsAlsoAConfirmedGatewayCommand() async throws {
         let exchange = RecordingExchange([
-            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"denied"}"#.utf8)),
-            HTTPExchangeResponse(status: 200, body: Data(#"{"status":"approved"}"#.utf8)),
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8)),
         ])
-        let signer = try SoftwareKeySigner()
-        _ = try await api(exchange).respond(to: approval(presence: true), approved: false, confirm: signer, reason: "r")
-        _ = try await api(exchange).respond(to: approval(presence: false), approved: true, confirm: signer, reason: "r")
-        #expect(exchange.requests.count == 2)
-        #expect(exchange.requests.allSatisfy { $0.url?.path.hasSuffix("approvals/challenge") == false })
-        #expect(try exchange.requests.allSatisfy { try nonces($0).count == 1 })
+        let reply = try await api(exchange).respond(to: approval(presence: false), approved: false, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .recorded(status: "denied"))
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+        #expect(try body(exchange.requests[1])["type"] as? String == "approval.respond")
+    }
+
+    @Test func respondingWithoutAConfirmKeySendsNothing() async throws {
+        let exchange = RecordingExchange([])
+        await #expect(throws: DeviceAPIError.self) {
+            _ = try await api(exchange).respond(to: approval(presence: false), approved: true, confirm: nil, reason: "r")
+        }
+        #expect(exchange.requests.isEmpty)
+    }
+
+    @Test func aStaleApprovalReportsChanged() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 409, body: Data(#"{"error":{"code":"PORT_CONFLICT"}}"#.utf8)),
+        ])
+        let reply = try await api(exchange).respond(to: approval(presence: true), approved: true, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .changed)
+    }
+
+    @Test func listingApprovalsReadsTheGatewayListThenEachDetail() async throws {
+        let detail = #"{"payload":{"approvalRequestId":"apr_1","revision":1,"status":"pending","semanticSnapshotHash":"h","finalRisk":"high","recentAuthenticationRequired":true,"requestedAt":"2026-11-13T06:38:00.000Z","expiresAt":"2026-11-13T06:48:00.000Z","decidedAt":null,"display":null,"intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_1","runId":"run_1","targetRefs":[]}}}"#
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{"itemRefs":["apr_1"],"nextCursor":null}}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(detail.utf8)),
+        ])
+        let found = try await api(exchange).approvals(status: .pending)
+        #expect(found.map(\.id) == ["apr_1"])
+        #expect(exchange.requests.map { $0.url?.path } == ["/api/device/v1/gateway", "/api/device/v1/gateway"])
+        #expect(exchange.requests.allSatisfy { $0.httpMethod == "POST" })
+        let list = try body(exchange.requests[0])
+        #expect(list["type"] as? String == "approval.list")
+        #expect(list["idempotencyKey"] == nil)
+        let listPayload = try #require(list["payload"] as? [String: Any])
+        #expect(listPayload["status"] as? String == "pending")
+        #expect(listPayload["afterCursor"] is NSNull)
+        #expect(listPayload["limit"] as? Int == 100)
+        #expect(try body(exchange.requests[1])["type"] as? String == "approval.detail")
     }
 
     @Test func changingThePolicyUsesTheServersChallengeAsTheNonce() async throws {

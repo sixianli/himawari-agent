@@ -74,7 +74,7 @@ public final class DeviceActionsModel {
         do {
             pending = try await api.approvals(status: .pending)
             approvalsAvailable = true
-        } catch DeviceAPIError.server(let status, _, _, _) where status == 404 {
+        } catch DeviceAPIError.server(let status, _, _, _) where status == 404 || status == 503 {
             approvalsAvailable = false
         } catch {}
         if let views = try? await api.actionViews(finishedSince: api.http.correctedNow.addingTimeInterval(-Self.recentWindow)) {
