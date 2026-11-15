@@ -34,6 +34,8 @@ enum DemoScene: String, CaseIterable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case memoryAwaiting = "21-memory-more-1-awaiting"
+    case memoryAdd = "21-memory-more-2-add"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -116,7 +118,7 @@ struct DemoSceneView: View {
     @ViewBuilder
     private func manage(_ screen: ManageDemoScreen) -> some View {
         switch screen {
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .memoryAwaiting, .memoryAdd:
             MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .memory, memory: AnyView(ManageDemoView(screen)))
         default:
             MainTabsView(model: .demo(.active), chat: .demo(DemoChatFixtures.chatList()), tab: .today, settings: AnyView(ManageDemoView(screen)))
@@ -205,7 +207,7 @@ struct DemoSceneView: View {
             PairingView(model: .demo(.unpaired(.removed)))
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .memoryAwaiting, .memoryAdd, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
             .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
             .notifications, .notificationsEdit, .thinkSettings:

@@ -27,6 +27,8 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case memoryAwaiting = "21-memory-more-1-awaiting"
+    case memoryAdd = "21-memory-more-2-add"
 }
 
 public struct ManageDemoView: View {
@@ -44,6 +46,10 @@ public struct ManageDemoView: View {
             MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1"))
         case .memoryEdit:
             MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5"))
+        case .memoryAwaiting:
+            MemoryRootView(store: ManageDemo.memoryStore(awaiting: true), tab: .awaiting)
+        case .memoryAdd:
+            MemoryRootView(store: ManageDemo.memoryStore(awaiting: true), opening: .add)
         case .rules:
             MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules)
         case .ruleDetail:
@@ -126,8 +132,8 @@ enum ManageDemo {
         pairingNumber: "482913"
     )
 
-    @MainActor static func memoryStore() -> MemoryStore {
-        MemoryStore(gateway: gateway())
+    @MainActor static func memoryStore(awaiting: Bool = false) -> MemoryStore {
+        MemoryStore(gateway: gateway(awaiting: awaiting))
     }
 
     @MainActor static func reactivationFailedStore() -> SettingsStore {
@@ -154,13 +160,15 @@ enum ManageDemo {
         expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
-    static func gateway(reactivated: Bool = false) -> ManageGateway {
-        ManageGateway(transport: DemoTransport(reactivated: reactivated), makeIdentifier: { UUID().uuidString })
+    static func gateway(reactivated: Bool = false, awaiting: Bool = false) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(reactivated: reactivated, awaiting: awaiting), makeIdentifier: { UUID().uuidString })
     }
 
-    static func answer(_ type: String) -> String {
+    static func answer(_ type: String, awaiting: Bool = false) -> String {
         switch type {
-        case "memory.overview.read": memories
+        case "memory.overview.read": memories(awaiting: awaiting)
+        case "memory.review.read":
+            awaiting ? memoryReview : #"{"payload":{"memories":[],"rules":[],"agreement":{}}}"#
         case "memory.rules.read": rules
         case "device.list.read": devices
         case "server.status.read":
@@ -262,7 +270,32 @@ enum ManageDemo {
         """#
     }
 
-    private static var memories: String {
+    private static let awaitingExtras = #"""
+    "pending":[{"requestId":"a1","threadId":"t1","sourceRef":"s1","text":"对花生过敏，点菜时要避开","topic":"health","requestedAt":"2026-11-14T10:00:00Z"}],
+    "externalProposals":{"total":2,"items":[
+      {"proposalId":"p1","text":"常去的咖啡店是新宿的 Blue Bottle","category":"preference","dataClassification":"private","client":"Codex","receivedAt":"2026-11-14T09:00:00Z"},
+      {"proposalId":"p2","text":"每周三晚上固定去健身房","category":"event","dataClassification":"private","client":"Claude Desktop","receivedAt":"2026-11-14T09:30:00Z"}
+    ],"batches":[{"batchId":"b1","decidedAt":"2026-11-14T08:00:00Z","committed":3,"rejected":1}]},
+    "personSuggestions":[{"suggestionId":"s1","personId":"pa","candidateId":"pb","createdAt":"2026-11-14T09:00:00Z"}],
+    "people":[
+      {"personId":"pa","name":"田中","aliases":[],"relation":null,"reverseRelation":null,"links":[],"memoryIds":[]},
+      {"personId":"pb","name":"田中部长","aliases":[],"relation":null,"reverseRelation":null,"links":[],"memoryIds":[]}
+    ],
+    "reminders":[{"reminderId":"rm1","text":"给山田回邮件","dueAt":"2026-11-15T03:00:00Z","remindAt":"2026-11-15T02:00:00Z","sourceThreadId":null}],
+    "tidyUps":[{"changeId":"c1","memoryId":"m5","action":"merge","text":"坐新干线喜欢靠窗","relatedText":null,"createdAt":"2026-11-14T06:00:00Z","undone":false,"undoable":true}],
+    "conversationReviews":[],
+    "manualAddReady":true
+    """#
+
+    private static let quietExtras = #"""
+    "pending":[],"externalProposals":{"total":0,"items":[],"batches":[]},"personSuggestions":[],"people":[],"reminders":[],"tidyUps":[],"conversationReviews":[],"manualAddReady":false
+    """#
+
+    private static let memoryReview = #"""
+    {"payload":{"memories":[{"memoryId":"m2","text":"每周五下午和田中有例会","upstreamMemoryId":"m7","upstreamText":null,"reason":"memory_edited","depth":1,"truncated":false,"flaggedAt":"2026-11-14T05:00:00Z"}],"rules":[],"agreement":{}}}
+    """#
+
+    private static func memories(awaiting: Bool) -> String {
         let items = [
             memory("m1", "出行", "从家走到车站约 18 分钟", inference: true, recordedAt: "2026-11-10T01:00:00Z", lastUsedAt: "2026-11-12T01:20:00Z", quote: nil),
             memory("m5", "出行", "坐新干线喜欢靠窗", inference: false, recordedAt: "2026-10-30T03:00:00Z", lastUsedAt: nil, quote: "以后都帮我订靠窗的"),
@@ -270,7 +303,8 @@ enum ManageDemo {
             memory("m6", "工作", "第一次给外面的人发邮件先让我看，同事不用", inference: false, recordedAt: "2026-11-08T03:00:00Z", lastUsedAt: nil, quote: "同事就不用问我了"),
             memory("m3", "身体", "对花生过敏", inference: false, recordedAt: "2026-10-21T03:00:00Z", lastUsedAt: "2026-11-05T03:00:00Z", quote: "我花生过敏"),
         ]
-        return #"{"payload":{"memories":[\#(items.joined(separator: ","))],"imports":[],"capturePaused":false}}"#
+        let extras = awaiting ? awaitingExtras : quietExtras
+        return #"{"payload":{"memories":[\#(items.joined(separator: ","))],"imports":[],"capturePaused":false,\#(extras)}}"#
     }
 
     private static let rules = #"""
@@ -296,9 +330,11 @@ enum ManageDemo {
 
 private actor DemoTransport: DeviceTransport {
     let reactivated: Bool
+    let awaiting: Bool
 
-    init(reactivated: Bool = false) {
+    init(reactivated: Bool = false, awaiting: Bool = false) {
         self.reactivated = reactivated
+        self.awaiting = awaiting
     }
 
     nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
@@ -317,7 +353,7 @@ private actor DemoTransport: DeviceTransport {
         if type == "files.list.read", case .object(let payload)? = body["payload"], case .string(let origin)? = payload["origin"] {
             return DeviceResponse(status: 200, body: Data(ManageDemo.files(origin: origin).utf8))
         }
-        return DeviceResponse(status: 200, body: Data(ManageDemo.answer(type).utf8))
+        return DeviceResponse(status: 200, body: Data(ManageDemo.answer(type, awaiting: awaiting).utf8))
     }
 }
 #endif

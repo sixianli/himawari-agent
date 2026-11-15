@@ -6,12 +6,14 @@ public struct MemoryRootView: View {
     enum Tab: Hashable {
         case remembered
         case rules
+        case awaiting
     }
 
     enum Opening: Equatable {
         case memory(String)
         case edit(String)
         case rule(String)
+        case add
     }
 
     @State private var store: MemoryStore
@@ -23,6 +25,8 @@ public struct MemoryRootView: View {
     @State private var detailHeight: CGFloat = 0
     @State private var actionFailed = false
     @State private var selectedRule: RuleSummary?
+    @State private var adding = false
+    @State private var busy: String?
     private let talk: (String) -> Void
     private let opening: Opening?
 
@@ -45,7 +49,7 @@ public struct MemoryRootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     ScreenTitle(Text(M.memoryTitle))
-                    MemorySegment(selection: $tab)
+                    MemorySegment(selection: $tab, awaitingCount: MemoryAwaiting.count(store.awaiting, review: store.review))
                     content
                 }
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
@@ -55,8 +59,15 @@ public struct MemoryRootView: View {
             .scrollIndicators(.hidden)
             .refreshable { await store.load() }
 
-            GlassCircleButton(Text(M.search), action: {}) {
-                Icon(.search, size: DesignTokens.IconSize.glassButton)
+            HStack(spacing: DesignTokens.Size.rowGap) {
+                if store.awaiting?.manualAddReady == true {
+                    GlassCircleButton(Text(M.addMemory), action: { adding = true }) {
+                        Icon(.plus, size: DesignTokens.IconSize.glassButton)
+                    }
+                }
+                GlassCircleButton(Text(M.search), action: {}) {
+                    Icon(.search, size: DesignTokens.IconSize.glassButton)
+                }
             }
             .padding(.trailing, DesignTokens.Size.pagePaddingX)
             .padding(.top, 10)
@@ -76,7 +87,8 @@ public struct MemoryRootView: View {
                 edit: {
                     pendingEdit = item
                     selected = nil
-                }
+                },
+                loadSources: { await store.basisSources(of: item) }
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailHeight = $0 }
             .presentationDetents(detailHeight > 0 ? [.height(detailHeight)] : [.medium])
@@ -87,6 +99,14 @@ public struct MemoryRootView: View {
         .sheet(item: $editing) { item in
             MemoryEditSheet(original: item.text, close: { editing = nil }) { text in
                 await perform { try await store.correct(item, text: text, reason: M.confirmEdit) }
+            }
+            .presentationDetents([.large])
+            .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            .presentationBackground(Color.hmBackground)
+        }
+        .sheet(isPresented: $adding) {
+            MemoryAddSheet(close: { adding = false }) { text in
+                await perform { try await store.create(text) }
             }
             .presentationDetents([.large])
             .presentationCornerRadius(DesignTokens.Radius.sheetTop)
@@ -126,6 +146,7 @@ public struct MemoryRootView: View {
         case .memory(let id): selected = memories.first { $0.memoryId == id }
         case .edit(let id): editing = memories.first { $0.memoryId == id }
         case .rule(let id): selectedRule = store.rules.first { $0.ruleId == id }
+        case .add: adding = true
         case nil: break
         }
     }
@@ -145,6 +166,19 @@ public struct MemoryRootView: View {
         Task {
             if await perform({ try await store.delete(item, reason: M.confirmDelete) }) { selected = nil }
         }
+    }
+
+    private func run(_ id: String, _ action: @escaping () async throws -> Void) {
+        guard busy == nil else { return }
+        busy = id
+        Task {
+            _ = await perform(action)
+            busy = nil
+        }
+    }
+
+    private func openFromAwaiting(_ id: String) {
+        open(.memory(id))
     }
 
     private func perform(_ action: () async throws -> Void) async -> Bool {
@@ -167,15 +201,21 @@ public struct MemoryRootView: View {
             RememberedList(store: store) { selected = $0 }
         case (.loaded, .rules):
             RuleList(rules: store.rules) { selectedRule = $0 }
+        case (.loaded, .awaiting):
+            MemoryAwaitingList(store: store, run: run, busy: busy, openMemory: openFromAwaiting)
         }
     }
 }
 
 struct MemorySegment: View {
     @Binding var selection: MemoryRootView.Tab
+    var awaitingCount = 0
 
     var body: some View {
-        SegmentPicker(selection: $selection, options: [(.remembered, M.remembered), (.rules, M.rules)])
+        SegmentPicker(
+            selection: $selection,
+            options: [(.remembered, M.remembered), (.rules, M.rules), (.awaiting, M.awaitingTab(awaitingCount))]
+        )
     }
 }
 
