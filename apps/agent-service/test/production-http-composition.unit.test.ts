@@ -395,6 +395,8 @@ describe("production HTTP composition", () => {
           "perception.episode.read",
           "perception.usage.read",
           "perception.settings.change",
+          "think.settings.read",
+          "think.settings.change",
         ],
         healthDependenciesAvailable: true,
       });

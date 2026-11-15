@@ -1064,6 +1064,8 @@ export class SqliteDurableAdapters {
       settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
       summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
       clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
+      readSettings: (input) => this.context.write("thinkInbox.readSettings", input),
+      changeSettings: (input) => this.context.write("thinkInbox.changeSettings", input),
     });
   }
 

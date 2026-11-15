@@ -1,5 +1,6 @@
 import type {
   StoredThinkEntry,
+  ThinkSettingsRecord,
   ThinkEnqueueOutcome,
   ThinkInboxStorePort,
   ThinkInboxUsage,
@@ -68,9 +69,62 @@ export class SqliteThinkInboxOperations {
         return this.summaryReferenced(payload as Input<"summaryReferenced">);
       case "thinkInbox.clearSummary":
         return this.clearSummary(payload as Input<"clearSummary">);
+      case "thinkInbox.readSettings":
+        return this.readSettings(payload as Input<"readSettings">);
+      case "thinkInbox.changeSettings":
+        return this.changeSettings(payload as Input<"changeSettings">);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown think inbox operation ${operation}`);
     }
+  }
+
+  private readSettings(input: Input<"readSettings">): ThinkSettingsRecord {
+    const row = this.database
+      .prepare(
+        `SELECT revision, overrides, updated_at AS updatedAt FROM think_settings
+         WHERE owner_id = ? AND agent_id = ?`,
+      )
+      .get(input.ownerId, input.agentId) as
+      | { revision: number; overrides: string; updatedAt: string }
+      | undefined;
+    if (!row) return Object.freeze({ revision: 0, overrides: Object.freeze({}), updatedAt: null });
+    return Object.freeze({
+      revision: row.revision,
+      overrides: Object.freeze(JSON.parse(row.overrides) as Record<string, number>),
+      updatedAt: row.updatedAt,
+    });
+  }
+
+  private changeSettings(input: Input<"changeSettings">): ThinkSettingsRecord {
+    if (!valid(input.now)) this.invalid("Think settings time is invalid");
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0)
+      this.invalid("Think settings revision is invalid");
+    const entries = Object.entries(input.overrides ?? {});
+    if (
+      entries.length > 32 ||
+      entries.some(
+        ([key, value]) =>
+          !/^[a-zA-Z]{1,64}$/u.test(key) || !Number.isSafeInteger(value) || value < 0,
+      )
+    )
+      this.invalid("Think settings overrides are invalid");
+    this.assertDiskHeadroom();
+    return this.database.transaction(() => {
+      const current = this.readSettings(input);
+      if (current.revision !== input.expectedRevision)
+        return this.fail("PORT_CONFLICT", "Think settings changed");
+      const overrides = Object.fromEntries(entries.sort(([a], [b]) => (a < b ? -1 : 1)));
+      this.database
+        .prepare(
+          `INSERT INTO think_settings (owner_id, agent_id, revision, overrides, updated_at)
+           VALUES (?, ?, 1, ?, ?)
+           ON CONFLICT (owner_id, agent_id) DO UPDATE SET
+             revision = revision + 1, overrides = excluded.overrides,
+             updated_at = excluded.updated_at`,
+        )
+        .run(input.ownerId, input.agentId, JSON.stringify(overrides), input.now);
+      return this.readSettings(input);
+    })();
   }
 
   private invalid(message: string): never {

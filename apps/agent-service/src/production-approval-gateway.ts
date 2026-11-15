@@ -1,3 +1,7 @@
+import {
+  PRODUCTION_THINK_OPERATIONS,
+  type ProductionThinkControl,
+} from "./production-think-settings.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import {
@@ -129,6 +133,7 @@ export function createProductionApprovalGateway(options: {
   readonly filesControl?: ProductionFilesControl;
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
+  readonly thinkControl?: Pick<ProductionThinkControl, "query" | "execute">;
   readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
@@ -194,7 +199,9 @@ export function createProductionApprovalGateway(options: {
                                       : query.type.startsWith("perception.") &&
                                           options.perceptionControl
                                         ? options.perceptionControl.query(query)
-                                        : searchAuthorization.query(query),
+                                        : query.type.startsWith("think.") && options.thinkControl
+                                          ? options.thinkControl.query(query)
+                                          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -325,6 +332,8 @@ export function createProductionApprovalGateway(options: {
           return options.deviceControl.execute(authentication, command);
         if (command.type.startsWith("perception.") && options.perceptionControl)
           return options.perceptionControl.execute(command);
+        if (command.type.startsWith("think.") && options.thinkControl)
+          return options.thinkControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -371,6 +380,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.filesControl ? PRODUCTION_FILES_OPERATIONS : []),
       ...(options.loginDevicesControl ? PRODUCTION_LOGIN_DEVICE_OPERATIONS : []),
       ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
+      ...(options.thinkControl ? PRODUCTION_THINK_OPERATIONS : []),
     ],
     reads,
     controlPlane,
