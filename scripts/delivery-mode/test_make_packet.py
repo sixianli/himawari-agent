@@ -555,7 +555,7 @@ class DerivedExpectationsTest(RenderedPacket):
 
     def test_history_fixtures_pass_in_a_packet_whose_ledger_applies_thread_origin(self):
         ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
-        for packet in (self.render(MIGRATION_LEDGER=ledger), self.render()):
+        for packet in (self.render(MIGRATION_LEDGER=ledger, TARGET_SCHEMA=57), self.render()):
             scratch = self.root / ('fixture-temp-' + packet.name)
             scratch.mkdir()
             result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
