@@ -13,6 +13,7 @@ enum MacDemoScene: String, CaseIterable {
     case checklistOpen = "mac-3b-checklist-one-by-one"
     case panel = "mac-4-panel"
     case panelQuiet = "mac-4b-panel-nothing-waiting"
+    case panelNotice = "mac-4c-panel-notice"
     case settings = "mac-6-settings"
     case settingsShortcutTaken = "mac-6b-settings-shortcut-taken"
     case settingsMessagesOn = "mac-6c-settings-messages-on"
@@ -42,6 +43,15 @@ enum MacDemo {
         """
         return try! JSONDecoder().decode(HomeSnapshot.self, from: Data(json.utf8))
     }
+
+    static let notice = DeviceNotification(
+        id: "demo-notice",
+        kind: "reminder",
+        title: "15:00 和田中的会，现在该出门了",
+        body: "从这里过去大约 25 分钟",
+        homeKey: nil,
+        createdAt: "2026-11-15T05:35:00.000Z"
+    )
 
     static func settings(seesMessages: Bool = false) -> MacAccessSettings {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -85,7 +95,8 @@ enum MacDemo {
             settings: store,
             home: scene == .panelQuiet ? nil : home(),
             running: [RunningWork(id: "w", title: "整理“下载”文件夹", progress: DeviceProgress(done: 21, total: 38), progressLabel: "已移动 21 / 38")],
-            shortcut: shortcut
+            shortcut: shortcut,
+            notices: scene == .panelNotice ? [notice] : []
         )
         let input = InputBarModel(api: app.api, chat: { nil }, limits: { nil })
         switch scene {
@@ -105,7 +116,7 @@ enum MacDemo {
             return AnyView(InputBarView(model: input, shortcutLabel: nil, submit: {}))
         case .checklist, .checklistOpen:
             return AnyView(ChecklistView(list: checklist, expanded: scene == .checklistOpen, decline: {}, approve: {}))
-        case .panel, .panelQuiet:
+        case .panel, .panelQuiet, .panelNotice:
             return AnyView(PanelView(model: menu, talk: {}, pair: {}))
         case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
             return AnyView(MacSettingsView(store: store, shortcutState: shortcut, scrolls: false))

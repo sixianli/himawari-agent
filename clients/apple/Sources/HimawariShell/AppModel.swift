@@ -131,6 +131,10 @@ public final class AppModel {
 
     @ObservationIgnored var demoHost: String?
 
+    @ObservationIgnored public var onDeviceNotification: (@MainActor (DeviceStreamEvent) -> Void)? {
+        didSet { chat?.onNotification = onDeviceNotification }
+    }
+
     public func ownerPresence(reason: String) -> OwnerPresenceSigner {
         OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
     }
@@ -330,6 +334,7 @@ public final class AppModel {
                 heartbeatSeconds: { heartbeat.seconds },
                 onSessionInvalid: { [weak self] in self?.checkRevoked() }
             )
+            chat.onNotification = onDeviceNotification
             self.chat = chat
             phase = .active
             chat.start()

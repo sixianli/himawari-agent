@@ -51,6 +51,7 @@ public final class ChatStore {
     @ObservationIgnored private let answerLocale: AnswerLocale
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
+    @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
 
     public init(
         api: DeviceAPI,
@@ -357,6 +358,8 @@ public final class ChatStore {
                 await load(threadId)
                 await loadExecution(runId, in: threadId)
             }
+        case .notificationDeliver, .notificationWithdraw:
+            onNotification?(event)
         case .unavailable:
             break
         case .resyncRequired:

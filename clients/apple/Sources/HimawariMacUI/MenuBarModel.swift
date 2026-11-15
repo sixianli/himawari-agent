@@ -35,6 +35,9 @@ final class MenuBarModel {
     private(set) var acting: String?
     private(set) var failedItem: String?
     private(set) var shortcutState: GlobalShortcut.State?
+    private(set) var notices = PendingNotifications()
+    @ObservationIgnored var showNotice: ((DeviceNotification) -> Void)?
+    @ObservationIgnored var removeNotice: ((String) -> Void)?
     @ObservationIgnored weak var work: MacWorkControl?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var serverActions: [DeviceActionSummary] = []
@@ -47,16 +50,43 @@ final class MenuBarModel {
         self.settings = settings
     }
 
-    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?) {
+    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = []) {
         self.app = app
         self.settings = settings
         self.home = home
         self.running = running
         shortcutState = shortcut
         demoShowsStop = true
+        var pending = PendingNotifications()
+        for notice in notices { pending.deliver(notice) }
+        self.notices = pending
     }
 
     var awaitingCount: Int { home?.awaitingCount ?? 0 }
+
+    var shownNotices: [DeviceNotification] {
+        let pressing = mostPressing?.key
+        return notices.items.filter { $0.homeKey == nil || $0.homeKey != pressing }
+    }
+
+    func receive(_ event: DeviceStreamEvent) {
+        switch event {
+        case let .notificationDeliver(notice):
+            if notices.deliver(notice) { showNotice?(notice) }
+            if notice.homeKey != nil { Task { await refresh() } }
+        case let .notificationWithdraw(id):
+            let gone = notices.withdraw(id)
+            removeNotice?(id)
+            if gone?.homeKey != nil { Task { await refresh() } }
+        default:
+            break
+        }
+    }
+
+    func dismiss(_ notice: DeviceNotification) {
+        notices.withdraw(notice.id)
+        removeNotice?(notice.id)
+    }
     var mostPressing: HomeItem? { home?.mostPressing }
 
     func shortcutChanged(_ state: GlobalShortcut.State?) {

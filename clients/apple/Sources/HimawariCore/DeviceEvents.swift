@@ -5,10 +5,21 @@ public enum DeviceStreamEvent: Sendable, Equatable {
     case thread(ThreadEvent)
     case executionText(ExecutionText)
     case executionChanged(threadId: String, runId: String)
+    case notificationDeliver(DeviceNotification)
+    case notificationWithdraw(id: String)
     case resyncRequired
     case sessionInvalid
     case unavailable
     case disconnected
+}
+
+extension DeviceStreamEvent {
+    public var isNotification: Bool {
+        switch self {
+        case .notificationDeliver, .notificationWithdraw: return true
+        default: return false
+        }
+    }
 }
 
 public enum DeviceEventDecoder {
@@ -31,6 +42,11 @@ public enum DeviceEventDecoder {
             default:
                 return nil
             }
+        case "notification.deliver":
+            return (try? JSONDecoder().decode(DeviceNotification.self, from: data)).map { .notificationDeliver($0) }
+        case "notification.withdraw":
+            struct Withdraw: Decodable { let id: String }
+            return (try? JSONDecoder().decode(Withdraw.self, from: data)).map { .notificationWithdraw(id: $0.id) }
         case "thread.snapshot_required":
             return .resyncRequired
         case "thread.execution_unavailable":
@@ -132,9 +148,10 @@ public final class DeviceEventStream: @unchecked Sendable {
                 for try await chunk in chunks {
                     deadline.touch()
                     for event in parser.feed(chunk) {
-                        if let id = event.id, !id.isEmpty { self.cursors?.save(id) }
+                        let decoded = DeviceEventDecoder.decode(event)
+                        if let id = event.id, !id.isEmpty, !(decoded?.isNotification ?? false) { self.cursors?.save(id) }
                         if event.event == "device.reconnect" { return false }
-                        guard let decoded = DeviceEventDecoder.decode(event) else { continue }
+                        guard let decoded else { continue }
                         if decoded == .resyncRequired { self.cursors?.save(nil) }
                         continuation.yield(decoded)
                         if decoded == .sessionInvalid || decoded == .unavailable { return true }

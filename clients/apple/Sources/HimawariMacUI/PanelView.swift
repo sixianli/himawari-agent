@@ -14,6 +14,9 @@ struct PanelView: View {
                 if model.app.phase != .active {
                     card { notPaired }
                 } else {
+                    ForEach(model.shownNotices) { notice in
+                        card { noticeCard(notice) }
+                    }
                     ForEach(model.running) { work in
                         card { running(work) }
                     }
@@ -94,6 +97,22 @@ struct PanelView: View {
                 .hmType(DesignTokens.TypeScale.macSmall)
                 .foregroundStyle(Color.hmMuted)
         }
+    }
+
+    @ViewBuilder
+    private func noticeCard(_ notice: DeviceNotification) -> some View {
+        Text(notice.title)
+            .hmType(DesignTokens.TypeScale.macRowStrong)
+            .foregroundStyle(Color.hmText)
+            .fixedSize(horizontal: false, vertical: true)
+        if !notice.body.isEmpty {
+            Text(notice.body)
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Button(L.text("panel.noticeDismiss")) { model.dismiss(notice) }
+            .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
     }
 
     private var talkRow: some View {

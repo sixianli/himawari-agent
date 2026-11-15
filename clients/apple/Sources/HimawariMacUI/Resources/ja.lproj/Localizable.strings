@@ -18,6 +18,7 @@
 "panel.awaiting" = "決めてほしいこと";
 "panel.actionFailed" = "うまくいきませんでした。もう一度押してください";
 "panel.presenceReason" = "ご本人の承認であることを確認";
+"panel.noticeDismiss" = "了解";
 "panel.talk" = "Himawari に話しかける";
 "panel.notPaired" = "まだ Himawari とつながっていません";
 "panel.pair" = "つなぐ";
