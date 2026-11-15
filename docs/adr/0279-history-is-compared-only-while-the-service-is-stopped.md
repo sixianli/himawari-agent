@@ -72,4 +72,4 @@ Andy 2026-11-15 的要求：找根因，不打补丁，也不做一次性豁免�
 
 - 下一个版本可以正常出包，S8 不再因服务的正常写入失败。
 - 新版本启动后的代码如果改坏老数据，上线检查不再拦。放弃它的理由：它在仓库记录里从没拦到过真问题，而且无法区分写对和写错。真出事时 S3 的恢复点（上线前的整库副本）仍保留，可以恢复。
-- 门槛：`scripts/delivery-mode/test_make_packet.py` 的 `test_history_is_compared_only_while_the_service_is_stopped`、`test_the_instance_file_cannot_switch_history_comparison_off`、`test_history_fixtures_pass_in_a_packet_without_the_switch`。
+- 门槛：`scripts/delivery-mode/test_make_packet.py` 的 `test_history_is_compared_only_while_the_service_is_stopped`、`test_the_instance_file_cannot_switch_history_comparison_off`、`test_history_fixtures_pass_in_a_packet_whose_ledger_applies_thread_origin`。

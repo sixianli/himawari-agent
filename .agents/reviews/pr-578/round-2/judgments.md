@@ -1,0 +1,4 @@
+# PR 578 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1【低】删除夹具测试后，ADR 0279 和 I-108 仍把它列为门槛。test_make_packet.py 只剩 test_history_fixtures_pass_in_a_packet_whose_ledger_applies_thread_origin（:580），全仓库只有这两处文档引用已删函数名；已改为现存测试名。；触发：读 ADR 0279:75 和 I-108 的人去找已删除的测试；后果：门槛文字指向不存在的测试，文字不准但不误导：真实门槛测试仍在
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2【低】ADR 0086 的 0083 例外仍把“deploy.sh 的自动回滚”当作替代核对，和 andy-production 的 keep 不符。deploy.sh:108 在 on_failure=keep 时打印 DEPLOY_ROLLBACK_SKIPPED 并不回滚；andy-production.json:25 为 keep；已改写 ADR 0086 该句。；触发：读 ADR 0086 第 51 行的人以为 keep 模式也会自动回滚；后果：文字不准：keep 模式不回滚，但 DEPLOY_ROLLBACK_SKIPPED 会明确打印，不会误导操作
