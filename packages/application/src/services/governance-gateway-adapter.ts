@@ -793,6 +793,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.status === command.payload.decision &&
       current.semanticSnapshotHash === command.payload.semanticSnapshotHash
     ) {
+      await this.#dependencies.onApprovalResolved?.(current).catch(() => undefined);
       return `approval:${current.id}:revision-${current.revision}`;
     }
     if (command.payload.decision === "approved" && current.recentAuthenticationRequired) {
