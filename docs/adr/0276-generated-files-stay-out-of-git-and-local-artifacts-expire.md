@@ -51,7 +51,7 @@ Mac 克隆里的本机产物：
 3. 证据要保留，减少证据先问。`.agents/instructions/disk-space-hygiene.md:8`：“始终保留测试报告、日志、状态回读、跟踪记录、截图、所有被引为证据的东西”“减少证据之前要先问。”
 4. 删除 Andy Mac 上的文件只认他在 Mac 线程亲手打的字。`.claude/rules/owner-standing-rules.md:42`：“唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。”
 5. 现有清理只认四种文件名。`scripts/disk-hygiene/prune-rebuildable.py:12`：`REBUILDABLE_FILES = ('*.bundle', 'node-modules.tar.gz', '*-abi[0-9]*-*.tar.gz', 'python-[0-9]*.tar.gz')`；第 53 行跳过 `.ci-output/tools`：`if name == 'tools' and current.name == '.ci-output':`。
-6. 现有定时任务每天 04:00 跑。`scripts/disk-hygiene/install-schedule.sh:60`：`<key>Hour</key><integer>4</integer>`。
+6. 现有定时任务每天 04:00 跑。`scripts/disk-hygiene/install-schedule.sh:88`：`<key>Hour</key><integer>4</integer>`。
 7. 截图脚本把截图和编译缓存都写在仓库目录里。`clients/apple/scripts/ui-review.sh:6`：`out="$root/ui-review/latest"`；第 11 行：`derived="$root/ui-review/DerivedData"`；`clients/apple/scripts/mac-ui-review.sh:6`：`derived="$root/ui-review/DerivedData-mac"`。
 8. 本 PR 之前，`--check` 的临时截图目录（`shots="$(mktemp -d)"`）没有删除它的语句；本 PR 改为检查通过就删，失败才留下并打印 `UI_REVIEW_CHECK_KEPT`。
 9. 截图目录已写进忽略清单。`clients/apple/ui-review/.gitignore:2`：`latest/`；第 6 行：`mac-latest/`。
@@ -59,7 +59,7 @@ Mac 克隆里的本机产物：
 11. 云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）。
 12. `.ci-output/handoff/scripts` 里是上线工具在用的脚本。`scripts/delivery-mode/make-packet.py:678`：`self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))`。
 13. `.ci-output/worktrees` 被模型目录工具使用。`.agents/opencode-models.py:131`：`base = root / ".ci-output" / "worktrees"`。
-14. 定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`；第 44 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
+14. 定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`；第 64 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
 15. 现有“忙时跳过”的进程名单里没有 Xcode。`scripts/disk-hygiene/prune-rebuildable.py:16`：`BUSY_PATTERN = r'vitest|playwright|scripts/ci/(run|local|test|build|execute)\.mjs|npm (test|run (build|check|test))'`。
 
 <a id="benchmarks"></a>
