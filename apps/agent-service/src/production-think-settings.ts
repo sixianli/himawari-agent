@@ -118,6 +118,19 @@ export const THINK_SETTING_TEXT: Readonly<
       ja: "1 回の考え事がこの時間を過ぎても終わらなければ止めて、失敗として記録します。",
     },
   },
+  threadRetentionDays: {
+    label: {
+      "zh-CN": "想一想记录保留天数",
+      en: "Keep thinking records for",
+      ja: "考え事の記録を残す日数",
+    },
+    description: {
+      "zh-CN":
+        "Himawari 自己想一想时开的对话不在你的列表里，结束后保留这么多天，然后自动删除。想出的提议照样留在提议箱里。",
+      en: "Conversations Himawari opens to think something over stay out of your lists. They are kept this many days after they finish and then deleted automatically. Any proposal they produced stays in your proposals.",
+      ja: "Himawari が考え事のために開いた会話は一覧に出ません。終わってからこの日数だけ残し、その後自動で削除します。出てきた提案は提案箱に残ります。",
+    },
+  },
 });
 
 export const THINK_SETTING_UNIT_TEXT: Readonly<Record<ThinkSettingUnit, ThinkSettingText>> =
@@ -129,6 +142,7 @@ export const THINK_SETTING_UNIT_TEXT: Readonly<Record<ThinkSettingUnit, ThinkSet
     minutes: { "zh-CN": "分钟", en: "minutes", ja: "分" },
     characters: { "zh-CN": "字", en: "characters", ja: "文字" },
     seconds: { "zh-CN": "秒", en: "seconds", ja: "秒" },
+    days: { "zh-CN": "天", en: "days", ja: "日" },
   });
 
 export const PRODUCTION_THINK_OPERATIONS = Object.freeze([

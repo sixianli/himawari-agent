@@ -1,0 +1,6 @@
+# PR 460 第 6 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 低 — ARM 资格探针使用的 model 文件仍无条件 realpath `/lib64`，ADR 的推迟范围没有点名它。test/qualification/sandbox-install-restart-model.mjs:410-428 确实仍无条件 realpath /lib64；ADR 第 65 行没点名。已在 ADR 推迟清单点名它，实际修留 PR 3；触发：读 ADR 0253 的推迟清单的人以为 test/qualification 里没有会在 ARM 上取 /lib64 真实路径的代码；后果：ARM 资格跑里探针仍报 ENOENT，而 ADR 没点名这个文件，只是文字不全，不误导实现
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低 — 作者说 `prod-read` 的“测试库改为不落盘”，但代码仍然把数据库写到磁盘。与第 5 轮 ds-2 同：只是作者说法不准（日志放内存、关同步），代码无错；PR 描述按准确说法写，不改代码
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低 — “其余改动与第 5 轮相同”与增量事实不符：增量里夹着大量 `origin/main` 合并。增量含 origin/main 合并是事实（git 合并提交），属材料文字问题，不是代码问题；下一轮材料写明只复核非合并提交
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低 — `realpath` 权限错误没有反向用例，测试无法证明“其他错误照常抛出”覆盖到取真实路径阶段。packages/testing/test/read-only-toolchain.unit.test.ts 原先没有 lstat 成功而 realpath 抛 EACCES 的用例；已补，10 个用例通过；触发：有人把 realpath 的异常也吞掉；后果：现有 9 个用例仍全过，ADR 要求的“其他错误照常抛出”在取真实路径阶段没有测试保护

@@ -4,10 +4,12 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -45,6 +47,25 @@ def download(url, limit):
     report['downloads'].append({'url': url, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'durationSeconds': round(time.monotonic() - started, 3)})
     return data
 
+RETRY_DELAYS_SECONDS = (1, 3)
+
+def transient(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500
+    if isinstance(error, urllib.error.URLError):
+        error = error.reason
+    return isinstance(error, (socket.gaierror, ConnectionResetError, TimeoutError))
+
+def download_with_retry(url, limit, sleep=time.sleep):
+    for delay in RETRY_DELAYS_SECONDS + (None,):
+        try:
+            return download(url, limit)
+        except Exception as error:
+            if delay is None or not transient(error):
+                raise
+            report.setdefault('downloadRetries', []).append({'url': url, 'type': type(error).__name__, 'message': str(error), 'delaySeconds': delay})
+            sleep(delay)
+
 cached = len(sys.argv) == 5 and sys.argv[1] == '--cached-question-12-inputs'
 if not cached and (len(sys.argv) != 3 or sys.argv[1] != '--approved-question-12-downloads'):
     raise RuntimeError('EXPLICIT_QUESTION12_DOWNLOAD_APPROVAL_REQUIRED')
@@ -68,7 +89,7 @@ try:
         report['inputMode'] = 'existing-hash-verified-copies'
         report['cachedInputs'] = [{'path': str(value), 'sha256': hashlib.sha256(value.read_bytes()).hexdigest(), 'bytes': value.stat().st_size} for value in source_paths]
     else:
-        fd_archive = download(fd_url, 4 * 1024**2)
+        fd_archive = download_with_retry(fd_url, 4 * 1024**2)
         report['inputMode'] = 'explicit-approved-two-source-downloads'
     if hashlib.sha256(fd_archive).hexdigest() != fd_sha256:
         raise RuntimeError('FD_RELEASE_DIGEST_MISMATCH')
@@ -91,7 +112,7 @@ try:
                 fd_payload = archive.extractfile(member).read()
     if not fd_payload or not fd_payload.startswith(b'\x7fELF'):
         raise RuntimeError('FD_BINARY_MISSING')
-    reference = source_paths[1].read_bytes() if cached else download(package_url, 1024**2)
+    reference = source_paths[1].read_bytes() if cached else download_with_retry(package_url, 1024**2)
     if len(reference) > 1024**2:
         raise RuntimeError('IS_NUMBER_REFERENCE_SIZE_EXCEEDED')
     if base64.b64encode(hashlib.sha512(reference).digest()).decode() != package_integrity:

@@ -54,7 +54,10 @@ import {
   type ThreadExecutionEnvironment,
 } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
-import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import {
+  SqliteGovernedDeletionAdapter,
+  type SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
@@ -202,6 +205,7 @@ import {
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
+import { ThinkThreadRetention } from "./production-think-retention.js";
 import {
   PRODUCTION_THINK_OPERATIONS,
   ProductionThinkControl,
@@ -328,6 +332,7 @@ export interface ProductionHttpCompositionOptions {
     readonly worth: ThinkWorthRoute;
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
+  readonly thinkRetentionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
   readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
@@ -1268,6 +1273,24 @@ export async function createProductionHttpComposition(
     configuration: configuration.runPolicy?.thinkInbox,
     clock: { now: clock },
   });
+  const retentionDeletion = () =>
+    new SqliteGovernedDeletionAdapter({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+      ownerId,
+      agentId,
+      now: clock,
+    });
+  const thinkRetention = new ThinkThreadRetention({
+    deletion: {
+      deleteExpiredThinkThreads: (input) => retentionDeletion().deleteExpiredThinkThreads(input),
+      retryIncompleteThreadDeletions: (input) =>
+        retentionDeletion().retryIncompleteThreadDeletions(input),
+    },
+    settings: thinkSettings,
+    clock: { now: clock },
+    ...(options.thinkRetentionDiagnostic ? { onDiagnostic: options.thinkRetentionDiagnostic } : {}),
+  });
   const think = options.think
     ? productionThinkLoop({
         settings: thinkSettings,
@@ -1818,6 +1841,7 @@ export async function createProductionHttpComposition(
         searchIndexer.start();
         home.startScoring();
         think?.loop.start();
+        thinkRetention.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1832,11 +1856,13 @@ export async function createProductionHttpComposition(
       searchIndexer.start();
       home.startScoring();
       think?.loop.start();
+      thinkRetention.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
       await think?.loop.stop();
+      await thinkRetention.stop();
       await home.stopScoring();
       try {
         await app.close();

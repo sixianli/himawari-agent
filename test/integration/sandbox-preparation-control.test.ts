@@ -85,6 +85,7 @@ vi.mock("node:child_process", async (original) => {
   };
 });
 
+import { resolveReadOnlyToolchainPaths } from "@himawari-agent/testing/read-only-toolchain";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-host.ts";
 import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job-host-control.ts";
@@ -686,23 +687,17 @@ async function r2t10Host(input: {
     ...(input.launchCommand ? { launchCommand: input.launchCommand } : {}),
     ...(input.gateDelaySeconds ? { gateDelaySeconds: input.gateDelaySeconds } : {}),
   });
-  const toolchain = [
-    ...new Set(
-      await Promise.all(
-        [
-          "/bin",
-          "/usr/bin",
-          "/usr/lib",
-          "/lib",
-          "/lib64",
-          "/proc",
-          "/dev",
-          path.dirname(process.execPath),
-          path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
-        ].map((filename) => realpath(filename)),
-      ),
-    ),
-  ];
+  const toolchain = await resolveReadOnlyToolchainPaths([
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    "/lib",
+    "/lib64",
+    "/proc",
+    "/dev",
+    path.dirname(process.execPath),
+    path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
+  ]);
   const { policy, compiled } = await prepareJobPolicy({
     workspace: null,
     privateRoot: root,
