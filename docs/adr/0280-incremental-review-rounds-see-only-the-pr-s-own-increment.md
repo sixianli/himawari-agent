@@ -27,12 +27,10 @@ date: "2026-11-15"
 
 ## 前提和来源
 
-下面第 1、4 条说的是本 ADR 实施前的代码，行号和原话都取自实施前的 main 提交 `5b1d5c49a6464f3197b9265a2ba1df90824a62a6`；实施后这些位置已经按“决定”一节改掉。
-
-1. 实施前，增量轮的提示仍要求先看整个 PR 的差异。`scripts/model-review/opencode-review.mjs:382`：“对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。”同一份提示第 387 行再要求：“这一轮先看 git diff ${previous}..${head} 的增量”。
+1. 增量轮原来的提示要求先看整个 PR 的差异；本 ADR 实施后，这段原文只在算不出增量、退回原做法时使用。`scripts/model-review/opencode-review.mjs` 的 `buildPrompt` 里：“对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。”同一份提示再要求：“这一轮先看 git diff ${previous}..${head} 的增量”。
 2. `previous..head` 的差异会把合并进来的 main 算进去；合并检查判断“PR 自己的改动”用的是另一套口径。`.agents/instructions/model-review.md:74`：“对每个文件，分别取该提交相对它与 `--main-ref` 的合并基线的 `git diff -U0 --binary --no-renames`……只是合入 main 带进来的文件差异不算改动，冲突手工解决、合并时顺手改的内容会让这个文件的比较结果变”。实现是 `scripts/model-review/opencode-review.mjs` 里的 `unreviewedFiles`。
 3. 只合并 main、PR 自己没改时，合并检查从 2026-11-09 起不再要求重新复核。`.agents/instructions/model-review.md:74`：“Andy 2026-11-09 改：只是合入 main、PR 自己的改动没变，不用再复核”。
-4. 实施前，发给模型的提示有 100000 字节的上限，写死在代码里。`scripts/model-review/opencode-review.mjs:3834`：`if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");`
+4. 发给模型的提示有 100000 字节的上限，超过就报 `PROMPT_TOO_LARGE`。`scripts/model-review/opencode-review.mjs`：`export const PROMPT_MAX_BYTES = 100000;`
 5. 固定前缀和必答问题不能改。`docs/adr/0270-faster-review-rounds.md` 的决定：“固定前缀和必答问题一字不改”；`.agents/instructions/prompt-prefix.md` 要求每轮会变的内容只放在最后一条消息里。
 6. 截图今后不进 PR 的分支。`docs/adr/0276-generated-files-stay-out-of-git-and-local-artifacts-expire.md:87`：截图推到 `refs/review-artifacts/…`，“它也不在任何分支的历史里，所以合并 PR 时不会带进 main”。
 
@@ -89,7 +87,7 @@ Andy 2026-11-15 觉得复核太慢，要求用真实数据找根因，不接受�
 | 做法 | 结论和原因 |
 | --- | --- |
 | 只删掉“先看整个 PR 差异”那一句 | 不够。模型仍要自己找增量，合并 main 的改动仍会混进来。 |
-| 只在提示里再强调“不要重读旧代码” | 实施前已经这样要求过（提交 `5b1d5c49a` 的第 387 行），30 行的增量轮仍要 37 步。 |
+| 只在提示里再强调“不要重读旧代码” | 原来的提示已经这样要求过（“不必整份重读”），30 行的增量轮仍要 37 步。 |
 | 按 `git log --first-parent --no-merges` 拼提交 | 不用。会漏掉合并 main 时手工解决冲突写的内容，而合并检查把这部分算作 PR 自己的改动。 |
 | 限制同时在跑的复核数 | 不做。只是把等待从“跑得慢”挪成“排队”，总时间不缩短；云端线程之间也没有共享的排队位置。 |
 | 截断后接着跑 | 不优先。11-15 以来 150 轮里只有 3 轮被截断。 |
