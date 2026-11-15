@@ -5941,18 +5941,25 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-export-requires-login", async () => {
+      const archive = (host: Page) =>
+        host.evaluate(async () => {
+          const response = await fetch("/api/data-export/v1/archive", { credentials: "include" });
+          return {
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+            bytes: (await response.arrayBuffer()).byteLength,
+          };
+        });
       const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
       try {
-        const refused = await stranger.request.get(
-          `${installation.origin}/api/data-export/v1/archive`,
-        );
-        expect(refused.status()).toBe(401);
-        expect((await refused.body()).byteLength).toBe(0);
-        const allowed = await context.request.get(
-          `${installation.origin}/api/data-export/v1/archive`,
-        );
-        expect(allowed.status()).toBe(200);
-        expect(allowed.headers()["content-type"]).toBe("application/zip");
+        const strangerPage = await stranger.newPage();
+        await strangerPage.goto(`${installation.origin}/`);
+        const refused = await archive(strangerPage);
+        expect(refused.status).toBe(401);
+        expect(refused.bytes).toBe(0);
+        const allowed = await archive(page);
+        expect(allowed.status).toBe(200);
+        expect(allowed.contentType).toBe("application/zip");
       } finally {
         await stranger.close();
       }
