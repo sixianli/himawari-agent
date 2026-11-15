@@ -188,7 +188,7 @@ describe("task run proposals", () => {
       ownerApprovedTask: true,
     });
     const tamper = database2();
-    tamper.prepare("UPDATE owner_proposals SET status = 'revoked'").run();
+    tamper.prepare("UPDATE owner_proposals SET status = 'pending', decided_at = NULL").run();
     tamper.close();
     expect(await runSource.read(runId)).not.toHaveProperty("ownerApprovedTask");
   });
