@@ -279,13 +279,16 @@ export class ProductionMcpMemoryWriter {
   async keepDirect(
     proposalId: string,
     input: { readonly batchId: string; readonly started: number },
-  ): Promise<"saved" | "pending"> {
+    digestCache?: ExternalProposalDigestCache,
+  ): Promise<"saved" | "existing" | "pending"> {
     return this.#serially(async () => {
       const proposal = await this.#pending(proposalId);
       if (proposal.status === "pending" && proposal.dataClassification !== "private")
         return "pending";
-      await this.#keep(proposalId, { ...input, direct: true });
-      return "saved";
+      const memoryId = await this.#keep(proposalId, { ...input, direct: true }, digestCache);
+      return memoryId === externalProposalMemoryId(proposalId, input.batchId)
+        ? "saved"
+        : "existing";
     });
   }
 

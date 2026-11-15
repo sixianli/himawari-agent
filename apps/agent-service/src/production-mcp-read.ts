@@ -100,6 +100,7 @@ import {
   type ExternalProposalCategory,
   type ExternalProposalDecision,
   type ExternalProposalDecisionInput,
+  type ExternalProposalDigestCache,
   type ExternalProposalSubmission,
   externalDirectBatchId,
   normalizeProposalText,
@@ -293,7 +294,8 @@ export interface McpMemoryProposals {
   readonly keepDirect: (
     proposalId: string,
     input: { readonly batchId: string; readonly started: number },
-  ) => Promise<"saved" | "pending">;
+    digestCache?: ExternalProposalDigestCache,
+  ) => Promise<"saved" | "existing" | "pending">;
 }
 
 export interface McpRuleProposals {
@@ -1156,14 +1158,17 @@ export class ProductionMcpRead {
           result["status"] = "replaced";
       if (direct) {
         const batchId = externalDirectBatchId(randomUUID());
+        const digestCache: ExternalProposalDigestCache = {};
         for (const result of results) {
           if (result["status"] !== "pending" || typeof result["proposalId"] !== "string") continue;
           try {
-            const kept = await proposals.keepDirect(result["proposalId"], {
-              batchId,
-              started: Date.parse(this.#options.clock.now()),
-            });
+            const kept = await proposals.keepDirect(
+              result["proposalId"],
+              { batchId, started: Date.parse(this.#options.clock.now()) },
+              digestCache,
+            );
             if (kept === "saved") result["status"] = "saved";
+            else if (kept === "existing") result["status"] = "already_saved";
           } catch (error) {
             if (isAlreadyDecided(error)) {
               const decided = await this.#options.write?.proposals?.decided(result["proposalId"]);
@@ -1172,7 +1177,9 @@ export class ProductionMcpRead {
                   ? "already_saved"
                   : decided === "declined"
                     ? "declined_before"
-                    : "pending";
+                    : decided === "superseded"
+                      ? "replaced"
+                      : "pending";
             } else this.#options.onFailure(error);
           }
         }
@@ -1221,6 +1228,8 @@ export class ProductionMcpRead {
         if (direct) {
           const kept = await this.#keepDirect(proposals, proposal.id, started);
           if (kept === "saved") return proposalReply(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text, false);
+          if (kept === "existing")
+            return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
           if (kept === "settled") return this.#settledReply(proposal.id);
           return this.#pendingReply(proposal);
         }
@@ -1283,7 +1292,7 @@ export class ProductionMcpRead {
     proposals: McpMemoryProposals,
     proposalId: string,
     started: number,
-  ): Promise<"saved" | "pending" | "settled"> {
+  ): Promise<"saved" | "existing" | "pending" | "settled"> {
     try {
       return await proposals.keepDirect(proposalId, {
         batchId: externalDirectBatchId(randomUUID()),
