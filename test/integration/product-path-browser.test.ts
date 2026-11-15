@@ -5944,11 +5944,12 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       const archive = (host: Page) =>
         host.evaluate(async () => {
           const response = await fetch("/api/data-export/v1/archive", { credentials: "include" });
-          return {
-            status: response.status,
-            contentType: response.headers.get("content-type"),
-            bytes: response.status === 200 ? -1 : (await response.arrayBuffer()).byteLength,
-          };
+          const status = response.status;
+          const contentType = response.headers.get("content-type");
+          let bytes = -1;
+          if (status === 200) await response.body?.cancel();
+          else bytes = (await response.arrayBuffer()).byteLength;
+          return { status, contentType, bytes };
         });
       const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
       try {
