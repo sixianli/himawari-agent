@@ -14,6 +14,7 @@ import {
   DEVICE_HARD_LIMIT_KEYS,
   type GovernedActionIntent,
   type GovernedApprovalRequest,
+  MCP_CONNECTION_MAXIMUM,
 } from "@himawari-agent/application";
 import { DEVICE_LIMIT_KEYS, gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
@@ -38,6 +39,11 @@ import {
   resolveDevicePairingAccess,
 } from "../src/production-http-composition.js";
 import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../src/production-mcp-connections.js";
+import {
+  MCP_READ_BODY_LIMIT,
   MCP_READ_PATH,
   ProductionMcpRead,
   type ProductionMcpReadOptions,
@@ -374,6 +380,9 @@ describe("production HTTP composition", () => {
           "sensitive.interceptions.read",
           "sensitive.interceptions.clear",
           "server.status.read",
+          "capability.list",
+          "capability.detail",
+          "capability.disable",
           "device.list.read",
           "device.pairing.start",
           "device.pairing.confirm",
@@ -392,6 +401,8 @@ describe("production HTTP composition", () => {
           "perception.episode.read",
           "perception.usage.read",
           "perception.settings.change",
+          "think.settings.read",
+          "think.settings.change",
         ],
         healthDependenciesAvailable: true,
       });
@@ -912,6 +923,7 @@ describe("production HTTP composition", () => {
       access: access.verifier,
       owners,
       timeZone: "Asia/Tokyo",
+      connections: repository.mcpConnections(),
       requestTimeoutMs: 5_000,
       sources: {
         recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
@@ -937,11 +949,22 @@ describe("production HTTP composition", () => {
       now: () => new Date(NOW),
       mcpRead,
     });
+    const secret = newMcpConnectionSecret();
+    await repository.mcpConnections().create({
+      ...scope,
+      id: "conn-composition",
+      name: "composition",
+      secretSha256: mcpConnectionSecretDigest(secret),
+      capabilities: ["mcp"],
+      readCeiling: "private",
+      pushPolicy: "ask",
+      createdAt: NOW.toISOString(),
+    });
     try {
-      const call = (assertion?: string) =>
+      const call = (assertion?: string, url = `${MCP_READ_PATH}/${secret}`) =>
         composition.app.inject({
           method: "POST",
-          url: MCP_READ_PATH,
+          url,
           headers: {
             host: "agent.example.test",
             accept: "application/json, text/event-stream",
@@ -959,10 +982,340 @@ describe("production HTTP composition", () => {
       const denied = await call();
       expect(denied.statusCode).toBe(401);
       expect(recorded).toEqual([]);
+      const unknown = await call(
+        await access.sign(),
+        `${MCP_READ_PATH}/${newMcpConnectionSecret()}`,
+      );
+      expect(unknown.statusCode).toBe(404);
+      const bare = await call(await access.sign(), MCP_READ_PATH);
+      expect(bare.body).not.toContain("2026");
+      expect(recorded).toEqual([]);
       const served = await call(await access.sign());
       expect(served.statusCode).toBe(200);
       expect(served.body).toContain("2026");
       expect(recorded).toEqual(["today_context"]);
+    } finally {
+      await composition.close();
+      await repository.close();
+    }
+  });
+
+  it("[P5-B] the owner creates a connection, sees its address once, and the connection is counted", async () => {
+    const paths = await fixture();
+    const config = configuration(paths);
+    const keyPair = {
+      privateKey: await importJWK(productionHttpRs256TestKeys.privateKey, "RS256"),
+      publicKey: await importJWK(productionHttpRs256TestKeys.publicKey, "RS256"),
+    };
+    const jwks: JSONWebKeySet = {
+      keys: [{ ...(await exportJWK(keyPair.publicKey)), kid: "key-production-http", alg: "RS256" }],
+    };
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "key-production-http" })
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject("subject-production-http")
+      .setIssuedAt(Math.floor(NOW.valueOf() / 1000))
+      .setExpirationTime(Math.floor(NOW.valueOf() / 1000) + 300)
+      .sign(keyPair.privateKey);
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const access = await createMcpAccess(() => new Date(NOW));
+    const recorded: string[] = [];
+    const scope = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+    } as unknown as ProductionMcpReadOptions["scope"];
+    const mcpRead = new ProductionMcpRead({
+      scope,
+      clock: { now: () => NOW.toISOString() },
+      access: access.verifier,
+      owners: {
+        readBySubject: async () =>
+          ({ ownerId: scope.ownerId, status: "active" }) as unknown as Awaited<
+            ReturnType<ReturnType<typeof repository.ownerIdentityState>["readBySubject"]>
+          >,
+      },
+      timeZone: "Asia/Tokyo",
+      connections: repository.mcpConnections(),
+      requestTimeoutMs: 5_000,
+      sources: {
+        recall: async () => ({ output: {}, contentClassification: "public", memoryIds: [] }),
+        embedOutsideRun: (_context, operation) => operation(),
+        reminders: async () => ({ reminders: [], more: false }),
+        settings: () => repository.proactive().readSettings(scope),
+      },
+      ledger: {
+        append: async (write) => {
+          recorded.push(write.subjectRef ?? "");
+        },
+      },
+      onFailure: () => undefined,
+      onSummariesFailed: () => undefined,
+    });
+    const composition = await createProductionHttpComposition({
+      configuration: config,
+      repository,
+      authority: () => authority(config),
+      secretSources: secretSources(),
+      jwksFetcher: { fetch: async () => jwks },
+      identityFetcher: {
+        fetch: async () => ({
+          user_uuid: "subject-production-http",
+          iat: Math.floor(NOW.valueOf() / 1000),
+        }),
+      },
+      now: () => new Date(NOW),
+      createSessionToken: () => "session-token-mcp-connections",
+      executionAuthority: () => ({
+        leaseId: "lease-mcp-connections" as AuthorityFence["leaseId"],
+        fencingToken: AUTHORITY.fencingToken,
+      }),
+      mcpRead,
+    });
+    const ownerEnvelope = (authenticationRef: string, type: string) => ({
+      schemaVersion: "gateway.v2",
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      authority: authority(config),
+      actor: { actorType: "owner", actorId: OWNER_ID },
+      dataClassification: "private",
+      risk: "medium",
+      authorizationRef: authenticationRef,
+      correlationId: `correlation-${type}`,
+      causationId: null,
+      messageId: `message-${type}-${Math.random()}`,
+      type,
+    });
+    try {
+      const bootstrap = await composition.app.inject({
+        method: "POST",
+        url: "/bootstrap",
+        headers: { host: "agent.example.test" },
+        payload: {
+          token: "bootstrap-token-production-fixture",
+          ownerId: OWNER_ID,
+          assertionToken: token,
+        },
+      });
+      expect(bootstrap.statusCode).toBe(201);
+      const session = await composition.app.inject({
+        method: "POST",
+        url: "/api/identity/v1/sessions",
+        headers: requestHeaders(token, "", undefined),
+        payload: { deviceLabel: "mcp connections fixture" },
+      });
+      expect(session.statusCode).toBe(201);
+      const cookie = "himawari_session=session-token-mcp-connections";
+      const csrf = (
+        (
+          await composition.app.inject({
+            method: "GET",
+            url: "/api/control-center/v1/config",
+            headers: requestHeaders(token, cookie),
+          })
+        ).json() as { csrfToken: string; installedGatewayV2Operations: string[] }
+      ).csrfToken;
+      const authenticationRef = (session.json() as { session: { authenticationRef: string } })
+        .session.authenticationRef;
+      const command = (type: string, key: string, payload: Record<string, unknown>) =>
+        composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/commands",
+          headers: { ...requestHeaders(token, cookie, csrf), "idempotency-key": key },
+          payload: {
+            ...ownerEnvelope(authenticationRef, type),
+            kind: "command",
+            idempotencyKey: key,
+            payload,
+          },
+        });
+      const read = async () => {
+        const response = await composition.app.inject({
+          method: "POST",
+          url: "/api/gateway/v2/queries",
+          headers: requestHeaders(token, cookie),
+          payload: {
+            ...ownerEnvelope(authenticationRef, "mcp.connections.read"),
+            kind: "query",
+            payload: {},
+          },
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        const parsed = gatewayV2MessageSchema.parseJson(response.body);
+        if (parsed.type !== "mcp.connections.snapshot") throw new Error(parsed.type);
+        return parsed.payload;
+      };
+      const address = (connectionId: string, withCookie = cookie) =>
+        composition.app.inject({
+          method: "GET",
+          url: `/api/mcp-connections/address?connectionId=${encodeURIComponent(connectionId)}`,
+          headers: requestHeaders(token, withCookie),
+        });
+      const mcpAssertion = await access.sign();
+      const mcp = (path: string) =>
+        composition.app.inject({
+          method: "POST",
+          url: path,
+          headers: {
+            host: "agent.example.test",
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+            "mcp-protocol-version": "2025-06-18",
+            "cf-access-jwt-assertion": mcpAssertion,
+          },
+          payload: {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "today_context", arguments: {} },
+          },
+        });
+      expect((await read()).connections).toEqual([]);
+      const direct = await command("mcp.connection.create", "mcp-create-direct", {
+        name: "Direct",
+        capabilities: ["mcp"],
+        readCeiling: "private",
+        pushPolicy: "direct",
+      });
+      expect(direct.statusCode).not.toBe(200);
+      expect(direct.body).toContain("PORT_INVALID_OPERATION");
+      expect((await read()).connections).toEqual([]);
+      const created = await command("mcp.connection.create", "mcp-create-01", {
+        name: "  Claude Code  ",
+        capabilities: ["mcp", "command_hooks"],
+        readCeiling: "private",
+        pushPolicy: "ask",
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      const connectionId = (created.json() as { resultRef: string }).resultRef;
+      expect(connectionId).toMatch(/^conn-[0-9a-f]{24}$/u);
+      const again = await command("mcp.connection.create", "mcp-create-01", {
+        name: "  Claude Code  ",
+        capabilities: ["mcp", "command_hooks"],
+        readCeiling: "private",
+        pushPolicy: "ask",
+      });
+      expect(again.statusCode, again.body).toBe(200);
+      expect(again.json()).toEqual({ resultRef: connectionId, replayed: true });
+      expect((await read()).connections).toHaveLength(1);
+      expect((await address(connectionId, "")).statusCode).toBe(401);
+      const shown = await address(connectionId);
+      expect(shown.statusCode).toBe(200);
+      expect(shown.headers["cache-control"]).toBe("no-store");
+      const { path: keyedPath } = shown.json() as { path: string };
+      expect(keyedPath).toMatch(/^\/api\/mcp\/v1\/[A-Za-z0-9_-]{43}$/u);
+      expect((await address(connectionId)).statusCode).toBe(404);
+      const served = await mcp(keyedPath);
+      expect(served.statusCode, served.body).toBe(200);
+      expect(recorded).toEqual([`mcp-connection:${connectionId}`]);
+      const snapshot = await read();
+      expect(snapshot.connections).toHaveLength(1);
+      expect(snapshot.connections[0]).toMatchObject({
+        id: connectionId,
+        name: "Claude Code",
+        capabilities: ["command_hooks", "mcp"],
+        status: "active",
+        lastSeenAt: NOW.toISOString(),
+        usage: { reads: 1, delivered: 1, empty: 0, failed: 0, modelReads: 1, autoReads: 0 },
+        minute: { reads: 1, hookReads: 0 },
+      });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.connections",
+        value: MCP_CONNECTION_MAXIMUM,
+        used: 1,
+      });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.request.body_bytes",
+        value: MCP_READ_BODY_LIMIT,
+        used: null,
+      });
+      expect(snapshot.limits).toContainEqual({
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: 11,
+      });
+      expect(JSON.stringify(snapshot)).not.toContain(keyedPath.split("/").at(-1));
+      const paused = await command("mcp.connection.change", "mcp-pause-01", {
+        connectionId,
+        name: null,
+        capabilities: null,
+        readCeiling: "public",
+        pushPolicy: null,
+        status: "paused",
+      });
+      expect(paused.statusCode, paused.body).toBe(200);
+      const toDirect = await command("mcp.connection.change", "mcp-direct-01", {
+        connectionId,
+        name: null,
+        capabilities: null,
+        readCeiling: null,
+        pushPolicy: "direct",
+        status: null,
+      });
+      expect(toDirect.statusCode).not.toBe(200);
+      expect((await read()).connections[0]).toMatchObject({ pushPolicy: "ask" });
+      expect((await mcp(keyedPath)).statusCode).toBe(403);
+      expect((await read()).connections[0]).toMatchObject({
+        status: "paused",
+        readCeiling: "public",
+      });
+      const rotated = await command("mcp.connection.rotate", "mcp-rotate-01", { connectionId });
+      expect(rotated.statusCode, rotated.body).toBe(200);
+      const { path: rotatedPath } = (await address(connectionId)).json() as { path: string };
+      expect(rotatedPath).not.toBe(keyedPath);
+      expect((await mcp(keyedPath)).statusCode).toBe(404);
+      const revoked = await command("mcp.connection.change", "mcp-revoke-01", {
+        connectionId,
+        name: null,
+        capabilities: null,
+        readCeiling: null,
+        pushPolicy: null,
+        status: "revoked",
+      });
+      expect(revoked.statusCode, revoked.body).toBe(200);
+      expect((await mcp(rotatedPath)).statusCode).toBe(404);
+      expect((await read()).limits).toContainEqual({
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: 0,
+      });
+      expect(
+        (
+          await command("mcp.connection.change", "mcp-empty-01", {
+            connectionId,
+            name: null,
+            capabilities: null,
+            readCeiling: null,
+            pushPolicy: null,
+            status: null,
+          })
+        ).statusCode,
+      ).not.toBe(200);
+      expect(
+        (await command("mcp.connection.rotate", "mcp-rotate-02", { connectionId })).statusCode,
+      ).toBe(409);
+      expect(
+        (await command("mcp.connection.rotate", "mcp-rotate-03", { connectionId: "conn-missing" }))
+          .statusCode,
+      ).toBe(404);
+      const twice = await Promise.all(
+        [0, 1].map(() =>
+          command("mcp.connection.create", "mcp-create-race", {
+            name: "Codex",
+            capabilities: ["mcp"],
+            readCeiling: "private",
+            pushPolicy: "ask",
+          }),
+        ),
+      );
+      expect(twice.map((reply) => reply.statusCode)).toEqual([200, 200]);
+      const raced = twice.map((reply) => (reply.json() as { resultRef: string }).resultRef);
+      expect(raced[0]).toBe(raced[1]);
+      expect((await read()).connections.filter(({ id }) => id === raced[0])).toHaveLength(1);
     } finally {
       await composition.close();
       await repository.close();
@@ -1887,7 +2240,7 @@ describe("production Thread access scope", () => {
           message: {
             ...message,
             payload: { ...message.payload, sessionId: "session" },
-          } as typeof message,
+          } as unknown as typeof message,
         }),
       ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
     },

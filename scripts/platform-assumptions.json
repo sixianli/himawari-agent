@@ -12,6 +12,8 @@
     "packages/runtime-sandbox/scripts/probe-network-boundary.mjs": 1,
     "packages/runtime-sandbox/scripts/probe-public-search.mjs": 1,
     "packages/runtime-sandbox/scripts/probe-workspace-access.mjs": 1,
+    "packages/testing/src/read-only-toolchain.mjs": 1,
+    "packages/testing/test/read-only-toolchain.unit.test.ts": 9,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-authorized-network.mjs": 1,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-foreground.mjs": 1,
     "scripts/delivery-mode/packet-template/acceptance/cloud/adapters/probe-linux-worker-loss.mjs": 1,
@@ -96,7 +98,7 @@
     "test/tooling/toolchain.test.mjs": 5
   },
   "arch-x64": {
-    ".github/workflows/ci.yml": 4,
+    ".github/workflows/ci.yml": 7,
     "packages/runtime-sandbox/src/srt-runtime-identity.ts": 1,
     "packages/runtime-sandbox/test/job-host-main.unit.test.ts": 1,
     "packages/runtime-sandbox/test/qualification.unit.test.ts": 2,
@@ -107,7 +109,7 @@
     "scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs": 1,
     "test/tooling/artifact-host.mjs": 1,
     "test/tooling/gate-lifecycle.test.mjs": 1,
-    "test/tooling/policy.test.mjs": 3
+    "test/tooling/policy.test.mjs": 5
   },
   "x86_64": {
     "apps/agent-service/test/sandbox-command-inventory.unit.test.ts": 1,

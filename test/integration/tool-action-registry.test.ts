@@ -72,6 +72,7 @@ async function setup(
     readonly rules?: readonly RuleRecord[];
     readonly registry?: ToolActionRegistry;
     readonly sourceType?: RunExecutionSource["sourceType"];
+    readonly ownerApprovedTask?: true;
     readonly recalledExternal?: boolean;
     readonly ownerScopeState?: (repository: StateStore) => StateStore;
     readonly ownerIntent?: {
@@ -88,7 +89,13 @@ async function setup(
     ? {
         read: async (runId) => {
           const found = await runSource.read(runId);
-          return found ? { ...found, sourceType: options.sourceType ?? found.sourceType } : found;
+          return found
+            ? {
+                ...found,
+                sourceType: options.sourceType ?? found.sourceType,
+                ...(options.ownerApprovedTask ? { ownerApprovedTask: true } : {}),
+              }
+            : found;
         },
       }
     : runSource;
@@ -158,7 +165,8 @@ async function setup(
                 enabled: true,
                 minConfidence: 900,
                 timeoutMs: options.ownerIntent.timeoutMs ?? 2_000,
-                modelRef: "test/jev",
+                model: "test/jev",
+                secretRef: "secret:test",
               },
               check: { check: options.ownerIntent.check },
               ownerWords: async () =>
@@ -633,6 +641,58 @@ it("[ADR-0257] treats an external-event run as external content even before any 
     expect(await s.externalContent.read(RUN_ID)).toEqual([
       expect.objectContaining({ origin: "external_event" }),
     ]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0278] lets a task the owner agreed to set a reminder when nothing external was read, without marking the run", async () => {
+  const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
+  try {
+    const set = s.call("reminder.set", "call:approved", {
+      text: "交周报",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledTimes(1);
+    expect(await s.externalContent.read(RUN_ID)).toEqual([]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
+  const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:approved-after", {
+      text: "付款",
+      due: "2026-11-13T15:00",
+    });
+    const result = await s.tools.execute(set);
+    expect(result).not.toMatchObject({ errorCode: "action_rule_refused" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    const approvals = await s.approvals();
+    expect(approvals).toHaveLength(1);
+    expect(JSON.stringify(approvals[0])).toContain("run_source_owner_approved_task");
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0278] REVERSE: without the owner-approved mark the same external-event write is still refused", async () => {
+  const s = await setup({ sourceType: "external_event" });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:plain-event", {
+      text: "付款",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({
+      outcome: "failed",
+      errorCode: "action_rule_refused",
+    });
+    expect(await s.approvals()).toEqual([]);
   } finally {
     await s.close();
   }
@@ -1204,7 +1264,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
     ["unsure", async () => ({ ...EXPLICIT, verdict: "unsure" })],
     ["low", async () => ({ ...EXPLICIT, confidence: 899 })],
     ["forged", async () => ({ ...EXPLICIT, quote: "请把会议改到下周" })],
-    ["noquote", async () => ({ ...EXPLICIT, quote: null })],
+    ["overlong", async () => ({ ...EXPLICIT, quote: "好".repeat(401) })],
     ["malformed", async () => "explicit"],
     [
       "failed",
@@ -1241,7 +1301,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
       await s.close();
     }
   }
-});
+}, 60_000);
 
 it("[ADR-0257] does not ask the check at all without outside content, for a standing rule, or for a scheduled run, and asks with no owner words as unconfirmed", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);

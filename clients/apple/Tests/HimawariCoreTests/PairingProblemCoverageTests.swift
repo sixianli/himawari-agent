@@ -40,4 +40,12 @@ import Testing
             }
         }
     }
+
+    @Test func theStartOverWarningIsComputedOnTapAndShownByTheDialog() throws {
+        let view = try source("Sources/HimawariShell/PairingView.swift")
+        #expect(view.contains(".confirmationDialog(startOverWarning,"), "the dialog does not show startOverWarning")
+        let assign = try #require(view.range(of: "startOverWarning = Self.startOverWarningText(unsent: model.unsentMessages)"))
+        let present = try #require(view.range(of: "confirmingStartOver = true"))
+        #expect(assign.lowerBound < present.lowerBound, "the warning is not set before the dialog is presented")
+    }
 }

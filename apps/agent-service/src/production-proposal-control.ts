@@ -1,8 +1,10 @@
 import {
   ApplicationPortError,
   type ClockPort,
+  type GatewayAuthenticationContext,
   PORT_ERROR_CODES,
   type ProductConfiguration,
+  type RecentAuthenticationGuardPort,
 } from "@himawari-agent/application";
 import type {
   GatewayV2Command,
@@ -22,7 +24,8 @@ const FIGURES_SHOWN = 10;
 
 export interface ProductionProposalControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
-  readonly box: Pick<ProductionProposalBox, "list" | "adopt" | "reject">;
+  readonly box: Pick<ProductionProposalBox, "list" | "adopt" | "reject" | "undo" | "openFull">;
+  readonly recentAuthentication?: RecentAuthenticationGuardPort;
   readonly clock: ClockPort;
 }
 
@@ -39,6 +42,8 @@ export class ProductionProposalControl {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "PROPOSAL_OPERATION_NOT_INSTALLED",
       );
+    const { open } = query.payload;
+    const opened = open ? await this.#open(open) : null;
     const listed = await this.#options.box.list();
     return {
       ...query,
@@ -55,6 +60,8 @@ export class ProductionProposalControl {
           effect: shownText(proposal.effect, 200),
           origin: proposal.origin,
           adoptable: proposal.adoptable,
+          requiresFullRead: proposal.requiresFullRead,
+          requiresPresence: proposal.requiresPresence,
           evidence: proposal.evidence
             .filter((item) => shownText(item.kind, 64).length > 0)
             .slice(0, EVIDENCE_SHOWN)
@@ -84,12 +91,43 @@ export class ProductionProposalControl {
         pendingCount: listed.pendingCount,
         limit: listed.limit,
         expiresAfterDays: listed.expiresAfterDays,
+        opened,
         generatedAt: this.#options.clock.now(),
       },
     };
   }
 
-  async execute(command: GatewayV2Command): Promise<{ resultRef: string; replayed: boolean }> {
+  async #open(open: {
+    readonly proposalId: string;
+    readonly expectedVersion: number;
+    readonly fingerprint: string;
+  }) {
+    try {
+      const opened = await this.#options.box.openFull(open.proposalId, {
+        version: open.expectedVersion,
+        fingerprint: open.fingerprint,
+      });
+      return { proposalId: open.proposalId, ...opened };
+    } catch (error) {
+      throw this.#failure(error);
+    }
+  }
+
+  #failure(error: unknown): unknown {
+    if (error instanceof ProposalError)
+      return new ApplicationPortError(
+        error.code === "PROPOSAL_NOT_FOUND"
+          ? PORT_ERROR_CODES.NOT_FOUND
+          : PORT_ERROR_CODES.INVALID_OPERATION,
+        error.code,
+      );
+    return error;
+  }
+
+  async execute(
+    authentication: GatewayAuthenticationContext,
+    command: GatewayV2Command,
+  ): Promise<{ resultRef: string; replayed: boolean }> {
     const { ownerId, agentId } = this.#options.configuration;
     if (
       command.actor.actorType !== "owner" ||
@@ -102,13 +140,48 @@ export class ProductionProposalControl {
         PORT_ERROR_CODES.INVALID_OPERATION,
         "PROPOSAL_OPERATION_NOT_INSTALLED",
       );
-    const { proposalId, action, expectedVersion, fingerprint } = command.payload;
+    const {
+      proposalId,
+      action,
+      expectedVersion,
+      fingerprint,
+      recentAuthenticationRef,
+      fullReadToken,
+    } = command.payload;
     const expected = { version: expectedVersion, fingerprint };
+    const guard = this.#options.recentAuthentication;
     try {
       if (action === "adopt")
         return {
-          resultRef: (await this.#options.box.adopt(proposalId, expected)).resultRef,
+          resultRef: (
+            await this.#options.box.adopt(proposalId, expected, {
+              fullReadToken,
+              ...(authentication.sessionId
+                ? {
+                    session: {
+                      sessionId: authentication.sessionId,
+                      proofRef: authentication.authenticationRef,
+                    },
+                  }
+                : {}),
+              ...(guard
+                ? {
+                    assertPresence: async () => {
+                      await guard.assertRecentAuthentication({
+                        authentication,
+                        expectedAuthenticationRef: recentAuthenticationRef,
+                      });
+                    },
+                  }
+                : {}),
+            })
+          ).resultRef,
           replayed: false,
+        };
+      if (action === "undo")
+        return {
+          resultRef: proposalId,
+          replayed: (await this.#options.box.undo(proposalId, expected)).replayed,
         };
       if (action === "reject")
         return {
@@ -117,14 +190,7 @@ export class ProductionProposalControl {
         };
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "PROPOSAL_ACTION_UNKNOWN");
     } catch (error) {
-      if (error instanceof ProposalError)
-        throw new ApplicationPortError(
-          error.code === "PROPOSAL_NOT_FOUND"
-            ? PORT_ERROR_CODES.NOT_FOUND
-            : PORT_ERROR_CODES.INVALID_OPERATION,
-          error.code,
-        );
-      throw error;
+      throw this.#failure(error);
     }
   }
 }

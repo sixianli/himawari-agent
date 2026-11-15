@@ -74,4 +74,26 @@ import Testing
             }
         }
     }
+
+    @Test func aLinkMadeOnThisPhoneIsReadBackByTheNewDevice() throws {
+        let access = try JSONDecoder().decode(
+            ServiceAccessToken.self,
+            from: Data(#"{"clientId":"id.access","clientSecret":"s3cret"}"#.utf8)
+        )
+        for origin in ["https://himawari.example.com", "https://himawari.example.com/"] {
+            let invitation = PairingInvitation(origin: try #require(URL(string: origin)), code: PairingInvitation.newCode(), access: access)
+            let parsed = try PairingInvitation.parse(invitation.link)
+            #expect(parsed.code == invitation.code)
+            #expect(parsed.access == access)
+            #expect(parsed.origin.host == "himawari.example.com")
+        }
+        let bare = PairingInvitation(origin: try #require(URL(string: "https://h.example")), code: PairingInvitation.newCode(), access: nil)
+        #expect(try PairingInvitation.parse(bare.link).access == nil)
+    }
+
+    @Test func newCodesAreTheCanonicalSixteenByteEncoding() {
+        for _ in 0..<64 {
+            #expect(PairingInvitation.newCode().range(of: "^[A-Za-z0-9_-]{21}[AQgw]$", options: .regularExpression) != nil)
+        }
+    }
 }

@@ -18,11 +18,11 @@ public struct DeviceCredentials: Sendable {
 }
 
 public enum DeviceAPIError: Error, Sendable, Equatable {
-    case server(status: Int, code: String?, pairingCodeTtlSeconds: Int? = nil)
+    case server(status: Int, code: String?, pairingCodeTtlSeconds: Int? = nil, reason: String? = nil)
     case invalidResponse
 
     public var code: String? {
-        if case let .server(_, code, _) = self { return code }
+        if case let .server(_, code, _, _) = self { return code }
         return nil
     }
 
@@ -83,6 +83,10 @@ public final class DeviceHTTPClient: @unchecked Sendable {
             self.credentials = credentials
             clockOffset = 0
         }
+    }
+
+    public var correctedNow: Date {
+        lock.withLock { now().addingTimeInterval(clockOffset) }
     }
 
     public var currentCredentials: DeviceCredentials? {
@@ -226,6 +230,8 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     private struct ErrorBody: Decodable {
         struct Inner: Decodable {
             let code: String
+            let reasonCode: String?
+            let reason: String?
             let serverTime: String?
             let pairingCodeTtlSeconds: Int?
         }
@@ -235,7 +241,7 @@ public final class DeviceHTTPClient: @unchecked Sendable {
     static func check(_ response: HTTPExchangeResponse) throws -> Data {
         if (200..<300).contains(response.status) { return response.body }
         let body = (try? JSONDecoder().decode(ErrorBody.self, from: response.body))?.error
-        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds)
+        throw DeviceAPIError.server(status: response.status, code: body?.code, pairingCodeTtlSeconds: body?.pairingCodeTtlSeconds, reason: body?.reason ?? body?.reasonCode)
     }
 
     static func serverTime(_ body: Data) -> Date? {

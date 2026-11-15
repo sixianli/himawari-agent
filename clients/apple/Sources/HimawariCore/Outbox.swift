@@ -127,7 +127,7 @@ public actor Outbox {
                     result = .rejected(messageId: message.messageId, code: reason)
                 }
             } catch let error as DeviceAPIError {
-                if case let .server(status, code, _) = error, (400..<500).contains(status), status != 408, status != 429 {
+                if case let .server(status, code, _, _) = error, (400..<500).contains(status), status != 408, status != 429 {
                     result = .rejected(messageId: message.messageId, code: code)
                 } else {
                     result = .retryLater

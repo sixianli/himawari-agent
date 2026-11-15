@@ -1,8 +1,11 @@
 import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { DeliveryTimingConfiguration } from "../services/delivery-timing.js";
+import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
+import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
-import type { PerceptionConfiguration } from "./perception.js";
 import type { ModelProviderRouting } from "./intelligence.js";
+import type { PerceptionConfiguration } from "./perception.js";
 import type { WebProviderId } from "./web-providers.js";
 
 export interface SecretReferenceDescriptor {
@@ -246,6 +249,8 @@ export interface SearchAskConfiguration {
   readonly askLimit: number;
   readonly answerCharacters: number;
   readonly minimumCoveragePercent: number;
+  readonly indexTermLimit: number;
+  readonly indexRebuildBatch: number;
 }
 
 export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
@@ -254,6 +259,8 @@ export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
   askLimit: 0,
   answerCharacters: 2000,
   minimumCoveragePercent: 50,
+  indexTermLimit: 2000,
+  indexRebuildBatch: 200,
 });
 
 export interface ProactiveGmailConfiguration {
@@ -375,6 +382,83 @@ export interface OwnerProposalConfiguration {
   readonly expiresAfterDays?: number;
 }
 
+export interface ThinkWorthConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly yesAtLeastPermille: number;
+  readonly noAtMostPermille: number;
+  readonly requestTimeoutMs: number;
+}
+
+export interface ThinkInboxConfiguration {
+  readonly worth?: ThinkWorthConfiguration;
+  readonly queueLimit?: number;
+  readonly dailyLimit?: number;
+  readonly expiresAfterHours?: number;
+  readonly stalledAfterMinutes?: number;
+  readonly maxAttempts?: number;
+  readonly summaryCharacters?: number;
+  readonly idleSeconds?: number;
+  readonly runTimeoutMinutes?: number;
+  readonly threadRetentionDays?: number;
+}
+
+export const THINK_SETTING_UNITS = [
+  "permille",
+  "count",
+  "times",
+  "hours",
+  "minutes",
+  "characters",
+  "seconds",
+  "days",
+] as const;
+
+export const THINK_SETTING_DEFINITIONS = Object.freeze([
+  { key: "yesAtLeastPermille", unit: "permille", minimum: 501, maximum: 1000, defaultValue: 700 },
+  { key: "noAtMostPermille", unit: "permille", minimum: 0, maximum: 499, defaultValue: 300 },
+  { key: "queueLimit", unit: "count", minimum: 1, maximum: 1000, defaultValue: 20 },
+  { key: "dailyLimit", unit: "count", minimum: 1, maximum: 10000, defaultValue: 50 },
+  { key: "expiresAfterHours", unit: "hours", minimum: 1, maximum: 8760, defaultValue: 48 },
+  { key: "stalledAfterMinutes", unit: "minutes", minimum: 1, maximum: 1440, defaultValue: 30 },
+  { key: "maxAttempts", unit: "times", minimum: 1, maximum: 20, defaultValue: 3 },
+  {
+    key: "summaryCharacters",
+    unit: "characters",
+    minimum: 100,
+    maximum: 4000,
+    defaultValue: 1000,
+  },
+  { key: "idleSeconds", unit: "seconds", minimum: 5, maximum: 86400, defaultValue: 60 },
+  { key: "runTimeoutMinutes", unit: "minutes", minimum: 1, maximum: 120, defaultValue: 10 },
+  { key: "threadRetentionDays", unit: "days", minimum: 1, maximum: 90, defaultValue: 7 },
+] as const satisfies readonly {
+  readonly key: string;
+  readonly unit: (typeof THINK_SETTING_UNITS)[number];
+  readonly minimum: number;
+  readonly maximum: number;
+  readonly defaultValue: number;
+}[]);
+
+export type ThinkSettingKey = (typeof THINK_SETTING_DEFINITIONS)[number]["key"];
+
+export function thinkSettingDefinition(key: ThinkSettingKey) {
+  const found = THINK_SETTING_DEFINITIONS.find((definition) => definition.key === key);
+  if (!found) throw new TypeError("THINK_SETTING_UNKNOWN");
+  return found;
+}
+
+export const THINK_WORTH_DEFAULTS = Object.freeze({
+  yesAtLeastPermille: thinkSettingDefinition("yesAtLeastPermille").defaultValue,
+  noAtMostPermille: thinkSettingDefinition("noAtMostPermille").defaultValue,
+  requestTimeoutMs: 15_000,
+});
+
+export const THINK_LOOP_DEFAULTS = Object.freeze({
+  idleSeconds: thinkSettingDefinition("idleSeconds").defaultValue,
+  runTimeoutMinutes: thinkSettingDefinition("runTimeoutMinutes").defaultValue,
+});
+
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;
   readonly total: number;
@@ -389,12 +473,14 @@ export interface OwnerIntentCheckConfiguration {
   readonly enabled: boolean;
   readonly minConfidence: number;
   readonly timeoutMs: number;
-  readonly modelRef: string;
+  readonly model: string;
+  readonly secretRef: string;
 }
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly ownerProposals?: OwnerProposalConfiguration;
+  readonly thinkInbox?: ThinkInboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
@@ -403,10 +489,13 @@ export interface RunPolicyConfiguration {
   readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly applePush?: ApplePushConfiguration;
   readonly device?: DeviceConfiguration;
   readonly homeFeed?: HomeFeedConfiguration;
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
+  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
+  readonly deliveryTiming?: DeliveryTimingRouteConfiguration;
   readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
@@ -420,6 +509,18 @@ export interface RunPolicyConfiguration {
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
+}
+
+export interface DeliveryTimingRouteConfiguration extends DeliveryTimingConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
+}
+
+export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {

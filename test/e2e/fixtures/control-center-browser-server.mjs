@@ -223,6 +223,7 @@ function capabilityRecord(capabilityRef, lifecycle, overrides = {}) {
     updateAssessment: null,
     rollbackVersion: lifecycle === "active" ? "0.9.0" : null,
     rollbackAvailable: lifecycle === "active",
+    lastInvalidation: null,
     lastTransition:
       lifecycle === "active"
         ? {
@@ -312,6 +313,12 @@ const grants = new Map([
       revokedAt: null,
       revocationReasonCode: null,
       affectedTaskRefs: ["task-dependent-01"],
+      label: "Approve and publish the article once",
+      detail: {
+        "zh-CN": ["范围 1 项", "收件对象 1 个", "已用 0/1 次", "会影响 1 个任务"],
+        en: ["1 scope item", "1 recipient", "Used 0 of 1", "Affects 1 task"],
+        ja: ["範囲 1 件", "宛先 1 件", "0/1 回使用", "1 件のタスクに影響"],
+      },
       generatedAt: now,
     },
   ],
@@ -546,6 +553,141 @@ function externalSnapshot() {
     })),
   };
 }
+const MCP_ZERO_USAGE = {
+  reads: 0,
+  readsByTool: [
+    { tool: "start_here", calls: 0 },
+    { tool: "find_memories", calls: 0 },
+  ],
+  delivered: 0,
+  empty: 0,
+  autoReads: 0,
+  autoDelivered: 0,
+  modelReads: 0,
+  memoryPushes: 0,
+  ruleProposals: 0,
+  ruleProposalsRateLimited: 0,
+  failed: 0,
+  rateLimited: 0,
+};
+const mcpFixtureState = { connections: [], held: new Map(), commands: [], sequence: 0 };
+function mcpReset(mode) {
+  mcpFixtureState.held = new Map();
+  mcpFixtureState.commands = [];
+  mcpFixtureState.sequence = 0;
+  mcpFixtureState.connections =
+    mode === "one"
+      ? [
+          {
+            id: "conn-fixture-existing",
+            name: "Codex 笔记本",
+            capabilities: ["mcp"],
+            readCeiling: "private",
+            pushPolicy: "ask",
+            status: "active",
+            reportedClient: "codex",
+            createdAt: "2026-08-24T01:00:00.000Z",
+            updatedAt: "2026-08-24T01:00:00.000Z",
+            secretRotatedAt: null,
+            lastSeenAt: "2026-08-30T01:00:00.000Z",
+            minute: { reads: 2, hookReads: 5 },
+            usage: {
+              ...MCP_ZERO_USAGE,
+              reads: 8,
+              readsByTool: [
+                { tool: "start_here", calls: 2 },
+                { tool: "find_memories", calls: 6 },
+              ],
+              delivered: 4,
+              empty: 3,
+              autoReads: 5,
+              autoDelivered: 2,
+              modelReads: 3,
+              memoryPushes: 3,
+              ruleProposals: 4,
+              ruleProposalsRateLimited: 2,
+              failed: 1,
+              rateLimited: 3,
+            },
+          },
+        ]
+      : [];
+}
+function mcpSnapshot() {
+  const live = mcpFixtureState.connections.filter(({ status }) => status !== "revoked");
+  const minutes = mcpFixtureState.connections.map(({ minute }) => minute);
+  return {
+    connections: mcpFixtureState.connections,
+    window: { fromDay: "2026-08-24", toDay: "2026-08-30", days: 7 },
+    limits: [
+      { key: "mcp.connections", value: 200, used: live.length },
+      {
+        key: "mcp.connection.name_characters",
+        value: 64,
+        used: Math.max(0, ...live.map(({ name }) => [...name].length)),
+      },
+      { key: "mcp.request.body_bytes", value: 65536, used: null },
+      {
+        key: "mcp.reads_per_minute",
+        value: 30,
+        used: Math.max(0, ...minutes.map(({ reads }) => reads)),
+      },
+      {
+        key: "mcp.hook_reads_per_minute",
+        value: 60,
+        used: Math.max(0, ...minutes.map(({ hookReads }) => hookReads)),
+      },
+    ],
+    addressPath: "/api/mcp-connections/address",
+    generatedAt: now,
+  };
+}
+function handleMcpCommand(message) {
+  if (!message.type.startsWith("mcp.connection.")) return null;
+  mcpFixtureState.commands.push({
+    type: message.type,
+    risk: message.risk,
+    payload: message.payload,
+  });
+  if (message.type === "mcp.connection.create") {
+    mcpFixtureState.sequence += 1;
+    const id = `conn-fixture-${mcpFixtureState.sequence}`;
+    mcpFixtureState.connections.push({
+      id,
+      name: message.payload.name,
+      capabilities: message.payload.capabilities,
+      readCeiling: message.payload.readCeiling,
+      pushPolicy: message.payload.pushPolicy,
+      status: "active",
+      reportedClient: null,
+      createdAt: now,
+      updatedAt: now,
+      secretRotatedAt: null,
+      lastSeenAt: null,
+      minute: { reads: 0, hookReads: 0 },
+      usage: MCP_ZERO_USAGE,
+    });
+    mcpFixtureState.held.set(id, `fixture-key-${mcpFixtureState.sequence}-${"x".repeat(24)}`);
+    return { status: 200, body: { resultRef: id, replayed: false } };
+  }
+  const connection = mcpFixtureState.connections.find(
+    ({ id }) => id === message.payload.connectionId,
+  );
+  if (!connection) return { status: 404, body: { error: { code: "PORT_NOT_FOUND" } } };
+  if (message.type === "mcp.connection.rotate") {
+    if (connection.status === "revoked")
+      return { status: 409, body: { error: { code: "PORT_CONFLICT" } } };
+    mcpFixtureState.sequence += 1;
+    mcpFixtureState.held.set(connection.id, `fixture-key-rotated-${mcpFixtureState.sequence}`);
+    connection.secretRotatedAt = now;
+    return { status: 200, body: { resultRef: connection.id, replayed: false } };
+  }
+  for (const key of ["name", "readCeiling", "status"])
+    if (message.payload[key] !== null) connection[key] = message.payload[key];
+  if (connection.status === "revoked") mcpFixtureState.held.delete(connection.id);
+  return { status: 200, body: { resultRef: connection.id, replayed: false } };
+}
+
 function handleExternalCommand(message) {
   if (!["memory.external.respond", "memory.external.undo"].includes(message.type)) return null;
   externalFixtureState.commands.push({ type: message.type, payload: message.payload });
@@ -1179,6 +1321,17 @@ function weeklySnapshot(withMails = false) {
               gate: null,
             })),
       },
+      mcpConnections: {
+        fromDay: "2026-08-24",
+        toDay: "2026-08-30",
+        connections: mcpFixtureState.connections.map(({ id, name, status, lastSeenAt, usage }) => ({
+          id,
+          name,
+          status,
+          lastSeenAt,
+          usage,
+        })),
+      },
       correction: withMails
         ? {
             handled: 12,
@@ -1526,6 +1679,10 @@ function handleOperationsQuery(message, request) {
     case "memory.overview.read":
       return memoryFixture
         ? { ...envelope("snapshot", "memory.overview.snapshot"), payload: memoryOverview() }
+        : undefined;
+    case "mcp.connections.read":
+      return memoryFixture
+        ? { ...envelope("snapshot", "mcp.connections.snapshot"), payload: mcpSnapshot() }
         : undefined;
     case "sensitive.interceptions.read":
       return memoryFixture
@@ -2260,6 +2417,10 @@ async function handleRequest(request, response) {
               "proactive.weekly.read",
               "decision.chain.read",
               "decision.email.read",
+              "mcp.connections.read",
+              "mcp.connection.create",
+              "mcp.connection.change",
+              "mcp.connection.rotate",
             ]
           : []),
       ],
@@ -2292,6 +2453,30 @@ async function handleRequest(request, response) {
       decided: Object.fromEntries(externalFixtureState.decided),
       commands: externalFixtureState.commands,
     });
+    return;
+  }
+  if (memoryFixture && url.pathname === "/__fixture/mcp") {
+    if (request.method === "POST") {
+      const { mode } = await body(request);
+      if (mode !== undefined) mcpReset(mode);
+    }
+    json(response, 200, {
+      connections: mcpFixtureState.connections,
+      held: [...mcpFixtureState.held.keys()],
+      commands: mcpFixtureState.commands,
+    });
+    return;
+  }
+  if (memoryFixture && url.pathname === "/api/mcp-connections/address") {
+    const connectionId = url.searchParams.get("connectionId") ?? "";
+    const secret = mcpFixtureState.held.get(connectionId);
+    mcpFixtureState.held.delete(connectionId);
+    if (!secret) {
+      response.writeHead(404, { "cache-control": "no-store" });
+      response.end();
+      return;
+    }
+    json(response, 200, { connectionId, path: `/api/mcp/v1/${secret}` });
     return;
   }
   if (memoryFixture && url.pathname === "/__fixture/muse") {
@@ -2671,6 +2856,11 @@ async function handleRequest(request, response) {
         reviewFixtureState.commands.push({ type: message.type, payload: message.payload });
         reviewFixtureState.undone = true;
         json(response, 200, { resultRef: "memory-review-undone", replayed: false });
+        return;
+      }
+      const mcp = memoryFixture ? handleMcpCommand(message) : null;
+      if (mcp) {
+        json(response, mcp.status, mcp.body);
         return;
       }
       const external = memoryFixture ? handleExternalCommand(message) : null;

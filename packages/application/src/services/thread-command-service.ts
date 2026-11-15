@@ -74,6 +74,7 @@ export class ThreadCommandService {
     readonly threadId?: ThreadId;
     readonly idempotencyKey: string;
     readonly answerLocale?: AnswerLocale;
+    readonly origin?: "think";
     readonly resultRef: PayloadRef;
   }) {
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
@@ -89,6 +90,7 @@ export class ThreadCommandService {
       agentId: input.agentId,
       createdAt: this.dependencies.clock.now(),
       ...(input.answerLocale === undefined ? {} : { answerLocale: input.answerLocale }),
+      ...(input.origin === undefined ? {} : { origin: input.origin }),
     });
     return this.dependencies.repository.create({
       thread,
@@ -178,6 +180,7 @@ export class ThreadCommandService {
   }
 
   async admitOwnerMessage(input: {
+    readonly triggerSource?: "user_message" | "external_event";
     readonly modelSelection?: import("../ports/run-execution-source.js").RunModelSelection;
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
@@ -221,6 +224,9 @@ export class ThreadCommandService {
         messageId,
         contentRef: input.contentRef,
         ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+        ...(input.triggerSource && input.triggerSource !== "user_message"
+          ? { triggerSource: input.triggerSource }
+          : {}),
       }),
       occurredAt,
       authority: this.dependencies.authority(),

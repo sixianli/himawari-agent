@@ -245,6 +245,43 @@ export const governanceMessages = [
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
   fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
+  fixture("query", "proactive.sources.read", {}),
+  fixture("snapshot", "proactive.sources.snapshot", {
+    sources: [
+      {
+        source: "gmail",
+        intake: "reader",
+        trust: "external",
+        enabled: true,
+        perDay: {
+          limit: 5000,
+          defaultLimit: 5000,
+          minimum: 1,
+          maximum: 1000000,
+          used: 12,
+          resetsAt: "2026-11-12T15:00:00.000Z",
+          onReach: "hold_until_reset",
+        },
+        perCheck: {
+          limit: 500,
+          defaultLimit: 500,
+          minimum: 1,
+          maximum: 500,
+          onReach: "hold_until_next_check",
+        },
+        dailyLimitReached: false,
+        updatedAt: null,
+      },
+    ],
+    generatedAt: "2026-11-12T00:00:00.000Z",
+  }),
+  fixture("command", "proactive.source.settings.set", {
+    source: "gmail",
+    enabled: true,
+    perDay: 5000,
+    perCheck: 500,
+  }),
+  fixture("command", "proactive.source.switch_off", { source: "gmail" }),
   fixture("query", "proactive.weekly.read", { end: null }),
   fixture("snapshot", "proactive.weekly.snapshot", {
     serviceRevision: "rev-01",
@@ -320,6 +357,7 @@ export const governanceMessages = [
           { signal: "replied", decisions: 0, events: 0, medianDelayMs: null, rate: null },
         ],
       },
+      mcpConnections: null,
       prereview: {
         agreementPermille: 900,
         confidencePermille: 800,
@@ -404,6 +442,31 @@ export const governanceMessages = [
     modelRef: null,
     thinkingLevel: null,
     expectedRevision: 3,
+  }),
+  fixture("query", "delivery_timing.settings.read", { locale: "zh-CN" }),
+  fixture("snapshot", "delivery_timing.settings.snapshot", {
+    items: [
+      {
+        key: "recheckSeconds",
+        label: "复查间隔",
+        description: "先不推送之后，隔多久再确认你有没有空。",
+        unit: "秒",
+        kind: "duration",
+        storageUnit: "s",
+        value: 600,
+        defaultValue: 300,
+        minimum: 60,
+        maximum: 3600,
+        overridden: true,
+      },
+    ],
+    revision: 2,
+    generatedAt: "2026-11-15T03:00:00.000Z",
+  }),
+  fixture("command", "delivery_timing.settings.change", {
+    expectedRevision: 2,
+    key: "recheckSeconds",
+    value: null,
   }),
   fixture("query", "device.list.read", {}),
   fixture("snapshot", "device.list.snapshot", {
@@ -581,6 +644,37 @@ export const governanceMessages = [
     key: "perception.records.daily",
     value: 10000,
   }),
+  fixture("query", "think.settings.read", {}),
+  fixture("snapshot", "think.settings.snapshot", {
+    revision: 2,
+    enabled: true,
+    items: [
+      {
+        key: "queueLimit",
+        value: 7,
+        defaultValue: 20,
+        minimum: 1,
+        maximum: 1000,
+        unit: "count",
+        kind: "count",
+        storageUnit: "count",
+        overridden: true,
+        label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+        description: {
+          "zh-CN": "最多同时排队等着想的事数。",
+          en: "How many items can wait at once.",
+          ja: "待てる件数の上限です。",
+        },
+        unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
+      },
+    ],
+    generatedAt: "2026-11-15T00:00:00.000Z",
+  }),
+  fixture("command", "think.settings.change", {
+    expectedRevision: 2,
+    key: "queueLimit",
+    value: null,
+  }),
   fixture("query", "server.status.read", {}),
   fixture("snapshot", "server.status.snapshot", {
     live: true,
@@ -630,6 +724,60 @@ export const governanceMessages = [
     deviceId: "device-02",
     recentAuthenticationRef: "auth-ref-01",
   }),
+  fixture("query", "mcp.connections.read", {}),
+  fixture("snapshot", "mcp.connections.snapshot", {
+    connections: [
+      {
+        id: "conn-0123456789abcdef01234567",
+        name: "Claude Code",
+        capabilities: ["command_hooks", "mcp"],
+        readCeiling: "private",
+        pushPolicy: "ask",
+        status: "active",
+        reportedClient: "claude-code",
+        createdAt: "2026-11-12T03:00:00.000Z",
+        updatedAt: "2026-11-12T03:00:00.000Z",
+        secretRotatedAt: null,
+        lastSeenAt: "2026-11-12T03:05:00.000Z",
+        minute: { reads: 1, hookReads: 3 },
+        usage: {
+          reads: 4,
+          readsByTool: [{ tool: "find_memories", calls: 4 }],
+          delivered: 3,
+          empty: 1,
+          autoReads: 3,
+          autoDelivered: 2,
+          modelReads: 1,
+          memoryPushes: 0,
+          ruleProposals: 0,
+          ruleProposalsRateLimited: 0,
+          failed: 0,
+          rateLimited: 0,
+        },
+      },
+    ],
+    window: { fromDay: "2026-11-06", toDay: "2026-11-12", days: 7 },
+    limits: [{ key: "mcp.connections", value: 200, used: 1 }],
+    addressPath: "/api/mcp-connections/address",
+    generatedAt: "2026-11-12T03:06:30.000Z",
+  }),
+  fixture("command", "mcp.connection.create", {
+    name: "Claude Code",
+    capabilities: ["mcp"],
+    readCeiling: "private",
+    pushPolicy: "ask",
+  }),
+  fixture("command", "mcp.connection.change", {
+    connectionId: "conn-0123456789abcdef01234567",
+    name: null,
+    capabilities: null,
+    readCeiling: "public",
+    pushPolicy: null,
+    status: "paused",
+  }),
+  fixture("command", "mcp.connection.rotate", {
+    connectionId: "conn-0123456789abcdef01234567",
+  }),
   fixture("command", "login.devices.revoke_others", { recentAuthenticationRef: "auth-ref-01" }),
   fixture("query", "search.ask.read", { query: "我对什么过敏", locale: "zh-CN" }),
   fixture("snapshot", "search.ask.snapshot", {
@@ -641,6 +789,7 @@ export const governanceMessages = [
       {
         kind: "conversation",
         label: "10 月 21 日你在对话里说的",
+        recordId: null,
         memoryId: "memory-1",
         threadId: "thread-1",
         at: "2026-10-21T03:00:00.000Z",
@@ -1124,7 +1273,7 @@ export const governanceMessages = [
     ],
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
-  fixture("query", "proposals.read", {}),
+  fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {
     proposals: [
       {
@@ -1136,6 +1285,8 @@ export const governanceMessages = [
         effect: "日本入管局相关的邮件一律提醒",
         origin: "inferred",
         adoptable: true,
+        requiresFullRead: false,
+        requiresPresence: false,
         evidence: [
           {
             kind: "owner_words",
@@ -1158,6 +1309,7 @@ export const governanceMessages = [
     pendingCount: 1,
     limit: 20,
     expiresAfterDays: 30,
+    opened: null,
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
   fixture("command", "proposal.respond", {
@@ -1165,6 +1317,8 @@ export const governanceMessages = [
     expectedVersion: 1,
     fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     action: "adopt",
+    recentAuthenticationRef: null,
+    fullReadToken: null,
   }),
   fixture("command", "memory.rule.respond", {
     target: "action_preauthorize_owner_data",
@@ -1275,11 +1429,19 @@ export const governanceMessages = [
     capabilityRef: "capability-01",
     expectedRevision: 7,
     reasonCode: "owner-disabled",
+    recentAuthenticationRef: "recent-auth-01",
   }),
   fixture("command", "capability.rollback", {
     capabilityRef: "capability-01",
     expectedRevision: 8,
     reasonCode: "owner-rollback",
+    recentAuthenticationRef: "recent-auth-01",
+  }),
+  fixture("command", "capability.reactivate", {
+    capabilityRef: "capability-01",
+    expectedRevision: 9,
+    reasonCode: "owner-reactivate",
+    recentAuthenticationRef: "recent-auth-01",
   }),
   fixture("query", "approval.detail", { approvalRequestId: "approval-01" }),
   fixture("query", "capability.list", {
@@ -1384,6 +1546,7 @@ export const governanceMessages = [
     },
     rollbackVersion: "0.9.0",
     rollbackAvailable: true,
+    lastInvalidation: null,
     lastTransition: {
       fromVersion: "0.9.0",
       toVersion: "1.0.0",
@@ -1421,6 +1584,12 @@ export const governanceMessages = [
     revokedAt: null,
     revocationReasonCode: null,
     affectedTaskRefs: ["task-01"],
+    label: "Send the review email once",
+    detail: {
+      "zh-CN": ["已用 0/1 次"],
+      en: ["Used 0 of 1"],
+      ja: ["0/1 回使用"],
+    },
     generatedAt: "2026-08-26T00:00:01.000Z",
   }),
 ] as const;

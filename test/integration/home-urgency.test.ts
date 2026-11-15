@@ -824,6 +824,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     expect(item?.actions).toEqual([
       {
         action: "approved",
+        binding: expect.stringMatching(/^b1\./),
         label: "发出去",
         labelBasis: "model",
         polarity: "positive",
@@ -832,6 +833,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
       },
       {
         action: "denied",
+        binding: expect.stringMatching(/^b1\./),
         label: "不同意",
         labelBasis: "catalog",
         polarity: "negative",
@@ -952,6 +954,7 @@ describe("[home-urgency] model urgency scores on the home feed", () => {
     await home.score();
     expect((await read()).items[0]?.actions[0]).toEqual({
       action: "approved",
+      binding: expect.stringMatching(/^b1\./),
       label: "发出去",
       labelBasis: "model",
       polarity: "positive",

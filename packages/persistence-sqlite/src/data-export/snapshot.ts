@@ -36,6 +36,7 @@ export interface PortableSnapshot {
   readonly restrictedMemories: number;
   readonly restrictedMemoryTexts: readonly Row[];
   readonly externalProposals: readonly Row[];
+  readonly ownerProposals: readonly Row[];
   readonly externalProposalKeys: readonly Row[];
   readonly externalProposalUnkeyed: readonly Row[];
   readonly openMemoryReviews: number;
@@ -100,6 +101,15 @@ export function readSnapshot(
         FROM external_memory_proposals
         WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY received_at, id`,
+      );
+      const ownerProposals = all(
+        `SELECT id, type, summary, effect, origin, source_ref, source_version, version, fingerprint,
+          status, exec_status, proposed_at, expires_at, decided_at, proposed_count, reject_count,
+          last_rejected_at, attempts, executed_at, requires_full_read, requires_presence,
+          evidence_ref, execution_ref
+        FROM owner_proposals
+        WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY proposed_at, id`,
       );
       const externalProposalKeys = all(
         `SELECT proposal_id, client, source_key FROM external_memory_proposal_keys
@@ -189,6 +199,16 @@ export function readSnapshot(
         limitUsage: all(
           `SELECT key, period_start, device_id, used
           FROM limit_usage WHERE ${scoped} ORDER BY period_start, key, device_id`,
+        ),
+        devicePolicies: all(
+          `SELECT device_id, blocked_actions, updated_at
+          FROM device_policies WHERE ${scoped} ORDER BY device_id`,
+        ),
+        deviceActions: all(
+          `SELECT id, device_id, action, schema_version, action_kind, risk, owner_presence,
+            approval_id, data_classification, state, reason_code, created_at, expires_at,
+            delivered_at, finished_at, arguments_ref, result_ref
+          FROM device_actions WHERE ${scoped} ORDER BY created_at, id`,
         ),
       };
       const runs = all(
@@ -299,16 +319,22 @@ export function readSnapshot(
         ...processedMessages,
         ...museEntries,
         ...externalProposals,
+        ...ownerProposals,
         ...restrictedMemoryTexts,
         ...perception.perceptionRecords,
+        ...perception.deviceActions,
       ])
         for (const key of [
+          "arguments_ref",
+          "result_ref",
           "content_ref",
           "quote_ref",
           "reason_ref",
           "payload_ref",
           "header_ref",
           "note_ref",
+          "evidence_ref",
+          "execution_ref",
         ]) {
           const ref = row[key];
           if (typeof ref === "string") refs.add(ref);
@@ -394,6 +420,7 @@ export function readSnapshot(
         restrictedMemories,
         restrictedMemoryTexts,
         externalProposals,
+        ownerProposals,
         externalProposalKeys,
         externalProposalUnkeyed,
         openMemoryReviews,

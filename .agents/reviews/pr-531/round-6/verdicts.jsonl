@@ -1,0 +1,1 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 低 — 上一轮第 2 条只改好了一半：第四类进了表，但流程图、取舍和验证仍写“三类来源”", "valid": true, "class": "error", "severity": "low", "trigger": "按流程图或验证清单实现的人漏掉提议", "consequence": "文档与代码不一致", "modelSeverity": "低", "why": "流程图、取舍和验证三处的“三类来源”已改成各类来源并把提议算进去"}

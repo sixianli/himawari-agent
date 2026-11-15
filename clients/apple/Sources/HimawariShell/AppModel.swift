@@ -1,6 +1,7 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
 import HimawariManage
 import HimawariSenses
@@ -26,10 +27,12 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
     public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
@@ -41,6 +44,10 @@ public final class AppModel {
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
+    #endif
+    public private(set) var watchOffer: String?
 
     private static let recordAccount = SharedVault.recordAccount
 
@@ -120,6 +127,34 @@ public final class AppModel {
         }
     }
 
+    public func handlePairingLink(_ text: String) {
+        if phase == .active {
+            #if os(iOS)
+            if WatchPairingRelay.offerable(text, pairedOrigin: record?.origin), watchRelay.canOffer {
+                watchOffer = text
+            }
+            #endif
+            return
+        }
+        pair(scanned: text)
+    }
+
+    public var watchOfferHost: String? {
+        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
+        return Self.host(invitation.origin)
+    }
+
+    public func sendOfferToWatch() {
+        #if os(iOS)
+        if let watchOffer { watchRelay.send(watchOffer) }
+        #endif
+        watchOffer = nil
+    }
+
+    public func declineWatchOffer() {
+        watchOffer = nil
+    }
+
     public func connectToScannedServer() {
         guard case .confirmingServer = phase, let lastScanned else { return }
         submit(lastScanned)
@@ -132,6 +167,10 @@ public final class AppModel {
     }
 
     @ObservationIgnored var demoHost: String?
+
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
 
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
@@ -227,6 +266,7 @@ public final class AppModel {
         chat = nil
         senses?.suspend()
         senses = nil
+        actions = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -324,11 +364,20 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
             self.chat = chat
             let service = LiveSensesService(
@@ -344,6 +393,7 @@ public final class AppModel {
             self.senses = senses
             phase = .active
             chat.start()
+            actions.deviceActionsChanged()
             Task {
                 await refreshConfiguration()
                 await senses.refresh()
@@ -421,11 +471,16 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
         deliverWaitingHandovers()
         Task {
             await refreshConfiguration()
             await senses?.refresh()
         }
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {

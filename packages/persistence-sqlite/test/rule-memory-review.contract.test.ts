@@ -34,7 +34,21 @@ const LEDGER_TABLES = [
 function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
   return {
     ...Object.fromEntries(
-      LEDGER_TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
+      LEDGER_TABLES.map((table) => [
+        table,
+        database
+          .prepare(`SELECT * FROM ${table}`)
+          .all()
+          .map((row) =>
+            table === "proactive_push_backoff"
+              ? Object.fromEntries(
+                  Object.entries(row as Record<string, unknown>).filter(
+                    ([column]) => column !== "source",
+                  ),
+                )
+              : row,
+          ),
+      ]),
     ),
     schemaNames: database
       .prepare(

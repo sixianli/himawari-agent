@@ -19,8 +19,17 @@ public struct SecureEnclaveKeySigner: DeviceKeySigner {
 
     public func sign(_ message: Data, reason: String?) async throws -> Data {
         let context = LAContext()
+        #if !os(watchOS)
         if let reason { context.localizedReason = reason }
-        let key = try store.load(role, context: role == .confirm ? context : nil)
+        #endif
+        let key: SecureEnclave.P256.Signing.PrivateKey
+        do {
+            key = try store.load(role, context: role == .confirm ? context : nil)
+        } catch let error as DeviceKeyError {
+            throw error
+        } catch {
+            throw DeviceKeyError.keyUnreadable(role)
+        }
         return try key.signature(for: message).rawRepresentation
     }
 }

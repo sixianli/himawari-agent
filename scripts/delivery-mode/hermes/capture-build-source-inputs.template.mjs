@@ -136,7 +136,7 @@ try {
     moduleBefore.set(relative, value.proof);
     report.modules.push({ path: relative, sha256: value.proof.sha256, bytes: value.proof.bytes, before: value.proof.before, after: null });
   }
-  require(moduleBefore.get("scripts/ci/verify-artifact.mjs").sha256 === "1e2ce324ae6966dc240f82da721a14a3fac309ac2db748c6dc30191b7b41cdc5" && moduleBefore.get("scripts/ci/source-inputs.mjs").sha256 === "d56996d46d915c08eab68f8ba67808f31c667a3177312e5cb303836a1b6e9fac", "BUILD_CAPTURE_PRODUCT_MODULE_IDENTITY_DIFFERENT");
+  require(moduleBefore.get("scripts/ci/verify-artifact.mjs").sha256 === "4e6f42c70e40b8c76ebbccdecf3e2cc5d6486a3f66f73e72a9edbfb6eac3f418" && moduleBefore.get("scripts/ci/source-inputs.mjs").sha256 === "d56996d46d915c08eab68f8ba67808f31c667a3177312e5cb303836a1b6e9fac", "BUILD_CAPTURE_PRODUCT_MODULE_IDENTITY_DIFFERENT");
   const { sourceTreeDigest } = await import(pathToFileURL(path.join(source, "scripts/ci/verify-artifact.mjs")));
   const { relativeModuleClosure } = await import(pathToFileURL(path.join(source, "scripts/ci/source-inputs.mjs")));
   report.stage = "original-product-digest-before";

@@ -234,7 +234,7 @@ public final class SensesGateway: Sendable {
         do {
             return try await api.http.send(request)
         } catch let error as DeviceAPIError {
-            if case let .server(status, code, _) = error,
+            if case let .server(status, code, _, _) = error,
                status == 404 || code == "DEVICE_GATEWAY_TYPE_UNKNOWN" || code == "DEVICE_GATEWAY_NOT_ON_PHONE" {
                 throw SensesGatewayError.notInstalled
             }

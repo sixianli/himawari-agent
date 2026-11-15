@@ -187,7 +187,7 @@ public actor PerceptionQueue {
                 if settled.isEmpty { return }
                 pending = Array(records.prefix(batchSize))
             } catch let error as DeviceAPIError {
-                if case let .server(status, _, _) = error, status == 400 || status == 422 {
+                if case let .server(status, _, _, _) = error, status == 400 || status == 422 {
                     if pending.count == 1 {
                         records.removeAll { $0.id == pending[0].id }
                         report.malformed += 1
@@ -223,7 +223,7 @@ public actor PerceptionQueue {
                 }
                 size = batchSize
             } catch let error as DeviceAPIError {
-                if case let .server(status, _, _) = error, status == 400 || status == 422 {
+                if case let .server(status, _, _, _) = error, status == 400 || status == 422 {
                     if batch.count == 1 {
                         points.removeFirst()
                         report.malformed += 1

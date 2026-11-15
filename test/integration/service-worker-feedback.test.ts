@@ -55,7 +55,14 @@ async function loadWorker() {
     });
     await Promise.all(waits.splice(0));
   };
-  return { dispatch, openWindow, stored };
+  const push = async (message: Record<string, unknown>) => {
+    listeners.get("push")?.({
+      data: { json: () => message },
+      waitUntil: (promise: Promise<unknown>) => waits.push(promise),
+    });
+    await Promise.all(waits.splice(0));
+  };
+  return { dispatch, push, shown: self.registration.showNotification, openWindow, stored };
 }
 
 describe("[WP-11] service worker notification feedback", () => {
@@ -77,5 +84,14 @@ describe("[WP-11] service worker notification feedback", () => {
     });
     await worker.dispatch("notificationclose", {});
     expect(worker.stored.size).toBe(1);
+  });
+
+  it("[IOS-4] shows a notification silently only when the payload asks for it", async () => {
+    const worker = await loadWorker();
+    await worker.push({ notification: { title: "t", silent: true } });
+    await worker.push({ notification: { title: "t" } });
+    await worker.push({ notification: { title: "t", silent: "true" } });
+    const silent = worker.shown.mock.calls.map(([, options]) => options.silent);
+    expect(silent).toEqual([true, false, false]);
   });
 });

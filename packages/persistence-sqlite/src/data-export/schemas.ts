@@ -1,7 +1,13 @@
+import { ACTION_KINDS, ACTION_RISK_LEVELS } from "@himawari-agent/application/authorization";
 import { DECISION_KINDS } from "@himawari-agent/application/decision-ledger";
+import {
+  DEVICE_ACTION_REASON_CODES,
+  DEVICE_ACTION_RECORD_STATES,
+} from "@himawari-agent/application/device-actions";
+import { PROACTIVE_SOURCE_NAME_PATTERN } from "@himawari-agent/application/proactive-sources";
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v3" as const;
+export const FORMAT_VERSION = "himawari.data-export.v4" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
@@ -45,6 +51,10 @@ const integer = (minimum = 0, maximum = Number.MAX_SAFE_INTEGER): JsonSchema => 
 });
 const permille: JsonSchema = integer(0, 1000);
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: "string", enum: values });
+const proactiveSourceName: JsonSchema = {
+  type: "string",
+  pattern: PROACTIVE_SOURCE_NAME_PATTERN.source,
+};
 const bool: JsonSchema = { type: "boolean" };
 const timestamp: JsonSchema = { type: "string", minLength: 20, maxLength: 40 };
 const objectOf = (
@@ -216,6 +226,63 @@ export const EXTERNAL_PROPOSAL_SCHEMA: JsonSchema = objectOf(
   "其他 agent 通过 MCP 提议的一条记忆和它的处理结果。content 为 null 表示正文已按规则删掉（拒绝满 30 天，或被替换）。content 被扣留时 textSha256 为 null，摘要和原文一起在密封文件里。keys 是各客户端的固定编号现在指向这一条的；unkeyedClients 是不带编号送过这段正文的客户端。",
 );
 
+export const OWNER_PROPOSAL_ORIGINS = [
+  "owner_said",
+  "inferred",
+  "external_agent",
+  "external_content",
+] as const;
+export const OWNER_PROPOSAL_STATUSES = [
+  "pending",
+  "accepted",
+  "rejected",
+  "expired",
+  "superseded",
+  "withdrawn",
+] as const;
+export const OWNER_PROPOSAL_EXECUTIONS = [
+  "not_started",
+  "running",
+  "executed_unverified",
+  "succeeded",
+  "failed",
+  "unknown",
+  "undone",
+] as const;
+
+export const ownerProposalBasisKey = (id: string): string => `ownerProposal/${id}/basis`;
+export const ownerProposalExecutionKey = (id: string): string => `ownerProposal/${id}/execution`;
+
+export const OWNER_PROPOSAL_SCHEMA: JsonSchema = objectOf(
+  {
+    id: text(1, 128),
+    type: text(1, 64),
+    summary: text(1, 200),
+    effect: text(1, 200),
+    origin: enumOf(OWNER_PROPOSAL_ORIGINS),
+    sourceRef: nullable(text(1, 256)),
+    sourceVersion: nullable(text(1, 128)),
+    version: integer(1),
+    fingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    status: enumOf(OWNER_PROPOSAL_STATUSES),
+    execStatus: enumOf(OWNER_PROPOSAL_EXECUTIONS),
+    proposedAt: timestamp,
+    expiresAt: timestamp,
+    decidedAt: nullable(timestamp),
+    proposedCount: integer(1),
+    rejectCount: integer(0),
+    lastRejectedAt: nullable(timestamp),
+    attempts: integer(0),
+    executedAt: nullable(timestamp),
+    requiresFullRead: { type: "boolean" },
+    requiresPresence: { type: "boolean" },
+    basis: nullableText,
+    execution: nullableText,
+  },
+  [],
+  "一条提给主人的下一步和它的处理结果：主人的决定（status）和执行（execStatus）分开记。basis 是主人看到的依据和处理方的数据（JSON 文字），execution 是执行改了什么（撤销用）；两者为 null 表示载荷已按规则清掉。导入时执行中和已执行待核实的记成结果不明，租约不导出。",
+);
+
 const exportedPayload = nullable({ type: "object" });
 const scalarMap: JsonSchema = { type: "object" };
 const day: JsonSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
@@ -304,6 +371,40 @@ export const LIMIT_USAGE_SCHEMA: JsonSchema = objectOf(
   "某个上限在某一天的已用量；deviceId 有值的是设备自己报的数。只供查看，导入时不恢复。",
 );
 
+export const DEVICE_POLICY_SCHEMA: JsonSchema = objectOf(
+  {
+    deviceId: text(1, 64),
+    blockedActions: { type: "array", items: text(3, 64) },
+    updatedAt: timestamp,
+  },
+  [],
+  "主人在某台设备上关掉的动作。只供查看，导入时不恢复。",
+);
+
+export const DEVICE_ACTION_SCHEMA: JsonSchema = objectOf(
+  {
+    id: { type: "string", pattern: "^dact_[0-9a-f]{32}$" },
+    deviceId: text(1, 64),
+    action: text(3, 64),
+    schemaVersion: integer(1),
+    actionKind: enumOf(ACTION_KINDS),
+    risk: enumOf(ACTION_RISK_LEVELS),
+    ownerPresence: bool,
+    approvalId: nullable(text(1, 128)),
+    classification: enumOf(CLASSIFICATIONS),
+    state: enumOf(DEVICE_ACTION_RECORD_STATES),
+    reasonCode: nullable(enumOf(DEVICE_ACTION_REASON_CODES)),
+    createdAt: timestamp,
+    expiresAt: timestamp,
+    deliveredAt: nullable(timestamp),
+    finishedAt: nullable(timestamp),
+    request: exportedPayload,
+    result: exportedPayload,
+  },
+  [],
+  "Himawari 让一台设备做的一件事：动作名、状态、风险档位、参数和明细（request）、设备读回的结果（result）。只供查看，导入时不恢复。",
+);
+
 export const CONSOLIDATION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 512),
@@ -369,7 +470,7 @@ export const DECISION_SCHEMA: JsonSchema = objectOf(
   {
     id: text(1, 128),
     kind: enumOf(DECISION_KINDS),
-    scenario: nullable(enumOf(["gmail"])),
+    scenario: nullable(proactiveSourceName),
     checkedAt: timestamp,
     counts: { type: "object" },
     verdict: nullable(
@@ -463,7 +564,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
       type: "array",
       items: objectOf({
         id: text(1, 128),
-        source: enumOf(["gmail"]),
+        source: proactiveSourceName,
         threadId: text(1, 256),
         lastMessageId: text(1, 256),
         result: enumOf(["act", "know", "check"]),
@@ -483,7 +584,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
     processedMessages: {
       type: "array",
       items: objectOf({
-        source: enumOf(["gmail"]),
+        source: proactiveSourceName,
         messageId: text(1, 256),
         threadId: text(1, 256),
         decisionId: text(1, 128),
@@ -517,7 +618,7 @@ export const EVIDENCE_SCHEMA: JsonSchema = objectOf(
       items: objectOf({
         id: text(1, 128),
         decisionId: nullable(text(1, 128)),
-        mailSource: nullable(enumOf(["gmail"])),
+        mailSource: nullable(proactiveSourceName),
         messageId: nullable(text(1, 256)),
         group: enumOf([
           "proactive_pushed",
@@ -581,6 +682,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       trackPoints: integer(0),
       perceptionSettings: integer(0),
       limitUsage: integer(0),
+      devicePolicies: integer(0),
+      deviceActions: integer(0),
       consolidations: integer(0),
       consolidationChanges: integer(0),
       conversationReviews: integer(0),
@@ -591,6 +694,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       rules: integer(0),
       enforcedRules: integer(0),
       externalProposals: integer(0),
+      ownerProposals: integer(0),
       ruleHistoryVersions: integer(0),
       sealedOriginals: integer(0),
       sealedEvidenceRows: integer(0),
@@ -607,6 +711,8 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "trackPoints",
       "perceptionSettings",
       "limitUsage",
+      "devicePolicies",
+      "deviceActions",
       "consolidations",
       "consolidationChanges",
       "conversationReviews",
@@ -617,6 +723,7 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "rules",
       "enforcedRules",
       "externalProposals",
+      "ownerProposals",
       "ruleHistoryVersions",
       "sealedOriginals",
       "sealedEvidenceRows",
@@ -644,13 +751,16 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
     { path: "schema/consolidations.schema.json", schema: CONSOLIDATION_SCHEMA },
     { path: "schema/conversation-reviews.schema.json", schema: CONVERSATION_REVIEW_SCHEMA },
     { path: "schema/decisions.schema.json", schema: DECISION_SCHEMA },
+    { path: "schema/device-actions.schema.json", schema: DEVICE_ACTION_SCHEMA },
     { path: "schema/device-mirror-items.schema.json", schema: DEVICE_MIRROR_ITEM_SCHEMA },
+    { path: "schema/device-policies.schema.json", schema: DEVICE_POLICY_SCHEMA },
     { path: "schema/evidence.schema.json", schema: EVIDENCE_SCHEMA },
     { path: "schema/external-memory-proposals.schema.json", schema: EXTERNAL_PROPOSAL_SCHEMA },
     { path: "schema/import-batches.schema.json", schema: IMPORT_BATCH_SCHEMA },
     { path: "schema/limit-usage.schema.json", schema: LIMIT_USAGE_SCHEMA },
     { path: "schema/manifest.schema.json", schema: MANIFEST_SCHEMA },
     { path: "schema/memories.schema.json", schema: MEMORY_SCHEMA },
+    { path: "schema/owner-proposals.schema.json", schema: OWNER_PROPOSAL_SCHEMA },
     { path: "schema/paired-devices.schema.json", schema: PAIRED_DEVICE_SCHEMA },
     { path: "schema/people.schema.json", schema: PERSON_SCHEMA },
     { path: "schema/perception-episodes.schema.json", schema: PERCEPTION_EPISODE_SCHEMA },
@@ -671,11 +781,14 @@ export const DATA_FILES = Object.freeze({
   trackPoints: "data/track-points.jsonl",
   perceptionSettings: "data/perception-settings.jsonl",
   limitUsage: "data/limit-usage.jsonl",
+  devicePolicies: "data/device-policies.jsonl",
+  deviceActions: "data/device-actions.jsonl",
   consolidations: "data/consolidations.jsonl",
   conversationReviews: "data/conversation-reviews.jsonl",
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
   externalProposals: "data/external-memory-proposals.jsonl",
+  ownerProposals: "data/owner-proposals.jsonl",
 } as const);
 
 export const PERCEPTION_FILE_KEYS = [
@@ -685,6 +798,8 @@ export const PERCEPTION_FILE_KEYS = [
   "trackPoints",
   "perceptionSettings",
   "limitUsage",
+  "devicePolicies",
+  "deviceActions",
 ] as const;
 export type PerceptionFileKey = (typeof PERCEPTION_FILE_KEYS)[number];
 
@@ -696,6 +811,8 @@ export const PERCEPTION_FILE_SCHEMAS: Readonly<Record<PerceptionFileKey, JsonSch
     trackPoints: TRACK_POINT_SCHEMA,
     perceptionSettings: PERCEPTION_SETTINGS_SCHEMA,
     limitUsage: LIMIT_USAGE_SCHEMA,
+    devicePolicies: DEVICE_POLICY_SCHEMA,
+    deviceActions: DEVICE_ACTION_SCHEMA,
   });
 
 export const EMPTY_PERCEPTION_COUNTS: Readonly<Record<PerceptionFileKey, number>> = Object.freeze(

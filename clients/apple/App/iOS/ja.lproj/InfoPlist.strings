@@ -1,9 +1,14 @@
 "NSCameraUsageDescription" = "パソコンの Himawari 設定に表示されたペアリングコードを読み取ります。";
 "NSFaceIDUsageDescription" = "Himawari の設定や記憶を変える前に、本人であることを確認します。";
+"NSAlarmKitUsageDescription" = "Himawari にアラームを頼んだとき、Himawari 自身のアラームで時間どおりに知らせます。";
+"NSCalendarsFullAccessUsageDescription" = "カレンダーの予定の追加・変更・削除を頼んだとき、先に読み、終わったあと読み直して確認します。「カレンダー」の感知をオンにすると、予定をあなた自身のサーバーにも同期し、カレンダーで削除した予定はそちらでも削除されます。";
+"NSContactsUsageDescription" = "連絡先の電話番号やメールの変更を頼んだときに使います。「連絡先」の感知をオンにすると、名前、電話番号、メール、誕生日をあなた自身のサーバーにも同期し、知り合いを覚えられるようにします。";
+"NSHomeKitUsageDescription" = "家の照明のオン・オフやエアコンの調整を頼んだときに使います。";
+"NSRemindersFullAccessUsageDescription" = "リマインダーの追加や完了を頼んだときに使います。";
+"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。録音は文字にしたら消します。";
+"NSSpeechRecognitionUsageDescription" = "聞こえた言葉をこの iPhone で文字にします。";
+"NSMotionUsageDescription" = "AirPods が耳に入っているかを確かめ、呼んだのがあなたかを見分けます。「ヘルスと動き」の感知をオンにすると、歩いているか、走っているか、運転しているかもあなた自身のサーバーに記録します。";
 "NSLocationWhenInUseUsageDescription" = "どこに着いて、どのくらいいたかを記録し、あなた自身のサーバーに保存します。";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "Himawari を開いていなくても、どこに着いてどのくらいいたかを記録し、あなた自身のサーバーに保存します。";
-"NSCalendarsFullAccessUsageDescription" = "カレンダーの予定をあなた自身のサーバーに同期します。カレンダーで削除した予定はそちらでも削除されます。";
 "NSHealthShareUsageDescription" = "歩数、睡眠、心拍数、ワークアウトを読み取り、あなた自身のサーバーに保存します。";
-"NSMotionUsageDescription" = "歩いているか、走っているか、運転しているかを記録し、あなた自身のサーバーに保存します。";
-"NSContactsUsageDescription" = "連絡先の名前、電話番号、メール、誕生日をあなた自身のサーバーに同期し、知り合いを覚えられるようにします。";
 "NSPhotoLibraryUsageDescription" = "新しく撮った写真とスクリーンショットの日時と場所を記録します。写真そのものはアップロードしません。";
