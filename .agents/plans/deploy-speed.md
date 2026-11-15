@@ -11,7 +11,7 @@
 2. 清理遇到非空资格目录只保留。`scripts/delivery-mode/release-cleanup-remote.py:257` `keep(target, 'qualification-not-empty')`，测试 `scripts/delivery-mode/test_release_cleanup.py:364` `test_directory_with_content_stays_for_the_preflight_to_report` 固定了它。这是 I-56 当时的决定（`docs/incidents-and-gates.md:93`）。
 3. 清理已有“只留小文件证据、删可重建内容”的做法。`release-cleanup-remote.py:27` `REBUILDABLE_SUBTREES = {'packet', 'validation', 'input', 'materials', 'runtime-tools', 'question-12-downloads', 'node_modules'}`，第 129 行 `def archive_small_files(source, destination, limit, apply):`。
 4. 规则不许只改名了事，减少证据要先问。`.agents/instructions/disk-space-hygiene.md:8` “包括失败的尝试，并且由脚本完成而不是手工完成，也绝不能只是给它们改名了事”，同一行 “减少证据之前要先问”。
-5. 清理对旧版本有四种保留理由。`release-cleanup-remote.py:200-207`：`keep(path, 'serving' if ...)`、`keep(path, 'symbolic-link')`、`keep(path, in_use(path))`、`keep(path, 'named-by-database:' + ...)`。
+5. 清理保留旧版本的理由有五种：正在服务、回滚目标、符号链接、被进程引用、被数据库引用。`release-cleanup-remote.py:201` `keep(path, 'serving' if path == current['prefix'] else 'rollback-target')`，第 203、205、207 行分别是 `keep(path, 'symbolic-link')`、`keep(path, in_use(path))`、`keep(path, 'named-by-database:' + named_by_database[path])`。
 6. 预检要求服务在运行。`deploy-preflight.py:184` `('SERVICE_ACTIVE', facts.get('active') == 'active')`。
 7. 清理失败现在不拦部署。`scripts/delivery-mode/deploy.sh:16` `|| echo "DEPLOY_CLEANUP_FAILED $1: the deployment result is unchanged; ...`。
 8. 上传接收端要求成员一个不缺。`packet-template/steps/transport-packet.py:87` `require(seen == set(members), ...)`；`packet-template/steps/README.md:47` “多出成员、重复成员、路径越界或缺成员都失败”；`packet-template/steps/verify-steps.py:230` `case('receiver rejects a missing member', ...)`。
@@ -65,6 +65,9 @@
 1. 同意“上次失败的残留由 deploy.sh 自动处理：留报告和日志等小文件、删可重建内容、失败证据保留最近 2 份”作为长期规则，以后不再逐次授权。这改掉 I-56 当时“有内容就保留等人处理”的决定，也属于规则里“减少证据要先问”的那种情况。
 2. 同意在生产机新建依赖缓存目录，最多约 1 GB（字节上限可改）。
 3. 改的是上线脚本，按规则合并前要 Andy 说“合并”。
+
+## 代码说法核对（round-3）
+35 句里 27 句与代码一致；第 5 条前提原写“四种”保留理由，实际五种，已改。另 7 句是 Mac 上的包文件、部署日志和本机实测，仓库里没有，核对模型找不到来源属正常，出处已在句中写明。
 
 ## 审核意见怎么处理的（round-2，17 条）
 - 采纳：改错收集脚本（高 1）、路径校验（高 2）、数据库引用保留（高 3）、只改名违反磁盘规则（高 4）、坏缓存永久卡住（高 5）、传输契约要显式改（高 6）、跨盘改名（中 7，改成不再改名）、锁（中 8）、配置接线（中 9）、缓存权限和原子写（中 10）、目录撞名（中 11，按原路径镜像）、上传目录漏在清单外（中 12）、清理失败要分段（中 13）、扩充 I-56 不开新行（中 14）、可复现检查不比旧包（中 15）、在复制层排除（中 16）、缓存容量（中 17）。
