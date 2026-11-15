@@ -17,12 +17,33 @@
         "sentence": "田中把周五的会改到 15:00，出门提醒要跟着改吗",
         "sentenceBasis": "recorded",
         "target": { "type": "mail", "id": "mail-42", "threadId": null, "link": null },
-        "source": { "type": "mail", "from": "田中", "label": "周五会议改时间", "threadId": null, "decisionId": "dec-1", "at": "2026-11-13T06:42:00.000Z" },
+        "source": {
+          "type": "mail",
+          "from": "田中",
+          "label": "周五会议改时间",
+          "threadId": null,
+          "decisionId": "dec-1",
+          "at": "2026-11-13T06:42:00.000Z"
+        },
         "deadline": null,
         "createdAt": "2026-11-13T06:42:00.000Z",
         "actions": [
-          { "action": "done", "label": "完成", "labelBasis": "catalog", "polarity": "positive", "ownerPresence": false, "reviewLabel": null },
-          { "action": "mute", "label": "不再提醒", "labelBasis": "catalog", "polarity": "negative", "ownerPresence": false, "reviewLabel": null }
+          {
+            "action": "done",
+            "label": "完成",
+            "labelBasis": "catalog",
+            "polarity": "positive",
+            "ownerPresence": false,
+            "reviewLabel": null
+          },
+          {
+            "action": "mute",
+            "label": "不再提醒",
+            "labelBasis": "catalog",
+            "polarity": "negative",
+            "ownerPresence": false,
+            "reviewLabel": null
+          }
         ],
         "rank": "unscored",
         "dataClassification": "private"
@@ -34,12 +55,33 @@
         "sentence": null,
         "sentenceBasis": "none",
         "target": { "type": "approval", "id": "apr-7", "threadId": "thr-osaka", "link": null },
-        "source": { "type": "conversation", "from": null, "label": null, "threadId": "thr-osaka", "decisionId": null, "at": "2026-11-13T06:50:00.000Z" },
+        "source": {
+          "type": "conversation",
+          "from": null,
+          "label": null,
+          "threadId": "thr-osaka",
+          "decisionId": null,
+          "at": "2026-11-13T06:50:00.000Z"
+        },
         "deadline": "2026-11-14T06:50:00.000Z",
         "createdAt": "2026-11-13T06:50:00.000Z",
         "actions": [
-          { "action": "approved", "label": "同意", "labelBasis": "catalog", "polarity": "positive", "ownerPresence": true, "reviewLabel": "看内容再定" },
-          { "action": "denied", "label": "不同意", "labelBasis": "catalog", "polarity": "negative", "ownerPresence": false, "reviewLabel": null }
+          {
+            "action": "approved",
+            "label": "同意",
+            "labelBasis": "catalog",
+            "polarity": "positive",
+            "ownerPresence": true,
+            "reviewLabel": "看内容再定"
+          },
+          {
+            "action": "denied",
+            "label": "不同意",
+            "labelBasis": "catalog",
+            "polarity": "negative",
+            "ownerPresence": false,
+            "reviewLabel": null
+          }
         ],
         "rank": "deadline",
         "dataClassification": "private"
@@ -51,7 +93,14 @@
         "sentence": null,
         "sentenceBasis": "none",
         "target": { "type": "thread", "id": "thr-train", "threadId": "thr-train", "link": null },
-        "source": { "type": "conversation", "from": null, "label": null, "threadId": "thr-train", "decisionId": null, "at": "2026-11-13T07:00:00.000Z" },
+        "source": {
+          "type": "conversation",
+          "from": null,
+          "label": null,
+          "threadId": "thr-train",
+          "decisionId": null,
+          "at": "2026-11-13T07:00:00.000Z"
+        },
         "deadline": null,
         "createdAt": "2026-11-13T07:00:00.000Z",
         "actions": [],
@@ -63,7 +112,15 @@
     "awaitingTruncated": false,
     "incompleteSources": [],
     "upcoming": [
-      { "reminderId": "rem-1", "memoryId": "mem-1", "text": "给妈妈打电话", "dueAt": "2026-11-13T12:00:00.000Z", "repeat": "none", "sourceThreadId": null, "dataClassification": "personal" }
+      {
+        "reminderId": "rem-1",
+        "memoryId": "mem-1",
+        "text": "给妈妈打电话",
+        "dueAt": "2026-11-13T12:00:00.000Z",
+        "repeat": "none",
+        "sourceThreadId": null,
+        "dataClassification": "personal"
+      }
     ],
     "revision": "home-rev-1",
     "generatedAt": "2026-11-13T07:30:00.000Z"
