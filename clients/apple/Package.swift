@@ -43,6 +43,11 @@ let interfaceTargets: [Target] = [
         dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariShell"],
         resources: [.process("Resources")]
     ),
+    .target(
+        name: "HimawariWatchUI",
+        dependencies: ["HimawariCore", "HimawariDesign"],
+        resources: [.process("Resources")]
+    ),
     .testTarget(name: "HimawariMacUITests", dependencies: ["HimawariMacUI", "HimawariCore"]),
     .target(name: "HimawariListenUI", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(
@@ -74,6 +79,7 @@ let interfaceProducts: [Product] = [
     .library(name: "HimawariShare", targets: ["HimawariShare"]),
     .library(name: "HimawariShell", targets: ["HimawariShell"]),
     .library(name: "HimawariMacUI", targets: ["HimawariMacUI"]),
+    .library(name: "HimawariWatchUI", targets: ["HimawariWatchUI"]),
     .library(name: "HimawariListenUI", targets: ["HimawariListenUI"]),
     .library(name: "HimawariListen", targets: ["HimawariListen"]),
     .executable(name: "himawari-listen-eval", targets: ["ListenEval"]),

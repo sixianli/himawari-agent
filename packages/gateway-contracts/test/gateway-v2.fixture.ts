@@ -654,6 +654,13 @@ export const governanceMessages = [
         maximum: 1000,
         unit: "count",
         overridden: true,
+        label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+        description: {
+          "zh-CN": "最多同时排队等着想的事数。",
+          en: "How many items can wait at once.",
+          ja: "待てる件数の上限です。",
+        },
+        unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
       },
     ],
     generatedAt: "2026-11-15T00:00:00.000Z",
