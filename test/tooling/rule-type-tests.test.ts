@@ -24,6 +24,11 @@ const SAMPLE_PARAMETERS = {
   excludePhrases: ["ignore me"],
 };
 
+const PUSH_SAMPLE_PARAMETERS = {
+  periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+  classes: ["run_result"],
+};
+
 function ruleTypeTestProblems(
   registry: readonly RuleTypeDefinition[],
   read: (file: string) => string | undefined,
@@ -67,11 +72,26 @@ describe("[P2-3] rule types", () => {
         revision: 1,
         status: "active",
         source: "test",
-        parameters: { type: type.id, summary: "示例", params: SAMPLE_PARAMETERS },
+        parameters: {
+          type: type.id,
+          summary: "示例",
+          params: type.gate === "push_delivery" ? PUSH_SAMPLE_PARAMETERS : SAMPLE_PARAMETERS,
+        },
       });
       expect(rule.outcome, type.id).toBe(type.outcome);
-      expect(rule.examples.filter(({ hit }) => hit).length, type.id).toBe(4);
-      expect(rule.examples.filter(({ hit }) => !hit).length, type.id).toBe(2);
+      if (type.gate === "mail_item") {
+        expect(rule.examples.filter(({ hit }) => hit).length, type.id).toBe(4);
+        expect(rule.examples.filter(({ hit }) => !hit).length, type.id).toBe(2);
+      } else {
+        expect(
+          rule.examples.some(({ hit }) => hit),
+          type.id,
+        ).toBe(true);
+        expect(
+          rule.examples.some(({ hit }) => !hit),
+          type.id,
+        ).toBe(true);
+      }
       assertRuleExamples(rule);
     }
   });

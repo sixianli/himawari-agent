@@ -26,7 +26,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ProductionHttpPayloadAdmission } from "../../apps/agent-service/src/production-http-composition.ts";
 import {
   agentId,
-  authority,
+  createThread,
   type Harness,
   harness,
   ownerId,
@@ -37,68 +37,11 @@ import {
   removeDeviceHarnessDirectories,
   send,
   signedRequest,
+  threadCommand,
   web,
 } from "../fixtures/device-api-harness.ts";
 
 afterEach(removeDeviceHarnessDirectories);
-
-async function threadCommand(
-  h: Harness,
-  type: string,
-  idempotencyKey: string,
-  payload: (resultRef: string) => Record<string, unknown>,
-) {
-  const resultRef = (
-    await new ProductionHttpPayloadAdmission({
-      ownerId,
-      agentId,
-      sessions: h.repository.sessionDeviceState(),
-      payloads: h.repository.payloadStore(ownerId, agentId),
-      protector: new EnvelopePayloadProtector({
-        keys: {
-          kind: "memory-development",
-          productionSuitable: false,
-          resolve: async () => new Uint8Array(32).fill(9),
-        },
-        activeKey: { keyRef: "test-kek", kekVersion: "v1", dekVersion: "v1" },
-      }),
-      clock: () => h.clock.now(),
-    }).protect({
-      authentication: h.webAuthentication,
-      idempotencyKey,
-      content: `thread-action:${type}`,
-      dataClassification: "private",
-      contentType: "text/plain",
-    })
-  ).payloadRef;
-  const response = await h.app.inject({
-    method: "POST",
-    url: "/api/gateway/thread/v3/commands",
-    headers: { ...(await h.webHeaders()), "idempotency-key": idempotencyKey },
-    payload: JSON.stringify({
-      schemaVersion: "gateway.thread.v3",
-      kind: "command",
-      type,
-      messageId: `message:${idempotencyKey}`,
-      correlationId: "correlation:device-test",
-      causationId: null,
-      scope: { ownerId, agentId },
-      authority,
-      actor: { actorType: "owner", actorId: ownerId },
-      idempotencyKey,
-      payload: payload(resultRef),
-    }),
-  });
-  expect(response.statusCode, response.body).toBe(200);
-}
-
-async function createThread(h: Harness, threadId: string) {
-  await threadCommand(h, "thread.create", `create:${threadId}`, (resultRef) => ({
-    threadId,
-    answerLocale: "zh-CN",
-    resultRef,
-  }));
-}
 
 describe("[P1-1] device pairing and signed device API", () => {
   it("pairs as pending, works only after the owner confirms, and never exposes the internal session", async () => {
@@ -679,6 +622,41 @@ describe("[P1-1] device client routes", () => {
         ...(query ? { query } : {}),
       }),
     );
+
+  it("[iOS-5] remembers which utterance a spoken command came from and refuses a malformed utterance id", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const created = await post(h, client, "threads", {
+      requestId: "device-request-0101",
+      answerLocale: "zh-CN",
+    });
+    const threadId = created.json().payload.threadId as string;
+    const message = {
+      messageId: "device-message-0101",
+      threadId,
+      expectedRevision: 1,
+      text: "帮我把明天的会改到下午",
+    };
+    const scope = { ownerId, agentId };
+    const known = () =>
+      h.repository.perception().commandUtterances({
+        ...scope,
+        utteranceIds: ["utterance-0101", "utterance-0102"],
+      });
+    expect(
+      (await post(h, client, "messages", { ...message, utteranceId: "bad id!" })).statusCode,
+    ).toBe(400);
+    expect((await post(h, client, "messages", { ...message, utteranceId: 7 })).statusCode).toBe(
+      400,
+    );
+    expect(await known()).toEqual([]);
+    const sent = await post(h, client, "messages", { ...message, utteranceId: "utterance-0101" });
+    expect(sent.statusCode, sent.body).toBe(200);
+    expect(await known()).toEqual(["utterance-0101"]);
+    const resent = await post(h, client, "messages", { ...message, utteranceId: "utterance-0101" });
+    expect(resent.statusCode, resent.body).toBe(200);
+    expect(await known()).toEqual(["utterance-0101"]);
+  });
 
   it("creates a conversation once per requestId and reads its messages and texts back", async () => {
     const h = await harness();

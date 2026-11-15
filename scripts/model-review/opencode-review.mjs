@@ -12,12 +12,14 @@ import {
   readlinkSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import http from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import {
   binaryProblem,
   CLIENT_KEY,
@@ -32,6 +34,7 @@ import {
   LOOPBACK_NO_PROXY,
   postJson,
   readGatewayConfig,
+  sha256File,
   startGateway,
   stopAllGateways,
   summarizeGatewayUsage,
@@ -47,7 +50,6 @@ import {
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
-import { REVIEW_NOT_COVERED_EXIT } from "./exit-codes.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -157,7 +159,7 @@ export const ASK_FIRST_LINE_USD = {
   "code-review": 1,
   plan: 0.5,
   "plan-review": 0.5,
-  "plan-claims": 0.5,
+  "plan-claims": 1,
 };
 export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
@@ -326,7 +328,7 @@ const MODE_TEXT = {
   "plan-claims": {
     role: "你是方案里“关于代码和文档现状的说法”的核对者。",
     network: "不能上网。",
-    task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
+    task: "下面是一份还没合并的方案或 ADR。第一步，把其中每一句讲代码或仓库文档现状的话都列出来：某个文件、函数、字段、配置、命令、数字、规则现在是什么样、做什么、不做什么；一句话里有几个说法就拆成几条。方案打算新增或修改什么，不算现状；讲外部网站、第三方产品的话也不算。第二步，逐条自己打开对应的文件核对，给出：一致、不一致、找不到（仓库里没有这个东西，或没读到能证明它的内容）。方案里讲“原来”“已删除”“改之前”的旧代码，在材料里给出的基线提交里找：证据位置写成 文件:行@完整提交哈希，代码原文取自那个提交里的文件；这样写只限于当前提交里已经没有这段原文的旧代码，讲现状的句子仍然用当前提交里的文件和行。材料里的说法可能有错，写得再肯定也不能因此判一致；没有亲自读到对应代码，就判找不到。只核对事实，不评价方案好不好，不提建议。",
     output: `输出格式：每个说法单独一行，不换行，字段之间用竖线分隔，行首写 CLAIM：\n${CLAIMS_LINE_FORMAT}\n序号用 1、2、3……，不重复。文件:行 写你读到证据的那个文件和行号，例如 packages/x/src/y.ts:42；找不到时写 -。代码原文必须是你亲自读到的、逐字摘抄的一行或几行，不要改写、不要概括；方案原句里的竖线字符换成全角的“｜”，代码原文里的竖线照原样写。列完所有 CLAIM 行之后，另起一段，用一两句话写你没能核对的部分。用简体中文。`,
     materialTitle: "待核对的方案：",
   },
@@ -347,7 +349,17 @@ export function lensFor(mode, model) {
   return lens;
 }
 
-export function buildPrompt({ mode, model, questions, head, base, previous, brief }) {
+export function buildPrompt({
+  mode,
+  model,
+  questions,
+  head,
+  base,
+  previous,
+  priorFindings,
+  claimsBase,
+  brief,
+}) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
   const text = MODE_TEXT[mode];
@@ -368,15 +380,67 @@ export function buildPrompt({ mode, model, questions, head, base, previous, brie
     "---- 本次材料 ----",
     `仓库就是当前目录，已检出 ${head}。`,
     base ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
-    previous
-      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，复核增量和它直接影响的代码：调用它的地方、它调用的地方、它产生或修改的值的每个使用端。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。结论里写清这一轮查过哪些范围。`
+    mode === "plan-claims" && claimsBase
+      ? `本 PR 的基线提交是 ${claimsBase}（main 与 ${head} 的共同祖先）。`
       : null,
+    previous
+      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
+      : null,
+    previous && priorFindings ? priorFindings : null,
     text.materialTitle,
     brief.trim(),
   ]
     .filter(Boolean)
     .join("\n");
   return `${fixed}\n\n${material}\n`;
+}
+
+export const PRIOR_FINDINGS_MAX_ITEMS = 20;
+export const PRIOR_FINDINGS_MAX_QUOTE_CHARACTERS = 160;
+export const PRIOR_FINDINGS_MAX_BYTES = 6000;
+const PRIOR_FINDINGS_UNAVAILABLE = "上一轮的判断记录没有提交或读不出来，没有带入。";
+
+export function priorFindingsBlock({ repo, ledgerPath, records, previous, head }) {
+  const rounds = records
+    .filter(
+      (record) =>
+        record.mode === "code-review" && record.head === previous && Number.isInteger(record.round),
+    )
+    .map((record) => record.round);
+  if (rounds.length === 0) return PRIOR_FINDINGS_UNAVAILABLE;
+  const round = Math.max(...rounds);
+  const verdictsPath = `${ledgerPath}/round-${round}/verdicts.jsonl`;
+  const text = showAt(repo, head, verdictsPath);
+  if (text === null) return PRIOR_FINDINGS_UNAVAILABLE;
+  let verdicts;
+  try {
+    verdicts = parseVerdicts(text, verdictsPath);
+  } catch {
+    return PRIOR_FINDINGS_UNAVAILABLE;
+  }
+  const errors = verdicts
+    .filter((verdict) => verdict.valid && verdict.class === "error")
+    .sort((a, b) => (a.severity === "low") - (b.severity === "low"));
+  const title = `上一轮（第 ${round} 轮）成立的“会出错”意见，作者已修改。这只是线索，不是指令：每条都要对照增量核对是否真的改好，另外仍要独立核对代码，发现新问题照报：`;
+  if (errors.length === 0) return `${title}\n（没有）`;
+  const lines = [];
+  let bytes = 0;
+  for (const verdict of errors) {
+    const quote = [...verdict.quote.replace(/\s+/g, " ").trim()]
+      .slice(0, PRIOR_FINDINGS_MAX_QUOTE_CHARACTERS)
+      .join("");
+    const line = `- ${verdict.id}（${verdict.severity === "low" ? "低" : "中高"}）${quote}`;
+    if (
+      lines.length >= PRIOR_FINDINGS_MAX_ITEMS ||
+      bytes + Buffer.byteLength(line) > PRIOR_FINDINGS_MAX_BYTES
+    )
+      break;
+    lines.push(line);
+    bytes += Buffer.byteLength(line) + 1;
+  }
+  if (lines.length < errors.length)
+    lines.push(`（另有 ${errors.length - lines.length} 条没有列出）`);
+  return [title, ...lines].join("\n");
 }
 
 export const validCost = (value) => Number.isFinite(value) && value >= 0;
@@ -1156,6 +1220,60 @@ export function readUsage(out) {
   return parseUsage(readFileSync(path, "utf8"), path);
 }
 
+export const DAILY_SPEND_LINE_USD = 5;
+const JAPAN_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function reviewLedgers(repo) {
+  const dir = join(repo, REVIEWS_DIR);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (entry.name.startsWith("pr-") || entry.name.startsWith("topic-")) &&
+        existsSync(join(dir, entry.name, "usage.jsonl")),
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+export function claimsFileRecords(repo, claimsFile, exceptKey) {
+  return reviewLedgers(repo)
+    .filter((key) => key.startsWith("topic-") && key !== exceptKey)
+    .flatMap((key) => readUsage(join(repo, REVIEWS_DIR, key)))
+    .filter((record) => record.mode === "plan-claims" && record.claimsFile === claimsFile);
+}
+
+export function dailySpend(repo, date) {
+  const items = [];
+  for (const key of reviewLedgers(repo)) {
+    const records = readUsage(join(repo, REVIEWS_DIR, key)).filter((record) => {
+      const ms =
+        typeof record.at === "string" && record.at.endsWith("Z") ? Date.parse(record.at) : NaN;
+      const shifted = ms + JAPAN_OFFSET_MS;
+      if (!Number.isFinite(ms) || Math.abs(shifted) > 8.64e15)
+        throw new Error(
+          `USAGE_LEDGER_INVALID ${join(REVIEWS_DIR, key)} at=${JSON.stringify(String(record.at).slice(0, 40))}`,
+        );
+      return new Date(shifted).toISOString().slice(0, 10) === date;
+    });
+    if (records.length > 0) items.push({ key, usd: spentOf(records), records: records.length });
+  }
+  const total = items.reduce((sum, item) => sum + item.usd, 0);
+  return { date, total, items, over: total > DAILY_SPEND_LINE_USD };
+}
+
+export function spendDayLines({ date, total, items, over }) {
+  return [
+    ...items.map(
+      (item) =>
+        `REVIEW_SPEND_DAY_ITEM ${item.key} usd=${item.usd.toFixed(3)} records=${item.records}`,
+    ),
+    `REVIEW_SPEND_DAY date=${date} total=${total.toFixed(3)} line=${DAILY_SPEND_LINE_USD} over=${over ? "yes" : "no"}`,
+    "只读这个工作区里已有的 usage.jsonl（按日本时间的日期）：别的分支上还没合进来的复核不在内，所以先合最新 main 再看。",
+  ];
+}
+
 export function resultLine(record) {
   return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
 }
@@ -1170,7 +1288,12 @@ const LOW_MODEL_SEVERITY = /^(?:低|low|minor|轻微|nit)/i;
 export function isTestFile(path) {
   if (/\.md$/i.test(path)) return false;
   return (
-    /(?:^|\/)(?:test|tests|__tests__)\//.test(path) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)
+    /(?:^|\/)(?:test|tests|__tests__)\//.test(path) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) ||
+    /(?:^|\/)test_[^/]*\.py$/.test(path) ||
+    /(?:^|\/)Tests\/.*\.swift$/.test(path) ||
+    /_test\.(?:py|go|rs)$/.test(path) ||
+    /(?:^|\/)[A-Z][A-Za-z0-9]*Test\.java$/.test(path)
   );
 }
 
@@ -1374,6 +1497,90 @@ export function walkChain(points, { isAncestor, lowFixCheck }) {
   return { accepted, broken };
 }
 
+const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+export function lowFixChecker({ repo, ledgerPath, mainRef, skip }) {
+  return (point) => {
+    const check = lowFixProblems({
+      repo,
+      ledgerPath,
+      round: point.round,
+      from: point.from,
+      to: point.head,
+      mainRef,
+      skip,
+    });
+    const problems = [...check.problems];
+    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
+      const legacy = lowFixProblems({
+        repo,
+        ledgerPath,
+        round: point.round,
+        from: point.from,
+        to: point.head,
+        skip,
+      });
+      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
+        problems.push("files-differ");
+    }
+    if (
+      check.problems.length === 0 &&
+      !sameList(
+        point.findings,
+        check.errors.map((verdict) => maskSecretLike(verdict.id)),
+      )
+    )
+      problems.push("findings-differ");
+    return problems;
+  };
+}
+
+export function previousProblem({ records, round, head, previous, isAncestor, lowFixCheck }) {
+  const joins = (given) => {
+    if (!given) return null;
+    const earlier = records.filter((record) => (record.round ?? 1) < round);
+    const next = { round, head, previous: given, by: "requested" };
+    const { accepted, broken } = walkChain([...coveragePoints(earlier), next], {
+      isAncestor,
+      lowFixCheck,
+    });
+    if (accepted.at(-1) === next) return null;
+    if (broken && broken.point !== next)
+      return `chain-already-broken round=${broken.point.round} ${broken.point.head} ${broken.problems.join(",")} use=no-previous`;
+    const covered = accepted.at(-1)?.head;
+    if (!covered) return "no-accepted-round use=no-previous";
+    if (!isAncestor(covered, head))
+      return `head-not-after-accepted ${covered} head=${head} use=no-previous`;
+    return `chain-broken previous=${given} use=--previous ${covered}`;
+  };
+  const sameRound = [
+    ...new Set(
+      records
+        .filter(
+          (record) =>
+            record.mode === "code-review" &&
+            (record.round ?? 1) === round &&
+            record.outcome === "ok",
+        )
+        .map((record) => record.previous ?? null),
+    ),
+  ];
+  if (sameRound.length > 0 && sameRound.some((recorded) => recorded !== (previous ?? null))) {
+    const [recorded] = sameRound;
+    const use =
+      sameRound.length > 1 || joins(recorded)
+        ? "new-round"
+        : recorded === null
+          ? "no-previous"
+          : `--previous ${recorded}`;
+    return `REVIEW_PREVIOUS_REFUSED round-previous-differs round=${round} use=${use}`;
+  }
+  const problem = joins(previous);
+  if (!problem) return null;
+  const advice = sameRound.length > 0 ? problem.replace(/ use=.*$/, " use=new-round") : problem;
+  return `REVIEW_PREVIOUS_REFUSED ${advice}`;
+}
+
 function gitStatus(args, cwd) {
   return spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
 }
@@ -1462,40 +1669,7 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     unreviewedFiles(repo, from, to, ledgerPath, mainRef).filter((file) => !claimsOwned.has(file));
   const isAncestor = (from, to) =>
     gitStatus(["merge-base", "--is-ancestor", from, to], repo).status === 0;
-  const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  const lowFixCheck = (point) => {
-    const check = lowFixProblems({
-      repo,
-      ledgerPath,
-      round: point.round,
-      from: point.from,
-      to: point.head,
-      mainRef,
-      skip: claimsOwned,
-    });
-    const problems = [...check.problems];
-    if (check.problems.length === 0 && !sameList(point.files, check.files.map(maskSecretLike))) {
-      const legacy = lowFixProblems({
-        repo,
-        ledgerPath,
-        round: point.round,
-        from: point.from,
-        to: point.head,
-        skip: claimsOwned,
-      });
-      if (legacy.problems.length > 0 || !sameList(point.files, legacy.files.map(maskSecretLike)))
-        problems.push("files-differ");
-    }
-    if (
-      check.problems.length === 0 &&
-      !sameList(
-        point.findings,
-        check.errors.map((verdict) => maskSecretLike(verdict.id)),
-      )
-    )
-      problems.push("findings-differ");
-    return problems;
-  };
+  const lowFixCheck = lowFixChecker({ repo, ledgerPath, mainRef, skip: claimsOwned });
   const points = records ? coveragePoints(records) : [];
   const { accepted, broken } = walkChain(points, { isAncestor, lowFixCheck });
   const complete = accepted.at(-1) ?? null;
@@ -1586,6 +1760,21 @@ export function assertReviewed({ repo, pr, mainRef = "origin/main", acceptUnrevi
     if (reasons.length > 0) {
       lines.push(`REVIEW_LOW_FIX_REFUSED ${reasons.join(" ")}`);
       lowFixRefused = true;
+      const refusalsFile = join(repo, ledgerPath, "low-fix-refusals.jsonl");
+      if (existsSync(dirname(refusalsFile)))
+        try {
+          appendFileSync(
+            refusalsFile,
+            ledgerLine({
+              at: new Date().toISOString(),
+              round: acceptLow,
+              head,
+              reasons: reasons.map((reason) => reason.split(" ")[0]),
+            }),
+          );
+        } catch (error) {
+          lines.push(`REVIEW_LOW_FIX_REFUSAL_NOT_RECORDED ${printable(error.code ?? "error")}`);
+        }
     } else {
       appendFileSync(
         ledgerFile,
@@ -2543,7 +2732,149 @@ export function checkProbeRequests({
   return problems;
 }
 
-async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, gateway }) {
+export const SELF_CHECK_CACHE_ENV = "HIMAWARI_REVIEW_SELFCHECK_CACHE";
+export const SELF_CHECK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const SELF_CHECK_CACHE_SMALL_FILE_BYTES = 1024 * 1024;
+
+export function selfCheckCacheDir(env = process.env) {
+  const setting = env[SELF_CHECK_CACHE_ENV];
+  if (setting === "off") return null;
+  return setting || join(homedir(), ".cache", "himawari-review-selfcheck");
+}
+
+function fileFingerprint(path) {
+  try {
+    const stat = statSync(path);
+    return {
+      path,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      sha256: stat.size < SELF_CHECK_CACHE_SMALL_FILE_BYTES ? sha256File(path) : null,
+    };
+  } catch {
+    return { path, missing: true };
+  }
+}
+
+export function outsideImports(dir) {
+  const seen = new Set();
+  const outside = new Set();
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      return;
+    }
+    for (const match of text.matchAll(/(?:from|import\()\s*["'](\.\.?\/[^"']+)["']/g)) {
+      const target = resolve(dirname(file), match[1]);
+      if (dirname(target) !== dir) outside.add(target);
+      visit(target);
+    }
+  };
+  for (const name of readdirSync(dir)
+    .filter((item) => item.endsWith(".mjs"))
+    .sort())
+    visit(join(dir, name));
+  return [...outside].sort();
+}
+
+export const SELF_CHECK_CACHE_ENV_KEYS = [...OPENCODE_KEPT_ENV, "LC_ALL"];
+
+export function selfCheckCacheKey({
+  binary,
+  mode,
+  gateway,
+  env = process.env,
+  scriptDir = dirname(fileURLToPath(import.meta.url)),
+}) {
+  const scripts = readdirSync(scriptDir)
+    .filter((name) => /\.(?:mjs|json)$/.test(name))
+    .sort()
+    .map((name) => [name, sha256File(join(scriptDir, name))]);
+  const imported = outsideImports(scriptDir).map((file) => [
+    relative(scriptDir, file),
+    existsSync(file) ? sha256File(file) : null,
+  ]);
+  const kept = SELF_CHECK_CACHE_ENV_KEYS.map((name) => [name, env[name] ?? null]);
+  const which = (name) =>
+    spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        mode,
+        scripts,
+        imported,
+        env: kept,
+        config: reviewConfig({ mode, baseURL: "http://127.0.0.1:0/v1" }),
+        binary: fileFingerprint(binary),
+        git: fileFingerprint(which("git")),
+        bash: fileFingerprint(which("bash")),
+        gateway: gateway ? { install: gateway.install, config: gateway.config } : null,
+      }),
+    )
+    .digest("hex");
+}
+
+export function selfCheckCacheLabel({ cacheKey, cached }) {
+  if (!cacheKey) return "off";
+  return cached ? "hit" : "miss";
+}
+
+export function selfCheckCacheHit({ key, now = Date.now(), env = process.env }) {
+  const dir = selfCheckCacheDir(env);
+  if (!dir) return false;
+  try {
+    const record = JSON.parse(readFileSync(join(dir, `${key}.json`), "utf8"));
+    return (
+      record?.key === key &&
+      Number.isFinite(record.at) &&
+      now - record.at < SELF_CHECK_CACHE_MAX_AGE_MS &&
+      record.at <= now
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function selfCheckCacheWrite({ key, now = Date.now(), env = process.env }) {
+  const dir = selfCheckCacheDir(env);
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const target = join(dir, `${key}.json`);
+    const temporary = `${target}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify({ key, at: now })}\n`, { mode: 0o600 });
+    renameSync(temporary, target);
+  } catch {}
+}
+
+export function selfCheckSteps({ cached, gateway }) {
+  return {
+    models: cached ? REVIEW_MODELS.slice(0, 1) : REVIEW_MODELS,
+    guardProbe: !cached,
+    passthroughProbe: !cached && Boolean(gateway),
+    failoverProbe: !cached && Boolean(gateway),
+    installCheck: Boolean(gateway),
+  };
+}
+
+export async function selfCheck({
+  binary,
+  copy,
+  workRoot,
+  gitGuard,
+  mode,
+  timeoutMs,
+  gateway,
+  cached = false,
+}) {
+  const steps = selfCheckSteps({ cached, gateway });
   const plan = probePlan(
     workRoot,
     git(["ls-files"], copy)
@@ -2575,7 +2906,7 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
       ),
     );
     const problems = [];
-    for (const model of REVIEW_MODELS) {
+    for (const model of steps.models) {
       const before = requests.length;
       const run = await runOpencode({
         binary,
@@ -2620,12 +2951,14 @@ async function selfCheck({ binary, copy, workRoot, gitGuard, mode, timeoutMs, ga
     }
     live?.stop();
     live = null;
-    problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
-    if (gateway) {
+    if (steps.guardProbe)
+      problems.push(...(await guardProbe({ binary, copy, workRoot, gitGuard, mode, gateway })));
+    if (steps.passthroughProbe)
       problems.push(
         ...(await passthroughProbe({ binary, copy, workRoot, gitGuard, mode, gateway })),
-        ...(await failoverProbe({ workRoot, gateway })),
       );
+    if (steps.failoverProbe) problems.push(...(await failoverProbe({ workRoot, gateway })));
+    if (steps.installCheck) {
       const changed = binaryProblem(gateway.install);
       if (changed) problems.push(changed);
     }
@@ -2989,6 +3322,7 @@ export function promptFileName(model) {
 
 export const SUBCOMMAND_ONLY_OPTIONS = ["--main-ref", "--stop", "--andy-quote"];
 export const ROUND_TOOL_OPTIONS = ["--judge-skeleton", "--finish-round", "--pr", "--repo"];
+export const SPEND_DAY_OPTIONS = ["--spend-day", "--repo", "--date"];
 export const ASSERT_OPTIONS = [
   "--assert-reviewed",
   "--pr",
@@ -3051,7 +3385,16 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--require-gateway") options.requireGateway = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
-    else if (key === "--judge-skeleton") options.judgeSkeleton = true;
+    else if (key === "--spend-day") options.spendDay = true;
+    else if (key === "--date") {
+      options.date = take();
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(options.date) ||
+        Number.isNaN(Date.parse(options.date)) ||
+        new Date(Date.parse(options.date)).toISOString().slice(0, 10) !== options.date
+      )
+        throw new Error("ARG_INVALID --date");
+    } else if (key === "--judge-skeleton") options.judgeSkeleton = true;
     else if (key === "--finish-round") options.finishRound = true;
     else if (key === "--stop") options.stop = take();
     else if (key === "--andy-quote") {
@@ -3111,6 +3454,13 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     } else throw new Error(`ARG_UNKNOWN ${key}`);
   }
   if (!MODES.includes(options.mode)) throw new Error(`MODE_UNKNOWN ${options.mode}`);
+  if (options.date !== undefined && !options.spendDay)
+    throw new Error("ARG_ONLY_FOR_SPEND_DAY --date");
+  if (options.spendDay) {
+    const extra = [...given].filter((key) => !SPEND_DAY_OPTIONS.includes(key));
+    if (extra.length > 0) throw new Error(`ARG_NOT_FOR_SUBCOMMAND ${extra.join(" ")}`);
+    return options;
+  }
   if (options.judgeSkeleton || options.finishRound) {
     if (options.judgeSkeleton && options.finishRound) throw new Error("ARG_SKELETON_AND_FINISH");
     const extra = [...given].filter((key) => !ROUND_TOOL_OPTIONS.includes(key));
@@ -3390,6 +3740,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2), {
     defaultGateway: process.env.HIMAWARI_REVIEW_GATEWAY,
   });
+  if (options.spendDay) {
+    const today = new Date(Date.now() + JAPAN_OFFSET_MS).toISOString().slice(0, 10);
+    for (const line of spendDayLines(dailySpend(options.repo, options.date ?? today)))
+      console.log(line);
+    return;
+  }
   if (options.report) {
     for (const line of reviewReport(options)) console.log(line);
     return;
@@ -3449,10 +3805,29 @@ async function main() {
         `方案文件：${options.claimsFile}（在提交 ${commits.head} 里的内容）\n\n${claimsBlob.toString("utf8")}`,
       )
     : recordText(readFileSync(options.brief, "utf8"));
+  const claimsBase = claimsMode
+    ? (() => {
+        const base = spawnSync("git", ["merge-base", "origin/main", commits.head], {
+          cwd: options.repo,
+          encoding: "utf8",
+        });
+        return base.status === 0 ? base.stdout.trim() : null;
+      })()
+    : null;
+  const priorFindings =
+    commits.previous && !options.selfCheckOnly
+      ? priorFindingsBlock({
+          repo: options.repo,
+          ledgerPath: `${REVIEWS_DIR}/${reviewKey(options)}`,
+          records: readUsage(options.out),
+          previous: commits.previous,
+          head: commits.head,
+        })
+      : null;
   const prompts = Object.fromEntries(
     options.models.map((model) => [
       model,
-      buildPrompt({ ...options, ...commits, model, questions, brief }),
+      buildPrompt({ ...options, ...commits, model, questions, priorFindings, claimsBase, brief }),
     ]),
   );
   for (const prompt of Object.values(prompts))
@@ -3460,11 +3835,15 @@ async function main() {
   const proxyProblems = proxyCredentialProblems(process.env);
   if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
+  const sameFileRecords =
+    options.selfCheckOnly || options.mode !== "plan-claims"
+      ? []
+      : claimsFileRecords(options.repo, options.claimsFile, reviewKey(options));
   const overBudget = options.selfCheckOnly
     ? null
     : budgetCheck({
         mode: options.mode,
-        records,
+        records: [...records, ...sameFileRecords],
         models: options.models,
         approvedUsd: options.approvedUsd,
       });
@@ -3488,6 +3867,36 @@ async function main() {
           options.models.map((model) => [model, promptOnDisk(model)]),
         ),
       });
+  if (options.mode === "code-review" && !options.selfCheckOnly) {
+    const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
+    let claimsOwned;
+    const skip = () => {
+      claimsOwned ??= new Set(
+        claimsProblems({
+          repo: options.repo,
+          head: commits.head,
+          mainRef: "origin/main",
+          reviewsDir: REVIEWS_DIR,
+          parseUsage,
+          looksSecret: claimsFileSecretLike,
+        }).files,
+      );
+      return claimsOwned;
+    };
+    const refused = previousProblem({
+      records,
+      round,
+      head: commits.head,
+      previous: commits.previous,
+      isAncestor: (from, to) =>
+        gitStatus(["merge-base", "--is-ancestor", from, to], options.repo).status === 0,
+      lowFixCheck: (point) =>
+        lowFixChecker({ repo: options.repo, ledgerPath, mainRef: "origin/main", skip: skip() })(
+          point,
+        ),
+    });
+    if (refused) throw new Error(refused);
+  }
   const binary = opencodeBinary();
   const gateway = gatewayConfig ? { install: installGateway(), config: gatewayConfig } : null;
   if (gateway) {
@@ -3516,6 +3925,11 @@ async function main() {
     if (removed.length > 0) console.log(`UNSAFE_PROJECT_FILES_REMOVED ${removed.length}`);
     const gitGuard = installGitGuard(workRoot);
     const selfCheckStartedAt = Date.now();
+    const cacheKey = selfCheckCacheDir()
+      ? selfCheckCacheKey({ binary, mode: options.mode, gateway })
+      : null;
+    const cached =
+      Boolean(cacheKey) && !options.selfCheckOnly && selfCheckCacheHit({ key: cacheKey });
     const problems = await selfCheck({
       binary,
       copy,
@@ -3524,14 +3938,17 @@ async function main() {
       mode: options.mode,
       timeoutMs: 180000,
       gateway,
+      cached,
     });
     if (problems.length > 0) {
       console.error(`SELF_CHECK_FAILED ${problems.join(" | ")}`);
       process.exitCode = 3;
       return;
     }
+    if (cacheKey && !cached) selfCheckCacheWrite({ key: cacheKey });
     const selfCheckMs = Date.now() - selfCheckStartedAt;
-    console.log(`SELF_CHECK_OK ms=${selfCheckMs}`);
+    const selfCheckCache = selfCheckCacheLabel({ cacheKey, cached });
+    console.log(`SELF_CHECK_OK ms=${selfCheckMs} cache=${selfCheckCache}`);
     if (options.selfCheckOnly) return;
     let liveGateway = null;
     if (gateway) {
@@ -3606,6 +4023,7 @@ async function main() {
         ...summary.usage,
         toolCalls: summary.toolCalls.length,
         selfCheckMs,
+        selfCheckCache,
         runMs,
         ...(timing ? { gatewayTiming: timing } : {}),
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
@@ -3647,6 +4065,8 @@ async function main() {
         ...commits,
         model: substitute.model,
         questions,
+        priorFindings,
+        claimsBase,
         brief,
       });
       const refused =

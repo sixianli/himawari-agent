@@ -577,6 +577,8 @@ export const messages = {
   "governance.updateAssessment": "更新差异与评估",
   "governance.rollback": "可回退版本",
   "governance.lastTransition": "最近版本切换",
+  "governance.lastInvalidation": "最近一次停用",
+  "governance.lastInvalidationValue": "{time}：取消了 {count} 个定时任务，不会自动恢复",
   "governance.rollbackBoundary": "副作用 / 产品状态回退边界",
   "governance.notAvailable": "不可用",
   "governance.capability": "能力",
@@ -866,13 +868,22 @@ export const messages = {
   "rules.title": "长期规则 · {count} 条",
   "rules.note": "这些规则由程序强制执行，不靠模型记住。撤销后下一次检查邮件时就不再执行。",
   "rules.type":
-    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} other {其他规则}}",
+    "{t, select, mail_must_notify {一定提醒} mail_read_whole_thread {先读完整个邮件串} push_quiet_hours {推送延后} other {其他规则}}",
   "rules.needsReview": "来源记忆改过，待重新确认（仍在执行）",
   "rules.suspended": "已暂停，不执行：来源记忆改了，自动核对后发现和原规则对不上，等你确认",
   "rules.resume": "恢复执行",
   "rules.notEnforced": "这条规则读不懂，暂时没有执行",
   "rules.reconfirm": "重新确认",
   "rules.undo": "撤销",
+  "rules.builtIn.title": "内置规则 · {count} 条",
+  "rules.builtIn.note":
+    "这几条写在程序里，决定 Himawari 自己动手做事之前要不要先问你。每条都带该命中和不该命中的例子，每次构建都会逐条跑一遍。“直接做”的那几条可以改成每次都先问你；“先问你”和“不做”的是安全底线，不能放松。",
+  "rules.builtIn.name":
+    "{id, select, action_preauthorize_owner_data {改你自己的数据：直接做} action_preauthorize_own_task_cancel {停掉自己开的任务：直接做} action_preauthorize_owner_intent_confirmed {读过外来内容后，你自己明说要做的事：直接做} action_ask_after_external_content {读过外来内容后要做事：先问你} action_refuse_background_after_external_content {后台读过外来内容后要做事：不做} other {其他内置规则}}",
+  "rules.builtIn.when":
+    "{id, select, action_preauthorize_owner_data {例如设提醒、记一条规则：能撤销、不发给别人、风险中等，而且这次对话里没读过网页、任务输出这类外来内容。} action_preauthorize_own_task_cancel {例如停掉 Himawari 自己开的后台任务。不是它开的任务不归这条管。} action_preauthorize_owner_intent_confirmed {例如读过网页之后，你用自己的话要求设的提醒。只有主人意图核对打开、而且把握够高时才直接做，否则弹卡片问你。} action_ask_after_external_content {例如读过网页或任务输出之后要设提醒、改规则，会弹出卡片等你点头。} action_refuse_background_after_external_content {例如定时任务或外部事件发起的一轮读过外来内容后想改规则：不做，也不弹卡片，只记下它想做什么。} other {}}",
+  "rules.builtIn.examples": "例子：{hit} 个该命中，{miss} 个不该命中",
+  "rules.builtIn.askFirst": "每次都先问我",
   "review.title": "改了记忆后待重审 · {count} 条",
   "review.note":
     "你改过、删过的记忆，依据它推出来的记忆、由它定的规则会列在这里。系统只标出来，不会自动改记忆的文字；暂停的规则在你处理前不执行。",
@@ -902,7 +913,7 @@ export const messages = {
   "memory.page.missedSaved": "记下了，这条会出现在待重审里",
   "rules.receipt.label": "长期规则回执",
   "rules.receipt.status":
-    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} other {长期规则}}",
+    "{s, select, active {已立为长期规则} proposed {建议立为长期规则，点“生效”才执行} soft {已记成偏好，程序不强制执行} undone {已撤销} rejected {已拒绝，不会生效} other {长期规则}}",
   "rules.receipt.trials": "试算",
   "rules.receipt.trial": "{hit, select, true {会命中} other {不会命中}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -911,6 +922,7 @@ export const messages = {
     "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
   "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
   "rules.receipt.confirm": "生效",
+  "proposals.reject": "不要",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",
@@ -1090,11 +1102,11 @@ export const messages = {
   "decision.chain.rating": "你的评价",
   "decision.chain.unrated": "还没评价",
   "decision.chain.kind":
-    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {其他}}",
+    "{k, select, proactive {系统主动提醒} memory_candidate {存记忆的判断} consolidation {整理记忆} context_truncation {裁剪上下文} retrieval_degrade {找记忆降级} external_read {外部程序读取记忆} rule_review {硬规则待重审} web_push {推送延后} memory_review {改记忆后待重审} limit_change {修改用量上限} delivery_timing {提醒的送达时间} proposal {提议的下一步} device_action {设备动作} other {其他}}",
   "decision.chain.rules": "命中的规则",
   "decision.chain.reviewRules": "待重审的规则",
   "decision.chain.rule":
-    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：模型判断这封邮件涉及钱款} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} other {{id}}}",
+    "{k, select, important_sender {重要来信不放过：发件人在你的重要名单里} public_domain {重要来信不放过：来自政府或学校域名} money_words {重要来信不放过：模型判断这封邮件涉及钱款} quiet_hours {静默时段：这段时间不推送，等时段结束再发} amount_threshold {小额不推送：金额低于门槛的邮件不推送} mail_must_notify {你立的规则：这类邮件必须提醒你} mail_read_whole_thread {你立的规则：先看整个邮件串再判断} push_quiet_hours {你立的规则：静默时段里，指定的推送等时段结束再发} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {你设定的} built_in {内置规则} other {未登记的规则}}",
   "decision.chain.ruleMails": "命中 {count} 封邮件",
@@ -1343,7 +1355,7 @@ export const messages = {
   "weekly.check.rowsKept": "已检查过的日子没有少记录",
   "weekly.check.rowsCleared": "已检查过的日子少了 {rows} 条 Gmail 记录，都是你清除的",
   "weekly.check.rowsMissing":
-    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} memory_review {改记忆后待重审} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
+    "{day}的{kind, select, proactive {Gmail 检查} memory_candidate {记忆} consolidation {整理记忆} context_truncation {回答时没带上的旧内容} retrieval_degrade {记忆搜索} external_read {外部程序读取记忆} rule_review {硬规则待重审} web_push {推送延后} memory_review {改记忆后待重审} limit_change {修改用量上限} delivery_timing {提醒的送达时间} proposal {提议的下一步} device_action {设备动作} other {决策}}记录比检查时少了：原来 {before} 条，现在 {after} 条",
   "weekly.check.timeOk": "决策记录里的时间格式都正确",
   "weekly.check.timeBad": "决策记录里有 {rows} 条时间格式不对",
   "weekly.check.other":
@@ -1491,6 +1503,7 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "邮件判断",
   "sensitive.purpose.action-review": "动作复核",
   "sensitive.purpose.review-prereview": "模型预评",
+  "sensitive.purpose.home-urgency": "首页要紧度打分",
   "sensitive.purpose.rule-review": "规则重审",
   "sensitive.purpose.other": "其他",
   "sensitive.maskedOnce": "{time} 遮住 1 次",

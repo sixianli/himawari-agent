@@ -21,15 +21,6 @@ import Testing
         let decoded = try JSONDecoder().decode(PairingRecord.self, from: JSONEncoder().encode(record))
         #expect(decoded == record)
     }
-
-    @Test func recordKeepsWhenItWasPairedAndReadsOlderRecordsWithoutIt() throws {
-        let pairedAt = Date(timeIntervalSince1970: 1_794_500_000)
-        let record = PairingRecord(origin: URL(string: "https://a.test")!, deviceId: "dev_x", access: nil, status: .active, pairingNumber: "012345", pairedAt: pairedAt)
-        let decoded = try JSONDecoder().decode(PairingRecord.self, from: JSONEncoder().encode(record))
-        #expect(decoded.pairedAt == pairedAt)
-        let older = #"{"origin":"https://a.test","deviceId":"dev_x","status":"active","pairingNumber":"012345"}"#
-        #expect(try JSONDecoder().decode(PairingRecord.self, from: Data(older.utf8)).pairedAt == nil)
-    }
 }
 
 @Suite struct DeviceConfigurationTests {
@@ -133,6 +124,10 @@ private final class UnreadableMarkStore: LocalStore, @unchecked Sendable {
 
     func contains(_ name: String) -> Bool {
         name == "owner" || inner.contains(name)
+    }
+
+    func names() -> [String] {
+        inner.names()
     }
 
     func write(_ name: String, _ data: Data?) throws {

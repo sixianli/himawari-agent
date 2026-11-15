@@ -43,7 +43,13 @@ export function checkIncidentGates({ root = repositoryRoot } = {}) {
   const file = path.join(root, INCIDENT_LIST);
   if (!existsSync(file))
     return { incidents: [], errors: [`INCIDENT_LIST_MISSING ${INCIDENT_LIST}`] };
-  const { incidents, errors } = readIncidents(readFileSync(file, "utf8"));
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return { incidents: [], errors: [`INCIDENT_LIST_UNREADABLE ${INCIDENT_LIST}`] };
+  }
+  const { incidents, errors } = readIncidents(text);
   const seen = new Set();
   for (const incident of incidents) {
     const where = incident.id || "(no id)";
@@ -93,6 +99,11 @@ export function openIncidentLines(incidents) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const unknown = process.argv.slice(2).filter((argument) => argument !== "--open");
+  if (unknown.length > 0) {
+    process.stderr.write(`INCIDENT_ARGUMENT_UNKNOWN ${unknown.join(" ")}\n`);
+    process.exit(2);
+  }
   const { incidents, errors } = checkIncidentGates();
   for (const error of errors) process.stderr.write(`${error}\n`);
   if (process.argv.includes("--open") && errors.length > 0) {

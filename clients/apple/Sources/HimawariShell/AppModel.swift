@@ -4,9 +4,13 @@ import HimawariCore
 import HimawariActions
 import HimawariDesign
 import HimawariManage
+import HimawariShare
 import Observation
 #if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(os)
+import os
 #endif
 
 public enum AppPhase: Equatable {
@@ -24,13 +28,13 @@ public final class AppModel {
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
-    public private(set) var pairedAt: Date?
 
     @ObservationIgnored public let api: DeviceAPI
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
+    @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
-    @ObservationIgnored private let shortVersion: String
     @ObservationIgnored private let kind: DeviceKind
     @ObservationIgnored private var store: FileLocalStore?
     @ObservationIgnored private var waiting: Task<Void, Never>?
@@ -39,20 +43,30 @@ public final class AppModel {
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
 
-    private static let recordAccount = "pairing-record"
+    private static let recordAccount = SharedVault.recordAccount
 
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, restoring: true)
+    }
+
+    private static func logUnknownServerValues(subsystem: String) {
+        #if canImport(os)
+        let logger = Logger(subsystem: subsystem, category: "server-values")
+        ServerValueDiagnostics.shared.observe { report in
+            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
+        }
+        #endif
     }
 
     init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
         self.kind = kind
-        let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
-        keys = SecureEnclaveKeyStore(service: service + ".keys")
-        keychain = KeychainValueStore(service: service)
+        let vault = SharedVault(bundle: bundle)
+        self.vault = vault
+        keys = vault.keys
+        keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
-        shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -92,7 +106,6 @@ public final class AppModel {
     }
 
     private func use(_ record: PairingRecord) {
-        pairedAt = record.pairedAt
         api.http.use(DeviceCredentials(origin: record.origin, deviceId: record.deviceId, access: record.access, deviceKey: keys.signer(.device)))
     }
 
@@ -120,6 +133,10 @@ public final class AppModel {
     }
 
     @ObservationIgnored var demoHost: String?
+
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
 
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
@@ -170,7 +187,7 @@ public final class AppModel {
                     throw DeviceAPIError.invalidResponse
                 }
                 let number = PairingNumber.display(devicePublicKey: devicePublicKey, confirmPublicKey: confirmPublicKey)
-                let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number, pairedAt: Date())
+                let record = PairingRecord(origin: invitation.origin, deviceId: device.id, access: invitation.access, status: device.status, pairingNumber: number)
                 try save(record)
                 use(record)
                 if device.status == .active {
@@ -331,6 +348,7 @@ public final class AppModel {
             chat.start()
             actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
+            deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -369,6 +387,25 @@ public final class AppModel {
         }
     }
 
+    @ObservationIgnored private var handoverDrain: Task<Void, Never>?
+
+    private func deliverWaitingHandovers() {
+        guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
+        let queue = HandoverQueue(store: store)
+        guard !queue.pending().isEmpty else { return }
+        #if canImport(UIKit)
+        let courier = HandoverCourier(api: api, images: UIKitImageFitter())
+        #else
+        let courier = HandoverCourier(api: api)
+        #endif
+        handoverDrain = Task { [weak self] in
+            let results = await queue.drain(using: courier)
+            guard let self else { return }
+            handoverDrain = nil
+            if results.values.contains(.deviceRemoved) { checkRevoked() }
+        }
+    }
+
     private func checkRevoked() {
         Task { await refreshConfiguration() }
     }
@@ -385,7 +422,12 @@ public final class AppModel {
         guard phase == .active else { return }
         chat?.reconnect()
         actions?.deviceActionsChanged()
+        deliverWaitingHandovers()
         Task { await refreshConfiguration() }
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {
@@ -394,17 +436,12 @@ public final class AppModel {
         configurationRetry = nil
         let emptied = emptyStore()
         configuration = nil
-        pairedAt = nil
         store = nil
         try? keys.delete(.device)
         try? keys.delete(.confirm)
         try? save(nil)
         api.http.use(nil)
         phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
-    }
-
-    public var versionLine: String {
-        ThisDevice.version(shortVersion, channel: releaseChannel.rawValue)
     }
 
     static var deviceName: String {

@@ -6,6 +6,7 @@ import type {
   PairingRedeemResult,
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import { disablePushForRevokedDevices } from "./sqlite-apple-push-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof PairedDeviceStorePort> = Parameters<PairedDeviceStorePort[TName]>[0];
@@ -292,6 +293,8 @@ export class SqlitePairedDeviceOperations {
         )
         .run(now, device.id);
       this.database.prepare("DELETE FROM device_request_nonces WHERE device_id = ?").run(device.id);
+      disablePushForRevokedDevices(this.database, [device.id], now);
+      this.database.prepare("DELETE FROM device_upload_grants WHERE device_id = ?").run(device.id);
       if (device.webDeviceId !== null) {
         this.database
           .prepare(
@@ -320,20 +323,19 @@ export class SqlitePairedDeviceOperations {
       this.database
         .prepare("DELETE FROM device_request_nonces WHERE device_id = ? AND expires_at <= ?")
         .run(input.deviceId, now);
+      const inserted = this.database
+        .prepare(
+          `INSERT INTO device_request_nonces (device_id, nonce, expires_at)
+           SELECT ?, ?, ?
+            WHERE (SELECT COUNT(*) FROM device_request_nonces WHERE device_id = ?) < ?
+           ON CONFLICT (device_id, nonce) DO NOTHING`,
+        )
+        .run(input.deviceId, input.nonce, expiresAt, input.deviceId, input.maximumRetained);
+      if (inserted.changes === 1) return "accepted";
       const seen = this.database
         .prepare("SELECT 1 FROM device_request_nonces WHERE device_id = ? AND nonce = ?")
         .get(input.deviceId, input.nonce);
-      if (seen) return "replayed";
-      const { count } = this.database
-        .prepare("SELECT COUNT(*) AS count FROM device_request_nonces WHERE device_id = ?")
-        .get(input.deviceId) as { count: number };
-      if (count >= input.maximumRetained) return "full";
-      this.database
-        .prepare(
-          "INSERT INTO device_request_nonces (device_id, nonce, expires_at) VALUES (?, ?, ?)",
-        )
-        .run(input.deviceId, input.nonce, expiresAt);
-      return "accepted";
+      return seen ? "replayed" : "full";
     })();
   }
 

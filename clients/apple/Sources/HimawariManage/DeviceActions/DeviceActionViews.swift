@@ -433,97 +433,27 @@ public struct ApprovalDetailView: View {
     }
 }
 
-public struct ThisDevice: Equatable, Sendable {
-    public enum Link: String, Equatable, Sendable {
-        case online
-        case connecting
-        case offline
-    }
+struct ApprovalsEntryRow: View {
+    let count: Int
 
-    public let name: String
-    public let link: Link
-    public let pairedAt: Date?
-    public let version: String
-
-    public static var title: String {
-        #if os(macOS)
-        L.text("device.this.mac")
-        #else
-        L.text("device.this.iphone")
-        #endif
-    }
-
-    static func dayText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.setLocalizedDateFormatFromTemplate("MMMd")
-        let pattern = L.text("device.pairedAt.pattern")
-        if pattern != "device.pairedAt.pattern", !pattern.isEmpty { formatter.dateFormat = pattern }
-        return formatter.string(from: date)
-    }
-
-    public static func version(_ short: String, channel: String) -> String {
-        L.format("device.version.value", short, L.text("device.channel.\(channel)"))
-    }
-
-    public init(name: String, link: Link, pairedAt: Date?, version: String) {
-        self.name = name
-        self.link = link
-        self.pairedAt = pairedAt
-        self.version = version
-    }
-}
-
-public struct ThisDeviceView: View {
-    let device: ThisDevice
-    let model: DeviceActionsModel
-    let back: () -> Void
-
-    public init(device: ThisDevice, model: DeviceActionsModel, back: @escaping () -> Void) {
-        self.device = device
-        self.model = model
-        self.back = back
-    }
-
-    public var body: some View {
-        VStack(spacing: 0) {
-            NavigationHeader(title: Text(ThisDevice.title), back: back)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    GroupedSection {
-                        valueRow(L.text("device.name"), Text(device.name))
-                        RowSeparator()
-                        valueRow(L.text("device.link"), Text(L.text("device.link.\(device.link.rawValue)")), color: device.link == .online ? Color.hmSuccess : Color.hmMuted)
-                        if let pairedAt = device.pairedAt {
-                            RowSeparator()
-                            valueRow(L.text("device.pairedAt"), Text(ThisDevice.dayText(pairedAt)))
-                        }
-                        RowSeparator()
-                        valueRow(L.text("device.version"), Text(device.version))
-                    }
-                    DeviceAbilitiesSection(model: model)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 40)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .himawariScreenBackground()
-    }
-
-    private func valueRow(_ title: String, _ value: Text, color: Color = Color.hmMuted) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
+    var body: some View {
+        HStack(spacing: 14) {
+            Icon(.handStop, size: DesignTokens.IconSize.listRow)
+                .foregroundStyle(Color.hmText)
+            Text(L.text("approval.title"))
                 .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            value
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(color)
-                .lineLimit(1)
+            if count > 0 {
+                Text(count, format: .number)
+                    .hmType(DesignTokens.TypeScale.secondary)
+                    .foregroundStyle(Color.hmMuted)
+            }
+            Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                .foregroundStyle(Color.hmMuted)
         }
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
+        .contentShape(Rectangle())
     }
 }
 

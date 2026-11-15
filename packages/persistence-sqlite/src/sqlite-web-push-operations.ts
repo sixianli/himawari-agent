@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   WebPushAttempt,
   WebPushAttemptStatus,
@@ -12,6 +13,7 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof WebPushStorePort> = Parameters<WebPushStorePort[TName]>[0];
@@ -78,6 +80,8 @@ export class SqliteWebPushOperations {
         return this.enqueue(payload as Input<"enqueue">);
       case "webPush.listDue":
         return this.listDue(payload as Input<"listDue">);
+      case "webPush.deferItem":
+        return this.deferItem(payload as Input<"deferItem">);
       case "webPush.recordAttempt":
         return this.recordAttempt(payload as Input<"recordAttempt">);
       case "webPush.recordReactions":
@@ -318,6 +322,7 @@ export class SqliteWebPushOperations {
       .prepare(
         `SELECT o.source_key AS sourceKey, o.kind, o.source_ref AS sourceRef,
            o.thread_id AS threadId, o.created_at AS itemCreatedAt, o.expires_at AS expiresAt,
+           o.defer_until AS deferUntil,
            ${subscriptionColumns},
            a.status AS attemptStatus, a.attempts AS attemptCount,
            a.next_attempt_at AS nextAttemptAt, a.last_code AS lastCode,
@@ -326,14 +331,17 @@ export class SqliteWebPushOperations {
          JOIN web_push_subscriptions s ON s.owner_id = o.owner_id AND s.agent_id = o.agent_id
            AND s.state = 'active'
          LEFT JOIN web_push_attempts a ON a.owner_id = o.owner_id AND a.agent_id = o.agent_id
-           AND a.source_key = o.source_key AND a.subscription_id = s.id
+           AND a.source_key = o.source_key AND a.channel = 'web_push'
+           AND a.subscription_id = s.id
          WHERE o.owner_id = ? AND o.agent_id = ?
+           AND (o.channel IS NULL OR o.channel = 'web_push')
+           AND (o.defer_until IS NULL OR o.defer_until <= ?)
            AND (a.status IS NULL OR (a.status = 'pending'
              AND (a.next_attempt_at IS NULL OR a.next_attempt_at <= ?)))
          ORDER BY o.created_at, o.source_key, s.created_at, s.id
          LIMIT ?`,
       )
-      .all(input.ownerId, input.agentId, input.now, input.limit) as Array<
+      .all(input.ownerId, input.agentId, input.now, input.now, input.limit) as Array<
       WebPushSubscription & {
         sourceKey: string;
         kind: WebPushOutboxItem["kind"];
@@ -341,6 +349,7 @@ export class SqliteWebPushOperations {
         threadId: string | null;
         itemCreatedAt: string;
         expiresAt: string;
+        deferUntil: string | null;
         attemptStatus: WebPushAttemptStatus | null;
         attemptCount: number | null;
         nextAttemptAt: string | null;
@@ -358,6 +367,7 @@ export class SqliteWebPushOperations {
         threadId: row.threadId,
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
+        deferUntil: row.deferUntil,
       },
       subscription: {
         id: row.id,
@@ -389,6 +399,75 @@ export class SqliteWebPushOperations {
     }));
   }
 
+  private deferItem(input: Input<"deferItem">): boolean {
+    this.time(input.now);
+    this.time(input.deferUntil);
+    this.time(input.expiresAt);
+    if (
+      input.ruleRefs.length < 1 ||
+      input.ruleRefs.length > 16 ||
+      input.ruleRefs.some((ref) => ref.length < 1 || ref.length > 256) ||
+      new Set(input.ruleRefs).size !== input.ruleRefs.length
+    )
+      this.fail("PORT_INVALID_OPERATION", "Web push deferral rule references are invalid");
+    const refs = [...input.ruleRefs].sort();
+    const digest = createHash("sha256")
+      .update(JSON.stringify([input.ownerId, input.agentId, input.sourceKey, input.deferUntil]))
+      .digest("hex");
+    return this.database
+      .transaction(() => {
+        const current = this.database.prepare(
+          `SELECT 1 FROM rule_book_rules
+           WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status IN ('active', 'needs_review')`,
+        );
+        const stale = refs.some((ref) => {
+          const at = ref.lastIndexOf("@");
+          return (
+            at < 1 ||
+            current.get(
+              input.ownerId,
+              input.agentId,
+              ref.slice(0, at),
+              Number(ref.slice(at + 1)),
+            ) === undefined
+          );
+        });
+        if (stale) return true;
+        const stored =
+          this.database
+            .prepare(
+              `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+            )
+            .run(
+              input.deferUntil,
+              JSON.stringify(refs),
+              input.expiresAt,
+              input.ownerId,
+              input.agentId,
+              input.sourceKey,
+            ).changes > 0;
+        if (!stored) return false;
+        insertLedgerRow(this.database, {
+          id: `web-push-${digest}`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "web_push",
+          decidedAt: input.now,
+          outcome: "deferred",
+          reasonCode: "push_quiet_hours",
+          subjectRef: input.sourceKey,
+          inputs: { memoryIds: [], ruleIds: refs },
+          reasonRef: null,
+          contentRef: null,
+          costMicros: 0,
+          durationMs: 0,
+        });
+        return true;
+      })
+      .immediate();
+  }
+
   private recordAttempt(input: Input<"recordAttempt">): boolean {
     this.time(input.now);
     if (input.nextAttemptAt !== null) this.time(input.nextAttemptAt);
@@ -406,12 +485,12 @@ export class SqliteWebPushOperations {
         this.database
           .prepare(
             `INSERT INTO web_push_attempts (
-              owner_id, agent_id, source_key, subscription_id, status, attempts, next_attempt_at,
-              last_code, updated_at
-            ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+              owner_id, agent_id, source_key, channel, push_type, subscription_id, status,
+              attempts, next_attempt_at, last_code, updated_at
+            ) SELECT ?, ?, ?, 'web_push', NULL, ?, ?, ?, ?, ?, ?
               WHERE EXISTS (SELECT 1 FROM web_push_outbox
                 WHERE owner_id = ? AND agent_id = ? AND source_key = ?)
-            ON CONFLICT (owner_id, agent_id, source_key, subscription_id) DO UPDATE SET
+            ON CONFLICT (owner_id, agent_id, source_key, channel, subscription_id) DO UPDATE SET
               status = excluded.status, attempts = excluded.attempts,
               next_attempt_at = excluded.next_attempt_at, last_code = excluded.last_code,
               updated_at = excluded.updated_at

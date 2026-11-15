@@ -52,7 +52,7 @@ const coverageJobIds = ["policy", "static", "build", "browser", "coverage", "sec
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 export const chromiumInstall =
   ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
-const chromiumChecks = ["static", "tests"];
+const chromiumChecks = ["static", "tests", "tooling"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;
@@ -609,11 +609,18 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
-    if (chromiumChecks.includes(check.id))
+    if (chromiumChecks.includes(check.id)) {
+      const install = job.steps.findIndex((step) => step.run === chromiumInstall);
+      const run = job.steps.findIndex((step) => step.run?.includes("scripts/ci/run.mjs"));
+      assert(install >= 0, `Job runs browser tests without installing Chromium: ${check.id}`);
+      const step = job.steps[install];
       assert(
-        job.steps.some((step) => step.run === chromiumInstall),
-        `Job runs browser tests without installing Chromium: ${check.id}`,
+        (run < 0 ? check.id === "tests" : install < run) &&
+          step.if === undefined &&
+          step["continue-on-error"] !== true,
+        `Chromium must install unconditionally before the checks run: ${check.id}`,
       );
+    }
     if (check.id === "required") {
       const [entry] = job.steps;
       assert(

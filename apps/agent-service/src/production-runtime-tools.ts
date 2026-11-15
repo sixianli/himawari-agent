@@ -54,6 +54,7 @@ import {
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
+  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
   TOOL_SAVE_COPY,
@@ -91,6 +92,13 @@ import {
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
 import {
+  PerceptionToolError,
+  type ProductionPerceptionTools,
+  perceptionReadUnavailable,
+  perceptionToolDescriptors,
+  PERCEPTION_READ_CAPABILITY_REF,
+} from "./production-perception-tools.js";
+import {
   OwnerRuleError,
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
@@ -112,6 +120,12 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
+import {
+  type ContextExternalContent,
+  ExternalContentMarkNotWrittenError,
+  originsOf,
+  RECALLED_EXTERNAL_RECORD_ORIGIN,
+} from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
@@ -130,7 +144,16 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
+  "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
 });
+const PERCEPTION_EXTERNAL_ORIGIN = "perception_read";
+class OwnerScopeStop extends Error {
+  readonly result: RuntimeToolExecutionResult;
+  constructor(result: RuntimeToolExecutionResult) {
+    super("OWNER_SCOPE_STOP");
+    this.result = result;
+  }
+}
 const EVENT_POLL_MS = 50;
 const AUTHORITY_STOP_WAIT_MS = 30_000;
 const RANK = ["public", "private", "sensitive", "restricted"] as const;
@@ -325,8 +348,10 @@ export interface ProductionRuntimeToolsOptions {
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
+  readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -574,6 +599,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
+    if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     return this.#registry.offer(descriptors);
   }
@@ -607,6 +633,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
+  #contentOrigin(invocation: RuntimeToolInvocation): string | null {
+    if (invocation.capabilityHandleRef !== null) return `authorized:${invocation.capabilityRef}`;
+    const named = this.#codingTool(invocation);
+    const row = named
+      ? this.#registry.forTool(named)
+      : this.#registry.forCapability(invocation.capabilityRef);
+    if (row?.resultOrigin === "owner_data") return null;
+    return row?.tool ?? `unregistered:${invocation.capabilityRef}`;
+  }
+  async #provenance(
+    invocation: RuntimeToolInvocation,
+  ): Promise<{ readonly externalOrigins?: readonly string[] }> {
+    const origins = originsOf(await this.#options.externalContent?.read(invocation.runId));
+    return origins.length === 0 ? {} : { externalOrigins: origins };
+  }
+  async #markExternalContent(invocation: RuntimeToolInvocation): Promise<void> {
+    const marker = this.#options.externalContent;
+    if (!marker) return;
+    const origin = this.#contentOrigin(invocation);
+    if (origin === null) return;
+    await marker.mark(invocation.runId, origin);
+  }
   #builtinRow(invocation: RuntimeToolInvocation): ToolActionRow | undefined {
     if (invocation.capabilityHandleRef !== null) return undefined;
     const row = this.#registry.forCapability(invocation.capabilityRef);
@@ -627,6 +675,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#reminder(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
       return (invocation, gate) => this.#ownerRule(invocation, gate);
+    if (row.targetType === "owner-perception" && this.#options.perception)
+      return (invocation, gate) => this.#perception(invocation, gate);
     return undefined;
   }
   #ownerScopeGate(
@@ -681,6 +731,39 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
     };
   }
+  async #perception(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const perception = this.#options.perception;
+    return this.#ownerScoped(
+      invocation,
+      "perception",
+      undefined,
+      perception
+        ? async (call) =>
+            perception.run(call, {
+              authorize: async () => {
+                const stopped = await gate?.();
+                if (stopped) throw new OwnerScopeStop(stopped);
+                if (!gate) reject();
+              },
+              markExternalContent: async () => {
+                await this.#options.externalContent?.mark(call.runId, PERCEPTION_EXTERNAL_ORIGIN);
+              },
+            })
+        : undefined,
+      (error) =>
+        error instanceof PerceptionToolError
+          ? { errorCode: error.code, note: error.note }
+          : invocation.capabilityRef === PERCEPTION_READ_CAPABILITY_REF
+            ? perceptionReadUnavailable()
+            : {
+                errorCode: "DEVICE_ACTION_UNAVAILABLE",
+                note: TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE.text,
+              },
+    );
+  }
   async #ownerRule(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -690,7 +773,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "rule",
       gate,
-      rules ? async (call) => ({ value: await rules.run(call) }) : undefined,
+      rules
+        ? async (call) => ({ value: await rules.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => ({
         errorCode: error instanceof OwnerRuleError ? error.code : "RULE_UNAVAILABLE",
         note:
@@ -711,7 +796,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       gate,
       recall
         ? async (call) => {
-            const { output, contentClassification } = await recall.recallWithClassification(call);
+            const { output, contentClassification, externalContent } =
+              await recall.recallWithClassification(call);
+            if (externalContent)
+              await this.#options.externalContent?.mark(
+                call.runId,
+                RECALLED_EXTERNAL_RECORD_ORIGIN,
+              );
             return { value: output, contentClassification };
           }
         : undefined,
@@ -733,7 +824,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       invocation,
       "reminder",
       gate,
-      reminders ? async (call) => ({ value: await reminders.run(call) }) : undefined,
+      reminders
+        ? async (call) => ({ value: await reminders.run(call, await this.#provenance(call)) })
+        : undefined,
       (error) => {
         const errorCode = error instanceof ReminderInputError ? error.code : "REMINDER_UNAVAILABLE";
         return {
@@ -750,7 +843,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule",
+    marker: "recall" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -777,7 +870,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule",
+    marker: "recall" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
@@ -829,6 +922,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         ...(recorded === invocation.dataClassification ? {} : { contentClassification: recorded }),
       };
     } catch (error) {
+      if (error instanceof OwnerScopeStop) return error.result;
       await this.#options.assertRunActive(invocation.runId);
       const { errorCode, note } = failure(error);
       result = {
@@ -1185,8 +1279,45 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     signal?.throwIfAborted();
     const invocation = await this.#taskStart(value);
     signal?.throwIfAborted();
+    try {
+      await this.#markExternalContent(invocation);
+    } catch (error) {
+      if (!(error instanceof ExternalContentMarkNotWrittenError)) throw error;
+      const dispatched = await this.#options.artifacts.lookup({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: `runtime-tool-intent:${digest([invocation.runId, invocation.toolCallId])}`,
+      });
+      if (dispatched) throw error;
+      await this.#options.assertRunActive(invocation.runId);
+      signal?.throwIfAborted();
+      await this.#writeJson(
+        invocation,
+        `runtime-tool-diagnostic:${digest([invocation.runId, invocation.toolCallId, "external-content-mark"])}`,
+        {
+          stage: "not_dispatched",
+          reasonCode: "external_content_mark_failed",
+          cause: error instanceof Error ? error.name : "unknown",
+        },
+      ).catch(() => undefined);
+      return {
+        dispatchState: "not_sent",
+        outcome: "failed",
+        resultRef: null,
+        errorCode: "external_content_mark_failed",
+        externalActionId: null,
+        modelContent: JSON.stringify({ error: "external_content_mark_failed" }),
+      };
+    }
+    signal?.throwIfAborted();
     if (this.#isTaskManagement(invocation)) {
       await this.#options.assertRunActive(invocation.runId);
+      const taskRow = this.#registry.forCapability(invocation.capabilityRef);
+      if (taskRow?.authorization === "owner_scope") {
+        if (!this.#exposed.has(invocation.runId)) reject();
+        const stopped = await this.#ownerScopeGate(invocation, taskRow, signal)?.();
+        if (stopped) return stopped;
+      }
       if (this.#background?.manages(invocation)) {
         if (!this.#exposed.has(invocation.runId)) reject();
         const key = digest([invocation.runId, invocation.toolCallId]);

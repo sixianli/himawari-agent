@@ -18,6 +18,7 @@ date: "2026-11-12"
 - [前提](#premises)
 - [决定](#decision)
 - [新值清单](#new-values)
+- [第 3 步怎么分批](#step-3-implementation)
 - [分几步做](#steps)
 - [业界怎么做](#industry)
 - [放弃的做法](#options)
@@ -195,30 +196,53 @@ date: "2026-11-12"
 
 ## 新值清单
 
-每个新出现的值，写明谁产生、谁使用、两端怎样校验、哪道检查守着（照苹果端设计“新值清单”一节的做法）。第 1 步的文件名已按代码更新，后面几步的文件名是计划。
+每个新出现的值，写明谁产生、谁使用、两端怎样校验、哪道检查守着（照苹果端设计“新值清单”一节的做法）。第 1、2 步的文件名已按代码更新，第 3、4 步的文件名是计划。
 
-登记表里有几列第 1 步只登记、还没有地方读：明细函数、结果算谁的内容、能不能由外来内容引出、去重方式、设备专用的几列。第 2 步（外来内容、卡片）和第 4 步（设备动作）才用到它们。第 1 步真正起作用的列是：工具名、家族、能力名、操作、动作类别、能否撤销、后果、对象类型、对外披露、要不要本人在场、是不是改长期规则、授权走哪条路、执行器。
+登记表里有几列第 1 步只登记、还没有地方读：明细函数、结果算谁的内容、能不能由外来内容引出、去重方式、设备专用的几列。第 2 步用上了“结果算谁的内容”；“能不能由外来内容引出”到第 2 步仍然没有地方读（现有工具都填“能”，读过外来内容后先问还是不做由内置规则按事实定），等出现第一个“不能”的工具时再接上；明细函数、去重方式和设备专用的几列留给第 4 步和主动提议。第 1 步真正起作用的列是：工具名、家族、能力名、操作、动作类别、能否撤销、后果、对象类型、对外披露、要不要本人在场、是不是改长期规则、授权走哪条路、执行器。
+
+<a id="step-2-differences"></a>
+
+第 2 步实施时和上文决定的写法有四处不同，原因如下：
+
+- 后台不做时，“记一条决策记录”落成审计记录加一条按动作意图编号的状态记录（见下表“后台不做时的记录”），没有写决策记录表：那张表的类别是邮件和记忆的判断，后台拒绝不属于其中任何一种。
+- 提议候选只存规范化参数的指纹，不存参数原文，冻结的动作意图里也只有参数摘要，所以拿不回参数。主动提议方案落地时，要在这里另存受保护的参数原文，再改这一行。
+- 外来内容的标记在工具真正执行之前写，所以被拒、执行失败的外来工具调用也算读过外来内容。这样只会偏严，和“漏登记只会偏严”同一个取舍；标记写不进去时工具不执行，返回“没发出”（`external_content_mark_failed`）；读不出对话状态，或者这次调用以前已经发出过（有执行意图记录）时照常报错，不说“没发出”，因为重放的调用上一次可能已经执行过。
+- 记录上的来源标记除了提醒和规则，也加在自动记下的记忆（每轮记忆捕获和对话复盘）上，用来源消息的引用加来源名区分。
 
 | 值 | 产生处 | 使用处 | 两端校验 | 自动检查 |
 | --- | --- | --- | --- | --- |
 | 工具动作登记表的行（家族、能力名、动作类别、能否撤销、结果算谁的内容、要不要本人在场、能不能由外来内容引出、明细函数、执行器） | 各工具家族的模块，启动时汇成一张表 | 出工具的函数、`preflight`、统一出口、审批卡片、以后的设备动作和提议 | 汇表时拒绝重复的能力名和缺字段的行；出工具时表里没有的不出 | `apps/agent-service/test/production-runtime-tools.unit.test.ts` 里带 `[ADR-0257]` 的用例（真实工具表的名字和定义哈希与改动前一致；表里没有的工具不给模型；没接统一出口时拒绝）；`packages/application/test/policy-fact-registry.unit.test.ts`（缺字段、重复、读取却有后果的行被拒）；`test/integration/tool-action-registry.test.ts` |
 | 内置能力清单（能力名、版本、操作、数据范围） | 代码里的常量 | 权限引擎查清单 | 先查安装的能力、再查内置清单，格式同一种校验 | `test/integration/tool-action-registry.test.ts`（反向：内置清单缺一项时调用被以“能力未登记”拒绝） |
 | 事实代码 `run_source_user_message`、`run_source_schedule`、`run_source_external_event`、`context_external_content`、`owner_presence_required`、`standing_rule_change`，以及现有的 `external_model_disclosure`、`external_provider_disclosure` 等 | 统一出口组动作意图时 | 动作闸门、审批快照、决策记录、卡片上的原因文字 | 事实代码表之外的代码在校验动作意图时被拒；每个代码必须有三种语言的文字 | `packages/application/test/policy-fact-registry.unit.test.ts`（反向：表外代码被拒；没排序的事实被拒，所以同一组事实只有一种指纹）；`test/tooling/policy-fact-codes.test.ts`（扫描源码里写出的事实代码都在表里；反向：表外代码被报出） |
-| 内容来源标记（`owner_data`、`external`） | 工具执行端按登记表填；没填算外来 | 运行时适配器记到对话状态、统一出口读 | 只认这两个值；缺省按外来 | `test/integration/external-content-fact.test.ts`（第 2 步） |
-| 对话的“上下文里有外来内容”状态 | 运行时适配器在工具结果、附件、外部事件正文进入上下文时 | 统一出口 | 服务重启、压缩、删除消息后仍然正确 | 同上（反向：去掉标记，用例失败） |
-| 记录上的来源标记（提醒、记忆、规则） | 在有外来内容的上下文里写入时 | 记忆检索把结果标成外来 | 写入处和读取处用同一个常量 | 同上（外来内容建提醒，压缩，记忆检索，再建提醒，仍然等点头） |
-| 规则闸门 `action` 及其字段（`action_kind`、`risk`、`reversible`、`disclosure`、`recipient_count`、`run_source`、`facts`） | 字段目录 | 裁判、内置规则、规则页 | 表达式只能读这道闸门的字段，类型检查通过 | `npm run check:rule-registry`（例子改错或表达式换掉时报错） |
+| 内容来源标记（`owner_data`、`external`） | 登记表每行的“结果算谁的内容”；查不到的工具算外来，记成 `unregistered:<能力名>`，用授权句柄调的工具记成 `authorized:<能力名>` | `ProductionRuntimeTools.execute` 在工具真正执行之前读这一列，外来的记进对话状态（`apps/agent-service/src/production-runtime-tools.ts`） | 只认这两个值；缺省按外来。任务取消改为 `owner_data`，取任务输出仍是 `external` | `test/integration/tool-action-registry.test.ts`（取任务输出后建提醒等主人点头；列提醒不记；反向：把取任务输出改成 `owner_data`，下一条提醒直接做） |
+| 对话的“上下文里有外来内容”状态：`product_state_records` 里键 `context-external-content:thread:<对话编号>`（没有对话时 `context-external-content:run:<运行编号>`），值 `{sources:[{origin, firstRunId, firstSeenAt}]}`，按来源去重；来源值是工具名、`external_event`（外部事件发起的一轮，在授权时记）、`owner_attachment`（主人消息带附件，在组上下文时记）、`recalled_external_record`（读到带来源标记的记录） | `apps/agent-service/src/context-external-content.ts` 的 `mark`，命令类型 `context.external_content.mark`；同一进程里同一对话的标记排队写，跨进程修订号冲突时重试 5 次 | 统一出口读对话和运行两处的并集，有来源就加事实 `context_external_content` | 只追加不删除，所以服务重启、压缩、删除消息后都还在；同一对话的后续轮次都读得到，别的对话读不到 | `test/integration/tool-action-registry.test.ts`（重启后仍问；压缩后的新一轮仍读到；外部事件发起的一轮不读任何东西也算外来）；`packages/application/test/context-projection.test.ts`（附件计数） |
+| 记录上的来源标记：提醒和规则的记忆 `sourceRefs` 多一条 `external-content:<记录编号>\|<来源>`；自动记下的记忆（`production-memory-capture.ts`、`production-memory-conversation-review.ts`）多一条 `external-content:<来源消息引用>\|<来源>`，规则的 `source` 前面加 `external-content:<来源列表>\|`；整条最长 512 个 UTF-16 码元（和网关校验的算法相同），来源名最多 256 个；超长的记录编号或来源名截短后接上原文哈希的前 16 位，所以 `\|<来源>` 不会被截掉，两条不同的记录也不会截成同一条 | 统一出口执行提醒、规则工具时读对话状态，把来源交给写入端（`production-reminder-writer.ts`、`production-owner-rules.ts`） | 记忆检索工具和组上下文时的记忆检索读到带标记的记录，这一轮记 `recalled_external_record` | 前缀常量 `EXTERNAL_CONTENT_SOURCE_REF_PREFIX` 在 `packages/gateway-contracts/src/memory-source.ts`，写入和读取共用；标记按记录编号区分，同来源去重不会因为标记把两条记录并在一起；记忆来源判断和上下文里的 `sourceRef` 跳过标记 | `test/integration/production-memory-capture.test.ts`（外来上下文里写的提醒、规则带标记，提醒仍显示为提醒；没有外来内容时不带）；`test/integration/tool-action-registry.test.ts`（读到带标记的记忆后下一条提醒等主人点头；反向：不带标记时不记）；`apps/agent-service/test/context-external-content.unit.test.ts`（组上下文时读到带标记的记忆就记）；`apps/agent-service/test/production-memory-recall.unit.test.ts`；`apps/agent-service/test/conversation-review-external-content.unit.test.ts`；`test/integration/production-memory-capture.test.ts`（读过外来内容的对话里自动记下的记忆带标记，只有别的对话读过时不带）；`test/integration/memory-conversation-review.test.ts`（对话复盘按这段对话自己的标记，别的对话的不算） |
+| 规则闸门 `action` 及其字段（`action_kind`、`risk`、`reversible`、`disclosure`、`recipient_count`、`run_source`、`target_type`、`facts`）；`target_type` 是第 2 步加的，取动作意图第一个对象的种类 | 字段目录 | 裁判、内置规则、规则页 | 表达式只能读这道闸门的字段，类型检查通过 | `npm run check:rule-registry`（例子改错或表达式换掉时报错） |
 | 规则结果值 `allow_preauthorized`、`ask_owner`、`refuse` | 内置动作规则 | 统一出口 | 结果值的类型穷举；邮件闸门的规则不许用这三种，动作闸门的规则只许用这三种 | 同上 |
-| 内置动作规则的编号 | 内置规则数据 | 长期授权记录里的“按哪条规则”、决策记录、卡片 | 编号固定，写进记录后不改名 | 同上 |
+| 内置动作规则的编号：`action_preauthorize_owner_data`、`action_preauthorize_own_task_cancel`（第 2 步：停掉自己开的任务直接做）、`action_ask_after_external_content`（第 2 步：读过外来内容后有后果的动作先问）、`action_refuse_background_after_external_content`（第 2 步：后台读过外来内容后不做） | 内置规则数据 | 长期授权记录里的“按哪条规则”、拒绝记录、卡片 | 编号固定，写进记录后不改名；`test/tooling/rule-ids.frozen.json` 记下所有发布过的内置规则编号（含邮件规则） | `test/tooling/rule-ids-frozen.test.ts`（属于 `npm run check:rule-registry`；改名、删掉、新加却没登记都失败；反向：把一条改名，两边都报出） |
 | 长期授权记录的键 `action-rule:<内置规则编号>`（按内置规则预先授权），值里有开关 `enabled` 和规则修订号 `ruleRevision` | 统一出口，第一次用到这条规则时按“开”写入 | 审批记录里的 `policyAuthorization`（键和这条记录的修订号）；数据库在用授权前核对这条记录还开着、修订号没变 | 和联网搜索的长期授权同一种做法。主人把记录关掉后，新的动作改成问主人；记录的修订号变了，按旧修订号记下的预先授权不再能用。内置规则换了修订号（只会随代码发布发生）时，仍开着的记录自动更新到新修订号、继续预先授权，关掉的保持关掉 | `test/integration/tool-action-registry.test.ts`（反向：把记录关掉，下一次建提醒改成等主人点头；规则修订号从 1 变 2，开着的继续、关掉的仍然问） |
 | 统一出口出错时的诊断记录（键 `runtime-tool-diagnostic:` 开头，内容是阶段、原因码 `authorization_component_error`、错误代码或类型名） | 统一出口抛错时，由出工具的那一层写 | `diagnose run` 命令按键前缀读出来给运维看 | 沿用现有工具诊断记录的键前缀；写不进去时忽略，仍按拒绝处理 | `apps/agent-service/test/production-runtime-tools.unit.test.ts` 里带 `[ADR-0257]` 的出口抛错用例（反向：这一轮已停或已取消时不写） |
-| 拒绝次数上限的两个配置键（连续、累计） | 配置解析，带默认值和范围 | 统一出口 | 配置解析只认登记的键名 | `test/integration/external-content-fact.test.ts`（连续被拒到上限后这一轮停下） |
-| 决策记录的新结果（后台有外来内容时不做） | 统一出口 | 决策记录页、导出 | 类别和结果登记在 `DECISION_KINDS`、`DECISION_OUTCOMES` | 现有决策记录的校验测试扩充 |
-| 提议候选的字段（动作、规范化参数、依据的外来内容、指纹） | 统一出口 | 主动提议方案落地后的接收端 | 落地前只写决策记录 | 第 2 步的后台用例 |
+| 拒绝次数上限：配置 `runPolicy.toolRefusals.consecutive`（默认 3，1 到 1000）和 `runPolicy.toolRefusals.total`（默认 20，1 到 10000）；工具结果多一个 `refused` 标记 | 配置解析（`strict-configuration.ts` 的 `parseToolRefusals`），默认值 `DEFAULT_TOOL_REFUSALS` | Pi 适配器的工具循环守卫（`PiToolProgressGuard`），到上限停下这一轮，和工具循环停下走同一条路 | 配置解析只认登记的键名和范围；守卫拿到不合法的上限直接报错；两个计数存进守卫快照，续跑接着算 | `packages/runtime-pi/test/pi-tool-progress-guard.compat.test.ts`；`packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts`（连续 3 次被拒停下，2 次不停）；配置解析测试 |
+| 后台不做时的记录：审计记录 `authorization.action_rule.refused`，`targetRef` 指向 `product_state_records` 的 `action-refusal:<动作意图编号>`，值里有规则编号和修订号、谁发起的、工具名、能力名、规范化参数的指纹、外来来源 | 统一出口（`owner-scope-authorization.ts` 的 `#audit`） | 运维和以后的提议接收端 | 审计记录没有放明细的字段，所以明细放在按动作意图编号的状态记录里，两边用同一个键；同一个动作意图只写一次，重放时审计的时间取状态记录里第一次拒绝的时间，所以重复写是同一条，不报冲突。没有用决策记录表：那张表的类别是邮件和记忆的判断，后台拒绝不属于其中任何一种 | `test/integration/tool-action-registry.test.ts`（后台读过任务输出后建提醒被拒、不建审批、写下这两条记录；反向：去掉这条规则，同一调用改成等主人点头） |
+| 提议候选的字段（动作、规范化参数的指纹、依据的外来内容） | 统一出口，就是上一行的拒绝记录 | 主动提议方案落地后的接收端 | 落地前只写拒绝记录；只存参数指纹，冻结的动作意图里也只有参数摘要，所以参数原文拿不回来，主动提议落地时要另存 | 同上 |
 | “要主人本人在场” | 登记表 | 建审批时定要不要近期身份验证 | 有这条事实的审批没有近期身份验证就拒绝，不管档位 | 第 4 步（设备动作接入时） |
-| 主人意图核对的配置键（开关、把握门槛、用哪个模型）和提示词编号 | 配置解析、提示词目录 | 核对端口 | 开关默认关；提示词目录里没有的编号发不出去 | 第 3 步的测试和评测 |
+| 卡片上的原因：`display.askedBecause` 新增 `{kind: "rule", ruleId, ruleText}` | 统一出口命中“先问”的内置规则时，把规则编号和一句说明（读过哪些外来来源，最多列 5 个，每个最多 80 字，多的写“等 N 个来源”）交给权限引擎建审批 | 网关的审批快照（`governance-gateway-adapter.ts`）；网页和苹果端的审批卡片还没有读它，按规则编号出三种语言的文字留给卡片界面那一步 | 原因的种类穷举 | `test/integration/tool-action-registry.test.ts`（卡片原因是这条规则，文字里有来源） |
+| 规则页的内置规则：`memory.rules.snapshot` 多一组 `builtIn`（编号、修订号、结果、该命中和不该命中的例子数、“每次都先问我”开关，只有“直接做”的规则有开关，其余为 null）；`memory.rule.respond` 多两个动作 `ask_first`、`allow_directly` | `apps/agent-service/src/action-rule-switches.ts`，开关写 `action-rule:<编号>` 的 `enabled`，命令类型 `authorization.action_rule.set` | 网页规则页“内置规则”一块 | 先问和不做的规则改不了（`ACTION_RULE_HAS_NO_SWITCH`）；只能把“直接做”改成问，关回去就是恢复内置的默认 | `test/integration/tool-action-registry.test.ts`（关掉后建提醒等主人点头，打开后直接做；先问的规则改不了）；`test/integration/production-memory-capture.test.ts`（快照过网关结构校验，命令转给开关）；`apps/control-center/test/owner-rules.unit.test.ts`（只有“直接做”的有开关；反向：开着的按下变 `allow_directly`，没有内置规则时整块不显示） |
+| 主人意图核对的配置键：`runPolicy.ownerIntentCheck{enabled, minConfidence, timeoutMs, model, secretRef}`（`minConfidence` 500 到 1000，`timeoutMs` 500 到 30000） | 配置解析（`strict-configuration.ts` 的 `parseOwnerIntentCheck`），不写就是关 | 核对入口 `OwnerIntentGate`（`apps/agent-service/src/owner-intent-gate.ts`） | 配置解析只认登记的键名和范围；没写这组键、或 `enabled` 为假，核对根本不调用。提示词 `authorization.owner-intent-question` 和 Jev 适配器 `packages/platform-node/src/owner-intent-decision.ts` 在第二批 | `packages/platform-node/test/startup-configuration.unit.test.ts`（范围和多余键）；第二批的评测 |
+| 事实代码 `owner_intent_confirmed` 和内置规则 `action_preauthorize_owner_intent_confirmed` | 核对入口在核对通过时把事实加进动作意图，冻结后随意图保存；规则登记表（`action-rules.ts`） | 动作闸门的规则判断：新规则要求这条事实，先问规则（修订号升到 2）排除“满足同一组条件且有这条事实”的动作 | 事实只在“用户消息发起、读过外来内容、`CREATE_OR_UPDATE`、中风险、能撤销、不外发、不要本人在场、不改长期规则”时才加；规则表达式把同一组条件再核一遍，所以事实单独出现不会放行（规则例子里有反向）；“每次都先问我”开关照内置规则的做法生效 | `packages/application/test/policy-fact-registry.unit.test.ts` 的规则例子校验；`test/integration/tool-action-registry.test.ts` |
+| 核对结果记录：状态记录 `owner-intent-check:<动作意图编号>`（是否通过、原因、把握、引用的原话、外来来源、模型编号）和审计记录 `authorization.owner_intent.checked` | `OwnerIntentGate` | 重放时直接读这条记录，不再调用模型；运维和以后的评测报告 | 同一个动作意图只写一次；写不进去也不影响结果（再读一次，读不到才报错） | `test/integration/tool-action-registry.test.ts` |
 
 [返回阅读导航](#contents)
+
+<a id="step-3-implementation"></a>
+
+第 3 步分两批做。第一批做不花钱的部分（已合并），第二批做模型适配器、接线和评测。
+
+- 第一批：核对端口 `OwnerIntentCheckPort`（输入只有主人原话和动作的类别、参数，没有工具结果）；严格解析 `judgeOwnerIntent`（答案格式不对、没有把握、不是“明说”、引用了原话但不是逐字出自主人的消息，都算没通过）；`OwnerIntentGate`（只在上面新值清单写的条件下才调用，超时、出错、拿不到原话都算没通过）；新的事实和内置规则；配置键。核对通过时，卡片被省掉，动作直接做，审批记录里仍有预授权的键，规则页上这条规则带“每次都先问我”的开关。
+- 第二批：Jev 适配器（走 Vercel AI Gateway 的 `/v1/decisions`，选择题、带把握、`zeroDataRetention`，发出去前先遮盖敏感内容）、提示词目录里的核对问题、`service-main.ts` 里的接线（只有配置写了这组键且密钥来源适合生产才装上）、70 条评测集和评测脚本 `scripts/evals/owner-intent-live.eval.ts`。DeepSeek V4.1 Flash 只在评测里跑（它是语言模型，`/decisions` 不收，走聊天接口又受出口检查限制）；它要是更好，再单开一批做走治理路径的适配器。
+- 评测（2026-11-14，70 条：夹带指令 30、边界 10、主人明说 30；Jev 一轮、DeepSeek 两轮，合计约 0.03 美元）：夹带指令和边界类被自动放行为 0（Jev 在任何把握门槛下都是 0，DeepSeek 也是 0）。主人明说的 30 条里，Jev 判“明说”的有 29 条，但它给的把握普遍在 570 到 870 之间：`minConfidence` 900 只放行 2 条，700 放行 16 条，600 放行 24 条，500 放行 29 条。DeepSeek（自报把握）放行 29 条。建议生产 `minConfidence` 先用 600：宁可多问一次，注入类在所有门槛下都没漏。评测只有 70 条，样本小，打开之后看审计记录里的实际分布再调。
+- 评测结果出来、Andy 点头之前，生产配置不写这组键，核对不会被调用。
+- 回执上“内容取自哪份外来内容”这一条只写在审计记录和状态记录里（外来来源），还没有出现在发给模型的工具结果里；要不要加，和 Andy 定，因为加了就是新增发给模型的内容。
 
 <a id="steps"></a>
 
@@ -233,7 +257,7 @@ date: "2026-11-12"
 
 第 1 步里外部事件发起的一轮照旧能建提醒（行为不变）；收紧在第 2 步。
 
-任务管理（查任务状态、取任务输出、取消任务）在第 1 步只登记进表，不另组动作意图：查状态和取输出登记为读取；取消仍由现有的检查把关，即只能管这一轮自己开出来的任务（原因码 `TASK_RESOURCE_AUTHORITY_REQUIRED`）。开任务本身一直走写代码那条路的权限引擎。取消要不要在“上下文里有外来内容”时也等主人点头，放到第 2 步和那条事实一起定。
+任务管理（查任务状态、取任务输出、取消任务）在第 1 步只登记进表，不另组动作意图：查状态和取输出登记为读取；取消仍由现有的检查把关，即只能管这一轮自己开出来的任务（原因码 `TASK_RESOURCE_AUTHORITY_REQUIRED`）。开任务本身一直走写代码那条路的权限引擎。取消要不要在“上下文里有外来内容”时也等主人点头，放到第 2 步和那条事实一起定。第 2 步定下：取消改走统一出口，登记为只动主人自己数据的操作，由内置规则 `action_preauthorize_own_task_cancel` 直接放行，读过外来内容也不问，因为最坏结果是停掉一个自己开的任务；“只能管自己开出来的任务”那道检查保留不变。
 
 设备动作（第 4 步）不经过模型工具那条路进来，所以统一出口另留一个只收动作意图的入口（`OwnerScopeAuthorization.decide`）：调用方拼好动作意图，它过动作闸门和权限引擎，返回放行、等主人点头或拒绝。
 

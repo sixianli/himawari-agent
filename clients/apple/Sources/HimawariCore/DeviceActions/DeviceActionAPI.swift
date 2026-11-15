@@ -27,7 +27,7 @@ extension DeviceAPI: DeviceActionTransport {
             struct Body: Decodable { let state: String; let replayed: Bool }
             let body = try decode(Body.self, data)
             return .recorded(state: body.state, replayed: body.replayed)
-        } catch let DeviceAPIError.server(status, code, _) where status == 404 || status == 409 || status == 400 {
+        } catch let DeviceAPIError.server(status, code, _, _) where status == 404 || status == 409 || status == 400 {
             return .refused(status: status, code: code)
         }
     }
@@ -56,9 +56,9 @@ extension DeviceAPI: DeviceActionTransport {
             let challenge = try await issueConfirmChallenge()
             let data = try await http.send(DeviceRequest(method: "POST", path: "actions/policy", body: body, nonce: challenge, confirmSigner: confirm, confirmReason: reason))
             return .written(try decode(DevicePolicyView.self, data))
-        } catch let DeviceAPIError.server(status, _, _) where status == 403 {
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 403 {
             return .ownerPresenceRequired
-        } catch let DeviceAPIError.server(status, _, _) where status == 409 {
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 409 {
             return .conflict(try await actionPolicy())
         }
     }
@@ -99,7 +99,7 @@ extension DeviceAPI: DeviceActionTransport {
             ))
             struct Reply: Decodable { let status: String }
             return .recorded(status: try decode(Reply.self, data).status)
-        } catch let DeviceAPIError.server(status, _, _) where status == 409 {
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 409 {
             return .changed
         }
     }

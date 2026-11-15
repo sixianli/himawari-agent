@@ -2,6 +2,7 @@ import type {
   ActionKind,
   AutomaticActionReviewPort,
   ActionRiskLevel,
+  ApprovalAskedBecause,
   ApprovalDisplay,
   ApprovalDisplayInput,
   ApprovalRequest,
@@ -281,6 +282,7 @@ export class ActionPolicyService {
       readonly uiAvailable: boolean;
       readonly approvalExpiresAt: string;
       readonly display?: () => Promise<ApprovalDisplayInput>;
+      readonly askedBecause?: ApprovalAskedBecause;
       readonly signal?: AbortSignal;
     },
   ): Promise<PermissionDecision> {
@@ -301,6 +303,7 @@ export class ActionPolicyService {
       readonly uiAvailable: boolean;
       readonly approvalExpiresAt: string;
       readonly display?: () => Promise<ApprovalDisplayInput>;
+      readonly askedBecause?: ApprovalAskedBecause;
       builtDisplay?: ApprovalDisplay;
       readonly signal?: AbortSignal;
     },
@@ -491,7 +494,7 @@ export class ActionPolicyService {
       }
       options.signal?.throwIfAborted();
       if (!options.builtDisplay) {
-        options.builtDisplay = await this.approvalDisplay(options.display);
+        options.builtDisplay = await this.approvalDisplay(options.display, options.askedBecause);
         options.signal?.throwIfAborted();
         return this.evaluateCurrent(intent, options, allowReview);
       }
@@ -536,20 +539,19 @@ export class ActionPolicyService {
 
   private async approvalDisplay(
     build: (() => Promise<ApprovalDisplayInput>) | undefined,
+    askedBecause: ApprovalAskedBecause | undefined,
   ): Promise<ApprovalDisplay> {
     let input: ApprovalDisplayInput = { displayTitle: null, bodyPreview: null, origin: null };
     if (build) {
       try {
         input = await build();
-      } catch {
-        // Display facts are never authority; a failed lookup leaves them empty.
-      }
+      } catch {}
     }
     return Object.freeze({
       displayTitle: input.displayTitle,
       bodyPreview: input.bodyPreview,
       origin: input.origin,
-      askedBecause: Object.freeze({ kind: "no_rule_allows" as const }),
+      askedBecause: Object.freeze(askedBecause ?? { kind: "no_rule_allows" as const }),
     });
   }
 

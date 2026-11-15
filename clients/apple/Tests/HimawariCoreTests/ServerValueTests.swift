@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import HimawariCore
 
-@Suite struct ServerValueTests {
+@Suite(.serialized) struct ServerValueTests {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         try JSONDecoder().decode(type, from: Data(json.utf8))
     }
@@ -134,4 +134,68 @@ import Testing
         #expect(UnknownStateRecheck.outcome(of: DeviceAPIError.server(status: 403, code: "DEVICE_SUSPENDED")) == .stillUnknown)
         #expect(UnknownStateRecheck.outcome(of: URLError(.timedOut)) == .stillUnknown)
     }
+
+    @Test func eachNewValueIsReportedOnceAndKnownValuesNeverAre() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil) }
+        _ = try decode([ThreadStatus].self, #"["active","zz-diag-new","zz-diag-new","archived"]"#)
+        _ = try decode([MessageRole].self, #"["zz-diag-new","owner"]"#)
+        let mine = reports.all.filter { $0.raw == "zz-diag-new" }
+        #expect(mine == [UnknownServerValue(type: "ThreadStatus", raw: "zz-diag-new"), UnknownServerValue(type: "MessageRole", raw: "zz-diag-new")])
+        #expect(!reports.all.contains { $0.raw == "active" || $0.raw == "owner" || $0.raw == "archived" })
+    }
+
+    @Test func aLongValueIsCutAndWithoutAnObserverNothingHappens() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe(nil)
+        _ = try decode([ThreadStatus].self, #"["zz-diag-silent"]"#)
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil) }
+        let long = "zz-diag-long-" + String(repeating: "x", count: 200)
+        _ = try decode([ThreadStatus].self, "[\"\(long)\",\"zz-diag-silent\"]")
+        #expect(reports.all.first { $0.raw.hasPrefix("zz-diag-long-") }?.raw.count == 64)
+        #expect(reports.all.contains { $0.raw == "zz-diag-silent" })
+    }
+
+    @Test func longValuesSharingTheirFirstCharactersCountOnce() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil) }
+        let head = "zz-diag-same-" + String(repeating: "y", count: ServerValueDiagnostics.rawLimit)
+        _ = try decode([ThreadStatus].self, "[\"\(head)a\",\"\(head)b\"]")
+        #expect(reports.all.filter { $0.raw.hasPrefix("zz-diag-same-") }.count == 1)
+    }
+
+    @Test func atMostTheDistinctLimitOfValuesIsReported() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil); ServerValueDiagnostics.shared.reset() }
+        let values = (0..<(ServerValueDiagnostics.distinctLimit + 1)).map { "\"zz-diag-many-\($0)\"" }.joined(separator: ",")
+        _ = try decode([ThreadStatus].self, "[\(values)]")
+        #expect(reports.all.filter { $0.raw.hasPrefix("zz-diag-many-") }.count == ServerValueDiagnostics.distinctLimit)
+    }
+
+    @Test func eachTypeHasItsOwnLimit() throws {
+        let reports = Reports()
+        ServerValueDiagnostics.shared.reset()
+        ServerValueDiagnostics.shared.observe { reports.add($0) }
+        defer { ServerValueDiagnostics.shared.observe(nil); ServerValueDiagnostics.shared.reset() }
+        let many = (0..<(ServerValueDiagnostics.distinctLimit + 1)).map { "\"zz-own-\($0)\"" }.joined(separator: ",")
+        _ = try decode([ThreadStatus].self, "[\(many)]")
+        _ = try decode([ExecutionPhase].self, "[\"zz-own-other-type\"]")
+        #expect(reports.all.filter { $0.raw == "zz-own-other-type" }.count == 1)
+    }
+}
+
+private final class Reports: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [UnknownServerValue] = []
+
+    func add(_ item: UnknownServerValue) { lock.withLock { items.append(item) } }
+    var all: [UnknownServerValue] { lock.withLock { items } }
 }

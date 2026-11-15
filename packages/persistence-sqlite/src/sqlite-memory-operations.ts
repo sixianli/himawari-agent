@@ -14,6 +14,7 @@ import type {
   MemoryIndexEmbedding,
   MemoryIndexSearchResult,
   MemoryProjectionJob,
+  MemorySourceType,
   ProductMemoryAttributes,
   ProductMemoryRecord,
   SensitiveMemoryApprovalRequest,
@@ -26,6 +27,7 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
+import { isKnownMemorySourceType, PERCEPTION_MEMORY_SOURCE_ID } from "./memory-source-types.ts";
 import { insertLedgerRow, validateLedgerWrite } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertConsolidationWrite } from "./sqlite-memory-consolidation-operations.ts";
@@ -510,14 +512,24 @@ export class SqliteMemoryOperations {
     }
   }
 
-  private sources(memoryId: MemoryId): readonly string[] {
-    return this.database
+  private sources(memoryId: MemoryId): Pick<ProductMemoryRecord, "sourceRefs" | "sourceTypes"> {
+    const rows = this.database
       .prepare(
-        `SELECT source_id FROM memory_provenance WHERE memory_id = ?
-        ORDER BY source_type, source_id`,
+        `SELECT source_type AS type, source_id AS id FROM memory_provenance WHERE memory_id = ?
+        ORDER BY source_id, source_type`,
       )
-      .pluck()
-      .all(memoryId) as string[];
+      .all(memoryId) as { type: string; id: string }[];
+    const typed = rows.filter(({ type }) => type !== "reference");
+    return {
+      sourceRefs: [...new Set(rows.map(({ id }) => id))],
+      ...(typed.length > 0
+        ? {
+            sourceTypes: Object.freeze(
+              Object.fromEntries(typed.map(({ type, id }) => [id, type as MemorySourceType])),
+            ),
+          }
+        : {}),
+    };
   }
 
   private memoryFromRow(row: MemoryRow): ProductMemoryRecord {
@@ -530,7 +542,7 @@ export class SqliteMemoryOperations {
       contentRef: row.contentRef,
       dataClassification: row.classification,
       sourceThreadId: row.sourceThreadId as ThreadId | null,
-      sourceRefs: this.sources(row.id as MemoryId),
+      ...this.sources(row.id as MemoryId),
       inference: row.inference === 1,
       confidencePermille: row.confidencePermille,
       policyVersion: row.policyVersion,
@@ -875,10 +887,36 @@ export class SqliteMemoryOperations {
       }
       const insertSource = this.database.prepare(
         `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
-        VALUES (?, 'reference', ?, 0) ON CONFLICT DO NOTHING`,
+        VALUES (?, ?, ?, 0) ON CONFLICT DO NOTHING`,
       );
+      const recordedSource = this.database
+        .prepare(
+          "SELECT 1 FROM memory_provenance WHERE memory_id = ? AND source_type = ? AND source_id = ?",
+        )
+        .pluck();
+      const perceptionRecord = this.database
+        .prepare(
+          `SELECT 1 FROM perception_records
+            WHERE id = ? AND owner_id = ? AND agent_id = ? AND status = 'active'`,
+        )
+        .pluck();
+      const sourceTypes = input.memory.sourceTypes ?? {};
+      for (const sourceRef of Object.keys(sourceTypes))
+        if (!input.memory.sourceRefs.includes(sourceRef))
+          this.fail("PORT_INVALID_OPERATION", "Memory source type names an unknown source");
       for (const sourceRef of [...new Set(input.memory.sourceRefs)]) {
-        insertSource.run(input.memory.id, sourceRef);
+        const sourceType = sourceTypes[sourceRef] ?? "reference";
+        if (!isKnownMemorySourceType(sourceType))
+          this.fail("PORT_INVALID_OPERATION", "Memory source type is not registered");
+        if (sourceType === "perception" && !PERCEPTION_MEMORY_SOURCE_ID.test(sourceRef))
+          this.fail("PORT_INVALID_OPERATION", "Perception memory source id is invalid");
+        if (
+          sourceType === "perception" &&
+          !recordedSource.get(input.memory.id, sourceType, sourceRef) &&
+          !perceptionRecord.get(sourceRef, input.memory.ownerId, input.memory.agentId)
+        )
+          this.fail("PORT_INVALID_OPERATION", "Perception memory source does not exist");
+        insertSource.run(input.memory.id, sourceType, sourceRef);
       }
       return this.read(input.memory.id) as ProductMemoryRecord;
     });

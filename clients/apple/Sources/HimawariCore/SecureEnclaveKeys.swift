@@ -20,16 +20,32 @@ public struct SecureEnclaveKeySigner: DeviceKeySigner {
     public func sign(_ message: Data, reason: String?) async throws -> Data {
         let context = LAContext()
         if let reason { context.localizedReason = reason }
-        let key = try store.load(role, context: role == .confirm ? context : nil)
+        let key: SecureEnclave.P256.Signing.PrivateKey
+        do {
+            key = try store.load(role, context: role == .confirm ? context : nil)
+        } catch let error as DeviceKeyError {
+            throw error
+        } catch {
+            throw DeviceKeyError.keyUnreadable(role)
+        }
         return try key.signature(for: message).rawRepresentation
     }
 }
 
 public struct SecureEnclaveKeyStore: Sendable {
     public let service: String
+    public let accessGroup: String?
 
-    public init(service: String) {
+    public init(service: String, accessGroup: String? = nil) {
         self.service = service
+        self.accessGroup = accessGroup
+    }
+
+    private func scoped(_ query: [String: Any]) -> [String: Any] {
+        guard let accessGroup else { return query }
+        var query = query
+        query[kSecAttrAccessGroup as String] = accessGroup
+        return query
     }
 
     public func signer(_ role: DeviceKeyRole) -> SecureEnclaveKeySigner {
@@ -71,7 +87,7 @@ public struct SecureEnclaveKeyStore: Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: key.dataRepresentation,
         ]
-        let status = SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(scoped(query) as CFDictionary, nil)
         guard status == errSecSuccess else { throw DeviceKeyError.keychain(status) }
     }
 
@@ -81,7 +97,7 @@ public struct SecureEnclaveKeyStore: Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: role.rawValue,
         ]
-        let status = SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(scoped(query) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw DeviceKeyError.keychain(status) }
     }
 
@@ -99,7 +115,7 @@ public struct SecureEnclaveKeyStore: Sendable {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let status = SecItemCopyMatching(scoped(query) as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
             if status == errSecItemNotFound { throw DeviceKeyError.keyMissing(role) }
             throw DeviceKeyError.keychain(status)
