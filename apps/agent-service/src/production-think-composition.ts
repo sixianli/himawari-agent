@@ -14,7 +14,7 @@ import type { ProductionProposalBox } from "./production-proposals.js";
 import type { ReminderProposalContext } from "./production-reminder-proposals.js";
 import { thinkActions } from "./production-think-actions.js";
 import { ProductionThinkInbox } from "./production-think-inbox.js";
-import { ThreadThinkRunner } from "./production-think-runner.js";
+import { ThreadThinkRunner, type ThreadThinkRunnerOptions } from "./production-think-runner.js";
 import { ProductionThinkWorker } from "./production-think-worker.js";
 
 export interface ThinkWorthRoute {
@@ -95,7 +95,9 @@ export class ThinkLoop {
       const step = await this.#worker.runOnce(signal);
       busy = step.status === "done";
     } catch (error) {
-      this.#onFailure(error);
+      try {
+        this.#onFailure(error);
+      } catch {}
     }
     this.#schedule(busy ? 0 : this.#intervalMs);
   }
@@ -120,6 +122,7 @@ export function productionThinkLoop(options: {
   readonly box: Pick<ProductionProposalBox, "propose">;
   readonly writer?: ReminderProposalContext["writer"];
   readonly worth: ThinkWorthRoute;
+  readonly cancelRun?: ThreadThinkRunnerOptions["cancelRun"];
   readonly onDiagnostic?: (event: Record<string, string>) => void;
 }) {
   const { configuration, payloads, protector } = options;
@@ -155,6 +158,9 @@ export function productionThinkLoop(options: {
       timeZone,
     }),
     describeSource: (kind) => inbox.sources.get(kind)?.describe,
+    ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+    onFailure: (event, entryId, error) =>
+      diagnostic({ event, entryId, error: error instanceof Error ? error.name : "unknown" }),
   });
   const worker = new ProductionThinkWorker({
     scope,

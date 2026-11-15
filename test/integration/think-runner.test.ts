@@ -57,7 +57,14 @@ describe("think runner", () => {
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function fixture(answer: { status: string; text?: string }) {
+  async function fixture(
+    answer: { status: string; text?: string },
+    options: {
+      readonly entry?: StoredThinkEntry;
+      readonly archiveConflicts?: number;
+    } = {},
+  ) {
+    const entry = options.entry ?? ENTRY;
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-think-runner-"));
     directories.push(stateRoot);
     await mkdir(path.join(stateRoot, "data"));
@@ -104,15 +111,27 @@ describe("think runner", () => {
       clock,
     });
     const real = repository.threadRepository();
-    const commands = new ThreadCommandService({
+    const service = new ThreadCommandService({
       repository: real,
       clock,
       authority: () => AUTHORITY,
     });
+    let conflicts = options.archiveConflicts ?? 0;
+    const commands = {
+      create: service.create.bind(service),
+      admitOwnerMessage: service.admitOwnerMessage.bind(service),
+      setLifecycle: async (input: Parameters<ThreadCommandService["setLifecycle"]>[0]) => {
+        if (conflicts > 0) {
+          conflicts -= 1;
+          throw new Error("PORT_CONFLICT");
+        }
+        return service.setLifecycle(input);
+      },
+    } as unknown as ThreadCommandService;
     registerTaskProposalHandler({
       box,
       configuration,
-      commands,
+      commands: service,
       threads: real,
       payloads,
       protector,
@@ -169,6 +188,8 @@ describe("think runner", () => {
         };
       },
     };
+    const cancelled: string[] = [];
+    const failures: string[] = [];
     const runner = new ThreadThinkRunner({
       configuration,
       commands,
@@ -178,14 +199,30 @@ describe("think runner", () => {
       clock,
       actions: thinkActions({ box, timeZone: "Asia/Tokyo" }),
       describeSource: (kind) => (kind === "email" ? "新邮件" : undefined),
+      cancelRun: async ({ runId }) => {
+        cancelled.push(runId);
+      },
+      onFailure: (event) => failures.push(event),
       pollMs: 1,
     });
-    const think = () =>
+    const think = (signal: AbortSignal = new AbortController().signal) =>
       runner.think({
-        entry: ENTRY,
+        entry,
         summary: "房东请在 11 月 20 日前回复是否续租",
-        signal: new AbortController().signal,
+        signal,
       });
+    const stored = async () => {
+      const db = openQualifiedDatabase(file);
+      try {
+        return db
+          .prepare(
+            "SELECT origin, source_ref AS sourceRef, source_version AS sourceVersion FROM owner_proposals",
+          )
+          .all() as { origin: string; sourceRef: string | null; sourceVersion: string | null }[];
+      } finally {
+        db.close();
+      }
+    };
     const list = async () => (await box.list()).proposals;
     const thread = async () => {
       const db = openQualifiedDatabase(file);
@@ -209,7 +246,7 @@ describe("think runner", () => {
         db.close();
       }
     };
-    return { think, list, prompts, thread, run };
+    return { think, list, prompts, thread, run, cancelled, failures, stored };
   }
 
   it("starts a run marked as think, then turns the answer into a waiting proposal and archives the thread", async () => {
@@ -271,5 +308,69 @@ describe("think runner", () => {
     const prose = await fixture({ status: "completed", text: "我觉得应该回复房东。" });
     expect(await prose.think()).toEqual({ outcome: "skipped", reasonCode: "answer_invalid" });
     expect(await prose.list()).toEqual([]);
+  });
+
+  it("cancels the run and still archives the thread when the wait runs out", async () => {
+    const { think, thread, cancelled } = await fixture({ status: "running" });
+    await expect(think(AbortSignal.timeout(20))).rejects.toBeDefined();
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0]?.startsWith("run:think:")).toBe(true);
+    expect(await thread()).toEqual([{ archived: 1 }]);
+  });
+
+  it("does not cancel a run that finished on its own", async () => {
+    const { think, cancelled } = await fixture({ status: "failed" });
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "run_failed" });
+    expect(cancelled).toEqual([]);
+  });
+
+  it("retries archiving after a revision conflict and reports when it keeps failing", async () => {
+    const once = await fixture({ status: "failed" }, { archiveConflicts: 1 });
+    await once.think();
+    expect(await once.thread()).toEqual([{ archived: 1 }]);
+    expect(once.failures).toEqual([]);
+    const always = await fixture({ status: "failed" }, { archiveConflicts: 10 });
+    expect(await always.think()).toEqual({ outcome: "skipped", reasonCode: "run_failed" });
+    expect(await always.thread()).toEqual([{ archived: 0 }]);
+    expect(always.failures).toEqual(["think.archive_failed"]);
+  });
+
+  it("does not propose again when an entry is retried after its thread was archived", async () => {
+    const { think, list } = await fixture({
+      status: "completed",
+      text: JSON.stringify({
+        action: "task.run",
+        reason: "房东要求回复续租",
+        text: "回复房东续租",
+      }),
+    });
+    expect(await think()).toEqual({ outcome: "proposed", reasonCode: "proposal_written" });
+    const before = await list();
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "run_already_finished" });
+    expect(await list()).toEqual(before);
+  });
+
+  it("keeps the proposal source within the export limits for the longest accepted source", async () => {
+    const { think, stored } = await fixture(
+      {
+        status: "completed",
+        text: JSON.stringify({ action: "task.run", reason: "看看这页", text: "读一下这页再说" }),
+      },
+      {
+        entry: {
+          ...ENTRY,
+          id: "think-entry-long",
+          sourceKind: "k".repeat(64),
+          sourceRef: "r".repeat(256),
+          sourceVersion: "v".repeat(256),
+          externalContent: false,
+        } as StoredThinkEntry,
+      },
+    );
+    expect(await think()).toEqual({ outcome: "proposed", reasonCode: "proposal_written" });
+    const [row] = await stored();
+    expect(row?.origin).toBe("external_content");
+    expect(row?.sourceRef?.length).toBeLessThanOrEqual(256);
+    expect(row?.sourceVersion?.length).toBeLessThanOrEqual(128);
   });
 });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type CancelCoordinatedRunInput,
   type ClockPort,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -9,6 +10,7 @@ import {
   type ThinkRunAnswer,
   type ThreadCommandService,
   type ThreadRepositoryPort,
+  threadCommandFingerprint,
 } from "@himawari-agent/application";
 import {
   renderPrompt,
@@ -33,6 +35,7 @@ export const THINK_MESSAGE_PREFIX = "message:think:";
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 const POLL_MS = 2_000;
 const SNAPSHOT_LIMIT = 50;
+const ARCHIVE_ATTEMPTS = 3;
 
 export function isThinkRunSource(
   source: Pick<RunExecutionSource, "sourceType" | "sourceId"> | undefined,
@@ -102,6 +105,10 @@ export interface ThreadThinkRunnerOptions {
   readonly clock: ClockPort;
   readonly actions: ThinkActionRegistry;
   readonly describeSource: (kind: string) => string | undefined;
+  readonly cancelRun?: (
+    input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
+  ) => Promise<void>;
+  readonly onFailure?: (event: string, entryId: string, error: unknown) => void;
   readonly pollMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -131,6 +138,7 @@ export class ThreadThinkRunner implements ThinkRunner {
   #ids(entry: StoredThinkEntry) {
     const key = createHash("sha256").update(entry.id).digest("hex").slice(0, 32);
     return {
+      key,
       threadId: `thread:think:${key}` as ThreadId,
       messageId: `${THINK_MESSAGE_PREFIX}${key}` as MessageId,
       turnId: `turn:think:${key}` as TurnId,
@@ -150,6 +158,15 @@ export class ThreadThinkRunner implements ThinkRunner {
     const ownerId = configuration.ownerId as OwnerId;
     const agentId = configuration.agentId as AgentId;
     const id = this.#ids(entry);
+    const earlier = await this.#options.threads.readDetailSnapshot({
+      ownerId,
+      agentId,
+      threadId: id.threadId,
+      afterSequence: 0,
+      limit: 1,
+    });
+    if (earlier && earlier.thread.status !== "active")
+      return { outcome: "skipped", reasonCode: "run_already_finished" };
     const now = clock.now();
     const sourceDescription = this.#options.describeSource(entry.sourceKind) ?? entry.sourceKind;
     const message = thinkRunMessage({
@@ -198,9 +215,15 @@ export class ThreadThinkRunner implements ThinkRunner {
     let answer: RunAnswer;
     try {
       answer = await this.#await(ownerId, agentId, id.threadId, id.runId, signal);
+    } catch (error) {
+      if (signal.aborted)
+        await this.#cancel(id.runId, id.contentRef).catch((cancelError: unknown) =>
+          this.#report("think.cancel_failed", entry.id, cancelError),
+        );
+      throw error;
     } finally {
-      await this.#archive(ownerId, agentId, id.threadId, entry.id, id.contentRef).catch(
-        () => undefined,
+      await this.#archive(ownerId, agentId, id.threadId, id.key, id.contentRef).catch(
+        (archiveError: unknown) => this.#report("think.archive_failed", entry.id, archiveError),
       );
     }
     if (answer.status !== "completed")
@@ -208,6 +231,25 @@ export class ThreadThinkRunner implements ThinkRunner {
     const parsed = answer.text === undefined ? undefined : parseThinkRunAnswer(answer.text);
     if (!parsed) return { outcome: "skipped", reasonCode: "answer_invalid" };
     return this.#propose(parsed, entry, id.threadId);
+  }
+
+  #report(event: string, entryId: string, error: unknown) {
+    try {
+      this.#options.onFailure?.(event, entryId, error);
+    } catch {}
+  }
+
+  async #cancel(runId: RunId, contentRef: string) {
+    const cancelRun = this.#options.cancelRun;
+    if (!cancelRun) throw new Error("THINK_RUN_CANCEL_UNAVAILABLE");
+    await cancelRun({
+      runId,
+      command: {
+        idempotencyKey: `think-cancel:${runId}` as never,
+        commandFingerprint: threadCommandFingerprint({ type: "think.cancel", runId }),
+        payloadRef: contentRef as never,
+      },
+    });
   }
 
   async #propose(
@@ -272,26 +314,33 @@ export class ThreadThinkRunner implements ThinkRunner {
     ownerId: OwnerId,
     agentId: AgentId,
     threadId: ThreadId,
-    entryId: string,
+    key: string,
     contentRef: string,
   ) {
-    const snapshot = await this.#options.threads.readDetailSnapshot({
-      ownerId,
-      agentId,
-      threadId,
-      afterSequence: 0,
-      limit: 1,
-    });
-    if (!snapshot) return;
-    await this.#options.commands.setLifecycle({
-      ownerId,
-      agentId,
-      threadId,
-      expectedRevision: snapshot.thread.revision,
-      status: "archived",
-      reasonCode: "think_finished",
-      idempotencyKey: `think-archive:${entryId}`,
-      resultRef: contentRef as never,
-    });
+    for (let attempt = 1; ; attempt += 1) {
+      const snapshot = await this.#options.threads.readDetailSnapshot({
+        ownerId,
+        agentId,
+        threadId,
+        afterSequence: 0,
+        limit: 1,
+      });
+      if (!snapshot || snapshot.thread.status !== "active") return;
+      try {
+        await this.#options.commands.setLifecycle({
+          ownerId,
+          agentId,
+          threadId,
+          expectedRevision: snapshot.thread.revision,
+          status: "archived",
+          reasonCode: "think_finished",
+          idempotencyKey: `think-archive:${key}:${snapshot.thread.revision}`,
+          resultRef: contentRef as never,
+        });
+        return;
+      } catch (error) {
+        if (attempt >= ARCHIVE_ATTEMPTS) throw error;
+      }
+    }
   }
 }

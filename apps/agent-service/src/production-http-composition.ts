@@ -1253,6 +1253,7 @@ export async function createProductionHttpComposition(
         box: proposalBox,
         ...(reminderWriter ? { writer: reminderWriter } : {}),
         worth: options.think.worth,
+        ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
         ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
       })
     : undefined;

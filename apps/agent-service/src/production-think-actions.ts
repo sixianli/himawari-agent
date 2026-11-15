@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   THINK_ACTION_REMINDER_CREATE,
   THINK_ACTION_REMINDER_RESCHEDULE,
@@ -18,14 +19,29 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+const SOURCE_REF_LENGTH = 256;
+const SOURCE_VERSION_LENGTH = 128;
+
+function bounded(value: string, maximum: number): string {
+  return value.length <= maximum
+    ? value
+    : `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function sourceRef(context: ThinkActionContext): string {
+  return bounded(`${context.entry.sourceKind}:${context.entry.sourceRef}`, SOURCE_REF_LENGTH);
+}
+
 function common(context: ThinkActionContext) {
   return {
-    origin: context.entry.externalContent ? ("external_content" as const) : ("inferred" as const),
+    origin: "external_content" as const,
     threadId: context.threadId,
     externalContentSeen: true,
     source: {
-      ref: `${context.entry.sourceKind}:${context.entry.sourceRef}`,
-      version: context.entry.sourceVersion || null,
+      ref: sourceRef(context),
+      version: context.entry.sourceVersion
+        ? bounded(context.entry.sourceVersion, SOURCE_VERSION_LENGTH)
+        : null,
     },
     reason: context.reason,
   };
@@ -49,9 +65,7 @@ export function thinkActions(options: {
         { box, ...common(context) },
         {
           text: task,
-          basis: [
-            { kind: "think_source", ref: `${context.entry.sourceKind}:${context.entry.sourceRef}` },
-          ],
+          basis: [{ kind: "think_source", ref: sourceRef(context) }],
         },
       );
     },

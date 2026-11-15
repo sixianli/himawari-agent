@@ -112,4 +112,30 @@ describe("think run pieces", () => {
     await loop.stop();
     expect(failures).toHaveLength(1);
   });
+
+  it("keeps the loop alive when reporting a failure throws", async () => {
+    let calls = 0;
+    let resolveSecond: () => void = () => undefined;
+    const second = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const loop = new ThinkLoop({
+      worker: {
+        runOnce: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("boom");
+          resolveSecond();
+          return { status: "idle" };
+        },
+      },
+      intervalMs: 1,
+      onFailure: () => {
+        throw new Error("diagnostic output closed");
+      },
+    });
+    loop.start();
+    await second;
+    await loop.stop();
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
 });
