@@ -115,7 +115,7 @@ struct DeviceActionResultRow: View {
     @ViewBuilder
     private var undoControl: some View {
         switch view.undo {
-        case .available, .failed:
+        case .available:
             Button(action: undo) {
                 if busy { spinner } else { Text(L.text("result.undo")) }
             }
@@ -125,7 +125,7 @@ struct DeviceActionResultRow: View {
             Button(action: {}) { spinner }
                 .buttonStyle(RowPillButtonStyle(filled: true))
                 .disabled(true)
-        case .done, .none:
+        case .done, .failed, .none:
             EmptyView()
         }
     }
@@ -137,8 +137,7 @@ struct DeviceActionResultRow: View {
     }
 
     static func undoFailure(_ view: DeviceActionView) -> String {
-        guard let reason = view.reason, !reason.isEmpty else { return L.text("result.undo.failed") }
-        return reason
+        L.text("result.undo.failed")
     }
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {

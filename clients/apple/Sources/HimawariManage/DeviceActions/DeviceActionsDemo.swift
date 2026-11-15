@@ -68,7 +68,7 @@ enum DeviceActionsDemo {
        "createdAt":"2026-11-13T05:11:00.000Z","updatedAt":"2026-11-13T05:11:04.000Z",
        "detail":{"zh-CN":"日历里加了“牙医复诊”，11 月 18 日 15:00","en":"Added “Dentist follow-up” on Nov 18 at 15:00","ja":"11月18日 15:00 に「歯医者の再診」を追加"}},
       {"id":"dact_demo6","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"failed",
-       "createdAt":"2026-11-13T05:05:00.000Z","updatedAt":"2026-11-13T05:10:00.000Z","reason":"日历里已经找不到这个日程了，没法撤回",
+       "createdAt":"2026-11-13T05:05:00.000Z","updatedAt":"2026-11-13T05:10:00.000Z",
        "detail":{"zh-CN":"把日历里“周会”挪到 16:00","en":"Moved “Weekly sync” to 16:00","ja":"「定例会」を 16:00 に変更"}},
       {"id":"dact_demo5","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"done",
        "createdAt":"2026-11-13T05:00:00.000Z","updatedAt":"2026-11-13T05:08:00.000Z",
