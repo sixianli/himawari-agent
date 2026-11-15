@@ -1,0 +1,8 @@
+# PR 518 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1 [中高/需确认] 作者说手机端接 `suggestion.*`，代码实际接的是 `proposals.*`，两套合约族不同。沿用第 1 轮第 4 条、第 2 轮第 6 条原判：代码用 proposals.read / proposal.respond 是对的（architecture-v0.1.md:428,431；Web 端 memory.ts:145,188），suggestion.* 是 brief 措辞错误，主线程已确认；无新证据
+- 2（deepseek-v4.1-flash）不成立：### 2 [中] `requiresFullRead` 的“先展开依据”门槛会被只有 `sources` 的依据绕过，且 sources 从未显示。sources 是内部引用（kind、ref），不是给人看的文字，沿用第 1 轮第 8 条、第 2 轮第 3 条原判；只有 sources、没有 text 和 figures 的依据展开后本来就没有可读内容，门槛无可读之物可守，ProposalModels.swift:39-41 的 hasEvidence 按“有可读内容”定义是对的；服务端仍在 production-proposals.ts 校验 fullReadToken
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3 [低] 演示的 proposals 快照 `generatedAt` 仍不是网关要求的毫秒格式。ManageDemo.swift:178 的 generatedAt 为 2026-11-12T00:00:00Z，确实漏改；触发：拿演示的 proposals 快照当合约证据时；后果：generatedAt 缺毫秒，过不了 validation.ts:128-137；Swift 端 Snapshot<ProposalList> 不解析 generatedAt，不会解码失败，只影响演示数据
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4 [低] 新增的采纳门槛没有自动检查，反向用例不会失败。ProposalsPage.swift:106 的禁用条件在视图里，没有单测；写法能更好（抽成纯函数加反向用例），照现在的代码不会出错，门槛行为本身正确
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5 [低] 上一轮第 5 条只改了一半：原始错误已核对，但测试仍是自造 transport，且只断言 409。沿用第 1 轮第 6 条、第 2 轮第 5 条原判：自造 transport 不新增合约解析测试；ProposalsTests.swift 已断言抛出 ManageGatewayError.rejected 且 status 为 409，补断言 code 和重读次数只是测试写法更好，不改变运行行为
+- 6（deepseek-v4.1-flash）不成立：### 6 [低/需确认] 新加的 `.disabled` 与外层 `.disabled(busy)` 叠加语义未验证，忙时可能仍可重复点采纳。SwiftUI 的 disabled 沿视图树向下传递：祖先 disabled(true) 时，子视图写 .disabled(false) 也不会重新启用（子级只能再加禁用，不能解除祖先的禁用），所以 ProposalsPage.swift:109 的 .disabled(busy) 对采纳按钮始终有效，busy 时不会重复点采纳；未编译，依据 SwiftUI 文档语义

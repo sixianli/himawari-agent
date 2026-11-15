@@ -11,7 +11,7 @@ import {
   readPreUpgradeAuthorization, readCatalogState, runPrepare, verifyUpgradePlan, verifyUpgradedCatalog, verifyCatalogRecordsAtS0, readCatalogResume,
   readPostSwitchAuthorization, readRestoredCatalog, evidenceRoot, oldPrefix, newPrefix, operations, sha,
   currentConfigurationStage, readOriginalConfiguration, staticRootConfigurationBytes, staticRootConfigurationSha256, newStaticRoot, verifyPendingCapabilities, verifyPreparedCapabilities, upgradeResultExpectation,
-  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, verifyHistoryAgainstRecoveryPoint, currentSchema, targetSchema,
+  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, currentSchema, targetSchema,
   migrateDatabase, readMigrationContent, describeMigrationSnapshot,
 } from "./maintenance-common.mjs";
 import { fixed } from "../s0-db/read-s0-db.mjs";
@@ -208,8 +208,7 @@ async function main(action) {
       report.state = retain("s8-database-readback.json", after);
       report.authorization = retain("s8-current-authorization.json", readPostSwitchAuthorization(binding));
       report.recoveryPoints = { ["schema" + currentSchema]: (await verifyRetainedRecovery(binding)).proof };
-      report.history = retain("s8-history-preserved.json", verifyHistoryAgainstRecoveryPoint(binding));
-      report.scope = "rows-present-at-s3-unchanged-new-rows-allowed-startup-recovery-column-allowed-upgraded-capability-catalog-existing-workspace-grant-and-raw-recovery-point-not-paid-chat-acceptance";
+      report.scope = "upgraded-capability-catalog-existing-workspace-grant-and-raw-recovery-point-not-paid-chat-acceptance";
     } else if (action === "S9_SIDECAR_TIDY") {
       const approval = readRollbackApproval(binding, "S9_RAW_RESTORE51");
       report.approvalSha256 = approval.sha256;

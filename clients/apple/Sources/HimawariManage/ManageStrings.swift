@@ -41,9 +41,48 @@ enum M {
         text("跑在你自己的服务器上", ja: "あなた自身のサーバーで動いています", en: "Running on your own server")
     }
     static var himawariSelf: String { text("Himawari 自己", ja: "Himawari 自身", en: "Himawari itself") }
+    static var proposalsTitle: String { text("待采纳的改进", ja: "採用待ちの改善", en: "Improvements to adopt") }
+    static var proposalsSubtitle: String {
+        text("它想改自己的做法，你说了算", ja: "自分のやり方を変えたい。決めるのはあなた", en: "It wants to change how it works. You decide")
+    }
+    static var proposalsNone: String { text("没有", ja: "なし", en: "None") }
+    static var noProposals: String { text("没有待采纳的改进", ja: "採用待ちの改善はありません", en: "No improvements waiting") }
+    static var proposalAdopt: String { text("采纳", ja: "採用", en: "Adopt") }
+    static var proposalDecline: String { text("不要", ja: "見送る", en: "No thanks") }
+    static var proposalWhy: String { text("为什么这么想", ja: "そう考えた理由", en: "Why it thinks so") }
+    static var proposalHideWhy: String { text("收起", ja: "閉じる", en: "Hide") }
+    static var proposalAdopted: String { text("已采纳", ja: "採用しました", en: "Adopted") }
+    static var proposalChanged: String { text("这条刚改了，请重新看一眼", ja: "この項目が変わりました。もう一度ご確認ください", en: "This one just changed. Please look again") }
+    static var proposalGone: String { text("这条已经处理过或过期了", ja: "この項目は処理済みか期限切れです", en: "This one was already handled or expired") }
+    static func proposalsFootnote(limit: Int, days: Int) -> String {
+        text(
+            "最多同时留 \(limit) 条，\(days) 天没处理的会收走",
+            ja: "同時に最大 \(limit) 件。\(days) 日たつと片付けられます",
+            en: "Up to \(limit) at a time. Untouched ones go away after \(days) days"
+        )
+    }
+    static func proposalFigure(_ figure: ProposalFigure) -> String { "\(figure.name) \(figure.value)" }
     static var capabilities: String { text("它会的本事", ja: "できること", en: "What it can do") }
     static var waitingForYou: String { text("等你看", ja: "確認待ち", en: "Waiting for you") }
     static var inUse: String { text("在用", ja: "使用中", en: "In use") }
+    static func disabledAt(_ iso: String, now: Date = Date()) -> String? {
+        guard let date = Timestamp.parse(iso) else { return nil }
+        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "en_GB")))
+        let day = Calendar.current.isDate(date, inSameDayAs: now) ? text("今天", ja: "今日", en: "Today") : pairedDay(date)
+        return text("\(day) \(time) 停用", ja: "\(day) \(time) に停止", en: "\(day) \(time) turned off")
+    }
+
+    static func cancelledJobs(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return text("取消了 \(count) 个定时任务，不会自动恢复", ja: "定期タスク \(count) 件を取り消しました。自動では戻りません", en: "\(count) scheduled tasks were cancelled and won't resume on their own")
+    }
+
+    static var reactivateFailed: String { text("没能重新启用", ja: "再び有効にできませんでした", en: "Couldn't turn it back on") }
+
+    static func confirmReactivateCapability(_ name: String) -> String {
+        text("重新启用“\(name)”", ja: "「\(name)」を再び有効にする", en: "Turn \(name) back on")
+    }
+
     static var disabledCapabilities: String { text("停用了", ja: "停止中", en: "Turned off") }
     static func capabilityExpansions(_ items: [String]) -> String? {
         guard !items.isEmpty else { return nil }
@@ -247,6 +286,22 @@ enum M {
     }
 
     static var yourWords: String { text("你的原话", ja: "あなたの言葉", en: "Your words") }
+    static var on: String { text("开", ja: "オン", en: "On") }
+    static var off: String { text("关", ja: "オフ", en: "Off") }
+    static var notificationsTitle: String { text("通知", ja: "通知", en: "Notifications") }
+    static var deliveryGroup: String { text("什么时候送", ja: "いつ届けるか", en: "When to deliver") }
+    static var thinkTitle: String { text("想一想的门槛", ja: "考える基準", en: "Thinking thresholds") }
+    static var tuningDisabled: String { text("未开启", ja: "オフ", en: "Off") }
+    static var tuningSave: String { text("保存", ja: "保存", en: "Save") }
+    static var tuningRestore: String { text("恢复默认", ja: "初期値に戻す", en: "Restore default") }
+    static var tuningSaveFailed: String { text("没能保存", ja: "保存できませんでした", en: "Couldn't save") }
+    static func tuningDefault(_ value: String) -> String {
+        text("默认 \(value)", ja: "初期値 \(value)", en: "Default \(value)")
+    }
+    static func confirmTuning(_ name: String) -> String {
+        text("修改“\(name)”", ja: "「\(name)」を変更", en: "Change \(name)")
+    }
+
     static var general: String { text("通用", ja: "一般", en: "General") }
     static var exportTitle: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export memories and rules") }
     static var confirmExport: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export your memories and rules") }
@@ -271,7 +326,12 @@ enum M {
     static func exportWithheld(_ count: Int) -> String {
         text("另有 \(count) 条敏感内容没导出", ja: "ほかに \(count) 件の機密内容は書き出していません", en: "\(count) sensitive items were left out")
     }
+    static var saveToFiles: String { text("存到“文件”", ja: "「ファイル」に保存", en: "Save to Files") }
+    static var sendElsewhere: String { text("发到别处", ja: "ほかへ送る", en: "Share") }
     static var exportExpired: String { text("过期了", ja: "期限が切れました", en: "Expired") }
+    static var exportPackFailed: String { text("没能打包", ja: "まとめられませんでした", en: "Couldn't pack it") }
+    static var exportDownloadFailed: String { text("没能下载", ja: "ダウンロードできませんでした", en: "Couldn't download it") }
+    static var downloadAgain: String { text("再下载一次", ja: "もう一度ダウンロード", en: "Download again") }
     static var exportAgain: String { text("重新打包", ja: "もう一度まとめる", en: "Pack again") }
     static var loginBrowsers: String { text("登录着的浏览器", ja: "ログイン中のブラウザ", en: "Signed-in browsers") }
     static var noLoginBrowsers: String { text("没有登录着的浏览器", ja: "ログイン中のブラウザはありません", en: "No browsers signed in") }

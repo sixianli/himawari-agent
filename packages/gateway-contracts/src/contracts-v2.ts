@@ -13,9 +13,9 @@ import {
   nullable,
   object,
   parseJson,
+  proactiveSourceName,
   type Schema,
   timestamp,
-  proactiveSourceName,
 } from "./validation.js";
 
 export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
@@ -62,6 +62,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "delivery_timing.settings.read",
+  "delivery_timing.settings.snapshot",
+  "delivery_timing.settings.change",
   "proposals.read",
   "proposals.snapshot",
   "proposal.respond",
@@ -162,6 +165,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "perception.usage.read",
   "perception.usage.snapshot",
   "perception.settings.change",
+  "think.settings.read",
+  "think.settings.snapshot",
+  "think.settings.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -177,6 +183,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "login.devices.read",
   "login.devices.snapshot",
   "login.device.revoke",
+  "mcp.connections.read",
+  "mcp.connections.snapshot",
+  "mcp.connection.create",
+  "mcp.connection.change",
+  "mcp.connection.rotate",
   "login.devices.revoke_others",
   "stream.event",
 ] as const;
@@ -547,6 +558,42 @@ const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
 });
+const deliveryTimingSettingsQuerySchema = object({
+  ...envelope("query", "delivery_timing.settings.read"),
+  payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
+});
+const settingValueKindSchema = enumeration(["ratio", "duration", "count"]);
+const settingStorageUnitSchema = enumeration(["permille", "ms", "s", "min", "h", "d", "count"]);
+const deliveryTimingSettingsSnapshotSchema = object({
+  ...envelope("snapshot", "delivery_timing.settings.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        key: machineString,
+        label: boundedString(80),
+        description: boundedString(240),
+        unit: boundedString(16),
+        kind: settingValueKindSchema,
+        storageUnit: settingStorageUnitSchema,
+        value: integer(0),
+        defaultValue: integer(0),
+        minimum: integer(0),
+        maximum: integer(0),
+        overridden: booleanValue,
+      }),
+    ),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const deliveryTimingSettingsChangeCommandSchema = object({
+  ...commandEnvelope("delivery_timing.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    key: machineString,
+    value: nullable(integer(0)),
+  }),
+});
 export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
 export const DEVICE_STATUSES = ["pending", "active", "revoked"] as const;
 export const DEVICE_LIMIT_KEYS = [
@@ -587,6 +634,18 @@ const devicePairingNumberSchema: Schema<string> = {
     return input;
   },
 };
+function isHiddenNameCharacter(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x2064) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0xfeff ||
+    (code >= 0xe0000 && code <= 0xe007f)
+  );
+}
 const HIDDEN_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const deviceNameSchema: Schema<string> = {
   parse(input, path = "$") {
@@ -833,6 +892,47 @@ const perceptionSettingsChangeCommandSchema = object({
     enabled: nullable(booleanValue),
     until: nullable(timestamp),
     key: nullable(machineString),
+    value: nullable(integer(0)),
+  }),
+});
+const thinkSettingsQuerySchema = object({
+  ...envelope("query", "think.settings.read"),
+  payload: object({}),
+});
+const thinkSettingTextSchema = object({
+  "zh-CN": boundedString(400),
+  en: boundedString(400),
+  ja: boundedString(400),
+});
+const thinkSettingsSnapshotSchema = object({
+  ...envelope("snapshot", "think.settings.snapshot"),
+  payload: object({
+    revision: integer(0),
+    enabled: booleanValue,
+    items: array(
+      object({
+        key: machineString,
+        value: integer(0),
+        defaultValue: integer(0),
+        minimum: integer(0),
+        maximum: integer(0),
+        unit: machineString,
+        kind: settingValueKindSchema,
+        storageUnit: settingStorageUnitSchema,
+        overridden: booleanValue,
+        label: thinkSettingTextSchema,
+        description: thinkSettingTextSchema,
+        unitLabel: thinkSettingTextSchema,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const thinkSettingsChangeCommandSchema = object({
+  ...commandEnvelope("think.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    key: machineString,
     value: nullable(integer(0)),
   }),
 });
@@ -1177,6 +1277,121 @@ const loginDeviceRevokeCommandSchema = object({
     deviceId: machineString,
     recentAuthenticationRef: nullable(machineString),
   }),
+});
+export const MCP_CONNECTION_STATUS_NAMES = ["active", "paused", "revoked"] as const;
+export const MCP_CONNECTION_READ_CEILING_NAMES = ["public", "private", "sensitive"] as const;
+export const MCP_CONNECTION_PUSH_POLICY_NAMES = ["ask", "direct"] as const;
+export const MCP_CONNECTION_CAPABILITY_NAMES = ["command_hooks", "mcp", "scheduled_tasks"] as const;
+export const MCP_CONNECTION_LIMIT_KEYS = [
+  "mcp.connections",
+  "mcp.connection.name_characters",
+  "mcp.request.body_bytes",
+  "mcp.reads_per_minute",
+  "mcp.hook_reads_per_minute",
+] as const;
+export const MCP_CONNECTION_NAME_CHARACTERS = 64;
+const mcpConnectionNameSchema: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string")
+      throw new ContractValidationError(path, "expected a connection name");
+    const trimmed = input.trim();
+    const characters = [...trimmed];
+    if (
+      characters.length < 1 ||
+      characters.length > MCP_CONNECTION_NAME_CHARACTERS ||
+      characters.some((character) => isHiddenNameCharacter(character.codePointAt(0) ?? 0))
+    )
+      throw new ContractValidationError(
+        path,
+        `expected a 1-${MCP_CONNECTION_NAME_CHARACTERS} character connection name`,
+      );
+    return trimmed;
+  },
+};
+const mcpConnectionCapabilitiesSchema: Schema<
+  readonly (typeof MCP_CONNECTION_CAPABILITY_NAMES)[number][]
+> = {
+  parse(input, path = "$") {
+    const values = array(enumeration(MCP_CONNECTION_CAPABILITY_NAMES)).parse(input, path);
+    if (new Set(values).size !== values.length)
+      throw new ContractValidationError(path, "expected each capability once");
+    return values;
+  },
+};
+const mcpUsageDaySchema = patternString(/^\d{4}-\d{2}-\d{2}$/u, "expected a YYYY-MM-DD day");
+const mcpConnectionUsageSchema = object({
+  reads: integer(0),
+  readsByTool: array(object({ tool: boundedString(64), calls: integer(0) })),
+  delivered: integer(0),
+  empty: integer(0),
+  autoReads: integer(0),
+  autoDelivered: integer(0),
+  modelReads: integer(0),
+  memoryPushes: integer(0),
+  ruleProposals: integer(0),
+  ruleProposalsRateLimited: integer(0),
+  failed: integer(0),
+  rateLimited: integer(0),
+});
+const mcpConnectionsQuerySchema = object({
+  ...envelope("query", "mcp.connections.read"),
+  payload: object({}),
+});
+const mcpConnectionsSnapshotSchema = object({
+  ...envelope("snapshot", "mcp.connections.snapshot"),
+  payload: object({
+    connections: array(
+      object({
+        id: machineString,
+        name: mcpConnectionNameSchema,
+        capabilities: mcpConnectionCapabilitiesSchema,
+        readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+        pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+        status: enumeration(MCP_CONNECTION_STATUS_NAMES),
+        reportedClient: nullable(boundedString(64)),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        secretRotatedAt: nullable(timestamp),
+        lastSeenAt: nullable(timestamp),
+        minute: object({ reads: integer(0), hookReads: integer(0) }),
+        usage: mcpConnectionUsageSchema,
+      }),
+    ),
+    window: object({ fromDay: mcpUsageDaySchema, toDay: mcpUsageDaySchema, days: integer(1) }),
+    limits: array(
+      object({
+        key: enumeration(MCP_CONNECTION_LIMIT_KEYS),
+        value: integer(0),
+        used: nullable(integer(0)),
+      }),
+    ),
+    addressPath: boundedString(256),
+    generatedAt: timestamp,
+  }),
+});
+const mcpConnectionCreateCommandSchema = object({
+  ...commandEnvelope("mcp.connection.create"),
+  payload: object({
+    name: mcpConnectionNameSchema,
+    capabilities: mcpConnectionCapabilitiesSchema,
+    readCeiling: enumeration(MCP_CONNECTION_READ_CEILING_NAMES),
+    pushPolicy: enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES),
+  }),
+});
+const mcpConnectionChangeCommandSchema = object({
+  ...commandEnvelope("mcp.connection.change"),
+  payload: object({
+    connectionId: machineString,
+    name: nullable(mcpConnectionNameSchema),
+    capabilities: nullable(mcpConnectionCapabilitiesSchema),
+    readCeiling: nullable(enumeration(MCP_CONNECTION_READ_CEILING_NAMES)),
+    pushPolicy: nullable(enumeration(MCP_CONNECTION_PUSH_POLICY_NAMES)),
+    status: nullable(enumeration(MCP_CONNECTION_STATUS_NAMES)),
+  }),
+});
+const mcpConnectionRotateCommandSchema = object({
+  ...commandEnvelope("mcp.connection.rotate"),
+  payload: object({ connectionId: machineString }),
 });
 const proactiveSettingsSetCommandSchema = object({
   ...commandEnvelope("proactive.settings.set"),
@@ -1685,6 +1900,21 @@ const proactiveWeeklySnapshotSchema = object({
           }),
         ),
       }),
+      mcpConnections: nullable(
+        object({
+          fromDay: mcpUsageDaySchema,
+          toDay: mcpUsageDaySchema,
+          connections: array(
+            object({
+              id: machineString,
+              name: mcpConnectionNameSchema,
+              status: enumeration(MCP_CONNECTION_STATUS_NAMES),
+              lastSeenAt: nullable(timestamp),
+              usage: mcpConnectionUsageSchema,
+            }),
+          ),
+        }),
+      ),
       prereview: object({
         agreementPermille: integer(0, 1000),
         confidencePermille: integer(0, 1000),
@@ -3246,6 +3476,13 @@ export const capabilitySnapshotSchema = object({
   }),
 });
 
+const grantDetailLinesSchema = array(boundedString(300));
+const grantDetailSchema = object({
+  "zh-CN": grantDetailLinesSchema,
+  en: grantDetailLinesSchema,
+  ja: grantDetailLinesSchema,
+});
+
 export const grantSnapshotSchema = object({
   ...envelope("snapshot", "grant.snapshot"),
   payload: object({
@@ -3275,6 +3512,8 @@ export const grantSnapshotSchema = object({
     revokedAt: nullable(timestamp),
     revocationReasonCode: nullable(machineString),
     affectedTaskRefs: array(machineString),
+    label: nullable(approvalDisplayText(301)),
+    detail: grantDetailSchema,
     generatedAt: timestamp,
   }),
 });
@@ -3499,6 +3738,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
+  "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
+  "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
   "proposals.read": proposalsQuerySchema,
   "proposals.snapshot": proposalsSnapshotSchema,
   "proposal.respond": proposalRespondCommandSchema,
@@ -3517,6 +3759,9 @@ const schemasByType = {
   "perception.usage.read": perceptionUsageQuerySchema,
   "perception.usage.snapshot": perceptionUsageSnapshotSchema,
   "perception.settings.change": perceptionSettingsChangeCommandSchema,
+  "think.settings.read": thinkSettingsQuerySchema,
+  "think.settings.snapshot": thinkSettingsSnapshotSchema,
+  "think.settings.change": thinkSettingsChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
@@ -3532,6 +3777,11 @@ const schemasByType = {
   "login.devices.read": loginDevicesQuerySchema,
   "login.devices.snapshot": loginDevicesSnapshotSchema,
   "login.device.revoke": loginDeviceRevokeCommandSchema,
+  "mcp.connections.read": mcpConnectionsQuerySchema,
+  "mcp.connections.snapshot": mcpConnectionsSnapshotSchema,
+  "mcp.connection.create": mcpConnectionCreateCommandSchema,
+  "mcp.connection.change": mcpConnectionChangeCommandSchema,
+  "mcp.connection.rotate": mcpConnectionRotateCommandSchema,
   "login.devices.revoke_others": loginDevicesRevokeOthersCommandSchema,
   "sensitive.interceptions.read": sensitiveInterceptionsQuerySchema,
   "sensitive.interceptions.snapshot": sensitiveInterceptionsSnapshotSchema,

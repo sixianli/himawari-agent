@@ -14,3 +14,7 @@ __pycache__/
 
 # 本地放置的 Muse 提示词资料，不进仓库
 /muse_prompt/
+
+.claude/worktrees/
+.agents/local/
+.cb-delegate/

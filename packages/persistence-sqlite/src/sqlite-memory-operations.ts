@@ -1704,6 +1704,7 @@ export class SqliteMemoryOperations {
           FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
           GROUP BY thread_id) m ON m.thread_id = t.id
         WHERE t.owner_id = @ownerId AND t.agent_id = @agentId AND t.status = 'open'
+          AND t.origin = 'owner'
           AND m.last_sequence > summarizedThrough
           AND (@activeSince IS NULL OR m.last_committed_at >= @activeSince)
         ORDER BY m.last_committed_at, t.id LIMIT @limit`,

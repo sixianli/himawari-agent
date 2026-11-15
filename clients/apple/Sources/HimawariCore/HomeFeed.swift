@@ -239,12 +239,6 @@ public struct HomeFeedSnapshot: Codable, Sendable, Equatable {
     }
 }
 
-public enum HomeRequestId {
-    public static func make() -> String {
-        "home-\(OutgoingMessage.newId())"
-    }
-}
-
 extension DeviceAPI {
     public func homeFeed(locale: HomeLocale) async throws -> HomeFeedSnapshot {
         let data = try await http.send(DeviceRequest(method: "GET", path: "home", query: [URLQueryItem(name: "locale", value: locale.rawValue)]))

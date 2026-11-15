@@ -87,7 +87,7 @@ struct HomeFeedTests {
 
     @Test func homeRequestIdsStartWithALetterOrDigitAndStayInsideTheServerCharacterSet() {
         for _ in 0 ..< 2000 {
-            let id = HomeRequestId.make()
+            let id = DeviceAPI.newActionRequestId()
             #expect(id.count <= 128)
             #expect(id.first?.isLetter == true || id.first?.isNumber == true)
             #expect(id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._:-".contains($0)) })

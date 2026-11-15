@@ -84,7 +84,9 @@ import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invoca
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteDeliveryTimingSettingsOperations } from "./sqlite-delivery-timing-settings-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
+import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
@@ -392,11 +394,13 @@ export class SqliteDurableOperations {
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
   private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
+  private readonly mcpConnections: SqliteMcpConnectionOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
   private readonly ledgerObservation: SqliteLedgerObservationOperations;
   private readonly ownerPreferences: SqliteOwnerPreferencesOperations;
+  private readonly deliveryTimingSettings: SqliteDeliveryTimingSettingsOperations;
   private readonly modelUsage: SqliteModelUsageOperations;
   private readonly realEval: SqliteRealEvalOperations;
   private readonly webPush: SqliteWebPushOperations;
@@ -502,6 +506,7 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
+    this.mcpConnections = new SqliteMcpConnectionOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(
       database,
       fail,
@@ -516,6 +521,11 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.ownerPreferences = new SqliteOwnerPreferencesOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
+    this.deliveryTimingSettings = new SqliteDeliveryTimingSettingsOperations(
       database,
       fail,
       assertDiskHeadroom,
@@ -695,6 +705,8 @@ export class SqliteDurableOperations {
     if (operation.startsWith("homeUrgency.")) return this.homeUrgency.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))
       return this.externalMemoryProposals.execute(operation, payload);
+    if (operation.startsWith("mcpConnection."))
+      return this.mcpConnections.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("ownerProposal."))
@@ -709,6 +721,8 @@ export class SqliteDurableOperations {
       return this.ledgerObservation.execute(operation, payload);
     if (operation.startsWith("ownerPreferences."))
       return this.ownerPreferences.execute(operation, payload);
+    if (operation.startsWith("deliveryTimingSettings."))
+      return this.deliveryTimingSettings.execute(operation, payload);
     if (operation.startsWith("modelUsage.")) return this.modelUsage.execute(operation, payload);
     if (operation.startsWith("realEval.")) return this.realEval.execute(operation, payload);
     if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);

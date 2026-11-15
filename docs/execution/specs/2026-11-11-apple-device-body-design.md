@@ -232,7 +232,7 @@ Cloudflare（服务令牌是第一道门）──隧道──▶ 生产机上的
 | `GET data-export/archive?exportId=…` | 下载已做好的导出包（只读；导出包只能由已过面容的 `data.export.start` 产生）          |
 | `GET files/content/{fileId}`      | 下载主人自己的文件内容（只读，只认路径里的文件编号，不接受查询参数）                   |
 
-设备能做的就是这张表，不是网页能做的全部。比如设备接口里没有“改规则”“删记忆”“发起导出”，这些只在嵌入的网页里做，走网页会话（设备只能下载已经做好的导出包，不能发起导出）；换网页会话要主人本人当场解锁（见上文“嵌入的网页”）。
+设备能做的就是这张表，不是网页能做的全部。比如设备接口里没有“改规则”“删记忆”，这些只在嵌入的网页里做，走网页会话（设备可以在主人当场面容确认后发起导出，也可以下载已经做好的导出包）；换网页会话要主人本人当场解锁（见上文“嵌入的网页”）。
 
 系统代传（App 被挂起后由苹果系统继续上传）只支持“从文件上传”，所以 `perception`、`perception/media`、`track` 都接受“一个文件装一批”的形式，用上传凭据而不是请求签名（见上节）。
 
@@ -763,6 +763,8 @@ Mac 的两个动作只在 `device_policies` 允许的范围内（见[设备身�
 | 苹果推送的应用标识和环境                                          | 配置、设备登记时                       | 推送服务                                                                                                             | 和令牌的环境对不上就不发                                                                                                                                                                | `test/integration/push-channels.test.ts`                                                                                          |
 | `limit_usage` 的周期开始时间                                      | 服务器按主人时区算                     | 账、清零                                                                                                             | 换时区和夏令时的用例                                                                                                                                                                    | `test/integration/usage-limits.test.ts`                                                                                           |
 | 工具错误码 `DEVICE_ACTION_CONFIRMATION_REQUIRED` 和固定说明 `tools.result.device-action.unconfirmed` | `device_action` 执行端（确认入口没有返回同意时） | 对话工具清单把错误码和说明放进给模型的工具结果 | 错误码是代码里的常量；说明文字登记在提示词清单，没登记检查不过 | `test/integration/perception-tools.test.ts`、`npm run check:prompt-catalog` |
+| 通知编号 `notificationId`（`webPushTopic(sourceKey)`，同时是推送标签）、`notification.deliver` 和 `notification.withdraw` 事件、`settledIds` | 服务器放置通知时（`mac-placement.ts`、`production-web-push.ts`） | Mac 事件流、iPhone 的推送载荷顶层 `notificationId`、`POST notifications/settled` | 编号只含字母、数字、下划线、连字符且不超过 64 位；对账请求最多 200 个，返回只含请求里的编号；Mac 的 `deliver` 事件不带 `id:` 行 | `test/integration/push-channels.test.ts`、`test/integration/device-notifications.test.ts` |
+| 在场信号 `lastInputAt`、`serverTime`、送达时机第 12 项 `macPresenceSeconds` | Mac 报 `lastInputAt`，服务器回 `serverTime`；`macPresenceSeconds` 来自送达时机设置 | `POST presence`、放置通知时选 Mac | `lastInputAt` 必须是毫秒精度 ISO 时间，服务器夹在当前时间以内，只有 Mac 能调；`macPresenceSeconds` 默认 300、范围 30 到 3600；Mac 事件里的标题不超过 256 字节、正文不超过 2048 字节，超出的按字符截断并以 `…` 结尾（产生端 `production-web-push.ts` 的 `clip`） | `test/integration/device-notifications.test.ts`、`packages/application/test/delivery-timing.unit.test.ts` |
 
 [返回阅读导航](#contents)
 

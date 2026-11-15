@@ -60,3 +60,6 @@
 "pairing.startOver.confirmUnknown" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost, but any unsent messages on this iPhone will be deleted with it.";
 "today.actionFailed" = "That didn’t go through. Try again.";
 "today.presenceReason" = "confirm it is you approving this";
+"watch.offer.title" = "Use this link for your Apple Watch?";
+"watch.offer.watch" = "Use for Watch";
+"watch.offer.cancel" = "Not now";

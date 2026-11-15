@@ -12,6 +12,8 @@ import type {
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
   DecisionLedgerPort,
+  DeliveryTimingSettingsStorePort,
+  DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
   GapCaseMarkPort,
@@ -20,6 +22,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
   LedgerObservationPort,
+  McpConnectionStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -37,9 +40,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
-  ThinkInboxStorePort,
   OwnerRuleStorePort,
-  DeviceActionStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
   PerceptionStorePort,
@@ -69,6 +70,7 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
+  ThinkInboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -1021,6 +1023,20 @@ export class SqliteDurableAdapters {
     });
   }
 
+  mcpConnections(): McpConnectionStorePort {
+    return Object.freeze<McpConnectionStorePort>({
+      create: (input) => this.context.write("mcpConnection.create", input),
+      list: (input) => this.context.read("mcpConnection.list", input),
+      read: (input) => this.context.read("mcpConnection.read", input),
+      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
+      change: (input) => this.context.write("mcpConnection.change", input),
+      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
+      touch: (input) => this.context.write("mcpConnection.touch", input),
+      addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
+      usage: (input) => this.context.read("mcpConnection.usage", input),
+    });
+  }
+
   homeUrgency(): HomeUrgencyStorePort {
     return Object.freeze<HomeUrgencyStorePort>({
       listScores: (input) => this.context.read("homeUrgency.listScores", input),
@@ -1064,6 +1080,8 @@ export class SqliteDurableAdapters {
       settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
       summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
       clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
+      readSettings: (input) => this.context.write("thinkInbox.readSettings", input),
+      changeSettings: (input) => this.context.write("thinkInbox.changeSettings", input),
     });
   }
 
@@ -1164,6 +1182,13 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
+  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
+    return Object.freeze<DeliveryTimingSettingsStorePort>({
+      read: (input) => this.context.read("deliveryTimingSettings.read", input),
+      write: (input) => this.context.write("deliveryTimingSettings.write", input),
+    });
+  }
+
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
@@ -1350,6 +1375,7 @@ export class SqliteDurableAdapters {
       readCursor: (input) => this.context.read("webPush.readCursor", input),
       enqueue: (input) => this.context.write("webPush.enqueue", input),
       listDue: (input) => this.context.read("webPush.listDue", input),
+      listRecent: (input) => this.context.read("webPush.listRecent", input),
       deferItem: (input) => this.context.write("webPush.deferItem", input),
       recordDeliveryTiming: (input) => this.context.write("webPush.recordDeliveryTiming", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),

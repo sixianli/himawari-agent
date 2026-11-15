@@ -15,6 +15,7 @@ import {
   type DataClassification,
   DEFAULT_HOME_URGENCY,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
+  DELIVERY_TIMING_DEFAULTS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -55,7 +56,6 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  DeviceActionHub,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
@@ -67,6 +67,9 @@ import {
   createGoogleOAuth,
   createWebPushSender,
   DescriptorRelativeReadOnly,
+  DeviceActionHub,
+  DeviceNotificationHub,
+  DevicePresence,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
   EXECUTION_UDS_ERROR_CODES,
@@ -109,16 +112,21 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
+import { MacPlacement } from "./mac-placement.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import {
   createDeliveryTimingSource,
+  DeliveryTimingHolder,
   productionDeliveryTiming,
 } from "./production-delivery-timing.js";
+import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
+import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -126,7 +134,6 @@ import { createProductionFileReadServices } from "./production-file-read-service
 import { ProductionGapExport } from "./production-gap-export.js";
 import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
-import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -192,8 +199,6 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
-import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -209,6 +214,8 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { productionThinkWorth, type ThinkWorthRoute } from "./production-think-composition.js";
+import { isThinkRunSource } from "./production-think-runner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
@@ -721,6 +728,15 @@ export async function startTenantRuntime(
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
   const deviceActionHub = new DeviceActionHub();
+  const deviceNotificationHub = new DeviceNotificationHub();
+  const devicePresence = new DevicePresence();
+  const macPlacement = new MacPlacement({
+    hub: deviceNotificationHub,
+    presence: devicePresence,
+    windowMilliseconds: () =>
+      (deliveryTimingHolder?.current() ?? DELIVERY_TIMING_DEFAULTS).macPresenceSeconds * 1000,
+    nowMilliseconds: () => Date.parse(productionClock().now()),
+  });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
@@ -734,11 +750,13 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let deliveryTimingHolder: DeliveryTimingHolder | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
+  let thinkWorth: ThinkWorthRoute | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1661,6 +1679,11 @@ export async function startTenantRuntime(
         timeZone: reminderTimeZone ?? "UTC",
         now: () => clock.now(),
         authorization: productionDeviceActionAuthorization({ ownerScope, registry: toolActions }),
+        openRequests: {
+          requestOpen: async (input) => {
+            await applePush?.requestOpen(input);
+          },
+        },
       });
       const perceptionTools = new ProductionPerceptionTools({
         scope: perceptionScope,
@@ -1679,6 +1702,10 @@ export async function startTenantRuntime(
         now: () => clock.now(),
         ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
+      const runSources = repository.runExecutionSource(
+        configuration.ownerId,
+        configuration.agentId,
+      );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         reminders: reminderTools,
@@ -1688,6 +1715,10 @@ export async function startTenantRuntime(
         externalContent,
         perception: perceptionTools,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
+        readOnlyRun: async (runId) => {
+          const source = await runSources.read(runId);
+          return source === undefined || isThinkRunSource(source);
+        },
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
           : {}),
@@ -1980,6 +2011,7 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
+      thinkWorth = productionThinkWorth(configuration, hostModelSources(configuration).provider);
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -2654,6 +2686,7 @@ export async function startTenantRuntime(
               }
             : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          connections: repository.mcpConnections(),
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
             recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),
@@ -2842,7 +2875,18 @@ export async function startTenantRuntime(
         }
         const timingConfiguration = configuration.runPolicy?.deliveryTiming;
         const timingModel = productionDeliveryTiming(configuration, sources.provider);
+        if (timingModel && timingConfiguration)
+          deliveryTimingHolder = new DeliveryTimingHolder(
+            timingConfiguration,
+            (
+              await pushRepository.deliveryTimingSettings().read({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+              })
+            ).overrides,
+          );
         webPush = new ProductionWebPush({
+          placement: macPlacement,
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
           store: pushRepository.webPush(),
@@ -2922,11 +2966,11 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
-          ...(timingModel && timingConfiguration
+          ...(timingModel && deliveryTimingHolder
             ? {
                 timing: createDeliveryTimingSource({
                   model: timingModel,
-                  configuration: timingConfiguration,
+                  configuration: deliveryTimingHolder.current,
                   store: pushRepository.perception(),
                   scope: {
                     ownerId: configuration.ownerId,
@@ -2975,6 +3019,9 @@ export async function startTenantRuntime(
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
         marks: repository.gapCaseMarks(),
+        ...(configuration.runPolicy?.mcpRead
+          ? { mcpConnections: repository.mcpConnections() }
+          : {}),
         ...(protector
           ? {
               seal: createProactiveSeal({
@@ -3316,6 +3363,7 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
+        ...(deliveryTimingHolder ? { deliveryTimingSettings: deliveryTimingHolder } : {}),
         webPush: {
           presence: webPushPresence,
           push: webPush,
@@ -3324,7 +3372,23 @@ export async function startTenantRuntime(
         ...(deviceActions
           ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
           : {}),
+        deviceNotifications: {
+          hub: deviceNotificationHub,
+          presence: devicePresence,
+          settled: async (ids) => (await webPush?.settled(ids)) ?? [],
+        },
         ...(proactive ? { proactive } : {}),
+        thinkRetentionDiagnostic: (event: Record<string, string>) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        ...(thinkWorth
+          ? {
+              think: {
+                worth: thinkWorth,
+                onDiagnostic: (event: Record<string, string>) =>
+                  writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+              },
+            }
+          : {}),
         ...(memoryComposition?.queryPrefetch
           ? {
               queryPrefetch: outsideRunQueryPrefetch(

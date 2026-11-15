@@ -252,6 +252,27 @@ import Testing
         #expect(snapshot.awaitingCount == 2)
     }
 
+    @Test func anActionWithoutABindingIsNeverAMenuBarButton() {
+        let item = HomeItem(key: "connection:gmail", kind: "connection", awaitsOwner: true, sentence: "要重新连接", actions: [
+            HomeAction(action: "reconnect", label: "重连", polarity: "positive", ownerPresence: false, binding: nil),
+            HomeAction(action: "dismiss", label: "知道了", polarity: "neutral", ownerPresence: false, binding: "b1"),
+        ])
+        #expect(item.shownActions.map(\.label) == ["知道了"])
+    }
+
+    @Test func anItemWhoseOnlyActionHasNoBindingIsNotTheMostPressingCard() throws {
+        let json = #"""
+        {"items":[
+          {"key":"connection:gmail","kind":"connection","awaitsOwner":true,"sentence":"要重新连接","actions":[
+            {"action":"reconnect","label":"重连","polarity":"positive","ownerPresence":false,"binding":null}]},
+          {"key":"approval:2","kind":"approval","awaitsOwner":true,"sentence":"第二件","actions":[
+            {"action":"approved","label":"好","polarity":"positive","ownerPresence":false,"binding":"b1"}]}],
+         "awaitingCount":2,"revision":"r1"}
+        """#
+        let snapshot = try JSONDecoder().decode(HomeSnapshot.self, from: Data(json.utf8))
+        #expect(try #require(snapshot.mostPressing).key == "approval:2")
+    }
+
     @Test func nothingWaitingMeansNoCard() throws {
         let json = #"{"items":[{"key":"done:1","kind":"done","awaitsOwner":false,"sentence":"x","actions":[]}],"awaitingCount":0,"revision":"r"}"#
         #expect(try JSONDecoder().decode(HomeSnapshot.self, from: Data(json.utf8)).mostPressing == nil)
