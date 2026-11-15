@@ -26,6 +26,7 @@ public final class SettingsStore {
     public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
+    @ObservationIgnored public private(set) lazy var proactive = ProactiveSession(gateway: gateway)
 
     public var capabilityCount: Int { waitingCapabilities.count + capabilitiesInUse.count + capabilitiesDisabled.count }
 
@@ -56,6 +57,7 @@ public final class SettingsStore {
         server = await status
         loginDevices = await logins
         proposals = await listedProposals
+        await proactive.reloadOverview()
     }
 
     public func disable(_ capability: CapabilitySummary, reason: String) async throws {

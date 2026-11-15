@@ -210,7 +210,9 @@ public struct ProactiveSource: Decodable, Sendable, Hashable, Identifiable {
 
     public var id: String { source }
 
-    public var displayName: String {
+    public var displayName: String { Self.displayName(of: source) }
+
+    public static func displayName(of source: String) -> String {
         let words = source.split(separator: "_").map { String($0) }
         guard let first = words.first else { return source }
         let head = first.prefix(1).uppercased() + first.dropFirst()

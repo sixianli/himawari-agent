@@ -12,6 +12,11 @@ public struct SettingsRootView: View {
         case export
         case proposals
         case approvals
+        case proactive
+        case proactiveLog
+        case proactiveSources
+        case proactiveSource(String)
+        case proactiveReport
         case tuningList(TuningKind)
         case tuningEdit(TuningKind, String)
     }
@@ -100,6 +105,17 @@ public struct SettingsRootView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if let overview = store.proactive.overview {
+                            Button { path.append(.proactive) } label: {
+                                SettingsRow(
+                                    icon: .mail,
+                                    title: M.proactiveTitle,
+                                    value: overview.enabled ? M.on : M.off,
+                                    chevron: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if let think = store.tuning[.think] {
                             Button { path.append(.tuningList(.think)) } label: {
                                 SettingsRow(
@@ -149,6 +165,11 @@ public struct SettingsRootView: View {
                 case .loginBrowsers: LoginDevicesPage(store: store) { path.removeLast() }
                 case .proposals: ProposalsPage(store: store) { path.removeLast() }
                 case .export: DataExportPage(session: store.export) { path.removeLast() }
+                case .proactive: ProactivePage(store: store, open: { path.append($0) }) { path.removeLast() }
+                case .proactiveLog: ProactiveLogPage(store: store) { path.removeLast() }
+                case .proactiveSources: ProactiveSourcesPage(store: store, open: { path.append(.proactiveSource($0)) }) { path.removeLast() }
+                case .proactiveSource(let id): ProactiveSourcePage(store: store, sourceId: id) { path.removeLast() }
+                case .proactiveReport: ProactiveReportPage(store: store) { path.removeLast() }
                 case .tuningList(let kind):
                     TuningListPage(store: store, kind: kind, open: { path.append(.tuningEdit(kind, $0)) }) { path.removeLast() }
                 case .tuningEdit(let kind, let key):
