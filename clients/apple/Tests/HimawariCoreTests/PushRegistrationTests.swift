@@ -172,4 +172,19 @@ final class SuspendingPushTransport: PushRegistrationTransport, @unchecked Senda
         await sync.deviceReady()
         #expect(transport.callCount == 2)
     }
+
+    @Test func twoOverlappingReadySignalsSendTheSameTokenOnlyOnce() async {
+        let transport = SuspendingPushTransport()
+        let sync = PushTokenSync(transport: transport, context: PushRegistrationContext(environment: "development", topic: "win.siyi.himawari", preferredLanguages: { ["en"] }))
+        await sync.tokenArrived(Data([1]))
+        let first = Task { await sync.deviceReady() }
+        while transport.callCount < 1 { await Task.yield() }
+        let second = Task { await sync.deviceReady() }
+        await second.value
+        #expect(transport.callCount == 1)
+        transport.release()
+        await first.value
+        await sync.deviceReady()
+        #expect(transport.callCount == 1)
+    }
 }
