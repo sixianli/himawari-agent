@@ -118,7 +118,7 @@ struct GrantsPage: View {
                 case .revoked(let affected): notice = M.grantRevoked(affected: affected)
                 case .gone: notice = M.grantGone
                 }
-            } catch where Self.declined(error) {
+            } catch where SettingsStore.isDeclined(error) {
             } catch {
                 failedId = grant.id
             }
@@ -126,10 +126,6 @@ struct GrantsPage: View {
     }
 
     private static let noticeSeconds = 4.0
-
-    private static func declined(_ error: Error) -> Bool {
-        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
-    }
 }
 
 struct NoticeBar: View {
