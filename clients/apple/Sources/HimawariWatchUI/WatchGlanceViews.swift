@@ -56,7 +56,7 @@ public struct WatchGlanceView: View {
                     Text(waitingText(count))
                         .font(.system(.footnote, design: .rounded, weight: .semibold))
                     if let latest {
-                        Text(latest).font(.caption2).lineLimit(2)
+                        Text(latest).font(.caption2).fontWeight(.regular).foregroundStyle(Color.hmMuted).lineLimit(2)
                     }
                 case .nothingWaiting:
                     Text(L.text("glance.quiet"))
