@@ -138,6 +138,17 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
           { code: "standing_rule_change" },
         ],
       }),
+      example(
+        true,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_external_event" },
+            { code: "run_source_owner_approved_task" },
+          ],
+        },
+        "external_event",
+      ),
       example(false, {}),
       example(false, {
         actionKind: "READ",
@@ -232,13 +243,14 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
   }),
   Object.freeze({
     id: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-    revision: 1,
+    revision: 2,
     gate: "action",
     expression:
-      'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts',
+      'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts && !("run_source_owner_approved_task" in facts)',
     outcome: "refuse",
     origin: "built_in",
-    source: "ADR 0257 决定 3；苹果端设计“指令和数据的界线”：后台一律不做",
+    source:
+      "ADR 0257 决定 3；苹果端设计“指令和数据的界线”：后台一律不做；ADR 0278：主人同意过的任务改为问主人",
     status: "active",
     examples: Object.freeze([
       example(
@@ -257,6 +269,17 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
           deterministicFacts: [
             { code: "context_external_content" },
             { code: "run_source_external_event" },
+          ],
+        },
+        "external_event",
+      ),
+      example(
+        false,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_external_event" },
+            { code: "run_source_owner_approved_task" },
           ],
         },
         "external_event",

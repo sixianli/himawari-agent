@@ -253,7 +253,7 @@ export async function proposeTaskRun(
     type: TASK_RUN_PROPOSAL_TYPE,
     summary: `交给我去办：${clip(text, SHOWN_TEXT_LENGTH)}`,
     effect:
-      "新开一个对话，把这段任务说明原样交给我去办；这次运行在后台，需要写入、发送、花钱、删除的动作会被直接拒绝",
+      "新开一个对话，把这段任务说明原样交给我去办；这次运行在后台，发送、花钱、删除照常先问你；读过网页、邮件这类外部内容之后，写入也要先问你，日历、联系人、家居这类设备操作则不做",
     origin: context.origin,
     threadId: context.threadId,
     evidence: [
