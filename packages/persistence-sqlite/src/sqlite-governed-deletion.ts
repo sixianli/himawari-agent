@@ -337,19 +337,21 @@ export class SqliteGovernedDeletionAdapter {
                 )
                 .run(now, objectId);
             }
+            const stillTrashed = previous?.lifecycle === "trashed" ? previous : undefined;
+            const pendingPayloadFiles = Object.freeze([...(previous?.pendingPayloadFiles ?? [])]);
             const next: StoredDeletionRecord = Object.freeze({
               deletionId: deletionId(input.objectType, objectId),
               objectType: input.objectType,
               objectId,
               lifecycle: "trashed",
-              purgeDeadlineAt: previous?.purgeDeadlineAt ?? deadline,
+              purgeDeadlineAt: stillTrashed?.purgeDeadlineAt ?? deadline,
               targets: initialTargets("trash"),
-              payloadFileCount: 0,
-              pendingPayloadFiles: Object.freeze([]),
+              payloadFileCount: pendingPayloadFiles.length,
+              pendingPayloadFiles,
               externalEffectTombstoneCount: 0,
-              associatedTaskIds: previous?.associatedTaskIds ?? associatedTaskIds,
+              associatedTaskIds: stillTrashed?.associatedTaskIds ?? associatedTaskIds,
               pausedTaskIds: Object.freeze([]),
-              priorProductStatus: previous?.priorProductStatus ?? row.status,
+              priorProductStatus: stillTrashed?.priorProductStatus ?? row.status,
               updatedAt: now,
             });
             this.#upsertTombstone(database, next, "pending", null);
@@ -614,6 +616,7 @@ export class SqliteGovernedDeletionAdapter {
     const input = { objectType, objectId };
     const now = this.#now();
     const previous = this.#storedRecord(database, input.objectType, objectId);
+    stillEligible?.(database);
     if (input.objectType === "thread") {
       const activeTaskIds = this.#values(
         database,
