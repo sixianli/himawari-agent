@@ -6021,21 +6021,12 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         const draft = target(phone, UI.composer);
         await uiExpect(draft).toBeVisible({ timeout: 30_000 });
         const text = "手机上发一条消息";
-        const answers = phone.getByText(PLAIN_ANSWER);
-        let answersBefore = await answers.count();
-        for (let steady = 0; steady < 3; ) {
-          await phone.waitForTimeout(500);
-          const current = await answers.count();
-          steady = current === answersBefore ? steady + 1 : 0;
-          answersBefore = current;
-        }
         await draft.fill(text);
         await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
         await target(phone, UI.send).click();
         await uiExpect(phone.getByText(text).last()).toBeVisible({ timeout: 20_000 });
-        await uiExpect(phone.getByText(PLAIN_ANSWER)).toHaveCount(answersBefore + 1, {
-          timeout: 120_000,
-        });
+        const sentTurn = phone.locator(UI.turn).filter({ hasText: text }).last();
+        await uiExpect(sentTurn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
         await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
         await expectPhoneLayout(phone, "after sending");
       } finally {
