@@ -176,6 +176,7 @@ export class OwnerScopeAuthorization {
     ])}`;
     const externalSources = await this.#externalSources(invocation, source);
     const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];
+    if (source.ownerApprovedTask) factCodes.push(POLICY_FACT_CODES.runSourceOwnerApprovedTask);
     if (externalSources.length > 0) factCodes.push(POLICY_FACT_CODES.contextExternalContent);
     if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);
     if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);
@@ -256,9 +257,9 @@ export class OwnerScopeAuthorization {
     source: RunExecutionSource,
   ): Promise<readonly string[]> {
     const marks = this.#options.externalContent;
-    if (!marks) return source.sourceType === "external_event" ? ["external_event"] : [];
-    if (source.sourceType === "external_event")
-      await marks.mark(invocation.runId, "external_event");
+    const eventIsExternal = source.sourceType === "external_event" && !source.ownerApprovedTask;
+    if (!marks) return eventIsExternal ? ["external_event"] : [];
+    if (eventIsExternal) await marks.mark(invocation.runId, "external_event");
     const found: ExternalContentSource[] = [...(await marks.read(invocation.runId))];
     return [...new Set(found.map(({ origin }) => origin))].sort();
   }

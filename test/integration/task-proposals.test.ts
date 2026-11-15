@@ -181,6 +181,24 @@ describe("task run proposals", () => {
       .listUnattendedRuns?.({ failedSince: START, limit: 10 });
     expect(unattended?.map((run) => run.runId)).toEqual([rows[0]?.["runId"]]);
     expect((await box.list()).pendingCount).toBe(0);
+    const runSource = repository.runExecutionSource(OWNER_ID, AGENT_ID);
+    const runId = rows[0]?.["runId"] as never;
+    expect(await runSource.read(runId)).toMatchObject({
+      sourceType: "external_event",
+      ownerApprovedTask: true,
+    });
+    const waiting = await proposeTaskRun(context, {
+      text: "把大阪的酒店也查一下，列出三家。",
+      basis: BASIS,
+    });
+    if (!("proposalId" in waiting)) throw new Error(waiting.refused);
+    expect((await box.list()).pendingCount).toBe(1);
+    const repoint = database2();
+    repoint
+      .prepare("UPDATE triggers SET source_proof_ref = replace(source_proof_ref, ?, ?)")
+      .run(proposed.proposalId, waiting.proposalId);
+    repoint.close();
+    expect(await runSource.read(runId)).not.toHaveProperty("ownerApprovedTask");
   });
 
   it("[reverse] an ordinary owner message is still recorded as a user message and is not listed as unattended", async () => {

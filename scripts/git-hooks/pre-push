@@ -21,3 +21,7 @@ node "$root/scripts/check-repo-hygiene.mjs" >&2 || {
   echo "PUSH_REPO_HYGIENE_FAILED npm run check:repo-hygiene 失败或脚本缺失，推送被拦下" >&2
   exit 1
 }
+node "$root/scripts/check-conflict-markers.mjs" >&2 || {
+  echo "PUSH_CONFLICT_MARKERS_FAILED npm run check:conflict-markers 失败或脚本缺失，推送被拦下" >&2
+  exit 1
+}
