@@ -9,6 +9,7 @@ import {
   createDeploymentId,
   createOwnerId,
 } from "@himawari-agent/domain";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -183,11 +184,17 @@ describe("think settings", () => {
     summary: `邮件 ${ref}：房东请在 11 月 20 日前回复是否续租`,
   });
   const head = {
-    protocolVersion: 2,
+    schemaVersion: "gateway.v2",
     kind: "query",
     type: "think.settings.read",
     messageId: "message-read",
+    correlationId: "correlation-read",
+    causationId: null,
+    dataClassification: "private",
+    risk: "low",
+    authorizationRef: null,
     scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    authority: { deploymentId: DEPLOYMENT_ID, authorityEpoch: 1, fencingToken: 1 },
     actor: { actorType: "owner", actorId: OWNER_ID },
     payload: {},
   };
@@ -216,6 +223,7 @@ describe("think settings", () => {
       };
     };
     expect(snapshot.type).toBe("think.settings.snapshot");
+    expect(() => gatewayV2MessageSchema.parse(JSON.parse(JSON.stringify(snapshot)))).not.toThrow();
     expect(snapshot.payload.revision).toBe(0);
     expect(snapshot.payload.enabled).toBe(true);
     expect(snapshot.payload.items.map((item) => item.key)).toEqual([
