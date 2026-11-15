@@ -43,4 +43,13 @@ describe("frozenRunSourceIdentity", () => {
       canonicalAuthorizationSnapshot(frozenRunSourceIdentity(frozenBeforeOwnerApprovedTask)),
     ).not.toBe(canonicalAuthorizationSnapshot(frozenRunSourceIdentity(other)));
   });
+
+  it("leaves a malformed frozen source as it is so the snapshot comparison still fails", () => {
+    for (const malformed of [undefined, null, "source"]) {
+      expect(frozenRunSourceIdentity(malformed)).toBe(malformed);
+      expect(canonicalAuthorizationSnapshot(frozenRunSourceIdentity(malformed))).not.toBe(
+        canonicalAuthorizationSnapshot(frozenRunSourceIdentity(frozenBeforeOwnerApprovedTask)),
+      );
+    }
+  });
 });

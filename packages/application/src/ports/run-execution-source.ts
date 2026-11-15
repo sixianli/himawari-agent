@@ -30,8 +30,10 @@ export interface RunExecutionSource {
   readonly occurredAt: string;
 }
 
-export function frozenRunSourceIdentity(source: RunExecutionSource): RunExecutionSource {
-  const { ownerApprovedTask: _derivedFromProposalState, ...identity } = source;
+export function frozenRunSourceIdentity(source: unknown): unknown {
+  if (source === null || typeof source !== "object") return source;
+  const { ownerApprovedTask: _derivedFromProposalState, ...identity } =
+    source as RunExecutionSource;
   return identity;
 }
 
