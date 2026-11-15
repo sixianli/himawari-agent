@@ -84,6 +84,7 @@ describe("delivery timing settings live on the server", () => {
       });
     return {
       device,
+      store: () => repository.deliveryTimingSettings(),
       effective: () => effective,
       advance: () => {
         now = T1;
@@ -136,6 +137,25 @@ describe("delivery timing settings live on the server", () => {
     expect(item(payload, "maximumDeferSeconds")).toMatchObject({ value: 7200, overridden: false });
     expect(effective().recheckSeconds).toBe(600);
     expect(effective().maximumDeferSeconds).toBe(7200);
+  });
+
+  it("shows the default for a stored value outside its range, as the running service ignores it", async () => {
+    const { device, store, effective } = await setup();
+    const saved = await store().write({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      key: "recheckSeconds",
+      value: 5,
+      expectedRevision: 0,
+      now: T0,
+    });
+    expect(applyDeliveryTimingOverrides(DELIVERY_TIMING_DEFAULTS, saved.overrides)).toEqual(
+      effective(),
+    );
+    expect(item(await read(device()), "recheckSeconds")).toMatchObject({
+      value: 300,
+      overridden: false,
+    });
   });
 
   it("goes back to the default when the value is cleared", async () => {

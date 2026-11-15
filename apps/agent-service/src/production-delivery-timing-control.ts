@@ -5,6 +5,7 @@ import {
   DELIVERY_TIMING_RANGES,
   type DeliveryTimingConfiguration,
   type DeliveryTimingSettingsStorePort,
+  deliveryTimingOverrideValue,
   PORT_ERROR_CODES,
   type ProductConfiguration,
 } from "@himawari-agent/application";
@@ -51,7 +52,7 @@ export class ProductionDeliveryTimingControl {
       payload: {
         items: DELIVERY_TIMING_KEYS.map((key) => {
           const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
-          const override = settings.overrides[key];
+          const override = deliveryTimingOverrideValue(key, settings.overrides);
           return {
             key,
             value: override ?? this.#options.defaults[key],
