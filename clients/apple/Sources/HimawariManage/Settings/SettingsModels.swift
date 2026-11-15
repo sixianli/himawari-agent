@@ -11,6 +11,12 @@ public struct CapabilitySummary: Decodable, Sendable, Identifiable, Hashable {
     public let lifecycle: String
     public let revision: Int
     public let updateAssessment: UpdateAssessment?
+    public let lastInvalidation: Invalidation?
+
+    public struct Invalidation: Decodable, Sendable, Hashable {
+        public let cancelledScheduledJobs: Int
+        public let occurredAt: String
+    }
 
     public struct UpdateAssessment: Decodable, Sendable, Hashable {
         public let expansions: [String]
