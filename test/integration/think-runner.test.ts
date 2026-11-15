@@ -117,10 +117,12 @@ describe("think runner", () => {
       authority: () => AUTHORITY,
     });
     let conflicts = options.archiveConflicts ?? 0;
+    const proposalsAtArchive: number[] = [];
     const commands = {
       create: service.create.bind(service),
       admitOwnerMessage: service.admitOwnerMessage.bind(service),
       setLifecycle: async (input: Parameters<ThreadCommandService["setLifecycle"]>[0]) => {
+        proposalsAtArchive.push((await box.list()).proposals.length);
         if (conflicts > 0) {
           conflicts -= 1;
           throw new Error("PORT_CONFLICT");
@@ -246,7 +248,7 @@ describe("think runner", () => {
         db.close();
       }
     };
-    return { think, list, prompts, thread, run, cancelled, failures, stored };
+    return { think, list, prompts, thread, run, cancelled, failures, stored, proposalsAtArchive };
   }
 
   it("starts a run marked as think, then turns the answer into a waiting proposal and archives the thread", async () => {
@@ -348,6 +350,20 @@ describe("think runner", () => {
     const before = await list();
     expect(await think()).toEqual({ outcome: "skipped", reasonCode: "run_already_finished" });
     expect(await list()).toEqual(before);
+  });
+
+  it("writes the proposal before archiving, so a crash after archiving cannot lose it", async () => {
+    const { think, list, proposalsAtArchive } = await fixture({
+      status: "completed",
+      text: JSON.stringify({
+        action: "task.run",
+        reason: "房东要求回复续租",
+        text: "回复房东续租",
+      }),
+    });
+    expect(await think()).toEqual({ outcome: "proposed", reasonCode: "proposal_written" });
+    expect(proposalsAtArchive).toEqual([1]);
+    expect(await list()).toHaveLength(1);
   });
 
   it("keeps the proposal source within the export limits for the longest accepted source", async () => {

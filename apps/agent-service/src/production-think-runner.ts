@@ -212,25 +212,27 @@ export class ThreadThinkRunner implements ThinkRunner {
       runId: id.runId,
       occurredAt: now,
     });
-    let answer: RunAnswer;
     try {
-      answer = await this.#await(ownerId, agentId, id.threadId, id.runId, signal);
-    } catch (error) {
-      if (signal.aborted)
-        await this.#cancel(id.runId, id.contentRef).catch((cancelError: unknown) =>
-          this.#report("think.cancel_failed", entry.id, cancelError),
-        );
-      throw error;
+      let answer: RunAnswer;
+      try {
+        answer = await this.#await(ownerId, agentId, id.threadId, id.runId, signal);
+      } catch (error) {
+        if (signal.aborted)
+          await this.#cancel(id.runId, id.contentRef).catch((cancelError: unknown) =>
+            this.#report("think.cancel_failed", entry.id, cancelError),
+          );
+        throw error;
+      }
+      if (answer.status !== "completed")
+        return { outcome: "skipped", reasonCode: `run_${answer.status}` };
+      const parsed = answer.text === undefined ? undefined : parseThinkRunAnswer(answer.text);
+      if (!parsed) return { outcome: "skipped", reasonCode: "answer_invalid" };
+      return await this.#propose(parsed, entry, id.threadId);
     } finally {
       await this.#archive(ownerId, agentId, id.threadId, id.key, id.contentRef).catch(
         (archiveError: unknown) => this.#report("think.archive_failed", entry.id, archiveError),
       );
     }
-    if (answer.status !== "completed")
-      return { outcome: "skipped", reasonCode: `run_${answer.status}` };
-    const parsed = answer.text === undefined ? undefined : parseThinkRunAnswer(answer.text);
-    if (!parsed) return { outcome: "skipped", reasonCode: "answer_invalid" };
-    return this.#propose(parsed, entry, id.threadId);
   }
 
   #report(event: string, entryId: string, error: unknown) {
