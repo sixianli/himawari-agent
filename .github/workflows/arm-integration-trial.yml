@@ -15,8 +15,9 @@ jobs:
     runs-on: ci-arm
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     timeout-minutes: 90
     env:
       CI_NODE: 22.22.3
