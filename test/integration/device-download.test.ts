@@ -106,7 +106,7 @@ async function seedFile(h: Harness, client: PairedClient, content: string) {
     ownerId,
     agentId,
     artifact: {
-      id: "file-download-1",
+      id: "thread-artifact:5b0c4a3e-1f6d-4c1e-9a52-0d3c8e7b9a10",
       threadId: "thread-download",
       runId: "run-download",
       toolCallId: "call-download",
@@ -144,6 +144,15 @@ describe("[iOS-11] device-signed downloads of an export archive and a stored fil
     expect(file.headers["content-disposition"]).toContain("attachment");
     expect(file.headers["content-disposition"]).toContain(encodeURIComponent("大阪.txt"));
     expect(file.body).toBe("会面定在 14:00");
+    const encoded = await get(
+      h,
+      client,
+      `/api/device/v1/files/content/${encodeURIComponent(fileId)}`,
+    );
+    expect(encoded.statusCode, encoded.body).toBe(200);
+    expect(encoded.body).toBe("会面定在 14:00");
+    const slash = await get(h, client, "/api/device/v1/files/content/a%2Fb");
+    expect(slash.statusCode).toBeGreaterThanOrEqual(400);
     await h.repository.close();
   });
 

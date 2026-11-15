@@ -66,6 +66,7 @@ export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
 
 const THREAD_ID_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+const FILE_ID_SEGMENT = "[A-Za-z0-9](?:[A-Za-z0-9._:-]|%3[Aa]){0,127}";
 
 export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "pair", signed: false },
@@ -110,7 +111,7 @@ const DEVICE_UPLOAD_PURPOSES: ReadonlyMap<string, UploadGrantPurpose> = new Map(
 const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
   method: route.method,
   pattern: new RegExp(
-    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT).replace("{fileId}", THREAD_ID_SEGMENT)}$`,
+    `^${route.path.replace("{threadId}", THREAD_ID_SEGMENT).replace("{runId}", THREAD_ID_SEGMENT).replace("{fileId}", FILE_ID_SEGMENT)}$`,
     "u",
   ),
 }));
