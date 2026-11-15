@@ -6,6 +6,8 @@ public enum IconName: String, CaseIterable, Sendable {
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
     case appWindow = "app-window"
+    case archive
+    case arrowBackUp = "arrow-back-up"
     case arrowUp = "arrow-up"
     case bell
     case bolt
@@ -41,11 +43,13 @@ public enum IconName: String, CaseIterable, Sendable {
     case fingerprint
     case folder
     case folderSymlink = "folder-symlink"
+    case gitFork = "git-fork"
     case handStop = "hand-stop"
     case heartbeat
     case history
     case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
+    case language
     case listCheck = "list-check"
     case mail
     case mapPin = "map-pin"
@@ -59,6 +63,8 @@ public enum IconName: String, CaseIterable, Sendable {
     case pencil
     case pencilPlus = "pencil-plus"
     case phone
+    case pin
+    case pinnedOff = "pinned-off"
     case photo
     case plane
     case playerPause = "player-pause"
