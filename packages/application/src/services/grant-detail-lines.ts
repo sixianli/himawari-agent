@@ -8,7 +8,6 @@ export interface GrantDetailInput {
   readonly spentCostMicros: number;
   readonly maxTotalCostMicros: number;
   readonly maxCostMicrosPerUse: number;
-  readonly expiresAt: string;
   readonly affectedTaskCount: number;
 }
 
@@ -61,10 +60,6 @@ export function grantDetailLines(input: GrantDetailInput): GrantDetailLines {
     en.push(`Cost limit per use ${each}`);
     ja.push(`1 回あたりの費用上限 ${each}`);
   }
-  const date = input.expiresAt.slice(0, 10);
-  zh.push(`到期：${date}`);
-  en.push(`Expires: ${date}`);
-  ja.push(`期限：${date}`);
   if (input.affectedTaskCount > 0) {
     const count = input.affectedTaskCount;
     zh.push(`会影响 ${count} 个任务`);

@@ -12,7 +12,6 @@ const base = {
   spentCostMicros: 0,
   maxTotalCostMicros: 0,
   maxCostMicrosPerUse: 0,
-  expiresAt: "2026-12-12T03:00:00.000Z",
   affectedTaskCount: 0,
 };
 
@@ -33,7 +32,6 @@ describe("grantDetailLines", () => {
       "收件对象：1 个",
       "已用 3/5 次",
       "费用上限 $2.00，已花 $0.50",
-      "到期：2026-12-12",
       "会影响 2 个任务",
     ]);
     expect(lines.en).toContain("Used 3 of 5");
@@ -52,7 +50,7 @@ describe("grantDetailLines", () => {
 
   it("omits scope, cost and affected-task lines when there is nothing to show", () => {
     const lines = grantDetailLines(base);
-    expect(lines["zh-CN"]).toEqual(["已用 0/1 次", "到期：2026-12-12"]);
-    expect(lines.en).toEqual(["Used 0 of 1", "Expires: 2026-12-12"]);
+    expect(lines["zh-CN"]).toEqual(["已用 0/1 次"]);
+    expect(lines.en).toEqual(["Used 0 of 1"]);
   });
 });

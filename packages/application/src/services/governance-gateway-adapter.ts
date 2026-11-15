@@ -601,7 +601,6 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
           spentCostMicros: grant.spentCostMicros,
           maxTotalCostMicros: grant.maxTotalCostMicros,
           maxCostMicrosPerUse: grant.scope.maxCostMicrosPerUse,
-          expiresAt: grant.expiresAt,
           affectedTaskCount: affectedTaskRefs.length,
         }),
         generatedAt,
