@@ -1,6 +1,7 @@
 import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
-import type { ApplePushConfiguration } from "./apple-push.js";
+import type { DeliveryTimingConfiguration } from "../services/delivery-timing.js";
 import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
+import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
 import type { DeviceConfiguration } from "./device-limits.js";
 import type { ModelProviderRouting } from "./intelligence.js";
@@ -426,6 +427,7 @@ export interface RunPolicyConfiguration {
   readonly searchAsk?: SearchAskConfiguration;
   readonly perception?: PerceptionConfiguration;
   readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
+  readonly deliveryTiming?: DeliveryTimingRouteConfiguration;
   readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
@@ -439,6 +441,12 @@ export interface RunPolicyConfiguration {
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
+}
+
+export interface DeliveryTimingRouteConfiguration extends DeliveryTimingConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
