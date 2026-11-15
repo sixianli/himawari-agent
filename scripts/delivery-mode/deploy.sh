@@ -21,6 +21,8 @@ result() {
     if [[ "$1" == passed ]]; then cleanup after 0; else cleanup after 1; fi
   elif [[ "$1" == recovery-failed ]]; then
     echo "DEPLOY_CLEANUP_SKIPPED: production may be down, every copy on the server is kept for diagnosis" >&2
+  elif [[ "$1" == failed-kept ]]; then
+    echo "DEPLOY_CLEANUP_SKIPPED: the failed release is kept as it stopped, every copy on the server is kept for diagnosis" >&2
   fi
   echo "DEPLOY_RESULT {\"result\":\"$1\",\"stoppedAt\":\"$2\",\"exit\":$3,\"log\":\"$log\"}"
   exit "$3"
@@ -45,6 +47,18 @@ fi
 echo "$$" > "$lock/pid"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$lock/started"
 trap 'rm -rf "$lock"' EXIT
+
+on_failure_source=HIMAWARI_DEPLOY_ON_FAILURE
+on_failure="${HIMAWARI_DEPLOY_ON_FAILURE:-}"
+if [[ -z "$on_failure" ]]; then
+  on_failure_source=packet-parameters.json
+  on_failure="$(/usr/bin/python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("ON_DEPLOY_FAILURE", "rollback"))' "$packet/packet-parameters.json" 2>/dev/null || echo rollback)"
+fi
+if [[ "$on_failure" != rollback && "$on_failure" != keep ]]; then
+  echo "DEPLOY_ON_FAILURE_INVALID $on_failure from $on_failure_source: use keep or rollback" >&2
+  result invalid-on-failure OPTION 9
+fi
+echo "DEPLOY_ON_FAILURE $on_failure from $on_failure_source"
 
 if [[ -f "$packet/inputs/check-packet-consistency.py" ]] && ! /usr/bin/python3 -I "$packet/inputs/check-packet-consistency.py" "$packet" > /dev/null; then
   echo "DEPLOY_PACKET_INCONSISTENT: /usr/bin/python3 -I $packet/inputs/check-packet-consistency.py $packet" >&2
@@ -89,6 +103,10 @@ for action in "${actions[@]}"; do
     if [[ "$stopped" -eq 0 ]]; then
       echo "DEPLOY_SERVICE_UNTOUCHED: the old release is still running" >&2
       result stopped-before-service-stop "$action" "$code"
+    fi
+    if [[ "$on_failure" == keep ]]; then
+      echo "DEPLOY_ROLLBACK_SKIPPED owner-choice: the failed release is kept as it stopped at $action and the old release was not restored; to restore it run bash $here/rollback.sh $packet" >&2
+      result failed-kept "$action" "$code"
     fi
     echo "DEPLOY_AUTO_RECOVERY_START bash $here/rollback.sh $packet"
     if bash "$here/rollback.sh" "$packet"; then

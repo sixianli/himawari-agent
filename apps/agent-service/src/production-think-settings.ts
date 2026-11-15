@@ -145,6 +145,25 @@ export const THINK_SETTING_UNIT_TEXT: Readonly<Record<ThinkSettingUnit, ThinkSet
     days: { "zh-CN": "天", en: "days", ja: "日" },
   });
 
+export const THINK_SETTING_UNIT_VALUE: Readonly<
+  Record<
+    ThinkSettingUnit,
+    {
+      readonly kind: "ratio" | "duration" | "count";
+      readonly storageUnit: "permille" | "s" | "min" | "h" | "d" | "count";
+    }
+  >
+> = Object.freeze({
+  permille: { kind: "ratio", storageUnit: "permille" },
+  count: { kind: "count", storageUnit: "count" },
+  times: { kind: "count", storageUnit: "count" },
+  hours: { kind: "duration", storageUnit: "h" },
+  minutes: { kind: "duration", storageUnit: "min" },
+  characters: { kind: "count", storageUnit: "count" },
+  seconds: { kind: "duration", storageUnit: "s" },
+  days: { kind: "duration", storageUnit: "d" },
+});
+
 export const PRODUCTION_THINK_OPERATIONS = Object.freeze([
   "think.settings.read",
   "think.settings.change",
@@ -157,6 +176,8 @@ export interface ThinkSettingView {
   readonly minimum: number;
   readonly maximum: number;
   readonly unit: ThinkSettingUnit;
+  readonly kind: "ratio" | "duration" | "count";
+  readonly storageUnit: "permille" | "s" | "min" | "h" | "d" | "count";
   readonly overridden: boolean;
   readonly label: ThinkSettingText;
   readonly description: ThinkSettingText;
@@ -214,6 +235,8 @@ export class ProductionThinkSettings {
         minimum: definition.minimum,
         maximum: definition.maximum,
         unit: definition.unit,
+        kind: THINK_SETTING_UNIT_VALUE[definition.unit].kind,
+        storageUnit: THINK_SETTING_UNIT_VALUE[definition.unit].storageUnit,
         overridden: stored !== undefined,
         label: THINK_SETTING_TEXT[definition.key].label,
         description: THINK_SETTING_TEXT[definition.key].description,
