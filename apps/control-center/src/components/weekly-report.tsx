@@ -10,6 +10,7 @@ import type {
 } from "../proactive.js";
 import { AccountLogin } from "./account-login.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
+import { McpUsageLines } from "./mcp-connections-settings.js";
 import { ModalDialog } from "./overlays.js";
 import { ActionButton } from "./primitives.js";
 
@@ -1454,6 +1455,31 @@ export function WeeklyReport({
             : message("weekly.prereview.reductionOff")}
         </p>
       </section>
+
+      {report.mcpConnections ? (
+        <section className="weekly-card" aria-label={message("agents.weekly.title")}>
+          <h3>{message("agents.weekly.title")}</h3>
+          <p className="weekly-muse-foot">
+            {message("agents.weekly.window", {
+              from: report.mcpConnections.fromDay,
+              to: report.mcpConnections.toDay,
+            })}
+          </p>
+          {report.mcpConnections.connections.length === 0 ? (
+            <p className="weekly-empty">{message("agents.weekly.empty")}</p>
+          ) : (
+            <ul className="weekly-agents">
+              {report.mcpConnections.connections.map((connection) => (
+                <li key={connection.id} data-connection={connection.id}>
+                  <strong>{connection.name}</strong>{" "}
+                  <span>{message(`agents.status.${connection.status}`)}</span>
+                  <McpUsageLines usage={connection.usage} message={message} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {report.correction ? (
         <section

@@ -22,6 +22,7 @@ export interface ControlCenterShellProps {
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
   readonly settingsNotifications?: ReactNode;
+  readonly settingsAgents?: ReactNode;
   readonly settingsDevices?: ReactNode;
   readonly settingsPersonalization?: ReactNode;
   readonly settingsAccount?: ReactNode;
@@ -48,6 +49,7 @@ export function ControlCenterShell({
   settingsTools,
   settingsData,
   settingsNotifications,
+  settingsAgents,
   settingsDevices,
   settingsPersonalization,
   settingsAccount,
@@ -75,9 +77,14 @@ export function ControlCenterShell({
     setSidebarCollapsed(collapsed);
   };
   const settingsOpen = route.page === "settings";
-  const settingsTab = ["personalization", "notifications", "devices", "tools", "data"].includes(
-    route.pageTab ?? "",
-  )
+  const settingsTab = [
+    "personalization",
+    "notifications",
+    "devices",
+    "tools",
+    "agents",
+    "data",
+  ].includes(route.pageTab ?? "")
     ? (route.pageTab as string)
     : "general";
   const routeRef = useRef(route);
@@ -223,6 +230,7 @@ export function ControlCenterShell({
         tools={settingsTools}
         data={settingsData}
         notifications={settingsNotifications}
+        agents={settingsAgents}
         devices={settingsDevices}
         personalization={settingsPersonalization}
         account={settingsAccount}
