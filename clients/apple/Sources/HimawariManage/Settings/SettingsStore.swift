@@ -15,6 +15,7 @@ public final class SettingsStore {
     public private(set) var waitingCapabilities: [CapabilitySummary] = []
     public private(set) var capabilitiesInUse: [CapabilitySummary] = []
     public private(set) var capabilitiesDisabled: [CapabilitySummary] = []
+    public private(set) var reactivationFailure: [String: String] = [:]
 
     public private(set) var devices: [PairedDevice] = []
     public private(set) var server: ServerReach?
@@ -85,6 +86,10 @@ public final class SettingsStore {
             ],
             options: ManageCommandOptions(confirmReason: reason)
         )
+    }
+
+    public func noteReactivationFailure(_ message: String?, for ref: String) {
+        reactivationFailure[ref] = message
     }
 
     public static func isDeclined(_ error: Error) -> Bool {

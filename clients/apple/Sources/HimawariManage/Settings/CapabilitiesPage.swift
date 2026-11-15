@@ -5,7 +5,6 @@ struct CapabilitiesPage: View {
     let store: SettingsStore
     let back: () -> Void
     @State private var failed = false
-    @State private var reactivationFailure: [String: String] = [:]
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -31,7 +30,7 @@ struct CapabilitiesPage: View {
                         note: disabled
                             ? item.lastInvalidation.flatMap { M.cancelledJobs($0.cancelledScheduledJobs) }
                             : M.capabilityExpansions(item.updateAssessment?.expansions ?? []),
-                        warning: reactivationFailure[item.capabilityRef],
+                        warning: store.reactivationFailure[item.capabilityRef],
                         switchState: switchable ? turnOff(item) : (disabled ? turnOn(item) : nil),
                         last: index == items.count - 1
                     )
@@ -61,13 +60,13 @@ struct CapabilitiesPage: View {
             get: { false },
             set: { isOn in
                 guard isOn else { return }
-                reactivationFailure[item.capabilityRef] = nil
+                store.noteReactivationFailure(nil, for: item.capabilityRef)
                 Task {
                     do {
                         try await store.reactivate(item, reason: M.confirmReactivateCapability(item.displayName))
                     } catch where SettingsStore.isDeclined(error) {
                     } catch {
-                        reactivationFailure[item.capabilityRef] = M.reactivateFailed
+                        store.noteReactivationFailure(M.reactivateFailed, for: item.capabilityRef)
                     }
                 }
             }

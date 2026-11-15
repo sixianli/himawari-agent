@@ -19,6 +19,8 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case exportPacking = "19-settings-more-6-export-packing"
     case exportReady = "19-settings-more-7-export-ready"
     case capabilities = "20-himawari-self-1-capabilities"
+    case capabilitiesReactivated = "20-himawari-self-1b-capabilities-reactivated"
+    case capabilitiesReactivateFailed = "20-himawari-self-1c-capabilities-reactivate-failed"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
 }
 
@@ -47,6 +49,10 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.device(ManageDemo.macId)]) {}
         case .capabilities:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.capabilities]) {}
+        case .capabilitiesReactivated:
+            SettingsRootView(store: ManageDemo.settingsStore(reactivated: true), path: [.capabilities]) {}
+        case .capabilitiesReactivateFailed:
+            SettingsRootView(store: ManageDemo.reactivationFailedStore(), path: [.capabilities]) {}
         case .files:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.files]) {}
         case .exportPacking:
@@ -106,9 +112,15 @@ enum ManageDemo {
         MemoryStore(gateway: gateway())
     }
 
-    @MainActor static func settingsStore() -> SettingsStore {
+    @MainActor static func reactivationFailedStore() -> SettingsStore {
+        let store = settingsStore()
+        store.noteReactivationFailure(M.reactivateFailed, for: "cap-photos")
+        return store
+    }
+
+    @MainActor static func settingsStore(reactivated: Bool = false) -> SettingsStore {
         SettingsStore(
-            gateway: gateway(),
+            gateway: gateway(reactivated: reactivated),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
         )
     }
@@ -124,8 +136,8 @@ enum ManageDemo {
         expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
-    static func gateway() -> ManageGateway {
-        ManageGateway(transport: DemoTransport(), makeIdentifier: { UUID().uuidString })
+    static func gateway(reactivated: Bool = false) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(reactivated: reactivated), makeIdentifier: { UUID().uuidString })
     }
 
     static func answer(_ type: String) -> String {
@@ -142,11 +154,11 @@ enum ManageDemo {
         }
     }
 
-    static func capability(_ ref: String) -> String {
+    static func capability(_ ref: String, reactivated: Bool = false) -> String {
         let (name, lifecycle) = switch ref {
         case "cap-calendar": ("日历", "update_proposed")
         case "cap-search": ("网页搜索", "active")
-        case "cap-photos": ("相册整理", "disabled")
+        case "cap-photos": ("相册整理", reactivated ? "active" : "disabled")
         default: ("邮件", "active")
         }
         var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
@@ -219,6 +231,12 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
+    let reactivated: Bool
+
+    init(reactivated: Bool = false) {
+        self.reactivated = reactivated
+    }
+
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
@@ -226,7 +244,7 @@ private actor DemoTransport: DeviceTransport {
         let body = (try? JSONDecoder().decode([String: JSONValue].self, from: json)) ?? [:]
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }
         if type == "capability.detail", case .object(let payload)? = body["payload"], case .string(let ref)? = payload["capabilityRef"] {
-            return DeviceResponse(status: 200, body: Data(ManageDemo.capability(ref).utf8))
+            return DeviceResponse(status: 200, body: Data(ManageDemo.capability(ref, reactivated: reactivated).utf8))
         }
         if type == "files.list.read", case .object(let payload)? = body["payload"], case .string(let origin)? = payload["origin"] {
             return DeviceResponse(status: 200, body: Data(ManageDemo.files(origin: origin).utf8))
