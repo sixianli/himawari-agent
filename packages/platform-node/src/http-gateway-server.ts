@@ -144,6 +144,7 @@ export interface HttpGatewayServerOptions {
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
     readonly addressee?: DeviceApiRouteOptions["addressee"];
+    readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1317,6 +1318,24 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
       ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
+      ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
+      ...(options.files
+        ? {
+            readFile: async ({ authentication, fileId }) => {
+              const content = await (options.files as HttpGatewayFilesPort).content({
+                authentication,
+                agentId: browserConfiguration.agentId,
+                fileId,
+                download: true,
+              });
+              return {
+                bytes: content.bytes,
+                mediaType: content.mediaType,
+                fileName: content.fileName,
+              };
+            },
+          }
+        : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,

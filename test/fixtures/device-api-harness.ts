@@ -210,6 +210,13 @@ export async function harness(
       read: (contentRef: string) => Promise<string | undefined>,
     ) => Promise<string | undefined>;
     readonly searchControl?: Parameters<typeof createProductionApprovalGateway>[0]["searchControl"];
+    readonly files?: (input: {
+      readonly repository: SqliteProductStateRepository;
+      readonly protector: EnvelopePayloadProtector;
+    }) => NonNullable<Parameters<typeof buildHttpGatewayServer>[0]["files"]>;
+    readonly exportArchive?: NonNullable<
+      Parameters<typeof buildHttpGatewayServer>[0]["devices"]
+    >["exportArchive"];
   } = {},
 ): Promise<Harness> {
   const publicOrigin = options.origin ?? origin;
@@ -474,6 +481,7 @@ export async function harness(
     csrf,
     threadGateway,
     gatewayV2,
+    ...(options.files ? { files: options.files({ repository, protector }) } : {}),
     payloadAdmission,
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
@@ -532,6 +540,7 @@ export async function harness(
         agentId,
       ),
       ...(options.withoutAddressee ? {} : { addressee: addresseeRoute }),
+      ...(options.exportArchive ? { exportArchive: options.exportArchive } : {}),
     },
   });
   await app.ready();
