@@ -61,7 +61,7 @@ Andy 2026-11-15 的答复（经协调者转来）：同意新增后台模型调�
 4. **第一次判断：值不值得再想，用 Jev。**这是是非题（选项 `worth`、`not_worth`），提示词是 `think.worth-question`（`packages/prompt-catalog/src/think.ts`）。输入只有来源说明、一句概括和是否外部内容，发出前过出口遮盖。`worth` 的概率不低于 700‰ 才去想，不高于 300‰ 判不想，中间带当作“不确定”，也不想；调用失败、解析失败、超时一律不想，记成 `failed`（原因 `worth_unavailable`）。两个门槛、超时、模型和密钥引用都是配置（`runPolicy.thinkInbox.worth`）。
    - 为什么中间带不想：宁可少提。方案参照 TypeSafe 建议的 0.7 和 0.3 门槛，和 [ADR 0271](0271-memory-import-duplicates-judged-by-the-model.md) 一致。
 
-5. **工人一次处理一条。**`apps/agent-service/src/production-think-worker.ts` 的 `ProductionThinkWorker.runOnce`：先做维护（卡住的放回或判失败、过期的标过期、已结束条目的摘要载荷清掉），领一条，读摘要，问 Jev，值得想才交给“想一想运行”，结果记回条目（`proposed`、`skipped`、`failed`）。调用方取消不算判断失败：已取消时不领条目；领了之后取消，工人返回 `aborted`，条目不结算、留在 `thinking`，到 `stalledAfterMinutes` 由维护放回重试，超过最多重试次数判 `failed`（原因 `stalled`）。记结果本身失败时工人返回 `unsettled`，条目同样留给维护处理。
+5. **工人一次处理一条。**`apps/agent-service/src/production-think-worker.ts` 的 `ProductionThinkWorker.runOnce`：先做维护（卡住的放回或判失败、过期的标过期、已结束条目的摘要载荷清掉），领一条，读摘要，问 Jev，值得想才交给“想一想运行”，结果记回条目（`proposed`、`skipped`、`failed`）。
 
 6. **第二次：带工具的“想一想”运行（后续 PR）。**用已有的运行路径开一次 `external_event` 运行，只给读类工具（按动作登记表的 `actionKind` 过滤，不写工具名清单）和联网搜索，不给任何写工具；运行的产出是一条提议，走提议箱，主人点头才执行。这一步在第 2 个 PR 的后半部分做，不在这个 PR 里。
 
