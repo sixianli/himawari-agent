@@ -35,10 +35,9 @@ ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，�
 
 1. 开关已设计好：`docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md` 决定 9 的原文是“每个接入有一个开关“先问我 / 直接存，可整批撤销”，默认先问；只有主人能改。”
 2. “直接存”只管记忆：同文件决定 9 的 2026-11-12 补注原文是““直接存”只管记忆。规则提议不管开关怎么设，都要主人在 Himawari 里点头才生效”。Andy 本次在决定卡选的“记忆直接存，规则仍要你点头”与它一致。
-3. 敏感内容一律待确认：`docs/adr/0228-external-memory-proposals-wait-for-owner-confirmation.md` 任务 C 清单里写的是“写入时同步判敏感，敏感一律待确认”（`/mnt/project-files/p5-memory-hub/coding-tasks.md`）。
-4. 待确认表和整批撤销已经存在：`ProductionMcpMemoryWriter.undoBatch`（`apps/agent-service/src/production-mcp-memory-writer.ts`）按批次号撤销，网关操作 `memory.external.undo`。
-5. 现在网关拒绝“直接存”：改动前的 `apps/agent-service/src/production-mcp-connections-control.ts` 里 `askFirstOnly` 对 `pushPolicy !== "ask"` 抛 `MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE`。
-6. 愿景 v2.2 起规则是 Andy 定的硬设定：`AGENTS.md` 产品愿景一节。
+3. 待确认表和整批撤销已经存在：`ProductionMcpMemoryWriter.undoBatch`（`apps/agent-service/src/production-mcp-memory-writer.ts`）按批次号撤销，网关操作 `memory.external.undo`。
+4. 现在网关拒绝“直接存”：改动前的 `apps/agent-service/src/production-mcp-connections-control.ts` 里 `askFirstOnly` 对 `pushPolicy !== "ask"` 抛 `MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE`。
+5. 愿景 v2.2 起规则是 Andy 定的硬设定：`AGENTS.md` 产品愿景一节。
 
 <a id="decision"></a>
 
@@ -46,7 +45,7 @@ ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，�
 
 1. **开关是每个接入的 `pushPolicy`，没有新增全局配置。** 网关允许把它设成 `direct`；`runPolicy.mcpRead.proposals` 仍决定写工具出不出现（ADR 0227），关掉它就没有写工具，也就没有直接存。依据“用户主权”：只有主人在设置页能改。
 2. **默认值：设置页新建接入时默认选“直接存”**（Andy 2026-11-15 的指示）；已有接入保持原来的“先问我”，主人在设置页改一次。接口层新建仍必须明写 `pushPolicy`，不靠隐含默认。
-3. **直接存的流程复用待确认表，不另开一条写路径。** 先照常提交（去重、机器密钥拒收、分级、决策记录 `pending`），再由写入器的 `keepDirect` 在同一把队列锁里检查：分级是敏感的，留在待确认；否则按网页确认同一套代码保存，批次号是 `batch-direct-` 加 24 位十六进制。`propose_memory` 一次调用一个批次，`propose_memories` 一次调用共用一个批次，所以主人在记忆页可以整批撤销，撤销后条目回到待确认。
+3. **直接存的流程复用待确认表，不另开一条写路径。** 先照常提交（去重、机器密钥拒收、分级、决策记录 `pending`），再由写入器的 `keepDirect` 在同一把队列锁里检查：分级是敏感的，留在待确认；否则按网页确认同一套代码保存（敏感内容一律待确认是本 ADR 的新决定，依据“边界与可逆性”：敏感内容存错的代价比普通记忆大，撤销也收不回已经被用掉的那一次；任务清单 `/mnt/project-files/p5-memory-hub/coding-tasks.md`（仓库外）里也有同样一条），批次号是 `batch-direct-` 加 24 位十六进制。`propose_memory` 一次调用一个批次，`propose_memories` 一次调用共用一个批次，所以主人在记忆页可以整批撤销，撤销后条目回到待确认。
 4. **先全部提交、再逐条保存。** `propose_memories` 里被同一次调用后面同 `key` 条目替换的，不保存，仍回 `replaced`。某一条保存失败，它留在待确认，结果里回 `pending`，不影响别的条目。
 5. **直接存的出处看得出来。** 记忆编号里带 `batch-direct-`；决策记录的原因码是 `mcp_proposal_kept_direct`（仍以 `mcp_proposal_` 开头，自动记忆校准照旧排除）；记忆详情的来源写“外部 agent 送来，未经确认直接保存”，不再写“你确认后保存”。依据“用户主权”：没经过主人点头的内容不冒充点过头。
 6. **规则不变。** `propose_rule` 不看 `pushPolicy`，仍要主人在客户端确认框里同意才生效。需要不弹框的客户端也能立规则时，走 ADR 0242 决定 9 的待确认页，单独做。
@@ -64,7 +63,7 @@ Claude 的“导入记忆”是直接存，事后在记忆面板里查看和删�
 
 - **规则也直接生效。** 外部 agent 读邮件时可能被诱导，立一条“某类邮件不要提醒”的规则，主人发现不了漏掉的提醒，也与愿景 v2.2“规则是主人定的”冲突。Andy 在决定卡上选了不要。
 - **新增全局开关代替每个接入的开关。** 一个全局开关放宽了 ADR 0242“接入上的设置只能在全局之内收窄”的方向，也没法让 Muse 直接存、别的接入仍先问。
-- **直接存时连敏感内容一起存。** 违反上面前提 3。
+- **直接存时连敏感内容一起存。** 敏感内容存错的代价比普通记忆大，见决定 3。
 
 <a id="consequences"></a>
 
