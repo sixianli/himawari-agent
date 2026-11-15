@@ -267,36 +267,40 @@ describe("execution Worker service main", () => {
     });
   }, 5_000);
 
-  it("keeps the qualified record when the authority belongs to another deployment", async () => {
-    const { configurationPath, layout } = await fixture();
-    const record = {
-      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
-      workerBootId: "worker-boot:other",
-      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
-      snapshotDigest: `sha256:${"b".repeat(64)}`,
-    };
-    await writeWorkerQualifiedDeployment(layout, record);
-    const base = authority(2, 2);
-    await writeAuthorityFile(layout, { ...base, id: `${base.id}-other` as typeof base.id });
-    const diagnostics = capture();
+  it.each(["id", "ownerId", "agentId"] as const)(
+    "keeps the qualified record when the authority %s differs",
+    async (field) => {
+      const { configurationPath, layout } = await fixture();
+      const record = {
+        workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+        workerBootId: "worker-boot:other",
+        deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+        snapshotDigest: `sha256:${"b".repeat(64)}`,
+      };
+      await writeWorkerQualifiedDeployment(layout, record);
+      const base = authority(2, 2);
+      await writeAuthorityFile(layout, { ...base, [field]: `${base[field]}-other` });
+      const diagnostics = capture();
 
-    await expect(
-      runExecutionWorkerService(
-        serviceArguments(configurationPath),
-        diagnostics.stream,
-        diagnostics.stream,
-        FAST_STARTUP_TIMING,
-      ),
-    ).resolves.toBe(1);
-    expect(qualification.started).toBe(0);
-    expect(JSON.parse(diagnostics.text())).toMatchObject({
-      event: "service.failed",
-      code: EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH,
-    });
-    await expect(readWorkerQualifiedDeployment(layout)).resolves.toMatchObject({
-      workerBootId: "worker-boot:other",
-    });
-  }, 5_000);
+      await expect(
+        runExecutionWorkerService(
+          serviceArguments(configurationPath),
+          diagnostics.stream,
+          diagnostics.stream,
+          FAST_STARTUP_TIMING,
+        ),
+      ).resolves.toBe(1);
+      expect(qualification.started).toBe(0);
+      expect(JSON.parse(diagnostics.text())).toMatchObject({
+        event: "service.failed",
+        code: EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH,
+      });
+      await expect(readWorkerQualifiedDeployment(layout)).resolves.toMatchObject({
+        workerBootId: "worker-boot:other",
+      });
+    },
+    5_000,
+  );
 
   it("publishes no qualified record when the Agent binding arrives but the checks fail", async () => {
     const { configurationPath, layout, currentAuthority } = await fixture();
