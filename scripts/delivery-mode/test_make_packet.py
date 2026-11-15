@@ -26,7 +26,7 @@ RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixture
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
-    'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
+    'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
     'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
@@ -1439,6 +1439,39 @@ class TimestampedMigrationTests(unittest.TestCase):
         files = self.LEGACY + ['20261114010000_first.sql']
         _, ledger = self.plan(files, ['0001', '0002', '0003', '20261114010000'])
         self.assertEqual(ledger, [])
+
+
+class AcceptanceScratchSamplingTest(unittest.TestCase):
+    def sampling_functions(self, walk):
+        source = (HERE / 'packet-template/acceptance/cloud/run-stage-03.py').read_text()
+        wanted = {'file_bytes', 'directory_bytes'}
+        nodes = [node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in wanted]
+        self.assertEqual({node.name for node in nodes}, wanted)
+        namespace = {'Path': Path, 'os': type('FakeOs', (), {'walk': staticmethod(walk)})}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), 'run-stage-03.py', 'exec'), namespace)
+        return namespace['directory_bytes']
+
+    def test_a_file_removed_between_listing_and_size_read_counts_as_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            kept = Path(directory) / 'kept'
+            vanishing = Path(directory) / 'node-compile-cache.tmp'
+            kept.write_bytes(b'x' * 7)
+            vanishing.write_bytes(b'y' * 11)
+
+            def walk(top, followlinks):
+                for parent, directories, files in os.walk(top, followlinks=followlinks):
+                    listed = (parent, directories, list(files))
+                    vanishing.unlink()
+                    yield listed
+
+            self.assertEqual(self.sampling_functions(walk)(Path(directory)), 7)
+
+    def test_other_size_read_errors_still_fail_sampling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'kept').write_bytes(b'x')
+            with unittest.mock.patch.object(Path, 'lstat', side_effect=PermissionError('denied')):
+                with self.assertRaises(PermissionError):
+                    self.sampling_functions(os.walk)(Path(directory))
 
 
 if __name__ == '__main__':

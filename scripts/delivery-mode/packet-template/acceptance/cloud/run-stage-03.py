@@ -57,8 +57,14 @@ scene_spec.loader.exec_module(scene_module)
 def root_free():
     return shutil.disk_usage('/').free
 
+def file_bytes(path):
+    try:
+        return path.lstat().st_size
+    except FileNotFoundError:
+        return 0
+
 def directory_bytes(directory):
-    return sum((Path(parent) / name).lstat().st_size for parent, directories, files in os.walk(directory, followlinks=False) for name in files)
+    return sum(file_bytes(Path(parent) / name) for parent, directories, files in os.walk(directory, followlinks=False) for name in files)
 
 class Resources:
     def __init__(self, scratch):
