@@ -37,6 +37,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
+  ThinkInboxStorePort,
   OwnerRuleStorePort,
   DeviceActionStorePort,
   PairedDeviceStorePort,
@@ -1049,6 +1050,20 @@ export class SqliteDurableAdapters {
       listExpiredLeases: (input) => this.context.write("ownerProposal.listExpiredLeases", input),
       settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
       clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
+    });
+  }
+
+  thinkInbox(): ThinkInboxStorePort {
+    return Object.freeze<ThinkInboxStorePort>({
+      enqueue: (input) => this.context.write("thinkInbox.enqueue", input),
+      claimNext: (input) => this.context.write("thinkInbox.claimNext", input),
+      finish: (input) => this.context.write("thinkInbox.finish", input),
+      recoverStalled: (input) => this.context.write("thinkInbox.recoverStalled", input),
+      expireQueued: (input) => this.context.write("thinkInbox.expireQueued", input),
+      usage: (input) => this.context.write("thinkInbox.usage", input),
+      settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
+      summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
+      clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
     });
   }
 
