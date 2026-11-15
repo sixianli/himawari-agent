@@ -70,13 +70,15 @@ export function historyDigests(database) {
   }));
 }
 
+export const ledgerMigrationId = (row) => row.id ?? String(row.sequence).padStart(4, "0");
+
 export function readS0State(database, expected) {
   assert.equal(database.pragma("query_only", { simple: true }), 1, "__PKT_LABEL_UPPER___DB_QUERY_ONLY_REQUIRED");
   const current = Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value);
   const minimumWriter = Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value);
   const ledger = database.prepare("SELECT sequence,name,phase,digest,applied_at FROM schema_migration_ledger ORDER BY sequence").all();
   const hasIdColumn = database.prepare("SELECT 1 FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'").get() !== undefined;
-  const migrationIds = (hasIdColumn ? database.prepare("SELECT sequence,migration_id AS id FROM schema_migration_ledger ORDER BY sequence").all() : ledger).map((row) => row.id ?? String(row.sequence).padStart(4, "0"));
+  const migrationIds = (hasIdColumn ? database.prepare("SELECT sequence,migration_id AS id FROM schema_migration_ledger ORDER BY sequence").all() : ledger).map(ledgerMigrationId);
   const migrationDigests = ledger.map((row) => row.digest);
   const migrationNames = ledger.map((row) => row.name);
   assert(Number.isSafeInteger(current) && current > 0 && minimumWriter === current, "__PKT_LABEL_UPPER___DB_SCHEMA_UNSUPPORTED");

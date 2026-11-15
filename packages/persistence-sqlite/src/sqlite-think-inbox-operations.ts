@@ -112,7 +112,7 @@ export class SqliteThinkInboxOperations {
     return this.database.transaction(() => {
       const current = this.readSettings(input);
       if (current.revision !== input.expectedRevision)
-        return this.fail("PORT_CONFLICT", "Think settings changed");
+        return this.fail("PORT_CONFLICT", "THINK_SETTINGS_CHANGED");
       const overrides = Object.fromEntries(entries.sort(([a], [b]) => (a < b ? -1 : 1)));
       this.database
         .prepare(
