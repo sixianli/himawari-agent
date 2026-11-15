@@ -557,6 +557,8 @@ const deliveryTimingSettingsQuerySchema = object({
   ...envelope("query", "delivery_timing.settings.read"),
   payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
 });
+const settingValueKindSchema = enumeration(["ratio", "duration", "count"]);
+const settingStorageUnitSchema = enumeration(["permille", "ms", "s", "min", "h", "d", "count"]);
 const deliveryTimingSettingsSnapshotSchema = object({
   ...envelope("snapshot", "delivery_timing.settings.snapshot"),
   payload: object({
@@ -566,6 +568,8 @@ const deliveryTimingSettingsSnapshotSchema = object({
         label: boundedString(80),
         description: boundedString(240),
         unit: boundedString(16),
+        kind: settingValueKindSchema,
+        storageUnit: settingStorageUnitSchema,
         value: integer(0),
         defaultValue: integer(0),
         minimum: integer(0),
@@ -896,6 +900,8 @@ const thinkSettingsSnapshotSchema = object({
         minimum: integer(0),
         maximum: integer(0),
         unit: machineString,
+        kind: settingValueKindSchema,
+        storageUnit: settingStorageUnitSchema,
         overridden: booleanValue,
         label: thinkSettingTextSchema,
         description: thinkSettingTextSchema,
