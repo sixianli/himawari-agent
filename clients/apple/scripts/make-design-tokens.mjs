@@ -99,6 +99,7 @@ export function generate(tokens) {
   scalars("Home", tokens.home ?? {});
   scalars("Pairing", tokens.pairing ?? {});
   scalars("Scanner", tokens.scanner ?? {});
+  scalars("Senses", tokens.senses ?? {});
   scalars("Handover", tokens.handover ?? {});
   scalars("Mac", tokens.mac ?? {});
   scalars("Watch", tokens.watch ?? {});

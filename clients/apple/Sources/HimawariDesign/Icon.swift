@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 
 public enum IconName: String, CaseIterable, Sendable {
+    case addressBook = "address-book"
+    case addressBookLarge = "address-book-large"
     case affiliate
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
@@ -15,14 +17,18 @@ public enum IconName: String, CaseIterable, Sendable {
     case calculator
     case calendar
     case calendarFrame = "calendar-frame"
+    case calendarLarge = "calendar-large"
     case camera
     case car
     case check
+    case clipboard
+    case clipboardLarge = "clipboard-large"
     case clipboardList = "clipboard-list"
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
     case clock
+    case compass
     case cloud
     case code
     case creditCard = "credit-card"
@@ -43,12 +49,14 @@ public enum IconName: String, CaseIterable, Sendable {
     case folderSymlink = "folder-symlink"
     case handStop = "hand-stop"
     case heartbeat
+    case heartbeatLarge = "heartbeat-large"
     case history
     case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
     case listCheck = "list-check"
     case mail
     case mapPin = "map-pin"
+    case mapPinLarge = "map-pin-large"
     case message
     case message2 = "message-2"
     case messagePlus = "message-plus"
@@ -60,6 +68,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case pencilPlus = "pencil-plus"
     case phone
     case photo
+    case photoLarge = "photo-large"
     case plane
     case playerPause = "player-pause"
     case playerStop = "player-stop"

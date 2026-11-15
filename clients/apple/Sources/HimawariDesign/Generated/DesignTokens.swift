@@ -179,6 +179,20 @@ public enum DesignTokens {
         public static let window: CGFloat = 250
     }
 
+    public enum Senses {
+        public static let actionGap: CGFloat = 6
+        public static let factGap: CGFloat = 18
+        public static let factLabelGap: CGFloat = 2
+        public static let factPadding: CGFloat = 20
+        public static let footnotePaddingX: CGFloat = 8
+        public static let introGap: CGFloat = 28
+        public static let introIcon: CGFloat = 72
+        public static let introTitleGap: CGFloat = 18
+        public static let introTop: CGFloat = 34
+        public static let listGap: CGFloat = 20
+        public static let timeColumn: CGFloat = 48
+    }
+
     public enum Handover {
         public static let buttonFontSize: CGFloat = 17
         public static let cardPaddingVertical: CGFloat = 14
@@ -317,6 +331,8 @@ public enum DesignTokens {
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
         public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
+        public static let senseTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .himawari, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)

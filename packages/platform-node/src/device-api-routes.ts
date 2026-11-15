@@ -12,6 +12,7 @@ import {
   DEVICE_ACTION_RECORD_STATES,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
+  DEVICE_MIRROR_KINDS,
   type DeviceActionService,
   type DeviceConfiguration,
   decideVoiceCommand,
@@ -19,7 +20,9 @@ import {
   isVoiceScore,
   type PairedDevice,
   type PairedDeviceScope,
+  PERCEPTION_RECORD_TYPES,
   PERCEPTION_SENSES,
+  PERCEPTION_TEXT_MAXIMUM,
   PERCEPTION_UTTERANCE_ID_PATTERN,
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
@@ -423,6 +426,14 @@ export async function presentDevicePerception(
   const settings = await service.settings(scope);
   const usage = await service.usage(scope);
   return {
+    recordTextCharacters: PERCEPTION_TEXT_MAXIMUM,
+    recordTypes: Object.fromEntries(
+      Object.entries(PERCEPTION_RECORD_TYPES).map(([type, { sense, text, evidence }]) => [
+        type,
+        { sense, text, evidence },
+      ]),
+    ),
+    mirrorKinds: DEVICE_MIRROR_KINDS,
     state: status.state,
     pausedUntil: status.pausedUntil,
     senses: PERCEPTION_SENSES.map((sense) => ({
