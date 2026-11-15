@@ -95,7 +95,7 @@ describe("delivery timing settings live on the server", () => {
 
   const read = async (control: ProductionDeliveryTimingControl) => {
     const snapshot = await control.query(
-      message("query", "delivery_timing.settings.read", {}) as GatewayV2Query,
+      message("query", "delivery_timing.settings.read", { locale: "zh-CN" }) as GatewayV2Query,
     );
     gatewayV2MessageSchema.parse(snapshot);
     if (snapshot.type !== "delivery_timing.settings.snapshot") throw new Error("unexpected");
@@ -121,12 +121,81 @@ describe("delivery timing settings live on the server", () => {
     expect(payload.items).toHaveLength(Object.keys(DELIVERY_TIMING_DEFAULTS).length);
     expect(item(payload, "recheckSeconds")).toEqual({
       key: "recheckSeconds",
+      label: "复查间隔",
+      description: "先不推送之后，隔多久再确认你有没有空。",
+      unit: "秒",
+      kind: "duration",
+      storageUnit: "s",
       value: 300,
       defaultValue: 300,
       minimum: 60,
       maximum: 3600,
       overridden: false,
     });
+  });
+
+  it("tells the phone how to show each value: percentage, duration or count", async () => {
+    const { device } = await setup();
+    const payload = await read(device());
+    expect(item(payload, "busyAtLeastPermille")).toMatchObject({
+      kind: "ratio",
+      storageUnit: "permille",
+    });
+    expect(item(payload, "timeoutMs")).toMatchObject({ kind: "duration", storageUnit: "ms" });
+    expect(item(payload, "perMinute")).toMatchObject({ kind: "count", storageUnit: "count" });
+    const seconds = { kind: "duration", storageUnit: "s" };
+    const expected: Record<string, { kind: string; storageUnit: string }> = {
+      busyAtLeastPermille: { kind: "ratio", storageUnit: "permille" },
+      recheckSeconds: seconds,
+      timeoutMs: { kind: "duration", storageUnit: "ms" },
+      perMinute: { kind: "count", storageUnit: "count" },
+      reminderMaximumDeferSeconds: seconds,
+      maximumDeferSeconds: seconds,
+      speechFreshSeconds: seconds,
+      motionFreshSeconds: seconds,
+      sleepFreshSeconds: seconds,
+      focusFreshSeconds: seconds,
+      connectivityFreshSeconds: seconds,
+      macPresenceSeconds: seconds,
+    };
+    expect(payload.items).toHaveLength(Object.keys(expected).length);
+    for (const entry of payload.items) {
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(expected[entry.key]);
+    }
+  });
+
+  it("gives every setting a name, one sentence and a unit in each language, and the language follows the request", async () => {
+    const { device } = await setup();
+    const texts = new Set<string>();
+    for (const locale of ["zh-CN", "en", "ja"] as const) {
+      const snapshot = await device().query(
+        message("query", "delivery_timing.settings.read", { locale }) as GatewayV2Query,
+      );
+      if (snapshot.type !== "delivery_timing.settings.snapshot") throw new Error("unexpected");
+      expect(snapshot.payload.items).toHaveLength(Object.keys(DELIVERY_TIMING_DEFAULTS).length);
+      for (const entry of snapshot.payload.items) {
+        expect(entry.label.length).toBeGreaterThan(0);
+        expect(entry.description.length).toBeGreaterThan(0);
+        expect(entry.unit.length).toBeGreaterThan(0);
+        texts.add(`${locale}:${entry.key}:${entry.label}`);
+      }
+      const recheck = snapshot.payload.items.find(({ key }) => key === "recheckSeconds");
+      expect(recheck?.label).toBe(
+        { "zh-CN": "复查间隔", en: "Recheck interval", ja: "再確認の間隔" }[locale],
+      );
+    }
+    expect(texts.size).toBe(3 * Object.keys(DELIVERY_TIMING_DEFAULTS).length);
+  });
+
+  it("REVERSE: the contract refuses a read for a language the app does not have, or with none", () => {
+    expect(() =>
+      gatewayV2MessageSchema.parse(
+        message("query", "delivery_timing.settings.read", { locale: "fr" }),
+      ),
+    ).toThrow();
+    expect(() =>
+      gatewayV2MessageSchema.parse(message("query", "delivery_timing.settings.read", {})),
+    ).toThrow();
   });
 
   it("shows on the phone a value changed on the computer, and the running service uses it", async () => {

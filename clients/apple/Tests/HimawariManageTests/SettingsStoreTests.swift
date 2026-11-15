@@ -96,7 +96,8 @@ final class SettingsStoreTests: XCTestCase {
             case "cap-search": ("网页搜索", "active")
             default: ("旧的", "disabled")
             }
-            let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+            var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+            if lifecycle == "disabled" { assessment = #","lastInvalidation":{"lifecycle":"disabled","cancelledScheduledJobs":2,"occurredAt":"2026-11-13T06:10:00Z"}"# }
             return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":3\#(assessment)}}"#
         case "device.list.read":
             return devices
@@ -137,6 +138,61 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(payload["reasonCode"], .string("owner_disabled"))
         XCTAssertEqual(payload["recentAuthenticationRef"], .string(ClientCapabilities.referencePlaceholder))
         XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
+    }
+
+    func testTurningADisabledCapabilityBackOnAsksForFaceIDAndReadsTheDisableDetail() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        let disabled = settings.capabilitiesDisabled[0]
+        XCTAssertEqual(disabled.lastInvalidation?.cancelledScheduledJobs, 2)
+        XCTAssertEqual(disabled.lastInvalidation?.occurredAt, "2026-11-13T06:10:00Z")
+        try await settings.reactivate(disabled, reason: "启用")
+        let sent = await transport.sent
+        guard let index = sent.firstIndex(where: { $0["type"] == "capability.reactivate" }) else { return XCTFail() }
+        XCTAssertEqual(sent[index - 1], [:])
+        guard case .object(let payload)? = sent[index]["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload["expectedRevision"], .number(3))
+        XCTAssertEqual(payload["reasonCode"], .string("owner_reactivated"))
+        XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
+    }
+
+    func testOnlyANonServerNonKeyFailureCountsAsDeclined() {
+        XCTAssertFalse(SettingsStore.isDeclined(ManageGatewayError.rejected(status: 403, code: "PORT_NOT_AUTHORITATIVE")))
+        XCTAssertFalse(SettingsStore.isDeclined(DeviceKeyError.keyUnreadable(.confirm)))
+        XCTAssertFalse(SettingsStore.isDeclined(URLError(.notConnectedToInternet)))
+        XCTAssertFalse(SettingsStore.isDeclined(HTTPExchangeError.notHTTP))
+        XCTAssertFalse(SettingsStore.isDeclined(DeviceAPIError.server(status: 409, code: "STALE")))
+        XCTAssertTrue(SettingsStore.isDeclined(CancellationError()))
+    }
+
+    func testOnlyOneReactivationPerCapabilityRunsAtATime() {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        XCTAssertTrue(settings.beginReactivation("cap-old"))
+        XCTAssertFalse(settings.beginReactivation("cap-old"))
+        XCTAssertTrue(settings.beginReactivation("cap-other"))
+        settings.endReactivation("cap-old")
+        XCTAssertTrue(settings.beginReactivation("cap-old"))
+    }
+
+    func testReloadDropsFailureNotesForCapabilitiesThatAreNoLongerDisabled() async {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        await settings.load()
+        let disabledRef = settings.capabilitiesDisabled[0].capabilityRef
+        settings.noteReactivationFailure("x", for: disabledRef)
+        settings.noteReactivationFailure("y", for: "cap-search")
+        await settings.reloadCapabilities()
+        XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
+    }
+
+    func testLoadAlsoDropsFailureNotesForCapabilitiesThatAreNoLongerDisabled() async {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        await settings.load()
+        let disabledRef = settings.capabilitiesDisabled[0].capabilityRef
+        settings.noteReactivationFailure("x", for: disabledRef)
+        settings.noteReactivationFailure("y", for: "cap-search")
+        await settings.load()
+        XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {

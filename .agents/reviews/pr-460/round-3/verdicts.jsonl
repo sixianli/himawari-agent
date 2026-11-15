@@ -1,0 +1,2 @@
+{"id": "ds-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "手写的 install 对象不符合 `installGateway()` 的完整返回形状", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：当前失败路径用不到 binarySha256，属于以后加校验时才有影响的完善"}
+{"id": "ds-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "测试库不是生产使用的 WAL 模式，只读脚本的 WAL 路径未被覆盖", "valid": true, "class": "better", "modelSeverity": "低", "reason": "不改，列给 Andy：改动前就没有覆盖 WAL（原来是默认回滚日志），不是本提交引入；补 WAL 变体属于另外的测试增强"}

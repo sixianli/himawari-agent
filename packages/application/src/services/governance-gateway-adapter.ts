@@ -34,8 +34,10 @@ import {
   type GatewayV2Query,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
+import { approvalBodyPreview } from "./approval-display.js";
 import type { ApprovalService } from "./approval-service.js";
 import type { CapabilityLifecycleService } from "./capability-lifecycle-service.js";
+import { grantDetailLines } from "./grant-detail-lines.js";
 import type { GrantService } from "./grant-service.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
 
@@ -157,6 +159,13 @@ function parseSnapshot(value: unknown): GatewayV2Snapshot {
 
 function responseId(prefix: string, messageId: string): string {
   return `${prefix}:${messageId}`.slice(0, 128);
+}
+
+function grantLabel(approval: GovernedApprovalRequest | undefined): string | null {
+  const display = approval?.display;
+  if (!display) return null;
+  if (display.displayTitle !== null) return display.displayTitle;
+  return display.bodyPreview === null ? null : approvalBodyPreview(display.bodyPreview, 300);
 }
 
 function distinctSorted(values: readonly string[]): readonly string[] {
@@ -542,6 +551,11 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
     const affectedTaskRefs = distinctSorted(
       await this.#dependencies.dependencies.listTaskRefsByGrant(grant.id),
     );
+    const approvalRecord = await this.#dependencies.authorization.getApproval(
+      grant.sourceApprovalRequestId,
+    );
+    const sourceApproval =
+      approvalRecord !== undefined && governedApproval(approvalRecord) ? approvalRecord : undefined;
     return parseSnapshot({
       ...this.#envelope(
         query,
@@ -576,6 +590,19 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         revokedAt: grant.revokedAt,
         revocationReasonCode: grant.revocationReasonCode,
         affectedTaskRefs,
+        label: grantLabel(sourceApproval),
+        detail: grantDetailLines({
+          exactResourceRef: grant.scope.exactResourceRef,
+          resourceIdentities: grant.scope.resourceIdentities,
+          resourcePrefixes: grant.scope.resourcePrefixes,
+          recipients: grant.scope.recipients,
+          uses: grant.uses,
+          maxUses: grant.maxUses,
+          spentCostMicros: grant.spentCostMicros,
+          maxTotalCostMicros: grant.maxTotalCostMicros,
+          maxCostMicrosPerUse: grant.scope.maxCostMicrosPerUse,
+          affectedTaskCount: affectedTaskRefs.length,
+        }),
         generatedAt,
       },
     });

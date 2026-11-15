@@ -400,15 +400,18 @@ export interface ThinkInboxConfiguration {
   readonly summaryCharacters?: number;
   readonly idleSeconds?: number;
   readonly runTimeoutMinutes?: number;
+  readonly threadRetentionDays?: number;
 }
 
 export const THINK_SETTING_UNITS = [
   "permille",
   "count",
+  "times",
   "hours",
   "minutes",
   "characters",
   "seconds",
+  "days",
 ] as const;
 
 export const THINK_SETTING_DEFINITIONS = Object.freeze([
@@ -418,7 +421,7 @@ export const THINK_SETTING_DEFINITIONS = Object.freeze([
   { key: "dailyLimit", unit: "count", minimum: 1, maximum: 10000, defaultValue: 50 },
   { key: "expiresAfterHours", unit: "hours", minimum: 1, maximum: 8760, defaultValue: 48 },
   { key: "stalledAfterMinutes", unit: "minutes", minimum: 1, maximum: 1440, defaultValue: 30 },
-  { key: "maxAttempts", unit: "count", minimum: 1, maximum: 20, defaultValue: 3 },
+  { key: "maxAttempts", unit: "times", minimum: 1, maximum: 20, defaultValue: 3 },
   {
     key: "summaryCharacters",
     unit: "characters",
@@ -428,6 +431,7 @@ export const THINK_SETTING_DEFINITIONS = Object.freeze([
   },
   { key: "idleSeconds", unit: "seconds", minimum: 5, maximum: 86400, defaultValue: 60 },
   { key: "runTimeoutMinutes", unit: "minutes", minimum: 1, maximum: 120, defaultValue: 10 },
+  { key: "threadRetentionDays", unit: "days", minimum: 1, maximum: 90, defaultValue: 7 },
 ] as const satisfies readonly {
   readonly key: string;
   readonly unit: (typeof THINK_SETTING_UNITS)[number];

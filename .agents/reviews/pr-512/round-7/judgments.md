@@ -1,0 +1,5 @@
+# PR 512 第 7 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 中：第 6 轮“红点有件数但卡片消失”在 126c 仍未修好，件数和卡片仍来自两套数据。WatchGlance.swift:110-120 pressing 要求 sentence 非空，countedAwaiting 取 awaitingCount；是上一轮中高修复时定的取舍，README:170 已写明；触发：服务器只返回一条没有句子或没有绑定串动作的待办（如账号需要重新连接）；后果：表盘或长条有件数，手表 App 没有卡片、只提示去 iPhone 上看；不丢数据不出错，只是提示不一致；判低理由：与第 5、6 轮第 1 条同一条，沿用原判：增量 126c 没改 WatchGlance.swift 的 pressing，模型无新证据；README 已写明无绑定串动作不画按钮，件数定义同 iPhone 红点
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低：中文离线文案已改成“现在连不上”，README 仍写“暂时连不上”。Localizable.strings:13 是“现在连不上”，README.md:170 仍写“暂时连不上”；第 3 轮起低意见只记录不修；触发：按 README 验收中文离线屏；后果：README 写“暂时连不上”，界面实际是“现在连不上”，只是文字不一致，不误导操作
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：新增 glance 视图没有自动检查，现有测试反而把“有件数、没卡片”当成合法状态。Linux 不编 SwiftUI，WatchGlanceView 只能在 Mac 用 watch-ui-review.sh 截图验收；WatchGlanceTests.swift:70-77 固定的是已判低的取舍，不是缺陷；覆盖可以更好，当前行为没错

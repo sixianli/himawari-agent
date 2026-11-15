@@ -442,11 +442,16 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
-  fixture("query", "delivery_timing.settings.read", {}),
+  fixture("query", "delivery_timing.settings.read", { locale: "zh-CN" }),
   fixture("snapshot", "delivery_timing.settings.snapshot", {
     items: [
       {
         key: "recheckSeconds",
+        label: "复查间隔",
+        description: "先不推送之后，隔多久再确认你有没有空。",
+        unit: "秒",
+        kind: "duration",
+        storageUnit: "s",
         value: 600,
         defaultValue: 300,
         minimum: 60,
@@ -650,7 +655,16 @@ export const governanceMessages = [
         minimum: 1,
         maximum: 1000,
         unit: "count",
+        kind: "count",
+        storageUnit: "count",
         overridden: true,
+        label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+        description: {
+          "zh-CN": "最多同时排队等着想的事数。",
+          en: "How many items can wait at once.",
+          ja: "待てる件数の上限です。",
+        },
+        unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
       },
     ],
     generatedAt: "2026-11-15T00:00:00.000Z",
@@ -1515,6 +1529,12 @@ export const governanceMessages = [
     revokedAt: null,
     revocationReasonCode: null,
     affectedTaskRefs: ["task-01"],
+    label: "Send the review email once",
+    detail: {
+      "zh-CN": ["已用 0/1 次"],
+      en: ["Used 0 of 1"],
+      ja: ["0/1 回使用"],
+    },
     generatedAt: "2026-08-26T00:00:01.000Z",
   }),
 ] as const;

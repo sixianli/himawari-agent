@@ -28,9 +28,11 @@ it("has an entitlements file for both signing variants, the keychain-only one wi
     const full = readFileSync(path.join(app, resolve(template, "")), "utf8");
     const keychainOnly = readFileSync(path.join(app, resolve(template, ".keychain-only")), "utf8");
     expect(full).toContain("com.apple.security.application-groups");
-    expect(full).toContain("keychain-access-groups");
     expect(keychainOnly).not.toContain("application-groups");
-    expect(keychainOnly).toContain("keychain-access-groups");
+    if (!/^(Watch|WatchWidgets)\//u.test(template)) {
+      expect(full).toContain("keychain-access-groups");
+      expect(keychainOnly).toContain("keychain-access-groups");
+    }
   }
 });
 
@@ -40,4 +42,23 @@ it("defaults the signing variant to the full App Group build in every project-le
   );
   expect(defaults.length).toBe(2);
   expect(new Set(defaults)).toEqual(new Set(['""']));
+});
+
+it("covers exactly the five signed targets, each configuration declaring the entitlements key once", () => {
+  expect(new Set(templates.map((t) => t.split("/")[0]))).toEqual(
+    new Set(["iOS", "ShareExtension", "SafariExtension", "Watch", "WatchWidgets"]),
+  );
+  expect([...project.matchAll(/CODE_SIGN_ENTITLEMENTS =/gu)].length).toBe(lines.length);
+});
+
+it("leaves HIMAWARI_APP_GROUP only in the project-level configurations so clearing it reaches every target", () => {
+  const blocks = [...project.matchAll(/buildSettings = \{([\s\S]*?)\n\t\t\t\};/gu)].map(
+    (m) => m[1] ?? "",
+  );
+  const withGroup = blocks.filter((b) => /HIMAWARI_APP_GROUP =/u.test(b));
+  expect(withGroup.length).toBe(2);
+  for (const block of withGroup) {
+    expect(block).toContain("HIMAWARI_ENTITLEMENTS_SUFFIX");
+    expect(block).not.toContain("CODE_SIGN_ENTITLEMENTS");
+  }
 });
