@@ -70,12 +70,7 @@ function get(h: Harness, client: PairedClient, path: string) {
   return send(h, signedRequest(h, client, { method: "GET", path }));
 }
 
-async function seedFile(
-  h: Harness,
-  client: PairedClient,
-  content: string,
-  extraArtifactIds: readonly string[] = [],
-) {
+async function seedFile(h: Harness, client: PairedClient, content: string, slashId?: string) {
   const text = await send(
     h,
     signedRequest(h, client, {
@@ -107,31 +102,38 @@ async function seedFile(
     )
     .run(ownerId, agentId, NOW, NOW);
   database.close();
-  const ids = ["thread-artifact:5b0c4a3e-1f6d-4c1e-9a52-0d3c8e7b9a10", ...extraArtifactIds];
-  let firstId = "";
-  for (const [index, id] of ids.entries()) {
-    const registered = await h.repository.threadArtifacts().register({
+  const registered = await h.repository.threadArtifacts().register({
+    ownerId,
+    agentId,
+    artifact: {
+      id: "thread-artifact:5b0c4a3e-1f6d-4c1e-9a52-0d3c8e7b9a10",
+      threadId: "thread-download",
+      runId: "run-download",
+      toolCallId: "call-download",
+      source: "bash",
+      path: "notes/大阪.txt",
+      kind: "document",
+      mediaType: "text/plain",
+      sizeBytes: content.length,
+      sha256: "a".repeat(64),
+      copyRef,
+      overlapped: false,
+      createdAt: NOW,
+    },
+  });
+  if (slashId) {
+    await h.repository.threadArtifacts().register({
       ownerId,
       agentId,
       artifact: {
-        id,
-        threadId: "thread-download",
-        runId: "run-download",
-        toolCallId: `call-download-${index}`,
-        source: "bash",
-        path: `notes/大阪-${index}.txt`,
-        kind: "document",
-        mediaType: "text/plain",
-        sizeBytes: content.length,
-        sha256: "a".repeat(64),
-        copyRef,
-        overlapped: false,
-        createdAt: NOW,
+        ...registered.artifact,
+        id: slashId,
+        toolCallId: "call-download-slash",
+        path: "notes/slash.txt",
       },
     });
-    if (index === 0) firstId = registered.artifact.id;
   }
-  return firstId;
+  return registered.artifact.id;
 }
 
 describe("[iOS-11] device-signed downloads of an export archive and a stored file", () => {
@@ -148,11 +150,11 @@ describe("[iOS-11] device-signed downloads of an export archive and a stored fil
     expect(archive.headers["cache-control"]).toBe("no-store");
     expect(archive.rawPayload).toEqual(ARCHIVE);
 
-    const fileId = await seedFile(h, client, "会面定在 14:00", ["a/b"]);
+    const fileId = await seedFile(h, client, "会面定在 14:00", "a/b");
     const file = await get(h, client, `/api/device/v1/files/content/${fileId}`);
     expect(file.statusCode, file.body).toBe(200);
     expect(file.headers["content-disposition"]).toContain("attachment");
-    expect(file.headers["content-disposition"]).toContain(encodeURIComponent("大阪-0.txt"));
+    expect(file.headers["content-disposition"]).toContain(encodeURIComponent("大阪.txt"));
     expect(file.body).toBe("会面定在 14:00");
     const encoded = await get(
       h,
