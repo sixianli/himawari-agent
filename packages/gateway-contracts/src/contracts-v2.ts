@@ -165,6 +165,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "perception.usage.read",
   "perception.usage.snapshot",
   "perception.settings.change",
+  "think.settings.read",
+  "think.settings.snapshot",
+  "think.settings.change",
   "server.status.read",
   "server.status.snapshot",
   "home.read",
@@ -865,6 +868,37 @@ const perceptionSettingsChangeCommandSchema = object({
     enabled: nullable(booleanValue),
     until: nullable(timestamp),
     key: nullable(machineString),
+    value: nullable(integer(0)),
+  }),
+});
+const thinkSettingsQuerySchema = object({
+  ...envelope("query", "think.settings.read"),
+  payload: object({}),
+});
+const thinkSettingsSnapshotSchema = object({
+  ...envelope("snapshot", "think.settings.snapshot"),
+  payload: object({
+    revision: integer(0),
+    enabled: booleanValue,
+    items: array(
+      object({
+        key: machineString,
+        value: integer(0),
+        defaultValue: integer(0),
+        minimum: integer(0),
+        maximum: integer(0),
+        unit: machineString,
+        overridden: booleanValue,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const thinkSettingsChangeCommandSchema = object({
+  ...commandEnvelope("think.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    key: machineString,
     value: nullable(integer(0)),
   }),
 });
@@ -3552,6 +3586,9 @@ const schemasByType = {
   "perception.usage.read": perceptionUsageQuerySchema,
   "perception.usage.snapshot": perceptionUsageSnapshotSchema,
   "perception.settings.change": perceptionSettingsChangeCommandSchema,
+  "think.settings.read": thinkSettingsQuerySchema,
+  "think.settings.snapshot": thinkSettingsSnapshotSchema,
+  "think.settings.change": thinkSettingsChangeCommandSchema,
   "server.status.read": serverStatusQuerySchema,
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
