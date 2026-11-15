@@ -32,7 +32,7 @@
     "check:incident-gates": "node scripts/check-incident-gates.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/incident-gates.test.mjs",
     "check:glossary": "node scripts/check-glossary.mjs",
     "check:meaning-word-lists": "node scripts/check-meaning-word-lists.mjs",
-    "check:apple-design": "node clients/apple/scripts/check-design.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/apple-design-check.test.mjs test/tooling/apple-attachment-fixture.test.ts",
+    "check:apple-design": "node clients/apple/scripts/check-design.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/apple-design-check.test.mjs test/tooling/apple-attachment-fixture.test.ts test/tooling/apple-icon-consistency.test.mjs",
     "check:agent-rulebook-inventory": "node scripts/check-agent-rulebook-inventory.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/agent-rulebook-inventory.test.mjs",
     "check:operations": "node scripts/check-operations.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/operations-check.test.mjs",
     "check:markdown-tables": "node scripts/check-markdown-tables.mjs",
