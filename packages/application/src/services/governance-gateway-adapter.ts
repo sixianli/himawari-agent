@@ -36,6 +36,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import type { ApprovalService } from "./approval-service.js";
 import type { CapabilityLifecycleService } from "./capability-lifecycle-service.js";
+import { grantDetailLines } from "./grant-detail-lines.js";
 import type { GrantService } from "./grant-service.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
 
@@ -542,6 +543,11 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
     const affectedTaskRefs = distinctSorted(
       await this.#dependencies.dependencies.listTaskRefsByGrant(grant.id),
     );
+    const approvalRecord = await this.#dependencies.authorization.getApproval(
+      grant.sourceApprovalRequestId,
+    );
+    const sourceApproval =
+      approvalRecord !== undefined && governedApproval(approvalRecord) ? approvalRecord : undefined;
     return parseSnapshot({
       ...this.#envelope(
         query,
@@ -576,6 +582,20 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         revokedAt: grant.revokedAt,
         revocationReasonCode: grant.revocationReasonCode,
         affectedTaskRefs,
+        label: sourceApproval?.display?.displayTitle ?? null,
+        detail: grantDetailLines({
+          exactResourceRef: grant.scope.exactResourceRef,
+          resourceIdentities: grant.scope.resourceIdentities,
+          resourcePrefixes: grant.scope.resourcePrefixes,
+          recipients: grant.scope.recipients,
+          uses: grant.uses,
+          maxUses: grant.maxUses,
+          spentCostMicros: grant.spentCostMicros,
+          maxTotalCostMicros: grant.maxTotalCostMicros,
+          maxCostMicrosPerUse: grant.scope.maxCostMicrosPerUse,
+          expiresAt: grant.expiresAt,
+          affectedTaskCount: affectedTaskRefs.length,
+        }),
         generatedAt,
       },
     });

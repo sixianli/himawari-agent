@@ -501,6 +501,10 @@ describe("S4 Task 11 governance Control Center boundary", () => {
         capabilityRef: "governed-ui-tool",
         capabilityVersion: "1.0.0",
         affectedTaskRefs: ["task-grant-dependent"],
+        detail: {
+          "zh-CN": expect.arrayContaining(["会影响 1 个任务"]),
+          en: expect.arrayContaining(["Affects 1 task"]),
+        },
       },
     });
 
