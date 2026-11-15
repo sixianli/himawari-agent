@@ -14,6 +14,22 @@ const fixture = vi.hoisted(() => ({
 vi.mock("../src/capabilities/artifact-verifier.js", () => ({
   digestRegularFile: fixture.artifactDigest,
 }));
+vi.mock("node:worker_threads", async () => {
+  const { EventEmitter } = await import("node:events");
+  class InstallationAuditPasses extends EventEmitter {
+    constructor() {
+      super();
+      queueMicrotask(() => {
+        this.emit("message", { protected: true });
+        this.emit("exit", 0);
+      });
+    }
+    terminate() {
+      return Promise.resolve(0);
+    }
+  }
+  return { Worker: InstallationAuditPasses };
+});
 vi.mock("node:fs/promises", () => {
   const metadata = (name: string) => {
     const node = fixture.nodes.get(name);
