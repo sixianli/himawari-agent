@@ -33,7 +33,7 @@ Andy 问为什么 himawari-agent 这么大。他 Mac 上的克隆一共 16G，�
 
 - 云端完整克隆的 `git count-objects -vH` 是 pack 340.64 MiB（只算 main 和它的历史；加上全部 355 个远程分支是 394.40 MiB），签出的跟踪文件约 260M。
 - main 历史里的文件内容压缩后约 309M，最大一块是 `clients/apple/ui-review`（界面截图和录屏）131M，其次是 `test/qualification/evidence` 74M、`clients/apple/Tests` 36M。当前 main 里已经不存在、只留在历史里的内容有 153M。
-- 截图目录 `clients/apple/ui-review/latest/` 写在了 `.gitignore` 里，却被强制提交在跟踪中。11-12 到 11-15 之间约有 20 个提交反复“提交截图”又“把截图移到项目文件夹”：原因是 Mac 上的线程不能直接给云端线程发文件，只能靠 git 推送把截图交给云端的设计验收线程。移走只改了当前版本，历史里每一批都还在。
+- 截图目录 `clients/apple/ui-review/latest/` 写在 `.gitignore` 里，在本 PR 之前却被强制提交在跟踪中；本 PR 已取消跟踪，`check:repo-hygiene` 拦它再被提交。11-12 到 11-15 之间约有 20 个提交反复“提交截图”又“把截图移到项目文件夹”：原因是 Mac 上的线程不能直接给云端线程发文件，只能靠 git 推送把截图交给云端的设计验收线程。移走只改了当前版本，历史里每一批都还在。
 
 Mac 克隆里的本机产物：
 
@@ -53,9 +53,9 @@ Mac 克隆里的本机产物：
 5. 现有清理只认四种文件名。`scripts/disk-hygiene/prune-rebuildable.py:12`：`REBUILDABLE_FILES = ('*.bundle', 'node-modules.tar.gz', '*-abi[0-9]*-*.tar.gz', 'python-[0-9]*.tar.gz')`；第 53 行跳过 `.ci-output/tools`：`if name == 'tools' and current.name == '.ci-output':`。
 6. 现有定时任务每天 04:00 跑。`scripts/disk-hygiene/install-schedule.sh:60`：`<key>Hour</key><integer>4</integer>`。
 7. 截图脚本把截图和编译缓存都写在仓库目录里。`clients/apple/scripts/ui-review.sh:6`：`out="$root/ui-review/latest"`；第 11 行：`derived="$root/ui-review/DerivedData"`；`clients/apple/scripts/mac-ui-review.sh:6`：`derived="$root/ui-review/DerivedData-mac"`。
-8. `--check` 的临时截图目录不删。`clients/apple/scripts/ui-review.sh:125`：`shots="$(mktemp -d)"`，脚本里没有删除它的语句。
+8. 本 PR 之前，`--check` 的临时截图目录（`shots="$(mktemp -d)"`）没有删除它的语句；本 PR 改为检查通过就删，失败才留下并打印 `UI_REVIEW_CHECK_KEPT`。
 9. 截图目录已写进忽略清单。`clients/apple/ui-review/.gitignore:2`：`latest/`；第 6 行：`mac-latest/`。
-10. 根 `.gitignore` 没有忽略工作副本目录：`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出（2026-11-15 云端运行）。
+10. 本 PR 之前，根 `.gitignore` 没有忽略工作副本目录（`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出，2026-11-15 云端运行）；本 PR 在根 `.gitignore` 加了 `.claude/worktrees/`、`.agents/local/`、`.cb-delegate/`。
 11. 云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）。
 12. `.ci-output/handoff/scripts` 里是上线工具在用的脚本。`scripts/delivery-mode/make-packet.py:678`：`self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))`。
 13. `.ci-output/worktrees` 被模型目录工具使用。`.agents/opencode-models.py:131`：`base = root / ".ci-output" / "worktrees"`。
