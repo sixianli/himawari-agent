@@ -46,6 +46,7 @@ public final class WatchModel {
     public private(set) var settled: Set<String> = []
     public private(set) var acting: String?
     public private(set) var talk: TalkState = .idle
+    public private(set) var said = ""
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
@@ -78,7 +79,7 @@ public final class WatchModel {
     }
 
     #if DEBUG
-    init(demoPhase: WatchPhase, home: WatchHome? = nil, talk: TalkState = .idle, homeFailed: Bool = false) {
+    init(demoPhase: WatchPhase, home: WatchHome? = nil, talk: TalkState = .idle, said: String = "", homeFailed: Bool = false) {
         keys = SecureEnclaveKeyStore(service: "himawari.watch.demo.keys")
         keychain = KeychainValueStore(service: "himawari.watch.demo")
         releaseChannel = .direct
@@ -87,6 +88,7 @@ public final class WatchModel {
         phase = demoPhase
         self.home = home
         self.talk = talk
+        self.said = said
         self.homeFailed = homeFailed
     }
     #endif
@@ -320,6 +322,7 @@ public final class WatchModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, talk == .idle || talk == .failed else { return }
         talking?.cancel()
+        said = trimmed
         talk = .sending
         talking = Task { [weak self] in
             await self?.run(trimmed, screen: screen)
@@ -387,6 +390,7 @@ public final class WatchModel {
         talking?.cancel()
         speaker.stopSpeaking(at: .immediate)
         pendingSend = nil
+        said = ""
         talk = .idle
     }
 

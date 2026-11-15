@@ -182,6 +182,7 @@ struct CardView: View {
                 buttons
                     .padding(.top, DesignTokens.Watch.cardButtonTop)
             }
+            .padding(.horizontal, DesignTokens.Watch.screenPadding)
         }
     }
 
@@ -225,7 +226,7 @@ struct TalkView: View {
             VStack(spacing: 8) {
                 switch model.talk {
                 case .idle:
-                    SunflowerMark(detail: .compact, growing: false).frame(width: DesignTokens.Watch.markPairing, height: DesignTokens.Watch.markPairing)
+                    HaloMark(growing: false)
                     TextField(L.text("talk.prompt"), text: $text)
                         .submitLabel(.send)
                         .onSubmit { model.say(text, screen: screen) }
@@ -257,7 +258,12 @@ struct TalkView: View {
                 case .failed:
                     Text(L.text("talk.failed"))
                         .foregroundStyle(Color.hmDanger)
-                    Button(L.text("retry")) { model.say(text, screen: screen) }
+                    Text(model.said)
+                        .hmType(DesignTokens.TypeScale.watchCaption)
+                        .foregroundStyle(Color.hmMuted)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(Int(DesignTokens.Watch.saidLines))
+                    Button(L.text("retry")) { model.say(model.said, screen: screen) }
                         .buttonStyle(WatchButtonStyle(primary: false))
                 }
             }
@@ -267,9 +273,34 @@ struct TalkView: View {
 
     private func status(_ key: String, growing: Bool) -> some View {
         VStack(spacing: 8) {
-            SunflowerMark(detail: .compact, growing: growing).frame(width: DesignTokens.Watch.markPairing, height: DesignTokens.Watch.markPairing)
+            HaloMark(growing: growing)
+            Text(model.said)
+                .hmType(DesignTokens.TypeScale.watchAnswerStrong)
+                .foregroundStyle(Color.hmText)
+                .multilineTextAlignment(.center)
+                .lineLimit(Int(DesignTokens.Watch.saidLines))
             Text(L.text(key)).hmType(DesignTokens.TypeScale.watchFootnote).foregroundStyle(Color.hmMuted)
         }
+    }
+}
+
+struct HaloMark: View {
+    let growing: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(
+                    colors: [Color.hmSun.opacity(DesignTokens.Opacity.watchHalo), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: DesignTokens.Watch.markHalo / 2
+                ))
+                .frame(width: DesignTokens.Watch.markHalo, height: DesignTokens.Watch.markHalo)
+            SunflowerMark(detail: .compact, growing: growing)
+                .frame(width: DesignTokens.Watch.markPairing, height: DesignTokens.Watch.markPairing)
+        }
+        .frame(height: DesignTokens.Watch.markPairing)
     }
 }
 #endif

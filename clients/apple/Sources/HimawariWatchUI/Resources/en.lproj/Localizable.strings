@@ -23,3 +23,5 @@
 "stop" = "Stop";
 "done" = "OK";
 "reminder.title" = "Himawari";
+"glance.waiting" = "%d need you";
+"glance.quiet" = "Nothing needs you";

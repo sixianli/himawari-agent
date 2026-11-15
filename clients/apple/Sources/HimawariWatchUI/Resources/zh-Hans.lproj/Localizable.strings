@@ -10,7 +10,7 @@
 "cancel" = "取消";
 "retry" = "再试一次";
 "quiet" = "没有要你定的事";
-"offline" = "暂时连不上";
+"offline" = "现在连不上";
 "onIPhone" = "在 iPhone 上看";
 "onIPhone.hint" = "在 iPhone 上打开 Himawari 接着看";
 "talk" = "跟 Himawari 说";
@@ -23,3 +23,5 @@
 "stop" = "停";
 "done" = "好";
 "reminder.title" = "Himawari";
+"glance.waiting" = "%d 件事等你定";
+"glance.quiet" = "没有要你定的事";

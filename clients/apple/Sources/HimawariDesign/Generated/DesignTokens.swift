@@ -114,6 +114,7 @@ public enum DesignTokens {
 
     public enum Opacity {
         public static let emptyMark: Double = 0.55
+        public static let watchHalo: Double = 0.3
         public static let watchPressed: Double = 0.7
     }
 
@@ -233,12 +234,21 @@ public enum DesignTokens {
         public static let buttonHeight: CGFloat = 44
         public static let cardButtonTop: CGFloat = 6
         public static let cardGap: CGFloat = 6
+        public static let glanceCircle: CGFloat = 76
+        public static let glanceGap: CGFloat = 8
+        public static let glanceHeight: CGFloat = 68
+        public static let glanceMarkInset: CGFloat = 4
+        public static let glancePadding: CGFloat = 6
+        public static let glanceRadius: CGFloat = 20
+        public static let glanceWidth: CGFloat = 160
+        public static let markHalo: CGFloat = 96
         public static let markMedium: CGFloat = 56
         public static let markPairing: CGFloat = 64
         public static let markQuiet: CGFloat = 80
         public static let markSmall: CGFloat = 28
         public static let markWidget: CGFloat = 30
-        public static let screenPadding: CGFloat = 6
+        public static let saidLines: CGFloat = 3
+        public static let screenPadding: CGFloat = 12
         public static let talkInsetHeight: CGFloat = 24
         public static let talkInsetWidth: CGFloat = 16
         public static let talkPadding: CGFloat = 8

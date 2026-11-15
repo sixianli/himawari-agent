@@ -2,6 +2,7 @@
 import Foundation
 import HimawariCore
 import SwiftUI
+import WidgetKit
 
 public enum WatchDemoScene: String, CaseIterable {
     case reminder = "11-watch-1-reminder"
@@ -18,6 +19,10 @@ public enum WatchDemoScene: String, CaseIterable {
     case unpairedProblem = "11-watch-7b-code-expired"
     case connecting = "11-watch-7c-connecting"
     case waiting = "11-watch-7d-waiting"
+    case glanceWaitingRectangular = "11-watch-8-glance-rectangular-waiting"
+    case glanceQuietRectangular = "11-watch-8b-glance-rectangular-quiet"
+    case glanceWaitingCircular = "11-watch-8c-glance-circular-waiting"
+    case glanceQuietCircular = "11-watch-8d-glance-circular-quiet"
 
     public static var requested: WatchDemoScene? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -55,14 +60,27 @@ public enum WatchDemoScene: String, CaseIterable {
         case .offline:
             WatchModel(demoPhase: .active, home: nil, homeFailed: true)
         case .talkReady: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .idle)
-        case .talkThinking: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .waiting)
+        case .talkThinking: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .waiting, said: "明天早上八点叫我起床")
         case .talkShown: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .shown("记下了：今晚九点给妈妈打电话。"))
         case .talkReading: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .reading(first: "会面定在 14:00，新大阪站附近。"))
-        case .talkFailed: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .failed)
+        case .talkFailed: WatchModel(demoPhase: .active, home: home([], awaiting: 0), talk: .failed, said: "今晚九点给妈妈打电话")
         case .unpaired: WatchModel(demoPhase: .unpaired(nil))
         case .unpairedProblem: WatchModel(demoPhase: .unpaired(.codeExpired(ttlSeconds: nil)))
         case .connecting: WatchModel(demoPhase: .submitting)
         case .waiting: WatchModel(demoPhase: .waitingForConfirmation(number: "482 913"))
+        case .glanceWaitingRectangular, .glanceQuietRectangular, .glanceWaitingCircular, .glanceQuietCircular: WatchModel(demoPhase: .active)
+        }
+    }
+
+    var glance: (state: WatchComplicationState, family: WidgetFamily)? {
+        let busy = WatchComplicationState(awaiting: 3, latest: "周五的会改到 15:00", updatedAt: Self.at)
+        let quiet = WatchComplicationState(awaiting: 0, latest: nil, updatedAt: Self.at)
+        switch self {
+        case .glanceWaitingRectangular: return (busy, .accessoryRectangular)
+        case .glanceQuietRectangular: return (quiet, .accessoryRectangular)
+        case .glanceWaitingCircular: return (busy, .accessoryCircular)
+        case .glanceQuietCircular: return (quiet, .accessoryCircular)
+        default: return nil
         }
     }
 
@@ -84,7 +102,16 @@ public struct WatchDemoView: View {
     }
 
     public var body: some View {
-        if scene.showsTalk {
+        if let glance = scene.glance {
+            WatchGlanceView(state: glance.state, family: glance.family)
+                .padding(DesignTokens.Watch.glancePadding)
+                .frame(
+                    width: glance.family == .accessoryCircular ? DesignTokens.Watch.glanceCircle : DesignTokens.Watch.glanceWidth,
+                    height: glance.family == .accessoryCircular ? DesignTokens.Watch.glanceCircle : DesignTokens.Watch.glanceHeight
+                )
+                .background(Color.hmFillStrong, in: RoundedRectangle(cornerRadius: DesignTokens.Watch.glanceRadius))
+                .containerBackground(.black, for: .navigation)
+        } else if scene.showsTalk {
             TalkView(model: model).containerBackground(.black, for: .navigation)
         } else {
             DemoHomeContainer(model: model)

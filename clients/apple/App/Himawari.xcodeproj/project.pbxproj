@@ -37,6 +37,7 @@
 		3940EC1D7AED0738DCCC0EDE /* HimawariWatchUI in Frameworks */ = {isa = PBXBuildFile; productRef = E2673B494288B432D066F62E /* HimawariWatchUI */; };
 		F4216EA1334C54E9C01DC393 /* HimawariWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B0608658B4823105EE7032 /* HimawariWatchWidgets.swift */; };
 		F4F90DE18EFC819D768B15DF /* HimawariDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C2DC1C1D268758D34401CA33 /* HimawariDesign */; };
+		A7C3E1D95B2F4806B1D4E7A1 /* HimawariWatchUI in Frameworks */ = {isa = PBXBuildFile; productRef = B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */; };
 		6CE3221F13E53AFE571CAF96 /* HimawariCore in Frameworks */ = {isa = PBXBuildFile; productRef = 51E8EE40F93C27556DED3B13 /* HimawariCore */; };
 		E444F86A4A2A3E5BC7AC234A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7C6B3CED21C8F4D4BB953482 /* Localizable.strings */; };
 		9F77C3D7CAFD5F6272B56278 /* HimawariWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -233,6 +234,7 @@
 			files = (
 				F4F90DE18EFC819D768B15DF /* HimawariDesign in Frameworks */,
 				6CE3221F13E53AFE571CAF96 /* HimawariCore in Frameworks */,
+				A7C3E1D95B2F4806B1D4E7A1 /* HimawariWatchUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -505,6 +507,7 @@
 			packageProductDependencies = (
 				C2DC1C1D268758D34401CA33 /* HimawariDesign */,
 				51E8EE40F93C27556DED3B13 /* HimawariCore */,
+				B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */,
 			);
 			productName = HimawariWatchWidgets;
 			productReference = CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */;
@@ -1252,6 +1255,11 @@
 			productName = HimawariListenUI;
 		};
 		E2673B494288B432D066F62E /* HimawariWatchUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariWatchUI;
+		};
+		B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
 			productName = HimawariWatchUI;

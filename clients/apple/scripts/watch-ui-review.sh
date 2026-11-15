@@ -5,21 +5,30 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/ui-review/watch-latest"
 derived="$root/ui-review/DerivedDataWatch"
 device_name="Himawari Watch"
+lang="zh-Hans"
 bundle="win.siyi.himawari.watchkitapp"
 
 usage() {
-  echo "usage: clients/apple/scripts/watch-ui-review.sh [--out DIR]" >&2
+  echo "usage: clients/apple/scripts/watch-ui-review.sh [--out DIR] [--lang zh-Hans|en|ja]" >&2
   exit 2
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) [ $# -ge 2 ] || usage; out="$2"; shift 2 ;;
+    --lang) [ $# -ge 2 ] || usage; lang="$2"; shift 2 ;;
     *) usage ;;
   esac
 done
 
 command -v xcrun >/dev/null && xcodebuild -version >/dev/null 2>&1 || { echo "WATCH_UI_REVIEW_FAILED needs Xcode on a Mac" >&2; exit 1; }
+
+case "$lang" in
+  zh-Hans) locale="zh_CN" ;;
+  en) locale="en_US" ;;
+  ja) locale="ja_JP" ;;
+  *) usage ;;
+esac
 
 scenes=()
 while IFS= read -r scene; do scenes+=("$scene"); done < <(sed -nE 's/^ *case [a-zA-Z]+ = "([^"]+)"$/\1/p' "$root/Sources/HimawariWatchUI/WatchDemo.swift")
@@ -52,7 +61,7 @@ xcrun simctl install "$udid" "$app"
 mkdir -p "$out"
 rm -f "$out"/*.png
 for scene in "${scenes[@]}"; do
-  xcrun simctl launch --terminate-running-process "$udid" "$bundle" -HimawariWatchDemoScene "$scene" >/dev/null
+  xcrun simctl launch --terminate-running-process "$udid" "$bundle" -HimawariWatchDemoScene "$scene" -AppleLanguages "($lang)" -AppleLocale "$locale" >/dev/null
   sleep 2
   xcrun simctl io "$udid" screenshot "$out/$scene.png" >/dev/null
   echo "WATCH_UI_REVIEW_SHOT $scene"
