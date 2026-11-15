@@ -23,11 +23,10 @@ struct ProposalsPage: View {
                 } else {
                     Text(M.proposalsSubtitle).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
                         .padding(.horizontal, SL.groupLabelPadding)
-                    SettingsGroup(label: nil) {
-                        ForEach(Array(list.proposals.enumerated()), id: \.element.id) { index, proposal in
+                    VStack(spacing: PL.gap) {
+                        ForEach(list.proposals) { proposal in
                             ProposalRow(
                                 proposal: proposal,
-                                last: index == list.proposals.count - 1,
                                 busy: busy == proposal.id,
                                 respond: { respond(proposal, $0) }
                             )
@@ -66,51 +65,56 @@ struct ProposalsPage: View {
     }
 }
 
+typealias PL = ManageLayout.ProposalCard
+
 struct ProposalRow: View {
     let proposal: Proposal
-    let last: Bool
     let busy: Bool
     let respond: (ProposalAction) -> Void
     @State private var open = false
 
+    private var firstReason: String? {
+        proposal.evidence.lazy.compactMap { $0.text }.first { !$0.isEmpty }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: SL.rowGap) {
-                VStack(alignment: .leading, spacing: SL.rowTextGap) {
-                    Text(proposal.summary).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                    Text(proposal.effect).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                }
-                if proposal.hasEvidence {
-                    Button { withAnimation(.snappy) { open.toggle() } } label: {
-                        Text(open ? M.proposalHideWhy : M.proposalWhy)
-                            .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                            .frame(minHeight: DesignTokens.Size.minTapTarget, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(.isButton)
-                    if open { evidence }
-                }
-                HStack(spacing: SL.rowGap) {
-                    Spacer(minLength: 0)
-                    Button { respond(.reject) } label: {
-                        Text(M.proposalDecline).hmType(SL.rowValue).foregroundStyle(Color.hmMuted)
-                            .frame(minHeight: DesignTokens.Size.minTapTarget)
-                    }
-                    .buttonStyle(.plain)
-                    if proposal.adoptable {
-                        Button { respond(.adopt) } label: {
-                            Text(M.proposalAdopt).hmType(SL.rowValue).foregroundStyle(Color.hmSun)
-                                .frame(minHeight: DesignTokens.Size.minTapTarget)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(proposal.requiresFullRead && proposal.hasEvidence && !open)
-                    }
-                }
-                .disabled(busy)
+        VStack(alignment: .leading, spacing: SL.rowGap) {
+            VStack(alignment: .leading, spacing: SL.rowTextGap) {
+                Text(proposal.summary).hmType(PL.title).foregroundStyle(Color.hmText)
+                Text(proposal.effect).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
             }
-            .padding(.vertical, SL.rowPaddingVertical)
-            if !last { RowSeparator() }
+            if proposal.hasEvidence {
+                Button { withAnimation(.snappy) { open.toggle() } } label: {
+                    HStack(alignment: .top, spacing: PL.buttonGap) {
+                        Text(firstReason ?? M.proposalWhy)
+                            .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                            .lineLimit(open ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Icon(.chevronRight, size: PL.chevron).foregroundStyle(Color.hmMuted)
+                            .rotationEffect(.degrees(open ? -90 : 90))
+                    }
+                    .frame(minHeight: DesignTokens.Size.minTapTarget, alignment: .top)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(open ? M.proposalHideWhy : M.proposalWhy)
+                .accessibilityAddTraits(.isButton)
+                if open { evidence }
+            }
+            HStack(spacing: PL.buttonGap) {
+                Button { respond(.reject) } label: { Text(M.proposalDecline) }
+                    .buttonStyle(CapsuleButtonStyle(.secondary, height: PL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
+                if proposal.adoptable {
+                    Button { respond(.adopt) } label: { Text(M.proposalAdopt) }
+                        .buttonStyle(CapsuleButtonStyle(.primary, height: PL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
+                        .disabled(proposal.requiresFullRead && proposal.hasEvidence && !open)
+                }
+            }
+            .disabled(busy)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .himawariCard()
     }
 
     private var evidence: some View {
