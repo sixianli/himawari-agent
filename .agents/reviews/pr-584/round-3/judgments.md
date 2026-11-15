@@ -1,0 +1,3 @@
+# PR 584 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 低：替补预算的测试只覆盖 `substituteRefusal`，没有覆盖 `main` 里实参的组装，传错「已定义但不对」的变量时不会失败。现在的调用点 opencode-review.mjs 4244 行传的就是 readUsage(options.out) 加 linkedRecords，没有一种输入会算错，缺的是调用点组装的测试，属于可以更好；顺手采纳：把组装抽成 ledgerRecordsSoFar 并在替补和 REVIEW_SPENT_TOTAL 两处现读（同时修掉开跑时只读一次、漏算同时在跑的 shadow 花费），补测试
