@@ -385,9 +385,9 @@
     "reason": "按接入设置直接存记忆：工具说明、回执文字"
   },
   "mcp.propose-memory": {
-    "sha256": "e0d4d1f4b9a5561e5cb0dd1bf2baee48f0d9bd03be1e55b0e6e21e264d4dd195",
-    "changedIn": "MCP 直接存",
-    "reason": "按接入设置直接存记忆：工具说明、回执文字"
+    "sha256": "af115498b1311aa371c3ea86751c2af24af17ce099fd2db2d54365782768cb1d",
+    "changedIn": "MCP 直接存（PR 589 复核第 3 轮）",
+    "reason": "工具说明里敏感分类改成与代码一致，只写健康、财务和正文里的证件号、银行卡号"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
