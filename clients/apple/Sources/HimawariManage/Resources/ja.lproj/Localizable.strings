@@ -42,3 +42,7 @@
 "permission.openSettings" = "設定を開く";
 "common.close" = "閉じる";
 "result.withReason" = "%@。%@";
+"actions.cannotUndo" = "もう元に戻せません";
+"result.undo" = "元に戻す";
+"result.undone" = "元に戻しました";
+"result.undo.failed" = "元に戻せませんでした";

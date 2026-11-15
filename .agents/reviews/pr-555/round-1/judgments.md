@@ -1,0 +1,7 @@
+# PR 555 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高：给 before 补空字符串，反而让日历删除和改地点/备注的撤销失效。CalendarActions.swift:20-24 补 ""；device-action-registry.ts:109-113 拒绝空串；device-action-service.ts:837 校验后返回 null。已撤销补值，并在 test/integration/device-actions.test.ts 加经 validateDeviceActionArguments 的正反用例；触发：iPhone 上删除或改地点/备注一个没有地点或备注的日历日程（很常见）；后果：snapshot 补的空字符串被服务端字符串校验（value.length===0）拒绝，撤销计划为 null，undo=none，删除无法恢复
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 中：没有端到端用例能证明 iPhone 实际生成的 before 能通过后端校验。test/integration/device-actions.test.ts 新增的 validateDeviceActionArguments 断言：缺字段通过、location 为空串被拒，已运行通过；触发：意见 1 的回归没有任何测试覆盖；后果：空字符串 before 可通过全部现有测试；判低理由：是意见 1 的测试缺口，不会单独让用户碰到错误；已随意见 1 补了回归测试
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 中：contact.update 原值为空时同样撤不回来（既有问题，本 PR 未覆盖）。ContactActions.swift:81-89 对未设置字段输出 ""；device-action-registry.ts:233-255 undoRestoring 带入 before 值；本 PR 的 diff 未改 ContactActions 和服务端；触发：改联系人时被改字段原值为空（如给没有公司的人填公司）；后果：反向参数含空串被校验拒绝，撤销按钮不出现（诚实地显示不可撤），不会撤错；判低理由：只是少一个撤销入口，不会写错数据；要支持需服务端设计清除语义，属产品决定，不在本 PR
+- 4（deepseek-v4.1-flash）不成立：### 4. 低：undoAction 允许不传确认签名，服务端测试表明未确认的撤销也会排队执行。服务端有意支持无确认的撤销：device-action-service.ts 的 undoState/undoKey 分 ownerPresent 两条反向调用，test/integration/device-actions.test.ts:1331 明确期望无确认排队；iPhone 界面始终传确认签名。是产品已定设计，不是本 PR 引入
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5. 低：演示数据让提醒事项显示“已撤销”，与“提醒事项不给撤销”矛盾。DeviceActionsDemo.swift dact_demo5 的详情是提醒事项却带 undo:done；已改成日历动作的三语详情；触发：打开演示页；后果：显示一条现实中不会出现的提醒事项“已撤销”
