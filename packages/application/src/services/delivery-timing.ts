@@ -280,7 +280,7 @@ export class DeliveryTimingJudge {
       if (!Number.isFinite(probability) || probability < 0 || probability > 1)
         return this.#settled(question, "deliver", "timing_failed", null, false);
       const permille = Math.round(probability * 1000);
-      return permille >= configuration.busyAtLeastPermille
+      return probability * 1000 >= configuration.busyAtLeastPermille
         ? this.#settled(question, "defer", "timing_busy", permille, true)
         : this.#settled(question, "deliver", "timing_clear", permille, true);
     } catch {

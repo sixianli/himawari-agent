@@ -161,6 +161,13 @@ describe("[IOS-4] delivery timing judge", () => {
     expect(result).toMatchObject({ action: "deliver", reasonCode: "timing_clear", judged: true });
   });
 
+  it("REVERSE: delivers when the probability is just under the busy threshold", async () => {
+    const result = await judge(new RecordingModel(0.6995)).decide(driving);
+    expect(result).toMatchObject({ action: "deliver", reasonCode: "timing_clear" });
+    const atThreshold = await judge(new RecordingModel(0.7)).decide(driving);
+    expect(atThreshold).toMatchObject({ action: "defer", reasonCode: "timing_busy" });
+  });
+
   it("REVERSE: asks nothing and delivers when no report is fresh", async () => {
     const model = new RecordingModel(1);
     const result = await judge(model).decide({ pushClass: "run_result", facts: [] });

@@ -19,6 +19,7 @@ import { resolveConfiguredSecretRequirement } from "./production-model-compositi
 import type { DeliveryTimingSource } from "./production-web-push.js";
 
 const READ_LIMIT = 500;
+const READ_PAGES = 20;
 
 export function productionDeliveryTiming(
   configuration: ProductConfiguration,
@@ -78,18 +79,27 @@ export function createDeliveryTimingSource(options: {
     configuration: () => configuration,
     async judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement> {
       const read = await Promise.all(
-        windows.map(([type, seconds]) =>
-          options.store.listRecordsBetween({
-            ...options.scope,
-            fromMs: Math.max(0, nowMs - seconds * 1000),
-            toMs: nowMs,
-            types: [type],
-            after: null,
-            limit: READ_LIMIT,
-          }),
-        ),
+        windows.map(async ([type, seconds]) => {
+          const collected: PerceptionRecord[] = [];
+          let after: { readonly atMs: number; readonly id: string } | null = null;
+          for (let page = 0; page < READ_PAGES; page += 1) {
+            const { records } = await options.store.listRecordsBetween({
+              ...options.scope,
+              fromMs: Math.max(0, nowMs - seconds * 1000),
+              toMs: nowMs,
+              types: [type],
+              after,
+              limit: READ_LIMIT,
+            });
+            collected.push(...records);
+            const last = records[records.length - 1];
+            if (records.length < READ_LIMIT || !last) return collected;
+            after = { atMs: last.occurredAtMs, id: last.id };
+          }
+          throw new Error("DELIVERY_TIMING_WINDOW_TOO_LARGE");
+        }),
       );
-      const records: readonly PerceptionRecord[] = read.flatMap(({ records }) => records);
+      const records: readonly PerceptionRecord[] = read.flat();
       return judge.decide({ pushClass, facts: ownerStateFacts(records, nowMs, configuration) });
     },
   };

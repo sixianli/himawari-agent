@@ -2940,7 +2940,6 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
-        webPush.start();
       }
       proactive?.start();
       realEval?.start();
@@ -3470,6 +3469,7 @@ export async function startTenantRuntime(
           return reply.code(503).send({ error: "AUTHORITY_UNAVAILABLE" });
         }
       });
+      webPush?.start();
       await http.assertIdentityReady();
       const probe = await protector.protect({
         ownerId: configuration.ownerId,

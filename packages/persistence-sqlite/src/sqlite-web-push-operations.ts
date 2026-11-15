@@ -518,6 +518,13 @@ export class SqliteWebPushOperations {
                 input.sourceKey,
               ).changes > 0;
           if (!stored) return false;
+        } else {
+          this.database
+            .prepare(
+              `UPDATE web_push_outbox SET defer_rule_refs = NULL
+               WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND defer_rule_refs = ?`,
+            )
+            .run(input.ownerId, input.agentId, input.sourceKey, TIMING_DEFER_REFS);
         }
         insertLedgerRow(this.database, {
           id: `delivery-timing-${digest}`,

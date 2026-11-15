@@ -673,7 +673,11 @@ export class ProductionWebPush {
       }
       const judgement = await timing.judge(pushClass, nowMs);
       if (judgement.action === "deliver") {
-        if (judgement.reasonCode === "timing_failed" || judgement.reasonCode === "timing_budget")
+        if (
+          judgement.reasonCode === "timing_failed" ||
+          judgement.reasonCode === "timing_budget" ||
+          judgement.reasonCode === "timing_rate"
+        )
           this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
         if (judgement.judged)
           await store.recordDeliveryTiming({

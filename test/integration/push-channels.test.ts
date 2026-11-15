@@ -1320,6 +1320,24 @@ describe("[IOS-4] push channels", () => {
     ]);
   });
 
+  it("[IOS-4] REVERSE: a send that fails after a clear answer is not later recorded as the latest delivery time being reached", async () => {
+    const { source } = timingSource([BUSY, CLEAR]);
+    const context = await setup({}, { timing: source });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("flaky");
+    context.setClock(T0);
+    await context.push.tick();
+    context.setClock(at(T0, 301));
+    context.apns.respond = () => ({ status: 503, reason: "ServiceUnavailable" });
+    await context.push.tick();
+    context.apns.respond = () => ({ status: 200 });
+    context.setClock(at(T0, DELIVERY_TIMING_DEFAULTS.reminderMaximumDeferSeconds + 400));
+    await context.push.tick();
+    await context.push.tick();
+    expect(timingRows(context).map(({ outcome }) => outcome)).not.toContain("deadline_reached");
+  });
+
   it("[IOS-4] REVERSE: an approval and a proposal notice are never held or judged", async () => {
     const { source, calls } = timingSource([BUSY]);
     const context = await setup(
@@ -1369,6 +1387,31 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     expect(context.apns.ofType("alert")).toHaveLength(1);
     expect(gateFailures).toEqual([`reminder:broken:${T0}`]);
+    expect(timingRows(context)).toEqual([]);
+  });
+
+  it("[IOS-4] REVERSE: sends and reports a diagnostic when the per-minute limit stops the judgement", async () => {
+    const limited: DeliveryTimingJudgement = {
+      action: "deliver",
+      reasonCode: "timing_rate",
+      confidencePermille: null,
+      signals: ["motion"],
+      judged: false,
+    };
+    const { source } = timingSource([limited]);
+    const gateFailures: string[] = [];
+    const context = await setup(
+      {},
+      { timing: source, onGateFailure: ({ sourceKey }) => gateFailures.push(sourceKey) },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.reminder("limited");
+    context.setClock(T0);
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(gateFailures).toEqual([`reminder:limited:${T0}`]);
     expect(timingRows(context)).toEqual([]);
   });
 
