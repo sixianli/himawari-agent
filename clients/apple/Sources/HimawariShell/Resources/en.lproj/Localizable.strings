@@ -37,9 +37,10 @@
 "pairing.problem.keysUnreadable" = "Your pairing and chats are still here. Unlock the phone and come back to try again automatically";
 "pairing.problem.keysUnreadable.title" = "Can’t read this iPhone’s keys right now";
 "pairing.problem.storage" = "Your pairing and chats are still here. Unlock the phone, free some space, and come back to try again automatically";
+"pairing.problem.stateUnknown" = "Update the app first, then tap Try again. If that doesn’t help, erase and pair again. Your chats and memories live on your server, so erasing won’t lose them";
+"pairing.problem.stateUnknown.title" = "This iPhone can’t reach Himawari anymore";
 "pairing.problem.storage.title" = "Can’t open this phone’s storage right now";
 "pairing.startOver" = "Erase and pair again";
-"pairing.startOver.confirm" = "This deletes the conversations and keys stored on this iPhone. You will need to scan a code again.";
 "today.search" = "Search";
 "today.open" = "View";
 "today.approval.waiting" = "Waiting for your OK";
@@ -54,3 +55,6 @@
 "today.upcoming.tomorrow" = "Tomorrow %@";
 "today.upcoming.on" = "%@ %@";
 "today.undo" = "Undo";
+"pairing.startOver.confirm" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost.";
+"pairing.startOver.confirmUnsent" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost, but %d unsent messages will be deleted with it.";
+"pairing.startOver.confirmUnknown" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost, but any unsent messages on this iPhone will be deleted with it.";

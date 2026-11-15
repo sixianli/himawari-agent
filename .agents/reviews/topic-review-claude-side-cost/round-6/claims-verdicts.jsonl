@@ -1,0 +1,1 @@
+{"id": "31", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|31|找不到|-|图表和逐项解释见线程文档“复核省 token 和提速：数据与结论”|-", "outcome": "model-wrong", "evidenceFile": "docs/assets/review-cost/2026-11-13-data.txt", "evidence": "图表和逐项解释在线程文档“复核省 token 和提速：数据与结论”"}

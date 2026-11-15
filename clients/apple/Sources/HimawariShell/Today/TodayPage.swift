@@ -1,12 +1,15 @@
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariListen
 import HimawariManage
 import SwiftUI
 
 struct TodayPage: View {
     let feed: HomeFeedModel
-    let actions: DeviceActionsModel
+    let actions: DeviceActionsModel?
+    var listening: ListeningController?
+    var openListening: () -> Void = {}
     let openSettings: () -> Void
     let openSearch: (() -> Void)?
     let openThread: (String) -> Void
@@ -41,7 +44,7 @@ struct TodayPage: View {
                 }
                 .refreshable {
                     await feed.refresh()
-                    await actions.refresh()
+                    await actions?.refresh()
                 }
                 if scrolled {
                     EdgeFade(.top, height: origin + DesignTokens.Size.fadeTop, solid: (origin + DesignTokens.Size.fadeTopSolid) / (origin + DesignTokens.Size.fadeTop))
@@ -51,7 +54,7 @@ struct TodayPage: View {
                 topButtons
                     .padding(.trailing, DesignTokens.Home.paddingX)
                     .padding(.top, origin + DesignTokens.Size.navTop - proxy.safeAreaInsets.top)
-                if let opened {
+                if let actions, let opened {
                     ApprovalDetailView(model: actions, approval: opened, openThread: openThread) {
                         withAnimation(.snappy) { self.opened = nil }
                     }
@@ -76,6 +79,11 @@ struct TodayPage: View {
                 Icon(.user, size: DesignTokens.IconSize.glassButton)
             }
         }
+    }
+
+    private var hasDeviceActions: Bool {
+        guard let actions else { return false }
+        return !actions.pending.isEmpty || !actions.recent.isEmpty
     }
 
     @ViewBuilder
@@ -105,18 +113,28 @@ struct TodayPage: View {
                 if !layout.upcoming.isEmpty {
                     UpcomingCard(upcoming: layout.upcoming, now: listClock ?? Date())
                 }
+                if let listening {
+                    ListenTodayCard(controller: listening, open: openListening)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .animation(.snappy, value: feed.settled)
-        } else if !actions.pending.isEmpty || !actions.recent.isEmpty {
-            TodayDeviceActionsCard(model: actions) { approval in
-                withAnimation(.snappy) { opened = approval }
+        } else if listening != nil || hasDeviceActions {
+            VStack(spacing: DesignTokens.Home.gap) {
+                if let listening {
+                    ListenTodayCard(controller: listening, open: openListening)
+                }
+                if let actions, hasDeviceActions {
+                    TodayDeviceActionsCard(model: actions) { approval in
+                        withAnimation(.snappy) { opened = approval }
+                    }
+                }
             }
         }
     }
 
     @ViewBuilder
-    private func row(_ item: HomeItem) -> some View {
+    private func row(_ item: HomeFeedItem) -> some View {
         let approval = feed.approval(for: item, in: actions)
         if item.awaitsOwner, let choice = item.choice, feed.canAct(item, approvals: actions) {
             DecisionRow(
@@ -140,11 +158,11 @@ struct TodayPage: View {
         }
     }
 
-    private func opens(_ item: HomeItem) -> Bool {
+    private func opens(_ item: HomeFeedItem) -> Bool {
         feed.approval(for: item, in: actions) != nil || item.threadId != nil
     }
 
-    private func open(_ item: HomeItem) {
+    private func open(_ item: HomeFeedItem) {
         if let approval = feed.approval(for: item, in: actions) {
             withAnimation(.snappy) { opened = approval }
         } else if let threadId = item.threadId {
@@ -152,7 +170,7 @@ struct TodayPage: View {
         }
     }
 
-    private func decide(_ item: HomeItem, _ action: HomeAction) {
+    private func decide(_ item: HomeFeedItem, _ action: HomeFeedAction) {
         if action.ownerPresence {
             open(item)
             return
@@ -179,7 +197,7 @@ struct TodayPage: View {
 }
 
 enum TodayWords {
-    static func title(_ item: HomeItem, approval: PendingApproval?) -> String {
+    static func title(_ item: HomeFeedItem, approval: PendingApproval?) -> String {
         if let approval { return approval.title }
         if let sentence = item.sentence, !sentence.isEmpty { return sentence }
         switch item.itemKind {
@@ -191,12 +209,12 @@ enum TodayWords {
         }
     }
 
-    static func status(_ item: HomeItem) -> String {
+    static func status(_ item: HomeFeedItem) -> String {
         if item.itemKind == .approval { return L.text("today.approval.waiting") }
         return item.subtitle ?? ""
     }
 
-    static func tint(_ item: HomeItem) -> Color {
+    static func tint(_ item: HomeFeedItem) -> Color {
         switch item.itemKind {
         case .approval: .hmSun
         case .problem: .hmDanger
@@ -204,7 +222,7 @@ enum TodayWords {
         }
     }
 
-    static func icon(_ item: HomeItem) -> IconName {
+    static func icon(_ item: HomeFeedItem) -> IconName {
         switch item.itemKind {
         case .approval: return .handStop
         case .memoryConfirm: return .ear
@@ -223,13 +241,13 @@ enum TodayWords {
 }
 
 struct LeadItemView: View {
-    let item: HomeItem
+    let item: HomeFeedItem
     let approval: PendingApproval?
     let detail: String?
     let busy: Bool
     let canAct: Bool
     let open: () -> Void
-    let decide: (HomeAction) -> Void
+    let decide: (HomeFeedAction) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Home.leadGap) {
@@ -284,7 +302,7 @@ struct LeadItemView: View {
 }
 
 struct HomeLinkRow: View {
-    let item: HomeItem
+    let item: HomeFeedItem
     let title: String
     let opens: Bool
     let open: () -> Void

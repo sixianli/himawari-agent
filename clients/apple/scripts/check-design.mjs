@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generate } from "./make-design-tokens.mjs";
+import { generate, generateCss } from "./make-design-tokens.mjs";
 
 const appleRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(appleRoot, "../..");
@@ -10,11 +10,48 @@ export const PAGE_DIRECTORIES = [
   "Sources/HimawariChat",
   "Sources/HimawariShell",
   "Sources/HimawariManage",
+  "Sources/HimawariShare",
+  "Sources/HimawariMacUI",
   "App",
 ];
 
 export const TOKENS_SOURCE = "docs/assets/apple-clients/2026-11-12-v2/tokens.json";
 export const TOKENS_OUTPUT = "Sources/HimawariDesign/Generated/DesignTokens.swift";
+export const WEB_DIRECTORY = "App/SafariExtension/Resources";
+export const CSS_OUTPUT = `${WEB_DIRECTORY}/tokens.css`;
+
+const WEB_RULES = [
+  {
+    code: "web-color-literal",
+    files: /\.(?:css|js|html)$/u,
+    pattern: /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/iu,
+  },
+  {
+    code: "web-number-literal",
+    files: /\.css$/u,
+    pattern: /(?<![\w-])(?:[1-9]\d*|0?\.\d+)(?:\.\d+)?(?:px|pt|em|rem)\b/u,
+  },
+];
+
+export function findWebViolations(source, file) {
+  const violations = [];
+  source.split("\n").forEach((line, index) => {
+    for (const rule of WEB_RULES) {
+      if (rule.files.test(file) && rule.pattern.test(line))
+        violations.push({ file, line: index + 1, code: rule.code, text: line.trim() });
+    }
+  });
+  return violations;
+}
+
+function webFiles(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).flatMap((entry) => {
+    const full = path.join(directory, entry);
+    if (statSync(full).isDirectory()) return webFiles(full);
+    return /\.(?:css|js|html)$/u.test(entry) ? [full] : [];
+  });
+}
 
 const RULES = [
   {
@@ -61,6 +98,11 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
       problems.push(...findViolations(readFileSync(file, "utf8"), path.relative(root, file)));
     }
   }
+  const web = path.join(root, WEB_DIRECTORY);
+  for (const file of webFiles(web)) {
+    if (path.relative(root, file) === CSS_OUTPUT) continue;
+    problems.push(...findWebViolations(readFileSync(file, "utf8"), path.relative(root, file)));
+  }
   const tokens = path.join(repo, TOKENS_SOURCE);
   const output = path.join(root, TOKENS_OUTPUT);
   let tokensChecked = false;
@@ -70,6 +112,12 @@ export function checkDesign(root = appleRoot, repo = repositoryRoot) {
     const actual = existsSync(output) ? readFileSync(output, "utf8") : "";
     if (expected !== actual)
       problems.push({ file: TOKENS_OUTPUT, line: 0, code: "tokens-stale", text: TOKENS_SOURCE });
+    if (existsSync(web)) {
+      const parsed = JSON.parse(readFileSync(tokens, "utf8"));
+      const css = path.join(root, CSS_OUTPUT);
+      if (generateCss(parsed) !== (existsSync(css) ? readFileSync(css, "utf8") : ""))
+        problems.push({ file: CSS_OUTPUT, line: 0, code: "tokens-stale", text: TOKENS_SOURCE });
+    }
   }
   return { problems, tokensChecked };
 }

@@ -16,8 +16,13 @@
     "./model-usage": "./src/ports/model-usage.ts",
     "./real-eval": "./src/ports/real-eval.ts",
     "./decision-ledger": "./src/ports/decision-ledger.ts",
+    "./device-actions": "./src/ports/device-actions.ts",
+    "./authorization": "./src/ports/authorization.ts",
+    "./apple-push": "./src/ports/apple-push.ts",
+    "./rule-review": "./src/ports/rule-review.ts",
     "./rule-ref": "./src/rules/rule-ref.ts",
     "./muse-intake": "./src/ports/muse-intake.ts",
+    "./proactive-sources": "./src/ports/proactive-sources.ts",
     "./ledger-observation": "./src/ports/ledger-observation.ts"
   },
   "dependencies": {

@@ -8,8 +8,8 @@ import type {
   ProactivePriority,
   ProactiveQuietPeriod,
   ProactiveResult,
-  ProactiveSourceItem,
 } from "../ports/proactive-checks.js";
+import type { ProactiveMail } from "../ports/proactive-sources.js";
 
 const JUDGE = new RuleJudge();
 
@@ -26,7 +26,7 @@ export const FLOOR_RULE_IDS = Object.freeze({
 export type FloorRuleId = (typeof FLOOR_RULE_IDS)[keyof typeof FLOOR_RULE_IDS];
 
 export function floorHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
   money: MoneyState = "unknown",
 ): readonly FloorRuleId[] {
@@ -36,7 +36,7 @@ export function floorHitIds(
 }
 
 function outcomeHits(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
   wanted: "require_notify" | "require_whole_thread",
 ): readonly string[] {
@@ -47,21 +47,21 @@ function outcomeHits(
 }
 
 export function wholeThreadHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
 ): readonly string[] {
   return outcomeHits(item, rules, "require_whole_thread");
 }
 
 export function mustNotifyHitIds(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   rules: readonly RuleRecord[],
 ): readonly string[] {
   return outcomeHits(item, rules, "require_notify");
 }
 
 export function suppressPushHits(
-  item: ProactiveSourceItem,
+  item: ProactiveMail,
   amount: MailAmount,
   rules: readonly RuleRecord[],
 ): readonly string[] {
@@ -167,18 +167,28 @@ interface ZonedParts {
 
 const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+const ZONED_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  const known = ZONED_FORMATTERS.get(timeZone);
+  if (known) return known;
+  const created = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+    hourCycle: "h23",
+  });
+  if (ZONED_FORMATTERS.size < 64) ZONED_FORMATTERS.set(timeZone, created);
+  return created;
+}
+
 export function zonedParts(at: string, timeZone: string): ZonedParts {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-      weekday: "short",
-      hourCycle: "h23",
-    })
+    zonedFormatter(timeZone)
       .formatToParts(new Date(at))
       .map(({ type, value }) => [type, value]),
   );
@@ -209,6 +219,10 @@ export function zonedTime(
 
 export function startOfZonedDay(at: string, timeZone: string): string {
   return zonedTime(zonedParts(at, timeZone), 0, timeZone);
+}
+
+export function startOfNextZonedDay(at: string, timeZone: string): string {
+  return zonedTime(shiftDays(zonedParts(at, timeZone), 1), 0, timeZone);
 }
 
 function clockMinutes(value: string): number {

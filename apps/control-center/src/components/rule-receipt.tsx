@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryModel, OwnerRuleAction } from "../memory.js";
+import type { MemoryModel, OwnerRuleAction, PendingProposal, ProposalAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -87,20 +87,33 @@ export function RuleReceiptCard({
   message,
 }: {
   output: string;
-  memory: Pick<MemoryModel, "respondRule" | "busy">;
+  memory: Pick<MemoryModel, "proposals" | "respondRule" | "respondProposal" | "busy">;
   message: Message;
 }) {
   const receipt = parseRuleReceipt(output);
-  const [done, setDone] = useState<OwnerRuleAction | null>(null);
+  const [done, setDone] = useState<OwnerRuleAction | ProposalAction | null>(null);
   if (!receipt) return null;
   const act = async (target: string, action: OwnerRuleAction) => {
     if (await memory.respondRule(target, action)) setDone(action);
+  };
+  const waiting = memory.proposals?.proposals.find(
+    ({ proposalId }) => proposalId === receipt.proposalId,
+  );
+  const refuse = async (proposal: PendingProposal) => {
+    if (await memory.respondProposal(proposal, "reject")) setDone("reject");
   };
   return (
     <section className="memory-card rule-receipt" aria-label={message("rules.receipt.label")}>
       <span className="memory-tag" data-kind="rule">
         {message("rules.receipt.status", {
-          s: done === "undo" ? "undone" : done === "confirm" ? "active" : receipt.status,
+          s:
+            done === "undo"
+              ? "undone"
+              : done === "confirm"
+                ? "active"
+                : done === "reject"
+                  ? "rejected"
+                  : receipt.status,
         })}
       </span>
       <p className="memory-text">{receipt.summary}</p>
@@ -165,6 +178,15 @@ export function RuleReceiptCard({
               {message("rules.receipt.confirm")}
             </ActionButton>
           ) : null}
+          {receipt.status === "proposed" && waiting ? (
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void refuse(waiting)}
+            >
+              {message("proposals.reject")}
+            </ActionButton>
+          ) : null}
         </div>
       )}
     </section>
@@ -193,15 +215,18 @@ export function OwnerRulesSection({
             {message("rules.type", { t: rule.type })}
           </span>
           {rule.status === "needs_review" ? <small> {message("rules.needsReview")}</small> : null}
-          {rule.enforced ? null : <small> {message("rules.notEnforced")}</small>}
+          {rule.status === "suspended" ? <small> {message("rules.suspended")}</small> : null}
+          {rule.enforced || rule.status === "suspended" ? null : (
+            <small> {message("rules.notEnforced")}</small>
+          )}
           <p className="memory-text">{rule.summary}</p>
           <div className="actions">
-            {rule.status === "needs_review" && rule.enforced ? (
+            {(rule.status === "needs_review" && rule.enforced) || rule.status === "suspended" ? (
               <ActionButton
                 disabled={memory.busy}
                 onClick={() => void memory.respondRule(rule.ruleId, "reconfirm")}
               >
-                {message("rules.reconfirm")}
+                {message(rule.status === "suspended" ? "rules.resume" : "rules.reconfirm")}
               </ActionButton>
             ) : null}
             <ActionButton
@@ -212,6 +237,61 @@ export function OwnerRulesSection({
               {message("rules.undo")}
             </ActionButton>
           </div>
+        </section>
+      ))}
+    </section>
+  );
+}
+
+export function BuiltInActionRulesSection({
+  memory,
+  message,
+}: {
+  memory: Pick<MemoryModel, "builtInRules" | "respondRule" | "busy">;
+  message: Message;
+}) {
+  if (!memory.builtInRules.length) return null;
+  const title = message("rules.builtIn.title", { count: memory.builtInRules.length });
+  return (
+    <section id="memory-built-in-rules" className="memory-confirm" aria-label={title}>
+      <h4>{title}</h4>
+      <p className="settings-note">{message("rules.builtIn.note")}</p>
+      {memory.builtInRules.map((rule) => (
+        <section
+          className="memory-card"
+          key={rule.ruleId}
+          data-built-in-rule={rule.ruleId}
+          data-outcome={rule.outcome}
+        >
+          <p className="memory-text">{message("rules.builtIn.name", { id: rule.ruleId })}</p>
+          <small>{message("rules.builtIn.when", { id: rule.ruleId })}</small>
+          <small>
+            {" "}
+            {message("rules.builtIn.examples", {
+              hit: rule.examplesHit,
+              miss: rule.examplesMiss,
+            })}
+          </small>
+          {rule.askFirst === null ? null : (
+            <div className="actions">
+              <label className="memory-switch">
+                {message("rules.builtIn.askFirst")}
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-checked={rule.askFirst}
+                  checked={rule.askFirst}
+                  disabled={memory.busy}
+                  onChange={() =>
+                    void memory.respondRule(
+                      rule.ruleId,
+                      rule.askFirst ? "allow_directly" : "ask_first",
+                    )
+                  }
+                />
+              </label>
+            </div>
+          )}
         </section>
       ))}
     </section>

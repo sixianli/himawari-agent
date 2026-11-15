@@ -116,12 +116,50 @@ def require_current_scripts(commit):
         refuse('PACKET_SCRIPTS_OLDER_THAN_COMMIT', 'these scripts are at ' + head + ', which does not contain ' + commit + '; run make-packet.py from a checkout of that commit')
 
 
+TIMESTAMP_MIGRATION = re.compile(r'([0-9]{14})_([a-z][a-z0-9_]*)\.sql')
+MIGRATION_META = re.compile(r'[0-9]{14}_[a-z][a-z0-9_]*\.meta\.json')
+
+
+def migration_files(commit):
+    legacy, timestamped = [], []
+    for name in (Path(name).name for name in git('ls-tree', '--name-only', commit, MIGRATIONS + '/').splitlines()):
+        legacy_match = re.fullmatch(r'([0-9]{4})_[a-z0-9_]+\.sql', name)
+        timestamp_match = TIMESTAMP_MIGRATION.fullmatch(name)
+        if legacy_match:
+            legacy.append(int(legacy_match.group(1)))
+        elif timestamp_match:
+            timestamped.append((timestamp_match.group(1), timestamp_match.group(2), name))
+        elif not MIGRATION_META.fullmatch(name):
+            refuse('PACKET_MIGRATION_FILE_NOT_RECOGNIZED', name)
+    legacy.sort()
+    timestamped.sort()
+    if not legacy or legacy != list(range(1, len(legacy) + 1)):
+        refuse('PACKET_MIGRATIONS_NOT_CONTIGUOUS', legacy[-3:])
+    if len({entry[0] for entry in timestamped}) != len(timestamped):
+        refuse('PACKET_MIGRATION_IDS_NOT_UNIQUE', [entry[0] for entry in timestamped][-3:])
+    return legacy, timestamped
+
+
+def target_migration_ids(commit):
+    legacy, timestamped = migration_files(commit)
+    return ['%04d' % number for number in legacy] + [entry[0] for entry in timestamped]
+
+
+def check_migration_replay(commit, applied_ids=None):
+    command = ['node', str(REPO / 'scripts' / 'check-migration-conflicts.mjs'), '--commit', commit]
+    if applied_ids is not None:
+        command += ['--applied', ','.join(applied_ids)]
+    try:
+        child = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+    except subprocess.TimeoutExpired:
+        raise PacketError('MIGRATION_REPLAY_TIMED_OUT ' + commit)
+    if child.returncode != 0:
+        raise PacketError('MIGRATION_REPLAY_FAILED ' + (child.stderr or child.stdout).strip()[:400])
+
+
 def target_schema(commit):
-    names = [Path(name).name for name in git('ls-tree', '--name-only', commit, MIGRATIONS + '/').splitlines()]
-    numbers = sorted(int(match.group(1)) for match in (re.fullmatch(r'([0-9]{4})_[a-z0-9_]+\.sql', name) for name in names) if match)
-    if not numbers or numbers != list(range(1, len(numbers) + 1)):
-        refuse('PACKET_MIGRATIONS_NOT_CONTIGUOUS', numbers[-3:])
-    return numbers[-1]
+    check_migration_replay(commit)
+    return len(target_migration_ids(commit))
 
 
 def startup_ready_budget(instance, worker_source):
@@ -144,6 +182,28 @@ def startup_phase_baseline(instance):
     return json.dumps(baseline, sort_keys=True)
 
 
+ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('a367072db3a9332d65a4cc070d41710913a4d020b7b70a761567f033f13e4f53', ('model_budget_allocations', 'model_invocation_identities'))}
+
+
+def rebuilds_keeping_rows(file_name, sql, touched):
+    digest, allowed = ROW_PRESERVING_REBUILDS.get(file_name, (None, ()))
+    if hashlib.sha256(sql.encode()).hexdigest() != digest:
+        return []
+    kept = []
+    for table in touched:
+        saved = 'saved_' + table
+        steps = (
+            r'CREATE\s+TEMP\s+TABLE\s+' + saved + r'\s+AS\s+SELECT\s+\*\s+FROM\s+' + table + r'\s*;',
+            r'INSERT\s+INTO\s+' + table + r'\s+SELECT\s+\*\s+FROM\s+' + saved + r'\s*;',
+            r'DROP\s+TABLE\s+' + saved + r'\s*;',
+        )
+        other = re.sub('|'.join(steps), '', sql, flags=re.I)
+        written_elsewhere = re.search(r'\b(?:ALTER\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', other, re.I)
+        if table in allowed and all(re.search(step, sql, re.I) for step in steps) and not written_elsewhere:
+            kept.append(table)
+    return kept
+
+
 def preserved_tables():
     source = (TEMPLATE / 's0-db' / 'read-s0-db.mjs').read_text()
     match = re.search(r'historyTables = Object\.freeze\(\[(.*?)\]\)', source, re.S)
@@ -152,19 +212,38 @@ def preserved_tables():
     return tuple(re.findall(r'"([a-z_]+)"', match.group(1))) + MIGRATION_COMPARED_TABLES
 
 
-def migration_ledger(commit, current, target):
-    if target == current:
+def migration_ledger(commit, current, target, applied_ids=None):
+    if target == current and applied_ids is None:
         return []
     engine = git('show', commit + ':' + MIGRATION_ENGINE)
     entries = {int(sequence): {'sequence': int(sequence), 'name': name, 'phase': phase, 'file': filename} for sequence, name, phase, filename in re.findall(r'sequence: ([0-9]+),\s*name: "([a-z0-9_]+)",\s*changeSet: "[^"]*",\s*phase: "([a-z]+)" as const,\s*file: "([0-9]{4}_[a-z0-9_]+\.sql)"', engine)}
+    _, timestamped = migration_files(commit)
+    by_id = {entry[0]: entry for entry in timestamped}
+    target_ids = target_migration_ids(commit)
+    if applied_ids is None:
+        target_ids = target_ids[:target]
+    applied = list(applied_ids) if applied_ids is not None else target_ids[:current]
+    if len(applied) != current or not set(applied) <= set(target_ids):
+        refuse('PACKET_PRODUCTION_HAS_MIGRATIONS_NOT_IN_COMMIT', sorted(set(applied) - set(target_ids)))
+    pending = [identifier for identifier in target_ids if identifier not in set(applied)]
+    if len(pending) != target - current:
+        refuse('PACKET_MIGRATION_COUNT_MISMATCH', str(len(pending)) + '/' + str(target - current))
     ledger = []
     tables = preserved_tables()
-    for sequence in range(current + 1, target + 1):
-        entry = entries.get(sequence)
-        if entry is None or entry['file'] != '%04d_%s.sql' % (sequence, entry['name']):
-            refuse('PACKET_MIGRATION_NOT_IN_ENGINE', sequence)
+    for offset, identifier in enumerate(pending):
+        sequence = current + offset + 1
+        if identifier in by_id:
+            file_name = by_id[identifier][2]
+            entry = {'sequence': sequence, 'name': by_id[identifier][1], 'phase': 'expand', 'file': file_name}
+        else:
+            entry = entries.get(int(identifier))
+            if entry is None or entry['file'] != '%04d_%s.sql' % (int(identifier), entry['name']):
+                refuse('PACKET_MIGRATION_NOT_IN_ENGINE', identifier)
+            entry = dict(entry, sequence=sequence)
         sql = git('show', commit + ':' + MIGRATIONS + '/' + entry['file'])
         touched = sorted(table for table in tables if re.search(r'\b(?:ALTER\s+TABLE|DROP\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', sql, re.I))
+        kept = rebuilds_keeping_rows(entry['file'], sql, touched)
+        touched = [table for table in touched if table not in kept]
         if touched:
             refuse('PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES', entry['file'] + ' ' + ','.join(touched))
         ledger.append({key: entry[key] for key in ('sequence', 'name', 'phase')})
@@ -346,7 +425,17 @@ def schema_parameters(parameters, s0):
     target = parameters['TARGET_SCHEMA']
     if target < current:
         refuse('PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA', 'production=' + str(current) + ' commit=' + str(target))
-    ledger = migration_ledger(parameters['COMMIT'], current, target) if target != current else []
+    applied_ids = s0.get('migrationIds')
+    if applied_ids is not None:
+        digests = s0.get('migrationDigests')
+        if not isinstance(digests, list) or len(digests) != len(applied_ids) or not all(isinstance(item, str) and item for item in digests):
+            refuse('PACKET_S0_MIGRATION_DIGESTS_INVALID', 'ids=' + str(len(applied_ids)))
+        names = s0.get('migrationNames')
+        if not isinstance(names, list) or len(names) != len(applied_ids) or not all(isinstance(item, str) and item and ':' not in item for item in names):
+            refuse('PACKET_S0_MIGRATION_NAMES_INVALID', 'ids=' + str(len(applied_ids)))
+        pairs = [identifier + ':' + digest + ':' + name for identifier, digest, name in zip(applied_ids, digests, names)]
+        check_migration_replay(parameters['COMMIT'], pairs)
+    ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 

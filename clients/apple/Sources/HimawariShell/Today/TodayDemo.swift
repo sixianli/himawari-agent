@@ -4,13 +4,13 @@ import HimawariChat
 import HimawariCore
 
 struct DemoHomeSource: HomeFeedSource {
-    let snapshot: HomeSnapshot
+    let snapshot: HomeFeedSnapshot
 
-    func read(locale: HomeLocale) async throws -> HomeSnapshot {
+    func read(locale: HomeLocale) async throws -> HomeFeedSnapshot {
         snapshot
     }
 
-    func act(_ item: HomeItem, action: HomeAction, revision: String) async throws -> HomeActOutcome {
+    func act(_ item: HomeFeedItem, action: HomeFeedAction, revision: String) async throws -> HomeActOutcome {
         HomeActOutcome(message: action.label, undo: nil)
     }
 }
@@ -19,7 +19,7 @@ struct DemoHomeSource: HomeFeedSource {
 enum TodayDemo {
     static let deviceApprovalId = "apr_demo_alarm"
 
-    static func feed(_ snapshot: HomeSnapshot, toast: (key: String, message: String, undo: Bool)? = nil) -> HomeFeedModel {
+    static func feed(_ snapshot: HomeFeedSnapshot, toast: (key: String, message: String, undo: Bool)? = nil) -> HomeFeedModel {
         HomeFeedModel(snapshot: snapshot, source: DemoHomeSource(snapshot: snapshot), toast: toast)
     }
 
@@ -27,7 +27,7 @@ enum TodayDemo {
         DemoChatFixtures.now.addingTimeInterval(offset).formatted(.iso8601)
     }
 
-    static let mailAsk = HomeItem(
+    static let mailAsk = HomeFeedItem(
         key: "insight:mail-tanaka",
         kind: "heads_up",
         awaitsOwner: true,
@@ -36,13 +36,13 @@ enum TodayDemo {
         source: .init(type: "mail", from: "田中", label: "从他今天 15:42 的邮件看到的", threadId: nil, at: at(-18 * 60)),
         createdAt: at(-18 * 60),
         actions: [
-            HomeAction(action: "dismiss", label: "不用", polarity: .negative),
-            HomeAction(action: "done", label: "改到 9:40", polarity: .positive),
+            HomeFeedAction(action: "dismiss", label: "不用", polarity: .negative),
+            HomeFeedAction(action: "done", label: "改到 9:40", polarity: .positive),
         ],
         rank: "deadline"
     )
 
-    static let mailApproval = HomeItem(
+    static let mailApproval = HomeFeedItem(
         key: "approval:apr-mail-tanaka",
         kind: "approval",
         awaitsOwner: true,
@@ -52,12 +52,12 @@ enum TodayDemo {
         deadline: at(3600),
         createdAt: at(-10 * 60),
         actions: [
-            HomeAction(action: "approved", label: "发出去", polarity: .positive),
-            HomeAction(action: "denied", label: "不发", polarity: .negative),
+            HomeFeedAction(action: "approved", label: "发出去", polarity: .positive),
+            HomeFeedAction(action: "denied", label: "不发", polarity: .negative),
         ]
     )
 
-    static let deviceApproval = HomeItem(
+    static let deviceApproval = HomeFeedItem(
         key: "approval:\(deviceApprovalId)",
         kind: "approval",
         awaitsOwner: true,
@@ -68,12 +68,12 @@ enum TodayDemo {
         deadline: at(600),
         createdAt: at(-20 * 60),
         actions: [
-            HomeAction(action: "approved", label: "定好", polarity: .positive),
-            HomeAction(action: "denied", label: "不用", polarity: .negative),
+            HomeFeedAction(action: "approved", label: "定好", polarity: .positive),
+            HomeFeedAction(action: "denied", label: "不用", polarity: .negative),
         ]
     )
 
-    static let heard = HomeItem(
+    static let heard = HomeFeedItem(
         key: "memory_request:tanaka-tokyo",
         kind: "memory_confirm",
         awaitsOwner: true,
@@ -82,12 +82,12 @@ enum TodayDemo {
         source: .init(type: "conversation", from: nil, label: "开会时听到的，要记吗", threadId: nil, at: at(-40 * 60)),
         createdAt: at(-40 * 60),
         actions: [
-            HomeAction(action: "approved", label: "记下", polarity: .positive),
-            HomeAction(action: "rejected", label: "不记", polarity: .negative),
+            HomeFeedAction(action: "approved", label: "记下", polarity: .positive),
+            HomeFeedAction(action: "rejected", label: "不记", polarity: .negative),
         ]
     )
 
-    static let running = HomeItem(
+    static let running = HomeFeedItem(
         key: "run:train",
         kind: "running",
         awaitsOwner: false,
@@ -98,7 +98,7 @@ enum TodayDemo {
         rank: "recency"
     )
 
-    static let done = HomeItem(
+    static let done = HomeFeedItem(
         key: "review:meeting",
         kind: "done",
         awaitsOwner: false,
@@ -114,8 +114,8 @@ enum TodayDemo {
         HomeUpcoming(reminderId: "rem-osaka", memoryId: "mem-osaka", text: "该出门了，去大阪", dueAt: at(17 * 3600 + 40 * 60)),
     ]
 
-    static func snapshot(_ items: [HomeItem], upcoming: [HomeUpcoming] = TodayDemo.upcoming) -> HomeSnapshot {
-        HomeSnapshot(
+    static func snapshot(_ items: [HomeFeedItem], upcoming: [HomeUpcoming] = TodayDemo.upcoming) -> HomeFeedSnapshot {
+        HomeFeedSnapshot(
             items: items,
             awaitingCount: items.filter(\.awaitsOwner).count,
             upcoming: upcoming,

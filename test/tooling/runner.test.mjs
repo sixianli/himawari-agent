@@ -11,14 +11,18 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../../scripts/ci/context.mjs";
 import { fileSha256, repositoryRoot, validateRecord } from "../../scripts/ci/contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "../../scripts/ci/execute.mjs";
 import { publish, publishQuality, redactReport } from "../../scripts/ci/publish.mjs";
 import { validateQualityPolicy } from "../../scripts/ci/quality-policy.mjs";
 import { required } from "../../scripts/ci/required.mjs";
-import { reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+import { memberRunsOnHost, reportEntry, runCheck, selectCheck } from "../../scripts/ci/run.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 
 const directories = [];
 const directory = () => {
@@ -119,7 +123,8 @@ describe("JSON公开报告的原始字节与脱敏", () => {
     const result = await runCheck({
       root,
       context,
-      checkId: "coverage",
+      checkId: "tests",
+      matrixKey: "others",
       artifact: archive,
       output: input,
       toolsDirectory: path.join(root, "missing"),
@@ -178,6 +183,27 @@ describe("受控子进程与真实报告", () => {
         timeoutMs: 50,
       }),
     ).toMatchObject({ termination: "timeout", exitCode: 128 });
+  });
+  it("子进程环境带上 runner 的进程追踪号，runner 结束作业时能认出它", async () => {
+    const root = directory();
+    const log = path.join(root, "tracking.log");
+    const previous = process.env.RUNNER_TRACKING_ID;
+    process.env.RUNNER_TRACKING_ID = "github_tracking_fixture";
+    try {
+      await execute(
+        process.execPath,
+        ["-e", "process.stdout.write(['id', process.env.RUNNER_TRACKING_ID].join('='))"],
+        {
+          cwd: root,
+          env: { PATH: process.env.PATH },
+          log,
+        },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.RUNNER_TRACKING_ID;
+      else process.env.RUNNER_TRACKING_ID = previous;
+    }
+    expect(readFileSync(log, "utf8")).toContain("id=github_tracking_fixture");
   });
   it("输出过大不能吞掉资源失败", async () => {
     const root = directory();
@@ -253,7 +279,7 @@ describe("受控检查与公开输出", () => {
     expect(read(path.join(root, ".ci-output/result/result.json"))).toEqual(result);
     await expect(runCheck(options)).rejects.toThrow("EXISTS");
     await expect(
-      runCheck({ ...options, checkId: "coverage", output: ".ci-output/coverage" }),
+      runCheck({ ...options, checkId: "tests", matrixKey: "others", output: ".ci-output/tests" }),
     ).rejects.toThrow("ARTIFACT_REQUIRED");
     await expect(
       runCheck({ ...options, artifact: path.join(root, "missing"), output: ".ci-output/bad" }),
@@ -271,7 +297,7 @@ describe("受控检查与公开输出", () => {
       toolsDirectory: path.join(root, "missing"),
     });
     const report = path.join(input, "log.txt");
-    write(report, "Bearer " + "x".repeat(24));
+    write(report, `Bearer ${"x".repeat(24)}`);
     result.reports.push(reportEntry(report, "diagnostic", input));
     write(path.join(input, "result.json"), result);
     write(path.join(input, "environment-dump.txt"), "never publish");
@@ -330,7 +356,7 @@ describe("required 失败证据和平台 artifact ID", () => {
       env: {},
     });
     expect(summary.status).toBe("failed");
-    expect(summary.missing).toHaveLength(8);
+    expect(summary.missing).toHaveLength(11);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
     expect(read(path.join(root, ".ci-output/gate/context.json"))).toEqual(gateContext);
     expect(() =>
@@ -352,4 +378,19 @@ describe("required 失败证据和平台 artifact ID", () => {
     ])
       expect(() => validateQualityPolicy(value)).toThrow();
   });
+});
+
+it("[ADR-0266] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
+  const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
+  const member = (id) => policy.checks.find((check) => check.id === id).members[0];
+  for (const id of ["policy", "static", "security"]) {
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "darwin", "arm64")).toBe(false);
+    expect(memberRunsOnHost(member(id), "linux", "ia32")).toBe(false);
+  }
+  for (const id of ["build", "tests", "required"]) {
+    expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
+    expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(false);
+  }
 });

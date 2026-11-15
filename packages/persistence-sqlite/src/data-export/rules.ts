@@ -13,7 +13,8 @@ import { DATA_EXPORT_ERROR_CODES, DataExportError } from "./types.js";
 
 export const RULES_INDEX_FILE = "RULES.md";
 
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
+export type RuleSuspendReason = "source_removed" | "no_longer_standing" | "parameters_changed";
 
 export interface PortableRuleVersion {
   readonly revision: number;
@@ -35,6 +36,7 @@ export interface PortableRule {
   readonly updatedAt: string;
   readonly parameters: string;
   readonly withheld?: true;
+  readonly suspendReason?: RuleSuspendReason;
   readonly history: readonly PortableRuleVersion[];
 }
 
@@ -45,7 +47,7 @@ export function ruleParametersKey(ruleId: string, revision?: number): string {
 }
 
 export function enforcedRuleCount(rules: readonly PortableRule[]): number {
-  return rules.filter(({ status }) => status !== "retired").length;
+  return rules.filter(({ status }) => status === "active" || status === "needs_review").length;
 }
 
 const OWNER_RULE_ID = /^owner:[A-Za-z0-9_-]{1,58}$/u;
@@ -55,6 +57,7 @@ const STORED_KINDS: readonly RuleKind[] = [
   "amount_threshold",
   "mail_must_notify",
   "mail_read_whole_thread",
+  "push_quiet_hours",
 ];
 
 const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
@@ -65,12 +68,14 @@ const KIND_LABELS: Readonly<Record<RuleKind, string>> = Object.freeze({
   amount_threshold: "小额不推送：金额低于门槛的邮件不推送",
   mail_must_notify: "一定提醒：命中的邮件一定交给你看并推送",
   mail_read_whole_thread: "先读完整个邮件串：命中的邮件先读同一串的全部往来再判断",
+  push_quiet_hours: "静默延后：这段时间里指定类别的推送不发，等时段结束再发",
   unknown: "未识别的规则",
 });
 
 const STATUS_LABELS: Readonly<Record<RuleStatus, string>> = Object.freeze({
   active: "在用",
   needs_review: "待重审，照常执行",
+  suspended: "已暂停，不执行，等你确认",
   retired: "已撤销",
 });
 
@@ -154,6 +159,25 @@ function amountWording(parameters: Parameters): string {
   return `低于 ${(minor / 10 ** exponent).toFixed(exponent)} ${currency}`;
 }
 
+const PUSH_CLASS_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  scheduled_reminder: "你定的到点提醒",
+  run_result: "任务完成",
+  mail_reminder: "邮件提醒",
+});
+
+function pushQuietWording(parameters: Parameters): string {
+  const params =
+    parameters["params"] !== null &&
+    typeof parameters["params"] === "object" &&
+    !Array.isArray(parameters["params"])
+      ? (parameters["params"] as { readonly [key: string]: JsonValue })
+      : {};
+  const classes = strings(params["classes"])
+    .map((name) => PUSH_CLASS_LABELS[name] ?? name)
+    .join("、");
+  return `${String(parameters["summary"] ?? "")}（时段 ${quietWording(params["periods"])}；推送类别 ${classes}）`;
+}
+
 function ownerWording(parameters: Parameters): string {
   const params =
     parameters["params"] !== null &&
@@ -187,6 +211,8 @@ function wording(kind: RuleKind, parameters: Parameters): string {
     case "mail_must_notify":
     case "mail_read_whole_thread":
       return ownerWording(parameters);
+    case "push_quiet_hours":
+      return pushQuietWording(parameters);
     default:
       return canonicalJson(parameters);
   }
@@ -297,4 +323,6 @@ export function assertRuleHistory(rule: PortableRule): void {
     (last.withheld === true) !== (rule.withheld === true)
   )
     fail(`规则 ${rule.ruleId} 当前版本和历史最后一版对不上`);
+  if ((rule.status === "suspended") !== (rule.suspendReason !== undefined))
+    fail(`规则 ${rule.ruleId} 的暂停原因和状态对不上`);
 }

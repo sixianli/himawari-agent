@@ -6,15 +6,13 @@ public struct PairingRecord: Codable, Sendable, Equatable {
     public let access: ServiceAccessToken?
     public var status: PairedDeviceStatus
     public let pairingNumber: String
-    public let pairedAt: Date?
 
-    public init(origin: URL, deviceId: String, access: ServiceAccessToken?, status: PairedDeviceStatus, pairingNumber: String, pairedAt: Date? = nil) {
+    public init(origin: URL, deviceId: String, access: ServiceAccessToken?, status: PairedDeviceStatus, pairingNumber: String) {
         self.origin = origin
         self.deviceId = deviceId
         self.access = access
         self.status = status
         self.pairingNumber = pairingNumber
-        self.pairedAt = pairedAt
     }
 }
 
@@ -27,6 +25,7 @@ public enum PairingProblem: Sendable, Equatable {
     case keysUnavailable
     case keysUnreadable
     case storageUnavailable
+    case stateUnknown
     case removed
 
     public static func from(_ error: Error) -> PairingProblem {
@@ -34,7 +33,7 @@ public enum PairingProblem: Sendable, Equatable {
             return parse == .unsupportedVersion ? .codeInvalid : .unreadableCode
         }
         if error is DeviceKeyError { return .keysUnavailable }
-        if let api = error as? DeviceAPIError, case let .server(status, code, ttl) = api {
+        if let api = error as? DeviceAPIError, case let .server(status, code, ttl, _) = api {
             switch code {
             case "DEVICE_PAIRING_CODE_EXPIRED": return .codeExpired(ttlSeconds: ttl.flatMap { $0 > 0 ? $0 : nil })
             case "DEVICE_PAIRING_CODE_USED": return .codeUsed

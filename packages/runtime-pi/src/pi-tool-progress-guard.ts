@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+  DEFAULT_TOOL_REFUSALS,
+  type ToolRefusalConfiguration,
+} from "@himawari-agent/application/runtime-port";
 
-/**
- * Adapted from Cindy's result-aware ToolLoopGuard: four identical observations,
- * a 12-call/two-input window, and a 16-call/four-input window. Pi retains loop
- * ownership; this product guard only decides when further work must stop.
- * State contains hashes only and travels inside the protected approval snapshot.
- */
 export interface PiToolProgressState {
   readonly version: "pi-tool-progress.v1";
   readonly recent: readonly string[];
@@ -13,7 +11,13 @@ export interface PiToolProgressState {
   readonly consecutive: number;
   readonly stopped: boolean;
   readonly fileConflicts?: number;
+  readonly refusalsInARow?: number;
+  readonly refusals?: number;
 }
+
+export type PiToolRefusalLimits = ToolRefusalConfiguration;
+
+const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
 
 function stable(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
@@ -35,8 +39,19 @@ export class PiToolProgressGuard {
   private consecutive = 0;
   private stopped = false;
   private fileConflicts = 0;
+  private refusalsInARow = 0;
+  private refusals = 0;
+  private readonly limits: PiToolRefusalLimits;
 
-  constructor(state?: PiToolProgressState) {
+  constructor(state?: PiToolProgressState, limits: PiToolRefusalLimits = DEFAULT_TOOL_REFUSALS) {
+    if (
+      !Number.isSafeInteger(limits.consecutive) ||
+      !Number.isSafeInteger(limits.total) ||
+      limits.consecutive < 1 ||
+      limits.total < 1
+    )
+      throw new Error("PI_TOOL_REFUSAL_LIMITS_INVALID");
+    this.limits = limits;
     if (state === undefined) return;
     if (
       state.version !== "pi-tool-progress.v1" ||
@@ -51,18 +66,26 @@ export class PiToolProgressGuard {
       (state.fileConflicts !== undefined &&
         (!Number.isSafeInteger(state.fileConflicts) ||
           state.fileConflicts < 0 ||
-          state.fileConflicts > 4))
+          state.fileConflicts > 4)) ||
+      (state.refusalsInARow !== undefined && !count(state.refusalsInARow)) ||
+      (state.refusals !== undefined && !count(state.refusals))
     )
       throw new Error("PI_TOOL_PROGRESS_STATE_INVALID");
     this.recent = [...state.recent];
     this.lastResult = state.lastResult;
     this.consecutive = state.consecutive;
     this.fileConflicts = state.fileConflicts ?? 0;
-    this.stopped = state.stopped || this.fileConflicts >= 4;
+    this.refusalsInARow = state.refusalsInARow ?? 0;
+    this.refusals = state.refusals ?? 0;
+    this.stopped = state.stopped || this.fileConflicts >= 4 || this.refusalLimitReached();
   }
 
   get blocked(): boolean {
     return this.stopped;
+  }
+
+  private refusalLimitReached(): boolean {
+    return this.refusalsInARow >= this.limits.consecutive || this.refusals >= this.limits.total;
   }
 
   observe(
@@ -71,9 +94,11 @@ export class PiToolProgressGuard {
     output: unknown,
     isError: boolean,
     errorCode?: string,
+    refused = false,
   ): void {
     if (this.stopped) return;
-    // Re-generating content and reading between attempts must not defeat the bound.
+    this.refusalsInARow = refused ? this.refusalsInARow + 1 : 0;
+    if (refused) this.refusals += 1;
     if (isError && ["write", "edit"].includes(name) && errorCode === "FILE_VERSION_CONFLICT")
       this.fileConflicts++;
     const call = digest([name, input]);
@@ -83,6 +108,7 @@ export class PiToolProgressGuard {
     this.recent.push(call);
     if (this.recent.length > 16) this.recent.shift();
     this.stopped =
+      this.refusalLimitReached() ||
       this.fileConflicts >= 4 ||
       this.consecutive >= 4 ||
       (this.recent.length >= 12 && new Set(this.recent.slice(-12)).size <= 2) ||
@@ -97,6 +123,8 @@ export class PiToolProgressGuard {
       consecutive: this.consecutive,
       stopped: this.stopped,
       fileConflicts: this.fileConflicts,
+      refusalsInARow: this.refusalsInARow,
+      refusals: this.refusals,
     };
   }
 }

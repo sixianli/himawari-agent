@@ -5,30 +5,30 @@ import Observation
 
 public struct HomeActOutcome: Sendable, Equatable {
     public let message: String?
-    public let undo: HomeAction?
+    public let undo: HomeFeedAction?
 
-    public init(message: String?, undo: HomeAction?) {
+    public init(message: String?, undo: HomeFeedAction?) {
         self.message = message
         self.undo = undo
     }
 }
 
 public protocol HomeFeedSource: Sendable {
-    func read(locale: HomeLocale) async throws -> HomeSnapshot
-    func act(_ item: HomeItem, action: HomeAction, revision: String) async throws -> HomeActOutcome
+    func read(locale: HomeLocale) async throws -> HomeFeedSnapshot
+    func act(_ item: HomeFeedItem, action: HomeFeedAction, revision: String) async throws -> HomeActOutcome
 }
 
 public struct HomeToast: Equatable, Identifiable {
     public let id = UUID()
-    public let item: HomeItem
+    public let item: HomeFeedItem
     public let message: String
-    public let undo: HomeAction?
+    public let undo: HomeFeedAction?
 }
 
 @MainActor
 @Observable
 public final class HomeFeedModel {
-    public private(set) var snapshot: HomeSnapshot?
+    public private(set) var snapshot: HomeFeedSnapshot?
     public private(set) var settled: Set<String> = []
     public private(set) var busy: Set<String> = []
     public private(set) var toast: HomeToast?
@@ -42,7 +42,7 @@ public final class HomeFeedModel {
         self.locale = locale
     }
 
-    init(snapshot: HomeSnapshot, source: (any HomeFeedSource)? = nil, toast: (key: String, message: String, undo: Bool)? = nil) {
+    init(snapshot: HomeFeedSnapshot, source: (any HomeFeedSource)? = nil, toast: (key: String, message: String, undo: Bool)? = nil) {
         self.source = source
         locale = .chinese
         self.snapshot = snapshot
@@ -70,19 +70,19 @@ public final class HomeFeedModel {
         }
     }
 
-    public func canAct(_ item: HomeItem, approvals: DeviceActionsModel) -> Bool {
-        if let id = item.approvalId, approvals.pending.contains(where: { $0.id == id }) { return true }
+    public func canAct(_ item: HomeFeedItem, approvals: DeviceActionsModel?) -> Bool {
+        if let id = item.approvalId, let approvals, approvals.pending.contains(where: { $0.id == id }) { return true }
         return source != nil
     }
 
-    public func approval(for item: HomeItem, in approvals: DeviceActionsModel) -> PendingApproval? {
-        guard let id = item.approvalId else { return nil }
+    public func approval(for item: HomeFeedItem, in approvals: DeviceActionsModel?) -> PendingApproval? {
+        guard let id = item.approvalId, let approvals else { return nil }
         return approvals.pending.first { $0.id == id }
     }
 
-    public func decide(_ item: HomeItem, action: HomeAction, approvals: DeviceActionsModel) async {
+    public func decide(_ item: HomeFeedItem, action: HomeFeedAction, approvals: DeviceActionsModel?) async {
         guard !busy.contains(item.key) else { return }
-        if let approval = approval(for: item, in: approvals) {
+        if let approvals, let approval = approval(for: item, in: approvals) {
             busy.insert(item.key)
             defer { busy.remove(item.key) }
             await approvals.respond(approval, approved: action.polarity == .positive)

@@ -265,6 +265,41 @@ struct DeviceActionServerTests {
         #expect(after["reason"] as? String == DeviceActionReason.notSupported.text(.chinese))
     }
 
+    @Test func aNewerVersionOfAnActionIsNotCheckedEither() async throws {
+        let setup = try await setUp()
+        let (executor, journal) = try executor(setup)
+        await executor.run()
+        let body: [String: Any] = ["deviceId": setup.deviceId, "action": "test.note.v2", "arguments": ["text": "新版本"], "toolCallId": "call-j"]
+        let asked = try await setup.control.call("request", body)
+        let id = try #require(asked["actionId"] as? String)
+        try journal.update {
+            $0.entries[id] = DeviceActionJournalEntry(id: id, action: "test.note.v2", stage: .started, before: nil, made: nil, report: nil, updatedAt: setup.clock.now)
+        }
+        #expect(await executor.run() == [.reported(id: id, outcome: .resultUnknown, readBack: false)])
+        #expect(setup.notes.lines.isEmpty)
+    }
+
+    @Test func aRefusedRecordWithNoDeadlineIsClearedOnTheNextPass() async throws {
+        let setup = try await setUp()
+        let (executor, journal) = try executor(setup)
+        await executor.run()
+        let asked = try await ask(setup, "取快递", call: "call-k")
+        let id = try #require(asked["actionId"] as? String)
+        let claimed = try await setup.api.claimActions()
+        #expect(claimed.map(\.id) == [id])
+        try await advance(setup, seconds: 3600)
+        let unchecked = DeviceActionReport(id: id, outcome: .failed, readBack: false, evidence: nil, reason: "没有核对")
+        try journal.update {
+            var entry = DeviceActionJournalEntry(id: id, action: "test.note.append", stage: .finished, before: nil, made: nil, report: unchecked, updatedAt: setup.clock.now)
+            entry.refused = true
+            entry.keepUntil = nil
+            $0.entries[id] = entry
+        }
+        _ = await executor.run()
+        #expect(setup.notes.lines.isEmpty)
+        #expect(try journal.entry(id)?.refused != true)
+    }
+
     @Test func aFinishedRecordWithoutAResultIsCheckedNotRedone() async throws {
         let setup = try await setUp()
         let (executor, journal) = try executor(setup)

@@ -14,10 +14,11 @@ public struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
-    public init(store: ChatStore, threadId: String?, close: @escaping () -> Void) {
+    public init(store: ChatStore, threadId: String?, draft: String = "", close: @escaping () -> Void) {
         self.store = store
         self.close = close
         _threadId = State(initialValue: threadId)
+        _draft = State(initialValue: draft)
     }
 
     private static let navBottom = DesignTokens.Size.navTop + DesignTokens.Size.glassButton
@@ -209,15 +210,21 @@ struct StreamingAnswer: View {
     let text: String
 
     var body: some View {
-        (Text(text)
-            .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
-            .foregroundStyle(Color.hmText)
-            + Text(" ")
-            + Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
-                context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
-            }))
+        Text("\(answer) \(dot)")
             .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var answer: Text {
+        Text(text)
+            .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
+            .foregroundStyle(Color.hmText)
+    }
+
+    private var dot: Text {
+        Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
+            context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
+        })
     }
 }
 

@@ -29,6 +29,9 @@ import type { FastifyInstance } from "fastify";
 
 export const DATA_EXPORT_PATH = "/api/data-export/v1/archive";
 export const DATA_EXPORT_ARCHIVE_ROOT = "himawari-export";
+export const DATA_EXPORT_CANCELLED = "DATA_EXPORT_CANCELLED";
+export const DATA_EXPORT_NOT_FOUND = "DATA_EXPORT_NOT_FOUND";
+export const DATA_EXPORT_NOT_CANCELLABLE = "DATA_EXPORT_NOT_CANCELLABLE";
 export const DATA_EXPORT_TOO_LARGE = "DATA_EXPORT_TOO_LARGE";
 export const DATA_EXPORT_BUSY = "DATA_EXPORT_BUSY";
 export const DATA_EXPORT_RETENTION_MS = 10 * 60 * 1000;
@@ -121,13 +124,24 @@ export interface DataExportArchive {
   readonly withheld: number;
 }
 
+export interface DataExportProgress {
+  readonly textsRead: number;
+  readonly textsTotal: number;
+}
+
+export interface DataExportBuildControl {
+  readonly signal: AbortSignal;
+  readonly onProgress: (progress: DataExportProgress) => void;
+}
+
 export interface DataExportJobView {
   readonly exportId: string;
-  readonly state: "running" | "ready" | "failed" | "expired";
+  readonly state: "running" | "ready" | "failed" | "cancelled" | "expired";
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
   readonly failureCode: string | null;
   readonly expiresAt: string | null;
+  readonly progress: DataExportProgress | null;
   readonly built: DataExportArchive | null;
 }
 
@@ -138,17 +152,19 @@ export interface DataExportJobsOptions {
   readonly protector: PayloadProtectorPort;
   readonly now: () => string;
   readonly retentionMs?: number;
-  readonly build?: () => Promise<DataExportArchive>;
+  readonly build?: (control: DataExportBuildControl) => Promise<DataExportArchive>;
 }
 
 interface DataExportJob {
   readonly exportId: string;
   readonly idempotencyKeys: Set<string>;
-  state: "running" | "ready" | "failed";
+  readonly abort: AbortController;
+  state: "running" | "ready" | "failed" | "cancelled";
   readonly startedAt: string;
   finishedAt: string | null;
   failureCode: string | null;
   expiresAt: string | null;
+  progress: DataExportProgress | null;
   built: DataExportArchive | null;
 }
 
@@ -171,11 +187,16 @@ export class DataExportJobs {
     return this.#building;
   }
 
-  async buildNow(): Promise<DataExportArchive> {
+  async buildNow(
+    control: DataExportBuildControl = {
+      signal: new AbortController().signal,
+      onProgress: () => {},
+    },
+  ): Promise<DataExportArchive> {
     if (this.#building) throw new Error(DATA_EXPORT_BUSY);
     this.#building = true;
     try {
-      return await (this.#options.build ?? (() => this.#build()))();
+      return await (this.#options.build ?? ((given) => this.#build(given)))(control);
     } finally {
       this.#building = false;
     }
@@ -191,7 +212,7 @@ export class DataExportJobs {
     const current = this.#job;
     if (
       current &&
-      current.state !== "failed" &&
+      (current.state === "running" || current.state === "ready") &&
       (current.expiresAt === null ||
         Date.parse(this.#options.now()) < Date.parse(current.expiresAt))
     ) {
@@ -208,18 +229,27 @@ export class DataExportJobs {
     const job: DataExportJob = {
       idempotencyKeys: new Set([idempotencyKey]),
       exportId: `data-export:${randomBytes(16).toString("base64url")}`,
+      abort: new AbortController(),
       state: "running",
       startedAt: this.#options.now(),
       finishedAt: null,
       failureCode: null,
       expiresAt: null,
+      progress: null,
       built: null,
     };
     this.#discard();
     this.#job = job;
     const retentionMs = this.#options.retentionMs ?? DATA_EXPORT_RETENTION_MS;
-    void this.buildNow().then(
+    void this.buildNow({
+      signal: job.abort.signal,
+      onProgress: (progress) => {
+        if (job.state === "running") job.progress = progress;
+      },
+    }).then(
       (built) => {
+        if (job.state !== "running") return;
+        job.progress = null;
         job.finishedAt = this.#options.now();
         job.expiresAt = new Date(Date.parse(job.finishedAt) + retentionMs).toISOString();
         job.built = built;
@@ -230,12 +260,35 @@ export class DataExportJobs {
         this.#release.unref();
       },
       (error: unknown) => {
+        if (job.state !== "running") return;
+        job.progress = null;
         job.finishedAt = this.#options.now();
         job.failureCode = exportFailureCode(error);
         job.state = "failed";
       },
     );
     return { exportId: job.exportId, replayed: false };
+  }
+
+  cancel(exportId: string): { readonly exportId: string; readonly replayed: boolean } {
+    const job = this.#job;
+    if (
+      !job ||
+      job.exportId !== exportId ||
+      (job.expiresAt !== null && Date.parse(this.#options.now()) >= Date.parse(job.expiresAt))
+    )
+      throw new Error(DATA_EXPORT_NOT_FOUND);
+    if (job.state === "cancelled") return { exportId, replayed: true };
+    if (job.state === "failed") throw new Error(DATA_EXPORT_NOT_CANCELLABLE);
+    if (this.#release) clearTimeout(this.#release);
+    this.#release = null;
+    job.state = "cancelled";
+    job.finishedAt = this.#options.now();
+    job.expiresAt = null;
+    job.progress = null;
+    job.built = null;
+    job.abort.abort(new Error(DATA_EXPORT_CANCELLED));
+    return { exportId, replayed: false };
   }
 
   view(exportId: string): DataExportJobView {
@@ -252,13 +305,14 @@ export class DataExportJobs {
         finishedAt: null,
         failureCode: null,
         expiresAt: null,
+        progress: null,
         built: null,
       };
-    const { idempotencyKeys: _idempotencyKeys, ...view } = job;
+    const { idempotencyKeys: _idempotencyKeys, abort: _abort, ...view } = job;
     return view;
   }
 
-  async #build(): Promise<DataExportArchive> {
+  async #build({ signal, onProgress }: DataExportBuildControl): Promise<DataExportArchive> {
     const database = openReadOnlyDatabase(this.#options.databasePath);
     try {
       const result = await buildPortableExport({
@@ -268,7 +322,10 @@ export class DataExportJobs {
         protector: this.#options.protector,
         policy: createDataExportTextPolicy(),
         now: this.#options.now,
+        signal,
+        onProgress: (textsRead, textsTotal) => onProgress({ textsRead, textsTotal }),
       });
+      signal.throwIfAborted();
       const zip = createStoredZip(result.files, result.manifest.exportedAt);
       const archive = Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength);
       return {
@@ -288,8 +345,28 @@ export class DataExportJobs {
   }
 }
 
+export function deviceExportArchive(options: {
+  readonly ownerId: ProductConfiguration["ownerId"];
+  readonly jobs: DataExportJobs;
+}) {
+  return (input: {
+    readonly authentication: { readonly ownerId: string };
+    readonly exportId: string;
+  }) => {
+    if (input.authentication.ownerId !== options.ownerId) return undefined;
+    const view = options.jobs.view(input.exportId);
+    if (view.state !== "ready" || !view.built) return undefined;
+    return {
+      bytes: view.built.archive,
+      mediaType: "application/zip",
+      fileName: view.built.fileName,
+    };
+  };
+}
+
 export const PRODUCTION_DATA_EXPORT_OPERATIONS = Object.freeze([
   "data.export.start",
+  "data.export.cancel",
   "data.export.status.read",
 ] as const);
 
@@ -321,6 +398,7 @@ export class ProductionDataExportControl {
         startedAt: view.startedAt,
         finishedAt: view.finishedAt,
         failureCode: view.failureCode,
+        progress: view.state === "running" ? view.progress : null,
         result:
           view.state === "ready" && view.built && view.expiresAt
             ? {
@@ -350,14 +428,23 @@ export class ProductionDataExportControl {
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
         "DATA_EXPORT_OWNER_REQUIRED",
       );
-    if (command.type !== "data.export.start")
-      throw new Error("DATA_EXPORT_OPERATION_NOT_INSTALLED");
     try {
+      if (command.type === "data.export.cancel") {
+        const cancelled = this.#options.jobs.cancel(command.payload.exportId);
+        return { resultRef: cancelled.exportId, replayed: cancelled.replayed };
+      }
+      if (command.type !== "data.export.start")
+        throw new Error("DATA_EXPORT_OPERATION_NOT_INSTALLED");
       const started = this.#options.jobs.start(command.idempotencyKey);
       return { resultRef: started.exportId, replayed: started.replayed };
     } catch (error) {
-      if (error instanceof Error && error.message === DATA_EXPORT_BUSY)
-        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, DATA_EXPORT_BUSY);
+      if (error instanceof Error && error.message === DATA_EXPORT_NOT_FOUND)
+        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, DATA_EXPORT_NOT_FOUND);
+      if (
+        error instanceof Error &&
+        (error.message === DATA_EXPORT_BUSY || error.message === DATA_EXPORT_NOT_CANCELLABLE)
+      )
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, error.message);
       throw error;
     }
   }

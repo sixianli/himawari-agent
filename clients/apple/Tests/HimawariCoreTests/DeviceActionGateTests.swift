@@ -112,11 +112,11 @@ import Testing
     }
 
     @Test func wholeNumbersAreSentAsIntegers() throws {
-        let data = try JSONEncoder().encode(JSONValue.object(["level": .number(40), "temperature": .number(21.5)]))
+        let data = try JSONEncoder().encode(DeviceActionValue.object(["level": .number(40), "temperature": .number(21.5)]))
         let text = String(decoding: data, as: UTF8.self)
         #expect(text.contains("\"level\":40") && !text.contains("40.0"))
         #expect(text.contains("21.5"))
-        #expect(try JSONDecoder().decode(JSONValue.self, from: data) == .object(["level": .number(40), "temperature": .number(21.5)]))
+        #expect(try JSONDecoder().decode(DeviceActionValue.self, from: data) == .object(["level": .number(40), "temperature": .number(21.5)]))
     }
 
     @Test func aSucceededReportCarriesNoReason() {

@@ -1,16 +1,18 @@
-import type {
-  ProactiveCounts,
-  ProactiveInsight,
-  ProactiveInsightContent,
-  ProactiveQuietPeriod,
-  ProactiveRating,
-  ProactiveScope,
-  ProactiveSourceItem,
-  ProactiveSealPort,
-  ProactiveSource,
-  ProactiveStorePort,
-  ProactiveVerdict,
+import type { DataClassification } from "../ports/common.js";
+import {
+  PROACTIVE_INSIGHT_LIST_MAXIMUM,
+  type ProactiveCounts,
+  type ProactiveInsight,
+  type ProactiveInsightContent,
+  type ProactiveQuietPeriod,
+  type ProactiveRating,
+  type ProactiveScope,
+  type ProactiveSealPort,
+  type ProactiveStorePort,
+  type ProactiveVerdict,
 } from "../ports/proactive-checks.js";
+import type { ProactiveSource } from "../ports/proactive-sources.js";
+import type { ProactiveMail } from "../ports/proactive-sources.js";
 import type { WebPushFeedback } from "../ports/web-push.js";
 import { ruleBookFor } from "../rules/rule-book.js";
 import {
@@ -41,7 +43,10 @@ export interface ProactiveOverviewInsight {
   readonly pushed: boolean;
   readonly pushReaction: "opened" | "dismissed" | null;
   readonly rating: ProactiveRating | null;
+  readonly decisionId: string;
+  readonly createdAt: string;
   readonly updatedAt: string;
+  readonly dataClassification: DataClassification;
 }
 
 export interface ProactiveOverviewBackoff {
@@ -78,6 +83,7 @@ export interface ProactiveOverview {
     readonly status: "disconnected" | "connected" | "needs_reconnect";
     readonly account: string | null;
     readonly connectedAt: string | null;
+    readonly changedAt: string | null;
   };
   readonly enabled: boolean;
   readonly quietHours: readonly ProactiveQuietPeriod[];
@@ -85,6 +91,7 @@ export interface ProactiveOverview {
   readonly dailyLimitReached: boolean;
   readonly backoff: readonly ProactiveOverviewBackoff[];
   readonly insights: readonly ProactiveOverviewInsight[];
+  readonly insightsCapped: boolean;
   readonly audit: {
     readonly active: boolean;
     readonly since: string;
@@ -142,7 +149,15 @@ export async function readProactiveOverview(options: {
   const auditSince = new Date(Date.parse(now) - AUDIT_DAYS * DAY_MS).toISOString();
   const insights: ProactiveOverviewInsight[] = [];
   const filteredInsights: ProactiveOverviewAuditItem[] = [];
-  for (const insight of await store.listInsights({ ...scope, statuses: ["open", "replied"] })) {
+  const storedInsights = await store.listInsights({ ...scope, statuses: ["open", "replied"] });
+  let insightsCapped = false;
+  if (storedInsights.length >= PROACTIVE_INSIGHT_LIST_MAXIMUM) {
+    const openCount = (await store.listInsights({ ...scope, statuses: ["open"] })).length;
+    insightsCapped =
+      openCount >= PROACTIVE_INSIGHT_LIST_MAXIMUM ||
+      openCount > storedInsights.filter(({ status }) => status === "open").length;
+  }
+  for (const insight of storedInsights) {
     const content = parse<ProactiveInsightContent>(await open(insight.contentRef));
     const floor =
       insight.floorRaised ||
@@ -152,7 +167,7 @@ export async function readProactiveOverview(options: {
             fromAddress: fromAddressOf(content.from ?? ""),
             subject: content.subject ?? "",
             snippet: content.summary ?? "",
-          } as ProactiveSourceItem,
+          } as ProactiveMail,
           rules,
         ).length > 0);
     if (!isReminderWorthy(insight.result, insight.priority, floor)) {
@@ -187,7 +202,11 @@ export async function readProactiveOverview(options: {
         pushed: insight.pushSourceKey !== null,
         pushReaction: reaction(insight.pushSourceKey),
         rating: insight.ownerRating,
+        decisionId: insight.decisionId,
+        createdAt: insight.createdAt,
         updatedAt: insight.updatedAt,
+        dataClassification:
+          (await seal.classificationOf?.({ ...scope, ref: insight.contentRef })) ?? "private",
       }),
     );
   }
@@ -274,6 +293,7 @@ export async function readProactiveOverview(options: {
       status: connection?.status ?? "disconnected",
       account,
       connectedAt: connection?.connectedAt ?? null,
+      changedAt: connection?.updatedAt ?? null,
     }),
     enabled: settings.enabled,
     quietHours: settings.quietHours,
@@ -293,6 +313,7 @@ export async function readProactiveOverview(options: {
         ),
     ),
     insights: Object.freeze(insights),
+    insightsCapped,
     audit: Object.freeze({
       active: auditActive,
       since: auditSince,

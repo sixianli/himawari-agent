@@ -5,3 +5,6 @@
 "NSContactsUsageDescription" = "連絡先の電話番号やメールの変更を頼んだときに使います。";
 "NSHomeKitUsageDescription" = "家の照明のオン・オフやエアコンの調整を頼んだときに使います。";
 "NSRemindersFullAccessUsageDescription" = "リマインダーの追加や完了を頼んだときに使います。";
+"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。録音は文字にしたら消します。";
+"NSSpeechRecognitionUsageDescription" = "聞こえた言葉をこの iPhone で文字にします。";
+"NSMotionUsageDescription" = "AirPods が耳に入っているかを確かめ、呼んだのがあなたかを見分けます。";

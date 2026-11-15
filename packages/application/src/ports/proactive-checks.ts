@@ -1,7 +1,12 @@
 import type { AgentId, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
-
-export type ProactiveSource = "gmail";
+import type {
+  ProactiveMailExtra,
+  ProactiveMailItem,
+  ProactiveSource,
+  ProactiveSourceItem,
+  ProactiveSourceSettings,
+} from "./proactive-sources.js";
 export type ProactiveResult = "act" | "know" | "check" | "ignore";
 export type ProactiveConfidence = "sure" | "unsure";
 export type ProactivePriority = "high" | "medium" | "low";
@@ -35,31 +40,6 @@ export interface ProactiveSettings {
   readonly importantSenders: readonly string[];
   readonly importantSendersRevision: number;
   readonly updatedAt: string | null;
-}
-
-export interface ProactiveSourceItem {
-  readonly source: ProactiveSource;
-  readonly messageId: string;
-  readonly threadId: string;
-  readonly from: string;
-  readonly fromAddress: string;
-  readonly subject: string;
-  readonly snippet: string;
-  readonly link: string;
-  readonly receivedAt: string;
-  readonly categories: readonly string[];
-  readonly sentByOwner: boolean;
-  readonly body: string | null;
-  readonly bodyTruncated: boolean;
-  readonly bodyUnavailable: boolean;
-  readonly attachments: readonly ProactiveMailAttachment[];
-  readonly participants?: readonly string[];
-}
-
-export interface ProactiveMailAttachment {
-  readonly filename: string;
-  readonly mimeType: string;
-  readonly size: number;
 }
 
 export interface ProactiveCounts {
@@ -97,6 +77,8 @@ export interface ProactiveInsightContent {
   readonly subject: string;
   readonly link: string;
 }
+
+export const PROACTIVE_INSIGHT_LIST_MAXIMUM = 500;
 
 export interface ProactiveInsight {
   readonly id: string;
@@ -253,6 +235,12 @@ export interface ProactiveCheckInputs {
   readonly summaryCharacters?: number;
   readonly summaryRead?: ProactiveSummaryReadStatus;
   readonly summaryGenerated?: number;
+  readonly observations?: ProactiveObservationHandOff;
+}
+
+export interface ProactiveObservationHandOff {
+  readonly handedOff: number;
+  readonly sink: "not_connected" | "port";
 }
 
 export type ProactiveBackoffStage = 0 | 1 | 2;
@@ -317,11 +305,16 @@ export interface ProactiveCheckRecord extends ProactiveScope {
   readonly push: { readonly id: string; readonly readyAt: string } | null;
   readonly backoff?: readonly ProactiveBackoffWrite[];
   readonly cursor: string | null;
+  readonly onlyIfNew?: {
+    readonly source: ProactiveSource;
+    readonly since: string;
+  };
 }
 
 export interface ProactiveRecordResult {
   readonly insightIds: readonly string[];
   readonly releasedRefs: readonly string[];
+  readonly refused?: "already_recorded" | "daily_limit";
 }
 
 export interface ProactiveStorePort {
@@ -333,6 +326,9 @@ export interface ProactiveStorePort {
       readonly importantSenders: readonly string[];
       readonly now: string;
     },
+  ): Promise<void>;
+  setEnabled(
+    input: ProactiveScope & { readonly enabled: boolean; readonly now: string },
   ): Promise<void>;
   readConnection(
     input: ProactiveScope & { readonly source: ProactiveSource },
@@ -351,7 +347,9 @@ export interface ProactiveStorePort {
   removeSource(
     input: ProactiveScope & { readonly source: ProactiveSource },
   ): Promise<readonly string[]>;
-  clearRecords(input: ProactiveScope): Promise<readonly string[]>;
+  clearRecords(
+    input: ProactiveScope & { readonly source: ProactiveSource },
+  ): Promise<readonly string[]>;
   readDecisionPayloads(
     input: ProactiveScope & { readonly decisionId: string },
   ): Promise<readonly ProactiveModelPayload[]>;
@@ -425,6 +423,7 @@ export interface ProactiveStorePort {
   ): Promise<readonly ProactiveInsight[]>;
   previewBackoff(
     input: ProactiveScope & {
+      readonly source: ProactiveSource;
       readonly classKeys: readonly string[];
       readonly settings: ProactiveBackoffSettings;
       readonly now: string;
@@ -433,6 +432,20 @@ export interface ProactiveStorePort {
   listBackoff(input: ProactiveScope): Promise<readonly ProactiveBackoffClass[]>;
   restoreBackoff(
     input: ProactiveScope & { readonly classKey: string | null; readonly now: string },
+  ): Promise<number>;
+  listSourceSettings(input: ProactiveScope): Promise<readonly ProactiveSourceSettings[]>;
+  writeSourceSettings(
+    input: ProactiveScope & {
+      readonly source: ProactiveSource;
+      readonly enabled: boolean;
+      readonly perDay: number;
+      readonly perCheck: number;
+      readonly changeId: string;
+      readonly now: string;
+    },
+  ): Promise<void>;
+  processedSince(
+    input: ProactiveScope & { readonly source: ProactiveSource; readonly since: string },
   ): Promise<number>;
 }
 
@@ -445,13 +458,16 @@ export interface ProactiveSealPort {
     },
   ): Promise<string>;
   open(input: ProactiveScope & { readonly ref: string }): Promise<string | undefined>;
+  classificationOf?(
+    input: ProactiveScope & { readonly ref: string },
+  ): Promise<DataClassification | undefined>;
   release(input: ProactiveScope & { readonly refs: readonly string[] }): Promise<void>;
 }
 
-export type ProactiveFetchResult =
+export type ProactiveFetchResult<Extra = Readonly<Record<string, unknown>>> =
   | {
       readonly kind: "items";
-      readonly items: readonly ProactiveSourceItem[];
+      readonly items: readonly ProactiveSourceItem<Extra>[];
       readonly cursor: string | null;
     }
   | { readonly kind: "unauthorized" }
@@ -469,29 +485,58 @@ export interface ProactiveWholeThread {
 }
 
 export interface ProactiveRelatedFetch {
-  readonly byMail: ReadonlyMap<string, readonly ProactiveSourceItem[]>;
+  readonly byMail: ReadonlyMap<string, readonly ProactiveMailItem[]>;
   readonly failed: ReadonlyMap<string, string>;
   readonly requests: number;
   readonly wholeThread?: ReadonlyMap<string, ProactiveWholeThread>;
 }
 
-export interface ProactiveSourceReader {
+export interface ProactiveSourceReader<Extra = Readonly<Record<string, unknown>>> {
   readonly source: ProactiveSource;
-  related?:
-    | ((input: {
-        readonly token: string;
-        readonly items: readonly ProactiveSourceItem[];
-        readonly limits: ProactiveRelatedLimits;
-        readonly wholeThread?: ReadonlySet<string>;
-        readonly references?: ReadonlyMap<string, readonly string[]>;
-        readonly signal: AbortSignal;
-      }) => Promise<ProactiveRelatedFetch>)
-    | undefined;
   fetch(input: {
     readonly token: string;
     readonly cursor: string | null;
     readonly since: string;
     readonly signal: AbortSignal;
     readonly unseen: (messageIds: readonly string[]) => Promise<readonly string[]>;
-  }): Promise<ProactiveFetchResult>;
+  }): Promise<ProactiveFetchResult<Extra>>;
+}
+
+export interface ProactiveMailReader extends ProactiveSourceReader<ProactiveMailExtra> {
+  related?:
+    | ((input: {
+        readonly token: string;
+        readonly items: readonly ProactiveMailItem[];
+        readonly limits: ProactiveRelatedLimits;
+        readonly wholeThread?: ReadonlySet<string>;
+        readonly references?: ReadonlyMap<string, readonly string[]>;
+        readonly signal: AbortSignal;
+      }) => Promise<ProactiveRelatedFetch>)
+    | undefined;
+}
+
+export interface ProactiveSourceRunner {
+  readonly source: ProactiveSource;
+  run(): Promise<ProactiveDecision | undefined>;
+}
+
+export interface ProactiveObservation {
+  readonly source: ProactiveSource;
+  readonly sourceId: string;
+  readonly sourceVersion: string;
+  readonly trust: "owner" | "external";
+  readonly provenance: {
+    readonly kind: string;
+    readonly author: string | null;
+    readonly occurredAt: string;
+  };
+  readonly what: string;
+  readonly contentRef: string;
+  readonly insightId: string;
+  readonly decisionId: string;
+  readonly observedAt: string;
+}
+
+export interface ProactiveObservationPort {
+  receive(observations: readonly ProactiveObservation[]): Promise<void>;
 }

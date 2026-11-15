@@ -30,7 +30,7 @@ date: "2026-11-04"
 
 - 后台提示词要求模型返回固定的 JSON，在线改一个字就可能让记忆整理悄悄失效；
 - 愿景要求规则写进程序、有回归测试（`docs/product-vision.md`）；
-- 系统提示每次运行都会重拼（`apps/agent-service/src/production-run-policy.ts`），改一个字，所有进行中对话的缓存都会整段失效一次（`.claude/rules/prompt-prefix.md` 第 1、6 条）。
+- 系统提示每次运行都会重拼（`apps/agent-service/src/production-run-policy.ts`），改一个字，所有进行中对话的缓存都会整段失效一次（`.agents/instructions/prompt-prefix.md` 第 1、6 条）。
 
 [返回阅读导航](#contents)
 

@@ -1,0 +1,6 @@
+# PR 539 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 低：分页硬上限 20 页/1 万条，超过后仍会丢掉最新状态，并把每个窗口的查询放大到最多 20 次。超过 1 万条才触发，触发时抛错走失败即发，通知照常送出不丢（production-delivery-timing.ts:21-22,85-99）；每窗口正常一页，读放大只在异常高频时出现；第 1 轮第 2、6 条已判过同类，沿用，不在本 PR 改
+- 2（deepseek-v4.1-flash）不成立：### 2. 低：限流和送达时机失败仍被记成“规则闸门失败”，第 3 条只补了触发、没改标签。沿用第 1 轮第 3 条原判：ADR 0273 第 5 条写的是“发送闸门失败的诊断”，与现有事件名一致；触发缺口上一轮已补，标签无新证据
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：启动顺序修复没有自动检查，现有启动测试没有配置 `runPolicy.deliveryTiming`。缺的是启动顺序的回归测试，不是现在的错误；现行代码 service-main.ts 先建 http 再 webPush.start()，行为正确，可补启动级测试但不影响正确性
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4. 低（影响为推测）：阈值改成浮点比较后 `confidencePermille` 仍是四舍五入值，可能和 action 矛盾。delivery-timing.ts:282-285 的 confidencePermille 当前没有消费端（#timed 只看 action/reasonCode/judged/signals，账本不存概率），现在不会出错，只是以后接展示时可能踩坑

@@ -331,6 +331,22 @@ describe("source-mapped coverage contract", () => {
       b: {},
     };
     expect(() => analyze({ [filename]: empty })).toThrow("empty executable denominator");
+    const negative = record();
+    negative.b[0][1] = -2;
+    expect(() => analyze({ [filename]: negative })).toThrow(
+      `invalid branch hit count: ${filename} branch 0 line 2 type "cond-expr" counts [1,-2]`,
+    );
+    const implicitElse = record();
+    implicitElse.branchMap[0] = {
+      type: "if",
+      line: 2,
+      loc: loc(2),
+      locations: [loc(2, 2, 16, 17), { start: {}, end: {} }],
+    };
+    implicitElse.b[0] = [3, -2];
+    expect(() => analyze({ [filename]: implicitElse })).toThrow(
+      `invalid branch hit count: ${filename} branch 0 line 2 type "if" counts [3,-2]`,
+    );
     expect(() =>
       analyze({ [filename]: empty }, new Map([[filename, "export type Nothing = string;\n"]])),
     ).toThrow("all production executable denominators");

@@ -83,12 +83,16 @@ async function fixture() {
   };
   await resource.repository.authorizationStore().createApproval(approval);
   let beforeAuthentication = async (_device: string) => {};
+  const resolved: string[] = [];
   const gateway = (repository: SqliteProductStateRepository) =>
     createProductionApprovalGateway({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       repository,
       authority: () => SERVICE_AUTHORITY.product,
       clock,
+      onApprovalResolved: async (resolvedApproval) => {
+        resolved.push(resolvedApproval.id);
+      },
       access: { authorize: async () => ({ allowed: true, reasonCode: "TEST_OWNER" }) },
       recentAuthentication: {
         assertRecentAuthentication: async ({ authentication, expectedAuthenticationRef }) => {
@@ -180,6 +184,7 @@ async function fixture() {
     authentication,
     command,
     gateways,
+    resolved,
     request,
     snapshot,
     setNow: (value: string) => {
@@ -223,6 +228,15 @@ it("accepts a valid production approval and independently reads its one grant", 
     approval: { status: "approved", revision: 2 },
     completed: { count: 1 },
   });
+  expect(f.snapshot().grants).toHaveLength(1);
+});
+
+it("calls the approval callback again when a retry hits the already-decided approval", async () => {
+  const f = await fixture();
+  await f.request(0, "device-one", "approved");
+  expect(f.resolved).toEqual([f.approval.id]);
+  await f.request(0, "device-one", "approved", "device-one-retry");
+  expect(f.resolved).toEqual([f.approval.id, f.approval.id]);
   expect(f.snapshot().grants).toHaveLength(1);
 });
 

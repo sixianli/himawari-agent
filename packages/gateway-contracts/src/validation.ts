@@ -46,14 +46,27 @@ export function enumeration<const TValues extends readonly string[]>(
   };
 }
 
+export const MACHINE_STRING_MAX_LENGTH = 128;
+
 export const machineString: Schema<string> = {
   parse(input, path = "$") {
     if (
       typeof input !== "string" ||
-      input.length > 128 ||
+      input.length > MACHINE_STRING_MAX_LENGTH ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)
     ) {
-      fail(path, "expected a 1-128 character machine string");
+      fail(path, `expected a 1-${MACHINE_STRING_MAX_LENGTH} character machine string`);
+    }
+    return input;
+  },
+};
+
+export const PROACTIVE_SOURCE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+
+export const proactiveSourceName: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !PROACTIVE_SOURCE_NAME_PATTERN.test(input)) {
+      fail(path, "expected a registered proactive source name");
     }
     return input;
   },

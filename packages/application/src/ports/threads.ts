@@ -48,6 +48,7 @@ export interface ThreadUpdateInput {
 }
 
 export interface AdmitOwnerMessageInput {
+  readonly triggerSource?: "user_message" | "external_event";
   readonly modelSelection?: import("./run-execution-source.js").RunModelSelection;
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;

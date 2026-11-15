@@ -105,6 +105,7 @@ struct DeviceActionResultRow: View {
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
         let detail = view.detail.localized()
+        if kind == .other { return detail.isEmpty ? L.text("result.other.update") : detail }
         guard kind == .notDone, let reason = view.reason, !reason.isEmpty else { return detail }
         return L.format("result.withReason", detail, reason)
     }
@@ -126,7 +127,7 @@ struct DeviceActionResultRow: View {
         case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
         case .checking: ProgressView().tint(Color.hmMuted)
         case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)
-        case .other: Icon(.deviceMobile, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
+        case .other: Icon(.infoCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
         }
     }
 }
@@ -188,32 +189,6 @@ struct NavigationHeader: View {
     }
 }
 
-struct SegmentPicker: View {
-    let titles: [String]
-    @Binding var selection: Int
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
-                Button {
-                    withAnimation(.snappy) { selection = index }
-                } label: {
-                    Text(title)
-                        .hmType(DesignTokens.TypeScale.secondary)
-                        .fontWeight(selection == index ? .semibold : .regular)
-                        .foregroundStyle(Color.hmText)
-                        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
-                        .background(selection == index ? Color.hmSurface : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Color.hmFill, in: Capsule())
-    }
-}
-
 public struct ApprovalsView: View {
     let model: DeviceActionsModel
     let openThread: ((String) -> Void)?
@@ -247,8 +222,8 @@ public struct ApprovalsView: View {
         VStack(spacing: 12) {
             NavigationHeader(title: Text(L.text("approval.title")), back: close)
             SegmentPicker(
-                titles: [L.format("approval.segment.pending", model.pending.count), L.text("approval.segment.handled")],
-                selection: $segment
+                selection: $segment,
+                options: [(0, L.format("approval.segment.pending", model.pending.count)), (1, L.text("approval.segment.handled"))]
             )
             .padding(.horizontal, 16)
             ScrollView {
@@ -432,88 +407,27 @@ public struct ApprovalDetailView: View {
     }
 }
 
-public struct ThisDevice: Equatable, Sendable {
-    public enum Link: String, Equatable, Sendable {
-        case online
-        case connecting
-        case offline
-    }
+struct ApprovalsEntryRow: View {
+    let count: Int
 
-    public let name: String
-    public let link: Link
-    public let pairedAt: Date?
-    public let version: String
-
-    public static var title: String {
-        #if os(macOS)
-        L.text("device.this.mac")
-        #else
-        L.text("device.this.iphone")
-        #endif
-    }
-
-    public static func version(_ short: String, channel: String) -> String {
-        L.format("device.version.value", short, L.text("device.channel.\(channel)"))
-    }
-
-    public init(name: String, link: Link, pairedAt: Date?, version: String) {
-        self.name = name
-        self.link = link
-        self.pairedAt = pairedAt
-        self.version = version
-    }
-}
-
-public struct ThisDeviceView: View {
-    let device: ThisDevice
-    let model: DeviceActionsModel
-    let back: () -> Void
-
-    public init(device: ThisDevice, model: DeviceActionsModel, back: @escaping () -> Void) {
-        self.device = device
-        self.model = model
-        self.back = back
-    }
-
-    public var body: some View {
-        VStack(spacing: 0) {
-            NavigationHeader(title: Text(ThisDevice.title), back: back)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    GroupedSection {
-                        valueRow(L.text("device.name"), Text(device.name))
-                        RowSeparator()
-                        valueRow(L.text("device.link"), Text(L.text("device.link.\(device.link.rawValue)")), color: device.link == .online ? Color.hmSuccess : Color.hmMuted)
-                        if let pairedAt = device.pairedAt {
-                            RowSeparator()
-                            valueRow(L.text("device.pairedAt"), Text(pairedAt, format: .dateTime.month().day()))
-                        }
-                        RowSeparator()
-                        valueRow(L.text("device.version"), Text(device.version))
-                    }
-                    DeviceAbilitiesSection(model: model)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 40)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .himawariScreenBackground()
-    }
-
-    private func valueRow(_ title: String, _ value: Text, color: Color = Color.hmMuted) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
+    var body: some View {
+        HStack(spacing: 14) {
+            Icon(.handStop, size: DesignTokens.IconSize.listRow)
+                .foregroundStyle(Color.hmText)
+            Text(L.text("approval.title"))
                 .hmType(DesignTokens.TypeScale.body)
                 .foregroundStyle(Color.hmText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            value
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(color)
-                .lineLimit(1)
+            if count > 0 {
+                Text(count, format: .number)
+                    .hmType(DesignTokens.TypeScale.secondary)
+                    .foregroundStyle(Color.hmMuted)
+            }
+            Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                .foregroundStyle(Color.hmMuted)
         }
         .frame(minHeight: DesignTokens.Size.rowMinHeight)
+        .contentShape(Rectangle())
     }
 }
 

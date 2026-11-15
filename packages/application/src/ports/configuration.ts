@@ -1,6 +1,11 @@
-import type { AgentId, DeploymentId, DemoLocale, OwnerId } from "@himawari-agent/domain";
+import type { AgentId, DemoLocale, DeploymentId, OwnerId } from "@himawari-agent/domain";
+import type { DeliveryTimingConfiguration } from "../services/delivery-timing.js";
+import type { VoiceAddresseeConfiguration } from "../services/voice-addressee.js";
+import type { ApplePushConfiguration } from "./apple-push.js";
 import type { DataClassification } from "./common.js";
+import type { DeviceConfiguration } from "./device-limits.js";
 import type { ModelProviderRouting } from "./intelligence.js";
+import type { PerceptionConfiguration } from "./perception.js";
 import type { WebProviderId } from "./web-providers.js";
 
 export interface SecretReferenceDescriptor {
@@ -228,6 +233,36 @@ export interface WebPushConfiguration {
   readonly subject: string;
 }
 
+export interface HomeFeedConfiguration {
+  readonly awaitingLimit: number;
+  readonly otherLimit: number;
+  readonly sourceReadLimit: number;
+  readonly deadlineLeadMinutes: number;
+  readonly recentHours: number;
+  readonly upcomingLimit: number;
+  readonly upcomingDays: number;
+}
+
+export interface SearchAskConfiguration {
+  readonly candidateLimit: number;
+  readonly basisLimit: number;
+  readonly askLimit: number;
+  readonly answerCharacters: number;
+  readonly minimumCoveragePercent: number;
+  readonly indexTermLimit: number;
+  readonly indexRebuildBatch: number;
+}
+
+export const DEFAULT_SEARCH_ASK: SearchAskConfiguration = Object.freeze({
+  candidateLimit: 20,
+  basisLimit: 1,
+  askLimit: 0,
+  answerCharacters: 2000,
+  minimumCoveragePercent: 50,
+  indexTermLimit: 2000,
+  indexRebuildBatch: 200,
+});
+
 export interface ProactiveGmailConfiguration {
   readonly clientId: string;
   readonly clientSecretRef: string;
@@ -282,6 +317,49 @@ export interface MuseIntakeConfiguration {
   readonly gapExportSecretRef?: string;
 }
 
+export interface ImportDuplicateTuning {
+  readonly yesAtLeastPermille: number;
+  readonly noAtMostPermille: number;
+  readonly existingPerRequest: number;
+  readonly existingCharactersPerRequest: number;
+  readonly candidatesPerRequest: number;
+  readonly maximumExistingMemories: number;
+  readonly maximumRequests: number;
+  readonly dailyMaximumRequests: number;
+  readonly requestTimeoutMs: number;
+}
+
+export interface ImportDuplicateConfiguration extends ImportDuplicateTuning {
+  readonly model: string;
+  readonly secretRef: string;
+}
+
+export const IMPORT_DUPLICATE_DEFAULTS: ImportDuplicateTuning = Object.freeze({
+  yesAtLeastPermille: 700,
+  noAtMostPermille: 300,
+  existingPerRequest: 200,
+  existingCharactersPerRequest: 30_000,
+  candidatesPerRequest: 20,
+  maximumExistingMemories: 1_000,
+  maximumRequests: 150,
+  dailyMaximumRequests: 1_500,
+  requestTimeoutMs: 15_000,
+});
+
+export const IMPORT_DUPLICATE_RANGES: Readonly<
+  Record<keyof ImportDuplicateTuning, readonly [number, number]>
+> = Object.freeze({
+  yesAtLeastPermille: [500, 1000],
+  noAtMostPermille: [0, 500],
+  existingPerRequest: [10, 500],
+  existingCharactersPerRequest: [2_000, 100_000],
+  candidatesPerRequest: [1, 50],
+  maximumExistingMemories: [0, 5_000],
+  maximumRequests: [1, 1_000],
+  dailyMaximumRequests: [1, 100_000],
+  requestTimeoutMs: [1_000, 60_000],
+});
+
 export const REAL_EVAL_MODES = ["off", "once", "weekly"] as const;
 export type RealEvalMode = (typeof REAL_EVAL_MODES)[number];
 export const REAL_EVAL_WEEKLY_CAP_MICROS_MAXIMUM = 500_000;
@@ -299,13 +377,73 @@ export interface McpReadConfiguration {
   readonly proposals?: true;
 }
 
+export interface OwnerProposalConfiguration {
+  readonly pendingLimit?: number;
+  readonly expiresAfterDays?: number;
+}
+
+export interface ThinkWorthConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly yesAtLeastPermille: number;
+  readonly noAtMostPermille: number;
+  readonly requestTimeoutMs: number;
+}
+
+export const THINK_WORTH_DEFAULTS = Object.freeze({
+  yesAtLeastPermille: 700,
+  noAtMostPermille: 300,
+  requestTimeoutMs: 15_000,
+});
+
+export interface ThinkInboxConfiguration {
+  readonly worth?: ThinkWorthConfiguration;
+  readonly queueLimit?: number;
+  readonly dailyLimit?: number;
+  readonly expiresAfterHours?: number;
+  readonly stalledAfterMinutes?: number;
+  readonly maxAttempts?: number;
+  readonly summaryCharacters?: number;
+}
+
+export interface ToolRefusalConfiguration {
+  readonly consecutive: number;
+  readonly total: number;
+}
+
+export const DEFAULT_TOOL_REFUSALS: ToolRefusalConfiguration = Object.freeze({
+  consecutive: 3,
+  total: 20,
+});
+
+export interface OwnerIntentCheckConfiguration {
+  readonly enabled: boolean;
+  readonly minConfidence: number;
+  readonly timeoutMs: number;
+  readonly model: string;
+  readonly secretRef: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly ownerProposals?: OwnerProposalConfiguration;
+  readonly thinkInbox?: ThinkInboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
+  readonly toolRefusals?: ToolRefusalConfiguration;
+  readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;
   readonly realEval?: RealEvalConfiguration;
   readonly museIntake?: MuseIntakeConfiguration;
+  readonly importDuplicates?: ImportDuplicateConfiguration;
   readonly mcpRead?: McpReadConfiguration;
   readonly webPush?: WebPushConfiguration;
+  readonly applePush?: ApplePushConfiguration;
+  readonly device?: DeviceConfiguration;
+  readonly homeFeed?: HomeFeedConfiguration;
+  readonly searchAsk?: SearchAskConfiguration;
+  readonly perception?: PerceptionConfiguration;
+  readonly voiceAddressee?: VoiceAddresseeRouteConfiguration;
+  readonly deliveryTiming?: DeliveryTimingRouteConfiguration;
+  readonly homeUrgency?: HomeUrgencyConfiguration;
   readonly proactive?: ProactiveConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
@@ -318,6 +456,18 @@ export interface RunPolicyConfiguration {
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
+}
+
+export interface DeliveryTimingRouteConfiguration extends DeliveryTimingConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
+}
+
+export interface VoiceAddresseeRouteConfiguration extends VoiceAddresseeConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly inputMicrosPerMillionTokens: number;
 }
 
 export interface AutomaticReviewConfiguration {
@@ -355,4 +505,17 @@ export interface ProductConfiguration {
 
 export interface ConfigurationPort {
   load(): Promise<ProductConfiguration>;
+}
+
+export interface HomeUrgencyConfiguration {
+  readonly enabled: boolean;
+  readonly modelRef?: string;
+  readonly dailyLimit: number;
+  readonly dailyCostMicros: number;
+  readonly perCall: number;
+  readonly referenceLimit: number;
+  readonly requestTimeoutMs: number;
+  readonly checkIntervalSeconds: number;
+  readonly retryAfterHours: number;
+  readonly affirmLabelMax: Readonly<Record<string, number>>;
 }

@@ -1,3 +1,4 @@
+import type { DataClassification } from "../ports/common.js";
 import { currencyExponent, type MailAmount, MISSING_AMOUNT, type MoneyState } from "./amount.js";
 import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
@@ -7,9 +8,12 @@ export type RuleOutcome =
   | "suppress_push"
   | "require_notify"
   | "require_whole_thread"
-  | "defer_to_quiet_hours";
+  | "defer_to_quiet_hours"
+  | "allow_preauthorized"
+  | "ask_owner"
+  | "refuse";
 export type RuleOrigin = "built_in" | "owner_setting";
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
 
 export function ruleIsEnforced(status: RuleStatus): boolean {
   return status === "active" || status === "needs_review";
@@ -18,6 +22,11 @@ export function ruleIsEnforced(status: RuleStatus): boolean {
 export interface RuleExample {
   readonly facts: RuleFacts;
   readonly hit: boolean;
+}
+
+export interface RuleSharedParameters {
+  readonly classification: Exclude<DataClassification, "restricted">;
+  readonly values: Readonly<Record<string, unknown>>;
 }
 
 export interface RuleRecord {
@@ -30,6 +39,7 @@ export interface RuleRecord {
   readonly source: string;
   readonly status: RuleStatus;
   readonly examples: readonly RuleExample[];
+  readonly sharedParameters?: RuleSharedParameters;
 }
 
 export const RULE_IDS = Object.freeze({
@@ -219,6 +229,10 @@ export function importantSenderRule(senders: readonly string[], revision: number
     source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
     status: "active",
     examples: importantSenderExamples(senders),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ importantSenders: senders }),
+    }),
   });
 }
 
@@ -295,6 +309,10 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
     source: "ADR 0106；主人的设置“静默时段”",
     status: "active",
     examples: quietHoursExamples(periods),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ quietHours: periods }),
+    }),
   });
 }
 
@@ -311,7 +329,11 @@ function inQuietPeriod(period: QuietPeriod, weekday: number, minutes: number): b
   );
 }
 
-function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExample[] {
+export function quietHoursExamples(
+  periods: readonly QuietPeriod[],
+  extraFacts: Readonly<Record<string, unknown>> = {},
+  hitWhen: (extra: Readonly<Record<string, unknown>>) => boolean = () => true,
+): readonly RuleExample[] {
   const moments = new Map<string, { readonly weekday: number; readonly minutes: number }>();
   const add = (weekday: number, minutes: number) => {
     const day = (weekday + Math.floor(minutes / MINUTES_PER_DAY) + 7) % 7;
@@ -334,11 +356,13 @@ function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExamp
     [...moments.values()].map(({ weekday, minutes }) =>
       Object.freeze({
         facts: {
+          ...extraFacts,
           local_minutes: minutes,
           local_weekday: weekday,
           local_previous_weekday: (weekday + 6) % 7,
         },
-        hit: periods.some((period) => inQuietPeriod(period, weekday, minutes)),
+        hit:
+          hitWhen(extraFacts) && periods.some((period) => inQuietPeriod(period, weekday, minutes)),
       }),
     ),
   );
@@ -410,6 +434,8 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
     "require_whole_thread",
   ] as const),
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  push_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  action: Object.freeze(["allow_preauthorized", "ask_owner", "refuse"] as const),
 });
 
 const AMOUNT_FIELD_NAMES: readonly string[] = ruleFields("mail_item")

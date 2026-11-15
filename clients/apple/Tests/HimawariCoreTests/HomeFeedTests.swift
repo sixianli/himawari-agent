@@ -3,13 +3,13 @@ import HimawariCore
 import Testing
 
 struct HomeFeedTests {
-    private func fixture() throws -> HomeSnapshot {
+    private func fixture() throws -> HomeFeedSnapshot {
         let url = try #require(Bundle.module.url(forResource: "home-snapshot", withExtension: "json", subdirectory: "Fixtures"))
-        return try HomeSnapshot.decode(Data(contentsOf: url))
+        return try HomeFeedSnapshot.decode(Data(contentsOf: url))
     }
 
-    private func item(_ key: String, awaits: Bool, actions: [HomeAction] = HomeFeedTests.pair) -> HomeItem {
-        HomeItem(
+    private func item(_ key: String, awaits: Bool, actions: [HomeFeedAction] = HomeFeedTests.pair) -> HomeFeedItem {
+        HomeFeedItem(
             key: key,
             kind: awaits ? "heads_up" : "done",
             awaitsOwner: awaits,
@@ -22,12 +22,12 @@ struct HomeFeedTests {
     }
 
     private static let pair = [
-        HomeAction(action: "done", label: "完成", polarity: .positive),
-        HomeAction(action: "mute", label: "不再提醒", polarity: .negative),
+        HomeFeedAction(action: "done", label: "完成", polarity: .positive),
+        HomeFeedAction(action: "mute", label: "不再提醒", polarity: .negative),
     ]
 
-    private func snapshot(_ items: [HomeItem], awaiting: Int? = nil, incomplete: [String] = []) -> HomeSnapshot {
-        HomeSnapshot(
+    private func snapshot(_ items: [HomeFeedItem], awaiting: Int? = nil, incomplete: [String] = []) -> HomeFeedSnapshot {
+        HomeFeedSnapshot(
             items: items,
             awaitingCount: awaiting ?? items.filter(\.awaitsOwner).count,
             incompleteSources: incomplete,
@@ -51,7 +51,7 @@ struct HomeFeedTests {
 
     @Test func rejectsAnotherMessageType() {
         let data = Data(#"{"type":"thread.snapshot","payload":{}}"#.utf8)
-        #expect(throws: (any Error).self) { try HomeSnapshot.decode(data) }
+        #expect(throws: (any Error).self) { try HomeFeedSnapshot.decode(data) }
     }
 
     @Test func keepsTheServerOrderExactly() {
@@ -103,9 +103,9 @@ struct HomeFeedTests {
     }
 
     @Test func choicePutsTheNegativeOnTheLeftAndFallsBackToNeutral() {
-        let snooze = HomeAction(action: "snooze", label: "稍后再提醒", polarity: .neutral)
-        let done = HomeAction(action: "done", label: "完成", polarity: .positive)
-        let dismiss = HomeAction(action: "dismiss", label: "知道了", polarity: .negative)
+        let snooze = HomeFeedAction(action: "snooze", label: "稍后再提醒", polarity: .neutral)
+        let done = HomeFeedAction(action: "done", label: "完成", polarity: .positive)
+        let dismiss = HomeFeedAction(action: "dismiss", label: "知道了", polarity: .negative)
         #expect(item("x", awaits: true, actions: [snooze, done, dismiss]).choice?.decline == dismiss)
         #expect(item("x", awaits: true, actions: [snooze, done]).choice?.decline == snooze)
         #expect(item("x", awaits: true, actions: [dismiss, snooze]).choice?.confirm == snooze)

@@ -19,7 +19,7 @@ public enum HomeLocale: String, Codable, Sendable, CaseIterable {
     }
 }
 
-public struct HomeAction: Codable, Sendable, Equatable, Hashable {
+public struct HomeFeedAction: Codable, Sendable, Equatable, Hashable {
     public enum Polarity: String, Codable, Sendable {
         case positive
         case negative
@@ -48,7 +48,7 @@ public struct HomeAction: Codable, Sendable, Equatable, Hashable {
     }
 }
 
-public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
+public struct HomeFeedItem: Codable, Sendable, Equatable, Identifiable {
     public enum Kind: Equatable, Sendable {
         case headsUp
         case approval
@@ -112,7 +112,7 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
     public let source: Source
     public let deadline: String?
     public let createdAt: String
-    public let actions: [HomeAction]
+    public let actions: [HomeFeedAction]
     public let rank: String
     public let dataClassification: String
 
@@ -129,7 +129,7 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
         source: Source,
         deadline: String? = nil,
         createdAt: String,
-        actions: [HomeAction] = [],
+        actions: [HomeFeedAction] = [],
         rank: String = "unscored",
         dataClassification: String = "personal"
     ) {
@@ -167,10 +167,10 @@ public struct HomeItem: Codable, Sendable, Equatable, Identifiable {
 }
 
 public struct HomeChoice: Sendable, Equatable {
-    public let decline: HomeAction?
-    public let confirm: HomeAction
+    public let decline: HomeFeedAction?
+    public let confirm: HomeFeedAction
 
-    init?(_ actions: [HomeAction]) {
+    init?(_ actions: [HomeFeedAction]) {
         let positive = actions.first { $0.polarity == .positive }
         let negative = actions.first { $0.polarity == .negative }
         let neutral = actions.first { $0.polarity == .neutral }
@@ -213,8 +213,8 @@ public struct HomeUpcoming: Codable, Sendable, Equatable, Identifiable {
     public var due: Date? { HomeTimestamp.parse(dueAt) }
 }
 
-public struct HomeSnapshot: Codable, Sendable, Equatable {
-    public let items: [HomeItem]
+public struct HomeFeedSnapshot: Codable, Sendable, Equatable {
+    public let items: [HomeFeedItem]
     public let awaitingCount: Int
     public let awaitingTruncated: Bool
     public let incompleteSources: [String]
@@ -222,7 +222,7 @@ public struct HomeSnapshot: Codable, Sendable, Equatable {
     public let revision: String
     public let generatedAt: String
 
-    public init(items: [HomeItem], awaitingCount: Int, awaitingTruncated: Bool = false, incompleteSources: [String] = [], upcoming: [HomeUpcoming], revision: String, generatedAt: String) {
+    public init(items: [HomeFeedItem], awaitingCount: Int, awaitingTruncated: Bool = false, incompleteSources: [String] = [], upcoming: [HomeUpcoming], revision: String, generatedAt: String) {
         self.items = items
         self.awaitingCount = awaitingCount
         self.awaitingTruncated = awaitingTruncated
@@ -232,10 +232,10 @@ public struct HomeSnapshot: Codable, Sendable, Equatable {
         self.generatedAt = generatedAt
     }
 
-    public static func decode(_ data: Data) throws -> HomeSnapshot {
+    public static func decode(_ data: Data) throws -> HomeFeedSnapshot {
         struct Envelope: Decodable {
             let type: String
-            let payload: HomeSnapshot
+            let payload: HomeFeedSnapshot
         }
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
         guard envelope.type == "home.snapshot" else { throw DeviceAPIError.invalidResponse }
@@ -244,14 +244,14 @@ public struct HomeSnapshot: Codable, Sendable, Equatable {
 }
 
 public struct HomeLayout: Sendable, Equatable {
-    public let lead: HomeItem?
-    public let rows: [HomeItem]
+    public let lead: HomeFeedItem?
+    public let rows: [HomeFeedItem]
     public let badge: Int?
     public let upcoming: [HomeUpcoming]
 
     public var isQuiet: Bool { lead == nil && rows.isEmpty }
 
-    public init(_ snapshot: HomeSnapshot, settled: Set<String> = []) {
+    public init(_ snapshot: HomeFeedSnapshot, settled: Set<String> = []) {
         let items = snapshot.items.filter { !settled.contains($0.key) }
         let leadIndex = items.firstIndex { $0.awaitsOwner && $0.choice != nil }
         lead = leadIndex.map { items[$0] }
@@ -262,7 +262,7 @@ public struct HomeLayout: Sendable, Equatable {
         badge = Self.badge(snapshot, settled: settled)
     }
 
-    static func badge(_ snapshot: HomeSnapshot, settled: Set<String>) -> Int? {
+    static func badge(_ snapshot: HomeFeedSnapshot, settled: Set<String>) -> Int? {
         guard snapshot.incompleteSources.isEmpty else { return nil }
         let settledAwaiting = snapshot.items.filter { $0.awaitsOwner && settled.contains($0.key) }.count
         let count = max(0, snapshot.awaitingCount - settledAwaiting)

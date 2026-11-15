@@ -269,7 +269,7 @@ PR 使用 `pull_request`，在 opened、synchronize、reopened、ready_for_revie
 
 PR 记录 head SHA、base SHA 和实际 tested merge SHA，不擅自将 checkout 改为 PR head 来回避组合测试。`push` 结果绑定真正的默认分支提交。PR 的临时合并 SHA 产物不能冒充后来不同 SHA 的发布产物。
 
-同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
+同一 PR 的更新可取消较旧 CI。concurrency key 包含 workflow、event 和 PR/ref，避免不同 workflow 相互取消。唯一有意的例外是 `.github/workflows/pr-closed.yml`：PR 关闭或合并时，它进入这个 PR 非草稿 CI 的并发组并取消里面还在排队或在跑的运行（2026-11-14 加，原因是临时门禁例外期间 PR 不等 CI 就合，留下的运行占着 runner）。默认分支交付记录使用唯一 run key，不取消前一个已开始的构建验证。矩阵 `fail-fast: false` 保留完整诊断，不降低总体失败条件。
 
 默认 `GITHUB_TOKEN` 只有 `contents: read`，checkout 使用 `persist-credentials: false`。确有读取运行、作业或作业日志需要的 job（`main.yml` 取回汇总结论）单独申请 `actions: read`。不配置任何 write、`id-token: write` 或生产 Secret。Action 固定完整提交 SHA；工具下载验证摘要，直接调用锁定本地 executable，不让 `npx` 自动安装未知最新版。
 
@@ -307,7 +307,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 实际规则以 GitHub 回读和失败 PR 的不可合并状态为证据。规则尚未配置时记录 `enforcement_not_configured`；规则接口拒绝或管理权限不足时记录 `enforcement_unavailable`。已启用规则下的 fork 待批准、检查未运行或资源限制属于检查未完成，必须继续阻止合并，不能误报规则不存在。不得回退为本地 hook 后宣称服务端强制完成。
 
-当前个人公开仓库方案不包含 merge queue。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
+当前个人公开仓库方案不包含 GitHub 自带的 merge queue；仓库另有自建的合并队列，见 [ADR 0268](../../adr/0268-merge-queue-and-related-tests-on-prs.md)。将来仓库具备并选择该能力时，新增 `merge_group` 事件和临时组合 SHA 验证，并重新执行门禁负向矩阵。
 
 ### 11. 周期检测与 S9 交接
 
