@@ -6025,10 +6025,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
         await target(phone, UI.send).click();
         await uiExpect(phone.getByText(text).last()).toBeVisible({ timeout: 20_000 });
-        const sentTurn = phone
-          .locator(`${UI.turn}:not(.chat-turn-outgoing)`)
-          .filter({ hasText: text })
-          .last();
+        const sentTurn = phone.locator(UI.settledTurn).filter({ hasText: text }).last();
         await uiExpect(sentTurn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
         await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
         await expectPhoneLayout(phone, "after sending");
