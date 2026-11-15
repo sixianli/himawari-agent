@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批：配对、对话列表、聊天。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批（配对、对话列表、聊天）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -9,6 +9,7 @@
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
 - [截图对照原型](#ui-review)
+- [分享面板和 Safari 扩展](#handover)
 - [Mac 菜单栏 App](#mac-app)
 - [Apple Watch App](#watch-app)
 
@@ -23,11 +24,12 @@
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
 | `HimawariChat` | 对话列表和聊天 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
+| `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
 | `HimawariWatchUI` | Apple Watch App 的界面和逻辑（App 目标叫 `HimawariWatch`）：配对、等你定的一件事、抬腕说一句、到点轻敲。只在 watchOS 上编译 | 第 10A 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
-`App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，只有一个入口文件 `App/iOS/HimawariApp.swift`，其余代码都从上面的包里来。
+`App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，有三个目标：App（入口文件 `App/iOS/HimawariApp.swift`）、分享扩展 `App/ShareExtension`、Safari 扩展 `App/SafariExtension`（扩展，extension，是 iOS 允许 App 嵌在别的 App 里出现的小部件）。其余代码都从上面的包里来。
 
 [返回目录](#apple-clients)
 
@@ -37,7 +39,8 @@
 需要 Xcode 26 或更新的版本，手机系统 iOS 26 或更新。现在用免费的 Apple ID 就能装到自己手机上（免费账号装的 App 7 天后要重新装一次）。
 
 1. 在 Xcode 里打开 `clients/apple/App/Himawari.xcodeproj`。第一次打开会自动下载依赖的 `swift-crypto` 包，等左边栏不再转圈。
-2. 左边栏点最上面的 Himawari 工程 → 中间点 TARGETS 下的 Himawari → Signing & Capabilities → Team 选你的 Apple ID。如果提示 Bundle Identifier 被占用，把 `win.siyi.himawari` 改成别的（例如末尾加你的名字）。
+2. 左边栏点最上面的 Himawari 工程 → 中间 TARGETS 下的 Himawari、HimawariShareExtension、HimawariSafariExtension 三个目标，各自在 Signing & Capabilities 里把 Team 选成你的 Apple ID。如果提示 Bundle Identifier 被占用，把 `win.siyi.himawari` 改成别的（例如末尾加你的名字），两个扩展的 `win.siyi.himawari.share`、`win.siyi.himawari.safari` 前面要跟着改成一样的。三个目标共用一个 App Group（`HIMAWARI_APP_GROUP`，让 App 和扩展共用一块存储）和一个钥匙串分组（`HIMAWARI_KEYCHAIN_GROUP`，让扩展能用 App 配对时存的设备密钥），这两个值在工程级的构建设置里，改了 Bundle Identifier 时最好一起改。
+   免费的 Apple ID 不支持 App Group，三个目标都签不过。这时在 Xcode 里把工程级构建设置 `HIMAWARI_APP_GROUP` 清空，并把 `HIMAWARI_ENTITLEMENTS_SUFFIX` 设成 `.keychain-only`（命令行是 `xcodebuild HIMAWARI_APP_GROUP= HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only`），三个目标就只用钥匙串分组。代价是扩展和 App 不再共用存储：分享面板和 Safari 扩展传不上去时不会排队，会显示“没能确认传上，稍后再分享一次”（可能已经传上，只是没收到回复），要重新分享一次，同一内容可能因此收到两份；App 里“开或关”的开关只写进 App 自己的存储，扩展看不到；Safari 的“已用过”记录由扩展写进扩展自己的存储，App 看不到。所以扩展一直按默认开着，App 里关掉分享或 Safari 并不会让扩展停下，Safari 引导页也不会因为扩展用过而前进。付费账号用默认设置，不用改。
 3. 用数据线连上 iPhone，窗口顶部的设备选你的 iPhone，按 ⌘R。第一次装完，在手机“设置 → 通用 → VPN 与设备管理”里信任你的开发者证书，再点开 App。
 4. 跑单元测试：在 Xcode 里另外打开 `clients/apple/Package.swift`，顶部设备选 “My Mac”，按 ⌘U。全部通过是绿色对勾。
 
@@ -106,6 +109,35 @@ clients/apple/scripts/ui-review.sh --approve
 ```
 
 把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。
+
+[返回目录](#apple-clients)
+
+<a id="handover"></a>
+## 分享面板和 Safari 扩展
+
+两条路把东西交给 Himawari，界面照原型“让 Himawari 感知”第 6 屏和“补画的几处”第 1、2 屏：
+
+- 分享面板：在别的 App 里点分享 → Himawari。网页、链接、文字、图片都行；从 Safari 分享时用 `App/ShareExtension/PagePreprocessor.js` 读出这一页的全文。界面是 `HimawariShare` 里的 `HandoverSheet`。
+- Safari 扩展：在 Safari 里点 Himawari，弹出的小面板是网页（`App/SafariExtension/Resources/` 下的 `popup.html`、`popup.css`、`popup.js`），它在你点的那一页执行 `page.js` 读出全文，再经 `background.js` 交给原生部分 `SafariWebExtensionHandler` 发给服务器。面板上的字也由原生部分给，和分享面板用同一份文案。
+
+写了要它做什么，就开一个新对话，这一页作为附件；没写，就只存一条感知记录。没连上服务器时先排队，回到 App 时自动补交。
+
+面板的颜色、尺寸都来自 `tokens.json`：`tokens.css` 由生成脚本产出，`npm run check:apple-design` 检查它是不是最新，并拦下面板代码里直接写的颜色和尺寸。改了 `tokens.json` 后：
+
+```bash
+node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026-11-12-v2/tokens.json clients/apple/Sources/HimawariDesign/Generated/DesignTokens.swift clients/apple/App/SafariExtension/Resources/tokens.css
+```
+
+面板左上角的葵盘和扩展图标从 App 里画葵盘的同一套算法生成（`Sources/HimawariDesign/SunflowerSeeds.swift`）：
+
+```bash
+cd clients/apple
+swiftc -o /tmp/make-sunflower-svg Sources/HimawariDesign/SunflowerSeeds.swift scripts/make-sunflower-svg/main.swift
+/tmp/make-sunflower-svg full App/SafariExtension/Resources/images/sunflower.svg
+node scripts/make-safari-icons.mjs App/SafariExtension/Resources/images/sunflower.svg App/SafariExtension/Resources/images 48 96 128 256 512
+```
+
+Safari 面板的截图不用模拟器：`node clients/apple/scripts/safari-panel-review.mjs [输出目录]` 用 Chromium 打开面板、模拟 Safari 的接口，浅色、深色各截一遍全部状态（默认放 `clients/apple/ui-review/safari-panel/`）。找不到浏览器时用 `HIMAWARI_CHROMIUM_PATH` 指定。`test/tooling/safari-panel.test.ts` 用同一套场景检查面板的行为。分享面板和两个设置页的截图走上一节的 `ui-review.sh`。
 
 [返回目录](#apple-clients)
 

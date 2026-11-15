@@ -54,12 +54,12 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | # | 做法 | 来源 | Himawari 现状 |
 |---|---|---|---|
 | 1 | 固定的在前，会变的在后：工具定义 → 系统提示 → 历史 → 最后一条用户消息 | S1、S2、S4、S5 | 做到 |
-| 2 | 每轮会变的内容只放最后一条用户消息；系统提示和工具定义里没有会变的值 | S5、S7 | 做到（[ADR 0164](adr/0164-move-changing-values-out-of-the-request-head.md)：运行环境说明放在最后一条消息里，只在第一轮、内容变化时和压缩后发） |
+| 2 | 每轮会变的内容只放最后一条用户消息；系统提示和工具定义里没有会变的值 | S5、S7 | 做到（[ADR 0164](adr/0164-move-changing-values-out-of-the-request-head.md)：运行环境说明放在最后一条消息里，只在第一轮、内容变化时和压缩后发）；感知记录的内容只作为 `perception_read` 这一次调用的工具结果追加在末尾，不进系统提示、工具定义，也不插到更早的位置 |
 | 3 | 告诉模型新情况时追加消息，不改系统提示 | S5、S6 | 做到（ADR 0164：工具循环停止、运行中压缩后补发运行环境说明都用追加消息） |
 | 4 | 已发内容不改、不重排、不删，只追加 | S2、S7 | 做到（[ADR 0149](adr/0149-append-only-model-requests.md)）；例外四种，见规则第 4 条 |
 | 5 | 存历史存实际发出去的那条 | 本项目事故 I-66 | 做到；出口遮盖除外：历史存遮盖前的内容，每次发送时确定地重新遮盖（遮盖密钥不变、前面的历史不变、对话的遮盖规则版本不变时字节相同；规则版本随冻结的提示记录固定，见 [ADR 0188](adr/0188-recognize-passwords-without-a-separator.md)） |
 | 6 | 系统提示和工具按对话冻结，只在规定的几种情况下换新并留记录 | S6 | 做到（[ADR 0165](adr/0165-freeze-the-request-head-per-conversation.md)）；“工具参数结构变了也换新”2026-11-05 获批并已实现（只改说明文字不换新）；只在一轮运行开始时判断，运行中途不换新 |
-| 7 | 工具集合尽量不变，不能用的工具由执行端拒绝，而不是删掉 | S2、S5、S7 | 部分做到：本项目选择“工具集合变了换新一次”，只因执行句柄出现的工具接在冻结工具后面并计数；它们出现或消失的那一轮，冻结工具之后的系统提示和历史整段重算 |
+| 7 | 工具集合尽量不变，不能用的工具由执行端拒绝，而不是删掉 | S2、S5、S7 | 部分做到：本项目选择“工具集合变了换新一次”，只因执行句柄出现的工具接在冻结工具后面并计数；它们出现或消失的那一轮，冻结工具之后的系统提示和历史整段重算。`device_action`、`perception_read` 两个工具的定义是固定文字，和有没有配对设备、设备支持哪些动作无关；现在能做什么由 `device_action` 的 `describe` 结果告诉模型，所以配对、换设备、加动作都不会改变请求开头。这两个工具上线的那一次，每个老对话按“工具集合变了”换新一次 |
 | 8 | 同一对话中途不换模型、不换推理强度，其他请求参数保持稳定 | S1、S2、S6 | 换模型或推理强度会换新一次（ADR 0165），没有阻止中途更换 |
 | 9 | 同一对话的请求送到同一个服务方 | S2、S6 | Magpie 发会话亲和头（`packages/runtime-pi/src/configured-model-binding.ts` 的 `sendSessionAffinityHeaders`）；没有传缓存路由键；实际是否稳定**未核实**，见[已知差距](#gaps) |
 | 10 | 序列化确定：JSON 键顺序、工具顺序、列表顺序固定 | S7 | 冻结后系统提示和工具按原字节读回；资料块和运行环境说明的列表顺序固定（ADR 0164） |
@@ -67,7 +67,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 12 | 压缩集中做、少做，用总输入费用判断是否值得 | S2、S8 | 压缩由 Pi 自动触发；没有按费用评估 |
 | 13 | 压缩请求沿用原对话的系统提示和工具 | S5、S6 | 做到（[ADR 0207](adr/0207-compaction-request-reuses-conversation-head.md)：摘要请求用上一次普通请求的系统提示、工具和切点前的历史，末尾追加总结指令；拆分轮、溢出压缩、对不上或放不进窗口时退回 Pi 默认请求） |
 | 14 | 清理旧工具结果要成批、少做、能恢复 | S7、S8 | 没做；排在提示词第二步之后另出方案 |
-| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)），原来接在整段提示最后、排在当前时间之后；没有统一检查。回看对话（`memory.conversation-review`，[ADR 0231](adr/0231-review-past-conversations-to-fix-memory.md)）按固定指令、本段数据 JSON、最后一行当地日期的顺序排，提示渲染黄金文件 `apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt` 锁住固定部分 |
+| 15 | 后台调用也是固定的在前、会变的在后 | S2、S4 | 大体做到（例如邮件判断把当前时间放在最后）；遮盖占位符说明作为后台调用的系统提示放在最前面（`packages/runtime-pi/src/egress-context.ts` 的 `backgroundModelContext`，[ADR 0166](adr/0166-prompt-wording-batch-1-system-and-tools.md)），原来接在整段提示最后、排在当前时间之后；感知抽取（`packages/application/src/services/perception-extraction.ts`）按同样的顺序排：固定说明、资料包装、这一段的记录（按时间和编号排序）、还没完成的待办（按编号排序）、日历表、当前时间；没有统一检查。回看对话（`memory.conversation-review`，[ADR 0231](adr/0231-review-past-conversations-to-fix-memory.md)）按固定指令、本段数据 JSON、最后一行当地日期的顺序排，提示渲染黄金文件 `apps/agent-service/test/__prompt_golden__/memory.conversation-review.txt` 锁住固定部分 |
 | 16 | 分叉出去的辅助计算沿用父对话的开头 | S5 | 没做（对话标题、记忆捕获各自另起开头） |
 | 17 | 开头相同的并发请求，等第一个开始返回再发 | S1 | 同一对话一般不并发，未专门处理 |
 
@@ -95,6 +95,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 
 - **阻断检查：**`npm run check:prompt-prefix`。用真实的 Pi 适配器和出口遮盖跑多轮对话，检查后一次请求是否以前一次请求开头（`messages` 逐字节比，其他字段按值比，`max_tokens` 除外），并带反向用例。测试在 `packages/runtime-pi/test/prompt-prefix.compat.test.ts`。
 - **端到端：**`test/integration/production-http-composition-process.test.ts` 里的 `[PR-A]`、`[PR-B]` 用例，用真实服务和 SQLite 抓取原始请求体来比对。
+- **感知内容的位置：**同一个测试文件里带 `[iOS-5]` 的四条用例直接看请求的结构：感知内容只出现在最后追加的那条工具结果里；把它放进系统提示、放进工具定义、插到更早的位置或换成别的角色，检查都必须报告失败。它们算在 `check:prompt-prefix` 要求的条数里。
 - **其他测试：**换新的各种条件在 `test/integration/thread-prompt-bundles.test.ts`；运行环境说明的发送时机和运行中压缩后补发，在 `packages/runtime-pi/test/runtime-environment-block.unit.test.ts` 和 `packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts`。这些不属于 `check:prompt-prefix` 这一步。
 - **生产监控：**对话的后续轮次请求（输入至少 1024 个 token，上游报告了缓存用量）命中率低于 50% 时，服务日志写一行 `cache.follow_up_low_hit`，阈值和命中率判断见 `packages/application/src/ports/model-usage.ts`，是否后续轮次见 `apps/agent-service/src/cache-hit-monitor.ts`；`node scripts/operations/cache-hit-report.mjs <product.sqlite> --by turn` 给出分轮次的命中率。排查时先排除四种情况：缓存过期、按规则换新、换了服务方、遮盖密钥轮换。
 
@@ -107,6 +108,7 @@ Andy 在 2026-11-05 要求把这些做法整理成最佳实践，用来指导 Hi
 | 日期 | 改动 | 依据 |
 |---|---|---|
 | 2026-11-11 | 第 15 条现状：新增的回看对话后台调用按固定在前、日期在最后排（ADR 0231） | Andy 2026-11-11 对回看对话变更清单：“同意” |
+| 2026-11-12 | 第 2、7、15 条现状补上感知：感知内容只以工具结果追加；`device_action`、`perception_read` 的定义固定，上线时老对话换新一次；感知抽取的排列顺序。“怎么检查”加上 `[iOS-5]` 结构检查 | 详细设计 [苹果设备上的身体](execution/specs/2026-11-11-apple-device-body-design.md) “发给模型的路径”一节（该节写明 Andy 同意老对话只重建一次） |
 | 2026-11-10 | 第 13 条做到：压缩摘要请求沿用原对话的系统提示、工具和切点前的历史；已知差距第 1 条（压缩请求不共用开头）移到第 13 条的现状 | Andy 2026-11-09：写入待办“压缩请求吃不到缓存”；2026-11-10 要求主动推进所有事情 |
 | 2026-11-10 | 大窗口模型的压缩触发点封顶在 20 万 token（[ADR 0210](adr/0210-cap-compaction-trigger-at-200k-per-model.md)） | Andy 批准第三步方案，默认约 20 万 |
 | 2026-11-07 | 第 4 条加入第四种例外：开发用的模型复核经 Magpie 调 CodeBuddy 时，插件在 11128 拒绝后改写系统提示（ADR 0178，只影响复核脚本） | Andy 2026-11-07 对整合方案：“同意” |

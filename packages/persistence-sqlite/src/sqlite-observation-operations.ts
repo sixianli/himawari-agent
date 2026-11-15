@@ -12,6 +12,7 @@ import {
   type ObservationFact,
   type ObservationStart,
 } from "@himawari-agent/application/ledger-observation";
+import { GMAIL_SOURCE } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -242,7 +243,7 @@ export class SqliteLedgerObservationOperations {
     const connection = this.database
       .prepare(
         `SELECT status FROM proactive_connections
-         WHERE owner_id = ? AND agent_id = ? AND source = 'gmail'`,
+         WHERE owner_id = ? AND agent_id = ? AND source = '${GMAIL_SOURCE.name}'`,
       )
       .get(input.ownerId, input.agentId) as { status: "connected" | "needs_reconnect" } | undefined;
     const memory = this.database

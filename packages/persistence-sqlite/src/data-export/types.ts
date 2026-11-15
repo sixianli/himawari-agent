@@ -33,6 +33,7 @@ export interface PortableCounts {
   rules: number;
   enforcedRules: number;
   externalProposals: number;
+  ownerProposals: number;
   ruleHistoryVersions: number;
   sealedOriginals: number;
   sealedEvidenceRows: number;
@@ -106,4 +107,4 @@ export class DataExportError extends Error {
 }
 
 export const SHORT_TEXT_OMISSION_LABEL =
-  "含机密的实体名、人物名、别名、来源编号和决定记录里的短文字";
+  "含机密的实体名、人物名、别名、来源编号、决定记录和提议说明里的短文字";

@@ -14,6 +14,10 @@ import {
   RULE_UNDO_CAPABILITY_REF,
 } from "./production-owner-rules.js";
 import {
+  DEVICE_ACTION_CAPABILITY_REF,
+  PERCEPTION_READ_CAPABILITY_REF,
+} from "./production-perception-tools.js";
+import {
   REMINDER_CANCEL_CAPABILITY_REF,
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
@@ -315,6 +319,34 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     targetType: "owner-rule",
     standingRuleChange: true,
     detail: detail({ zh: "撤销规则", en: "Undo rule", ja: "ルールを取り消す" }, "ruleId"),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "perception_read",
+    family: "builtin",
+    capabilityRef: PERCEPTION_READ_CAPABILITY_REF,
+    operation: "read",
+    targetType: "owner-perception",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "查感知记录", en: "Read perception records", ja: "感知の記録を調べる" },
+      "query",
+    ),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "device_action",
+    capabilityRef: DEVICE_ACTION_CAPABILITY_REF,
+    operation: "act",
+    targetType: "owner-perception",
+    standingRuleChange: false,
+    detail: detail(
+      { zh: "让设备做一件事", en: "Ask a device to act", ja: "デバイスに操作を依頼" },
+      "action",
+    ),
   },
 ] satisfies ToolActionRow[]);
 

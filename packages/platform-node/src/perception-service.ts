@@ -14,7 +14,9 @@ import {
   type DeviceMirrorItemInput,
   type DeviceMirrorKind,
   type GatewayAuthenticationContext,
+  isOwnerSpoken,
   isUsageLimitKey,
+  isVoiceScore,
   LIMIT_CHANGE_REASON_CODE,
   ownerDayBounds,
   ownerLocalDay,
@@ -33,6 +35,7 @@ import {
   PERCEPTION_SENSES,
   PERCEPTION_SPEAKER_KINDS,
   PERCEPTION_TEXT_MAXIMUM,
+  PERCEPTION_UTTERANCE_ID_PATTERN,
   type PerceptionCaptureSource,
   type PerceptionConfiguration,
   type PerceptionDayPage,
@@ -46,6 +49,7 @@ import {
   type PerceptionSettings,
   type PerceptionSpeakerKind,
   type PerceptionStorePort,
+  perceptionSearchEvidenceText,
   perceptionTypesOfSense,
   resolvePerceptionOrigin,
   type TrackPointInput,
@@ -58,6 +62,7 @@ import {
   type UsageLimitKey,
   type UsageLimitView,
   usageLimitState,
+  type VoiceGates,
   validatePerceptionFields,
 } from "@himawari-agent/application";
 import { PAIRED_DEVICE_ERROR_CODES, PairedDeviceError } from "./paired-device-service.js";
@@ -102,7 +107,15 @@ export interface PerceptionServiceOptions {
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }) => Promise<string>;
   readonly uploadDirectory: string;
-  readonly ownerVoiceQualified?: () => boolean;
+  readonly voiceGates?: () => VoiceGates;
+  readonly searchIndex?: {
+    readonly version: string;
+    readonly rebuildBatch: number;
+    readonly termLimit: number;
+    readonly readText: (contentRef: string) => Promise<string | undefined>;
+    readonly document: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
+    readonly query: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
+  };
   readonly proactiveUsage?: {
     readonly limit: () => number;
     readonly usedSince: (scope: PerceptionScope, since: string) => Promise<number>;
@@ -209,6 +222,17 @@ export class PerceptionService {
 
   settings(scope: PerceptionScope): Promise<PerceptionSettings> {
     return this.#options.store.readSettings(this.#scope(scope));
+  }
+
+  async reserveModelCost(scope: PerceptionScope, amountMicros: number): Promise<boolean> {
+    const settings = await this.settings(scope);
+    return this.#options.store.reserveUsage({
+      ...this.#scope(scope),
+      key: "perception.model_cost.daily",
+      periodStart: ownerDayBounds(this.#now().toISOString(), this.#options.timeZone()).start,
+      amount: amountMicros,
+      limit: this.#limit(settings, "perception.model_cost.daily"),
+    });
   }
 
   #scope(scope: PerceptionScope): PerceptionScope {
@@ -398,16 +422,19 @@ export class PerceptionService {
       return invalid("text");
     let speakerKind: PerceptionSpeakerKind | null = null;
     let speakerRef: string | null = null;
+    let speakerScore: number | null = null;
     if (speaker !== undefined) {
       const parsed = plainObject(speaker);
       if (
         definition.sense !== "hearing" ||
         !parsed ||
-        !onlyKeys(parsed, ["kind", "contactRef"]) ||
-        !(PERCEPTION_SPEAKER_KINDS as readonly unknown[]).includes(parsed["kind"])
+        !onlyKeys(parsed, ["kind", "contactRef", "score"]) ||
+        !(PERCEPTION_SPEAKER_KINDS as readonly unknown[]).includes(parsed["kind"]) ||
+        (parsed["score"] !== undefined && !isVoiceScore(parsed["score"]))
       )
         return invalid("speaker");
       speakerKind = parsed["kind"] as PerceptionSpeakerKind;
+      speakerScore = (parsed["score"] as number | undefined) ?? null;
       const contactRef = parsed["contactRef"];
       if ((contactRef !== undefined) !== (speakerKind === "contact")) return invalid("speaker");
       if (contactRef !== undefined) {
@@ -428,7 +455,7 @@ export class PerceptionService {
         origin: resolvePerceptionOrigin({
           type: type as PerceptionRecordType,
           speakerKind,
-          ownerVoiceQualified: this.#options.ownerVoiceQualified?.() ?? false,
+          ownerVoiceQualified: isOwnerSpoken(speakerScore, this.#options.voiceGates?.()),
         }),
         captureSource: captureSource as PerceptionCaptureSource,
         occurredAtMs,
@@ -512,7 +539,26 @@ export class PerceptionService {
                   content: record.text,
                   dataClassification: record.input.dataClassification,
                 });
-          prepared.push({ ...record.input, contentRef });
+          const indexText = [
+            record.text ?? "",
+            perceptionSearchEvidenceText(record.input.type, record.input.evidence),
+          ]
+            .filter((part) => part !== "")
+            .join(" ");
+          const searchTerms =
+            indexText === "" || known.has(record.input.id) || !this.#options.searchIndex
+              ? undefined
+              : await this.#options.searchIndex
+                  .document(scope, indexText)
+                  .then((terms) => terms.slice(0, this.#options.searchIndex?.termLimit))
+                  .catch(() => undefined);
+          prepared.push({
+            ...record.input,
+            contentRef,
+            ...(searchTerms && this.#options.searchIndex
+              ? { searchTerms, searchVersion: this.#options.searchIndex.version }
+              : {}),
+          });
         }
         return prepared.length === 0
           ? { outcomes: [], reached: [] }
@@ -592,6 +638,80 @@ export class PerceptionService {
       return;
     this.#prunedAt.set(scopeKey, now.getTime());
     await this.prune(scope);
+  }
+
+  async search(input: {
+    readonly scope: PerceptionScope;
+    readonly query: string;
+    readonly limit: number;
+  }) {
+    const scope = this.#scope(input.scope);
+    await this.#ensureSearchIndex(scope);
+    const terms = this.#options.searchIndex
+      ? await this.#options.searchIndex.query(scope, input.query)
+      : [];
+    return terms.length === 0
+      ? []
+      : this.#options.store.searchRecords({ ...scope, terms, limit: input.limit });
+  }
+
+  #searchIndexReady = new Map<string, Promise<void>>();
+
+  #ensureSearchIndex(scope: PerceptionScope): Promise<void> {
+    const key = `${scope.ownerId}\n${scope.agentId}`;
+    const cached = this.#searchIndexReady.get(key);
+    if (cached) return cached;
+    const pending = this.rebuildSearchIndex(scope).then(
+      () => undefined,
+      (error: unknown) => {
+        this.#searchIndexReady.delete(key);
+        throw error;
+      },
+    );
+    this.#searchIndexReady.set(key, pending);
+    return pending;
+  }
+
+  async rebuildSearchIndex(scope: PerceptionScope): Promise<number> {
+    const index = this.#options.searchIndex;
+    if (!index) return 0;
+    const owned = this.#scope(scope);
+    let rebuilt = 0;
+    const failed: string[] = [];
+    for (;;) {
+      const stale = await this.#options.store.listStaleSearchRecords({
+        ...owned,
+        version: index.version,
+        limit: index.rebuildBatch,
+        excludeRecordIds: failed,
+      });
+      if (stale.length === 0) return rebuilt;
+      for (const record of stale) {
+        try {
+          let text: string | undefined;
+          if (record.contentRef !== null) {
+            text = await index.readText(record.contentRef);
+            if (text === undefined) throw new Error("PERCEPTION_INDEX_TEXT_MISSING");
+          }
+          const indexText = [text ?? "", perceptionSearchEvidenceText(record.type, record.evidence)]
+            .filter((part) => part !== "")
+            .join(" ");
+          const terms =
+            indexText === ""
+              ? []
+              : (await index.document(owned, indexText)).slice(0, index.termLimit);
+          await this.#options.store.replaceSearchTerms({
+            ...owned,
+            recordId: record.id,
+            version: index.version,
+            terms,
+          });
+          rebuilt += 1;
+        } catch {
+          failed.push(record.id);
+        }
+      }
+    }
   }
 
   async prune(scope: PerceptionScope) {
@@ -1227,6 +1347,15 @@ export class PerceptionService {
       episodeId: input.episodeId,
       cursor: input.cursor,
       limit: this.#options.configuration().listPageRows,
+    });
+  }
+
+  async recordCommandUtterance(scope: PerceptionScope, utteranceId: string): Promise<void> {
+    if (!PERCEPTION_UTTERANCE_ID_PATTERN.test(utteranceId)) return invalid("utteranceId");
+    await this.#options.store.recordCommandUtterance({
+      ...this.#scope(scope),
+      utteranceId,
+      now: this.#now().toISOString(),
     });
   }
 }

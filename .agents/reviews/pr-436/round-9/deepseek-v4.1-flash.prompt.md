@@ -1,0 +1,75 @@
+你是独立的代码复核者。
+你能用的工具：read、grep、glob，以及 git diff、git log、git show、git blame、git status 这几条 git 命令。不能修改任何文件，不能运行别的命令。不能上网。
+系统的真相在代码里。下面「作者的说法」可能有错，每一条都要对照代码核对；发现说法和代码不一致，要明确指出。
+做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。
+列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
+必答问题：
+1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.claude/rules/prompt-prefix.md#rules)。
+2. 这个改动会不会让同一段文字在不同请求里变成不同的字节（例如依赖前后文的遮盖、带时间的字段、无序的集合）？
+3. 改动有没有对应的自动检查，反向用例是否真的会失败？
+4. 改动产生或修改的每个值（标识、字段、配置键、清单项、序列化格式），每一个使用它的地方都能接受吗？逐个找到产生它的地方和使用它的地方，核对两端的校验，只看改动本身不够。依据：[I-73](../../docs/incidents-and-gates.md#incidents)，双模型复核只看了改动，没问“清单里的 id 能通过后端校验吗”。
+你的额外侧重：错误路径、不合规范或不可信的输入、安全、资源耗尽、不可撤销的操作，以及规则文件、说明文档和代码是否一致。有时另有一个复核者侧重别的方面，有时只有你一个，所以你都要回答全部必答问题、报告你发现的任何问题；侧重只决定你先查什么。在结论之前单独写一节「侧重检查」，列出你查过的这类路径和结论。
+输出格式：按严重度从高到低排列，每条写：严重度、文件:行、问题、证据（引用你亲自读到的那几行代码）、建议。把「读代码证实的」和「推测」分开写。最后逐条回答必答问题。用简体中文。
+
+---- 本次材料 ----
+仓库就是当前目录，已检出 162c431ad131296213ae16d1815bfbfdb1fb48ab。
+对比基准是 0d989adb521245a18eea3e8e26c55c27469b70c2，先运行 git diff 0d989adb521245a18eea3e8e26c55c27469b70c2..162c431ad131296213ae16d1815bfbfdb1fb48ab 看改动。
+上一轮复核到 756c4097968291a52543c3ae558cf90f1bc7dc24，先看 git diff 756c4097968291a52543c3ae558cf90f1bc7dc24..162c431ad131296213ae16d1815bfbfdb1fb48ab 的增量，但可以读任何文件。
+作者的说法（可能有错，请核对）：
+# PR 436 复核材料
+
+## 问题
+模型提的、主人没明说的邮件规则（rule_set 工具，类型 mail_must_notify / mail_read_whole_thread）以前只存成一份加密载荷（编号 rule-proposal:<32 位十六进制>），界面列不出待确认的提议，也没有“不要”：memory.rule.respond 把 confirm、reconfirm 以外的动作都当撤销。
+
+## 目标
+- 待确认的提议能列出来（固定顺序，带已用条数、上限、过期日），能采纳、能明确拒绝，并能看依据（提议产生那一刻存下的原话、试算例子、回放数字；读的时候不重算）。
+- “不要”只标记拒绝，不写规则、不写记忆。已拒绝再采纳返回已拒绝。
+- 同样内容再次提议重置为待采纳，保留拒绝次数；参数进哈希前固定键顺序。
+- 来源标记：主人说过（通过 #ownerSaid 校验）/ 模型推断，界面分别写。
+- 数量上限和过期；外部 agent（MCP）提的规则当场确认，不进列表。
+- 采纳和拒绝同时发生只能有一个生效。
+
+## 约束
+- 新增 1 张表 owner_rule_proposals，原话、参数、试算例子、回放数字仍在加密载荷里，表里只存引用。
+- 不改发给模型的内容（rule_set 工具定义和提示词未动）。
+- 不许写死：上限和过期天数随响应返回给界面。
+- 测试用真实 SQLite，不用假替身。
+
+## 已核对的事实
+- 方案：/mnt/project-files/four-features-wiring/integrated-plan.md v2 第 1–5 条；任务：coding-tasks.md 任务 1。
+- 主要改动文件：apps/agent-service/src/production-owner-rules.ts、production-memory-control.ts、production-mcp-rule-writer.ts、packages/gateway-contracts/src/contracts-v2.ts、packages/persistence-sqlite/src/sqlite-owner-rule-proposal-operations.ts 和迁移 0095、apps/control-center/src/components/rule-receipt.tsx。
+- 采纳先把表里状态 pending→accepted（认领），再写规则；写规则失败就退回 pending；对已 accepted 的提议再采纳照样走规则写入（幂等），因为旧流程允许撤销后再点同一张提议卡恢复规则。
+- 没有表行的提议（外部 agent 的、旧版本留下的）按原来的载荷路径采纳，不能拒绝。
+- 本容器已通过：typecheck、lint、format:check、check:operations、check:locale、integration 里 production-memory-capture 和 mcp-write、契约测试、control-center 相关单元测试、数据导出检查。
+- 列出的做法只是参考，请从问题本身出发，提出你认为更好的做法。
+
+## 第 2 轮增量
+第 1 轮后的修改（提交 3354f76e）：提议编号哈希加入 agentId 且主键改为 (owner_id, agent_id, id)；先写载荷再写表，写表失败或已满时删掉刚写的载荷；采纳时写记忆用表里的来源对话；再次提议时按状态处理（待采纳只延长过期并更新来源标记，已拒绝/已过期/已撤销重写依据，规则仍在生效不新建）。请重点看这些修改本身有没有引入新问题。
+
+## 第 3 轮增量
+第 2 轮后的修改（提交 bf386aaf）：迁移 0095 还原为首次提交的内容（主键仍是单列 id，跨 agent 区分靠提议编号哈希里的 agentId，0095 从未进过 main）；创建提议时先查同参数的生效规则，有就按已有规则回执，不新建待采纳；已存在的行先写表成功再删旧载荷；拒绝读到仍是待采纳时重试一次。新增三条反向测试。请只看这些修改有没有引入新问题。
+
+## 第 4 轮增量
+第 3 轮后的修改（提交 d4bf2b74）：规则生效时（`#activate` 的两个出口）把同参数、还在待采纳的提议一并标成已采纳（`#settle`）；重置已拒绝/已过期/已采纳的旧提议时先写载荷再写表，任何一步失败把原载荷写回、表里状态不动。迁移 0095 只存在于本分支，从未合并或上线，没有持久库应用过。数据导出、历史行清理、载荷结构校验、双向控制符、上限超过 200 这几条已作为“可以更好”列给 Andy，不必重复。请只看这次修改有没有引入新问题。
+
+## 第 5 轮增量
+第 4 轮后的修改（提交 be62587d）：`#settle` 改为尽力而为，读待采纳列表或改状态失败都不抛错，不影响规则生效和采纳结果；文档相应措辞已改；补了一条注入列表读取失败的用例。“先删旧载荷再写新载荷”的窗口和写回失败已列为“可以更好”，不必重复。请只看这次修改有没有引入新问题。
+
+## 第 6 轮增量
+第 5 轮后的修改（a00a7253 之后）：把前几轮列为“可以更好”的几条改掉。(1) 依据载荷不再固定写在提议编号上：每次新建或重置提议写到新引用 `<提议编号>:<16 位十六进制>`，写表成功后才删旧载荷，失败或已满删掉刚写的；采纳时按表里的 evidence_ref 读（没有表行的旧提议仍按提议编号读）。(2) 存储口新增 settledEvidence、clearEvidence：已拒绝、已过期提议的依据载荷在拒绝时和读列表时删掉、引用置空，表行保留。(3) 读列表时对所有生效规则补做一次 `#settle`。(4) 依据按字段校验（evidenceOf），列表文字去掉 Bidi_Control 字符，上限配置超过 200 时存储层拒绝写入（存储层只按类型引入 application 包，因为 sqlite 工作进程里按值引入会加载失败）。不做的：提议表进数据导出（要改导出格式版本，属数据格式大改动，另行决定）；删除已拒绝/已过期的表行（拒绝历史是需求）。请只看这次修改有没有引入新问题。
+
+## 第 8 轮增量
+第 7 轮后的修改（提交 4761c068）：每次提议（新建、重置、仍待采纳）都把依据写到新引用，存储层三个分支都把 evidence_ref 换成新引用，成功后删旧载荷，失败或已满删掉刚写的；`#sweep` 改为先 clearEvidence（只对已拒绝/已过期且引用没变的行生效）再删载荷，批量用独立常量；构造时校验上限 1–200、过期天数至少 1。已采纳提议的依据保留是有意的（撤销后再采纳要用）。请只看这次修改有没有引入新问题。
+
+## 第 9 轮增量（改动较大，请整体看这两个提交）
+第 8 轮后，按 Andy 的原则“提议下一步是通用能力，不写死在某一种场景”重构（提交 147c5c63、162c431a）。上面各节里“owner_rule_proposals”“memory.ruleProposals.read”“memory.rule.respond 的 reject”“网页待采纳列表”都已不成立，以本节为准：
+- 表改名 owner_proposals（迁移 0095 只在本分支，从未应用到任何持久库）：type 是任意字符串；新增 effect、version、fingerprint、source_ref、source_version；type、origin、status 在表里只限长度，取值在 sqlite-owner-proposal-operations.ts 里校验（有意如此，以后加取值不改表）。
+- 新模块 apps/agent-service/src/production-proposals.ts（ProductionProposalBox）：依据是通用结构 {kind, text, sources[{kind, ref}], figures[{name, value, definition}]}，和处理方数据一起存在加密载荷；采纳按类型分派给 register 登记的处理方，没有处理方报 PROPOSAL_TYPE_NOT_ADOPTABLE；指纹是 canonicalJson([type, summary, effect, evidence, data]) 的 SHA-256，同编号重提时指纹变了版本加一，重新打开也加一；adopt、reject 带期望版本号和指纹，对不上报 PROPOSAL_CHANGED，状态不变。
+- 新模块 production-proposal-control.ts：网关操作 proposals.read / proposals.snapshot / proposal.respond（adopt、reject）。memory.rule.respond 回到 undo、confirm、reconfirm；对话里规则卡片的“生效”仍走 confirm（不带版本号，有意保留：规则提议编号本身是内容哈希，且撤销后要能再点同一张卡片）。
+- production-owner-rules.ts 改成提议箱的一个处理方（类型 owner_rule）。
+- 网页不做待采纳列表（Andy 定了有 App 版不做网页版），只保留已有规则卡片的适配：“不要”改走 proposal.respond，只有该提议还在待采纳列表里才显示。
+- 上限和过期天数改成可选配置 runPolicy.ownerProposals.pendingLimit（1–200，缺省 20）、expiresAfterDays（1–3650，缺省 30）。
+- 不改发给模型的内容（工具定义、提示词未动）。
+- 有意不做：执行状态列、处理方的扩展接口、按来源清除、提议进数据导出、删除已拒绝或已过期的表行。
+- 已通过：typecheck、lint、format:check、check:operations、check:glossary、check:locale；production-memory-capture 与 mcp-write 集成测试 132 条（含一条与邮件和规则无关的提议：版本号随内容变化、旧版本号和错指纹被拒）、persistence-sqlite、gateway-contracts、control-center、startup-configuration 测试。
+请重点看：版本号和指纹的核对有没有竞态或漏口；按类型分派和认领、退回有没有会丢状态的路径；规则这条路径重构后行为有没有退化；配置解析。

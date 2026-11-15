@@ -15,6 +15,7 @@ import {
   parseJson,
   type Schema,
   timestamp,
+  proactiveSourceName,
 } from "./validation.js";
 
 export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
@@ -45,6 +46,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
+  "proactive.sources.read",
+  "proactive.sources.snapshot",
+  "proactive.source.settings.set",
+  "proactive.source.switch_off",
   "muse.overview.read",
   "muse.overview.snapshot",
   "muse.item.rate",
@@ -57,6 +62,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "proposals.read",
+  "proposals.snapshot",
+  "proposal.respond",
   "sensitive.interceptions.read",
   "sensitive.interceptions.snapshot",
   "sensitive.interceptions.clear",
@@ -157,6 +165,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "server.status.snapshot",
   "home.read",
   "home.snapshot",
+  "search.ask.read",
+  "search.ask.snapshot",
   "data.export.start",
   "data.export.cancel",
   "data.export.status.read",
@@ -430,7 +440,7 @@ const proactiveOverviewQuerySchema = object({
 const proactiveOverviewSnapshotSchema = object({
   ...envelope("snapshot", "proactive.overview.snapshot"),
   payload: object({
-    source: enumeration(["gmail"]),
+    source: proactiveSourceName,
     connection: object({
       status: enumeration(["disconnected", "connected", "needs_reconnect"]),
       account: nullable(boundedString(320)),
@@ -949,6 +959,33 @@ const homeSnapshotSchema = object({
     generatedAt: timestamp,
   }),
 });
+export const SEARCH_ASK_STATES = ["answered", "not_found", "suggestions"] as const;
+export const SEARCH_BASIS_KINDS = ["memory", "conversation", "perception"] as const;
+const searchAskQuerySchema = object({
+  ...envelope("query", "search.ask.read"),
+  payload: object({ query: nullable(boundedString(500)), locale: enumeration(HOME_LOCALES) }),
+});
+const searchAskSnapshotSchema = object({
+  ...envelope("snapshot", "search.ask.snapshot"),
+  payload: object({
+    state: enumeration(SEARCH_ASK_STATES),
+    query: nullable(boundedString(500)),
+    answer: nullable(boundedString(2000)),
+    notFoundText: nullable(boundedString(200)),
+    basis: array(
+      object({
+        kind: enumeration(SEARCH_BASIS_KINDS),
+        label: boundedString(200),
+        recordId: nullable(machineString),
+        memoryId: nullable(machineString),
+        threadId: nullable(machineString),
+        at: timestamp,
+      }),
+    ),
+    asks: array(boundedString(500)),
+    generatedAt: timestamp,
+  }),
+});
 const serverStatusQuerySchema = object({
   ...envelope("query", "server.status.read"),
   payload: object({}),
@@ -1278,13 +1315,62 @@ const proactiveReviewCheckupCommandSchema = object({
 const proactiveSourceManageCommandSchema = object({
   ...commandEnvelope("proactive.source.manage"),
   payload: object({
-    source: enumeration(["gmail"]),
+    source: proactiveSourceName,
     action: enumeration(["disconnect", "clear_records"]),
   }),
 });
 const proactiveBackoffRestoreCommandSchema = object({
   ...commandEnvelope("proactive.backoff.restore"),
   payload: object({ classKey: nullable(boundedString(128)) }),
+});
+const proactiveSafetyLimitShape = {
+  limit: integer(1),
+  defaultLimit: integer(1),
+  minimum: integer(1),
+  maximum: integer(1),
+};
+const proactiveSourcesQuerySchema = object({
+  ...envelope("query", "proactive.sources.read"),
+  payload: object({}),
+});
+const proactiveSourcesSnapshotSchema = object({
+  ...envelope("snapshot", "proactive.sources.snapshot"),
+  payload: object({
+    sources: array(
+      object({
+        source: proactiveSourceName,
+        intake: enumeration(["reader", "written_by_program"]),
+        trust: enumeration(["owner", "external"]),
+        enabled: booleanValue,
+        perDay: object({
+          ...proactiveSafetyLimitShape,
+          used: integer(0),
+          resetsAt: timestamp,
+          onReach: literal("hold_until_reset"),
+        }),
+        perCheck: object({
+          ...proactiveSafetyLimitShape,
+          onReach: literal("hold_until_next_check"),
+        }),
+        dailyLimitReached: booleanValue,
+        updatedAt: nullable(timestamp),
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const proactiveSourceSettingsSetCommandSchema = object({
+  ...commandEnvelope("proactive.source.settings.set"),
+  payload: object({
+    source: proactiveSourceName,
+    enabled: booleanValue,
+    perDay: integer(1),
+    perCheck: integer(1),
+  }),
+});
+const proactiveSourceSwitchOffCommandSchema = object({
+  ...commandEnvelope("proactive.source.switch_off"),
+  payload: object({ source: proactiveSourceName }),
 });
 const museOverviewQuerySchema = object({
   ...envelope("query", "muse.overview.read"),
@@ -2195,6 +2281,13 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
+export const PROPOSAL_ACTIONS = ["adopt", "reject", "undo"] as const;
+export const PROPOSAL_ORIGINS = [
+  "owner_said",
+  "inferred",
+  "external_agent",
+  "external_content",
+] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -2230,6 +2323,72 @@ const memoryRulesSnapshotSchema = object({
       }),
     ),
     generatedAt: timestamp,
+  }),
+});
+const proposalsQuerySchema = object({
+  ...envelope("query", "proposals.read"),
+  payload: object({
+    open: nullable(
+      object({
+        proposalId: machineString,
+        expectedVersion: integer(1),
+        fingerprint: machineString,
+      }),
+    ),
+  }),
+});
+const proposalsSnapshotSchema = object({
+  ...envelope("snapshot", "proposals.snapshot"),
+  payload: object({
+    proposals: array(
+      object({
+        proposalId: machineString,
+        version: integer(1),
+        fingerprint: machineString,
+        type: boundedString(64),
+        summary: boundedString(200),
+        effect: boundedString(200),
+        origin: enumeration(PROPOSAL_ORIGINS),
+        adoptable: booleanValue,
+        requiresFullRead: booleanValue,
+        requiresPresence: booleanValue,
+        evidence: array(
+          object({
+            kind: boundedString(64),
+            text: nullable(boundedString(500)),
+            sources: array(object({ kind: boundedString(64), ref: boundedString(256) })),
+            figures: array(
+              object({
+                name: boundedString(64),
+                value: integer(Number.MIN_SAFE_INTEGER),
+                definition: boundedString(200),
+              }),
+            ),
+          }),
+        ),
+        proposedAt: timestamp,
+        expiresAt: timestamp,
+        refusedBefore: integer(0),
+      }),
+    ),
+    pendingCount: integer(0),
+    limit: integer(1),
+    expiresAfterDays: integer(1),
+    opened: nullable(
+      object({ proposalId: machineString, fullReadToken: machineString, expiresAt: timestamp }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const proposalRespondCommandSchema = object({
+  ...commandEnvelope("proposal.respond"),
+  payload: object({
+    proposalId: machineString,
+    expectedVersion: integer(1),
+    fingerprint: machineString,
+    action: enumeration(PROPOSAL_ACTIONS),
+    recentAuthenticationRef: nullable(machineString),
+    fullReadToken: nullable(machineString),
   }),
 });
 const memoryRuleRespondCommandSchema = object({
@@ -2581,6 +2740,7 @@ export const disableCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -2590,6 +2750,7 @@ export const rollbackCapabilityCommandSchema = object({
     capabilityRef: machineString,
     expectedRevision: integer(1),
     reasonCode: machineString,
+    recentAuthenticationRef: nullable(machineString),
   }),
 });
 
@@ -3052,6 +3213,13 @@ export const capabilitySnapshotSchema = object({
     updateAssessment: nullable(updateAssessmentSnapshotSchema),
     rollbackVersion: nullable(machineString),
     rollbackAvailable: booleanValue,
+    lastInvalidation: nullable(
+      object({
+        lifecycle: enumeration(["disabled"]),
+        cancelledScheduledJobs: integer(0),
+        occurredAt: timestamp,
+      }),
+    ),
     lastTransition: nullable(
       object({
         fromVersion: machineString,
@@ -3303,6 +3471,10 @@ const schemasByType = {
   "proactive.review.checkup": proactiveReviewCheckupCommandSchema,
   "proactive.source.manage": proactiveSourceManageCommandSchema,
   "proactive.backoff.restore": proactiveBackoffRestoreCommandSchema,
+  "proactive.sources.read": proactiveSourcesQuerySchema,
+  "proactive.sources.snapshot": proactiveSourcesSnapshotSchema,
+  "proactive.source.settings.set": proactiveSourceSettingsSetCommandSchema,
+  "proactive.source.switch_off": proactiveSourceSwitchOffCommandSchema,
   "muse.overview.read": museOverviewQuerySchema,
   "muse.overview.snapshot": museOverviewSnapshotSchema,
   "muse.item.rate": museItemRateCommandSchema,
@@ -3315,6 +3487,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "proposals.read": proposalsQuerySchema,
+  "proposals.snapshot": proposalsSnapshotSchema,
+  "proposal.respond": proposalRespondCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
   "device.pairing.start": devicePairingStartCommandSchema,
@@ -3334,6 +3509,8 @@ const schemasByType = {
   "server.status.snapshot": serverStatusSnapshotSchema,
   "home.read": homeQuerySchema,
   "home.snapshot": homeSnapshotSchema,
+  "search.ask.read": searchAskQuerySchema,
+  "search.ask.snapshot": searchAskSnapshotSchema,
   "data.export.start": dataExportStartCommandSchema,
   "data.export.cancel": dataExportCancelCommandSchema,
   "data.export.status.read": dataExportStatusQuerySchema,

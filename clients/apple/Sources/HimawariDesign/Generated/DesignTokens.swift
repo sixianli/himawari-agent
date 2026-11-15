@@ -145,6 +145,29 @@ public enum DesignTokens {
         public static let window: CGFloat = 250
     }
 
+    public enum Handover {
+        public static let buttonFontSize: CGFloat = 17
+        public static let cardPaddingVertical: CGFloat = 14
+        public static let cardPaddingHorizontal: CGFloat = 16
+        public static let closeIcon: CGFloat = 18
+        public static let doneIcon: CGFloat = 22
+        public static let fieldMinHeight: CGFloat = 96
+        public static let fieldPaddingVertical: CGFloat = 14
+        public static let fieldPaddingHorizontal: CGFloat = 16
+        public static let fieldRadius: CGFloat = 22
+        public static let heroGap: CGFloat = 18
+        public static let heroIcon: CGFloat = 72
+        public static let heroTitleSize: CGFloat = 26
+        public static let heroTop: CGFloat = 30
+        public static let noteInset: CGFloat = 8
+        public static let outcomeGap: CGFloat = 14
+        public static let pageGap: CGFloat = 24
+        public static let popupFieldMinHeight: CGFloat = 84
+        public static let sheetGap: CGFloat = 18
+        public static let stepsGap: CGFloat = 18
+        public static let stepsPadding: CGFloat = 20
+    }
+
     public enum Mac {
         public static let buttonGap: CGFloat = 8
         public static let buttonHeight: CGFloat = 34

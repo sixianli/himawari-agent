@@ -2,6 +2,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariShare
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -26,6 +27,8 @@ public final class AppModel {
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
+    @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -41,7 +44,7 @@ public final class AppModel {
     #endif
     public private(set) var watchOffer: String?
 
-    private static let recordAccount = "pairing-record"
+    private static let recordAccount = SharedVault.recordAccount
 
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
         Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
@@ -59,9 +62,10 @@ public final class AppModel {
 
     init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
         self.kind = kind
-        let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
-        keys = SecureEnclaveKeyStore(service: service + ".keys")
-        keychain = KeychainValueStore(service: service)
+        let vault = SharedVault(bundle: bundle)
+        self.vault = vault
+        keys = vault.keys
+        keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
@@ -158,6 +162,10 @@ public final class AppModel {
     }
 
     @ObservationIgnored var demoHost: String?
+
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
 
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
@@ -358,6 +366,7 @@ public final class AppModel {
             phase = .active
             chat.start()
             Task { await refreshConfiguration() }
+            deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -396,6 +405,25 @@ public final class AppModel {
         }
     }
 
+    @ObservationIgnored private var handoverDrain: Task<Void, Never>?
+
+    private func deliverWaitingHandovers() {
+        guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
+        let queue = HandoverQueue(store: store)
+        guard !queue.pending().isEmpty else { return }
+        #if canImport(UIKit)
+        let courier = HandoverCourier(api: api, images: UIKitImageFitter())
+        #else
+        let courier = HandoverCourier(api: api)
+        #endif
+        handoverDrain = Task { [weak self] in
+            let results = await queue.drain(using: courier)
+            guard let self else { return }
+            handoverDrain = nil
+            if results.values.contains(.deviceRemoved) { checkRevoked() }
+        }
+    }
+
     private func checkRevoked() {
         Task { await refreshConfiguration() }
     }
@@ -411,7 +439,12 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        deliverWaitingHandovers()
         Task { await refreshConfiguration() }
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {

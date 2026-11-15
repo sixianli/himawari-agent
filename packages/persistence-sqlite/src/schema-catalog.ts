@@ -713,6 +713,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its review or its Memory record",
   ),
   entry(
+    "owner_proposals",
+    "OwnerProposalStorePort",
+    "one row per next step proposed to the owner, of any kind: the owner's decision (pending until adopted, refused, expired, superseded or withdrawn) and the execution of a fixed action (not started, running under a lease, done and awaiting read-back, succeeded, failed, unknown or undone, undone being final) kept in separate columns, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner, the data its handler needs and what an execution changed (for undo) stay in protected payloads the row points to",
+    "payload_reference",
+    "cascade with Owner or Agent deletion; the source thread link clears with the thread",
+  ),
+  entry(
     "memory_review_items",
     "MemoryReviewStorePort",
     "one row per Memory and upstream Memory whose change put it up for review, with the reason, chain depth, the Memory it was reached through, whether the chain was cut short and how the owner answered; the upstream id carries no foreign key so a deleted upstream still explains the row",
@@ -846,6 +853,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "surroundings types are removed after their retention days; cascade with the device, Owner or Agent deletion",
   ),
   entry(
+    "perception_search_terms",
+    "PerceptionStorePort",
+    "one row per keyed digest of a word in a perception record's text, so a search can find the record without reading every text; the digests cannot be turned back into words without the search key",
+    "metadata_only",
+    "cascade with its record; removed when the record is deleted; never exported",
+  ),
+  entry(
+    "perception_search_index_state",
+    "PerceptionStorePort",
+    "which search-key version each perception record's search words were built with, so records built with an older key or an older rule are found and rebuilt",
+    "metadata_only",
+    "cascade with its record; removed when the record is deleted; never exported",
+  ),
+  entry(
     "device_mirror_items",
     "PerceptionStorePort",
     "the server copy of calendar events, reminders, contacts and home accessories from one device, one row per item with its version",
@@ -872,6 +893,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "one row per raw audio, image or screen file received for server processing; the file itself is on disk under the state root, named by its digest",
     "metadata_only",
     "removed with its file once older than the configured media retention days; cascade with the device, Owner or Agent deletion",
+  ),
+  entry(
+    "perception_extractions",
+    "PerceptionStorePort",
+    "one row per stretch of conversation the background extraction has picked up: status, attempts, how many records it saw, when to try again and what the model call cost; never exported",
+    "metadata_only",
+    "cascade with the stretch, Owner or Agent deletion",
+  ),
+  entry(
+    "perception_command_utterances",
+    "PerceptionStorePort",
+    "the ids of spoken sentences that already entered a conversation as a command, so extraction skips the matching speech record; never exported",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
   ),
   entry(
     "limit_usage",
@@ -902,9 +937,23 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "apns_registrations",
+    "ApplePushStorePort",
+    "one row per Apple push token a paired device registered: push type (alert, widgets or liveactivity), the Live Activity it belongs to when there is one, environment, app bundle ID, locale, active or disabled; never exported",
+    "metadata_only",
+    "disabled when Apple reports the token invalid or the device is revoked; removed with the device, Owner or Agent",
+  ),
+  entry(
+    "notification_action_tokens",
+    "ApplePushStorePort",
+    "one row per button on a delivered notification: only the SHA-256 of the one-time token, the action, the device it was issued to, and for approval buttons the approval revision and content fingerprint at issue time; never exported",
+    "metadata_only",
+    "marked used on first use; removed when the device is revoked, seven days after expiry, and with the device, Owner or Agent",
+  ),
+  entry(
     "web_push_attempts",
     "WebPushStorePort",
-    "pending to sent, suppressed, expired, gone or failed per device",
+    "pending to sent, suppressed, expired, gone or failed per channel (web_push or apns) and per target; subscription_id holds the web push subscription id or the Apple push registration id",
     "metadata_only",
     "cascade with its outbox row",
   ),
@@ -956,6 +1005,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "append-only history of every revision of every rule in the rule book",
     "metadata_only",
     "retain with the Agent; update and deletion are forbidden while the Agent exists",
+  ),
+  entry(
+    "proactive_source_settings",
+    "ProactiveStorePort",
+    "one row per registered proactive source the owner has changed: its switch and its two safety limits (items per day, items per check); sources without a row use the defaults in the source registry; not exported, so a restored Agent starts from those defaults",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
   ),
   entry(
     "proactive_connections",
@@ -1107,9 +1163,9 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "proactive_push_backoff",
     "ProactiveStorePort",
-    "per sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
+    "per source and sender-domain class of reminder pushes: current backoff stage, when counting started, last allowed push; no mail text",
     "metadata_only",
-    "removed with its Owner or Agent, when the owner deletes proactive records, or when the source is disconnected",
+    "removed with its Owner or Agent, when the owner deletes that source's proactive records, or when that source is disconnected",
   ),
   entry(
     "proactive_processed_messages",

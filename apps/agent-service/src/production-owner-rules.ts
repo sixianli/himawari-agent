@@ -33,6 +33,12 @@ import {
 import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import {
+  canonicalJson,
+  type ProductionProposalBox,
+  ProposalError,
+  type ProposalEvidence,
+} from "./production-proposals.js";
 import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
@@ -54,6 +60,8 @@ const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
+export const RULE_PROPOSAL_TYPE = "owner_rule";
+const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
 const STANDING_MARKERS = [
   "以后",
   "以後",
@@ -254,7 +262,10 @@ export type OwnerRuleErrorCode =
   | "RULE_MEMORY_NOT_READY"
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
-  | "RULE_UNAVAILABLE";
+  | "RULE_UNAVAILABLE"
+  | "RULE_PROPOSALS_FULL"
+  | "RULE_PROPOSAL_REJECTED"
+  | "RULE_PROPOSAL_EXPIRED";
 
 export class OwnerRuleError extends Error {
   readonly code: OwnerRuleErrorCode;
@@ -394,6 +405,8 @@ interface Proposal {
   readonly quote: string;
   readonly threadId: string | null;
   readonly source?: string;
+  readonly trials?: readonly RuleTrial[];
+  readonly replay?: RuleReplay | null;
   readonly externalOrigins?: readonly string[];
 }
 
@@ -417,10 +430,113 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly replay?: (rule: RuleRecord) => Promise<RuleReplay>;
+  readonly box: ProductionProposalBox;
 }
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function evidenceOf(value: unknown): Proposal | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const { key, type, summary, quote, threadId, source, trials, replay } = record;
+  if (
+    typeof key !== "string" ||
+    typeof type !== "string" ||
+    typeof summary !== "string" ||
+    typeof quote !== "string"
+  )
+    return undefined;
+  const counts = replay as Record<string, unknown> | null | undefined;
+  const replayed =
+    typeof counts === "object" &&
+    counts !== null &&
+    ["days", "mailsChecked", "mailsHit", "changed"].every((name) =>
+      Number.isSafeInteger(counts[name]),
+    ) &&
+    typeof counts["truncated"] === "boolean";
+  return {
+    key,
+    type,
+    params: record["params"],
+    summary,
+    quote,
+    threadId: typeof threadId === "string" ? threadId : null,
+    ...(typeof source === "string" ? { source } : {}),
+    trials: Array.isArray(trials)
+      ? trials.filter(
+          (trial): trial is RuleTrial =>
+            typeof trial === "object" &&
+            trial !== null &&
+            typeof (trial as RuleTrial).from === "string" &&
+            typeof (trial as RuleTrial).subject === "string" &&
+            typeof (trial as RuleTrial).hit === "boolean",
+        )
+      : [],
+    replay: replayed ? (replay as RuleReplay) : null,
+  };
+}
+
+function ruleEvidence(
+  quote: string,
+  threadId: string | null,
+  trials: readonly RuleTrial[],
+  replay: RuleReplay | null,
+): readonly ProposalEvidence[] {
+  const flag = (value: boolean) => (value ? 1 : 0);
+  return [
+    {
+      kind: "owner_words",
+      text: quote,
+      sources: threadId === null ? [] : [{ kind: "thread", ref: threadId }],
+      figures: [],
+    },
+    ...trials.map((trial) => ({
+      kind: "mail_trial",
+      text: `${trial.from}: ${trial.subject}`,
+      sources: [],
+      figures: [
+        {
+          name: "hit",
+          value: flag(trial.hit),
+          definition: "这封示例邮件按这条规则会不会提醒：1 会，0 不会",
+        },
+      ],
+    })),
+    ...(replay
+      ? [
+          {
+            kind: "mail_replay",
+            text: null,
+            sources: [],
+            figures: [
+              { name: "days", value: replay.days, definition: "回看了最近多少天收到的邮件" },
+              {
+                name: "mailsChecked",
+                value: replay.mailsChecked,
+                definition: "回看时检查了多少封邮件",
+              },
+              {
+                name: "mailsHit",
+                value: replay.mailsHit,
+                definition: "其中多少封按这条规则会提醒",
+              },
+              {
+                name: "changed",
+                value: replay.changed,
+                definition: "其中多少封的结果会和现在不一样",
+              },
+              {
+                name: "truncated",
+                value: flag(replay.truncated),
+                definition: "邮件太多没有看完时为 1，这时上面的数字是至少",
+              },
+            ],
+          },
+        ]
+      : []),
+  ];
 }
 
 const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
@@ -523,6 +639,19 @@ export class ProductionOwnerRuleWriter {
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
     this.#options = options;
+    options.box.register(RULE_PROPOSAL_TYPE, {
+      repeatable: true,
+      adopt: async ({ threadId, data }) => {
+        const stored = evidenceOf(data);
+        if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
+        const receipt = await this.#activate({ ...stored, threadId }, stored.replay ?? null);
+        return { resultRef: receipt.ruleId ?? "owner-rule", detail: receipt };
+      },
+      settled: async () => {
+        const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+        return (data) => this.#covers(live.map((rule) => rule.parameters))(data);
+      },
+    });
   }
 
   #scope() {
@@ -669,6 +798,23 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
+  #covers(enforced: readonly unknown[]): (data: unknown) => boolean {
+    return (data) => {
+      const stored = evidenceOf(data);
+      if (!stored) return false;
+      const parsed = parseOwnerRuleParameters({
+        type: stored.type,
+        params: stored.params,
+        summary: stored.summary,
+      });
+      return enforced.some((parameters) => sameRule(parameters, parsed.type, parsed.params));
+    };
+  }
+
+  #settle(type: string, params: unknown): Promise<void> {
+    return this.#options.box.settle(RULE_PROPOSAL_TYPE, this.#covers([{ type, params }]));
+  }
+
   async #activate(proposal: Proposal, replayed: RuleReplay | null): Promise<RuleReceipt> {
     const draft = this.#draft(proposal.type, proposal.params, proposal.summary);
     const parsed = parseOwnerRuleParameters({
@@ -683,6 +829,7 @@ export class ProductionOwnerRuleWriter {
     );
     if (same) {
       await this.reconfirm(same.ruleId);
+      await this.#settle(parsed.type, parsed.params);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -738,6 +885,7 @@ export class ProductionOwnerRuleWriter {
         throw new OwnerRuleError("RULE_UNAVAILABLE");
       }
     }
+    await this.#settle(parsed.type, parsed.params);
     return Object.freeze({
       status: "active",
       ruleId,
@@ -781,6 +929,7 @@ export class ProductionOwnerRuleWriter {
     readonly summary: string;
     readonly threadId: string | null;
     readonly source?: string;
+    readonly listed?: boolean;
     readonly externalOrigins?: readonly string[];
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
@@ -823,24 +972,47 @@ export class ProductionOwnerRuleWriter {
       ...(input.source === undefined ? {} : { source: input.source }),
       ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
     };
-    const explicit =
-      !input.inferred && isStandingQuote(quote) && (await this.#ownerSaid(input.threadId, quote));
-    if (explicit) return this.#activate(proposal, replayed);
+    const ownerSaid = !input.inferred && (await this.#ownerSaid(input.threadId, quote));
+    if (ownerSaid && isStandingQuote(quote)) return this.#activate(proposal, replayed);
     const normalized = parseOwnerRuleParameters({
       type: input.type,
       params: input.params,
       summary,
     });
     const proposalId = `rule-proposal:${hash(
-      JSON.stringify([
+      canonicalJson([
         this.#scope().ownerId,
+        this.#scope().agentId,
         normalized.type,
         normalized.params,
         normalized.summary,
         quote,
       ]),
     ).slice(0, 32)}`;
-    await this.#writeText(proposalId, JSON.stringify(proposal));
+    const trials = trialsOf(draft);
+    const stored = { ...proposal, trials, replay: replayed };
+    if (input.listed === false) await this.#writeText(proposalId, JSON.stringify(stored));
+    else {
+      const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
+      if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
+        return this.#activate(proposal, replayed);
+      await this.#options.box
+        .propose({
+          proposalId,
+          type: RULE_PROPOSAL_TYPE,
+          summary: normalized.summary,
+          effect: normalized.summary,
+          origin: ownerSaid ? "owner_said" : "inferred",
+          threadId: input.threadId,
+          evidence: ruleEvidence(quote, input.threadId, trials, replayed),
+          data: stored,
+        })
+        .catch((error: unknown) => {
+          throw error instanceof ProposalError && error.code === "PROPOSALS_FULL"
+            ? new OwnerRuleError("RULE_PROPOSALS_FULL", error.detail)
+            : error;
+        });
+    }
     return Object.freeze({
       status: "proposed",
       ruleId: null,
@@ -849,19 +1021,40 @@ export class ProductionOwnerRuleWriter {
       type: input.type,
       summary,
       quote,
-      trials: trialsOf(draft),
+      trials,
       replay: replayed,
       replayed: false,
     });
   }
 
+  async #readProposal(ref: string): Promise<Proposal | undefined> {
+    const text = await this.#readText(ref);
+    if (text === undefined) return undefined;
+    try {
+      return evidenceOf(JSON.parse(text));
+    } catch {
+      return undefined;
+    }
+  }
+
   async confirm(proposalId: string): Promise<RuleReceipt> {
-    if (!/^rule-proposal:[0-9a-f]{32}$/u.test(proposalId))
-      throw new OwnerRuleError("RULE_NOT_FOUND");
-    const text = await this.#readText(proposalId);
-    if (text === undefined) throw new OwnerRuleError("RULE_NOT_FOUND");
-    const proposal = JSON.parse(text) as Proposal;
-    return this.#activate(proposal, null);
+    if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
+    if (await this.#options.box.read(proposalId)) {
+      const adopted = await this.#options.box.adopt(proposalId).catch((error: unknown) => {
+        if (!(error instanceof ProposalError)) throw error;
+        throw new OwnerRuleError(
+          error.code === "PROPOSAL_REJECTED"
+            ? "RULE_PROPOSAL_REJECTED"
+            : error.code === "PROPOSAL_EXPIRED"
+              ? "RULE_PROPOSAL_EXPIRED"
+              : "RULE_NOT_FOUND",
+        );
+      });
+      return adopted.detail as RuleReceipt;
+    }
+    const stored = await this.#readProposal(proposalId);
+    if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
+    return this.#activate(stored, stored.replay ?? null);
   }
 
   async storedFor(key: string): Promise<boolean> {

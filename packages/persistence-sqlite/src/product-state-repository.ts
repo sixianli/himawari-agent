@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type {
+  ApplePushStorePort,
   AttentionStatePort,
   AuditLedgerPort,
   AuthorityFence,
@@ -47,6 +48,7 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
+  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -143,6 +145,7 @@ export interface SqliteProductStateRepositoryOptions {
   readonly onOperation?: (operation: SqliteTimedOperation) => void;
   readonly transactionScopeTimeoutMs?: number;
   readonly extraReadThreadBudget?: SqliteExtraReadThreadBudget;
+  readonly proactiveSources?: SqliteWorkerConfiguration["proactiveSources"];
 }
 
 export const DEFAULT_TRANSACTION_SCOPE_TIMEOUT_MS = 2000;
@@ -292,6 +295,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
           minimumFreeBytes,
           warningFreeBytes,
           ...(options.qualification ? { qualification: options.qualification } : {}),
+          ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
         },
         {
           ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -307,6 +311,7 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
             minimumFreeBytes,
             warningFreeBytes,
             readOnly: true,
+            ...(options.proactiveSources ? { proactiveSources: options.proactiveSources } : {}),
           },
           {
             ...(options.onSlowOperation ? { onSlowOperation: options.onSlowOperation } : {}),
@@ -597,6 +602,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerRules();
   }
 
+  ownerProposals(): OwnerProposalStorePort {
+    return this.durable.ownerProposals();
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
   }
@@ -659,6 +668,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   webPush(): WebPushStorePort {
     return this.durable.webPush();
+  }
+
+  applePush(): ApplePushStorePort {
+    return this.durable.applePush();
   }
 
   pairedDevices(): PairedDeviceStorePort {
