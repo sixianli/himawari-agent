@@ -182,11 +182,13 @@ def startup_phase_baseline(instance):
     return json.dumps(baseline, sort_keys=True)
 
 
-ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('model_budget_allocations', 'model_invocation_identities')}
+ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('a367072db3a9332d65a4cc070d41710913a4d020b7b70a761567f033f13e4f53', ('model_budget_allocations', 'model_invocation_identities'))}
 
 
 def rebuilds_keeping_rows(file_name, sql, touched):
-    allowed = ROW_PRESERVING_REBUILDS.get(file_name, ())
+    digest, allowed = ROW_PRESERVING_REBUILDS.get(file_name, (None, ()))
+    if hashlib.sha256(sql.encode()).hexdigest() != digest:
+        return []
     kept = []
     for table in touched:
         saved = 'saved_' + table

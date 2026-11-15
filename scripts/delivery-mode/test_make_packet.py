@@ -532,8 +532,11 @@ class DerivedExpectationsTest(RenderedPacket):
         name = '0083_model_invocation_owner_lost.sql'
         self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql, tables), tables)
         self.assertEqual(packet_maker.rebuilds_keeping_rows('0099_other.sql', sql, tables), [])
-        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDELETE FROM model_budget_allocations;', tables), ['model_invocation_identities'])
-        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql.replace('INSERT INTO model_invocation_identities SELECT * FROM saved_model_invocation_identities;', ''), tables), ['model_budget_allocations'])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDELETE FROM model_budget_allocations;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDROP TABLE model_budget_allocations;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, '-- ' + sql, tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nUPDATE saved_model_budget_allocations SET id = id;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql.replace('INSERT INTO model_invocation_identities SELECT * FROM saved_model_invocation_identities;', ''), tables), [])
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
