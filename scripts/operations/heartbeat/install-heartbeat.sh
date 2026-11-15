@@ -11,7 +11,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 prefix="${HEARTBEAT_ROOT:-}"
 systemctl_command="${HEARTBEAT_SYSTEMCTL:-systemctl}"
 script_path="$prefix/usr/local/sbin/himawari-heartbeat"
-url_path="$prefix/etc/himawari/healthcheck-url"
+url_path="$prefix/etc/himawari-heartbeat/healthcheck-url"
+legacy_url_path="$prefix/etc/himawari/healthcheck-url"
 service_path="$prefix/etc/systemd/system/himawari-heartbeat.service"
 timer_path="$prefix/etc/systemd/system/himawari-heartbeat.timer"
 
@@ -31,7 +32,7 @@ case "$mode" in
     [[ "${1:-}" == --purge ]] && purge=1
     "$systemctl_command" disable --now himawari-heartbeat.timer 2>/dev/null || true
     rm -f "$timer_path" "$service_path" "$script_path"
-    [[ "$purge" == 1 ]] && rm -f "$url_path"
+    [[ "$purge" == 1 ]] && rm -f "$url_path" "$legacy_url_path"
     "$systemctl_command" daemon-reload
     echo "HEARTBEAT_REMOVED"
     exit 0
@@ -46,8 +47,10 @@ umask 077
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 if [[ "$keep" == 1 ]]; then
-  [[ -f "$url_path" ]] || { echo "HEARTBEAT_URL_MISSING" >&2; exit 2; }
-  cp "$url_path" "$staging/url"
+  keep_source="$url_path"
+  [[ -f "$keep_source" ]] || keep_source="$legacy_url_path"
+  [[ -f "$keep_source" ]] || { echo "HEARTBEAT_URL_MISSING" >&2; exit 2; }
+  cp "$keep_source" "$staging/url"
 else
   head -c 600 > "$staging/url"
   [[ -s "$staging/url" ]] || { echo "HEARTBEAT_URL_MISSING" >&2; exit 2; }
@@ -55,9 +58,12 @@ fi
 /usr/bin/python3 -I "$here/himawari-heartbeat.py" --check-url-file --url-file "$staging/url" > /dev/null
 
 umask 022
-mkdir -p "$(dirname "$script_path")" "$(dirname "$url_path")" "$(dirname "$service_path")"
+mkdir -p "$(dirname "$script_path")" "$(dirname "$service_path")"
+mkdir -p "$(dirname "$url_path")"
+chmod 0700 "$(dirname "$url_path")"
 install -m 0755 "$here/himawari-heartbeat.py" "$script_path"
-if [[ "$keep" == 1 ]]; then chmod 0600 "$url_path"; else install -m 0600 "$staging/url" "$url_path"; fi
+install -m 0600 "$staging/url" "$url_path"
+if [[ -z "$prefix" ]]; then chown root:root "$(dirname "$url_path")" "$url_path"; fi
 cat > "$service_path" <<'UNIT'
 [Unit]
 Description=Himawari heartbeat to Healthchecks.io
@@ -89,6 +95,7 @@ AccuracySec=5s
 WantedBy=timers.target
 UNIT
 chmod 0644 "$service_path" "$timer_path"
+rm -f "$legacy_url_path"
 "$systemctl_command" daemon-reload
 "$systemctl_command" enable --now himawari-heartbeat.timer
 echo "HEARTBEAT_INSTALLED"

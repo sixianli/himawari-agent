@@ -44,7 +44,5 @@
   "MIGRATION_LEDGER": "[]",
   "STARTUP_READY_BUDGET_MS": 15000,
   "STARTUP_PHASE_BASELINE_MS": "{\"sandbox-services-created\": 6000, \"state-opened\": 8200}",
-  "TARGET_EMBEDDING_JSON": "null",
-  "HISTORY_COMPARISON": "on",
-  "HISTORY_COMPARISON_JSON": "{\"mode\":\"on\"}"
+  "TARGET_EMBEDDING_JSON": "null"
 }
