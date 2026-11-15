@@ -195,6 +195,11 @@ import {
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
+import {
+  PRODUCTION_THINK_OPERATIONS,
+  ProductionThinkControl,
+  ProductionThinkSettings,
+} from "./production-think-settings.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -823,6 +828,7 @@ function routeOptions(
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...PRODUCTION_PERCEPTION_OPERATIONS,
+        ...PRODUCTION_THINK_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1241,8 +1247,15 @@ export async function createProductionHttpComposition(
     clock: { now: clock },
     timeZone: configuration.runPolicy?.timeZone ?? "UTC",
   });
+  const thinkSettings = new ProductionThinkSettings({
+    scope: { ownerId, agentId },
+    store: repository.thinkInbox(),
+    configuration: configuration.runPolicy?.thinkInbox,
+    clock: { now: clock },
+  });
   const think = options.think
     ? productionThinkLoop({
+        settings: thinkSettings,
         configuration,
         repository,
         payloads: memoryPayloads,
@@ -1591,6 +1604,11 @@ export async function createProductionHttpComposition(
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    thinkControl: new ProductionThinkControl({
+      settings: thinkSettings,
+      scope: { ownerId, agentId },
       clock: { now: clock },
     }),
     perceptionControl: new ProductionPerceptionControl({

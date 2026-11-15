@@ -618,6 +618,28 @@ export const governanceMessages = [
     key: "perception.records.daily",
     value: 10000,
   }),
+  fixture("query", "think.settings.read", {}),
+  fixture("snapshot", "think.settings.snapshot", {
+    revision: 2,
+    enabled: true,
+    items: [
+      {
+        key: "queueLimit",
+        value: 7,
+        defaultValue: 20,
+        minimum: 1,
+        maximum: 1000,
+        unit: "count",
+        overridden: true,
+      },
+    ],
+    generatedAt: "2026-11-15T00:00:00.000Z",
+  }),
+  fixture("command", "think.settings.change", {
+    expectedRevision: 2,
+    key: "queueLimit",
+    value: null,
+  }),
   fixture("query", "server.status.read", {}),
   fixture("snapshot", "server.status.snapshot", {
     live: true,

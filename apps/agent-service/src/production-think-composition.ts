@@ -15,6 +15,7 @@ import type { ReminderProposalContext } from "./production-reminder-proposals.js
 import { thinkActions } from "./production-think-actions.js";
 import { ProductionThinkInbox } from "./production-think-inbox.js";
 import { ThreadThinkRunner, type ThreadThinkRunnerOptions } from "./production-think-runner.js";
+import type { ProductionThinkSettings } from "./production-think-settings.js";
 import { ProductionThinkWorker } from "./production-think-worker.js";
 
 export interface ThinkWorthRoute {
@@ -58,7 +59,7 @@ export function productionThinkWorth(
 
 export class ThinkLoop {
   readonly #worker: Pick<ProductionThinkWorker, "runOnce">;
-  readonly #intervalMs: number;
+  readonly #intervalMs: () => Promise<number>;
   readonly #onFailure: (error: unknown) => void;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #controller: AbortController | undefined;
@@ -66,11 +67,12 @@ export class ThinkLoop {
 
   constructor(options: {
     readonly worker: Pick<ProductionThinkWorker, "runOnce">;
-    readonly intervalMs: number;
+    readonly intervalMs: number | (() => Promise<number>);
     readonly onFailure: (error: unknown) => void;
   }) {
     this.#worker = options.worker;
-    this.#intervalMs = options.intervalMs;
+    const interval = options.intervalMs;
+    this.#intervalMs = typeof interval === "number" ? async () => interval : interval;
     this.#onFailure = options.onFailure;
   }
 
@@ -99,7 +101,11 @@ export class ThinkLoop {
         this.#onFailure(error);
       } catch {}
     }
-    this.#schedule(busy ? 0 : this.#intervalMs);
+    const delay = busy
+      ? 0
+      : await this.#intervalMs().catch(() => THINK_LOOP_DEFAULTS.idleSeconds * 1000);
+    if (signal.aborted) return;
+    this.#schedule(delay);
   }
 
   async stop(): Promise<void> {
@@ -123,8 +129,12 @@ export function productionThinkLoop(options: {
   readonly writer?: ReminderProposalContext["writer"];
   readonly worth: ThinkWorthRoute;
   readonly cancelRun?: ThreadThinkRunnerOptions["cancelRun"];
+  readonly settings?: Pick<ProductionThinkSettings, "overrides">;
   readonly onDiagnostic?: (event: Record<string, string>) => void;
 }) {
+  const overrides = options.settings
+    ? () => (options.settings as Pick<ProductionThinkSettings, "overrides">).overrides()
+    : undefined;
   const { configuration, payloads, protector } = options;
   const settings = configuration.runPolicy?.thinkInbox ?? {};
   const timeZone = configuration.runPolicy?.timeZone ?? "UTC";
@@ -143,6 +153,7 @@ export function productionThinkLoop(options: {
     clock,
     timeZone,
     limits,
+    ...(overrides ? { overrides } : {}),
   });
   const diagnostic = options.onDiagnostic ?? (() => undefined);
   const runner = new ThreadThinkRunner({
@@ -177,6 +188,7 @@ export function productionThinkLoop(options: {
     },
     runner,
     runTimeoutMs: (runTimeoutMinutes ?? THINK_LOOP_DEFAULTS.runTimeoutMinutes) * 60_000,
+    ...(overrides ? { overrides } : {}),
     onFailure: (entryId, error) =>
       diagnostic({
         event: "think.failed",
@@ -186,7 +198,10 @@ export function productionThinkLoop(options: {
   });
   const loop = new ThinkLoop({
     worker,
-    intervalMs: (idleSeconds ?? THINK_LOOP_DEFAULTS.idleSeconds) * 1000,
+    intervalMs: async () => {
+      const value = (await overrides?.().catch(() => undefined))?.["idleSeconds"];
+      return (value ?? idleSeconds ?? THINK_LOOP_DEFAULTS.idleSeconds) * 1000;
+    },
     onFailure: (error) =>
       diagnostic({
         event: "think.loop_failed",
