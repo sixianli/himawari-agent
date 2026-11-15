@@ -382,6 +382,15 @@ export interface OwnerProposalConfiguration {
   readonly expiresAfterDays?: number;
 }
 
+export interface ThinkInboxConfiguration {
+  readonly queueLimit?: number;
+  readonly dailyLimit?: number;
+  readonly expiresAfterHours?: number;
+  readonly stalledAfterMinutes?: number;
+  readonly maxAttempts?: number;
+  readonly summaryCharacters?: number;
+}
+
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;
   readonly total: number;
@@ -403,6 +412,7 @@ export interface OwnerIntentCheckConfiguration {
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly ownerProposals?: OwnerProposalConfiguration;
+  readonly thinkInbox?: ThinkInboxConfiguration;
   readonly approvalBodyPreviewCharacters?: number;
   readonly toolRefusals?: ToolRefusalConfiguration;
   readonly ownerIntentCheck?: OwnerIntentCheckConfiguration;

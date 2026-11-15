@@ -1980,6 +1980,34 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
       parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
     ).toEqual(ownerProposals);
   }
+  for (const thinkInbox of [
+    {},
+    { queueLimit: 1 },
+    {
+      queueLimit: 1000,
+      dailyLimit: 10000,
+      expiresAfterHours: 8760,
+      stalledAfterMinutes: 1440,
+      maxAttempts: 20,
+      summaryCharacters: 4000,
+    },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox };
+    expect(
+      parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox,
+    ).toEqual(thinkInbox);
+  }
+  for (const invalid of [
+    { queueLimit: 0 },
+    { dailyLimit: 10001 },
+    { maxAttempts: 21 },
+    { summaryCharacters: 99 },
+    { queueLimit: 1.5 },
+    { unknownKey: 1 },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
   raw["runPolicy"] = { ...policy };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,

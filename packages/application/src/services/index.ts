@@ -21,6 +21,8 @@ export * from "./context-projection-service.js";
 export * from "./daily-review.js";
 export * from "./delegation-service.js";
 export * from "./delivery-timing.js";
+export * from "./device-action-registry.js";
+export * from "./device-action-service.js";
 export * from "./durable-autonomy-state-adapter.js";
 export * from "./durable-background-work-service.js";
 export * from "./durable-host-workspace-state-adapter.js";

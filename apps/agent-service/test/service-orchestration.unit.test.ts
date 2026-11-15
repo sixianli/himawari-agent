@@ -783,6 +783,7 @@ function web() {
     "gapCaseMarks",
     "perception",
     "pairedDevices",
+    "deviceActions",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

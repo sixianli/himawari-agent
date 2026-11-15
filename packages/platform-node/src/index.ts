@@ -14,6 +14,7 @@ export * from "./deepseek-web-provider.js";
 export * from "./delivery-timing-decision.js";
 export * from "./demo-mailbox.js";
 export * from "./demo-mailbox-token.js";
+export * from "./device-action-hub.js";
 export * from "./device-api-routes.js";
 export * from "./device-gateway.js";
 export * from "./device-push.js";

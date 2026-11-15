@@ -429,6 +429,34 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       deviceId: str(row["device_id"]) === "" ? null : str(row["device_id"]),
       used: num(row["used"]),
     })),
+    devicePolicies: snapshot.perception.devicePolicies.map((row) => ({
+      deviceId: str(row["device_id"]),
+      blockedActions: JSON.parse(str(row["blocked_actions"])) as JsonValue,
+      updatedAt: str(row["updated_at"]),
+    })),
+    deviceActions: snapshot.perception.deviceActions.map((row) => {
+      const id = str(row["id"]);
+      const resultRef = optionalString(row["result_ref"]);
+      return {
+        id,
+        deviceId: str(row["device_id"]),
+        action: str(row["action"]),
+        schemaVersion: num(row["schema_version"]),
+        actionKind: str(row["action_kind"]),
+        risk: str(row["risk"]),
+        ownerPresence: num(row["owner_presence"]) === 1,
+        approvalId: optionalString(row["approval_id"]),
+        classification: str(row["data_classification"]),
+        state: str(row["state"]),
+        reasonCode: optionalString(row["reason_code"]),
+        createdAt: str(row["created_at"]),
+        expiresAt: str(row["expires_at"]),
+        deliveredAt: optionalString(row["delivered_at"]),
+        finishedAt: optionalString(row["finished_at"]),
+        request: exportedText(str(row["arguments_ref"]), `device-actions/${id}/request`),
+        result: resultRef === null ? null : exportedText(resultRef, `device-actions/${id}/result`),
+      };
+    }),
   };
   const perceptionCounts = Object.fromEntries(
     PERCEPTION_FILE_KEYS.map((key) => [key, perceptionLines[key].length]),
@@ -842,7 +870,7 @@ export async function buildPortableExport(options: ExportOptions): Promise<Expor
       what: "上传凭据，和还没处理的原始音频、图片、屏幕画面",
       count: null,
       reason:
-        "上传凭据是凭据，不导出；原始材料只是等待处理的临时文件，超过配置的天数（runPolicy.perception.mediaRetentionDays）后，在下一次有设备交数据时删除，不属于长期数据。感知记录、一段经历、镜像、轨迹、感知设置和用量在 data/ 下各有一个文件，只供查看，导入时不恢复",
+        "上传凭据是凭据，不导出；原始材料只是等待处理的临时文件，超过配置的天数（runPolicy.perception.mediaRetentionDays）后，在下一次有设备交数据时删除，不属于长期数据。感知记录、一段经历、镜像、轨迹、感知设置、用量、设备上关掉的动作和设备动作在 data/ 下各有一个文件，只供查看，导入时不恢复",
     },
     {
       what: "记忆评测的题库和每次评测的分数",

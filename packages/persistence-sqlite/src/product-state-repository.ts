@@ -37,6 +37,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
+  DeviceActionStorePort,
   PerceptionStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
@@ -49,6 +50,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
+  ThinkInboxStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -606,6 +608,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerProposals();
   }
 
+  thinkInbox(): ThinkInboxStorePort {
+    return this.durable.thinkInbox();
+  }
+
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
   }
@@ -676,6 +682,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   pairedDevices(): PairedDeviceStorePort {
     return this.durable.pairedDevices();
+  }
+
+  deviceActions(): DeviceActionStorePort {
+    return this.durable.deviceActions();
   }
 
   perception(): PerceptionStorePort {

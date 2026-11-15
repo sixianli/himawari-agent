@@ -55,6 +55,7 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  DeviceActionHub,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
@@ -125,6 +126,7 @@ import { createProductionFileReadServices } from "./production-file-read-service
 import { ProductionGapExport } from "./production-gap-export.js";
 import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -190,6 +192,7 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -716,6 +719,8 @@ export async function startTenantRuntime(
   let memoryWorker: ProductionMemoryWorker | undefined;
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
+  const deviceActionHub = new DeviceActionHub();
+  let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
@@ -1594,10 +1599,33 @@ export async function startTenantRuntime(
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
       };
+      const externalContent = new ContextExternalContent({
+        configuration,
+        state: repository,
+        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
+        authority: () => invocationAuthority().lease,
+        clock,
+      });
+      deviceActions = createProductionDeviceActions({
+        scope: perceptionScope,
+        store: repository.deviceActions(),
+        perception: repository.perception(),
+        externalContent,
+        devices: repository.pairedDevices().listDevices,
+        ledger: repository.decisionLedger(),
+        payloads,
+        protector: recallProtector,
+        delivery: deviceActionHub,
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        timeZone: reminderTimeZone ?? "UTC",
+        now: () => clock.now(),
+      });
       const perceptionTools = new ProductionPerceptionTools({
         scope: perceptionScope,
         store: repository.perception(),
         devices: repository.pairedDevices().listDevices,
+        ...deviceActions.tools,
         readText: async (contentRef) => {
           const payload = await payloads.get(contentRef);
           if (!payload || payload.contentType !== "text/plain") return undefined;
@@ -1615,13 +1643,6 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
-      const externalContent = new ContextExternalContent({
-        configuration,
-        state: repository,
-        source: repository.runExecutionSource(configuration.ownerId, configuration.agentId),
-        authority: () => invocationAuthority().lease,
-        clock,
-      });
       const ownerIntent = productionOwnerIntentGate({
         configuration,
         secretSource: hostModelSources(configuration).provider,
@@ -3284,7 +3305,13 @@ export async function startTenantRuntime(
       const activeDurableMemory = durableMemory;
       if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
         throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
+      const capabilityReactivation = createProductionCapabilityReactivationVerifier({
+        configuration,
+        layout,
+        trustedPeerBinding: () => peerBinding,
+      });
       http = await createProductionHttpComposition({
+        ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
         webPush: {
@@ -3292,6 +3319,9 @@ export async function startTenantRuntime(
           push: webPush,
           ...(applePush ? { applePush } : {}),
         },
+        ...(deviceActions
+          ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
+          : {}),
         ...(proactive ? { proactive } : {}),
         ...(memoryComposition?.queryPrefetch
           ? {

@@ -3,6 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
   CancelCoordinatedRunInput,
+  CapabilityReactivationVerifierPort,
   DurableMemoryService,
   MemoryExtractionAuditRecord,
   PayloadProtectionRequest,
@@ -38,6 +39,7 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -83,6 +85,7 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
+  type DeviceActionHub,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
@@ -111,11 +114,13 @@ import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
   PRODUCTION_CAPABILITY_OPERATIONS,
+  PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import {
   DataExportJobs,
+  deviceExportArchive,
   PRODUCTION_DATA_EXPORT_OPERATIONS,
   ProductionDataExportControl,
   registerDataExportRoute,
@@ -233,6 +238,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
     ref: string;
@@ -253,6 +259,10 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly deviceActions?: {
+    readonly service: DeviceActionService;
+    readonly hub: DeviceActionHub;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
@@ -760,6 +770,7 @@ function routeOptions(
   museAvailable: boolean,
   observationAvailable: boolean,
   searchAvailable: boolean,
+  capabilityReactivationAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -799,6 +810,7 @@ function routeOptions(
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_CAPABILITY_OPERATIONS,
+        ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
@@ -1503,6 +1515,9 @@ export async function createProductionHttpComposition(
   await perception.prepareDirectories();
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
+    ...(options.capabilityReactivation
+      ? { capabilityReactivation: options.capabilityReactivation }
+      : {}),
     repository,
     access: threadAccess,
     homeControl: home,
@@ -1609,6 +1624,7 @@ export async function createProductionHttpComposition(
       Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(searchControl),
+      options.capabilityReactivation !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1621,7 +1637,19 @@ export async function createProductionHttpComposition(
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
+      ...(options.deviceActions
+        ? {
+            actions: {
+              service: (scope) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? options.deviceActions?.service
+                  : undefined,
+              hub: options.deviceActions.hub,
+            },
+          }
+        : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
