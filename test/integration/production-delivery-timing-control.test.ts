@@ -124,12 +124,29 @@ describe("delivery timing settings live on the server", () => {
       label: "复查间隔",
       description: "先不推送之后，隔多久再确认你有没有空。",
       unit: "秒",
+      kind: "duration",
+      storageUnit: "s",
       value: 300,
       defaultValue: 300,
       minimum: 60,
       maximum: 3600,
       overridden: false,
     });
+  });
+
+  it("tells the phone how to show each value: percentage, duration or count", async () => {
+    const { device } = await setup();
+    const payload = await read(device());
+    expect(item(payload, "busyAtLeastPermille")).toMatchObject({
+      kind: "ratio",
+      storageUnit: "permille",
+    });
+    expect(item(payload, "timeoutMs")).toMatchObject({ kind: "duration", storageUnit: "ms" });
+    expect(item(payload, "perMinute")).toMatchObject({ kind: "count", storageUnit: "count" });
+    for (const entry of payload.items) {
+      expect(["ratio", "duration", "count"]).toContain(entry.kind);
+      expect(["permille", "ms", "s", "count"]).toContain(entry.storageUnit);
+    }
   });
 
   it("gives every setting a name, one sentence and a unit in each language, and the language follows the request", async () => {

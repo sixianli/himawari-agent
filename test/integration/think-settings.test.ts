@@ -244,8 +244,13 @@ describe("think settings", () => {
       minimum: 1,
       maximum: 90,
       unit: "days",
+      kind: "duration",
+      storageUnit: "d",
       unitLabel: { "zh-CN": "天", en: "days", ja: "日" },
     });
+    expect(snapshot.payload.items[0]).toMatchObject({ kind: "ratio", storageUnit: "permille" });
+    expect(snapshot.payload.items[2]).toMatchObject({ kind: "count", storageUnit: "count" });
+    expect(snapshot.payload.items[6]).toMatchObject({ kind: "count", storageUnit: "count" });
     expect(snapshot.payload.items[0]).toMatchObject({
       value: 800,
       defaultValue: 800,
