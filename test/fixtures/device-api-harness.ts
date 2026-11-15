@@ -10,12 +10,17 @@ import {
   DEFAULT_HOME_FEED,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
+  type DeviceActionAuthorizationPort,
+  type DeviceActionOpenRequestPort,
+  type DeviceActionRecord,
+  type DeviceActionRegistry,
   type DeviceConfiguration,
   defaultDeviceHardLimits,
   type GatewayAuthenticationContext,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type PerceptionConfiguration,
   ProductThreadGatewayAdapter,
+  ReadOnlyDeviceActionAuthorization,
   RecentAuthenticationGuard,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
@@ -28,6 +33,7 @@ import {
 } from "@himawari-agent/application";
 import {
   createAgentId,
+  createAuthorityLeaseId,
   createDeploymentId,
   createDeviceId,
   createOwnerId,
@@ -50,6 +56,7 @@ import {
 import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
+  DeviceActionHub,
   type DevicePairingAccess,
   DevicePushService,
   EnvelopePayloadProtector,
@@ -70,6 +77,8 @@ import {
 } from "@himawari-agent/testing";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
+import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
+import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
@@ -86,6 +95,10 @@ const deploymentId = createDeploymentId("deployment-device-api");
 export const authority: ProductAuthorityFence = {
   deploymentId,
   authorityEpoch: 1,
+  fencingToken: 1,
+};
+const authorityLease = {
+  leaseId: createAuthorityLeaseId("lease-device-api"),
   fencingToken: 1,
 };
 const origin = "https://himawari.example";
@@ -194,6 +207,12 @@ export interface Harness {
   readonly limitWarnings: PerceptionLimitWarning[];
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly protector: EnvelopePayloadProtector;
+  readonly externalContent: ContextExternalContent;
+  readonly actions: ReturnType<typeof createProductionDeviceActions> & {
+    readonly hub: DeviceActionHub;
+    readonly authorization: { current: DeviceActionAuthorizationPort | undefined };
+    readonly openRequests: DeviceActionRecord[];
+  };
 }
 
 export async function harness(
@@ -201,6 +220,7 @@ export async function harness(
     readonly origin?: string;
     readonly staticRoot?: string;
     readonly pairingAccess?: DevicePairingAccess;
+    readonly actionRegistry?: DeviceActionRegistry;
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutAddressee?: boolean;
@@ -229,6 +249,22 @@ export async function harness(
       ) VALUES (?, ?, ?, 0, 'active', ?, ?)`,
     )
     .run(deploymentId, ownerId, agentId, authority.authorityEpoch, authority.fencingToken);
+  database
+    .prepare(
+      `INSERT INTO authority_leases (
+        id, owner_id, agent_id, deployment_id, holder_id, authority_epoch,
+        fencing_token, acquired_at, expires_at
+      ) VALUES (?, ?, ?, ?, 'holder-device-api', ?, ?, '2026-11-12T00:00:00.000Z',
+        '2999-12-31T23:59:59.999Z')`,
+    )
+    .run(
+      authorityLease.leaseId,
+      ownerId,
+      agentId,
+      deploymentId,
+      authority.authorityEpoch,
+      authorityLease.fencingToken,
+    );
   database.close();
   const clock = new ManualClock("2026-11-12T00:00:00.000Z");
   const now = () => new Date(clock.now());
@@ -421,6 +457,43 @@ export async function harness(
     now,
   });
   await perception.prepareDirectories();
+  const hub = new DeviceActionHub();
+  const authorization: { current: DeviceActionAuthorizationPort | undefined } = {
+    current: undefined,
+  };
+  const openRequests: DeviceActionRecord[] = [];
+  const requestOpen: DeviceActionOpenRequestPort = {
+    requestOpen: async ({ record }) => {
+      openRequests.push(record);
+    },
+  };
+  const externalContent = new ContextExternalContent({
+    configuration: { ownerId, agentId },
+    state: repository,
+    source: repository.runExecutionSource(ownerId, agentId),
+    authority: () => authorityLease,
+    clock,
+  });
+  const actions = createProductionDeviceActions({
+    scope: { ownerId, agentId },
+    store: repository.deviceActions(),
+    perception: repository.perception(),
+    externalContent,
+    devices: (scope) => repository.pairedDevices().listDevices(scope),
+    ledger: repository.decisionLedger(),
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector,
+    delivery: hub,
+    configuration: () => perceptionConfiguration.current,
+    timeZone: timeZone.current,
+    now: () => clock.now(),
+    openRequests: requestOpen,
+    authorization: {
+      authorize: async (intent) =>
+        (authorization.current ?? new ReadOnlyDeviceActionAuthorization()).authorize(intent),
+    },
+    ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
+  });
   const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
   const prefetch = new QueryPrefetch({
     limits: () => prefetchLimits.current,
@@ -521,6 +594,11 @@ export async function harness(
       }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
       perception,
+      actions: {
+        service: (scope) =>
+          scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
+        hub,
+      },
       voiceGates: () => voiceGates.current,
       prefetch: utterancePrefetch(
         {
@@ -561,6 +639,8 @@ export async function harness(
     queryEmbedder,
     limitWarnings,
     protector,
+    externalContent,
+    actions: { ...actions, hub, authorization, openRequests },
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
       if (!payload) return undefined;

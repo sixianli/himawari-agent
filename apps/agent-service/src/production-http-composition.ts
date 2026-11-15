@@ -38,6 +38,7 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -83,6 +84,7 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
+  type DeviceActionHub,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
@@ -253,6 +255,10 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly deviceActions?: {
+    readonly service: DeviceActionService;
+    readonly hub: DeviceActionHub;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
@@ -1621,6 +1627,17 @@ export async function createProductionHttpComposition(
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       perception,
+      ...(options.deviceActions
+        ? {
+            actions: {
+              service: (scope) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? options.deviceActions?.service
+                  : undefined,
+              hub: options.deviceActions.hub,
+            },
+          }
+        : {}),
       voiceGates: () => DEFAULT_VOICE_GATES,
       ...(options.queryPrefetch
         ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }

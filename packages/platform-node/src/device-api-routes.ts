@@ -6,9 +6,12 @@ import { pipeline } from "node:stream/promises";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  DEVICE_ACTION_OPEN_STATES,
+  DEVICE_ACTION_RECORD_STATES,
   type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
+  type DeviceActionService,
   type DeviceConfiguration,
   decideVoiceCommand,
   type GatewayAuthenticationContext,
@@ -37,6 +40,7 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { type DeviceActionHub, withDeviceActionSignals } from "./device-action-hub.js";
 import {
   classifyDeviceGatewayRequest,
   DEVICE_GATEWAY_ERROR_CODES,
@@ -94,6 +98,13 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "mirror", signed: true },
   { method: "GET", path: "usage", signed: true },
   { method: "POST", path: "usage/report", signed: true },
+  { method: "GET", path: "actions", signed: true },
+  { method: "POST", path: "actions/claim", signed: true },
+  { method: "POST", path: "actions/result", signed: true },
+  { method: "POST", path: "actions/open", signed: true },
+  { method: "POST", path: "actions/supported", signed: true },
+  { method: "GET", path: "actions/policy", signed: true },
+  { method: "POST", path: "actions/policy", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -113,6 +124,8 @@ const DEVICE_ROUTE_PATTERNS = DEVICE_API_ROUTES.map((route) => ({
 }));
 
 export const DEVICE_PAYLOAD_TEXT_MAXIMUM_REFS = 100;
+export const DEVICE_ACTION_VIEW_LIMIT = 100;
+const DEVICE_ACTION_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 export const DEVICE_PAYLOAD_TEXT_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 export const DEVICE_THREAD_EVENT_TYPES: ReadonlySet<string> = new Set([
@@ -235,6 +248,10 @@ export interface DeviceApiRouteOptions {
   readonly configuration: () => DeviceConfiguration;
   readonly authority: DeviceApiAuthority;
   readonly perception?: PerceptionService;
+  readonly actions?: {
+    readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
+    readonly hub: DeviceActionHub;
+  };
   readonly voiceGates?: () => VoiceGates;
   readonly addressee?: (input: {
     readonly authentication: GatewayAuthenticationContext;
@@ -732,6 +749,104 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body: json(request),
         });
         return options.sendJson(reply, 200, { accepted: true });
+      });
+
+      const actions = (authenticated: AuthenticatedDeviceRequest): DeviceActionService =>
+        options.actions?.service(scope(authenticated.authentication)) ?? options.rejectNotAllowed();
+
+      device.get("/actions", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const query = new URLSearchParams(rawQuery(request));
+        const finishedSince = query.get("finishedSince");
+        if (
+          [...query.keys()].some((key) => key !== "finishedSince") ||
+          (finishedSince !== null &&
+            (!DEVICE_ACTION_TIMESTAMP.test(finishedSince) ||
+              Number.isNaN(Date.parse(finishedSince))))
+        )
+          options.rejectBody(400);
+        return options.sendJson(reply, 200, {
+          actions: await actions(authenticated).views({
+            deviceId: authenticated.device.id,
+            limit: DEVICE_ACTION_VIEW_LIMIT,
+            ...(finishedSince === null
+              ? { states: DEVICE_ACTION_OPEN_STATES }
+              : { states: DEVICE_ACTION_RECORD_STATES, finishedSince }),
+          }),
+        });
+      });
+
+      device.post("/actions/claim", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        only(json(request), []);
+        return options.sendJson(reply, 200, {
+          actions: await actions(authenticated).claim(authenticated.device.id),
+        });
+      });
+
+      device.post("/actions/open", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        only(json(request), []);
+        return options.sendJson(reply, 200, {
+          actions: await actions(authenticated).reopen(authenticated.device.id),
+        });
+      });
+
+      device.post("/actions/result", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const result = await actions(authenticated).report(authenticated.device.id, json(request));
+        if ("state" in result)
+          return options.sendJson(reply, 200, {
+            state: result.state,
+            replayed: result.kind === "replayed",
+          });
+        if (result.kind === "invalid") return options.rejectBody(400);
+        return options.sendJson(reply, result.kind === "not_found" ? 404 : 409, {
+          code: `DEVICE_ACTION_${result.kind.toUpperCase()}`,
+        });
+      });
+
+      device.post("/actions/supported", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["actions"]);
+        const kept = await actions(authenticated).reportSupported(
+          authenticated.device,
+          body["actions"],
+        );
+        if (!kept) options.rejectBody(400);
+        return options.sendJson(reply, 200, { actions: kept });
+      });
+
+      device.get("/actions/policy", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        return options.sendJson(
+          reply,
+          200,
+          await actions(authenticated).policy(authenticated.device),
+        );
+      });
+
+      device.post("/actions/policy", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["expectedRevision", "blockedActions"]);
+        const service = actions(authenticated);
+        const outcome = await service.changePolicy({
+          device: authenticated.device,
+          ownerPresent: authenticated.confirmed,
+          expectedRevision: body["expectedRevision"],
+          blockedActions: body["blockedActions"],
+        });
+        if (outcome === "invalid") options.rejectBody(400);
+        if (outcome === "owner_presence_required")
+          return options.sendJson(reply, 403, { code: "DEVICE_OWNER_PRESENCE_REQUIRED" });
+        if (outcome === "revision_conflict")
+          return options.sendJson(reply, 409, {
+            code: "DEVICE_POLICY_REVISION_CONFLICT",
+            ...(await service.policy(authenticated.device)),
+          });
+        return options.sendJson(reply, 200, await service.policy(authenticated.device));
       });
 
       const envelope = (
@@ -1335,20 +1450,26 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           actor: { actorType: "owner", actorId: authentication.ownerId },
           payload: { afterCursor: after },
         }) as ThreadGatewaySubscription;
+        const signalled = (source: AsyncGenerator<string>) =>
+          options.actions
+            ? withDeviceActionSignals(source, options.actions.hub, authenticated.device.id)
+            : source;
         const stream = Readable.from(
           bounded(
-            options.streamThreadEvents({
-              gateway: options.threadGateway,
-              authentication,
-              subscription,
-              heartbeatMilliseconds: configuration.heartbeatSeconds * 1000,
-              include: (event) => DEVICE_THREAD_EVENT_TYPES.has(event.payload.eventType),
-              revalidate: async () => {
-                if (!(await options.devices.stillActive(authenticated.device.id)))
-                  throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
-                options.push?.streamAlive(authenticated.device.id);
-              },
-            }),
+            signalled(
+              options.streamThreadEvents({
+                gateway: options.threadGateway,
+                authentication,
+                subscription,
+                heartbeatMilliseconds: configuration.heartbeatSeconds * 1000,
+                include: (event) => DEVICE_THREAD_EVENT_TYPES.has(event.payload.eventType),
+                revalidate: async () => {
+                  if (!(await options.devices.stillActive(authenticated.device.id)))
+                    throw new Error(PAIRED_DEVICE_ERROR_CODES.DEVICE_REVOKED);
+                  options.push?.streamAlive(authenticated.device.id);
+                },
+              }),
+            ),
             configuration.connectionMaxSeconds * 1000,
           ),
         );
