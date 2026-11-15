@@ -68,7 +68,7 @@ date: "2026-11-15"
 - **用 vitest 自带的 `--shard`**：放弃。它按文件路径的哈希排序后切块，选法写在 vitest 内部，`test.mjs` 要核对“该跑哪些文件”就得照抄它的内部算法，升级 vitest 后可能悄悄对不上。自己按排序轮流分，规则只有一行，核对不变。
 - **按上次用时平衡两份**：先不做。要先把每个文件的用时存下来并在 CI 里读回，多一套状态；先看轮流分的两份实际差多少，差得多再改。
 - **integration 分三份**：先不做。三个检查 runner 还要跑三个 browser 作业，分三份会让 tests 和 browser 抢 runner，而且三台合计内存上限是 16 GB。
-- **把 tooling 的 worker 从 2 个减到 1 个**：放弃。会让 tooling 整体变慢，而失败的原因是单条测试超过 5 秒，不是并发出错。
+- **把 tooling 的 worker 从 2 个减到 1 个**（`scripts/ci/run.mjs` 给 tooling 起 vitest 时写的是 `"--maxWorkers",` 后跟 `"2",`）：放弃。会让 tooling 整体变慢，而失败的原因是单条测试超过 5 秒，不是并发出错。
 
 <a id="consequences"></a>
 
