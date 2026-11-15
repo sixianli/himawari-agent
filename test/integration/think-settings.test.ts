@@ -1,4 +1,6 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -11,11 +13,9 @@ import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
+import { ThinkWorthDecision } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { ThinkWorthDecision } from "@himawari-agent/platform-node";
 import { ProductionThinkInbox } from "../../apps/agent-service/src/production-think-inbox.ts";
 import {
   ProductionThinkControl,
@@ -319,5 +319,30 @@ describe("think settings", () => {
       reasonCode: "worth_unsure",
     });
     expect(runs).toEqual([]);
+  });
+
+  it("lets only one of two changes made at the same revision through", async () => {
+    const { control, settings } = await fixture();
+    const results = await Promise.all([
+      failure(control.execute(change(0, "queueLimit", 7))),
+      failure(control.execute(change(0, "dailyLimit", 9))),
+    ]);
+    expect(results.toSorted()).toEqual(["THINK_SETTINGS_CHANGED", undefined].toSorted());
+    const after = await settings.read();
+    expect(after.revision).toBe(1);
+    expect(after.items.filter((item) => item.overridden)).toHaveLength(1);
+  });
+
+  it("falls back to the configured limits when saved changes cannot be read", async () => {
+    const { control, inbox } = await fixture();
+    await control.execute(change(0, "queueLimit", 5));
+    const broken = new ProductionThinkInbox({
+      overrides: async () => {
+        throw new Error("SQLITE_BUSY");
+      },
+      limits: { queueLimit: 1 },
+    } as never);
+    expect((await broken.currentLimits()).queueLimit).toBe(1);
+    expect((await inbox.currentLimits()).queueLimit).toBe(5);
   });
 });
