@@ -308,7 +308,7 @@ public final class WatchModel {
                 settled.insert(card.key)
                 Haptics.shared.report(.messageSent)
             } catch {
-                if case let DeviceAPIError.server(status, _, _) = error, (400 ..< 500).contains(status) { requestIds[identity] = nil }
+                if case let DeviceAPIError.server(status, _, _, _) = error, (400 ..< 500).contains(status) { requestIds[identity] = nil }
                 Haptics.shared.report(.taskFailed)
             }
             await refresh()
