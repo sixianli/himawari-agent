@@ -6,6 +6,7 @@ import SwiftUI
 struct PanelView: View {
     let model: MenuBarModel
     @State private var olderListHeight: CGFloat = 0
+    @State private var olderListAtBottom = true
     let talk: () -> Void
     let pair: () -> Void
 
@@ -126,9 +127,25 @@ struct PanelView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
                 }
                 .scrollIndicators(.never)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 1
+                } action: { _, atBottom in
+                    olderListAtBottom = atBottom
+                }
                 .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
+                .mask { olderListMask }
                 .onChange(of: olderListHeight) { scrollToRevealed(proxy) }
                 .onChange(of: model.revealedNotice, initial: true) { scrollToRevealed(proxy) }
+            }
+        }
+    }
+
+    private var olderListMask: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+            if !olderListAtBottom {
+                LinearGradient(colors: [.primary, .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: DesignTokens.Mac.noticeListFade)
             }
         }
     }
