@@ -78,9 +78,7 @@ export interface ThinkInboxStorePort {
   settledSummaries(
     input: OwnerRuleScope & { readonly limit: number },
   ): Promise<readonly { readonly id: string; readonly summaryRef: string }[]>;
-  summaryReferenced(
-    input: OwnerRuleScope & { readonly summaryRef: string },
-  ): Promise<boolean>;
+  summaryReferenced(input: OwnerRuleScope & { readonly summaryRef: string }): Promise<boolean>;
   clearSummary(
     input: OwnerRuleScope & { readonly id: string; readonly summaryRef: string },
   ): Promise<boolean>;

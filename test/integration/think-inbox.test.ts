@@ -31,25 +31,17 @@ describe("think inbox", () => {
   const closers: (() => Promise<void>)[] = [];
   afterEach(async () => {
     await Promise.all(closers.splice(0).map((close) => close()));
-    await Promise.all(
-      directories
-        .splice(0)
-        .map((directory) => rm(directory, { recursive: true })),
-    );
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
   async function fixture() {
-    const stateRoot = await mkdtemp(
-      path.join(tmpdir(), "himawari-think-inbox-"),
-    );
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-think-inbox-"));
     directories.push(stateRoot);
     await mkdir(path.join(stateRoot, "data"));
     const file = path.join(stateRoot, "data", "product.sqlite");
     await copyMigratedDatabase(file);
     const database = openQualifiedDatabase(file);
-    database
-      .prepare("INSERT INTO owners (id, revision) VALUES (?, 0)")
-      .run(OWNER_ID);
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
       .run(AGENT_ID, OWNER_ID);
@@ -67,13 +59,7 @@ describe("think inbox", () => {
           acquired_at, expires_at)
         VALUES (?, ?, ?, ?, 'holder-think-inbox', 1, 1, ?, '2026-11-15T00:00:00.000Z')`,
       )
-      .run(
-        createAuthorityLeaseId("lease-think-inbox"),
-        OWNER_ID,
-        AGENT_ID,
-        DEPLOYMENT_ID,
-        START,
-      );
+      .run(createAuthorityLeaseId("lease-think-inbox"), OWNER_ID, AGENT_ID, DEPLOYMENT_ID, START);
     database.close();
     const clock = { value: START };
     const repository = await SqliteProductStateRepository.open({
@@ -85,9 +71,7 @@ describe("think inbox", () => {
     closers.push(() => repository.close());
     const adapters = createReferenceAdapterSet();
     const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
-    const make = (
-      limits?: ConstructorParameters<typeof ProductionThinkInbox>[0]["limits"],
-    ) => {
+    const make = (limits?: ConstructorParameters<typeof ProductionThinkInbox>[0]["limits"]) => {
       const inbox = new ProductionThinkInbox({
         scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
         store: repository.thinkInbox(),
@@ -114,9 +98,7 @@ describe("think inbox", () => {
       try {
         return (
           handle
-            .prepare(
-              "SELECT COUNT(*) AS count FROM payloads WHERE ref LIKE 'think-summary:%'",
-            )
+            .prepare("SELECT COUNT(*) AS count FROM payloads WHERE ref LIKE 'think-summary:%'")
             .get() as { count: number }
         ).count;
       } finally {
@@ -167,9 +149,7 @@ describe("think inbox", () => {
   it("turns away a source nobody registered and an empty summary", async () => {
     const { make, store } = await fixture();
     const inbox = make();
-    expect(
-      await inbox.submit({ ...mail("m"), sourceKind: "calendar" }),
-    ).toEqual({
+    expect(await inbox.submit({ ...mail("m"), sourceKind: "calendar" })).toEqual({
       accepted: false,
       reason: "THINK_SOURCE_UNREGISTERED",
     });
@@ -177,9 +157,7 @@ describe("think inbox", () => {
       accepted: false,
       reason: "THINK_SUMMARY_EMPTY",
     });
-    expect(
-      (await store.usage({ ...scope, day: "2026-11-14" })).acceptedToday,
-    ).toBe(0);
+    expect((await store.usage({ ...scope, day: "2026-11-14" })).acceptedToday).toBe(0);
   });
 
   it("does not queue the same source version twice but accepts a new version", async () => {
@@ -200,14 +178,9 @@ describe("think inbox", () => {
   it("takes two identical submits at once without failing or writing a second summary", async () => {
     const { make, thinkPayloads } = await fixture();
     const inbox = make();
-    const [first, second] = await Promise.all([
-      inbox.submit(mail("a")),
-      inbox.submit(mail("a")),
-    ]);
+    const [first, second] = await Promise.all([inbox.submit(mail("a")), inbox.submit(mail("a"))]);
     expect(first.accepted && second.accepted).toBe(true);
-    expect(
-      [first, second].filter((r) => r.accepted && r.duplicate),
-    ).toHaveLength(1);
+    expect([first, second].filter((r) => r.accepted && r.duplicate)).toHaveLength(1);
     expect(thinkPayloads()).toBe(1);
   });
 
@@ -246,9 +219,10 @@ describe("think inbox", () => {
   it("rejects input of the wrong type and counts thinking entries in usage", async () => {
     const { make, store } = await fixture();
     const inbox = make();
-    expect(
-      await inbox.submit({ ...mail("a"), externalContent: "true" } as never),
-    ).toEqual({ accepted: false, reason: "THINK_INPUT_INVALID" });
+    expect(await inbox.submit({ ...mail("a"), externalContent: "true" } as never)).toEqual({
+      accepted: false,
+      reason: "THINK_INPUT_INVALID",
+    });
     expect(await inbox.submit({ ...mail("a"), summary: 5 } as never)).toEqual({
       accepted: false,
       reason: "THINK_INPUT_INVALID",
