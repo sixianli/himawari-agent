@@ -630,9 +630,10 @@ def refresh_carried_copies(packet, commit):
 
 def packet_member(staged_path):
     marker = '/packet/'
-    if staged_path.count(marker) != 1:
+    member = staged_path.split(marker, 1)[-1]
+    if staged_path.count(marker) != 1 or member.startswith('/') or '..' in member.split('/'):
         refuse('PACKET_STAGED_PATH_OUTSIDE_PACKET', staged_path)
-    return staged_path.split(marker, 1)[1]
+    return member
 
 
 def regenerate_hashes(packet):

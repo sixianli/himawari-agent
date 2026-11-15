@@ -434,6 +434,12 @@ class TemplateTest(RenderedPacket):
         self.assertEqual(json.loads(draft_path.read_text())['cleanupHelper']['sha256'], hashlib.sha256(helper.read_bytes()).hexdigest())
         self.assertEqual([problem for problem in self.consistency_problems(packet) if not problem.startswith('CANDIDATE_ARCHIVE_MISSING')], [])
 
+    def test_the_bound_cleanup_helper_path_must_stay_inside_the_packet(self):
+        self.assertEqual(packet_maker.packet_member('/x/packet/acceptance/helpers/a.py'), 'acceptance/helpers/a.py')
+        for path in ['/x/packet/../secret', '/x/packet/acceptance/../../secret', '/x/packet//etc/passwd', '/x/elsewhere/a.py', '/x/packet/a/packet/b.py']:
+            with self.subTest(path=path), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STAGED_PATH_OUTSIDE_PACKET'):
+                packet_maker.packet_member(path)
+
     def test_the_template_cleanup_helper_digest_matches_the_template_helper(self):
         draft = (packet_maker.TEMPLATE / 'acceptance' / 'cloud' / 'cloud-inputs.draft.json').read_text()
         helper = packet_maker.TEMPLATE / 'acceptance' / 'helpers' / 'check-p5-scratch-cleanup.py'

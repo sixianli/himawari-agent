@@ -43,7 +43,8 @@ for relative, expected in draft['files'].items():
         problems.append(f'CLOUD_INPUT_DIGEST_STALE {relative}')
 referenced_but_unlisted(cloud, cloud, {name for name in draft['files'] if (cloud / name).is_file()}, {'cloud-inputs.draft.json'})
 helper_path = draft['cleanupHelper']['path']
-helper = packet / helper_path.split('/packet/', 1)[1] if helper_path.count('/packet/') == 1 else None
+helper_member = helper_path.split('/packet/', 1)[-1]
+helper = packet / helper_member if helper_path.count('/packet/') == 1 and not helper_member.startswith('/') and '..' not in helper_member.split('/') else None
 if helper is None or not helper.is_file():
     problems.append(f'CLOUD_INPUT_CLEANUP_HELPER_MISSING {helper_path}')
 elif sha(helper.read_bytes()) != draft['cleanupHelper']['sha256']:
