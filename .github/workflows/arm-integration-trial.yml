@@ -4,6 +4,7 @@ on:
     paths:
       - .github/workflows/arm-integration-trial.yml
       - scripts/ci/trial/**
+      - scripts/ci/platforms.mjs
 permissions:
   contents: read
 defaults:
@@ -12,9 +13,14 @@ defaults:
 jobs:
   trial:
     runs-on: ci-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     timeout-minutes: 90
     env:
       CI_NODE: 22.22.3
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -27,10 +33,14 @@ jobs:
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: install dependencies
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
-      - name: build linux-arm64 and run integration 3 of 3
+      - name: install chromium shell
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+      - name: build linux-arm64 and run integration shard
         run: |
           nproc; free -g; uptime
-          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools 3 3
+          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools ${{ matrix.shard }} 3
       - name: failed test names
         if: always()
         run: |
@@ -38,5 +48,5 @@ jobs:
           f=$(find .ci-output/trial/tests -name integration.json | head -n 1 || true)
           echo "report=$f"
           if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
-          ls .ci-output/trial/build || true
+          if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);const seen=new Set();for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed"){const m=(a.failureMessages[0]||"");const k=m.split("\n")[0];if(seen.has(k))continue;seen.add(k);console.log("=== "+t.name.split("/test/")[1]+" > "+a.title);console.log(m.split("\n").slice(0,40).join("\n"))}' "$PWD/$f"; fi
           tail -n 40 .ci-output/trial/build/*.log 2>/dev/null | tail -n 80 || true
