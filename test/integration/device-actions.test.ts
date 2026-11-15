@@ -2,6 +2,7 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   DEVICE_ACTION_RECORD_STATES,
+  DEVICE_ACTION_REGISTRY,
   DEVICE_ACTION_REGISTRATIONS,
   type DeviceActionAuthorizationPort,
   type DeviceActionIntent,
@@ -968,6 +969,186 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await act("run-2", request);
     expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([false, true]);
     await h.repository.close();
+  });
+
+  it("[undo] offers an undo only when the device reported what it changed, and queues the reverse action", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update", "device_reminder.create"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    const views = async () =>
+      (
+        (await deviceGet(h, client, "actions?finishedSince=1970-01-01T00:00:00.000Z")).body[
+          "actions"
+        ] as { id: string; action: string; undo: string }[]
+      ).map(({ id, action, undo }) => ({ id, action, undo }));
+    const finish = async (evidence: Record<string, unknown>) => {
+      const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+        id: string;
+      }[];
+      const id = claimed[0]?.id;
+      expect(
+        (
+          await devicePost(h, client, "actions/result", {
+            id,
+            outcome: "succeeded",
+            readBack: true,
+            evidence,
+          })
+        ).body,
+      ).toEqual({ state: "succeeded", replayed: false });
+      return id as string;
+    };
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const changed = await finish({ before: { title: "牙医复诊" } });
+    h.clock.advance(1000);
+    await act("run-1", { action: "device_reminder.create", arguments: { title: "买牛奶" } });
+    const reminder = await finish({ reminderId: "r-1" });
+    expect(await views()).toEqual(
+      expect.arrayContaining([
+        { id: changed, action: "calendar.update", undo: "available" },
+        { id: reminder, action: "device_reminder.create", undo: "none" },
+      ]),
+    );
+    expect((await devicePost(h, client, "actions/undo", { id: reminder })).status).toBe(409);
+    expect(
+      (await devicePost(h, client, "actions/undo", { id: "dact_" + "0".repeat(32) })).status,
+    ).toBe(404);
+    const undone = await devicePost(h, client, "actions/undo", { id: changed });
+    expect(undone.body).toMatchObject({ state: "queued" });
+    expect((await views()).find(({ id }) => id === changed)?.undo).toBe("pending");
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      arguments: Record<string, unknown>;
+    }[];
+    expect(claimed).toMatchObject([
+      { arguments: { eventId: "evt-1", title: "牙医复诊" }, mode: "perform" },
+    ]);
+    const reverse = (await rows(h)).find(({ state }) => state === "delivered");
+    await devicePost(h, client, "actions/result", {
+      id: reverse?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: {},
+    });
+    expect((await views()).find(({ id }) => id === changed)?.undo).toBe("done");
+    await h.repository.close();
+  });
+
+  it("[undo] never offers an undo when the device kept no before-image, and hands an undo to the owner's approval", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update", "calendar.delete"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    await devicePost(h, client, "actions/result", {
+      id: claimed[0]?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: {},
+    });
+    expect(await devicePost(h, client, "actions/undo", { id: claimed[0]?.id })).toMatchObject({
+      status: 409,
+    });
+    const seen: DeviceActionIntent[] = [];
+    h.clock.advance(1000);
+    await addRun(h, "run-2");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-2", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "再改" },
+    });
+    const second = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    await devicePost(h, client, "actions/result", {
+      id: second[0]?.id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: { before: { title: "新标题" } },
+    });
+    h.actions.authorization.current = ownerIsAsked(seen);
+    h.clock.advance(1000);
+    const undone = await devicePost(h, client, "actions/undo", { id: second[0]?.id });
+    expect(undone.body).toMatchObject({ state: "waiting_owner" });
+    expect(seen).toMatchObject([
+      { action: "calendar.update", readUntrustedContent: false, arguments: { title: "新标题" } },
+    ]);
+    await h.repository.close();
+  });
+
+  it("[undo] derives the reverse action only from what the device reported", () => {
+    const plan = (
+      action: string,
+      args: Record<string, unknown>,
+      evidence: Record<string, unknown>,
+    ) => DEVICE_ACTION_REGISTRY.get(action)?.undo?.(args, evidence) ?? null;
+    expect(plan("calendar.create", { title: "x" }, { eventId: "evt-9" })).toEqual({
+      action: "calendar.delete",
+      arguments: { eventId: "evt-9" },
+    });
+    expect(plan("calendar.create", { title: "x" }, {})).toBeNull();
+    const before = {
+      title: "牙医复诊",
+      start: "2026-11-13T15:00",
+      end: "2026-11-13T16:00",
+      allDay: false,
+    };
+    expect(plan("calendar.delete", { eventId: "evt-1" }, { before })).toEqual({
+      action: "calendar.create",
+      arguments: before,
+    });
+    expect(
+      plan(
+        "calendar.delete",
+        { eventId: "evt-1", occurrenceStart: "2026-11-13T15:00" },
+        { before },
+      ),
+    ).toBeNull();
+    expect(plan("calendar.delete", { eventId: "evt-1" }, {})).toBeNull();
+    expect(
+      plan(
+        "calendar.update",
+        { eventId: "evt-1", title: "新", location: "东京" },
+        { before: { title: "旧" } },
+      ),
+    ).toBeNull();
+    expect(
+      plan(
+        "calendar.update",
+        { eventId: "evt-1", occurrenceStart: "2026-11-13T15:00", title: "新" },
+        { before: { title: "旧", notes: "无关" } },
+      ),
+    ).toEqual({
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", occurrenceStart: "2026-11-13T15:00", title: "旧" },
+    });
+    expect(
+      plan(
+        "contact.update",
+        { contactId: "c-1", organization: "新公司" },
+        { before: { organization: "旧公司" } },
+      ),
+    ).toEqual({
+      action: "contact.update",
+      arguments: { contactId: "c-1", organization: "旧公司" },
+    });
+    expect(plan("alarm.set", { time: "2026-11-13T07:00" }, { alarmId: "a-1" })).toBeNull();
+    expect(plan("home.control", { accessoryId: "lamp-1" }, { before: { on: false } })).toBeNull();
   });
 
   it("[approval] moves a waiting action on once the unified approval is answered, and rejects it when the owner says no", async () => {
