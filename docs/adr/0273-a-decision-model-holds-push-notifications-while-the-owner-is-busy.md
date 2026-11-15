@@ -28,7 +28,7 @@ date: "2026-11-15"
 
 ## 背景
 
-发送闸门（[PR 414](0244-hard-rules-step4-unified-push-gate.md)）让主人自己定的“不推送时段”规则判断一次发还是延后；主人正在看 Himawari 时不弹推送。这两道之外，没有按主人此刻状态延后的判断。
+发送闸门（[PR 414](0244-hard-rules-step4-unified-push-gate.md)）让主人自己定的“不推送时段”规则判断一次发还是延后；主人正在看 Himawari 时不弹推送。本 PR 加上第三道：按主人此刻的状态判断要不要延后（`production-web-push.ts` 的 `#timed`）。
 
 设计里早就有这一块（[苹果设备身体设计](../execution/specs/2026-11-11-apple-device-body-design.md#10-送达时机)的“10. 送达时机”）：按“主人此刻的状态”把不紧急的推送延后到状态结束或最晚送达时间。本 ADR 定第一版怎么做，并修订 [ADR 0264](0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md) 把 Jev 用于真实个人数据的范围：除了“这句话是不是在叫我”，再加“现在打扰主人合不合适”。
 
@@ -84,9 +84,9 @@ date: "2026-11-15"
 
 ## 评测结果
 
-评测脚本 `scripts/evals/delivery-timing-live.eval.ts` 用生产同一个类 `DeliveryTimingDecision` 问真的 Jev。数据集 `test/fixtures/delivery-timing-eval/dataset.json` 共 40 条：20 条主人在忙（开车、骑车、跑步、车载连接、睡着、专注、和人说话及组合），20 条不忙（静止、走路、醒着、一个人、专注关、没连车及组合），每条问 2 遍，共 80 次，0 次出错，中位约 0.2 秒，两版一共花约 0.007 美元。结果：`evals/delivery-timing/result.json`。
+评测脚本 `scripts/evals/delivery-timing-live.eval.ts` 用生产同一个类 `DeliveryTimingDecision` 问真的 Jev。数据集 `test/fixtures/delivery-timing-eval/dataset.json` 共 40 条：20 条主人在忙（开车、骑车、跑步、车载连接、睡着、专注、和人说话及组合），20 条不忙（静止、走路、醒着、一个人、专注关、没连车及组合），每条问 2 遍，共 80 次，0 次出错，中位约 0.2 秒，最终问法这一版约 0.003 美元（`result.json` 的 `estimatedUsd`）。结果：`evals/delivery-timing/result.json`。
 
-- 第一版问法的结果记在 `evals/delivery-timing/first-prompt-result.json`：门槛 0.7 下，忙的 40 次里判出 29 次，不忙的 40 次里误延后 0 次；漏掉的是只有车载连接、骑车、只有睡着这几类（概率 0.21 到 0.63）。
+- 第一版问法的结果记在 `evals/delivery-timing/first-prompt-result.json`：门槛 0.7 下，忙的 40 次里判出 29 次，不忙的 40 次里误延后 0 次；漏掉的是只有车载连接、骑车、跑步、只有睡着这几类（概率 0.21 到 0.63）。
 - 现用问法（把开车、骑车、跑步、连着车、睡着、和人说话、专注模式逐项写明，也写明静止、走路、醒着、一个人、没开专注不算忙）：门槛 0.7 下，忙的 40 次全部判出（最低 0.94），不忙的 40 次误延后 0 次（最高 0.53）。结果：`evals/delivery-timing/result.json`。
 - 局限：数据集只有 40 条、是自己写的，问法也是照这批类别调的，所以现用问法的好成绩有偏高的可能；真实使用里的信号组合会更杂。费用上线后按决策记录里 `delivery_timing` 的条数和感知每日模型费用核对。
 
