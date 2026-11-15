@@ -234,6 +234,7 @@ public final class AppModel {
         chat?.stop()
         chat = nil
         actions = nil
+        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true

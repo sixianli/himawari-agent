@@ -22,8 +22,8 @@ struct HomeFeedTests {
     }
 
     private static let pair = [
-        HomeFeedAction(action: "done", label: "完成", polarity: .positive),
-        HomeFeedAction(action: "mute", label: "不再提醒", polarity: .negative),
+        HomeFeedAction(action: "done", label: "完成", polarity: .positive, binding: "b-done"),
+        HomeFeedAction(action: "mute", label: "不再提醒", polarity: .negative, binding: "b-mute"),
     ]
 
     private func snapshot(_ items: [HomeFeedItem], awaiting: Int? = nil, incomplete: [String] = []) -> HomeFeedSnapshot {
@@ -56,9 +56,42 @@ struct HomeFeedTests {
         #expect(actions.allSatisfy { $0.binding == "b-insight:mail-42-\($0.action)" })
     }
 
-    @Test func rejectsAGatewayEnvelopeBecauseTheDeviceRouteSendsOnlyThePayload() {
-        let data = Data(#"{"type":"home.snapshot","payload":{"items":[],"awaitingCount":0,"revision":"r","generatedAt":"x"}}"#.utf8)
-        #expect(throws: (any Error).self) { try HomeFeedSnapshot.decode(data) }
+    @Test func rejectsAGatewayEnvelopeBecauseTheDeviceRouteSendsOnlyThePayload() throws {
+        let url = try #require(Bundle.module.url(forResource: "home-snapshot", withExtension: "json", subdirectory: "Fixtures"))
+        let payload = try String(contentsOf: url, encoding: .utf8)
+        #expect(throws: Never.self) { try HomeFeedSnapshot.decode(Data(payload.utf8)) }
+        let envelope = Data(#"{"type":"home.snapshot","payload":\#(payload)}"#.utf8)
+        #expect(throws: (any Error).self) { try HomeFeedSnapshot.decode(envelope) }
+    }
+
+    @Test func anActionWithoutABindingCannotBeSentToHomeAct() {
+        let reconnect = HomeFeedAction(action: "reconnect", label: "重新连接", polarity: .positive)
+        let unbound = item("connection:mail", awaits: true, actions: [reconnect])
+        #expect(unbound.choice == nil)
+        #expect(HomeLayout(snapshot([unbound])).lead == nil)
+    }
+
+    @Test func anApprovalKeepsItsButtonsBecauseItIsAnsweredThroughTheApprovalRoute() {
+        let approval = HomeFeedItem(
+            key: "approval:a1",
+            kind: "approval",
+            awaitsOwner: true,
+            sentence: "a",
+            target: .init(type: "approval", id: "a1", threadId: nil),
+            source: .init(type: "conversation", from: nil, label: nil, threadId: nil, at: "2026-11-13T00:00:00Z"),
+            createdAt: "2026-11-13T00:00:00Z",
+            actions: [HomeFeedAction(action: "approved", label: "同意", polarity: .positive)]
+        )
+        #expect(approval.choice?.confirm.action == "approved")
+    }
+
+    @Test func homeRequestIdsStartWithALetterOrDigitAndStayInsideTheServerCharacterSet() {
+        for _ in 0 ..< 2000 {
+            let id = HomeRequestId.make()
+            #expect(id.count <= 128)
+            #expect(id.first?.isLetter == true || id.first?.isNumber == true)
+            #expect(id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._:-".contains($0)) })
+        }
     }
 
     @Test func keepsTheServerOrderExactly() {
@@ -110,9 +143,9 @@ struct HomeFeedTests {
     }
 
     @Test func choicePutsTheNegativeOnTheLeftAndFallsBackToNeutral() {
-        let snooze = HomeFeedAction(action: "snooze", label: "稍后再提醒", polarity: .neutral)
-        let done = HomeFeedAction(action: "done", label: "完成", polarity: .positive)
-        let dismiss = HomeFeedAction(action: "dismiss", label: "知道了", polarity: .negative)
+        let snooze = HomeFeedAction(action: "snooze", label: "稍后再提醒", polarity: .neutral, binding: "b")
+        let done = HomeFeedAction(action: "done", label: "完成", polarity: .positive, binding: "b")
+        let dismiss = HomeFeedAction(action: "dismiss", label: "知道了", polarity: .negative, binding: "b")
         #expect(item("x", awaits: true, actions: [snooze, done, dismiss]).choice?.decline == dismiss)
         #expect(item("x", awaits: true, actions: [snooze, done]).choice?.decline == snooze)
         #expect(item("x", awaits: true, actions: [dismiss, snooze]).choice?.confirm == snooze)

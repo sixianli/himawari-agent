@@ -36,8 +36,8 @@ enum TodayDemo {
         source: .init(type: "mail", from: "田中", label: "从他今天 15:42 的邮件看到的", threadId: nil, at: at(-18 * 60)),
         createdAt: at(-18 * 60),
         actions: [
-            HomeFeedAction(action: "dismiss", label: "不用", polarity: .negative),
-            HomeFeedAction(action: "done", label: "改到 9:40", polarity: .positive),
+            HomeFeedAction(action: "dismiss", label: "不用", polarity: .negative, binding: "demo-dismiss"),
+            HomeFeedAction(action: "done", label: "改到 9:40", polarity: .positive, binding: "demo-done"),
         ],
         rank: "deadline"
     )

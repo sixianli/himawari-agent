@@ -54,6 +54,18 @@ public final class HomeFeedModel {
 
     public var available: Bool { snapshot != nil }
 
+    public var approvalsIncomplete: Bool {
+        snapshot?.incompleteSources.contains("approvals") == true
+    }
+
+    public func reset() {
+        snapshot = nil
+        settled = []
+        busy = []
+        toast = nil
+        failed = false
+    }
+
     public var layout: HomeLayout? {
         snapshot.map { HomeLayout($0, settled: settled) }
     }
@@ -86,7 +98,11 @@ public final class HomeFeedModel {
             busy.insert(item.key)
             defer { busy.remove(item.key) }
             await approvals.respond(approval, approved: action.polarity == .positive)
-            if !approvals.pending.contains(where: { $0.id == approval.id }) { settled.insert(item.key) }
+            if approvals.pending.contains(where: { $0.id == approval.id }) {
+                if approvals.problem != nil { toast = HomeToast(item: item, message: L.text("today.actionFailed"), undo: nil) }
+            } else {
+                settled.insert(item.key)
+            }
             await refresh()
             return
         }

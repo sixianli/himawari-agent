@@ -164,7 +164,8 @@ struct MainTabsView: View {
     }
 
     private var todayBadge: Int? {
-        feed.layout?.badge ?? actions?.waitingCount
+        guard feed.available else { return actions?.waitingCount }
+        return feed.approvalsIncomplete ? actions?.waitingCount : feed.layout?.badge
     }
 
     @ViewBuilder

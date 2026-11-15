@@ -18,7 +18,7 @@ actor DeviceHomeSource: HomeFeedSource {
 
     func act(_ item: HomeFeedItem, action: HomeFeedAction, revision: String) async throws -> HomeActOutcome {
         let key = [item.key, action.action, action.binding ?? ""].joined(separator: "\n")
-        let requestId = requestIds[key] ?? OutgoingMessage.newId()
+        let requestId = requestIds[key] ?? HomeRequestId.make()
         requestIds[key] = requestId
         let presence = action.ownerPresence ? OwnerPresenceSigner(key: confirmKey, reason: L.text("today.presenceReason")) : nil
         do {

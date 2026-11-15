@@ -164,7 +164,7 @@ public struct HomeFeedItem: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var choice: HomeChoice? {
-        HomeChoice(actions)
+        HomeChoice(actions.filter { $0.binding != nil || approvalId != nil })
     }
 }
 
@@ -236,6 +236,12 @@ public struct HomeFeedSnapshot: Codable, Sendable, Equatable {
 
     public static func decode(_ data: Data) throws -> HomeFeedSnapshot {
         try JSONDecoder().decode(HomeFeedSnapshot.self, from: data)
+    }
+}
+
+public enum HomeRequestId {
+    public static func make() -> String {
+        "home-\(OutgoingMessage.newId())"
     }
 }
 

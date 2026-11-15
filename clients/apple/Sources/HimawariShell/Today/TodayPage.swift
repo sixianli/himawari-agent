@@ -113,7 +113,7 @@ struct TodayPage: View {
                 if !layout.upcoming.isEmpty {
                     UpcomingCard(upcoming: layout.upcoming, now: listClock ?? Date())
                 }
-                if let actions, hasDeviceActions, feed.snapshot?.incompleteSources.isEmpty == false {
+                if let actions, hasDeviceActions, feed.approvalsIncomplete {
                     TodayDeviceActionsCard(model: actions) { approval in
                         withAnimation(.snappy) { opened = approval }
                     }

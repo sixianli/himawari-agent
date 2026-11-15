@@ -122,7 +122,7 @@ final class MenuBarModel {
         acting = item.key
         failedItem = nil
         let key = [item.key, action.action, action.binding ?? ""].joined(separator: "\n")
-        let requestId = actionRequestIds[key] ?? OutgoingMessage.newId()
+        let requestId = actionRequestIds[key] ?? HomeRequestId.make()
         actionRequestIds[key] = requestId
         let presence = action.ownerPresence ? app.ownerPresence(reason: L.text("panel.presenceReason")) : nil
         Task {
