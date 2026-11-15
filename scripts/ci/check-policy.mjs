@@ -52,7 +52,7 @@ const coverageJobIds = ["policy", "static", "build", "browser", "coverage", "sec
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 export const chromiumInstall =
   ".ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium";
-const chromiumChecks = ["static", "tests"];
+const chromiumChecks = ["static", "tests", "tooling"];
 
 export function timeoutMinutesFor(checkId) {
   if (checkId === "required") return 15;

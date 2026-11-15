@@ -237,7 +237,9 @@ function workflow() {
             ...(check.id === "required"
               ? [shareCollect(), gateStep(), shareRemove()]
               : [sharePut(check), diagnosticSummary(check)]),
-            ...(["static", "tests"].includes(check.id) ? [{ run: chromiumInstall }] : []),
+            ...(["static", "tests", "tooling"].includes(check.id)
+              ? [{ run: chromiumInstall }]
+              : []),
           ],
         },
       ]),
@@ -766,7 +768,7 @@ describe("CI policy contract", () => {
     value.jobs.required.permissions = { contents: "read", actions: "read" };
     expect(() => validateWorkflow(policy, stringify(value), lock)).not.toThrow();
   });
-  it.each(["static", "tests"])(
+  it.each(["static", "tests", "tooling"])(
     "rejects a %s job that runs browser tests without installing Chromium",
     (id) => {
       const value = workflow();
