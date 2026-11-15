@@ -191,6 +191,15 @@ export class SqliteMcpMemorySyncOperations {
   }
 
   private push(input: McpSyncPushInput): McpSyncPushResult {
+    try {
+      return this.pushBatch(input);
+    } catch (error) {
+      this.dropUnusedPayloads(input);
+      throw error;
+    }
+  }
+
+  private pushBatch(input: McpSyncPushInput): McpSyncPushResult {
     this.assertDiskHeadroom();
     if (
       !instant(input.now) ||
@@ -214,9 +223,30 @@ export class SqliteMcpMemorySyncOperations {
         .get(input.connectionId, input.ownerId, input.agentId) as string | undefined;
       if (connection !== "active") return this.fail("PORT_CONFLICT", "MCP_CONNECTION_NOT_ACTIVE");
       const deletes = this.applyDeletes(input);
-      const items = input.items.map((item) => this.applyItem(input, item));
+      const items = input.items.flatMap((item) => {
+        const applied = this.applyItem(input, item);
+        return applied === null ? [] : [applied];
+      });
       return Object.freeze({ items: Object.freeze(items), deletes: Object.freeze(deletes) });
     })();
+  }
+
+  private dropUnusedPayloads(input: McpSyncPushInput): void {
+    if (!Array.isArray(input.items)) return;
+    const refs = new Set<string>();
+    for (const item of input.items) {
+      if (typeof item?.contentRef === "string") refs.add(item.contentRef);
+      if (typeof item?.proposalContentRef === "string") refs.add(item.proposalContentRef);
+    }
+    for (const ref of refs) {
+      try {
+        this.database
+          .prepare("DELETE FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?")
+          .run(ref, input.ownerId, input.agentId);
+      } catch {
+        continue;
+      }
+    }
   }
 
   private itemValid(item: McpSyncPushItem): boolean {
@@ -487,7 +517,7 @@ export class SqliteMcpMemorySyncOperations {
     return { index: item.index, status, versionTag: item.textSha256, entryId, projectId };
   }
 
-  private applyItem(input: McpSyncPushInput, item: McpSyncPushItem): McpSyncItemResult {
+  private applyItem(input: McpSyncPushInput, item: McpSyncPushItem): McpSyncItemResult | null {
     const projectId = this.projectFor(input, item.projectName, input.now, true) as string;
     const existing = this.entry(input, projectId, item.stableId);
     return item.kind === "owner"
@@ -516,8 +546,8 @@ export class SqliteMcpMemorySyncOperations {
     item: McpSyncPushItem,
     projectId: string,
     existing: EntryRow | undefined,
-  ): McpSyncItemResult {
-    if (existing !== undefined && existing.kind !== "owner") return this.invalid();
+  ): McpSyncItemResult | null {
+    if (existing !== undefined && existing.kind !== "owner") return null;
     const previous = this.proposal(input, existing?.proposalId ?? null);
     if (
       existing !== undefined &&
@@ -642,8 +672,8 @@ export class SqliteMcpMemorySyncOperations {
     item: McpSyncPushItem,
     projectId: string,
     existing: EntryRow | undefined,
-  ): McpSyncItemResult {
-    if (existing !== undefined && existing.kind !== "project_note") return this.invalid();
+  ): McpSyncItemResult | null {
+    if (existing !== undefined && existing.kind !== "project_note") return null;
     if (existing?.state === STATE_OWNER_DELETED)
       return this.result("owner_deleted", item, existing.entryId, projectId);
     const approval = this.approval(input, projectId);

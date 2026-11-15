@@ -150,7 +150,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
           note("a:b", "第一份笔记 alpha", "项目甲"),
           note("a", "第二份笔记 beta", "b:项目甲"),
           note("a:b", "第三份笔记 gamma", "项目乙"),
-          note("a:b", "无项目的笔记 delta", undefined),
+          owner("a:b", "无项目的内容 delta"),
         ],
       },
     );
@@ -164,10 +164,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
     expect(rows.some((row) => row.project_id === "proj-none")).toBe(true);
     const generated = rows.filter((row) => row.project_id !== "proj-none");
     for (const row of generated) expect(row.project_id).toMatch(/^proj-[0-9a-f]{24}$/u);
-    await sync.sync(
-      { id: first, entry: HOOK },
-      { entries: [note("a:b", "无项目的笔记 delta", undefined)] },
-    );
+    await sync.sync({ id: first, entry: HOOK }, { entries: [owner("a:b", "无项目的内容 delta")] });
     expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_sync_entries").get()).toEqual({ n: 4 });
   });
 
@@ -377,6 +374,72 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
     expect(raw.prepare("SELECT COUNT(*) AS n FROM external_memory_proposals").get()).toEqual({
       n: 999,
     });
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM payloads").get()).toEqual({ n: 0 });
+  });
+
+  it("keeps stored text that a rolled back batch did not use and drops only the unused", async () => {
+    const { sync, first, raw } = await setup();
+    await sync.sync({ id: first, entry: OAUTH }, { entries: [owner("kept", "已经存下的内容")] });
+    const before = raw.prepare("SELECT COUNT(*) AS n FROM payloads").get();
+    raw.exec("PRAGMA foreign_keys = OFF");
+    const insert = raw.prepare(
+      `INSERT INTO external_memory_proposals (id, owner_id, agent_id, subject_ref, client, text_sha256,
+        normalization, content_ref, category, classification, status, received_at)
+       VALUES (?, ?, ?, 's', 'c', ?, 'mcp-text:v1', 'ref', 'other', 'private', 'pending', ?)`,
+    );
+    for (let index = 0; index < 999; index += 1)
+      insert.run(`filler-${index}`, OWNER_ID, AGENT_ID, sha(`filler-${index}`), NOW);
+    raw.exec("PRAGMA foreign_keys = ON");
+    await expect(
+      sync.sync(
+        { id: first, entry: OAUTH },
+        { entries: [owner("kept", "已经存下的内容"), owner("new", "没存成的内容")] },
+      ),
+    ).rejects.toThrow(MCP_SYNC_FULL);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM payloads").get()).toEqual(before);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_sync_entries").get()).toEqual({ n: 1 });
+  });
+
+  it("marks only the entry whose kind changed as invalid and still saves the others", async () => {
+    const { sync, first, raw } = await setup();
+    await sync.sync(
+      { id: first, entry: OAUTH },
+      { entries: [owner("x", "关于主人的一句话", { project: "项目甲" })] },
+    );
+    const result = await sync.sync(
+      { id: first, entry: OAUTH },
+      { entries: [note("x", "改成项目笔记", "项目甲"), owner("y", "另一条内容")] },
+    );
+    expect(result.entries[1]).toMatchObject({ index: 1, status: "pending" });
+    expect(result.entries[0]).toEqual({ index: 0, status: "invalid", reason: "kind_changed" });
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_sync_entries").get()).toEqual({ n: 2 });
+    const sameProject = await sync.sync(
+      { id: first, entry: OAUTH },
+      {
+        entries: [
+          note("z", "项目甲的笔记", "项目甲"),
+          owner("z", "同编号别的种类", { project: "项目甲" }),
+        ],
+      },
+    );
+    expect(sameProject.entries.map((entry) => entry.status)).toEqual([
+      "awaiting_project_approval",
+      "invalid",
+    ]);
+  });
+
+  it("refuses a project note with no project and keeps it out of storage", async () => {
+    const { sync, first, raw } = await setup();
+    const result = await sync.sync(
+      { id: first, entry: OAUTH },
+      { entries: [note("n1", "没有项目的笔记", undefined), note("n2", "空项目名", "   ")] },
+    );
+    expect(result.entries).toEqual([
+      { index: 0, status: "invalid", reason: "project_invalid", detail: "empty" },
+      { index: 1, status: "invalid", reason: "project_invalid", detail: "empty" },
+    ]);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_sync_entries").get()).toEqual({ n: 0 });
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_project_approvals").get()).toEqual({ n: 0 });
   });
 
   describe("deletion", () => {

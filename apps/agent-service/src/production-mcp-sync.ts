@@ -381,6 +381,8 @@ export class ProductionMcpSync {
     if (!id.ok) return invalid("id_invalid", { detail: id.reason });
     const project = checkProjectName(entry["project"], limits.project_name_chars);
     if (!project.ok) return invalid("project_invalid", { detail: project.reason });
+    if (kind === "project_note" && project.value === null)
+      return invalid("project_invalid", { detail: "empty" });
     const category = entry["category"] === undefined ? "other" : entry["category"];
     if (
       typeof category !== "string" ||
