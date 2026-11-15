@@ -817,10 +817,10 @@ export class SqliteMcpMemorySyncOperations {
       .prepare(
         `SELECT COUNT(*) FROM mcp_sync_entries
          WHERE owner_id = ? AND agent_id = ? AND state IN (${marks})
-           AND (kind = 'project_note' OR state = ?)`,
+           AND kind = 'project_note'`,
       )
       .pluck()
-      .get(input.ownerId, input.agentId, ...pendingStates, STATE_REFUSED) as number;
+      .get(input.ownerId, input.agentId, ...pendingStates) as number;
     const rows = this.database
       .prepare(
         `SELECT e.entry_id AS entryId, e.connection_id AS connectionId,
@@ -832,11 +832,11 @@ export class SqliteMcpMemorySyncOperations {
              ORDER BY v.version DESC LIMIT 1) AS previousContentRef
          FROM mcp_sync_entries e JOIN mcp_connections c ON c.id = e.connection_id
          WHERE e.owner_id = ? AND e.agent_id = ? AND e.state IN (${marks})
-           AND (e.kind = 'project_note' OR e.state = ?)
+           AND e.kind = 'project_note'
          ORDER BY e.connection_id, e.project_id, e.last_synced_at DESC, e.entry_id
          LIMIT ?`,
       )
-      .all(input.ownerId, input.agentId, ...pendingStates, STATE_REFUSED, input.limit) as {
+      .all(input.ownerId, input.agentId, ...pendingStates, input.limit) as {
       entryId: string;
       connectionId: string;
       connectionName: string;

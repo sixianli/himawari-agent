@@ -62,7 +62,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       await connections.create({
         ...scope,
         id,
-        name: id,
+        name: `接入-${id}`,
         secretSha256: mcpConnectionSecretDigest(newMcpConnectionSecret()),
         capabilities: ["mcp"],
         readCeiling: "private",
@@ -691,7 +691,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       ]);
       expect(overview.entries[0]).toMatchObject({
         connectionId: first,
-        connectionName: first,
+        connectionName: `接入-${first}`,
         projectName: "甲",
         kind: "project_note",
         previousContentRef: null,
@@ -700,7 +700,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       expect(overview.projects).toEqual([
         {
           connectionId: first,
-          connectionName: first,
+          connectionName: `接入-${first}`,
           projectId: overview.entries[0]?.projectId,
           projectName: "甲",
           approval: "pending",
@@ -768,7 +768,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       expect(after.projects).toEqual([
         expect.objectContaining({
           connectionId: first,
-          connectionName: first,
+          connectionName: `接入-${first}`,
           approval: "approved",
         }),
       ]);
