@@ -30,12 +30,12 @@ jobs:
       - name: build linux-arm64 and run integration 3 of 3
         run: |
           nproc; free -g; uptime
-          PATH="$PWD/.ci-output/tools/bin:$PATH" .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial 3 3
+          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools 3 3
       - name: failed test names
         if: always()
         run: |
           uptime
-          f=.ci-output/trial/tests/integration.json
-          if [ -f "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
+          f=$(ls .ci-output/trial/tests/*/integration.json .ci-output/trial/tests/integration.json 2>/dev/null | head -1)
+          if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
           ls .ci-output/trial/build || true
           tail -n 40 .ci-output/trial/build/*.log 2>/dev/null | tail -n 80 || true
