@@ -67,7 +67,7 @@ struct CapabilitiesPage: View {
                         try await store.reactivate(item, reason: M.confirmReactivateCapability(item.displayName))
                     } catch where SettingsStore.isDeclined(error) {
                     } catch {
-                        reactivationFailure[item.capabilityRef] = M.actionFailed
+                        reactivationFailure[item.capabilityRef] = M.reactivateFailed
                     }
                 }
             }

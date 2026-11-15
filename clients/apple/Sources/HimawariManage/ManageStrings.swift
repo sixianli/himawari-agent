@@ -56,6 +56,8 @@ enum M {
         return text("取消了 \(count) 个定时任务，不会自动恢复", ja: "定期タスク \(count) 件を取り消しました。自動では戻りません", en: "\(count) scheduled tasks were cancelled and won't resume on their own")
     }
 
+    static var reactivateFailed: String { text("没能重新启用", ja: "再び有効にできませんでした", en: "Couldn't turn it back on") }
+
     static func confirmReactivateCapability(_ name: String) -> String {
         text("重新启用“\(name)”", ja: "「\(name)」を再び有効にする", en: "Turn \(name) back on")
     }
