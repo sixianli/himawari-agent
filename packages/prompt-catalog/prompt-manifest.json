@@ -519,6 +519,11 @@
     "changedIn": "ADR 0219",
     "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },
+  "mcp.server-connection-required": {
+    "sha256": "01ff98c366520f0f79c71beb70ddcccbf08cde89c351a5c2b0de41bfc6758bf9",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 接入：网址不带接入密钥时只给这句说明，不提供工具"
+  },
   "mcp.server-instructions": {
     "sha256": "98d911bf287a39e40b7348c077b6258cf4dd95be67b3b4275dbefcc5e0a9b62e",
     "changedIn": "ADR 0242",

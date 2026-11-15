@@ -193,9 +193,10 @@ Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型�
 
 2026-10-19 生产重启后进了新内核，服务停了约 51 小时、没有任何人知道（[BL-20261021-009](../backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md)）。心跳告警补的就是“没人知道”：生产机上一个系统定时任务每分钟先问本机服务是否就绪（`http://127.0.0.1:8400/health/ready`，返回 200 才算就绪），就绪就向 Healthchecks.io（一个“超时没收到心跳就发通知”的外部服务）发一次心跳；不就绪就不发心跳，只把原因记进这条检查的日志，连续超过宽限时间（5 分钟）没收到心跳，Healthchecks.io 才发通知。整台机器停了或这个定时任务不跑，同样会因为超时发通知。所以上线和回滚时服务停止的几分钟不会报警；上线或回滚预计超过 5 分钟时，先在 Healthchecks.io 页面点这条检查的暂停，做完再恢复。它不随上线包安装，上线、回滚、重启都不会带走它。
 
-脚本和安装命令在 `scripts/operations/heartbeat/`：`himawari-heartbeat.py` 每次运行一次，`install-heartbeat.sh` 安装、移除和查看状态。专属网址只放在生产机的 `/etc/himawari/healthcheck-url`（root 所有、权限 0600），脚本只接受 `https://hc-ping.com/` 开头、只含字母数字、`_`、`-`（最多再带一段 `/名字`，名字不能是 `fail`、`start`、`log`）的网址，别的一律拒绝，不写进仓库、命令行或日志。
+脚本和安装命令在 `scripts/operations/heartbeat/`：`himawari-heartbeat.py` 每次运行一次，`install-heartbeat.sh` 安装、移除和查看状态。专属网址只放在生产机的 `/etc/himawari-heartbeat/healthcheck-url`（目录和文件都归 root，目录 0700、文件 0600；不能放在 `/etc/himawari/`，那个目录归 himawari-prod 且 0700，心跳单元去掉了 root 绕过目录权限的能力，会读不到，2026-11-15 第一次安装就是这样失败的，I-110），脚本只接受 `https://hc-ping.com/` 开头、只含字母数字、`_`、`-`（最多再带一段 `/名字`，名字不能是 `fail`、`start`、`log`）的网址，别的一律拒绝，不写进仓库、命令行或日志。
 
 - **安装**（root，需要 Andy 对这次生产机写操作的同意）：把本仓库的 `scripts/operations/heartbeat/` 目录拷到生产机，然后 `bash install-heartbeat.sh install < <装有专属网址的文件>`，网址从标准输入读，不出现在命令行里；换网址就再装一次；只重装脚本不换网址用 `install --keep-url`（顺便把网址文件权限改回 0600）。装到一半失败时（例如 `enable` 报错），修好原因后重跑同一条命令即可。systemd 的加固选项没有在真实 systemd 上跑过，装完用 `status` 和 `journalctl` 确认第一次运行成功。装完会启用 `himawari-heartbeat.timer`。
+- **网址存在哪里、丢了怎么办**：网址只在两处：Andy 的 Mac 上的 `~/healthcheck-url.txt`（装的时候用），和生产机的上面那个文件。它相当于“服务正常”的暗号，谁拿到都能替生产机发心跳，所以不提交进仓库、不贴进聊天或命令行。丢了不用补备份：Healthchecks.io 上那条检查（`himawari-prod`，周期 1 分钟、宽限 5 分钟）的页面永远能重新复制 Ping URL（选 uuid 那个）；怀疑泄露就在页面上换一个，再用 `install` 重装一次。安装脚本会顺手删掉旧位置 `/etc/himawari/healthcheck-url` 的残留（`install --keep-url` 在新位置没有网址时会先从旧位置取；普通 `remove` 不动旧位置，只有 `remove --purge` 才删）。
 - **查看**：`bash install-heartbeat.sh status` 显示定时器是否在运行；`journalctl -u himawari-heartbeat.service -n 20` 看每次运行的结果，正常时一行 `HEARTBEAT ok`，不就绪时是 `HEARTBEAT skipped <原因>`。
 - **移除**：`bash install-heartbeat.sh remove`；连同专属网址一起删用 `remove --purge`。
 - **Healthchecks.io 上的设置**：这条检查的周期 1 分钟、宽限 5 分钟，通知方式选邮件加手机推送。

@@ -32,6 +32,7 @@ export * from "./identity.js";
 export * from "./improvement.js";
 export * from "./intelligence.js";
 export * from "./ledger-observation.js";
+export * from "./mcp-connections.js";
 export * from "./memory-book.js";
 export * from "./memory-capture-backlog.js";
 export * from "./memory-checkup.js";

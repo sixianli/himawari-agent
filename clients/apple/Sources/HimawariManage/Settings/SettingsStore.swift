@@ -23,6 +23,7 @@ public final class SettingsStore {
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
     public private(set) var proposals: ProposalList?
+    public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
 
@@ -51,6 +52,7 @@ public final class SettingsStore {
         } catch {
             phase = .failed
         }
+        await loadTuning()
         server = await status
         loginDevices = await logins
         proposals = await listedProposals
@@ -158,6 +160,32 @@ public final class SettingsStore {
     }
 
     static let stillChangingReason: String? = "LOGIN_DEVICES_STILL_CHANGING"
+
+    public func loadTuning() async {
+        for kind in TuningKind.allCases { await reloadTuning(kind) }
+    }
+
+    public func reloadTuning(_ kind: TuningKind) async {
+        guard let data = try? await gateway.read(.v2, kind.readType, payload: kind.readPayload) else { return }
+        if let snapshot = try? JSONDecoder().decode(Snapshot<TuningSnapshot>.self, from: data).payload {
+            tuning[kind] = snapshot
+        }
+    }
+
+    public func changeTuning(_ kind: TuningKind, key: String, value: Int?, reason: String) async throws {
+        guard let snapshot = tuning[kind] else { throw ManageGatewayError.malformedResponse }
+        defer { Task { await reloadTuning(kind) } }
+        _ = try await gateway.command(
+            .v2,
+            kind.changeType,
+            payload: [
+                "expectedRevision": .number(Double(snapshot.revision)),
+                "key": .string(key),
+                "value": value.map { .number(Double($0)) } ?? .null,
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
 
     public func reloadProposals() async {
         if let listed = try? await loadProposals() { proposals = listed }
