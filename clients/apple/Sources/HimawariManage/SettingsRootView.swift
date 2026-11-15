@@ -49,7 +49,7 @@ public struct SettingsRootView: View {
         openThread = nil
     }
 
-    static let exportDownloadAvailable = false
+    static let exportDownloadAvailable = true
 
     public var body: some View {
         NavigationStack(path: $path) {
