@@ -10,6 +10,7 @@ import {
   type ApplePushConfiguration,
   type ApprovalRequest,
   type DeliveryTimingJudgement,
+  type DeviceActionRecord,
   type MemoryReminder,
   type ProductMemoryRecord,
   type PushGate,
@@ -830,6 +831,61 @@ describe("[IOS-4] push channels", () => {
         database.prepare("SELECT count(*) FROM notification_action_tokens").pluck().get(),
       ),
     ).toBe(0);
+  });
+
+  it("[IOS-4] asks the owner to open the app for a waiting device action with generic text, and puts nothing private on the lock screen", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    const registration = await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    const record = (id: string, ownerPresence: boolean) =>
+      ({
+        id,
+        deviceId: IPHONE,
+        ownerPresence,
+        expiresAt: "2026-11-13T00:10:00.000Z",
+        action: "calendar.delete",
+        arguments: { eventId: "牙医复诊" },
+      }) as unknown as DeviceActionRecord;
+    await context.applePush.requestOpen({ record: record("dact_" + "a".repeat(32), false) });
+    await context.applePush.requestOpen({ record: record("dact_" + "b".repeat(32), true) });
+    const sent = context.apns.ofType("alert");
+    expect(sent).toHaveLength(2);
+    expect(sent.map(({ token }) => token)).toEqual([registration.token, registration.token]);
+    expect(sent.map(({ headers }) => headers["apns-priority"])).toEqual(["10", "10"]);
+    expect(
+      sent.map(({ json }) => (json as { aps: Record<string, unknown> }).aps["interruption-level"]),
+    ).toEqual(["active", "time-sensitive"]);
+    const first = sent[0]?.json as {
+      aps: { alert: { title: string; body: string } };
+      himawari: Record<string, unknown>;
+    };
+    expect(first.himawari).toMatchObject({
+      kind: "device_action",
+      actionId: "dact_" + "a".repeat(32),
+      actions: [],
+    });
+    expect(JSON.stringify(first)).not.toContain("牙医复诊");
+    expect(JSON.stringify(first)).not.toContain("calendar");
+    expect(first.aps.alert.title.length).toBeGreaterThan(0);
+  });
+
+  it("[IOS-4] REVERSE: sends no open request to a device with no usable alert token, and none to another device's token", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    context.setClock(T0);
+    const record = {
+      id: "dact_" + "c".repeat(32),
+      deviceId: IPHONE,
+      ownerPresence: false,
+      expiresAt: "2026-11-13T00:10:00.000Z",
+    } as unknown as DeviceActionRecord;
+    await context.applePush.requestOpen({ record });
+    expect(context.apns.ofType("alert")).toEqual([]);
+    context.device(WATCH, "watch");
+    await context.register(WATCH, "alert");
+    await context.applePush.requestOpen({ record });
+    expect(context.apns.ofType("alert")).toEqual([]);
   });
 
   it("[IOS-4] replaces the unused button tokens when an approval alert is sent again after a server error", async () => {
