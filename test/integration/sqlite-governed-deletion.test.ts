@@ -779,4 +779,57 @@ describe("SQLite governed deletion", () => {
     expect(reports[0]?.lifecycle).toBe("deleted_verified");
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(0);
   });
+
+  it("purges a trashed Thread left incomplete but skips a Thread recreated after deletion", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    database
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    const threadRow = database
+      .prepare("SELECT * FROM threads WHERE id = 'thread-delete'")
+      .get() as Record<string, unknown>;
+    database.close();
+    const columns = Object.keys(threadRow);
+    const recreate = () => {
+      const current = openQualifiedDatabase(resource.databasePath);
+      current.pragma("foreign_keys = OFF");
+      current
+        .prepare(
+          `INSERT INTO threads (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+        )
+        .run(...columns.map((column) => threadRow[column]));
+      current.close();
+    };
+
+    resource.failTarget("payload");
+    const failed = await resource.adapter.deleteImmediately({
+      objectType: "thread",
+      objectId: "thread-delete",
+    });
+    expect(failed.lifecycle).toBe("deletion_pending");
+    recreate();
+    resource.failTarget(null);
+    expect(await resource.adapter.purgeExpiredTrash(T8)).toEqual([]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(1);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT status FROM deletion_tombstones WHERE object_id = 'thread-delete'",
+      ),
+    ).toBe("incomplete");
+
+    resource.failTarget("search");
+    await resource.adapter.trashThread("thread-delete");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT status FROM deletion_tombstones WHERE object_id = 'thread-delete'",
+      ),
+    ).toBe("incomplete");
+    resource.failTarget(null);
+    const reports = await resource.adapter.purgeExpiredTrash(T8);
+    expect(reports.map((report) => report.lifecycle)).toEqual(["deleted_verified"]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(0);
+  });
 });

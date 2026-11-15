@@ -457,12 +457,19 @@ export class SqliteGovernedDeletionAdapter {
     readonly objectType: GovernedDeletionObjectType;
     readonly objectId: string;
   }): Promise<GovernedDeletionReport> {
-    const objectId = safeIdentity(input.objectId, "object ID");
+    return await this.#deleteLocked(input.objectType, safeIdentity(input.objectId, "object ID"));
+  }
+
+  async #deleteLocked(
+    objectType: GovernedDeletionObjectType,
+    objectId: string,
+    stillEligible?: (database: InstanceType<typeof BetterSqlite3>) => void,
+  ): Promise<GovernedDeletionReport> {
     const lock = await this.#lock();
     try {
       const database = this.#database();
       try {
-        return await this.#deleteOpen(database, input.objectType, objectId);
+        return await this.#deleteOpen(database, objectType, objectId, stillEligible);
       } finally {
         database.close();
       }
@@ -548,15 +555,7 @@ export class SqliteGovernedDeletionAdapter {
         const objectId = safeIdentity(threadId, "thread ID");
         try {
           reports.push(
-            await this.#deleteOpen(database, "thread", objectId, (current) => {
-              if (current.prepare("SELECT 1 FROM threads WHERE id = ?").get(objectId)) {
-                throw new GovernedDeletionError(
-                  GOVERNED_DELETION_ERROR_CODES.CONFLICT,
-                  "Thread was recreated before its incomplete deletion was retried",
-                  { objectId },
-                );
-              }
-            }),
+            await this.#deleteOpen(database, "thread", objectId, this.#threadStillGone(objectId)),
           );
         } catch (error) {
           if (
@@ -776,9 +775,47 @@ export class SqliteGovernedDeletionAdapter {
       if (!(["thread", "run", "task", "memory", "payload"] as const).includes(entry.objectType)) {
         continue;
       }
-      reports.push(await this.deleteImmediately(entry));
+      const objectId = safeIdentity(entry.objectId, "object ID");
+      if (entry.objectType !== "thread") {
+        reports.push(await this.#deleteLocked(entry.objectType, objectId));
+        continue;
+      }
+      let live = false;
+      try {
+        reports.push(
+          await this.#deleteLocked("thread", objectId, (current) => {
+            if (
+              current
+                .prepare("SELECT 1 FROM threads WHERE id = ? AND status != 'trashed'")
+                .get(objectId)
+            ) {
+              live = true;
+              throw new GovernedDeletionError(
+                GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                "Thread is no longer in Trash",
+                { objectId },
+              );
+            }
+          }),
+        );
+      } catch (error) {
+        if (live) continue;
+        throw error;
+      }
     }
     return Object.freeze(reports);
+  }
+
+  #threadStillGone(objectId: string): (database: InstanceType<typeof BetterSqlite3>) => void {
+    return (current) => {
+      if (current.prepare("SELECT 1 FROM threads WHERE id = ?").get(objectId)) {
+        throw new GovernedDeletionError(
+          GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+          "Thread was recreated before its incomplete deletion was retried",
+          { objectId },
+        );
+      }
+    };
   }
 
   inspect(
