@@ -229,6 +229,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       timeZone: TIME_ZONE,
     });
     const realLedger = repository.decisionLedger();
+    let activeScans = 0;
     const writer = new ProductionMcpMemoryWriter({
       configuration: scope,
       memory,
@@ -242,7 +243,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
             listActive: (ownerId, agentId) =>
               repository.productMemoryState().listActive(ownerId, agentId),
           }
-        : repository.productMemoryState(),
+        : {
+            read: (id) => repository.productMemoryState().read(id),
+            listActive: (ownerId, agentId) => {
+              activeScans += 1;
+              return repository.productMemoryState().listActive(ownerId, agentId);
+            },
+          },
       book: repository.memoryBook(),
       ledger: options.failDecline
         ? {
@@ -499,6 +506,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       }
     };
     return {
+      activeScanCount: () => activeScans,
       usage,
       hooks,
       connect,
@@ -2169,6 +2177,30 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     await web.command("memory.external.undo", { batchId }, "undo-direct");
     expect(await f.external()).toEqual([]);
     expect((await web.overview()).externalProposals.total).toBe(4);
+  });
+
+  it("[direct] scans active memories once for a whole propose_memories call", async () => {
+    const f = await setup({ direct: true });
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const before = f.activeScanCount();
+    const sent = await batch(muse, [{ text: COFFEE }, { text: PARK }, { text: RAIN }]);
+    expect(sent.parsed.results.map(({ status }) => status)).toEqual(["saved", "saved", "saved"]);
+    expect(f.activeScanCount() - before).toBe(1);
+  });
+
+  it("[direct] keeps proposals waiting while the memory book is not ready, and an all-duplicate batch has nothing to undo", async () => {
+    const waiting = await setup({ direct: true, notReady: true });
+    const client = await waiting.connect({ elicitation: false });
+    const held = await waiting.propose(client, { text: COFFEE });
+    expect(held.result.isError).not.toBe(true);
+    expect(held.text).toContain("待确认");
+    expect(await waiting.external()).toEqual([]);
+    const f = await setup({ direct: true });
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    await batch(muse, [{ text: PARK }]);
+    await batch(muse, [{ text: PARK }]);
+    expect((await web.overview()).externalProposals.batches).toHaveLength(1);
   });
 
   it("[direct] never turns a proposed rule into a rule without the owner, even on a connection set to direct save", async () => {

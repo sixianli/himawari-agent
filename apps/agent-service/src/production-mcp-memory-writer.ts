@@ -322,7 +322,7 @@ export class ProductionMcpMemoryWriter {
           ? linked
           : undefined;
       if (same) {
-        await this.#commit(proposal, same, input);
+        await this.#commit(proposal, same, input.direct ? { ...input, batchId: null } : input);
         return same;
       }
       const memoryId = externalProposalMemoryId(proposal.id, input.batchId) as MemoryId;

@@ -1156,7 +1156,7 @@ export class ProductionMcpRead {
           replaced.has(result["proposalId"])
         )
           result["status"] = "replaced";
-      if (direct) {
+      if (direct && (await proposals.ready())) {
         const batchId = externalDirectBatchId(randomUUID());
         const digestCache: ExternalProposalDigestCache = {};
         for (const result of results) {
@@ -1225,7 +1225,7 @@ export class ProductionMcpRead {
           return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
         if (proposal.status === "rejected")
           return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
-        if (direct) {
+        if (direct && (await proposals.ready())) {
           const kept = await this.#keepDirect(proposals, proposal.id, started);
           if (kept === "saved") return proposalReply(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text, false);
           if (kept === "existing")
