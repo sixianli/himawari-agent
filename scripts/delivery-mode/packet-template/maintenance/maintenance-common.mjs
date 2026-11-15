@@ -790,7 +790,24 @@ export function historyIgnoredColumnsFor(ledger) {
   return Object.freeze(Object.fromEntries(Object.entries(merged).map(([table, columns]) => [table, Object.freeze(columns)])));
 }
 export const historyIgnoredColumns = historyIgnoredColumnsFor(migrationExpectedLedger);
-export const migrationComparedSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
+export function checkedHistoryComparison(value, label) {
+  assert(value && typeof value === "object" && ["on", "off"].includes(value.mode), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  if (value.mode === "on") {
+    assert.deepEqual(Object.keys(value), ["mode"], "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+    return Object.freeze({ mode: "on" });
+  }
+  assert.deepEqual(Object.keys(value).sort(), ["authorizedBy", "mode", "reason", "release"], "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  assert(typeof value.reason === "string" && value.reason.trim() !== "" && typeof value.authorizedBy === "string" && value.authorizedBy.trim() !== "", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  assert.equal(value.release, label, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE");
+  return Object.freeze({ mode: "off", reason: value.reason, authorizedBy: value.authorizedBy, release: value.release });
+}
+export const historyComparison = checkedHistoryComparison(__PKT_HISTORY_COMPARISON_JSON__, "__PKT_LABEL__");
+export function historyComparisonEvidence(comparison = historyComparison) {
+  return comparison.mode === "on" ? { historyComparison: "on" } : { historyComparison: "off", historyComparisonReason: comparison.reason, historyComparisonAuthorizedBy: comparison.authorizedBy, historyComparisonRelease: comparison.release };
+}
+export const comparedSectionsFor = (sections, comparison = historyComparison) => Object.freeze(comparison.mode === "on" ? [...sections] : sections.filter((section) => section !== "history"));
+export const migrationSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
+export const migrationComparedSections = comparedSectionsFor(migrationSections);
 
 export function migrationContentState(database) {
   return { ...collectTidyState(database), releaseReceipts: rows(database, "SELECT environment_id AS environmentId,basis,stop_fence AS stopFence,accepted_at AS acceptedAt,proof_json AS proofJson,authority_json AS authorityJson FROM execution_environment_release_receipts ORDER BY environment_id", []) };
@@ -808,7 +825,8 @@ export function readMigrationContent(prefix = newPrefix, database = fixed.databa
   }
 }
 
-export function verifyMigrationTransition(before, after) {
+export function verifyMigrationTransition(before, after, comparison = historyComparison) {
+  const compared = comparedSectionsFor(migrationSections, comparison);
   const changed = (detail) => failTidy("__PKT_LABEL_UPPER___MAINTENANCE_MIGRATION_CONTENT_CHANGED", detail);
   if (after.schema.current !== targetSchema || after.schema.minimumWriter !== targetSchema) changed({ section: "schema", before: before.schema, after: after.schema });
   if (after.ledger.length !== before.ledger.length + migrationExpectedLedger.length) changed({ section: "ledgerLength", beforeLength: before.ledger.length, afterLength: after.ledger.length });
@@ -818,8 +836,8 @@ export function verifyMigrationTransition(before, after) {
     const expected = migrationExpectedLedger[index];
     if (!expected || row.sequence !== expected.sequence || row.name !== expected.name || row.phase !== expected.phase) changed({ section: "ledgerApplied", applied: row, expected });
   });
-  for (const section of migrationComparedSections) if (canonicalJson(after[section]) !== canonicalJson(before[section])) changed({ section, before: before[section], after: after[section] });
-  return { schema: after.schema, ledgerApplied: applied, comparedSections: [...migrationComparedSections] };
+  for (const section of compared) if (canonicalJson(after[section]) !== canonicalJson(before[section])) changed({ section, before: before[section], after: after[section] });
+  return { schema: after.schema, ledgerApplied: applied, comparedSections: [...compared], ...historyComparisonEvidence(comparison) };
 }
 
 export function describeMigrationSnapshot(source, stateRoot = fixed.stateRoot, owner = fixed.uid) {
@@ -957,9 +975,11 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
   }
 }
 
-export function verifyHistoryUnchanged(before, after) {
+export function verifyHistoryUnchanged(before, after, comparison = historyComparison) {
+  if (comparison.mode === "off") return historyComparisonEvidence(comparison);
   assert(before.history && typeof before.history === "object" && Object.keys(before.history).length > 0, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_MISSING");
   assert.deepEqual(after.history, before.history, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED");
+  return historyComparisonEvidence(comparison);
 }
 
 export const startupRecoveryColumns = Object.freeze({ sandbox_execution_records: Object.freeze(["recovery_json"]) });
@@ -1002,9 +1022,10 @@ export function compareHistoryRows(reference, current, ignoredColumns = historyI
   return tables;
 }
 
-export function verifyHistoryAgainstRecoveryPoint(binding) {
+export function verifyHistoryAgainstRecoveryPoint(binding, comparison = historyComparison) {
   const recoveryId = recoveryIdForSchema(binding, currentSchema);
   const copyPath = `${evidenceRoot}/${recoveryId}/data/product.sqlite`;
+  if (comparison.mode === "off") return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, ...historyComparisonEvidence(comparison), tables: null };
   const reference = openImmutableReadonly(copyPath, fixed.uid);
   try {
     const current = openReadonly(sqliteDriverRoot, fixed.database);
@@ -1014,7 +1035,7 @@ export function verifyHistoryAgainstRecoveryPoint(binding) {
       const tables = compareHistoryRows(reference, current);
       current.exec("COMMIT");
       reference.exec("COMMIT");
-      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, ignoredHistoryColumns: historyIgnoredColumns, tables };
+      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, ...historyComparisonEvidence(comparison), allowedStartupRecoveryColumns: startupRecoveryColumns, ignoredHistoryColumns: historyIgnoredColumns, tables };
     } finally {
       current.close();
     }
