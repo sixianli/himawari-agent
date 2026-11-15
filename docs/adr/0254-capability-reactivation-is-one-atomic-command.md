@@ -77,7 +77,7 @@ date: "2026-11-12"
 
 这是进程间契约的改动，单列说明。
 
-- 执行进程启动时先删掉上一次留下的记录；现场检查通过、且拿到 agent-service 的绑定之后，才写出 `runtime/execution-worker.qualified.json`。字段：`schemaVersion`、`workerInstanceId`、`workerBootId`、`deploymentId`、`snapshotDigest`。读到这份文件且启动编号对得上，就等于这次启动的现场检查已经通过。写出记录之后启动仍然失败的（例如后面的装配或监听出错），退出前把记录删掉；正常停止时也删掉。
+- 执行进程启动时先读 authority 并核对部署、主人、agent 三项与配置一致，一致后才删掉上一次留下的记录（authority 读不出或身份不符时保留，同部署但未激活仍会删除）；现场检查通过、且拿到 agent-service 的绑定之后，才写出 `runtime/execution-worker.qualified.json`。字段：`schemaVersion`、`workerInstanceId`、`workerBootId`、`deploymentId`、`snapshotDigest`。读到这份文件且启动编号对得上，就等于这次启动的现场检查已经通过。写出记录之后启动仍然失败的（例如后面的装配或监听出错），退出前把记录删掉；正常停止时也删掉。
 - 现有的启动绑定文件 `execution-worker.boot.json` 的格式和写入时机都不变，agent-service 启动时等的仍是它，启动顺序不受影响。
 - 读写沿用启动绑定的安全做法，和启动绑定共用同一对函数（`commitWorkerRuntimeRecord`、`readWorkerRuntimeRecord`）：临时文件加原子改名、权限 0600；读时拒绝符号链接、组或其他人可读写的文件、属主不是服务账号的文件、超过 16384 字节的文件、多余字段。
 - 两个进程成对重启（前提 8），所以不考虑新旧版本混跑，文件不做旧格式兼容。

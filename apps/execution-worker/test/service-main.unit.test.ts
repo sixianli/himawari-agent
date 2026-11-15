@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
+import { createDeploymentId } from "@himawari-agent/domain";
 import {
   initializeStateRoot,
   readWorkerQualifiedDeployment,
@@ -276,7 +277,10 @@ describe("execution Worker service main", () => {
       snapshotDigest: `sha256:${"b".repeat(64)}`,
     };
     await writeWorkerQualifiedDeployment(layout, record);
-    await writeAuthorityFile(layout, { ...authority(2, 2), id: "deployment-other" });
+    await writeAuthorityFile(layout, {
+      ...authority(2, 2),
+      id: createDeploymentId("deployment-other"),
+    });
     const diagnostics = capture();
 
     await expect(
@@ -288,6 +292,10 @@ describe("execution Worker service main", () => {
       ),
     ).resolves.toBe(1);
     expect(qualification.started).toBe(0);
+    expect(JSON.parse(diagnostics.text())).toMatchObject({
+      event: "service.failed",
+      code: EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH,
+    });
     await expect(readWorkerQualifiedDeployment(layout)).resolves.toMatchObject({
       workerBootId: "worker-boot:other",
     });
