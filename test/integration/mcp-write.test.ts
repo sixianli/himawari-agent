@@ -18,6 +18,7 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { memorySourceState } from "@himawari-agent/gateway-contracts";
 import { type Embedder, HybridMemoryProvider } from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
@@ -35,6 +36,7 @@ import {
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
+  MCP_PROPOSE_MEMORY_SAVED_DIRECT,
   MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
   MCP_PROPOSE_NOT_SHOWN,
@@ -140,6 +142,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       readonly slowDecidedMs?: number;
       readonly notReady?: boolean;
       readonly replay?: boolean;
+      readonly direct?: boolean;
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-write-"));
@@ -389,7 +392,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       secretSha256: mcpConnectionSecretDigest(secret),
       capabilities: ["mcp"],
       readCeiling: "private",
-      pushPolicy: "ask",
+      pushPolicy: options.direct ? "direct" : "ask",
       createdAt: clock.now(),
     });
     const url = new URL(
@@ -2083,5 +2086,96 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       [`${CONNECTION_ID}/propose_rule/calls`]: 1,
       [`${CONNECTION_ID}/propose_rule/failed`]: 1,
     });
+  });
+
+  it("[direct] saves a proposed memory at once on a connection set to direct save, with no confirmation box", async () => {
+    const f = await setup({ direct: true });
+    const claude = await f.connect();
+    const saved = await f.propose(claude, { text: COFFEE, category: "preference" });
+    expect(saved.text).toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(f.elicitations).toEqual([]);
+    expect(await f.pending()).toEqual([]);
+    const [memory] = await f.external();
+    expect(memory?.id).toMatch(/^memory:mcp:[^:]+:batch-direct-[0-9a-f]{24}$/);
+    expect(
+      memorySourceState({
+        memoryId: memory?.id ?? "",
+        importBatchId: null,
+        sourceThreadId: null,
+        sourceMessageId: null,
+        sourceRefs: [],
+        history: [],
+      }),
+    ).toBe("external_direct");
+    expect(await f.readText(memory?.contentRef ?? "")).toBe(COFFEE);
+    expect((await f.ledgerRows()).map(({ reasonCode, outcome }) => [reasonCode, outcome])).toEqual(
+      expect.arrayContaining([[EXTERNAL_PROPOSAL_REASON_CODES.keptDirect, "kept"]]),
+    );
+    await f.memory.runProjectionBatch(10);
+    expect(await found(claude, "拿铁")).toContain("燕麦拿铁");
+    expect((await f.propose(claude, { text: COFFEE })).text).toBe(
+      MCP_PROPOSE_MEMORY_ALREADY_SAVED.text,
+    );
+  });
+
+  it("[direct] still holds sensitive proposals for the owner, and a connection set to ask keeps asking", async () => {
+    const f = await setup({ direct: true });
+    const claude = await f.connect({ elicitation: false });
+    const sensitive = await f.propose(claude, {
+      text: "主人有高血压，每天吃降压药",
+      category: "health",
+    });
+    expect(sensitive.text).not.toBe(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text);
+    expect(sensitive.text).toContain("待确认");
+    expect(await f.external()).toEqual([]);
+    expect(await f.pending()).toHaveLength(1);
+    const asking = await setup();
+    const muse = await asking.connect({ elicitation: false });
+    expect((await asking.propose(muse, { text: COFFEE })).text).toContain("待确认");
+    expect(await asking.external()).toEqual([]);
+    expect(await asking.pending()).toHaveLength(1);
+  });
+
+  it("[direct] saves a whole propose_memories call as one batch the owner can undo, and does not save replaced or sensitive ones", async () => {
+    const f = await setup({ direct: true });
+    const web = control(f);
+    const muse = await f.connect({ elicitation: false, name: "muse" });
+    const sent = await batch(muse, [
+      { text: COFFEE, category: "preference", key: "muse:memory/coffee" },
+      { text: PARK },
+      { text: "主人有高血压", category: "health" },
+      { text: RAIN, key: "muse:memory/weather" },
+      { text: "主人讨厌下大雨天", key: "muse:memory/weather" },
+    ]);
+    expect(sent.parsed.results.map(({ status }) => status)).toEqual([
+      "saved",
+      "saved",
+      "pending",
+      "replaced",
+      "saved",
+    ]);
+    const saved = await f.external();
+    expect(saved).toHaveLength(3);
+    const batchIds = new Set(saved.map(({ id }) => id.split(":").at(-1)));
+    expect(batchIds.size).toBe(1);
+    const [batchId] = [...batchIds];
+    expect(batchId).toMatch(/^batch-direct-/);
+    expect(await f.pending()).toHaveLength(1);
+    expect((await web.overview()).externalProposals.batches).toEqual([
+      { batchId, decidedAt: NOW, committed: 3, rejected: 0 },
+    ]);
+    const again = await batch(muse, [{ text: PARK }]);
+    expect(again.parsed.results.map(({ status }) => status)).toEqual(["already_saved"]);
+    await web.command("memory.external.undo", { batchId }, "undo-direct");
+    expect(await f.external()).toEqual([]);
+    expect((await web.overview()).externalProposals.total).toBe(4);
+  });
+
+  it("[direct] never turns a proposed rule into a rule without the owner, even on a connection set to direct save", async () => {
+    const f = await setup({ direct: true });
+    const muse = await f.connect({ elicitation: false });
+    const result = await f.proposeRule(muse, RULE);
+    expect(result.result.isError).toBe(true);
+    expect(await f.storedRules()).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import {
   type SensitiveMemoryTopic,
 } from "@himawari-agent/application";
 import {
+  EXTERNAL_DIRECT_BATCH_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
 } from "@himawari-agent/gateway-contracts";
@@ -79,6 +80,7 @@ export interface ExternalProposalSubmission {
 
 export interface ExternalProposalDecisionInput {
   readonly batchId: string | null;
+  readonly direct?: true;
   readonly editedText?: string;
   readonly started: number;
 }
@@ -104,6 +106,10 @@ function sensitiveTopicFor(category: ExternalProposalCategory): SensitiveMemoryT
 
 export function externalProposalBatchId(idempotencyKey: string): string {
   return `batch-${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32)}`;
+}
+
+export function externalDirectBatchId(callId: string): string {
+  return `${EXTERNAL_DIRECT_BATCH_PREFIX}${createHash("sha256").update(callId).digest("hex").slice(0, 24)}`;
 }
 
 export function externalProposalMemoryId(proposalId: string, batchId: string | null): string {
@@ -267,7 +273,28 @@ export class ProductionMcpMemoryWriter {
     input: ExternalProposalDecisionInput,
     digestCache?: ExternalProposalDigestCache,
   ): Promise<string> {
+    return this.#serially(() => this.#keep(proposalId, input, digestCache));
+  }
+
+  async keepDirect(
+    proposalId: string,
+    input: { readonly batchId: string; readonly started: number },
+  ): Promise<"saved" | "pending"> {
     return this.#serially(async () => {
+      const proposal = await this.#pending(proposalId);
+      if (proposal.status === "pending" && proposal.dataClassification !== "private")
+        return "pending";
+      await this.#keep(proposalId, { ...input, direct: true });
+      return "saved";
+    });
+  }
+
+  async #keep(
+    proposalId: string,
+    input: ExternalProposalDecisionInput,
+    digestCache?: ExternalProposalDigestCache,
+  ): Promise<string> {
+    {
       const proposal = await this.#pending(proposalId);
       if (proposal.status === "committed" && proposal.memoryId) return proposal.memoryId;
       if (proposal.status !== "pending")
@@ -296,7 +323,13 @@ export class ProductionMcpMemoryWriter {
         return same;
       }
       const memoryId = externalProposalMemoryId(proposal.id, input.batchId) as MemoryId;
-      const write = this.#ledgerWrite(proposal, input.batchId, "kept", memoryId, input.started);
+      const write = this.#ledgerWrite(
+        proposal,
+        input.batchId,
+        input.direct ? "keptDirect" : "kept",
+        memoryId,
+        input.started,
+      );
       const stored = await this.#options.state.read(memoryId);
       if (stored && stored.status !== "active" && stored.status !== "archived")
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MCP_PROPOSAL_MEMORY_REMOVED");
@@ -353,7 +386,7 @@ export class ProductionMcpMemoryWriter {
       await this.#appendOnce(write);
       await this.#decideCommitted(proposal, memoryId, input);
       return memoryId;
-    });
+    }
   }
 
   async #commit(
@@ -362,7 +395,13 @@ export class ProductionMcpMemoryWriter {
     input: ExternalProposalDecisionInput,
   ): Promise<void> {
     await this.#appendOnce(
-      this.#ledgerWrite(proposal, input.batchId, "kept", memoryId, input.started),
+      this.#ledgerWrite(
+        proposal,
+        input.batchId,
+        input.direct ? "keptDirect" : "kept",
+        memoryId,
+        input.started,
+      ),
     );
     await this.#decideCommitted(proposal, memoryId, input);
   }
@@ -615,7 +654,11 @@ export class ProductionMcpMemoryWriter {
       kind: "memory_candidate",
       decidedAt,
       outcome:
-        decision === "kept" ? "kept" : decision === "pending" ? "pending_approval" : "discarded",
+        decision === "kept" || decision === "keptDirect"
+          ? "kept"
+          : decision === "pending"
+            ? "pending_approval"
+            : "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES[decision],
       subjectRef: memoryId ?? proposal.subjectRef,
       inputs: { memoryIds: memoryId ? [memoryId] : [], ruleIds: [] },

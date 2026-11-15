@@ -6,6 +6,7 @@ import type {
   DecisionLedgerWrite,
   JsonObject,
   McpConnectionEntry,
+  McpConnectionPushPolicy,
   McpConnectionStorePort,
   McpUsageCounter,
   OwnerIdentityStatePort,
@@ -31,6 +32,7 @@ import {
   MCP_PROPOSE_MEMORY_INVALID,
   MCP_PROPOSE_MEMORY_PENDING,
   MCP_PROPOSE_MEMORY_SAVED,
+  MCP_PROPOSE_MEMORY_SAVED_DIRECT,
   MCP_PROPOSE_MEMORY_SECRET,
   MCP_PROPOSE_MEMORY_SENSITIVE_NOTE,
   MCP_PROPOSE_MEMORY_UNSUPPORTED,
@@ -99,6 +101,7 @@ import {
   type ExternalProposalDecision,
   type ExternalProposalDecisionInput,
   type ExternalProposalSubmission,
+  externalDirectBatchId,
   normalizeProposalText,
   proposalClassification,
   proposalHasMachineSecret,
@@ -287,6 +290,10 @@ export interface McpMemoryProposals {
   readonly decided: (proposalId: string) => Promise<ExternalProposalDecision | undefined>;
   readonly keep: (proposalId: string, input: ExternalProposalDecisionInput) => Promise<string>;
   readonly decline: (proposalId: string, input: ExternalProposalDecisionInput) => Promise<boolean>;
+  readonly keepDirect: (
+    proposalId: string,
+    input: { readonly batchId: string; readonly started: number },
+  ) => Promise<"saved" | "pending">;
 }
 
 export interface McpRuleProposals {
@@ -317,6 +324,7 @@ export type McpAdmission =
 interface ConnectionRef {
   readonly id: string;
   readonly entry: McpConnectionEntry;
+  readonly pushPolicy: McpConnectionPushPolicy;
   readonly callKey: string | null;
 }
 
@@ -606,6 +614,7 @@ export class ProductionMcpRead {
         extra: {
           [READ_CEILING_KEY]: connection.readCeiling,
           [ENTRY_KEY]: "oauth" satisfies McpConnectionEntry,
+          [PUSH_POLICY_KEY]: connection.pushPolicy,
         },
       },
     };
@@ -765,6 +774,7 @@ export class ProductionMcpRead {
       );
     const proposals = this.#options.write?.proposals;
     const subjectRef = mcpConnectionSubject(connection.id);
+    const direct = connection.pushPolicy === "direct";
     if (
       proposals &&
       context.era === "modern" &&
@@ -795,7 +805,7 @@ export class ProductionMcpRead {
         async (args: JsonObject, handlerContext) => {
           const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
           return this.#counted(connection, "propose_memory", client, () =>
-            this.#proposeMemory(proposals, args, client, subjectRef, handlerContext),
+            this.#proposeMemory(proposals, args, client, subjectRef, handlerContext, direct),
           );
         },
       );
@@ -831,7 +841,7 @@ export class ProductionMcpRead {
         async (args: JsonObject, handlerContext) => {
           const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
           return this.#counted(connection, "propose_memories", client, () =>
-            this.#proposeMemories(proposals, args, client, subjectRef),
+            this.#proposeMemories(proposals, args, client, subjectRef, direct),
           );
         },
       );
@@ -1093,6 +1103,7 @@ export class ProductionMcpRead {
     args: JsonObject,
     client: string,
     subjectRef: string,
+    direct: boolean,
   ): Promise<CallToolResult> {
     const items = Array.isArray(args["items"]) ? args["items"] : [];
     if (items.length === 0 || items.length > MCP_PROPOSE_MEMORIES_MAXIMUM)
@@ -1143,6 +1154,29 @@ export class ProductionMcpRead {
           replaced.has(result["proposalId"])
         )
           result["status"] = "replaced";
+      if (direct) {
+        const batchId = externalDirectBatchId(randomUUID());
+        for (const result of results) {
+          if (result["status"] !== "pending" || typeof result["proposalId"] !== "string") continue;
+          try {
+            const kept = await proposals.keepDirect(result["proposalId"], {
+              batchId,
+              started: Date.parse(this.#options.clock.now()),
+            });
+            if (kept === "saved") result["status"] = "saved";
+          } catch (error) {
+            if (isAlreadyDecided(error)) {
+              const decided = await this.#options.write?.proposals?.decided(result["proposalId"]);
+              result["status"] =
+                decided === "kept"
+                  ? "already_saved"
+                  : decided === "declined"
+                    ? "declined_before"
+                    : "pending";
+            } else this.#options.onFailure(error);
+          }
+        }
+      }
       return proposalReply(
         JSON.stringify({ note: MCP_PROPOSE_MEMORIES_RESULT.text, results }),
         false,
@@ -1159,6 +1193,7 @@ export class ProductionMcpRead {
     client: string,
     subjectRef: string,
     context: ServerContext,
+    direct: boolean,
   ): Promise<CallToolResult | InputRequiredResult> {
     const started = Date.parse(this.#options.clock.now());
     const parsed = this.#readProposalArgs(args);
@@ -1183,6 +1218,12 @@ export class ProductionMcpRead {
           return proposalReply(MCP_PROPOSE_MEMORY_ALREADY_SAVED.text, false);
         if (proposal.status === "rejected")
           return proposalReply(MCP_PROPOSE_MEMORY_DECLINED.text, false);
+        if (direct) {
+          const kept = await this.#keepDirect(proposals, proposal.id, started);
+          if (kept === "saved") return proposalReply(MCP_PROPOSE_MEMORY_SAVED_DIRECT.text, false);
+          if (kept === "settled") return this.#settledReply(proposal.id);
+          return this.#pendingReply(proposal);
+        }
         if (!elicitationSupported(context.mcpReq.envelope) || !(await proposals.ready()))
           return this.#pendingReply(proposal);
         return await this.#askConfirmation(
@@ -1235,6 +1276,22 @@ export class ProductionMcpRead {
       if (isPendingFull(error)) return proposalReply(MCP_PROPOSE_MEMORY_FULL.text, true);
       this.#options.onFailure(error);
       return proposalReply(MCP_PROPOSE_MEMORY_FAILED.text, true);
+    }
+  }
+
+  async #keepDirect(
+    proposals: McpMemoryProposals,
+    proposalId: string,
+    started: number,
+  ): Promise<"saved" | "pending" | "settled"> {
+    try {
+      return await proposals.keepDirect(proposalId, {
+        batchId: externalDirectBatchId(randomUUID()),
+        started,
+      });
+    } catch (error) {
+      if (isAlreadyDecided(error)) return "settled";
+      throw error;
     }
   }
 
@@ -1427,6 +1484,7 @@ export class ProductionMcpRead {
 
 const READ_CEILING_KEY = "readCeiling";
 const ENTRY_KEY = "entry";
+const PUSH_POLICY_KEY = "pushPolicy";
 const CALL_KEY = "callKey";
 const UNKNOWN_CLIENT = "unknown";
 
@@ -1443,7 +1501,12 @@ function connectionOf(authInfo: AuthInfo | undefined): ConnectionRef | null {
   if (typeof id !== "string" || id.length === 0) return null;
   if (entry !== "oauth" && entry !== "service_token") return null;
   const callKey = authInfo?.extra?.[CALL_KEY];
-  return { id, entry, callKey: typeof callKey === "string" ? callKey : null };
+  return {
+    id,
+    entry,
+    pushPolicy: authInfo?.extra?.[PUSH_POLICY_KEY] === "direct" ? "direct" : "ask",
+    callKey: typeof callKey === "string" ? callKey : null,
+  };
 }
 
 function toolCallOf(body: unknown): { readonly name: string; readonly auto: boolean } | null {
