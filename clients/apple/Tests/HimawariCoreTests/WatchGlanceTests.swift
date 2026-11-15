@@ -151,6 +151,15 @@ import Testing
         #expect(WatchPairingRelay.link(in: ["other": link]) == nil)
     }
 
+    @Test func aLinkIsOfferedToTheWatchOnlyForTheServerThePhoneIsPairedTo() throws {
+        let link = try PairingTestLink.make()
+        let origin = try PairingInvitation.parse(link).origin
+        #expect(WatchPairingRelay.offerable(link, pairedOrigin: origin))
+        #expect(!WatchPairingRelay.offerable(link, pairedOrigin: try #require(URL(string: "https://other.example.test"))))
+        #expect(!WatchPairingRelay.offerable(link, pairedOrigin: nil))
+        #expect(!WatchPairingRelay.offerable("himawari-pair:nonsense", pairedOrigin: origin))
+    }
+
     @Test func watchHomeReadsTheSameEndpointAsTheMacPanelAndActsByKey() async throws {
         let exchange = RecordingExchange([
             HTTPExchangeResponse(status: 200, body: Data(snapshot.utf8)),

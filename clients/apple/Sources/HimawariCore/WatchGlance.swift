@@ -245,6 +245,11 @@ public enum WatchPairingRelay {
         [key: link.trimmingCharacters(in: .whitespacesAndNewlines)]
     }
 
+    public static func offerable(_ link: String, pairedOrigin: URL?) -> Bool {
+        guard let pairedOrigin, let invitation = try? PairingInvitation.parse(link) else { return false }
+        return invitation.origin == pairedOrigin
+    }
+
     public static func link(in message: [String: Any]) -> String? {
         guard let link = message[key] as? String, (try? PairingInvitation.parse(link)) != nil else { return nil }
         return link
