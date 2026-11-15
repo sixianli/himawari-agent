@@ -98,6 +98,12 @@ struct DeviceActionResultRow: View {
                     .hmType(DesignTokens.TypeScale.caption)
                     .foregroundStyle(Color.hmMuted)
                     .multilineTextAlignment(.leading)
+                if view.undo == .failed {
+                    Text(Self.undoFailure(view))
+                        .hmType(DesignTokens.TypeScale.caption)
+                        .foregroundStyle(Color.hmDanger)
+                        .multilineTextAlignment(.leading)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             undoControl
@@ -109,20 +115,30 @@ struct DeviceActionResultRow: View {
     @ViewBuilder
     private var undoControl: some View {
         switch view.undo {
-        case .available:
-            Button(L.text("result.undo"), action: undo)
-                .buttonStyle(RowPillButtonStyle(filled: false))
-                .disabled(busy)
-                .opacity(busy ? 0.5 : 1)
+        case .available, .failed:
+            Button(action: undo) {
+                if busy { spinner } else { Text(L.text("result.undo")) }
+            }
+            .buttonStyle(RowPillButtonStyle(filled: true))
+            .disabled(busy)
         case .pending:
-            Text(L.text("result.undo.pending")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
-        case .done:
-            Text(L.text("result.undo.done")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
-        case .failed:
-            Text(L.text("result.undo.failed")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmDanger)
-        case .none:
+            Button(action: {}) { spinner }
+                .buttonStyle(RowPillButtonStyle(filled: true))
+                .disabled(true)
+        case .done, .none:
             EmptyView()
         }
+    }
+
+    private var spinner: some View {
+        Text(L.text("result.undo"))
+            .hidden()
+            .overlay { ProgressView().controlSize(.small).tint(Color.hmMuted) }
+    }
+
+    static func undoFailure(_ view: DeviceActionView) -> String {
+        guard let reason = view.reason, !reason.isEmpty else { return L.text("result.undo.failed") }
+        return reason
     }
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
@@ -135,6 +151,7 @@ struct DeviceActionResultRow: View {
     static func headline(_ kind: DeviceActionResultKind) -> String {
         switch kind {
         case .done: "result.done"
+        case .undone: "result.undone"
         case .notDone: "result.notDone"
         case .checking: "result.checking"
         case .waiting: "result.waiting"
@@ -146,6 +163,7 @@ struct DeviceActionResultRow: View {
     private func icon(_ kind: DeviceActionResultKind) -> some View {
         switch kind {
         case .done: Icon(.circleCheck, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSuccess)
+        case .undone: Icon(.arrowBackUp, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
         case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
         case .checking: ProgressView().tint(Color.hmMuted)
         case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)

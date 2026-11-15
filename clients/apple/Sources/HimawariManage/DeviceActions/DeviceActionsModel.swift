@@ -135,7 +135,7 @@ public final class DeviceActionsModel {
     }
 
     public func undo(_ view: DeviceActionView) async {
-        guard let api, view.undo == .available, !busy.contains(view.id) else { return }
+        guard let api, view.undo == .available || view.undo == .failed, !busy.contains(view.id) else { return }
         busy.insert(view.id)
         defer { busy.remove(view.id) }
         problem = nil

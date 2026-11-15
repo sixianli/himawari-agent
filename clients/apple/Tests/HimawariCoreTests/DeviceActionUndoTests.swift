@@ -30,6 +30,13 @@ import Testing
         #expect(try view("from_the_future").undo == .none)
     }
 
+    @Test func aSucceededActionThatWasUndoneReadsAsUndoneAndOthersDoNot() throws {
+        #expect(DeviceActionResultKind(try view("done")) == .undone)
+        #expect(DeviceActionResultKind(try view("available")) == .done)
+        #expect(DeviceActionResultKind(try view("failed")) == .done)
+        #expect(DeviceActionResultKind(try view(nil)) == .done)
+    }
+
     @Test func aSignedUndoAsksForTheChallengeAndPostsTheActionId() async throws {
         let exchange = RecordingExchange([
             HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),

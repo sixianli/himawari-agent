@@ -44,6 +44,5 @@
 "result.withReason" = "%@. %@";
 "actions.cannotUndo" = "This can't be undone any more";
 "result.undo" = "Undo";
-"result.undo.pending" = "Undoing";
-"result.undo.done" = "Undone";
+"result.undone" = "Undone";
 "result.undo.failed" = "Couldn't undo";

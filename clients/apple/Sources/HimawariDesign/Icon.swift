@@ -6,6 +6,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
     case appWindow = "app-window"
+    case arrowBackUp = "arrow-back-up"
     case arrowUp = "arrow-up"
     case bell
     case bolt

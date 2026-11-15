@@ -341,6 +341,7 @@ public enum DeviceActionTime {
 
 public enum DeviceActionResultKind: Equatable, Sendable {
     case done
+    case undone
     case notDone
     case checking
     case waiting
@@ -348,7 +349,7 @@ public enum DeviceActionResultKind: Equatable, Sendable {
 
     public init(_ view: DeviceActionView) {
         switch view.state {
-        case .succeeded: self = .done
+        case .succeeded: self = view.undo == .done ? .undone : .done
         case .failed, .expired, .rejected: self = .notDone
         case .resultUnknown, .delivered, .queued: self = .checking
         case .waitingOwner: self = .waiting
