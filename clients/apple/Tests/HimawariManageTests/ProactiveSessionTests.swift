@@ -24,7 +24,7 @@ private actor ProactiveTransport: DeviceTransport {
     private static func reply(_ type: JSONValue?) -> String {
         switch type {
         case .string("proactive.overview.read"):
-            return #"{"payload":{"source":"gmail","connection":{"status":"connected","account":"a@example.com","connectedAt":null},"enabled":true,"quietHours":[{"days":[1,2],"start":"23:00","end":"07:00"}],"importantSenders":["boss@example.com"],"dailyLimitReached":false,"backoff":[],"insights":[],"decisions":[],"metrics":{"spoke":0,"hits":0,"misfires":0,"missed":0,"reviewed":0}}}"#
+            return #"{"payload":{"source":"gmail","connection":{"status":"connected","account":"a@example.com","connectedAt":null},"enabled":true,"quietHours":[{"days":[1,2],"start":"23:00","end":"07:00"}],"importantSenders":["boss@example.com"],"dailyLimitReached":false,"backoff":[],"insights":[],"decisions":[]}}"#
         case .string("proactive.sources.read"):
             return #"{"payload":{"sources":[{"source":"gmail","intake":"reader","trust":"external","enabled":true,"perDay":{"limit":100,"defaultLimit":100,"minimum":10,"maximum":500,"used":3,"resetsAt":"2026-11-13T00:00:00.000Z","onReach":"hold_until_reset"},"perCheck":{"limit":20,"defaultLimit":20,"minimum":1,"maximum":100,"onReach":"hold_until_next_check"},"dailyLimitReached":false,"updatedAt":null}]}}"#
         default:
@@ -65,13 +65,6 @@ final class ProactiveSessionTests: XCTestCase {
         XCTAssertEqual(proactive.overview?.enabled, true)
         XCTAssertEqual(proactive.sources?.map(\.id), ["gmail"])
         XCTAssertEqual(proactive.overviewLoad, .loaded)
-    }
-
-    func testAnUnreadableOverviewIsAFailureNotAnEmptyPage() async {
-        let proactive = session(ProactiveTransport())
-        await proactive.reloadWeekly()
-        XCTAssertNil(proactive.weekly)
-        XCTAssertEqual(proactive.weeklyLoad, .failed)
     }
 
     func testTurningOffUsesPauseWithoutAFaceCheck() async throws {

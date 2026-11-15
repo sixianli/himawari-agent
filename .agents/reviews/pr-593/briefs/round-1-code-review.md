@@ -6,7 +6,6 @@
 1. 关开关发 proactive.pause（收紧档，无面容），开开关发 proactive.settings.set（改档，带原有 quietHours 和 importantSenders），载荷和合同一致。
 2. 来源只关时发 proactive.source.switch_off，同时改了上限发 proactive.source.settings.set，字段齐全。
 3. 检查记录能打什么分的规则（pushed、deferred 可打 useful 或 unneeded，silent 可打 missed，其余不可打）和网页 apps/control-center/src/components/proactive-reminders.tsx 一致；insight 的打分只有 useful、unneeded，且不能清空（服务器对 rate 加 null 会拒绝）。
-4. 校准周报里百分比只在服务器 enough 为真且 ratesWithheld 为假时显示，不自己算比例。
-5. 界面上每个数字都来自服务器字段，没有编造的字段；四个统计的定义写在界面上。
-6. 不涉及发给模型的内容，不涉及生产。
+4. 界面上每个数字都来自服务器字段，没有编造的字段。统计和周报页按协调者通知先不做。
+5. 不涉及发给模型的内容，不涉及生产。
 注意：SwiftUI 部分只能在 Mac 编译，请肉眼核对类型、成员初始化顺序、结果构建器里的写法。

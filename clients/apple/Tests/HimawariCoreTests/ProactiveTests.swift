@@ -49,8 +49,8 @@ struct ProactiveTests {
         #expect(try decision("needs_owner", judged: 2).showsJudgedBreakdown == false)
     }
 
-    private func overview(insights: String, decisions: String = "[]", metrics: String = #"{"spoke":0,"hits":0,"misfires":0,"missed":0,"reviewed":0}"#) throws -> ProactiveOverview {
-        let json = #"{"source":"gmail","connection":{"status":"connected","account":"a@example.com","connectedAt":null},"enabled":true,"quietHours":[{"days":[0,1,6],"start":"23:00","end":"07:00"}],"importantSenders":[],"dailyLimitReached":false,"backoff":[],"insights":\#(insights),"audit":{"active":false,"since":"2026-11-01T00:00:00.000Z","items":[],"pending":0},"decisions":\#(decisions),"metrics":\#(metrics),"generatedAt":"2026-11-14T00:00:00.000Z"}"#
+    private func overview(insights: String, decisions: String = "[]") throws -> ProactiveOverview {
+        let json = #"{"source":"gmail","connection":{"status":"connected","account":"a@example.com","connectedAt":null},"enabled":true,"quietHours":[{"days":[0,1,6],"start":"23:00","end":"07:00"}],"importantSenders":[],"dailyLimitReached":false,"backoff":[],"insights":\#(insights),"audit":{"active":false,"since":"2026-11-01T00:00:00.000Z","items":[],"pending":0},"decisions":\#(decisions),"generatedAt":"2026-11-14T00:00:00.000Z"}"#
         return try JSONDecoder().decode(ProactiveOverview.self, from: Data(json.utf8))
     }
 
@@ -81,11 +81,6 @@ struct ProactiveTests {
         #expect(shown.map(\.id) == ["new", "old"])
     }
 
-    @Test func metricsAreHiddenUntilThereIsSomethingToCount() throws {
-        #expect(try overview(insights: "[]").hasMetrics == false)
-        #expect(try overview(insights: "[]", metrics: #"{"spoke":3,"hits":1,"misfires":0,"missed":0,"reviewed":0}"#).hasMetrics == true)
-    }
-
     @Test func quietHoursListMondayFirst() throws {
         let period = try #require(try overview(insights: "[]").quietHours.first)
         #expect(period.sortedDays == [1, 6, 0])
@@ -114,45 +109,6 @@ struct ProactiveTests {
         let item = try source()
         #expect(item.perDay.used == 12)
         #expect(item.perCheck.used == nil)
-    }
-
-    private func weekly(withheld: Bool, group: String) throws -> ProactiveWeekly {
-        let json = #"{"observation":{"startDay":"2026-11-01"},"report":{"startDay":"2026-11-01","endDay":"2026-11-07","complete":\#(!withheld),"ratesWithheld":\#(withheld),"minimumSamples":5,"groups":[\#(group)]}}"#
-        return try JSONDecoder().decode(ProactiveWeekly.self, from: Data(json.utf8))
-    }
-
-    private let pushedGroup = #"{"group":"proactive_pushed","total":9,"rated":6,"useful":4,"unneeded":2,"missed":0,"applicable":["useful","unneeded"],"rates":{"useful":{"successes":4,"samples":6,"enough":true,"value":0.6666,"low":0.3,"high":0.9},"unneeded":{"successes":2,"samples":6,"enough":true,"value":0.3333,"low":0.1,"high":0.7},"missed":null}}"#
-    private let fewGroup = #"{"group":"memory_kept","total":3,"rated":2,"useful":2,"unneeded":0,"missed":0,"applicable":["useful","unneeded"],"rates":{"useful":{"successes":2,"samples":2,"enough":false,"value":null,"low":null,"high":null},"unneeded":{"successes":0,"samples":2,"enough":false,"value":null,"low":null,"high":null},"missed":null}}"#
-    private let emptyGroup = #"{"group":"consolidation","total":0,"rated":0,"useful":0,"unneeded":0,"missed":0,"applicable":["useful","unneeded"],"rates":{"useful":null,"unneeded":null,"missed":null}}"#
-
-    @Test func weeklyFiguresShowPercentOnlyWhenTheServerSaysThereAreEnoughRatings() throws {
-        let report = try weekly(withheld: false, group: pushedGroup).report
-        let figures = try #require(report.groups.first).figures(ratesWithheld: report.ratesWithheld)
-        #expect(figures == [
-            ProactiveWeeklyFigure(rating: .useful, count: 4, percent: 67),
-            ProactiveWeeklyFigure(rating: .unneeded, count: 2, percent: 33),
-        ])
-        let few = try weekly(withheld: false, group: fewGroup).report
-        #expect(try #require(few.groups.first).figures(ratesWithheld: false).allSatisfy { $0.percent == nil })
-    }
-
-    @Test func weeklyPercentsAreWithheldWhileTheObservationIsIncomplete() throws {
-        let report = try weekly(withheld: true, group: pushedGroup).report
-        let figures = try #require(report.groups.first).figures(ratesWithheld: report.ratesWithheld)
-        #expect(figures.map(\.count) == [4, 2])
-        #expect(figures.allSatisfy { $0.percent == nil })
-    }
-
-    @Test func weeklyHidesGroupsWithNothingRecorded() throws {
-        let report = try weekly(withheld: false, group: pushedGroup + "," + emptyGroup).report
-        #expect(report.shownGroups.map(\.group) == ["proactive_pushed"])
-    }
-
-    @Test func weeklyKnowsWhetherObservationStarted() throws {
-        let json = #"{"observation":{"startDay":null},"report":{"startDay":"2026-11-01","endDay":"2026-11-07","complete":false,"ratesWithheld":true,"minimumSamples":5,"groups":[]}}"#
-        let parsed = try JSONDecoder().decode(ProactiveWeekly.self, from: Data(json.utf8))
-        #expect(parsed.hasStarted == false)
-        #expect(try weekly(withheld: false, group: pushedGroup).hasStarted)
     }
 
     @Test func unknownRatingStringsAreIgnoredNotFatal() throws {

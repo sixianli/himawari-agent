@@ -55,22 +55,6 @@ extension M {
 
     static var proactiveRestore: String { text("恢复推送", ja: "通知を元に戻す", en: "Restore pushes") }
 
-    static var proactiveStats: String { text("最近 30 天", ja: "直近 30 日", en: "Last 30 days") }
-    static var metricSpoke: String { text("主动提醒总次数", ja: "自発的なリマインダーの総数", en: "Total proactive reminders") }
-    static var metricHits: String { text("恰当的提醒", ja: "適切なリマインダー", en: "Appropriate reminders") }
-    static var metricMisfires: String { text("多余的提醒", ja: "余計なリマインダー", en: "Unneeded reminders") }
-    static var metricMissed: String { text("漏提醒（你查过的邮件里）", ja: "見逃し（確認したメールの中）", en: "Reminders it missed (in emails you checked)") }
-    static func metricReviewed(_ count: Int) -> String {
-        text("已审 \(count) 封", ja: "\(count) 通確認", en: "\(count) reviewed")
-    }
-    static var metricsDefinition: String {
-        text(
-            "你打了“做对了”或 24 小时内点开的算恰当；打了“不该做”、划掉或 24 小时没点开的算多余；漏提醒只算你查过的邮件。",
-            ja: "「正しかった」と採点したもの、24 時間以内に開いたものは適切。「やるべきではなかった」と採点したもの、閉じたもの、24 時間開かなかったものは余計。見逃しは確認したメールだけ数えます。",
-            en: "Appropriate means you rated it “Right call” or opened it within 24 hours. Unneeded means you rated it “Shouldn’t have done it”, dismissed it, or didn’t open it within 24 hours. Missed counts only emails you checked."
-        )
-    }
-
     static var proactiveToHandle: String { text("待处理", ja: "対応待ち", en: "To handle") }
     static var proactiveDone: String { text("完成", ja: "完了", en: "Done") }
     static var proactiveMute: String { text("不再提醒", ja: "通知しない", en: "Don’t remind") }
@@ -79,7 +63,6 @@ extension M {
         text("还没有检查记录", ja: "まだ確認の記録はありません", en: "No check records yet")
     }
     static var proactiveSources: String { text("检查的来源", ja: "確認する情報源", en: "Sources it checks") }
-    static var proactiveReport: String { text("校准周报", ja: "較正レポート", en: "Calibration report") }
     static var proactiveQuiet: String { text("不推送时段", ja: "通知しない時間帯", en: "Quiet hours") }
     static var proactiveQuietNone: String { text("没设", ja: "なし", en: "None") }
     static var proactiveQuietFootnote: String {
@@ -195,61 +178,4 @@ extension M {
     }
     static var sourceSwitch: String { text("检查这个来源", ja: "この情報源を確認する", en: "Check this source") }
     static var sourcesNone: String { text("没有可设置的来源", ja: "設定できる情報源はありません", en: "No sources to set") }
-
-    static func weeklyPeriod(_ start: String, _ end: String) -> String { "\(start) – \(end)" }
-    static var weeklyNotStarted: String {
-        text("还没开始观察。数据起点要在网页上设。", ja: "まだ観察を始めていません。データの起点はウェブで設定します。", en: "Observation hasn’t started. Set the data start day on the web.")
-    }
-    static var weeklyNotFull: String {
-        text("观察期还没满 7 天，先不算比例", ja: "観察期間が 7 日に満たないため、割合はまだ出しません", en: "The observation period is under 7 days, so no ratios yet")
-    }
-    static var weeklyEmpty: String {
-        text("这段时间没有决策记录", ja: "この期間に判断の記録はありません", en: "No decisions recorded in this period")
-    }
-    static var weeklyDefinition: String {
-        text("分母是你评过的条数", ja: "分母は採点した件数です", en: "The denominator is the number you rated")
-    }
-    static func weeklyCounts(total: Int, rated: Int) -> String {
-        text("共 \(total) 条 · 你评过 \(rated) 条", ja: "\(total) 件 · 採点 \(rated) 件", en: "\(total) decisions · \(rated) rated")
-    }
-    static func weeklyFew(rated: Int, minimum: Int) -> String {
-        text("样本不足（评过 \(rated) 条，至少 \(minimum) 条才算比例）", ja: "件数不足（採点 \(rated) 件、割合には \(minimum) 件以上必要）", en: "Too few rated (\(rated); ratios need \(minimum))")
-    }
-    static func weeklyFigure(_ name: String, _ figure: ProactiveWeeklyFigure) -> String {
-        figure.percent.map { "\(name) \(figure.count) · \($0)%" } ?? "\(name) \(figure.count)"
-    }
-
-    static func weeklyGroup(_ group: String) -> String {
-        switch group {
-        case "proactive_pushed": text("读完邮件提醒了你", ja: "メールを読んで通知した", en: "Read mail and reminded you")
-        case "proactive_silent": text("读完邮件没提醒", ja: "メールを読んで通知しなかった", en: "Read mail, no reminder")
-        case "memory_skipped": text("系统没存下的记忆", ja: "システムが保存しないと判断した記憶", en: "Memories the system chose not to save")
-        case "memory_kept": text("已存的记忆", ja: "保存した記憶", en: "Saved memories")
-        case "consolidation": text("整理记忆", ja: "記憶の整理", en: "Memory tidy-up")
-        case "memory_pending": text("待你确认的记忆", ja: "確認待ちの記憶", en: "Memories awaiting your confirmation")
-        case "context_truncation": text("回答时没带上的旧内容", ja: "回答に入れなかった古い内容", en: "Older content left out of an answer")
-        case "retrieval_degrade": text("记忆搜索没生效", ja: "記憶検索が働かなかった", en: "Memory search did not work")
-        case "rule_review": text("硬规则待重审", ja: "ハードルールの再確認待ち", en: "Hard rule waiting for review")
-        case "memory_capture_failed": text("记忆抽取失败", ja: "記憶の抽出に失敗", en: "Memory capture failed")
-        default: text("外部程序读取记忆", ja: "外部プログラムによる記憶の読み取り", en: "Memory read by an outside program")
-        }
-    }
-
-    static func weeklyRating(group: String, _ rating: ProactiveRating) -> String {
-        switch (group, rating) {
-        case ("proactive_pushed", .useful): text("提醒得对", ja: "通知は正しかった", en: "Right to remind")
-        case ("proactive_pushed", .unneeded): text("不该提醒", ja: "通知すべきではなかった", en: "Shouldn’t have reminded")
-        case ("proactive_silent", .useful): text("不提醒是对的", ja: "通知しないのが正しかった", en: "Right to stay silent")
-        case ("proactive_silent", .missed): text("该提醒没提醒", ja: "通知すべきだった", en: "Should have reminded")
-        case ("memory_skipped", .useful): text("不存是对的", ja: "保存しないのが正しかった", en: "Right not to save")
-        case ("memory_skipped", .missed): text("该存没存", ja: "保存すべきだった", en: "Should have saved")
-        case ("memory_kept", .useful): text("存对了", ja: "正しく保存した", en: "Saved correctly")
-        case ("memory_kept", .unneeded): text("不该存", ja: "保存すべきではなかった", en: "Shouldn’t have saved")
-        case ("consolidation", .useful): text("整理得对", ja: "整理は正しかった", en: "Right tidy-up")
-        case ("consolidation", .unneeded): text("不该整理", ja: "整理すべきではなかった", en: "Shouldn’t have tidied")
-        case ("memory_capture_failed", .useful): text("没漏掉什么", ja: "失ったものはない", en: "Nothing was lost")
-        case ("memory_capture_failed", .missed): text("漏了该记的", ja: "覚えるべきことを逃した", en: "Lost something worth keeping")
-        default: proactiveRating(rating)
-        }
-    }
 }

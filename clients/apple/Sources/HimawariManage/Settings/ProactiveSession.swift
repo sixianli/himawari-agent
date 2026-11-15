@@ -20,10 +20,8 @@ public final class ProactiveSession {
 
     public private(set) var overview: ProactiveOverview?
     public private(set) var sources: [ProactiveSource]?
-    public private(set) var weekly: ProactiveWeekly?
     public private(set) var overviewLoad: Load = .loading
     public private(set) var sourcesLoad: Load = .loading
-    public private(set) var weeklyLoad: Load = .loading
 
     @ObservationIgnored private let gateway: ManageGateway
 
@@ -48,16 +46,6 @@ public final class ProactiveSession {
             sourcesLoad = .loaded
         } catch {
             sourcesLoad = sources == nil ? .failed : .loaded
-        }
-    }
-
-    public func reloadWeekly() async {
-        do {
-            let data = try await gateway.read(.v2, "proactive.weekly.read", payload: ["end": .null])
-            weekly = try JSONDecoder().decode(Snapshot<ProactiveWeekly>.self, from: data).payload
-            weeklyLoad = .loaded
-        } catch {
-            weeklyLoad = weekly == nil ? .failed : .loaded
         }
     }
 

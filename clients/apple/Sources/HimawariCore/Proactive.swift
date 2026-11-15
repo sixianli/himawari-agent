@@ -126,14 +126,6 @@ public struct ProactiveDecision: Decodable, Sendable, Hashable, Identifiable {
     public var showsJudgedBreakdown: Bool { counts.judged > 0 && verdict != "needs_owner" }
 }
 
-public struct ProactiveMetrics: Decodable, Sendable, Hashable {
-    public let spoke: Int
-    public let hits: Int
-    public let misfires: Int
-    public let missed: Int
-    public let reviewed: Int
-}
-
 public struct ProactiveOverview: Decodable, Sendable, Hashable {
     public let source: String
     public let connection: ProactiveConnection
@@ -144,7 +136,6 @@ public struct ProactiveOverview: Decodable, Sendable, Hashable {
     public let backoff: [ProactiveBackoff]
     public let insights: [ProactiveInsight]
     public let decisions: [ProactiveDecision]
-    public let metrics: ProactiveMetrics
 
     public func openInsights(limit: Int) -> [ProactiveInsight] {
         let open = insights.filter(\.isOpen)
@@ -165,8 +156,6 @@ public struct ProactiveOverview: Decodable, Sendable, Hashable {
         }
         return Array(sorted.prefix(limit))
     }
-
-    public var hasMetrics: Bool { metrics.spoke > 0 || metrics.reviewed > 0 }
 }
 
 public enum ProactiveTime {
@@ -222,90 +211,4 @@ public struct ProactiveSource: Decodable, Sendable, Hashable, Identifiable {
 
 public struct ProactiveSourceList: Decodable, Sendable, Hashable {
     public let sources: [ProactiveSource]
-}
-
-public struct ProactiveRate: Decodable, Sendable, Hashable {
-    public let successes: Int
-    public let samples: Int
-    public let enough: Bool
-    public let value: Double?
-}
-
-public struct ProactiveRates: Decodable, Sendable, Hashable {
-    public let useful: ProactiveRate?
-    public let unneeded: ProactiveRate?
-    public let missed: ProactiveRate?
-
-    func rate(_ rating: ProactiveRating) -> ProactiveRate? {
-        switch rating {
-        case .useful: useful
-        case .unneeded: unneeded
-        case .missed: missed
-        }
-    }
-}
-
-public struct ProactiveWeeklyFigure: Sendable, Equatable {
-    public let rating: ProactiveRating
-    public let count: Int
-    public let percent: Int?
-
-    public init(rating: ProactiveRating, count: Int, percent: Int?) {
-        self.rating = rating
-        self.count = count
-        self.percent = percent
-    }
-}
-
-public struct ProactiveWeeklyGroup: Decodable, Sendable, Hashable, Identifiable {
-    public let group: String
-    public let total: Int
-    public let rated: Int
-    public let useful: Int
-    public let unneeded: Int
-    public let missed: Int
-    public let applicable: [String]
-    public let rates: ProactiveRates
-
-    public var id: String { group }
-
-    public func figures(ratesWithheld: Bool) -> [ProactiveWeeklyFigure] {
-        applicable.compactMap(ProactiveRating.init(rawValue:)).map { rating in
-            let count: Int
-            switch rating {
-            case .useful: count = useful
-            case .unneeded: count = unneeded
-            case .missed: count = missed
-            }
-            var percent: Int?
-            if !ratesWithheld, let rate = rates.rate(rating), rate.enough, let value = rate.value {
-                percent = Int((value * 100).rounded())
-            }
-            return ProactiveWeeklyFigure(rating: rating, count: count, percent: percent)
-        }
-    }
-
-    public func hasEnoughRated(minimum: Int) -> Bool { rated >= minimum }
-}
-
-public struct ProactiveWeeklyReport: Decodable, Sendable, Hashable {
-    public let startDay: String
-    public let endDay: String
-    public let complete: Bool
-    public let ratesWithheld: Bool
-    public let minimumSamples: Int
-    public let groups: [ProactiveWeeklyGroup]
-
-    public var shownGroups: [ProactiveWeeklyGroup] { groups.filter { $0.total > 0 } }
-}
-
-public struct ProactiveObservation: Decodable, Sendable, Hashable {
-    public let startDay: String?
-}
-
-public struct ProactiveWeekly: Decodable, Sendable, Hashable {
-    public let observation: ProactiveObservation
-    public let report: ProactiveWeeklyReport
-
-    public var hasStarted: Bool { observation.startDay != nil }
 }

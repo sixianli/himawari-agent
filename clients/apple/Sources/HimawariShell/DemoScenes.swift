@@ -38,7 +38,6 @@ enum DemoScene: String, CaseIterable {
     case proactiveLog = "20-himawari-self-5b-proactive-log"
     case proactiveSources = "20-himawari-self-5c-proactive-sources"
     case proactiveSource = "20-himawari-self-5d-proactive-source"
-    case proactiveReport = "20-himawari-self-5e-proactive-report"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -214,7 +213,7 @@ struct DemoSceneView: View {
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
             .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
             .notifications, .notificationsEdit, .thinkSettings,
-            .proactive, .proactiveLog, .proactiveSources, .proactiveSource, .proactiveReport:
+            .proactive, .proactiveLog, .proactiveSources, .proactiveSource:
             EmptyView()
         }
     }

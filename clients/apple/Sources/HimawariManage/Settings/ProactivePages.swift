@@ -31,7 +31,6 @@ struct ProactivePage: View {
         .task {
             await session.reloadOverview()
             await session.reloadSources()
-            await session.reloadWeekly()
         }
         .refreshable { await session.reloadOverview() }
         .alert(M.actionFailed, isPresented: $failed) {}
@@ -79,7 +78,6 @@ struct ProactivePage: View {
             .himawariCard()
         }
         links(overview)
-        if overview.hasMetrics { metrics(overview.metrics) }
         let pending = overview.openInsights(limit: Self.insightLimit)
         if !pending.isEmpty {
             Text(M.proactiveToHandle).hmType(DesignTokens.TypeScale.groupLabel).foregroundStyle(Color.hmMuted)
@@ -97,18 +95,12 @@ struct ProactivePage: View {
     private func links(_ overview: ProactiveOverview) -> some View {
         SettingsGroup(label: nil) {
             Button { open(.proactiveLog) } label: {
-                SettingsRow(icon: .history, title: M.proactiveLog, chevron: true, last: !hasSources && !hasReport)
+                SettingsRow(icon: .history, title: M.proactiveLog, chevron: true, last: !hasSources)
             }
             .buttonStyle(.plain)
             if hasSources {
                 Button { open(.proactiveSources) } label: {
-                    SettingsRow(icon: .listCheck, title: M.proactiveSources, chevron: true, last: !hasReport)
-                }
-                .buttonStyle(.plain)
-            }
-            if hasReport {
-                Button { open(.proactiveReport) } label: {
-                    SettingsRow(icon: .clipboardList, title: M.proactiveReport, chevron: true, last: true)
+                    SettingsRow(icon: .listCheck, title: M.proactiveSources, chevron: true, last: true)
                 }
                 .buttonStyle(.plain)
             }
@@ -116,26 +108,6 @@ struct ProactivePage: View {
     }
 
     private var hasSources: Bool { !(session.sources ?? []).isEmpty }
-    private var hasReport: Bool { session.weekly != nil }
-
-    private func metrics(_ metrics: ProactiveMetrics) -> some View {
-        VStack(alignment: .leading, spacing: SL.groupGap) {
-            SettingsGroup(label: M.proactiveStats) {
-                SettingsRow(icon: nil, title: M.metricSpoke, value: "\(metrics.spoke)")
-                SettingsRow(icon: nil, title: M.metricHits, value: "\(metrics.hits)")
-                SettingsRow(icon: nil, title: M.metricMisfires, value: "\(metrics.misfires)")
-                SettingsRow(
-                    icon: nil,
-                    title: M.metricMissed,
-                    note: M.metricReviewed(metrics.reviewed),
-                    value: "\(metrics.missed)",
-                    last: true
-                )
-            }
-            Text(M.metricsDefinition).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                .padding(.horizontal, SL.groupLabelPadding)
-        }
-    }
 
     private func run(_ key: String, _ work: @escaping () async throws -> Void) {
         busy = key
@@ -437,81 +409,5 @@ struct ProactiveSourcePage: View {
                 failed = true
             }
         }
-    }
-}
-
-struct ProactiveReportPage: View {
-    let store: SettingsStore
-    let back: () -> Void
-
-    var body: some View {
-        SettingsPage(gap: SL.pageGap) {
-            SheetHeader(title: M.proactiveReport, leading: .back, action: back)
-            if let weekly = store.proactive.weekly {
-                if !weekly.hasStarted {
-                    Text(M.weeklyNotStarted).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
-                        .padding(.horizontal, SL.groupLabelPadding)
-                } else {
-                    report(weekly.report)
-                }
-            } else {
-                EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
-            }
-        }
-        .task { await store.proactive.reloadWeekly() }
-        .refreshable { await store.proactive.reloadWeekly() }
-    }
-
-    @ViewBuilder
-    private func report(_ report: ProactiveWeeklyReport) -> some View {
-        Text(M.weeklyPeriod(report.startDay, report.endDay)).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
-            .padding(.horizontal, SL.groupLabelPadding)
-        if report.ratesWithheld {
-            Text(M.weeklyNotFull).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                .padding(.horizontal, SL.groupLabelPadding)
-        }
-        if report.shownGroups.isEmpty {
-            EmptyStateView(Text(M.weeklyEmpty)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
-        } else {
-            VStack(spacing: PL.gap) {
-                ForEach(report.shownGroups) { group in
-                    ProactiveGroupCard(group: group, report: report)
-                }
-            }
-            if !report.ratesWithheld {
-                Text(M.weeklyDefinition).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                    .padding(.horizontal, SL.groupLabelPadding)
-            }
-        }
-    }
-}
-
-struct ProactiveGroupCard: View {
-    let group: ProactiveWeeklyGroup
-    let report: ProactiveWeeklyReport
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: SL.rowGap) {
-            VStack(alignment: .leading, spacing: SL.rowTextGap) {
-                Text(M.weeklyGroup(group.group)).hmType(SL.rowValue).foregroundStyle(Color.hmText)
-                Text(M.weeklyCounts(total: group.total, rated: group.rated))
-                    .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-            }
-            if !report.ratesWithheld {
-                if group.hasEnoughRated(minimum: report.minimumSamples) {
-                    VStack(alignment: .leading, spacing: SL.rowTextGap) {
-                        ForEach(group.figures(ratesWithheld: false), id: \.rating) { figure in
-                            Text(M.weeklyFigure(M.weeklyRating(group: group.group, figure.rating), figure))
-                                .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmText)
-                        }
-                    }
-                } else {
-                    Text(M.weeklyFew(rated: group.rated, minimum: report.minimumSamples))
-                        .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .himawariCard()
     }
 }

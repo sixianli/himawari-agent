@@ -31,7 +31,6 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case proactiveLog = "20-himawari-self-5b-proactive-log"
     case proactiveSources = "20-himawari-self-5c-proactive-sources"
     case proactiveSource = "20-himawari-self-5d-proactive-source"
-    case proactiveReport = "20-himawari-self-5e-proactive-report"
 }
 
 public struct ManageDemoView: View {
@@ -92,8 +91,6 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.proactiveStore(), path: [.proactive, .proactiveSources]) {}
         case .proactiveSource:
             SettingsRootView(store: ManageDemo.proactiveStore(), path: [.proactive, .proactiveSources, .proactiveSource("gmail")]) {}
-        case .proactiveReport:
-            SettingsRootView(store: ManageDemo.proactiveStore(), path: [.proactive, .proactiveReport]) {}
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -186,7 +183,6 @@ enum ManageDemo {
         case "proposals.read": proposals
         case "proactive.overview.read": proactiveOverview
         case "proactive.sources.read": proactiveSources
-        case "proactive.weekly.read": proactiveWeekly
         case "think.settings.read": tuning(think: true)
         case "delivery_timing.settings.read": tuning(think: false)
         case "capability.list":
@@ -262,17 +258,11 @@ enum ManageDemo {
         let pushed = #"{"id":"d1","checkedAt":"2026-11-12T01:00:00.000Z","verdict":"pushed","reasonCode":"OK","counts":{"fetched":3,"skipped":1,"judged":2,"act":1,"know":1,"check":0,"ignore":0,"floorRaised":0,"pushed":1},"opened":true,"rating":null}"#
         let silent = #"{"id":"d2","checkedAt":"2026-11-12T00:45:00.000Z","verdict":"silent","reasonCode":"OK","counts":{"fetched":2,"skipped":2,"judged":0,"act":0,"know":0,"check":0,"ignore":0,"floorRaised":0,"pushed":0},"opened":false,"rating":null}"#
         let quiet = #"{"id":"d3","checkedAt":"2026-11-12T00:30:00.000Z","verdict":"silent","reasonCode":"OK","counts":\#(zeroCounts),"opened":false,"rating":null}"#
-        return #"{"payload":{"source":"gmail","connection":{"status":"connected","account":"andy@example.com","connectedAt":"2026-11-01T00:00:00.000Z"},"enabled":true,"quietHours":[{"days":[0,1,2,3,4,5,6],"start":"23:00","end":"07:00"}],"importantSenders":[],"dailyLimitReached":false,"backoff":[],"insights":[\#(insight),\#(later)],"audit":{"active":false,"since":"2026-11-01T00:00:00.000Z","items":[],"pending":0},"decisions":[\#(pushed),\#(silent),\#(quiet)],"metrics":{"spoke":6,"hits":4,"misfires":1,"missed":0,"reviewed":8},"generatedAt":"2026-11-12T02:00:00.000Z"}}"#
+        return #"{"payload":{"source":"gmail","connection":{"status":"connected","account":"andy@example.com","connectedAt":"2026-11-01T00:00:00.000Z"},"enabled":true,"quietHours":[{"days":[0,1,2,3,4,5,6],"start":"23:00","end":"07:00"}],"importantSenders":[],"dailyLimitReached":false,"backoff":[],"insights":[\#(insight),\#(later)],"audit":{"active":false,"since":"2026-11-01T00:00:00.000Z","items":[],"pending":0},"decisions":[\#(pushed),\#(silent),\#(quiet)],"generatedAt":"2026-11-12T02:00:00.000Z"}}"#
     }
 
     private static var proactiveSources: String {
         #"{"payload":{"sources":[{"source":"gmail","intake":"reader","trust":"external","enabled":true,"perDay":{"limit":100,"defaultLimit":100,"minimum":10,"maximum":500,"used":23,"resetsAt":"2026-11-13T00:00:00.000Z","onReach":"hold_until_reset"},"perCheck":{"limit":20,"defaultLimit":20,"minimum":1,"maximum":100,"onReach":"hold_until_next_check"},"dailyLimitReached":false,"updatedAt":null}],"generatedAt":"2026-11-12T02:00:00.000Z"}}"#
-    }
-
-    private static var proactiveWeekly: String {
-        let pushed = #"{"group":"proactive_pushed","total":9,"rated":6,"useful":4,"unneeded":2,"missed":0,"applicable":["useful","unneeded"],"rates":{"useful":{"successes":4,"samples":6,"enough":true,"value":0.667,"low":0.3,"high":0.9},"unneeded":{"successes":2,"samples":6,"enough":true,"value":0.333,"low":0.1,"high":0.7},"missed":null}}"#
-        let silent = #"{"group":"proactive_silent","total":14,"rated":2,"useful":0,"unneeded":0,"missed":2,"applicable":["useful","missed"],"rates":{"useful":{"successes":0,"samples":2,"enough":false,"value":null,"low":null,"high":null},"unneeded":null,"missed":{"successes":2,"samples":2,"enough":false,"value":null,"low":null,"high":null}}}"#
-        return #"{"payload":{"observation":{"startDay":"2026-11-01"},"report":{"start":"2026-11-01T00:00:00.000Z","end":"2026-11-08T00:00:00.000Z","startDay":"2026-11-01","endDay":"2026-11-07","complete":true,"ratesWithheld":false,"minimumSamples":5,"groups":[\#(pushed),\#(silent)]}}}"#
     }
 
     private static var proposals: String {
