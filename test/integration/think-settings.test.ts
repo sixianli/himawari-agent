@@ -237,7 +237,15 @@ describe("think settings", () => {
       "summaryCharacters",
       "idleSeconds",
       "runTimeoutMinutes",
+      "threadRetentionDays",
     ]);
+    expect(snapshot.payload.items[10]).toMatchObject({
+      value: 7,
+      minimum: 1,
+      maximum: 90,
+      unit: "days",
+      unitLabel: { "zh-CN": "天", en: "days", ja: "日" },
+    });
     expect(snapshot.payload.items[0]).toMatchObject({
       value: 800,
       defaultValue: 800,
