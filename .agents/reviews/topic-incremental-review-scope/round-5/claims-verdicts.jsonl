@@ -1,0 +1,1 @@
+{"id": "13", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|13|找不到|-|数据取自 main 上的复核账本（`.agents/reviews/pr-*/usage.jsonl`）和 git 历史|-", "outcome": "model-wrong", "evidenceFile": "docs/assets/review-cost/2026-11-15-incremental-rounds-data.txt", "evidence": "数据源：main 上 .agents/reviews/pr-*/usage.jsonl"}
