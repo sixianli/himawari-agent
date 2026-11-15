@@ -45,11 +45,7 @@ struct TuningListPage: View {
     }
 
     private func valueText(_ item: TuningItem) -> String {
-<<<<<<< HEAD
-        item.isSwitch ? (item.value == 1 ? M.on : M.off) : "\(item.value)" + (item.unit.isEmpty ? "" : " \(item.unit)")
-=======
         item.isSwitch ? (item.value == 1 ? M.on : M.off) : item.text(item.value)
->>>>>>> origin/main
     }
 }
 
@@ -78,14 +74,6 @@ struct TuningEditPage: View {
                         Toggle("", isOn: Binding(get: { current == 1 }, set: { draft = $0 ? 1 : 0 }))
                             .labelsHidden().tint(Color.hmSuccess)
                     } else {
-<<<<<<< HEAD
-                        Text("\(current)" + (item.unit.isEmpty ? "" : " \(item.unit)"))
-                            .hmType(TL.value).foregroundStyle(Color.hmText)
-                        Stepper("", value: Binding(get: { current }, set: { draft = $0 }), in: item.minimum...item.maximum, step: item.step)
-                            .labelsHidden()
-                    }
-                    Text(M.tuningDefault(item.defaultValue, unit: item.isSwitch || item.unit.isEmpty ? nil : item.unit))
-=======
                         Text(item.text(current))
                             .hmType(TL.value).foregroundStyle(Color.hmText)
                         Stepper(
@@ -96,7 +84,6 @@ struct TuningEditPage: View {
                         .labelsHidden()
                     }
                     Text(M.tuningDefault(item.isSwitch ? "\(item.defaultValue)" : item.text(item.defaultValue)))
->>>>>>> origin/main
                         .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     if failed {
                         Text(M.tuningSaveFailed).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmDanger)
@@ -137,10 +124,6 @@ struct TuningEditPage: View {
     }
 
     private static func declined(_ error: Error) -> Bool {
-<<<<<<< HEAD
-        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
-=======
         !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError || error is URLError || error is HTTPExchangeError)
->>>>>>> origin/main
     }
 }

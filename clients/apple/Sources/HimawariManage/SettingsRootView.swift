@@ -101,7 +101,6 @@ public struct SettingsRootView: View {
                             }
                             .buttonStyle(.plain)
                         }
-<<<<<<< HEAD
                         if let grants = store.grants {
                             Button { path.append(.grants) } label: {
                                 SettingsRow(
@@ -113,8 +112,6 @@ public struct SettingsRootView: View {
                             }
                             .buttonStyle(.plain)
                         }
-=======
->>>>>>> origin/main
                         if let think = store.tuning[.think] {
                             Button { path.append(.tuningList(.think)) } label: {
                                 SettingsRow(

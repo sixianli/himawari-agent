@@ -23,10 +23,7 @@ public final class SettingsStore {
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
     public private(set) var proposals: ProposalList?
-<<<<<<< HEAD
     public private(set) var grants: [GrantSummary]?
-=======
->>>>>>> origin/main
     public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
@@ -193,7 +190,6 @@ public final class SettingsStore {
         )
     }
 
-<<<<<<< HEAD
     public func reloadGrants() async {
         if let listed = try? await loadGrants() { grants = listed }
     }
@@ -232,8 +228,6 @@ public final class SettingsStore {
         return result.filter(\.isActive)
     }
 
-=======
->>>>>>> origin/main
     public func reloadProposals() async {
         if let listed = try? await loadProposals() { proposals = listed }
     }

@@ -193,39 +193,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(second["value"], .null)
     }
 
-    func testOnlyActiveGrantsAreListedWithTheirLabelAndDetail() async {
-        let transport = ScriptedTransport(answer: Self.answer)
-        let settings = store(transport)
-        await settings.load()
-        XCTAssertEqual(settings.grants?.map(\.grantId), ["g1"])
-        XCTAssertEqual(settings.grants?.first?.label, "给田中发邮件不用再问")
-        XCTAssertFalse(settings.grants?.first?.detailLines.isEmpty ?? true)
-        let listed = await transport.sent.first { $0["type"] == "grant.list" }
-        guard case .object(let payload)? = listed?["payload"] else { return XCTFail() }
-        XCTAssertEqual(payload["includeRevoked"], .bool(false))
-    }
-
-    func testRevokingSendsTheRevisionAndReportsHowManyTasksAreAffected() async throws {
-        let transport = ScriptedTransport(answer: Self.answer)
-        let settings = store(transport)
-        await settings.load()
-        let grant = try XCTUnwrap(settings.grants?.first)
-        let outcome = try await settings.revoke(grant, reason: "撤回")
-        XCTAssertEqual(outcome, .revoked(affectedTasks: 2))
-        let sent = await transport.sent.first { $0["type"] == "grant.revoke" }
-        guard case .object(let payload)? = sent?["payload"] else { return XCTFail() }
-        XCTAssertEqual(payload, ["grantId": .string("g1"), "expectedRevision": .number(2), "reasonCode": .string("owner_revoked")])
-    }
-
-    func testRevokingAGrantThatIsAlreadyGoneSaysSoInsteadOfFailing() async throws {
-        let settings = store(GoneGrantTransport())
-        await settings.load()
-        let grant = try XCTUnwrap(settings.grants?.first)
-        let outcome = try await settings.revoke(grant, reason: "撤回")
-        XCTAssertEqual(outcome, .gone)
-        XCTAssertEqual(settings.grants?.count, 0)
-    }
-
     private func tuningItem(_ unit: String, kind: String?, storage: String?, value: Int, minimum: Int, maximum: Int) throws -> TuningItem {
         let extra = (kind.map { #","kind":"\#($0)""# } ?? "") + (storage.map { #","storageUnit":"\#($0)""# } ?? "")
         let json = #"{"key":"k","value":\#(value),"defaultValue":\#(value),"minimum":\#(minimum),"maximum":\#(maximum),"unit":"\#(unit)","overridden":false,"label":{"zh-CN":"名","en":"n","ja":"名"},"description":{"zh-CN":"","en":"","ja":""}\#(extra)}"#
@@ -331,6 +298,39 @@ final class SettingsStoreTests: XCTestCase {
         settings.noteReactivationFailure("y", for: "cap-search")
         await settings.load()
         XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
+    }
+
+    func testOnlyActiveGrantsAreListedWithTheirLabelAndDetail() async {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        XCTAssertEqual(settings.grants?.map(\.grantId), ["g1"])
+        XCTAssertEqual(settings.grants?.first?.label, "给田中发邮件不用再问")
+        XCTAssertFalse(settings.grants?.first?.detailLines.isEmpty ?? true)
+        let listed = await transport.sent.first { $0["type"] == "grant.list" }
+        guard case .object(let payload)? = listed?["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload["includeRevoked"], .bool(false))
+    }
+
+    func testRevokingSendsTheRevisionAndReportsHowManyTasksAreAffected() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        let grant = try XCTUnwrap(settings.grants?.first)
+        let outcome = try await settings.revoke(grant, reason: "撤回")
+        XCTAssertEqual(outcome, .revoked(affectedTasks: 2))
+        let sent = await transport.sent.first { $0["type"] == "grant.revoke" }
+        guard case .object(let payload)? = sent?["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload, ["grantId": .string("g1"), "expectedRevision": .number(2), "reasonCode": .string("owner_revoked")])
+    }
+
+    func testRevokingAGrantThatIsAlreadyGoneSaysSoInsteadOfFailing() async throws {
+        let settings = store(GoneGrantTransport())
+        await settings.load()
+        let grant = try XCTUnwrap(settings.grants?.first)
+        let outcome = try await settings.revoke(grant, reason: "撤回")
+        XCTAssertEqual(outcome, .gone)
+        XCTAssertEqual(settings.grants?.count, 0)
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {

@@ -27,13 +27,10 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
-<<<<<<< HEAD
     case grants = "20-himawari-self-5-grants"
     case grantsOpen = "20-himawari-self-5b-grants-open"
     case grantsRevoked = "20-himawari-self-5c-grants-revoked"
     case grantsEmpty = "20-himawari-self-5d-grants-empty"
-=======
->>>>>>> origin/main
 }
 
 public struct ManageDemoView: View {
@@ -86,7 +83,6 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
-<<<<<<< HEAD
         case .grants:
             grantsPage(.all)
         case .grantsOpen:
@@ -95,8 +91,6 @@ public struct ManageDemoView: View {
             grantsPage(.withoutFirst, notice: M.grantRevoked(affected: 2))
         case .grantsEmpty:
             grantsPage(.none)
-=======
->>>>>>> origin/main
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -155,27 +149,21 @@ enum ManageDemo {
         MemoryStore(gateway: gateway())
     }
 
-<<<<<<< HEAD
     enum Grants: Sendable {
         case all
         case withoutFirst
         case none
     }
 
-    @MainActor static func settingsStore(grants: Grants = .all) -> SettingsStore {
-        SettingsStore(
-            gateway: gateway(grants: grants),
-=======
     @MainActor static func reactivationFailedStore() -> SettingsStore {
         let store = settingsStore()
         store.noteReactivationFailure(M.reactivateFailed, for: "cap-photos")
         return store
     }
 
-    @MainActor static func settingsStore(reactivated: Bool = false) -> SettingsStore {
+    @MainActor static func settingsStore(reactivated: Bool = false, grants: Grants = .all) -> SettingsStore {
         SettingsStore(
-            gateway: gateway(reactivated: reactivated),
->>>>>>> origin/main
+            gateway: gateway(reactivated: reactivated, grants: grants),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
         )
     }
@@ -191,13 +179,8 @@ enum ManageDemo {
         expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
-<<<<<<< HEAD
-    static func gateway(grants: Grants = .all) -> ManageGateway {
-        ManageGateway(transport: DemoTransport(grants: grants), makeIdentifier: { UUID().uuidString })
-=======
-    static func gateway(reactivated: Bool = false) -> ManageGateway {
-        ManageGateway(transport: DemoTransport(reactivated: reactivated), makeIdentifier: { UUID().uuidString })
->>>>>>> origin/main
+    static func gateway(reactivated: Bool = false, grants: Grants = .all) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(reactivated: reactivated, grants: grants), makeIdentifier: { UUID().uuidString })
     }
 
     static func answer(_ type: String) -> String {
@@ -294,9 +277,6 @@ enum ManageDemo {
                 ("maximumDeferSeconds", "其余通知最多扣多久", "其余通知最多往后扣这么久", "秒", 1800, 1800, 0, 86400, true),
             ]
         let items = rows.map { key, label, note, unit, value, def, low, high, overridden in
-<<<<<<< HEAD
-            #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
-=======
             let (kind, storage) = switch unit {
             case "千分比": ("ratio", "permille")
             case "秒": ("duration", "s")
@@ -305,7 +285,6 @@ enum ManageDemo {
             default: ("count", "count")
             }
             return #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","kind":"\#(kind)","storageUnit":"\#(storage)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
->>>>>>> origin/main
         }
         let enabled = think ? #""enabled":true,"# : ""
         return #"{"payload":{"revision":4,\#(enabled)"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
@@ -372,21 +351,16 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
-<<<<<<< HEAD
+    let reactivated: Bool
     let grants: ManageDemo.Grants
 
-    init(grants: ManageDemo.Grants = .all) {
-        self.grants = grants
-=======
-    let reactivated: Bool
-
-    init(reactivated: Bool = false) {
+    init(reactivated: Bool = false, grants: ManageDemo.Grants = .all) {
         self.reactivated = reactivated
+        self.grants = grants
     }
 
     nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
         DeviceResponse(status: 200, body: Data("demo".utf8))
->>>>>>> origin/main
     }
 
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
