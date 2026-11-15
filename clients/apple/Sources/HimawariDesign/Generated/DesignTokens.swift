@@ -202,6 +202,8 @@ public enum DesignTokens {
         public static let inputMark: CGFloat = 28
         public static let inputRowHeight: CGFloat = 52
         public static let noticeButtonHeight: CGFloat = 30
+        public static let noticeListFade: CGFloat = 24
+        public static let noticeListMaxHeight: CGFloat = 260
         public static let noticeMark: CGFloat = 30
         public static let noticePadding: CGFloat = 14
         public static let noticeRadius: CGFloat = 22
