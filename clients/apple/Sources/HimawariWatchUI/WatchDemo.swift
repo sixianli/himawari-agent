@@ -1,6 +1,7 @@
 #if os(watchOS) && DEBUG
 import Foundation
 import HimawariCore
+import HimawariDesign
 import SwiftUI
 import WidgetKit
 
