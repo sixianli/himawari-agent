@@ -5,6 +5,8 @@ import SwiftUI
 
 struct PanelView: View {
     let model: MenuBarModel
+    @State private var olderListHeight: CGFloat = 0
+    @State private var olderListAtBottom = true
     let talk: () -> Void
     let pair: () -> Void
 
@@ -14,6 +16,12 @@ struct PanelView: View {
                 if model.app.phase != .active {
                     card { notPaired }
                 } else {
+                    if let notice = model.latestNotice {
+                        card { noticeCard(notice) }
+                    }
+                    if !model.olderNotices.isEmpty {
+                        olderNotices
+                    }
                     ForEach(model.running) { work in
                         card { running(work) }
                     }
@@ -94,6 +102,77 @@ struct PanelView: View {
                 .hmType(DesignTokens.TypeScale.macSmall)
                 .foregroundStyle(Color.hmMuted)
         }
+    }
+
+    @ViewBuilder
+    private var olderNotices: some View {
+        Button { model.toggleOlderNotices() } label: {
+            Text(model.noticesExpanded ? L.text("panel.fewerNotices") : L.format("panel.moreNotices", model.olderNotices.count))
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DesignTokens.Mac.panelCardPadding)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        if model.noticesExpanded {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: DesignTokens.Mac.panelGap) {
+                        ForEach(model.olderNotices) { notice in
+                            card { noticeCard(notice) }
+                                .id(notice.id)
+                        }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
+                }
+                .scrollIndicators(.never)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 1
+                } action: { _, atBottom in
+                    olderListAtBottom = atBottom
+                }
+                .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
+                .mask { olderListMask }
+                .onChange(of: olderListHeight) { scrollToRevealed(proxy) }
+                .onChange(of: model.revealedNotice, initial: true) { scrollToRevealed(proxy) }
+            }
+        }
+    }
+
+    private var olderListMask: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+            if !olderListAtBottom {
+                LinearGradient(colors: [.primary, .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: DesignTokens.Mac.noticeListFade)
+            }
+        }
+    }
+
+    private func scrollToRevealed(_ proxy: ScrollViewProxy) {
+        if let id = model.revealedNotice?.id { proxy.scrollTo(id, anchor: .top) }
+    }
+
+    @ViewBuilder
+    private func noticeCard(_ notice: DeviceNotification) -> some View {
+        if let received = notice.createdDate {
+            Text(received, format: .dateTime.hour().minute())
+                .hmType(DesignTokens.TypeScale.macLabel)
+                .foregroundStyle(Color.hmMuted)
+        }
+        Text(notice.title)
+            .hmType(DesignTokens.TypeScale.macRowStrong)
+            .foregroundStyle(Color.hmText)
+            .fixedSize(horizontal: false, vertical: true)
+        if !notice.body.isEmpty {
+            Text(notice.body)
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Button(L.text("panel.noticeDismiss")) { model.dismiss(notice) }
+            .buttonStyle(MacButtonStyle(role: .secondary, height: DesignTokens.Mac.smallButtonHeight, small: true))
     }
 
     private var talkRow: some View {
