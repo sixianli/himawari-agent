@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, bundledMigrationId } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -25,6 +25,13 @@ const rejectAll = (group, base, cases, check) => {
   }
 };
 assert(typeof process.env.HIMAWARI_TEST_TEMP_ROOT === "string", "FIXTURE_OWNED_TEMP_ROOT_REQUIRED");
+
+const releaseWithoutMigrationIds = [{ sequence: 1, name: "a" }, { sequence: 78, name: "b" }];
+const releaseWithMigrationIds = [{ sequence: 79, id: "20261114120000", name: "c" }];
+const definitionsByLedgerId = new Map([...releaseWithoutMigrationIds, ...releaseWithMigrationIds].map((migration) => [bundledMigrationId(migration), migration]));
+assert.equal(definitionsByLedgerId.get("0001")?.name, "a", "MIGRATION_ID_FALLBACK_FIRST");
+assert.equal(definitionsByLedgerId.get("0078")?.name, "b", "MIGRATION_ID_FALLBACK_PADDED");
+assert.equal(definitionsByLedgerId.get("20261114120000")?.name, "c", "MIGRATION_ID_EXPLICIT");
 
 const plan = { decisionRef: "G90", routeKey: "coding", grantId: "directory:himawari-prod-workspace-20261015", canonicalPath: "/var/lib/himawari/workspace", subdirectories: ["files", "repos"] };
 const fourthPlan = { decisionRef: "G90", routeKey: "coding", oldGrantId: "directory:himawari-prod-workspace-20261012", oldCanonicalPath: "/var/lib/himawari/qualification-workspace", newGrantId: plan.grantId, canonicalPath: plan.canonicalPath, subdirectories: ["files", "repos"], durationDays: 90 };
