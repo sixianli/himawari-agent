@@ -14,7 +14,9 @@ import {
   type DeviceMirrorItemInput,
   type DeviceMirrorKind,
   type GatewayAuthenticationContext,
+  isOwnerSpoken,
   isUsageLimitKey,
+  isVoiceScore,
   LIMIT_CHANGE_REASON_CODE,
   ownerDayBounds,
   ownerLocalDay,
@@ -60,6 +62,7 @@ import {
   type UsageLimitKey,
   type UsageLimitView,
   usageLimitState,
+  type VoiceGates,
   validatePerceptionFields,
 } from "@himawari-agent/application";
 import { PAIRED_DEVICE_ERROR_CODES, PairedDeviceError } from "./paired-device-service.js";
@@ -104,6 +107,7 @@ export interface PerceptionServiceOptions {
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }) => Promise<string>;
   readonly uploadDirectory: string;
+  readonly voiceGates?: () => VoiceGates;
   readonly searchIndex?: {
     readonly version: string;
     readonly rebuildBatch: number;
@@ -112,7 +116,6 @@ export interface PerceptionServiceOptions {
     readonly document: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
     readonly query: (scope: PerceptionScope, text: string) => Promise<readonly string[]>;
   };
-  readonly ownerVoiceQualified?: () => boolean;
   readonly proactiveUsage?: {
     readonly limit: () => number;
     readonly usedSince: (scope: PerceptionScope, since: string) => Promise<number>;
@@ -219,6 +222,17 @@ export class PerceptionService {
 
   settings(scope: PerceptionScope): Promise<PerceptionSettings> {
     return this.#options.store.readSettings(this.#scope(scope));
+  }
+
+  async reserveModelCost(scope: PerceptionScope, amountMicros: number): Promise<boolean> {
+    const settings = await this.settings(scope);
+    return this.#options.store.reserveUsage({
+      ...this.#scope(scope),
+      key: "perception.model_cost.daily",
+      periodStart: ownerDayBounds(this.#now().toISOString(), this.#options.timeZone()).start,
+      amount: amountMicros,
+      limit: this.#limit(settings, "perception.model_cost.daily"),
+    });
   }
 
   #scope(scope: PerceptionScope): PerceptionScope {
@@ -408,16 +422,19 @@ export class PerceptionService {
       return invalid("text");
     let speakerKind: PerceptionSpeakerKind | null = null;
     let speakerRef: string | null = null;
+    let speakerScore: number | null = null;
     if (speaker !== undefined) {
       const parsed = plainObject(speaker);
       if (
         definition.sense !== "hearing" ||
         !parsed ||
-        !onlyKeys(parsed, ["kind", "contactRef"]) ||
-        !(PERCEPTION_SPEAKER_KINDS as readonly unknown[]).includes(parsed["kind"])
+        !onlyKeys(parsed, ["kind", "contactRef", "score"]) ||
+        !(PERCEPTION_SPEAKER_KINDS as readonly unknown[]).includes(parsed["kind"]) ||
+        (parsed["score"] !== undefined && !isVoiceScore(parsed["score"]))
       )
         return invalid("speaker");
       speakerKind = parsed["kind"] as PerceptionSpeakerKind;
+      speakerScore = (parsed["score"] as number | undefined) ?? null;
       const contactRef = parsed["contactRef"];
       if ((contactRef !== undefined) !== (speakerKind === "contact")) return invalid("speaker");
       if (contactRef !== undefined) {
@@ -438,7 +455,7 @@ export class PerceptionService {
         origin: resolvePerceptionOrigin({
           type: type as PerceptionRecordType,
           speakerKind,
-          ownerVoiceQualified: this.#options.ownerVoiceQualified?.() ?? false,
+          ownerVoiceQualified: isOwnerSpoken(speakerScore, this.#options.voiceGates?.()),
         }),
         captureSource: captureSource as PerceptionCaptureSource,
         occurredAtMs,

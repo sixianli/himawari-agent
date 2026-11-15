@@ -124,6 +124,7 @@ describe("JSON公开报告的原始字节与脱敏", () => {
       root,
       context,
       checkId: "tests",
+      matrixKey: "others",
       artifact: archive,
       output: input,
       toolsDirectory: path.join(root, "missing"),
@@ -278,7 +279,7 @@ describe("受控检查与公开输出", () => {
     expect(read(path.join(root, ".ci-output/result/result.json"))).toEqual(result);
     await expect(runCheck(options)).rejects.toThrow("EXISTS");
     await expect(
-      runCheck({ ...options, checkId: "tests", output: ".ci-output/tests" }),
+      runCheck({ ...options, checkId: "tests", matrixKey: "others", output: ".ci-output/tests" }),
     ).rejects.toThrow("ARTIFACT_REQUIRED");
     await expect(
       runCheck({ ...options, artifact: path.join(root, "missing"), output: ".ci-output/bad" }),
@@ -355,7 +356,7 @@ describe("required 失败证据和平台 artifact ID", () => {
       env: {},
     });
     expect(summary.status).toBe("failed");
-    expect(summary.missing).toHaveLength(9);
+    expect(summary.missing).toHaveLength(11);
     expect(read(path.join(root, ".ci-output/gate/summary.json"))).toEqual(summary);
     expect(read(path.join(root, ".ci-output/gate/context.json"))).toEqual(gateContext);
     expect(() =>

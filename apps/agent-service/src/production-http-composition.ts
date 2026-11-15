@@ -3,6 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
   CancelCoordinatedRunInput,
+  CapabilityReactivationVerifierPort,
   DurableMemoryService,
   MemoryExtractionAuditRecord,
   PayloadProtectionRequest,
@@ -14,10 +15,8 @@ import {
   ApplicationPortError,
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
+  DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
-  PERCEPTION_CONFIGURATION_DEFAULTS,
-  PERCEPTION_SEARCH_INDEX_RULES,
-  perceptionSearchEvidenceText,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -27,9 +26,12 @@ import {
   OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_SEARCH_INDEX_RULES,
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
+  perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
@@ -37,9 +39,15 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
+  type VoiceAddresseeConfiguration,
+  VoiceAddresseeJudge,
+  type VoiceAddresseeModel,
+  type VoiceAddresseeOutcome,
+  type VoiceAddresseeRequest,
 } from "@himawari-agent/application";
 import {
   isDeviceAccessText,
@@ -77,10 +85,11 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
+  type DeviceActionHub,
   PairedDeviceService,
+  type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
-  type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -95,6 +104,7 @@ import {
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
   type UnixSocketIdentity,
+  type UtterancePrefetchPort,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
@@ -104,19 +114,17 @@ import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
   PRODUCTION_CAPABILITY_OPERATIONS,
+  PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import {
   DataExportJobs,
+  deviceExportArchive,
   PRODUCTION_DATA_EXPORT_OPERATIONS,
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
-import {
-  PRODUCTION_PERCEPTION_OPERATIONS,
-  ProductionPerceptionControl,
-} from "./production-perception-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -129,17 +137,13 @@ import {
   type ProductionHomeUrgencyOptions,
 } from "./production-home.js";
 import {
-  PRODUCTION_SEARCH_OPERATIONS,
-  ProductionSearchControl,
-  type ProductionSearchOptions,
-} from "./production-search.js";
-import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
+import type { ProductionQueryPrefetch } from "./production-memory-composition.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
@@ -158,18 +162,29 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
-import {
-  PRODUCTION_PROPOSAL_OPERATIONS,
-  ProductionProposalControl,
-} from "./production-proposal-control.js";
-import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  ProductionPerceptionControl,
+} from "./production-perception-control.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { ProductionProposalBox } from "./production-proposals.js";
+import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
+import { ProductionReminderWriter } from "./production-reminder-writer.js";
+import {
+  PRODUCTION_SEARCH_OPERATIONS,
+  ProductionSearchControl,
+  type ProductionSearchOptions,
+} from "./production-search.js";
 import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
@@ -178,6 +193,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -222,6 +238,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
     ref: string;
@@ -242,6 +259,10 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly deviceActions?: {
+    readonly service: DeviceActionService;
+    readonly hub: DeviceActionHub;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
@@ -284,6 +305,8 @@ export interface ProductionHttpCompositionOptions {
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly queryPrefetch?: ProductionQueryPrefetch;
+  readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
   readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
@@ -315,6 +338,7 @@ export interface ProductionHttpComposition {
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
   readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -746,6 +770,7 @@ function routeOptions(
   museAvailable: boolean,
   observationAvailable: boolean,
   searchAvailable: boolean,
+  capabilityReactivationAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -785,6 +810,7 @@ function routeOptions(
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
         ...PRODUCTION_CAPABILITY_OPERATIONS,
+        ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
@@ -1179,6 +1205,34 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     clock: { now: clock },
   });
+  if (options.memory)
+    registerReminderProposalHandlers({
+      box: proposalBox,
+      writer: new ProductionReminderWriter({
+        configuration,
+        memory: options.memory.service,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        reminders: repository.memoryReminders(),
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock: { now: clock },
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+      }),
+      clock: { now: clock },
+    });
+  registerTaskProposalHandler({
+    box: proposalBox,
+    configuration,
+    commands: threadCommands,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+    timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+  });
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1461,6 +1515,9 @@ export async function createProductionHttpComposition(
   await perception.prepareDirectories();
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
+    ...(options.capabilityReactivation
+      ? { capabilityReactivation: options.capabilityReactivation }
+      : {}),
     repository,
     access: threadAccess,
     homeControl: home,
@@ -1468,6 +1525,13 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(options.deviceActions
+      ? {
+          onApprovalResolved: async (approval) => {
+            await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
     ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
     ...(memoryControl ? { memoryControl } : {}),
@@ -1567,6 +1631,7 @@ export async function createProductionHttpComposition(
       Boolean(options.museControl),
       Boolean(options.observation),
       Boolean(searchControl),
+      options.capabilityReactivation !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1579,7 +1644,30 @@ export async function createProductionHttpComposition(
       push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
+      ...(options.deviceActions
+        ? {
+            actions: {
+              service: (scope) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? options.deviceActions?.service
+                  : undefined,
+              hub: options.deviceActions.hub,
+            },
+          }
+        : {}),
+      voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(options.queryPrefetch
+        ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
+        : {}),
+      addressee: voiceAddressee(
+        options.voiceAddressee,
+        voiceAddresseeConfiguration(configuration),
+        perception,
+        agentId,
+        () => now().getTime(),
+      ),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -1639,6 +1727,7 @@ export async function createProductionHttpComposition(
     health,
     metrics,
     home,
+    perception,
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({
@@ -1678,4 +1767,62 @@ export async function createProductionHttpComposition(
       }
     },
   });
+}
+
+function voiceAddresseeConfiguration(
+  configuration: ProductConfiguration,
+): (() => VoiceAddresseeConfiguration) | undefined {
+  const route = configuration.runPolicy?.voiceAddressee;
+  return route ? () => route : undefined;
+}
+
+export function voiceAddressee(
+  model: VoiceAddresseeModel | undefined,
+  configuration: (() => VoiceAddresseeConfiguration) | undefined,
+  perception: PerceptionService,
+  agentId: AgentId,
+  now: () => number,
+): (input: {
+  readonly authentication: GatewayAuthenticationContext;
+  readonly request: VoiceAddresseeRequest;
+}) => Promise<VoiceAddresseeOutcome> {
+  if (!model || !configuration)
+    return async ({ request }) =>
+      request.trigger === "hands_on" ? "addressed" : "addressed_unsure";
+  const judges = new Map<string, VoiceAddresseeJudge>();
+  return ({ authentication, request }) => {
+    const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
+    let judge = judges.get(scope.ownerId);
+    if (!judge) {
+      judge = new VoiceAddresseeJudge({
+        model,
+        configuration,
+        reserve: (micros) => perception.reserveModelCost(scope, micros),
+        now,
+      });
+      judges.set(scope.ownerId, judge);
+    }
+    return judge.decide(request);
+  };
+}
+
+export function utterancePrefetch(
+  prefetch: ProductionQueryPrefetch,
+  perception: PerceptionService,
+  agentId: AgentId,
+): UtterancePrefetchPort {
+  return {
+    prepare: async ({ authentication, deviceId, utteranceId, text }) => {
+      const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
+      if (!(await perception.reserveModelCost(scope, prefetch.estimateMicros(text))))
+        return { prepared: false, reason: "limit_reached" };
+      const prepared = await prefetch.queue.prepare({ deviceId, utteranceId, text }, (query) =>
+        prefetch.embedQuery(query),
+      );
+      return { prepared, reason: prepared ? null : "nothing_to_search" };
+    },
+    settle: (input) => {
+      prefetch.queue.settle(input);
+    },
+  };
 }

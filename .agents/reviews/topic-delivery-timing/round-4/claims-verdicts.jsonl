@@ -1,0 +1,1 @@
+{"id": "51", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|51|找不到|-|评测和生产共用同一把 key|-", "outcome": "model-wrong", "evidenceFile": "docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md", "evidence": "Andy 同意评测和生产共用同一把 key（16:08 第 3 条）。"}

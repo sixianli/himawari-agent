@@ -1,0 +1,2473 @@
+{
+  "version": 2,
+  "stages": [
+    {
+      "id": "enroll",
+      "purpose": "enrollment",
+      "placement": "hand",
+      "condition": "quiet",
+      "setup": "安静的房间。手机拿在手里，离嘴二三十厘米，用平常说话的音量。",
+      "prompts": [
+        {
+          "id": "enroll-001",
+          "language": "zh-Hans",
+          "text": "Himawari，明天早上八点叫我起床。"
+        },
+        {
+          "id": "enroll-002",
+          "language": "zh-Hans",
+          "text": "今晚九点提醒我给妈妈打电话。"
+        },
+        {
+          "id": "enroll-003",
+          "language": "zh-Hans",
+          "text": "帮我看看这周五下午有没有空。"
+        }
+      ]
+    },
+    {
+      "id": "speaker-quiet",
+      "purpose": "speaker",
+      "placement": "hand",
+      "condition": "quiet",
+      "setup": "安静的房间。手机拿在手里，离嘴二三十厘米，用平常说话的音量。",
+      "prompts": [
+        {
+          "id": "speaker-quiet-001",
+          "language": "zh-Hans",
+          "text": "今天早上地铁特别挤，我差点没挤上去。"
+        },
+        {
+          "id": "speaker-quiet-002",
+          "language": "zh-Hans",
+          "text": "晚饭想吃点清淡的，煮个青菜豆腐汤吧。"
+        },
+        {
+          "id": "speaker-quiet-003",
+          "language": "zh-Hans",
+          "text": "这周末要是不下雨，我们去河边走走。"
+        },
+        {
+          "id": "speaker-quiet-004",
+          "language": "zh-Hans",
+          "text": "我把钥匙放在门口的小盒子里了。"
+        },
+        {
+          "id": "speaker-quiet-005",
+          "language": "zh-Hans",
+          "text": "下午三点有个会，开完我再给你回电话。"
+        },
+        {
+          "id": "speaker-quiet-006",
+          "language": "zh-Hans",
+          "text": "这本书我看了一半，后面越来越好看。"
+        },
+        {
+          "id": "speaker-quiet-007",
+          "language": "zh-Hans",
+          "text": "明天记得带伞，天气预报说有雷阵雨。"
+        },
+        {
+          "id": "speaker-quiet-008",
+          "language": "zh-Hans",
+          "text": "冰箱里的牛奶快过期了，得赶紧喝掉。"
+        },
+        {
+          "id": "speaker-quiet-009",
+          "language": "zh-Hans",
+          "text": "我最近在学做面包，第一次烤得有点硬。"
+        },
+        {
+          "id": "speaker-quiet-010",
+          "language": "zh-Hans",
+          "text": "这个月的电费比上个月多了不少。"
+        },
+        {
+          "id": "speaker-quiet-011",
+          "language": "zh-Hans",
+          "text": "周五晚上公司聚餐，我大概九点才能回家。"
+        },
+        {
+          "id": "speaker-quiet-012",
+          "language": "zh-Hans",
+          "text": "窗外的樱花开了，风一吹就落一地。"
+        },
+        {
+          "id": "speaker-quiet-013",
+          "language": "zh-Hans",
+          "text": "我想换一个轻一点的笔记本电脑。"
+        },
+        {
+          "id": "speaker-quiet-014",
+          "language": "zh-Hans",
+          "text": "刚才那家咖啡店的拿铁味道还不错。"
+        },
+        {
+          "id": "speaker-quiet-015",
+          "language": "zh-Hans",
+          "text": "他说下个月要搬到大阪去住。"
+        },
+        {
+          "id": "speaker-quiet-016",
+          "language": "zh-Hans",
+          "text": "我把照片整理好了，回头发给你看。"
+        },
+        {
+          "id": "speaker-quiet-017",
+          "language": "zh-Hans",
+          "text": "今天跑了五公里，腿有点酸。"
+        },
+        {
+          "id": "speaker-quiet-018",
+          "language": "zh-Hans",
+          "text": "超市的鸡蛋又涨价了。"
+        },
+        {
+          "id": "speaker-quiet-019",
+          "language": "zh-Hans",
+          "text": "这首歌我在高中的时候特别喜欢。"
+        },
+        {
+          "id": "speaker-quiet-020",
+          "language": "zh-Hans",
+          "text": "我们约在车站北口见面吧。"
+        },
+        {
+          "id": "speaker-quiet-021",
+          "language": "zh-Hans",
+          "text": "房间有点乱，周末得好好收拾一下。"
+        },
+        {
+          "id": "speaker-quiet-022",
+          "language": "zh-Hans",
+          "text": "我忘了给植物浇水，叶子都蔫了。"
+        },
+        {
+          "id": "speaker-quiet-023",
+          "language": "zh-Hans",
+          "text": "这个软件更新以后好像更慢了。"
+        },
+        {
+          "id": "speaker-quiet-024",
+          "language": "zh-Hans",
+          "text": "午饭就在楼下随便吃一点。"
+        },
+        {
+          "id": "speaker-quiet-025",
+          "language": "zh-Hans",
+          "text": "我打算明年夏天回国一趟。"
+        },
+        {
+          "id": "speaker-quiet-026",
+          "language": "zh-Hans",
+          "text": "昨天晚上睡得不太好，一直做梦。"
+        },
+        {
+          "id": "speaker-quiet-027",
+          "language": "zh-Hans",
+          "text": "这条路晚上灯太少，走着有点害怕。"
+        },
+        {
+          "id": "speaker-quiet-028",
+          "language": "zh-Hans",
+          "text": "我给妈妈打了个视频电话，她看起来挺好的。"
+        },
+        {
+          "id": "speaker-quiet-029",
+          "language": "zh-Hans",
+          "text": "新买的耳机降噪效果很好。"
+        },
+        {
+          "id": "speaker-quiet-030",
+          "language": "zh-Hans",
+          "text": "等会儿顺路去一趟药店买点感冒药。"
+        },
+        {
+          "id": "speaker-quiet-031",
+          "language": "zh-Hans",
+          "text": "这家拉面店每天中午都要排队。"
+        },
+        {
+          "id": "speaker-quiet-032",
+          "language": "zh-Hans",
+          "text": "我觉得这个方案还需要再改一改。"
+        },
+        {
+          "id": "speaker-quiet-033",
+          "language": "zh-Hans",
+          "text": "楼上的邻居好像在装修，声音很大。"
+        },
+        {
+          "id": "speaker-quiet-034",
+          "language": "zh-Hans",
+          "text": "今年的冬天好像来得特别早。"
+        },
+        {
+          "id": "speaker-quiet-035",
+          "language": "zh-Hans",
+          "text": "你上次推荐的那部电影我看了。"
+        },
+        {
+          "id": "speaker-quiet-036",
+          "language": "zh-Hans",
+          "text": "我把快递放在前台了，你下班去拿。"
+        },
+        {
+          "id": "speaker-quiet-037",
+          "language": "zh-Hans",
+          "text": "这个周末想去看个展览。"
+        },
+        {
+          "id": "speaker-quiet-038",
+          "language": "zh-Hans",
+          "text": "我得先把这封邮件回完再出门。"
+        },
+        {
+          "id": "speaker-quiet-039",
+          "language": "zh-Hans",
+          "text": "手机快没电了，你那有充电器吗。"
+        },
+        {
+          "id": "speaker-quiet-040",
+          "language": "zh-Hans",
+          "text": "晚上想早点睡，明天六点就要起。"
+        },
+        {
+          "id": "speaker-quiet-041",
+          "language": "ja",
+          "text": "今朝は電車が遅れて、会社に少し遅刻しました。"
+        },
+        {
+          "id": "speaker-quiet-042",
+          "language": "ja",
+          "text": "週末は久しぶりに実家に帰る予定です。"
+        },
+        {
+          "id": "speaker-quiet-043",
+          "language": "ja",
+          "text": "駅前に新しいパン屋さんができたらしいです。"
+        },
+        {
+          "id": "speaker-quiet-044",
+          "language": "ja",
+          "text": "明日は朝から雨が降るみたいですね。"
+        },
+        {
+          "id": "speaker-quiet-045",
+          "language": "ja",
+          "text": "冷蔵庫の中に昨日のカレーが残っています。"
+        },
+        {
+          "id": "speaker-quiet-046",
+          "language": "ja",
+          "text": "最近、寝る前にスマホを見ないようにしています。"
+        },
+        {
+          "id": "speaker-quiet-047",
+          "language": "ja",
+          "text": "この道をまっすぐ行くと郵便局があります。"
+        },
+        {
+          "id": "speaker-quiet-048",
+          "language": "ja",
+          "text": "今日はとても暑いので、冷たいものが飲みたいです。"
+        },
+        {
+          "id": "speaker-quiet-049",
+          "language": "ja",
+          "text": "来月の旅行の切符をもう予約しました。"
+        },
+        {
+          "id": "speaker-quiet-050",
+          "language": "ja",
+          "text": "会議の資料はあとでメールで送ります。"
+        },
+        {
+          "id": "speaker-quiet-051",
+          "language": "ja",
+          "text": "近所の公園で桜がきれいに咲いています。"
+        },
+        {
+          "id": "speaker-quiet-052",
+          "language": "ja",
+          "text": "この服、ちょっと大きいかもしれません。"
+        },
+        {
+          "id": "speaker-quiet-053",
+          "language": "ja",
+          "text": "コンビニでお弁当を買ってきました。"
+        },
+        {
+          "id": "speaker-quiet-054",
+          "language": "ja",
+          "text": "部屋の電気をつけっぱなしにしていました。"
+        },
+        {
+          "id": "speaker-quiet-055",
+          "language": "ja",
+          "text": "友達と一緒にラーメンを食べに行きました。"
+        },
+        {
+          "id": "speaker-quiet-056",
+          "language": "ja",
+          "text": "今日は在宅勤務なので、少しゆっくりできます。"
+        },
+        {
+          "id": "speaker-quiet-057",
+          "language": "ja",
+          "text": "この本はとても読みやすかったです。"
+        },
+        {
+          "id": "speaker-quiet-058",
+          "language": "ja",
+          "text": "夜の散歩は気持ちがいいですね。"
+        },
+        {
+          "id": "speaker-quiet-059",
+          "language": "ja",
+          "text": "バスが来るまであと十分くらいあります。"
+        },
+        {
+          "id": "speaker-quiet-060",
+          "language": "ja",
+          "text": "最近、料理を始めたばかりです。"
+        },
+        {
+          "id": "speaker-quiet-061",
+          "language": "ja",
+          "text": "傘を電車に忘れてしまいました。"
+        },
+        {
+          "id": "speaker-quiet-062",
+          "language": "ja",
+          "text": "来週の水曜日なら時間が空いています。"
+        },
+        {
+          "id": "speaker-quiet-063",
+          "language": "ja",
+          "text": "このカフェはいつも静かで落ち着きます。"
+        },
+        {
+          "id": "speaker-quiet-064",
+          "language": "ja",
+          "text": "洗濯物を取り込むのを忘れていました。"
+        },
+        {
+          "id": "speaker-quiet-065",
+          "language": "ja",
+          "text": "今年の夏は海に行きたいと思っています。"
+        },
+        {
+          "id": "speaker-quiet-066",
+          "language": "ja",
+          "text": "お昼は簡単にうどんにしましょう。"
+        },
+        {
+          "id": "speaker-quiet-067",
+          "language": "ja",
+          "text": "エアコンの温度を少し下げてください。"
+        },
+        {
+          "id": "speaker-quiet-068",
+          "language": "ja",
+          "text": "新しい靴を買ったら、少し足が痛いです。"
+        },
+        {
+          "id": "speaker-quiet-069",
+          "language": "ja",
+          "text": "週末に映画を見に行く約束をしました。"
+        },
+        {
+          "id": "speaker-quiet-070",
+          "language": "ja",
+          "text": "この辺りは夜になるととても静かです。"
+        },
+        {
+          "id": "speaker-quiet-071",
+          "language": "en",
+          "text": "The train was packed this morning, so I stood the whole way."
+        },
+        {
+          "id": "speaker-quiet-072",
+          "language": "en",
+          "text": "I think we should leave a little earlier tomorrow."
+        },
+        {
+          "id": "speaker-quiet-073",
+          "language": "en",
+          "text": "There's a new bakery near the station that just opened."
+        },
+        {
+          "id": "speaker-quiet-074",
+          "language": "en",
+          "text": "Can you believe how warm it is for November?"
+        },
+        {
+          "id": "speaker-quiet-075",
+          "language": "en",
+          "text": "I left my umbrella at the office again."
+        },
+        {
+          "id": "speaker-quiet-076",
+          "language": "en",
+          "text": "We're having pasta for dinner tonight."
+        },
+        {
+          "id": "speaker-quiet-077",
+          "language": "en",
+          "text": "The meeting ran over, so I missed lunch."
+        },
+        {
+          "id": "speaker-quiet-078",
+          "language": "en",
+          "text": "I've been reading a lot more since I stopped scrolling at night."
+        },
+        {
+          "id": "speaker-quiet-079",
+          "language": "en",
+          "text": "The park looks beautiful when the leaves change color."
+        },
+        {
+          "id": "speaker-quiet-080",
+          "language": "en",
+          "text": "My phone battery drains so fast these days."
+        },
+        {
+          "id": "speaker-quiet-081",
+          "language": "en",
+          "text": "Let's meet at the north exit of the station."
+        },
+        {
+          "id": "speaker-quiet-082",
+          "language": "en",
+          "text": "I finally cleaned out the closet last weekend."
+        },
+        {
+          "id": "speaker-quiet-083",
+          "language": "en",
+          "text": "The coffee here is a bit too strong for me."
+        },
+        {
+          "id": "speaker-quiet-084",
+          "language": "en",
+          "text": "I need to call the bank about my card."
+        },
+        {
+          "id": "speaker-quiet-085",
+          "language": "en",
+          "text": "We should plan a short trip before the end of the year."
+        },
+        {
+          "id": "speaker-quiet-086",
+          "language": "en",
+          "text": "The neighbors are renovating, and it's really loud."
+        },
+        {
+          "id": "speaker-quiet-087",
+          "language": "en",
+          "text": "I signed up for a cooking class on Saturdays."
+        },
+        {
+          "id": "speaker-quiet-088",
+          "language": "en",
+          "text": "This road gets really busy around five."
+        },
+        {
+          "id": "speaker-quiet-089",
+          "language": "en",
+          "text": "I'm thinking about getting a smaller laptop."
+        },
+        {
+          "id": "speaker-quiet-090",
+          "language": "en",
+          "text": "The package should arrive sometime tomorrow afternoon."
+        },
+        {
+          "id": "speaker-quiet-091",
+          "language": "en",
+          "text": "I forgot to water the plants, and they look sad."
+        },
+        {
+          "id": "speaker-quiet-092",
+          "language": "en",
+          "text": "It started raining right after I left the house."
+        },
+        {
+          "id": "speaker-quiet-093",
+          "language": "en",
+          "text": "My sister is moving to a new apartment next month."
+        },
+        {
+          "id": "speaker-quiet-094",
+          "language": "en",
+          "text": "I usually go for a run before breakfast."
+        },
+        {
+          "id": "speaker-quiet-095",
+          "language": "en",
+          "text": "The movie was longer than I expected."
+        },
+        {
+          "id": "speaker-quiet-096",
+          "language": "en",
+          "text": "Could we push the call to Thursday instead?"
+        },
+        {
+          "id": "speaker-quiet-097",
+          "language": "en",
+          "text": "The supermarket was out of my favorite yogurt."
+        },
+        {
+          "id": "speaker-quiet-098",
+          "language": "en",
+          "text": "I'm trying to drink more water during the day."
+        },
+        {
+          "id": "speaker-quiet-099",
+          "language": "en",
+          "text": "The concert tickets sold out in ten minutes."
+        },
+        {
+          "id": "speaker-quiet-100",
+          "language": "en",
+          "text": "I spent the afternoon fixing my bike."
+        }
+      ]
+    },
+    {
+      "id": "speaker-noisy",
+      "purpose": "speaker",
+      "placement": "hand",
+      "condition": "noisy",
+      "setup": "开着电视（平常音量，最好是有人说话的节目），或者坐在咖啡店里。手机拿在手里，离嘴二三十厘米。",
+      "prompts": [
+        {
+          "id": "speaker-noisy-001",
+          "language": "zh-Hans",
+          "text": "这道菜盐放多了，有点咸。"
+        },
+        {
+          "id": "speaker-noisy-002",
+          "language": "zh-Hans",
+          "text": "我们下次可以试试那家新开的烤肉店。"
+        },
+        {
+          "id": "speaker-noisy-003",
+          "language": "zh-Hans",
+          "text": "银行的手续比我想的要麻烦。"
+        },
+        {
+          "id": "speaker-noisy-004",
+          "language": "zh-Hans",
+          "text": "今天的会开得挺顺利的。"
+        },
+        {
+          "id": "speaker-noisy-005",
+          "language": "zh-Hans",
+          "text": "我把旧衣服捐给社区了。"
+        },
+        {
+          "id": "speaker-noisy-006",
+          "language": "zh-Hans",
+          "text": "这个公园秋天的时候特别漂亮。"
+        },
+        {
+          "id": "speaker-noisy-007",
+          "language": "zh-Hans",
+          "text": "我准备报一个周末的日语课。"
+        },
+        {
+          "id": "speaker-noisy-008",
+          "language": "zh-Hans",
+          "text": "他总是忘记关客厅的灯。"
+        },
+        {
+          "id": "speaker-noisy-009",
+          "language": "zh-Hans",
+          "text": "最近工作有点忙，没怎么运动。"
+        },
+        {
+          "id": "speaker-noisy-010",
+          "language": "zh-Hans",
+          "text": "这台洗衣机用了快十年了。"
+        },
+        {
+          "id": "speaker-noisy-011",
+          "language": "zh-Hans",
+          "text": "我想把阳台布置成一个小花园。"
+        },
+        {
+          "id": "speaker-noisy-012",
+          "language": "zh-Hans",
+          "text": "火车晚点了二十分钟。"
+        },
+        {
+          "id": "speaker-noisy-013",
+          "language": "zh-Hans",
+          "text": "你要不要一起去看周六的球赛。"
+        },
+        {
+          "id": "speaker-noisy-014",
+          "language": "zh-Hans",
+          "text": "这件衬衫洗完缩水了。"
+        },
+        {
+          "id": "speaker-noisy-015",
+          "language": "zh-Hans",
+          "text": "我刚把这个月的账单都付了。"
+        },
+        {
+          "id": "speaker-noisy-016",
+          "language": "zh-Hans",
+          "text": "早上喝了一杯咖啡，现在还是很困。"
+        },
+        {
+          "id": "speaker-noisy-017",
+          "language": "zh-Hans",
+          "text": "图书馆周一不开门。"
+        },
+        {
+          "id": "speaker-noisy-018",
+          "language": "zh-Hans",
+          "text": "这个包太重了，我换个小一点的。"
+        },
+        {
+          "id": "speaker-noisy-019",
+          "language": "zh-Hans",
+          "text": "朋友送了我一盆多肉。"
+        },
+        {
+          "id": "speaker-noisy-020",
+          "language": "zh-Hans",
+          "text": "今天风特别大，帽子差点被吹跑。"
+        },
+        {
+          "id": "speaker-noisy-021",
+          "language": "zh-Hans",
+          "text": "我在网上订了两张演唱会的票。"
+        },
+        {
+          "id": "speaker-noisy-022",
+          "language": "zh-Hans",
+          "text": "晚上的烟花大会八点开始。"
+        },
+        {
+          "id": "speaker-noisy-023",
+          "language": "zh-Hans",
+          "text": "这次体检结果都挺正常的。"
+        },
+        {
+          "id": "speaker-noisy-024",
+          "language": "zh-Hans",
+          "text": "我想学一下怎么做咖喱。"
+        },
+        {
+          "id": "speaker-noisy-025",
+          "language": "zh-Hans",
+          "text": "他的猫特别黏人，总往人身上跳。"
+        },
+        {
+          "id": "speaker-noisy-026",
+          "language": "zh-Hans",
+          "text": "等这阵子忙完，我想去海边住两天。"
+        },
+        {
+          "id": "speaker-noisy-027",
+          "language": "zh-Hans",
+          "text": "这个路口经常堵车。"
+        },
+        {
+          "id": "speaker-noisy-028",
+          "language": "zh-Hans",
+          "text": "我把空调温度调高了一点。"
+        },
+        {
+          "id": "speaker-noisy-029",
+          "language": "zh-Hans",
+          "text": "今天是我们认识的第五年。"
+        },
+        {
+          "id": "speaker-noisy-030",
+          "language": "zh-Hans",
+          "text": "那家店的营业时间改到晚上十点了。"
+        },
+        {
+          "id": "speaker-noisy-031",
+          "language": "zh-Hans",
+          "text": "我还没想好生日礼物送什么。"
+        },
+        {
+          "id": "speaker-noisy-032",
+          "language": "zh-Hans",
+          "text": "外面突然下起了大雨。"
+        },
+        {
+          "id": "speaker-noisy-033",
+          "language": "zh-Hans",
+          "text": "我们的航班改到下午两点了。"
+        },
+        {
+          "id": "speaker-noisy-034",
+          "language": "zh-Hans",
+          "text": "这个沙发坐久了腰有点疼。"
+        },
+        {
+          "id": "speaker-noisy-035",
+          "language": "zh-Hans",
+          "text": "我把会议记录整理好放在共享文件夹里了。"
+        },
+        {
+          "id": "speaker-noisy-036",
+          "language": "zh-Hans",
+          "text": "孩子们在公园里放风筝。"
+        },
+        {
+          "id": "speaker-noisy-037",
+          "language": "zh-Hans",
+          "text": "新年的时候我们一起去神社吧。"
+        },
+        {
+          "id": "speaker-noisy-038",
+          "language": "zh-Hans",
+          "text": "这杯茶有点苦，再加点热水。"
+        },
+        {
+          "id": "speaker-noisy-039",
+          "language": "zh-Hans",
+          "text": "我准备把头发剪短一点。"
+        },
+        {
+          "id": "speaker-noisy-040",
+          "language": "zh-Hans",
+          "text": "周日早上市场有很多新鲜的蔬菜。"
+        },
+        {
+          "id": "speaker-noisy-041",
+          "language": "ja",
+          "text": "母から野菜がたくさん送られてきました。"
+        },
+        {
+          "id": "speaker-noisy-042",
+          "language": "ja",
+          "text": "最近、肩こりがひどくて困っています。"
+        },
+        {
+          "id": "speaker-noisy-043",
+          "language": "ja",
+          "text": "スーパーで卵が安くなっていました。"
+        },
+        {
+          "id": "speaker-noisy-044",
+          "language": "ja",
+          "text": "朝ごはんはいつもパンとコーヒーです。"
+        },
+        {
+          "id": "speaker-noisy-045",
+          "language": "ja",
+          "text": "今日は会議が三つもあって疲れました。"
+        },
+        {
+          "id": "speaker-noisy-046",
+          "language": "ja",
+          "text": "駐輪場が混んでいて、自転車を停められませんでした。"
+        },
+        {
+          "id": "speaker-noisy-047",
+          "language": "ja",
+          "text": "来年は資格の試験を受けるつもりです。"
+        },
+        {
+          "id": "speaker-noisy-048",
+          "language": "ja",
+          "text": "ベランダでトマトを育てています。"
+        },
+        {
+          "id": "speaker-noisy-049",
+          "language": "ja",
+          "text": "電車の中で寝てしまい、一駅乗り過ごしました。"
+        },
+        {
+          "id": "speaker-noisy-050",
+          "language": "ja",
+          "text": "このアプリはとても便利です。"
+        },
+        {
+          "id": "speaker-noisy-051",
+          "language": "ja",
+          "text": "週末は家でゆっくり過ごしたいです。"
+        },
+        {
+          "id": "speaker-noisy-052",
+          "language": "ja",
+          "text": "雨の日は洗濯ができないので困ります。"
+        },
+        {
+          "id": "speaker-noisy-053",
+          "language": "ja",
+          "text": "新しいスマホに機種変更しました。"
+        },
+        {
+          "id": "speaker-noisy-054",
+          "language": "ja",
+          "text": "今夜は鍋にしようと思います。"
+        },
+        {
+          "id": "speaker-noisy-055",
+          "language": "ja",
+          "text": "この時期は花粉がつらいですね。"
+        },
+        {
+          "id": "speaker-noisy-056",
+          "language": "ja",
+          "text": "駅の階段で転びそうになりました。"
+        },
+        {
+          "id": "speaker-noisy-057",
+          "language": "ja",
+          "text": "同僚にお土産のお菓子をもらいました。"
+        },
+        {
+          "id": "speaker-noisy-058",
+          "language": "ja",
+          "text": "図書館で本を三冊借りました。"
+        },
+        {
+          "id": "speaker-noisy-059",
+          "language": "ja",
+          "text": "朝のジョギングを続けています。"
+        },
+        {
+          "id": "speaker-noisy-060",
+          "language": "ja",
+          "text": "この店のケーキはとても人気があります。"
+        },
+        {
+          "id": "speaker-noisy-061",
+          "language": "ja",
+          "text": "明日の朝は早いので、もう寝ます。"
+        },
+        {
+          "id": "speaker-noisy-062",
+          "language": "ja",
+          "text": "引っ越しの準備がなかなか進みません。"
+        },
+        {
+          "id": "speaker-noisy-063",
+          "language": "ja",
+          "text": "夕方から雪が降り始めました。"
+        },
+        {
+          "id": "speaker-noisy-064",
+          "language": "ja",
+          "text": "休みの日は近くの温泉に行きます。"
+        },
+        {
+          "id": "speaker-noisy-065",
+          "language": "ja",
+          "text": "窓を開けると気持ちいい風が入ってきます。"
+        },
+        {
+          "id": "speaker-noisy-066",
+          "language": "ja",
+          "text": "財布を家に忘れてきてしまいました。"
+        },
+        {
+          "id": "speaker-noisy-067",
+          "language": "ja",
+          "text": "今週末は天気が良さそうです。"
+        },
+        {
+          "id": "speaker-noisy-068",
+          "language": "ja",
+          "text": "このお茶はとても香りがいいです。"
+        },
+        {
+          "id": "speaker-noisy-069",
+          "language": "ja",
+          "text": "友達の結婚式に招待されました。"
+        },
+        {
+          "id": "speaker-noisy-070",
+          "language": "ja",
+          "text": "今日は早めに仕事を終わらせました。"
+        },
+        {
+          "id": "speaker-noisy-071",
+          "language": "en",
+          "text": "We had a long chat over coffee yesterday."
+        },
+        {
+          "id": "speaker-noisy-072",
+          "language": "en",
+          "text": "The library is closed on Mondays."
+        },
+        {
+          "id": "speaker-noisy-073",
+          "language": "en",
+          "text": "I want to learn how to make good bread at home."
+        },
+        {
+          "id": "speaker-noisy-074",
+          "language": "en",
+          "text": "The heater in my room is making a strange noise."
+        },
+        {
+          "id": "speaker-noisy-075",
+          "language": "en",
+          "text": "My flight got moved to the evening."
+        },
+        {
+          "id": "speaker-noisy-076",
+          "language": "en",
+          "text": "I've been sleeping better since I changed my pillow."
+        },
+        {
+          "id": "speaker-noisy-077",
+          "language": "en",
+          "text": "That restaurant always has a line at lunchtime."
+        },
+        {
+          "id": "speaker-noisy-078",
+          "language": "en",
+          "text": "I bought a few plants for the balcony."
+        },
+        {
+          "id": "speaker-noisy-079",
+          "language": "en",
+          "text": "The weather is supposed to clear up by the weekend."
+        },
+        {
+          "id": "speaker-noisy-080",
+          "language": "en",
+          "text": "I'm going to take a short walk to clear my head."
+        },
+        {
+          "id": "speaker-noisy-081",
+          "language": "en",
+          "text": "My cat keeps knocking things off the table."
+        },
+        {
+          "id": "speaker-noisy-082",
+          "language": "en",
+          "text": "I finished the report and sent it to the team."
+        },
+        {
+          "id": "speaker-noisy-083",
+          "language": "en",
+          "text": "The bus was twenty minutes late this morning."
+        },
+        {
+          "id": "speaker-noisy-084",
+          "language": "en",
+          "text": "We should invite them over for dinner sometime."
+        },
+        {
+          "id": "speaker-noisy-085",
+          "language": "en",
+          "text": "I need new running shoes before the race."
+        },
+        {
+          "id": "speaker-noisy-086",
+          "language": "en",
+          "text": "The view from the top of the hill was amazing."
+        },
+        {
+          "id": "speaker-noisy-087",
+          "language": "en",
+          "text": "I keep forgetting where I put my keys."
+        },
+        {
+          "id": "speaker-noisy-088",
+          "language": "en",
+          "text": "This tea tastes better with a little honey."
+        },
+        {
+          "id": "speaker-noisy-089",
+          "language": "en",
+          "text": "My favorite song came on the radio today."
+        },
+        {
+          "id": "speaker-noisy-090",
+          "language": "en",
+          "text": "I'm saving up for a new camera."
+        },
+        {
+          "id": "speaker-noisy-091",
+          "language": "en",
+          "text": "The kids were flying kites in the park."
+        },
+        {
+          "id": "speaker-noisy-092",
+          "language": "en",
+          "text": "I think I caught a cold over the weekend."
+        },
+        {
+          "id": "speaker-noisy-093",
+          "language": "en",
+          "text": "We watched the fireworks from the river bank."
+        },
+        {
+          "id": "speaker-noisy-094",
+          "language": "en",
+          "text": "The new update made the app a lot faster."
+        },
+        {
+          "id": "speaker-noisy-095",
+          "language": "en",
+          "text": "I'm going to bed early tonight."
+        },
+        {
+          "id": "speaker-noisy-096",
+          "language": "en",
+          "text": "My mom sent me a box of homemade snacks."
+        },
+        {
+          "id": "speaker-noisy-097",
+          "language": "en",
+          "text": "The elevator was out of order, so I took the stairs."
+        },
+        {
+          "id": "speaker-noisy-098",
+          "language": "en",
+          "text": "I like working from the cafe on quiet afternoons."
+        },
+        {
+          "id": "speaker-noisy-099",
+          "language": "en",
+          "text": "We're thinking about adopting a dog next year."
+        },
+        {
+          "id": "speaker-noisy-100",
+          "language": "en",
+          "text": "The sunset was really pretty this evening."
+        }
+      ]
+    },
+    {
+      "id": "command-airpods",
+      "purpose": "command",
+      "placement": "airpods",
+      "condition": "everyday",
+      "setup": "戴上两只 AirPods，手机放在一边别碰。照平常叫它的样子说，名字在句首、句中、句尾都照屏幕读。",
+      "prompts": [
+        {
+          "id": "command-airpods-001",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我看一下明天早上的天气。"
+        },
+        {
+          "id": "command-airpods-002",
+          "language": "zh-Hans",
+          "text": "Himawari，提醒我晚上八点给妈妈打电话。"
+        },
+        {
+          "id": "command-airpods-003",
+          "language": "zh-Hans",
+          "text": "Himawari，我下午三点的会是在哪个会议室。"
+        },
+        {
+          "id": "command-airpods-004",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我记一下，周六要去取干洗的衣服。"
+        },
+        {
+          "id": "command-airpods-005",
+          "language": "zh-Hans",
+          "text": "Himawari，最近一班去新宿的电车是几点。"
+        },
+        {
+          "id": "command-airpods-006",
+          "language": "zh-Hans",
+          "text": "Himawari，把今天的待办念给我听。"
+        },
+        {
+          "id": "command-airpods-007",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我查一下附近还开着的药店。"
+        },
+        {
+          "id": "command-airpods-008",
+          "language": "zh-Hans",
+          "text": "Himawari，上周我说要买的那本书叫什么。"
+        },
+        {
+          "id": "command-airpods-009",
+          "language": "zh-Hans",
+          "text": "Himawari，明天要带什么东西去公司。"
+        },
+        {
+          "id": "command-airpods-010",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我把刚才那个想法记下来，周报里写上测试覆盖率。"
+        },
+        {
+          "id": "command-airpods-011",
+          "language": "zh-Hans",
+          "text": "Himawari，今天的日程还剩下什么。"
+        },
+        {
+          "id": "command-airpods-012",
+          "language": "zh-Hans",
+          "text": "Himawari，提醒我明天出门前带上护照。"
+        },
+        {
+          "id": "command-airpods-013",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我算一下这个月的餐费花了多少。"
+        },
+        {
+          "id": "command-airpods-014",
+          "language": "zh-Hans",
+          "text": "Himawari，我上次和田中约的是哪一天。"
+        },
+        {
+          "id": "command-airpods-015",
+          "language": "ja",
+          "text": "Himawari、明日の天気を教えて。"
+        },
+        {
+          "id": "command-airpods-016",
+          "language": "ja",
+          "text": "Himawari、今夜九時にゴミ出しをリマインドして。"
+        },
+        {
+          "id": "command-airpods-017",
+          "language": "ja",
+          "text": "Himawari、次の会議は何時から？"
+        },
+        {
+          "id": "command-airpods-018",
+          "language": "ja",
+          "text": "Himawari、週末の予定を確認して。"
+        },
+        {
+          "id": "command-airpods-019",
+          "language": "ja",
+          "text": "Himawari、駅までの道が混んでいるか調べて。"
+        },
+        {
+          "id": "command-airpods-020",
+          "language": "ja",
+          "text": "Himawari、さっきのメモを読み上げて。"
+        },
+        {
+          "id": "command-airpods-021",
+          "language": "ja",
+          "text": "Himawari、近くで開いているスーパーを探して。"
+        },
+        {
+          "id": "command-airpods-022",
+          "language": "ja",
+          "text": "Himawari、明日の朝七時にアラームをセットして。"
+        },
+        {
+          "id": "command-airpods-023",
+          "language": "en",
+          "text": "Himawari, what's the weather like tomorrow morning?"
+        },
+        {
+          "id": "command-airpods-024",
+          "language": "en",
+          "text": "Himawari, remind me to call the dentist at four."
+        },
+        {
+          "id": "command-airpods-025",
+          "language": "en",
+          "text": "Himawari, when is my next meeting?"
+        },
+        {
+          "id": "command-airpods-026",
+          "language": "en",
+          "text": "Himawari, add oat milk to my shopping list."
+        },
+        {
+          "id": "command-airpods-027",
+          "language": "en",
+          "text": "Himawari, how long will it take to get to the airport?"
+        },
+        {
+          "id": "command-airpods-028",
+          "language": "en",
+          "text": "Himawari, read me my to-do list for today."
+        },
+        {
+          "id": "command-airpods-029",
+          "language": "en",
+          "text": "Himawari, find a pharmacy that's still open nearby."
+        },
+        {
+          "id": "command-airpods-030",
+          "language": "en",
+          "text": "Himawari, what was the name of that book I wanted to buy?"
+        },
+        {
+          "id": "command-airpods-031",
+          "language": "zh-Hans",
+          "text": "明天早上叫我起床吧，Himawari。"
+        },
+        {
+          "id": "command-airpods-032",
+          "language": "zh-Hans",
+          "text": "帮我查查今晚的电影票，Himawari。"
+        },
+        {
+          "id": "command-airpods-033",
+          "language": "zh-Hans",
+          "text": "提醒我周五交报告，Himawari。"
+        },
+        {
+          "id": "command-airpods-034",
+          "language": "zh-Hans",
+          "text": "帮我看一下，Himawari，明天下雨吗。"
+        },
+        {
+          "id": "command-airpods-035",
+          "language": "zh-Hans",
+          "text": "那个，Himawari，我下午的会几点开始。"
+        },
+        {
+          "id": "command-airpods-036",
+          "language": "zh-Hans",
+          "text": "等一下，Himawari，帮我记一下车停在哪。"
+        },
+        {
+          "id": "command-airpods-037",
+          "language": "ja",
+          "text": "明日の天気を教えて、Himawari。"
+        },
+        {
+          "id": "command-airpods-038",
+          "language": "ja",
+          "text": "ねえ、Himawari、今日の予定は？"
+        },
+        {
+          "id": "command-airpods-039",
+          "language": "en",
+          "text": "what's on my calendar today, Himawari?"
+        },
+        {
+          "id": "command-airpods-040",
+          "language": "en",
+          "text": "hey, um, Himawari, remind me to call Ken."
+        }
+      ]
+    },
+    {
+      "id": "command-table",
+      "purpose": "command",
+      "placement": "table",
+      "condition": "everyday",
+      "setup": "摘下耳机。手机屏幕朝上放在一米外的桌上，人坐着或站着都行，照平常叫它的样子说。",
+      "prompts": [
+        {
+          "id": "command-table-001",
+          "language": "zh-Hans",
+          "text": "Himawari，我的快递现在到哪了。"
+        },
+        {
+          "id": "command-table-002",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我记住，车停在B2的十七号。"
+        },
+        {
+          "id": "command-table-003",
+          "language": "zh-Hans",
+          "text": "Himawari，下周三我有空吗。"
+        },
+        {
+          "id": "command-table-004",
+          "language": "zh-Hans",
+          "text": "Himawari，把刚才那段会议要点整理一下。"
+        },
+        {
+          "id": "command-table-005",
+          "language": "zh-Hans",
+          "text": "Himawari，提醒我周日早上去超市。"
+        },
+        {
+          "id": "command-table-006",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我看看今天的汇率。"
+        },
+        {
+          "id": "command-table-007",
+          "language": "zh-Hans",
+          "text": "Himawari，我明天几点要起床。"
+        },
+        {
+          "id": "command-table-008",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我查一下这周末有什么展览。"
+        },
+        {
+          "id": "command-table-009",
+          "language": "zh-Hans",
+          "text": "Himawari，提醒我下班前提交报销单。"
+        },
+        {
+          "id": "command-table-010",
+          "language": "zh-Hans",
+          "text": "Himawari，我之前说想看的那部电影叫什么来着。"
+        },
+        {
+          "id": "command-table-011",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我记一下，这家咖啡店的拿铁很好喝。"
+        },
+        {
+          "id": "command-table-012",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我把闹钟改到六点半。"
+        },
+        {
+          "id": "command-table-013",
+          "language": "zh-Hans",
+          "text": "Himawari，今晚吃什么好，给我点建议。"
+        },
+        {
+          "id": "command-table-014",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我看一下下个月的信用卡账单。"
+        },
+        {
+          "id": "command-table-015",
+          "language": "ja",
+          "text": "Himawari、牛乳を買うのを忘れないようにリマインドして。"
+        },
+        {
+          "id": "command-table-016",
+          "language": "ja",
+          "text": "Himawari、今から渋谷まで何分かかる？"
+        },
+        {
+          "id": "command-table-017",
+          "language": "ja",
+          "text": "Himawari、今月の出費を教えて。"
+        },
+        {
+          "id": "command-table-018",
+          "language": "ja",
+          "text": "Himawari、田中さんに少し遅れるって伝えて。"
+        },
+        {
+          "id": "command-table-019",
+          "language": "ja",
+          "text": "Himawari、この前話してたレストランの名前は何だっけ。"
+        },
+        {
+          "id": "command-table-020",
+          "language": "ja",
+          "text": "Himawari、明日の持ち物を確認して。"
+        },
+        {
+          "id": "command-table-021",
+          "language": "ja",
+          "text": "Himawari、三十分後に休憩するように言って。"
+        },
+        {
+          "id": "command-table-022",
+          "language": "ja",
+          "text": "Himawari、今日の予定をまとめて。"
+        },
+        {
+          "id": "command-table-023",
+          "language": "en",
+          "text": "Himawari, set a timer for twenty minutes."
+        },
+        {
+          "id": "command-table-024",
+          "language": "en",
+          "text": "Himawari, what do I have on Friday afternoon?"
+        },
+        {
+          "id": "command-table-025",
+          "language": "en",
+          "text": "Himawari, summarize the emails I got this morning."
+        },
+        {
+          "id": "command-table-026",
+          "language": "en",
+          "text": "Himawari, remind me to take my passport tomorrow."
+        },
+        {
+          "id": "command-table-027",
+          "language": "en",
+          "text": "Himawari, where did I park the car?"
+        },
+        {
+          "id": "command-table-028",
+          "language": "en",
+          "text": "Himawari, how much have I spent on food this week?"
+        },
+        {
+          "id": "command-table-029",
+          "language": "en",
+          "text": "Himawari, move my three o'clock meeting to Thursday."
+        },
+        {
+          "id": "command-table-030",
+          "language": "en",
+          "text": "Himawari, find a good ramen place around here."
+        },
+        {
+          "id": "command-table-031",
+          "language": "zh-Hans",
+          "text": "帮我把客厅的灯关了，Himawari。"
+        },
+        {
+          "id": "command-table-032",
+          "language": "zh-Hans",
+          "text": "今天的待办念给我听，Himawari。"
+        },
+        {
+          "id": "command-table-033",
+          "language": "zh-Hans",
+          "text": "我明天几点有会，Himawari。"
+        },
+        {
+          "id": "command-table-034",
+          "language": "zh-Hans",
+          "text": "对了，Himawari，帮我订周六的餐厅。"
+        },
+        {
+          "id": "command-table-035",
+          "language": "zh-Hans",
+          "text": "我想问一下，Himawari，快递到哪了。"
+        },
+        {
+          "id": "command-table-036",
+          "language": "zh-Hans",
+          "text": "哎，Himawari，现在外面冷不冷。"
+        },
+        {
+          "id": "command-table-037",
+          "language": "ja",
+          "text": "週末の予定を確認して、Himawari。"
+        },
+        {
+          "id": "command-table-038",
+          "language": "ja",
+          "text": "あのさ、Himawari、駅まで何分かかる？"
+        },
+        {
+          "id": "command-table-039",
+          "language": "en",
+          "text": "remind me to water the plants, Himawari."
+        },
+        {
+          "id": "command-table-040",
+          "language": "en",
+          "text": "okay so, Himawari, how long to the airport?"
+        }
+      ]
+    },
+    {
+      "id": "owner-mention",
+      "purpose": "owner_mention",
+      "placement": "table",
+      "condition": "everyday",
+      "setup": "手机还放在一米外的桌上。像平常跟人聊天时提到它那样说，不是在叫它做事。",
+      "prompts": [
+        {
+          "id": "owner-mention-001",
+          "language": "zh-Hans",
+          "text": "我跟你说，Himawari 昨天那个提醒挺有用的。"
+        },
+        {
+          "id": "owner-mention-002",
+          "language": "zh-Hans",
+          "text": "这个 App 叫 Himawari，是向日葵的意思。"
+        },
+        {
+          "id": "owner-mention-003",
+          "language": "zh-Hans",
+          "text": "我昨天让 Himawari 帮我订了餐厅。"
+        },
+        {
+          "id": "owner-mention-004",
+          "language": "zh-Hans",
+          "text": "Himawari 这个名字是我自己起的。"
+        },
+        {
+          "id": "owner-mention-005",
+          "language": "zh-Hans",
+          "text": "你用过 Himawari 吗？挺方便的。"
+        },
+        {
+          "id": "owner-mention-006",
+          "language": "zh-Hans",
+          "text": "向日葵今年开得特别好。"
+        },
+        {
+          "id": "owner-mention-007",
+          "language": "ja",
+          "text": "ひまわりって名前、気に入ってるんだ。"
+        },
+        {
+          "id": "owner-mention-008",
+          "language": "ja",
+          "text": "昨日ひまわり畑に行ってきたよ。"
+        },
+        {
+          "id": "owner-mention-009",
+          "language": "en",
+          "text": "I named my assistant Himawari last year."
+        },
+        {
+          "id": "owner-mention-010",
+          "language": "en",
+          "text": "Himawari helped me plan the trip yesterday."
+        }
+      ]
+    },
+    {
+      "id": "command-pocket",
+      "purpose": "command",
+      "placement": "pocket",
+      "condition": "everyday",
+      "setup": "摘下耳机。点开始后把手机放进裤兜或外套口袋，说完再拿出来点停。",
+      "prompts": [
+        {
+          "id": "command-pocket-001",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我查一下明天的航班有没有延误。"
+        },
+        {
+          "id": "command-pocket-002",
+          "language": "zh-Hans",
+          "text": "Himawari，我今天喝了几杯咖啡。"
+        },
+        {
+          "id": "command-pocket-003",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我记一下，下次体检要空腹。"
+        },
+        {
+          "id": "command-pocket-004",
+          "language": "zh-Hans",
+          "text": "Himawari，周五的会议能不能挪到下午。"
+        },
+        {
+          "id": "command-pocket-005",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我找找附近评价好的拉面店。"
+        },
+        {
+          "id": "command-pocket-006",
+          "language": "zh-Hans",
+          "text": "Himawari，今天的新闻有什么要紧的吗。"
+        },
+        {
+          "id": "command-pocket-007",
+          "language": "zh-Hans",
+          "text": "Himawari，提醒我晚上记得吃药。"
+        },
+        {
+          "id": "command-pocket-008",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我把这个地址存起来。"
+        },
+        {
+          "id": "command-pocket-009",
+          "language": "zh-Hans",
+          "text": "Himawari，我上个月电费交了吗。"
+        },
+        {
+          "id": "command-pocket-010",
+          "language": "zh-Hans",
+          "text": "Himawari，帮我规划一下周末的行程。"
+        },
+        {
+          "id": "command-pocket-011",
+          "language": "ja",
+          "text": "Himawari、今日の歩数はどれくらい？"
+        },
+        {
+          "id": "command-pocket-012",
+          "language": "ja",
+          "text": "Himawari、新幹線の時間を調べて。"
+        },
+        {
+          "id": "command-pocket-013",
+          "language": "ja",
+          "text": "Himawari、週末に行けそうな温泉を探して。"
+        },
+        {
+          "id": "command-pocket-014",
+          "language": "ja",
+          "text": "Himawari、さっきの会議の要点をメモして。"
+        },
+        {
+          "id": "command-pocket-015",
+          "language": "ja",
+          "text": "Himawari、明日の朝のニュースを教えて。"
+        },
+        {
+          "id": "command-pocket-016",
+          "language": "en",
+          "text": "Himawari, is my flight tomorrow on time?"
+        },
+        {
+          "id": "command-pocket-017",
+          "language": "en",
+          "text": "Himawari, note that the cafe on the corner has great coffee."
+        },
+        {
+          "id": "command-pocket-018",
+          "language": "en",
+          "text": "Himawari, what did I say I wanted to watch last week?"
+        },
+        {
+          "id": "command-pocket-019",
+          "language": "en",
+          "text": "Himawari, check if anything important came in today."
+        },
+        {
+          "id": "command-pocket-020",
+          "language": "en",
+          "text": "Himawari, plan something fun for Saturday."
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "purpose": "mixed",
+      "placement": "hand",
+      "condition": "quiet",
+      "setup": "安静的房间，手机拿在手里。照平常混着说的样子读，外语词按你平常的发音。",
+      "prompts": [
+        {
+          "id": "mixed-001",
+          "language": "mixed",
+          "text": "我今天去了渋谷的那家 cafe，人特别多。"
+        },
+        {
+          "id": "mixed-002",
+          "language": "mixed",
+          "text": "明天的 meeting 改到下午三点了，记得看一下 calendar。"
+        },
+        {
+          "id": "mixed-003",
+          "language": "mixed",
+          "text": "这个 project 的 deadline 是下周五。"
+        },
+        {
+          "id": "mixed-004",
+          "language": "mixed",
+          "text": "帰りにコンビニで牛奶买一下吧。"
+        },
+        {
+          "id": "mixed-005",
+          "language": "mixed",
+          "text": "我刚给 manager 发了一封 email。"
+        },
+        {
+          "id": "mixed-006",
+          "language": "mixed",
+          "text": "这家店的 cheesecake 真的超级 おいしい。"
+        },
+        {
+          "id": "mixed-007",
+          "language": "mixed",
+          "text": "周末想去 Costco 买点日用品。"
+        },
+        {
+          "id": "mixed-008",
+          "language": "mixed",
+          "text": "今天の会議は online でやります。"
+        },
+        {
+          "id": "mixed-009",
+          "language": "mixed",
+          "text": "我把 slides 放到 shared folder 里了。"
+        },
+        {
+          "id": "mixed-010",
+          "language": "mixed",
+          "text": "下班以后要不要去 izakaya 喝一杯。"
+        },
+        {
+          "id": "mixed-011",
+          "language": "mixed",
+          "text": "这个 app 的 notification 太多了，好烦。"
+        },
+        {
+          "id": "mixed-012",
+          "language": "mixed",
+          "text": "We could go to 横浜 this weekend if the weather is nice."
+        },
+        {
+          "id": "mixed-013",
+          "language": "mixed",
+          "text": "I'll pick up 便当 on the way home."
+        },
+        {
+          "id": "mixed-014",
+          "language": "mixed",
+          "text": "我的 iPhone 又该 update 了。"
+        },
+        {
+          "id": "mixed-015",
+          "language": "mixed",
+          "text": "この資料、ちょっと check してもらえますか。"
+        },
+        {
+          "id": "mixed-016",
+          "language": "mixed",
+          "text": "今天 lunch 吃了一碗很好吃的 ramen。"
+        },
+        {
+          "id": "mixed-017",
+          "language": "mixed",
+          "text": "我在 Amazon 上订了一个新的 keyboard。"
+        },
+        {
+          "id": "mixed-018",
+          "language": "mixed",
+          "text": "下周有个 interview，我有点紧张。"
+        },
+        {
+          "id": "mixed-019",
+          "language": "mixed",
+          "text": "That 居酒屋 near the station is really good."
+        },
+        {
+          "id": "mixed-020",
+          "language": "mixed",
+          "text": "我把 password 改了，记得用新的登录。"
+        },
+        {
+          "id": "mixed-021",
+          "language": "mixed",
+          "text": "明日の朝、gym に行くつもりです。"
+        },
+        {
+          "id": "mixed-022",
+          "language": "mixed",
+          "text": "这个 bug 我查了一下午还没找到原因。"
+        },
+        {
+          "id": "mixed-023",
+          "language": "mixed",
+          "text": "I need to buy a 定期券 for next month."
+        },
+        {
+          "id": "mixed-024",
+          "language": "mixed",
+          "text": "今天天气很好，适合去公园 picnic。"
+        },
+        {
+          "id": "mixed-025",
+          "language": "mixed",
+          "text": "請求書は PDF で送ってください。"
+        },
+        {
+          "id": "mixed-026",
+          "language": "mixed",
+          "text": "我们约在新宿站 south exit 见面。"
+        },
+        {
+          "id": "mixed-027",
+          "language": "mixed",
+          "text": "这个 feature 下个 sprint 再做吧。"
+        },
+        {
+          "id": "mixed-028",
+          "language": "mixed",
+          "text": "Could you send me the 住所 again?"
+        },
+        {
+          "id": "mixed-029",
+          "language": "mixed",
+          "text": "我想报一个 yoga 的 class。"
+        },
+        {
+          "id": "mixed-030",
+          "language": "mixed",
+          "text": "週末は friends と BBQ をします。"
+        },
+        {
+          "id": "mixed-031",
+          "language": "mixed",
+          "text": "他刚换了一台 MacBook，速度快多了。"
+        },
+        {
+          "id": "mixed-032",
+          "language": "mixed",
+          "text": "最近每天都在用 ChatGPT 查资料。"
+        },
+        {
+          "id": "mixed-033",
+          "language": "mixed",
+          "text": "Let's grab some 焼き鳥 after work."
+        },
+        {
+          "id": "mixed-034",
+          "language": "mixed",
+          "text": "今天的 presentation 进行得还挺顺利。"
+        },
+        {
+          "id": "mixed-035",
+          "language": "mixed",
+          "text": "这家 hotel 的 breakfast 很丰盛。"
+        },
+        {
+          "id": "mixed-036",
+          "language": "mixed",
+          "text": "我把 receipt 拍照存在 Google Drive 里了。"
+        },
+        {
+          "id": "mixed-037",
+          "language": "mixed",
+          "text": "次の電車は express ですか。"
+        },
+        {
+          "id": "mixed-038",
+          "language": "mixed",
+          "text": "这个 weekend 我想在家看 Netflix。"
+        },
+        {
+          "id": "mixed-039",
+          "language": "mixed",
+          "text": "I left my 傘 on the train again."
+        },
+        {
+          "id": "mixed-040",
+          "language": "mixed",
+          "text": "我的 Suica 余额不够了，得充值一下。"
+        },
+        {
+          "id": "mixed-041",
+          "language": "mixed",
+          "text": "明天要交的 report 我还没写完。"
+        },
+        {
+          "id": "mixed-042",
+          "language": "mixed",
+          "text": "新しい laptop、すごく軽いです。"
+        },
+        {
+          "id": "mixed-043",
+          "language": "mixed",
+          "text": "你能帮我 review 一下这个文档吗。"
+        },
+        {
+          "id": "mixed-044",
+          "language": "mixed",
+          "text": "I'm going to the 病院 for a checkup tomorrow."
+        },
+        {
+          "id": "mixed-045",
+          "language": "mixed",
+          "text": "这个 sale 只到这周日。"
+        },
+        {
+          "id": "mixed-046",
+          "language": "mixed",
+          "text": "ランチは pasta にしようかな。"
+        },
+        {
+          "id": "mixed-047",
+          "language": "mixed",
+          "text": "我们的 team 下个月要扩招两个人。"
+        },
+        {
+          "id": "mixed-048",
+          "language": "mixed",
+          "text": "Could you remind me about the 歯医者 appointment?"
+        },
+        {
+          "id": "mixed-049",
+          "language": "mixed",
+          "text": "今天的 traffic 特别堵。"
+        },
+        {
+          "id": "mixed-050",
+          "language": "mixed",
+          "text": "我刚下载了一个新的 podcast app。"
+        },
+        {
+          "id": "mixed-051",
+          "language": "mixed",
+          "text": "金曜日の dinner、予約しておきました。"
+        },
+        {
+          "id": "mixed-052",
+          "language": "mixed",
+          "text": "这双 sneakers 打折以后挺便宜的。"
+        },
+        {
+          "id": "mixed-053",
+          "language": "mixed",
+          "text": "I think the 会議室 on the fifth floor is free."
+        },
+        {
+          "id": "mixed-054",
+          "language": "mixed",
+          "text": "等一下我在 Slack 上给你发链接。"
+        },
+        {
+          "id": "mixed-055",
+          "language": "mixed",
+          "text": "この book、とても面白かったです。"
+        },
+        {
+          "id": "mixed-056",
+          "language": "mixed",
+          "text": "我想在 kitchen 里多放几个收纳盒。"
+        },
+        {
+          "id": "mixed-057",
+          "language": "mixed",
+          "text": "Let's take the 新幹線 to Kyoto next month."
+        },
+        {
+          "id": "mixed-058",
+          "language": "mixed",
+          "text": "这个 password manager 很好用。"
+        },
+        {
+          "id": "mixed-059",
+          "language": "mixed",
+          "text": "明天的 schedule 我已经发到群里了。"
+        },
+        {
+          "id": "mixed-060",
+          "language": "mixed",
+          "text": "I need to renew my 在留カード next year."
+        },
+        {
+          "id": "mixed-061",
+          "language": "mixed",
+          "text": "今天的 standup 只开了十分钟。"
+        },
+        {
+          "id": "mixed-062",
+          "language": "mixed",
+          "text": "我在 Uniqlo 买了一件新的 jacket。"
+        },
+        {
+          "id": "mixed-063",
+          "language": "mixed",
+          "text": "これ、すごく cute じゃない？"
+        },
+        {
+          "id": "mixed-064",
+          "language": "mixed",
+          "text": "这周的 workout 我只去了两次。"
+        },
+        {
+          "id": "mixed-065",
+          "language": "mixed",
+          "text": "明天要去 Apple Store 修一下 AirPods。"
+        },
+        {
+          "id": "mixed-066",
+          "language": "mixed",
+          "text": "I'll text you the 地址 later."
+        },
+        {
+          "id": "mixed-067",
+          "language": "mixed",
+          "text": "这个 issue 我已经提了 pull request。"
+        },
+        {
+          "id": "mixed-068",
+          "language": "mixed",
+          "text": "帰りに Starbucks 寄っていこうか。"
+        },
+        {
+          "id": "mixed-069",
+          "language": "mixed",
+          "text": "周末的 hiking 因为下雨取消了。"
+        },
+        {
+          "id": "mixed-070",
+          "language": "mixed",
+          "text": "我把 budget 的 spreadsheet 更新了。"
+        },
+        {
+          "id": "mixed-071",
+          "language": "mixed",
+          "text": "Can we do the 打ち合わせ on Monday instead?"
+        },
+        {
+          "id": "mixed-072",
+          "language": "mixed",
+          "text": "这家店的 matcha latte 很好喝。"
+        },
+        {
+          "id": "mixed-073",
+          "language": "mixed",
+          "text": "明天の flight は朝早いです。"
+        },
+        {
+          "id": "mixed-074",
+          "language": "mixed",
+          "text": "我在 YouTube 上看到一个很好的 tutorial。"
+        },
+        {
+          "id": "mixed-075",
+          "language": "mixed",
+          "text": "He said the 资料 is on the shared drive."
+        },
+        {
+          "id": "mixed-076",
+          "language": "mixed",
+          "text": "今天 Wi-Fi 一直断，开会好麻烦。"
+        },
+        {
+          "id": "mixed-077",
+          "language": "mixed",
+          "text": "この cafe の Wi-Fi、パスワード何だっけ。"
+        },
+        {
+          "id": "mixed-078",
+          "language": "mixed",
+          "text": "我们 team 的 offsite 定在下个月。"
+        },
+        {
+          "id": "mixed-079",
+          "language": "mixed",
+          "text": "Let's book the 温泉 for the long weekend."
+        },
+        {
+          "id": "mixed-080",
+          "language": "mixed",
+          "text": "这个 deadline 有点紧，要加班了。"
+        },
+        {
+          "id": "mixed-081",
+          "language": "mixed",
+          "text": "コンビニで coffee 買ってくるね。"
+        },
+        {
+          "id": "mixed-082",
+          "language": "mixed",
+          "text": "我刚把 subscription 取消了。"
+        },
+        {
+          "id": "mixed-083",
+          "language": "mixed",
+          "text": "Could you check the 予約 for tonight?"
+        },
+        {
+          "id": "mixed-084",
+          "language": "mixed",
+          "text": "今天的 sushi 特别新鲜，omakase 很值。"
+        },
+        {
+          "id": "mixed-085",
+          "language": "mixed",
+          "text": "这个 weekend 要不要去看 fireworks。"
+        }
+      ]
+    }
+  ],
+  "synthetic": {
+    "bystander": [
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我订一张明天去京都的车票。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，今天晚上有什么好看的电视剧。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我看看现在几点了。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我放一首轻松的音乐。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，告诉我附近哪里有停车场。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我设一个十分钟的计时器。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，明天会不会下雪。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我给老板发个邮件说我请假。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我查一下这个单词怎么读。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，提醒我明天交作业。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我找一下最近的便利店。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，今天股市怎么样。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我把灯关了。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我叫一辆出租车。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，下一班公交车几点来。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我记一下我的手机号。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari，帮我看看邮件。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、今日の晩ごはんのレシピを教えて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、明日の朝六時に起こして。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、近くのカフェを探して。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、音楽をかけて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、今何時？"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、天気予報を教えて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、母に電話して。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、タクシーを呼んで。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、電気を消して。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、今日のニュースを読んで。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、駅までの行き方を教えて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、十分のタイマーをセットして。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、週末の予定を入れて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、メールをチェックして。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、明日は雨が降る？"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、おすすめの映画を教えて。"
+      },
+      {
+        "language": "ja",
+        "text": "Himawari、買い物リストに卵を追加して。"
+      },
+      {
+        "language": "en",
+        "text": "Himawari, what time is it?"
+      },
+      {
+        "language": "en",
+        "text": "Himawari, play some jazz."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, call my mom."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, turn off the lights."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, order a pizza for tonight."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, what's the traffic like right now?"
+      },
+      {
+        "language": "en",
+        "text": "Himawari, book a table for two at seven."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, tell me a joke."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, send an email to my boss."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, how tall is Mount Fuji?"
+      },
+      {
+        "language": "en",
+        "text": "Himawari, set an alarm for six thirty."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, what's the score of the game?"
+      },
+      {
+        "language": "en",
+        "text": "Himawari, find me a recipe for pancakes."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, remind me to buy milk."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, read my messages."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, cancel my next meeting."
+      }
+    ],
+    "tvMention": [
+      {
+        "language": "zh-Hans",
+        "text": "向日葵在夏天开得特别灿烂，吸引了很多游客。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "这片向日葵田是今年最受欢迎的拍照地点。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "今天我们来到北海道的向日葵花海。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "向日葵的种子可以炒来吃，也可以榨油。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "这部电影的名字叫做向日葵，讲的是一个家庭的故事。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "梵高画过好几幅向日葵，现在都是博物馆的珍藏。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "向日葵会跟着太阳转，这是真的吗？我们来看看。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "主持人手里拿着一束向日葵走上舞台。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "下面这首歌叫向日葵，请大家欣赏。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "Himawari 是日语里向日葵的意思。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "这家叫 Himawari 的日料店最近很火。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "气象卫星向日葵九号拍到了台风的云图。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "向日葵幼儿园的小朋友们今天去春游。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "农民们正在收割成熟的向日葵。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "这款新香水的名字是 Himawari，主打夏日花香。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "向日葵花语是忠诚和爱慕。"
+      },
+      {
+        "language": "zh-Hans",
+        "text": "画家正在画一幅巨大的向日葵壁画。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわり畑が見頃を迎えています。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわりの種は栄養がたっぷりです。"
+      },
+      {
+        "language": "ja",
+        "text": "今日は山梨県のひまわり畑からお伝えします。"
+      },
+      {
+        "language": "ja",
+        "text": "気象衛星ひまわりが撮影した雲の画像です。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわり九号の画像を見ると、台風が近づいています。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわりは太陽の方を向いて咲きます。"
+      },
+      {
+        "language": "ja",
+        "text": "この夏、ひまわり祭りには十万人が訪れました。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわり幼稚園の子どもたちが歌を披露しました。"
+      },
+      {
+        "language": "ja",
+        "text": "ヒマワリの迷路で遊ぶ家族連れでにぎわっています。"
+      },
+      {
+        "language": "ja",
+        "text": "続いては、ひまわりという曲をお聴きください。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわり油を使ったヘルシーな料理を紹介します。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわりの花言葉は、あなただけを見つめる、です。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわりが一面に咲く丘で撮影しました。"
+      },
+      {
+        "language": "ja",
+        "text": "映画ひまわりが四十年ぶりに上映されます。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわりの絵を描いた画家として有名です。"
+      },
+      {
+        "language": "ja",
+        "text": "ひまわり畑の中で結婚式を挙げるカップルが増えています。"
+      },
+      {
+        "language": "ja",
+        "text": "今年のひまわりは例年より背が高いそうです。"
+      },
+      {
+        "language": "en",
+        "text": "Himawari means sunflower in Japanese."
+      },
+      {
+        "language": "en",
+        "text": "The Himawari weather satellite captured the storm from space."
+      },
+      {
+        "language": "en",
+        "text": "Himawari nine sent back new images of the typhoon."
+      },
+      {
+        "language": "en",
+        "text": "The sunflower fields near Himawari station are in full bloom."
+      },
+      {
+        "language": "en",
+        "text": "Tonight's special guest is the band Himawari from Osaka."
+      },
+      {
+        "language": "en",
+        "text": "Himawari is also the name of a popular sushi restaurant downtown."
+      },
+      {
+        "language": "en",
+        "text": "The new anime Himawari starts streaming next week."
+      },
+      {
+        "language": "en",
+        "text": "Scientists used Himawari data to track the volcanic ash."
+      },
+      {
+        "language": "en",
+        "text": "Himawari, the little girl in the show, has a new baby brother."
+      },
+      {
+        "language": "en",
+        "text": "The Himawari festival draws thousands of visitors every summer."
+      },
+      {
+        "language": "en",
+        "text": "Data from Himawari helps forecasters predict heavy rain."
+      },
+      {
+        "language": "en",
+        "text": "The museum's Himawari exhibit features Van Gogh's sunflowers."
+      },
+      {
+        "language": "en",
+        "text": "Himawari eight was launched in twenty fourteen."
+      },
+      {
+        "language": "en",
+        "text": "The Himawari cafe serves the best matcha in town."
+      },
+      {
+        "language": "en",
+        "text": "Himawari is trending on social media this morning."
+      },
+      {
+        "language": "en",
+        "text": "Our reporter is live at the Himawari flower park."
+      }
+    ]
+  }
+}

@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
+  DELIVERY_TIMING_CLASSES,
+  type DeliveryTimingConfiguration,
+  type DeliveryTimingJudgement,
+  deliveryTimingDeadlineMs,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
+  type PushClass,
   PushGate,
   type PushGateDecision,
   pushClassOf,
@@ -25,6 +30,8 @@ const REMINDER_WINDOW_MS = 6 * 3_600_000;
 const PUSH_DEFER_EXTENSION_MS = 3_600_000;
 const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
 const DEFAULT_GATE = new PushGate();
+const DELIVER_UNGATED: PushGateDecision = Object.freeze({ action: "deliver", failed: false });
+const PROPOSAL_WINDOW_MS = 24 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
@@ -50,6 +57,8 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "有封邮件可能重要，请看原信",
     mailMore: (count: number) => `还有 ${count} 件`,
     museDown: "Muse 通道中断",
+    proposal: "有一条建议等你看",
+    proposalBody: "不急，有空时看看。",
     museDownBody:
       "Muse 通道 3 小时没有数据，可能是定时任务的预授权失效或令牌过期，去 Muse 的 Upcoming 看一眼",
   },
@@ -68,6 +77,8 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "An email may be important. Please read it",
     mailMore: (count: number) => `${count} more`,
     museDown: "Muse channel is down",
+    proposal: "A suggestion is waiting for you",
+    proposalBody: "No rush. Take a look when you can.",
     museDownBody:
       "No data from Muse for 3 hours. The scheduled task's pre-approval may have expired or the token may be out of date. Check Upcoming in Muse",
   },
@@ -86,6 +97,8 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "重要かもしれないメールがあります。原文をご確認ください",
     mailMore: (count: number) => `ほか ${count} 件`,
     museDown: "Muse の連携が止まっています",
+    proposal: "提案が届いています",
+    proposalBody: "急ぎではありません。時間のあるときにどうぞ。",
     museDownBody:
       "Muse から 3 時間データが届いていません。定期タスクの事前承認が切れたか、トークンの期限切れの可能性があります。Muse の Upcoming を確認してください",
   },
@@ -118,6 +131,7 @@ export interface WebPushNotification {
   readonly lang: WebPushLocale;
   readonly tag: string;
   readonly badge: number;
+  readonly quiet?: boolean;
 }
 
 export function webPushTopic(sourceKey: string): string {
@@ -145,6 +159,7 @@ export function webPushPayload(notification: WebPushNotification): string {
         lang: notification.lang,
         tag: notification.tag,
         ...(notification.badge > 0 ? { app_badge: String(notification.badge) } : {}),
+        ...(notification.quiet === true ? { silent: true } : {}),
       },
     });
   const full = build(notification.body);
@@ -199,6 +214,7 @@ export interface ProductionWebPushOptions {
   readonly awaitingCount: () => Promise<number | undefined>;
   readonly proactive?: ProactivePushSource;
   readonly museChannel?: MuseChannelPushSource;
+  readonly proposals?: ProposalPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
@@ -206,6 +222,7 @@ export interface ProductionWebPushOptions {
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
+  readonly timing?: DeliveryTimingSource;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
@@ -213,8 +230,22 @@ export interface ProductionWebPushOptions {
   readonly onFailure: (error: unknown) => void;
 }
 
+export interface DeliveryTimingSource {
+  configuration(): DeliveryTimingConfiguration;
+  judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement>;
+}
+
 export interface MuseChannelPushSource {
   listActive(now: string): Promise<readonly { readonly outageStartedAt: string }[]>;
+}
+
+type ProposalRead = {
+  readonly ok: boolean;
+  readonly rows: readonly { readonly id: string; readonly proposedAt: string }[];
+};
+
+export interface ProposalPushSource {
+  listReady(now: string): Promise<readonly { readonly id: string; readonly proposedAt: string }[]>;
 }
 
 export interface ProactivePushSource {
@@ -321,6 +352,7 @@ export class ProductionWebPush {
 
   async #run(): Promise<void> {
     const now = this.#options.now();
+    this.#proposalRead = undefined;
     if (!this.#resumed) {
       await this.#resumePaused(now);
       this.#resumed = true;
@@ -408,6 +440,21 @@ export class ProductionWebPush {
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
       });
+    const { rows: proposalRows } = await this.#readyProposals(now);
+    const newest = proposalRows.reduce<(typeof proposalRows)[number] | undefined>(
+      (latest, row) => (latest === undefined || row.proposedAt > latest.proposedAt ? row : latest),
+      undefined,
+    );
+    for (const proposal of newest ? [newest] : [])
+      items.push({
+        ...scope,
+        sourceKey: `proposal:${proposal.id}:${proposal.proposedAt}`,
+        kind: "reminder",
+        sourceRef: proposal.id,
+        threadId: null,
+        createdAt: now,
+        expiresAt: new Date(Date.parse(proposal.proposedAt) + PROPOSAL_WINDOW_MS).toISOString(),
+      });
     const museOutages = (await this.#options.museChannel?.listActive(now)) ?? [];
     for (const outage of museOutages)
       items.push({
@@ -428,6 +475,30 @@ export class ProductionWebPush {
       now,
     });
     for (const push of proactive) await this.#options.proactive?.markEnqueued(push.id, now);
+  }
+
+  #proposalRead: Promise<ProposalRead> | undefined;
+
+  #readyProposals(now: string): Promise<ProposalRead> {
+    this.#proposalRead ??= this.#loadProposals(now);
+    return this.#proposalRead;
+  }
+
+  async #loadProposals(now: string): Promise<ProposalRead> {
+    const source = this.#options.proposals;
+    if (!source) return { ok: true, rows: [] };
+    try {
+      const rows = await source.listReady(now);
+      return {
+        ok: true,
+        rows: rows.filter(
+          ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
+        ),
+      };
+    } catch (error) {
+      this.#options.onFailure(error);
+      return { ok: false, rows: [] };
+    }
   }
 
   async #runThread(runId: string): Promise<string | null> {
@@ -502,7 +573,7 @@ export class ProductionWebPush {
         entry,
         now,
         content,
-        (await awaiting()) ?? 0,
+        content.build("en").quiet === true ? 0 : ((await awaiting()) ?? 0),
         accountLocale ?? entry.subscription.locale,
       );
     }
@@ -518,29 +589,34 @@ export class ProductionWebPush {
     if (known !== undefined) return known;
     const { ownerId, agentId, store } = this.#options;
     const pushClass = pushClassOf(item);
-    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass) || !this.#options.readPushRules) {
+    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass)) {
       gated.set(item.sourceKey, false);
       return false;
     }
-    let decision = decisions.get(pushClass);
-    if (decision === undefined) {
-      try {
-        const rules = await this.#options.readPushRules();
-        decision = (this.#options.gate ?? DEFAULT_GATE).decide({
-          pushClass,
-          now,
-          timeZone: this.#options.timeZone ?? "UTC",
-          rules,
-        });
-      } catch {
-        decision = { action: "deliver", failed: true };
+    const readPushRules = this.#options.readPushRules;
+    let decision: PushGateDecision = DELIVER_UNGATED;
+    if (readPushRules) {
+      const cached = decisions.get(pushClass);
+      if (cached) decision = cached;
+      else {
+        try {
+          decision = (this.#options.gate ?? DEFAULT_GATE).decide({
+            pushClass,
+            now,
+            timeZone: this.#options.timeZone ?? "UTC",
+            rules: await readPushRules(),
+          });
+        } catch {
+          decision = { action: "deliver", failed: true };
+        }
+        decisions.set(pushClass, decision);
       }
-      decisions.set(pushClass, decision);
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      gated.set(item.sourceKey, false);
-      return false;
+      const timed = await this.#timed(item, pushClass, now);
+      gated.set(item.sourceKey, timed);
+      return timed;
     }
     const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
     const expiresAt = new Date(
@@ -567,6 +643,83 @@ export class ProductionWebPush {
     return stored;
   }
 
+  async #timed(item: WebPushOutboxItem, pushClass: PushClass, now: string): Promise<boolean> {
+    const timing = this.#options.timing;
+    if (!timing || !DELIVERY_TIMING_CLASSES.includes(pushClass)) return false;
+    if (this.#options.presence.anyVisible(now)) return false;
+    const { ownerId, agentId, store } = this.#options;
+    try {
+      const configuration = timing.configuration();
+      const nowMs = Date.parse(now);
+      const deadline = deliveryTimingDeadlineMs(
+        pushClass,
+        Date.parse(item.createdAt),
+        configuration,
+      );
+      if (nowMs >= deadline) {
+        if (item.deferredByTiming)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "deadline_reached",
+            reasonCode: "timing_deadline",
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const judgement = await timing.judge(pushClass, nowMs);
+      if (judgement.action === "deliver") {
+        if (
+          judgement.reasonCode === "timing_failed" ||
+          judgement.reasonCode === "timing_budget" ||
+          judgement.reasonCode === "timing_rate"
+        )
+          this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+        if (judgement.judged)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "delivered",
+            reasonCode: judgement.reasonCode,
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const until = new Date(
+        Math.min(nowMs + configuration.recheckSeconds * 1000, deadline),
+      ).toISOString();
+      const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
+      const expiresAt = new Date(
+        Math.min(
+          Math.max(Date.parse(item.expiresAt), Date.parse(until) + PUSH_DEFER_EXTENSION_MS),
+          lifeEnd,
+        ),
+      ).toISOString();
+      return await store.recordDeliveryTiming({
+        ownerId,
+        agentId,
+        sourceKey: item.sourceKey,
+        outcome: "deferred",
+        reasonCode: `timing_busy_${judgement.signals.join("+")}`.slice(0, 64),
+        deferUntil: until,
+        expiresAt,
+        costMicros: 0,
+        now,
+      });
+    } catch {
+      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+      return false;
+    }
+  }
+
   async #content(
     item: WebPushOutboxItem,
     approvals: readonly ApprovalRequest[],
@@ -586,6 +739,27 @@ export class ProductionWebPush {
           body: WEB_PUSH_TEXT[locale].museDownBody,
           navigate: `${origin}/`,
           lang: locale,
+        }),
+      };
+    }
+    if (item.kind === "reminder" && item.sourceKey.startsWith("proposal:")) {
+      const pending = await this.#readyProposals(now);
+      if (
+        pending.ok &&
+        !pending.rows.some(
+          ({ id, proposedAt }) =>
+            id === item.sourceRef && item.sourceKey === `proposal:${id}:${proposedAt}`,
+        )
+      )
+        return { expired: true };
+      return {
+        expired: false,
+        build: (locale) => ({
+          title: WEB_PUSH_TEXT[locale].proposal,
+          body: WEB_PUSH_TEXT[locale].proposalBody,
+          navigate: `${origin}/`,
+          lang: locale,
+          quiet: true,
         }),
       };
     }
@@ -714,7 +888,7 @@ export class ProductionWebPush {
         auth: subscription.auth,
         payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
-        urgency: item.kind === "run" ? "normal" : "high",
+        urgency: item.kind === "run" || content.build(locale).quiet === true ? "normal" : "high",
         topic,
       });
     } catch (error) {

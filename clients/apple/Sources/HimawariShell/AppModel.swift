@@ -1,7 +1,9 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
+import HimawariManage
 import HimawariShare
 import Observation
 #if canImport(UIKit)
@@ -24,6 +26,7 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
@@ -131,6 +134,10 @@ public final class AppModel {
 
     @ObservationIgnored var demoHost: String?
 
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
+
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
         return record.map { Self.host($0.origin) } ?? demoHost
@@ -223,6 +230,7 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        actions = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -320,15 +328,25 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
             self.chat = chat
             phase = .active
             chat.start()
+            actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
             deliverWaitingHandovers()
         } catch {
@@ -403,6 +421,7 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
         deliverWaitingHandovers()
         Task { await refreshConfiguration() }
     }

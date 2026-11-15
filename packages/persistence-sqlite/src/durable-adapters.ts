@@ -37,7 +37,9 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
+  ThinkInboxStorePort,
   OwnerRuleStorePort,
+  DeviceActionStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
   PerceptionStorePort,
@@ -1051,6 +1053,20 @@ export class SqliteDurableAdapters {
     });
   }
 
+  thinkInbox(): ThinkInboxStorePort {
+    return Object.freeze<ThinkInboxStorePort>({
+      enqueue: (input) => this.context.write("thinkInbox.enqueue", input),
+      claimNext: (input) => this.context.write("thinkInbox.claimNext", input),
+      finish: (input) => this.context.write("thinkInbox.finish", input),
+      recoverStalled: (input) => this.context.write("thinkInbox.recoverStalled", input),
+      expireQueued: (input) => this.context.write("thinkInbox.expireQueued", input),
+      usage: (input) => this.context.write("thinkInbox.usage", input),
+      settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
+      summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
+      clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
+    });
+  }
+
   ruleReviews(): RuleReviewStorePort & RuleReviewOwnerStorePort {
     return Object.freeze<RuleReviewStorePort & RuleReviewOwnerStorePort>({
       listDue: (input) => this.context.read("ruleReview.listDue", input),
@@ -1227,6 +1243,24 @@ export class SqliteDurableAdapters {
     });
   }
 
+  deviceActions(): DeviceActionStorePort {
+    return Object.freeze<DeviceActionStorePort>({
+      insert: (input) => this.context.write("deviceActions.insert", input),
+      read: (input) => this.context.read("deviceActions.read", input),
+      readInvocation: (input) => this.context.read("deviceActions.readInvocation", input),
+      list: (input) => this.context.read("deviceActions.list", input),
+      settleDue: (input) => this.context.write("deviceActions.settleDue", input),
+      claim: (input) => this.context.write("deviceActions.claim", input),
+      report: (input) => this.context.write("deviceActions.report", input),
+      forget: (input) => this.context.write("deviceActions.forget", input),
+      decide: (input) => this.context.write("deviceActions.decide", input),
+      setSupportedActions: (input) =>
+        this.context.write("deviceActions.setSupportedActions", input),
+      readPolicy: (input) => this.context.read("deviceActions.readPolicy", input),
+      writePolicy: (input) => this.context.write("deviceActions.writePolicy", input),
+    });
+  }
+
   pairedDevices(): PairedDeviceStorePort {
     return Object.freeze<PairedDeviceStorePort>({
       createPairingCode: (input) => this.context.write("pairedDevices.createPairingCode", input),
@@ -1317,6 +1351,7 @@ export class SqliteDurableAdapters {
       enqueue: (input) => this.context.write("webPush.enqueue", input),
       listDue: (input) => this.context.read("webPush.listDue", input),
       deferItem: (input) => this.context.write("webPush.deferItem", input),
+      recordDeliveryTiming: (input) => this.context.write("webPush.recordDeliveryTiming", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),

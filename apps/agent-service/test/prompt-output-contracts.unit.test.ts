@@ -1,5 +1,6 @@
 import type { ProactiveMail } from "@himawari-agent/application";
 import * as application from "@himawari-agent/application";
+import * as platform from "@himawari-agent/platform-node";
 import type { PromptEntry } from "@himawari-agent/prompt-catalog";
 import * as catalog from "@himawari-agent/prompt-catalog";
 import { describe, expect, it } from "vitest";
@@ -60,6 +61,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseConversationReview: review.parseConversationReview,
   parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
   parseOwnerIntentDecision: application.parseOwnerIntentDecision,
+  parseThinkWorthDecision: application.parseThinkWorthDecision,
   parseJudgements: application.parseJudgements,
   parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
@@ -72,6 +74,8 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parsePerceptionImage: application.parsePerceptionImage,
   parseHomeUrgency: application.parseHomeUrgency,
   parseRuleReviewAnswer: application.parseRuleReviewAnswer,
+  voiceAddresseeProbability: platform.voiceAddresseeProbability,
+  deliveryTimingProbability: platform.deliveryTimingProbability,
 };
 
 const NOT_COVERED = new Set(["memory.consolidation", "memory.consolidation.format"]);
@@ -119,8 +123,46 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "review.prereview",
         "review.typesafe-questions",
         "rule.review",
+        "think.worth-question",
+        "voice.addressee-question",
+        "push.delivery-timing-question",
       ].sort(),
     );
+  });
+
+  it("voice addressee: reads the yes probability only from the one answer the question asks for", () => {
+    const answer = (fields: Record<string, unknown>) => ({
+      model: "typesafe-ai/jev",
+      answers: [{ type: "predicate", name: "addressed", probability: 0.92, ...fields }],
+    });
+    expect(platform.voiceAddresseeProbability(answer({}), "typesafe-ai/jev")).toBe(0.92);
+    for (const body of [
+      answer({ probability: 1.2 }),
+      answer({ probability: "0.9" }),
+      answer({ name: "other" }),
+      answer({ type: "choice" }),
+      { model: "typesafe-ai/jev", answers: [] },
+      { answers: answer({}).answers },
+    ])
+      expect(() => platform.voiceAddresseeProbability(body, "typesafe-ai/jev")).toThrow();
+    expect(() => platform.voiceAddresseeProbability(answer({}), "typesafe-ai/jev-2")).toThrow();
+  });
+
+  it("delivery timing: reads the unwelcome probability only from the one answer the question asks for", () => {
+    const answer = (fields: Record<string, unknown>) => ({
+      model: "typesafe-ai/jev",
+      answers: [{ type: "predicate", name: "unwelcome", probability: 0.8, ...fields }],
+    });
+    expect(platform.deliveryTimingProbability(answer({}), "typesafe-ai/jev")).toBe(0.8);
+    for (const body of [
+      answer({ probability: -0.1 }),
+      answer({ probability: "0.8" }),
+      answer({ name: "addressed" }),
+      answer({ type: "choice" }),
+      { model: "typesafe-ai/jev", answers: [] },
+    ])
+      expect(() => platform.deliveryTimingProbability(body, "typesafe-ai/jev")).toThrow();
+    expect(() => platform.deliveryTimingProbability(answer({}), "typesafe-ai/other")).toThrow();
   });
 
   it("memory capture: accepts the JSON the prompt asks for, also inside a Markdown fence", () => {

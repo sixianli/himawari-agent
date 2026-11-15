@@ -200,6 +200,16 @@ export function readSnapshot(
           `SELECT key, period_start, device_id, used
           FROM limit_usage WHERE ${scoped} ORDER BY period_start, key, device_id`,
         ),
+        devicePolicies: all(
+          `SELECT device_id, blocked_actions, updated_at
+          FROM device_policies WHERE ${scoped} ORDER BY device_id`,
+        ),
+        deviceActions: all(
+          `SELECT id, device_id, action, schema_version, action_kind, risk, owner_presence,
+            approval_id, data_classification, state, reason_code, created_at, expires_at,
+            delivered_at, finished_at, arguments_ref, result_ref
+          FROM device_actions WHERE ${scoped} ORDER BY created_at, id`,
+        ),
       };
       const runs = all(
         `SELECT id, day, trigger_run_id, status, reviewed_through, model_called, change_count,
@@ -312,8 +322,11 @@ export function readSnapshot(
         ...ownerProposals,
         ...restrictedMemoryTexts,
         ...perception.perceptionRecords,
+        ...perception.deviceActions,
       ])
         for (const key of [
+          "arguments_ref",
+          "result_ref",
           "content_ref",
           "quote_ref",
           "reason_ref",

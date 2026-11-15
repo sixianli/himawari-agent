@@ -22,6 +22,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
+    case clock
     case cloud
     case code
     case creditCard = "credit-card"
@@ -31,6 +32,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case deviceWatch = "device-watch"
     case download
     case ear
+    case earLarge = "ear-large"
     case eye
     case faceId = "face-id"
     case filePencil = "file-pencil"
@@ -42,6 +44,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case handStop = "hand-stop"
     case heartbeat
     case history
+    case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
     case listCheck = "list-check"
     case mail
@@ -58,8 +61,10 @@ public enum IconName: String, CaseIterable, Sendable {
     case phone
     case photo
     case plane
+    case playerPause = "player-pause"
     case playerStop = "player-stop"
     case plus
+    case point
     case qrcodeOff = "qrcode-off"
     case scan
     case search
@@ -67,6 +72,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case serverLarge = "server-large"
     case share2 = "share-2"
     case settings
+    case shieldLock = "shield-lock"
     case stack2 = "stack-2"
     case table
     case terminal2 = "terminal-2"

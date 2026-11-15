@@ -1,0 +1,1 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 低：新增的 `%2F` 反向用例不能证明路径白名单真的拒绝编码斜杠", "valid": true, "class": "error", "severity": "low", "trigger": "白名单回归成放行 %2F 时该用例仍通过", "consequence": "测试盲点，生产行为当前正确", "modelSeverity": "低", "why": "device-download.test.ts:154-155 只断言 >=400，白名单放行后查不到 artifact 也是 404"}
