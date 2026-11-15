@@ -25,9 +25,9 @@ date: "2026-11-15"
 
 ## 背景
 
-按 [ADR 0267](0267-ci-tests-without-coverage-on-prs.md)，`ci.yml` 的 `tests` 作业在 CI 服务器的一个 runner（替 GitHub 执行 CI 任务的程序）上依次跑 unit、contracts、integration、e2e、pi-compat 五个测试项目。main 上一次完整运行里这个作业用了约 50 分钟，其中 integration 一项就 34 分钟，是整次 CI 最慢的一段；同一台机器上的另外两个检查 runner 在 browser 作业跑完后就空着。
+按 [ADR 0267](0267-ci-tests-without-coverage-on-prs.md)，`ci.yml` 的 `tests` 作业在 CI 服务器的一个 runner（替 GitHub 执行 CI 任务的程序）上依次跑 unit、contracts、integration、e2e、pi-compat 五个测试项目。main 上一次完整运行里这个作业用了约 50 分钟，其中 integration 一项就 34 分钟，是整次 CI 最慢的一段；同一台机器上的另外两个检查 runner 在 browser 作业跑完后就空着（用时见 `.agents/evidence/ci-tests-split-2026-11-15.md`）。
 
-另外，ARM 机器上的 `tooling` 检查连续两次 main 运行各有两条测试因为超过 vitest 的 5 秒默认超时而失败，两次失败的测试不全相同。
+另外，ARM 机器上的 `tooling` 检查连续两次 main 运行各有两条测试因为超过 vitest 的 5 秒默认超时而失败，两次失败的测试不全相同（同一份证据文件的“ARM 上 tooling 测试超时”一节）。
 
 <a id="premises"></a>
 
