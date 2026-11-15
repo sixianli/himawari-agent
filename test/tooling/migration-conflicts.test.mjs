@@ -360,7 +360,9 @@ describe("checking a commit against what production applied", () => {
       sequential: true,
     });
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toMatch(/^MIGRATION_FAILS 20261114000002_broken\.sql: no such table: missing/);
+    expect(problems[0]).toMatch(
+      /^MIGRATION_FAILS 20261114000002_broken\.sql: no such table: missing/,
+    );
   });
 
   it("rejects an applied migration whose name differs from the commit", () => {
