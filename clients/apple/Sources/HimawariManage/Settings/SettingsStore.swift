@@ -16,6 +16,7 @@ public final class SettingsStore {
     public private(set) var capabilitiesInUse: [CapabilitySummary] = []
     public private(set) var capabilitiesDisabled: [CapabilitySummary] = []
     public private(set) var reactivationFailure: [String: String] = [:]
+    @ObservationIgnored private var reactivating: Set<String> = []
 
     public private(set) var devices: [PairedDevice] = []
     public private(set) var server: ServerReach?
@@ -95,8 +96,17 @@ public final class SettingsStore {
         reactivationFailure[ref] = message
     }
 
+    public func beginReactivation(_ ref: String) -> Bool {
+        reactivating.insert(ref).inserted
+    }
+
+    public func endReactivation(_ ref: String) {
+        reactivating.remove(ref)
+    }
+
     public static func isDeclined(_ error: Error) -> Bool {
-        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError
+            || error is URLError || error is HTTPExchangeError)
     }
 
     public func reloadCapabilities() async {
@@ -104,6 +114,8 @@ public final class SettingsStore {
         waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
         capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
         capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+        let disabledRefs = Set(capabilitiesDisabled.map(\.capabilityRef))
+        reactivationFailure = reactivationFailure.filter { disabledRefs.contains($0.key) }
     }
 
     public func reloadLoginDevices() async {

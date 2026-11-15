@@ -160,7 +160,29 @@ final class SettingsStoreTests: XCTestCase {
     func testOnlyANonServerNonKeyFailureCountsAsDeclined() {
         XCTAssertFalse(SettingsStore.isDeclined(ManageGatewayError.rejected(status: 403, code: "PORT_NOT_AUTHORITATIVE")))
         XCTAssertFalse(SettingsStore.isDeclined(DeviceKeyError.keyUnreadable(.confirm)))
+        XCTAssertFalse(SettingsStore.isDeclined(URLError(.notConnectedToInternet)))
+        XCTAssertFalse(SettingsStore.isDeclined(HTTPExchangeError.notHTTP))
+        XCTAssertFalse(SettingsStore.isDeclined(DeviceAPIError.server(status: 409, code: "STALE")))
         XCTAssertTrue(SettingsStore.isDeclined(CancellationError()))
+    }
+
+    func testOnlyOneReactivationPerCapabilityRunsAtATime() {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        XCTAssertTrue(settings.beginReactivation("cap-old"))
+        XCTAssertFalse(settings.beginReactivation("cap-old"))
+        XCTAssertTrue(settings.beginReactivation("cap-other"))
+        settings.endReactivation("cap-old")
+        XCTAssertTrue(settings.beginReactivation("cap-old"))
+    }
+
+    func testReloadDropsFailureNotesForCapabilitiesThatAreNoLongerDisabled() async {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        await settings.load()
+        let disabledRef = settings.capabilitiesDisabled[0].capabilityRef
+        settings.noteReactivationFailure("x", for: disabledRef)
+        settings.noteReactivationFailure("y", for: "cap-search")
+        await settings.reloadCapabilities()
+        XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {

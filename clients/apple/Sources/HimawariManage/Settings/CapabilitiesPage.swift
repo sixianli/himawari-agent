@@ -31,7 +31,7 @@ struct CapabilitiesPage: View {
                         note: disabled
                             ? item.lastInvalidation.flatMap { M.cancelledJobs($0.cancelledScheduledJobs) }
                             : M.capabilityExpansions(item.updateAssessment?.expansions ?? []),
-                        warning: store.reactivationFailure[item.capabilityRef],
+                        warning: disabled ? store.reactivationFailure[item.capabilityRef] : nil,
                         switchState: switchable ? turnOff(item) : (disabled ? turnOn(item) : nil),
                         last: index == items.count - 1
                     )
@@ -60,9 +60,10 @@ struct CapabilitiesPage: View {
         Binding(
             get: { false },
             set: { isOn in
-                guard isOn else { return }
+                guard isOn, store.beginReactivation(item.capabilityRef) else { return }
                 store.noteReactivationFailure(nil, for: item.capabilityRef)
                 Task {
+                    defer { store.endReactivation(item.capabilityRef) }
                     do {
                         try await store.reactivate(item, reason: M.confirmReactivateCapability(item.displayName))
                     } catch where SettingsStore.isDeclined(error) {
