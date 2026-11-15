@@ -71,6 +71,18 @@ describe("[IOS-9] one place rings: device notification interface", () => {
     await h.repository.close();
   });
 
+  it("REVERSE: answers an iPhone with 404 and a Mac with ok:false when notifications are not wired", async () => {
+    const h = await harness({ withoutNotifications: true });
+    const phone = await pairAndConfirm(h, "Andy iPhone", "iphone");
+    const mac = await pairAndConfirm(h, "Andy Mac", "mac");
+    const iso = new Date(Date.now() - 1000).toISOString();
+    expect((await post(h, phone, "presence", { lastInputAt: iso })).statusCode).toBe(404);
+    const answered = await post(h, mac, "presence", { lastInputAt: iso });
+    expect(answered.statusCode).toBe(200);
+    expect(answered.json()).toMatchObject({ ok: false });
+    await h.repository.close();
+  });
+
   it("sends notification events on a Mac stream without an id line, and not on an iPhone stream", async () => {
     const h = await harness();
     const mac = await pairAndConfirm(h, "Andy Mac", "mac");

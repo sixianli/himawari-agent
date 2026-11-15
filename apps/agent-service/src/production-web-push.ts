@@ -42,6 +42,7 @@ const MAX_PAYLOAD_BYTES = 3_072;
 const MAC_TITLE_BYTES = 256;
 const MAC_BODY_BYTES = 2_048;
 const SEND_BATCH = 50;
+const MAX_BATCH = 500;
 const FINISHED_RUN_BATCH = 100;
 
 export const WEB_PUSH_TEXT = {
@@ -141,7 +142,7 @@ export function webPushTopic(sourceKey: string): string {
   return createHash("sha256").update(sourceKey).digest().subarray(0, 24).toString("base64url");
 }
 
-function clip(text: string, bytes: number): string {
+export function clip(text: string, bytes: number): string {
   if (Buffer.byteLength(text, "utf8") <= bytes) return text;
   let result = "";
   for (const character of text) {
@@ -193,6 +194,7 @@ export interface PushCompanionChannel {
     readonly visible: boolean;
     readonly content: (item: WebPushOutboxItem) => Promise<PushContent>;
     readonly deferred: (item: WebPushOutboxItem) => Promise<boolean>;
+    readonly batch: number;
   }): Promise<void>;
   maintain(input: {
     readonly now: string;
@@ -538,7 +540,8 @@ export class ProductionWebPush {
       if (built.expired) this.#options.placement?.withdraw(webPushTopic(item.sourceKey));
       return built;
     };
-    this.#options.placement?.withdrawExpired();
+    this.#options.placement?.withdrawExpired(Date.parse(now));
+    const batch = Math.min(MAX_BATCH, SEND_BATCH + (this.#options.placement?.heldCount() ?? 0));
     const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
       if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
       if (await this.#deferred(item, now, gated, decisions)) return true;
@@ -559,9 +562,10 @@ export class ProductionWebPush {
         visible,
         content: contentOf,
         deferred: gate,
+        batch,
       })
       .catch(this.#options.onFailure);
-    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
+    const due = await store.listDue({ ownerId, agentId, now, limit: batch });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {

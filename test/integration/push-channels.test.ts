@@ -43,6 +43,7 @@ import {
   ProductionApplePush,
 } from "../../apps/agent-service/src/production-apple-push.ts";
 import {
+  clip,
   type DeliveryTimingSource,
   ProductionWebPush,
   WebPushPresence,
@@ -1492,6 +1493,7 @@ describe("[IOS-4] push channels", () => {
     const hub = new DeviceNotificationHub();
     const presence = new DevicePresence();
     const frames: DeviceNotificationFrame[] = [];
+    const byDevice = new Map<string, DeviceNotificationFrame[]>();
     const placement = new MacPlacement({
       hub,
       presence,
@@ -1500,12 +1502,19 @@ describe("[IOS-4] push channels", () => {
     });
     const connect = (deviceId: string) => {
       const listening = hub.listen(deviceId);
+      const own: DeviceNotificationFrame[] = [];
+      byDevice.set(deviceId, own);
       void (async () => {
-        while (true) frames.push(await listening.next());
+        while (true) {
+          const frame = await listening.next();
+          frames.push(frame);
+          own.push(frame);
+        }
       })();
       closers.push(async () => listening.close());
+      return () => listening.close();
     };
-    return { hub, presence, frames, placement, connect };
+    return { hub, presence, frames, byDevice, placement, connect };
   }
   const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -1594,7 +1603,44 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     await settle();
     expect(mac.frames).toHaveLength(1);
+    expect(mac.byDevice.get("dev_new")?.map((frame) => frame.event)).toEqual([
+      "notification.deliver",
+    ]);
+    expect(mac.byDevice.get("dev_old")).toEqual([]);
     expect(context.apns.ofType("alert")).toEqual([]);
+  });
+
+  it("[IOS-9] a pile of notifications placed on the Mac does not keep a new one from reaching the iPhone", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    const disconnect = mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 1_000);
+    for (let index = 0; index < 60; index += 1) context.reminder(`pile${index}`);
+    await context.push.tick();
+    await context.push.tick();
+    await settle();
+    expect(mac.frames).toHaveLength(60);
+    disconnect();
+    await settle();
+    context.reminder("late", at(T0, 60));
+    context.setClock(at(T0, 60));
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(1);
+    expect(context.apns.ofType("alert")[0]?.json).toMatchObject({
+      notificationId: webPushTopic(`reminder:late:${at(T0, 60)}`),
+    });
+  });
+
+  it("[IOS-9] cuts a Mac title and body to their byte limits without breaking a character", () => {
+    const long = "日本語".repeat(2_000);
+    const cut = clip(long, 2_048);
+    expect(Buffer.byteLength(cut, "utf8")).toBeLessThanOrEqual(2_048);
+    expect(cut.endsWith("…")).toBe(true);
+    expect(cut).not.toContain("\uFFFD");
+    expect(clip("short", 256)).toBe("short");
   });
 
   it("[IOS-9] tells the Mac to withdraw when the notification life ends while the reminder is still open", async () => {

@@ -232,6 +232,7 @@ export async function harness(
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutAddressee?: boolean;
+    readonly withoutNotifications?: boolean;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
       contentRef: string,
@@ -628,14 +629,18 @@ export async function harness(
           scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
         hub,
       },
-      notifications: {
-        hub: notifications.hub,
-        presence: notifications.presence,
-        settled: async ({ ids }) => {
-          notifications.settledAsked.push(ids);
-          return ids.filter((id) => notifications.settledAnswer.current.includes(id));
-        },
-      },
+      ...(options.withoutNotifications
+        ? {}
+        : {
+            notifications: {
+              hub: notifications.hub,
+              presence: notifications.presence,
+              settled: async ({ ids }: { ids: readonly string[] }) => {
+                notifications.settledAsked.push(ids);
+                return ids.filter((id) => notifications.settledAnswer.current.includes(id));
+              },
+            },
+          }),
       voiceGates: () => voiceGates.current,
       prefetch: utterancePrefetch(
         {

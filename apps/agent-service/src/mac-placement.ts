@@ -10,7 +10,8 @@ export interface NotificationPlacement {
   place(notification: DeviceNotificationDeliver, expiresAtMilliseconds: number): boolean;
   holds(id: string): boolean;
   withdraw(id: string): void;
-  withdrawExpired(): void;
+  withdrawExpired(nowMilliseconds: number): void;
+  heldCount(): number;
 }
 
 export interface MacPlacementOptions {
@@ -43,13 +44,10 @@ export class MacPlacement implements NotificationPlacement {
       .filter((deviceId) => hub.connected(deviceId))
       .slice(0, 1);
     if (devices.length === 0) return false;
+    if (this.#placed.size >= REMEMBER_LIMIT) return false;
     for (const deviceId of devices)
       hub.send(deviceId, { event: "notification.deliver", data: notification });
     this.#placed.set(notification.id, { devices, expiresAt: expiresAtMilliseconds });
-    if (this.#placed.size > REMEMBER_LIMIT) {
-      const oldest = this.#placed.keys().next().value;
-      if (oldest !== undefined) this.#placed.delete(oldest);
-    }
     return true;
   }
 
@@ -61,8 +59,11 @@ export class MacPlacement implements NotificationPlacement {
       this.#options.hub.send(deviceId, { event: "notification.withdraw", data: { id } });
   }
 
-  withdrawExpired(): void {
-    const now = this.#options.nowMilliseconds();
+  heldCount(): number {
+    return this.#placed.size;
+  }
+
+  withdrawExpired(now: number): void {
     for (const [id, placed] of [...this.#placed]) if (now >= placed.expiresAt) this.withdraw(id);
   }
 }

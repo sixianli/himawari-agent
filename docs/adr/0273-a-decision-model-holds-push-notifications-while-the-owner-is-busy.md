@@ -144,6 +144,8 @@ date: "2026-11-15"
 - Mac 收通知：Mac 的事件流里多两种事件 `notification.deliver`（带 `id`、`kind`、`title`、`body`、`homeKey`、`createdAt`）和 `notification.withdraw`（带 `id`）。这两种事件不带 `id:` 行，因为客户端把 `id:` 当作断点续传的游标。Mac 上打开事件流不再算“应用正在屏幕上”，否则一开着 Mac 就把 iPhone 的推送压住了。
 - 撤回：一条事项已经办结（提醒被划掉或完成、审批已处理），或者它的有效期已过时，服务器给收过它的 Mac 发 `notification.withdraw`；`settled` 对账同样把有效期已过的算作已结束。
 - iPhone 对账：`POST /api/device/v1/notifications/settled`，请求体 `{ids}`（最多 200 个，每个只含字母、数字、下划线、连字符，最长 64），返回 `{settledIds}`；只返回服务器确认已办结的，认不得的或还有效的不返回，iPhone 据此撤掉已经没用的通知。iPhone 的推送载荷顶层带 `notificationId`，值就是上面的 `id`。
+- 已放置到 Mac 的通知仍留在待发表里，所以每轮取待发表的数量是 50 加上当前放置在 Mac 上的条数（最多 500），放置的条数多也不会挤掉新通知；放置记录满 500 条后新通知不再放到 Mac，直接走 iPhone。
+- 撤回和放置用同一轮的同一个时刻判断有效期，避免在到期边界上先撤回又重发。
 - 通知 `id` 就是推送的 tag（对来源键做哈希），三处用同一个值。
 
 没做：Mac 在场信号在服务重启后清空（进程内存），Mac 下一次上报前通知会退回 iPhone；这是故意的，宁可多响一处也不漏。同样，哪台 Mac 收过哪条通知也只记在进程内存里，服务重启后，重启前已放置还没过期的通知会退回 iPhone，Mac 上那条也收不到撤回。

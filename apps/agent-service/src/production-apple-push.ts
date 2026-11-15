@@ -28,7 +28,6 @@ import {
 
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const RATE_LIMIT_DELAY_MS = 60_000;
-const SEND_BATCH = 50;
 const PAYLOAD_BYTES = 4_096;
 const WIDGET_EXPIRY_SECONDS = 3_600;
 const ACTIVITY_BATCH = 20;
@@ -342,7 +341,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     const { store } = this.#options;
     const { now } = input;
     await store.routeOutbox({ ...this.#scope(), now });
-    const due = await store.listDue({ ...this.#scope(), now, limit: SEND_BATCH });
+    const due = await store.listDue({ ...this.#scope(), now, limit: input.batch });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
