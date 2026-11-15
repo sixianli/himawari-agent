@@ -331,6 +331,40 @@ describe("checking a commit against what production applied", () => {
     ).toEqual([]);
   });
 
+  it("lets pending stamped migrations depend on earlier pending ones, as they already do on main", () => {
+    const kinds = entry("20261114000001", "kinds", "CREATE TABLE kinds (kind TEXT PRIMARY KEY);");
+    const useKinds = entry("20261114000002", "use_kinds", "INSERT INTO kinds VALUES ('a');");
+    const applied = [{ id: "0001", digest: sha(seed.sql) }];
+    expect(checkAgainstApplied({ entries: [seed, kinds, useKinds], applied })).toEqual([]);
+    expect(analyzeMigrations({ base: [seed], added: [kinds, useKinds] }).join("\n")).toMatch(
+      /MIGRATION_FAILS 20261114000002_use_kinds\.sql: no such table: kinds/,
+    );
+  });
+
+  it("still rejects a pending migration that fails even after the earlier pending ones", () => {
+    const kinds = entry("20261114000001", "kinds", "CREATE TABLE kinds (kind TEXT PRIMARY KEY);");
+    const broken = entry("20261114000002", "broken", "INSERT INTO missing VALUES ('a');");
+    const applied = [{ id: "0001", digest: sha(seed.sql) }];
+    expect(checkAgainstApplied({ entries: [seed, kinds, broken], applied })[0]).toMatch(
+      /^FULL_REPLAY_FAILS no such table: missing/,
+    );
+  });
+
+  it("reports a failing pending migration as a problem even when a valid one follows it", () => {
+    const kinds = entry("20261114000001", "kinds", "CREATE TABLE kinds (kind TEXT PRIMARY KEY);");
+    const broken = entry("20261114000002", "broken", "INSERT INTO missing VALUES ('a');");
+    const later = entry("20261114000003", "later", "CREATE TABLE later (id INTEGER);");
+    const problems = analyzeMigrations({
+      base: [seed],
+      added: [kinds, broken, later],
+      sequential: true,
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(
+      /^MIGRATION_FAILS 20261114000002_broken\.sql: no such table: missing/,
+    );
+  });
+
   it("rejects an applied migration whose name differs from the commit", () => {
     expect(
       checkAgainstApplied({

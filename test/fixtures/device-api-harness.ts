@@ -498,6 +498,8 @@ export async function harness(
     authorization: {
       authorize: async (intent) =>
         (authorization.current ?? new ReadOnlyDeviceActionAuthorization()).authorize(intent),
+      resolve: async (approvalId) =>
+        authorization.current?.resolve?.(approvalId) ?? { decision: "pending" },
     },
     ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
   });

@@ -3,6 +3,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
   ApplicationPortError,
+  type ApprovalRequest,
   ApprovalService,
   type AuthorityFence,
   type CapabilityReactivationVerifierPort,
@@ -128,6 +129,7 @@ export function createProductionApprovalGateway(options: {
   readonly filesControl?: ProductionFilesControl;
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
+  readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -269,6 +271,7 @@ export function createProductionApprovalGateway(options: {
     },
   });
   const controlPlane = new GovernanceGatewayV2ControlPlane({
+    ...(options.onApprovalResolved ? { onApprovalResolved: options.onApprovalResolved } : {}),
     ownerId,
     agentId,
     authorization,

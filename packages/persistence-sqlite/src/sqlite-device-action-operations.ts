@@ -221,6 +221,7 @@ export class SqliteDeviceActionOperations {
             WHERE owner_id = ? AND agent_id = ? AND (? IS NULL OR device_id = ?)
               AND state IN (${marks})
               AND (? IS NULL OR state IN (${OPEN_STATES}) OR finished_at >= ?)
+              AND (? IS NULL OR approval_id = ?)
             ORDER BY created_at, id LIMIT ?`,
         )
         .all(
@@ -231,6 +232,8 @@ export class SqliteDeviceActionOperations {
           ...input.states,
           input.finishedSince ?? null,
           input.finishedSince ?? null,
+          input.approvalId ?? null,
+          input.approvalId ?? null,
           input.limit,
         ) as Row[]
     ).map(toRecord);

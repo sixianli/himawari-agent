@@ -292,7 +292,7 @@ describe("[iOS-5] perception_read reads what the devices recorded", () => {
 });
 
 describe("[iOS-5] device_action describes what is possible and refuses what is not", () => {
-  it("passes a changing action through the owner's authorization before carrying it out, and a reading action straight through", async () => {
+  it("hands every action, reading or changing, to the device action service and never asks the tool-level gate", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
     allowActions(h, client.deviceId);
@@ -308,7 +308,6 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
       }),
     );
     expect(reading.value).toMatchObject({ done: true });
-    expect(hookCalls.authorize).toBe(0);
     const changing = await tools.run(
       call("run-owner", "device.action", {
         action: "calendar.delete_event",
@@ -316,7 +315,7 @@ describe("[iOS-5] device_action describes what is possible and refuses what is n
       }),
     );
     expect(changing.value).toMatchObject({ done: true });
-    expect(hookCalls.authorize).toBe(1);
+    expect(hookCalls.authorize).toBe(0);
     expect(performed.map(({ action }) => action.name)).toEqual([
       "calendar.list_events",
       "calendar.delete_event",

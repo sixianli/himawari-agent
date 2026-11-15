@@ -29,7 +29,7 @@ import {
   approvalMatchesIntent,
 } from "./action-intent-snapshot.js";
 import { actionIntentFingerprint } from "./permission-service.js";
-import { assertPolicyFactCodes } from "./policy-fact-registry.js";
+import { assertPolicyFactCodes, POLICY_FACT_CODES } from "./policy-fact-registry.js";
 
 const RISK_RANK: Readonly<Record<ActionRiskLevel, number>> = Object.freeze({
   LOW: 0,
@@ -510,7 +510,11 @@ export class ActionPolicyService {
         intentSnapshot: intent,
         semanticSnapshotHash: actionIntentFingerprint(intent),
         finalRisk: intent.finalRisk,
-        recentAuthenticationRequired: intent.finalRisk === "CRITICAL",
+        recentAuthenticationRequired:
+          intent.finalRisk === "CRITICAL" ||
+          intent.deterministicFacts.some(
+            ({ code }) => code === POLICY_FACT_CODES.ownerPresenceRequired,
+          ),
         recentAuthenticationRef: null,
         status: "pending",
         deliveryState: options.uiAvailable ? "deliverable" : "queued_no_ui",
