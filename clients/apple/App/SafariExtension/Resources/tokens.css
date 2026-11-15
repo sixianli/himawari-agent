@@ -57,6 +57,7 @@
   --size-pairing-mark: 148px;
   --size-pill: 46px;
   --size-pill-big: 56px;
+  --size-pill-small: 36px;
   --size-row-gap: 14px;
   --size-row-min-height: 60px;
   --size-sheet-padding: 16px 16px 40px;
@@ -76,6 +77,7 @@
   --icon-stroke-chevron: 2.2px;
   --icon-stroke-large: 1.3px;
   --icon-tab: 26px;
+  --icon-today-row: 22px;
   --handover-button-font-size: 17px;
   --handover-card-padding: 14px 16px;
   --handover-close-icon: 18px;
@@ -175,6 +177,9 @@
   --type-pairing-number-size: 54px;
   --type-pairing-number-weight: 700;
   --type-pairing-number-line-height: normal;
+  --type-row-action-size: 15px;
+  --type-row-action-weight: 600;
+  --type-row-action-line-height: normal;
   --type-secondary-size: 15px;
   --type-secondary-weight: 400;
   --type-secondary-line-height: 1.45;
@@ -187,6 +192,30 @@
   --type-title-1-size: 34px;
   --type-title-1-weight: 700;
   --type-title-1-line-height: 44px;
+  --type-watch-answer-size: 16px;
+  --type-watch-answer-weight: 400;
+  --type-watch-answer-line-height: normal;
+  --type-watch-answer-strong-size: 16px;
+  --type-watch-answer-strong-weight: 600;
+  --type-watch-answer-strong-line-height: normal;
+  --type-watch-button-size: 16px;
+  --type-watch-button-weight: 500;
+  --type-watch-button-line-height: normal;
+  --type-watch-caption-size: 12px;
+  --type-watch-caption-weight: 400;
+  --type-watch-caption-line-height: normal;
+  --type-watch-footnote-size: 13px;
+  --type-watch-footnote-weight: 400;
+  --type-watch-footnote-line-height: normal;
+  --type-watch-number-size: 34px;
+  --type-watch-number-weight: 700;
+  --type-watch-number-line-height: normal;
+  --type-watch-sentence-size: 17px;
+  --type-watch-sentence-weight: 600;
+  --type-watch-sentence-line-height: normal;
+  --type-watch-time-size: 13px;
+  --type-watch-time-weight: 600;
+  --type-watch-time-line-height: normal;
 }
 @media (prefers-color-scheme: dark) {
   :root {

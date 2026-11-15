@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
+  DELIVERY_TIMING_CLASSES,
+  type DeliveryTimingConfiguration,
+  type DeliveryTimingJudgement,
+  deliveryTimingDeadlineMs,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
+  type PushClass,
   PushGate,
   type PushGateDecision,
   pushClassOf,
@@ -18,6 +23,7 @@ import {
   type WebPushSendResult,
   type WebPushStorePort,
 } from "@himawari-agent/application";
+import type { NotificationPlacement } from "./mac-placement.js";
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
@@ -25,6 +31,7 @@ const REMINDER_WINDOW_MS = 6 * 3_600_000;
 const PUSH_DEFER_EXTENSION_MS = 3_600_000;
 const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
 const DEFAULT_GATE = new PushGate();
+const DELIVER_UNGATED: PushGateDecision = Object.freeze({ action: "deliver", failed: false });
 const PROPOSAL_WINDOW_MS = 24 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
@@ -32,7 +39,11 @@ const RUN_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const MAX_PAYLOAD_BYTES = 3_072;
+const MAC_TITLE_BYTES = 256;
+const MAC_BODY_BYTES = 2_048;
 const SEND_BATCH = 50;
+const MAX_BATCH = 500;
+const ROWS_PER_HELD_ITEM = 4;
 const FINISHED_RUN_BATCH = 100;
 
 export const WEB_PUSH_TEXT = {
@@ -132,7 +143,7 @@ export function webPushTopic(sourceKey: string): string {
   return createHash("sha256").update(sourceKey).digest().subarray(0, 24).toString("base64url");
 }
 
-function clip(text: string, bytes: number): string {
+export function clip(text: string, bytes: number): string {
   if (Buffer.byteLength(text, "utf8") <= bytes) return text;
   let result = "";
   for (const character of text) {
@@ -184,6 +195,7 @@ export interface PushCompanionChannel {
     readonly visible: boolean;
     readonly content: (item: WebPushOutboxItem) => Promise<PushContent>;
     readonly deferred: (item: WebPushOutboxItem) => Promise<boolean>;
+    readonly batch: number;
   }): Promise<void>;
   maintain(input: {
     readonly now: string;
@@ -216,11 +228,18 @@ export interface ProductionWebPushOptions {
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
+  readonly timing?: DeliveryTimingSource;
+  readonly placement?: NotificationPlacement;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
+}
+
+export interface DeliveryTimingSource {
+  configuration(): DeliveryTimingConfiguration;
+  judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement>;
 }
 
 export interface MuseChannelPushSource {
@@ -252,6 +271,8 @@ export interface ProactivePushSource {
 }
 
 type Content = PushContent;
+
+const SETTLED_LOOKUP_LIMIT = 500;
 
 export class ProductionWebPush {
   readonly #options: ProductionWebPushOptions;
@@ -517,7 +538,18 @@ export class ProductionWebPush {
       if (cached) return cached;
       const built = await this.#content(item, approvals, now);
       contents.set(item.sourceKey, built);
+      if (built.expired) this.#options.placement?.withdraw(webPushTopic(item.sourceKey));
       return built;
+    };
+    this.#options.placement?.withdrawExpired(Date.parse(now));
+    const batch = Math.min(
+      MAX_BATCH,
+      SEND_BATCH + ROWS_PER_HELD_ITEM * (this.#options.placement?.heldCount() ?? 0),
+    );
+    const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
+      if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
+      if (await this.#deferred(item, now, gated, decisions)) return true;
+      return !visible && (await this.#place(item, contentOf, accountLocale));
     };
     let counted: Promise<number | undefined> | undefined;
     const awaiting = () => {
@@ -533,10 +565,11 @@ export class ProductionWebPush {
         accountLocale,
         visible,
         content: contentOf,
-        deferred: (item) => this.#deferred(item, now, gated, decisions),
+        deferred: gate,
+        batch,
       })
       .catch(this.#options.onFailure);
-    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
+    const due = await store.listDue({ ownerId, agentId, now, limit: batch });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
@@ -552,7 +585,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
-      if (await this.#deferred(entry.item, now, gated, decisions)) continue;
+      if (await gate(entry.item)) continue;
       if (visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;
@@ -567,6 +600,54 @@ export class ProductionWebPush {
     }
   }
 
+  async #place(
+    item: WebPushOutboxItem,
+    contentOf: (item: WebPushOutboxItem) => Promise<Content>,
+    accountLocale: WebPushLocale | null,
+  ): Promise<boolean> {
+    const placement = this.#options.placement;
+    if (!placement) return false;
+    try {
+      const content = await contentOf(item);
+      if (content.expired) return false;
+      const built = content.build(accountLocale ?? "en");
+      return placement.place(
+        {
+          id: webPushTopic(item.sourceKey),
+          kind: item.kind,
+          title: clip(built.title, MAC_TITLE_BYTES),
+          body: clip(built.body, MAC_BODY_BYTES),
+          homeKey: item.threadId,
+          createdAt: item.createdAt,
+        },
+        Date.parse(item.expiresAt),
+      );
+    } catch (error) {
+      this.#options.onFailure(error);
+      return false;
+    }
+  }
+
+  async settled(ids: readonly string[]): Promise<readonly string[]> {
+    const wanted = new Set(ids);
+    if (wanted.size === 0) return [];
+    const { ownerId, agentId, store } = this.#options;
+    const now = this.#options.now();
+    const since = new Date(Date.parse(now) - PUSH_TOTAL_LIFE_MS).toISOString();
+    const recent = await store.listRecent({ ownerId, agentId, since, limit: SETTLED_LOOKUP_LIMIT });
+    const approvals = await this.#options.listApprovals();
+    const settled: string[] = [];
+    for (const item of recent) {
+      const id = webPushTopic(item.sourceKey);
+      if (!wanted.has(id)) continue;
+      const expired =
+        Date.parse(now) >= Date.parse(item.expiresAt) ||
+        (await this.#content(item, approvals, now)).expired;
+      if (expired) settled.push(id);
+    }
+    return settled;
+  }
+
   async #deferred(
     item: WebPushOutboxItem,
     now: string,
@@ -577,29 +658,34 @@ export class ProductionWebPush {
     if (known !== undefined) return known;
     const { ownerId, agentId, store } = this.#options;
     const pushClass = pushClassOf(item);
-    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass) || !this.#options.readPushRules) {
+    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass)) {
       gated.set(item.sourceKey, false);
       return false;
     }
-    let decision = decisions.get(pushClass);
-    if (decision === undefined) {
-      try {
-        const rules = await this.#options.readPushRules();
-        decision = (this.#options.gate ?? DEFAULT_GATE).decide({
-          pushClass,
-          now,
-          timeZone: this.#options.timeZone ?? "UTC",
-          rules,
-        });
-      } catch {
-        decision = { action: "deliver", failed: true };
+    const readPushRules = this.#options.readPushRules;
+    let decision: PushGateDecision = DELIVER_UNGATED;
+    if (readPushRules) {
+      const cached = decisions.get(pushClass);
+      if (cached) decision = cached;
+      else {
+        try {
+          decision = (this.#options.gate ?? DEFAULT_GATE).decide({
+            pushClass,
+            now,
+            timeZone: this.#options.timeZone ?? "UTC",
+            rules: await readPushRules(),
+          });
+        } catch {
+          decision = { action: "deliver", failed: true };
+        }
+        decisions.set(pushClass, decision);
       }
-      decisions.set(pushClass, decision);
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      gated.set(item.sourceKey, false);
-      return false;
+      const timed = await this.#timed(item, pushClass, now);
+      gated.set(item.sourceKey, timed);
+      return timed;
     }
     const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
     const expiresAt = new Date(
@@ -624,6 +710,83 @@ export class ProductionWebPush {
     }
     gated.set(item.sourceKey, stored);
     return stored;
+  }
+
+  async #timed(item: WebPushOutboxItem, pushClass: PushClass, now: string): Promise<boolean> {
+    const timing = this.#options.timing;
+    if (!timing || !DELIVERY_TIMING_CLASSES.includes(pushClass)) return false;
+    if (this.#options.presence.anyVisible(now)) return false;
+    const { ownerId, agentId, store } = this.#options;
+    try {
+      const configuration = timing.configuration();
+      const nowMs = Date.parse(now);
+      const deadline = deliveryTimingDeadlineMs(
+        pushClass,
+        Date.parse(item.createdAt),
+        configuration,
+      );
+      if (nowMs >= deadline) {
+        if (item.deferredByTiming)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "deadline_reached",
+            reasonCode: "timing_deadline",
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const judgement = await timing.judge(pushClass, nowMs);
+      if (judgement.action === "deliver") {
+        if (
+          judgement.reasonCode === "timing_failed" ||
+          judgement.reasonCode === "timing_budget" ||
+          judgement.reasonCode === "timing_rate"
+        )
+          this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+        if (judgement.judged)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "delivered",
+            reasonCode: judgement.reasonCode,
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const until = new Date(
+        Math.min(nowMs + configuration.recheckSeconds * 1000, deadline),
+      ).toISOString();
+      const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
+      const expiresAt = new Date(
+        Math.min(
+          Math.max(Date.parse(item.expiresAt), Date.parse(until) + PUSH_DEFER_EXTENSION_MS),
+          lifeEnd,
+        ),
+      ).toISOString();
+      return await store.recordDeliveryTiming({
+        ownerId,
+        agentId,
+        sourceKey: item.sourceKey,
+        outcome: "deferred",
+        reasonCode: `timing_busy_${judgement.signals.join("+")}`.slice(0, 64),
+        deferUntil: until,
+        expiresAt,
+        costMicros: 0,
+        now,
+      });
+    } catch {
+      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+      return false;
+    }
   }
 
   async #content(

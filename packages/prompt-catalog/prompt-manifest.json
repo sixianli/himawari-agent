@@ -777,6 +777,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "push.delivery-timing-question": {
+    "sha256": "7a4acf576f5c548096f329256986510d4269229e4b32c822d52f200132c161e9",
+    "changedIn": "ADR 0273",
+    "reason": "推送送达时机：发通知前问判断模型此刻打扰主人是不是不合适"
+  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -801,6 +806,36 @@
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
     "changedIn": "ADR 0207",
     "reason": "压缩第 2 步：压缩摘要请求沿用原对话的工具、系统提示和历史，末尾追加这条指令，要求只写结构化摘要、不调用工具"
+  },
+  "think.action.reminder-create": {
+    "sha256": "615f8815db0ed146584f5c76def76c712743185a78a3ea1ca74b4553dd066cab",
+    "changedIn": "ADR 0274",
+    "reason": "想一想运行的任务说明和可选动作"
+  },
+  "think.action.reminder-reschedule": {
+    "sha256": "655be814a83deb0dfa7478285827a6b8b4d165cd790559fe74aa11b51298b8b1",
+    "changedIn": "ADR 0274",
+    "reason": "想一想运行的任务说明和可选动作"
+  },
+  "think.action.task-run": {
+    "sha256": "3502f8bf21f51a48352f3bdfe64d25f91b23bdcf7dafed5ed81c362585908289",
+    "changedIn": "ADR 0274",
+    "reason": "想一想运行的任务说明和可选动作"
+  },
+  "think.run-external-note": {
+    "sha256": "a7e1cb858879ed9a15edf55f816e9b17a85777fa006cf042fa626c247709026e",
+    "changedIn": "ADR 0274",
+    "reason": "想一想运行的任务说明和可选动作"
+  },
+  "think.run-task": {
+    "sha256": "f3cebeeaf9d3530981713eb43e734f67c179c980d3c279e2bdeba51f67aeb73b",
+    "changedIn": "ADR 0274",
+    "reason": "想一想运行的任务说明和可选动作"
+  },
+  "think.worth-question": {
+    "sha256": "9b7369f374f4c8a7ae8153270c923277ac61d037798abc88e9e6e9bc7c8db302",
+    "changedIn": "ADR 0274",
+    "reason": "新增：后台收到新知道的事时，让判断模型凭一句概括看值不值得再想一想要不要主动提一件事"
   },
   "thread.title": {
     "sha256": "a3434b07edffccd5317c05341559fe8550ba0a0d727d19802d6dd394641bbbce",

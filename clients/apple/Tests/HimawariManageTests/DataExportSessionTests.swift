@@ -28,6 +28,10 @@ private actor ExportTransport: DeviceTransport {
         }
     }
 
+    nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
+        DeviceResponse(status: 404, body: Data(#"{"error":{"code":"not_found"}}"#.utf8))
+    }
+
     private func record(_ body: [String: JSONValue]) {
         sent.append(body)
     }
@@ -101,6 +105,19 @@ final class DataExportSessionTests: XCTestCase {
         await export.start(reason: "导出")
         XCTAssertEqual(export.stage, .idle)
     }
+
+    func testDownloadingAnExpiredArchiveTurnsTheReadyPageIntoExpired() async throws {
+        let transport = ExportTransport(statuses: [status("ready", result: readyResult)])
+        let export = session(transport)
+        await export.start(reason: "导出")
+        guard case .ready = export.stage else { return XCTFail("expected ready") }
+        do {
+            _ = try await export.archiveFile(named: "a.zip")
+            XCTFail("expected the download to fail")
+        } catch {
+            XCTAssertEqual(export.stage, .expired)
+        }
+    }
 }
 
 @MainActor
@@ -112,5 +129,15 @@ final class ExportExpiryTextTests: XCTestCase {
         XCTAssertTrue(M.exportExpiry(inSevenDays, now: now)?.contains("7") == true)
         XCTAssertNil(M.exportExpiry(past, now: now))
         XCTAssertNil(M.exportExpiry("not a date", now: now))
+    }
+
+    func testFollowingAFixedReadyPageDoesNotPollOrFail() async throws {
+        let transport = ExportTransport(statuses: [(500, "{}")])
+        let result = try JSONDecoder().decode(DataExportResult.self, from: Data(readyResult.utf8))
+        let fixed = DataExportSession(gateway: ManageGateway(transport: transport), fixed: .ready(result))
+        await fixed.follow()
+        XCTAssertEqual(fixed.stage, .ready(result))
+        let sent = await transport.sent
+        XCTAssertTrue(sent.isEmpty)
     }
 }

@@ -10,6 +10,9 @@ struct DataExportPage: View {
     let session: DataExportSession
     let back: () -> Void
     @State private var failed = false
+    @State private var archive: URL?
+    @State private var downloadFailed = false
+    @State private var saving = false
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -25,7 +28,7 @@ struct DataExportPage: View {
                 case .expired:
                     retry(M.exportExpired)
                 case .failed:
-                    retry(M.actionFailed)
+                    retry(M.exportPackFailed)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -76,6 +79,44 @@ struct DataExportPage: View {
         if result.withheld > 0 {
             Text(M.exportWithheld(result.withheld)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
         }
+        Spacer(minLength: DL.askTopPadding)
+        VStack(spacing: XL.buttonGap) {
+            if downloadFailed {
+                Text(M.exportDownloadFailed).hmType(XL.title).foregroundStyle(Color.hmText).multilineTextAlignment(.center)
+                Button { Task { await fetchArchive(result) } } label: { Text(M.downloadAgain) }
+                    .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+            } else {
+                Button { saving = true } label: {
+                    Text(M.saveToFiles)
+                }
+                .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                .disabled(archive == nil)
+                if let archive {
+                    ShareLink(item: archive) {
+                        Text(M.sendElsewhere)
+                            .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pillBig)
+                    }
+                    .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                } else {
+                    Button {} label: { Text(M.sendElsewhere) }
+                        .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                        .disabled(true)
+                }
+            }
+        }
+        .task(id: result.downloadPath) { await fetchArchive(result) }
+        .fileMover(isPresented: $saving, file: archive) { outcome in
+            guard case .success = outcome else { return }
+            if let moved = archive { try? FileManager.default.removeItem(at: moved.deletingLastPathComponent()) }
+            archive = nil
+            Task { await fetchArchive(result) }
+        }
+    }
+
+    private func fetchArchive(_ result: DataExportResult) async {
+        guard archive == nil else { return }
+        downloadFailed = false
+        do { archive = try await session.archiveFile(named: result.fileName) } catch { downloadFailed = true }
     }
 
     @ViewBuilder private func retry(_ title: String) -> some View {

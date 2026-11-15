@@ -1,7 +1,9 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
+import HimawariManage
 import HimawariShare
 import Observation
 #if canImport(UIKit)
@@ -24,6 +26,7 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
@@ -39,6 +42,10 @@ public final class AppModel {
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
+    #endif
+    public private(set) var watchOffer: String?
 
     private static let recordAccount = SharedVault.recordAccount
 
@@ -116,6 +123,34 @@ public final class AppModel {
             lastScanned = nil
             phase = .unpaired(PairingProblem.from(error))
         }
+    }
+
+    public func handlePairingLink(_ text: String) {
+        if phase == .active {
+            #if os(iOS)
+            if WatchPairingRelay.offerable(text, pairedOrigin: record?.origin), watchRelay.canOffer {
+                watchOffer = text
+            }
+            #endif
+            return
+        }
+        pair(scanned: text)
+    }
+
+    public var watchOfferHost: String? {
+        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
+        return Self.host(invitation.origin)
+    }
+
+    public func sendOfferToWatch() {
+        #if os(iOS)
+        if let watchOffer { watchRelay.send(watchOffer) }
+        #endif
+        watchOffer = nil
+    }
+
+    public func declineWatchOffer() {
+        watchOffer = nil
     }
 
     public func connectToScannedServer() {
@@ -227,6 +262,7 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        actions = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -324,15 +360,25 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
             self.chat = chat
             phase = .active
             chat.start()
+            actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
             deliverWaitingHandovers()
         } catch {
@@ -407,6 +453,7 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
         deliverWaitingHandovers()
         Task { await refreshConfiguration() }
     }

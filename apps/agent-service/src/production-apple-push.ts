@@ -10,6 +10,7 @@ import {
   type ApplePushSendResult,
   type ApplePushStorePort,
   type ApprovalRequest,
+  type DeviceActionRecord,
   hasVisibleText,
   type MemoryReminder,
   type NotificationAction,
@@ -27,7 +28,6 @@ import {
 
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const RATE_LIMIT_DELAY_MS = 60_000;
-const SEND_BATCH = 50;
 const PAYLOAD_BYTES = 4_096;
 const WIDGET_EXPIRY_SECONDS = 3_600;
 const ACTIVITY_BATCH = 20;
@@ -46,6 +46,8 @@ export const APPLE_PUSH_TEXT = {
     approveInApp: "看内容再定",
     progress: "Himawari 正在处理",
     untitled: "新对话",
+    openTitle: "Himawari 想请你点开一下",
+    openBody: "这台设备上有一件事在等着做",
   },
   en: {
     approve: "Approve",
@@ -53,6 +55,8 @@ export const APPLE_PUSH_TEXT = {
     approveInApp: "Review to approve",
     progress: "Himawari is working",
     untitled: "New chat",
+    openTitle: "Himawari needs you to open the app",
+    openBody: "Something is waiting to be done on this device",
   },
   ja: {
     approve: "承認",
@@ -60,6 +64,8 @@ export const APPLE_PUSH_TEXT = {
     approveInApp: "内容を見て決める",
     progress: "Himawari が処理しています",
     untitled: "新しいチャット",
+    openTitle: "Himawari を開いてください",
+    openBody: "このデバイスで行う操作が待っています",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -107,6 +113,7 @@ export function applePushAlertPayload(input: {
             : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
+      notificationId: input.tag,
       himawari: {
         v: 1,
         tag: input.tag,
@@ -125,6 +132,32 @@ export function applePushAlertPayload(input: {
   const titleOverflow = excess(input.title, body);
   if (titleOverflow <= 0) return build(input.title, body);
   return build(shorten(input.title, titleOverflow), body);
+}
+
+export function applePushOpenRequestPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly tag: string;
+  readonly actionId: string;
+  readonly ownerPresence: boolean;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": "device_action",
+      "interruption-level": input.ownerPresence ? "time-sensitive" : "active",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: input.tag,
+      kind: "device_action",
+      navigate: "/",
+      actionId: input.actionId,
+      actions: [],
+    },
+  });
 }
 
 export function liveActivityPhase(status: string): AppleLiveActivityPhase {
@@ -220,6 +253,45 @@ export class ProductionApplePush implements PushCompanionChannel {
     };
   }
 
+  async requestOpen(input: { readonly record: DeviceActionRecord }): Promise<void> {
+    const { record } = input;
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({
+          ...this.#scope(),
+          pushType: "alert",
+          deviceId: record.deviceId,
+        })
+      ).filter(
+        (registration) => registration.status === "active" && this.#configured(registration),
+      );
+      const now = this.#options.now();
+      const tag = `device-action-${record.id}`;
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", "device_action", {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds: Math.floor(Date.parse(record.expiresAt) / 1_000),
+          collapseId: tag,
+          payload: applePushOpenRequestPayload({
+            title: text.openTitle,
+            body: text.openBody,
+            tag,
+            actionId: record.id,
+            ownerPresence: record.ownerPresence,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
   async #transmit(
     pushType: string,
     kind: string,
@@ -269,7 +341,7 @@ export class ProductionApplePush implements PushCompanionChannel {
     const { store } = this.#options;
     const { now } = input;
     await store.routeOutbox({ ...this.#scope(), now });
-    const due = await store.listDue({ ...this.#scope(), now, limit: SEND_BATCH });
+    const due = await store.listDue({ ...this.#scope(), now, limit: input.batch });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {

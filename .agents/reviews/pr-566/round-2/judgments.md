@@ -1,0 +1,6 @@
+# PR 566 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 中：`ProductionDeliveryTimingControl` 自身不校验 locale，非法或缺失值会以 TypeError 崩溃。沿用第 1 轮第 3 条原判：production-delivery-timing-control.ts:49,59 无守卫，但生产入口 http-gateway-server.ts:398、in-process-gateway.ts:35 都先过合同，非法 locale 到不了控制层；模型自己也承认没有生产路径绕过网关，代码未改，属可以更好。
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低：三语快照的 en/ja 没有逐条通过合同 schema，超长或含控制字符的新文案不会被自动检查发现。沿用第 1 轮第 1、2 条原判：当前 36 条文案都在 80/240/16 上限内，今天不会出错，只是测试防线不足，属可以更好。
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：ADR 0273 的响应字段主列表没有同步新增的 label/description/unit。ADR 0273 第 132 行字段列表确实没列三项，但第 136 行紧接着写明查询带 locale、每项再带 label/description/unit，读者不会做错，只是写法能更好。
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4. 低：`watch-ui-review.sh` 的 `--out` 未校验，会删除任意目标目录的所有 PNG，且新建模拟器不清理。该脚本来自合并进来的 PR 512，不是本 PR 的改动（模型自己也注明）；clients/apple/scripts/watch-ui-review.sh:62 的 rm 只删 *.png，需开发者手动传入误用的 --out 才触发，属可以更好。

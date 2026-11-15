@@ -27,7 +27,7 @@ INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
@@ -525,6 +525,42 @@ class DerivedExpectationsTest(RenderedPacket):
     def test_a_migration_that_rewrites_preserved_history_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES 0030_run_model_selection.sql runs'):
             packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30}, {'schema': {'current': 29, 'minimumWriter': 29}})
+
+    def test_the_owner_lost_rebuild_that_copies_every_row_back_is_allowed_and_anything_else_is_not(self):
+        sql = (packet_maker.REPO / packet_maker.MIGRATIONS / '0083_model_invocation_owner_lost.sql').read_text()
+        tables = ['model_budget_allocations', 'model_invocation_identities']
+        name = '0083_model_invocation_owner_lost.sql'
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql, tables), tables)
+        self.assertEqual(packet_maker.rebuilds_keeping_rows('0099_other.sql', sql, tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDELETE FROM model_budget_allocations;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDROP TABLE model_budget_allocations;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, '-- ' + sql, tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nUPDATE saved_model_budget_allocations SET id = id;', tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql.replace('INSERT INTO model_invocation_identities SELECT * FROM saved_model_invocation_identities;', ''), tables), [])
+
+    def test_the_owner_lost_rebuild_is_allowed_through_the_migration_ledger_as_the_packet_maker_reads_it_from_git(self):
+        self.assertEqual(packet_maker.migration_ledger('HEAD', 82, 83), [{'sequence': 83, 'name': 'model_invocation_owner_lost', 'phase': 'expand'}])
+
+    def test_the_thread_origin_backfill_is_allowed_only_with_its_exact_text_and_the_ignored_history_column(self):
+        name = '20261115045512_thread_origin.sql'
+        sql = packet_maker.git('show', 'HEAD:' + packet_maker.MIGRATIONS + '/' + name)
+        self.assertEqual(packet_maker.added_column_backfills(name, sql, ['threads']), ['threads'])
+        self.assertEqual(packet_maker.added_column_backfills(name, sql + '\nDELETE FROM threads;', ['threads']), [])
+        self.assertEqual(packet_maker.added_column_backfills('other.sql', sql, ['threads']), [])
+        self.assertEqual(packet_maker.added_column_backfills(name, sql, ['messages']), [])
+        self.assertEqual(packet_maker.history_ignored_columns(), {'thread_origin': {'threads': ('origin',)}})
+        with unittest.mock.patch.dict(packet_maker.ADDED_COLUMN_BACKFILLS, {'0099_old_style.sql': (hashlib.sha256(sql.strip().encode()).hexdigest(), {'threads': 'origin'})}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ADDED_COLUMN_BACKFILL_NAME_INVALID'):
+                packet_maker.added_column_backfills('0099_old_style.sql', sql, ['threads'])
+
+    def test_history_fixtures_pass_in_a_packet_whose_ledger_applies_thread_origin(self):
+        ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
+        for packet in (self.render(MIGRATION_LEDGER=ledger, TARGET_SCHEMA=57), self.render()):
+            scratch = self.root / ('fixture-temp-' + packet.name)
+            scratch.mkdir()
+            result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):

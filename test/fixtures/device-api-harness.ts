@@ -57,7 +57,9 @@ import {
   BrowserTextPayloadReader,
   buildHttpGatewayServer,
   DeviceActionHub,
+  DeviceNotificationHub,
   type DevicePairingAccess,
+  DevicePresence,
   DevicePushService,
   EnvelopePayloadProtector,
   PairedDeviceService,
@@ -78,8 +80,8 @@ import {
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.ts";
-import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { createProductionApprovalGateway } from "../../apps/agent-service/src/production-approval-gateway.ts";
+import { createProductionDeviceActions } from "../../apps/agent-service/src/production-device-actions.ts";
 import { ProductionHomeControl } from "../../apps/agent-service/src/production-home.ts";
 import {
   ProductionHttpPayloadAdmission,
@@ -97,7 +99,7 @@ export const authority: ProductAuthorityFence = {
   authorityEpoch: 1,
   fencingToken: 1,
 };
-const authorityLease = {
+export const authorityLease = {
   leaseId: createAuthorityLeaseId("lease-device-api"),
   fencingToken: 1,
 };
@@ -208,6 +210,12 @@ export interface Harness {
   readonly readText: (contentRef: string) => Promise<string | undefined>;
   readonly protector: EnvelopePayloadProtector;
   readonly externalContent: ContextExternalContent;
+  readonly notifications: {
+    readonly hub: DeviceNotificationHub;
+    readonly presence: DevicePresence;
+    readonly settledAsked: (readonly string[])[];
+    readonly settledAnswer: { current: readonly string[] };
+  };
   readonly actions: ReturnType<typeof createProductionDeviceActions> & {
     readonly hub: DeviceActionHub;
     readonly authorization: { current: DeviceActionAuthorizationPort | undefined };
@@ -224,6 +232,7 @@ export async function harness(
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutAddressee?: boolean;
+    readonly withoutNotifications?: boolean;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
       contentRef: string,
@@ -380,7 +389,11 @@ export async function harness(
     clock,
     onSourceFailure: () => undefined,
   });
+  const approvalResolved: { current: (() => Promise<void>) | undefined } = { current: undefined };
   const gatewayV2 = createProductionApprovalGateway({
+    onApprovalResolved: async () => {
+      await approvalResolved.current?.();
+    },
     homeControl: home,
     configuration: { ownerId, agentId },
     repository,
@@ -465,6 +478,12 @@ export async function harness(
   });
   await perception.prepareDirectories();
   const hub = new DeviceActionHub();
+  const notifications = {
+    hub: new DeviceNotificationHub(),
+    presence: new DevicePresence(),
+    settledAsked: [] as (readonly string[])[],
+    settledAnswer: { current: [] as readonly string[] },
+  };
   const authorization: { current: DeviceActionAuthorizationPort | undefined } = {
     current: undefined,
   };
@@ -498,9 +517,12 @@ export async function harness(
     authorization: {
       authorize: async (intent) =>
         (authorization.current ?? new ReadOnlyDeviceActionAuthorization()).authorize(intent),
+      resolve: async (approvalId) =>
+        authorization.current?.resolve?.(approvalId) ?? { decision: "pending" },
     },
     ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
   });
+  approvalResolved.current = () => actions.service.reconcile();
   const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
   const prefetch = new QueryPrefetch({
     limits: () => prefetchLimits.current,
@@ -607,6 +629,18 @@ export async function harness(
           scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
         hub,
       },
+      ...(options.withoutNotifications
+        ? {}
+        : {
+            notifications: {
+              hub: notifications.hub,
+              presence: notifications.presence,
+              settled: async ({ ids }: { ids: readonly string[] }) => {
+                notifications.settledAsked.push(ids);
+                return ids.filter((id) => notifications.settledAnswer.current.includes(id));
+              },
+            },
+          }),
       voiceGates: () => voiceGates.current,
       prefetch: utterancePrefetch(
         {
@@ -650,6 +684,7 @@ export async function harness(
     protector,
     externalContent,
     actions: { ...actions, hub, authorization, openRequests },
+    notifications,
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
       if (!payload) return undefined;

@@ -11,6 +11,7 @@
 - [截图对照原型](#ui-review)
 - [分享面板和 Safari 扩展](#handover)
 - [Mac 菜单栏 App](#mac-app)
+- [Apple Watch App](#watch-app)
 
 <a id="layout"></a>
 ## 代码怎么分
@@ -25,6 +26,7 @@
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位 | 第 11 批 |
 | `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
 | `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
+| `HimawariWatchUI` | Apple Watch App 的界面和逻辑（App 目标叫 `HimawariWatch`）：配对、等你定的一件事、抬腕说一句、到点轻敲。只在 watchOS 上编译 | 第 10A 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
 `App/Himawari.xcodeproj` 是 App 本身的 Xcode 工程，有三个目标：App（入口文件 `App/iOS/HimawariApp.swift`）、分享扩展 `App/ShareExtension`、Safari 扩展 `App/SafariExtension`（扩展，extension，是 iOS 允许 App 嵌在别的 App 里出现的小部件）。其余代码都从上面的包里来。
@@ -90,6 +92,11 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 <a id="ui-review"></a>
 ## 截图对照原型
 
+截图、录屏和 Xcode 编译缓存都不进仓库（[ADR 0276](../../docs/adr/0276-generated-files-stay-out-of-git-and-local-artifacts-expire.md)）：`npm run check:repo-hygiene` 会拦下被提交的截图目录、`*.mp4` 和 `*.mov`。
+
+- 编译缓存：一律用 `clients/apple/scripts/xcode-build.sh ios|mac|watch <xcodebuild 的其余参数>` 编译，不要自己传 `-derivedDataPath`，也不要每个 PR 新建 `dd-*` 目录。它把缓存固定在 `~/Library/Caches/himawari/DerivedData/<平台>`，各 PR 共用（增量编译更快），同一平台同时只让一个编译用（另一个最多等 `HIMAWARI_XCODE_LOCK_WAIT` 秒，默认 1800）。截图脚本也用这几份缓存。
+- 把截图交给云端线程：Mac 上 `node scripts/ui-review-artifacts.mjs publish --pr <编号> --batch <批次名> --dir <截图目录>`，把这批 `png`、`mp4` 推到 `refs/review-artifacts/pr-<编号>/<批次名>`。它不在任何分支上，普通克隆不会下载，合并 PR 也不会带进 main。云端线程用 `node scripts/ui-review-artifacts.mjs fetch --pr <编号> --batch <批次名> --out <空目录>` 取下来，脚本按随附的清单核对每个文件的大小和 SHA-256。验收完由 Mac 线程运行 `node scripts/ui-review-artifacts.mjs delete --pr <编号> --batch <批次名>`（云端线程推不了这种引用）。`list --pr <编号>` 列出还在的批次。
+
 界面要和 Andy 批准的原型逐屏对照。`App` 的调试版带一套示例数据（`Sources/HimawariShell/DemoScenes.swift`，只在调试版里编译）：启动参数 `-HimawariDemoScene <场景名>` 让 App 直接显示某一屏，不连服务器。场景名就是截图文件名，以原型图的编号开头（例如 `16-chat-states-3-sending`），`motion-` 开头的是动效录屏。示例数据的时钟固定在 2026-11-12 15:00，截静态图时关掉动效，所以每次截出来一样。
 
 在 Mac 上一条命令（需要 Xcode 26 和 iPhone 16e 模拟器，宽 390 点）：
@@ -98,7 +105,7 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 clients/apple/scripts/ui-review.sh
 ```
 
-它建一个叫 “Himawari 390pt” 的模拟器，把状态栏固定成 9:41，编译调试版并装上，浅色、深色各截一遍全部场景（PNG 放 `clients/apple/ui-review/latest/`），并录下动效（微光、切页签、面板弹出、内容在玻璃下滚动；有 `avconvert` 时压成 960×540 的 MP4）。截图宽度不是 1170 像素（390 点 × 3）就报错停下。
+它建一个叫 “Himawari 390pt” 的模拟器，把状态栏固定成 9:41，编译调试版并装上，浅色、深色各截一遍全部场景（PNG 放仓库外的 `~/Library/Caches/himawari/ui-review/latest/`，`HIMAWARI_APPLE_CACHE` 可改这个缓存根目录），并录下动效（微光、切页签、面板弹出、内容在玻璃下滚动；有 `avconvert` 时压成 960×540 的 MP4）。截图宽度不是 1170 像素（390 点 × 3）就报错停下。
 
 设计线程验收通过后：
 
@@ -106,7 +113,7 @@ clients/apple/scripts/ui-review.sh
 clients/apple/scripts/ui-review.sh --approve
 ```
 
-把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。
+把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照：先拷到旁边的临时目录，全部场景都在才整体换掉旧快照，中途出错旧快照不动。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。`--check` 通过后删掉这次的临时截图，失败时留着并打印路径（`UI_REVIEW_CHECK_KEPT`）。
 
 [返回目录](#apple-clients)
 
@@ -155,6 +162,27 @@ Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没�
 clients/apple/scripts/mac-ui-review.sh
 ```
 
-它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMacUI/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到 `clients/apple/ui-review/mac-latest/`，少一张就报错。
+它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMacUI/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到仓库外的 `~/Library/Caches/himawari/ui-review/mac-latest/`，少一张就报错。
+
+[返回目录](#apple-clients)
+
+<a id="watch-app"></a>
+## Apple Watch App
+
+手表只做“一眼和一句”，照原型 Version 46 画板“每一端做什么”里的手表画面。工程里有两个目标：`HimawariWatch`（手表 App，入口 `App/Watch/HimawariWatchApp.swift`，其余代码在 `Sources/HimawariWatchUI/`）和 `HimawariWatchWidgets`（表盘小组件，`App/WatchWidgets/`）。`HimawariWatch` 嵌在 iPhone 的 Himawari 里一起安装。
+
+- 配对：手表上不打字。iPhone 的 Himawari 收到 `himawari-pair:` 开头的配对链接（只有从链接点开才会问“给手表用吗”；扫码只配这台 iPhone；已配对的 iPhone 收到链接时只会问这一句，不会重新配对，问话里写着链接指向的服务器），只有这台 iPhone 已经配对、又连着手表、而且链接指向的服务器和这台 iPhone 配对的服务器相同，才问一句“给这块 Apple Watch 用吗”；没连手表或服务器不同时什么也不提示。选了就经 WatchConnectivity（苹果的手机和手表之间传数据的接口）把链接交给手表。手表自己生成密钥、自己配对，只显示 6 位核对数字，主人在网页上确认。没配对时手表只写“在 iPhone 上打开配对链接”。
+- 等你定的一件事：读和 Mac 菜单栏同一个接口（`GET home`、`POST home/act`），只显示最要紧的一件：一句话、一行明细、服务器给的最多两个按钮（肯定的在前，白色）。要本人在场的，手表上只有“在 iPhone 上看”（点了只是提示去 iPhone 上打开 Himawari，不指定哪一件）；服务器没给句子的待办也一样提示。服务器给了没有可执行绑定串的动作（例如需要重新连接的账号）时，手表不显示这个按钮，按“在 iPhone 上看”处理。入口连不上时，手表继续显示上一次成功读到的卡片；没有旧卡片可显示才写“暂时连不上”。Mac 菜单栏同样不为没有绑定串的动作画按钮。件数的定义和 iPhone 红点相同：服务器没读全来源时不显示件数。
+- 抬腕说一句：点底部的向日葵，用系统的听写输入一句话，每句开一个新对话。回答放得下这块表的屏幕（按屏幕宽高和字号算，不写死字数）就直接显示；放不下就在耳机里读，屏幕显示第一句和“停”，全文留在 iPhone 的对话里。
+- 到点轻敲：每次刷新把服务器给的“接下来”提醒排成手表本地通知（系统最多排 64 条），到点轻敲；点开通知就打开 Himawari，显示当时最要紧的一件事。刷新在打开 App 时和系统后台刷新时做，间隔取服务器的心跳秒数，不低于系统允许的 15 分钟。
+- 表盘小组件：长条（向日葵加“N 件事等你定”加最近一件；没有时写“没有要你定的事”）、圆形（件数，没有时只有向日葵）、一行文字（没有时空着）、角落。手表 App 刷新后把状态写进共用存储（App Group `HIMAWARI_APP_GROUP`），再通知系统重画小组件。
+
+在云端能跑的是 `HimawariCore` 里的手表逻辑（`Sources/HimawariCore/WatchGlance.swift`，测试 `Tests/HimawariCoreTests/WatchGlanceTests.swift`）。界面、小组件和嵌入只能在 Mac 上的 Xcode 里编译。截图：
+
+```bash
+clients/apple/scripts/watch-ui-review.sh
+```
+
+它建一个叫 “Himawari Watch” 的手表模拟器，编译调试版，用启动参数 `-HimawariWatchDemoScene <场景名>` 让 App 按 `Sources/HimawariWatchUI/WatchDemo.swift` 里的示例数据逐屏截图（手表只有深色），放到 `clients/apple/ui-review/watch-latest/`。
 
 [返回目录](#apple-clients)

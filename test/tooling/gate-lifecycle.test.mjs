@@ -241,7 +241,7 @@ function gateFixture(event = "workflow_dispatch") {
     gate = path.join(state.root, ".ci-output/source-gate");
   for (const { check, member } of expectedMembers(policy)) {
     const output = path.join(reports, check.id, member.key),
-      projects = check.projects.map((id) => ({ id, counts: count() })),
+      projects = (member.projects ?? check.projects).map((id) => ({ id, counts: count() })),
       total = Math.max(1, projects.length),
       artifactPlatform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {

@@ -5941,18 +5941,28 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
       await uiExpect(memory).toHaveCount(0, { timeout: 20_000 });
     });
     await scenario("accept-export-requires-login", async () => {
+      const archive = (host: Page) =>
+        host.evaluate(async () => {
+          const response = await fetch("/api/data-export/v1/archive", { credentials: "include" });
+          const status = response.status;
+          const contentType = response.headers.get("content-type");
+          let bytes = -1;
+          if (status === 200) await response.body?.cancel();
+          else bytes = (await response.arrayBuffer()).byteLength;
+          return { status, contentType, bytes };
+        });
       const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
       try {
-        const refused = await stranger.request.get(
-          `${installation.origin}/api/data-export/v1/archive`,
-        );
-        expect(refused.status()).toBe(401);
-        expect((await refused.body()).byteLength).toBe(0);
-        const allowed = await context.request.get(
-          `${installation.origin}/api/data-export/v1/archive`,
-        );
-        expect(allowed.status()).toBe(200);
-        expect(allowed.headers()["content-type"]).toBe("application/zip");
+        const strangerPage = await stranger.newPage();
+        await strangerPage.route("**/api/identity/v1/sessions", (route) => route.abort());
+        await strangerPage.goto(`${installation.origin}/`);
+        const refused = await archive(strangerPage);
+        expect(refused.status).toBe(401);
+        expect(refused.bytes).toBe(0);
+        expect((await stranger.cookies()).length).toBe(0);
+        const allowed = await archive(page);
+        expect(allowed.status).toBe(200);
+        expect(allowed.contentType).toBe("application/zip");
       } finally {
         await stranger.close();
       }
@@ -6011,14 +6021,12 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
         const draft = target(phone, UI.composer);
         await uiExpect(draft).toBeVisible({ timeout: 30_000 });
         const text = "手机上发一条消息";
-        const answersBefore = await phone.getByText(PLAIN_ANSWER).count();
         await draft.fill(text);
         await uiExpect(target(phone, UI.send)).toBeEnabled({ timeout: 20_000 });
         await target(phone, UI.send).click();
         await uiExpect(phone.getByText(text).last()).toBeVisible({ timeout: 20_000 });
-        await uiExpect(phone.getByText(PLAIN_ANSWER)).toHaveCount(answersBefore + 1, {
-          timeout: 120_000,
-        });
+        const sentTurn = phone.locator(UI.settledTurn).filter({ hasText: text }).last();
+        await uiExpect(sentTurn.getByText(PLAIN_ANSWER)).toBeVisible({ timeout: 120_000 });
         await uiExpect(target(phone, UI.stop)).toHaveCount(0, { timeout: 120_000 });
         await expectPhoneLayout(phone, "after sending");
       } finally {

@@ -21,6 +21,7 @@ public final class SettingsStore {
     public private(set) var server: ServerReach?
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
+    public private(set) var proposals: ProposalList?
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
 
@@ -39,6 +40,7 @@ public final class SettingsStore {
     public func load() async {
         async let status = loadServerReach()
         async let logins = try? loadLoginDevices()
+        async let listedProposals = try? loadProposals()
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
@@ -53,6 +55,7 @@ public final class SettingsStore {
         }
         server = await status
         loginDevices = await logins
+        proposals = await listedProposals
     }
 
     public func disable(_ capability: CapabilitySummary, reason: String) async throws {
@@ -133,6 +136,63 @@ public final class SettingsStore {
     }
 
     static let stillChangingReason: String? = "LOGIN_DEVICES_STILL_CHANGING"
+
+    public func reloadProposals() async {
+        if let listed = try? await loadProposals() { proposals = listed }
+    }
+
+    public func respond(_ proposal: Proposal, _ action: ProposalAction, reason: String) async throws -> ProposalOutcome {
+        do {
+            var fullReadToken = JSONValue.null
+            if action == .adopt && proposal.requiresFullRead {
+                fullReadToken = .string(try await openFullText(proposal))
+            }
+            _ = try await gateway.command(
+                .v2,
+                "proposal.respond",
+                payload: [
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                    "action": .string(action.rawValue),
+                    "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+                    "fullReadToken": fullReadToken,
+                ],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+            await reloadProposals()
+            return .done(action)
+        } catch let error as ManageGatewayError {
+            guard case .rejected(let status, _, _) = error, status != 401, status != 403 else { throw error }
+            guard let listed = try? await loadProposals() else { throw error }
+            proposals = listed
+            guard let latest = listed.proposals.first(where: { $0.proposalId == proposal.proposalId }) else { return .gone }
+            guard latest.version != proposal.version || latest.fingerprint != proposal.fingerprint else { throw error }
+            return .changed(latest)
+        }
+    }
+
+    private func openFullText(_ proposal: Proposal) async throws -> String {
+        let data = try await gateway.read(
+            .v2,
+            "proposals.read",
+            payload: [
+                "open": .object([
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                ]),
+            ]
+        )
+        let list = try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+        guard let token = list.opened?.fullReadToken else { throw ManageGatewayError.malformedResponse }
+        return token
+    }
+
+    private func loadProposals() async throws -> ProposalList {
+        let data = try await gateway.read(.v2, "proposals.read", payload: ["open": .null])
+        return try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+    }
 
     public func shelf(_ origin: FileOrigin) -> FileShelf {
         shelves[origin] ?? FileShelf()

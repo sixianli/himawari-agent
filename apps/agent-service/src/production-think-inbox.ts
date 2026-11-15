@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import type {
-  ClockPort,
-  PayloadProtectorPort,
-  PayloadStorePort,
-  ThinkEnqueueOutcome,
-  ThinkInboxStorePort,
-  ThinkInboxUsage,
+import {
+  type ClockPort,
+  type PayloadProtectorPort,
+  type PayloadStorePort,
+  type ThinkEnqueueOutcome,
+  type ThinkInboxStorePort,
+  type ThinkInboxUsage,
+  thinkSettingDefinition,
 } from "@himawari-agent/application";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 
@@ -13,12 +14,13 @@ type Scope = Parameters<ThinkInboxStorePort["usage"]>[0] extends infer Input
   ? Omit<Input & object, "day">
   : never;
 
-export const THINK_QUEUE_LIMIT = 20;
-export const THINK_DAILY_LIMIT = 50;
-export const THINK_EXPIRES_AFTER_HOURS = 48;
-export const THINK_STALLED_AFTER_MINUTES = 30;
-export const THINK_MAX_ATTEMPTS = 3;
-export const THINK_SUMMARY_CHARACTERS = 1000;
+export const THINK_QUEUE_LIMIT = thinkSettingDefinition("queueLimit").defaultValue;
+export const THINK_DAILY_LIMIT = thinkSettingDefinition("dailyLimit").defaultValue;
+export const THINK_EXPIRES_AFTER_HOURS = thinkSettingDefinition("expiresAfterHours").defaultValue;
+export const THINK_STALLED_AFTER_MINUTES =
+  thinkSettingDefinition("stalledAfterMinutes").defaultValue;
+export const THINK_MAX_ATTEMPTS = thinkSettingDefinition("maxAttempts").defaultValue;
+export const THINK_SUMMARY_CHARACTERS = thinkSettingDefinition("summaryCharacters").defaultValue;
 
 const KIND = /^[a-z][a-z0-9_]{0,63}$/u;
 const SWEEP_BATCH = 50;
@@ -44,6 +46,7 @@ export interface ThinkInboxOptions {
     readonly maxAttempts?: number;
     readonly summaryCharacters?: number;
   };
+  readonly overrides?: () => Promise<Readonly<Record<string, number>>>;
 }
 
 export type ThinkSubmitResult =
@@ -108,7 +111,16 @@ export class ProductionThinkInbox {
   }
 
   get limits() {
-    const limits = this.#options.limits ?? {};
+    return this.#merge({});
+  }
+
+  async currentLimits() {
+    const overrides = await this.#options.overrides?.().catch(() => ({}));
+    return this.#merge(overrides ?? {});
+  }
+
+  #merge(overrides: Readonly<Record<string, number>>) {
+    const limits = { ...this.#options.limits, ...overrides };
     return {
       queueLimit: limits.queueLimit ?? THINK_QUEUE_LIMIT,
       dailyLimit: limits.dailyLimit ?? THINK_DAILY_LIMIT,
@@ -140,7 +152,8 @@ export class ProductionThinkInbox {
       return { accepted: false, reason: "THINK_SOURCE_REF_INVALID" };
     if (input.sourceVersion.length > 256)
       return { accepted: false, reason: "THINK_SOURCE_VERSION_INVALID" };
-    const summary = clip(input.summary, this.limits.summaryCharacters);
+    const limits = await this.currentLimits();
+    const summary = clip(input.summary, limits.summaryCharacters);
     if (summary.length === 0) return { accepted: false, reason: "THINK_SUMMARY_EMPTY" };
     const now = this.#options.clock.now();
     const key = entryKey(
@@ -152,7 +165,9 @@ export class ProductionThinkInbox {
     const id = `think:${key}`;
     const summaryRef = `think-summary:${key}`;
     const previous = this.#locks.get(key) ?? Promise.resolve();
-    const turn = previous.then(() => this.#accept({ input, source, summary, now, id, summaryRef }));
+    const turn = previous.then(() =>
+      this.#accept({ input, source, summary, now, id, summaryRef, limits }),
+    );
     const settled = turn.then(
       () => undefined,
       () => undefined,
@@ -176,8 +191,9 @@ export class ProductionThinkInbox {
     readonly now: string;
     readonly id: string;
     readonly summaryRef: string;
+    readonly limits: { readonly queueLimit: number; readonly dailyLimit: number };
   }): Promise<ThinkSubmitResult> {
-    const { input, source, summary, now, id, summaryRef } = args;
+    const { input, source, summary, now, id, summaryRef, limits } = args;
     let wrote = false;
     if (!(await this.#options.payloads.get(summaryRef as never))) {
       try {
@@ -208,8 +224,8 @@ export class ProductionThinkInbox {
         summaryRef,
         day: localDay(now, this.#options.timeZone),
         now,
-        queueLimit: this.limits.queueLimit,
-        dailyLimit: this.limits.dailyLimit,
+        queueLimit: limits.queueLimit,
+        dailyLimit: limits.dailyLimit,
       });
     } catch (error) {
       if (wrote) await this.#discardUnreferenced(summaryRef);
@@ -236,7 +252,7 @@ export class ProductionThinkInbox {
     readonly expired: number;
   }> {
     const now = this.#options.clock.now();
-    const limits = this.limits;
+    const limits = await this.currentLimits();
     const at = Date.parse(now);
     const recovered = await this.#options.store.recoverStalled({
       ...this.#options.scope,

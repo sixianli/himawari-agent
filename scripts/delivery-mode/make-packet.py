@@ -182,6 +182,50 @@ def startup_phase_baseline(instance):
     return json.dumps(baseline, sort_keys=True)
 
 
+ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('f268bbd8b8999496d5e2eaa50ad8c62e7e671934511a1439d8da700d94aa8acc', ('model_budget_allocations', 'model_invocation_identities'))}
+
+
+ADDED_COLUMN_BACKFILLS = {'20261115045512_thread_origin.sql': ('817407da2a5be720c26f6a8689af2508cd85d051a9567525dfe1d80b40fcf060', {'threads': 'origin'})}
+
+
+def added_column_backfills(file_name, sql, touched):
+    digest, columns = ADDED_COLUMN_BACKFILLS.get(file_name, (None, {}))
+    if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
+        return []
+    named = TIMESTAMP_MIGRATION.fullmatch(file_name)
+    if not named:
+        refuse('PACKET_ADDED_COLUMN_BACKFILL_NAME_INVALID', file_name)
+    ignored = history_ignored_columns().get(named.group(2), {})
+    return [table for table in touched if table in columns and columns[table] in ignored.get(table, ())]
+
+
+def history_ignored_columns():
+    source = (TEMPLATE / 'maintenance' / 'maintenance-common.mjs').read_text()
+    match = re.search(r'^export const addedColumnBackfills = Object\.freeze\(\{(.*)\}\);$', source, re.M)
+    if not match:
+        refuse('PACKET_HISTORY_IGNORED_COLUMNS_NOT_FOUND')
+    return {name: {table: tuple(re.findall(r'"([a-z_]+)"', names)) for table, names in re.findall(r'([a-z_]+): Object\.freeze\(\[(.*?)\]\)', body)} for name, body in re.findall(r'([a-z_]+): Object\.freeze\(\{(.*?)\}\)', match.group(1))}
+
+
+def rebuilds_keeping_rows(file_name, sql, touched):
+    digest, allowed = ROW_PRESERVING_REBUILDS.get(file_name, (None, ()))
+    if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
+        return []
+    kept = []
+    for table in touched:
+        saved = 'saved_' + table
+        steps = (
+            r'CREATE\s+TEMP\s+TABLE\s+' + saved + r'\s+AS\s+SELECT\s+\*\s+FROM\s+' + table + r'\s*;',
+            r'INSERT\s+INTO\s+' + table + r'\s+SELECT\s+\*\s+FROM\s+' + saved + r'\s*;',
+            r'DROP\s+TABLE\s+' + saved + r'\s*;',
+        )
+        other = re.sub('|'.join(steps), '', sql, flags=re.I)
+        written_elsewhere = re.search(r'\b(?:ALTER\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', other, re.I)
+        if table in allowed and all(re.search(step, sql, re.I) for step in steps) and not written_elsewhere:
+            kept.append(table)
+    return kept
+
+
 def preserved_tables():
     source = (TEMPLATE / 's0-db' / 'read-s0-db.mjs').read_text()
     match = re.search(r'historyTables = Object\.freeze\(\[(.*?)\]\)', source, re.S)
@@ -220,6 +264,8 @@ def migration_ledger(commit, current, target, applied_ids=None):
             entry = dict(entry, sequence=sequence)
         sql = git('show', commit + ':' + MIGRATIONS + '/' + entry['file'])
         touched = sorted(table for table in tables if re.search(r'\b(?:ALTER\s+TABLE|DROP\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', sql, re.I))
+        kept = rebuilds_keeping_rows(entry['file'], sql, touched) + added_column_backfills(entry['file'], sql, touched)
+        touched = [table for table in touched if table not in kept]
         if touched:
             refuse('PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES', entry['file'] + ' ' + ','.join(touched))
         ledger.append({key: entry[key] for key in ('sequence', 'name', 'phase')})

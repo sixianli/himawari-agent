@@ -44,6 +44,17 @@ public struct HimawariRootView: View {
             }
         }
         .onAppear { SerifFace.shared.prepare() }
+        .onOpenURL { url in model.handlePairingLink(url.absoluteString) }
+        .confirmationDialog(
+            L.text("watch.offer.title"),
+            isPresented: Binding(get: { model.watchOffer != nil }, set: { if !$0 { model.declineWatchOffer() } }),
+            titleVisibility: .visible
+        ) {
+            Button(L.text("watch.offer.watch")) { model.sendOfferToWatch() }
+            Button(L.text("watch.offer.cancel"), role: .cancel) { model.declineWatchOffer() }
+        } message: {
+            if let host = model.watchOfferHost { Text(host) }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() }
         }
@@ -64,6 +75,7 @@ enum MainTab: Hashable {
 struct MainTabsView: View {
     let model: AppModel
     let chat: ChatStore
+    private let actionsOverride: DeviceActionsModel?
     @State private var tab: MainTab
     @State private var openThread: OpenThread?
     @State private var settingsOpen: Bool
@@ -74,14 +86,17 @@ struct MainTabsView: View {
     private let settingsOverride: AnyView?
     @Environment(\.listClock) private var listClock
 
-    init(model: AppModel, chat: ChatStore, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
+    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
         self.model = model
         self.chat = chat
+        actionsOverride = actions
         _tab = State(initialValue: tab)
         _settingsOpen = State(initialValue: settings != nil)
         memoryOverride = memory
         settingsOverride = settings
     }
+
+    private var actions: DeviceActionsModel? { actionsOverride ?? model.actions }
 
     struct OpenThread: Equatable {
         let threadId: String?
@@ -125,6 +140,11 @@ struct MainTabsView: View {
                     SettingsRootView(
                         api: model.api,
                         confirmKey: model.confirmKey,
+                        actions: actions,
+                        openThread: { threadId in
+                            settingsOpen = false
+                            withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
+                        },
                         close: { settingsOpen = false },
                         removedThisDevice: {
                             settingsOpen = false
@@ -156,7 +176,9 @@ struct MainTabsView: View {
     private var content: some View {
         switch tab {
         case .today:
-            TodayView(listening: listening, openListening: { listenOpen = true }) { settingsOpen = true }
+            TodayView(actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }) { threadId in
+                withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
+            }
         case .chats:
             ChatListView(store: chat) { threadId in
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
@@ -204,20 +226,45 @@ struct MainTabsView: View {
 }
 
 struct TodayView: View {
+    let actions: DeviceActionsModel?
     var listening: ListeningController?
     var openListening: () -> Void = {}
     let openSettings: () -> Void
+    let openThread: (String) -> Void
+    @State private var opened: PendingApproval?
+
+    private var hasActions: Bool {
+        guard let actions else { return false }
+        return !actions.pending.isEmpty || !actions.recent.isEmpty
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            EmptyStateView(Text(L.text("placeholder.notConnected")))
-            if let listening {
-                VStack {
-                    ListenTodayCard(controller: listening, open: openListening)
-                        .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                        .padding(.top, 96)
-                    Spacer()
+            if let actions, let opened {
+                ApprovalDetailView(model: actions, approval: opened, openThread: openThread) { withAnimation(.snappy) { self.opened = nil } }
+                    .transition(.move(edge: .trailing))
+                    .zIndex(1)
+            }
+            if !hasActions && listening == nil {
+                EmptyStateView(Text(L.text("placeholder.notConnected")))
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        if let listening {
+                            ListenTodayCard(controller: listening, open: openListening)
+                        }
+                        if let actions, hasActions {
+                            TodayDeviceActionsCard(model: actions) { approval in
+                                withAnimation(.snappy) { opened = approval }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+                    .padding(.top, 96)
+                    .padding(.bottom, 130)
                 }
+                .scrollIndicators(.hidden)
+                .refreshable { await actions?.refresh() }
             }
             GlassCircleButton(Text(L.text("settings")), action: openSettings) {
                 Icon(.user, size: DesignTokens.IconSize.glassButton)
