@@ -239,6 +239,17 @@ describe("think settings", () => {
       overridden: false,
     });
     expect(snapshot.payload.items[2]).toMatchObject({ value: 5, defaultValue: 5 });
+    for (const item of snapshot.payload.items as unknown as {
+      label: Record<string, string>;
+      description: Record<string, string>;
+      unitLabel: Record<string, string>;
+    }[])
+      for (const text of [item.label, item.description, item.unitLabel])
+        expect(Object.keys(text).sort()).toEqual(["en", "ja", "zh-CN"]);
+    expect(snapshot.payload.items[2]).toMatchObject({
+      label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+      unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
+    });
     expect(snapshot.payload.items[3]).toMatchObject({ value: 50, defaultValue: 50 });
     const off = await fixture();
     const plain = (await off.control.query(head as never)) as unknown as {
