@@ -17,6 +17,7 @@ import {
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
+  type DeviceActionService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -39,7 +40,6 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
-  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -69,8 +69,11 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceActionHub,
   type DeviceGatewayAuditFailure,
+  type DeviceNotificationHub,
   type DevicePairingAccess,
+  type DevicePresence,
   DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
@@ -85,7 +88,6 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  type DeviceActionHub,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
@@ -125,6 +127,11 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import type { DeliveryTimingHolder } from "./production-delivery-timing.js";
+import {
+  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
+  ProductionDeliveryTimingControl,
+} from "./production-delivery-timing-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -194,6 +201,12 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
+import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
+import {
+  PRODUCTION_THINK_OPERATIONS,
+  ProductionThinkControl,
+  ProductionThinkSettings,
+} from "./production-think-settings.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -263,6 +276,11 @@ export interface ProductionHttpCompositionOptions {
     readonly service: DeviceActionService;
     readonly hub: DeviceActionHub;
   };
+  readonly deviceNotifications?: {
+    readonly hub: DeviceNotificationHub;
+    readonly presence: DevicePresence;
+    readonly settled: (ids: readonly string[]) => Promise<readonly string[]>;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
   readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
@@ -299,12 +317,17 @@ export interface ProductionHttpCompositionOptions {
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+  readonly deliveryTimingSettings?: Pick<DeliveryTimingHolder, "base" | "apply">;
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly think?: {
+    readonly worth: ThinkWorthRoute;
+    readonly onDiagnostic?: (event: Record<string, string>) => void;
+  };
   readonly queryPrefetch?: ProductionQueryPrefetch;
   readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
@@ -771,6 +794,7 @@ function routeOptions(
   observationAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  deliveryTimingAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -806,6 +830,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
@@ -818,6 +843,7 @@ function routeOptions(
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
         ...PRODUCTION_PERCEPTION_OPERATIONS,
+        ...PRODUCTION_THINK_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1205,10 +1231,8 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     clock: { now: clock },
   });
-  if (options.memory)
-    registerReminderProposalHandlers({
-      box: proposalBox,
-      writer: new ProductionReminderWriter({
+  const reminderWriter = options.memory
+    ? new ProductionReminderWriter({
         configuration,
         memory: options.memory.service,
         state: repository.productMemoryState(),
@@ -1220,7 +1244,12 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
-      }),
+      })
+    : undefined;
+  if (reminderWriter)
+    registerReminderProposalHandlers({
+      box: proposalBox,
+      writer: reminderWriter,
       clock: { now: clock },
     });
   registerTaskProposalHandler({
@@ -1233,6 +1262,29 @@ export async function createProductionHttpComposition(
     clock: { now: clock },
     timeZone: configuration.runPolicy?.timeZone ?? "UTC",
   });
+  const thinkSettings = new ProductionThinkSettings({
+    scope: { ownerId, agentId },
+    store: repository.thinkInbox(),
+    configuration: configuration.runPolicy?.thinkInbox,
+    clock: { now: clock },
+  });
+  const think = options.think
+    ? productionThinkLoop({
+        settings: thinkSettings,
+        configuration,
+        repository,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock,
+        commands: threadCommands,
+        threads,
+        box: proposalBox,
+        ...(reminderWriter ? { writer: reminderWriter } : {}),
+        worth: options.think.worth,
+        ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+        ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1551,6 +1603,17 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.deliveryTimingSettings
+      ? {
+          deliveryTimingControl: new ProductionDeliveryTimingControl({
+            configuration,
+            defaults: options.deliveryTimingSettings.base,
+            store: repository.deliveryTimingSettings(),
+            clock: { now: clock },
+            changed: options.deliveryTimingSettings.apply,
+          }),
+        }
+      : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1567,6 +1630,11 @@ export async function createProductionHttpComposition(
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    thinkControl: new ProductionThinkControl({
+      settings: thinkSettings,
+      scope: { ownerId, agentId },
       clock: { now: clock },
     }),
     perceptionControl: new ProductionPerceptionControl({
@@ -1632,6 +1700,7 @@ export async function createProductionHttpComposition(
       Boolean(options.observation),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      options.deliveryTimingSettings !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1646,6 +1715,18 @@ export async function createProductionHttpComposition(
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
       exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
+      ...(options.deviceNotifications
+        ? {
+            notifications: {
+              hub: options.deviceNotifications.hub,
+              presence: options.deviceNotifications.presence,
+              settled: async ({ scope, ids }) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? ((await options.deviceNotifications?.settled(ids)) ?? [])
+                  : [],
+            },
+          }
+        : {}),
       ...(options.deviceActions
         ? {
             actions: {
@@ -1736,6 +1817,7 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
+        think?.loop.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1749,10 +1831,12 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
+      think?.loop.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await think?.loop.stop();
       await home.stopScoring();
       try {
         await app.close();

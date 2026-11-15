@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   failSecurity: false,
   testReportFailure: "",
   empty: false,
+  emptyShard: false,
   pipelineExitCode: 0,
   writtenCandidateFailure: false,
   failCleanup: false,
@@ -200,8 +201,9 @@ vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
   },
 }));
 vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact, projects, related }) => {
+  runTests: async ({ output, artifact, projects, related, shard }) => {
     state.related = related;
+    state.shard = shard;
     const report = path.join(output, "tests.json");
     write(report, { status: "passed" });
     return {
@@ -216,7 +218,9 @@ vi.mock("../../scripts/ci/test.mjs", () => ({
       },
       projects: projects.map((id) => ({
         id,
-        counts: counts(),
+        counts: state.emptyShard
+          ? { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 }
+          : counts(),
       })),
       reports: [{ path: report, kind: "json" }],
     };
@@ -275,6 +279,7 @@ beforeEach(() => {
   state.failSecurity = false;
   state.testReportFailure = "";
   state.empty = false;
+  state.emptyShard = false;
   state.pipelineExitCode = 0;
   state.writtenCandidateFailure = false;
   state.failCleanup = false;
@@ -308,7 +313,11 @@ const run = (checkId, extra = {}) =>
     toolsDirectory: state.root,
     hosted: false,
     ...(checkId === "tests"
-      ? { artifact: path.join(state.root, "runtime.tar.gz"), coverage: "measure" }
+      ? {
+          matrixKey: "others",
+          artifact: path.join(state.root, "runtime.tar.gz"),
+          coverage: "measure",
+        }
       : {}),
     ...extra,
   });
@@ -386,13 +395,8 @@ describe("共享runner的调度、来源和失败传播", () => {
     const result = await run("tests", { coverage: undefined });
     expect(result.status).toBe("passed");
     expect(state.calls.map(({ name }) => name)).toEqual([]);
-    expect(result.projects.map(({ id }) => id)).toEqual([
-      "unit",
-      "contracts",
-      "integration",
-      "e2e",
-      "pi-compat",
-    ]);
+    expect(result.projects.map(({ id }) => id)).toEqual(["unit", "contracts", "e2e", "pi-compat"]);
+    expect(state.shard).toBeUndefined();
     expect(result.reports.some((entry) => entry.path.includes("coverage-final.json"))).toBe(false);
     const declared = JSON.parse(readFileSync("ci/policy.json", "utf8")).checks.find(
       (check) => check.id === "tests",
@@ -436,13 +440,23 @@ describe("共享runner的调度、来源和失败传播", () => {
       asked.push(projects);
       return { related: new Map([["integration", []]]), reason: "related" };
     };
-    const plain = await run("tests", { coverage: undefined, planScope });
-    expect(asked).toEqual([["unit", "contracts", "integration", "e2e", "pi-compat"]]);
+    const plain = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope,
+    });
+    expect(asked).toEqual([["integration"]]);
     expect([...state.related]).toEqual([["integration", []]]);
+    expect(state.shard).toEqual({ index: 2, count: 2 });
     expect(plain.relatedProjects).toEqual(["integration"]);
-    await run("tests", { output: ".ci-output/tests-measure", planScope });
+    await run("tests", {
+      output: ".ci-output/tests-measure",
+      matrixKey: "integration-2",
+      planScope,
+    });
     expect(asked).toHaveLength(1);
     expect(state.related.size).toBe(0);
+    expect(state.shard).toBeUndefined();
   });
   it.each([
     ["policy", "measure"],
@@ -450,6 +464,26 @@ describe("共享runner的调度、来源和失败传播", () => {
   ])("[ADR-0267] 拒绝%s的覆盖率选项%s，不启动命令", async (checkId, coverage) => {
     await expect(run(checkId, { coverage })).rejects.toThrow("CI_COVERAGE_OPTION_INVALID");
     expect(state.calls).toEqual([]);
+  });
+  it("[ADR-0275] 全量运行里一份分到零个文件时失败，相关范围下分到零个文件时通过", async () => {
+    state.emptyShard = true;
+    const full = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope: () => ({ related: new Map(), reason: "full-event" }),
+    });
+    expect(full.status).not.toBe("passed");
+    expect(
+      JSON.parse(readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"))
+        .failures,
+    ).toContain("CI_INCOMPLETE_EXECUTION");
+    const related = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      output: ".ci-output/tests-related",
+      planScope: () => ({ related: new Map([["integration", []]]), reason: "related" }),
+    });
+    expect(related.status).toBe("passed");
   });
   it("tests 在缺少构建归档时拒绝启动", async () => {
     await expect(run("tests", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");

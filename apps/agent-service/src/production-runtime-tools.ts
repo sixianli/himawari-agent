@@ -350,6 +350,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
   readonly toolActions?: ToolActionRegistry;
+  readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
   readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
@@ -601,7 +602,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
-    return this.#registry.offer(descriptors);
+    const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
+    return this.#registry.offer(descriptors, { readOnly });
   }
 
   async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {

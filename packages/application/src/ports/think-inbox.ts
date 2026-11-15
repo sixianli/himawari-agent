@@ -38,6 +38,12 @@ export interface ThinkInboxUsage {
   readonly declinedToday: Readonly<Record<string, number>>;
 }
 
+export interface ThinkSettingsRecord {
+  readonly revision: number;
+  readonly overrides: Readonly<Record<string, number>>;
+  readonly updatedAt: string | null;
+}
+
 export interface ThinkInboxStorePort {
   enqueue(
     input: OwnerRuleScope & {
@@ -82,4 +88,12 @@ export interface ThinkInboxStorePort {
   clearSummary(
     input: OwnerRuleScope & { readonly id: string; readonly summaryRef: string },
   ): Promise<boolean>;
+  readSettings(input: OwnerRuleScope): Promise<ThinkSettingsRecord>;
+  changeSettings(
+    input: OwnerRuleScope & {
+      readonly expectedRevision: number;
+      readonly overrides: Readonly<Record<string, number>>;
+      readonly now: string;
+    },
+  ): Promise<ThinkSettingsRecord>;
 }

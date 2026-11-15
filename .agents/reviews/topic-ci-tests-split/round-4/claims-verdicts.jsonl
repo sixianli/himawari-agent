@@ -1,0 +1,1 @@
+{"id": "6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|6|找不到|-|integration 是整次 CI 最慢的一段。|-", "outcome": "model-wrong", "evidenceFile": ".agents/evidence/ci-tests-split-2026-11-15.md", "evidence": "integration | 2021 秒（`\"durationMs\":2021486`"}

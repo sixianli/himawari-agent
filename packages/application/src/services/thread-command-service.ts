@@ -74,6 +74,7 @@ export class ThreadCommandService {
     readonly threadId?: ThreadId;
     readonly idempotencyKey: string;
     readonly answerLocale?: AnswerLocale;
+    readonly origin?: "think";
     readonly resultRef: PayloadRef;
   }) {
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
@@ -89,6 +90,7 @@ export class ThreadCommandService {
       agentId: input.agentId,
       createdAt: this.dependencies.clock.now(),
       ...(input.answerLocale === undefined ? {} : { answerLocale: input.answerLocale }),
+      ...(input.origin === undefined ? {} : { origin: input.origin }),
     });
     return this.dependencies.repository.create({
       thread,

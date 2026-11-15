@@ -19,6 +19,7 @@ export interface DeliveryTimingConfiguration {
   readonly sleepFreshSeconds: number;
   readonly focusFreshSeconds: number;
   readonly connectivityFreshSeconds: number;
+  readonly macPresenceSeconds: number;
 }
 
 export const DELIVERY_TIMING_DEFAULTS: DeliveryTimingConfiguration = Object.freeze({
@@ -33,6 +34,7 @@ export const DELIVERY_TIMING_DEFAULTS: DeliveryTimingConfiguration = Object.free
   sleepFreshSeconds: 1800,
   focusFreshSeconds: 600,
   connectivityFreshSeconds: 300,
+  macPresenceSeconds: 300,
 });
 
 export const DELIVERY_TIMING_RANGES: Readonly<
@@ -49,7 +51,35 @@ export const DELIVERY_TIMING_RANGES: Readonly<
   sleepFreshSeconds: [60, 14_400],
   focusFreshSeconds: [60, 14_400],
   connectivityFreshSeconds: [10, 3600],
+  macPresenceSeconds: [30, 3600],
 });
+
+export const DELIVERY_TIMING_KEYS = Object.freeze(
+  Object.keys(DELIVERY_TIMING_DEFAULTS) as (keyof DeliveryTimingConfiguration)[],
+);
+
+export function deliveryTimingOverrideValue(
+  key: keyof DeliveryTimingConfiguration,
+  overrides: Readonly<Record<string, number>>,
+): number | undefined {
+  const value = overrides[key];
+  const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
+  return Number.isSafeInteger(value) && value !== undefined && value >= minimum && value <= maximum
+    ? value
+    : undefined;
+}
+
+export function applyDeliveryTimingOverrides(
+  base: DeliveryTimingConfiguration,
+  overrides: Readonly<Record<string, number>>,
+): DeliveryTimingConfiguration {
+  const next: Record<string, number> = { ...base };
+  for (const key of DELIVERY_TIMING_KEYS) {
+    const value = deliveryTimingOverrideValue(key, overrides);
+    if (value !== undefined) next[key] = value;
+  }
+  return Object.freeze(next) as unknown as DeliveryTimingConfiguration;
+}
 
 export const DELIVERY_TIMING_SIGNALS = [
   "speech",

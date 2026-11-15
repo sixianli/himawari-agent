@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -21,6 +21,10 @@ export const newStaticRoot = `${newPrefix}/share/control-center`;
 export const sqliteDriverRoot = `${newPrefix}/lib/himawari-agent`;
 export const node = "/opt/himawari/node/bin/node";
 export const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+export function definitionsForLedger(migrations, ledgerIds) {
+  const definitions = new Map(migrations.map((migration) => [ledgerMigrationId(migration), migration]));
+  return ledgerIds.map((row) => definitions.get(ledgerMigrationId(row)));
+}
 
 function present(filename) {
   try {
@@ -930,10 +934,10 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
     assert(migrations.length >= ledger.length, "__PKT_LABEL_UPPER___MAINTENANCE_MIGRATIONS_TOO_OLD");
     const idColumn = rows(database, "SELECT 1 AS present FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'", []).length === 1;
     const ledgerIds = idColumn ? rows(database, "SELECT sequence, migration_id AS id FROM schema_migration_ledger ORDER BY sequence", []) : ledger;
-    const definitions = new Map(migrations.map((migration) => [migration.id, migration]));
+    const definitions = definitionsForLedger(migrations, ledgerIds);
     for (let index = 0; index < ledger.length; index += 1) {
       assert.equal(ledger[index].sequence, index + 1, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
-      const definition = definitions.get(ledgerIds[index].id ?? String(ledger[index].sequence).padStart(4, "0"));
+      const definition = definitions[index];
       assert(definition, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
       for (const key of ["name", "phase", "digest"]) assert.equal(ledger[index][key], definition[key], "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
     }

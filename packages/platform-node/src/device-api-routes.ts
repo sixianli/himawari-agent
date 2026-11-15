@@ -6,9 +6,10 @@ import { pipeline } from "node:stream/promises";
 import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
+  DEVICE_ACTION_ID_PATTERN,
   DEVICE_ACTION_OPEN_STATES,
   DEVICE_ACTION_RECORD_STATES,
-  type AuditLedgerPort,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
   type DeviceActionService,
@@ -51,6 +52,11 @@ import {
   type DeviceGateways,
   dispatchDeviceGatewayRequest,
 } from "./device-gateway.js";
+import {
+  type DeviceNotificationHub,
+  type DevicePresence,
+  withDeviceNotifications,
+} from "./device-notification-hub.js";
 import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from "./device-push.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
@@ -65,6 +71,10 @@ import {
   parseTextAdmission,
   type TextAdmissionClassification,
 } from "./text-admission.js";
+
+const ISO_MILLISECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const NOTIFICATION_ID = /^[A-Za-z0-9_-]{1,64}$/u;
+const SETTLED_MAXIMUM_IDS = 200;
 
 export const DEVICE_API_PREFIX = "/api/device/v1" as const;
 export const DEVICE_MANAGEMENT_PREFIX = "/api/devices/v1" as const;
@@ -106,7 +116,10 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "actions/claim", signed: true },
   { method: "POST", path: "actions/result", signed: true },
   { method: "POST", path: "actions/open", signed: true },
+  { method: "POST", path: "presence", signed: true },
+  { method: "POST", path: "notifications/settled", signed: true },
   { method: "POST", path: "actions/supported", signed: true },
+  { method: "POST", path: "actions/undo", signed: true },
   { method: "GET", path: "actions/policy", signed: true },
   { method: "POST", path: "actions/policy", signed: true },
 ] as const);
@@ -261,6 +274,14 @@ export interface DeviceApiRouteOptions {
   readonly actions?: {
     readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
     readonly hub: DeviceActionHub;
+  };
+  readonly notifications?: {
+    readonly hub: DeviceNotificationHub;
+    readonly presence: DevicePresence;
+    readonly settled: (input: {
+      readonly scope: PairedDeviceScope;
+      readonly ids: readonly string[];
+    }) => Promise<readonly string[]>;
   };
   readonly voiceGates?: () => VoiceGates;
   readonly addressee?: (input: {
@@ -846,6 +867,51 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         });
       });
 
+      device.post("/presence", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        if (authenticated.device.kind !== "mac") options.rejectNotAllowed();
+        const notifications = options.notifications;
+        if (!notifications)
+          return options.sendJson(reply, 200, { ok: false, reason: "unavailable" });
+        const body = json(request);
+        const lastInputAt = body["lastInputAt"];
+        if (
+          Object.keys(body).some((key) => key !== "lastInputAt") ||
+          typeof lastInputAt !== "string" ||
+          !ISO_MILLISECONDS.test(lastInputAt)
+        )
+          options.rejectBody(400);
+        const reported = Date.parse(lastInputAt as string);
+        if (!Number.isFinite(reported)) options.rejectBody(400);
+        const serverTime = now();
+        notifications.presence.record(
+          authenticated.device.id,
+          Math.min(reported, serverTime.getTime()),
+        );
+        return options.sendJson(reply, 200, { ok: true, serverTime: serverTime.toISOString() });
+      });
+
+      device.post("/notifications/settled", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const notifications = options.notifications;
+        if (!notifications) return options.sendJson(reply, 200, { settledIds: [] });
+        const body = json(request);
+        const ids = body["ids"];
+        if (
+          Object.keys(body).some((key) => key !== "ids") ||
+          !Array.isArray(ids) ||
+          ids.length > SETTLED_MAXIMUM_IDS ||
+          ids.some((id) => typeof id !== "string" || !NOTIFICATION_ID.test(id))
+        )
+          options.rejectBody(400);
+        return options.sendJson(reply, 200, {
+          settledIds: await notifications.settled({
+            scope: scope(authenticated.authentication),
+            ids: ids as string[],
+          }),
+        });
+      });
+
       device.post("/actions/open", async (request, reply) => {
         const authenticated = await authenticate(request);
         only(json(request), []);
@@ -866,6 +932,26 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         return options.sendJson(reply, result.kind === "not_found" ? 404 : 409, {
           code: `DEVICE_ACTION_${result.kind.toUpperCase()}`,
         });
+      });
+
+      device.post("/actions/undo", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        only(body, ["id"]);
+        if (typeof body["id"] !== "string" || !DEVICE_ACTION_ID_PATTERN.test(body["id"]))
+          return options.rejectBody(400);
+        const outcome = await actions(authenticated).undo({
+          device: authenticated.device,
+          actionId: body["id"],
+          ownerPresent: authenticated.confirmed,
+        });
+        if (outcome.kind === "not_found" || outcome.kind === "not_undoable")
+          return options.sendJson(reply, outcome.kind === "not_found" ? 404 : 409, {
+            code: `DEVICE_ACTION_${outcome.kind.toUpperCase()}`,
+          });
+        if (outcome.kind !== "recorded")
+          return options.sendJson(reply, 409, { code: "DEVICE_ACTION_NOT_UNDOABLE" });
+        return options.sendJson(reply, 200, { id: outcome.actionId, state: outcome.state });
       });
 
       device.post("/actions/supported", async (request, reply) => {
@@ -1512,10 +1598,19 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           actor: { actorType: "owner", actorId: authentication.ownerId },
           payload: { afterCursor: after },
         }) as ThreadGatewaySubscription;
-        const signalled = (source: AsyncGenerator<string>) =>
-          options.actions
+        const mac = authenticated.device.kind === "mac";
+        const signalled = (source: AsyncGenerator<string>) => {
+          const withActions = options.actions
             ? withDeviceActionSignals(source, options.actions.hub, authenticated.device.id)
             : source;
+          return mac && options.notifications
+            ? withDeviceNotifications(
+                withActions,
+                options.notifications.hub,
+                authenticated.device.id,
+              )
+            : withActions;
+        };
         const stream = Readable.from(
           bounded(
             signalled(
@@ -1536,8 +1631,10 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           ),
         );
         holdStream(authenticated.device.id, stream, configuration.streamConnections, reply.raw);
-        options.push?.streamOpened(authenticated.device.id);
-        stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
+        if (!mac) {
+          options.push?.streamOpened(authenticated.device.id);
+          stream.once("close", () => options.push?.streamClosed(authenticated.device.id));
+        }
         try {
           options.setStreamHeaders(reply);
           return reply.send(stream);

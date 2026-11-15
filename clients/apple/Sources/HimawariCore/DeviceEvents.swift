@@ -8,6 +8,7 @@ public enum DeviceStreamEvent: Sendable, Equatable {
     case notificationDeliver(DeviceNotification)
     case notificationWithdraw(id: String)
     case resyncRequired
+    case deviceActions
     case sessionInvalid
     case unavailable
     case disconnected
@@ -40,6 +41,8 @@ public enum DeviceEventDecoder {
         case "notification.withdraw":
             struct Withdraw: Decodable { let id: String }
             return (try? JSONDecoder().decode(Withdraw.self, from: data)).map { .notificationWithdraw(id: $0.id) }
+        case "device.actions":
+            return .deviceActions
         case "thread.snapshot_required":
             return .resyncRequired
         case "thread.execution_unavailable":

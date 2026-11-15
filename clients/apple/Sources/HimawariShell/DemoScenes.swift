@@ -3,6 +3,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
+import HimawariManage
 import HimawariListenUI
 import HimawariManage
 import HimawariShare
@@ -18,6 +19,7 @@ enum DemoScene: String, CaseIterable {
     case ruleDetail = "18-memory-more-3-rule-detail"
     case settings = "08-settings"
     case device = "19-settings-more-1-device"
+    case deviceAbilities = "19-settings-more-1-abilities"
     case addDevice = "19-settings-more-2-add-device"
     case addDeviceAsking = "19-settings-more-3-new-device"
     case addDeviceExpired = "19-settings-more-4-code-expired"
@@ -26,6 +28,7 @@ enum DemoScene: String, CaseIterable {
     case exportReady = "19-settings-more-7-export-ready"
     case capabilities = "20-himawari-self-1-capabilities"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
+    case proposals = "20-himawari-self-3-proposals"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -40,6 +43,13 @@ enum DemoScene: String, CaseIterable {
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case tabTodayOneDigit = "tab-today-1-digit"
+    case actionsToday = "01-today-device-actions"
+    case actionsDetail = "17-today-more-2-detail"
+    case actionsDetailFace = "17-today-more-3-detail-face-id"
+    case actionsApprovals = "17-today-more-1-approvals"
+    case actionsPrimer = "19-settings-more-2-permission-primer"
+    case actionsPrimerDenied = "19-settings-more-3-permission-denied"
+    case actionsTodayEmpty = "01-today-device-actions-empty"
     case listenIntro = "23-listen-1"
     case listenEnroll = "23-listen-2"
     case listenLive = "23-listen-3"
@@ -64,7 +74,6 @@ enum DemoScene: String, CaseIterable {
     static let argument = "-HimawariDemoScene"
     static let demoHost = "himawari.example.com"
     static let shownMarker = "himawari-demo-scene-shown"
-
     static var requested: DemoScene? {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: argument), arguments.indices.contains(index + 1) else { return nil }
@@ -122,6 +131,22 @@ struct DemoSceneView: View {
         case .motionTabs:
             tabs(DemoChatFixtures.chatList())
                 .environment(\.tabsCycleEvery, 3)
+        case .actionsToday:
+            tabs(DemoChatFixtures.chatList(), tab: .today)
+        case .actionsTodayEmpty:
+            tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true))
+        case .actionsDetail:
+            approvalDetail(at: 0)
+        case .actionsDetailFace:
+            approvalDetail(at: 1)
+        case .actionsApprovals:
+            ApprovalsView(model: .demo(), openThread: { _ in }) {}
+        case .actionsPrimer:
+            PermissionPrimerView(permission: DeviceActionsModel.demoPermission, ask: {}, close: {})
+                .himawariScreenBackground()
+        case .actionsPrimerDenied:
+            PermissionPrimerView(permission: DeviceActionsModel.demoDeniedPermission, ask: {}, close: {})
+                .himawariScreenBackground()
         case .chat:
             chat(DemoChatFixtures.answered())
         case .chatNew:
@@ -175,14 +200,19 @@ struct DemoSceneView: View {
             PairingView(model: .demo(.unpaired(.removed)))
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .addDevice, .addDeviceAsking,
-            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
+            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers, .proposals:
             EmptyView()
         }
     }
 
-    private func tabs(_ state: DemoChatState) -> some View {
-        MainTabsView(model: .demo(.active), chat: .demo(state))
+    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo()) -> some View {
+        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, tab: tab)
+    }
+
+    private func approvalDetail(at index: Int) -> some View {
+        let actions = DeviceActionsModel.demo()
+        return ApprovalDetailView(model: actions, approval: actions.pending[index], openThread: { _ in }) {}
     }
 
     private func chat(_ state: DemoChatState) -> some View {
