@@ -33,7 +33,10 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         applyShortcut(model.settings.settings.shortcut)
         model.settings.onShortcutChange = { [weak self] in self?.applyShortcut($0) }
         notices.prepare()
-        notices.openPanel = { [weak self] in self?.showPanel() }
+        notices.openPanel = { [weak self] id in
+            self?.model.reveal(id)
+            self?.showPanel()
+        }
         model.showNotice = { [weak self] in self?.notices.show($0) }
         model.removeNotice = { [weak self] in self?.notices.withdraw($0) }
         model.app.onDeviceNotification = { [weak model] in model?.receive($0) }
@@ -311,7 +314,7 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert]) { _, _ in }
     }
 
-    var openPanel: (() -> Void)?
+    var openPanel: ((String) -> Void)?
 
     static func noticeIdentifier(_ id: String) -> String { "himawari.notice." + id }
 
@@ -345,12 +348,12 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let id = info["actionId"] as? String ?? ""
-        let isNotice = info["noticeId"] is String
+        let noticeId = info["noticeId"] as? String
         let files = (info["files"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
         let action = response.actionIdentifier
         await MainActor.run {
-            if isNotice {
-                if action == UNNotificationDefaultActionIdentifier { openPanel?() }
+            if let noticeId {
+                if action == UNNotificationDefaultActionIdentifier { openPanel?(noticeId) }
                 return
             }
             switch action {

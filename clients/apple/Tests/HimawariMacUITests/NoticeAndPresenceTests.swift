@@ -95,6 +95,19 @@ import Testing
         #expect(!menu.noticesExpanded)
     }
 
+    @Test func openingAnOlderNoticeUnfoldsTheListButTheNewestOneLeavesItFolded() {
+        let menu = model()
+        menu.receive(.notificationDeliver(DeviceNotification(id: "n-1", kind: "run_result", title: "a", body: "", homeKey: nil, createdAt: "2026-11-15T01:00:00.000Z")))
+        menu.receive(.notificationDeliver(DeviceNotification(id: "n-2", kind: "run_result", title: "b", body: "", homeKey: nil, createdAt: "2026-11-15T02:00:00.000Z")))
+        menu.reveal("n-2")
+        #expect(!menu.noticesExpanded)
+        menu.reveal("gone")
+        #expect(!menu.noticesExpanded)
+        menu.reveal("n-1")
+        #expect(menu.noticesExpanded)
+        #expect(menu.olderNotices.map(\.id) == ["n-1"])
+    }
+
     @Test func theSystemIdleTimeCanBeRead() throws {
         let seconds = try #require(PresenceSensor.secondsSinceInput())
         #expect(seconds >= 0)

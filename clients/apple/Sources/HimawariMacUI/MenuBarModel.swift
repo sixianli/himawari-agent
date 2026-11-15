@@ -80,6 +80,10 @@ final class MenuBarModel {
         noticesExpanded.toggle()
     }
 
+    func reveal(_ id: String) {
+        if olderNotices.contains(where: { $0.id == id }) { noticesExpanded = true }
+    }
+
     func receive(_ event: DeviceStreamEvent) {
         rememberSettled()
         switch event {
