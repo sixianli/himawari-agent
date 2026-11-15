@@ -42,7 +42,8 @@ import Testing
         #expect(exchange.requests[1].url?.path == "/api/device/v1/actions/undo")
         let input = try #require(exchange.requests[1].value(forHTTPHeaderField: "Signature-Input"))
         #expect(input.components(separatedBy: challenge).count - 1 == 2)
-        let body = try #require(JSONSerialization.jsonObject(with: try #require(exchange.requests[1].httpBody)) as? [String: Any])
+        let data = try #require(exchange.requests[1].httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(body["id"] as? String == "dact_1")
     }
 
