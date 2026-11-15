@@ -153,11 +153,18 @@ function cloneFrom(entries) {
   return database;
 }
 
+function snapshotOf(entries) {
+  const database = cloneFrom(entries);
+  const result = snapshot(database);
+  database.close();
+  return result;
+}
+
 function tableOf(key) {
   return key.slice(key.indexOf(":") + 1);
 }
 
-export function analyzeMigrations({ base, added, meta = {} }) {
+export function analyzeMigrations({ base, added, meta = {}, sequential = false }) {
   const problems = [];
   const ids = new Set();
   for (const entry of added) {
@@ -183,8 +190,13 @@ export function analyzeMigrations({ base, added, meta = {} }) {
 
   const touched = new Map();
   const written = new Map();
-  for (const entry of added) {
-    const database = cloneFrom(base);
+  const ordered = sequential
+    ? [...added].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+    : added;
+  for (const [position, entry] of ordered.entries()) {
+    const stepBase = sequential ? [...base, ...ordered.slice(0, position)] : base;
+    const stepBaseSnapshot = sequential ? snapshotOf(stepBase) : baseSnapshot;
+    const database = cloneFrom(stepBase);
     const rowsBefore = tableRows(database);
     const sqlBefore = new Map(
       database
@@ -197,9 +209,10 @@ export function analyzeMigrations({ base, added, meta = {} }) {
     } catch (error) {
       problems.push(`MIGRATION_FAILS ${entry.file}: ${error.message}`);
       database.close();
+      if (sequential) break;
       continue;
     }
-    const diff = diffSnapshots(baseSnapshot, snapshot(database));
+    const diff = diffSnapshots(stepBaseSnapshot, snapshot(database));
     const rowsAfter = tableRows(database);
     const sqlAfter = new Map(
       database
@@ -251,7 +264,8 @@ export function analyzeMigrations({ base, added, meta = {} }) {
   if (problems.length > 0) return problems;
 
   const sorted = [...added].sort((left, right) => (left.id < right.id ? -1 : 1));
-  for (let i = 0; i < sorted.length; i += 1) {
+  const pairLimit = sequential ? 0 : sorted.length;
+  for (let i = 0; i < pairLimit; i += 1) {
     for (let j = i + 1; j < sorted.length; j += 1) {
       const left = sorted[i];
       const right = sorted[j];
@@ -393,6 +407,6 @@ export function checkAgainstApplied({ entries, applied, meta = {} }) {
   const isLegacy = (entry) => /^\d{4}$/.test(entry.id);
   const base = [...appliedIds.map((id) => byId.get(id)), ...pending.filter(isLegacy)];
   const added = pending.filter((entry) => !isLegacy(entry));
-  problems.push(...analyzeMigrations({ base, added, meta }));
+  problems.push(...analyzeMigrations({ base, added, meta, sequential: true }));
   return problems;
 }
