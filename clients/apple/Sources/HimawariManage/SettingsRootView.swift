@@ -12,6 +12,8 @@ public struct SettingsRootView: View {
         case export
         case proposals
         case approvals
+        case tuningList(TuningKind)
+        case tuningEdit(TuningKind, String)
     }
 
     @State private var store: SettingsStore
@@ -66,12 +68,20 @@ public struct SettingsRootView: View {
                 }
                 if store.phase == .loaded {
                     DevicesGroup(store: store, open: { path.append(.device($0.id)) }, add: { path.append(.addDevice) })
-                    if Self.exportDownloadAvailable {
+                    if Self.exportDownloadAvailable || store.tuning[.delivery] != nil {
                         SettingsGroup(label: M.general) {
-                            Button { path.append(.export) } label: {
-                                SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: true)
+                            if Self.exportDownloadAvailable {
+                                Button { path.append(.export) } label: {
+                                    SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: store.tuning[.delivery] == nil)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            if store.tuning[.delivery] != nil {
+                                Button { path.append(.tuningList(.delivery)) } label: {
+                                    SettingsRow(icon: .bell, title: M.notificationsTitle, chevron: true, last: true)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                     SettingsGroup(label: M.himawariSelf) {
@@ -85,6 +95,17 @@ public struct SettingsRootView: View {
                                     icon: .bulb,
                                     title: M.proposalsTitle,
                                     value: proposals.proposals.isEmpty ? M.proposalsNone : "\(proposals.proposals.count)",
+                                    chevron: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if let think = store.tuning[.think] {
+                            Button { path.append(.tuningList(.think)) } label: {
+                                SettingsRow(
+                                    icon: .clock,
+                                    title: M.thinkTitle,
+                                    value: think.isEnabled ? nil : M.tuningDisabled,
                                     chevron: true
                                 )
                             }
@@ -128,6 +149,10 @@ public struct SettingsRootView: View {
                 case .loginBrowsers: LoginDevicesPage(store: store) { path.removeLast() }
                 case .proposals: ProposalsPage(store: store) { path.removeLast() }
                 case .export: DataExportPage(session: store.export) { path.removeLast() }
+                case .tuningList(let kind):
+                    TuningListPage(store: store, kind: kind, open: { path.append(.tuningEdit(kind, $0)) }) { path.removeLast() }
+                case .tuningEdit(let kind, let key):
+                    TuningEditPage(store: store, kind: kind, key: key) { path.removeLast() }
                 case .approvals:
                     if let actions { ApprovalsView(model: actions, openThread: openThread) { path.removeLast() } }
                 }

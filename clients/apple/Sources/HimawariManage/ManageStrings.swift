@@ -268,6 +268,70 @@ enum M {
     }
 
     static var yourWords: String { text("你的原话", ja: "あなたの言葉", en: "Your words") }
+    struct TuningCopy {
+        let name: String
+        let note: String
+        let unit: String?
+    }
+
+    static func tuningCopy(_ kind: TuningKind, key: String, serverUnit: String?) -> TuningCopy {
+        let entry: (String, String, String?)? = switch key {
+        case "yesAtLeastPermille": (text("值得想的门槛", ja: "考える価値ありの基準", en: "Worth thinking about"), text("判断“值得想”至少要多有把握", ja: "「考える価値あり」と判断する最低限の確信度", en: "Least confidence to call it worth thinking about"), nil)
+        case "noAtMostPermille": (text("不值得想的门槛", ja: "考える価値なしの基準", en: "Not worth thinking about"), text("判断“不值得”最多有多少把握，中间算拿不准，不想", ja: "「価値なし」と判断する最大の確信度。間は迷いとして考えません", en: "Most confidence to call it not worth it; in between counts as unsure and is skipped"), nil)
+        case "queueLimit": (text("排队上限", ja: "待ち行列の上限", en: "Queue limit"), text("最多同时排几件", ja: "同時に並べられる件数", en: "Most items waiting at once"), nil)
+        case "dailyLimit": (text("每天上限", ja: "1日の上限", en: "Daily limit"), text("每天最多收多少件", ja: "1日に受け付ける最大件数", en: "Most items accepted per day"), nil)
+        case "expiresAfterHours": (text("排队多久作废", ja: "待ちの有効時間", en: "Queue expiry"), text("排队这么久还没想就作废", ja: "この時間考えなかったら取り消します", en: "Dropped if not thought about by then"), nil)
+        case "stalledAfterMinutes": (text("多久算卡住", ja: "止まったと見なす時間", en: "Stalled after"), text("“在想”卡这么久就算卡住", ja: "考え中のままこの時間たつと止まったと見なします", en: "A thought stuck this long counts as stalled"), nil)
+        case "maxAttempts": (text("最多重试", ja: "再試行の上限", en: "Retries"), text("一件事最多试几次", ja: "1件あたりの最大試行回数", en: "Most attempts per item"), nil)
+        case "summaryCharacters": (text("摘要长度", ja: "要約の長さ", en: "Summary length"), text("摘要最多多少字", ja: "要約の最大文字数", en: "Most characters in a summary"), nil)
+        case "idleSeconds": (text("空闲查看间隔", ja: "待機中の確認間隔", en: "Idle check interval"), text("没事时隔多久查一次", ja: "何もないときに確認する間隔", en: "How often to look when idle"), nil)
+        case "runTimeoutMinutes": (text("单次最长时间", ja: "1回の最長時間", en: "Longest run"), text("一次想一想最长跑多久", ja: "1回の考える処理の最長時間", en: "Longest a single think may run"), nil)
+        case "busyAtLeastPermille": (text("判忙门槛", ja: "取り込み中の基準", en: "Busy threshold"), text("至少多有把握才算你正忙，忙就先不打扰", ja: "これ以上の確信度で取り込み中と見なし、通知を控えます", en: "How sure it must be that you're busy before holding back"), text("千分比", ja: "‰", en: "per mille"))
+        case "recheckSeconds": (text("复查间隔", ja: "再確認の間隔", en: "Recheck interval"), text("扣下的通知隔多久再看一次", ja: "保留した通知を再確認する間隔", en: "How often to look again at a held notification"), text("秒", ja: "秒", en: "s"))
+        case "timeoutMs": (text("问模型超时", ja: "モデル確認の期限", en: "Model timeout"), text("问模型判断的最长等待", ja: "モデルに判断を聞く最長の待ち時間", en: "Longest wait for the model's call"), text("毫秒", ja: "ミリ秒", en: "ms"))
+        case "perMinute": (text("每分钟最多问几次", ja: "1分あたりの確認回数", en: "Asks per minute"), text("每分钟最多问模型几次", ja: "1分間にモデルへ聞く最大回数", en: "Most model checks per minute"), text("次", ja: "回", en: "times"))
+        case "reminderMaximumDeferSeconds": (text("提醒最多扣多久", ja: "リマインドの最大保留", en: "Most to hold a reminder"), text("提醒最多往后扣这么久", ja: "リマインドをここまで遅らせます", en: "A reminder is held back at most this long"), text("秒", ja: "秒", en: "s"))
+        case "maximumDeferSeconds": (text("其余通知最多扣多久", ja: "ほかの通知の最大保留", en: "Most to hold others"), text("其余通知最多往后扣这么久", ja: "ほかの通知をここまで遅らせます", en: "Other notifications are held back at most this long"), text("秒", ja: "秒", en: "s"))
+        case "speechFreshSeconds": (text("说话状态多新算新", ja: "会話状態の鮮度", en: "Speech freshness"), text("听到说话多久内算“正在说话”", ja: "会話を検知してからこの間は会話中と見なします", en: "How recent speech counts as happening now"), text("秒", ja: "秒", en: "s"))
+        case "motionFreshSeconds": (text("运动状态多新算新", ja: "動きの鮮度", en: "Motion freshness"), text("动作信息多久内算有效", ja: "動きの情報が有効な時間", en: "How recent motion data counts"), text("秒", ja: "秒", en: "s"))
+        case "sleepFreshSeconds": (text("睡眠状态多新算新", ja: "睡眠状態の鮮度", en: "Sleep freshness"), text("睡眠信息多久内算有效", ja: "睡眠の情報が有効な時間", en: "How recent sleep data counts"), text("秒", ja: "秒", en: "s"))
+        case "focusFreshSeconds": (text("专注状态多新算新", ja: "集中モードの鮮度", en: "Focus freshness"), text("专注模式信息多久内算有效", ja: "集中モードの情報が有効な時間", en: "How recent Focus data counts"), text("秒", ja: "秒", en: "s"))
+        case "connectivityFreshSeconds": (text("网络状态多新算新", ja: "接続状態の鮮度", en: "Connectivity freshness"), text("网络信息多久内算有效", ja: "接続の情報が有効な時間", en: "How recent connectivity data counts"), text("秒", ja: "秒", en: "s"))
+        default: nil
+        }
+        let unit = entry?.2 ?? serverUnit.map(tuningUnit)
+        return TuningCopy(name: entry?.0 ?? key, note: entry?.1 ?? "", unit: unit)
+    }
+
+    static func tuningUnit(_ unit: String) -> String {
+        switch unit {
+        case "permille": text("千分比", ja: "‰", en: "per mille")
+        case "count": text("件", ja: "件", en: "items")
+        case "hours": text("小时", ja: "時間", en: "hours")
+        case "minutes": text("分钟", ja: "分", en: "min")
+        case "characters": text("字", ja: "文字", en: "chars")
+        case "seconds": text("秒", ja: "秒", en: "s")
+        default: unit
+        }
+    }
+
+    static var on: String { text("开", ja: "オン", en: "On") }
+    static var off: String { text("关", ja: "オフ", en: "Off") }
+    static var notificationsTitle: String { text("通知", ja: "通知", en: "Notifications") }
+    static var deliveryGroup: String { text("什么时候送", ja: "いつ届けるか", en: "When to deliver") }
+    static var thinkTitle: String { text("想一想的门槛", ja: "考える基準", en: "Thinking thresholds") }
+    static var tuningDisabled: String { text("未开启", ja: "オフ", en: "Off") }
+    static var tuningSave: String { text("保存", ja: "保存", en: "Save") }
+    static var tuningRestore: String { text("恢复默认", ja: "初期値に戻す", en: "Restore default") }
+    static var tuningSaveFailed: String { text("没能保存", ja: "保存できませんでした", en: "Couldn't save") }
+    static func tuningDefault(_ value: Int, unit: String?) -> String {
+        let tail = unit.map { " \($0)" } ?? ""
+        return text("默认 \(value)\(tail)", ja: "初期値 \(value)\(tail)", en: "Default \(value)\(tail)")
+    }
+    static func confirmTuning(_ name: String) -> String {
+        text("修改“\(name)”", ja: "「\(name)」を変更", en: "Change \(name)")
+    }
+
     static var general: String { text("通用", ja: "一般", en: "General") }
     static var exportTitle: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export memories and rules") }
     static var confirmExport: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export your memories and rules") }

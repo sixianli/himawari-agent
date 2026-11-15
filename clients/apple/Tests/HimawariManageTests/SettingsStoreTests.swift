@@ -104,6 +104,8 @@ final class SettingsStoreTests: XCTestCase {
             return #"{"payload":{"devices":[{"deviceId":"login_web","label":"Mac 上的 Safari","firstSeenAt":"2026-11-01T00:00:00Z","lastSeenAt":"2026-11-12T00:00:00Z","current":true},{"deviceId":"login_old","label":"Windows 上的 Chrome","firstSeenAt":"2026-10-01T00:00:00Z","lastSeenAt":"2026-11-09T00:00:00Z","current":false}],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "files.list.read":
             return files(origin: payloadString(body, "origin") ?? "", before: payloadString(body, "before"))
+        case "think.settings.read":
+            return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","overridden":false}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
         case "server.status.read":
             return #"{"payload":{"live":true,"ready":false,"status":"not_ready","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         default:
@@ -137,6 +139,22 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(payload["reasonCode"], .string("owner_disabled"))
         XCTAssertEqual(payload["recentAuthenticationRef"], .string(ClientCapabilities.referencePlaceholder))
         XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
+    }
+
+    func testTuningLoadsAndChangingAValueSendsTheRevisionAndKey() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        XCTAssertEqual(settings.tuning[.think]?.items.map(\.key), ["queueLimit"])
+        XCTAssertNil(settings.tuning[.delivery])
+        XCTAssertEqual(settings.tuning[.think]?.items.first?.step, 10)
+        try await settings.changeTuning(.think, key: "queueLimit", value: 30, reason: "改")
+        try await settings.changeTuning(.think, key: "queueLimit", value: nil, reason: "改")
+        let sent = await transport.sent.filter { $0["type"] == "think.settings.change" }
+        XCTAssertEqual(sent.count, 2)
+        guard case .object(let first)? = sent[0]["payload"], case .object(let second)? = sent[1]["payload"] else { return XCTFail() }
+        XCTAssertEqual(first, ["expectedRevision": .number(4), "key": .string("queueLimit"), "value": .number(30)])
+        XCTAssertEqual(second["value"], .null)
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
