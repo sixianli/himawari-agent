@@ -10,6 +10,7 @@ public struct SettingsRootView: View {
         case files
         case loginBrowsers
         case export
+        case proposals
         case approvals
     }
 
@@ -78,6 +79,17 @@ public struct SettingsRootView: View {
                             SettingsRow(icon: .bolt, title: M.capabilities, value: "\(store.capabilityCount)", chevron: true)
                         }
                         .buttonStyle(.plain)
+                        if let proposals = store.proposals {
+                            Button { path.append(.proposals) } label: {
+                                SettingsRow(
+                                    icon: .bulb,
+                                    title: M.proposalsTitle,
+                                    value: proposals.proposals.isEmpty ? M.proposalsNone : "\(proposals.proposals.count)",
+                                    chevron: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Button { path.append(.files) } label: {
                             SettingsRow(icon: .fileText, title: M.files, chevron: true)
                         }
@@ -114,6 +126,7 @@ public struct SettingsRootView: View {
                 case .addDevice: AddDevicePage(store: store) { path.removeLast() }
                 case .files: StoredFilesPage(store: store) { path.removeLast() }
                 case .loginBrowsers: LoginDevicesPage(store: store) { path.removeLast() }
+                case .proposals: ProposalsPage(store: store) { path.removeLast() }
                 case .export: DataExportPage(session: store.export) { path.removeLast() }
                 case .approvals:
                     if let actions { ApprovalsView(model: actions, openThread: openThread) { path.removeLast() } }

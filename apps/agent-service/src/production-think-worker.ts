@@ -39,6 +39,7 @@ export interface ThinkWorkerOptions {
   };
   readonly runner: ThinkRunner;
   readonly runTimeoutMs: number;
+  readonly overrides?: () => Promise<Readonly<Record<string, number>>>;
   readonly onFailure?: (entryId: string, error: unknown) => void;
 }
 
@@ -77,11 +78,16 @@ export class ProductionThinkWorker {
       return { status: "done" as const, entryId: entry.id, outcome: to, reasonCode };
     };
     try {
+      const overrides = (await this.#options.overrides?.().catch(() => undefined)) ?? {};
+      const runTimeoutMs =
+        overrides["runTimeoutMinutes"] === undefined
+          ? this.#options.runTimeoutMs
+          : overrides["runTimeoutMinutes"] * 60_000;
       const source = this.#options.inbox.sources.get(entry.sourceKind);
       if (!source) return await settle("failed", "source_unregistered");
       const summary = await this.#summary(entry);
       if (summary === undefined) return await settle("failed", "summary_missing");
-      const verdict = await this.#decide(entry, source.describe, summary, signal).catch(
+      const verdict = await this.#decide(entry, source.describe, summary, overrides, signal).catch(
         (error: unknown) => {
           report(entry.id, error);
           return undefined;
@@ -97,8 +103,8 @@ export class ProductionThinkWorker {
         entry,
         summary,
         signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(this.#options.runTimeoutMs)])
-          : AbortSignal.timeout(this.#options.runTimeoutMs),
+          ? AbortSignal.any([signal, AbortSignal.timeout(runTimeoutMs)])
+          : AbortSignal.timeout(runTimeoutMs),
       });
       return await settle(run.outcome, run.reasonCode.slice(0, 64));
     } catch (error) {
@@ -124,6 +130,7 @@ export class ProductionThinkWorker {
     entry: StoredThinkEntry,
     sourceDescription: string,
     summary: string,
+    overrides: Readonly<Record<string, number>>,
     signal?: AbortSignal,
   ) {
     const worth = this.#options.worth;
@@ -140,8 +147,14 @@ export class ProductionThinkWorker {
       signal ? AbortSignal.any([signal, timeout]) : timeout,
     );
     return judgeThinkWorth(answer, {
-      yesAtLeastPermille: worth.yesAtLeastPermille ?? THINK_WORTH_DEFAULTS.yesAtLeastPermille,
-      noAtMostPermille: worth.noAtMostPermille ?? THINK_WORTH_DEFAULTS.noAtMostPermille,
+      yesAtLeastPermille:
+        overrides["yesAtLeastPermille"] ??
+        worth.yesAtLeastPermille ??
+        THINK_WORTH_DEFAULTS.yesAtLeastPermille,
+      noAtMostPermille:
+        overrides["noAtMostPermille"] ??
+        worth.noAtMostPermille ??
+        THINK_WORTH_DEFAULTS.noAtMostPermille,
     });
   }
 }

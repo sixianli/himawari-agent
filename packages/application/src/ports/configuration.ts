@@ -390,12 +390,6 @@ export interface ThinkWorthConfiguration {
   readonly requestTimeoutMs: number;
 }
 
-export const THINK_WORTH_DEFAULTS = Object.freeze({
-  yesAtLeastPermille: 700,
-  noAtMostPermille: 300,
-  requestTimeoutMs: 15_000,
-});
-
 export interface ThinkInboxConfiguration {
   readonly worth?: ThinkWorthConfiguration;
   readonly queueLimit?: number;
@@ -404,7 +398,62 @@ export interface ThinkInboxConfiguration {
   readonly stalledAfterMinutes?: number;
   readonly maxAttempts?: number;
   readonly summaryCharacters?: number;
+  readonly idleSeconds?: number;
+  readonly runTimeoutMinutes?: number;
 }
+
+export const THINK_SETTING_UNITS = [
+  "permille",
+  "count",
+  "hours",
+  "minutes",
+  "characters",
+  "seconds",
+] as const;
+
+export const THINK_SETTING_DEFINITIONS = Object.freeze([
+  { key: "yesAtLeastPermille", unit: "permille", minimum: 501, maximum: 1000, defaultValue: 700 },
+  { key: "noAtMostPermille", unit: "permille", minimum: 0, maximum: 499, defaultValue: 300 },
+  { key: "queueLimit", unit: "count", minimum: 1, maximum: 1000, defaultValue: 20 },
+  { key: "dailyLimit", unit: "count", minimum: 1, maximum: 10000, defaultValue: 50 },
+  { key: "expiresAfterHours", unit: "hours", minimum: 1, maximum: 8760, defaultValue: 48 },
+  { key: "stalledAfterMinutes", unit: "minutes", minimum: 1, maximum: 1440, defaultValue: 30 },
+  { key: "maxAttempts", unit: "count", minimum: 1, maximum: 20, defaultValue: 3 },
+  {
+    key: "summaryCharacters",
+    unit: "characters",
+    minimum: 100,
+    maximum: 4000,
+    defaultValue: 1000,
+  },
+  { key: "idleSeconds", unit: "seconds", minimum: 5, maximum: 86400, defaultValue: 60 },
+  { key: "runTimeoutMinutes", unit: "minutes", minimum: 1, maximum: 120, defaultValue: 10 },
+] as const satisfies readonly {
+  readonly key: string;
+  readonly unit: (typeof THINK_SETTING_UNITS)[number];
+  readonly minimum: number;
+  readonly maximum: number;
+  readonly defaultValue: number;
+}[]);
+
+export type ThinkSettingKey = (typeof THINK_SETTING_DEFINITIONS)[number]["key"];
+
+export function thinkSettingDefinition(key: ThinkSettingKey) {
+  const found = THINK_SETTING_DEFINITIONS.find((definition) => definition.key === key);
+  if (!found) throw new TypeError("THINK_SETTING_UNKNOWN");
+  return found;
+}
+
+export const THINK_WORTH_DEFAULTS = Object.freeze({
+  yesAtLeastPermille: thinkSettingDefinition("yesAtLeastPermille").defaultValue,
+  noAtMostPermille: thinkSettingDefinition("noAtMostPermille").defaultValue,
+  requestTimeoutMs: 15_000,
+});
+
+export const THINK_LOOP_DEFAULTS = Object.freeze({
+  idleSeconds: thinkSettingDefinition("idleSeconds").defaultValue,
+  runTimeoutMinutes: thinkSettingDefinition("runTimeoutMinutes").defaultValue,
+});
 
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;

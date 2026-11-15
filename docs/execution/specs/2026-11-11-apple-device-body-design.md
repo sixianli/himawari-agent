@@ -219,6 +219,7 @@ Cloudflare（服务令牌是第一道门）──隧道──▶ 生产机上的
 | `POST mirror`                     | 日历、提醒事项、通讯录、家居配件的全量或增量同步                                       |
 | `POST track`                      | 一批轨迹点                                                                             |
 | `POST actions/result`             | 设备动作的执行结果和读回的状态                                                         |
+| `POST actions/undo`               | 撤销已成功的动作（日历和通讯录那几个）；带确认密钥签名才算主人亲自点                   |
 | `POST approvals/challenge`        | 取一个一次性的挑战值（给高风险审批的确认密钥签名用，限时、只能用一次）                 |
 | `POST approvals/respond`          | 回答审批（来自通知按钮或 App 内）                                                      |
 | `POST feedback`                   | 通知被点开或划掉（“有用 / 打扰”只在 App 里评，不走这里）                               |
@@ -538,9 +539,9 @@ Cloudflare（服务令牌是第一道门）──隧道──▶ 生产机上的
 | -------------------------------------- | ------------------------------------------------------ | -------------- | -------------------------------- |
 | `calendar.create`、`calendar.update`   | 新建或修改，中；带参与者时算对外发送，高               | 带参与者时要   | 读回事件；改之前存原样，可撤销   |
 | `calendar.delete`                      | 删除，高                                               | 要             | 确认不存在；删之前存原样，可恢复 |
-| `reminder.create`、`reminder.complete` | 新建或修改，中                                         | 不要           | 读回；可撤销                     |
+| `reminder.create`、`reminder.complete` | 新建或修改，中                                         | 不要           | 读回；可撤销（本批未做）         |
 | `contact.update`                       | 新建或修改，中                                         | 不要           | 读回；改之前存原样，可撤销       |
-| `alarm.set`                            | 新建或修改，中                                         | 不要           | 读回；可撤销                     |
+| `alarm.set`                            | 新建或修改，中                                         | 不要           | 读回；可撤销（本批未做）         |
 | `home.read`                            | 读取，低                                               | 不要           | 无                               |
 | `home.control`                         | 新建或修改，中；门锁、车库门、安防算人身安全，最高一档 | 门锁这类要     | 读回配件状态                     |
 | `mac.open`（打开文件或网址）           | 执行代码，高                                           | 要             | 确认已打开                       |
@@ -762,6 +763,8 @@ Mac 的两个动作只在 `device_policies` 允许的范围内（见[设备身�
 | 苹果推送的应用标识和环境                                          | 配置、设备登记时                       | 推送服务                                                                                                             | 和令牌的环境对不上就不发                                                                                                                                                                | `test/integration/push-channels.test.ts`                                                                                          |
 | `limit_usage` 的周期开始时间                                      | 服务器按主人时区算                     | 账、清零                                                                                                             | 换时区和夏令时的用例                                                                                                                                                                    | `test/integration/usage-limits.test.ts`                                                                                           |
 | 工具错误码 `DEVICE_ACTION_CONFIRMATION_REQUIRED` 和固定说明 `tools.result.device-action.unconfirmed` | `device_action` 执行端（确认入口没有返回同意时） | 对话工具清单把错误码和说明放进给模型的工具结果 | 错误码是代码里的常量；说明文字登记在提示词清单，没登记检查不过 | `test/integration/perception-tools.test.ts`、`npm run check:prompt-catalog` |
+| 通知编号 `notificationId`（`webPushTopic(sourceKey)`，同时是推送标签）、`notification.deliver` 和 `notification.withdraw` 事件、`settledIds` | 服务器放置通知时（`mac-placement.ts`、`production-web-push.ts`） | Mac 事件流、iPhone 的推送载荷顶层 `notificationId`、`POST notifications/settled` | 编号只含字母、数字、下划线、连字符且不超过 64 位；对账请求最多 200 个，返回只含请求里的编号；Mac 的 `deliver` 事件不带 `id:` 行 | `test/integration/push-channels.test.ts`、`test/integration/device-notifications.test.ts` |
+| 在场信号 `lastInputAt`、`serverTime`、送达时机第 12 项 `macPresenceSeconds` | Mac 报 `lastInputAt`，服务器回 `serverTime`；`macPresenceSeconds` 来自送达时机设置 | `POST presence`、放置通知时选 Mac | `lastInputAt` 必须是毫秒精度 ISO 时间，服务器夹在当前时间以内，只有 Mac 能调；`macPresenceSeconds` 默认 300、范围 30 到 3600；Mac 事件里的标题不超过 256 字节、正文不超过 2048 字节，超出的按字符截断并以 `…` 结尾（产生端 `production-web-push.ts` 的 `clip`） | `test/integration/device-notifications.test.ts`、`packages/application/test/delivery-timing.unit.test.ts` |
 
 [返回阅读导航](#contents)
 

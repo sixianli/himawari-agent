@@ -58,7 +58,13 @@ export class ProductionThreadTitles {
     const { threadId, ownerId, agentId } = request;
     if (!threadId) return;
     const thread = await this.options.threads.read(ownerId, agentId, threadId);
-    if (!thread || thread.status !== "active" || thread.titleRef || thread.titleSource === "owner")
+    if (
+      !thread ||
+      thread.origin === "think" ||
+      thread.status !== "active" ||
+      thread.titleRef ||
+      thread.titleSource === "owner"
+    )
       return;
     const messages = await this.options.threads.listMessages(ownerId, agentId, threadId, 0, 20);
     const first = messages.find(
