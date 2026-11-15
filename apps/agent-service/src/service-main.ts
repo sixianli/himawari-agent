@@ -55,6 +55,7 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  DeviceActionHub,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
@@ -109,12 +110,15 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
-import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import {
+  createDeliveryTimingSource,
+  productionDeliveryTiming,
+} from "./production-delivery-timing.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -122,6 +126,7 @@ import { createProductionFileReadServices } from "./production-file-read-service
 import { ProductionGapExport } from "./production-gap-export.js";
 import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -164,6 +169,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
@@ -186,6 +192,8 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
+import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -712,6 +720,8 @@ export async function startTenantRuntime(
   let memoryWorker: ProductionMemoryWorker | undefined;
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
+  const deviceActionHub = new DeviceActionHub();
+  let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
@@ -1590,27 +1600,6 @@ export async function startTenantRuntime(
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
       };
-      const perceptionTools = new ProductionPerceptionTools({
-        scope: perceptionScope,
-        store: repository.perception(),
-        devices: repository.pairedDevices().listDevices,
-        readText: async (contentRef) => {
-          const payload = await payloads.get(contentRef);
-          if (!payload || payload.contentType !== "text/plain") return undefined;
-          return new TextDecoder("utf-8", { fatal: true }).decode(
-            await recallProtector.unprotect({ ...perceptionScope, payload }),
-          );
-        },
-        configuration: () =>
-          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
-        now: () => clock.now(),
-        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
-      });
-      const toolActions = productionToolActionRegistry();
-      const installedCapabilities = repository.capabilityStore(
-        configuration.ownerId,
-        configuration.agentId,
-      );
       const externalContent = new ContextExternalContent({
         configuration,
         state: repository,
@@ -1618,6 +1607,11 @@ export async function startTenantRuntime(
         authority: () => invocationAuthority().lease,
         clock,
       });
+      const toolActions = productionToolActionRegistry();
+      const installedCapabilities = repository.capabilityStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
       const ownerIntent = productionOwnerIntentGate({
         configuration,
         secretSource: hostModelSources(configuration).provider,
@@ -1651,6 +1645,39 @@ export async function startTenantRuntime(
         clock,
         ids,
         intentLifetimeMs: configuration.deadlines.workerRequestMs,
+      });
+      deviceActions = createProductionDeviceActions({
+        scope: perceptionScope,
+        store: repository.deviceActions(),
+        perception: repository.perception(),
+        externalContent,
+        devices: repository.pairedDevices().listDevices,
+        ledger: repository.decisionLedger(),
+        payloads,
+        protector: recallProtector,
+        delivery: deviceActionHub,
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        timeZone: reminderTimeZone ?? "UTC",
+        now: () => clock.now(),
+        authorization: productionDeviceActionAuthorization({ ownerScope, registry: toolActions }),
+      });
+      const perceptionTools = new ProductionPerceptionTools({
+        scope: perceptionScope,
+        store: repository.perception(),
+        devices: repository.pairedDevices().listDevices,
+        ...deviceActions.tools,
+        readText: async (contentRef) => {
+          const payload = await payloads.get(contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({ ...perceptionScope, payload }),
+          );
+        },
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        now: () => clock.now(),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
       const tools = new ProductionRuntimeTools({
         memoryRecall,
@@ -2813,6 +2840,8 @@ export async function startTenantRuntime(
               }),
           });
         }
+        const timingConfiguration = configuration.runPolicy?.deliveryTiming;
+        const timingModel = productionDeliveryTiming(configuration, sources.provider);
         webPush = new ProductionWebPush({
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
@@ -2893,6 +2922,25 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
+          ...(timingModel && timingConfiguration
+            ? {
+                timing: createDeliveryTimingSource({
+                  model: timingModel,
+                  configuration: timingConfiguration,
+                  store: pushRepository.perception(),
+                  scope: {
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                  },
+                  reserve: async (micros) =>
+                    (await http?.perception.reserveModelCost(
+                      { ownerId: configuration.ownerId, agentId: configuration.agentId },
+                      micros,
+                    )) ?? false,
+                  now: () => Date.parse(clock.now()),
+                }),
+              }
+            : {}),
           onGateFailure: ({ sourceKey }) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -2915,7 +2963,6 @@ export async function startTenantRuntime(
               code: stableErrorCode(error),
             }),
         });
-        webPush.start();
       }
       proactive?.start();
       realEval?.start();
@@ -3260,7 +3307,13 @@ export async function startTenantRuntime(
       const activeDurableMemory = durableMemory;
       if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
         throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
+      const capabilityReactivation = createProductionCapabilityReactivationVerifier({
+        configuration,
+        layout,
+        trustedPeerBinding: () => peerBinding,
+      });
       http = await createProductionHttpComposition({
+        ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
         webPush: {
@@ -3268,6 +3321,9 @@ export async function startTenantRuntime(
           push: webPush,
           ...(applePush ? { applePush } : {}),
         },
+        ...(deviceActions
+          ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
+          : {}),
         ...(proactive ? { proactive } : {}),
         ...(memoryComposition?.queryPrefetch
           ? {
@@ -3445,6 +3501,7 @@ export async function startTenantRuntime(
           return reply.code(503).send({ error: "AUTHORITY_UNAVAILABLE" });
         }
       });
+      webPush?.start();
       await http.assertIdentityReady();
       const probe = await protector.protect({
         ownerId: configuration.ownerId,

@@ -4,8 +4,11 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import {
   initializeStateRoot,
+  readWorkerQualifiedDeployment,
+  readWorkerServiceBootBinding,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
+  writeWorkerQualifiedDeployment,
 } from "@himawari-agent/platform-node";
 import { createV02Fixture } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +17,12 @@ import {
   runExecutionWorkerService,
 } from "../src/service-main.js";
 
-const qualification = vi.hoisted(() => ({ started: 0 }));
+const qualification = vi.hoisted(() => ({
+  started: 0,
+  admittedSnapshotDigest: undefined as string | undefined,
+  rejectAfterBinding: undefined as (() => Promise<void>) | undefined,
+  beforeCompositionFails: undefined as (() => Promise<void>) | undefined,
+}));
 
 vi.mock("../src/production-worker-composition.js", async (original) => {
   const actual = await original<typeof import("../src/production-worker-composition.js")>();
@@ -24,7 +32,24 @@ vi.mock("../src/production-worker-composition.js", async (original) => {
       options: Parameters<typeof actual.qualifyProductionWorkerDeployment>[0],
     ) => {
       qualification.started += 1;
+      if (qualification.rejectAfterBinding)
+        return qualification.rejectAfterBinding().then(() => {
+          throw new Error("QUALIFICATION_FAILED_AFTER_BINDING");
+        });
+      if (qualification.admittedSnapshotDigest)
+        return Promise.resolve({
+          deployment: { snapshotDigest: qualification.admittedSnapshotDigest, manifests: [] },
+          isolation: {},
+        } as unknown as Awaited<ReturnType<typeof actual.qualifyProductionWorkerDeployment>>);
       return actual.qualifyProductionWorkerDeployment(options);
+    },
+    createProductionWorkerComposition: async (
+      ...parameters: Parameters<typeof actual.createProductionWorkerComposition>
+    ) => {
+      if (!qualification.beforeCompositionFails)
+        return actual.createProductionWorkerComposition(...parameters);
+      await qualification.beforeCompositionFails();
+      throw new Error("COMPOSITION_FAILED_AFTER_PUBLISH");
     },
   };
 });
@@ -38,6 +63,9 @@ const FAST_STARTUP_TIMING = Object.freeze({
 
 afterEach(async () => {
   qualification.started = 0;
+  qualification.admittedSnapshotDigest = undefined;
+  qualification.rejectAfterBinding = undefined;
+  qualification.beforeCompositionFails = undefined;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -190,6 +218,180 @@ describe("execution Worker service main", () => {
       code: EXECUTION_WORKER_SERVICE_ERROR_CODES.STARTUP_TIMEOUT,
     });
   }, 5_000);
+
+  it("clears an earlier boot's qualified record and publishes none when startup fails", async () => {
+    const { configurationPath, layout } = await fixture();
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: "worker-boot:old",
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: `sha256:${"a".repeat(64)}`,
+    });
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 5_000);
+
+  it("clears an earlier boot's qualified record even when the authority check fails", async () => {
+    const { configurationPath, layout } = await fixture();
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: "worker-boot:old",
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: `sha256:${"a".repeat(64)}`,
+    });
+    await writeAuthorityFile(layout, { ...authority(2, 2), status: "inactive_ready" });
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    expect(qualification.started).toBe(0);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 5_000);
+
+  it.each(["id", "ownerId", "agentId"] as const)(
+    "keeps the qualified record when the authority %s differs",
+    async (field) => {
+      const { configurationPath, layout } = await fixture();
+      const record = {
+        workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+        workerBootId: "worker-boot:other",
+        deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+        snapshotDigest: `sha256:${"b".repeat(64)}`,
+      };
+      await writeWorkerQualifiedDeployment(layout, record);
+      const base = authority(2, 2);
+      await writeAuthorityFile(layout, { ...base, [field]: `${base[field]}-other` });
+      const diagnostics = capture();
+
+      await expect(
+        runExecutionWorkerService(
+          serviceArguments(configurationPath),
+          diagnostics.stream,
+          diagnostics.stream,
+          FAST_STARTUP_TIMING,
+        ),
+      ).resolves.toBe(1);
+      expect(qualification.started).toBe(0);
+      expect(JSON.parse(diagnostics.text())).toMatchObject({
+        event: "service.failed",
+        code: EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH,
+      });
+      await expect(readWorkerQualifiedDeployment(layout)).resolves.toMatchObject({
+        workerBootId: "worker-boot:other",
+      });
+    },
+    5_000,
+  );
+
+  it("publishes no qualified record when the Agent binding arrives but the checks fail", async () => {
+    const { configurationPath, layout, currentAuthority } = await fixture();
+    let bound = false;
+    let publishedBeforeChecksFailed: boolean | undefined;
+    qualification.rejectAfterBinding = async () => {
+      while (!bound) await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      publishedBeforeChecksFailed = await readWorkerQualifiedDeployment(layout).then(
+        () => true,
+        () => false,
+      );
+    };
+    const diagnostics = capture();
+    const running = runExecutionWorkerService(
+      serviceArguments(configurationPath),
+      diagnostics.stream,
+      diagnostics.stream,
+      { startupWaitTimeoutMs: 4_000, startupRetryDelayMs: 1 },
+    );
+    let workerBootId: string | undefined;
+    for (let attempt = 0; attempt < 2_000 && !workerBootId; attempt += 1) {
+      workerBootId = (await readWorkerServiceBootBinding(layout).catch(() => undefined))
+        ?.workerBootId;
+      if (!workerBootId) await new Promise<void>((resolve) => setTimeout(resolve, 2));
+    }
+    await writeAgentServiceBootBinding(layout, {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: workerBootId as string,
+      agentServiceInstanceId: `agent-service:${FIXTURE_SCOPE.authority.deploymentId}`,
+      agentServiceBootId: "agent-service-boot:current",
+      authorityLeaseId: "authority:worker-service-main:current",
+      authority: currentAuthority,
+    });
+    bound = true;
+
+    await expect(running).resolves.toBe(1);
+    expect(diagnostics.text()).toContain("service.failed");
+    expect(publishedBeforeChecksFailed).toBe(false);
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 10_000);
+
+  it("publishes the qualified record only after its checks pass and removes it when startup then fails", async () => {
+    const { configurationPath, layout, currentAuthority } = await fixture();
+    const digest = `sha256:${"b".repeat(64)}`;
+    const workerInstanceId = `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`;
+    qualification.admittedSnapshotDigest = digest;
+    let publishedBeforeFailure: unknown;
+    qualification.beforeCompositionFails = async () => {
+      publishedBeforeFailure = await readWorkerQualifiedDeployment(layout);
+    };
+    const diagnostics = capture();
+    const running = runExecutionWorkerService(
+      serviceArguments(configurationPath),
+      diagnostics.stream,
+      diagnostics.stream,
+      { startupWaitTimeoutMs: 4_000, startupRetryDelayMs: 1 },
+    );
+    let workerBootId: string | undefined;
+    for (let attempt = 0; attempt < 2_000 && !workerBootId; attempt += 1) {
+      workerBootId = (await readWorkerServiceBootBinding(layout).catch(() => undefined))
+        ?.workerBootId;
+      if (!workerBootId) await new Promise<void>((resolve) => setTimeout(resolve, 2));
+    }
+    expect(workerBootId).toBeDefined();
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+    await writeAgentServiceBootBinding(layout, {
+      workerInstanceId,
+      workerBootId: workerBootId as string,
+      agentServiceInstanceId: `agent-service:${FIXTURE_SCOPE.authority.deploymentId}`,
+      agentServiceBootId: "agent-service-boot:current",
+      authorityLeaseId: "authority:worker-service-main:current",
+      authority: currentAuthority,
+    });
+
+    await expect(running).resolves.toBe(1);
+    expect(publishedBeforeFailure).toEqual({
+      schemaVersion: 1,
+      workerInstanceId,
+      workerBootId,
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: digest,
+    });
+    await expect(readWorkerQualifiedDeployment(layout)).rejects.toMatchObject({
+      code: "STATE_ROOT_BOOT_BINDING_INVALID",
+    });
+  }, 10_000);
 
   it.each([true, false])(
     "rejects a stale worker boot binding (authority advanced: %s)",

@@ -77,6 +77,7 @@ public enum DesignTokens {
         public static let pairingMark: CGFloat = 148
         public static let pill: CGFloat = 46
         public static let pillBig: CGFloat = 56
+        public static let pillSmall: CGFloat = 36
         public static let rowGap: CGFloat = 14
         public static let rowMinHeight: CGFloat = 60
         public static let sheetPaddingTop: CGFloat = 16
@@ -102,6 +103,7 @@ public enum DesignTokens {
         public static let strokeChevron: CGFloat = 2.2
         public static let strokeLarge: CGFloat = 1.3
         public static let tab: CGFloat = 26
+        public static let todayRow: CGFloat = 22
     }
 
     public enum ProcessRow {
@@ -270,6 +272,7 @@ public enum DesignTokens {
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let offlineBanner = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
+        public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)

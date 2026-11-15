@@ -355,6 +355,93 @@ const WORKER_BOOT_BINDING_FIELDS = Object.freeze([
   "fencingToken",
 ]);
 
+async function commitWorkerRuntimeRecord(
+  layout: StateRootLayout,
+  file: string,
+  record: object,
+  label: string,
+): Promise<void> {
+  const temporary = path.join(
+    layout.runtime,
+    `.${path.basename(file, ".json")}-${process.pid}-${randomUUID()}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(`${JSON.stringify(record)}\n`);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await rename(temporary, file);
+    await chmod(file, 0o600);
+    const directory = await open(layout.runtime, "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  } catch {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_WRITE_FAILED,
+      `${label} could not be atomically committed`,
+    );
+  }
+}
+
+const WORKER_RUNTIME_RECORD_MAX_BYTES = 16_384;
+
+async function readWorkerRuntimeRecord(
+  file: string,
+  fields: readonly string[],
+  label: string,
+): Promise<Record<string, unknown>> {
+  const info = await lstat(file).catch(() => undefined);
+  if (
+    !info?.isFile() ||
+    info.isSymbolicLink() ||
+    (info.mode & 0o077) !== 0 ||
+    info.size > WORKER_RUNTIME_RECORD_MAX_BYTES
+  ) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${label} is missing or unsafe`,
+    );
+  }
+  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${label} is not owned by the service account`,
+    );
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${label} is not valid JSON`,
+    );
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${label} is invalid`,
+    );
+  }
+  const input = value as Record<string, unknown>;
+  if (input["schemaVersion"] !== 1 || Object.keys(input).some((field) => !fields.includes(field))) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${label} fields are invalid`,
+    );
+  }
+  return input;
+}
+
+const WORKER_BOOT_BINDING_LABEL = "Worker Service boot binding";
+
 export async function writeWorkerServiceBootBinding(
   layout: StateRootLayout,
   input: {
@@ -379,79 +466,23 @@ export async function writeWorkerServiceBootBinding(
     authorityEpoch: parsePositiveInteger(input.authority.authorityEpoch, "authorityEpoch"),
     fencingToken: parsePositiveInteger(input.authority.fencingToken, "fencingToken"),
   });
-  const file = workerServiceBootBindingPath(layout);
-  const temporary = path.join(
-    layout.runtime,
-    `.execution-worker.boot-${process.pid}-${randomUUID()}.tmp`,
+  await commitWorkerRuntimeRecord(
+    layout,
+    workerServiceBootBindingPath(layout),
+    binding,
+    WORKER_BOOT_BINDING_LABEL,
   );
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify(binding)}\n`);
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporary, file);
-    await chmod(file, 0o600);
-    const directory = await open(layout.runtime, "r");
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
-  } catch {
-    await handle?.close().catch(() => undefined);
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_WRITE_FAILED,
-      "Worker Service boot binding could not be atomically committed",
-    );
-  }
   return binding;
 }
 
 export async function readWorkerServiceBootBinding(
   layout: StateRootLayout,
 ): Promise<WorkerServiceBootBinding> {
-  const file = workerServiceBootBindingPath(layout);
-  const info = await lstat(file).catch(() => undefined);
-  if (!info?.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
-      "Worker Service boot binding is missing or unsafe",
-    );
-  }
-  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
-      "Worker Service boot binding is not owned by the service account",
-    );
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(await readFile(file, "utf8"));
-  } catch {
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
-      "Worker Service boot binding is not valid JSON",
-    );
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
-      "Worker Service boot binding is invalid",
-    );
-  }
-  const input = value as Record<string, unknown>;
-  if (
-    input["schemaVersion"] !== 1 ||
-    Object.keys(input).some((field) => !WORKER_BOOT_BINDING_FIELDS.includes(field))
-  ) {
-    throw new StateRootLifecycleError(
-      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
-      "Worker Service boot binding fields are invalid",
-    );
-  }
+  const input = await readWorkerRuntimeRecord(
+    workerServiceBootBindingPath(layout),
+    WORKER_BOOT_BINDING_FIELDS,
+    WORKER_BOOT_BINDING_LABEL,
+  );
   return Object.freeze({
     schemaVersion: 1 as const,
     workerInstanceId: assertBootBindingText(input["workerInstanceId"], "workerInstanceId"),
@@ -461,6 +492,86 @@ export async function readWorkerServiceBootBinding(
     agentId: createAgentId(assertBootBindingText(input["agentId"], "agentId")),
     authorityEpoch: parsePositiveInteger(input["authorityEpoch"], "authorityEpoch"),
     fencingToken: parsePositiveInteger(input["fencingToken"], "fencingToken"),
+  });
+}
+
+export interface WorkerQualifiedDeploymentRecord {
+  readonly schemaVersion: 1;
+  readonly workerInstanceId: string;
+  readonly workerBootId: string;
+  readonly deploymentId: DeploymentId;
+  readonly snapshotDigest: string;
+}
+
+const WORKER_QUALIFIED_DEPLOYMENT_FIELDS = Object.freeze([
+  "schemaVersion",
+  "workerInstanceId",
+  "workerBootId",
+  "deploymentId",
+  "snapshotDigest",
+]);
+const WORKER_QUALIFIED_DEPLOYMENT_LABEL = "Worker qualified deployment record";
+const SNAPSHOT_DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+function workerQualifiedDeploymentPath(layout: StateRootLayout): string {
+  return path.join(layout.runtime, "execution-worker.qualified.json");
+}
+
+function assertSnapshotDigest(value: unknown): string {
+  const digest = assertBootBindingText(value, "snapshotDigest");
+  if (!SNAPSHOT_DIGEST.test(digest)) {
+    throw new StateRootLifecycleError(
+      STATE_ROOT_ERROR_CODES.BOOT_BINDING_INVALID,
+      `${WORKER_QUALIFIED_DEPLOYMENT_LABEL} is invalid`,
+      { field: "snapshotDigest" },
+    );
+  }
+  return digest;
+}
+
+export async function clearWorkerQualifiedDeployment(layout: StateRootLayout): Promise<void> {
+  await rm(workerQualifiedDeploymentPath(layout), { force: true });
+}
+
+export async function writeWorkerQualifiedDeployment(
+  layout: StateRootLayout,
+  input: {
+    readonly workerInstanceId: string;
+    readonly workerBootId: string;
+    readonly deploymentId: DeploymentId;
+    readonly snapshotDigest: string;
+  },
+): Promise<WorkerQualifiedDeploymentRecord> {
+  const record = Object.freeze({
+    schemaVersion: 1 as const,
+    workerInstanceId: assertBootBindingText(input.workerInstanceId, "workerInstanceId"),
+    workerBootId: assertBootBindingText(input.workerBootId, "workerBootId"),
+    deploymentId: input.deploymentId,
+    snapshotDigest: assertSnapshotDigest(input.snapshotDigest),
+  });
+  await commitWorkerRuntimeRecord(
+    layout,
+    workerQualifiedDeploymentPath(layout),
+    record,
+    WORKER_QUALIFIED_DEPLOYMENT_LABEL,
+  );
+  return record;
+}
+
+export async function readWorkerQualifiedDeployment(
+  layout: StateRootLayout,
+): Promise<WorkerQualifiedDeploymentRecord> {
+  const input = await readWorkerRuntimeRecord(
+    workerQualifiedDeploymentPath(layout),
+    WORKER_QUALIFIED_DEPLOYMENT_FIELDS,
+    WORKER_QUALIFIED_DEPLOYMENT_LABEL,
+  );
+  return Object.freeze({
+    schemaVersion: 1 as const,
+    workerInstanceId: assertBootBindingText(input["workerInstanceId"], "workerInstanceId"),
+    workerBootId: assertBootBindingText(input["workerBootId"], "workerBootId"),
+    deploymentId: createDeploymentId(assertBootBindingText(input["deploymentId"], "deploymentId")),
+    snapshotDigest: assertSnapshotDigest(input["snapshotDigest"]),
   });
 }
 

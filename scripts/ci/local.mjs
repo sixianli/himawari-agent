@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testsMembers } from "./check-policy.mjs";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
 import { verifyInstalledTools } from "./install-tools.mjs";
@@ -79,7 +80,8 @@ export async function local({
   }
   if (!check && built)
     for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
-  if ((!check || check === "tests") && built) await execute("tests", "default", built);
+  if ((!check || check === "tests") && built)
+    for (const member of testsMembers) await execute("tests", member.key, built);
   if (!check || check === "tooling") await execute("tooling");
   if (!check || check === "security") await execute("security");
   const summary = {

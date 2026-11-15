@@ -85,6 +85,10 @@ public final class DeviceHTTPClient: @unchecked Sendable {
         }
     }
 
+    public var correctedNow: Date {
+        lock.withLock { now().addingTimeInterval(clockOffset) }
+    }
+
     public var currentCredentials: DeviceCredentials? {
         lock.withLock { credentials }
     }

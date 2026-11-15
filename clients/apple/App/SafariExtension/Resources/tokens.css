@@ -57,6 +57,7 @@
   --size-pairing-mark: 148px;
   --size-pill: 46px;
   --size-pill-big: 56px;
+  --size-pill-small: 36px;
   --size-row-gap: 14px;
   --size-row-min-height: 60px;
   --size-sheet-padding: 16px 16px 40px;
@@ -76,6 +77,7 @@
   --icon-stroke-chevron: 2.2px;
   --icon-stroke-large: 1.3px;
   --icon-tab: 26px;
+  --icon-today-row: 22px;
   --handover-button-font-size: 17px;
   --handover-card-padding: 14px 16px;
   --handover-close-icon: 18px;
@@ -175,6 +177,9 @@
   --type-pairing-number-size: 54px;
   --type-pairing-number-weight: 700;
   --type-pairing-number-line-height: normal;
+  --type-row-action-size: 15px;
+  --type-row-action-weight: 600;
+  --type-row-action-line-height: normal;
   --type-secondary-size: 15px;
   --type-secondary-weight: 400;
   --type-secondary-line-height: 1.45;

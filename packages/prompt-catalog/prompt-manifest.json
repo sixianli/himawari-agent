@@ -777,6 +777,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "push.delivery-timing-question": {
+    "sha256": "7a4acf576f5c548096f329256986510d4269229e4b32c822d52f200132c161e9",
+    "changedIn": "ADR 0273",
+    "reason": "推送送达时机：发通知前问判断模型此刻打扰主人是不是不合适"
+  },
   "review.prereview": {
     "sha256": "b4a2529b91a91177aae2b4203f8fe4d23b8135bcc659b73c24ecc8e28a1ecda6",
     "changedIn": "P4-8",
@@ -801,6 +806,11 @@
     "sha256": "c660e6ce3998ce2684fd7e656fea25ab7f2fca93db91c12d51742943f5bd82aa",
     "changedIn": "ADR 0207",
     "reason": "压缩第 2 步：压缩摘要请求沿用原对话的工具、系统提示和历史，末尾追加这条指令，要求只写结构化摘要、不调用工具"
+  },
+  "think.worth-question": {
+    "sha256": "9b7369f374f4c8a7ae8153270c923277ac61d037798abc88e9e6e9bc7c8db302",
+    "changedIn": "ADR 0274",
+    "reason": "新增：后台收到新知道的事时，让判断模型凭一句概括看值不值得再想一想要不要主动提一件事"
   },
   "thread.title": {
     "sha256": "a3434b07edffccd5317c05341559fe8550ba0a0d727d19802d6dd394641bbbce",
@@ -1100,6 +1110,61 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.device-action.reason.approval-not-connected": {
+    "sha256": "d44ac7a7f4368966af3c5ba6617ecd2e1e4ac66c9889a7ee4426a79cf54ac032",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.denied": {
+    "sha256": "5c69e54ae00846283ae6023b1c853f9f73d4728f193291cf797f1646f3abdce5",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.device-lost-record": {
+    "sha256": "9c97e5f63bf29e139b5b8759252c1706b38878070412eb35d54a88f61c242fa8",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.device-policy": {
+    "sha256": "01cc66d128cf0eda7cd434dc2effe4838675c7e40558397d33155b02e3c26c5b",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.device-revoked": {
+    "sha256": "eb2956321e5379c93897153f633dca1e13106c3e539b28391cec9b11e24e0555",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.device-unsupported": {
+    "sha256": "58223d5b0d2f45a5ee4980e38306e1fa188ec1ed3286e210f7ca039e37428367",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.not-delivered": {
+    "sha256": "cea54501d05d4e8f8cd6448fc2776a2299e8363ee4fe968d7b4f699a8ff5b85e",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.owner-denied": {
+    "sha256": "7ba804772d67a3d2548f33a34746fc89271c9de734234a857d5e32b364fddcad",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.presence-unproven": {
+    "sha256": "07fb32b36fdd2fc6665385cca44b4bede892241fb75bd76f3bf5dc805c1e5810",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.report-missing": {
+    "sha256": "525fa749d31ca8b4a7c6d048b7bff8733edc712f0a824b25f5752859bc513313",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
+  "tools.result.device-action.reason.target-unknown": {
+    "sha256": "039ee7fa8b84541251b00d354bac5e8dd6765dc29e87ea8d43d8a8f324124566",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "设备动作没做成时告诉模型的原因（审批未接上、设备策略、本人未确认、结果未知等）"
+  },
   "tools.result.device-action.rejected": {
     "sha256": "d2dbc0bffcbeedaceb491d41fdc82dfc7b4dfbe836ea0c0ed3fb595e8d5f110a",
     "changedIn": "ADR 0230",
@@ -1120,11 +1185,6 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
-  "tools.result.device-action.unconfirmed": {
-    "sha256": "e05f02c1fb9c18595955c2af9d3bf3e7ad0a7e5712cf15c4bebc2b65a46e53a8",
-    "changedIn": "ADR 0230",
-    "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
-  },
   "tools.result.device-action.unknown-action": {
     "sha256": "b5af85ce1d1ee305d9e513cc2576b8fd8f946eeec941b9da26c820da8d89fb53",
     "changedIn": "ADR 0230",
@@ -1134,6 +1194,11 @@
     "sha256": "5cd885aa95e3b11c7a145bfd6ca25818812f88735beefcc1f7a35a85e329ed9e",
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
+  },
+  "tools.result.device-action.usage.device-reminder": {
+    "sha256": "4cdea5930b529306a9a838e53350001a4f11ae72f06984db41755eba737b2fc3",
+    "changedIn": "iOS 第 9A 批",
+    "reason": "device_reminder 两个动作的用法说明：默认用 Himawari 自己的提醒，主人明说才写进苹果“提醒事项”"
   },
   "tools.result.device-action.waiting-owner": {
     "sha256": "cd84a6d23e03457c0fc116fa235ca008d2ec33f5495d30a90b363479dc06caec",

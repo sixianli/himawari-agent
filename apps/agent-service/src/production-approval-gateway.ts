@@ -3,8 +3,10 @@ import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
   ApplicationPortError,
+  type ApprovalRequest,
   ApprovalService,
   type AuthorityFence,
+  type CapabilityReactivationVerifierPort,
   type ClockPort,
   type GatewayV2AccessPolicyPort,
   type GatewayV2ControlPlanePort,
@@ -96,6 +98,10 @@ export const PRODUCTION_CAPABILITY_OPERATIONS = Object.freeze([
   "capability.disable",
 ] as const);
 
+export const PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS = Object.freeze([
+  "capability.reactivate",
+] as const);
+
 export function createProductionApprovalGateway(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> &
     Partial<Pick<ProductConfiguration, "modelDescriptors" | "runPolicy">>;
@@ -115,6 +121,7 @@ export function createProductionApprovalGateway(options: {
   readonly proposalControl?: Pick<ProductionProposalControl, "query" | "execute">;
   readonly sensitiveInterceptionsControl?: ProductionSensitiveInterceptionsControl;
   readonly serverStatusControl?: ProductionServerStatusControl;
+  readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly deviceControl?: Pick<ProductionDeviceControl, "query" | "execute">;
   readonly homeControl?: Pick<ProductionHomeControl, "query">;
   readonly searchControl?: Pick<ProductionSearchControl, "query">;
@@ -122,6 +129,7 @@ export function createProductionApprovalGateway(options: {
   readonly filesControl?: ProductionFilesControl;
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
+  readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -263,6 +271,7 @@ export function createProductionApprovalGateway(options: {
     },
   });
   const controlPlane = new GovernanceGatewayV2ControlPlane({
+    ...(options.onApprovalResolved ? { onApprovalResolved: options.onApprovalResolved } : {}),
     ownerId,
     agentId,
     authorization,
@@ -334,8 +343,10 @@ export function createProductionApprovalGateway(options: {
       configuration: options.configuration,
       repository,
       clock,
+      ...(options.capabilityReactivation ? { reactivation: options.capabilityReactivation } : {}),
     }),
   });
+  const capabilityReactivationAvailable = options.capabilityReactivation !== undefined;
   return new AgentGatewayV2Service({
     installedOperations: [
       ...PRODUCTION_APPROVAL_OPERATIONS,
@@ -352,6 +363,7 @@ export function createProductionApprovalGateway(options: {
         : []),
       ...(options.serverStatusControl ? PRODUCTION_SERVER_STATUS_OPERATIONS : []),
       ...PRODUCTION_CAPABILITY_OPERATIONS,
+      ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
       ...(options.deviceControl ? PRODUCTION_DEVICE_OPERATIONS : []),
       ...(options.homeControl ? PRODUCTION_HOME_OPERATIONS : []),
       ...(options.searchControl ? PRODUCTION_SEARCH_OPERATIONS : []),

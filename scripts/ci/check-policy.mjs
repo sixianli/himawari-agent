@@ -150,6 +150,20 @@ const ciVpsDefaultMember = {
   node: "22.22.3",
 };
 
+export const testsMembers = [
+  { key: "integration-1", projects: ["integration"], shard: { index: 1, count: 2 } },
+  { key: "integration-2", projects: ["integration"], shard: { index: 2, count: 2 } },
+  { key: "others", projects: ["unit", "contracts", "e2e", "pi-compat"] },
+].map((member) => ({ ...ciVpsDefaultMember, ...member }));
+
+export function upgradeSplitTests(policy) {
+  const tests = policy?.checks?.find((check) => check.id === "tests");
+  if (!tests || canonicalJson(tests.members) !== canonicalJson([ciVpsDefaultMember])) return policy;
+  const upgraded = structuredClone(policy);
+  upgraded.checks.find((check) => check.id === "tests").members = structuredClone(testsMembers);
+  return upgraded;
+}
+
 const retiredShapeChecks = [
   ...retiredTestChecks,
   {
@@ -412,7 +426,9 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
         ? ["linux-x64", "macos-arm64"]
         : check.id === "browser"
           ? ["chromium", "firefox", "webkit"]
-          : ["default"];
+          : check.id === "tests"
+            ? testsMembers.map((member) => member.key)
+            : ["default"];
     assert(
       sameSet(
         check.members.map((member) => member.key),
@@ -420,6 +436,7 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
       ),
       `Incomplete matrix: ${check.id}`,
     );
+    validateMemberProjects(check);
     assert(activeMembers(check).length > 0, `Every member is paused: ${check.id}`);
     for (const member of check.members) {
       const mac = member.key === "macos-arm64";
@@ -440,6 +457,39 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
     visit(check.id, new Set());
   }
   return policy;
+}
+
+function validateMemberProjects(check) {
+  const split = check.members.some((member) => member.projects || member.shard);
+  if (check.id !== "tests" || !split) {
+    assert(!split, `Only tests members may split projects: ${check.id}`);
+    return;
+  }
+  for (const member of check.members) {
+    assert(member.projects, `Split tests member names no projects: ${member.key}`);
+    unique(member.projects, `${member.key} project`);
+    assert(
+      member.projects.every((id) => check.projects.includes(id)),
+      `Split tests member runs a project outside tests: ${member.key}`,
+    );
+    assert(
+      !member.shard || member.projects.length === 1,
+      `Sharded tests member must run exactly one project: ${member.key}`,
+    );
+  }
+  for (const id of check.projects) {
+    const owners = check.members.filter((member) => member.projects.includes(id));
+    const shards = owners.map((member) => member.shard);
+    const whole = owners.length === 1 && shards[0] === undefined;
+    const sharded =
+      owners.length > 1 &&
+      shards.every((shard) => shard?.count === owners.length) &&
+      sameSet(
+        shards.map((shard) => String(shard.index)),
+        owners.map((_member, index) => String(index + 1)),
+      );
+    assert(whole || sharded, `Tests project must run exactly once across members: ${id}`);
+  }
 }
 
 function requireReadPermissions(permissions, label, root = false) {
@@ -1303,13 +1353,15 @@ export function resolvePolicySource({
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
   const policy = validatePolicy(
-    upgradeCoverageToTests(
-      upgradeCoverageCollection(
-        upgradeArmRunnerPolicy(
-          upgradeGateRunnerPolicy(
-            upgradeRetiredTestChecks(
-              upgradeArtifactRetention(
-                upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+    upgradeSplitTests(
+      upgradeCoverageToTests(
+        upgradeCoverageCollection(
+          upgradeArmRunnerPolicy(
+            upgradeGateRunnerPolicy(
+              upgradeRetiredTestChecks(
+                upgradeArtifactRetention(
+                  upgradeRunnerLabel(upgradeHostedRunnerPolicy(JSON.parse(bytes))),
+                ),
               ),
             ),
           ),
