@@ -8,6 +8,7 @@
 - [在云端跑单元测试](#in-the-cloud)
 - [和服务器对齐的固定测试数据](#vectors)
 - [图标](#icons)
+- [himawari 字样](#wordmark)
 - [截图对照原型](#ui-review)
 - [分享面板和 Safari 扩展](#handover)
 - [Mac 菜单栏 App](#mac-app)
@@ -26,7 +27,7 @@
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
 | `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文并强制 12 小时制，系统询问框才和原型一样是中文，状态栏时间才是原型里的“9:41”而不是“09:41” | 第 6 批 |
 | `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
-| `HimawariShell` | 三页签外壳、配对页、整个 App 的状态 | 第 2 批 |
+| `HimawariShell` | 三页签外壳、“今天”页（`Today/`，按服务器 `home.read` 给的首页条目照原顺序画）、配对页、整个 App 的状态 | 第 2 批；“今天”页由“做 iPhone 今天页”线程做 |
 | `HimawariWatchUI` | Apple Watch App 的界面和逻辑（App 目标叫 `HimawariWatch`）：配对、等你定的一件事、抬腕说一句、到点轻敲。只在 watchOS 上编译 | 第 10A 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
@@ -87,6 +88,20 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 ```
 
 脚本把每个 SVG 改好线宽后放进 `Icons.xcassets`（Xcode 的图片资源目录），按模板图片处理；许可证原文和版本号放进 `Licenses/`，以后的致谢页（第 11 批设置页）用 `ThirdPartyLicense.all` 读出来显示，第 2 批还没有界面用它。
+
+[返回目录](#apple-clients)
+
+<a id="wordmark"></a>
+## himawari 字样
+
+“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
+
+```bash
+mkdir -p /tmp/cormorant && cd /tmp/cormorant && npm pack @fontsource/cormorant-garamond@5.2.6 && tar xzf fontsource-cormorant-garamond-5.2.6.tgz && cd -
+python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg
+```
+
+旁边的向日葵不是图片，是照原型的画法（`flower.js`）用代码画的：花瓣、花盘和种子的位置在 `Sources/HimawariCore/CornerFlower.swift`，`Tests/HimawariCoreTests/CornerFlowerTests.swift` 核对每片花瓣的尖和原型算出来的一样。
 
 [返回目录](#apple-clients)
 

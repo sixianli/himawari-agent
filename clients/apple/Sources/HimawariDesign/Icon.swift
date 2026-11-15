@@ -123,7 +123,7 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
     public let text: String
 
     public static var all: [ThirdPartyLicense] {
-        [load(id: "tabler-icons", name: "Tabler Icons")].compactMap { $0 }
+        [load(id: "tabler-icons", name: "Tabler Icons"), load(id: "cormorant-garamond", name: "Cormorant Garamond")].compactMap { $0 }
     }
 
     private static func load(id: String, name: String) -> ThirdPartyLicense? {

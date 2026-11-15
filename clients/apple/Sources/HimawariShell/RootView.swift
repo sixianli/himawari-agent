@@ -31,7 +31,7 @@ public struct HimawariRootView: View {
     private var app: some View {
         Group {
             if model.phase == .active, let chat = model.chat {
-                MainTabsView(model: model, chat: chat)
+                MainTabsView(model: model, chat: chat, feed: model.home)
             } else {
                 PairingView(model: model)
             }
@@ -77,6 +77,7 @@ struct MainTabsView: View {
     let model: AppModel
     let chat: ChatStore
     private let actionsOverride: DeviceActionsModel?
+    let feed: HomeFeedModel
     @State private var tab: MainTab
     @State private var openThread: OpenThread?
     @State private var settingsOpen: Bool
@@ -87,10 +88,11 @@ struct MainTabsView: View {
     private let settingsOverride: AnyView?
     @Environment(\.listClock) private var listClock
 
-    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
+    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, feed: HomeFeedModel? = nil, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
         self.model = model
         self.chat = chat
         actionsOverride = actions
+        self.feed = feed ?? model.home
         _tab = State(initialValue: tab)
         _settingsOpen = State(initialValue: settings != nil)
         memoryOverride = memory
@@ -176,11 +178,16 @@ struct MainTabsView: View {
         }
     }
 
+    private var todayBadge: Int? {
+        guard feed.available else { return actions?.waitingCount }
+        return feed.approvalsIncomplete ? actions?.waitingCount : feed.layout?.badge
+    }
+
     @ViewBuilder
     private var content: some View {
         switch tab {
         case .today:
-            TodayView(actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }) { threadId in
+            TodayPage(feed: feed, actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }, openSearch: nil) { threadId in
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
             }
         case .chats:
@@ -207,7 +214,7 @@ struct MainTabsView: View {
             EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar, solid: 0.3)
             HStack(spacing: 0) {
                 FloatingTabBar(selection: $tab, tabs: [
-                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today"))) {
+                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today")), badge: todayBadge) {
                         TimelineView(.everyMinute) { context in
                             TodayTabIcon(day: TodayNumber.day(at: listClock ?? context.date))
                         }
@@ -226,57 +233,6 @@ struct MainTabsView: View {
             .padding(.bottom, 26)
         }
         .ignoresSafeArea(.container, edges: .bottom)
-    }
-}
-
-struct TodayView: View {
-    let actions: DeviceActionsModel?
-    var listening: ListeningController?
-    var openListening: () -> Void = {}
-    let openSettings: () -> Void
-    let openThread: (String) -> Void
-    @State private var opened: PendingApproval?
-
-    private var hasActions: Bool {
-        guard let actions else { return false }
-        return !actions.pending.isEmpty || !actions.recent.isEmpty
-    }
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if let actions, let opened {
-                ApprovalDetailView(model: actions, approval: opened, openThread: openThread) { withAnimation(.snappy) { self.opened = nil } }
-                    .transition(.move(edge: .trailing))
-                    .zIndex(1)
-            }
-            if !hasActions && listening == nil {
-                EmptyStateView(Text(L.text("placeholder.notConnected")))
-            } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        if let listening {
-                            ListenTodayCard(controller: listening, open: openListening)
-                        }
-                        if let actions, hasActions {
-                            TodayDeviceActionsCard(model: actions) { approval in
-                                withAnimation(.snappy) { opened = approval }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                    .padding(.top, 96)
-                    .padding(.bottom, 130)
-                }
-                .scrollIndicators(.hidden)
-                .refreshable { await actions?.refresh() }
-            }
-            GlassCircleButton(Text(L.text("settings")), action: openSettings) {
-                Icon(.user, size: DesignTokens.IconSize.glassButton)
-            }
-            .padding(.trailing, 16)
-            .padding(.top, 10)
-        }
-        .himawariScreenBackground()
     }
 }
 

@@ -60,6 +60,10 @@ enum DemoScene: String, CaseIterable {
     case actionsPrimer = "19-settings-more-2-permission-primer"
     case actionsPrimerDenied = "19-settings-more-3-permission-denied"
     case actionsTodayEmpty = "01-today-device-actions-empty"
+    case today = "01-today"
+    case todayDeviceApproval = "01-today-device-approval"
+    case todaySettled = "12-today-states-3-settled"
+    case todayQuiet = "12-today-states-5-quiet"
     case listenIntro = "23-listen-1"
     case listenEnroll = "23-listen-2"
     case listenLive = "23-listen-3"
@@ -145,6 +149,14 @@ struct DemoSceneView: View {
             tabs(DemoChatFixtures.chatList(), tab: .today)
         case .actionsTodayEmpty:
             tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true))
+        case .today:
+            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.first)
+        case .todayDeviceApproval:
+            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.withDeviceApproval)
+        case .todaySettled:
+            tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.settled)
+        case .todayQuiet:
+            tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true), feed: TodayDemo.quiet)
         case .actionsDetail:
             approvalDetail(at: 0)
         case .actionsDetailFace:
@@ -228,8 +240,8 @@ struct DemoSceneView: View {
         }
     }
 
-    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo()) -> some View {
-        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, tab: tab)
+    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo(), feed: HomeFeedModel = HomeFeedModel(source: nil)) -> some View {
+        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, feed: feed, tab: tab)
     }
 
     private func approvalDetail(at index: Int) -> some View {

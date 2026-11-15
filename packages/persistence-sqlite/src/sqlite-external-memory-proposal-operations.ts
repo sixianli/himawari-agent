@@ -51,7 +51,7 @@ const EXTERNAL_PROPOSAL_PENDING_MAXIMUM = 1000;
 
 const EXTERNAL_PROPOSAL_HELD_TEXT_MAXIMUM = 5000;
 
-const CATEGORIES: ReadonlySet<string> = new Set([
+export const EXTERNAL_PROPOSAL_STORE_CATEGORIES = [
   "identity",
   "preference",
   "relationship",
@@ -61,7 +61,9 @@ const CATEGORIES: ReadonlySet<string> = new Set([
   "finance",
   "event",
   "other",
-]);
+] as const;
+
+const CATEGORIES: ReadonlySet<string> = new Set(EXTERNAL_PROPOSAL_STORE_CATEGORIES);
 
 const CLASSIFICATIONS: ReadonlySet<string> = new Set(["private", "sensitive"]);
 

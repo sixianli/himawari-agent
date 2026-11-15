@@ -96,6 +96,7 @@ export function generate(tokens) {
   scalars("IconSize", tokens.icon);
   scalars("ProcessRow", tokens.processRow);
   scalars("Opacity", tokens.opacity, "Double");
+  scalars("Home", tokens.home ?? {});
   scalars("Pairing", tokens.pairing ?? {});
   scalars("Scanner", tokens.scanner ?? {});
   scalars("Senses", tokens.senses ?? {});
