@@ -350,6 +350,19 @@ describe("checking a commit against what production applied", () => {
     );
   });
 
+  it("reports a failing pending migration as a problem even when a valid one follows it", () => {
+    const kinds = entry("20261114000001", "kinds", "CREATE TABLE kinds (kind TEXT PRIMARY KEY);");
+    const broken = entry("20261114000002", "broken", "INSERT INTO missing VALUES ('a');");
+    const later = entry("20261114000003", "later", "CREATE TABLE later (id INTEGER);");
+    const problems = analyzeMigrations({
+      base: [seed],
+      added: [kinds, broken, later],
+      sequential: true,
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^MIGRATION_FAILS 20261114000002_broken\.sql: no such table: missing/);
+  });
+
   it("rejects an applied migration whose name differs from the commit", () => {
     expect(
       checkAgainstApplied({

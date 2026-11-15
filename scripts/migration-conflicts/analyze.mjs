@@ -209,6 +209,7 @@ export function analyzeMigrations({ base, added, meta = {}, sequential = false }
     } catch (error) {
       problems.push(`MIGRATION_FAILS ${entry.file}: ${error.message}`);
       database.close();
+      if (sequential) break;
       continue;
     }
     const diff = diffSnapshots(stepBaseSnapshot, snapshot(database));
