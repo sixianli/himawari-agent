@@ -187,9 +187,17 @@ describe("task run proposals", () => {
       sourceType: "external_event",
       ownerApprovedTask: true,
     });
-    const tamper = database2();
-    tamper.prepare("UPDATE owner_proposals SET status = 'pending', decided_at = NULL").run();
-    tamper.close();
+    const waiting = await proposeTaskRun(context, {
+      text: "把大阪的酒店也查一下，列出三家。",
+      basis: BASIS,
+    });
+    if (!("proposalId" in waiting)) throw new Error(waiting.refused);
+    expect((await box.list()).pendingCount).toBe(1);
+    const repoint = database2();
+    repoint
+      .prepare("UPDATE triggers SET source_proof_ref = replace(source_proof_ref, ?, ?)")
+      .run(proposed.proposalId, waiting.proposalId);
+    repoint.close();
     expect(await runSource.read(runId)).not.toHaveProperty("ownerApprovedTask");
   });
 
