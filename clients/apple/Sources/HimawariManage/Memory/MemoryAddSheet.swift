@@ -41,7 +41,7 @@ struct MemoryAddSheet: View {
                         .frame(width: L.headerButton, height: L.headerButton, alignment: .trailing)
                 }
                 .buttonStyle(.plain)
-                .disabled(trimmed.isEmpty || trimmed.count > Self.characterLimit || saving)
+                .disabled(trimmed.isEmpty || trimmed.unicodeScalars.count > Self.characterLimit || saving)
             }
             TextField(M.addPlaceholder, text: $text, axis: .vertical)
                 .hmType(L.text)
@@ -59,7 +59,9 @@ struct MemoryAddSheet: View {
         .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
         .background(Color.hmBackground)
         .onChange(of: text) {
-            if text.count > Self.characterLimit { text = String(text.prefix(Self.characterLimit)) }
+            if text.unicodeScalars.count > Self.characterLimit {
+                text = String(String.UnicodeScalarView(text.unicodeScalars.prefix(Self.characterLimit)))
+            }
         }
         .onAppear { focused = true }
     }

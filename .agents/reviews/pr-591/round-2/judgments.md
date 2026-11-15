@@ -1,0 +1,5 @@
+# PR 591 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 中 - 新增的“敏感重传”测试 mock 自相矛盾，在 Mac 上会失败。MemoryDecisionTests.swift 原 :26 硬编码 ref-1，与 :20 上传返回的 ref-private 不符；已改为分类 mock 回显请求里的 contentRefs[0]（Linux 不跑 Manage 测试，未实跑，需 Mac 验证）；触发：在 Mac 上跑 HimawariManageTests 的 testCreatingAHealthMemoryUploadsItAsSensitiveWithTheHealthTopic；后果：分类 mock 回 ref-1 而上传回 ref-private，MemoryCreatePlan.swift:21 contentRef 不等回退 other，断言 health 失败，测试红
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低 - 500 字上限按 Swift 字符簇计，不能保证服务端 2000 上限；编辑路径仍无上限。MemoryAddSheet.swift 原用 Character.count；已改按 unicodeScalars 计 500（最多 1000 个 UTF-16 单元，低于 2000）。编辑页无上限是本 PR 前就有的，且读取回填已被截到 2000，不属本 PR 范围；触发：输入大量组合字符或 ZWJ emoji 序列，500 个字符簇超过 2000 UTF-16 单元；后果：新建的记忆被服务端读回截断；只有故意构造的怪输入才触发
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低 - 人物建议 ID 只改新写入，旧库里已经存在的超长 ID 不会修复。0057_memory_page.sql 的唯一约束使旧行不会被重写；已新增迁移 20261115144849_shorten_person_suggestion_ids.sql 把超长 id 重写为 person-suggestion:<32hex>，test/person-suggestion-id-migration.contract.test.ts 通过；触发：升级前的库里已有超过 128 字符的 pending 人物建议；后果：overview 的 suggestionId 或 person.respond 撞 machineString 128 上限被拒

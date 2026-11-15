@@ -23,7 +23,9 @@ private actor Recorder: DeviceTransport {
         let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
         await record(body)
         if case .string("memory.classify.read")? = body["type"] {
-            let item = #"{"contentRef":"ref-1","category":"health","classification":"private","topic":null,"failed":false}"#
+            var requested = "ref-private"
+            if case .object(let payload)? = body["payload"], case .array(let refs)? = payload["contentRefs"], case .string(let first)? = refs.first { requested = first }
+            let item = #"{"contentRef":"\#(requested)","category":"health","classification":"private","topic":null,"failed":false}"#
             return DeviceResponse(status: 200, body: Data(#"{"payload":{"items":[\#(item)]}}"#.utf8))
         }
         return DeviceResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8))
