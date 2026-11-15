@@ -16,8 +16,6 @@ import {
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
-  PERCEPTION_SEARCH_INDEX_RULES,
-  perceptionSearchEvidenceText,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -28,9 +26,11 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
   PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_SEARCH_INDEX_RULES,
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
+  perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
@@ -328,6 +328,7 @@ export interface ProductionHttpComposition {
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
   readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -1691,6 +1692,7 @@ export async function createProductionHttpComposition(
     health,
     metrics,
     home,
+    perception,
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({

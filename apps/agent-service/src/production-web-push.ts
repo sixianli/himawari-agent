@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
 import {
   type ApprovalRequest,
+  DELIVERY_TIMING_CLASSES,
+  type DeliveryTimingConfiguration,
+  type DeliveryTimingJudgement,
+  deliveryTimingDeadlineMs,
   type MemoryReminder,
   type MemoryReminderStorePort,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_RULE_PROTECTED_CLASSES,
+  type PushClass,
   PushGate,
   type PushGateDecision,
   pushClassOf,
@@ -25,6 +30,7 @@ const REMINDER_WINDOW_MS = 6 * 3_600_000;
 const PUSH_DEFER_EXTENSION_MS = 3_600_000;
 const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
 const DEFAULT_GATE = new PushGate();
+const DELIVER_UNGATED: PushGateDecision = Object.freeze({ action: "deliver", failed: false });
 const PROPOSAL_WINDOW_MS = 24 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
@@ -216,11 +222,17 @@ export interface ProductionWebPushOptions {
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
+  readonly timing?: DeliveryTimingSource;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
   readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
   readonly onFailure: (error: unknown) => void;
+}
+
+export interface DeliveryTimingSource {
+  configuration(): DeliveryTimingConfiguration;
+  judge(pushClass: PushClass, nowMs: number): Promise<DeliveryTimingJudgement>;
 }
 
 export interface MuseChannelPushSource {
@@ -577,29 +589,34 @@ export class ProductionWebPush {
     if (known !== undefined) return known;
     const { ownerId, agentId, store } = this.#options;
     const pushClass = pushClassOf(item);
-    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass) || !this.#options.readPushRules) {
+    if (PUSH_RULE_PROTECTED_CLASSES.includes(pushClass)) {
       gated.set(item.sourceKey, false);
       return false;
     }
-    let decision = decisions.get(pushClass);
-    if (decision === undefined) {
-      try {
-        const rules = await this.#options.readPushRules();
-        decision = (this.#options.gate ?? DEFAULT_GATE).decide({
-          pushClass,
-          now,
-          timeZone: this.#options.timeZone ?? "UTC",
-          rules,
-        });
-      } catch {
-        decision = { action: "deliver", failed: true };
+    const readPushRules = this.#options.readPushRules;
+    let decision: PushGateDecision = DELIVER_UNGATED;
+    if (readPushRules) {
+      const cached = decisions.get(pushClass);
+      if (cached) decision = cached;
+      else {
+        try {
+          decision = (this.#options.gate ?? DEFAULT_GATE).decide({
+            pushClass,
+            now,
+            timeZone: this.#options.timeZone ?? "UTC",
+            rules: await readPushRules(),
+          });
+        } catch {
+          decision = { action: "deliver", failed: true };
+        }
+        decisions.set(pushClass, decision);
       }
-      decisions.set(pushClass, decision);
     }
     if (decision.action === "deliver") {
       if (decision.failed) this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
-      gated.set(item.sourceKey, false);
-      return false;
+      const timed = await this.#timed(item, pushClass, now);
+      gated.set(item.sourceKey, timed);
+      return timed;
     }
     const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
     const expiresAt = new Date(
@@ -624,6 +641,79 @@ export class ProductionWebPush {
     }
     gated.set(item.sourceKey, stored);
     return stored;
+  }
+
+  async #timed(item: WebPushOutboxItem, pushClass: PushClass, now: string): Promise<boolean> {
+    const timing = this.#options.timing;
+    if (!timing || !DELIVERY_TIMING_CLASSES.includes(pushClass)) return false;
+    if (this.#options.presence.anyVisible(now)) return false;
+    const { ownerId, agentId, store } = this.#options;
+    try {
+      const configuration = timing.configuration();
+      const nowMs = Date.parse(now);
+      const deadline = deliveryTimingDeadlineMs(
+        pushClass,
+        Date.parse(item.createdAt),
+        configuration,
+      );
+      if (nowMs >= deadline) {
+        if (item.deferredByTiming)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "deadline_reached",
+            reasonCode: "timing_deadline",
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const judgement = await timing.judge(pushClass, nowMs);
+      if (judgement.action === "deliver") {
+        if (judgement.reasonCode === "timing_failed" || judgement.reasonCode === "timing_budget")
+          this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+        if (judgement.judged)
+          await store.recordDeliveryTiming({
+            ownerId,
+            agentId,
+            sourceKey: item.sourceKey,
+            outcome: "delivered",
+            reasonCode: judgement.reasonCode,
+            deferUntil: null,
+            expiresAt: null,
+            costMicros: 0,
+            now,
+          });
+        return false;
+      }
+      const until = new Date(
+        Math.min(nowMs + configuration.recheckSeconds * 1000, deadline),
+      ).toISOString();
+      const lifeEnd = Date.parse(item.createdAt) + PUSH_TOTAL_LIFE_MS;
+      const expiresAt = new Date(
+        Math.min(
+          Math.max(Date.parse(item.expiresAt), Date.parse(until) + PUSH_DEFER_EXTENSION_MS),
+          lifeEnd,
+        ),
+      ).toISOString();
+      return await store.recordDeliveryTiming({
+        ownerId,
+        agentId,
+        sourceKey: item.sourceKey,
+        outcome: "deferred",
+        reasonCode: `timing_busy_${judgement.signals.join("+")}`.slice(0, 64),
+        deferUntil: until,
+        expiresAt,
+        costMicros: 0,
+        now,
+      });
+    } catch {
+      this.#options.onGateFailure?.({ sourceKey: item.sourceKey });
+      return false;
+    }
   }
 
   async #content(

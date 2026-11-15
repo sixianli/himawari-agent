@@ -109,12 +109,15 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
-import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
+import {
+  createDeliveryTimingSource,
+  productionDeliveryTiming,
+} from "./production-delivery-timing.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -164,6 +167,7 @@ import {
 import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-muse-intake.js";
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
+import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
@@ -2813,6 +2817,8 @@ export async function startTenantRuntime(
               }),
           });
         }
+        const timingConfiguration = configuration.runPolicy?.deliveryTiming;
+        const timingModel = productionDeliveryTiming(configuration, sources.provider);
         webPush = new ProductionWebPush({
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
@@ -2893,6 +2899,25 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
+          ...(timingModel && timingConfiguration
+            ? {
+                timing: createDeliveryTimingSource({
+                  model: timingModel,
+                  configuration: timingConfiguration,
+                  store: pushRepository.perception(),
+                  scope: {
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                  },
+                  reserve: async (micros) =>
+                    (await http?.perception.reserveModelCost(
+                      { ownerId: configuration.ownerId, agentId: configuration.agentId },
+                      micros,
+                    )) ?? false,
+                  now: () => Date.parse(clock.now()),
+                }),
+              }
+            : {}),
           onGateFailure: ({ sourceKey }) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
