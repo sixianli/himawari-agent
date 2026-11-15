@@ -67,9 +67,7 @@ function ownerAllows(ownerPresent: boolean): DeviceActionAuthorizationPort {
   return { authorize: async () => ({ decision: "allow", ownerPresent }) };
 }
 
-function ownerIsAsked(
-  seen: DeviceActionIntent[] = [],
-): DeviceActionAuthorizationPort {
+function ownerIsAsked(seen: DeviceActionIntent[] = []): DeviceActionAuthorizationPort {
   return {
     authorize: async (intent) => {
       seen.push(intent);
@@ -90,11 +88,7 @@ function setup(h: Harness) {
     now: () => h.clock.now(),
   });
   let calls = 0;
-  const act = async (
-    runId: string,
-    args: Record<string, unknown>,
-    toolCallId?: string,
-  ) =>
+  const act = async (runId: string, args: Record<string, unknown>, toolCallId?: string) =>
     (
       (await tools.run(
         {
@@ -107,8 +101,7 @@ function setup(h: Harness) {
         },
         {
           authorize: async () => undefined,
-          markExternalContent: () =>
-            h.externalContent.mark(createRunId(runId), "perception_read"),
+          markExternalContent: () => h.externalContent.mark(createRunId(runId), "perception_read"),
         },
       )) as { value: Record<string, unknown> }
     ).value;
@@ -146,11 +139,7 @@ async function until(condition: () => boolean | Promise<boolean>) {
   throw new Error("condition was not met in time");
 }
 
-async function supports(
-  h: Harness,
-  client: PairedClient,
-  actions: readonly string[],
-) {
+async function supports(h: Harness, client: PairedClient, actions: readonly string[]) {
   const result = await devicePost(h, client, "actions/supported", { actions });
   expect(result.status, JSON.stringify(result.body)).toBe(200);
   return result.body["actions"] as string[];
@@ -200,9 +189,7 @@ async function confirmablePost(
       method: "POST",
       path: `/api/device/v1/${path}`,
       body: JSON.stringify(body),
-      ...(nonce === undefined
-        ? {}
-        : { confirmKey: client.confirmKeys.privateKey, nonce }),
+      ...(nonce === undefined ? {} : { confirmKey: client.confirmKeys.privateKey, nonce }),
     }),
   );
   return {
@@ -283,18 +270,12 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
         actions: ["alarm.set", "device_reminder.create", "home.read"],
       },
     ]);
-    expect(
-      described.actions.map(({ name, confirm }) => [name, confirm]),
-    ).toEqual([
+    expect(described.actions.map(({ name, confirm }) => [name, confirm])).toEqual([
       ["alarm.set", true],
       ["device_reminder.create", true],
       ["home.read", false],
     ]);
-    expect(described.actions.map((entry) => "usage" in entry)).toEqual([
-      false,
-      true,
-      false,
-    ]);
+    expect(described.actions.map((entry) => "usage" in entry)).toEqual([false, true, false]);
     expect(described.actions[1]).toMatchObject({
       usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
     });
@@ -314,10 +295,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
       actions: { name: string }[];
     };
     expect(after.devices[0]?.actions).toEqual(["alarm.set", "home.read"]);
-    expect(after.actions.map(({ name }) => name)).toEqual([
-      "alarm.set",
-      "home.read",
-    ]);
+    expect(after.actions.map(({ name }) => name)).toEqual(["alarm.set", "home.read"]);
     await h.repository.close();
   });
 
@@ -335,9 +313,7 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
       done: false,
       note: TOOL_RESULT_DEVICE_ACTION_UNKNOWN.text,
     });
-    const device = (
-      await h.repository.pairedDevices().listDevices(perceptionScope)
-    )[0];
+    const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
     expect(
       await h.actions.service.request({
@@ -443,9 +419,7 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
       readBack: false,
       evidence: { on: true, level: 40 },
     }));
-    const signalsBefore = device.frames.filter((frame) =>
-      frame.includes("device.actions"),
-    ).length;
+    const signalsBefore = device.frames.filter((frame) => frame.includes("device.actions")).length;
     const { act } = setup(h);
     await addRun(h, "run-1");
     const result = await act("run-1", {
@@ -458,9 +432,9 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
       device: client.deviceId,
       evidence: { on: true, level: 40 },
     });
-    expect(
-      device.frames.filter((frame) => frame.includes("device.actions")).length,
-    ).toBe(signalsBefore + 1);
+    expect(device.frames.filter((frame) => frame.includes("device.actions")).length).toBe(
+      signalsBefore + 1,
+    );
     expect(device.claimed).toHaveLength(1);
     expect(device.claimed[0]).toMatchObject({
       mode: "perform",
@@ -510,11 +484,7 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
   it("[reverse] until approval is connected, every action that is not a low-risk read is refused with the reason and never reaches the device", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
-    await supports(h, client, [
-      "calendar.create",
-      "home.control",
-      "device_reminder.create",
-    ]);
+    await supports(h, client, ["calendar.create", "home.control", "device_reminder.create"]);
     await mirror(h, client, "home_accessory", [LAMP]);
     const device = await connectDevice(h, client, () => ({
       outcome: "succeeded",
@@ -545,12 +515,10 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
         reason: TOOL_RESULT_DEVICE_ACTION_REASON_APPROVAL_NOT_CONNECTED.text,
       });
     }
-    expect(
-      TOOL_RESULT_DEVICE_ACTION_REASON_APPROVAL_NOT_CONNECTED.text,
-    ).toContain("审批还没接上");
-    expect(
-      (await rows(h)).map(({ state, reasonCode }) => [state, reasonCode]),
-    ).toEqual(attempts.map(() => ["rejected", "approval_not_connected"]));
+    expect(TOOL_RESULT_DEVICE_ACTION_REASON_APPROVAL_NOT_CONNECTED.text).toContain("审批还没接上");
+    expect((await rows(h)).map(({ state, reasonCode }) => [state, reasonCode])).toEqual(
+      attempts.map(() => ["rejected", "approval_not_connected"]),
+    );
     await device.close();
     expect(device.claimed).toEqual([]);
     expect(h.actions.openRequests).toEqual([]);
@@ -571,33 +539,21 @@ describe("[iOS-9A] an action goes from the model to the device and its result co
       arguments: { title: "买牛奶" },
     });
     expect(queued).toMatchObject({ done: false, state: "queued" });
-    expect(h.actions.openRequests.map(({ deviceId }) => deviceId)).toEqual([
-      first.deviceId,
-    ]);
+    expect(h.actions.openRequests.map(({ deviceId }) => deviceId)).toEqual([first.deviceId]);
     const [record] = await rows(h);
     const report = (client: PairedClient, body: Record<string, unknown>) =>
       devicePost(h, client, "actions/result", { id: record?.id, ...body });
-    expect(
-      (await report(first, { outcome: "failed", readBack: false })).body,
-    ).toEqual({
+    expect((await report(first, { outcome: "failed", readBack: false })).body).toEqual({
       code: "DEVICE_ACTION_NOT_DELIVERED",
     });
     expect((await devicePost(h, second, "actions/claim", {})).body).toEqual({
       actions: [],
     });
     const claimed = await devicePost(h, first, "actions/claim", {});
-    expect(claimed.body["actions"]).toMatchObject([
-      { id: record?.id, mode: "perform" },
-    ]);
-    expect(
-      (await report(second, { outcome: "succeeded", readBack: true })).status,
-    ).toBe(404);
-    expect(
-      (await report(first, { outcome: "succeeded", readBack: false })).status,
-    ).toBe(400);
-    expect(
-      (await report(first, { outcome: "done", readBack: true })).status,
-    ).toBe(400);
+    expect(claimed.body["actions"]).toMatchObject([{ id: record?.id, mode: "perform" }]);
+    expect((await report(second, { outcome: "succeeded", readBack: true })).status).toBe(404);
+    expect((await report(first, { outcome: "succeeded", readBack: false })).status).toBe(400);
+    expect((await report(first, { outcome: "done", readBack: true })).status).toBe(400);
     const failed = await report(first, {
       outcome: "failed",
       readBack: false,
@@ -661,9 +617,7 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
       id: device.claimed[0]?.["id"],
       mode: "verify",
     });
-    expect(
-      device.claimed.filter(({ mode }) => mode === "perform"),
-    ).toHaveLength(1);
+    expect(device.claimed.filter(({ mode }) => mode === "perform")).toHaveLength(1);
     const id = recorded[0]?.id;
     const blind = await devicePost(h, client, "actions/result", {
       id,
@@ -671,10 +625,7 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
       readBack: false,
       reason: "没看",
     });
-    expect([blind.status, blind.body]).toEqual([
-      409,
-      { code: "DEVICE_ACTION_VERIFY_ONLY" },
-    ]);
+    expect([blind.status, blind.body]).toEqual([409, { code: "DEVICE_ACTION_VERIFY_ONLY" }]);
     const verified = await devicePost(h, client, "actions/result", {
       id,
       outcome: "succeeded",
@@ -720,20 +671,19 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
     expect(reopened.body["actions"]).toMatchObject([
       { action: "device_reminder.create", mode: "verify" },
     ]);
-    const open = (await deviceGet(h, client, "actions")).body[
-      "actions"
-    ] as Record<string, unknown>[];
+    const open = (await deviceGet(h, client, "actions")).body["actions"] as Record<
+      string,
+      unknown
+    >[];
     expect(
-      open.map(
-        ({ state, reasonCode, reason, detail, risk, ownerPresence }) => ({
-          state,
-          reasonCode,
-          reason,
-          detail: (detail as Record<string, string>)["zh-CN"],
-          risk,
-          ownerPresence,
-        }),
-      ),
+      open.map(({ state, reasonCode, reason, detail, risk, ownerPresence }) => ({
+        state,
+        reasonCode,
+        reason,
+        detail: (detail as Record<string, string>)["zh-CN"],
+        risk,
+        ownerPresence,
+      })),
     ).toEqual([
       {
         state: "result_unknown",
@@ -753,12 +703,10 @@ describe("[iOS-9A] an action whose result is unknown is never done twice", () =>
       },
     ]);
     h.clock.advance(601_000);
-    expect(
-      (await devicePost(h, client, "actions/claim", {})).body["actions"],
-    ).toMatchObject([{ action: "device_reminder.create", mode: "verify" }]);
-    const expired = (await rows(h)).find(
-      ({ action }) => action === "alarm.set",
-    );
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toMatchObject([
+      { action: "device_reminder.create", mode: "verify" },
+    ]);
+    const expired = (await rows(h)).find(({ action }) => action === "alarm.set");
     expect(expired).toMatchObject({
       state: "expired",
       reasonCode: "not_delivered_in_time",
@@ -784,9 +732,7 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     const h = await harness();
     const client = await pairAndConfirm(h);
     await supports(h, client, ["contact.update"]);
-    await mirror(h, client, "contact", [
-      { externalId: "c-1", data: { name: "林一" } },
-    ]);
+    await mirror(h, client, "contact", [{ externalId: "c-1", data: { name: "林一" } }]);
     h.actions.authorization.current = ownerAllows(false);
     noWaiting(h);
     const device = await connectDevice(h, client);
@@ -800,17 +746,13 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     await update(["+81 90 1111 2222", "+81 3 3333 4444"]);
     await until(() => device.claimed.length === 1);
     h.clock.advance(601_000);
-    expect(await update(["+81 3 3333 4444", "+81 90 1111 2222"])).toMatchObject(
-      {
-        done: false,
-        state: "result_unknown",
-      },
-    );
+    expect(await update(["+81 3 3333 4444", "+81 90 1111 2222"])).toMatchObject({
+      done: false,
+      state: "result_unknown",
+    });
     await until(() => device.claimed.length >= 2);
     expect(await rows(h)).toHaveLength(1);
-    expect(
-      device.claimed.filter(({ mode }) => mode === "perform"),
-    ).toHaveLength(1);
+    expect(device.claimed.filter(({ mode }) => mode === "perform")).toHaveLength(1);
     await device.close();
     await h.repository.close();
   });
@@ -833,10 +775,7 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
       actions: { name: string; parameters: Record<string, unknown> }[];
     };
     const fields = Object.fromEntries(
-      described.actions.map(({ name, parameters }) => [
-        name,
-        Object.keys(parameters),
-      ]),
+      described.actions.map(({ name, parameters }) => [name, Object.keys(parameters)]),
     );
     expect(fields["calendar.create"]).not.toContain("attendees");
     expect(fields["calendar.update"]).not.toContain("attendees");
@@ -858,9 +797,7 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
       action: "calendar.delete",
       arguments: { eventId: "evt-1", occurrenceStart: "2026-11-20T15:00" },
     });
-    const [single] = (await deviceGet(h, client, "actions")).body[
-      "actions"
-    ] as {
+    const [single] = (await deviceGet(h, client, "actions")).body["actions"] as {
       detail: Record<string, string>;
     }[];
     expect(single?.detail).toEqual({
@@ -912,9 +849,7 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
     const client = await pairAndConfirm(h);
     await supports(h, client, ["device_reminder.create"]);
     h.actions.authorization.current = ownerAllows(false);
-    const device = (
-      await h.repository.pairedDevices().listDevices(perceptionScope)
-    )[0];
+    const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
     await web(h, "revoke", {
       deviceId: client.deviceId,
@@ -931,14 +866,10 @@ describe("[iOS-9A] review round 1: the same action is recognised however it is a
         arguments: { title: "买牛奶" },
       }),
     ).rejects.toThrow();
-    const database = openQualifiedDatabase(
-      path.join(h.stateRoot, "product.sqlite"),
-    );
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
     try {
       expect(
-        database
-          .prepare("SELECT ref FROM payloads WHERE ref LIKE 'device-action:%'")
-          .all(),
+        database.prepare("SELECT ref FROM payloads WHERE ref LIKE 'device-action:%'").all(),
       ).toEqual([]);
     } finally {
       database.close();
@@ -974,11 +905,7 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       mode: "verify",
     });
     await expect(
-      act(
-        "run-1",
-        { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } },
-        "call:fixed",
-      ),
+      act("run-1", { action: "alarm.set", arguments: { time: "2026-11-13T07:00" } }, "call:fixed"),
     ).rejects.toMatchObject({ code: "DEVICE_ACTION_INPUT_INVALID" });
     expect(await rows(h)).toHaveLength(1);
     await device.close();
@@ -997,9 +924,7 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       action: "device_reminder.create",
       arguments: { title: "买牛奶" },
     });
-    expect(
-      (await devicePost(h, client, "actions/claim", {})).body["actions"],
-    ).toHaveLength(1);
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(1);
     const [record] = await rows(h);
     const secondRoot = path.join(h.stateRoot, "full-disk-view");
     await mkdir(secondRoot);
@@ -1032,15 +957,11 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       }),
     ).rejects.toMatchObject({ details: { reason: "disk_headroom" } });
     await full.close();
-    const database = openQualifiedDatabase(
-      path.join(h.stateRoot, "product.sqlite"),
-    );
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
     try {
       expect(
         database
-          .prepare(
-            "SELECT ref FROM payloads WHERE ref LIKE 'device-action:%:result:%'",
-          )
+          .prepare("SELECT ref FROM payloads WHERE ref LIKE 'device-action:%:result:%'")
           .all(),
       ).toEqual([]);
     } finally {
@@ -1068,26 +989,23 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       });
       h.clock.advance(1000);
     }
-    expect(
-      (await devicePost(h, client, "actions/claim", {})).body["actions"],
-    ).toHaveLength(3);
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(3);
     h.perceptionConfiguration.current = {
       ...PERCEPTION_CONFIGURATION_DEFAULTS,
       actionWaitSeconds: 0,
       actionClaimBatch: 2,
     };
     const first = await devicePost(h, client, "actions/open", {});
-    expect(
-      (first.body["actions"] as { mode: string }[]).map(({ mode }) => mode),
-    ).toEqual(["verify", "verify"]);
+    expect((first.body["actions"] as { mode: string }[]).map(({ mode }) => mode)).toEqual([
+      "verify",
+      "verify",
+    ]);
     expect((await rows(h)).map(({ state }) => state)).toEqual([
       "result_unknown",
       "result_unknown",
       "delivered",
     ]);
-    expect(
-      (await ledger(h)).filter(({ outcome }) => outcome === "result_unknown"),
-    ).toHaveLength(2);
+    expect((await ledger(h)).filter(({ outcome }) => outcome === "result_unknown")).toHaveLength(2);
     await h.repository.close();
   });
 });
@@ -1123,9 +1041,7 @@ describe("[iOS-9A] review round 3: actions nobody can verify do not block the qu
       "在“提醒事项”里新建：甲",
       "在“提醒事项”里新建：乙",
     ]);
-    expect((await claim()).map(({ title }) => title)).toEqual([
-      "在“提醒事项”里新建：丙",
-    ]);
+    expect((await claim()).map(({ title }) => title)).toEqual(["在“提醒事项”里新建：丙"]);
     h.clock.advance(601_000);
     const firstCheck = await claim();
     expect(firstCheck.map(({ mode, title }) => [mode, title])).toEqual([
@@ -1148,9 +1064,7 @@ describe("[iOS-9A] review round 3: actions nobody can verify do not block the qu
       ["perform", "在“提醒事项”里新建：丁"],
       ["verify", "在“提醒事项”里新建：丙"],
     ]);
-    expect(
-      (await rows(h)).filter(({ state }) => state === "result_unknown"),
-    ).toHaveLength(3);
+    expect((await rows(h)).filter(({ state }) => state === "result_unknown")).toHaveLength(3);
     await h.repository.close();
   });
 });
@@ -1173,9 +1087,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await act("run-1", request);
     await h.externalContent.mark(createRunId("run-2"), "perception_read");
     await act("run-2", request);
-    expect(
-      seen.map(({ readUntrustedContent }) => readUntrustedContent),
-    ).toEqual([false, true]);
+    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([false, true]);
     await h.repository.close();
   });
 
@@ -1189,18 +1101,12 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     h.actions.authorization.current = ownerAllows(true);
     const views = async () =>
       (
-        (
-          await deviceGet(
-            h,
-            client,
-            "actions?finishedSince=1970-01-01T00:00:00.000Z",
-          )
-        ).body["actions"] as { id: string; action: string; undo: string }[]
+        (await deviceGet(h, client, "actions?finishedSince=1970-01-01T00:00:00.000Z")).body[
+          "actions"
+        ] as { id: string; action: string; undo: string }[]
       ).map(({ id, action, undo }) => ({ id, action, undo }));
     const finish = async (evidence: Record<string, unknown>) => {
-      const claimed = (await devicePost(h, client, "actions/claim", {})).body[
-        "actions"
-      ] as {
+      const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
         id: string;
       }[];
       const id = claimed[0]?.id;
@@ -1233,9 +1139,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         { id: reminder, action: "device_reminder.create", undo: "none" },
       ]),
     );
-    expect(
-      (await devicePost(h, client, "actions/undo", { id: reminder })).status,
-    ).toBe(409);
+    expect((await devicePost(h, client, "actions/undo", { id: reminder })).status).toBe(409);
     expect(
       (
         await devicePost(h, client, "actions/undo", {
@@ -1243,20 +1147,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         })
       ).status,
     ).toBe(404);
-    const undone = await confirmablePost(
-      h,
-      client,
-      "actions/undo",
-      { id: changed },
-      true,
-    );
+    const undone = await confirmablePost(h, client, "actions/undo", { id: changed }, true);
     expect(undone.body).toMatchObject({ state: "queued" });
-    expect((await views()).find(({ id }) => id === changed)?.undo).toBe(
-      "pending",
-    );
-    const claimed = (await devicePost(h, client, "actions/claim", {})).body[
-      "actions"
-    ] as {
+    expect((await views()).find(({ id }) => id === changed)?.undo).toBe("pending");
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
       arguments: Record<string, unknown>;
     }[];
     expect(claimed).toMatchObject([
@@ -1285,9 +1179,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       action: "calendar.update",
       arguments: { eventId: "evt-1", title: "新标题" },
     });
-    const claimed = (await devicePost(h, client, "actions/claim", {})).body[
-      "actions"
-    ] as {
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
       id: string;
     }[];
     await devicePost(h, client, "actions/result", {
@@ -1296,9 +1188,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       readBack: true,
       evidence: {},
     });
-    expect(
-      await devicePost(h, client, "actions/undo", { id: claimed[0]?.id }),
-    ).toMatchObject({
+    expect(await devicePost(h, client, "actions/undo", { id: claimed[0]?.id })).toMatchObject({
       status: 409,
     });
     const seen: DeviceActionIntent[] = [];
@@ -1309,9 +1199,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       action: "calendar.update",
       arguments: { eventId: "evt-1", title: "再改" },
     });
-    const second = (await devicePost(h, client, "actions/claim", {})).body[
-      "actions"
-    ] as {
+    const second = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
       id: string;
     }[];
     await devicePost(h, client, "actions/result", {
@@ -1359,9 +1247,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         },
         `call:${targets.length}`,
       );
-      const claimed = (await devicePost(h, client, "actions/claim", {})).body[
-        "actions"
-      ] as {
+      const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
         id: string;
       }[];
       await devicePost(h, client, "actions/result", {
@@ -1375,23 +1261,9 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await h.externalContent.mark(createRunId("run-1"), "perception_read");
     const seen: DeviceActionIntent[] = [];
     h.actions.authorization.current = ownerIsAsked(seen);
-    await confirmablePost(
-      h,
-      client,
-      "actions/undo",
-      { id: targets[0] as string },
-      false,
-    );
-    await confirmablePost(
-      h,
-      client,
-      "actions/undo",
-      { id: targets[1] as string },
-      true,
-    );
-    expect(
-      seen.map(({ readUntrustedContent }) => readUntrustedContent),
-    ).toEqual([true, false]);
+    await confirmablePost(h, client, "actions/undo", { id: targets[0] as string }, false);
+    await confirmablePost(h, client, "actions/undo", { id: targets[1] as string }, true);
+    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([true, false]);
     await h.repository.close();
   });
 
@@ -1408,32 +1280,22 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       action: "calendar.update",
       arguments: { eventId: "evt-1", title: "新" },
     });
-    const claimed = (await devicePost(h, client, "actions/claim", {})).body[
-      "actions"
-    ] as {
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
       id: string;
     }[];
     const id = claimed[0]?.id as string;
-    expect((await devicePost(h, client, "actions/undo", { id })).status).toBe(
-      409,
-    );
+    expect((await devicePost(h, client, "actions/undo", { id })).status).toBe(409);
     await devicePost(h, client, "actions/result", {
       id,
       outcome: "succeeded",
       readBack: true,
       evidence: { before: { title: "牙医复诊" } },
     });
-    expect((await devicePost(h, other, "actions/undo", { id })).status).toBe(
-      404,
-    );
-    expect(
-      (await devicePost(h, client, "actions/undo", { id })).body,
-    ).toMatchObject({
+    expect((await devicePost(h, other, "actions/undo", { id })).status).toBe(404);
+    expect((await devicePost(h, client, "actions/undo", { id })).body).toMatchObject({
       state: "queued",
     });
-    const reverse = (await devicePost(h, client, "actions/claim", {})).body[
-      "actions"
-    ] as {
+    const reverse = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
       id: string;
     }[];
     await devicePost(h, client, "actions/result", {
@@ -1445,9 +1307,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     const again = await devicePost(h, client, "actions/undo", { id });
     expect(again.body).toEqual({ id: reverse[0]?.id, state: "failed" });
     expect((await rows(h)).length).toBe(before);
-    expect(
-      (await devicePost(h, client, "actions/claim", {})).body["actions"],
-    ).toEqual([]);
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toEqual([]);
     await h.repository.close();
   });
 
@@ -1457,9 +1317,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       args: Record<string, unknown>,
       evidence: Record<string, unknown>,
     ) => DEVICE_ACTION_REGISTRY.get(action)?.undo?.(args, evidence) ?? null;
-    expect(
-      plan("calendar.create", { title: "x" }, { eventId: "evt-9" }),
-    ).toEqual({
+    expect(plan("calendar.create", { title: "x" }, { eventId: "evt-9" })).toEqual({
       action: "calendar.delete",
       arguments: { eventId: "evt-9" },
     });
@@ -1513,16 +1371,8 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       action: "contact.update",
       arguments: { contactId: "c-1", organization: "旧公司" },
     });
-    expect(
-      plan("alarm.set", { time: "2026-11-13T07:00" }, { alarmId: "a-1" }),
-    ).toBeNull();
-    expect(
-      plan(
-        "home.control",
-        { accessoryId: "lamp-1" },
-        { before: { on: false } },
-      ),
-    ).toBeNull();
+    expect(plan("alarm.set", { time: "2026-11-13T07:00" }, { alarmId: "a-1" })).toBeNull();
+    expect(plan("home.control", { accessoryId: "lamp-1" }, { before: { on: false } })).toBeNull();
   });
 
   it("[approval] moves a waiting action on once the unified approval is answered, and rejects it when the owner says no", async () => {
@@ -1539,8 +1389,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         decision: "approval",
         approvalId: `approval:${intent.runId}`,
       }),
-      resolve: async (approvalId) =>
-        answers.get(approvalId) ?? { decision: "pending" },
+      resolve: async (approvalId) => answers.get(approvalId) ?? { decision: "pending" },
     };
     const request = {
       action: "calendar.delete",
@@ -1550,9 +1399,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       state: "waiting_owner",
     });
     await h.actions.service.reconcile();
-    expect((await rows(h)).map(({ state }) => state)).toEqual([
-      "waiting_owner",
-    ]);
+    expect((await rows(h)).map(({ state }) => state)).toEqual(["waiting_owner"]);
     answers.set("approval:run-1", {
       decision: "deny",
       reasonCode: "owner_denied",
@@ -1565,10 +1412,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     });
     answers.set("approval:run-2", { decision: "allow", ownerPresent: true });
     await h.actions.service.reconcile();
-    expect((await rows(h)).map(({ state }) => state).sort()).toEqual([
-      "queued",
-      "rejected",
-    ]);
+    expect((await rows(h)).map(({ state }) => state).sort()).toEqual(["queued", "rejected"]);
     await h.repository.close();
   });
 
@@ -1593,8 +1437,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
         decision: "approval",
         approvalId: `approval:${intent.runId}`,
       }),
-      resolve: async (approvalId) =>
-        answers.get(approvalId) ?? { decision: "pending" },
+      resolve: async (approvalId) => answers.get(approvalId) ?? { decision: "pending" },
     };
     for (let index = 0; index < total; index += 1) {
       await addRun(h, `run-${index}`);
@@ -1660,9 +1503,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       untrustedOriginAllowed: false,
       readUntrustedContent: false,
     });
-    const waiting = (await rows(h)).find(
-      ({ state }) => state === "waiting_owner",
-    );
+    const waiting = (await rows(h)).find(({ state }) => state === "waiting_owner");
     if (!waiting) throw new Error("waiting action missing");
     expect(waiting).toMatchObject({
       approvalId: "approval-1",
@@ -1679,9 +1520,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     expect(await act("run-1", request)).toMatchObject({
       state: "waiting_owner",
     });
-    const second = (await rows(h)).find(
-      ({ state }) => state === "waiting_owner",
-    );
+    const second = (await rows(h)).find(({ state }) => state === "waiting_owner");
     if (!second) throw new Error("second waiting action missing");
     expect(
       await h.actions.service.decide({
@@ -1692,9 +1531,10 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     ).toBe("queued");
     expect(h.actions.openRequests.map(({ id }) => id)).toEqual([second.id]);
     const cut = h.clock.now();
-    const view = (await deviceGet(h, client, "actions")).body[
-      "actions"
-    ] as Record<string, unknown>[];
+    const view = (await deviceGet(h, client, "actions")).body["actions"] as Record<
+      string,
+      unknown
+    >[];
     expect(view).toMatchObject([
       {
         id: second.id,
@@ -1714,11 +1554,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       actions: [],
     });
     expect(
-      (await rows(h)).map(({ state, reasonCode, deliveredAt }) => [
-        state,
-        reasonCode,
-        deliveredAt,
-      ]),
+      (await rows(h)).map(({ state, reasonCode, deliveredAt }) => [state, reasonCode, deliveredAt]),
     ).toEqual([
       ["rejected", "owner_presence_unproven", null],
       ["rejected", "owner_presence_unproven", null],
@@ -1726,18 +1562,16 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     ]);
     const since = async (value: string) =>
       (
-        (
-          await deviceGet(
-            h,
-            client,
-            `actions?finishedSince=${encodeURIComponent(value)}`,
-          )
-        ).body["actions"] as { id: string; state: string }[]
+        (await deviceGet(h, client, `actions?finishedSince=${encodeURIComponent(value)}`)).body[
+          "actions"
+        ] as { id: string; state: string }[]
       ).map(({ id, state }) => [id, state]);
     expect(await since(cut)).toEqual([[second.id, "expired"]]);
-    expect(
-      (await since("1970-01-01T00:00:00.000Z")).map(([, state]) => state),
-    ).toEqual(["rejected", "rejected", "expired"]);
+    expect((await since("1970-01-01T00:00:00.000Z")).map(([, state]) => state)).toEqual([
+      "rejected",
+      "rejected",
+      "expired",
+    ]);
     expect((await deviceGet(h, client, "actions")).body).toEqual({
       actions: [],
     });
@@ -1815,31 +1649,20 @@ describe("[iOS-9A] every action carries the words for its confirm button", () =>
       { "zh-CN": "删掉", en: "Delete", ja: " " },
       { "zh-CN": "删掉", en: "Delete" },
     ])
-      expect(
-        () =>
-          new DeviceActionRegistry([{ ...base, confirmLabel } as typeof base]),
-      ).toThrow("DEVICE_ACTION_REGISTRATION_INVALID");
-    for (const declineLabel of [
-      undefined,
-      { "zh-CN": "不删", en: "Don't delete" },
-    ])
-      expect(
-        () =>
-          new DeviceActionRegistry([{ ...base, declineLabel } as typeof base]),
-      ).toThrow("DEVICE_ACTION_REGISTRATION_INVALID");
+      expect(() => new DeviceActionRegistry([{ ...base, confirmLabel } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
+    for (const declineLabel of [undefined, { "zh-CN": "不删", en: "Don't delete" }])
+      expect(() => new DeviceActionRegistry([{ ...base, declineLabel } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
     for (const registration of DEVICE_ACTION_REGISTRATIONS)
-      for (const words of [
-        registration.confirmLabel,
-        registration.declineLabel,
-      ])
+      for (const words of [registration.confirmLabel, registration.declineLabel])
         expect(Object.keys(words).sort()).toEqual(["en", "ja", "zh-CN"]);
-    for (const title of [
-      undefined,
-      { "zh-CN": "删除日程", en: "", ja: "予定を削除" },
-    ])
-      expect(
-        () => new DeviceActionRegistry([{ ...base, title } as typeof base]),
-      ).toThrow("DEVICE_ACTION_REGISTRATION_INVALID");
+    for (const title of [undefined, { "zh-CN": "删除日程", en: "", ja: "予定を削除" }])
+      expect(() => new DeviceActionRegistry([{ ...base, title } as typeof base])).toThrow(
+        "DEVICE_ACTION_REGISTRATION_INVALID",
+      );
   });
 });
 
@@ -1881,9 +1704,7 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       403,
       { code: "DEVICE_OWNER_PRESENCE_REQUIRED" },
     ]);
-    expect(
-      (await deviceGet(h, client, "actions/policy")).body["revision"],
-    ).toBe(0);
+    expect((await deviceGet(h, client, "actions/policy")).body["revision"]).toBe(0);
     expect(await ledger(h)).toEqual([]);
     const unknown = await changePolicy(
       h,
@@ -1911,12 +1732,7 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
         ],
       },
     ]);
-    const stale = await changePolicy(
-      h,
-      client,
-      { expectedRevision: 0, blockedActions: [] },
-      true,
-    );
+    const stale = await changePolicy(h, client, { expectedRevision: 0, blockedActions: [] }, true);
     expect([stale.status, stale.body["code"], stale.body["revision"]]).toEqual([
       409,
       "DEVICE_POLICY_REVISION_CONFLICT",
@@ -1987,18 +1803,12 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
     await device.close();
     expect(device.claimed).toEqual([]);
     expect(
-      (await rows(h)).map(({ action, state, reasonCode }) => [
-        action,
-        state,
-        reasonCode,
-      ]),
+      (await rows(h)).map(({ action, state, reasonCode }) => [action, state, reasonCode]),
     ).toEqual([
       ["device_reminder.create", "rejected", "device_policy"],
       ["home.read", "rejected", "device_policy"],
     ]);
-    expect(
-      (await ledger(h)).map(({ outcome, reasonCode }) => [outcome, reasonCode]),
-    ).toEqual(
+    expect((await ledger(h)).map(({ outcome, reasonCode }) => [outcome, reasonCode])).toEqual(
       expect.arrayContaining([
         ["rejected", "device_action_device_policy"],
         ["policy_changed", "device_policy_owner_change"],
@@ -2019,17 +1829,13 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       action: "device_reminder.create",
       arguments: { title: "买牛奶" },
     });
-    expect(
-      (await devicePost(h, client, "actions/claim", {})).body["actions"],
-    ).toHaveLength(1);
+    expect((await devicePost(h, client, "actions/claim", {})).body["actions"]).toHaveLength(1);
     h.clock.advance(1000);
     await act("run-1", {
       action: "alarm.set",
       arguments: { time: "2026-11-13T07:00" },
     });
-    const device = (
-      await h.repository.pairedDevices().listDevices(perceptionScope)
-    )[0];
+    const device = (await h.repository.pairedDevices().listDevices(perceptionScope))[0];
     if (!device) throw new Error("device missing");
     const revoked = await web(h, "revoke", {
       deviceId: client.deviceId,
@@ -2040,11 +1846,7 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
       expect((await devicePost(h, client, route, {})).status).toBe(403);
     expect(await h.actions.service.claim(client.deviceId)).toEqual([]);
     expect(
-      (await rows(h)).map(({ action, state, reasonCode }) => [
-        action,
-        state,
-        reasonCode,
-      ]),
+      (await rows(h)).map(({ action, state, reasonCode }) => [action, state, reasonCode]),
     ).toEqual([
       ["device_reminder.create", "result_unknown", "device_revoked"],
       ["alarm.set", "rejected", "device_revoked"],
@@ -2060,10 +1862,7 @@ describe("[iOS-9A] each device has its own policy and a revoked device gets noth
 });
 
 describe("[iOS-9A] device actions and policies are part of the owner's data export", () => {
-  function lines(
-    files: PortableFiles,
-    file: string,
-  ): Record<string, unknown>[] {
+  function lines(files: PortableFiles, file: string): Record<string, unknown>[] {
     const text = new TextDecoder().decode(files.get(file));
     return text === ""
       ? []
@@ -2074,9 +1873,7 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
   }
 
   async function exported(h: Harness) {
-    const database = openQualifiedDatabase(
-      path.join(h.stateRoot, "product.sqlite"),
-    );
+    const database = openQualifiedDatabase(path.join(h.stateRoot, "product.sqlite"));
     try {
       return await buildPortableExport({
         database,
@@ -2113,12 +1910,7 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
       arguments: { title: "买牛奶" },
     });
     await device.close();
-    await changePolicy(
-      h,
-      client,
-      { expectedRevision: 0, blockedActions: ["home.read"] },
-      true,
-    );
+    await changePolicy(h, client, { expectedRevision: 0, blockedActions: ["home.read"] }, true);
     const { files, manifest } = await exported(h);
     const [record] = await rows(h);
     const [action] = lines(files, "data/device-actions.jsonl");
@@ -2184,10 +1976,7 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
     await mkdir(path.dirname(databasePath), { recursive: true });
     for (const name of await readdir(h.stateRoot))
       if (name.startsWith("product.sqlite"))
-        await rename(
-          path.join(h.stateRoot, name),
-          path.join(h.stateRoot, "data", name),
-        );
+        await rename(path.join(h.stateRoot, name), path.join(h.stateRoot, "data", name));
     await new SqliteGovernedDeletionAdapter({
       stateRoot: h.stateRoot,
       databasePath,
@@ -2197,13 +1986,11 @@ describe("[iOS-9A] device actions and policies are part of the owner's data expo
     }).deleteImmediately({ objectType: "run", objectId: "run-1" });
     const database = openQualifiedDatabase(databasePath);
     try {
-      expect(
-        database.prepare("SELECT run_id AS runId FROM device_actions").all(),
-      ).toEqual([{ runId: "run-2" }]);
+      expect(database.prepare("SELECT run_id AS runId FROM device_actions").all()).toEqual([
+        { runId: "run-2" },
+      ]);
       const stored = (ref: string | undefined) =>
-        database
-          .prepare("SELECT COUNT(*) AS total FROM payloads WHERE ref = ?")
-          .get(ref);
+        database.prepare("SELECT COUNT(*) AS total FROM payloads WHERE ref = ?").get(ref);
       expect(stored(gone?.argumentsRef)).toEqual({ total: 0 });
       expect(stored(kept?.argumentsRef)).toEqual({ total: 1 });
     } finally {
