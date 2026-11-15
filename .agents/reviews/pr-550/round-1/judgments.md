@@ -1,0 +1,9 @@
+# PR 550 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 中：无法解码的 `notification.*` 事件仍会把 id 存成游标，通知可能丢。DeviceEvents.swift:151-152 旧代码按解码结果判断，decoded 为 nil 时会 save(id)；触发：服务器违反合约给 notification.* 事件带 id 行，且载荷解码失败；后果：通知的 id 被当成设备流游标存下，重连时 after 参数指向通知 id；判低理由：合约写明通知事件不带 id 行（材料“推送线程已同意”），要同时违反合约并发坏载荷才触发；已改为按事件名判断（DeviceEvents.swift notificationEvents），补坏载荷带 id 行的用例
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2. 中：“同一事件重发不会再弹”只在通知还留在内存时成立；点过“知道了”或收到 withdraw 后重发会再弹。OwnerPresence.swift:27-35 只和 items 里现有条目比较，withdraw 后条目已删；已加本次运行内已收走/已知道 id 集合，补 deliver→withdraw→deliver 和 MacUI deliver→dismiss→deliver 用例；触发：点过“知道了”或收到 withdraw 后，服务器重连时重发同一 id 的 notification.deliver（合约没规定不重发）；后果：已处理的提醒再弹一次系统通知、面板卡片又回来，和提交说明“同一事件重发不会再弹”不符
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 中（推测）：负数或 0 的系统空闲时间会被当成“刚刚有操作”。OwnerPresence.swift:78-80 max(0, x) 把负数截成 0；触发：CGEventSource.secondsSinceLastEventType 返回负数或非有限值；后果：被当成刚刚有输入，上报主人在场；判低理由：苹果文档未说会返回负数，属推测；0 本身就是刚有输入，不改；已把负数和非有限值当作读不到、跳过上报并补用例
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低：4 分钟保活实际可能超过 4 分钟。PresenceSensor.swift:26 固定睡 15 秒；已加 PresenceReportPolicy.secondsUntilNextCheck，在保活到期点醒来并补用例；触发：保活到期时刚好在两次 15 秒检查之间；后果：补报最晚晚约 15 秒，超过合约的每 4 分钟一次，仍在 5 分钟在场窗口内
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5. 低：通知列表和标题/正文没有上限，坏服务器或重发可耗尽内存和面板。服务器是已认证的自有服务器，长度和数量异常要服务器出错才出现；但结果类通知不一定收走，面板（PanelView.swift 无 ScrollView）在长时间不点“知道了”时会变长，保留几条是产品选择，交 Andy 定
+- 6（deepseek-v4.1-flash）成立，会出错，低：### 6. 低：新测试自建了假的 `CursorStore`，与“测试不许假替身”不一致。OwnerPresenceTests.swift:8-19 自写 MemoryCursor；已换成 StoredCursor(store: MemoryLocalStore())，按 load() 断言；触发：违反“测试不许假替身”的项目约束；后果：测试自写 CursorStore，没有走真实的 StoredCursor
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7. 低：`createdAt` 用字符串排序，格式一旦有偏差，“最新在前”就会排错。OwnerPresence.swift:34 按字符串排序；合约规定毫秒格式，违反合约才触发；已改为解析成时间再排序，补混合格式用例；触发：createdAt 混用带毫秒和不带毫秒的 ISO 8601 写法；后果：面板里通知顺序排错，只影响显示顺序
