@@ -634,8 +634,7 @@ describe("think runner", () => {
       const db = openQualifiedDatabase(file);
       try {
         const prepared = db.prepare(statement);
-        if (prepared.reader)
-          return prepared.all(...parameters) as Record<string, unknown>[];
+        if (prepared.reader) return prepared.all(...parameters) as Record<string, unknown>[];
         prepared.run(...parameters);
         return [];
       } finally {
