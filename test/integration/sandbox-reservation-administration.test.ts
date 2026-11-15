@@ -756,7 +756,13 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const migrated = snapshot(f);
     for (const [table, rows] of Object.entries(before)) {
       if (table !== "schema_migration_ledger" && table !== "schema_metadata")
-        expect(migrated[table]).toEqual(rows.map((row) => expect.objectContaining(row)));
+        expect(
+          migrated[table]?.map((row) =>
+            table === "threads"
+              ? Object.fromEntries(Object.entries(row).filter(([column]) => column !== "origin"))
+              : row,
+          ),
+        ).toEqual(rows);
     }
     withDatabase(f, (database) => {
       expect(
