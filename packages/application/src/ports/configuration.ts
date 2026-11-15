@@ -405,6 +405,7 @@ export interface ThinkInboxConfiguration {
 export const THINK_SETTING_UNITS = [
   "permille",
   "count",
+  "times",
   "hours",
   "minutes",
   "characters",
@@ -418,7 +419,7 @@ export const THINK_SETTING_DEFINITIONS = Object.freeze([
   { key: "dailyLimit", unit: "count", minimum: 1, maximum: 10000, defaultValue: 50 },
   { key: "expiresAfterHours", unit: "hours", minimum: 1, maximum: 8760, defaultValue: 48 },
   { key: "stalledAfterMinutes", unit: "minutes", minimum: 1, maximum: 1440, defaultValue: 30 },
-  { key: "maxAttempts", unit: "count", minimum: 1, maximum: 20, defaultValue: 3 },
+  { key: "maxAttempts", unit: "times", minimum: 1, maximum: 20, defaultValue: 3 },
   {
     key: "summaryCharacters",
     unit: "characters",

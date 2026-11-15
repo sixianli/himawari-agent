@@ -86,11 +86,12 @@ export const THINK_SETTING_TEXT: Readonly<
     },
   },
   maxAttempts: {
-    label: { "zh-CN": "最多重试次数", en: "Maximum attempts", ja: "最大試行回数" },
+    label: { "zh-CN": "最多尝试次数", en: "Maximum attempts", ja: "最大試行回数" },
     description: {
-      "zh-CN": "一件事最多想几次，次数用完还没成就记为失败。",
-      en: "How many times one item may be tried before it is marked failed.",
-      ja: "1 件を試せる回数の上限です。使い切ると失敗として記録します。",
+      "zh-CN":
+        "一件事“在想”时卡住了会重新排队再想，连同第一次最多想这么多次，仍卡住就记为失败。因别的原因失败的不会再想。",
+      en: "An item that stalls while in progress is queued again, up to this many tries in all, and is then marked failed. Items that fail for other reasons are not tried again.",
+      ja: "考えている最中に停滞した件は並び直して考え直します。最初の 1 回を含めてこの回数まで試しても停滞したら失敗として記録します。ほかの理由で失敗した件は考え直しません。",
     },
   },
   summaryCharacters: {
@@ -123,6 +124,7 @@ export const THINK_SETTING_UNIT_TEXT: Readonly<Record<ThinkSettingUnit, ThinkSet
   Object.freeze({
     permille: { "zh-CN": "千分比", en: "per mille", ja: "パーミル" },
     count: { "zh-CN": "件", en: "items", ja: "件" },
+    times: { "zh-CN": "次", en: "times", ja: "回" },
     hours: { "zh-CN": "小时", en: "hours", ja: "時間" },
     minutes: { "zh-CN": "分钟", en: "minutes", ja: "分" },
     characters: { "zh-CN": "字", en: "characters", ja: "文字" },

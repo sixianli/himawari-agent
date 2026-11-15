@@ -250,6 +250,12 @@ describe("think settings", () => {
       label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
       unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
     });
+    expect(snapshot.payload.items[6]).toMatchObject({
+      key: "maxAttempts",
+      unit: "times",
+      label: { "zh-CN": "最多尝试次数", en: "Maximum attempts", ja: "最大試行回数" },
+      unitLabel: { "zh-CN": "次", en: "times", ja: "回" },
+    });
     expect(snapshot.payload.items[3]).toMatchObject({ value: 50, defaultValue: 50 });
     const off = await fixture();
     const plain = (await off.control.query(head as never)) as unknown as {
