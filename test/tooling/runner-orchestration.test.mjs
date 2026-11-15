@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   failSecurity: false,
   testReportFailure: "",
   empty: false,
+  emptyShard: false,
   pipelineExitCode: 0,
   writtenCandidateFailure: false,
   failCleanup: false,
@@ -217,7 +218,9 @@ vi.mock("../../scripts/ci/test.mjs", () => ({
       },
       projects: projects.map((id) => ({
         id,
-        counts: counts(),
+        counts: state.emptyShard
+          ? { files: 0, executed: 0, passed: 0, failed: 0, skipped: 0 }
+          : counts(),
       })),
       reports: [{ path: report, kind: "json" }],
     };
@@ -276,6 +279,7 @@ beforeEach(() => {
   state.failSecurity = false;
   state.testReportFailure = "";
   state.empty = false;
+  state.emptyShard = false;
   state.pipelineExitCode = 0;
   state.writtenCandidateFailure = false;
   state.failCleanup = false;
@@ -460,6 +464,26 @@ describe("共享runner的调度、来源和失败传播", () => {
   ])("[ADR-0267] 拒绝%s的覆盖率选项%s，不启动命令", async (checkId, coverage) => {
     await expect(run(checkId, { coverage })).rejects.toThrow("CI_COVERAGE_OPTION_INVALID");
     expect(state.calls).toEqual([]);
+  });
+  it("[ADR-0275] 全量运行里一份分到零个文件时失败，相关范围下分到零个文件时通过", async () => {
+    state.emptyShard = true;
+    const full = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope: () => ({ related: new Map(), reason: "full-event" }),
+    });
+    expect(full.status).not.toBe("passed");
+    expect(
+      JSON.parse(readFileSync(path.join(state.root, ".ci-output/tests/details.json"), "utf8"))
+        .failures,
+    ).toContain("CI_INCOMPLETE_EXECUTION");
+    const related = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      output: ".ci-output/tests-related",
+      planScope: () => ({ related: new Map([["integration", []]]), reason: "related" }),
+    });
+    expect(related.status).toBe("passed");
   });
   it("tests 在缺少构建归档时拒绝启动", async () => {
     await expect(run("tests", { artifact: undefined })).rejects.toThrow("CI_ARTIFACT_REQUIRED");

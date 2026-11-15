@@ -50,11 +50,11 @@ date: "2026-11-15"
 ### tests 拆成三个矩阵成员
 
 - `ci/policy.json` 里 tests 的成员从一个 `default` 换成三个：`integration-1`、`integration-2` 各跑 integration 的一半（`"shard": { "index": 1, "count": 2 }` 和 `index: 2`），`others` 跑 unit、contracts、e2e、pi-compat。成员上新加的 `projects`、`shard` 两个字段写进 `ci/policy.schema.json`。
-- 分份办法：把这个项目该跑的测试文件（全量时是仓库里符合 include、exclude 的文件，PR 上只跑相关测试时是相关的那些）按路径排序，第 i 个文件归第 `i % count + 1` 份。每份把自己的文件名明确交给 vitest，`CI_TEST_FILE_SET_MISMATCH` 核对照旧生效：多跑或少跑一个文件都失败。
+- 分份办法：把这个项目该跑的测试文件（全量时是 `git ls-files --cached` 列出的、已提交且符合 include、exclude 的文件，PR 上只跑相关测试时是相关的那些）按路径排序，从 0 开始数，第 i 个文件归第 `i % count + 1` 份。只用已提交的文件，是为了让各台机器分到的清单一致：同一个提交检出的已提交文件相同，没提交的文件各台可能不同。每份把自己的文件名明确交给 vitest，`CI_TEST_FILE_SET_MISMATCH` 核对照旧生效：多跑或少跑一个文件都失败。
 - `scripts/ci/check-policy.mjs` 的 `validatePolicy` 要求 tests 正好是这三个成员；每个项目在成员之间恰好跑一次（要么一个成员整个跑，要么几个成员的 `shard` 正好是 1/N 到 N/N）；分片成员只能跑一个项目；tests 以外的作业不能写 `projects`、`shard`。工作流的矩阵仍须和策略逐字一致。
 - 基准上还是单个 `default` 成员的策略，由新的 `upgradeSplitTests` 换成三个成员，所以这个 PR 自己的 CI 和合并后的 main 用的是同一种写法。
 - 汇总（`scripts/ci/aggregate.mjs`）按每个成员自己的项目核对报上来的项目，三个成员缺一个就不过。证据导出的检查条数上下限从 9、10 改成 11、12。
-- `--coverage measure`（统计覆盖率）照旧在一台上跑全部项目，不分片，因为覆盖率要所有项目在同一份报告里。
+- `--coverage measure`（统计覆盖率）不分片：在哪个成员上统计，就在那一台上跑全部项目，因为覆盖率要所有项目在同一份报告里。已知的限制：仓库第一次接入（基准上没有 `ci/policy.json`）时，tests 作业带的 `--baseline-candidate initial-only` 会让三个成员都这样统计，而汇总按每个成员自己的项目核对，这种运行会不过。本仓库 main 上早已有策略，这条路走不到；以后要在新仓库第一次接入时，先让 tests 只有一个成员。
 - `scripts/ci/local.mjs` 在本机依次跑三个成员。
 
 ### tooling 测试超时放到 30 秒

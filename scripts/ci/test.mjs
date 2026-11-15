@@ -45,16 +45,16 @@ export async function runTests({
   const projects = [];
   const reports = [{ path: archive, kind: "artifact" }];
   const outcomes = [];
-  const trackedFiles = [
+  const listFiles = (args) => [
     ...new Set(
-      execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
-        cwd: root,
-        encoding: "utf8",
-      })
+      execFileSync("git", ["ls-files", ...args, "-z"], { cwd: root, encoding: "utf8" })
         .split("\0")
         .filter(Boolean),
     ),
   ];
+  const trackedFiles = listFiles(
+    shard ? ["--cached"] : ["--cached", "--others", "--exclude-standard"],
+  );
   if (!selection?.length || selection.some((id) => !check.projects.includes(id)))
     throw new Error("CI_TEST_PROJECT_SELECTION_INVALID");
   if (

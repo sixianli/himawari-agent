@@ -333,6 +333,8 @@ describe("five-project execution contract", () => {
     const options = await fixture();
     const files = ["a", "b", "c", "d", "e"].map((name) => `test/integration/${name}.test.ts`);
     for (const file of files) await put(path.join(options.root, file), "export {};\n");
+    await put(path.join(options.root, "test/integration/untracked.test.ts"), "export {};\n");
+    execFileSync("git", ["add", ...files], { cwd: options.root });
     const value = mocks.policy.getMockImplementation()().policy;
     value.testProjects.find((project) => project.id === "integration").include = [
       "test/integration/*.test.ts",
