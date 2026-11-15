@@ -22,16 +22,19 @@ final class FakeSettlement: NotificationSettlementSource, @unchecked Sendable {
     private let lock = NSLock()
     private let settled: Set<String>
     private let failing: Bool
+    private let fixedReply: [String]?
     private(set) var asked: [[String]] = []
 
-    init(settled: Set<String>, failing: Bool = false) {
+    init(settled: Set<String>, failing: Bool = false, fixedReply: [String]? = nil) {
         self.settled = settled
         self.failing = failing
+        self.fixedReply = fixedReply
     }
 
     func settledNotifications(ids: [String]) async throws -> [String] {
         lock.withLock { asked.append(ids) }
         if failing { throw URLError(.notConnectedToInternet) }
+        if let fixedReply { return fixedReply }
         return ids.filter { settled.contains($0) }
     }
 }
@@ -63,14 +66,12 @@ final class FakeSettlement: NotificationSettlementSource, @unchecked Sendable {
     }
 
     @Test func aServerReplyNamingAnIdentifierThatWasNotAskedAboutRemovesNothingExtra() async {
-        let center = FakeNotificationCenter(shown([("r1", "asked")]))
-        let source = FakeSettlement(settled: ["asked", "stranger"])
-        _ = await NotificationSettler(center: center, source: source).reconcile()
-        #expect(center.remaining == [])
-        let other = FakeNotificationCenter(shown([("r9", "unrelated")]))
-        let reply = FakeSettlement(settled: ["stranger"])
-        #expect(await NotificationSettler(center: other, source: reply).reconcile() == 0)
-        #expect(other.remaining == ["r9"])
+        let center = FakeNotificationCenter(shown([("r1", "asked"), ("r2", "has space"), ("r3", "unrelated")]))
+        let source = FakeSettlement(settled: [], fixedReply: ["asked", "has space", "stranger"])
+        let removed = await NotificationSettler(center: center, source: source).reconcile()
+        #expect(source.asked == [["asked", "unrelated"]])
+        #expect(removed == 1)
+        #expect(center.remaining == ["r2", "r3"])
     }
 
     @Test func aFailedCheckLeavesEveryNotificationInPlace() async {
