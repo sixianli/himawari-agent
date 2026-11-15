@@ -61,7 +61,7 @@ extension TuningItem {
         case (.duration, let unit?):
             guard let perUnit = unit.seconds else { return step }
             let seconds = Double(max(raw, 0)) * perUnit
-            let tier: Double = seconds < 60 ? 1 : seconds < 3600 ? 60 : seconds < 86_400 ? 3600 : 86_400
+            let tier: Double = seconds < 1 ? 0.1 : seconds < 60 ? 1 : seconds < 3600 ? 60 : seconds < 86_400 ? 3600 : 86_400
             return max(1, Int((tier / perUnit).rounded()))
         default:
             return step

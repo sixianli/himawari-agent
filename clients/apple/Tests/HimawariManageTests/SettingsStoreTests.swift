@@ -187,6 +187,10 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(millis.text(4000).contains("4000"))
         XCTAssertEqual(millis.stepUp(from: 4000), 5000)
         XCTAssertEqual(millis.text(250), "250 毫秒")
+        XCTAssertEqual(millis.stepUp(from: 250), 300)
+        XCTAssertEqual(millis.stepDown(from: 300), 200)
+        XCTAssertEqual(millis.stepDown(from: 1000), 900)
+        XCTAssertEqual(millis.stepUp(from: 900), 1000)
         let hours = try tuningItem("小时", kind: "duration", storage: "h", value: 48, minimum: 1, maximum: 8760)
         XCTAssertEqual(hours.stepUp(from: 48), 72)
     }

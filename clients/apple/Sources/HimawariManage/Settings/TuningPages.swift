@@ -124,6 +124,6 @@ struct TuningEditPage: View {
     }
 
     private static func declined(_ error: Error) -> Bool {
-        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError || error is URLError)
     }
 }
