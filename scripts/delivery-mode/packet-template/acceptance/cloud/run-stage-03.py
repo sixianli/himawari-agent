@@ -57,43 +57,56 @@ scene_spec.loader.exec_module(scene_module)
 def root_free():
     return shutil.disk_usage('/').free
 
-def file_bytes(path):
+def file_bytes(path, tally=None):
     try:
         return path.lstat().st_size
     except FileNotFoundError:
+        if tally is not None:
+            tally.vanished += 1
         return 0
 
-def directory_bytes(directory):
-    return sum(file_bytes(Path(parent) / name) for parent, directories, files in os.walk(directory, followlinks=False) for name in files)
+def directory_bytes(directory, tally=None):
+    def listing_failed(error):
+        if tally is None:
+            return
+        if isinstance(error, FileNotFoundError):
+            tally.vanished += 1
+        else:
+            tally.warnings.append({'phase': 'listing', 'type': type(error).__name__, 'message': str(error)})
+    return sum(file_bytes(Path(parent) / name, tally) for parent, directories, files in os.walk(directory, onerror=listing_failed, followlinks=False) for name in files)
 
 class Resources:
     def __init__(self, scratch):
         self.scratch = scratch
         self.peak = 0
         self.lowest = root_free()
-        self.errors = []
+        self.warnings = []
+        self.vanished = 0
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self.observe, daemon=True)
 
     def sample(self):
-        current = {'at': time.time(), 'scratchBytes': directory_bytes(self.scratch) if self.scratch.exists() else 0, 'rootFreeBytes': root_free()}
+        current = {'at': time.time(), 'scratchBytes': directory_bytes(self.scratch, self) if self.scratch.exists() else 0, 'rootFreeBytes': root_free()}
         self.peak = max(self.peak, current['scratchBytes'])
         self.lowest = min(self.lowest, current['rootFreeBytes'])
         with (evidence / 'resources.jsonl').open('a') as output:
             output.write(json.dumps(current) + '\n')
 
+    def sample_or_warn(self):
+        try:
+            self.sample()
+        except Exception as error:
+            self.warnings.append({'phase': 'sample', 'type': type(error).__name__, 'message': str(error)})
+
     def observe(self):
         while not self.stopping.is_set():
-            try:
-                self.sample()
-            except Exception as error:
-                self.errors.append(str(error))
+            self.sample_or_warn()
             self.stopping.wait(5)
 
     def stop(self):
         self.stopping.set()
         self.thread.join()
-        self.sample()
+        self.sample_or_warn()
 
 record = {'schema': 'himawari-__PKT_LABEL__-cloud-acceptance-run.v1', 'startedAt': time.time(), 'rootFreeBeforeBytes': root_free(), 'scratchCleanupPending': True, 'runnerErrors': [], 'productionQualificationIssued': False, 'passed': False, 'profile': profile, 'nonProduction': True, 'hostname': socket.gethostname(), 'acceptanceUid': os.getuid()}
 scratch = None
@@ -175,13 +188,7 @@ finally:
                 raise RuntimeError('SCRATCH_STILL_USED_BY_OBSERVED_TASK_PROCESS')
             if resources is not None:
                 resources_stopped = True
-                try:
-                    resources.stop()
-                except Exception as error:
-                    resources.errors.append(str(error))
-                    raise
-                if resources.errors:
-                    raise RuntimeError('RESOURCE_SAMPLING_FAILED_SCENE_RETAINED_NO_AUTOMATIC_DELETION')
+                resources.stop()
                 record['resourceSamplingStoppedBeforeReferenceCheck'] = True
             if not record['passed']:
                 raise RuntimeError('FAILED_ACCEPTANCE_SCENE_RETAINED_NO_AUTOMATIC_DELETION')
@@ -200,15 +207,10 @@ finally:
         except Exception as error:
             record['runnerErrors'].append({'phase': 'scratch-retention-or-cleanup', 'type': type(error).__name__, 'message': str(error)})
     if resources is not None:
-        try:
-            if not resources_stopped:
-                resources_stopped = True
-                resources.stop()
-        except Exception as error:
-            resources.errors.append(str(error))
-        record.update({'scratchPeakBytes': resources.peak, 'rootLowestFreeBytes': resources.lowest, 'resourceSamplingErrors': resources.errors})
-        if resources.errors:
-            record['runnerErrors'].append({'phase': 'resources', 'errors': resources.errors})
+        if not resources_stopped:
+            resources_stopped = True
+            resources.stop()
+        record.update({'scratchPeakBytes': resources.peak, 'rootLowestFreeBytes': resources.lowest, 'resourceSamplingWarnings': resources.warnings, 'resourceSamplingVanishedEntries': resources.vanished})
     record['rootFreeAfterCleanupBytes'] = root_free()
     record['intentionallyRetainedEvidenceBytes'] = directory_bytes(evidence)
     record['rootSpaceShortfallBytes'] = record['rootFreeBeforeBytes'] - record['rootFreeAfterCleanupBytes']

@@ -51,3 +51,22 @@ for (const item of cases) {
   process.stdout.write(`STARTUP_READINESS_FIXTURE_PASSED ${item.name}\n`);
 }
 process.stdout.write(`STARTUP_READINESS_FIXTURES_PASSED ${cases.length} budgetMs=${budgetMs}\n`);
+
+const failureStart = source.indexOf("function startupFailureEvents(");
+const failureEnd = source.indexOf("\n}\n", failureStart);
+assert(failureStart > 0 && failureEnd > failureStart, "STARTUP_FAILURE_EVENTS_FUNCTION_NOT_FOUND");
+const startupFailureEvents = new Function(`${source.slice(failureStart, failureEnd + 2)}\nreturn startupFailureEvents;`)();
+assert.deepEqual(startupFailureEvents([
+  { component: "agent-service", event: "memory.embedding_catch_up_failed", code: "EMBEDDING_LOCAL_UNAVAILABLE", retryInMs: "30000" },
+  { component: "agent-service", event: "memory.embedding_catch_up_failed", code: "EMBEDDING_LOCAL_UNAVAILABLE" },
+  { component: "agent-service", event: "future.sync_failed", retryInMs: "1000" },
+  { component: "agent-service", event: "service.ready" },
+]), [], "RETRYABLE_STARTUP_DIAGNOSTICS_MUST_NOT_FAIL_THE_SWITCH");
+assert.deepEqual(startupFailureEvents([
+  { component: "pair-supervisor", event: "pair.child_exit", name: "agent", code: 1 },
+  { component: "agent-service", event: "sandbox_runtime.content_audit_retryable" },
+  { component: "agent-service", event: "service.failed" },
+  { component: "agent-service", event: "sandbox.srt_prewarm.failed" },
+  { component: "agent-service", event: "authority.lost" },
+]), ["pair.child_exit", "sandbox_runtime.content_audit_retryable", "service.failed", "sandbox.srt_prewarm.failed", "authority.lost"], "FATAL_STARTUP_EVENTS_MUST_STILL_FAIL_THE_SWITCH");
+process.stdout.write("STARTUP_FAILURE_EVENT_FIXTURES_PASSED 2\n");

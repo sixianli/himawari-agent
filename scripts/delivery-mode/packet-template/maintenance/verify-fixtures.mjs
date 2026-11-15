@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -657,4 +657,9 @@ try {
 } finally {
   rmSync(samplerRoot, { recursive: true });
 }
+assert.deepEqual(spaceSamplingWarnings(false, { errors: [] }), []);
+assert.deepEqual(spaceSamplingWarnings(false, { errors: [{ code: "EACCES", stage: "temporary-tree" }] }), [{ code: "EACCES", stage: "temporary-tree" }]);
+assert.deepEqual(spaceSamplingWarnings(true, undefined), [{ code: "SAMPLER_EXIT_FAILED", stage: "worker" }, { code: "SAMPLER_RESULT_MISSING", stage: "worker" }]);
+assert(!/SPACE_SAMPLING_FAILED|SPACE_SAMPLER_NOT_READY/.test(maintenanceCli.toString()), "SPACE_SAMPLING_MUST_STAY_A_WARNING");
+count("spaceSamplingWarningsNotFatal");
 process.stdout.write(JSON.stringify({ passed: true, scope: "__PKT_LABEL__ configuration stages (original, static root moved to the __PKT_LABEL__ release, prepared snapshot), handles counted only while usable (status active), startup authority, real-sqlite S0 gate and history, S8 row-by-row history against the S3 copy (old rows kept, new rows allowed, only sandbox recovery_json may change; threads.origin skipped for the whole release only when the packet ledger contains thread_origin), previous strict catalog shape, existing workspace grant and directory identity, catalog at S0, prepared capabilities with no pending registration, reviewed plain upgrade plan for all three capabilities without scope changes or registration, upgrade result, upgraded catalog before and after a restart snapshot, restored catalog, space sampler", fixtureSource: fileURLToPath(import.meta.url), counts, samplerReadback, doesNotProveProductionState: true }) + "\n");

@@ -61,6 +61,11 @@ async function loadCatalogReader() {
 
 const startupReadyBudgetMs = __PKT_STARTUP_READY_BUDGET_MS__;
 
+function startupFailureEvents(records) {
+  const nonFatal = new Set(["memory.embedding_catch_up_failed"]);
+  return records.filter((item) => !Object.hasOwn(item, "retryInMs") && !nonFatal.has(item.event) && /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error|retryable)/i.test(String(item.event))).map((item) => String(item.event));
+}
+
 function startupReadiness(journal, budgetMs) {
   const timed = journal.map((entry) => { let message = null; try { message = JSON.parse(entry.MESSAGE); } catch {} return message && typeof message === "object" ? { message, at: Number(entry.__REALTIME_TIMESTAMP) / 1000 } : null; }).filter(Boolean);
   const spawned = timed.filter(({ message }) => message.event === "pair.child_spawned");
@@ -207,7 +212,7 @@ async function inspect(mode, invocationId) {
   assert(journal.every((item) => item._SYSTEMD_INVOCATION_ID === invocationId), "__PKT_LABEL_UPPER___STARTUP_JOURNAL_INVOCATION_CHANGED");
   const readiness = startupReadiness(journal, startupReadyBudgetMs);
   const records = journal.map((item) => { try { return JSON.parse(item.MESSAGE); } catch { return null; } }).filter((item) => item && typeof item === "object");
-  assert(!records.some((item) => /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error|retryable)/i.test(String(item.event))), "__PKT_LABEL_UPPER___STARTUP_FAILURE_EVENT_OBSERVED");
+  assert.deepEqual(startupFailureEvents(records), [], "__PKT_LABEL_UPPER___STARTUP_FAILURE_EVENT_OBSERVED");
   const prepared = records.filter((item) => item.event === "installation-verified");
   assert.equal(prepared.length, 1, "__PKT_LABEL_UPPER___STARTUP_PREPARE_EVENT_MISSING_OR_REPEATED");
   const loaded = await new platform.CapabilityDeploymentSnapshotLoader(currentDeployment).load();

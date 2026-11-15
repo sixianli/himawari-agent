@@ -43,6 +43,12 @@ def directory(filename, uid, mode=None):
 
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
 
+STARTUP_FAILURE_TERMS = ('failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable')
+STARTUP_NON_FATAL_EVENTS = frozenset({'memory.embedding_catch_up_failed'})
+
+def startup_failure_events(messages):
+    return [value.get('event', '') for value in messages if isinstance(value, dict) and 'retryInMs' not in value and value.get('event') not in STARTUP_NON_FATAL_EVENTS and any(term in str(value.get('event', '')).lower() for term in STARTUP_FAILURE_TERMS)]
+
 def content_audits_completed(messages):
     counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}, 'sandbox_runtime.content_audit_superseded': {}}
     for value in messages:
@@ -239,7 +245,7 @@ post_upgrade_state = json_file(evidence / 's7-post-upgrade-state.json', 999, 0o6
 if post_upgrade_state['schemaVersion'] != 'himawari.__PKT_LABEL__-change-post-upgrade-state.v1' or post_upgrade_state['action'] != 'S7_CATALOG_UPGRADE' or post_upgrade_state['deploymentId'] != binding['identity']['deploymentId'] or post_upgrade_state['schemaSequence'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['schemaMinimumWriter'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['migrationCount'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['integrityCheck'] != 'ok' or post_upgrade_state['foreignKeys'] != 'ok':
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_POST_UPGRADE_STATE_FAILED')
 qualification_run = json_file(qualification / 'acceptance-evidence/run-report.json')
-if qualification_run['passed'] is not True or qualification_run['profile'] != 'cloud-__PKT_LABEL__-change' or qualification_run['scratchDeleted'] is not True or qualification_run['scratchCleanupPending'] is not False or qualification_run['acceptanceUid'] != 999 or qualification_run['runnerErrors'] or qualification_run['resourceSamplingErrors']:
+if qualification_run['passed'] is not True or qualification_run['profile'] != 'cloud-__PKT_LABEL__-change' or qualification_run['scratchDeleted'] is not True or qualification_run['scratchCleanupPending'] is not False or qualification_run['acceptanceUid'] != 999 or qualification_run['runnerErrors']:
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_COMPLETE_S6_REQUIRED')
 probe = json_file(evidence / 's6-service-read-launch.json')
 if probe['passed'] is not True or probe['productionStateAccess'] is not False or probe['systemdRunExitCode'] != 0 or probe['errors'] or probe['readback']['scratchDeleted'] is not True or probe['cgroupReadback']['remainingPids']:
@@ -303,7 +309,7 @@ try:
                 messages.append(json.loads(entry['MESSAGE']))
             except (json.JSONDecodeError, KeyError):
                 pass
-        failure_events = [value.get('event', '') for value in messages if isinstance(value, dict) and any(term in str(value.get('event', '')).lower() for term in ['failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable'])]
+        failure_events = startup_failure_events(messages)
         if failure_events:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_STARTUP_FAILURE_EVENT')
         audits_completed = content_audits_completed(messages)
