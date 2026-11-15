@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: ""
@@ -82,7 +82,7 @@ Mac 克隆里的本机产物：
 ### 一、仓库本身：截图不再进 main
 
 1. 取消跟踪 `clients/apple/ui-review/latest/` 和 `mac-latest/`（`git rm --cached`，Mac 上的文件不动）。快照基准 `clients/apple/Tests/Snapshots/` 照旧跟踪：`ui-review.sh --check` 要拿它逐像素比较。
-2. Mac 线程交截图改走一次性引用：新脚本把一批截图做成一个不接任何分支的单独提交，推到 `refs/review-artifacts/pr-<编号>/<批次>`，附 `manifest.json`（每个文件的路径、大小、SHA-256，按路径排序）。这类引用不在 `refs/heads/` 下，普通克隆、`git fetch` 和 CI 签出默认都不会下载它；它也不在任何分支的历史里，所以合并 PR 时不会带进 main。云端线程用对应的取图脚本按精确名字取下来、核对清单（引用名格式、文件路径不能越出目录、大小和 SHA-256），只拷 `png` 和 `mp4` 进项目文件夹给设计验收线程看。验收结束后删掉这个引用；Mac 本地那次提交的对象由 git 自带的定期 `git gc` 按默认期限回收，不做 `--prune=now`。
+2. Mac 线程交截图改走一次性引用：新脚本把一批截图做成一个不接任何分支的单独提交，推到 `refs/review-artifacts/pr-<编号>/<批次>`，附 `manifest.json`（每个文件的路径、大小、SHA-256，按路径排序）。这类引用不在 `refs/heads/` 下，普通克隆、`git fetch` 和 CI 签出默认都不会下载它；它也不在任何分支的历史里，所以合并 PR 时不会带进 main。云端线程用对应的取图脚本按精确名字取下来、核对清单（引用名格式、文件路径不能越出目录、大小和 SHA-256），只拷 `png` 和 `mp4` 进项目文件夹给设计验收线程看。验收结束后由 Mac 线程删掉这个引用（云端线程经代理推不了 `refs/heads/` 以外的引用，2026-11-15 实测推送被断开）；Mac 本地那次提交的对象由 git 自带的定期 `git gc` 按默认期限回收，不做 `--prune=now`。
 3. 先建好新通道并试点一批，再取消跟踪 `latest/`、`mac-latest/`（第 1 项），免得切换期间丢图；`clients/apple/README.md` 同步改成新做法。
 4. 截图脚本的输出和编译缓存移出仓库目录：默认放在 `~/Library/Caches/himawari/`（可用环境变量改）。`--check` 的临时截图目录成功时在退出时删除，失败时保留并打印路径，留作诊断。`--approve` 先写到临时目录，全部场景齐了再整体替换快照，不再先删后拷。
 5. 新增阻断检查 `npm run check:repo-hygiene`（进 `npm run check` 的步骤列表，CI 的 static 作业和推送前钩子都会跑）：
@@ -102,7 +102,7 @@ Mac 克隆里的本机产物：
 | --- | --- | --- |
 | Xcode 编译缓存 | 所有 Xcode 编译统一走一个包装脚本，缓存按平台固定在 `~/Library/Caches/himawari/DerivedData/<ios、mac、watch>`，跨 PR 复用（增量编译也更快）；包装脚本对每个平台加文件锁，两个编译不会同时写同一份缓存。不再每个 PR 新建 `dd-*`。超过期限没用过、也没有被锁住的缓存目录，和遗留的 `$TMPDIR/dd-*`、仓库里的 `ui-review/DerivedData*`，由回收脚本删掉 | 7 天 |
 | git 工作副本 | 先 `git worktree prune`；其余用 `git worktree list --porcelain -z` 逐个判断，只有同时满足以下全部条件才 `git worktree remove`（不加 `--force`）：没加锁；没有未提交和未跟踪的改动，被忽略的文件只有 `node_modules`、`dist`、`coverage` 这类可重建目录；分支的提交都已在 `origin/main` 里；超过期限没改动；没有进程以它为当前目录；不在保留清单里（上线用的 `../himawari-deploy-wt`、`.ci-output/worktrees` 默认在清单里）。不满足的只列出，不删。不是 git 登记过的副本（例如 `.cb-delegate` 下的目录若不是）只列出 | 3 天 |
-| 旧上线包 | 每个 `production/` 下最新几个上线包，以及上线记录里写的当前在服务版本和它的回滚目标对应的上线包，完整保留；更旧的只留报告、日志和小于上限的 json、md，删其余大文件（照服务器上 `release-cleanup.py` 的做法：删超过 10 MiB 的证据文件，但保护在服务、回滚目标和在用的东西） | 保留 2 个，小文件上限 1MB |
+| 旧上线包 | 每个 `production/` 下按日期最新的几个上线包完整保留（当前在服务的和它的回滚目标是最近上线的两个，默认多留一个给“已打包还没上线”的）；更旧的只删大于上限、又不是日志和报告（`.log`、`.md`、`.txt`）的文件，24 小时内改过的不动（照服务器上 `release-cleanup.py` 删大证据文件的做法） | 保留 3 个，大文件线 1MB |
 | `.ci-output/handoff`、`tool-execution-audit` 等证据目录 | 只报告大小、日期、有没有被文档引用，不自动删；删不删由 Andy 定（见下一节第 2 项）。`handoff/scripts` 永远不动 | — |
 | `.ci-output/tools` 工具缓存 | 不动：每次检查都要用 | — |
 
@@ -124,9 +124,9 @@ Mac 克隆里的本机产物：
 
 ## 要 Andy 定的事
 
-1. 截图交接改走一次性引用，验收后删掉引用（推荐）。删的是一个只装截图、不在任何分支历史里的引用，不改动任何分支的提交；仍算“删除已推送的东西”，所以请 Andy 明确同意。
-2. 证据：Andy 2026-11-15 已定，原话“删 9 月测试证据和旧生产证据”。9 月 28 日那份测试证据和 `handoff` 下的旧生产证据目录由 Mac 清理线程删掉，`handoff/scripts` 保留。以后旧上线包是否按上表“只留报告和日志”自动瘦身（推荐）还待定。
-3. 历史瘦身：推荐不做。做法是用 `git filter-repo` 删掉历史里的截图和证据包，pack 大约能从 340M 降到 150M 左右（估算，没实测）。代价：main 上 5119 个提交的哈希全部改变，复核账本、上线包、事故清单里记的提交号全部对不上；所有克隆、工作副本和未合并的 PR 都要重做；要临时允许强制推送。省下的约 190M 对 16G 的问题影响很小。
+1. 截图交接改走一次性引用，验收后删掉引用：Andy 2026-11-15 同意（原话“一和三我都同意”）。
+2. 证据：Andy 2026-11-15 已定，原话“删 9 月测试证据和旧生产证据”。9 月 28 日那份测试证据和 `handoff` 下的旧生产证据目录由 Mac 清理线程删掉，`handoff/scripts` 保留。以后旧上线包按上表自动瘦身。
+3. 历史瘦身：不做，Andy 2026-11-15 同意（原话同第 1 项）。做法是用 `git filter-repo` 删掉历史里的截图和证据包，pack 大约能从 340M 降到 150M 左右（估算，没实测）。代价：main 上 5119 个提交的哈希全部改变，复核账本、上线包、事故清单里记的提交号全部对不上；所有克隆、工作副本和未合并的 PR 都要重做；要临时允许强制推送。省下的约 190M 对 16G 的问题影响很小。
 
 <a id="consequences"></a>
 

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-out="$root/ui-review/mac-latest"
-derived="$root/ui-review/DerivedData-mac"
+. "$root/scripts/xcode-cache.sh"
+out="$himawari_apple_cache/ui-review/mac-latest"
+log="$himawari_apple_cache/ui-review/mac-build.log"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -12,9 +13,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme HimawariMac -configuration Debug -destination "platform=macOS" -derivedDataPath "$derived" CODE_SIGNING_ALLOWED=NO build >"$root/ui-review/mac-build.log" 2>&1 || {
-  tail -40 "$root/ui-review/mac-build.log" >&2
-  echo "MAC_UI_REVIEW_FAILED build; full log: $root/ui-review/mac-build.log" >&2
+trap himawari_release_lock EXIT
+himawari_lock_derived_data mac
+derived="$himawari_locked_derived"
+mkdir -p "$(dirname "$log")"
+xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme HimawariMac -configuration Debug -destination "platform=macOS" -derivedDataPath "$derived" CODE_SIGNING_ALLOWED=NO build >"$log" 2>&1 || {
+  tail -40 "$log" >&2
+  echo "MAC_UI_REVIEW_FAILED build; full log: $log" >&2
   exit 1
 }
 app="$derived/Build/Products/Debug/HimawariMac.app/Contents/MacOS/HimawariMac"

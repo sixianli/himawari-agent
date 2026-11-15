@@ -90,6 +90,11 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 <a id="ui-review"></a>
 ## 截图对照原型
 
+截图、录屏和 Xcode 编译缓存都不进仓库（[ADR 0276](../../docs/adr/0276-generated-files-stay-out-of-git-and-local-artifacts-expire.md)）：`npm run check:repo-hygiene` 会拦下被提交的截图目录、`*.mp4` 和 `*.mov`。
+
+- 编译缓存：一律用 `clients/apple/scripts/xcode-build.sh ios|mac|watch <xcodebuild 的其余参数>` 编译，不要自己传 `-derivedDataPath`，也不要每个 PR 新建 `dd-*` 目录。它把缓存固定在 `~/Library/Caches/himawari/DerivedData/<平台>`，各 PR 共用（增量编译更快），同一平台同时只让一个编译用（另一个最多等 `HIMAWARI_XCODE_LOCK_WAIT` 秒，默认 1800）。截图脚本也用这几份缓存。
+- 把截图交给云端线程：Mac 上 `node scripts/ui-review-artifacts.mjs publish --pr <编号> --batch <批次名> --dir <截图目录>`，把这批 `png`、`mp4` 推到 `refs/review-artifacts/pr-<编号>/<批次名>`。它不在任何分支上，普通克隆不会下载，合并 PR 也不会带进 main。云端线程用 `node scripts/ui-review-artifacts.mjs fetch --pr <编号> --batch <批次名> --out <空目录>` 取下来，脚本按随附的清单核对每个文件的大小和 SHA-256。验收完由 Mac 线程运行 `node scripts/ui-review-artifacts.mjs delete --pr <编号> --batch <批次名>`（云端线程推不了这种引用）。`list --pr <编号>` 列出还在的批次。
+
 界面要和 Andy 批准的原型逐屏对照。`App` 的调试版带一套示例数据（`Sources/HimawariShell/DemoScenes.swift`，只在调试版里编译）：启动参数 `-HimawariDemoScene <场景名>` 让 App 直接显示某一屏，不连服务器。场景名就是截图文件名，以原型图的编号开头（例如 `16-chat-states-3-sending`），`motion-` 开头的是动效录屏。示例数据的时钟固定在 2026-11-12 15:00，截静态图时关掉动效，所以每次截出来一样。
 
 在 Mac 上一条命令（需要 Xcode 26 和 iPhone 16e 模拟器，宽 390 点）：
@@ -98,7 +103,7 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 clients/apple/scripts/ui-review.sh
 ```
 
-它建一个叫 “Himawari 390pt” 的模拟器，把状态栏固定成 9:41，编译调试版并装上，浅色、深色各截一遍全部场景（PNG 放 `clients/apple/ui-review/latest/`），并录下动效（微光、切页签、面板弹出、内容在玻璃下滚动；有 `avconvert` 时压成 960×540 的 MP4）。截图宽度不是 1170 像素（390 点 × 3）就报错停下。
+它建一个叫 “Himawari 390pt” 的模拟器，把状态栏固定成 9:41，编译调试版并装上，浅色、深色各截一遍全部场景（PNG 放仓库外的 `~/Library/Caches/himawari/ui-review/latest/`，`HIMAWARI_APPLE_CACHE` 可改这个缓存根目录），并录下动效（微光、切页签、面板弹出、内容在玻璃下滚动；有 `avconvert` 时压成 960×540 的 MP4）。截图宽度不是 1170 像素（390 点 × 3）就报错停下。
 
 设计线程验收通过后：
 
@@ -106,7 +111,7 @@ clients/apple/scripts/ui-review.sh
 clients/apple/scripts/ui-review.sh --approve
 ```
 
-把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。
+把这批截图存进 `Tests/Snapshots/iPhone-390/`，成为快照：先拷到旁边的临时目录，全部场景都在才整体换掉旧快照，中途出错旧快照不动。之后改界面时跑 `clients/apple/scripts/ui-review.sh --check`：重新截图，用 `scripts/compare-snapshots.swift` 逐像素比较，任一张图里颜色差超过 3/255 的像素多于 0.05%（约 1500 个像素，小于一个 44 点见方的图标）就报 `SNAPSHOT_DIFF` 并失败；快照少了哪个场景也失败。比这更小的局部改动拦不住，动效录屏不做自动比对，只交设计线程看。`--check` 通过后删掉这次的临时截图，失败时留着并打印路径（`UI_REVIEW_CHECK_KEPT`）。
 
 [返回目录](#apple-clients)
 
@@ -155,6 +160,6 @@ Mac 上只做原型 Version 46 画板“每一端做什么”里的六样，没�
 clients/apple/scripts/mac-ui-review.sh
 ```
 
-它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMacUI/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到 `clients/apple/ui-review/mac-latest/`，少一张就报错。
+它编译调试版，用启动参数 `-HimawariMacDemo <文件夹>` 让 App 按 `Sources/HimawariMacUI/MacDemoScenes.swift` 里的示例数据把每一屏画成 PNG（浅色、深色各一张），放到仓库外的 `~/Library/Caches/himawari/ui-review/mac-latest/`，少一张就报错。
 
 [返回目录](#apple-clients)

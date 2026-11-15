@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "minAgeHours": 24,
+  "appleCache": "~/Library/Caches/himawari",
+  "xcodeIdleDays": 7,
+  "legacyXcodeDirs": [
+    "clients/apple/ui-review/DerivedData",
+    "clients/apple/ui-review/DerivedData-mac",
+    "clients/apple/ui-review/DerivedDataWatch"
+  ],
+  "tmpXcodePrefix": "dd-",
+  "worktreeIdleDays": 3,
+  "worktreeKeep": ["../himawari-deploy-wt", ".ci-output/worktrees"],
+  "worktreeIgnoredAllowed": [
+    "node_modules",
+    "dist",
+    "coverage",
+    ".playwright-cli",
+    "__pycache__",
+    ".DS_Store"
+  ],
+  "worktreeParents": [".agents/local/worktrees", ".cb-delegate", ".claude/worktrees"],
+  "keepPackets": 3,
+  "packetSlimFileBytes": 1048576,
+  "packetKeepSuffixes": [".log", ".md", ".txt"]
+}
