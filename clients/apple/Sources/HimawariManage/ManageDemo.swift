@@ -234,6 +234,10 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
+    nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
+        DeviceResponse(status: 200, body: Data("demo".utf8))
+    }
+
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"demo","expiresAt":"2999-01-01T00:00:00Z"}"#.utf8))
