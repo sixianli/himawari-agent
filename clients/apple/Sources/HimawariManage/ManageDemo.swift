@@ -27,6 +27,13 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case personalization = "21-settings-more-1-personalization"
+    case mcp = "21-settings-more-2-mcp"
+    case mcpDetail = "21-settings-more-3-mcp-detail"
+    case searchAuthorization = "21-settings-more-4-search"
+    case sensitiveRecords = "21-settings-more-5-sensitive"
+    case pushKinds = "21-settings-more-6-push-kinds"
+    case muse = "21-settings-more-7-muse"
 }
 
 public struct ManageDemoView: View {
@@ -79,6 +86,20 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
+        case .personalization:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.personalization)]) {}
+        case .mcp:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.mcp)]) {}
+        case .mcpDetail:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.mcp), .more(.mcpDetail("c1"))]) {}
+        case .searchAuthorization:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.search)]) {}
+        case .sensitiveRecords:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.sensitive)]) {}
+        case .pushKinds:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.pushKinds)]) {}
+        case .muse:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.more(.muse)]) {}
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -171,7 +192,7 @@ enum ManageDemo {
         case "delivery_timing.settings.read": tuning(think: false)
         case "capability.list":
             #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail","cap-photos"],"nextCursor":null}}"#
-        default: "{}"
+        default: MoreDemo.answer(type) ?? "{}"
         }
     }
 

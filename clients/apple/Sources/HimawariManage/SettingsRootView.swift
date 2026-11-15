@@ -14,9 +14,11 @@ public struct SettingsRootView: View {
         case approvals
         case tuningList(TuningKind)
         case tuningEdit(TuningKind, String)
+        case more(MorePage)
     }
 
     @State private var store: SettingsStore
+    @State private var more: MoreSettingsStore
     @State private var path: [Page] = []
     private let close: () -> Void
     private let removedThisDevice: () -> Void
@@ -36,6 +38,7 @@ public struct SettingsRootView: View {
             DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access)
         }
         _store = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
+        _more = State(initialValue: MoreSettingsStore(gateway: gateway))
         self.close = close
         self.removedThisDevice = removedThisDevice
         self.actions = actions
@@ -44,6 +47,7 @@ public struct SettingsRootView: View {
 
     init(store: SettingsStore, actions: DeviceActionsModel? = nil, path: [Page] = [], close: @escaping () -> Void) {
         _store = State(initialValue: store)
+        _more = State(initialValue: MoreSettingsStore(gateway: store.gateway))
         _path = State(initialValue: path)
         self.close = close
         removedThisDevice = {}
@@ -84,6 +88,7 @@ public struct SettingsRootView: View {
                             }
                         }
                     }
+                    MoreEntryGroups(store: more) { path.append(.more($0)) }
                     SettingsGroup(label: M.himawariSelf) {
                         Button { path.append(.capabilities) } label: {
                             SettingsRow(icon: .bolt, title: M.capabilities, value: "\(store.capabilityCount)", chevron: true)
@@ -139,7 +144,10 @@ public struct SettingsRootView: View {
                     EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
                 }
             }
-            .refreshable { await store.load() }
+            .refreshable {
+                await store.load()
+                await more.loadAll()
+            }
             .navigationDestination(for: Page.self) { page in
                 switch page {
                 case .capabilities: CapabilitiesPage(store: store) { path.removeLast() }
@@ -153,12 +161,17 @@ public struct SettingsRootView: View {
                     TuningListPage(store: store, kind: kind, open: { path.append(.tuningEdit(kind, $0)) }) { path.removeLast() }
                 case .tuningEdit(let kind, let key):
                     TuningEditPage(store: store, kind: kind, key: key) { path.removeLast() }
+                case .more(let page):
+                    MorePageView(page: page, store: more, open: { path.append(.more($0)) }) { path.removeLast() }
                 case .approvals:
                     if let actions { ApprovalsView(model: actions, openThread: openThread) { path.removeLast() } }
                 }
             }
         }
-        .task { await store.load() }
+        .task {
+            await store.load()
+            await more.loadAll()
+        }
     }
 }
 
