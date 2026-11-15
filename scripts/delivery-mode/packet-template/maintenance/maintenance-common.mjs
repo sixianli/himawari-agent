@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -21,7 +21,6 @@ export const newStaticRoot = `${newPrefix}/share/control-center`;
 export const sqliteDriverRoot = `${newPrefix}/lib/himawari-agent`;
 export const node = "/opt/himawari/node/bin/node";
 export const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
-export const ledgerMigrationId = (row) => row.id ?? String(row.sequence).padStart(4, "0");
 export function definitionsForLedger(migrations, ledgerIds) {
   const definitions = new Map(migrations.map((migration) => [ledgerMigrationId(migration), migration]));
   return ledgerIds.map((row) => definitions.get(ledgerMigrationId(row)));
