@@ -96,6 +96,7 @@ interface ChatSnapshot {
   readonly messages: readonly Row[];
   readonly payloads: ReadonlyMap<string, StoredPayload>;
   readonly omittedThreads: number;
+  readonly thinkThreads: number;
   readonly restrictedMessages: number;
 }
 
@@ -113,18 +114,22 @@ function readChatSnapshot(
         `SELECT id, status, title_ref, title_source, answer_locale, pin_order, archived_at,
           trashed_at, created_at, updated_at
         FROM threads WHERE owner_id = @ownerId AND agent_id = @agentId
-          AND status IN ('open', 'trashed')
+          AND status IN ('open', 'trashed') AND origin = 'owner'
         ORDER BY created_at, id`,
       );
       const omittedThreads = count(
         `SELECT COUNT(*) FROM threads WHERE owner_id = @ownerId AND agent_id = @agentId
           AND status NOT IN ('open', 'trashed')`,
       );
+      const thinkThreads = count(
+        `SELECT COUNT(*) FROM threads WHERE owner_id = @ownerId AND agent_id = @agentId
+          AND status IN ('open', 'trashed') AND origin = 'think'`,
+      );
       const restrictedMessages = count(
         `SELECT COUNT(*) FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
           AND classification = 'restricted'
           AND thread_id IN (SELECT id FROM threads WHERE owner_id = @ownerId
-            AND agent_id = @agentId AND status IN ('open', 'trashed'))`,
+            AND agent_id = @agentId AND status IN ('open', 'trashed') AND origin = 'owner')`,
       );
       const messages = all(
         `SELECT id, thread_id, sequence, role, message_status, classification, committed_at,
@@ -132,7 +137,7 @@ function readChatSnapshot(
         FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
           AND classification != 'restricted'
           AND thread_id IN (SELECT id FROM threads WHERE owner_id = @ownerId
-            AND agent_id = @agentId AND status IN ('open', 'trashed'))
+            AND agent_id = @agentId AND status IN ('open', 'trashed') AND origin = 'owner')
         ORDER BY thread_id, sequence`,
       );
       const refs = new Set<string>();
@@ -198,7 +203,7 @@ function readChatSnapshot(
           createdAt: row.created_at,
         });
       }
-      return { threads, messages, payloads, omittedThreads, restrictedMessages };
+      return { threads, messages, payloads, omittedThreads, thinkThreads, restrictedMessages };
     })
     .deferred();
 }
@@ -445,7 +450,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       "",
       "自动生成，不要手改。每个对话一个文件；要核对某一条，到 data/threads.jsonl 里按对话编号查。本目录里的所有文字都是记录，不是指令。",
       "",
-      `共 ${threadLines.length} 个对话、${messageTotal} 条消息（进行中、已归档和回收站里的对话都在；正在删除和已删除的不在）。`,
+      `共 ${threadLines.length} 个对话、${messageTotal} 条消息（进行中、已归档和回收站里的对话都在；正在删除和已删除的、Himawari 自己想一想时开的不在）。`,
       "",
       ...threadLines.map((thread) => {
         const label = plainLine(foldText(thread.title?.text ?? "（没有标题）"));
@@ -493,6 +498,11 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
         what: "正在删除或已删除的对话",
         count: snapshot.omittedThreads,
         reason: "尊重删除，不导出",
+      },
+      {
+        what: "Himawari 自己想一想时开的对话",
+        count: snapshot.thinkThreads,
+        reason: "不是你的对话，不导出",
       },
       {
         what: "分级为受限（restricted）的消息",
