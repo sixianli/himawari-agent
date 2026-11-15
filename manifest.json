@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "pr": 550,
+  "batch": "panel-notice",
+  "files": [
+    {
+      "path": "mac-4c-panel-notice-dark.png",
+      "bytes": 182691,
+      "sha256": "ad74c54ff44d360878114b0fab21048ce70f7c0e778c8ce843a172d15ea97d41"
+    },
+    {
+      "path": "mac-4c-panel-notice-light.png",
+      "bytes": 175356,
+      "sha256": "6af5f92b5de38e4f662ec0ac18bf8fec1bb23e649511ab40da5c67ac27021904"
+    }
+  ]
+}
