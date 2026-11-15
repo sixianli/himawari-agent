@@ -29,6 +29,9 @@ enum DemoScene: String, CaseIterable {
     case capabilities = "20-himawari-self-1-capabilities"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
+    case notifications = "19-settings-more-4-notifications"
+    case notificationsEdit = "19-settings-more-4-notifications-edit"
+    case thinkSettings = "20-himawari-self-4-think"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -201,7 +204,8 @@ struct DemoSceneView: View {
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
-            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers, .proposals:
+            .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities, .loginBrowsers, .proposals,
+            .notifications, .notificationsEdit, .thinkSettings:
             EmptyView()
         }
     }

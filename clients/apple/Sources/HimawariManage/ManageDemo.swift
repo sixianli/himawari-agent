@@ -22,6 +22,9 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case capabilities = "20-himawari-self-1-capabilities"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
+    case notifications = "19-settings-more-4-notifications"
+    case notificationsEdit = "19-settings-more-4-notifications-edit"
+    case thinkSettings = "20-himawari-self-4-think"
 }
 
 public struct ManageDemoView: View {
@@ -61,6 +64,12 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.loginBrowsers]) {}
         case .proposals:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.proposals]) {}
+        case .notifications:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery)]) {}
+        case .notificationsEdit:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
+        case .thinkSettings:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -143,6 +152,8 @@ enum ManageDemo {
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "login.devices.read": loginDevices
         case "proposals.read": proposals
+        case "think.settings.read": tuning(think: true)
+        case "delivery_timing.settings.read": tuning(think: false)
         case "capability.list":
             #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail","cap-photos"],"nextCursor":null}}"#
         default: "{}"
@@ -171,6 +182,17 @@ enum ManageDemo {
         let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-daysAgo * 86_400))
         let title = thread.map { #""\#($0)""# } ?? "null"
         return #"{"fileId":"\#(id)","threadId":"t1","threadTitle":\#(title),"name":"\#(name)","kind":"\#(kind)","origin":"\#(origin)","mediaType":"application/octet-stream","sizeBytes":2048,"version":1,"createdAt":"\#(at)","deleted":false,"contentPath":null}"#
+    }
+
+    private static func tuning(think: Bool) -> String {
+        let rows: [(String, Int, Int, Int, Int, String?, Bool)] = think
+            ? [("yesAtLeastPermille", 700, 700, 501, 1000, "permille", false), ("noAtMostPermille", 300, 300, 0, 499, "permille", false), ("queueLimit", 20, 20, 1, 1000, "count", false), ("dailyLimit", 80, 50, 1, 10000, "count", true), ("expiresAfterHours", 48, 48, 1, 8760, "hours", false)]
+            : [("busyAtLeastPermille", 700, 700, 500, 1000, nil, false), ("recheckSeconds", 120, 120, 1, 3600, nil, false), ("timeoutMs", 4000, 4000, 100, 60000, nil, false), ("perMinute", 12, 12, 1, 600, nil, false), ("reminderMaximumDeferSeconds", 600, 600, 0, 86400, nil, false), ("maximumDeferSeconds", 1800, 1800, 0, 86400, nil, true)]
+        let items = rows.map { key, value, def, low, high, unit, overridden in
+            #"{"key":"\#(key)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"unit":\#(unit.map { "\"\($0)\"" } ?? "null"),"overridden":\#(overridden)}"#
+        }
+        let enabled = think ? #""enabled":true,"# : ""
+        return #"{"payload":{"revision":4,\#(enabled)"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
     }
 
     private static var proposals: String {
