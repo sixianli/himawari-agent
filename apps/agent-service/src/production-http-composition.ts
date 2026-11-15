@@ -150,6 +150,12 @@ import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
+import {
+  McpConnectionAddresses,
+  PRODUCTION_MCP_CONNECTION_OPERATIONS,
+  ProductionMcpConnectionsControl,
+  registerMcpConnectionAddressRoute,
+} from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
@@ -797,6 +803,7 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
   deliveryTimingAvailable: boolean,
@@ -847,6 +854,7 @@ function routeOptions(
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_THINK_OPERATIONS,
       ],
@@ -1481,6 +1489,7 @@ export async function createProductionHttpComposition(
         }
       : {}),
   });
+  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
         ownerId,
@@ -1700,6 +1709,23 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.mcpRead
+      ? {
+          mcpConnectionsControl: new ProductionMcpConnectionsControl({
+            configuration,
+            store: repository.mcpConnections(),
+            addresses: mcpConnectionAddresses,
+            minute: (connectionId) =>
+              options.mcpRead?.minuteUsage(connectionId) ?? {
+                reads: 0,
+                hookReads: 0,
+              },
+            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+            clock: { now: clock },
+          }),
+        }
+      : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1721,6 +1747,7 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
       options.deliveryTimingSettings !== undefined,
@@ -1804,7 +1831,15 @@ export async function createProductionHttpComposition(
   });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
-  if (options.mcpRead) registerMcpReadRoute(app, options.mcpRead);
+  if (options.mcpRead) {
+    registerMcpReadRoute(app, options.mcpRead);
+    registerMcpConnectionAddressRoute(app, {
+      authentication,
+      sessionCookieName: httpConfiguration.sessionCookieName,
+      ownerId,
+      addresses: mcpConnectionAddresses,
+    });
+  }
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)
