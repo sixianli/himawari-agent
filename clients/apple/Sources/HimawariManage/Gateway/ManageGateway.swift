@@ -19,10 +19,17 @@ public struct ManageCommandOptions: Sendable {
     }
 }
 
+public struct ThreadSearchPreparation: Decodable, Equatable, Sendable {
+    public let queryRef: String
+    public let tokenRefs: [String]
+    public let projectionVersion: String
+}
+
 public actor ManageGateway {
     public static let gatewayPath = "gateway"
     public static let challengePath = "approvals/challenge"
     public static let textPath = "payloads/text/new"
+    public static let threadSearchPreparePath = "thread-search/prepare"
 
     private let transport: DeviceTransport
     private let makeIdentifier: @Sendable () -> String
@@ -109,6 +116,19 @@ public actor ManageGateway {
             throw ManageGatewayError.malformedResponse
         }
         return uploaded.payloadRef
+    }
+
+    public func prepareThreadSearch(query: String) async throws -> ThreadSearchPreparation {
+        let data = try await send(
+            path: Self.threadSearchPreparePath,
+            body: ["query": .string(query)],
+            nonce: nil,
+            confirm: nil
+        )
+        guard let prepared = try? JSONDecoder().decode(ThreadSearchPreparation.self, from: data) else {
+            throw ManageGatewayError.malformedResponse
+        }
+        return prepared
     }
 
     static func withPlaceholders(_ payload: JSONValue) -> JSONValue {

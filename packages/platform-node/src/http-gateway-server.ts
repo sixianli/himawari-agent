@@ -38,6 +38,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import { readThreadSearchPrepareQuery } from "./browser-thread-search.js";
 import type { DeviceActionHub } from "./device-action-hub.js";
 import {
   type DeviceApiRouteOptions,
@@ -1355,6 +1356,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         fencingToken: browserConfiguration.fencingToken,
       },
       threadGateway: options.threadGateway,
+      ...(options.threadSearch ? { threadSearch: options.threadSearch } : {}),
       gateways: {
         ...(options.gateway ? { v1: options.gateway } : {}),
         ...(options.gatewayV2 ? { v2: options.gatewayV2 } : {}),
@@ -1683,23 +1685,11 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       if (!agentId) {
         throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.SCOPE_REJECTED, 403);
       }
-      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+      const query = readThreadSearchPrepareQuery(request.body);
+      if (query === undefined) {
         throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
       }
-      const body = request.body as { readonly query?: unknown };
-      if (
-        Object.keys(body).some((key) => key !== "query") ||
-        typeof body.query !== "string" ||
-        body.query.trim().length === 0 ||
-        body.query.length > 2048
-      ) {
-        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-      }
-      return sendJson(
-        reply,
-        200,
-        await threadSearch.prepare({ authentication, agentId, query: body.query }),
-      );
+      return sendJson(reply, 200, await threadSearch.prepare({ authentication, agentId, query }));
     });
   }
 

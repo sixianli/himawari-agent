@@ -232,6 +232,9 @@ export async function harness(
     readonly applePush?: ApplePushConfiguration;
     readonly revokeHookFails?: "prepare" | "wipe";
     readonly withoutAddressee?: boolean;
+    readonly threadSearch?: NonNullable<
+      Parameters<typeof buildHttpGatewayServer>[0]["threadSearch"]
+    >;
     readonly withoutNotifications?: boolean;
     readonly indexTermLimit?: number;
     readonly indexReadText?: (
@@ -578,6 +581,7 @@ export async function harness(
     gatewayV2,
     ...(options.files ? { files: options.files({ repository, protector }) } : {}),
     payloadAdmission,
+    ...(options.threadSearch ? { threadSearch: options.threadSearch } : {}),
     payloadRead: new BrowserTextPayloadReader({
       payloads: (owner, agent) =>
         repository.payloadStore(createOwnerId(owner), createAgentId(agent)),

@@ -10,6 +10,19 @@ const SEARCH_QUERY_CONTEXT = "himawari.thread-search.query.v1";
 const MAXIMUM_QUERY_CHARACTERS = 2_048;
 const MAXIMUM_TOKENS = 64;
 
+export function readThreadSearchPrepareQuery(body: unknown): string | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
+  const fields = body as { readonly query?: unknown };
+  if (
+    Object.keys(fields).some((key) => key !== "query") ||
+    typeof fields.query !== "string" ||
+    fields.query.trim().length === 0 ||
+    fields.query.length > MAXIMUM_QUERY_CHARACTERS
+  )
+    return undefined;
+  return fields.query;
+}
+
 export interface ThreadSearchKeyPort {
   resolve(input: { readonly ownerId: string; readonly agentId: string }): Promise<Uint8Array>;
 }

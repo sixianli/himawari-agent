@@ -564,6 +564,103 @@ describe("[第11批] 原生页面经设备接口走和网页同一个处理程�
   });
 });
 
+describe("手机搜索词预处理经设备通道", () => {
+  const prepared = {
+    queryRef: "payload-search-device-01",
+    tokenRefs: ["search-token-device-01"],
+    projectionVersion: "thread-search-v1",
+  };
+  const path = "/api/device/v1/thread-search/prepare";
+
+  it("设备签名通过后调用和网页同一个预处理，用服务器的智能体身份", async () => {
+    const calls: string[] = [];
+    const h = await harness({
+      threadSearch: {
+        async prepare(input) {
+          calls.push(`${input.authentication.ownerId}:${input.agentId}:${input.query}`);
+          return prepared;
+        },
+      },
+    });
+    const client = await pairAndConfirm(h);
+    const response = await send(
+      h,
+      signedRequest(h, client, {
+        method: "POST",
+        path,
+        body: JSON.stringify({ query: "私人搜索" }),
+      }),
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual(prepared);
+    expect(calls).toEqual([`${ownerId}:${agentId}:私人搜索`]);
+    await h.repository.close();
+  });
+
+  it("未签名、签名错、空的、超长的、多字段的请求都拒绝且不调用预处理", async () => {
+    const calls: string[] = [];
+    const h = await harness({
+      threadSearch: {
+        async prepare(input) {
+          calls.push(input.query);
+          return prepared;
+        },
+      },
+    });
+    const client = await pairAndConfirm(h);
+    const signedWith = (body: unknown) =>
+      send(h, signedRequest(h, client, { method: "POST", path, body: JSON.stringify(body) }));
+
+    const unsigned = await h.app.inject({
+      method: "POST",
+      url: path,
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ query: "x" }),
+    });
+    expect(unsigned.statusCode).toBeGreaterThanOrEqual(400);
+
+    const good = signedRequest(h, client, {
+      method: "POST",
+      path,
+      body: JSON.stringify({ query: "x" }),
+    });
+    const tampered = await h.app.inject({
+      method: "POST",
+      url: path,
+      headers: good.headers,
+      payload: JSON.stringify({ query: "y" }),
+    });
+    expect(tampered.statusCode).toBeGreaterThanOrEqual(400);
+
+    for (const body of [
+      { query: "" },
+      { query: "   " },
+      { query: "x".repeat(2049) },
+      { query: "x", extra: true },
+      { query: 1 },
+      {},
+    ]) {
+      const response = await signedWith(body);
+      expect(response.statusCode, JSON.stringify(body).slice(0, 40)).toBe(400);
+    }
+    expect(calls).toEqual([]);
+    expect((await signedWith({ query: "x".repeat(2048) })).statusCode).toBe(200);
+    expect(calls).toEqual(["x".repeat(2048)]);
+    await h.repository.close();
+  });
+
+  it("服务器没有装配搜索预处理时拒绝，不返回空结果", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const response = await send(
+      h,
+      signedRequest(h, client, { method: "POST", path, body: JSON.stringify({ query: "x" }) }),
+    );
+    expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    await h.repository.close();
+  });
+});
+
 describe("手机搜索页问答经设备通道", () => {
   const memory = {
     id: "memory-allergy",

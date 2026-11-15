@@ -45,6 +45,7 @@ import {
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { readThreadSearchPrepareQuery } from "./browser-thread-search.js";
 import { type DeviceActionHub, withDeviceActionSignals } from "./device-action-hub.js";
 import {
   classifyDeviceGatewayRequest,
@@ -61,6 +62,7 @@ import {
   withDeviceNotifications,
 } from "./device-notification-hub.js";
 import { DEVICE_PUSH_ERROR_CODES, DevicePushError, type DevicePushPort } from "./device-push.js";
+import type { HttpGatewayThreadSearchPort } from "./http-gateway-server.js";
 import type { DeviceSignedRequest } from "./device-request-signature.js";
 import {
   type AuthenticatedDeviceRequest,
@@ -101,6 +103,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "home", signed: true },
   { method: "POST", path: "home/act", signed: true },
   { method: "POST", path: "payloads/text/new", signed: true },
+  { method: "POST", path: "thread-search/prepare", signed: true },
   { method: "POST", path: "threads", signed: true },
   { method: "GET", path: "threads/{threadId}", signed: true },
   { method: "GET", path: "threads/{threadId}/execution-stream", signed: true },
@@ -293,6 +296,7 @@ export interface DeviceApiRouteOptions {
   }) => Promise<VoiceAddresseeOutcome>;
   readonly prefetch?: UtterancePrefetchPort;
   readonly threadGateway: AgentThreadGatewayPort;
+  readonly threadSearch?: HttpGatewayThreadSearchPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
   readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
@@ -1343,6 +1347,18 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           ...admitted,
         });
         return options.sendJson(reply, 201, { payloadRef });
+      });
+
+      device.post("/thread-search/prepare", async (request, reply) => {
+        const { authentication } = await authenticate(request);
+        const threadSearch = options.threadSearch ?? options.rejectNotAllowed();
+        const query = readThreadSearchPrepareQuery(json(request));
+        if (query === undefined) return options.rejectBody(400);
+        return options.sendJson(
+          reply,
+          200,
+          await threadSearch.prepare({ authentication, agentId: options.authority.agentId, query }),
+        );
       });
 
       device.post("/approvals/challenge", async (request, reply) => {
