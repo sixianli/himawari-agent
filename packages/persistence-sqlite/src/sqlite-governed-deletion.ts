@@ -544,10 +544,29 @@ export class SqliteGovernedDeletionAdapter {
         [this.#options.ownerId, this.#options.agentId, this.#now(), input.limit],
       );
       const reports: GovernedDeletionReport[] = [];
-      for (const threadId of incomplete)
-        reports.push(
-          await this.#deleteOpen(database, "thread", safeIdentity(threadId, "thread ID")),
-        );
+      for (const threadId of incomplete) {
+        const objectId = safeIdentity(threadId, "thread ID");
+        try {
+          reports.push(
+            await this.#deleteOpen(database, "thread", objectId, (current) => {
+              if (current.prepare("SELECT 1 FROM threads WHERE id = ?").get(objectId)) {
+                throw new GovernedDeletionError(
+                  GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                  "Thread was recreated before its incomplete deletion was retried",
+                  { objectId },
+                );
+              }
+            }),
+          );
+        } catch (error) {
+          if (
+            error instanceof GovernedDeletionError &&
+            error.code === GOVERNED_DELETION_ERROR_CODES.CONFLICT
+          )
+            continue;
+          throw error;
+        }
+      }
       return Object.freeze(reports);
     } finally {
       database.close();

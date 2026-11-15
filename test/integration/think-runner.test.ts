@@ -757,6 +757,7 @@ describe("think runner", () => {
     expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toHaveLength(1);
     expect(sql("SELECT id FROM deletion_tombstones WHERE object_id = ?", thinkId)).toEqual([]);
     sql("UPDATE runs SET status = 'completed' WHERE thread_id = ?", thinkId);
+    const [threadRow] = sql("SELECT * FROM threads WHERE id = ?", thinkId);
     const failing = new SqliteGovernedDeletionAdapter({
       stateRoot,
       databasePath: file,
@@ -770,6 +771,31 @@ describe("think runner", () => {
     const [failed] = await failing.deleteExpiredThinkThreads(input);
     expect(failed?.lifecycle).toBe("deletion_pending");
     expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toEqual([]);
+    const columns = Object.keys(threadRow ?? {});
+    let clockReads = 0;
+    const recreating = new SqliteGovernedDeletionAdapter({
+      stateRoot,
+      databasePath: file,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      now: () => {
+        clockReads += 1;
+        if (clockReads === 2)
+          sql(
+            `INSERT INTO threads (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+            ...columns.map((column) => threadRow?.[column]),
+          );
+        return now;
+      },
+    });
+    expect(await recreating.retryIncompleteThreadDeletions({ limit: 50 })).toEqual([]);
+    expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toHaveLength(1);
+    expect(
+      sql("SELECT status FROM deletion_tombstones WHERE object_id = ?", thinkId).map(
+        (row) => row["status"],
+      ),
+    ).toEqual(["incomplete"]);
+    sql("DELETE FROM threads WHERE id = ?", thinkId);
     const diagnostics: Record<string, string>[] = [];
     const healthy = () =>
       new SqliteGovernedDeletionAdapter({
