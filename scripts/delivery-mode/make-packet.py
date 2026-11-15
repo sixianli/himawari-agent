@@ -234,7 +234,7 @@ def preserved_tables():
     return tuple(re.findall(r'"([a-z_]+)"', match.group(1))) + MIGRATION_COMPARED_TABLES
 
 
-def migration_ledger(commit, current, target, applied_ids=None):
+def migration_ledger(commit, current, target, applied_ids=None, compare_history=True):
     if target == current and applied_ids is None:
         return []
     engine = git('show', commit + ':' + MIGRATION_ENGINE)
@@ -266,7 +266,7 @@ def migration_ledger(commit, current, target, applied_ids=None):
         touched = sorted(table for table in tables if re.search(r'\b(?:ALTER\s+TABLE|DROP\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', sql, re.I))
         kept = rebuilds_keeping_rows(entry['file'], sql, touched) + added_column_backfills(entry['file'], sql, touched)
         touched = [table for table in touched if table not in kept]
-        if touched:
+        if touched and compare_history:
             refuse('PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES', entry['file'] + ' ' + ','.join(touched))
         ledger.append({key: entry[key] for key in ('sequence', 'name', 'phase')})
     return ledger
@@ -413,11 +413,39 @@ def embedding_target(target):
     return encoded
 
 
+HISTORY_COMPARISON_OFF_KEYS = {'mode', 'reason', 'authorizedBy', 'release'}
+DEPLOY_FAILURE_CHOICES = ('rollback', 'keep')
+
+
+def history_comparison(instance, label):
+    setting = instance.get('historyComparison', {'mode': 'on'})
+    if setting == {'mode': 'on'}:
+        return {'mode': 'on'}
+    if not isinstance(setting, dict) or setting.get('mode') != 'off' or set(setting) != HISTORY_COMPARISON_OFF_KEYS or not all(isinstance(setting[key], str) and setting[key].strip() for key in HISTORY_COMPARISON_OFF_KEYS):
+        refuse('PACKET_HISTORY_COMPARISON_INVALID', json.dumps(setting, ensure_ascii=False))
+    if not re.fullmatch(r'cmsg_[A-Za-z0-9]+', setting['authorizedBy']):
+        refuse('PACKET_HISTORY_COMPARISON_INVALID', 'authorizedBy must name the owner message that allowed it')
+    if setting['release'] != label:
+        refuse('PACKET_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE', 'historyComparison is off for ' + setting['release'] + ' but this packet is ' + label + '; remove it from the instance file or have Andy approve it for this release')
+    return {key: setting[key] for key in ('mode', 'reason', 'authorizedBy', 'release')}
+
+
+def deploy_failure_choice(instance):
+    choice = instance.get('onDeployFailure', 'rollback')
+    if choice not in DEPLOY_FAILURE_CHOICES:
+        refuse('PACKET_ON_DEPLOY_FAILURE_INVALID', choice)
+    return choice
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
+    comparison = history_comparison(instance, label)
     return {
         **discovered,
+        'HISTORY_COMPARISON': comparison['mode'],
+        'HISTORY_COMPARISON_JSON': json.dumps(comparison, sort_keys=True, separators=(',', ':'), ensure_ascii=True),
+        'ON_DEPLOY_FAILURE': deploy_failure_choice(instance),
         'LABEL_TITLE': label.capitalize(),
         'LABEL_UPPER': label.upper(),
         'DATE': date,
@@ -457,7 +485,7 @@ def schema_parameters(parameters, s0):
             refuse('PACKET_S0_MIGRATION_NAMES_INVALID', 'ids=' + str(len(applied_ids)))
         pairs = [identifier + ':' + digest + ':' + name for identifier, digest, name in zip(applied_ids, digests, names)]
         check_migration_replay(parameters['COMMIT'], pairs)
-    ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
+    ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids, parameters.get('HISTORY_COMPARISON', 'on') != 'off') if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 
