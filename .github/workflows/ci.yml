@@ -231,18 +231,48 @@ jobs:
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   tests:
-    name: tests
+    name: tests / ${{ matrix.key }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-vps
+    runs-on: ${{ matrix.runner }}
     needs:
       - policy
       - build
     timeout-minutes: 60
     outputs:
-      default: ${{ steps.share.outputs.default }}
+      integration-1: ${{ steps.share.outputs.integration-1 }}
+      integration-2: ${{ steps.share.outputs.integration-2 }}
+      others: ${{ steps.share.outputs.others }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: integration-1
+            runner: ci-vps
+            os: linux
+            arch: x64
+            node: 22.22.3
+            projects: [integration]
+            shard:
+              index: 1
+              count: 2
+          - key: integration-2
+            runner: ci-vps
+            os: linux
+            arch: x64
+            node: 22.22.3
+            projects: [integration]
+            shard:
+              index: 2
+              count: 2
+          - key: others
+            runner: ci-vps
+            os: linux
+            arch: x64
+            node: 22.22.3
+            projects: [unit, contracts, e2e, pi-compat]
     env:
-      CI_NODE: 22.22.3
-      CI_MATRIX: default
+      CI_NODE: ${{ matrix.node }}
+      CI_MATRIX: ${{ matrix.key }}
       CI_BASE: ${{ inputs.base_sha || '' }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
     steps:
@@ -252,7 +282,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22.22.3
+          node-version: ${{ matrix.node }}
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针

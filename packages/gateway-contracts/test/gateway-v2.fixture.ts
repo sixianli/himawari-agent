@@ -442,6 +442,26 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
+  fixture("query", "delivery_timing.settings.read", {}),
+  fixture("snapshot", "delivery_timing.settings.snapshot", {
+    items: [
+      {
+        key: "recheckSeconds",
+        value: 600,
+        defaultValue: 300,
+        minimum: 60,
+        maximum: 3600,
+        overridden: true,
+      },
+    ],
+    revision: 2,
+    generatedAt: "2026-11-15T03:00:00.000Z",
+  }),
+  fixture("command", "delivery_timing.settings.change", {
+    expectedRevision: 2,
+    key: "recheckSeconds",
+    value: null,
+  }),
   fixture("query", "device.list.read", {}),
   fixture("snapshot", "device.list.snapshot", {
     devices: [
@@ -617,6 +637,28 @@ export const governanceMessages = [
     until: null,
     key: "perception.records.daily",
     value: 10000,
+  }),
+  fixture("query", "think.settings.read", {}),
+  fixture("snapshot", "think.settings.snapshot", {
+    revision: 2,
+    enabled: true,
+    items: [
+      {
+        key: "queueLimit",
+        value: 7,
+        defaultValue: 20,
+        minimum: 1,
+        maximum: 1000,
+        unit: "count",
+        overridden: true,
+      },
+    ],
+    generatedAt: "2026-11-15T00:00:00.000Z",
+  }),
+  fixture("command", "think.settings.change", {
+    expectedRevision: 2,
+    key: "queueLimit",
+    value: null,
   }),
   fixture("query", "server.status.read", {}),
   fixture("snapshot", "server.status.snapshot", {
@@ -1324,6 +1366,12 @@ export const governanceMessages = [
     capabilityRef: "capability-01",
     expectedRevision: 8,
     reasonCode: "owner-rollback",
+    recentAuthenticationRef: "recent-auth-01",
+  }),
+  fixture("command", "capability.reactivate", {
+    capabilityRef: "capability-01",
+    expectedRevision: 9,
+    reasonCode: "owner-reactivate",
     recentAuthenticationRef: "recent-auth-01",
   }),
   fixture("query", "approval.detail", { approvalRequestId: "approval-01" }),

@@ -613,12 +613,17 @@ describe("local shared-runner boundary", () => {
       "browser",
       "browser",
       "tests",
+      "tests",
+      "tests",
       "tooling",
       "security",
     ]);
     expect(
       calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
     ).toEqual(["chromium", "firefox", "webkit"]);
+    expect(
+      calls.filter((entry) => entry.checkId === "tests").map((entry) => entry.matrixKey),
+    ).toEqual(["integration-1", "integration-2", "others"]);
     const consumers = calls.filter((entry) => ["browser", "tests"].includes(entry.checkId));
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
@@ -671,7 +676,7 @@ describe("local shared-runner boundary", () => {
         "local_passed",
       );
       expect(state.calls.map((entry) => entry.checkId)).toEqual(
-        check === "tests" ? ["build", "tests"] : [check],
+        check === "tests" ? ["build", "tests", "tests", "tests"] : [check],
       );
     }
     state.calls = [];
@@ -680,8 +685,8 @@ describe("local shared-runner boundary", () => {
       artifact: "/fixture/existing.tar.gz",
       output: ".ci-output/local-coverage-artifact",
     });
-    expect(state.calls.map((entry) => entry.checkId)).toEqual(["tests"]);
-    expect(state.calls[0].artifact).toBe("/fixture/existing.tar.gz");
+    expect(state.calls.map((entry) => entry.checkId)).toEqual(["tests", "tests", "tests"]);
+    expect(state.calls.every((entry) => entry.artifact === "/fixture/existing.tar.gz")).toBe(true);
   });
   it("does not run artifact consumers after failed build and preserves failed check outcomes", async () => {
     state.fail = "build";

@@ -79,6 +79,14 @@ public enum ManageLayout {
         public static let identityName = TypeToken(size: 19, weight: 500, lineHeight: nil, face: .system, tracking: 0)
     }
 
+    public enum ProposalCard {
+        public static let title = TypeToken(size: 19, weight: 600, lineHeight: 19 * 1.4, face: .himawari, tracking: 0)
+        public static let gap: CGFloat = 12
+        public static let buttonHeight: CGFloat = 44
+        public static let buttonGap: CGFloat = 10
+        public static let chevron: CGFloat = 14
+    }
+
     public enum DeviceSheet {
         public static let rowGap: CGFloat = 16
         public static let rowTrailingPadding: CGFloat = 18

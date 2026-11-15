@@ -345,6 +345,25 @@ export class DataExportJobs {
   }
 }
 
+export function deviceExportArchive(options: {
+  readonly ownerId: ProductConfiguration["ownerId"];
+  readonly jobs: DataExportJobs;
+}) {
+  return (input: {
+    readonly authentication: { readonly ownerId: string };
+    readonly exportId: string;
+  }) => {
+    if (input.authentication.ownerId !== options.ownerId) return undefined;
+    const view = options.jobs.view(input.exportId);
+    if (view.state !== "ready" || !view.built) return undefined;
+    return {
+      bytes: view.built.archive,
+      mediaType: "application/zip",
+      fileName: view.built.fileName,
+    };
+  };
+}
+
 export const PRODUCTION_DATA_EXPORT_OPERATIONS = Object.freeze([
   "data.export.start",
   "data.export.cancel",

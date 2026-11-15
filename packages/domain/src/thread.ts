@@ -36,6 +36,7 @@ export interface ProductThread {
   readonly answerLocale: AnswerLocale;
   readonly messageWatermark: number;
   readonly lineage: ThreadForkLineage | null;
+  readonly origin?: "think";
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -55,6 +56,7 @@ export function createProductThread(input: {
   readonly createdAt: string;
   readonly answerLocale?: AnswerLocale;
   readonly lineage?: ThreadForkLineage | null;
+  readonly origin?: "think";
 }): ProductThread {
   return Object.freeze({
     id: input.id,
@@ -69,6 +71,7 @@ export function createProductThread(input: {
     answerLocale: input.answerLocale ?? "zh-CN",
     messageWatermark: 0,
     lineage: input.lineage ?? null,
+    ...(input.origin === "think" ? { origin: "think" as const } : {}),
     createdAt: input.createdAt,
     updatedAt: input.createdAt,
   });
