@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger, historyComparison, checkedHistoryComparison, historyComparisonEvidence, verifyMigrationTransition, verifyHistoryAgainstRecoveryPoint, migrationComparedSections, currentSchema, targetSchema } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -29,15 +29,6 @@ const originRelease = historyIgnoredColumnsFor([{ sequence: 97, name: "other" },
 assert.deepEqual(originRelease, { threads: ["origin"] }, "HISTORY_ORIGIN_IGNORED_WHEN_THE_PACKET_LEDGER_HAS_THREAD_ORIGIN");
 assert.deepEqual(historyIgnoredColumnsFor([{ sequence: 97, name: "other" }]), {}, "HISTORY_ORIGIN_COMPARED_WHEN_THE_PACKET_LEDGER_LACKS_THREAD_ORIGIN");
 const packetAppliesThreadOrigin = migrationExpectedLedger.some((row) => row.name === "thread_origin");
-const historyOn = checkedHistoryComparison({ mode: "on" }, "__PKT_LABEL__");
-const historyOff = checkedHistoryComparison({ mode: "off", reason: "owner said production data does not matter", authorizedBy: "cmsg_fixture", release: "__PKT_LABEL__" }, "__PKT_LABEL__");
-assert.deepEqual(historyComparison, checkedHistoryComparison(__PKT_HISTORY_COMPARISON_JSON__, "__PKT_LABEL__"), "HISTORY_COMPARISON_FOLLOWS_THE_PACKET_PARAMETER");
-assert.equal(historyComparison.mode, "__PKT_HISTORY_COMPARISON__", "HISTORY_COMPARISON_MODE_MATCHES_THE_PYTHON_SWITCH");
-assert.deepEqual(migrationComparedSections.includes("history"), historyComparison.mode === "on", "HISTORY_MIGRATION_SECTIONS_FOLLOW_THE_PACKET");
-throwsCode(() => checkedHistoryComparison({ ...historyOff, release: "__PKT_LABEL__x" }, "__PKT_LABEL__"), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE", "off for another release");
-for (const [name, value] of [["no reason", { ...historyOff, reason: " " }], ["no authorization", { ...historyOff, authorizedBy: "" }], ["unknown mode", { mode: "partial" }], ["extra key on", { mode: "on", release: "__PKT_LABEL__" }], ["extra key off", { ...historyOff, tables: [] }], ["missing", null]]) throwsCode(() => checkedHistoryComparison(value, "__PKT_LABEL__"), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID", name);
-assert.deepEqual(historyComparisonEvidence(historyOn), { historyComparison: "on" });
-assert.deepEqual(historyComparisonEvidence(historyOff), { historyComparison: "off", historyComparisonReason: "owner said production data does not matter", historyComparisonAuthorizedBy: "cmsg_fixture", historyComparisonRelease: "__PKT_LABEL__" });
 assert.deepEqual(historyIgnoredColumns, packetAppliesThreadOrigin ? { threads: ["origin"] } : {}, "HISTORY_IGNORED_COLUMNS_FOLLOW_THE_PACKET_LEDGER");
 assert.deepEqual(historyIgnoredColumnsFor([{ sequence: 97, name: "thread_origin" }, { sequence: 98, name: "thread_origin" }]), { threads: ["origin"] }, "HISTORY_IGNORED_COLUMNS_MERGED_WITHOUT_DUPLICATES");
 assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }, originRelease), { __rowid: 1, id: "thread:1" }, "HISTORY_ROW_THREAD_ORIGIN_IGNORED");
@@ -193,16 +184,16 @@ count("s0Accepted");
 withWrites(() => full.prepare("INSERT INTO sandbox_execution_records VALUES(?,?, 'reserved', NULL,?)").run("job:stopped", '{"backendRef":"srt"}', "2026-10-08T00:00:00.000Z"));
 const reserved = readS0State(full, expectedIdentity);
 assert.deepEqual(reserved.gate, { oldReservedCount: 1, unresolvedReservedCount: 1, nonTerminalRunCount: 0 });
-assert.throws(() => verifyHistoryUnchanged(clear, reserved, historyOn), /__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED/);
+assert.throws(() => verifyHistoryUnchanged(clear, reserved), /__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED/);
 withWrites(() => full.exec("DELETE FROM sandbox_execution_records"));
-verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity), historyOn);
+verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity));
 withWrites(() => full.exec("UPDATE runs SET body='changed'"));
 const changedRun = readS0State(full, expectedIdentity);
 assert.equal(changedRun.history.runs.rows, 1);
 assert.notEqual(changedRun.history.runs.sha256, clear.history.runs.sha256);
-assert.throws(() => verifyHistoryUnchanged(clear, changedRun, historyOn), /__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED/);
+assert.throws(() => verifyHistoryUnchanged(clear, changedRun), /__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED/);
 withWrites(() => full.exec("UPDATE runs SET body='SECRET_RUN_CANARY_NOT_ALLOWED_IN_OUTPUT'"));
-verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity), historyOn);
+verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity));
 for (const status of ["accepted", "building_context", "running", "awaiting_approval", "reconciling_external_result"]) {
   withWrites(() => full.prepare("UPDATE runs SET status=?").run(status));
   assert.equal(readS0State(full, expectedIdentity).gate.nonTerminalRunCount, 1, status);
@@ -226,7 +217,7 @@ for (const [name, code, statement, undo] of [
   withWrites(() => full.exec(undo));
   count("s0Rejections");
 }
-verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity), historyOn);
+verifyHistoryUnchanged(clear, readS0State(full, expectedIdentity));
 
 withWrites(() => {
   full.exec("ALTER TABLE sandbox_execution_records ADD COLUMN recovery_json TEXT");
@@ -234,78 +225,20 @@ withWrites(() => {
   full.prepare("INSERT INTO threads(id,body) VALUES(?,?)").run("thread:one", "SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT");
 });
 const historyReference = new BetterSqlite3(full.serialize());
-const historyRows = () => compareHistoryRows(historyReference, full, {});
-const unchangedRows = historyRows();
-assert.deepEqual(unchangedRows.runs, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [] });
-assert.deepEqual(unchangedRows.sandbox_execution_records, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [] });
-assert(!JSON.stringify(unchangedRows).includes("CANARY"), "HISTORY_ROWS_LEAKED_ROW_CONTENT");
-count("historyRowsAccepted");
 withWrites(() => {
   full.prepare("INSERT INTO runs(id,status,body) VALUES(?,?,?)").run("run:two", "completed", "new");
   full.prepare("INSERT INTO threads(id,body) VALUES(?,?)").run("thread:two", "new");
 });
-const grownRows = historyRows();
-assert.deepEqual(grownRows.runs, { referenceRows: 1, liveRows: 2, addedRows: 1, recoveryUpdatedRowids: [] });
-assert.equal(grownRows.threads.addedRows, 1);
-count("historyRowsAccepted");
-withWrites(() => full.exec(`UPDATE sandbox_execution_records SET recovery_json='{"status":"unresolved","revision":3}' WHERE job_id='job:recovered'`));
-const recoveredRow = historyReference.prepare("SELECT rowid AS id FROM sandbox_execution_records WHERE job_id='job:recovered'").get().id;
-assert.deepEqual(historyRows().sandbox_execution_records, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [recoveredRow] });
-count("historyRowsAccepted");
-for (const [name, code, statement, undo] of [
-  ["old run body changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:runs", "UPDATE runs SET body='changed' WHERE id='run:one'", "UPDATE runs SET body='SECRET_RUN_CANARY_NOT_ALLOWED_IN_OUTPUT' WHERE id='run:one'"],
-  ["old run status changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:runs", "UPDATE runs SET status='failed' WHERE id='run:one'", "UPDATE runs SET status='completed' WHERE id='run:one'"],
-  ["old sandbox state changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:sandbox_execution_records", "UPDATE sandbox_execution_records SET preparation_state='reserved' WHERE job_id='job:recovered'", "UPDATE sandbox_execution_records SET preparation_state='terminal' WHERE job_id='job:recovered'"],
-  ["old thread deleted", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_REMOVED:threads", "DELETE FROM threads WHERE id='thread:one'", "INSERT INTO threads(rowid,id,body) VALUES(1,'thread:one','SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT')"],
-  ["history column added", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COLUMNS_CHANGED:threads", "ALTER TABLE threads ADD COLUMN extra TEXT", "ALTER TABLE threads DROP COLUMN extra"],
-]) {
-  withWrites(() => full.exec(statement));
-  throwsCode(historyRows, code, name);
-  withWrites(() => full.exec(undo));
-  count("historyRowsRejections");
-}
-assert.equal(historyRows().threads.addedRows, 1);
 withWrites(() => full.exec("ALTER TABLE threads ADD COLUMN origin TEXT NOT NULL DEFAULT 'owner'; UPDATE threads SET origin='think' WHERE id='thread:two'"));
-throwsCode(historyRows, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COLUMNS_CHANGED:threads", "origin added by a release that does not apply thread_origin");
-count("historyRowsRejections");
-if (packetAppliesThreadOrigin) assert.equal(compareHistoryRows(historyReference, full).threads.addedRows, 1, "HISTORY_PACKET_DEFAULT_SKIPS_ORIGIN");
-else throwsCode(() => compareHistoryRows(historyReference, full), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COLUMNS_CHANGED:threads", "packet default compares origin");
-assert.equal(compareHistoryRows(historyReference, full, originRelease).threads.addedRows, 1);
 const referenceHistory = historyDigests(historyReference, originRelease).threads;
 const originHistory = historyDigests(full, originRelease).threads;
 assert.equal(originHistory.rows, referenceHistory.rows + 1);
 assert.notDeepEqual(historyDigests(full).threads, originHistory, "HISTORY_ORIGIN_DIGEST_COUNTS_ORIGIN_BY_DEFAULT");
-count("historyRowsAccepted");
+count("historyDigestsAccepted");
 withWrites(() => full.exec("UPDATE threads SET body='changed' WHERE id='thread:one'"));
-throwsCode(() => compareHistoryRows(historyReference, full, originRelease), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:threads", "old thread body changed beside origin");
-count("historyRowsRejections");
+assert.notDeepEqual(historyDigests(full, originRelease).threads.sha256, referenceHistory.sha256, "HISTORY_DIGEST_SEES_AN_OLD_THREAD_CHANGE_BESIDE_ORIGIN");
+count("historyDigestsRejections");
 withWrites(() => full.exec("UPDATE threads SET body='SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT' WHERE id='thread:one'; ALTER TABLE threads DROP COLUMN origin"));
-assert.deepEqual(verifyHistoryUnchanged(clear, changedRun, historyOff), historyComparisonEvidence(historyOff), "HISTORY_OFF_SKIPS_THE_DIGEST_COMPARISON");
-assert.deepEqual(verifyHistoryUnchanged({}, changedRun, historyOff), historyComparisonEvidence(historyOff), "HISTORY_OFF_NEEDS_NO_EARLIER_DIGEST");
-count("historyComparisonOff");
-withWrites(() => full.exec("INSERT INTO model_budget_accounts(id,body) VALUES('account:one','before')"));
-const budgetReference = new BetterSqlite3(full.serialize());
-withWrites(() => full.exec("UPDATE model_budget_accounts SET body='changed after start' WHERE id='account:one'"));
-throwsCode(() => compareHistoryRows(budgetReference, full, {}), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:model_budget_accounts", "twentyninth S8 failure reproduced with history comparison on");
-budgetReference.close();
-const offBinding = { maintenance: { ["recovery__PKT_CURRENT_SCHEMA__Id"]: "raw-fixture" } };
-const offReadback = verifyHistoryAgainstRecoveryPoint(offBinding, historyOff);
-assert.equal(offReadback.passed, true);
-assert.equal(offReadback.historyComparison, "off");
-assert.equal(offReadback.historyComparisonReason, historyOff.reason);
-assert.equal(offReadback.tables, null);
-assert.throws(() => verifyHistoryAgainstRecoveryPoint(offBinding, historyOn), "HISTORY_ON_STILL_OPENS_THE_RECOVERY_COPY");
-withWrites(() => full.exec("DELETE FROM model_budget_accounts"));
-count("historyComparisonOff");
-if (targetSchema > currentSchema) {
-  const migrationBefore = { schema: { current: currentSchema, minimumWriter: currentSchema }, ledger: [], history: { runs: { rows: 1, sha256: "a".repeat(64) } }, capabilities: [], authorization: [], releaseReceipts: [], integrity: "ok", foreignKeys: 0 };
-  const migrationAfter = { ...migrationBefore, schema: { current: targetSchema, minimumWriter: targetSchema }, ledger: migrationExpectedLedger.map((row) => ({ ...row })), history: { runs: { rows: 1, sha256: "b".repeat(64) } } };
-  throwsCode(() => verifyMigrationTransition(migrationBefore, migrationAfter, historyOn), "__PKT_LABEL_UPPER___MAINTENANCE_MIGRATION_CONTENT_CHANGED", "migration history change refused when on");
-  const skipped = verifyMigrationTransition(migrationBefore, migrationAfter, historyOff);
-  assert(!skipped.comparedSections.includes("history") && skipped.historyComparison === "off", "HISTORY_OFF_SKIPS_THE_MIGRATION_HISTORY_SECTION");
-  throwsCode(() => verifyMigrationTransition(migrationBefore, { ...migrationAfter, foreignKeys: 1 }, historyOff), "__PKT_LABEL_UPPER___MAINTENANCE_MIGRATION_CONTENT_CHANGED", "other migration sections still compared when off");
-  count("historyComparisonOff");
-}
 historyReference.close();
 
 const registeredRuntime = `${catalogRegistrationPrefix}/lib/himawari-agent`;
