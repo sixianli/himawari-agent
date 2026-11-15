@@ -4,6 +4,7 @@ import HimawariDesign
 import HimawariListen
 import HimawariListenUI
 import HimawariManage
+import HimawariSenses
 import HimawariShare
 import SwiftUI
 
@@ -146,6 +147,9 @@ struct MainTabsView: View {
                         openThread: { threadId in
                             settingsOpen = false
                             withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
+                        },
+                        senses: model.senses.map { senses in
+                            AnyView(SensesView(model: senses) { HandoverEntryRows() })
                         },
                         close: { settingsOpen = false },
                         removedThisDevice: {

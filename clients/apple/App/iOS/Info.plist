@@ -38,15 +38,6 @@
 				<string>himawari</string>
 			</array>
 		</dict>
-	</array>
-	<key>HimawariAppGroup</key>
-	<string>$(HIMAWARI_APP_GROUP)</string>
-	<key>HimawariKeychainGroup</key>
-	<string>$(AppIdentifierPrefix)$(HIMAWARI_KEYCHAIN_GROUP)</string>
-	<key>HimawariReleaseChannel</key>
-	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
 		<dict>
 			<key>CFBundleURLName</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).pairing</string>
@@ -56,12 +47,18 @@
 			</array>
 		</dict>
 	</array>
+	<key>HimawariAppGroup</key>
+	<string>$(HIMAWARI_APP_GROUP)</string>
+	<key>HimawariKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)$(HIMAWARI_KEYCHAIN_GROUP)</string>
+	<key>HimawariReleaseChannel</key>
+	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>你让 Himawari 定闹钟时，用 Himawari 自己的闹钟按时叫你</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>你让 Himawari 加、改、删日历里的事时，先读一遍再动手，做完读回来确认</string>
+	<string>你让 Himawari 加、改、删日历里的事时，先读一遍再动手，做完读回来确认；打开“日历”感知后，也把日历里的安排同步到你自己的服务器，日历里删了那边也删</string>
 	<key>NSContactsUsageDescription</key>
-	<string>你让 Himawari 改联系人的电话或邮箱时使用</string>
+	<string>你让 Himawari 改联系人的电话或邮箱时使用；打开“联系人”感知后，也把名字、电话、邮箱和生日同步到你自己的服务器，让它认得你认识的人</string>
 	<key>NSHomeKitUsageDescription</key>
 	<string>你让 Himawari 开关家里的灯、调空调时使用</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
@@ -70,10 +67,18 @@
 	<string>扫电脑上 Himawari 设置里的配对码</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>改动 Himawari 里的设置和记忆前确认是你本人</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>到了一个地方、停了多久会记下来，存在你自己的服务器上。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>不打开 Himawari 也记下你到了哪、停了多久，存在你自己的服务器上。</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>读步数、睡眠、心率和锻炼，存在你自己的服务器上。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>记下新拍的照片和截屏的时间、地点，不传照片本身。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>你点“开始听”后，听周围的话并在这台 iPhone 上转成字；录音转完就删</string>
 	<key>NSMotionUsageDescription</key>
-	<string>判断 AirPods 是不是戴在耳朵上，好知道是不是你在叫它</string>
+	<string>判断 AirPods 是不是戴在耳朵上，好知道是不是你在叫它；打开“健康与运动”感知后，也记下你在走路、跑步还是开车，存在你自己的服务器上</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>在这台 iPhone 上把听到的话转成字</string>
 	<key>UIFileSharingEnabled</key>
@@ -85,6 +90,8 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>location</string>
+		<string>remote-notification</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
