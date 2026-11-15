@@ -185,6 +185,16 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
     }
 
+    func testLoadAlsoDropsFailureNotesForCapabilitiesThatAreNoLongerDisabled() async {
+        let settings = store(ScriptedTransport(answer: Self.answer))
+        await settings.load()
+        let disabledRef = settings.capabilitiesDisabled[0].capabilityRef
+        settings.noteReactivationFailure("x", for: disabledRef)
+        settings.noteReactivationFailure("y", for: "cap-search")
+        await settings.load()
+        XCTAssertEqual(settings.reactivationFailure, [disabledRef: "x"])
+    }
+
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {
         let settings = store(ScriptedTransport(answer: Self.answer))
         await settings.load()

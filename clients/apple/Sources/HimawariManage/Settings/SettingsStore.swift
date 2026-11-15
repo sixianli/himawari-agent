@@ -45,10 +45,7 @@ public final class SettingsStore {
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
-            let all = try await capabilities
-            waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
-            capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
-            capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+            applyCapabilities(try await capabilities)
             devices = try await listed.devices
             phase = .loaded
         } catch {
@@ -78,7 +75,16 @@ public final class SettingsStore {
     static let ownerReactivatedReason = "owner_reactivated"
 
     public func reactivate(_ capability: CapabilitySummary, reason: String) async throws {
-        defer { Task { await reloadCapabilities() } }
+        do {
+            try await sendReactivation(capability, reason: reason)
+        } catch {
+            await reloadCapabilities()
+            throw error
+        }
+        await reloadCapabilities()
+    }
+
+    private func sendReactivation(_ capability: CapabilitySummary, reason: String) async throws {
         _ = try await gateway.command(
             .v2,
             "capability.reactivate",
@@ -111,6 +117,10 @@ public final class SettingsStore {
 
     public func reloadCapabilities() async {
         guard let all = try? await loadCapabilities() else { return }
+        applyCapabilities(all)
+    }
+
+    private func applyCapabilities(_ all: [CapabilitySummary]) {
         waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
         capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
         capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
