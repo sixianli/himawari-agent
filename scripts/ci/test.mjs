@@ -21,6 +21,7 @@ export async function runTests({
   context,
   projects: selection,
   related = new Map(),
+  shard,
   remainingBudgetMs,
 } = {}) {
   const started = performance.now();
@@ -56,8 +57,30 @@ export async function runTests({
   ];
   if (!selection?.length || selection.some((id) => !check.projects.includes(id)))
     throw new Error("CI_TEST_PROJECT_SELECTION_INVALID");
+  if (
+    shard !== undefined &&
+    !(
+      selection.length === 1 &&
+      Number.isSafeInteger(shard?.count) &&
+      Number.isSafeInteger(shard?.index) &&
+      shard.count > 1 &&
+      shard.index >= 1 &&
+      shard.index <= shard.count
+    )
+  )
+    throw new Error("CI_TEST_SHARD_INVALID");
   for (const id of selection) {
-    const selected = related.get(id);
+    const expected = policy.testProjects.find((project) => project.id === id);
+    const candidates = (related.get(id) ?? trackedFiles)
+      .filter(
+        (filename) =>
+          expected.include.some((glob) => path.matchesGlob(filename, glob)) &&
+          !expected.exclude.some((glob) => path.matchesGlob(filename, glob)),
+      )
+      .sort();
+    const selected = shard
+      ? candidates.filter((_filename, index) => index % shard.count === shard.index - 1)
+      : related.get(id);
     if (selected?.length === 0) {
       projects.push({ id, counts: zeroCounts() });
       continue;
@@ -67,7 +90,6 @@ export async function runTests({
     const json = path.join(destination, `${id}.json`);
     const junit = path.join(destination, `${id}.xml`);
     const log = path.join(destination, `${id}.log`);
-    const expected = policy.testProjects.find((project) => project.id === id);
     const outcome = await execute(
       process.execPath,
       [
@@ -109,13 +131,7 @@ export async function runTests({
     const counts = parseVitestReport(report);
     if (outcome.exitCode === 0 && (counts.failed || counts.skipped))
       throw new Error(`CI_TEST_EXIT_CONTRADICTION:${id}`);
-    const expectedFiles = (selected ?? trackedFiles)
-      .filter(
-        (filename) =>
-          expected.include.some((glob) => path.matchesGlob(filename, glob)) &&
-          !expected.exclude.some((glob) => path.matchesGlob(filename, glob)),
-      )
-      .sort();
+    const expectedFiles = shard ? selected : candidates;
     const actualFiles = report.testResults
       .map((file) => path.relative(root, file.name).split(path.sep).join("/"))
       .sort();

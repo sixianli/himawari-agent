@@ -329,6 +329,74 @@ describe("five-project execution contract", () => {
     );
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+  const shardFixture = async ({ reportAll = false } = {}) => {
+    const options = await fixture();
+    const files = ["a", "b", "c", "d", "e"].map((name) => `test/integration/${name}.test.ts`);
+    for (const file of files) await put(path.join(options.root, file), "export {};\n");
+    const value = mocks.policy.getMockImplementation()().policy;
+    value.testProjects.find((project) => project.id === "integration").include = [
+      "test/integration/*.test.ts",
+    ];
+    const original = mocks.execute.getMockImplementation();
+    mocks.execute.mockImplementation(async (command, args, settings) => {
+      const result = await original(command, args, settings);
+      const named = args.filter((arg) => arg.startsWith("test/integration/"));
+      const json = args.find((arg) => arg.startsWith("--outputFile.json=")).split("=")[1];
+      await put(
+        json,
+        JSON.stringify({
+          success: true,
+          testResults: (reportAll ? files : named).map((file) => ({
+            name: path.join(options.root, file),
+            assertionResults: [{ status: "passed" }],
+          })),
+        }),
+      );
+      return result;
+    });
+    return { options, files };
+  };
+  it("[ADR-0275] 分片按排好序的文件轮流分，两份合起来正好是全部集成测试文件", async () => {
+    const ran = [];
+    for (const index of [1, 2]) {
+      const { options, files } = await shardFixture();
+      const result = await runTests({
+        ...options,
+        projects: ["integration"],
+        shard: { index, count: 2 },
+      });
+      expect(result.exitCode).toBe(0);
+      const [[, args]] = mocks.execute.mock.calls;
+      const named = args.filter((arg) => arg.startsWith("test/integration/"));
+      expect(named).toEqual(files.filter((_file, position) => position % 2 === index - 1));
+      expect(result.projects).toEqual([
+        { id: "integration", counts: expect.objectContaining({ files: named.length }) },
+      ]);
+      ran.push(...named);
+      mocks.execute.mockReset();
+    }
+    expect(ran.sort()).toEqual(
+      ["a", "b", "c", "d", "e"].map((n) => `test/integration/${n}.test.ts`),
+    );
+  });
+  it("[ADR-0275] 反向：分片里 vitest 多跑了不属于这一份的文件时失败", async () => {
+    const { options } = await shardFixture({ reportAll: true });
+    await expect(
+      runTests({ ...options, projects: ["integration"], shard: { index: 1, count: 2 } }),
+    ).rejects.toThrow("CI_TEST_FILE_SET_MISMATCH:integration");
+  });
+  it.each([
+    ["编号超出份数", ["integration"], { index: 3, count: 2 }],
+    ["编号为零", ["integration"], { index: 0, count: 2 }],
+    ["只分一份", ["integration"], { index: 1, count: 1 }],
+    ["一次分两个项目", ["integration", "unit"], { index: 1, count: 2 }],
+  ])("[ADR-0275] 反向：分片写错（%s）时什么都不跑", async (_name, projects, shard) => {
+    const { options } = await shardFixture();
+    await expect(runTests({ ...options, projects, shard })).rejects.toThrow(
+      "CI_TEST_SHARD_INVALID",
+    );
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
   it("runs only the selected projects in their policy order", async () => {
     const options = await fixture();
     const result = await runTests({ ...options, projects: ["e2e", "pi-compat"] });

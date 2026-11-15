@@ -200,8 +200,9 @@ vi.mock("../../scripts/ci/verify-artifact.mjs", () => ({
   },
 }));
 vi.mock("../../scripts/ci/test.mjs", () => ({
-  runTests: async ({ output, artifact, projects, related }) => {
+  runTests: async ({ output, artifact, projects, related, shard }) => {
     state.related = related;
+    state.shard = shard;
     const report = path.join(output, "tests.json");
     write(report, { status: "passed" });
     return {
@@ -308,7 +309,11 @@ const run = (checkId, extra = {}) =>
     toolsDirectory: state.root,
     hosted: false,
     ...(checkId === "tests"
-      ? { artifact: path.join(state.root, "runtime.tar.gz"), coverage: "measure" }
+      ? {
+          matrixKey: "others",
+          artifact: path.join(state.root, "runtime.tar.gz"),
+          coverage: "measure",
+        }
       : {}),
     ...extra,
   });
@@ -386,13 +391,8 @@ describe("共享runner的调度、来源和失败传播", () => {
     const result = await run("tests", { coverage: undefined });
     expect(result.status).toBe("passed");
     expect(state.calls.map(({ name }) => name)).toEqual([]);
-    expect(result.projects.map(({ id }) => id)).toEqual([
-      "unit",
-      "contracts",
-      "integration",
-      "e2e",
-      "pi-compat",
-    ]);
+    expect(result.projects.map(({ id }) => id)).toEqual(["unit", "contracts", "e2e", "pi-compat"]);
+    expect(state.shard).toBeUndefined();
     expect(result.reports.some((entry) => entry.path.includes("coverage-final.json"))).toBe(false);
     const declared = JSON.parse(readFileSync("ci/policy.json", "utf8")).checks.find(
       (check) => check.id === "tests",
@@ -436,13 +436,23 @@ describe("共享runner的调度、来源和失败传播", () => {
       asked.push(projects);
       return { related: new Map([["integration", []]]), reason: "related" };
     };
-    const plain = await run("tests", { coverage: undefined, planScope });
-    expect(asked).toEqual([["unit", "contracts", "integration", "e2e", "pi-compat"]]);
+    const plain = await run("tests", {
+      coverage: undefined,
+      matrixKey: "integration-2",
+      planScope,
+    });
+    expect(asked).toEqual([["integration"]]);
     expect([...state.related]).toEqual([["integration", []]]);
+    expect(state.shard).toEqual({ index: 2, count: 2 });
     expect(plain.relatedProjects).toEqual(["integration"]);
-    await run("tests", { output: ".ci-output/tests-measure", planScope });
+    await run("tests", {
+      output: ".ci-output/tests-measure",
+      matrixKey: "integration-2",
+      planScope,
+    });
     expect(asked).toHaveLength(1);
     expect(state.related.size).toBe(0);
+    expect(state.shard).toBeUndefined();
   });
   it.each([
     ["policy", "measure"],
