@@ -2968,4 +2968,26 @@ describe("runner machine preparation", () => {
       expect(text).toMatch(/playwright\/cli\.js" install-deps chromium\b/u);
     },
   );
+
+  it("prepare-arm.sh gives integration tests the same sandbox tools and bwrap AppArmor profile as prepare-vps.sh", () => {
+    const read = (name) => readFileSync(path.join(scripts, name), "utf8");
+    const packages = (text) => text.match(/^apt-get install -y -q (.+)$/mu)?.[1].split(" ") ?? [];
+    const profile = (text) => text.match(/^profile_text='([^']+)'$/mu)?.[1];
+    const vps = read("prepare-vps.sh");
+    const arm = read("prepare-arm.sh");
+    for (const name of ["bubblewrap", "socat", "ripgrep", "apparmor-utils"]) {
+      expect(packages(vps)).toContain(name);
+      expect(packages(arm)).toContain(name);
+    }
+    expect(profile(arm)).toBeDefined();
+    expect(profile(arm)).toBe(profile(vps));
+    expect(value(arm, "APPARMOR_PROFILE")).toBe(value(vps, "APPARMOR_PROFILE"));
+    expect(arm).toContain(
+      '[ "$(cat "$APPARMOR_PROFILE")" = "$profile_text" ] || fail "$APPARMOR_PROFILE exists with other content" 75',
+    );
+    expect(arm).toContain(
+      'apparmor_parser -r "$APPARMOR_PROFILE" || fail "could not load $APPARMOR_PROFILE" 76',
+    );
+    expect(arm).toMatch(/^for tool in .*\bbwrap socat rg\b/mu);
+  });
 });
