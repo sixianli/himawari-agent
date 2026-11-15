@@ -125,6 +125,7 @@ struct PanelView: View {
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
                 }
+                .scrollIndicators(.never)
                 .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
                 .onChange(of: olderListHeight) { scrollToRevealed(proxy) }
                 .onChange(of: model.revealedNotice, initial: true) { scrollToRevealed(proxy) }
