@@ -22,9 +22,6 @@ configuration = Path('/etc/himawari/config.json')
 fragment = Path('/etc/systemd/system/himawari-prod.service')
 node = Path('/opt/himawari/node/bin/node')
 unit = 'himawari-prod.service'
-history_comparison = '__PKT_HISTORY_COMPARISON__'
-if history_comparison not in ('on', 'off'):
-    raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_HISTORY_COMPARISON_INVALID')
 old_pair_supervisor = '__PKT_OLD_OPERATIONS__/pair-supervisor.mjs'
 account = pwd.getpwnam('himawari-prod')
 if sys.argv[1:] != ['--approved-r2l13-__PKT_LABEL__-deployment-switch-start'] or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or sys.platform != 'linux' or os.getuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or (account.pw_uid, account.pw_gid) != (999, 988) or Path(__file__).resolve() != base / 'S7-switch-start-readback.py':
@@ -239,7 +236,7 @@ upgraded_state = json_file(evidence / 's7-catalog-after__PKT_TARGET_SCHEMA__.jso
 for value, schema in [(state, __PKT_CURRENT_SCHEMA__), (upgraded_state, __PKT_TARGET_SCHEMA__)]:
     if value['schema']['current'] != schema or value['schema']['minimumWriter'] != schema or value['gate']['unresolvedReservedCount'] != 0 or value['gate']['nonTerminalRunCount'] != 0 or value['authority'] != binding['authority']:
         raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_SCHEMA_GATE_OR_AUTHORITY_CHANGED')
-if history_comparison == 'on' and upgraded_state['history'] != state['history']:
+if upgraded_state['history'] != state['history']:
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_HISTORY_CHANGED')
 for key, expected in binding['identity'].items():
     if upgraded_state['identity'].get(key, upgraded_state['authority'].get(key)) != expected:
@@ -265,7 +262,7 @@ for filename in ['cloud-protected-prepare.mjs', 'validate-r2l6-installed.mjs', '
     regular(operations / filename)
 regular(Path(binding['service']['workerTokenFile']), 999, 0o600)
 initial_enabled = subprocess.run(['/usr/bin/systemctl', 'is-enabled', unit], capture_output=True, text=True, timeout=15).stdout.strip()
-orchestration = {'schemaVersion': 'himawari.__PKT_LABEL__-change-switch-orchestration.v1', 'passed': False, 'bindingSha256': sha(binding_bytes), 'frozenPacketReadback': frozen_packet, 'catalogUpgrade': {'reportSha256': upgrade_report_sha256, 'preparedConfigurationSha256': catalog['preparedConfigurationSha256'], 'snapshotSha256': catalog['snapshotSha256'], 'planDigest': catalog['planDigest'], 'upgraded': catalog['upgraded']}, 'historyComparison': history_comparison, 'startedAt': time.time(), 'commands': [], 'errors': [], 'oldProperties': original_properties, 'oldEnabledState': initial_enabled, 'unitSwitched': False, 'startRequested': False, 'rollbackPerformed': False, 'rootFreeBeforeBytes': os.statvfs('/').f_bavail * os.statvfs('/').f_frsize}
+orchestration = {'schemaVersion': 'himawari.__PKT_LABEL__-change-switch-orchestration.v1', 'passed': False, 'bindingSha256': sha(binding_bytes), 'frozenPacketReadback': frozen_packet, 'catalogUpgrade': {'reportSha256': upgrade_report_sha256, 'preparedConfigurationSha256': catalog['preparedConfigurationSha256'], 'snapshotSha256': catalog['snapshotSha256'], 'planDigest': catalog['planDigest'], 'upgraded': catalog['upgraded']}, 'startedAt': time.time(), 'commands': [], 'errors': [], 'oldProperties': original_properties, 'oldEnabledState': initial_enabled, 'unitSwitched': False, 'startRequested': False, 'rollbackPerformed': False, 'rootFreeBeforeBytes': os.statvfs('/').f_bavail * os.statvfs('/').f_frsize}
 retain_json(evidence / 's7-orchestration.started.json', {'bindingSha256': sha(binding_bytes), 'startedAt': orchestration['startedAt']})
 try:
     published = []
