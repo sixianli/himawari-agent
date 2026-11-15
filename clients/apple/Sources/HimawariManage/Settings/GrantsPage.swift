@@ -7,6 +7,7 @@ struct GrantsPage: View {
     let store: SettingsStore
     let back: () -> Void
     @Environment(\.pairingClock) private var pairingClock
+    @Environment(\.stillFrames) private var stillFrames
     @State private var open: String?
     @State private var notice: String?
     @State private var failedId: String?
@@ -24,17 +25,13 @@ struct GrantsPage: View {
             SheetHeader(title: M.grantsTitle, leading: .back, action: back)
             if let grants = store.grants {
                 if grants.isEmpty {
-                    EmptyStateView(Text(M.noGrants)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
+                    GrantsEmptyState()
                 } else {
                     SettingsGroup(label: nil) {
                         ForEach(Array(grants.enumerated()), id: \.element.id) { index, grant in
                             row(grant, last: index == grants.count - 1)
                         }
                     }
-                }
-                if let notice {
-                    Text(notice).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
-                        .padding(.horizontal, SL.groupLabelPadding)
                 }
             } else {
                 EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
@@ -45,6 +42,19 @@ struct GrantsPage: View {
             await store.reloadCapabilities()
         }
         .refreshable { await store.reloadGrants() }
+        .overlay(alignment: .bottom) {
+            if let notice {
+                NoticeBar(text: notice)
+                    .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: notice)
+        .task(id: notice) {
+            guard notice != nil, !stillFrames else { return }
+            try? await Task.sleep(for: .seconds(Self.noticeSeconds))
+            if !Task.isCancelled { notice = nil }
+        }
     }
 
     private func title(_ grant: GrantSummary) -> String {
@@ -86,6 +96,9 @@ struct GrantsPage: View {
                     ForEach(Array(grant.detailLines.enumerated()), id: \.offset) { _, line in
                         Text(line).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     }
+                    if let endsAt = grant.endsAt {
+                        Text(M.grantExpires(endsAt)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, SL.rowPaddingVertical)
@@ -112,7 +125,39 @@ struct GrantsPage: View {
         }
     }
 
+    private static let noticeSeconds = 4.0
+
     private static func declined(_ error: Error) -> Bool {
         !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
+    }
+}
+
+struct NoticeBar: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .hmType(DesignTokens.TypeScale.offlineBanner)
+            .foregroundStyle(Color.hmText)
+            .multilineTextAlignment(.leading)
+            .padding(.vertical, DesignTokens.Size.offlineBannerPaddingVertical)
+            .padding(.horizontal, DesignTokens.Size.offlineBannerPaddingHorizontal)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.offlineBanner, style: .continuous))
+            .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
+            .accessibilityElement(children: .combine)
+    }
+}
+
+struct GrantsEmptyState: View {
+    var body: some View {
+        VStack(spacing: SL.rowGap) {
+            SunflowerMark()
+                .frame(width: DesignTokens.Size.emptyMark, height: DesignTokens.Size.emptyMark)
+                .opacity(DesignTokens.Opacity.emptyMark)
+            Text(M.noGrants)
+                .hmType(DesignTokens.TypeScale.emptyTitle)
+                .foregroundStyle(Color.hmText)
+        }
+        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.emptyMinHeight)
     }
 }

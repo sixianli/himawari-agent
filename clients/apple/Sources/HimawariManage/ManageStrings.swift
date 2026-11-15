@@ -80,10 +80,14 @@ enum M {
     static var grantRevokeFailed: String { text("没能撤回", ja: "取り消せませんでした", en: "Couldn't revoke") }
     static var grantGone: String { text("这一条已经不在了", ja: "この項目はもうありません", en: "This one is already gone") }
     static func grantRevoked(affected: Int) -> String {
-        let base = text("已撤回。以后它做这件事会先问你", ja: "取り消しました。今後これをする前に確認します", en: "Revoked. It will ask you first from now on")
+        let base = text("已撤回。以后它做这件事会先问你。", ja: "取り消しました。今後これをする前に確認します。", en: "Revoked. It will ask you first from now on.")
         guard affected > 0 else { return base }
-        let extra = text("有 \(affected) 个任务会受影响", ja: "\(affected) 件のタスクに影響します", en: "\(affected) task\(affected == 1 ? "" : "s") will be affected")
-        return text("\(base)。\(extra)", ja: "\(base)。\(extra)", en: "\(base). \(extra)")
+        let extra = text("有 \(affected) 个任务会受影响。", ja: "\(affected) 件のタスクに影響します。", en: "\(affected) task\(affected == 1 ? "" : "s") will be affected.")
+        return text("\(base)\(extra)", ja: "\(base)\(extra)", en: "\(base) \(extra)")
+    }
+    static func grantExpires(_ date: Date) -> String {
+        let day = pairedDay(date)
+        return text("到期：\(day)", ja: "期限：\(day)", en: "Expires: \(day)")
     }
     static func grantTitle(label: String?, capability: String?) -> String {
         if let label, !label.isEmpty { return label }
