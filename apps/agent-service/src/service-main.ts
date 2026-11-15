@@ -1666,6 +1666,11 @@ export async function startTenantRuntime(
         timeZone: reminderTimeZone ?? "UTC",
         now: () => clock.now(),
         authorization: productionDeviceActionAuthorization({ ownerScope, registry: toolActions }),
+        openRequests: {
+          requestOpen: async (input) => {
+            await applePush?.requestOpen(input);
+          },
+        },
       });
       const perceptionTools = new ProductionPerceptionTools({
         scope: perceptionScope,
