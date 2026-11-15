@@ -23,6 +23,8 @@ export interface PortableCounts {
   trackPoints: number;
   perceptionSettings: number;
   limitUsage: number;
+  devicePolicies: number;
+  deviceActions: number;
   consolidations: number;
   consolidationChanges: number;
   conversationReviews: number;

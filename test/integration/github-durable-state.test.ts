@@ -362,6 +362,45 @@ describe.each(["worker", "direct"] as const)("github-durable-state through %s", 
         T0,
       );
       database
+        .prepare(
+          `INSERT INTO payloads (
+          ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+          content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+          content_type
+        ) VALUES (?, ?, ?, 'private', 'sqlite_blob', X'03', ?, 'fixture', 'fixture-key',
+          'active', ?, 'application/json')`,
+        )
+        .run("payload:github-device-action", OWNER_ID, AGENT_ID, "sha256:github-device-action", T0);
+      database
+        .prepare(
+          `INSERT INTO paired_devices
+          (id, owner_id, agent_id, revision, kind, name, release_channel, device_public_key,
+           confirm_public_key, status, supported_actions, paired_at, last_seen_at)
+          VALUES ('dev_githubhistory000000000', ?, ?, 0, 'iphone', 'iPhone', 'direct', ?, ?,
+           'pending', '[]', ?, ?)`,
+        )
+        .run(
+          OWNER_ID,
+          AGENT_ID,
+          `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"D".repeat(86)}==`,
+          `MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE${"C".repeat(86)}==`,
+          T0,
+          T0,
+        );
+      database
+        .prepare(
+          `INSERT INTO device_actions (
+          id, owner_id, agent_id, revision, device_id, action, schema_version, arguments_ref,
+          fingerprint, action_kind, risk, owner_presence, approval_id, data_classification,
+          state, reason_code, result_ref, run_id, tool_call_id, created_at, expires_at,
+          delivered_at, finished_at, updated_at
+        ) VALUES (?, ?, ?, 1, 'dev_githubhistory000000000', 'home.read', 1,
+          'payload:github-device-action', ?, 'READ', 'LOW', 0, NULL, 'private', 'rejected',
+          'approval_not_connected', NULL, 'run-github-history-delete', 'call-1', ?,
+          '2999-01-01T00:00:00.000Z', NULL, ?, ?)`,
+        )
+        .run(`dact_${"a".repeat(32)}`, OWNER_ID, AGENT_ID, "f".repeat(64), T0, T0, T0);
+      database
         .prepare("UPDATE job_occurrences SET run_id = ? WHERE id = ?")
         .run("run-github-history-delete", admitted.id);
       database.close();
@@ -454,6 +493,14 @@ describe.each(["worker", "direct"] as const)("github-durable-state through %s", 
         expect(
           afterSuccessfulDelete
             .prepare("SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-artifact-only'")
+            .pluck()
+            .get(),
+        ).toBe(0);
+        expect(
+          afterSuccessfulDelete
+            .prepare(
+              "SELECT (SELECT COUNT(*) FROM device_actions) + (SELECT COUNT(*) FROM payloads WHERE ref = 'payload:github-device-action')",
+            )
             .pluck()
             .get(),
         ).toBe(0);
