@@ -1,0 +1,5 @@
+# PR 583 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1、中、安装只改权限位、不校验也不强制目录和文件属主，与 runbook 和测试名的「only root owns」不符。install-heartbeat.sh 原先只 mkdir/chmod；已加 chown root:root 目录和文件（HEARTBEAT_ROOT 为空时），并把测试名改成不含 only root owns；触发：管理员事先手工建了非 root 属主的 /etc/himawari-heartbeat；后果：心跳读不到网址，和事故症状相同，但只在人为构造的状态下出现；判低理由：install-heartbeat.sh 第 14-17 行在非 root 且无 HEARTBEAT_ROOT 时直接退出，root 新建的目录和 install 写的文件本来就归 root；只有人手工预先建了属主不对的 /etc/himawari-heartbeat 才触发，不是正常使用
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2、低、`install --keep-url` 无法从旧位置迁移，受影响机器照「只重装脚本不换网址」操作会得到 `HEARTBEAT_URL_MISSING`。install-heartbeat.sh --keep-url 只读新路径；已改成新路径没有时从旧位置取，并加 test_keep_url_migrates_the_url_from_the_old_location；触发：尚未迁移的机器执行 install --keep-url；后果：报 HEARTBEAT_URL_MISSING 后退出，写任何文件之前失败，不破坏旧安装
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3、低、`remove`（不带 `--purge`）也会删掉旧位置网址，和「`remove` 保留网址、`--purge` 才删」的说明不一致，且没有测试。install-heartbeat.sh remove 分支无条件 rm 旧位置；已收进 purge 分支，并加 test_remove_without_purge_keeps_the_old_location_url，runbook 同步；触发：未迁移的机器执行不带 --purge 的 remove；后果：旧位置网址被删，与说明不符；网址可在 Healthchecks.io 页面重新复制，不丢数据

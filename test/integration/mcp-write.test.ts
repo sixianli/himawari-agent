@@ -51,6 +51,10 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../../apps/agent-service/src/production-mcp-connections.ts";
+import {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
   externalProposalBatchId,
@@ -85,6 +89,7 @@ const OWNER_ID = createOwnerId("owner-mcp-write");
 const AGENT_ID = createAgentId("agent-mcp-write");
 const THREAD_ID = createThreadId("thread-mcp-write");
 const GENERATION_ID = createMemoryGenerationId("generation-mcp-write");
+const CONNECTION_ID = "conn-mcp-write";
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
@@ -360,6 +365,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
             write: { proposals: slowDecided(writer), rules: slowDecided(ruleProposals) },
           }),
       timeZone: TIME_ZONE,
+      connections: repository.mcpConnections(),
       requestTimeoutMs: 30_000,
       sources: {
         recall: (args, within, ceiling) => recall.recallOutsideRun(args, within, ceiling),
@@ -375,9 +381,22 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
+    const secret = newMcpConnectionSecret();
+    await repository.mcpConnections().create({
+      ...scope,
+      id: CONNECTION_ID,
+      name: CONNECTION_ID,
+      secretSha256: mcpConnectionSecretDigest(secret),
+      capabilities: ["mcp"],
+      readCeiling: "private",
+      pushPolicy: "ask",
+      createdAt: clock.now(),
+    });
     const url = new URL(
-      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
+      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}/${secret}`,
     );
+    const usage = async () =>
+      repository.mcpConnections().usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
     const elicitations: Record<string, unknown>[] = [];
     const connect = async (
       input: {
@@ -477,6 +496,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       }
     };
     return {
+      usage,
       hooks,
       connect,
       propose,
@@ -575,7 +595,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(row).toMatchObject({
       outcome: "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES.declined,
-      subjectRef: "mcp-client:claude-code",
+      subjectRef: `mcp-connection:${CONNECTION_ID}`,
     });
     const other = await f.connect({ name: "muse", elicitation: false });
     const again = await f.propose(other, { text: ` ${COFFEE}\u200b` });
@@ -797,7 +817,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     );
   });
 
-  it("records the client name the owner saw in the dialog, not the one on the answer", async () => {
+  it("records the connection as the source, not the client name on the answer", async () => {
     const f = await setup();
     const client = await f.connect({ autoFulfill: false });
     const first = await f.raw(client, { arguments: { text: COFFEE } });
@@ -809,7 +829,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     expect(declined.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     const [row] = await f.decisions();
-    expect(row?.subjectRef).toBe("mcp-client:claude-code");
+    expect(row?.subjectRef).toBe(`mcp-connection:${CONNECTION_ID}`);
   });
 
   it("removes invisible formatting before checking the length and showing the text", async () => {
@@ -995,7 +1015,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const rows = await f.storedRules();
     expect(rows).toHaveLength(1);
     const [row] = rows;
-    expect(row).toMatchObject({ status: "active", source: "mcp:claude-code" });
+    expect(row).toMatchObject({ status: "active", source: `mcp:${CONNECTION_ID}` });
     expect(row?.ruleId).toMatch(/^owner:[0-9a-f]{24}$/u);
     expect(row?.sourceMemoryId?.startsWith(EXTERNAL_RULE_MEMORY_PREFIX)).toBe(true);
     const ruleMemory = await f.repository.productMemoryState().read(row?.sourceMemoryId as never);
@@ -2031,5 +2051,37 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.writer.undoBatch("external-batch-two", async () => undefined)).toEqual([
       left[0]?.id,
     ]);
+  });
+
+  it("[P5-B] counts every push call on the connection and the rejected ones as failed", async () => {
+    const f = await setup();
+    const client = await f.connect();
+    await f.propose(client, { text: COFFEE });
+    expect((await f.propose(client, { text: "" })).result.isError).toBe(true);
+    const many = await client.callTool({
+      name: "propose_memories",
+      arguments: { items: [{ text: PARK }] },
+    });
+    expect(many.isError).not.toBe(true);
+    expect(
+      (
+        await f.proposeRule(client, {
+          type: "mail_must_notify",
+          params: { senderDomains: ["isa.go.jp"] },
+          summary: "入管局的邮件一律提醒",
+          reason: " ",
+        })
+      ).result.isError,
+    ).toBe(true);
+    const rows = Object.fromEntries(
+      (await f.usage()).map((row) => [`${row.connectionId}/${row.tool}/${row.counter}`, row.value]),
+    );
+    expect(rows).toEqual({
+      [`${CONNECTION_ID}/propose_memory/calls`]: 3,
+      [`${CONNECTION_ID}/propose_memory/failed`]: 1,
+      [`${CONNECTION_ID}/propose_memories/calls`]: 1,
+      [`${CONNECTION_ID}/propose_rule/calls`]: 1,
+      [`${CONNECTION_ID}/propose_rule/failed`]: 1,
+    });
   });
 });

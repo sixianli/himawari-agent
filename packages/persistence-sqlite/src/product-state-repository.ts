@@ -33,6 +33,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
   LedgerObservationPort,
+  McpConnectionStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -631,6 +632,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   externalMemoryProposals(): ExternalMemoryProposalStorePort {
     return this.durable.externalMemoryProposals();
+  }
+
+  mcpConnections(): McpConnectionStorePort {
+    return this.durable.mcpConnections();
   }
 
   memoryCaptureBacklog(): MemoryCaptureBacklogPort {
