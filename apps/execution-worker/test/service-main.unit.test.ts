@@ -267,6 +267,32 @@ describe("execution Worker service main", () => {
     });
   }, 5_000);
 
+  it("keeps the qualified record when the authority belongs to another deployment", async () => {
+    const { configurationPath, layout } = await fixture();
+    const record = {
+      workerInstanceId: `execution-worker:${FIXTURE_SCOPE.authority.deploymentId}`,
+      workerBootId: "worker-boot:other",
+      deploymentId: FIXTURE_SCOPE.authority.deploymentId,
+      snapshotDigest: `sha256:${"b".repeat(64)}`,
+    };
+    await writeWorkerQualifiedDeployment(layout, record);
+    await writeAuthorityFile(layout, { ...authority(2, 2), id: "deployment-other" });
+    const diagnostics = capture();
+
+    await expect(
+      runExecutionWorkerService(
+        serviceArguments(configurationPath),
+        diagnostics.stream,
+        diagnostics.stream,
+        FAST_STARTUP_TIMING,
+      ),
+    ).resolves.toBe(1);
+    expect(qualification.started).toBe(0);
+    await expect(readWorkerQualifiedDeployment(layout)).resolves.toMatchObject({
+      workerBootId: "worker-boot:other",
+    });
+  }, 5_000);
+
   it("publishes no qualified record when the Agent binding arrives but the checks fail", async () => {
     const { configurationPath, layout, currentAuthority } = await fixture();
     let bound = false;

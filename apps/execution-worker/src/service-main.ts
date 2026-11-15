@@ -149,17 +149,17 @@ export async function runExecutionWorkerService(
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
     const layout = await initializeStateRoot(configuration.stateRoot);
-    await clearWorkerQualifiedDeployment(layout);
     const authority = await readAuthorityFile(layout);
-    if (authority.status !== "active") {
-      throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
-    }
     if (
       authority.id !== configuration.deploymentId ||
       authority.ownerId !== configuration.ownerId ||
       authority.agentId !== configuration.agentId
     ) {
       throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
+    }
+    await clearWorkerQualifiedDeployment(layout);
+    if (authority.status !== "active") {
+      throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
     }
     const workerInstanceId = `execution-worker:${configuration.deploymentId}`;
     const workerBootId = `worker-boot:${randomUUID()}`;
