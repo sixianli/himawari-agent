@@ -724,7 +724,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "McpMemorySyncStorePort",
     "one row per memory or project note an external agent synced, keyed by connection, project and the agent's own stable id: kind, category, classification, version, the SHA-256 of the text, a payload reference to the text, state, the waiting proposal and the memory it replaces",
     "payload_reference",
-    "cascade with its connection or with Owner or Agent deletion; the text payload is removed with the row",
+    "cascade with its connection or with Owner or Agent deletion; the text payload is held by a restrict reference, so it is removed only by deleting the payload itself",
   ),
   entry(
     "mcp_sync_versions",

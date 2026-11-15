@@ -413,19 +413,17 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
     expect(result.entries[1]).toMatchObject({ index: 1, status: "pending" });
     expect(result.entries[0]).toEqual({ index: 0, status: "invalid", reason: "kind_changed" });
     expect(raw.prepare("SELECT COUNT(*) AS n FROM mcp_sync_entries").get()).toEqual({ n: 2 });
+    await sync.sync(
+      { id: first, entry: OAUTH },
+      { entries: [note("z", "项目甲的笔记", "项目甲")] },
+    );
+    const payloadsBefore = raw.prepare("SELECT COUNT(*) AS n FROM payloads").get();
     const sameProject = await sync.sync(
       { id: first, entry: OAUTH },
-      {
-        entries: [
-          note("z", "项目甲的笔记", "项目甲"),
-          owner("z", "同编号别的种类", { project: "项目甲" }),
-        ],
-      },
+      { entries: [owner("z", "同编号别的种类", { project: "项目甲" })] },
     );
-    expect(sameProject.entries.map((entry) => entry.status)).toEqual([
-      "awaiting_project_approval",
-      "invalid",
-    ]);
+    expect(sameProject.entries).toEqual([{ index: 0, status: "invalid", reason: "kind_changed" }]);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM payloads").get()).toEqual(payloadsBefore);
   });
 
   it("refuses a project note with no project and keeps it out of storage", async () => {
@@ -639,11 +637,13 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       { entries: [owner("m", "要被删掉的")] },
     );
     expect(result.entries[0]?.status).toBe("owner_deleted");
+    const payloadsBeforeChange = raw.prepare("SELECT COUNT(*) AS n FROM payloads").get();
     const changed = await sync.sync(
       { id: first, entry: OAUTH },
       { entries: [owner("m", "改过的内容")] },
     );
     expect(changed.entries[0]?.status).toBe("owner_deleted");
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM payloads").get()).toEqual(payloadsBeforeChange);
     expect(raw.prepare("SELECT COUNT(*) AS n FROM external_memory_proposals").get()).toEqual({
       n: 1,
     });

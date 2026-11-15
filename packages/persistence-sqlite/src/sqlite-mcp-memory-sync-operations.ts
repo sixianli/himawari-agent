@@ -193,9 +193,8 @@ export class SqliteMcpMemorySyncOperations {
   private push(input: McpSyncPushInput): McpSyncPushResult {
     try {
       return this.pushBatch(input);
-    } catch (error) {
+    } finally {
       this.dropUnusedPayloads(input);
-      throw error;
     }
   }
 
