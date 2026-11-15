@@ -1,5 +1,6 @@
 import type { PayloadRecord } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
+import type { PerceptionFileKey } from "./schemas.js";
 import type { ExportScope } from "./types.js";
 
 export type Row = Record<string, unknown>;
@@ -14,6 +15,8 @@ export interface PortableSnapshot {
   readonly people: readonly Row[];
   readonly aliases: readonly Row[];
   readonly importBatches: readonly Row[];
+  readonly pairedDevices: readonly Row[];
+  readonly perception: Readonly<Record<PerceptionFileKey, readonly Row[]>>;
   readonly runs: readonly Row[];
   readonly changes: readonly Row[];
   readonly basis: readonly Row[];
@@ -33,6 +36,7 @@ export interface PortableSnapshot {
   readonly restrictedMemories: number;
   readonly restrictedMemoryTexts: readonly Row[];
   readonly externalProposals: readonly Row[];
+  readonly ownerProposals: readonly Row[];
   readonly externalProposalKeys: readonly Row[];
   readonly externalProposalUnkeyed: readonly Row[];
   readonly openMemoryReviews: number;
@@ -98,6 +102,15 @@ export function readSnapshot(
         WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY received_at, id`,
       );
+      const ownerProposals = all(
+        `SELECT id, type, summary, effect, origin, source_ref, source_version, version, fingerprint,
+          status, exec_status, proposed_at, expires_at, decided_at, proposed_count, reject_count,
+          last_rejected_at, attempts, executed_at, requires_full_read, requires_presence,
+          evidence_ref, execution_ref
+        FROM owner_proposals
+        WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY proposed_at, id`,
+      );
       const externalProposalKeys = all(
         `SELECT proposal_id, client, source_key FROM external_memory_proposal_keys
         WHERE owner_id = @ownerId AND agent_id = @agentId
@@ -150,6 +163,54 @@ export function readSnapshot(
         `SELECT id, source, item_count, created_at, undone_at FROM memory_import_batches
         WHERE owner_id = @ownerId AND agent_id = @agentId ORDER BY created_at, id`,
       );
+      const pairedDevices = all(
+        `SELECT id, kind, name, release_channel, status, paired_at, confirmed_at, revoked_at, last_seen_at
+        FROM paired_devices WHERE owner_id = @ownerId AND agent_id = @agentId
+        ORDER BY paired_at, id`,
+      );
+      const scoped = "owner_id = @ownerId AND agent_id = @agentId";
+      const perception: Record<PerceptionFileKey, Row[]> = {
+        perceptionRecords: all(
+          `SELECT id, device_id, type, origin, capture_source, occurred_at_ms, occurred_at_device,
+            local_day, confidence, speaker_kind, speaker_ref, episode_id, content_ref,
+            data_classification, evidence
+          FROM perception_records WHERE ${scoped} AND status = 'active'
+          ORDER BY occurred_at_ms, id`,
+        ),
+        perceptionEpisodes: all(
+          `SELECT id, started_at_ms, ended_at_ms, local_day, record_count
+          FROM perception_episodes WHERE ${scoped} AND status = 'active'
+          ORDER BY started_at_ms, id`,
+        ),
+        deviceMirrorItems: all(
+          `SELECT device_id, kind, external_id, version, updated_at_ms, data
+          FROM device_mirror_items WHERE ${scoped} AND deleted = 0
+          ORDER BY device_id, kind, external_id`,
+        ),
+        trackPoints: all(
+          `SELECT device_id, occurred_at_ms, latitude_e7, longitude_e7, accuracy_dm, speed_cms
+          FROM location_track_points WHERE ${scoped} ORDER BY occurred_at_ms, device_id`,
+        ),
+        perceptionSettings: all(
+          `SELECT disabled_senses, paused_from, paused_until, retention_days, limit_overrides,
+            updated_at
+          FROM perception_settings WHERE ${scoped}`,
+        ),
+        limitUsage: all(
+          `SELECT key, period_start, device_id, used
+          FROM limit_usage WHERE ${scoped} ORDER BY period_start, key, device_id`,
+        ),
+        devicePolicies: all(
+          `SELECT device_id, blocked_actions, updated_at
+          FROM device_policies WHERE ${scoped} ORDER BY device_id`,
+        ),
+        deviceActions: all(
+          `SELECT id, device_id, action, schema_version, action_kind, risk, owner_presence,
+            approval_id, data_classification, state, reason_code, created_at, expires_at,
+            delivered_at, finished_at, arguments_ref, result_ref
+          FROM device_actions WHERE ${scoped} ORDER BY created_at, id`,
+        ),
+      };
       const runs = all(
         `SELECT id, day, trigger_run_id, status, reviewed_through, model_called, change_count,
           error_code, started_at, finished_at
@@ -258,15 +319,22 @@ export function readSnapshot(
         ...processedMessages,
         ...museEntries,
         ...externalProposals,
+        ...ownerProposals,
         ...restrictedMemoryTexts,
+        ...perception.perceptionRecords,
+        ...perception.deviceActions,
       ])
         for (const key of [
+          "arguments_ref",
+          "result_ref",
           "content_ref",
           "quote_ref",
           "reason_ref",
           "payload_ref",
           "header_ref",
           "note_ref",
+          "evidence_ref",
+          "execution_ref",
         ]) {
           const ref = row[key];
           if (typeof ref === "string") refs.add(ref);
@@ -331,6 +399,8 @@ export function readSnapshot(
         people,
         aliases,
         importBatches,
+        pairedDevices,
+        perception,
         runs,
         changes,
         basis,
@@ -350,6 +420,7 @@ export function readSnapshot(
         restrictedMemories,
         restrictedMemoryTexts,
         externalProposals,
+        ownerProposals,
         externalProposalKeys,
         externalProposalUnkeyed,
         openMemoryReviews,

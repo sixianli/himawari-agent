@@ -61,7 +61,7 @@
                   "minLength": 1
                 },
                 "runner": {
-                  "enum": ["ci-vps", "ci-vps-gate", "macos-15"]
+                  "enum": ["ci-vps", "ci-vps-gate", "ci-arm", "macos-15"]
                 },
                 "paused": {
                   "const": true
@@ -81,6 +81,29 @@
                 },
                 "browser": {
                   "enum": ["chromium", "firefox", "webkit"]
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "shard": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["index", "count"],
+                  "properties": {
+                    "index": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 2
+                    }
+                  }
                 }
               }
             },

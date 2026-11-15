@@ -512,12 +512,45 @@ describe("agent service startup ownership", () => {
     start();
     await settle();
     expect(stdout).toContain('"event":"service.ready"');
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(await exit).toBe(1);
     expect(stdout).toContain('"signal":"AUTHORITY_LOST"');
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AGENT_AUTHORITY_LOST"/);
+    expect(stderr).toContain('"event":"authority.lost"');
+    expect(stderr).toContain('"code":"AGENT_AUTHORITY_LOST"');
+    expect(stderr).toContain('"msSinceLastRenewal":12000');
     expect(boundary.admissionStop).toHaveBeenCalledOnce();
     expect(boundary.stopWorker).toHaveBeenCalledOnce();
+  });
+});
+
+describe("signal exit diagnostics", () => {
+  it("does not report an authority loss or an error code when stopped by a signal", async () => {
+    start();
+    await settle();
+    expect(stdout).toContain('"event":"service.ready"');
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"signal":"SIGTERM"/);
+    expect(stdout).not.toMatch(/"event":"service.draining"[^\n]*"code"/);
+    expect(stderr).not.toContain('"event":"authority.lost"');
+  });
+
+  it("names an unknown loss cause instead of calling it a startup failure", async () => {
+    start();
+    await settle();
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("plain failure"), {
+      msSinceLastRenewal: null,
+    });
+    await settle();
+    expect(await exit).toBe(1);
+    expect(stdout).toMatch(/"event":"service.draining"[^\n]*"code":"AUTHORITY_LOSS_CODE_UNKNOWN"/);
+    expect(stderr).toContain('"code":"AUTHORITY_LOSS_CODE_UNKNOWN"');
+    expect(stderr).not.toContain('"msSinceLastRenewal"');
   });
 });
 
@@ -581,7 +614,9 @@ describe("resource recovery without web Run dispatch", () => {
         boundary.payloadStart.mockRejectedValue(new Error("PAYLOAD_STARTUP_FAILED"));
       if (stage === "authority")
         boundary.connect.mockImplementation(async () => {
-          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+            msSinceLastRenewal: 12_000,
+          });
           return { payload: { ready: true, selectedSchemaVersion: "execution.v2" } };
         });
       start();
@@ -606,7 +641,10 @@ describe("resource recovery without web Run dispatch", () => {
     await settle();
     expect(recoverPending).toHaveBeenCalledOnce();
     if (cause === "signal") signal?.();
-    else boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    else
+      boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+        msSinceLastRenewal: 12_000,
+      });
     await settle();
     expect(received?.aborted).toBe(true);
     expect(await exit).toBe(cause === "signal" ? 0 : 1);
@@ -730,6 +768,7 @@ function web() {
     "memoryBook",
     "memoryReminders",
     "ownerRules",
+    "ownerProposals",
     "ruleReviews",
     "memoryReviews",
     "memoryProjectionJobs",
@@ -742,6 +781,9 @@ function web() {
     "modelUsage",
     "decisionLedger",
     "gapCaseMarks",
+    "perception",
+    "pairedDevices",
+    "deviceActions",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {
@@ -1220,7 +1262,7 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
     const early = vi.fn();
     handle.onAuthorityLost(early);
     const error = new Error("AGENT_AUTHORITY_LOST");
-    boundary.authority.mock.calls[0]?.[0].onLost(error);
+    boundary.authority.mock.calls[0]?.[0].onLost(error, { msSinceLastRenewal: 12_000 });
     await settle();
     expect(early).toHaveBeenCalledWith(error);
     const late = vi.fn();
@@ -1238,7 +1280,9 @@ describe("[MU-A] one tenant runtime started and stopped as a handle", () => {
       throw new Error("HANDLER_FAILED");
     });
     handle.onAuthorityLost(other);
-    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"), {
+      msSinceLastRenewal: 12_000,
+    });
     await settle();
     expect(other).toHaveBeenCalledOnce();
     expect(stderr).toContain('"event":"authority.lost_handler_failed"');

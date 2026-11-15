@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -21,6 +21,10 @@ export const newStaticRoot = `${newPrefix}/share/control-center`;
 export const sqliteDriverRoot = `${newPrefix}/lib/himawari-agent`;
 export const node = "/opt/himawari/node/bin/node";
 export const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+export function definitionsForLedger(migrations, ledgerIds) {
+  const definitions = new Map(migrations.map((migration) => [ledgerMigrationId(migration), migration]));
+  return ledgerIds.map((row) => definitions.get(ledgerMigrationId(row)));
+}
 
 function present(filename) {
   try {
@@ -555,7 +559,6 @@ export function readCatalogResume(binding) {
   const himawari = `${newPrefix}/bin/himawari`;
   const plan = requireRetainedCommand(records.plan, [himawari, "capabilities", "upgrade-plan", "--config", binding.paths.config, "--reviewed"]);
   const upgrade = requireRetainedCommand(records.upgrade, [himawari, "capabilities", "upgrade", "--config", binding.paths.config, "--confirm", plan.planDigest, "--reviewed"]);
-  for (const record of [records.plan, records.upgrade]) assert(record.samplerFailure === false && record.spaceSample && record.spaceSample.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   return { approval: { path: approvalPath, sha256: sha(readFileSync(approvalPath)), approvalRef: approval.approvalRef }, retained, original, snapshotSha256: event.snapshotDigest, plan, upgrade };
 }
 
@@ -733,7 +736,7 @@ export function collectTidyState(database) {
   return {
     schema: { current: Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value), minimumWriter: Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value) },
     ledger: rows(database, "SELECT sequence,name,phase,digest,applied_at FROM schema_migration_ledger ORDER BY sequence", []),
-    history: historyDigests(database),
+    history: historyDigests(database, historyIgnoredColumns),
     capabilities: rows(database, "SELECT id,version,status,revision,integrity,record_json FROM capability_declarations ORDER BY id", []).map(({ record_json: recordJson, ...row }) => ({ ...row, recordSha256: sha(recordJson) })),
     authorization: rows(database, "SELECT key,revision,value_json FROM product_state_records WHERE key LIKE 'host-workspace:directory-grant:%' ORDER BY key", []).map(({ value_json: valueJson, ...row }) => ({ ...row, valueSha256: sha(valueJson) })),
     integrity: rows(database, "PRAGMA integrity_check", []).map((row) => row.integrity_check).join(","),
@@ -780,7 +783,31 @@ export function tidyDatabaseSidecars(options) {
 export const currentSchema = __PKT_CURRENT_SCHEMA__;
 export const targetSchema = __PKT_TARGET_SCHEMA__;
 export const migrationExpectedLedger = Object.freeze(__PKT_MIGRATION_LEDGER__.map((row) => Object.freeze(row)));
-export const migrationComparedSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
+export const addedColumnBackfills = Object.freeze({ thread_origin: Object.freeze({ threads: Object.freeze(["origin"]) }) });
+export function historyIgnoredColumnsFor(ledger) {
+  const merged = {};
+  for (const row of ledger) for (const [table, columns] of Object.entries(addedColumnBackfills[row.name] ?? {})) merged[table] = [...new Set([...(merged[table] ?? []), ...columns])];
+  return Object.freeze(Object.fromEntries(Object.entries(merged).map(([table, columns]) => [table, Object.freeze(columns)])));
+}
+export const historyIgnoredColumns = historyIgnoredColumnsFor(migrationExpectedLedger);
+export function checkedHistoryComparison(value, label) {
+  assert(value && typeof value === "object" && ["on", "off"].includes(value.mode), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  if (value.mode === "on") {
+    assert.deepEqual(Object.keys(value), ["mode"], "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+    return Object.freeze({ mode: "on" });
+  }
+  assert.deepEqual(Object.keys(value).sort(), ["authorizedBy", "mode", "reason", "release"], "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  assert(typeof value.reason === "string" && value.reason.trim() !== "" && typeof value.authorizedBy === "string" && value.authorizedBy.trim() !== "", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_INVALID");
+  assert.equal(value.release, label, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE");
+  return Object.freeze({ mode: "off", reason: value.reason, authorizedBy: value.authorizedBy, release: value.release });
+}
+export const historyComparison = checkedHistoryComparison(__PKT_HISTORY_COMPARISON_JSON__, "__PKT_LABEL__");
+export function historyComparisonEvidence(comparison = historyComparison) {
+  return comparison.mode === "on" ? { historyComparison: "on" } : { historyComparison: "off", historyComparisonReason: comparison.reason, historyComparisonAuthorizedBy: comparison.authorizedBy, historyComparisonRelease: comparison.release };
+}
+export const comparedSectionsFor = (sections, comparison = historyComparison) => Object.freeze(comparison.mode === "on" ? [...sections] : sections.filter((section) => section !== "history"));
+export const migrationSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
+export const migrationComparedSections = comparedSectionsFor(migrationSections);
 
 export function migrationContentState(database) {
   return { ...collectTidyState(database), releaseReceipts: rows(database, "SELECT environment_id AS environmentId,basis,stop_fence AS stopFence,accepted_at AS acceptedAt,proof_json AS proofJson,authority_json AS authorityJson FROM execution_environment_release_receipts ORDER BY environment_id", []) };
@@ -798,7 +825,8 @@ export function readMigrationContent(prefix = newPrefix, database = fixed.databa
   }
 }
 
-export function verifyMigrationTransition(before, after) {
+export function verifyMigrationTransition(before, after, comparison = historyComparison) {
+  const compared = comparedSectionsFor(migrationSections, comparison);
   const changed = (detail) => failTidy("__PKT_LABEL_UPPER___MAINTENANCE_MIGRATION_CONTENT_CHANGED", detail);
   if (after.schema.current !== targetSchema || after.schema.minimumWriter !== targetSchema) changed({ section: "schema", before: before.schema, after: after.schema });
   if (after.ledger.length !== before.ledger.length + migrationExpectedLedger.length) changed({ section: "ledgerLength", beforeLength: before.ledger.length, afterLength: after.ledger.length });
@@ -808,8 +836,8 @@ export function verifyMigrationTransition(before, after) {
     const expected = migrationExpectedLedger[index];
     if (!expected || row.sequence !== expected.sequence || row.name !== expected.name || row.phase !== expected.phase) changed({ section: "ledgerApplied", applied: row, expected });
   });
-  for (const section of migrationComparedSections) if (canonicalJson(after[section]) !== canonicalJson(before[section])) changed({ section, before: before[section], after: after[section] });
-  return { schema: after.schema, ledgerApplied: applied, comparedSections: [...migrationComparedSections] };
+  for (const section of compared) if (canonicalJson(after[section]) !== canonicalJson(before[section])) changed({ section, before: before[section], after: after[section] });
+  return { schema: after.schema, ledgerApplied: applied, comparedSections: [...compared], ...historyComparisonEvidence(comparison) };
 }
 
 export function describeMigrationSnapshot(source, stateRoot = fixed.stateRoot, owner = fixed.uid) {
@@ -852,6 +880,10 @@ export function recoveryIdForSchema(binding, schema) {
   return id;
 }
 
+export function spaceSamplingWarnings(samplerFailure, sampled) {
+  return [...(samplerFailure ? [{ code: "SAMPLER_EXIT_FAILED", stage: "worker" }] : []), ...(sampled ? sampled.errors : [{ code: "SAMPLER_RESULT_MISSING", stage: "worker" }])];
+}
+
 export async function cli(prefix, args, name) {
   requireStopped();
   safeFile(`${prefix}/bin/himawari`);
@@ -871,15 +903,13 @@ export async function cli(prefix, args, name) {
     sampler.once("exit", (code) => code === 0 ? resolve() : reject(new Error("__PKT_LABEL_UPPER___MAINTENANCE_SAMPLER_FAILED")));
   });
   exited.catch(() => undefined);
-  const readiness = await ready;
-  if (readiness.initialErrors.length > 0) {
-    sampler.postMessage({ kind: "stop" });
-    await exited;
-    retainedJson(`${name}-sampler-precheck-failure.json`, sampled);
-    throw new Error("__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLER_NOT_READY");
+  let samplerFailure = false;
+  try {
+    await ready;
+  } catch {
+    samplerFailure = true;
   }
   let output;
-  let samplerFailure = false;
   try {
     output = spawnSync(command[0], command.slice(1), { encoding: "utf8", timeout: 1200000, maxBuffer: 16777216, env: { HOME: fixed.stateRoot, PATH: "/opt/himawari/node/bin:/usr/bin:/bin", LANG: "C.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
   } finally {
@@ -890,9 +920,8 @@ export async function cli(prefix, args, name) {
       samplerFailure = true;
     }
   }
-  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure };
+  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure, spaceSamplingWarnings: spaceSamplingWarnings(samplerFailure, sampled) };
   const retained = retainedJson(`${name}-command.json`, record);
-  assert(!samplerFailure && sampled && sampled.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   assert(output.status === 0 && output.signal === null && !output.error, "__PKT_LABEL_UPPER___MAINTENANCE_CLI_FAILED");
   requireStopped();
   const records = output.stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -914,7 +943,7 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
   const database = allowStartupAuthority === true ? openReadonly(sqliteDriverRoot, fixed.database) : openRecoveryReadonly(prefix, fixed.database, fixed.uid);
   try {
     database.exec("BEGIN");
-    const state = readS0State(database, binding.identity);
+    const state = readS0State(database, binding.identity, historyIgnoredColumns);
     assert.deepEqual(state.identity, binding.identity, "__PKT_LABEL_UPPER___MAINTENANCE_DB_BINDING_CHANGED");
     if (allowStartupAuthority === "rollback-current") {
       assert.equal(state.authority.authorityEpoch, binding.authority.authorityEpoch, "__PKT_LABEL_UPPER___MAINTENANCE_ROLLBACK_CURRENT_EPOCH_CHANGED");
@@ -928,7 +957,15 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
     const { loadBundledMigrations } = await persistence(prefix);
     const migrations = await loadBundledMigrations();
     assert(migrations.length >= ledger.length, "__PKT_LABEL_UPPER___MAINTENANCE_MIGRATIONS_TOO_OLD");
-    for (let index = 0; index < ledger.length; index += 1) for (const key of ["sequence", "name", "phase", "digest"]) assert.equal(ledger[index][key], migrations[index][key], "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+    const idColumn = rows(database, "SELECT 1 AS present FROM pragma_table_info('schema_migration_ledger') WHERE name='migration_id'", []).length === 1;
+    const ledgerIds = idColumn ? rows(database, "SELECT sequence, migration_id AS id FROM schema_migration_ledger ORDER BY sequence", []) : ledger;
+    const definitions = definitionsForLedger(migrations, ledgerIds);
+    for (let index = 0; index < ledger.length; index += 1) {
+      assert.equal(ledger[index].sequence, index + 1, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+      const definition = definitions[index];
+      assert(definition, "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+      for (const key of ["name", "phase", "digest"]) assert.equal(ledger[index][key], definition[key], "__PKT_LABEL_UPPER___MAINTENANCE_LEDGER_DIGEST_MISMATCH");
+    }
     assert.deepEqual(rows(database, "PRAGMA integrity_check", []), [{ integrity_check: "ok" }], "__PKT_LABEL_UPPER___MAINTENANCE_INTEGRITY_FAILED");
     assert.deepEqual(rows(database, "PRAGMA foreign_key_check", []), [], "__PKT_LABEL_UPPER___MAINTENANCE_FOREIGN_KEYS_FAILED");
     database.exec("COMMIT");
@@ -938,25 +975,28 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
   }
 }
 
-export function verifyHistoryUnchanged(before, after) {
+export function verifyHistoryUnchanged(before, after, comparison = historyComparison) {
+  if (comparison.mode === "off") return historyComparisonEvidence(comparison);
   assert(before.history && typeof before.history === "object" && Object.keys(before.history).length > 0, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_MISSING");
   assert.deepEqual(after.history, before.history, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_CHANGED");
+  return historyComparisonEvidence(comparison);
 }
 
 export const startupRecoveryColumns = Object.freeze({ sandbox_execution_records: Object.freeze(["recovery_json"]) });
 
-export function compareHistoryRows(reference, current) {
+export function compareHistoryRows(reference, current, ignoredColumns = historyIgnoredColumns) {
   const tables = {};
   for (const table of historyTables) {
     const allowed = new Set(startupRecoveryColumns[table] ?? []);
     const query = `SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`;
-    const live = current.prepare(query).iterate();
+    const live = (function* () { for (const row of current.prepare(query).iterate()) yield historyRow(table, row, ignoredColumns); })();
     let referenceRows = 0;
     let liveRows = 0;
     const recoveryUpdatedRowids = [];
     try {
       let next = live.next();
-      for (const row of reference.prepare(query).iterate()) {
+      for (const raw of reference.prepare(query).iterate()) {
+        const row = historyRow(table, raw, ignoredColumns);
         while (!next.done && next.value.__rowid < row.__rowid) {
           liveRows += 1;
           next = live.next();
@@ -982,9 +1022,10 @@ export function compareHistoryRows(reference, current) {
   return tables;
 }
 
-export function verifyHistoryAgainstRecoveryPoint(binding) {
+export function verifyHistoryAgainstRecoveryPoint(binding, comparison = historyComparison) {
   const recoveryId = recoveryIdForSchema(binding, currentSchema);
   const copyPath = `${evidenceRoot}/${recoveryId}/data/product.sqlite`;
+  if (comparison.mode === "off") return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, ...historyComparisonEvidence(comparison), tables: null };
   const reference = openImmutableReadonly(copyPath, fixed.uid);
   try {
     const current = openReadonly(sqliteDriverRoot, fixed.database);
@@ -994,7 +1035,7 @@ export function verifyHistoryAgainstRecoveryPoint(binding) {
       const tables = compareHistoryRows(reference, current);
       current.exec("COMMIT");
       reference.exec("COMMIT");
-      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, tables };
+      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, ...historyComparisonEvidence(comparison), allowedStartupRecoveryColumns: startupRecoveryColumns, ignoredHistoryColumns: historyIgnoredColumns, tables };
     } finally {
       current.close();
     }

@@ -83,6 +83,16 @@ function assertRow(row: ToolActionRow): void {
   if (row.family !== "device_action" && row.device) fail("不是设备动作却带了设备那几列");
 }
 
+const READ_ONLY_FAMILIES: readonly ToolActionFamily[] = Object.freeze(["builtin", "web"]);
+
+export function readOnlyRow(row: ToolActionRow): boolean {
+  return (
+    row.actionKind === "READ" &&
+    row.sideEffect === "none" &&
+    READ_ONLY_FAMILIES.includes(row.family)
+  );
+}
+
 export class ToolActionRegistry {
   readonly rows: readonly ToolActionRow[];
   readonly #exact = new Map<string, ToolActionRow>();
@@ -121,10 +131,14 @@ export class ToolActionRegistry {
     return this.#byCapability.get(capabilityRef);
   }
 
-  offer(descriptors: readonly RuntimeToolDescriptor[]): readonly RuntimeToolDescriptor[] {
+  offer(
+    descriptors: readonly RuntimeToolDescriptor[],
+    options: { readonly readOnly?: boolean } = {},
+  ): readonly RuntimeToolDescriptor[] {
     return descriptors.filter((descriptor) => {
       const row = this.forTool(descriptor.name);
       if (!row) return false;
+      if (options.readOnly === true && !readOnlyRow(row)) return false;
       const parallel = "executionMode" in descriptor && descriptor.executionMode === "parallel";
       return !parallel || row.actionKind === "READ";
     });

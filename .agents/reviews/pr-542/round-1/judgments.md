@@ -1,0 +1,11 @@
+# PR 542 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 中 — 断网/传输错误会被当成“面容取消”吞掉，界面不会报“没能重新启用”。SettingsStore.swift isDeclined 原本只排除四类错误，URLSession 的 URLError 原样抛出（DeviceTransport.swift 只接管 DeviceAPIError.server）；已把 URLError、HTTPExchangeError 加入排除并补反向用例；触发：断网或超时时点重新启用：URLError/HTTPExchangeError 不在 isDeclined 的排除列表里，被当成面容取消；后果：真实失败被吞掉，开关弹回但界面不显示没能重新启用
+- 2（deepseek-v4.1-flash）不成立：### 2. 中 — “面容取消不报错”依赖取消错误没被包成 `DeviceKeyError`，代码里存在会误报失败的路径。SecureEnclave 私钥重建（SecureEnclaveKeys.swift:30 的 store.load）只带 LAContext、不求值，面容在 key.signature(for:) 才弹，取消错误不经过 load 的 catch；模型自己也写明未在真机核实，没有可达的取消输入走到 keyUnreadable
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3. 中 — 重新启用没有在途保护，连点会重复发送命令，成功后还可能显示失败。CapabilitiesPage.swift turnOn 的 get 恒为 false、每次 set 都新开 Task；已加 beginReactivation/endReactivation 按 capabilityRef 防重入并补测试；触发：同一行开关在上一次重新启用未结束时再次拨开；后果：第二个命令带过期版本被拒，成功后在“在用”行显示没能重新启用
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 低 — 失败文案不只在“停用了”行显示，也不在 reload 时清理。CapabilitiesPage.swift 原先对所有分区传 warning，reloadCapabilities 不清理；已改为只在停用分区传，reload 时丢掉不在停用列表里的 ref，并补测试；触发：另一台设备重新启用后本机 reload，旧失败文案仍在 reactivationFailure；后果：旧的没能重新启用显示在“在用”行下；判低理由：只在先失败、后被别处启用的少见顺序下触发，只多显示一行文字
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5. 低 — 关键错误路径没有自动检查，现有反向用例只覆盖谓词。本轮确认的错误（1、3、4）缺证明用例；已补 URLError/HTTPExchangeError/DeviceAPIError 的 isDeclined 用例、防重入用例、reload 清理用例。catch where 接线在视图里，本机无法跑 Swift，未补视图层测试；触发：有人把 catch where 改成普通 catch 或去掉 warning 渲染；后果：现有测试仍全过，错误路径无回归保护；判低理由：只是缺测试，行为本身无误
+- 6（deepseek-v4.1-flash）不成立：### 6. 低 — 缺少“取消了 0 个”和“历史数据没有 lastInvalidation”时的显示。cancelledJobs 在 0 时返回 nil 是明确的写法（ManageStrings.swift），0 个任务时没有要说的取消；缺 lastInvalidation 的旧记录服务端返回 null（governance-gateway-adapter.ts:496），客户端没有可显示的时间，不存在显示错误值的路径
+- 7（deepseek-v4.1-flash）不成立：### 7. 低 — 作者两条说法与代码不一致。指的是作者在材料里的说法，不在仓库代码或文档里；Swift 模型少 lifecycle 字段解码照样成功（Decodable 忽略未知键），行为没有错
+- 8（deepseek-v4.1-flash）不成立：### 8. 低（推测，待确认）— 示例固定时间与固定 now 在 JST 不是同一天，截图文字会随时区变化。只影响示例数据截图：JST 下显示日期、UTC 下显示今天，两种都是 disabledAt 对输入的正确输出；生产路径用真实 now，没有错误结果
+- 9（deepseek-v4.1-flash）不成立：### 9. 低（待确认）— 未安装 `capability.reactivate` 的部署仍显示开关，失败写成“没能重新启用”，与架构文档不一致。architecture-v0.1.md:576 说的是正式控制中心用 installedGatewayV2Operations 判断可用性，不是手机 App；App 没有读取该清单的约定，改成读它是新功能；501 走通用失败文案不是错误结果

@@ -79,6 +79,7 @@ import {
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { ProductionReminderWriter } from "../../apps/agent-service/src/production-reminder-writer.ts";
 import { createMcpAccess } from "../../apps/agent-service/test/fixtures/mcp-access.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
@@ -265,9 +266,17 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     const failures: unknown[] = [];
     const settingsStore = repository.proactive();
+    const proposalBox = new ProductionProposalBox({
+      configuration: scope,
+      store: repository.ownerProposals(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock,
+    });
     const ownerRules = new ProductionOwnerRuleWriter({
       configuration: scope,
       rules: repository.ownerRules(),
+      box: proposalBox,
       reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
@@ -496,6 +505,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       storedRules,
       rulePayloads,
       ownerRules,
+      proposalBox,
       raw,
       external,
       decisions,
@@ -1027,6 +1037,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const payloads = f.rulePayloads();
     expect(payloads.filter((ref) => ref.startsWith("rule-proposal:"))).toHaveLength(1);
     expect(payloads.filter((ref) => ref.startsWith(EXTERNAL_RULE_DECISION_PREFIX))).toHaveLength(1);
+    expect(await f.proposalBox.list()).toMatchObject({ proposals: [], pendingCount: 0 });
   });
 
   it.each([

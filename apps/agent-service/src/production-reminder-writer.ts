@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   ClockPort,
   DataClassification,
@@ -14,6 +15,7 @@ import type {
   RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { classificationRank } from "@himawari-agent/application";
+import { MACHINE_STRING_MAX_LENGTH } from "@himawari-agent/gateway-contracts";
 import {
   TOOL_REMINDER_CANCEL,
   TOOL_REMINDER_LIST,
@@ -22,6 +24,7 @@ import {
 } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { reminderSchedule } from "./production-memory-capture.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const REMINDER_SET_CAPABILITY_REF = "reminder.set";
 export const REMINDER_LIST_CAPABILITY_REF = "reminder.list";
@@ -37,6 +40,22 @@ const REMINDER_IMPORTANCE = 500;
 const MAXIMUM_TEXT = 500;
 const LISTED = 20;
 const CEILING_SCAN_LIMIT = 200;
+const MEMORY_ID_PREFIX = "memory:reminder:";
+const REMINDER_ID_PREFIX = `reminder:${MEMORY_ID_PREFIX}`;
+
+const SHORTENED_KEY = /\.[0-9a-f]{64}$/u;
+
+function reminderKey(key: string): string {
+  if (
+    REMINDER_ID_PREFIX.length + key.length <= MACHINE_STRING_MAX_LENGTH &&
+    !SHORTENED_KEY.test(key)
+  )
+    return key;
+  const digest = createHash("sha256").update(key, "utf8").digest("hex");
+  const kept = MACHINE_STRING_MAX_LENGTH - REMINDER_ID_PREFIX.length - digest.length - 1;
+  return `${key.slice(0, kept)}.${digest}`;
+}
+
 const LIST_WINDOW_MS = 2 * 366 * 24 * 3_600_000;
 const SET_ARGUMENTS = ["text", "due", "repeat"];
 const CANCEL_ARGUMENTS = ["reminderId"];
@@ -103,7 +122,8 @@ export function reminderToolDescriptors(): readonly RuntimeToolDescriptor[] {
 
 export interface ProductionReminderWriterOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
-  readonly memory: Pick<DurableMemoryService, "applyProposal">;
+  readonly memory: Pick<DurableMemoryService, "applyProposal"> &
+    Partial<Pick<DurableMemoryService, "delete">>;
   readonly state: Pick<ProductMemoryStatePort, "read">;
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly reminders: Pick<
@@ -161,8 +181,11 @@ export class ProductionReminderWriter {
     readonly due: string;
     readonly repeat: "none" | "yearly";
     readonly sourceThreadId?: string | null;
+    readonly externalOrigins?: readonly string[];
+    readonly expectedDueAt?: string;
   }): Promise<CreatedReminder> {
-    const memoryId = `memory:reminder:${input.key}` as MemoryId;
+    const key = reminderKey(input.key);
+    const memoryId = `${MEMORY_ID_PREFIX}${key}` as MemoryId;
     const reminderId = `reminder:${memoryId}`;
     const existing = await this.#options.reminders.read(reminderId);
     if (
@@ -184,11 +207,13 @@ export class ProductionReminderWriter {
     if (!DUE_FORMAT.test(due)) throw new ReminderInputError("REMINDER_TIME_INVALID");
     const schedule = reminderSchedule(due, input.repeat, now, this.#options.timeZone);
     if (!schedule) throw new ReminderInputError("REMINDER_TIME_INVALID");
+    if (input.expectedDueAt !== undefined && schedule.dueAt !== input.expectedDueAt)
+      throw new ReminderInputError("REMINDER_TIME_INVALID");
     let contentRef = input.contentRef;
     let text = contentRef ? await this.#readText(contentRef) : undefined;
     if (contentRef === undefined) {
       text = (input.text ?? "").trim();
-      contentRef = `memory-content:reminder:${input.key}`;
+      contentRef = `memory-content:reminder:${key}`;
     }
     if (text === undefined || text.trim().length === 0 || text.length > MAXIMUM_TEXT)
       throw new ReminderInputError(
@@ -223,7 +248,10 @@ export class ProductionReminderWriter {
           contentRef,
           dataClassification: payload.dataClassification,
           sourceThreadId: (input.sourceThreadId ?? null) as ProductMemoryRecord["sourceThreadId"],
-          sourceRefs: [contentRef],
+          sourceRefs: [
+            contentRef,
+            ...externalContentSourceRefs(memoryId, input.externalOrigins ?? []),
+          ],
           inference: false,
           confidencePermille: 1000,
           policyVersion: REMINDER_POLICY_VERSION,
@@ -312,6 +340,66 @@ export class ProductionReminderWriter {
       : undefined;
   }
 
+  async describe(
+    reminderId: string,
+  ): Promise<{ readonly reminder: MemoryReminder; readonly text: string } | undefined> {
+    const reminder = await this.#options.reminders.read(reminderId);
+    const { ownerId, agentId } = this.#options.configuration;
+    if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId) return undefined;
+    const text = await this.#textOf(reminder);
+    return text === undefined ? undefined : { reminder, text };
+  }
+
+  schedulePreview(due: string, repeat: "none" | "yearly") {
+    return reminderSchedule(due, repeat, this.#options.clock.now(), this.#options.timeZone);
+  }
+
+  async moveSchedule(input: {
+    readonly reminderId: string;
+    readonly expectedUpdatedAt: string;
+    readonly dueAt: string;
+    readonly remindAt: string;
+  }): Promise<{ readonly updatedAt: string; readonly dueAt: string; readonly remindAt: string }> {
+    const reminder = await this.#options.reminders.read(input.reminderId);
+    const { ownerId, agentId } = this.#options.configuration;
+    if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
+      throw new ReminderInputError("REMINDER_NOT_FOUND");
+    if (reminder.status !== "scheduled" || reminder.updatedAt !== input.expectedUpdatedAt)
+      throw new ReminderInputError("REMINDER_UNAVAILABLE");
+    const now = this.#options.clock.now();
+    const updatedAt =
+      Date.parse(now) > Date.parse(reminder.updatedAt)
+        ? now
+        : new Date(Date.parse(reminder.updatedAt) + 1).toISOString();
+    const updated = await this.#options.reminders.update({
+      id: reminder.id,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      status: "scheduled",
+      dueAt: input.dueAt,
+      remindAt: input.remindAt,
+      dismissedAt: null,
+      updatedAt,
+    });
+    if (!updated) throw new ReminderInputError("REMINDER_UNAVAILABLE");
+    return { updatedAt, dueAt: input.dueAt, remindAt: input.remindAt };
+  }
+
+  async withdraw(reminderId: string): Promise<void> {
+    const remove = this.#options.memory.delete;
+    if (remove === undefined) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const reminder = await this.cancel(reminderId);
+    const generation = await this.#options.book.latestGeneration(this.#scope());
+    if (!generation) throw new ReminderInputError("REMINDER_MEMORY_NOT_READY");
+    const memory = await this.#options.state.read(reminder.memoryId);
+    if (
+      memory === undefined ||
+      memory.status === "deletion_pending" ||
+      memory.status === "deleted_verified"
+    )
+      return;
+    await remove.call(this.#options.memory, reminder.memoryId, generation);
+  }
+
   async cancel(reminderId: string): Promise<MemoryReminder> {
     const reminder = await this.#options.reminders.read(reminderId);
     const { ownerId, agentId } = this.#options.configuration;
@@ -369,7 +457,10 @@ export class ProductionReminderTools {
     return `${localTimeText(instant, this.#timeZone)}（${this.#timeZone}）`;
   }
 
-  async run(invocation: RuntimeToolInvocation): Promise<unknown> {
+  async run(
+    invocation: RuntimeToolInvocation,
+    provenance: { readonly externalOrigins?: readonly string[] } = {},
+  ): Promise<unknown> {
     const args = invocation.arguments;
     const names = Object.keys(args);
     if (invocation.capabilityRef === REMINDER_LIST_CAPABILITY_REF) {
@@ -413,6 +504,9 @@ export class ProductionReminderTools {
       due,
       repeat,
       sourceThreadId: invocation.context?.threadId ?? null,
+      ...(provenance.externalOrigins?.length
+        ? { externalOrigins: provenance.externalOrigins }
+        : {}),
     });
     return {
       created: true,

@@ -1,0 +1,4 @@
+{"id": "R5-1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低｜资源耗尽：新增依赖任务读取没有上限", "valid": true, "class": "better", "reason": "同 R4-5，判断不变：只有已认证的主人能触发，任务数量很小，停用必须在一个事务里取消全部任务。"}
+{"id": "R5-2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低｜错误路径/幂等：第二道最近认证失败仍会留下 executing 收据", "valid": false, "class": "error", "reason": "只在同一个请求里两次检查之间认证恰好过期或会话被撤销时才会出现，状态不变；之后同键重试得到 409，控制中心收到 409 会清掉待重试键（governance-control-center.tsx 第 799-800 行，模型自己引了），下一次用新键可以成功。不会出错，只是多一次点击。"}
+{"id": "R5-3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 低｜测试缺口：缺少跨 owner/agent 和“已撤销任务不计入”的反向用例", "valid": true, "class": "better", "reason": "SQL 带 owner/agent 条件，生产一人一库；已撤销任务不计入由 status != 'revoked' 一行条件保证。列给 Andy，不建议这次改。"}
+{"id": "R5-4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 说明（不是当前漏洞）：最近认证检查在网关适配器，不在 `CapabilityLifecycleService` 本身", "valid": true, "class": "better", "reason": "模型自己说不是当前漏洞；生产只有网关一个入口。项目规定不写代码注释，不改。"}

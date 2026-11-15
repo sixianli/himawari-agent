@@ -13,6 +13,7 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
+import { DeviceSettings } from "./components/device-settings.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
@@ -604,6 +605,11 @@ function LocalizedControlCenterApp({
             connected={threadConnection !== "offline"}
             message={message}
           />
+        ) : undefined
+      }
+      settingsDevices={
+        configuration?.installedDeviceApi ? (
+          <DeviceSettings csrfToken={configuration.csrfToken} message={message} />
         ) : undefined
       }
       settingsNotifications={

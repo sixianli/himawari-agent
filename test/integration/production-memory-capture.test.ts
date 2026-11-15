@@ -1,15 +1,20 @@
+import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DurableMemoryService,
+  IMPORT_DUPLICATE_DEFAULTS,
+  type ImportDuplicateAnswer,
   type MemoryExtractionAuditRecord,
   type MemoryProviderProjectionPort,
   OwnerProfileService,
   type ProactiveModelInvoker,
   type ProductMemoryRecord,
   RuleReviewService,
+  type RunExecutionSourcePort,
   type RuntimeRequest,
   type ThreadRepositoryPort,
 } from "@himawari-agent/application";
@@ -23,6 +28,7 @@ import {
 import {
   gatewayV2MessageSchema,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  memorySourceState,
 } from "@himawari-agent/gateway-contracts";
 import {
   applyMigrations,
@@ -33,7 +39,12 @@ import {
 import { TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { redactForEgress } from "@himawari-agent/sensitive-capture";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ContextExternalContent,
+  externalContentKey,
+  runExternalOrigins,
+} from "../../apps/agent-service/src/context-external-content.ts";
 import {
   type MemoryCaptureCall,
   memoryCapturePrompt,
@@ -41,6 +52,7 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryClassifier } from "../../apps/agent-service/src/production-memory-classification.ts";
+import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import {
   isStandingQuote,
@@ -212,26 +224,56 @@ describe("production memory capture", () => {
     const calls: MemoryCaptureCall[] = [];
     const outputs: (string | Error)[] = [output];
     const relevant: string[] = [];
-    const capture = new ProductionMemoryCapture({
-      sources: {
-        read: async (runId) => {
-          const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
-          if (!owner) return undefined;
-          return {
-            ownerId: OWNER_ID,
-            agentId: AGENT_ID,
-            runId,
-            sessionId: "session" as never,
-            threadId: THREAD_ID,
-            triggerId: "trigger" as never,
-            sourceType: "user_message",
-            sourceId: owner.id,
-            payloadRef: owner.contentRef,
-            dataClassification: "private",
-            occurredAt: T0,
-          };
+    const externalMarks = new Map<string, readonly string[]>();
+    const externalContent = new ContextExternalContent({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      state: {
+        readScopedState: async (_owner, _agent, key) => {
+          const origins = externalMarks.get(key);
+          return origins
+            ? ({
+                revision: 1,
+                value: {
+                  sources: origins.map((origin) => ({
+                    origin,
+                    firstRunId: "run-earlier",
+                    firstSeenAt: T0,
+                  })),
+                },
+              } as never)
+            : undefined;
+        },
+        commitStateAndEvents: async () => {
+          throw new Error("marks are seeded directly in this test");
         },
       },
+      source: { read: (runId) => runSources.read(runId) },
+      authority: () => {
+        throw new Error("marks are seeded directly in this test");
+      },
+      clock: { now: () => T0 },
+    });
+    const runSources: RunExecutionSourcePort = {
+      read: async (runId) => {
+        const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
+        if (!owner) return undefined;
+        return {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId,
+          sessionId: "session" as never,
+          threadId: THREAD_ID,
+          triggerId: "trigger" as never,
+          sourceType: "user_message",
+          sourceId: owner.id,
+          payloadRef: owner.contentRef,
+          dataClassification: "private",
+          occurredAt: T0,
+        };
+      },
+    };
+    const capture = new ProductionMemoryCapture({
+      sources: runSources,
       threads: {
         listMessages: async (_owner, _agent, _thread, afterSequence, limit) =>
           messages.filter(({ sequence }) => sequence > afterSequence).slice(0, limit),
@@ -241,6 +283,7 @@ describe("production memory capture", () => {
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
       relevantMemoryIds: () => relevant as never,
+      externalOrigins: runExternalOrigins(externalContent),
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
@@ -276,9 +319,58 @@ describe("production memory capture", () => {
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
     const clock = { value: T0 };
+    const boxWith = (extra: Partial<ConstructorParameters<typeof ProductionProposalBox>[0]> = {}) =>
+      new ProductionProposalBox({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        store: repository.ownerProposals(),
+        payloads,
+        protector: adapters.payloadProtector,
+        clock: { now: () => clock.value },
+        ...extra,
+      });
+    const ruleWriterWith = (
+      extra: Partial<ConstructorParameters<typeof ProductionOwnerRuleWriter>[0]> & {
+        readonly proposals?: ConstructorParameters<typeof ProductionProposalBox>[0]["store"];
+        readonly proposalLimit?: number;
+        readonly proposalTtlDays?: number;
+        readonly box?: ProductionProposalBox;
+      } = {},
+    ) => {
+      const { proposals, proposalLimit, proposalTtlDays, box: given, ...rest } = extra;
+      return new ProductionOwnerRuleWriter({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        rules: repository.ownerRules(),
+        box:
+          given ??
+          boxWith({
+            ...(proposals ? { store: proposals } : {}),
+            ...(rest.protector ? { protector: rest.protector } : {}),
+            configuration: {
+              ...(rest.configuration ?? { ownerId: OWNER_ID, agentId: AGENT_ID }),
+              runPolicy: {
+                ownerProposals: {
+                  ...(proposalLimit === undefined ? {} : { pendingLimit: proposalLimit }),
+                  ...(proposalTtlDays === undefined ? {} : { expiresAfterDays: proposalTtlDays }),
+                },
+              },
+            },
+          }),
+        reviews: repository.ruleReviews(),
+        memory,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads: repository.threadRepository(),
+        payloads,
+        protector: adapters.payloadProtector,
+        clock: { now: () => clock.value },
+        ...rest,
+      });
+    };
+    const box = boxWith();
     const ruleWriter = new ProductionOwnerRuleWriter({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       rules: repository.ownerRules(),
+      box,
       reviews: repository.ruleReviews(),
       memory,
       memories: repository.productMemoryState(),
@@ -288,6 +380,19 @@ describe("production memory capture", () => {
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
     });
+    const actionRules = {
+      list: vi.fn(async () => [
+        {
+          ruleId: "action_preauthorize_owner_data",
+          revision: 1,
+          outcome: "allow_preauthorized" as const,
+          examplesHit: 2,
+          examplesMiss: 6,
+          askFirst: false,
+        },
+      ]),
+      setAskFirst: vi.fn(async () => undefined),
+    };
     const classifyOutputs: string[] = [];
     const classifyPrompts: string[] = [];
     const classifyFailures: unknown[] = [];
@@ -309,12 +414,35 @@ describe("production memory capture", () => {
       newId: () => "classify",
       onFailure: (error) => classifyFailures.push(error),
     });
+    const duplicateAnswers: (ImportDuplicateAnswer | undefined)[] = [];
+    const duplicateRequests: {
+      existing: readonly { key: string; text: string }[];
+      candidates: readonly { text: string }[];
+    }[] = [];
+    const duplicateSettings = { ...IMPORT_DUPLICATE_DEFAULTS };
+    const importDuplicates = new ProductionImportDuplicateChecker({
+      decision: {
+        decide: async ({ existing, candidates }) => {
+          duplicateRequests.push({ existing, candidates });
+          return candidates.map(() => duplicateAnswers.shift());
+        },
+      },
+      settings: duplicateSettings,
+      onFailure: () => {},
+    });
+    const proposalControl = new ProductionProposalControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      box,
+      clock: { now: () => clock.value },
+    });
     const control = new ProductionMemoryControl({
       classifier,
+      importDuplicates,
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
+      actionRules,
       unitOfWork: repository.unitOfWork(),
       memory,
       reminders: repository.memoryReminders(),
@@ -403,8 +531,18 @@ describe("production memory capture", () => {
       plaintext,
       capture,
       control,
+      actionRules,
+      markThread: (threadId: string, origins: readonly string[]) => {
+        externalMarks.set(externalContentKey({ threadId, runId: "" }), origins);
+      },
       reminderTools,
       ruleTools: new ProductionOwnerRuleTools(ruleWriter),
+      ruleWriter,
+      ruleWriterWith,
+      box,
+      boxWith,
+      proposalControl,
+      protector: adapters.payloadProtector,
       protect,
       request: requestFor("run-memory-capture"),
       requestFor,
@@ -418,6 +556,9 @@ describe("production memory capture", () => {
       classifyOutputs,
       classifyPrompts,
       classifyFailures,
+      duplicateAnswers,
+      duplicateRequests,
+      duplicateSettings,
     };
   }
 
@@ -1785,6 +1926,66 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
   });
 
+  it("keeps reminder and memory ids within the gateway limit when the command key or tool call id is as long as allowed", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-long", "给妈妈打电话");
+    const longKey = `page-${"k".repeat(123)}`;
+    const page = { contentRef: "payload-long", due: "2026-10-26", repeat: "none" };
+    const created = await command(context.control, "memory.reminder.create", page, longKey);
+    const replay = await command(context.control, "memory.reminder.create", page, longKey);
+    expect(replay).toEqual({ resultRef: created.resultRef, replayed: true });
+    const other = await command(
+      context.control,
+      "memory.reminder.create",
+      page,
+      `page-${"k".repeat(122)}x`,
+    );
+    expect(other.resultRef).not.toBe(created.resultRef);
+    const shortened = String(created.resultRef).slice("reminder:memory:reminder:owner:".length);
+    expect(shortened).toMatch(/\.[0-9a-f]{64}$/u);
+    const lookalike = await command(context.control, "memory.reminder.create", page, shortened);
+    expect(lookalike.resultRef).not.toBe(created.resultRef);
+    expect(String(lookalike.resultRef).length).toBeLessThanOrEqual(128);
+    const tool = (await context.reminderTools.run({
+      runId: createRunId(`run-${"r".repeat(120)}`),
+      toolCallId: `call-${"c".repeat(120)}`,
+      capabilityRef: "reminder.set",
+      capabilityHandleRef: null,
+      arguments: { text: "周五交周报", due: "2026-10-30T15:00", repeat: "none" },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as { reminderId: string };
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.overview.read",
+      payload: {},
+    } as never);
+    const { idempotencyKey: _queryKey, ...message } = snapshot as unknown as Record<
+      string,
+      unknown
+    >;
+    const parsed = gatewayV2MessageSchema.parse(message);
+    if (parsed.type !== "memory.overview.snapshot") throw new Error("snapshot");
+    expect(parsed.payload.upcoming.map(({ reminderId }) => reminderId).sort()).toEqual(
+      [created.resultRef, other.resultRef, lookalike.resultRef, tool.reminderId].sort(),
+    );
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: tool.reminderId, action: "cancel" },
+    } as never);
+    expect(await context.repository.memoryReminders().read(tool.reminderId)).toMatchObject({
+      status: "cancelled",
+    });
+  });
+
   it("sets, lists and cancels reminders from the conversation tool and the reminders page through one writer", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
@@ -1995,6 +2196,191 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().read(withPassword["memoryId"] as never),
     ).toMatchObject({ status: "active", dataClassification: "sensitive" });
+  });
+
+  it('[HR-4] turns "夜里别提醒我" into an enforced push_quiet_hours rule through the rule tool, and refuses periods that are not times', async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const set = (args: Record<string, unknown>, id: string) =>
+      context.ruleTools.run({
+        runId: createRunId("run-rule-tool"),
+        toolCallId: id,
+        capabilityRef: "rule.set",
+        capabilityHandleRef: null,
+        arguments: {
+          inferred: false,
+          type: "push_quiet_hours",
+          summary: "夜里 23 点到早上 7 点，任务完成和邮件提醒等到早上再推",
+          quote: sentence,
+          ...args,
+        },
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      } as never) as Promise<Record<string, unknown>>;
+    const night = { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] };
+    const created = await set({ params: night }, "call-night");
+    expect(created).toMatchObject({ status: "active", type: "push_quiet_hours", replayed: false });
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => hit)).toBe(true);
+    expect((created["trials"] as { hit: boolean }[]).some(({ hit }) => !hit)).toBe(true);
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: created["ruleId"] as string,
+    } as never);
+    expect(stored).toMatchObject({ status: "active" });
+    await expect(
+      set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
+    ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });
+    await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
+      code: "RULE_PARAMETERS_INVALID",
+    });
+  });
+
+  it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
+    const output =
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}';
+    const marked = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    marked.markThread(THREAD_ID, ["web_fetch"]);
+    await marked.capture.start(marked.request);
+    await marked.capture.stop();
+    const [captured] = await marked.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(captured?.sourceRefs).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^external-content:.*\|web_fetch$/u)]),
+    );
+    const plain = await setup("请记住，我最喜欢的颜色是蓝色。", output);
+    plain.markThread("thread-elsewhere", ["web_fetch"]);
+    await plain.capture.start(plain.request);
+    await plain.capture.stop();
+    const [unmarked] = await plain.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(unmarked?.sourceRefs.some((ref) => ref.startsWith("external-content:"))).toBe(false);
+  });
+
+  it("[ADR-0257] marks a reminder and a rule written with external content in context, and keeps the reminder's source readable", async () => {
+    const sentence = "以后扣款邮件必须通知我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const invocation = (capabilityRef: string, toolCallId: string, args: unknown) =>
+      ({
+        runId: createRunId("run-external-marks"),
+        toolCallId,
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId: THREAD_ID },
+      }) as never;
+    const provenance = { externalOrigins: ["web_fetch", "execution_task_output"] };
+    const reminder = (await context.reminderTools.run(
+      invocation("reminder.set", "call-external", { text: "改会议", due: "2026-10-30T15:00" }),
+      provenance,
+    )) as Record<string, unknown>;
+    const reminderMemory = await context.repository
+      .productMemoryState()
+      .read((reminder["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(reminderMemory?.sourceRefs).toEqual([
+      `external-content:${reminderMemory?.id}|execution_task_output`,
+      `external-content:${reminderMemory?.id}|web_fetch`,
+      expect.stringMatching(/^memory-content:reminder:/u),
+    ]);
+    expect(
+      memorySourceState({
+        memoryId: reminderMemory?.id ?? "",
+        importBatchId: null,
+        sourceThreadId: THREAD_ID,
+        sourceMessageId: null,
+        sourceRefs: reminderMemory?.sourceRefs ?? [],
+        history: [],
+      }),
+    ).toBe("reminder");
+
+    const rule = (await context.ruleTools.run(
+      invocation("rule.set", "call-external-rule", {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "扣款邮件一律提醒",
+        params: { phrases: ["扣款"] },
+      }),
+      provenance,
+    )) as Record<string, unknown>;
+    expect(rule).toMatchObject({ status: "active" });
+    const stored = await context.repository.ownerRules().read({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      ruleId: rule["ruleId"] as string,
+    } as never);
+    expect(stored?.source).toBe(
+      `external-content:execution_task_output,web_fetch|chat:${THREAD_ID}`,
+    );
+    const ruleMemory = await context.repository
+      .productMemoryState()
+      .read(rule["memoryId"] as never);
+    expect(ruleMemory?.sourceRefs).toContain(
+      `external-content:${ruleMemory?.id}|execution_task_output`,
+    );
+
+    const plain = (await context.reminderTools.run(
+      invocation("reminder.set", "call-plain", { text: "交周报", due: "2026-10-30T16:00" }),
+    )) as Record<string, unknown>;
+    const plainMemory = await context.repository
+      .productMemoryState()
+      .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
+    expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+  });
+
+  it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.rules.read",
+      payload: {},
+    } as never);
+    if (snapshot.type !== "memory.rules.snapshot") throw new Error("snapshot");
+    const { idempotencyKey: _, ...parsable } = snapshot as Record<string, unknown>;
+    gatewayV2MessageSchema.parse(parsable);
+    expect(snapshot.payload.builtIn).toEqual([
+      expect.objectContaining({ ruleId: "action_preauthorize_owner_data", askFirst: false }),
+    ]);
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "ask_first" },
+      "ask-first",
+    );
+    await command(
+      context.control,
+      "memory.rule.respond",
+      { target: "action_preauthorize_owner_data", action: "allow_directly" },
+      "allow-directly",
+    );
+    expect(context.actionRules.setAskFirst.mock.calls).toEqual([
+      ["action_preauthorize_owner_data", true],
+      ["action_preauthorize_owner_data", false],
+    ]);
+    await expect(
+      command(
+        context.control,
+        "memory.rule.respond",
+        { target: "action_preauthorize_owner_data", action: "future_action" },
+        "unknown-action",
+      ),
+    ).rejects.toThrow("MEMORY_RULE_ACTION_UNSUPPORTED");
+    expect(context.actionRules.setAskFirst).toHaveBeenCalledTimes(2);
   });
 
   it("[P2-3] turns the owner's standing sentence into an enforced rule, keeps inferred ones as proposals, and undoes one from the page", async () => {
@@ -2266,6 +2652,38 @@ describe("production memory capture", () => {
     expect(isStandingQuote("刚才那封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封必须提醒我")).toBe(false);
     expect(isStandingQuote("这封先不用管，以后再说")).toBe(false);
+    expect(isStandingQuote("夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("今晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这次别提醒我")).toBe(false);
+    expect(isStandingQuote("提醒我")).toBe(false);
+    expect(isStandingQuote("现在别提醒我")).toBe(false);
+    expect(isStandingQuote("我在开会，一会别打扰我")).toBe(false);
+    expect(isStandingQuote("今夜は通知しないで")).toBe(false);
+    expect(isStandingQuote("do not disturb me right now")).toBe(false);
+    expect(isStandingQuote("从现在起夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("晚上别提醒我")).toBe(true);
+    expect(isStandingQuote("周末别打扰我")).toBe(true);
+    expect(isStandingQuote("don't remind me at night")).toBe(true);
+    expect(isStandingQuote("别提醒我")).toBe(false);
+    expect(isStandingQuote("明天别提醒我")).toBe(false);
+    expect(isStandingQuote("暂时别提醒我")).toBe(false);
+    expect(isStandingQuote("先别提醒我")).toBe(false);
+    expect(isStandingQuote("明天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me tomorrow")).toBe(false);
+    expect(isStandingQuote("这个周末别提醒我")).toBe(false);
+    expect(isStandingQuote("下周三晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("后天晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("昨晚别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("明年夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("这个月，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("下个月起，晚上别提醒我")).toBe(false);
+    expect(isStandingQuote("今年先这样，以后夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("从今天开始，以后夜里别提醒我")).toBe(true);
+    expect(isStandingQuote("本季度夜里别提醒我")).toBe(false);
+    expect(isStandingQuote("don't remind me at night this month")).toBe(false);
+    expect(isStandingQuote("don't remind me this weekend")).toBe(false);
+    expect(isStandingQuote("don't remind me next week at night")).toBe(false);
     expect(isStandingQuote("今天先这样，以后再看")).toBe(false);
     expect(isStandingQuote("今天起每次都提醒我")).toBe(true);
     expect(isStandingQuote("From now on, always tell me about refunds")).toBe(true);
@@ -2372,6 +2790,992 @@ describe("production memory capture", () => {
         ?.status,
     ).toBe("deletion_pending");
     expect(await listed()).toEqual([]);
+  });
+
+  describe("[A-1] rule proposals waiting for the owner", () => {
+    const sentence = "日本入管局相关的邮件以后必须通知我";
+    const proposalsQuery = async (context: Awaited<ReturnType<typeof setup>>) => {
+      const snapshot = await context.proposalControl.query({
+        ...envelope,
+        kind: "query",
+        type: "proposals.read",
+        payload: {},
+      } as never);
+      if (snapshot.type !== "proposals.snapshot") throw new Error("snapshot");
+      const { idempotencyKey: _key, ...wire } = snapshot as typeof snapshot & {
+        idempotencyKey?: string;
+      };
+      gatewayV2MessageSchema.parse(wire);
+      return {
+        ...snapshot,
+        payload: {
+          ...snapshot.payload,
+          proposals: snapshot.payload.proposals.map((item) => {
+            const replay = item.evidence.find((entry) => entry.kind === "mail_replay");
+            const figure = (name: string) =>
+              replay?.figures.find((entry) => entry.name === name)?.value ?? 0;
+            return {
+              ...item,
+              quote: item.evidence.find((entry) => entry.kind === "owner_words")?.text ?? null,
+              trials: item.evidence.filter((entry) => entry.kind === "mail_trial"),
+              replay: replay
+                ? {
+                    days: figure("days"),
+                    mailsChecked: figure("mailsChecked"),
+                    mailsHit: figure("mailsHit"),
+                    changed: figure("changed"),
+                    truncated: figure("truncated") === 1,
+                  }
+                : null,
+            };
+          }),
+        },
+      };
+    };
+    const shownVersion = (context: Awaited<ReturnType<typeof setup>>, proposalId: unknown) => {
+      let row: { version: number; fingerprint: string } | undefined;
+      context.sql((database) => {
+        row = database
+          .prepare("SELECT version, fingerprint FROM owner_proposals WHERE id = ?")
+          .get(String(proposalId)) as typeof row;
+      });
+      return row ?? { version: 1, fingerprint: "0".repeat(64) };
+    };
+    const respond = async (
+      context: Awaited<ReturnType<typeof setup>>,
+      proposalId: unknown,
+      action: string,
+      key: string,
+      seen = shownVersion(context, proposalId),
+    ) =>
+      context.proposalControl.execute(
+        {} as never,
+        {
+          ...envelope,
+          idempotencyKey: key,
+          kind: "command",
+          type: "proposal.respond",
+          payload: {
+            proposalId,
+            action,
+            expectedVersion: seen.version,
+            fingerprint: seen.fingerprint,
+            recentAuthenticationRef: null,
+            fullReadToken: null,
+          },
+        } as never,
+      );
+    const counts = (context: Awaited<ReturnType<typeof setup>>) => {
+      const found = { rules: 0, memories: 0 };
+      context.sql((database) => {
+        found.rules = (
+          database.prepare("SELECT COUNT(*) AS n FROM rule_book_rules").get() as { n: number }
+        ).n;
+        found.memories = (
+          database.prepare("SELECT COUNT(*) AS n FROM memory_records").get() as { n: number }
+        ).n;
+      });
+      return found;
+    };
+    const prepared = async () => {
+      const context = await setup(
+        "请记住，我最喜欢的颜色是蓝色。",
+        '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+      );
+      await context.capture.start(context.request);
+      await context.capture.stop();
+      await context.turn("owner", sentence, null);
+      await context.turn("owner", "入管局相关的邮件", null);
+      const set = (args: Record<string, unknown>, id: string, writer = context.ruleTools) =>
+        writer.run({
+          runId: createRunId("run-proposal-tool"),
+          toolCallId: id,
+          capabilityRef: "rule.set",
+          capabilityHandleRef: null,
+          arguments: {
+            inferred: false,
+            type: "mail_must_notify",
+            summary: "入管局的邮件一律提醒",
+            ...args,
+          },
+          dataClassification: "private",
+          context: { threadId: THREAD_ID },
+        } as never) as Promise<Record<string, unknown>>;
+      const inferred = (domain: string, id = `call-${domain}`) =>
+        set({ quote: sentence, inferred: true, params: { senderDomains: [domain] } }, id);
+      return { context, set, inferred };
+    };
+
+    it("lists a proposal with who it came from, its evidence and the limit, and adopts it into a rule that can be undone", async () => {
+      const { context, set, inferred } = await prepared();
+      const replay = {
+        days: 30,
+        mailsChecked: 12,
+        mailsHit: 2,
+        changed: 1,
+        usefulChanged: [],
+        headersOnly: 0,
+        truncated: false,
+      };
+      const withReplay = new ProductionOwnerRuleTools(
+        context.ruleWriterWith({ replay: async () => replay }),
+      );
+      expect((await proposalsQuery(context)).payload).toMatchObject({
+        proposals: [],
+        pendingCount: 0,
+        limit: 20,
+        expiresAfterDays: 30,
+      });
+      const guessed = await inferred("isa.go.jp");
+      const said = await set(
+        { quote: "入管局相关的邮件", params: { senderDomains: ["moj.go.jp"] } },
+        "call-said",
+        withReplay,
+      );
+      expect(guessed).toMatchObject({ status: "proposed" });
+      expect(said).toMatchObject({ status: "proposed" });
+      const first = await proposalsQuery(context);
+      expect(first.payload.proposals.map((item) => item.proposalId).sort()).toEqual(
+        [guessed["proposalId"], said["proposalId"]].sort(),
+      );
+      expect(first.payload).toMatchObject({ pendingCount: 2, limit: 20, expiresAfterDays: 30 });
+      const byId = new Map(first.payload.proposals.map((item) => [item.proposalId, item]));
+      expect(byId.get(guessed["proposalId"] as string)).toMatchObject({
+        origin: "inferred",
+        quote: sentence,
+        replay: null,
+        proposedAt: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        refusedBefore: 0,
+      });
+      expect(byId.get(guessed["proposalId"] as string)?.trials.length).toBeGreaterThan(0);
+      expect(byId.get(said["proposalId"] as string)).toMatchObject({
+        origin: "owner_said",
+        quote: "入管局相关的邮件",
+        replay: { days: 30, mailsChecked: 12, mailsHit: 2, changed: 1, truncated: false },
+      });
+      const { generatedAt: _first, ...firstPayload } = first.payload;
+      const { generatedAt: _second, ...secondPayload } = (await proposalsQuery(context)).payload;
+      expect(JSON.stringify(secondPayload)).toBe(JSON.stringify(firstPayload));
+
+      const before = counts(context);
+      await respond(context, guessed["proposalId"], "adopt", "adopt-1");
+      expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
+      await respond(context, guessed["proposalId"], "adopt", "adopt-2");
+      expect(counts(context)).toEqual({ rules: before.rules + 1, memories: before.memories + 1 });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      const rule = (await context.ruleWriter.list())[0];
+      expect(rule).toMatchObject({ status: "active", enforced: true });
+      await command(
+        context.control,
+        "memory.rule.respond",
+        { target: rule?.ruleId, action: "undo" },
+        "undo-adopted",
+      );
+      expect(await context.ruleWriter.list()).toEqual([]);
+    });
+
+    it("refuses a proposal without writing a rule or a memory, and says so when it is adopted or refused again", async () => {
+      const { context, inferred } = await prepared();
+      const proposal = await inferred("isa.go.jp");
+      const before = counts(context);
+      await respond(context, proposal["proposalId"], "reject", "reject-1");
+      expect(counts(context)).toEqual(before);
+      expect(await context.ruleWriter.list()).toEqual([]);
+      expect((await proposalsQuery(context)).payload.proposals).toEqual([]);
+      await expect(
+        respond(context, proposal["proposalId"], "adopt", "adopt-refused"),
+      ).rejects.toThrow("PROPOSAL_REJECTED");
+      expect(counts(context)).toEqual(before);
+      await respond(context, proposal["proposalId"], "reject", "reject-2");
+      await expect(
+        respond(
+          context,
+          "rule-proposal:00000000000000000000000000000000",
+          "reject",
+          "reject-missing",
+        ),
+      ).rejects.toThrow("PROPOSAL_NOT_FOUND");
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposal["proposalId"], action: "forget" },
+          "unknown-action",
+        ),
+      ).rejects.toThrow();
+      expect(await context.ruleWriter.list()).toEqual([]);
+
+      const again = await inferred("isa.go.jp", "call-again");
+      expect(again["proposalId"]).toBe(proposal["proposalId"]);
+      const listed = (await proposalsQuery(context)).payload;
+      expect(listed.proposals).toMatchObject([
+        { proposalId: proposal["proposalId"], refusedBefore: 1 },
+      ]);
+      await respond(context, proposal["proposalId"], "adopt", "adopt-after-again");
+      await expect(
+        respond(context, proposal["proposalId"], "reject", "reject-adopted"),
+      ).rejects.toThrow("PROPOSAL_ACCEPTED");
+    });
+
+    it("lets only one of a simultaneous adopt and refuse win", async () => {
+      const { context, inferred } = await prepared();
+      for (const [index, domain] of [
+        "a.example",
+        "b.example",
+        "c.example",
+        "d.example",
+      ].entries()) {
+        const proposal = await inferred(domain);
+        const outcomes = await Promise.allSettled([
+          command(
+            context.control,
+            "memory.rule.respond",
+            { target: proposal["proposalId"], action: "confirm" },
+            `race-adopt-${index}`,
+          ),
+          respond(context, proposal["proposalId"], "reject", `race-reject-${index}`),
+        ]);
+        expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+        const lost = outcomes.find(({ status }) => status === "rejected") as PromiseRejectedResult;
+        expect(String(lost.reason)).toMatch(/PROPOSAL_ACCEPTED|RULE_PROPOSAL_REJECTED/u);
+        const adopted = outcomes[0]?.status === "fulfilled";
+        const active = (await context.ruleWriter.list()).length;
+        expect(active).toBe(adopted ? 1 : 0);
+        await context.ruleWriter
+          .list()
+          .then((rules) => Promise.all(rules.map((rule) => context.ruleWriter.undo(rule.ruleId))));
+      }
+    });
+
+    it("keeps a proposal an outside agent made out of the list, and still lets it be adopted at once", async () => {
+      const { context } = await prepared();
+      const receipt = await context.ruleWriter.create({
+        key: "mcp:outside-1",
+        quote: "外部 agent「x」提议：入管局的邮件要提醒",
+        inferred: true,
+        type: "mail_must_notify",
+        params: { senderDomains: ["isa.go.jp"] },
+        summary: "入管局的邮件一律提醒",
+        threadId: null,
+        source: "mcp:x",
+        listed: false,
+      });
+      expect(receipt).toMatchObject({ status: "proposed" });
+      expect((await proposalsQuery(context)).payload.proposals).toEqual([]);
+      expect(await context.ruleWriter.confirm(receipt.proposalId ?? "")).toMatchObject({
+        status: "active",
+      });
+      await expect(context.box.reject(receipt.proposalId ?? "")).rejects.toMatchObject({
+        code: "PROPOSAL_NOT_FOUND",
+      });
+    });
+
+    it("shows the limit, refuses a proposal over it and expires a proposal after its days", async () => {
+      const { context, set } = await prepared();
+      const tight = context.boxWith({
+        configuration: {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runPolicy: { ownerProposals: { pendingLimit: 2, expiresAfterDays: 3 } },
+        },
+      });
+      const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ box: tight }));
+      const shownByTight = await new ProductionProposalControl({
+        configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        box: tight,
+        clock: { now: () => context.clock.value },
+      }).query({ ...envelope, kind: "query", type: "proposals.read", payload: {} } as never);
+      expect(shownByTight.payload).toMatchObject({ limit: 2, expiresAfterDays: 3 });
+      const make = (domain: string) =>
+        set(
+          { quote: sentence, inferred: true, params: { senderDomains: [domain] } },
+          `call-${domain}`,
+          small,
+        );
+      const one = await make("one.example");
+      await make("two.example");
+      await expect(make("three.example")).rejects.toMatchObject({ code: "RULE_PROPOSALS_FULL" });
+      await make("one.example");
+      const full = (await proposalsQuery(context)).payload;
+      expect(full.pendingCount).toBe(2);
+      expect(full.limit).toBe(20);
+      context.clock.value = new Date(Date.parse(T0) + 3 * 86_400_000).toISOString();
+      expect((await proposalsQuery(context)).payload).toMatchObject({
+        proposals: [],
+        pendingCount: 0,
+      });
+      await expect(respond(context, one["proposalId"], "adopt", "adopt-expired")).rejects.toThrow(
+        "PROPOSAL_EXPIRED",
+      );
+      await make("one.example");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      for (const digit of ["a", "b"])
+        await context.repository.ownerProposals().propose({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          proposalId: `next-step:${digit.repeat(32)}`,
+          type: "other",
+          summary: "上限调低之前就在的提议",
+          effect: "上限调低之前就在的提议",
+          origin: "inferred",
+          threadId: null,
+          sourceRef: null,
+          sourceVersion: null,
+          fingerprint: digit.repeat(64),
+          evidenceRef: null,
+          now: context.clock.value,
+          expiresAt: new Date(Date.parse(context.clock.value) + 86_400_000).toISOString(),
+          pendingLimit: 20,
+        });
+      const over = await tight.list();
+      expect([over.proposals.length, over.pendingCount]).toEqual([3, 3]);
+    });
+
+    it("gives the same proposal id however the parameters are ordered, and shows no evidence for one stored without it", async () => {
+      const { context, set } = await prepared();
+      const one = await set(
+        {
+          quote: sentence,
+          inferred: true,
+          params: { senderDomains: ["isa.go.jp"], phrases: ["在留"] },
+        },
+        "call-order-1",
+      );
+      const two = await set(
+        {
+          quote: sentence,
+          inferred: true,
+          params: { phrases: ["在留"], senderDomains: ["isa.go.jp"] },
+        },
+        "call-order-2",
+      );
+      expect(two["proposalId"]).toBe(one["proposalId"]);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+
+      const oldRef = "rule-proposal:ffffffffffffffffffffffffffffffff";
+      await context.protect(oldRef, JSON.stringify({ key: "k", type: "mail_must_notify" }));
+      await context.repository.ownerProposals().propose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        proposalId: oldRef,
+        type: "owner_rule",
+        summary: "旧提议",
+        effect: "旧提议",
+        origin: "inferred",
+        threadId: null,
+        sourceRef: null,
+        sourceVersion: null,
+        fingerprint: "e".repeat(64),
+        evidenceRef: oldRef,
+        now: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        pendingLimit: 20,
+      } as never);
+      const listed = (await proposalsQuery(context)).payload.proposals;
+      expect(listed.find((item) => item.proposalId === oldRef)).toMatchObject({
+        quote: null,
+        trials: [],
+        replay: null,
+      });
+    });
+
+    it("rewrites the basis when a proposal comes back, and drops what it wrote when the list is full", async () => {
+      const { context, set, inferred } = await prepared();
+      const first = await inferred("a.example");
+      await respond(context, first["proposalId"], "reject", "reject-a");
+      const withReplay = new ProductionOwnerRuleTools(
+        context.ruleWriterWith({
+          replay: async () => ({
+            days: 30,
+            mailsChecked: 9,
+            mailsHit: 1,
+            changed: 0,
+            usefulChanged: [],
+            headersOnly: 0,
+            truncated: false,
+          }),
+        }),
+      );
+      await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["a.example"] } },
+        "call-a-again",
+        withReplay,
+      );
+      const back = (await proposalsQuery(context)).payload.proposals[0];
+      expect(back).toMatchObject({ refusedBefore: 1, replay: { mailsChecked: 9 } });
+      await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["a.example"] } },
+        "call-a-third",
+      );
+      expect((await proposalsQuery(context)).payload.proposals[0]?.replay).toBeNull();
+
+      const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ proposalLimit: 1 }));
+      const refs = () => {
+        const found: string[] = [];
+        context.sql((database) => {
+          for (const row of database
+            .prepare("SELECT ref FROM payloads WHERE ref LIKE 'rule-proposal:%'")
+            .all() as { ref: string }[])
+            found.push(row.ref);
+        });
+        return found;
+      };
+      const before = refs();
+      await expect(
+        set(
+          { quote: sentence, inferred: true, params: { senderDomains: ["z.example"] } },
+          "call-z",
+          small,
+        ),
+      ).rejects.toMatchObject({ code: "RULE_PROPOSALS_FULL" });
+      expect(refs()).toEqual(before);
+    });
+
+    it("does not stack a waiting proposal on a rule that is already enforced, and puts the source back as the latest one", async () => {
+      const { context, set, inferred } = await prepared();
+      const proposal = await inferred("moj.go.jp");
+      await respond(context, proposal["proposalId"], "adopt", "adopt-moj");
+      const again = await inferred("moj.go.jp", "call-moj-again");
+      expect(again).toMatchObject({ status: "active", replayed: true });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      const rule = (await context.ruleWriter.list())[0];
+      await context.ruleWriter.undo(rule?.ruleId ?? "");
+      await inferred("moj.go.jp", "call-moj-after-undo");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+
+      const other = "入管局相关的邮件";
+      const known = (await proposalsQuery(context)).payload.proposals.map(
+        (item) => item.proposalId,
+      );
+      await set(
+        { quote: other, inferred: true, params: { senderDomains: ["pending.example"] } },
+        "call-pending-inferred",
+      );
+      const before = (await proposalsQuery(context)).payload.proposals.find(
+        (item) => !known.includes(item.proposalId),
+      );
+      expect(before?.origin).toBe("inferred");
+      expect(before).not.toBeUndefined();
+      await set(
+        { quote: other, inferred: false, params: { senderDomains: ["pending.example"] } },
+        "call-pending-said",
+      );
+      const after = (await proposalsQuery(context)).payload.proposals.filter(
+        (item) => item.proposalId === before?.proposalId,
+      );
+      expect(after).toHaveLength(1);
+      expect(after[0]?.origin).toBe("owner_said");
+    });
+
+    it("does not queue a proposal for a rule that is already enforced even when it is worded differently", async () => {
+      const { context, set, inferred } = await prepared();
+      const proposal = await inferred("same.example");
+      await respond(context, proposal["proposalId"], "adopt", "adopt-same");
+      const again = await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["same.example"] },
+        },
+        "call-same-reworded",
+      );
+      expect(again).toMatchObject({ status: "active" });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+    });
+
+    it("takes waiting proposals for the same rule off the list once that rule is enforced", async () => {
+      const { context, set, inferred } = await prepared();
+      const first = await inferred("twin.example");
+      await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["twin.example"] },
+        },
+        "call-twin-reworded",
+      );
+      await inferred("apart.example");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(3);
+      await respond(context, first["proposalId"], "adopt", "adopt-twin");
+      const left = (await proposalsQuery(context)).payload;
+      expect(left.pendingCount).toBe(1);
+      expect(await context.ruleWriter.list()).toHaveLength(1);
+    });
+
+    it("still adopts the proposal when tidying the other waiting proposals fails", async () => {
+      const { context, inferred } = await prepared();
+      const proposal = await inferred("tidy.example");
+      const store = context.repository.ownerProposals();
+      const writer = context.ruleWriterWith({
+        proposals: {
+          ...store,
+          listPending: async () => {
+            throw new Error("list failed");
+          },
+        },
+      });
+      const receipt = await writer.confirm(proposal["proposalId"] as string);
+      expect(receipt.status).toBe("active");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      const twin = await inferred("tidy-two.example");
+      await context.ruleWriter.create({
+        key: "tidy-two-reworded",
+        quote: "入管局相关的邮件",
+        inferred: true,
+        type: "mail_must_notify",
+        params: { senderDomains: ["tidy-two.example"] },
+        summary: "另一种说法",
+        threadId: THREAD_ID,
+      });
+      let decisions = 0;
+      const second = context.ruleWriterWith({
+        proposals: {
+          ...store,
+          decide: async (input) => {
+            if (decisions++ > 0) throw new Error("decide failed");
+            return store.decide(input);
+          },
+        },
+      });
+      expect((await second.confirm(twin["proposalId"] as string)).status).toBe("active");
+      expect(decisions).toBe(2);
+      await expect(context.box.reject(proposal["proposalId"] as string)).rejects.toMatchObject({
+        code: "PROPOSAL_ACCEPTED",
+      });
+    });
+
+    it("removes the basis of a refused or expired proposal, tidies a leftover card when the list is read, and shows only clean text", async () => {
+      const { context, set, inferred } = await prepared();
+      const stored = () => {
+        const found: { ref: string | null; kept: number }[] = [];
+        context.sql((database) => {
+          for (const row of database
+            .prepare(
+              `SELECT evidence_ref AS ref,
+                 (SELECT COUNT(*) FROM payloads WHERE payloads.ref = evidence_ref) AS kept
+               FROM owner_proposals ORDER BY proposed_at, id`,
+            )
+            .all() as { ref: string | null; kept: number }[])
+            found.push(row);
+        });
+        return found;
+      };
+      const payloadCount = () => {
+        let count = 0;
+        context.sql((database) => {
+          count = (
+            database
+              .prepare("SELECT COUNT(*) AS n FROM payloads WHERE ref LIKE 'rule-proposal:%'")
+              .get() as { n: number }
+          ).n;
+        });
+        return count;
+      };
+      const refused = await inferred("refused.example");
+      expect(stored()).toMatchObject([{ kept: 1 }]);
+      await context.box.reject(refused["proposalId"] as string);
+      expect(stored()).toEqual([{ ref: null, kept: 0 }]);
+      expect(payloadCount()).toBe(0);
+
+      await set(
+        {
+          quote: "入管局\u202e相关的邮件",
+          inferred: true,
+          params: { senderDomains: ["bidi.example"] },
+        },
+        "call-bidi",
+      );
+      const shown = (await proposalsQuery(context)).payload.proposals;
+      expect(shown.map((item) => item.quote)).toEqual(["入管局相关的邮件"]);
+
+      const broken = "rule-proposal:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+      await context.protect(
+        broken,
+        JSON.stringify({
+          evidence: [
+            { kind: "owner_words", text: "原话", sources: "x", figures: [{ name: "n" }] },
+            "junk",
+            { text: "没有种类" },
+          ],
+          data: "not-a-rule",
+        }),
+      );
+      await context.repository.ownerProposals().propose({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        proposalId: broken,
+        type: "owner_rule",
+        summary: "坏依据",
+        effect: "坏依据",
+        origin: "inferred",
+        threadId: null,
+        sourceRef: null,
+        sourceVersion: null,
+        fingerprint: "e".repeat(64),
+        evidenceRef: broken,
+        now: T0,
+        expiresAt: "2026-11-24T12:00:00.000Z",
+        pendingLimit: 20,
+      });
+      expect(
+        (await proposalsQuery(context)).payload.proposals.find(
+          (item) => item.proposalId === broken,
+        ),
+      ).toMatchObject({
+        quote: "原话",
+        evidence: [{ kind: "owner_words", text: "原话", sources: [], figures: [] }],
+      });
+
+      const store = context.repository.ownerProposals();
+      const first = await inferred("left.example");
+      await set(
+        {
+          quote: "入管局相关的邮件",
+          inferred: true,
+          summary: "另一种说法",
+          params: { senderDomains: ["left.example"] },
+        },
+        "call-left-reworded",
+      );
+      const untidy = context.ruleWriterWith({
+        proposals: {
+          ...store,
+          listPending: async () => {
+            throw new Error("list failed");
+          },
+        },
+      });
+      await untidy.confirm(first["proposalId"] as string);
+      let waiting = 0;
+      context.sql((database) => {
+        waiting = (
+          database
+            .prepare("SELECT COUNT(*) AS n FROM owner_proposals WHERE status = 'pending'")
+            .get() as { n: number }
+        ).n;
+      });
+      expect(waiting).toBe(3);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(2);
+
+      expect(() => context.ruleWriterWith({ proposalLimit: 201 })).toThrow(RangeError);
+      expect(() => context.ruleWriterWith({ proposalTtlDays: 0 })).toThrow(RangeError);
+      expect(() => context.ruleWriterWith({ proposalTtlDays: 3651 })).toThrow(RangeError);
+      await expect(
+        store.propose({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          proposalId: broken,
+          type: "owner_rule",
+          summary: "坏依据",
+          effect: "坏依据",
+          origin: "inferred",
+          threadId: null,
+          sourceRef: null,
+          sourceVersion: null,
+          fingerprint: "e".repeat(64),
+          evidenceRef: broken,
+          now: T0,
+          expiresAt: "2026-11-24T12:00:00.000Z",
+          pendingLimit: 201,
+        }),
+      ).rejects.toThrow("limit is invalid");
+      context.sql((database) => {
+        database
+          .prepare(
+            "DELETE FROM payloads WHERE ref IN (SELECT evidence_ref FROM owner_proposals WHERE status = 'pending' AND summary = '入管局的邮件一律提醒')",
+          )
+          .run();
+      });
+      expect(payloadCount()).toBe(3);
+      await set(
+        {
+          quote: "入管局\u202e相关的邮件",
+          inferred: true,
+          params: { senderDomains: ["bidi.example"] },
+        },
+        "call-bidi-repaired",
+      );
+      expect(stored().filter((row) => row.ref !== null && row.kept === 0)).toEqual([]);
+      expect(payloadCount()).toBe(4);
+
+      context.clock.value = new Date(Date.parse(T0) + 31 * 86_400_000).toISOString();
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      expect(stored().filter((row) => row.kept > 0)).toHaveLength(2);
+      expect(stored().filter((row) => row.ref === null)).toHaveLength(3);
+      expect(payloadCount()).toBe(2);
+      await inferred("repeat.example");
+      await inferred("repeat.example", "call-repeat-again");
+      expect(payloadCount()).toBe(3);
+    });
+
+    it("holds a proposal that has nothing to do with mail or rules: listed with its basis, refusable, and not adoptable until something registers for its type", async () => {
+      const { context } = await prepared();
+      const proposalId = `next-step:${"7".repeat(32)}`;
+      const propose = (
+        data: unknown = { query: "新款手机" },
+        source?: { ref: string; version: string | null },
+      ) =>
+        context.box.propose({
+          ...(source ? { source } : {}),
+          proposalId,
+          type: "price_search",
+          summary: "要不要我去查哪个平台的新款手机最便宜",
+          effect: "采纳后我会去几个购物平台比价，把结果发给你",
+          origin: "inferred",
+          threadId: THREAD_ID,
+          evidence: [
+            {
+              kind: "watched_video",
+              text: "你看了一个讲新款手机的视频",
+              sources: [
+                { kind: "web_page", ref: "https://video.example/watch?v=1" },
+                { kind: "thread", ref: THREAD_ID },
+              ],
+              figures: [{ name: "minutes", value: 14, definition: "这个视频你看了多少分钟" }],
+            },
+          ],
+          data,
+        });
+      await propose();
+      const listed = (await proposalsQuery(context)).payload;
+      expect(listed.pendingCount).toBe(1);
+      expect(listed.proposals[0]).toMatchObject({
+        proposalId,
+        type: "price_search",
+        summary: "要不要我去查哪个平台的新款手机最便宜",
+        effect: "采纳后我会去几个购物平台比价，把结果发给你",
+        origin: "inferred",
+        adoptable: false,
+        evidence: [
+          {
+            kind: "watched_video",
+            text: "你看了一个讲新款手机的视频",
+            sources: [
+              { kind: "web_page", ref: "https://video.example/watch?v=1" },
+              { kind: "thread", ref: THREAD_ID },
+            ],
+            figures: [{ name: "minutes", value: 14, definition: "这个视频你看了多少分钟" }],
+          },
+        ],
+      });
+      const first = {
+        version: listed.proposals[0]?.version,
+        fingerprint: listed.proposals[0]?.fingerprint,
+      };
+      expect(first).toEqual({ version: 1, fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u) });
+      await propose();
+      expect((await proposalsQuery(context)).payload.proposals[0]).toMatchObject(first);
+      await propose({ query: "新款手机 256GB" }, { ref: "video:1", version: "2026-11-12" });
+      const changed = (await proposalsQuery(context)).payload.proposals[0];
+      expect(changed?.version).toBe(2);
+      expect(changed?.fingerprint).not.toBe(first.fingerprint);
+      expect(await context.box.read(proposalId)).toMatchObject({
+        sourceRef: "video:1",
+        sourceVersion: "2026-11-12",
+      });
+      const before = counts(context);
+      for (const action of ["adopt", "reject"])
+        await expect(
+          respond(context, proposalId, action, `stale-${action}`, first as never),
+        ).rejects.toThrow("PROPOSAL_CHANGED");
+      await expect(
+        respond(context, proposalId, "reject", "wrong-fingerprint", {
+          version: 2,
+          fingerprint: first.fingerprint as string,
+        }),
+      ).rejects.toThrow("PROPOSAL_CHANGED");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      await expect(respond(context, proposalId, "adopt", "adopt-other")).rejects.toThrow(
+        "PROPOSAL_TYPE_NOT_ADOPTABLE",
+      );
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+      expect(counts(context)).toEqual(before);
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposalId, action: "confirm" },
+          "confirm-other",
+        ),
+      ).rejects.toThrow("RULE_NOT_FOUND");
+      await expect(
+        command(
+          context.control,
+          "memory.rule.respond",
+          { target: proposalId, action: "reject" },
+          "reject-through-rules",
+        ),
+      ).rejects.toThrow("MEMORY_RULE_ACTION_UNSUPPORTED");
+      await expect(respond(context, proposalId, "postpone", "unknown-action")).rejects.toThrow(
+        "PROPOSAL_ACTION_UNKNOWN",
+      );
+      expect(await respond(context, proposalId, "reject", "reject-other")).toMatchObject({
+        replayed: false,
+      });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      expect(counts(context)).toEqual(before);
+
+      await propose();
+      const adopted: unknown[] = [];
+      context.box.register("price_search", {
+        adopt: async ({ data }) => {
+          adopted.push(data);
+          return { resultRef: "price-search:1" };
+        },
+      });
+      expect((await proposalsQuery(context)).payload.proposals[0]).toMatchObject({
+        adoptable: true,
+        refusedBefore: 1,
+      });
+      expect(await respond(context, proposalId, "adopt", "adopt-registered")).toMatchObject({
+        resultRef: "price-search:1",
+      });
+      expect(adopted).toEqual([{ query: "新款手机" }]);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      await expect(respond(context, proposalId, "adopt", "adopt-again")).rejects.toThrow(
+        "PROPOSAL_ACCEPTED",
+      );
+      expect(adopted).toHaveLength(1);
+
+      const wideId = `next-step:${"8".repeat(32)}`;
+      const wide = (over: Record<string, unknown> = {}) =>
+        context.box.propose({
+          proposalId: wideId,
+          type: "price_search",
+          summary: "😀".repeat(100),
+          effect: "\u202e  采纳后去比价",
+          origin: "external_agent",
+          threadId: null,
+          evidence: [
+            { kind: "\u202e", text: "只有控制符的种类", sources: [], figures: [] },
+            { kind: "note", text: "\u202e", sources: [], figures: [] },
+          ],
+          data: { query: "宽字符" },
+          ...over,
+        } as never);
+      for (const invalid of [
+        { summary: "\u202e \u0007" },
+        { effect: "" },
+        { type: "t".repeat(65) },
+        { summary: "长".repeat(201) },
+        { summary: "😀".repeat(101) },
+        { effect: "长".repeat(201) },
+        { type: "price\u202esearch" },
+        { proposalId: "not-an-id" },
+      ])
+        await expect(wide(invalid)).rejects.toMatchObject({ code: "PROPOSAL_INVALID" });
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      await wide();
+      const shown = (await proposalsQuery(context)).payload.proposals[0];
+      expect(shown).toMatchObject({
+        summary: "😀".repeat(100),
+        effect: "采纳后去比价",
+        evidence: [{ kind: "note", text: null }],
+      });
+      await wide();
+      expect(
+        await respond(context, wideId, "adopt", "adopt-after-same-content", {
+          version: shown?.version as number,
+          fingerprint: shown?.fingerprint as string,
+        }),
+      ).toMatchObject({ resultRef: "price-search:1" });
+      expect(adopted).toEqual([{ query: "新款手机" }, { query: "宽字符" }]);
+    });
+
+    it("keeps the old basis and the old state when writing the new basis fails", async () => {
+      const { context, inferred } = await prepared();
+      const first = await inferred("fail.example");
+      const id = first["proposalId"] as string;
+      await context.box.reject(id);
+      const real = context.ruleWriterWith();
+      let failures = 1;
+      const failing = context.ruleWriterWith({
+        protector: {
+          protect: async (input: Parameters<typeof context.protector.protect>[0]) => {
+            if (failures-- > 0) throw new Error("protect failed");
+            return context.protector.protect(input);
+          },
+          unprotect: (input: Parameters<typeof context.protector.unprotect>[0]) =>
+            context.protector.unprotect(input),
+        } as never,
+      });
+      await expect(
+        failing.create({
+          key: "fail-key",
+          quote: sentence,
+          inferred: true,
+          type: "mail_must_notify",
+          params: { senderDomains: ["fail.example"] },
+          summary: "入管局的邮件一律提醒",
+          threadId: THREAD_ID,
+        }),
+      ).rejects.toThrow("protect failed");
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(0);
+      await expect(real.confirm(id)).rejects.toMatchObject({ code: "RULE_PROPOSAL_REJECTED" });
+      await inferred("fail.example", "call-fail-again");
+      const back = (await proposalsQuery(context)).payload.proposals;
+      expect(back).toHaveLength(1);
+      expect(back[0]?.quote).toBe(sentence);
+    });
+
+    it("lets an adopted card be adopted again after its rule was undone, even when the list is full", async () => {
+      const { context, set } = await prepared();
+      const small = new ProductionOwnerRuleTools(context.ruleWriterWith({ proposalLimit: 1 }));
+      const first = await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["card.example"] } },
+        "call-card",
+        small,
+      );
+      const writer = context.ruleWriterWith({ proposalLimit: 1 });
+      await writer.confirm(first["proposalId"] as string);
+      await context.ruleWriter.undo((await context.ruleWriter.list())[0]?.ruleId ?? "");
+      await set(
+        { quote: sentence, inferred: true, params: { senderDomains: ["filler.example"] } },
+        "call-filler",
+        small,
+      );
+      const receipt = await writer.confirm(first["proposalId"] as string);
+      expect(receipt.status).toBe("active");
+    });
+
+    it("adopts a proposal whose source conversation is gone, without pointing the memory at it", async () => {
+      const { context, inferred } = await prepared();
+      const proposal = await inferred("gone.example");
+      context.sql((database) => {
+        database.prepare("UPDATE owner_proposals SET thread_id = NULL").run();
+      });
+      const receipt = await context.ruleWriter.confirm(proposal["proposalId"] as string);
+      expect(
+        await context.repository.productMemoryState().read(receipt.memoryId as never),
+      ).toMatchObject({ sourceThreadId: null });
+    });
+
+    it("tells proposals from two agents of one owner apart", async () => {
+      const { context, inferred } = await prepared();
+      context.sql((database) => {
+        database
+          .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+          .run("agent-second", OWNER_ID);
+      });
+      const second = context.ruleWriterWith({
+        configuration: { ownerId: OWNER_ID, agentId: createAgentId("agent-second") },
+      });
+      const mine = await inferred("shared.example");
+      const theirs = await second.create({
+        key: "second-key",
+        quote: sentence,
+        inferred: true,
+        type: "mail_must_notify",
+        params: { senderDomains: ["shared.example"] },
+        summary: "入管局的邮件一律提醒",
+        threadId: null,
+      });
+      expect(theirs.proposalId).not.toBe(mine["proposalId"]);
+      expect((await proposalsQuery(context)).payload.pendingCount).toBe(1);
+    });
   });
 
   it("[P4-1] flags a three-level chain after an edit, leaves an unrelated memory alone, suspends the rule whose source changed and counts what the Owner agreed with", async () => {
@@ -2589,6 +3993,7 @@ describe("production memory capture", () => {
     });
     const model: ProactiveModelInvoker = {
       modelRef: "stub-flash",
+      allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
       model: {
         listAvailable: async () => [],
         async *invoke(request) {
@@ -3722,6 +5127,152 @@ describe("production memory capture", () => {
         .filter(({ importBatchId }) => importBatchId === "memory-import-sensitive-1")
         .map(({ dataClassification }) => dataClassification),
     ).toEqual(["sensitive"]);
+  });
+
+  it("[A4] judges an imported entry against the owner's private memories with the model and never compares words", async () => {
+    const context = await setup(
+      "请记住，我对乳制品不耐受。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人对乳制品不耐受","classification":"private","confidence":950,"explicit":true,"quote":"我对乳制品不耐受"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-d1", "喝不了牛奶");
+    await context.protect("payload-d2", "对乳制品不耐受，每次喝都难受");
+    await context.protect("payload-d3", "我的身份证号是 110101199003071234");
+    await context.protect("payload-d4", "我得了抑郁症", "sensitive");
+    const duplicates = async (contentRefs: readonly string[]) => {
+      const snapshot = await context.control.query({
+        ...envelope,
+        kind: "query",
+        type: "memory.import.duplicates.read",
+        payload: { contentRefs },
+      } as never);
+      if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+      return snapshot.payload.items.map(({ contentRef, verdict, memoryId }) => [
+        contentRef,
+        verdict,
+        memoryId === null ? null : memoryId.length > 0,
+      ]);
+    };
+    context.duplicateAnswers.push(
+      { matchKey: "m0", probabilityPermille: 920 },
+      { matchKey: null, probabilityPermille: 0 },
+    );
+    expect(await duplicates(["payload-d1", "payload-d2", "payload-d3", "payload-d4"])).toEqual([
+      ["payload-d1", "same", true],
+      ["payload-d2", "different", null],
+      ["payload-d3", "skipped", null],
+      ["payload-d4", "skipped", null],
+    ]);
+    expect(context.duplicateRequests).toHaveLength(1);
+    const request = context.duplicateRequests[0];
+    expect(request?.existing.map(({ text }) => text)).toEqual(["主人对乳制品不耐受"]);
+    expect(request?.candidates.map(({ text }) => text)).toEqual([
+      "喝不了牛奶",
+      "对乳制品不耐受，每次喝都难受",
+    ]);
+    expect(JSON.stringify(context.duplicateRequests)).not.toContain("抑郁症");
+    await context.protect("payload-d5", "我最近总睡不好");
+    context.classifyOutputs.push(
+      JSON.stringify({
+        items: [{ id: "0", category: "health", classification: "sensitive", topic: "health" }],
+      }),
+    );
+    await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.classify.read",
+      payload: { contentRefs: ["payload-d5"] },
+    } as never);
+    const before = context.duplicateRequests.length;
+    expect(await duplicates(["payload-d5"])).toEqual([["payload-d5", "skipped", null]]);
+    expect(context.duplicateRequests).toHaveLength(before);
+  });
+
+  it("[A4] never calls an entry different when older memories were left out of the comparison", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-t1", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-two",
+        source: "assistant",
+        items: [{ contentRef: "payload-t1", category: "other", subCategory: null, topic: null }],
+      },
+      "import-two",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    await context.protect("payload-t2", "喜欢吃辣");
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-t2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
+  });
+
+  it("[A4] reports skipped when every existing memory is sensitive, and never counts them against the limit", async () => {
+    const context = await setup(
+      "我月薪三万。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-s1", "我每周日去教堂", "sensitive");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-sensitive-only",
+        source: "assistant",
+        items: [
+          { contentRef: "payload-s1", category: "other", subCategory: null, topic: "beliefs" },
+        ],
+      },
+      "import-sensitive-only",
+    );
+    await context.protect("payload-s2", "喜欢蓝色");
+    const snapshot = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (snapshot.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(snapshot.payload.items.map(({ verdict }) => verdict)).toEqual(["skipped"]);
+    expect(context.duplicateRequests).toHaveLength(0);
+    await context.protect("payload-s3", "每周跑三次步");
+    await command(
+      context.control,
+      "memory.import.commit",
+      {
+        batchId: "memory-import-a-private",
+        source: "assistant",
+        items: [{ contentRef: "payload-s3", category: "other", subCategory: null, topic: null }],
+      },
+      "import-a-private",
+    );
+    context.duplicateSettings.maximumExistingMemories = 1;
+    context.duplicateAnswers.push({ matchKey: null, probabilityPermille: 0 });
+    const limited = await context.control.query({
+      ...envelope,
+      kind: "query",
+      type: "memory.import.duplicates.read",
+      payload: { contentRefs: ["payload-s2"] },
+    } as never);
+    if (limited.type !== "memory.import.duplicates.snapshot") throw new Error("snapshot");
+    expect(limited.payload.items.map(({ verdict }) => verdict)).toEqual(["different"]);
+    expect(context.duplicateRequests[0]?.existing).toHaveLength(1);
   });
 
   it("[T5] sorts hand-added memories with the model, keeps identifiers away from it and treats a broken answer as sensitive", async () => {

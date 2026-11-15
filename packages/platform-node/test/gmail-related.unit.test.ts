@@ -1,4 +1,4 @@
-import type { ProactiveSourceItem } from "@himawari-agent/application";
+import { flatMailReader, type ProactiveMail } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
   counterparts,
@@ -8,7 +8,7 @@ import {
 } from "../src/gmail-related.ts";
 import { createGmailReader, gmailItem } from "../src/gmail-source.ts";
 
-function item(id: string, overrides: Partial<ProactiveSourceItem> = {}): ProactiveSourceItem {
+function item(id: string, overrides: Partial<ProactiveMail> = {}): ProactiveMail {
   return {
     source: "gmail",
     messageId: id,
@@ -33,7 +33,7 @@ function item(id: string, overrides: Partial<ProactiveSourceItem> = {}): Proacti
 const limits = { perMail: 6, requestsPerCheck: 100, wholeThreadPerMail: 50 };
 
 function mailbox(
-  mails: readonly ProactiveSourceItem[],
+  mails: readonly ProactiveMail[],
   hooks: { onRequest?: () => void; failThread?: boolean } = {},
 ): GmailRelatedTransport {
   return {
@@ -352,10 +352,12 @@ describe("[PA-1] Gmail wiring", () => {
         );
       return new Response(JSON.stringify({}), { status: 200 });
     };
-    const reader = createGmailReader({
-      oauth: { accessToken: async () => "access-1" },
-      fetch,
-    });
+    const reader = flatMailReader(
+      createGmailReader({
+        oauth: { accessToken: async () => "access-1" },
+        fetch,
+      }),
+    );
     const current = item("new", { threadId: "t-1", subject: "Re: 返金について" });
     const result = await reader.related?.({
       token: "refresh",

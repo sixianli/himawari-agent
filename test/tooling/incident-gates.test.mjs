@@ -1,8 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkIncidentGates, INCIDENT_LIST } from "../../scripts/check-incident-gates.mjs";
+import {
+  checkIncidentGates,
+  INCIDENT_LIST,
+  openIncidentLines,
+} from "../../scripts/check-incident-gates.mjs";
 
 const roots = [];
 afterEach(() => {
@@ -96,6 +101,114 @@ describe("incident and gate list check", () => {
       "I-02",
       "I-03",
     ]);
+  });
+
+  it("lists every incident that is not closed by a gate, one short line each", () => {
+    const longSymptom = `${"很长的现象".repeat(40)}。第二句不显示`;
+    const root = fixture([
+      row({}),
+      row({ id: "I-02", state: "缺门槛", gate: "无", symptom: "第一句。第二句" }),
+      row({ id: "I-03", state: "仓库外", gate: "替代做法", symptom: "仓库外的现象" }),
+      row({ id: "I-04", state: "等 Andy", gate: "待定", symptom: longSymptom }),
+    ]);
+    const lines = openIncidentLines(checkIncidentGates({ root }).incidents);
+    expect(lines[0]).toBe("I-02 | 缺门槛 | 2026-10-28 | 第一句。");
+    expect(lines[1]).toBe("I-03 | 仓库外 | 2026-10-28 | 仓库外的现象");
+    expect(lines[2].startsWith("I-04 | 等 Andy | 2026-10-28 | 很长的现象")).toBe(true);
+    expect(lines[2].endsWith("…")).toBe(true);
+    expect(lines[2]).not.toContain("第二句");
+    expect(lines).toHaveLength(3);
+  });
+
+  it("cuts a long symptom after 80 characters without splitting a character in two", () => {
+    const exactly80 = "字".repeat(80);
+    const emojiAtTheCut = `${"字".repeat(79)}😀😀尾巴`;
+    const root = fixture([
+      row({ id: "I-01", state: "缺门槛", gate: "无", symptom: exactly80 }),
+      row({ id: "I-02", state: "缺门槛", gate: "无", symptom: emojiAtTheCut }),
+    ]);
+    const lines = openIncidentLines(checkIncidentGates({ root }).incidents);
+    expect(lines[0]).toBe(`I-01 | 缺门槛 | 2026-10-28 | ${exactly80}`);
+    expect(lines[1]).toBe(`I-02 | 缺门槛 | 2026-10-28 | ${"字".repeat(79)}😀…`);
+    expect(lines[1].isWellFormed()).toBe(true);
+  });
+
+  it("prints the repository's open incidents from the command line", () => {
+    const output = execFileSync("node", ["scripts/check-incident-gates.mjs", "--open"], {
+      encoding: "utf8",
+    });
+    const { incidents } = checkIncidentGates();
+    const open = incidents.filter((incident) => incident.state !== "已落门槛");
+    const outputLines = output.trimEnd().split("\n");
+    const rows = outputLines.filter((line) => /^I-\d/.test(line));
+    expect(rows.map((line) => line.split(" | ")[0])).toEqual(open.map((incident) => incident.id));
+    expect(outputLines.slice(-2)).toEqual([
+      `INCIDENT_OPEN count=${open.length} total=${incidents.length}`,
+      `INCIDENT_GATES passed incidents=${incidents.length} errors=0`,
+    ]);
+  });
+
+  it("says the open list is unavailable instead of printing a zero count when the list cannot be read", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-gates-"));
+    roots.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    copyFileSync(
+      "scripts/check-incident-gates.mjs",
+      join(root, "scripts/check-incident-gates.mjs"),
+    );
+    const run = () =>
+      spawnSync("node", [join(root, "scripts/check-incident-gates.mjs"), "--open"], {
+        encoding: "utf8",
+      });
+    const missing = run();
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toContain("INCIDENT_OPEN unavailable errors=1");
+    expect(missing.stdout).not.toContain("count=0");
+    writeFileSync(join(root, INCIDENT_LIST), "# 清单\n\n没有表格\n");
+    const noTable = run();
+    expect(noTable.status).toBe(1);
+    expect(noTable.stdout).toContain("INCIDENT_OPEN unavailable");
+    expect(noTable.stdout).not.toContain("count=0");
+  });
+
+  it("reports a list path that is a directory instead of crashing", () => {
+    const root = mkdtempSync(join(tmpdir(), "incident-gates-"));
+    roots.push(root);
+    mkdirSync(join(root, INCIDENT_LIST), { recursive: true });
+    expect(checkIncidentGates({ root })).toEqual({
+      incidents: [],
+      errors: [`INCIDENT_LIST_UNREADABLE ${INCIDENT_LIST}`],
+    });
+  });
+
+  it("refuses an argument it does not know instead of ignoring it", () => {
+    const result = spawnSync("node", ["scripts/check-incident-gates.mjs", "--Open"], {
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("INCIDENT_ARGUMENT_UNKNOWN --Open");
+    expect(result.stdout).toBe("");
+  });
+
+  it("withholds the open list when the list can be read but fails a check", () => {
+    const root = fixture([
+      row({}),
+      row({ id: "I-02", state: "缺门槛", gate: "无", symptom: "未结的现象" }),
+      row({ id: "I-03", state: "已落门槛", gate: "`scripts/missing-gate.mjs`" }),
+    ]);
+    copyFileSync(
+      "scripts/check-incident-gates.mjs",
+      join(root, "scripts/check-incident-gates.mjs"),
+    );
+    const result = spawnSync("node", [join(root, "scripts/check-incident-gates.mjs"), "--open"], {
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("INCIDENT_GATE_PATH_MISSING I-03 scripts/missing-gate.mjs");
+    expect(result.stdout).toContain("INCIDENT_OPEN unavailable errors=1");
+    expect(result.stdout).not.toContain("I-02");
+    expect(result.stdout).not.toContain("count=");
   });
 
   it("checks the repository's own list", () => {

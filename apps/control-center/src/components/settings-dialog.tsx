@@ -28,6 +28,7 @@ export function SettingsDialog({
   data,
   notifications,
   agents,
+  devices,
   personalization,
   account,
   initialTab = "general",
@@ -43,6 +44,7 @@ export function SettingsDialog({
   data?: ReactNode;
   notifications?: ReactNode;
   agents?: ReactNode;
+  devices?: ReactNode;
   personalization?: ReactNode;
   account?: ReactNode;
   initialTab?: string;
@@ -69,6 +71,7 @@ export function SettingsDialog({
               "personalization",
               "general",
               ...(notifications ? (["notifications"] as const) : []),
+              ...(devices ? (["devices"] as const) : []),
               "tools",
               ...(agents ? (["agents"] as const) : []),
               "data",
@@ -168,6 +171,8 @@ export function SettingsDialog({
             notifications
           ) : tab === "agents" ? (
             agents
+          ) : tab === "devices" ? (
+            devices
           ) : (
             data
           )}

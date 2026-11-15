@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testsMembers } from "./check-policy.mjs";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
 import { verifyInstalledTools } from "./install-tools.mjs";
@@ -25,9 +26,9 @@ export async function local({
 }) {
   if (!supportedPlatforms().includes(hostPlatform()))
     throw new Error("CI_LOCAL_PLATFORM_UNSUPPORTED");
-  if (check && !["policy", "static", "build", "coverage", "security"].includes(check))
+  if (check && !["policy", "static", "build", "tests", "tooling", "security"].includes(check))
     throw new Error("CI_LOCAL_CHECK_UNSUPPORTED");
-  if (!check || check === "build" || check === "coverage") artifactPlatformKey();
+  if (!check || check === "build" || check === "tests") artifactPlatformKey();
   if (!existsSync(path.join(toolsDirectory, "installation.json")))
     throw new Error("CI_LOCAL_TOOLS_REQUIRED: npm run ci:tools，然后使用 --tools 指定该目录");
   if (process.env.GITHUB_ACTIONS === "true")
@@ -69,7 +70,7 @@ export async function local({
     return result;
   };
   let built = artifact;
-  const requiresBuild = !check || check === "build" || (check === "coverage" && !built);
+  const requiresBuild = !check || check === "build" || (check === "tests" && !built);
   if (!check || check === "policy") await execute("policy");
   if (!check || check === "static") await execute("static");
   if (requiresBuild) {
@@ -79,7 +80,9 @@ export async function local({
   }
   if (!check && built)
     for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
-  if ((!check || check === "coverage") && built) await execute("coverage", "default", built);
+  if ((!check || check === "tests") && built)
+    for (const member of testsMembers) await execute("tests", member.key, built);
+  if (!check || check === "tooling") await execute("tooling");
   if (!check || check === "security") await execute("security");
   const summary = {
     schemaVersion: 1,

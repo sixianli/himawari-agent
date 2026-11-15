@@ -55,6 +55,7 @@ interface ThreadRow {
   readonly answerLocale: ProductThread["answerLocale"];
   readonly messageWatermark: number;
   readonly archivedAt: string | null;
+  readonly origin: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -136,7 +137,7 @@ interface ThreadGatewayEventRow {
 const THREAD_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revision, status,
   title_ref AS titleRef, title_source AS titleSource, title_revision AS titleRevision,
   pin_order AS pinOrder, answer_locale AS answerLocale,
-  message_watermark AS messageWatermark, archived_at AS archivedAt,
+  message_watermark AS messageWatermark, archived_at AS archivedAt, origin,
   created_at AS createdAt, updated_at AS updatedAt FROM threads`;
 
 const MESSAGE_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId,
@@ -345,6 +346,7 @@ export class SqliteThreadOperations {
       answerLocale: row.answerLocale,
       messageWatermark: row.messageWatermark,
       lineage: this.lineage(row.id),
+      ...(row.origin === "think" ? { origin: "think" as const } : {}),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -523,8 +525,8 @@ export class SqliteThreadOperations {
         `INSERT INTO threads (
           id, owner_id, agent_id, revision, status, title_ref, title_source,
           title_revision, pin_order, answer_locale, message_watermark,
-          archived_at, trashed_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          archived_at, trashed_at, created_at, updated_at, origin
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         thread.id,
@@ -542,6 +544,7 @@ export class SqliteThreadOperations {
         thread.status === "trashed" ? thread.updatedAt : null,
         thread.createdAt,
         thread.updatedAt,
+        thread.origin ?? "owner",
       );
   }
 
@@ -1089,7 +1092,7 @@ export class SqliteThreadOperations {
           `INSERT INTO triggers (
             id, owner_id, agent_id, thread_id, idempotency_key, source_type,
             source_id, payload_ref, source_proof_ref, occurred_at
-          ) VALUES (?, ?, ?, ?, ?, 'user_message', ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.triggerId,
@@ -1097,6 +1100,7 @@ export class SqliteThreadOperations {
           input.agentId,
           input.threadId,
           input.idempotencyKey,
+          input.triggerSource ?? "user_message",
           input.messageId,
           input.contentRef,
           input.sourceProofRef,
@@ -1430,7 +1434,7 @@ export class SqliteThreadOperations {
         cursor: query.afterThreadId,
       });
     }
-    const conditions = ["owner_id = ?", "agent_id = ?", lifecycle];
+    const conditions = ["owner_id = ?", "agent_id = ?", "origin = 'owner'", lifecycle];
     const parameters: unknown[] = [query.ownerId, query.agentId];
     if (query.pinnedOnly) conditions.push("pin_order IS NOT NULL");
     if (cursor?.pinOrder !== null && cursor?.pinOrder !== undefined) {
@@ -1815,6 +1819,10 @@ export class SqliteThreadOperations {
           event_type AS eventType, payload_ref AS payloadRef, occurred_at AS occurredAt
         FROM thread_gateway_events
         WHERE owner_id = ? AND agent_id = ? AND cursor_sequence > ?
+          AND NOT EXISTS (
+            SELECT 1 FROM threads AS hidden
+            WHERE hidden.id = thread_gateway_events.thread_id AND hidden.origin = 'think'
+          )
         ORDER BY cursor_sequence LIMIT ?`,
       )
       .all(ownerId, agentId, afterSequence, limit) as ThreadGatewayEventRow[];
@@ -1864,14 +1872,14 @@ export class SqliteThreadOperations {
         t.title_ref AS payloadRef, p.classification AS dataClassification,
         t.title_revision AS titleRevision, NULL AS messageId, NULL AS sequence
       FROM threads t JOIN payloads p ON p.ref=t.title_ref AND p.owner_id=t.owner_id AND p.agent_id=t.agent_id
-      WHERE t.owner_id=? AND t.agent_id=? AND t.status='open' AND p.lifecycle_state='active' AND p.content_type='text/plain'
+      WHERE t.owner_id=? AND t.agent_id=? AND t.status='open' AND t.origin='owner' AND p.lifecycle_state='active' AND p.content_type='text/plain'
         AND NOT EXISTS (SELECT 1 FROM thread_title_search_projection s WHERE s.thread_id=t.id AND s.title_revision=t.title_revision AND s.projection_version=?)
       UNION ALL
       SELECT 'message', m.owner_id, m.agent_id, m.thread_id, m.content_ref, m.classification,
         NULL, m.id, m.sequence
       FROM thread_messages m JOIN threads t ON t.id=m.thread_id AND t.owner_id=m.owner_id AND t.agent_id=m.agent_id
         JOIN payloads p ON p.ref=m.content_ref AND p.owner_id=m.owner_id AND p.agent_id=m.agent_id
-      WHERE m.owner_id=? AND m.agent_id=? AND t.status='open' AND m.message_status='committed'
+      WHERE m.owner_id=? AND m.agent_id=? AND t.status='open' AND t.origin='owner' AND m.message_status='committed'
         AND p.lifecycle_state='active' AND p.content_type='text/plain'
         AND NOT EXISTS (SELECT 1 FROM thread_search_projection s WHERE s.thread_id=m.thread_id AND s.message_id=m.id AND s.projection_version=?)
       LIMIT ?`)
@@ -2020,6 +2028,7 @@ export class SqliteThreadOperations {
       "tokens.agent_id = ?",
       "tokens.projection_version = ?",
       `tokens.token_ref IN (${placeholders})`,
+      "current_thread.origin = 'owner'",
       lifecycle,
     ];
     const parameters: unknown[] = [

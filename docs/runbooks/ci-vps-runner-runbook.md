@@ -64,7 +64,7 @@ date: "2026-11-07"
 - 服务不在 `/proc` 下加任何挂载，所以不设 `ProtectKernelTunables`、`ProtectKernelLogs`，`ReadOnlyPaths`、`InaccessiblePaths` 里也不写 `/proc` 下的路径：项目沙箱要给自己新挂一份 `/proc`，VPS 的内核遇到这类挂载会拒绝，沙箱就起不来（原因和复现见 [ADR 0176](../adr/0176-ci-on-ovh-vps.md#decision) 决定第 6 条）。
 - 防火墙规则只对这几个 runner 账号生效（一条规则同时匹配这几个账号的 uid）：拒绝它访问私有网段（`10/8`、`100.64/10`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）和 `169.254.0.0/16`（云主机的元数据服务地址），以及本机任何地址（回环地址、公网 IPv4 和 IPv6 都算，规则写作 `fib daddr type local`）上端口名单里的 TCP 端口（DNS 的 53 端口除外）。名单在每次生成规则时取当时在监听的端口，再加上上一份规则里已有的端口。访问互联网不受影响。防火墙不管 UDP 和本机的 Unix 套接字（同一台机器上进程之间通信用的文件形式的接口）：Unix 套接字靠文件权限挡住，Docker 的控制接口另外被藏起来。
 - 同一个 runner 上的所有任务都以同一个账号运行，所以一个任务能读到这个 runner 自己的注册凭证，也能改 runner 的安装文件和后面任务的残留。仓库是私有的，只有 Andy 和他自己的代理线程会推送，所以接受这一点。这也是所有 runner 都不给 docker 组的原因：docker 组等于 root，一个任务就能拿到整台机器。怀疑 runner 被改过时，按 [Rollback](#rollback) 完整卸载后重新安装、注册；只重新运行安装脚本不会重新解压 runner。
-- VPS 只跑 CI，所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个检查 runner 内存最多 15 GB（`MemoryHigh=14G`、`MemoryMax=15G`），不用交换分区，最多 2048 个进程。三个检查 runner 的服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 18 GB（`MemoryHigh=17G`、`MemoryMax=18G`），最多 6144 个进程。汇总 runner 单独放在 `ghgate.slice` 里：预留 2 GB（`MemoryMin=2G`，检查任务把内存吃满时系统也不会先回收它这一份），上限也是 2 GB，最多 1024 个进程。这个分组的名字不带短横线，因为 systemd 把名字里的短横线当成上下级（`gh-runners.slice` 实际挂在 `gh.slice` 下面），而预留内存要每一级上级都设了才生效。两个分组合计 20 GB，留出的约 2 GB 让 ssh 在 runner 用满自己的内存时仍能登录。
+- VPS 只跑 CI，所以 runner 不限 CPU，CPU 和磁盘优先级用系统默认。每个检查 runner 内存最多 15 GB（`MemoryHigh=14G`、`MemoryMax=15G`），不用交换分区，最多 2048 个进程。三个检查 runner 的服务都放在 `gh-runners.slice`（把几个服务放进同一个资源分组、一起设上限的单元）里，合计内存最多 16 GB（`MemoryHigh=15G`、`MemoryMax=16G`），最多 6144 个进程。汇总 runner 单独放在 `ghgate.slice` 里：预留 2 GB（`MemoryMin=2G`，检查任务把内存吃满时系统也不会先回收它这一份），上限 4 GB（`MemoryHigh=3G`、`MemoryMax=4G`；2026-11-14 收报告时在 2 GB 上限处被系统按内存超限杀掉，所以调大），最多 1024 个进程。这个分组的名字不带短横线，因为 systemd 把名字里的短横线当成上下级（`gh-runners.slice` 实际挂在 `gh.slice` 下面），而预留内存要每一级上级都设了才生效。两个分组合计 20 GB，留出的约 2 GB 让 ssh 在 runner 用满自己的内存时仍能登录。
 - 每个任务开始前检查 runner 目录所在磁盘（就是根盘）的可用空间，低于 16 GiB（几个检查任务可能同时占盘，汇总任务占得很少）或读不出数字时都拒绝这个任务；任务结束后删除它的检出和 `_work/_temp`；每小时的定时清理删除三天前的 `_work` 残留和 14 天前的 runner 诊断日志，哪个 runner 有任务在跑就跳过它，查不出有没有任务时也跳过并以退出码 1 结束；共享目录里超过 6 小时没变的运行目录（汇总作业被取消或 runner 崩溃时留下的）不论有没有任务都删掉。
 
 [↑ 返回阅读导航](#contents)
@@ -107,7 +107,7 @@ date: "2026-11-07"
 4. 服务状态：`systemctl is-active gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service gh-runner-nft.service gh-runner-clean.timer`，六个都应是 `active`（第 3 个检查 runner 还没装时没有 `gh-runner-3.service`，汇总 runner 还没装时没有 `gh-runner-gate.service`，其余应是 `active`）。
 5. 用户没有多余的组：`id gh-runner`、`id gh-runner-2`、`id gh-runner-3`、`id gh-runner-gate` 各自只列出自己的一个组。共享目录在：`stat -c '%a %U %G' /srv/gh-runner-share` 是 `2770 root gh-ci-share`。
 6. 防火墙表在：`sudo -n nft list table inet gh_runner` 里有 `fib daddr type local`。
-7. 限额生效：`systemctl show gh-runner.service gh-runner-2.service gh-runner-3.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，三个都应为 `Slice=gh-runners.slice`、`MemoryHigh=15032385536`、`MemoryMax=16106127360`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh`、`/srv/gh-runner-2/runner/bin/runsvc.sh` 和 `/srv/gh-runner-3/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=18253611008`、`MemoryMax=19327352832`、`MemorySwapMax=0`、`TasksMax=6144`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。汇总 runner：`systemctl show gh-runner-gate.service -p Slice -p MemoryMin -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p ExecStart` 应为 `Slice=ghgate.slice`、`MemoryMin=2147483648`、`MemoryHigh=2147483648`、`MemoryMax=2147483648`、`MemorySwapMax=0`、`TasksMax=1024`，启动命令是 `/srv/gh-runner-gate/runner/bin/runsvc.sh`；`systemctl show ghgate.slice -p MemoryMin -p MemoryMax` 应为 `MemoryMin=2147483648`、`MemoryMax=2147483648`；`cat /sys/fs/cgroup/ghgate.slice/memory.min` 应为 `2147483648`（确认预留真的写进了内核）。
+7. 限额生效：`systemctl show gh-runner.service gh-runner-2.service gh-runner-3.service -p Slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p Nice -p ExecStart`，三个都应为 `Slice=gh-runners.slice`、`MemoryHigh=15032385536`、`MemoryMax=16106127360`、`MemorySwapMax=0`、`TasksMax=2048`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`、`Nice=0`，启动命令分别是 `/srv/gh-runner/runner/bin/runsvc.sh`、`/srv/gh-runner-2/runner/bin/runsvc.sh` 和 `/srv/gh-runner-3/runner/bin/runsvc.sh`；`systemctl show gh-runners.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight` 应为 `MemoryHigh=16106127360`、`MemoryMax=17179869184`、`MemorySwapMax=0`、`TasksMax=6144`、`CPUQuotaPerSecUSec=infinity`、`CPUWeight=[not set]`、`IOWeight=[not set]`。汇总 runner：`systemctl show gh-runner-gate.service -p Slice -p MemoryMin -p MemoryHigh -p MemoryMax -p MemorySwapMax -p TasksMax -p ExecStart` 应为 `Slice=ghgate.slice`、`MemoryMin=2147483648`、`MemoryHigh=3221225472`、`MemoryMax=4294967296`、`MemorySwapMax=0`、`TasksMax=1024`，启动命令是 `/srv/gh-runner-gate/runner/bin/runsvc.sh`；`systemctl show ghgate.slice -p MemoryMin -p MemoryMax` 应为 `MemoryMin=2147483648`、`MemoryMax=4294967296`；`cat /sys/fs/cgroup/ghgate.slice/memory.min` 应为 `2147483648`（确认预留真的写进了内核）。
 8. GitHub 上的状态（在 Mac 上运行）：`gh api repos/sixianli/himawari-agent/actions/runners --jq '.runners[]|{id,name,status,busy,labels:[.labels[].name]}'`，应看到 `ci-vps-1`、`ci-vps-2`、`ci-vps-3`、`ci-vps-gate` 都为 `online`；`ci-vps-1`、`ci-vps-2`、`ci-vps-3` 的标签里有 `ci-vps`、没有 `ci-vps-gate`（应急期间 `ci-vps-1` 会多带一个，见[应急](#gate-fallback)），`ci-vps-gate` 的标签里有 `ci-vps-gate`、没有 `ci-vps`。
 9. 有没有任务在跑：`pgrep -u gh-runner -x Runner.Worker; pgrep -u gh-runner-2 -x Runner.Worker; pgrep -u gh-runner-3 -x Runner.Worker; pgrep -u gh-runner-gate -x Runner.Worker`，有输出就是有任务。
 
@@ -134,7 +134,7 @@ date: "2026-11-07"
 3. `sudo bash /home/ubuntu/ci-runner/install-runner.sh`。脚本会：确认主机名是 `ci-vps`（否则以退出码 68 拒绝）；把要改动的服务文件、slice、`/etc/gh-runner/`、窄 sudo 规则和各个 runner 的 `hooks/` 目录复制到 `/var/backups/gh-runner/<时间>/`，并记下哪些原来不存在；之后任何一步失败或脚本被中断（`Ctrl-C`、`TERM`、`HUP`），都会把原有的放回、把这次新建的文件、用户、组和目录删掉，撤销这次新启用的开机启动，重新加载防火墙规则，并打印 `INSTALL_FAILED`；某一步出错时，先打印一行 `INSTALL_STEP_FAILED line <行号> exit <退出码>: <出错的命令>`，指出是哪一步；回滚期间忽略 `PIPE` 信号（读输出的一方已退出时系统发出的信号），所以标准错误被关掉、或接收输出的程序已经退出时，回滚也会放回全部文件，不会中途停下；有放不回去的会打印 `RESTORE_INCOMPLETE`，列出是哪几项和备份目录；建 `gh-runner`、`gh-runner-2`、`gh-runner-3`、`gh-runner-gate` 四个用户（已有额外组时以退出码 67 拒绝；已有这个用户但没有它的 `runner` 目录时以退出码 69 拒绝），建系统组 `gh-ci-share` 和共享目录 `/srv/gh-runner-share`（`2770`，属主 root；组不存在而目录已存在时以退出码 71 拒绝，不接管别人建的目录），建四个 runner 的目录，没装过 runner 的下载 2.338.2 并核对 SHA-256，装钩子、两个 slice 和服务（服务文件每次都全部重新生成，所以给已有的机器加 runner 时，原有 runner 的服务文件也会换成新的），按端口名单和现存的 runner 账号生成防火墙规则并先用 `nft -c` 检查，生成窄 sudo 规则，加载防火墙规则，启用防火墙服务和每小时清理定时器。成功时打印 `INSTALL_OK`，同时打印共享目录、 runner 账号的 uid、拦住的本机端口和备份目录。
 4. 重装时最后在 Mac 上运行 `resume-runners.sh`；第一次安装要先按[注册](#register)注册。
 5. 在已经有两个检查 runner 的机器上加汇总 runner：第 2 步暂停，第 1 步上传，第 3 步安装（看到 `INSTALL_OK`，`runner_uids` 里有四个 uid：安装脚本按 `runners.sh` 的名单一起建好第 3 个检查 runner 的账号和服务，只是不注册），按[注册](#register)注册汇总 runner（`register-runner.sh 3`），再运行 `resume-runners.sh`，最后按 [Live-State Preflight](#live-state-preflight) 第 4、5、7、8 项核对。恢复脚本只给已注册的 runner 加标签，所以要先注册再恢复。
-6. 加第 3 个检查 runner `ci-vps-3`（编号 6，账号 `gh-runner-3`，目录 `/srv/gh-runner-3/`，服务 `gh-runner-3.service`，标签 `ci-vps`，和前两个检查 runner 共用 `gh-runners.slice` 的 18 GB 内存池）：做法同第 5 条，注册时用 `register-runner.sh 6`。2026-11-13 量过：两个检查 runner 都在跑作业时，CPU 平均空着 37%，内存实际只用了 4 GB（其余是可回收的文件缓存），所以加第 3 个。三个检查作业同时吃满内存时，内存池上限会让其中一个作业被系统杀掉、作业失败，这时按 [Rollback](#rollback) 里“只卸第 3 个检查 runner”卸掉它。
+6. 加第 3 个检查 runner `ci-vps-3`（编号 6，账号 `gh-runner-3`，目录 `/srv/gh-runner-3/`，服务 `gh-runner-3.service`，标签 `ci-vps`，和前两个检查 runner 共用 `gh-runners.slice` 的 16 GB 内存池（2026-11-14 前是 18 GB））：做法同第 5 条，注册时用 `register-runner.sh 6`。2026-11-13 量过：两个检查 runner 都在跑作业时，CPU 平均空着 37%，内存实际只用了 4 GB（其余是可回收的文件缓存），所以加第 3 个。三个检查作业同时吃满内存时，内存池上限会让其中一个作业被系统杀掉、作业失败，这时按 [Rollback](#rollback) 里“只卸第 3 个检查 runner”卸掉它。
 
 <a id="register"></a>
 
@@ -177,13 +177,13 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 ### Oracle 的 ARM 机器上的两个 runner
 
-第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里还没有任务写 `runs-on: ci-arm`。这两个 runner 只跑试跑工作流 `.github/workflows/ci-arm-trial.yml`：每个 PR（包括草稿）把 policy、static、security 用和 `ci.yml` 相同的命令在 ARM 上再跑一遍，结论不进 `ci/required`，也不往共享目录交报告，只用来和 CI VPS 上同一提交的结论、时长逐次对比。用 `arm-fallback.sh on` 应急期间，试跑任务也会落到 CI VPS 的检查 runner 上；只想保住必过检查时，可以在 GitHub 上暂时停用这个工作流。按 CI 第二阶段方案的要求，连续 20 次结论一致、ARM 上的时长不超过 CI VPS 的 1.5 倍，才另开 PR 把这三项检查切到 `ci-arm`。
+第二处 runner 装在 Andy 的 Oracle 东京 ARM 机器上（Ubuntu 24.04，处理器是 64 位 ARM，系统里显示为 `aarch64`；4 核 24 GB，公网地址 `138.2.31.252`，这台机器同时是测试机）。那里有两个 runner：`ci-arm-1` 和 `ci-arm-2`，标签都是 `ci-arm`，合计最多用 18 GB 内存。脚本和 CI VPS 用同一套，靠环境变量 `RUNNER_SITE=arm` 区分；不写这个变量时，所有脚本管的都是 CI VPS。必过的 `ci.yml` 里 policy、static、tooling、security 四项检查写 `runs-on: ci-arm`，由这两个 runner 接（[ADR 0266](../adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md)）；build、browser、tests 和汇总作业仍在 CI 服务器上；tooling 测试也在 ARM 上单独跑（[ADR 0267](../adr/0267-ci-tests-without-coverage-on-prs.md)）。四项检查在 ARM 上把报告写进那台机器自己的共享目录，汇总作业用下面“报告怎样回到汇总作业”一节的办法取回。用 `arm-fallback.sh on` 应急期间，这四项检查改由 CI VPS 的检查 runner 接，汇总照样认可 x64 的报告。
 
 **安装（Andy 在 Mac 上，仓库根目录，一条命令）**：`scripts/operations/ci-runner/install-arm-runners.sh`。它依次做 8 步，每步打印一行 `ARM_INSTALL_STEP n/8`，全部成功时打印 `ARM_INSTALL_OK`：
 
 1. 确认两台机器都连得上、`sudo` 不要密码。
 2. 把脚本传到两台机器的 `/home/ubuntu/ci-runner/`。
-3. 在 ARM 机器上运行 `prepare-arm.sh`：打印机器的实际情况（主机名、系统版本、内存、磁盘、`/home` 下各目录的权限、`/srv` 和 `/opt` 下的目录、在监听的端口，每行以 `CI_ARM_PROBE` 开头），不是 Ubuntu 24.04 的 aarch64、根分区剩余不到 40 GiB、内存不到 20 GB，或 `/home` 下有目录对所有账号可读时拒绝（`CI_ARM_PREPARE_FAILED` 加原因）；然后装 `nftables`、编译工具和 runner 需要的系统库，再用固定版本的 Node 和 Playwright 装 Chromium 需要的系统库（static 检查里的布局检查要用 Chromium，少了这些库会在“安装布局检查用的 Chromium”一步报缺库）。脚本可以重复运行，不动正在运行的 runner；机器已经装好 runner、只缺这些库时，单独重跑它即可。
+3. 在 ARM 机器上运行 `prepare-arm.sh`：打印机器的实际情况（主机名、系统版本、内存、磁盘、`/home` 下各目录的权限、`/srv` 和 `/opt` 下的目录、在监听的端口，每行以 `CI_ARM_PROBE` 开头），不是 Ubuntu 24.04 的 aarch64、根分区剩余不到 40 GiB、内存不到 20 GB，或 `/home` 下有目录对所有账号可读时拒绝（`CI_ARM_PREPARE_FAILED` 加原因）；然后装 `nftables`、编译工具、runner 需要的系统库，以及在 ARM 上跑 integration 测试（现在只有试跑，正式作业仍在 CI 服务器上）时沙箱用例要的 `bubblewrap`（`bwrap`，Linux 上建隔离环境的程序）、`socat`、`ripgrep` 和载入 AppArmor 规则用的 `apparmor-utils`，并装上和 CI VPS 相同的 `bwrap` AppArmor 规则（Ubuntu 24.04 默认不许普通账号建用户命名空间，这条规则只放行 `bwrap`；规则文件已存在但内容不同时退出码 75，载入失败时退出码 76；少了这几样，沙箱用例在 ARM 上报 `JOB_HOST_DEPENDENCIES_UNAVAILABLE`），再用固定版本的 Node 和 Playwright 装 Chromium 需要的系统库（static 检查里的布局检查和 tooling 检查里的 Safari 面板测试都要用 Chromium，少了这些库会在“安装布局检查用的 Chromium”或“安装工具测试用的 Chromium”一步报缺库）。脚本可以重复运行，不动正在运行的 runner；机器已经装好 runner、只缺这些库时，单独重跑它即可。
 4. 在 CI VPS 上运行 `install-gate-remote.sh key`：生成汇总 runner 取报告用的钥匙（已有就沿用），放在 `/etc/gh-runner/remote-share/`，只有 root 和汇总 runner 的账号读得到，检查 runner 读不到。
 5. 在 ARM 机器上运行 `install-runner.sh`：建两个 runner 账号、systemd 服务、防火墙规则和内存分组，另建一个只用来交报告的账号 `gh-ci-send`。这个账号的 `authorized_keys` 只放第 4 步的公钥，并写明只接受来自 CI VPS 地址的连接、只能执行 `/usr/local/lib/gh-runner/send-reports` 这一个脚本。失败时把改过的东西放回去。已经有 runner 服务在跑时跳过这一步。
 6. 把 ARM 机器的主机密钥和地址交给 CI VPS（`install-gate-remote.sh trust`），再用 `install-gate-remote.sh check` 以汇总 runner 的身份取一份不存在的报告，对方回答“没有这份报告”才算通（`GATE_REMOTE_OK`）。
@@ -192,7 +192,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 任何一步失败都打印 `ARM_INSTALL_FAILED step=<第几步>` 和原因，以退出码 1 结束；修好原因后重新运行同一条命令，做完的步骤可以安全地重复。两台机器的地址可以用 `CI_VPS_SSH`、`CI_ARM_SSH` 换掉，`CI_VPS_SSH` 必须以 CI VPS 的 IPv4 地址结尾。
 
-**报告怎样回到汇总作业（切换之后才用，现在没有工作流传 `--remote-jobs`）**：切到 ARM 之后，ARM 上的检查会把报告写在那台机器自己的 `/srv/gh-runner-share/<运行号>-<重试号>/`。汇总作业在 CI VPS 上发现本机共享目录里没有某份报告、而命令行的 `--remote-jobs` 名单里有这个作业时，用上面那把钥匙连 ARM 机器，请求名只能是“运行号-重试号/报告名”，对方把那个目录里的普通文件打成一段 JSON 交回来（符号链接、硬链接、超过 500 个文件、单个文件超过 16 MiB、合计超过 64 MiB 都拒绝）。取回的内容写进本机共享目录后照旧按摘要核对；连不上、超时（总时限 2 分钟）、主机密钥不对、内容对不上，都记成缺这份报告，汇总判失败。ARM 机器上不放任何能连别处的钥匙。
+**报告怎样回到汇总作业**：ARM 上的检查会把报告写在那台机器自己的 `/srv/gh-runner-share/<运行号>-<重试号>/`。汇总作业在 CI VPS 上发现本机共享目录里没有某份报告、而命令行的 `--remote-jobs` 名单里有这个作业时，用上面那把钥匙连 ARM 机器，请求名只能是“运行号-重试号/报告名”，对方把那个目录里的普通文件打成一段 JSON 交回来（符号链接、硬链接、超过 500 个文件、单个文件超过 16 MiB、合计超过 64 MiB 都拒绝）。取回的内容写进本机共享目录后照旧按摘要核对；连不上、超时（总时限 2 分钟）、主机密钥不对、内容对不上，都记成缺这份报告，汇总判失败。ARM 机器上不放任何能连别处的钥匙。
 
 **暂停和恢复**：在 Mac 上运行 `RUNNER_SITE=arm scripts/operations/ci-runner/pause-runners.sh` 和 `RUNNER_SITE=arm scripts/operations/ci-runner/resume-runners.sh`，行为和上面[暂停和恢复](#pause-and-resume)一节相同，只是对象换成 ARM 机器上的两个 runner 和 `ci-arm` 标签。两处各有各的锁，暂停一处不影响另一处。
 
@@ -205,6 +205,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 ### 日常维护
 
 - **磁盘**：看每个 runner 各自的 `logs/disk.log`，每个任务记一行开始时的可用空间，一行结束时 `_work` 的大小和可用空间。
+- **依赖缓存**：CI 作业装完整依赖时（`scripts/ci/install-dependencies.mjs --cache runner`），npm 的下载缓存放在各 runner 账号自己的 `~/.cache/himawari-ci/npm`，跨作业保留，每个包照旧按锁文件里的摘要核对。满 7 天由下一个作业整个清空重建，一般不用手动管；怀疑缓存坏了时，暂停那个 runner，删掉这个目录再恢复，下一个作业会重新下载（[ADR 0267](../adr/0267-ci-tests-without-coverage-on-prs.md)）。`ci/required` 汇总作业只装几个小依赖（`scripts/ci/install-gate-dependencies.mjs`），仍用作业工作区里的缓存，不用这个目录。
 - **runner 升级**：runner 会自己升级到 GitHub 要求的版本（它的目录归各自的 runner 账号所有，所以能写）。要换安装脚本里固定的版本时，改 `install-runner.sh` 里的 `VERSION`，并改 `runners.sh` 里 x64 和 arm64 两处的 `RUNNER_PACKAGE_SHA256`（两个架构的安装包各一个校验值），SHA-256 从 GitHub 的发布页核对。
 - **本机新增了服务**：防火墙只挡端口名单里的端口。之后新开的本机服务端口不在名单里，要刷新规则：先按[暂停和恢复](#pause-and-resume)在 Mac 上运行 `pause-runners.sh`（有 runner 服务在运行时安装脚本以退出码 70 拒绝），再重新运行 `install-runner.sh`（脚本可重复运行，不会重新下载或重建用户，最后会重新加载防火墙规则），最后运行 `resume-runners.sh`。
 - **防火墙表被清掉**：如果有人重启了系统的 `nftables` 服务，而 `/etc/nftables.conf` 里有 `flush ruleset`，表 `inet gh_runner` 会被一并清掉。用 `sudo systemctl restart gh-runner-nft.service gh-runner.service gh-runner-2.service gh-runner-3.service gh-runner-gate.service` 恢复。
@@ -250,7 +251,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 
 ## Rollback
 
-触发条件：Andy 决定不再用这台机器，几个检查 runner 同时跑时内存不够（见 [Troubleshooting](#troubleshooting) 里“合计 18 GB 不够用”那一行），或者决定不再用专门的汇总 runner。
+触发条件：Andy 决定不再用这台机器，几个检查 runner 同时跑时内存不够（见 [Troubleshooting](#troubleshooting) 里“合计 16 GB 不够用”那一行），或者决定不再用专门的汇总 runner。
 
 **只卸第 2 个 runner**：
 
@@ -267,7 +268,7 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 **只卸汇总 runner（`ci-vps-gate`）**：
 
 1. 先确认 `ci.yml` 的汇总作业已经不写 `runs-on: ci-vps-gate`（改回去的 PR 已合并），或者已经运行 `gate-fallback.sh on` 并打算一直让第 1 个 runner 接汇总作业；否则卸掉之后所有 PR 的 `ci/required` 都会一直排队。
-2. 在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 3`。它停掉并删除 `gh-runner-gate.service`、结束 `gh-runner-gate` 的进程、删除 `/srv/gh-runner-gate/`、删除 `gh-runner-gate` 用户和组，再按剩下的 runner 重新生成防火墙规则和窄 sudo 规则。`ghgate.slice` 文件留着，没有服务用它时不占内存；检查 runner 合计的内存上限仍是 18 GB。
+2. 在 Mac 上运行 `pause-runners.sh`，再在 VPS 上运行 `sudo bash /home/ubuntu/ci-runner/uninstall-runner.sh 3`。它停掉并删除 `gh-runner-gate.service`、结束 `gh-runner-gate` 的进程、删除 `/srv/gh-runner-gate/`、删除 `gh-runner-gate` 用户和组，再按剩下的 runner 重新生成防火墙规则和窄 sudo 规则。`ghgate.slice` 文件留着，没有服务用它时不占内存；检查 runner 合计的内存上限仍是 16 GB。
 3. 在 Mac 上运行 `resume-runners.sh`，再按“只卸第 2 个 runner”的第 3 步从 GitHub 删除 `ci-vps-gate`。
 4. 验证：`id gh-runner-gate` 报用户不存在，`/srv/gh-runner-gate` 不存在，各检查 runner（`ci-vps-1`、`ci-vps-2`，装了的话还有 `ci-vps-3`）仍为 `online`。
 
@@ -316,8 +317,8 @@ ADR 0176 决定第 10 条：不留作备用。原定 VPS 上完整跑通一次 C
 | 安装脚本以退出码 71 拒绝（`refusing to take over`；注意 `prepare-vps.sh` 的 71 是另一件事） | `getent group gh-ci-share`；`ls -la /srv/gh-runner-share` | 组不存在而共享目录已存在，安装脚本不接管别人建的目录。先查清目录是谁建的、里面有什么；确认没用后手动移走（不要用 `uninstall-runner.sh all`，它会删掉这个目录），再重新运行安装脚本。 |
 | 安装脚本以退出码 70 拒绝 | 输出里点名的服务 | 有 runner 服务在运行；先在 Mac 上运行 `pause-runners.sh`，装完再 `resume-runners.sh`。 |
 | bwrap 报 `Operation not permitted` 或 `setting up uid map` | `sysctl -n kernel.apparmor_restrict_unprivileged_userns`；`sudo aa-status \| grep bwrap` | `/etc/apparmor.d/bwrap` 没加载或被改过。重新运行 `prepare-vps.sh`；不要关掉全局开关。 |
-| 几个检查任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 18 GB 不够用的迹象。记录下来报告 Andy，由 Andy 决定是否减少检查 runner；不自行调高上限。 |
+| 几个检查任务同时跑时任务被系统杀掉或测试变慢、超时 | `cat /sys/fs/cgroup/gh.slice/gh-runners.slice/memory.events`（systemd 按名字里的 `-` 把它放在 `gh.slice` 下面） 看 `oom_kill`；`systemctl show gh-runners.slice -p MemoryCurrent` | 合计 16 GB 不够用的迹象。记录下来报告 Andy，由 Andy 决定是否减少检查 runner；不自行调高上限。 |
 | 所有 PR 的 `ci/required` 都在排队，检查作业却照常跑完 | Preflight 第 4、8 项里 `gh-runner-gate.service` 和 `ci-vps-gate` 的状态；`journalctl -u gh-runner-gate.service --since -30min` | 汇总 runner 停了或掉线。先在 Mac 上运行 `gate-fallback.sh on`（见[应急](#gate-fallback)），再查服务；服务停着就 `sudo -n /usr/bin/systemctl restart gh-runner-gate.service`。修好后运行 `gate-fallback.sh off`。 |
-| 汇总作业被系统杀掉，或 `ci/required` 的日志在装工具、收报告时中断 | `cat /sys/fs/cgroup/ghgate.slice/memory.events` 看 `oom_kill`；`systemctl show ghgate.slice -p MemoryPeak` | 汇总 runner 的 2 GB 不够用。记录峰值报告 Andy；要调时改 `runners.sh` 里汇总 runner（编号 3）的三个内存值和 `ghgate.slice`，并相应调低 `gh-runners.slice`，两个分组合计不超过 20 GB。 |
+| 汇总作业被系统杀掉，或 `ci/required` 的日志在装工具、收报告时中断 | `cat /sys/fs/cgroup/ghgate.slice/memory.events` 看 `oom_kill`；`systemctl show ghgate.slice -p MemoryPeak` | 汇总 runner 的 4 GB 不够用。记录峰值报告 Andy；要调时改 `runners.sh` 里汇总 runner（编号 3）的三个内存值和 `ghgate.slice`，并相应调低 `gh-runners.slice`，两个分组合计不超过 20 GB。 |
 
 [↑ 返回阅读导航](#contents)

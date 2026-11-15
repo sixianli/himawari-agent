@@ -1,10 +1,16 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
+import HimawariManage
+import HimawariShare
 import Observation
 #if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(os)
+import os
 #endif
 
 public enum AppPhase: Equatable {
@@ -20,9 +26,12 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
 
     @ObservationIgnored public let api: DeviceAPI
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
+    @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -33,20 +42,35 @@ public final class AppModel {
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
+    #endif
+    public private(set) var watchOffer: String?
 
-    private static let recordAccount = "pairing-record"
+    private static let recordAccount = SharedVault.recordAccount
 
     public convenience init(bundle: Bundle = .main, kind: DeviceKind = .iphone) {
+        Self.logUnknownServerValues(subsystem: bundle.bundleIdentifier ?? "himawari")
         self.init(bundle: bundle, kind: kind, restoring: true)
+    }
+
+    private static func logUnknownServerValues(subsystem: String) {
+        #if canImport(os)
+        let logger = Logger(subsystem: subsystem, category: "server-values")
+        ServerValueDiagnostics.shared.observe { report in
+            logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
+        }
+        #endif
     }
 
     init(bundle: Bundle = .main, kind: DeviceKind = .iphone, restoring: Bool) {
         self.kind = kind
-        let service = (bundle.bundleIdentifier ?? "himawari") + ".device"
-        keys = SecureEnclaveKeyStore(service: service + ".keys")
-        keychain = KeychainValueStore(service: service)
+        let vault = SharedVault(bundle: bundle)
+        self.vault = vault
+        keys = vault.keys
+        keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
-        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)) ?? .direct
+        releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         api = DeviceAPI(http: DeviceHTTPClient())
         if restoring { restore() }
     }
@@ -75,7 +99,7 @@ public final class AppModel {
         guard let record else { return }
         use(record)
         switch record.status {
-        case .pending:
+        case .pending, .unrecognized:
             phase = .waitingForConfirmation(number: record.pairingNumber)
             waitForConfirmation()
         case .active:
@@ -101,6 +125,34 @@ public final class AppModel {
         }
     }
 
+    public func handlePairingLink(_ text: String) {
+        if phase == .active {
+            #if os(iOS)
+            if WatchPairingRelay.offerable(text, pairedOrigin: record?.origin), watchRelay.canOffer {
+                watchOffer = text
+            }
+            #endif
+            return
+        }
+        pair(scanned: text)
+    }
+
+    public var watchOfferHost: String? {
+        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
+        return Self.host(invitation.origin)
+    }
+
+    public func sendOfferToWatch() {
+        #if os(iOS)
+        if let watchOffer { watchRelay.send(watchOffer) }
+        #endif
+        watchOffer = nil
+    }
+
+    public func declineWatchOffer() {
+        watchOffer = nil
+    }
+
     public func connectToScannedServer() {
         guard case .confirmingServer = phase, let lastScanned else { return }
         submit(lastScanned)
@@ -113,6 +165,10 @@ public final class AppModel {
     }
 
     @ObservationIgnored var demoHost: String?
+
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
 
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
@@ -190,6 +246,11 @@ public final class AppModel {
         forget(problem: nil)
     }
 
+    public var unsentMessages: Int? {
+        guard let local = try? store ?? FileLocalStore.applicationSupport(named: "himawari-device") else { return nil }
+        return Outbox.unsentCount(in: local)
+    }
+
     public func startOver() {
         guard emptyStore() else {
             phase = .unpaired(.storageUnavailable)
@@ -201,6 +262,7 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        actions = nil
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -210,7 +272,40 @@ public final class AppModel {
     }
 
     public func retryReadingKeys() {
-        restore()
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+        } else {
+            restore()
+        }
+    }
+
+    private func recheckUnknownState() {
+        waiting?.cancel()
+        waiting = Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            do {
+                configuration = try await api.configuration()
+            } catch {
+                failure = error
+            }
+            guard !Task.isCancelled, phase == .unpaired(.stateUnknown) else { return }
+            switch UnknownStateRecheck.outcome(of: failure) {
+            case .connected:
+                try? save(record.map { var updated = $0; updated.status = .active; return updated })
+                Haptics.shared.report(.pairingSucceeded)
+                activate()
+            case .removed:
+                forget(problem: .removed)
+            case .waiting:
+                if let record {
+                    phase = .waitingForConfirmation(number: record.pairingNumber)
+                    waitForConfirmation()
+                }
+            case .stillUnknown:
+                break
+            }
+        }
     }
 
     public func retryPairing() {
@@ -242,7 +337,12 @@ public final class AppModel {
                 } catch let error as DeviceAPIError where error.isRevoked {
                     forget(problem: .removed)
                     return
-                } catch {}
+                } catch {
+                    if let status = record?.status, ConfirmationWait.givesUp(waitingAs: status, after: error) {
+                        phase = .unpaired(.stateUnknown)
+                        return
+                    }
+                }
                 try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
                 delay = min(delay * 2, 10)
             }
@@ -260,16 +360,27 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
             self.chat = chat
             phase = .active
             chat.start()
+            actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
+            deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -308,18 +419,47 @@ public final class AppModel {
         }
     }
 
+    @ObservationIgnored private var handoverDrain: Task<Void, Never>?
+
+    private func deliverWaitingHandovers() {
+        guard handoverDrain == nil, let store = try? vault.handoverStore() else { return }
+        let queue = HandoverQueue(store: store)
+        guard !queue.pending().isEmpty else { return }
+        #if canImport(UIKit)
+        let courier = HandoverCourier(api: api, images: UIKitImageFitter())
+        #else
+        let courier = HandoverCourier(api: api)
+        #endif
+        handoverDrain = Task { [weak self] in
+            let results = await queue.drain(using: courier)
+            guard let self else { return }
+            handoverDrain = nil
+            if results.values.contains(.deviceRemoved) { checkRevoked() }
+        }
+    }
+
     private func checkRevoked() {
         Task { await refreshConfiguration() }
     }
 
     public func becameActive() {
+        if phase == .unpaired(.stateUnknown) {
+            recheckUnknownState()
+            return
+        }
         if phase == .unpaired(.keysUnreadable) || phase == .unpaired(.storageUnavailable) {
             restore()
             return
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
+        deliverWaitingHandovers()
         Task { await refreshConfiguration() }
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {

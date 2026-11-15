@@ -16,6 +16,14 @@ import {
 } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
+const DEFERRED_APPROVAL_CAPABILITY_REF = "device.action";
+
+export function terminalRunStatuses(capabilityRef: string): readonly string[] {
+  return capabilityRef === DEFERRED_APPROVAL_CAPABILITY_REF
+    ? ["failed", "cancelled"]
+    : ["completed", "failed", "cancelled"];
+}
+
 export class SqliteAuthorizationReservations {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -97,7 +105,7 @@ export class SqliteAuthorizationReservations {
     if (
       !run ||
       run.threadId !== record.intent.threadId ||
-      ["completed", "failed", "cancelled"].includes(run.status)
+      terminalRunStatuses(record.intent.capabilityRef).includes(run.status)
     )
       this.fail("PORT_NOT_AUTHORITATIVE", "Run cannot acquire execution authority");
     return grant;

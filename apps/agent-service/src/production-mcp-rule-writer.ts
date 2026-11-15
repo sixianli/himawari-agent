@@ -78,6 +78,7 @@ export class ProductionMcpRuleWriter {
       summary: proposal.summary,
       threadId: null,
       source: `${EXTERNAL_RULE_SOURCE_PREFIX}${proposal.connectionId}`,
+      listed: false,
     });
     if (receipt.status !== "proposed" || receipt.proposalId === null)
       throw new Error("MCP_RULE_PROPOSAL_NOT_STORED");

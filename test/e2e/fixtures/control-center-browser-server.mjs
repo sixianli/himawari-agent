@@ -223,6 +223,7 @@ function capabilityRecord(capabilityRef, lifecycle, overrides = {}) {
     updateAssessment: null,
     rollbackVersion: lifecycle === "active" ? "0.9.0" : null,
     rollbackAvailable: lifecycle === "active",
+    lastInvalidation: null,
     lastTransition:
       lifecycle === "active"
         ? {
@@ -312,6 +313,12 @@ const grants = new Map([
       revokedAt: null,
       revocationReasonCode: null,
       affectedTaskRefs: ["task-dependent-01"],
+      label: "Approve and publish the article once",
+      detail: {
+        "zh-CN": ["范围 1 项", "收件对象 1 个", "已用 0/1 次", "会影响 1 个任务"],
+        en: ["1 scope item", "1 recipient", "Used 0 of 1", "Affects 1 task"],
+        ja: ["範囲 1 件", "宛先 1 件", "0/1 回使用", "1 件のタスクに影響"],
+      },
       generatedAt: now,
     },
   ],

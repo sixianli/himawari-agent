@@ -77,6 +77,7 @@ public enum DesignTokens {
         public static let pairingMark: CGFloat = 148
         public static let pill: CGFloat = 46
         public static let pillBig: CGFloat = 56
+        public static let pillSmall: CGFloat = 36
         public static let rowGap: CGFloat = 14
         public static let rowMinHeight: CGFloat = 60
         public static let sheetPaddingTop: CGFloat = 16
@@ -102,6 +103,7 @@ public enum DesignTokens {
         public static let strokeChevron: CGFloat = 2.2
         public static let strokeLarge: CGFloat = 1.3
         public static let tab: CGFloat = 26
+        public static let todayRow: CGFloat = 22
     }
 
     public enum ProcessRow {
@@ -112,6 +114,8 @@ public enum DesignTokens {
 
     public enum Opacity {
         public static let emptyMark: Double = 0.55
+        public static let watchHalo: Double = 0.3
+        public static let watchPressed: Double = 0.7
     }
 
     public enum Pairing {
@@ -142,6 +146,29 @@ public enum DesignTokens {
         public static let stroke: CGFloat = 3
         public static let strokeOpacity: CGFloat = 0.9
         public static let window: CGFloat = 250
+    }
+
+    public enum Handover {
+        public static let buttonFontSize: CGFloat = 17
+        public static let cardPaddingVertical: CGFloat = 14
+        public static let cardPaddingHorizontal: CGFloat = 16
+        public static let closeIcon: CGFloat = 18
+        public static let doneIcon: CGFloat = 22
+        public static let fieldMinHeight: CGFloat = 96
+        public static let fieldPaddingVertical: CGFloat = 14
+        public static let fieldPaddingHorizontal: CGFloat = 16
+        public static let fieldRadius: CGFloat = 22
+        public static let heroGap: CGFloat = 18
+        public static let heroIcon: CGFloat = 72
+        public static let heroTitleSize: CGFloat = 26
+        public static let heroTop: CGFloat = 30
+        public static let noteInset: CGFloat = 8
+        public static let outcomeGap: CGFloat = 14
+        public static let pageGap: CGFloat = 24
+        public static let popupFieldMinHeight: CGFloat = 84
+        public static let sheetGap: CGFloat = 18
+        public static let stepsGap: CGFloat = 18
+        public static let stepsPadding: CGFloat = 20
     }
 
     public enum Mac {
@@ -200,6 +227,33 @@ public enum DesignTokens {
         public static let talkRowHeight: CGFloat = 38
     }
 
+    public enum Watch {
+        public static let answerLineHeight: CGFloat = 20
+        public static let answerSize: CGFloat = 16
+        public static let buttonGap: CGFloat = 6
+        public static let buttonHeight: CGFloat = 44
+        public static let cardButtonTop: CGFloat = 6
+        public static let cardGap: CGFloat = 6
+        public static let glanceCircle: CGFloat = 76
+        public static let glanceGap: CGFloat = 8
+        public static let glanceHeight: CGFloat = 68
+        public static let glanceMarkInset: CGFloat = 4
+        public static let glancePadding: CGFloat = 6
+        public static let glanceRadius: CGFloat = 20
+        public static let glanceWidth: CGFloat = 160
+        public static let markHalo: CGFloat = 96
+        public static let markMedium: CGFloat = 56
+        public static let markPairing: CGFloat = 64
+        public static let markQuiet: CGFloat = 80
+        public static let markSmall: CGFloat = 28
+        public static let markWidget: CGFloat = 30
+        public static let saidLines: CGFloat = 3
+        public static let screenPadding: CGFloat = 12
+        public static let talkInsetHeight: CGFloat = 24
+        public static let talkInsetWidth: CGFloat = 16
+        public static let talkPadding: CGFloat = 8
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 500, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)
@@ -228,9 +282,18 @@ public enum DesignTokens {
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let offlineBanner = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
+        public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
+        public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchAnswerStrong = TypeToken(size: 16, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchButton = TypeToken(size: 16, weight: 500, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchCaption = TypeToken(size: 12, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchFootnote = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchNumber = TypeToken(size: 34, weight: 700, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchSentence = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchTime = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
     }
 }

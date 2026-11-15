@@ -6,10 +6,15 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type AuditLedgerPort,
+  type DeviceActionService,
+  type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
+  type PairedDeviceScope,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
+  type VoiceGates,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -21,6 +26,7 @@ import {
   type GatewayV2Query,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
+  isGatewayErrorReasonCode,
   type StreamEvent,
   type ThreadExecutionEventsSubscription,
   type ThreadExecutionStreamEvent,
@@ -32,8 +38,26 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import type { DeviceActionHub } from "./device-action-hub.js";
+import {
+  type DeviceApiRouteOptions,
+  type DeviceHomePort,
+  type DevicePairingAccess,
+  registerDeviceApiRoutes,
+  type UtterancePrefetchPort,
+} from "./device-api-routes.js";
+import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
+import { DevicePushError, type DevicePushPort } from "./device-push.js";
+import { DeviceSignatureError } from "./device-request-signature.js";
+import {
+  PAIRED_DEVICE_ERROR_CODES,
+  PairedDeviceError,
+  type PairedDeviceService,
+} from "./paired-device-service.js";
+import type { PerceptionService } from "./perception-service.js";
 import { withPreviewStorage } from "./preview-page-storage.js";
 import type { RuntimeMetricsSnapshot } from "./runtime-observability.js";
+import { PLAIN_TEXT_MAXIMUM_CHARACTERS, parseTextAdmission } from "./text-admission.js";
 
 export const HTTP_GATEWAY_ERROR_CODES = Object.freeze({
   AUTHENTICATION_REQUIRED: "HTTP_GATEWAY_AUTHENTICATION_REQUIRED",
@@ -111,6 +135,25 @@ export interface HttpGatewayServerOptions {
   readonly maximumBodyBytes?: number;
   readonly maximumStaticAssetBytes?: number;
   readonly heartbeatMilliseconds?: number;
+  readonly devices?: {
+    readonly service: PairedDeviceService;
+    readonly configuration: () => DeviceConfiguration;
+    readonly audit: AuditLedgerPort;
+    readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+    readonly push?: DevicePushPort;
+    readonly pairingAccess?: DevicePairingAccess;
+    readonly perception?: PerceptionService;
+    readonly actions?: {
+      readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
+      readonly hub: DeviceActionHub;
+    };
+    readonly notifications?: DeviceApiRouteOptions["notifications"];
+    readonly home?: DeviceHomePort;
+    readonly voiceGates?: () => VoiceGates;
+    readonly prefetch?: UtterancePrefetchPort;
+    readonly addressee?: DeviceApiRouteOptions["addressee"];
+    readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
+  };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
   readonly browserConfiguration?: {
@@ -594,6 +637,7 @@ async function* streamThreadGatewayEvents(input: {
   readonly authentication: GatewayAuthenticationContext;
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
+  readonly include?: (event: ThreadGatewayEvent) => boolean;
 }): AsyncGenerator<string> {
   yield ": connected\n\n";
   const controller = new AbortController();
@@ -648,7 +692,13 @@ async function* streamThreadGatewayEvents(input: {
       }
       if (result.value.done) return;
       const event = result.value.value;
-      yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      yield input.include && !input.include(event)
+        ? serializeSse({
+            event: "device.scanned",
+            id: event.payload.cursor,
+            data: { cursor: event.payload.cursor },
+          })
+        : serializeSse({ event: "message", id: event.payload.cursor, data: event });
       pending = iterator.next();
     }
   } finally {
@@ -807,6 +857,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   const previewOrigin = options.previewOrigin ? new URL(options.previewOrigin) : undefined;
+  const deviceApiInstalled = Boolean(
+    options.devices &&
+      options.threadGateway &&
+      options.payloadAdmission &&
+      options.browserConfiguration,
+  );
   if (
     previewOrigin &&
     (previewOrigin.origin !== options.previewOrigin || previewOrigin.host === publicOrigin.host)
@@ -874,6 +930,23 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof PairedDeviceError) {
+      sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
+      return;
+    }
+    if (error instanceof DeviceGatewayError || error instanceof DevicePushError) {
+      sendJson(reply, error.statusCode, { error: { code: error.code } });
+      return;
+    }
+    if (error instanceof DeviceSignatureError) {
+      sendJson(reply, 401, {
+        error: {
+          code: error.code,
+          ...(error.serverTime === undefined ? {} : { serverTime: error.serverTime }),
+        },
+      });
+      return;
+    }
     if (error instanceof HttpGatewayError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
@@ -891,7 +964,12 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
             : error.code === PORT_ERROR_CODES.OPERATION_NOT_INSTALLED
               ? 501
               : 409;
-      sendJson(reply, statusCode, { error: { code: error.code } });
+      sendJson(reply, statusCode, {
+        error: {
+          code: error.code,
+          ...(isGatewayErrorReasonCode(error.message) ? { reasonCode: error.message } : {}),
+        },
+      });
       return;
     }
     const statusCode =
@@ -968,6 +1046,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         healthDependenciesAvailable: options.health !== undefined,
         filesAvailable: options.files !== undefined,
         filePreviewAvailable: options.files !== undefined && previewOrigin !== undefined,
+        installedDeviceApi: deviceApiInstalled,
         agentId: configuration.agentId,
         deploymentId: configuration.deploymentId,
         authorityEpoch: configuration.authorityEpoch,
@@ -1230,6 +1309,123 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
     }
   }
 
+  if (
+    options.devices &&
+    options.threadGateway &&
+    options.payloadAdmission &&
+    options.browserConfiguration
+  ) {
+    const payloadAdmission = options.payloadAdmission;
+    const browserConfiguration = options.browserConfiguration;
+    const deviceWatchExecution = options.threadGateway.watchExecution?.bind(options.threadGateway);
+    registerDeviceApiRoutes(app, {
+      publicOrigin,
+      ...(options.devices.home ? { home: options.devices.home } : {}),
+      devices: options.devices.service,
+      configuration: options.devices.configuration,
+      ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
+      ...(options.devices.perception ? { perception: options.devices.perception } : {}),
+      ...(options.devices.actions ? { actions: options.devices.actions } : {}),
+      ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
+      ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
+      ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
+      ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
+      ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
+      ...(options.files
+        ? {
+            readFile: async ({ authentication, fileId }) => {
+              const content = await (options.files as HttpGatewayFilesPort).content({
+                authentication,
+                agentId: browserConfiguration.agentId,
+                fileId,
+                download: true,
+              });
+              return {
+                bytes: content.bytes,
+                mediaType: content.mediaType,
+                fileName: content.fileName,
+              };
+            },
+          }
+        : {}),
+      authority: {
+        agentId: browserConfiguration.agentId,
+        deploymentId: browserConfiguration.deploymentId,
+        authorityEpoch: browserConfiguration.authorityEpoch,
+        fencingToken: browserConfiguration.fencingToken,
+      },
+      threadGateway: options.threadGateway,
+      gateways: {
+        ...(options.gateway ? { v1: options.gateway } : {}),
+        ...(options.gatewayV2 ? { v2: options.gatewayV2 } : {}),
+        "thread-v3": options.threadGateway,
+      },
+      audit: options.devices.audit,
+      ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
+      ...(options.devices.push ? { push: options.devices.push } : {}),
+      protectText: async (input) =>
+        (
+          await payloadAdmission.protect({
+            authentication: input.authentication,
+            idempotencyKey: input.idempotencyKey,
+            content: input.content,
+            dataClassification: input.dataClassification ?? "private",
+            contentType: "text/plain",
+          })
+        ).payloadRef,
+      streamThreadEvents: streamThreadGatewayEvents,
+      ...(options.payloadRead
+        ? {
+            readPayload: ({ authentication, payloadRef }) =>
+              (options.payloadRead as HttpGatewayPayloadReadPort).read({
+                authentication,
+                agentId: browserConfiguration.agentId,
+                payloadRef,
+              }),
+          }
+        : {}),
+      ...(deviceWatchExecution
+        ? {
+            streamExecution: (input) =>
+              streamThreadExecutionEvents({ ...input, watch: deviceWatchExecution }),
+          }
+        : {}),
+      webAuthenticate: (request) => {
+        assertMutationBoundary(request, publicOrigin);
+        return authenticate(request, options);
+      },
+      webMutationGuard: async (request, authentication) => {
+        const accepted = await options.csrf.verify({
+          authentication,
+          token: header(request, "x-csrf-token"),
+          method: request.method,
+          path: requestPath(request),
+        });
+        if (!accepted) throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+      },
+      setStreamHeaders: (reply) => {
+        setSecurityHeaders(reply, previewOrigin);
+        reply
+          .header("cache-control", "no-cache, no-store")
+          .header("connection", "keep-alive")
+          .header("x-accel-buffering", "no")
+          .type(SSE_CONTENT_TYPE);
+      },
+      sendJson,
+      rejectNotAllowed: () => {
+        throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.PATH_NOT_ALLOWED, 404);
+      },
+      rejectBody: (statusCode) => {
+        if (statusCode === 413)
+          throw new PairedDeviceError(PAIRED_DEVICE_ERROR_CODES.BODY_TOO_LARGE, 413);
+        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, statusCode);
+      },
+      rejectError: (error) => {
+        throw error;
+      },
+    });
+  }
+
   if (options.payloadAdmission) {
     const payloadAdmission = options.payloadAdmission;
     const admitText =
@@ -1261,39 +1457,24 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
           throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         }
-        const body = request.body as Readonly<{
-          content?: unknown;
-          dataClassification?: unknown;
-        }>;
-        if (
-          Object.keys(body).some((key) => !["content", "dataClassification"].includes(key)) ||
-          typeof body.content !== "string" ||
-          body.content.length === 0 ||
-          body.content.length > maximumCharacters ||
-          !accepts(body.content) ||
-          !["public", "private", "sensitive", "restricted"].includes(
-            body.dataClassification as string,
-          )
-        ) {
-          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-        }
+        const admitted = parseTextAdmission(
+          request.body as Readonly<Record<string, unknown>>,
+          maximumCharacters,
+          accepts,
+        );
+        if (!admitted) throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
         return sendJson(
           reply,
           201,
           await payloadAdmission.protect({
             authentication,
             idempotencyKey,
-            content: body.content,
-            dataClassification: body.dataClassification as
-              | "public"
-              | "private"
-              | "sensitive"
-              | "restricted",
+            ...admitted,
             contentType,
           }),
         );
       };
-    app.post("/api/payload/v1/text", admitText(64 * 1024, "text/plain"));
+    app.post("/api/payload/v1/text", admitText(PLAIN_TEXT_MAXIMUM_CHARACTERS, "text/plain"));
     app.post(
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },

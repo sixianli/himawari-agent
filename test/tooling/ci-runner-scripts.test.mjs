@@ -808,10 +808,10 @@ describe("runner units and shared limits", () => {
 
   const gateSlice = () => unitSettings(readFileSync(path.join(scripts, "ghgate.slice"), "utf8"));
 
-  it("gives the three check runners all cores and 18 GB together with default priority on a CI-only host", () => {
+  it("gives the three check runners all cores and 16 GB together with default priority on a CI-only host", () => {
     expect(slice()).toMatchObject({
-      MemoryHigh: "17G",
-      MemoryMax: "18G",
+      MemoryHigh: "15G",
+      MemoryMax: "16G",
       MemorySwapMax: "0",
       TasksMax: "6144",
     });
@@ -821,11 +821,11 @@ describe("runner units and shared limits", () => {
     expect(bytes(slice().MemoryHigh)).toBeLessThan(bytes(slice().MemoryMax));
   });
 
-  it("reserves 2 GB for the gate runner outside the check runners' pool, and both pools fit in the 22 GB host", () => {
+  it("reserves 2 GB and allows up to 4 GB for the gate runner outside the check runners' pool, and both pools fit in the 22 GB host", () => {
     expect(gateSlice()).toMatchObject({
       MemoryMin: "2G",
-      MemoryHigh: "2G",
-      MemoryMax: "2G",
+      MemoryHigh: "3G",
+      MemoryMax: "4G",
       MemorySwapMax: "0",
       TasksMax: "1024",
     });
@@ -839,8 +839,8 @@ describe("runner units and shared limits", () => {
       Group: "gh-runner-gate",
       WorkingDirectory: "/srv/gh-runner-gate/runner",
       MemoryMin: "2G",
-      MemoryHigh: "2G",
-      MemoryMax: "2G",
+      MemoryHigh: "3G",
+      MemoryMax: "4G",
       MemorySwapMax: "0",
       TasksMax: "1024",
       ReadWritePaths:
@@ -1638,12 +1638,17 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     expect(shell("runner_label_for_name ci-vps-9").status).not.toBe(0);
   });
 
-  it("only the required job runs on the gate label, the ARM trial jobs on the ARM label, and ci/policy.json, ci.yml, the trial workflow, actionlint, the schema and runners.sh agree on the labels", () => {
+  it("only the required job runs on the gate label, the policy, static and security jobs on the ARM label, and ci/policy.json, ci.yml, actionlint, the schema and runners.sh agree on the labels", () => {
     const gateLabel = shell('printf "%s" "$RUNNER_GATE_LABEL"').stdout;
     expect(gateLabel).toBe(gateRunnerLabel);
     expect(shell('printf "%s" "$RUNNER_CHECK_LABEL"').stdout).toBe(linuxRunnerLabel);
     expect(shell('printf "%s" "$RUNNER_ARM_LABEL"').stdout).toBe(armRunnerLabel);
-    const labelFor = (id) => (id === "required" ? gateRunnerLabel : linuxRunnerLabel);
+    const labelFor = (id) =>
+      id === "required"
+        ? gateRunnerLabel
+        : armChecks.includes(id)
+          ? armRunnerLabel
+          : linuxRunnerLabel;
     const policy = JSON.parse(read("ci/policy.json"));
     for (const check of policy.checks)
       for (const member of check.members) {
@@ -1657,6 +1662,7 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     const schema = read("ci/policy.schema.json");
     expect(schema).toContain(`"${linuxRunnerLabel}"`);
     expect(schema).toContain(`"${gateRunnerLabel}"`);
+    expect(schema).toContain(`"${armRunnerLabel}"`);
     const workflow = parse(read(".github/workflows/ci.yml"));
     const fixed = Object.entries(workflow.jobs)
       .filter(([, job]) => !String(job["runs-on"]).startsWith("$"))
@@ -1664,9 +1670,8 @@ describe("[HR-11] the gate runner keeps its own label", () => {
     expect(fixed.length).toBeGreaterThan(1);
     for (const [id, label] of fixed) expect([id, label]).toEqual([id, labelFor(id)]);
     expect(Object.fromEntries(fixed).required).toBe(gateRunnerLabel);
-    const trial = parse(read(".github/workflows/ci-arm-trial.yml"));
-    expect(Object.keys(trial.jobs)).toEqual(armChecks);
-    for (const job of Object.values(trial.jobs)) expect(job["runs-on"]).toBe(armRunnerLabel);
+    for (const id of armChecks) expect(workflow.jobs[id]["runs-on"]).toBe(armRunnerLabel);
+    expect(existsSync(".github/workflows/ci-arm-trial.yml")).toBe(false);
     const matrixRunners = Object.values(workflow.jobs).flatMap((job) =>
       (job.strategy?.matrix?.include ?? []).map((entry) => entry.runner),
     );
@@ -1988,7 +1993,7 @@ const fiveRunners = (overrides = {}) =>
     ...overrides,
   });
 
-describe("[ADR-0260] the ARM machine is a second site with its own runners", () => {
+describe("[ADR-0266] the ARM machine is a second site with its own runners", () => {
   it("RUNNER_SITE=arm selects runners 4 and 5 with the ci-arm label, the arm64 package and their own slice", () => {
     const result = armShell(
       'for id in $RUNNER_IDS; do runner_select $id; echo "$RUNNER_NAME $RUNNER_USER $RUNNER_ROOT $RUNNER_UNIT $RUNNER_LABEL $RUNNER_SLICE $RUNNER_OTHER_ROOTS"; done; echo "$RUNNER_LABELS|$RUNNER_SLICE_UNITS|$RUNNER_PACKAGE_ARCH|$RUNNER_GATE_LABEL|"',
@@ -2103,7 +2108,7 @@ describe("[ADR-0260] the ARM machine is a second site with its own runners", () 
   });
 });
 
-describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a private mount namespace", () => {
+describe("[ADR-0266] install-runner.sh on the ARM machine, run as root in a private mount namespace", () => {
   const key = `ssh-ed25519 ${"B".repeat(68)}`;
   const reported = [
     "/etc/systemd/system/gh-runner-arm-1.service",
@@ -2247,7 +2252,7 @@ describe("[ADR-0260] install-runner.sh on the ARM machine, run as root in a priv
   });
 });
 
-describe("[ADR-0260] pause, resume and fallback know about both machines", () => {
+describe("[ADR-0266] pause, resume and fallback know about both machines", () => {
   const armBox = () => {
     const box = fiveRunners({ vpsNames: ["ci-arm-1", "ci-arm-2"] });
     box.set("service-states", "gh-runner-arm-1.service=active\ngh-runner-arm-2.service=active\n");
@@ -2546,7 +2551,7 @@ describe("[ADR-0260] pause, resume and fallback know about both machines", () =>
   });
 });
 
-describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS", () => {
+describe("[ADR-0266] install-gate-remote.sh keeps the report key on the CI VPS", () => {
   const hostKey = `ssh-ed25519 ${"C".repeat(68)}`;
   const gateBox = () => {
     const box = sandbox();
@@ -2712,7 +2717,7 @@ describe("[ADR-0260] install-gate-remote.sh keeps the report key on the CI VPS",
   });
 });
 
-describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", () => {
+describe("[ADR-0266] install-arm-runners.sh drives both machines from the Mac", () => {
   const sendKey = `ssh-ed25519 ${"E".repeat(68)}`;
   const hostKey = `ssh-ed25519 ${"F".repeat(68)}`;
   const orchestra = () => {
@@ -2764,7 +2769,7 @@ describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", 
     const box = orchestra();
     const result = box.go();
     expect(result.stdout).toContain(
-      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20; only .github/workflows/ci-arm-trial.yml uses ci-arm until the switch to ARM is merged\n",
+      "ARM_INSTALL_OK runners=ci-arm-1 ci-arm-2 label=ci-arm report_account=gh-ci-send@192.0.2.20; .github/workflows/ci.yml runs policy, static and security on it\n",
     );
     expect(result.status).toBe(0);
     const lines = box.lines();
@@ -2884,7 +2889,7 @@ describe("[ADR-0260] install-arm-runners.sh drives both machines from the Mac", 
   });
 });
 
-describe("[ADR-0260] the sender and the fetcher agree, and the ARM site uninstalls cleanly", () => {
+describe("[ADR-0266] the sender and the fetcher agree, and the ARM site uninstalls cleanly", () => {
   it("send-reports.py and remote-share.mjs use the same limits and the same request shape", async () => {
     const sender = readFileSync(path.join(scripts, "send-reports.py"), "utf8");
     const number = (name) => {
@@ -2963,4 +2968,26 @@ describe("runner machine preparation", () => {
       expect(text).toMatch(/playwright\/cli\.js" install-deps chromium\b/u);
     },
   );
+
+  it("prepare-arm.sh gives integration tests the same sandbox tools and bwrap AppArmor profile as prepare-vps.sh", () => {
+    const read = (name) => readFileSync(path.join(scripts, name), "utf8");
+    const packages = (text) => text.match(/^apt-get install -y -q (.+)$/mu)?.[1].split(" ") ?? [];
+    const profile = (text) => text.match(/^profile_text='([^']+)'$/mu)?.[1];
+    const vps = read("prepare-vps.sh");
+    const arm = read("prepare-arm.sh");
+    for (const name of ["bubblewrap", "socat", "ripgrep", "apparmor-utils"]) {
+      expect(packages(vps)).toContain(name);
+      expect(packages(arm)).toContain(name);
+    }
+    expect(profile(arm)).toBeDefined();
+    expect(profile(arm)).toBe(profile(vps));
+    expect(value(arm, "APPARMOR_PROFILE")).toBe(value(vps, "APPARMOR_PROFILE"));
+    expect(arm).toContain(
+      '[ "$(cat "$APPARMOR_PROFILE")" = "$profile_text" ] || fail "$APPARMOR_PROFILE exists with other content" 75',
+    );
+    expect(arm).toContain(
+      'apparmor_parser -r "$APPARMOR_PROFILE" || fail "could not load $APPARMOR_PROFILE" 76',
+    );
+    expect(arm).toMatch(/^for tool in .*\bbwrap socat rg\b/mu);
+  });
 });

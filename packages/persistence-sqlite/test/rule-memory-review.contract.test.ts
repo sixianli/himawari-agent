@@ -34,13 +34,28 @@ const LEDGER_TABLES = [
 function dumpLedgerTables(database: ReturnType<typeof openQualifiedDatabase>) {
   return {
     ...Object.fromEntries(
-      LEDGER_TABLES.map((table) => [table, database.prepare(`SELECT * FROM ${table}`).all()]),
+      LEDGER_TABLES.map((table) => [
+        table,
+        database
+          .prepare(`SELECT * FROM ${table}`)
+          .all()
+          .map((row) =>
+            table === "proactive_push_backoff"
+              ? Object.fromEntries(
+                  Object.entries(row as Record<string, unknown>).filter(
+                    ([column]) => column !== "source",
+                  ),
+                )
+              : row,
+          ),
+      ]),
     ),
     schemaNames: database
       .prepare(
         `SELECT type, name, tbl_name FROM sqlite_master
          WHERE tbl_name IN (${LEDGER_TABLES.map(() => "?").join(", ")})
            AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_autoindex%'
+           AND name NOT LIKE 'decision_ledger_known_kind%'
          ORDER BY name`,
       )
       .all(...LEDGER_TABLES),

@@ -1,0 +1,7 @@
+# PR 542 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 中 — `capability.reactivate` 已有 iPhone 调用方，却仍留在待补清单，`check:operations` 会报红。本地运行 node scripts/check-operations.mjs 复现该报错（errors=1）；已从 ci/operations-pending.json 移除，再跑 OPERATIONS passed errors=0；触发：合并检查 npm run check:operations（属于 npm run check）；后果：capability.reactivate 有了 iPhone 调用方后仍在待补清单，检查报 OPERATION_PENDING_BUT_COMPLETE，PR 过不了检查
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低 — 在途保护在命令返回时就释放，成功后的重新加载尚未完成，仍可能用旧 revision 重发并闪出失败。CapabilitiesPage.swift 在 reactivate 返回即 endReactivation，而 SettingsStore.reactivate 的 defer 只另起 Task 重载；已改成 reactivate 内等重载完成（成功和失败路径都 await reloadCapabilities）再返回；判低理由：只在重载窗口内再点一次才触发，只多显示一行文字；触发：重新启用命令成功返回后、重新加载完成前再拨一次开关；后果：用旧 revision 再发一次命令被拒，成功后短暂显示没能重新启用
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低 — 失败文案只在 `reloadCapabilities` 清理，`load()` 刷新路径不清理，旧失败可能在以后重新停用时冒出来。SettingsStore.load 原先不裁剪 reactivationFailure；已抽 applyCapabilities，load 和 reloadCapabilities 共用，并补 load 版测试；判低理由：需多步少见顺序，只多显示一行文字；触发：别处重新启用后本机下拉刷新（load），之后本机再次停用同一能力；后果：旧的没能重新启用文案冒出来，与本次停用无关
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4. 低 — 第 1 轮第 5 条只补到谓词和 Store 方法，页面接线与真正的面容取消路径没有反向测试。页面接线（warning 只给停用行、beginReactivation 守卫）在 SwiftUI 视图里，本机不能跑 Swift；第 1 轮第 5 条已判，把接线抽成纯函数是重构，不属于会出错；建议 Andy 决定是否做
+- 5（deepseek-v4.1-flash）不成立：### 5. 低 — 作者说法与代码不一致：`Invalidation` 没有 `lifecycle`，`isDeclined` 的排除项也多了 `URLError`/`HTTPExchangeError`。指的是作者在材料里的说法，不在仓库代码或文档里；第 1 轮第 7 条已判不成立：Swift 模型少 lifecycle 字段解码照样成功，isDeclined 的排除项多于作者描述是正确行为，没有错误结果

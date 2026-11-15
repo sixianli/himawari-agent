@@ -1,2 +1,10 @@
 "NSCameraUsageDescription" = "パソコンの Himawari 設定に表示されたペアリングコードを読み取ります。";
 "NSFaceIDUsageDescription" = "Himawari の設定や記憶を変える前に、本人であることを確認します。";
+"NSAlarmKitUsageDescription" = "Himawari にアラームを頼んだとき、Himawari 自身のアラームで時間どおりに知らせます。";
+"NSCalendarsFullAccessUsageDescription" = "カレンダーの予定の追加・変更・削除を頼んだとき、先に読み、終わったあと読み直して確認します。";
+"NSContactsUsageDescription" = "連絡先の電話番号やメールの変更を頼んだときに使います。";
+"NSHomeKitUsageDescription" = "家の照明のオン・オフやエアコンの調整を頼んだときに使います。";
+"NSRemindersFullAccessUsageDescription" = "リマインダーの追加や完了を頼んだときに使います。";
+"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。録音は文字にしたら消します。";
+"NSSpeechRecognitionUsageDescription" = "聞こえた言葉をこの iPhone で文字にします。";
+"NSMotionUsageDescription" = "AirPods が耳に入っているかを確かめ、呼んだのがあなたかを見分けます。";
