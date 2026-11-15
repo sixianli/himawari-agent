@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { createDeploymentId } from "@himawari-agent/domain";
 import {
   initializeStateRoot,
   readWorkerQualifiedDeployment,
@@ -277,10 +276,8 @@ describe("execution Worker service main", () => {
       snapshotDigest: `sha256:${"b".repeat(64)}`,
     };
     await writeWorkerQualifiedDeployment(layout, record);
-    await writeAuthorityFile(layout, {
-      ...authority(2, 2),
-      id: createDeploymentId("deployment-other"),
-    });
+    const base = authority(2, 2);
+    await writeAuthorityFile(layout, { ...base, id: `${base.id}-other` as typeof base.id });
     const diagnostics = capture();
 
     await expect(
