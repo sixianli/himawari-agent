@@ -100,6 +100,7 @@ export class ThinkSourceRegistry {
 export class ProductionThinkInbox {
   readonly #options: ThinkInboxOptions;
   readonly sources: ThinkSourceRegistry;
+  readonly #locks = new Map<string, Promise<void>>();
 
   constructor(options: ThinkInboxOptions, sources = new ThinkSourceRegistry()) {
     this.#options = options;
@@ -150,6 +151,33 @@ export class ProductionThinkInbox {
     );
     const id = `think:${key}`;
     const summaryRef = `think-summary:${key}`;
+    const previous = this.#locks.get(key) ?? Promise.resolve();
+    const turn = previous.then(() => this.#accept({ input, source, summary, now, id, summaryRef }));
+    const settled = turn.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#locks.set(key, settled);
+    void settled.then(() => {
+      if (this.#locks.get(key) === settled) this.#locks.delete(key);
+    });
+    return turn;
+  }
+
+  async #accept(args: {
+    readonly input: {
+      readonly sourceKind: string;
+      readonly sourceRef: string;
+      readonly sourceVersion: string;
+      readonly externalContent?: boolean;
+    };
+    readonly source: ThinkSource;
+    readonly summary: string;
+    readonly now: string;
+    readonly id: string;
+    readonly summaryRef: string;
+  }): Promise<ThinkSubmitResult> {
+    const { input, source, summary, now, id, summaryRef } = args;
     let wrote = false;
     if (!(await this.#options.payloads.get(summaryRef as never))) {
       try {
@@ -168,19 +196,25 @@ export class ProductionThinkInbox {
         if (!(await this.#options.payloads.get(summaryRef as never))) throw error;
       }
     }
-    const outcome: ThinkEnqueueOutcome = await this.#options.store.enqueue({
-      ...this.#options.scope,
-      id,
-      sourceKind: input.sourceKind,
-      sourceRef: input.sourceRef,
-      sourceVersion: input.sourceVersion,
-      externalContent: input.externalContent === true || source.externalContent,
-      summaryRef,
-      day: localDay(now, this.#options.timeZone),
-      now,
-      queueLimit: this.limits.queueLimit,
-      dailyLimit: this.limits.dailyLimit,
-    });
+    let outcome: ThinkEnqueueOutcome;
+    try {
+      outcome = await this.#options.store.enqueue({
+        ...this.#options.scope,
+        id,
+        sourceKind: input.sourceKind,
+        sourceRef: input.sourceRef,
+        sourceVersion: input.sourceVersion,
+        externalContent: input.externalContent === true || source.externalContent,
+        summaryRef,
+        day: localDay(now, this.#options.timeZone),
+        now,
+        queueLimit: this.limits.queueLimit,
+        dailyLimit: this.limits.dailyLimit,
+      });
+    } catch (error) {
+      if (wrote) await this.#discardUnreferenced(summaryRef);
+      throw error;
+    }
     if (outcome.outcome === "queued") return { accepted: true, entryId: id, duplicate: false };
     if (wrote) await this.#discardUnreferenced(summaryRef);
     if (outcome.outcome === "duplicate") return { accepted: true, entryId: id, duplicate: true };

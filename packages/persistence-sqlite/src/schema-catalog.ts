@@ -722,7 +722,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "think_inbox",
     "ThinkInboxStorePort",
-    "one row per thing a source (an email, a new memory, a reminder) asked Himawari to think about: the source and its version, whether the source is outside content, the queue state (queued, thinking, proposed, skipped, failed or expired), why it ended, how many times it was tried and the day it was accepted; the short summary the thinking reads stays in a protected payload the row points to and is cleared once the entry settles; a transient queue, not exported",
+    "one row per thing a source (an email, a new memory, a reminder) asked Himawari to think about: the source and its version, whether the source is outside content, the queue state (queued, thinking, proposed, skipped, failed or expired), why it ended, how many times it was tried and the day it was accepted; the short summary the thinking reads stays in a protected payload the row points to and is swept in batches by the inbox maintenance after the entry settles; a transient queue, not exported",
     "payload_reference",
     "cascade with Owner or Agent deletion; the summary link clears with its payload",
   ),

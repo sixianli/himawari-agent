@@ -71,10 +71,15 @@ describe("think inbox", () => {
     closers.push(() => repository.close());
     const adapters = createReferenceAdapterSet();
     const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
-    const make = (limits?: ConstructorParameters<typeof ProductionThinkInbox>[0]["limits"]) => {
+    const make = (
+      limits?: ConstructorParameters<typeof ProductionThinkInbox>[0]["limits"],
+      wrap?: (
+        store: ReturnType<typeof repository.thinkInbox>,
+      ) => ReturnType<typeof repository.thinkInbox>,
+    ) => {
       const inbox = new ProductionThinkInbox({
         scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
-        store: repository.thinkInbox(),
+        store: wrap ? wrap(repository.thinkInbox()) : repository.thinkInbox(),
         payloads,
         protector: adapters.payloadProtector,
         clock: { now: () => clock.value },
@@ -182,6 +187,20 @@ describe("think inbox", () => {
     expect(first.accepted && second.accepted).toBe(true);
     expect([first, second].filter((r) => r.accepted && r.duplicate)).toHaveLength(1);
     expect(thinkPayloads()).toBe(1);
+  });
+
+  it("leaves no summary behind when the enqueue step throws", async () => {
+    const { make, thinkPayloads } = await fixture();
+    const inbox = make(undefined, (real) => {
+      return {
+        ...real,
+        enqueue: async () => {
+          throw new Error("disk full");
+        },
+      };
+    });
+    await expect(inbox.submit(mail("a"))).rejects.toThrow("disk full");
+    expect(thinkPayloads()).toBe(0);
   });
 
   it("leaves no summary behind when a settled entry is submitted again", async () => {
