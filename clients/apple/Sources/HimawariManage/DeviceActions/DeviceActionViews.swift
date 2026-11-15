@@ -189,32 +189,6 @@ struct NavigationHeader: View {
     }
 }
 
-struct SegmentPicker: View {
-    let titles: [String]
-    @Binding var selection: Int
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
-                Button {
-                    withAnimation(.snappy) { selection = index }
-                } label: {
-                    Text(title)
-                        .hmType(DesignTokens.TypeScale.secondary)
-                        .fontWeight(selection == index ? .semibold : .regular)
-                        .foregroundStyle(Color.hmText)
-                        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
-                        .background(selection == index ? Color.hmSurface : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Color.hmFill, in: Capsule())
-    }
-}
-
 public struct ApprovalsView: View {
     let model: DeviceActionsModel
     let openThread: ((String) -> Void)?
@@ -248,8 +222,8 @@ public struct ApprovalsView: View {
         VStack(spacing: 12) {
             NavigationHeader(title: Text(L.text("approval.title")), back: close)
             SegmentPicker(
-                titles: [L.format("approval.segment.pending", model.pending.count), L.text("approval.segment.handled")],
-                selection: $segment
+                selection: $segment,
+                options: [(0, L.format("approval.segment.pending", model.pending.count)), (1, L.text("approval.segment.handled"))]
             )
             .padding(.horizontal, 16)
             ScrollView {
