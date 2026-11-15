@@ -70,8 +70,11 @@ if [ "$mode" = "approve" ]; then
   missing_in "$staged" || { rm -rf "$staged"; echo "UI_REVIEW_FAILED copying the screenshots into $staged lost some; snapshots left as they were" >&2; exit 1; }
   [ ! -d "$snapshots" ] || mv "$snapshots" "$previous"
   if ! mv "$staged" "$snapshots"; then
-    [ ! -d "$previous" ] || mv "$previous" "$snapshots"
     rm -rf "$staged"
+    if [ -d "$previous" ] && ! mv "$previous" "$snapshots"; then
+      echo "UI_REVIEW_FAILED could not move $staged into $snapshots, and the old snapshots stayed in $previous; move them back by hand" >&2
+      exit 1
+    fi
     echo "UI_REVIEW_FAILED could not move $staged into $snapshots; the old snapshots were put back" >&2
     exit 1
   fi

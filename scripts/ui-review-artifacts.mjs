@@ -139,7 +139,12 @@ export function fetchArtifacts({ cwd, remote, pr, batch, out }) {
         throw new Error(`UI_REVIEW_MANIFEST_MISMATCH ${file.path}`);
       verified.push({ path: file.path, content });
     }
-    for (const file of verified) writeFileSync(join(out, file.path), file.content);
+    try {
+      for (const file of verified) writeFileSync(join(out, file.path), file.content);
+    } catch (error) {
+      for (const file of verified) rmSync(join(out, file.path), { force: true });
+      throw error;
+    }
     return { ref, files: manifest.files.length, out };
   } finally {
     git(cwd, ["update-ref", "-d", local]);

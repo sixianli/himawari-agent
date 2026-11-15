@@ -21,6 +21,7 @@
   ],
   "worktreeParents": [".agents/local/worktrees", ".cb-delegate", ".claude/worktrees"],
   "keepPackets": 3,
+  "keepDeployedPackets": 2,
   "packetSlimFileBytes": 1048576,
   "packetKeepSuffixes": [".log", ".md", ".txt"]
 }

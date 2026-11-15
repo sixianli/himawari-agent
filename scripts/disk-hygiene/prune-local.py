@@ -15,7 +15,6 @@ DATED_PACKET = re.compile(r'^\d{4}-\d{2}-\d{2}-')
 XCODE_BUSY_PATTERN = r'xcodebuild|simctl|swift-frontend|swiftc'
 DAY = 86400
 DEPLOY_PASSED = 'DEPLOY_RESULT {"result":"passed"'
-DEPLOYED_PACKETS_KEPT = 2
 
 
 def load_rebuildable():
@@ -53,6 +52,8 @@ def load_config(path):
             problems.append(key)
     if not isinstance(config.get('keepPackets'), int) or isinstance(config.get('keepPackets'), bool) or config['keepPackets'] < 1:
         problems.append('keepPackets')
+    if not isinstance(config.get('keepDeployedPackets'), int) or isinstance(config.get('keepDeployedPackets'), bool) or config['keepDeployedPackets'] < 1:
+        problems.append('keepDeployedPackets')
     for key in ('legacyXcodeDirs', 'worktreeKeep', 'worktreeIgnoredAllowed', 'worktreeParents', 'packetKeepSuffixes'):
         if not string_list(config.get(key)):
             problems.append(key)
@@ -106,6 +107,14 @@ def tree_size(path):
             except OSError:
                 pass
     return total
+
+
+def same_or_inside(path, root):
+    try:
+        root_status = os.stat(root)
+        return any(os.path.samestat(os.stat(candidate), root_status) for candidate in (Path(path), *Path(path).parents))
+    except OSError:
+        return True
 
 
 def inside(path, root):
@@ -255,7 +264,7 @@ def prune_worktrees(run, config, repo, now, process_dirs):
             continue
         if path.is_symlink():
             reason = 'symlink'
-        elif path.resolve() == repo or inside(repo, path):
+        elif same_or_inside(repo, path):
             reason = 'current-repo'
         elif any(path.resolve() == kept or inside(path, kept) for kept in keep):
             reason = 'keep-list'
@@ -289,15 +298,16 @@ def prune_worktrees(run, config, repo, now, process_dirs):
 
 def deployed(packet):
     logs = packet / 'run-logs'
+    newest = ''
     if not logs.is_dir():
-        return False
+        return newest
     for log in logs.glob('deploy-*.log'):
         try:
             if DEPLOY_PASSED in log.read_text(errors='replace'):
-                return True
+                newest = max(newest, log.name)
         except OSError:
-            return True
-    return False
+            newest = max(newest, log.name)
+    return newest
 
 
 def prune_packets(run, config, roots, now):
@@ -310,7 +320,8 @@ def prune_packets(run, config, roots, now):
             packets = [child for child in production.iterdir() if child.is_dir() and not child.is_symlink() and DATED_PACKET.match(child.name)]
             packets.sort(key=lambda child: (child.name[:10], child.stat().st_mtime), reverse=True)
             protected = set(packets[:config['keepPackets']])
-            for packet in [packet for packet in packets if deployed(packet)][:DEPLOYED_PACKETS_KEPT]:
+            stamps = {packet: deployed(packet) for packet in packets}
+            for packet in sorted([packet for packet in packets if stamps[packet]], key=stamps.get, reverse=True)[:config['keepDeployedPackets']]:
                 if packet not in protected:
                     run.keep('packet', packet, 'deployed')
                 protected.add(packet)

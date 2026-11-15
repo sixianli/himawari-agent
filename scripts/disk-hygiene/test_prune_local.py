@@ -196,6 +196,23 @@ class PruneLocalTest(unittest.TestCase):
         self.assertTrue((production / '2026-10-02-b/materials/source.tar.gz').exists())
         self.assertFalse((production / '2026-10-01-a/materials/source.tar.gz').exists())
 
+    def test_the_packets_deployed_last_are_kept_whatever_their_names_say(self):
+        config = json.loads(self.config.read_text())
+        config['keepPackets'] = 1
+        config['keepDeployedPackets'] = 2
+        self.config.write_text(json.dumps(config))
+        production = self.repo / '.ci-output/production'
+        deploys = {'2026-10-01-a': '20261010T000000Z', '2026-10-02-b': '20261002T000000Z', '2026-10-03-c': '20261003T000000Z'}
+        for name in [*deploys, '2026-10-04-d']:
+            write(production / name / 'materials/source.tar.gz', 2 * 1024 * 1024)
+        for name, stamp in deploys.items():
+            write(production / name / f'run-logs/deploy-{stamp}.log').write_text('DEPLOY_RESULT {"result":"passed","stoppedAt":"","exit":0}\n')
+        _, output = self.run_prune('--apply')
+        self.assertIn(f'KEEP packet deployed {production / "2026-10-01-a"}', output)
+        self.assertTrue((production / '2026-10-01-a/materials/source.tar.gz').exists())
+        self.assertTrue((production / '2026-10-03-c/materials/source.tar.gz').exists())
+        self.assertFalse((production / '2026-10-02-b/materials/source.tar.gz').exists())
+
     def test_the_repository_given_as_repo_is_never_removed_as_a_worktree(self):
         linked = self.worktree('self')
         age(linked)
