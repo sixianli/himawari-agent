@@ -113,4 +113,14 @@ final class ExportExpiryTextTests: XCTestCase {
         XCTAssertNil(M.exportExpiry(past, now: now))
         XCTAssertNil(M.exportExpiry("not a date", now: now))
     }
+
+    func testFollowingAFixedReadyPageDoesNotPollOrFail() async throws {
+        let transport = ExportTransport(statuses: [(500, "{}")])
+        let result = try JSONDecoder().decode(DataExportResult.self, from: Data(readyResult.utf8))
+        let fixed = DataExportSession(gateway: ManageGateway(transport: transport), fixed: .ready(result))
+        await fixed.follow()
+        XCTAssertEqual(fixed.stage, .ready(result))
+        let sent = await transport.sent
+        XCTAssertTrue(sent.isEmpty)
+    }
 }

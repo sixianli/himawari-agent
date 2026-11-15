@@ -81,6 +81,7 @@ public final class DataExportSession {
     }
 
     public func follow() async {
+        if case .ready = stage { return }
         guard let exportId, !polling else { return }
         polling = true
         defer { polling = false }
