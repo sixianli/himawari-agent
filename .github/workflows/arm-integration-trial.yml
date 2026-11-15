@@ -35,7 +35,7 @@ jobs:
       - name: install dependencies
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: install chromium shell
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install chromium
+        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
       - name: build linux-arm64 and run integration shard

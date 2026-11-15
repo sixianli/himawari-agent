@@ -42,6 +42,7 @@ process.env = {
   ...cacheEnvironment(process.env),
   HIMAWARI_CI_PYTHON: tools.python,
   HIMAWARI_CI_NPM: tools.npmCli,
+  PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
 };
 const stopLoad = startHostLoad();
 const t0 = performance.now();
