@@ -58,3 +58,5 @@
 "pairing.startOver.confirm" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost.";
 "pairing.startOver.confirmUnsent" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost, but %d unsent messages will be deleted with it.";
 "pairing.startOver.confirmUnknown" = "This only erases the pairing on this iPhone. Your chats and memories live on your server and won’t be lost, but any unsent messages on this iPhone will be deleted with it.";
+"today.actionFailed" = "That didn’t go through. Try again.";
+"today.presenceReason" = "confirm it is you approving this";

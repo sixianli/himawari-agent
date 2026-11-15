@@ -32,14 +32,16 @@ public struct HomeFeedAction: Codable, Sendable, Equatable, Hashable {
     public let polarity: Polarity
     public let ownerPresence: Bool
     public let reviewLabel: String?
+    public let binding: String?
 
-    public init(action: String, label: String, labelBasis: String = "catalog", polarity: Polarity, ownerPresence: Bool = false, reviewLabel: String? = nil) {
+    public init(action: String, label: String, labelBasis: String = "catalog", polarity: Polarity, ownerPresence: Bool = false, reviewLabel: String? = nil, binding: String? = nil) {
         self.action = action
         self.label = label
         self.labelBasis = labelBasis
         self.polarity = polarity
         self.ownerPresence = ownerPresence
         self.reviewLabel = reviewLabel
+        self.binding = binding
     }
 
     public var buttonLabel: String {
@@ -233,13 +235,18 @@ public struct HomeFeedSnapshot: Codable, Sendable, Equatable {
     }
 
     public static func decode(_ data: Data) throws -> HomeFeedSnapshot {
-        struct Envelope: Decodable {
-            let type: String
-            let payload: HomeFeedSnapshot
-        }
-        let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-        guard envelope.type == "home.snapshot" else { throw DeviceAPIError.invalidResponse }
-        return envelope.payload
+        try JSONDecoder().decode(HomeFeedSnapshot.self, from: data)
+    }
+}
+
+extension DeviceAPI {
+    public func homeFeed(locale: HomeLocale) async throws -> HomeFeedSnapshot {
+        let data = try await http.send(DeviceRequest(method: "GET", path: "home", query: [URLQueryItem(name: "locale", value: locale.rawValue)]))
+        return try decode(HomeFeedSnapshot.self, data)
+    }
+
+    public func act(on item: HomeFeedItem, action: HomeFeedAction, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
+        try await act(key: item.key, action: action.action, binding: action.binding, ownerPresence: action.ownerPresence, requestId: requestId, presence: presence)
     }
 }
 

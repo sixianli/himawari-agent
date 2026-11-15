@@ -38,6 +38,7 @@ let interfaceTargets: [Target] = [
         resources: [.process("Resources")]
     ),
     .testTarget(name: "HimawariManageTests", dependencies: ["HimawariManage", "HimawariCore"]),
+    .testTarget(name: "HimawariShellTests", dependencies: ["HimawariShell", "HimawariCore"]),
     .target(
         name: "HimawariMacUI",
         dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariShell"],

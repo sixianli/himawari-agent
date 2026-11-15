@@ -113,6 +113,11 @@ struct TodayPage: View {
                 if !layout.upcoming.isEmpty {
                     UpcomingCard(upcoming: layout.upcoming, now: listClock ?? Date())
                 }
+                if let actions, hasDeviceActions, feed.snapshot?.incompleteSources.isEmpty == false {
+                    TodayDeviceActionsCard(model: actions) { approval in
+                        withAnimation(.snappy) { opened = approval }
+                    }
+                }
                 if let listening {
                     ListenTodayCard(controller: listening, open: openListening)
                 }
@@ -309,10 +314,10 @@ struct HomeLinkRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: DesignTokens.Home.linkRowGap) {
                 icon
                     .frame(width: DesignTokens.IconSize.todayRow, height: DesignTokens.TypeScale.body.lineHeight)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignTokens.Home.linkRowTextGap) {
                     Text(title)
                         .hmType(item.itemKind == .running ? DesignTokens.TypeScale.body : DesignTokens.TypeScale.navTitle)
                         .foregroundStyle(Color.hmText)
@@ -328,7 +333,7 @@ struct HomeLinkRow: View {
                         .frame(height: DesignTokens.TypeScale.body.lineHeight)
                 }
             }
-            .padding(.vertical, 14)
+            .padding(.vertical, DesignTokens.Home.linkRowPaddingY)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -358,7 +363,7 @@ struct UpcomingCard: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DesignTokens.Home.upcomingGap) {
             Text(L.text("today.upcoming"))
                 .hmType(DesignTokens.TypeScale.secondary)
                 .foregroundStyle(Color.hmMuted)

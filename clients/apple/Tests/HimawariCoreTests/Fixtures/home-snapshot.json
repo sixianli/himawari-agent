@@ -1,128 +1,136 @@
 {
-  "schemaVersion": 2,
-  "kind": "snapshot",
-  "type": "home.snapshot",
-  "messageId": "msg_home_1",
-  "correlationId": "corr_home_1",
-  "causationId": null,
-  "dataClassification": "private",
-  "risk": "low",
-  "authorizationRef": null,
-  "payload": {
-    "items": [
-      {
-        "key": "insight:mail-42",
-        "kind": "heads_up",
-        "awaitsOwner": true,
-        "sentence": "田中把周五的会改到 15:00，出门提醒要跟着改吗",
-        "sentenceBasis": "recorded",
-        "target": { "type": "mail", "id": "mail-42", "threadId": null, "link": null },
-        "source": {
-          "type": "mail",
-          "from": "田中",
-          "label": "周五会议改时间",
-          "threadId": null,
-          "decisionId": "dec-1",
-          "at": "2026-11-13T06:42:00.000Z"
-        },
-        "deadline": null,
-        "createdAt": "2026-11-13T06:42:00.000Z",
-        "actions": [
-          {
-            "action": "done",
-            "label": "完成",
-            "labelBasis": "catalog",
-            "polarity": "positive",
-            "ownerPresence": false,
-            "reviewLabel": null
-          },
-          {
-            "action": "mute",
-            "label": "不再提醒",
-            "labelBasis": "catalog",
-            "polarity": "negative",
-            "ownerPresence": false,
-            "reviewLabel": null
-          }
-        ],
-        "rank": "unscored",
-        "dataClassification": "private"
+  "items": [
+    {
+      "key": "insight:mail-42",
+      "kind": "heads_up",
+      "awaitsOwner": true,
+      "sentence": "田中把周五的会改到 15:00，出门提醒要跟着改吗",
+      "sentenceBasis": "recorded",
+      "target": {
+        "type": "mail",
+        "id": "mail-42",
+        "threadId": null,
+        "link": null
       },
-      {
-        "key": "approval:apr-7",
-        "kind": "approval",
-        "awaitsOwner": true,
-        "sentence": null,
-        "sentenceBasis": "none",
-        "target": { "type": "approval", "id": "apr-7", "threadId": "thr-osaka", "link": null },
-        "source": {
-          "type": "conversation",
-          "from": null,
-          "label": null,
-          "threadId": "thr-osaka",
-          "decisionId": null,
-          "at": "2026-11-13T06:50:00.000Z"
-        },
-        "deadline": "2026-11-14T06:50:00.000Z",
-        "createdAt": "2026-11-13T06:50:00.000Z",
-        "actions": [
-          {
-            "action": "approved",
-            "label": "同意",
-            "labelBasis": "catalog",
-            "polarity": "positive",
-            "ownerPresence": true,
-            "reviewLabel": "看内容再定"
-          },
-          {
-            "action": "denied",
-            "label": "不同意",
-            "labelBasis": "catalog",
-            "polarity": "negative",
-            "ownerPresence": false,
-            "reviewLabel": null
-          }
-        ],
-        "rank": "deadline",
-        "dataClassification": "private"
+      "source": {
+        "type": "mail",
+        "from": "田中",
+        "label": "周五会议改时间",
+        "threadId": null,
+        "decisionId": "dec-1",
+        "at": "2026-11-13T06:42:00.000Z"
       },
-      {
-        "key": "run:run-3",
-        "kind": "running",
-        "awaitsOwner": false,
-        "sentence": null,
-        "sentenceBasis": "none",
-        "target": { "type": "thread", "id": "thr-train", "threadId": "thr-train", "link": null },
-        "source": {
-          "type": "conversation",
-          "from": null,
-          "label": null,
-          "threadId": "thr-train",
-          "decisionId": null,
-          "at": "2026-11-13T07:00:00.000Z"
+      "deadline": null,
+      "createdAt": "2026-11-13T06:42:00.000Z",
+      "actions": [
+        {
+          "action": "done",
+          "label": "完成",
+          "labelBasis": "catalog",
+          "polarity": "positive",
+          "ownerPresence": false,
+          "reviewLabel": null,
+          "binding": "b-insight:mail-42-done"
         },
-        "deadline": null,
-        "createdAt": "2026-11-13T07:00:00.000Z",
-        "actions": [],
-        "rank": "recency",
-        "dataClassification": "private"
-      }
-    ],
-    "awaitingCount": 2,
-    "awaitingTruncated": false,
-    "incompleteSources": [],
-    "upcoming": [
-      {
-        "reminderId": "rem-1",
-        "memoryId": "mem-1",
-        "text": "给妈妈打电话",
-        "dueAt": "2026-11-13T12:00:00.000Z",
-        "repeat": "none",
-        "sourceThreadId": null,
-        "dataClassification": "personal"
-      }
-    ],
-    "revision": "home-rev-1",
-    "generatedAt": "2026-11-13T07:30:00.000Z"
-  }
+        {
+          "action": "mute",
+          "label": "不再提醒",
+          "labelBasis": "catalog",
+          "polarity": "negative",
+          "ownerPresence": false,
+          "reviewLabel": null,
+          "binding": "b-insight:mail-42-mute"
+        }
+      ],
+      "rank": "unscored",
+      "dataClassification": "private"
+    },
+    {
+      "key": "approval:apr-7",
+      "kind": "approval",
+      "awaitsOwner": true,
+      "sentence": null,
+      "sentenceBasis": "none",
+      "target": {
+        "type": "approval",
+        "id": "apr-7",
+        "threadId": "thr-osaka",
+        "link": null
+      },
+      "source": {
+        "type": "conversation",
+        "from": null,
+        "label": null,
+        "threadId": "thr-osaka",
+        "decisionId": null,
+        "at": "2026-11-13T06:50:00.000Z"
+      },
+      "deadline": "2026-11-14T06:50:00.000Z",
+      "createdAt": "2026-11-13T06:50:00.000Z",
+      "actions": [
+        {
+          "action": "approved",
+          "label": "同意",
+          "labelBasis": "catalog",
+          "polarity": "positive",
+          "ownerPresence": true,
+          "reviewLabel": "看内容再定",
+          "binding": "b-approval:apr-7-approved"
+        },
+        {
+          "action": "denied",
+          "label": "不同意",
+          "labelBasis": "catalog",
+          "polarity": "negative",
+          "ownerPresence": false,
+          "reviewLabel": null,
+          "binding": "b-approval:apr-7-denied"
+        }
+      ],
+      "rank": "deadline",
+      "dataClassification": "private"
+    },
+    {
+      "key": "run:run-3",
+      "kind": "running",
+      "awaitsOwner": false,
+      "sentence": null,
+      "sentenceBasis": "none",
+      "target": {
+        "type": "thread",
+        "id": "thr-train",
+        "threadId": "thr-train",
+        "link": null
+      },
+      "source": {
+        "type": "conversation",
+        "from": null,
+        "label": null,
+        "threadId": "thr-train",
+        "decisionId": null,
+        "at": "2026-11-13T07:00:00.000Z"
+      },
+      "deadline": null,
+      "createdAt": "2026-11-13T07:00:00.000Z",
+      "actions": [],
+      "rank": "recency",
+      "dataClassification": "private"
+    }
+  ],
+  "awaitingCount": 2,
+  "awaitingTruncated": false,
+  "incompleteSources": [],
+  "upcoming": [
+    {
+      "reminderId": "rem-1",
+      "memoryId": "mem-1",
+      "text": "给妈妈打电话",
+      "dueAt": "2026-11-13T12:00:00.000Z",
+      "repeat": "none",
+      "sourceThreadId": null,
+      "dataClassification": "personal"
+    }
+  ],
+  "revision": "home-rev-1",
+  "generatedAt": "2026-11-13T07:30:00.000Z"
 }

@@ -99,8 +99,10 @@ public final class HomeFeedModel {
             if let message = outcome.message, !message.isEmpty {
                 toast = HomeToast(item: item, message: message, undo: outcome.undo)
             }
+        } catch OwnerPresenceError.declined {
         } catch {
             failed = true
+            toast = HomeToast(item: item, message: L.text("today.actionFailed"), undo: nil)
         }
         await refresh()
     }
@@ -116,6 +118,7 @@ public final class HomeFeedModel {
             settled.remove(toast.item.key)
         } catch {
             failed = true
+            self.toast = HomeToast(item: toast.item, message: L.text("today.actionFailed"), undo: nil)
         }
         await refresh()
     }

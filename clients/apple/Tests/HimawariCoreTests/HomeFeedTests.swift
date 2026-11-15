@@ -49,8 +49,15 @@ struct HomeFeedTests {
         #expect(home.upcoming.first?.due == HomeTimestamp.parse("2026-11-13T12:00:00Z"))
     }
 
-    @Test func rejectsAnotherMessageType() {
-        let data = Data(#"{"type":"thread.snapshot","payload":{}}"#.utf8)
+    @Test func keepsTheBindingTheServerGaveEachAction() throws {
+        let home = try fixture()
+        let actions = try #require(home.items.first { $0.key == "insight:mail-42" }).actions
+        #expect(!actions.isEmpty)
+        #expect(actions.allSatisfy { $0.binding == "b-insight:mail-42-\($0.action)" })
+    }
+
+    @Test func rejectsAGatewayEnvelopeBecauseTheDeviceRouteSendsOnlyThePayload() {
+        let data = Data(#"{"type":"home.snapshot","payload":{"items":[],"awaitingCount":0,"revision":"r","generatedAt":"x"}}"#.utf8)
         #expect(throws: (any Error).self) { try HomeFeedSnapshot.decode(data) }
     }
 

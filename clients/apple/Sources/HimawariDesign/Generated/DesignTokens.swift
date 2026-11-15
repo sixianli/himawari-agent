@@ -130,6 +130,9 @@ public enum DesignTokens {
         public static let leadGap: CGFloat = 14
         public static let leadIconBox: CGFloat = 36
         public static let leadIndent: CGFloat = 38
+        public static let linkRowGap: CGFloat = 12
+        public static let linkRowPaddingY: CGFloat = 14
+        public static let linkRowTextGap: CGFloat = 2
         public static let paddingBottom: CGFloat = 130
         public static let paddingTop: CGFloat = 152
         public static let paddingX: CGFloat = 16
@@ -137,6 +140,7 @@ public enum DesignTokens {
         public static let rowsLeading: CGFloat = 16
         public static let rowsTrailing: CGFloat = 14
         public static let statusBar: CGFloat = 47
+        public static let upcomingGap: CGFloat = 10
         public static let upcomingInsetX: CGFloat = 20
         public static let upcomingTime: CGFloat = 84
         public static let wordmarkHeight: CGFloat = 48

@@ -58,3 +58,5 @@
 "pairing.startOver.confirm" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢。";
 "pairing.startOver.confirmUnsent" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；但还有 %d 条消息没发出去，会一起删掉。";
 "pairing.startOver.confirmUnknown" = "只清掉这台 iPhone 上的配对。对话和记忆都存在你的服务器上，不会丢；这台 iPhone 上如果有还没发出去的消息，会一起删掉。";
+"today.actionFailed" = "没做成，请再试一次";
+"today.presenceReason" = "确认是你本人在同意这件事";

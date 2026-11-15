@@ -58,3 +58,5 @@
 "pairing.startOver.confirm" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われません。";
 "pairing.startOver.confirmUnsent" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われませんが、まだ送信していない %d 件のメッセージは一緒に削除されます。";
 "pairing.startOver.confirmUnknown" = "この iPhone のペアリングだけを消去します。会話と記憶はあなたのサーバーにあるので失われませんが、この iPhone にまだ送信していないメッセージがあれば一緒に削除されます。";
+"today.actionFailed" = "うまくいきませんでした。もう一度お試しください。";
+"today.presenceReason" = "ご本人の承認であることを確認";

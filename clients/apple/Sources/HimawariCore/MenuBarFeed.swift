@@ -88,14 +88,18 @@ extension DeviceAPI {
     }
 
     public func act(on item: HomeItem, action: HomeAction, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
+        try await act(key: item.key, action: action.action, binding: action.binding, ownerPresence: action.ownerPresence, requestId: requestId, presence: presence)
+    }
+
+    public func act(key: String, action: String, binding: String?, ownerPresence: Bool, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
         struct Body: Encodable {
             let key: String
             let action: String
             let binding: String?
             let requestId: String
         }
-        let body = try JSONEncoder().encode(Body(key: item.key, action: action.action, binding: action.binding, requestId: requestId))
-        guard action.ownerPresence else {
+        let body = try JSONEncoder().encode(Body(key: key, action: action, binding: binding, requestId: requestId))
+        guard ownerPresence else {
             _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
             return
         }
