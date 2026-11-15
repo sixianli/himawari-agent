@@ -103,9 +103,31 @@ import Testing
         #expect(!menu.noticesExpanded)
         menu.reveal("gone")
         #expect(!menu.noticesExpanded)
+        #expect(menu.revealedNotice == nil)
         menu.reveal("n-1")
         #expect(menu.noticesExpanded)
         #expect(menu.olderNotices.map(\.id) == ["n-1"])
+        #expect(menu.revealedNotice == NoticeReveal(id: "n-1", serial: 1))
+    }
+
+    @Test func theOpenedOlderNoticeIsTheOneTheListScrollsTo() {
+        let menu = model()
+        for (index, id) in ["n-1", "n-2", "n-3", "n-4", "n-5"].enumerated() {
+            menu.receive(.notificationDeliver(DeviceNotification(id: id, kind: "run_result", title: id, body: "", homeKey: nil, createdAt: "2026-11-15T0\(index):00:00.000Z")))
+        }
+        menu.reveal("n-1")
+        #expect(menu.revealedNotice?.id == "n-1")
+        menu.reveal("n-1")
+        #expect(menu.revealedNotice == NoticeReveal(id: "n-1", serial: 2))
+        menu.reveal("n-3")
+        #expect(menu.revealedNotice?.id == "n-3")
+        menu.receive(.notificationWithdraw(id: "n-1"))
+        #expect(menu.revealedNotice?.id == "n-3")
+        if let notice = menu.olderNotices.first(where: { $0.id == "n-3" }) { menu.dismiss(notice) }
+        #expect(menu.revealedNotice == nil)
+        menu.reveal("n-2")
+        menu.toggleOlderNotices()
+        #expect(menu.revealedNotice == nil)
     }
 
     @Test func theSystemIdleTimeCanBeRead() throws {

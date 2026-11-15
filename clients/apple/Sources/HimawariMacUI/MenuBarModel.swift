@@ -25,6 +25,11 @@ protocol MacWorkControl: AnyObject {
     func stop(_ workId: String) async
 }
 
+struct NoticeReveal: Equatable {
+    let id: String
+    let serial: Int
+}
+
 @MainActor
 @Observable
 final class MenuBarModel {
@@ -37,6 +42,7 @@ final class MenuBarModel {
     private(set) var shortcutState: GlobalShortcut.State?
     private(set) var notices = PendingNotifications()
     var noticesExpanded = false
+    private(set) var revealedNotice: NoticeReveal?
     @ObservationIgnored var showNotice: ((DeviceNotification) -> Void)?
     @ObservationIgnored var removeNotice: ((String) -> Void)?
     @ObservationIgnored weak var work: MacWorkControl?
@@ -78,10 +84,13 @@ final class MenuBarModel {
 
     func toggleOlderNotices() {
         noticesExpanded.toggle()
+        revealedNotice = nil
     }
 
     func reveal(_ id: String) {
-        if olderNotices.contains(where: { $0.id == id }) { noticesExpanded = true }
+        guard olderNotices.contains(where: { $0.id == id }) else { return }
+        noticesExpanded = true
+        revealedNotice = NoticeReveal(id: id, serial: (revealedNotice?.serial ?? 0) + 1)
     }
 
     func receive(_ event: DeviceStreamEvent) {
@@ -93,6 +102,7 @@ final class MenuBarModel {
         case let .notificationWithdraw(id):
             let gone = notices.withdraw(id)
             removeNotice?(id)
+            forgetReveal(of: id)
             if olderNotices.isEmpty { noticesExpanded = false }
             if gone?.homeKey != nil { Task { await refresh() } }
         default:
@@ -104,7 +114,12 @@ final class MenuBarModel {
         rememberSettled()
         notices.withdraw(notice.id)
         removeNotice?(notice.id)
+        forgetReveal(of: notice.id)
         if olderNotices.isEmpty { noticesExpanded = false }
+    }
+
+    private func forgetReveal(of id: String) {
+        if revealedNotice?.id == id { revealedNotice = nil }
     }
 
     private func rememberSettled() {

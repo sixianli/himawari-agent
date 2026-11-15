@@ -115,16 +115,25 @@ struct PanelView: View {
         }
         .buttonStyle(.plain)
         if model.noticesExpanded {
-            ScrollView {
-                VStack(spacing: DesignTokens.Mac.panelGap) {
-                    ForEach(model.olderNotices) { notice in
-                        card { noticeCard(notice) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: DesignTokens.Mac.panelGap) {
+                        ForEach(model.olderNotices) { notice in
+                            card { noticeCard(notice) }
+                                .id(notice.id)
+                        }
                     }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
+                .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
+                .onChange(of: olderListHeight) { scrollToRevealed(proxy) }
+                .onChange(of: model.revealedNotice, initial: true) { scrollToRevealed(proxy) }
             }
-            .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
         }
+    }
+
+    private func scrollToRevealed(_ proxy: ScrollViewProxy) {
+        if let id = model.revealedNotice?.id { proxy.scrollTo(id, anchor: .top) }
     }
 
     @ViewBuilder
