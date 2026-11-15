@@ -42,7 +42,7 @@ date: "2026-11-15"
 3. 做判断时是哪一版：模型、提示词、门槛和设置。
 4. 这次开口有没有到 Andy 眼前。
 
-现状是：邮件的系统主动提醒有第 1 样和一部分第 2 样；“想一想”（[ADR 0274](0274-new-things-go-through-one-think-entrance.md)）不写决策记录；第 3 样哪里都没有；第 4 样只有推送通知有。同一件事还记在两处（通知的点开既在推送表又在决策信号表；邮件有按次和按封两套评价）。
+现状是：邮件的系统主动提醒有第 1 样和一部分第 2 样；“想一想”（[ADR 0274](0274-new-things-go-through-one-think-entrance.md)）不写决策记录；第 3 样在决策记录的写入字段里没有位置（前提 2）；第 4 样本决定只找到推送表在记（前提 9）。同一件事还记在两处（通知的点开既在推送表又在决策信号表；邮件有按次和按封两套评价）。
 
 本决定只定“记什么、存哪里、怎么算”，不含统计页面，也不新增或修改任何模型调用。
 
@@ -59,7 +59,7 @@ date: "2026-11-15"
 7. 邮件判断的把握只有两档，没有数字：`packages/application/src/ports/proactive-checks.ts` 原话 `export type ProactiveConfidence = "sure" | "unsure";`。
 8. 邮件有两套评价，单位不同：`proactive_processed_messages` 每封邮件一行，自己带 `owner_rating`（同一迁移原话 `owner_rating TEXT CHECK (owner_rating IS NULL OR owner_rating IN ('useful', 'unneeded', 'missed'))`）；决策记录每次检查一行，也有 `owner_rating`。
 9. 推送表按通知记点开和划掉，并且只把“点开”抄进决策信号：`packages/persistence-sqlite/src/migrations/20261114154943_apple_push.sql` 里 `web_push_feedback` 有 `opened_at TEXT`、`dismissed_at TEXT`，主键是 `PRIMARY KEY (owner_id, agent_id, source_key)`；`packages/persistence-sqlite/src/sqlite-web-push-operations.ts` 原话 `if (event.reaction !== "opened" || changes === 0) continue;`。
-10. 推送的退避和概览都在读推送表的这两列：`packages/persistence-sqlite/src/proactive-push-backoff.ts` 和 `packages/application/src/services/proactive-overview.ts` 里都出现 `opened_at`、`dismissed_at`（或对应的 `openedAt`、`dismissedAt`）。
+10. 推送的退避和概览在读推送表的这两列：`packages/persistence-sqlite/src/proactive-push-backoff.ts` 读点开，原话 `feedback.opened_at AS openedAt`；`packages/application/src/services/proactive-overview.ts` 点开和划掉都读，原话 `return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;`。
 11. 统计包按决策种类分组的规则写在代码里，信号名单也写在代码里：`packages/calibration/src/index.ts` 的 `export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup | null` 和 `export const IMPLICIT_SIGNALS = ["opened", "undone", "replied"] as const;`。
 12. 每天打分现在的取样范围和上限：`packages/application/src/services/daily-review.ts` 原话 `export const DAILY_REVIEW_WINDOW_DAYS = 7;`、`export const DAILY_REVIEW_MAX_RATINGS = 50;`。
 13. 想一想当时看到的摘要在条目结束后会被清掉：`apps/agent-service/src/production-think-inbox.ts` 的清理里对已结束的条目执行 `.delete(summaryRef as never)`，再 `clearSummary`。
@@ -130,7 +130,7 @@ date: "2026-11-15"
 
 ### 四、通知的送出、点开和划掉
 
-18. **通知这一层的事实只存在推送表里。** `web_push_feedback` 保留 `first_sent_at`、`devices`、`opened_at`、`dismissed_at`：它们说的是“这条通知”，而很多通知背后没有模型判断（Andy 自己定的提醒、审批请求、任务完成），退避和概览也在读它们（前提 10）。
+18. **通知这一层的事实只存在推送表里。** `web_push_feedback` 保留 `first_sent_at`、`devices`、`opened_at`、`dismissed_at`：它们说的是“这条通知”，而很多通知背后没有模型判断（Andy 自己定的提醒、审批请求、任务完成），退避读点开、概览读点开和划掉（前提 10）。
 19. **不再把“点开”抄一份到决策这一侧。** 统计要知道某次判断的通知有没有点开，按决策记录的 `push_source_key` 去推送表查。
 20. `web_push_feedback` 的主键加上 `channel`，同一条通知经网页推送和苹果推送各一行，互不覆盖。
 21. 名称上分清三层：`sent`（推送服务收下了，不等于到了设备）、`shown`（卡片在 App 里显示了，客户端回报）、点开。统计里“到了 Andy 眼前”指：通知已送出，或有 `shown` 事件。
@@ -203,7 +203,7 @@ date: "2026-11-15"
 
 ## 放弃的做法
 
-- **推送表不再记点开和划掉，全部搬到决策这一侧。** 设计线程曾这样提议。放弃的原因：没有模型判断的通知没有决策记录可挂，要为它们造假的“判断”行；退避和概览都在读这两列。改成推送表是这类事实唯一的存放处，删掉决策这一侧的副本。
+- **推送表不再记点开和划掉，全部搬到决策这一侧。** 设计线程曾这样提议。放弃的原因：没有模型判断的通知没有决策记录可挂，要为它们造假的“判断”行；退避和概览在读这两列（前提 10）。改成推送表是这类事实唯一的存放处，删掉决策这一侧的副本。
 - **给邮件判断补一个数字分数。** 现在只有两档。补数字要改发给模型的内容和输出格式，属于模型调用改动，不在本决定里；要做另出方案。
 - **把事件的“正面、负面”写进参照表。** 口径会变，写进表里改一次就要改数据。
 - **只挑可疑的沉默给 Andy 评。** 省他的时间，但算出来的“该做没做”比例会偏高，不能代表全部沉默。保留这一层，另加纯随机的一层专门用来算比例。

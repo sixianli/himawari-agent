@@ -1,0 +1,44 @@
+CLAIM|1|一致|docs/product-vision.md:155|愿景要的是所有模型门槛决策的趋势：`docs/product-vision.md` 第 3.7 节表格第 10 行，原话“连续 30 天统计所有由模型做出的门槛决策”“附样本量”“趋势可量化”。|连续 30 天统计所有由模型做出的门槛决策——主动提醒的开口与沉默、记忆的保留与丢弃、整理的合并与作废——的命中率、误扰率与已审漏报率，附样本量；命中率上升、误扰率下降，趋势可量化
+CLAIM|2|一致|packages/application/src/ports/decision-ledger.ts:199|决策记录的写入字段里没有模型、提示词或设置的版本：`packages/application/src/ports/decision-ledger.ts` 的 `DecisionLedgerWrite` 只有 `id, ownerId, agentId, kind, decidedAt, outcome, reasonCode, subjectRef, inputs, reasonRef, contentRef, costMicros, durationMs, category, confidencePermille, inferred`。|export interface DecisionLedgerWrite {
+CLAIM|3|一致|packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts:120|把握分数只允许记忆候选记：`packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts` 原话 `"Decision ledger candidate fields belong to memory candidates only"`。|return "Decision ledger candidate fields belong to memory candidates only";
+CLAIM|4|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:58|迁移 `packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql` 原话 `kind = 'memory_candidate' OR (category IS NULL AND confidence_permille IS NULL AND inferred IS NULL)`。|kind = 'memory_candidate' OR
+CLAIM|5|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:61|来源名一栏只允许邮件那一种决策用：同一迁移原话 `CHECK ((kind = 'proactive') = (scenario IS NOT NULL))`。|CHECK ((kind = 'proactive') = (scenario IS NOT NULL)),
+CLAIM|6|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:221|决策信号只有三种，写死在表里：同一迁移原话 `signal TEXT NOT NULL CHECK (signal IN ('opened', 'undone', 'replied'))`。|signal TEXT NOT NULL CHECK (signal IN ('opened', 'undone', 'replied')),
+CLAIM|7|一致|packages/application/src/ports/decision-ledger.ts:20|代码里是 `packages/application/src/ports/decision-ledger.ts` 的 `export const DECISION_SIGNALS = ["opened", "undone", "replied"] as const;`。|export const DECISION_SIGNALS = ["opened", "undone", "replied"] as const;
+CLAIM|8|一致|apps/agent-service/src/production-think-worker.ts:100|`apps/agent-service/src/production-think-worker.ts` 原话 `if (verdict === "skip") return await settle("skipped", "worth_no");`|if (verdict === "skip") return await settle("skipped", "worth_no");
+CLAIM|9|一致|apps/agent-service/src/production-think-worker.ts:101|和 `if (verdict === "unsure") return await settle("skipped", "worth_unsure");`|if (verdict === "unsure") return await settle("skipped", "worth_unsure");
+CLAIM|10|一致|apps/agent-service/src/production-think-runner.ts:272|`apps/agent-service/src/production-think-runner.ts` 写出提议后只返回 `return { outcome: "proposed", reasonCode: "proposal_written" };`。|return { outcome: "proposed", reasonCode: "proposal_written" };
+CLAIM|11|一致|packages/application/src/ports/proactive-checks.ts:11|邮件判断的把握只有两档，没有数字：`packages/application/src/ports/proactive-checks.ts` 原话 `export type ProactiveConfidence = "sure" ｜ "unsure";`。|export type ProactiveConfidence = "sure" | "unsure";
+CLAIM|12|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:122|`proactive_processed_messages` 每封邮件一行。|PRIMARY KEY (owner_id, agent_id, source, message_id),
+CLAIM|13|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:121|自己带 `owner_rating`（同一迁移原话 `owner_rating TEXT CHECK (owner_rating IS NULL OR owner_rating IN ('useful', 'unneeded', 'missed'))`）。|owner_rating TEXT CHECK (owner_rating IS NULL OR owner_rating IN ('useful', 'unneeded', 'missed'))
+CLAIM|14|一致|packages/persistence-sqlite/src/sqlite-proactive-operations.ts:965|决策记录每次检查一行。|INSERT INTO decision_ledger (
+CLAIM|15|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:43|决策记录每次检查一行，也有 `owner_rating`。|owner_rating TEXT CHECK (owner_rating IS NULL OR owner_rating IN ('useful', 'unneeded', 'missed')),
+CLAIM|16|一致|packages/persistence-sqlite/src/migrations/20261114154943_apple_push.sql:99|`web_push_feedback` 有 `opened_at TEXT`、`dismissed_at TEXT`。|opened_at TEXT,
+CLAIM|17|一致|packages/persistence-sqlite/src/migrations/20261114154943_apple_push.sql:102|主键是 `PRIMARY KEY (owner_id, agent_id, source_key)`。|PRIMARY KEY (owner_id, agent_id, source_key)
+CLAIM|18|一致|packages/persistence-sqlite/src/sqlite-web-push-operations.ts:671|`packages/persistence-sqlite/src/sqlite-web-push-operations.ts` 原话 `if (event.reaction !== "opened" || changes === 0) continue;`。|if (event.reaction !== "opened" || changes === 0) continue;
+CLAIM|19|一致|packages/persistence-sqlite/src/proactive-push-backoff.ts:47|`packages/persistence-sqlite/src/proactive-push-backoff.ts` 里出现 `opened_at`（或 `openedAt`）。|insight.owner_rating AS rating, feedback.opened_at AS openedAt
+CLAIM|20|不一致|packages/persistence-sqlite/src/proactive-push-backoff.ts:47|`packages/persistence-sqlite/src/proactive-push-backoff.ts` 里出现 `dismissed_at`（或 `dismissedAt`）。|insight.owner_rating AS rating, feedback.opened_at AS openedAt
+CLAIM|21|一致|packages/application/src/services/proactive-overview.ts:147|`packages/application/src/services/proactive-overview.ts` 里出现 `opened_at`、`dismissed_at`（或对应的 `openedAt`、`dismissedAt`）。|return sent?.openedAt ? "opened" : sent?.dismissedAt ? "dismissed" : null;
+CLAIM|22|一致|packages/calibration/src/index.ts:274|统计包按决策种类分组的规则写在代码里：`packages/calibration/src/index.ts` 的 `export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup ｜ null`。|export function calibrationGroup(row: CalibrationDecisionRow): CalibrationGroup | null {
+CLAIM|23|一致|packages/calibration/src/index.ts:126|信号名单也写在代码里：`export const IMPLICIT_SIGNALS = ["opened", "undone", "replied"] as const;`。|export const IMPLICIT_SIGNALS = ["opened", "undone", "replied"] as const;
+CLAIM|24|一致|packages/application/src/services/daily-review.ts:24|`packages/application/src/services/daily-review.ts` 原话 `export const DAILY_REVIEW_WINDOW_DAYS = 7;`。|export const DAILY_REVIEW_WINDOW_DAYS = 7;
+CLAIM|25|一致|packages/application/src/services/daily-review.ts:26|`export const DAILY_REVIEW_MAX_RATINGS = 50;`。|export const DAILY_REVIEW_MAX_RATINGS = 50;
+CLAIM|26|一致|apps/agent-service/src/production-think-inbox.ts:274|清理里对已结束的条目执行 `.delete(summaryRef as never)`。|.delete(summaryRef as never)
+CLAIM|27|一致|apps/agent-service/src/production-think-inbox.ts:279|再 `clearSummary`。|.clearSummary({ ...this.#options.scope, id, summaryRef })
+CLAIM|28|一致|apps/agent-service/src/production-think-worker.ts:77|“想一想”（[ADR 0274](0274-new-things-go-through-one-think-entrance.md)）不写决策记录。|await store.finish({ ...scope, id: entry.id, to, reasonCode, now: clock.now() });
+CLAIM|29|找不到|-|第 3 样哪里都没有。|-
+CLAIM|30|找不到|-|第 4 样只有推送通知有。|-
+CLAIM|31|一致|packages/application/src/ports/proactive-checks.ts:396|邮件有按次和按封两套评价。|rateProcessed(
+CLAIM|32|一致|packages/persistence-sqlite/src/sqlite-proactive-operations.ts:330|现在只有改每天上限和每次上限时才写。|for (const key of ["perDay", "perCheck"] as const) {
+CLAIM|33|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:116|结果值沿用 `proactive_processed_messages.outcome` 现有的 `act`、`know`、`check`、`ignore`。|outcome TEXT NOT NULL CHECK (outcome IN ('act', 'know', 'check', 'ignore', 'skipped')),
+CLAIM|34|一致|packages/application/src/ports/decision-ledger.ts:78|`proposal` 种类里原来用来表示 Andy 的反应或后续结果的结果值（`accepted`、`dismissed`、`expired`、`executed`、`failed`、`undone`、`superseded`）。|proposal: [
+CLAIM|35|一致|packages/application/src/services/perception-extraction.ts:861|`perception-extraction.ts` 里自己写 `proposal/proposed` 的那一段。|this.#ledger(key, "proposed", PERCEPTION_REASON_CODES.proposed, {
+CLAIM|36|一致|packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts:517|`decision_ledger.owner_rating` 存最新的评价。|UPDATE decision_ledger SET owner_rating = ?, rated_at = ?
+CLAIM|37|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:132|模型预评（`decision_prereviews`）照旧。|CREATE TABLE decision_prereviews (
+CLAIM|38|一致|packages/persistence-sqlite/src/migrations/20261114172143_proactive_source_registry.sql:244|Muse 对照照旧。|CREATE TABLE muse_reference_entries (
+CLAIM|39|一致|docs/adr/0155-decision-record-observation-and-weekly-report-page.md:10|观察期照旧。|# ADR 0155：决策记录观察期与校准周报网页
+CLAIM|40|一致|apps/control-center/src/i18n/resources/zh-CN.ts:1014|界面上是“做对了、不该做、该做没做”。|"proactive.rate": "{r, select, useful {做对了} unneeded {不该做} other {该做没做}}",
+CLAIM|41|一致|packages/persistence-sqlite/src/migrations/20261114154943_apple_push.sql:97|`web_push_feedback` 保留 `first_sent_at`、`devices`、`opened_at`、`dismissed_at`。|first_sent_at TEXT NOT NULL,
+CLAIM|42|一致|packages/persistence-sqlite/src/sqlite-web-push-operations.ts:684|`opened` 不搬（它是推送表 `opened_at` 的副本）。|occurredAt: row.openedAt,
+
+外部网站和第三方产品（Anthropic、Apple、arXiv、YouTube）的说法按要求未核对；另外“邮件的系统主动提醒有第 1 样和一部分第 2 样”“第 3 样哪里都没有”“第 4 样只有推送通知有”这类全局性断言，以及 `DAILY_REVIEW_MAX_RATINGS` 是否真在每天打分流程中生效，我没有读到足够证据。
