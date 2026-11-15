@@ -130,45 +130,95 @@ import Testing
         #expect(menu.revealedNotice == nil)
     }
 
-    private func temporaryStore() throws -> FileLocalStore {
-        try FileLocalStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true))
+    private func withTemporaryStores(_ count: Int, _ body: ([FileLocalStore]) throws -> Void) throws {
+        let directories = (0 ..< count).map { _ in FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true) }
+        defer { for directory in directories { try? FileManager.default.removeItem(at: directory) } }
+        try body(directories.map { try FileLocalStore(directory: $0) })
     }
 
     private func settledIds(in store: FileLocalStore) -> [String] {
         store.read(PendingNotifications.settledName).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
     }
 
-    @Test func noticesSettledBeforeTheFirstStoreAreSavedInIt() throws {
-        let menu = model()
-        menu.receive(.notificationWithdraw(id: "before-ready"))
-        let store = try temporaryStore()
-        menu.settle(in: store)
-        #expect(settledIds(in: store) == ["before-ready"])
-    }
-
-    @Test func pairingAgainStartsTheNewDeviceWithNoneOfTheOldNoticesOrSettledIds() throws {
-        let menu = model()
-        var removed: [String] = []
-        var shown: [String] = []
-        menu.removeNotice = { removed.append($0) }
-        menu.showNotice = { shown.append($0.id) }
-        let old = try temporaryStore()
-        menu.settle(in: old)
+    private func deliverOldNotices(to menu: MenuBarModel) {
         menu.receive(.notificationDeliver(DeviceNotification(id: "old-1", kind: "run_result", title: "a", body: "", homeKey: nil, createdAt: "2026-11-15T01:00:00.000Z")))
         menu.receive(.notificationDeliver(DeviceNotification(id: "old-2", kind: "run_result", title: "b", body: "", homeKey: nil, createdAt: "2026-11-15T02:00:00.000Z")))
         menu.receive(.notificationWithdraw(id: "old-settled"))
         menu.reveal("old-1")
-        removed = []
-        let fresh = try temporaryStore()
-        menu.settle(in: fresh)
-        #expect(menu.shownNotices.isEmpty)
-        #expect(Set(removed) == ["old-1", "old-2"])
-        #expect(menu.revealedNotice == nil)
-        #expect(!menu.noticesExpanded)
-        #expect(settledIds(in: fresh).isEmpty)
-        menu.receive(.notificationDeliver(DeviceNotification(id: "old-settled", kind: "run_result", title: "c", body: "", homeKey: nil, createdAt: "2026-11-15T03:00:00.000Z")))
-        #expect(shown.last == "old-settled")
-        #expect(settledIds(in: old) == ["old-settled"])
+    }
+
+    @Test func noticesSettledBeforeTheFirstStoreAreSavedInIt() throws {
+        try withTemporaryStores(1) { stores in
+            let menu = model()
+            menu.receive(.notificationWithdraw(id: "before-ready"))
+            menu.app.useDemoDeviceStore(stores[0])
+            #expect(settledIds(in: stores[0]) == ["before-ready"])
+        }
+    }
+
+    @Test func aStoreTheAppAlreadyHasIsUsedFromTheStart() throws {
+        try withTemporaryStores(1) { stores in
+            let app = AppModel.demo(.active, host: "himawari.example.com", kind: .mac)
+            app.useDemoDeviceStore(stores[0])
+            let menu = MenuBarModel(demo: app, settings: MacSettingsStore(demo: MacAccessSettings()), home: nil, running: [], shortcut: nil)
+            menu.receive(.notificationWithdraw(id: "n-1"))
+            #expect(settledIds(in: stores[0]) == ["n-1"])
+        }
+    }
+
+    @Test func pairingAgainClearsTheOldNoticesTheMomentTheDeviceStoreChanges() throws {
+        try withTemporaryStores(2) { stores in
+            let (old, fresh) = (stores[0], stores[1])
+            let menu = model()
+            var removed: [String] = []
+            var shown: [String] = []
+            menu.removeNotice = { removed.append($0) }
+            menu.showNotice = { shown.append($0.id) }
+            menu.app.useDemoDeviceStore(old)
+            deliverOldNotices(to: menu)
+            removed = []
+            menu.app.useDemoDeviceStore(fresh)
+            #expect(menu.shownNotices.isEmpty)
+            #expect(Set(removed) == ["old-1", "old-2"])
+            #expect(menu.revealedNotice == nil)
+            #expect(!menu.noticesExpanded)
+            #expect(settledIds(in: fresh).isEmpty)
+            menu.receive(.notificationDeliver(DeviceNotification(id: "old-settled", kind: "run_result", title: "c", body: "", homeKey: nil, createdAt: "2026-11-15T03:00:00.000Z")))
+            #expect(shown.last == "old-settled")
+            #expect(settledIds(in: old) == ["old-settled"])
+        }
+    }
+
+    @Test func forgettingTheDeviceClearsTheOldNoticesEvenWithoutPairingAgain() throws {
+        try withTemporaryStores(1) { stores in
+            let menu = model()
+            var removed: [String] = []
+            menu.removeNotice = { removed.append($0) }
+            menu.app.useDemoDeviceStore(stores[0])
+            deliverOldNotices(to: menu)
+            removed = []
+            menu.app.useDemoDeviceStore(nil)
+            #expect(menu.shownNotices.isEmpty)
+            #expect(Set(removed) == ["old-1", "old-2"])
+            #expect(menu.revealedNotice == nil)
+            #expect(!menu.noticesExpanded)
+        }
+    }
+
+    @Test func dismissingACardFromTheOldDeviceDoesNotWriteItIntoTheNewStore() throws {
+        try withTemporaryStores(2) { stores in
+            let menu = model()
+            var removed: [String] = []
+            menu.removeNotice = { removed.append($0) }
+            menu.app.useDemoDeviceStore(stores[0])
+            deliverOldNotices(to: menu)
+            let stale = try #require(menu.latestNotice)
+            menu.app.useDemoDeviceStore(stores[1])
+            removed = []
+            menu.dismiss(stale)
+            #expect(settledIds(in: stores[1]).isEmpty)
+            #expect(removed.isEmpty)
+        }
     }
 
     @Test func theSystemIdleTimeCanBeRead() throws {

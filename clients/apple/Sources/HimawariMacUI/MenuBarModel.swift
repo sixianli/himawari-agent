@@ -51,12 +51,12 @@ final class MenuBarModel {
     @ObservationIgnored private var localProgress: [String: DeviceProgress] = [:]
     @ObservationIgnored private var actionRequestIds: [String: String] = [:]
     @ObservationIgnored private var demoShowsStop = false
-    @ObservationIgnored private weak var settledStore: FileLocalStore?
-    @ObservationIgnored private var hasSettledStore = false
+    @ObservationIgnored private var hasBoundStore = false
 
     init(app: AppModel, settings: MacSettingsStore) {
         self.app = app
         self.settings = settings
+        followDeviceStore()
     }
 
     init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = [], noticesExpanded: Bool = false) {
@@ -70,6 +70,7 @@ final class MenuBarModel {
         for notice in notices { pending.deliver(notice) }
         self.notices = pending
         self.noticesExpanded = noticesExpanded
+        followDeviceStore()
     }
 
     var awaitingCount: Int { home?.awaitingCount ?? 0 }
@@ -95,7 +96,6 @@ final class MenuBarModel {
     }
 
     func receive(_ event: DeviceStreamEvent) {
-        rememberSettled()
         switch event {
         case let .notificationDeliver(notice):
             if notices.deliver(notice) { showNotice?(notice) }
@@ -112,7 +112,7 @@ final class MenuBarModel {
     }
 
     func dismiss(_ notice: DeviceNotification) {
-        rememberSettled()
+        guard notices.items.contains(where: { $0.id == notice.id }) else { return }
         notices.withdraw(notice.id)
         removeNotice?(notice.id)
         forgetReveal(of: notice.id)
@@ -123,22 +123,23 @@ final class MenuBarModel {
         if revealedNotice?.id == id { revealedNotice = nil }
     }
 
-    private func rememberSettled() {
-        settle(in: app.deviceStore)
+    private func followDeviceStore() {
+        app.onDeviceStoreChange = { [weak self] in self?.deviceStoreChanged(to: $0) }
+        if let store = app.deviceStore { deviceStoreChanged(to: store) }
     }
 
-    func settle(in store: FileLocalStore?) {
-        guard let store, store !== settledStore else { return }
-        if hasSettledStore {
-            for notice in notices.items { removeNotice?(notice.id) }
-            notices = PendingNotifications(rememberingIn: store)
-            revealedNotice = nil
-            noticesExpanded = false
-        } else {
-            notices.remember(in: store)
+    private func deviceStoreChanged(to store: FileLocalStore?) {
+        guard hasBoundStore else {
+            if let store {
+                notices.remember(in: store)
+                hasBoundStore = true
+            }
+            return
         }
-        settledStore = store
-        hasSettledStore = true
+        for notice in notices.items { removeNotice?(notice.id) }
+        notices = store.map { PendingNotifications(rememberingIn: $0) } ?? PendingNotifications()
+        revealedNotice = nil
+        noticesExpanded = false
     }
 
     var mostPressing: HomeItem? { home?.mostPressing }

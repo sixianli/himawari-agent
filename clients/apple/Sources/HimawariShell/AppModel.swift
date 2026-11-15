@@ -36,7 +36,9 @@ public final class AppModel {
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
     @ObservationIgnored private let kind: DeviceKind
-    @ObservationIgnored private var store: FileLocalStore?
+    @ObservationIgnored private var store: FileLocalStore? {
+        didSet { if store !== oldValue { onDeviceStoreChange?(store) } }
+    }
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
     @ObservationIgnored private var lastScanned: String?
@@ -170,6 +172,8 @@ public final class AppModel {
         didSet { chat?.onNotification = onDeviceNotification }
     }
 
+    @ObservationIgnored public var onDeviceStoreChange: (@MainActor (FileLocalStore?) -> Void)?
+
     public var deviceStore: FileLocalStore? { store }
 
     public func ownerPresence(reason: String) -> OwnerPresenceSigner {
@@ -187,6 +191,10 @@ public final class AppModel {
         model.phase = phase
         model.demoHost = host
         return model
+    }
+
+    public func useDemoDeviceStore(_ store: FileLocalStore?) {
+        self.store = store
     }
     #endif
 
