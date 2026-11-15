@@ -25,7 +25,7 @@ public struct PushStatus: Decodable, Sendable, Equatable {
     public var activeDeviceCount: Int { subscriptions.filter { $0.state == "active" }.count }
 
     public func setting(_ kind: String, enabled: Bool) -> PushKindChange? {
-        isOn(kind) == enabled ? nil : PushKindChange(kind: kind, enabled: enabled)
+        Self.knownKinds.contains(kind) && isOn(kind) != enabled ? PushKindChange(kind: kind, enabled: enabled) : nil
     }
 }
 

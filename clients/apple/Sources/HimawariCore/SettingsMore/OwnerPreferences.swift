@@ -21,7 +21,7 @@ public struct OwnerPreferences: Decodable, Sendable, Equatable {
     public static func clampedName(_ text: String) -> String {
         var result = ""
         var units = 0
-        for character in text {
+        for character in text where !character.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) {
             let width = String(character).utf16.count
             if units + width > nameLimit { break }
             result.append(character)

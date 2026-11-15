@@ -99,6 +99,7 @@ struct SettingsMoreTests {
             #"{"available":true,"kinds":["digest"],"subscriptions":[]}"#
         )
         #expect(status.listedKinds == ["reminder", "approval", "run", "digest"])
+        #expect(status.setting("digest", enabled: true) == nil)
     }
 
     private let mcpJSON = #"""
@@ -144,6 +145,11 @@ struct SettingsMoreTests {
         #expect(revoked.renamed("x") == nil)
         #expect(revoked.ceiling("private") == nil)
         #expect(revoked.moving(to: McpConnections.active) == nil)
+    }
+
+    @Test func mcpNameDropsHiddenCharactersAndCountsCodePoints() {
+        #expect(McpConnections.clampedName("a\u{200B}b\u{0}c") == "abc")
+        #expect(McpConnections.clampedName(String(repeating: "👨‍👩‍👧", count: 40)).unicodeScalars.count <= McpConnections.nameCharacters)
     }
 
     @Test func mcpNameIsCutAtTheServerLimit() {

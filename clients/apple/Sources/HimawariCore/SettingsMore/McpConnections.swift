@@ -69,7 +69,19 @@ public struct McpConnections: Decodable, Sendable, Equatable {
     public static let revoked = "revoked"
 
     public static func clampedName(_ text: String) -> String {
-        String(text.prefix(nameCharacters))
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars where !hidden(scalar) {
+            if scalars.count >= nameCharacters { break }
+            scalars.append(scalar)
+        }
+        return String(scalars)
+    }
+
+    static func hidden(_ scalar: Unicode.Scalar) -> Bool {
+        let code = scalar.value
+        return code < 0x20 || (0x7f...0x9f).contains(code) || (0x200b...0x200f).contains(code)
+            || (0x202a...0x202e).contains(code) || (0x2060...0x2064).contains(code)
+            || (0x2066...0x2069).contains(code) || code == 0xfeff
     }
 
     public var live: [McpConnection] { connections.filter { !$0.isRevoked } }
