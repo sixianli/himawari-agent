@@ -15,7 +15,7 @@ import type {
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 
-import { DELIVERY_TIMING_COPY } from "./delivery-timing-copy.js";
+import { DELIVERY_TIMING_COPY, DELIVERY_TIMING_VALUE } from "./delivery-timing-copy.js";
 
 export const PRODUCTION_DELIVERY_TIMING_OPERATIONS = Object.freeze([
   "delivery_timing.settings.read",
@@ -62,6 +62,8 @@ export class ProductionDeliveryTimingControl {
             label: copy.label,
             description: copy.description,
             unit: copy.unit,
+            kind: DELIVERY_TIMING_VALUE[key].kind,
+            storageUnit: DELIVERY_TIMING_VALUE[key].storageUnit,
             value: override ?? this.#options.defaults[key],
             defaultValue: this.#options.defaults[key],
             minimum,

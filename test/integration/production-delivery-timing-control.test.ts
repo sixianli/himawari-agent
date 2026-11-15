@@ -124,12 +124,44 @@ describe("delivery timing settings live on the server", () => {
       label: "复查间隔",
       description: "先不推送之后，隔多久再确认你有没有空。",
       unit: "秒",
+      kind: "duration",
+      storageUnit: "s",
       value: 300,
       defaultValue: 300,
       minimum: 60,
       maximum: 3600,
       overridden: false,
     });
+  });
+
+  it("tells the phone how to show each value: percentage, duration or count", async () => {
+    const { device } = await setup();
+    const payload = await read(device());
+    expect(item(payload, "busyAtLeastPermille")).toMatchObject({
+      kind: "ratio",
+      storageUnit: "permille",
+    });
+    expect(item(payload, "timeoutMs")).toMatchObject({ kind: "duration", storageUnit: "ms" });
+    expect(item(payload, "perMinute")).toMatchObject({ kind: "count", storageUnit: "count" });
+    const seconds = { kind: "duration", storageUnit: "s" };
+    const expected: Record<string, { kind: string; storageUnit: string }> = {
+      busyAtLeastPermille: { kind: "ratio", storageUnit: "permille" },
+      recheckSeconds: seconds,
+      timeoutMs: { kind: "duration", storageUnit: "ms" },
+      perMinute: { kind: "count", storageUnit: "count" },
+      reminderMaximumDeferSeconds: seconds,
+      maximumDeferSeconds: seconds,
+      speechFreshSeconds: seconds,
+      motionFreshSeconds: seconds,
+      sleepFreshSeconds: seconds,
+      focusFreshSeconds: seconds,
+      connectivityFreshSeconds: seconds,
+      macPresenceSeconds: seconds,
+    };
+    expect(payload.items).toHaveLength(Object.keys(expected).length);
+    for (const entry of payload.items) {
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(expected[entry.key]);
+    }
   });
 
   it("gives every setting a name, one sentence and a unit in each language, and the language follows the request", async () => {

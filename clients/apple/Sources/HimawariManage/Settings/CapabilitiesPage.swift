@@ -5,6 +5,7 @@ struct CapabilitiesPage: View {
     let store: SettingsStore
     let back: () -> Void
     @State private var failed = false
+    @Environment(\.pairingClock) private var pairingClock
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -14,20 +15,24 @@ struct CapabilitiesPage: View {
             }
             section(M.waitingForYou, store.waitingCapabilities)
             section(M.inUse, store.capabilitiesInUse, switchable: true)
-            section(M.disabledCapabilities, store.capabilitiesDisabled)
+            section(M.disabledCapabilities, store.capabilitiesDisabled, disabled: true)
         }
         .alert(M.actionFailed, isPresented: $failed) {}
     }
 
-    @ViewBuilder private func section(_ label: String, _ items: [CapabilitySummary], switchable: Bool = false) -> some View {
+    @ViewBuilder private func section(_ label: String, _ items: [CapabilitySummary], switchable: Bool = false, disabled: Bool = false) -> some View {
         if !items.isEmpty {
             SettingsGroup(label: label) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     SettingsRow(
                         icon: .puzzle,
                         title: item.displayName,
-                        note: M.capabilityExpansions(item.updateAssessment?.expansions ?? []),
-                        switchState: switchable ? turnOff(item) : nil,
+                        detail: disabled ? item.lastInvalidation.flatMap { M.disabledAt($0.occurredAt, now: pairingClock ?? Date()) } : nil,
+                        note: disabled
+                            ? item.lastInvalidation.flatMap { M.cancelledJobs($0.cancelledScheduledJobs) }
+                            : M.capabilityExpansions(item.updateAssessment?.expansions ?? []),
+                        warning: disabled ? store.reactivationFailure[item.capabilityRef] : nil,
+                        switchState: switchable ? turnOff(item) : (disabled ? turnOn(item) : nil),
                         last: index == items.count - 1
                     )
                 }
@@ -45,6 +50,25 @@ struct CapabilitiesPage: View {
                         try await store.disable(item, reason: M.confirmDisableCapability(item.displayName))
                     } catch {
                         failed = true
+                    }
+                }
+            }
+        )
+    }
+
+    private func turnOn(_ item: CapabilitySummary) -> Binding<Bool> {
+        Binding(
+            get: { false },
+            set: { isOn in
+                guard isOn, store.beginReactivation(item.capabilityRef) else { return }
+                store.noteReactivationFailure(nil, for: item.capabilityRef)
+                Task {
+                    defer { store.endReactivation(item.capabilityRef) }
+                    do {
+                        try await store.reactivate(item, reason: M.confirmReactivateCapability(item.displayName))
+                    } catch where SettingsStore.isDeclined(error) {
+                    } catch {
+                        store.noteReactivationFailure(M.reactivateFailed, for: item.capabilityRef)
                     }
                 }
             }
