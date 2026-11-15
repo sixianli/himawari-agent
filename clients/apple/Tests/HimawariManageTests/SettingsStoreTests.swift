@@ -105,7 +105,7 @@ final class SettingsStoreTests: XCTestCase {
         case "files.list.read":
             return files(origin: payloadString(body, "origin") ?? "", before: payloadString(body, "before"))
         case "think.settings.read":
-            return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","overridden":false}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
+            return #"{"payload":{"revision":4,"enabled":true,"items":[{"key":"queueLimit","value":20,"defaultValue":20,"minimum":1,"maximum":1000,"unit":"count","overridden":false,"label":{"zh-CN":"排队上限","en":"Queue limit","ja":"待ち行列の上限"},"description":{"zh-CN":"最多同时排几件","en":"Most items waiting at once","ja":"同時に並べられる件数"},"unitLabel":{"zh-CN":"件","en":"items","ja":"件"}},{"key":"unnamed","value":5,"defaultValue":5,"minimum":0,"maximum":9,"unit":"count","overridden":false,"label":{"zh-CN":"","en":"","ja":""},"description":{"zh-CN":"","en":"","ja":""},"unitLabel":{"zh-CN":"","en":"","ja":""}}],"generatedAt":"2026-11-15T00:00:00Z"}}"#
         case "server.status.read":
             return #"{"payload":{"live":true,"ready":false,"status":"not_ready","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         default:
@@ -145,7 +145,10 @@ final class SettingsStoreTests: XCTestCase {
         let transport = ScriptedTransport(answer: Self.answer)
         let settings = store(transport)
         await settings.load()
-        XCTAssertEqual(settings.tuning[.think]?.items.map(\.key), ["queueLimit"])
+        XCTAssertEqual(settings.tuning[.think]?.shown.map(\.key), ["queueLimit"])
+        XCTAssertEqual(settings.tuning[.think]?.items.count, 2)
+        XCTAssertFalse(settings.tuning[.think]?.shown.first?.name.isEmpty ?? true)
+        XCTAssertFalse(settings.tuning[.think]?.shown.first?.unit.isEmpty ?? true)
         XCTAssertNil(settings.tuning[.delivery])
         XCTAssertEqual(settings.tuning[.think]?.items.first?.step, 10)
         try await settings.changeTuning(.think, key: "queueLimit", value: 30, reason: "改")

@@ -11,11 +11,41 @@ public enum TuningKind: CaseIterable, Sendable {
         }
     }
 
+    var readPayload: JSONValue {
+        switch self {
+        case .think: [:]
+        case .delivery: ["locale": .string(ManageLanguage.current.serverTag)]
+        }
+    }
+
     var changeType: String {
         switch self {
         case .think: "think.settings.change"
         case .delivery: "delivery_timing.settings.change"
         }
+    }
+}
+
+extension ManageLanguage {
+    var serverTag: String {
+        switch self {
+        case .zh: "zh-CN"
+        case .ja: "ja"
+        case .en: "en"
+        }
+    }
+}
+
+struct LocalizedText: Decodable, Sendable, Hashable {
+    let value: String
+
+    init(from decoder: Decoder) throws {
+        if let single = try? decoder.singleValueContainer().decode(String.self) {
+            value = single
+            return
+        }
+        let table = try decoder.singleValueContainer().decode([String: String].self)
+        value = table[ManageLanguage.current.serverTag] ?? table["en"] ?? ""
     }
 }
 
@@ -25,8 +55,10 @@ public struct TuningItem: Decodable, Sendable, Hashable, Identifiable {
     public let defaultValue: Int
     public let minimum: Int
     public let maximum: Int
-    public let unit: String?
     public let overridden: Bool
+    public let name: String
+    public let note: String
+    public let unit: String
 
     public var id: String { key }
 
@@ -38,6 +70,24 @@ public struct TuningItem: Decodable, Sendable, Hashable, Identifiable {
         while span / (step * 10) >= 20 { step *= 10 }
         return step
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, value, defaultValue, minimum, maximum, overridden, label, description, unit, unitLabel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        value = try container.decode(Int.self, forKey: .value)
+        defaultValue = try container.decode(Int.self, forKey: .defaultValue)
+        minimum = try container.decode(Int.self, forKey: .minimum)
+        maximum = try container.decode(Int.self, forKey: .maximum)
+        overridden = try container.decode(Bool.self, forKey: .overridden)
+        name = (try container.decodeIfPresent(LocalizedText.self, forKey: .label))?.value ?? ""
+        note = (try container.decodeIfPresent(LocalizedText.self, forKey: .description))?.value ?? ""
+        let label = try container.decodeIfPresent(LocalizedText.self, forKey: .unitLabel)
+        unit = label?.value ?? (try? container.decode(LocalizedText.self, forKey: .unit))?.value ?? ""
+    }
 }
 
 public struct TuningSnapshot: Decodable, Sendable, Equatable {
@@ -46,4 +96,6 @@ public struct TuningSnapshot: Decodable, Sendable, Equatable {
     public let items: [TuningItem]
 
     public var isEnabled: Bool { enabled ?? true }
+
+    public var shown: [TuningItem] { items.filter { !$0.name.isEmpty } }
 }

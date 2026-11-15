@@ -21,16 +21,15 @@ struct TuningListPage: View {
                         .padding(.horizontal, SL.groupLabelPadding)
                 }
                 SettingsGroup(label: kind == .delivery ? M.deliveryGroup : nil) {
-                    ForEach(Array(snapshot.items.enumerated()), id: \.element.id) { index, item in
-                        let copy = M.tuningCopy(kind, key: item.key, serverUnit: item.unit)
+                    ForEach(Array(snapshot.shown.enumerated()), id: \.element.id) { index, item in
                         Button { open(item.key) } label: {
                             SettingsRow(
                                 icon: nil,
-                                title: copy.name,
-                                note: copy.note.isEmpty ? nil : copy.note,
-                                value: valueText(item, copy: copy),
+                                title: item.name,
+                                note: item.note.isEmpty ? nil : item.note,
+                                value: valueText(item),
                                 chevron: snapshot.isEnabled,
-                                last: index == snapshot.items.count - 1
+                                last: index == snapshot.shown.count - 1
                             )
                         }
                         .buttonStyle(.plain)
@@ -45,8 +44,8 @@ struct TuningListPage: View {
         .refreshable { await store.reloadTuning(kind) }
     }
 
-    private func valueText(_ item: TuningItem, copy: M.TuningCopy) -> String {
-        item.isSwitch ? (item.value == 1 ? M.on : M.off) : "\(item.value)" + (copy.unit.map { " \($0)" } ?? "")
+    private func valueText(_ item: TuningItem) -> String {
+        item.isSwitch ? (item.value == 1 ? M.on : M.off) : "\(item.value)" + (item.unit.isEmpty ? "" : " \(item.unit)")
     }
 }
 
@@ -64,11 +63,10 @@ struct TuningEditPage: View {
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
             if let item {
-                let copy = M.tuningCopy(kind, key: key, serverUnit: item.unit)
                 let current = draft ?? item.value
-                SheetHeader(title: copy.name, leading: .back, action: back)
-                if !copy.note.isEmpty {
-                    Text(copy.note).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
+                SheetHeader(title: item.name, leading: .back, action: back)
+                if !item.note.isEmpty {
+                    Text(item.note).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 VStack(spacing: TL.gap) {
@@ -76,12 +74,12 @@ struct TuningEditPage: View {
                         Toggle("", isOn: Binding(get: { current == 1 }, set: { draft = $0 ? 1 : 0 }))
                             .labelsHidden().tint(Color.hmSuccess)
                     } else {
-                        Text("\(current)" + (copy.unit.map { " \($0)" } ?? ""))
+                        Text("\(current)" + (item.unit.isEmpty ? "" : " \(item.unit)"))
                             .hmType(TL.value).foregroundStyle(Color.hmText)
                         Stepper("", value: Binding(get: { current }, set: { draft = $0 }), in: item.minimum...item.maximum, step: item.step)
                             .labelsHidden()
                     }
-                    Text(M.tuningDefault(item.defaultValue, unit: item.isSwitch ? nil : copy.unit))
+                    Text(M.tuningDefault(item.defaultValue, unit: item.isSwitch || item.unit.isEmpty ? nil : item.unit))
                         .hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
                     if failed {
                         Text(M.tuningSaveFailed).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmDanger)
@@ -91,10 +89,10 @@ struct TuningEditPage: View {
                 .padding(.top, TL.gap)
                 Spacer(minLength: DL.askTopPadding)
                 VStack(spacing: ManageLayout.ExportSheet.buttonGap) {
-                    Button { save(item, copy.name, current) } label: { Text(M.tuningSave) }
+                    Button { save(item, item.name, current) } label: { Text(M.tuningSave) }
                         .buttonStyle(CapsuleButtonStyle(.primary, height: TL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
                         .disabled(busy || current == item.value)
-                    Button { save(item, copy.name, nil) } label: { Text(M.tuningRestore) }
+                    Button { save(item, item.name, nil) } label: { Text(M.tuningRestore) }
                         .buttonStyle(CapsuleButtonStyle(.secondary, height: TL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
                         .disabled(busy || !item.overridden)
                 }

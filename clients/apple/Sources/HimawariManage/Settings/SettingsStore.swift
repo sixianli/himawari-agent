@@ -119,7 +119,7 @@ public final class SettingsStore {
     }
 
     public func reloadTuning(_ kind: TuningKind) async {
-        guard let data = try? await gateway.read(.v2, kind.readType) else { return }
+        guard let data = try? await gateway.read(.v2, kind.readType, payload: kind.readPayload) else { return }
         if let snapshot = try? JSONDecoder().decode(Snapshot<TuningSnapshot>.self, from: data).payload {
             tuning[kind] = snapshot
         }
