@@ -5,6 +5,7 @@ struct CapabilitiesPage: View {
     let store: SettingsStore
     let back: () -> Void
     @State private var failed = false
+    @Environment(\.pairingClock) private var pairingClock
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -26,7 +27,7 @@ struct CapabilitiesPage: View {
                     SettingsRow(
                         icon: .puzzle,
                         title: item.displayName,
-                        detail: disabled ? item.lastInvalidation.flatMap { M.disabledAt($0.occurredAt) } : nil,
+                        detail: disabled ? item.lastInvalidation.flatMap { M.disabledAt($0.occurredAt, now: pairingClock ?? Date()) } : nil,
                         note: disabled
                             ? item.lastInvalidation.flatMap { M.cancelledJobs($0.cancelledScheduledJobs) }
                             : M.capabilityExpansions(item.updateAssessment?.expansions ?? []),

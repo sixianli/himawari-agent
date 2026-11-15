@@ -53,10 +53,13 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), actions: .demo(), path: [.device(ManageDemo.phoneId)]) {}
         case .capabilities:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         case .capabilitiesReactivated:
             SettingsRootView(store: ManageDemo.settingsStore(reactivated: true), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         case .capabilitiesReactivateFailed:
             SettingsRootView(store: ManageDemo.reactivationFailedStore(), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         case .files:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.files]) {}
         case .exportPacking:
@@ -170,7 +173,7 @@ enum ManageDemo {
         }
         var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
         if lifecycle == "disabled" {
-            let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3_600))
+            let at = "2026-11-06T15:10:00+09:00"
             assessment = #","lastInvalidation":{"lifecycle":"disabled","cancelledScheduledJobs":2,"occurredAt":"\#(at)"}"#
         }
         return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":1\#(assessment)}}"#

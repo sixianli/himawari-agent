@@ -70,7 +70,7 @@ struct SettingsRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: SL.rowGap) {
+            HStack(alignment: switchState != nil && (detail != nil || note != nil || warning != nil) ? .top : .center, spacing: SL.rowGap) {
                 if let icon {
                     Icon(icon, size: DesignTokens.IconSize.listRow).foregroundStyle(Color.hmText)
                 }
