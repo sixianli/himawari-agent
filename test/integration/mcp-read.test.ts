@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   classificationRank,
+  type DataClassification,
   DEFAULT_MEMORY_ATTRIBUTES,
   DurableMemoryService,
-  type DataClassification,
   type MemoryCategory,
   OwnerProfileService,
   ruleBookFor,
@@ -34,6 +34,10 @@ import { createReferenceAdapterSet, ManualClock } from "@himawari-agent/testing"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../../apps/agent-service/src/production-mcp-connections.ts";
 import {
   MCP_READ_PATH,
   MCP_READ_TOOL_CEILING_MISSING,
@@ -63,6 +67,7 @@ const YESTERDAY = "昨天和主人商量了京都红叶行程，主人说民宿�
 const OLDER = "三天前主人整理了书架";
 
 const TOPICS = ["牙医", "Wi-Fi", "京都"];
+const CONNECTION_ID = "conn-mcp-read";
 
 const embedder: Embedder = {
   model: "fixture-embedding",
@@ -112,6 +117,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
       readonly failBinding?: boolean;
       readonly readCeiling?: Exclude<DataClassification, "restricted">;
+      readonly hookReadsPerMinute?: number;
       readonly sensitiveSummary?: boolean;
       readonly hiddenRules?: boolean;
       readonly failProfile?: boolean;
@@ -385,7 +391,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         },
       },
       timeZone: TIME_ZONE,
-      ...(options.readCeiling ? { readCeiling: options.readCeiling } : {}),
+      connections: repository.mcpConnections(),
+      ...(options.hookReadsPerMinute ? { hookReadsPerMinute: options.hookReadsPerMinute } : {}),
       ...(options.readTools ? { readTools: options.readTools } : {}),
       requestTimeoutMs: 30_000,
       sources: {
@@ -469,20 +476,42 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       onFailure: (error) => failures.push(error),
       onSummariesFailed: (error) => summaryFailures.push(error),
     });
+    const connections = repository.mcpConnections();
+    const createConnection = async (
+      id: string,
+      readCeiling: Exclude<DataClassification, "restricted"> = "private",
+    ) => {
+      const secret = newMcpConnectionSecret();
+      await connections.create({
+        ...scope,
+        id,
+        name: id,
+        secretSha256: mcpConnectionSecretDigest(secret),
+        capabilities: ["mcp"],
+        readCeiling,
+        pushPolicy: "ask",
+        createdAt: clock.now(),
+      });
+      return secret;
+    };
+    const secret = await createConnection(CONNECTION_ID, options.readCeiling);
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
-    const url = new URL(
-      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
-    );
-    const connect = async (era: Era, assertion?: string) => {
+    const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`;
+    const bareUrl = new URL(base);
+    const urlFor = (key: string) => new URL(`${base}/${key}`);
+    const url = urlFor(secret);
+    const usage = async () =>
+      connections.usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
+    const connect = async (era: Era, assertion?: string, target: URL = url) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
-        new StreamableHTTPClientTransport(url, {
+        new StreamableHTTPClientTransport(target, {
           requestInit: {
             headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
           },
@@ -553,6 +582,12 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       );
     return {
       url,
+      bareUrl,
+      urlFor,
+      secret,
+      createConnection,
+      connections,
+      usage,
       seedProfile,
       runProjection: () => memory.runProjectionBatch(20),
       connect,
@@ -607,9 +642,13 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         kind: "external_read",
         outcome: "read",
         reasonCode: "find_memories",
-        subjectRef: `mcp-client:${era === "modern" ? "mcp-read-test-modern" : "node"}`,
+        subjectRef: `mcp-connection:${CONNECTION_ID}`,
       });
       expect(dentistRow?.costMicros).toBeGreaterThan(0);
+      expect(await f.connections.read({ ...scope, id: CONNECTION_ID })).toMatchObject({
+        reportedClient: era === "modern" ? "mcp-read-test-modern" : "node",
+        lastSeenAt: NOW,
+      });
     },
   );
 
@@ -1414,6 +1453,232 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const client = await f.connect("modern");
       const found = await f.call(client, "find_memories", { query: "牙医", auto: "yes" });
       expect(found.result.isError).toBe(true);
+    });
+  });
+
+  describe("[P5-B] each connection has its own address, ceiling and counts", () => {
+    const post = async (target: URL, assertion: string | null, body: unknown) =>
+      fetch(target, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} };
+    const counted = (
+      rows: readonly {
+        connectionId: string;
+        tool: string;
+        auto: boolean;
+        counter: string;
+        value: number;
+      }[],
+    ) =>
+      Object.fromEntries(
+        rows.map((row) => [
+          `${row.connectionId}/${row.tool}/${row.auto ? "auto" : "model"}/${row.counter}`,
+          row.value,
+        ]),
+      );
+
+    it("offers no tools on the address without a key, only the hint, and counts nothing", async () => {
+      const f = await setup();
+      const client = await f.connect("modern", undefined, f.bareUrl);
+      expect(client.getInstructions()).toContain("接入的 agent");
+      expect((await client.listTools()).tools).toEqual([]);
+      await expect(client.callTool({ name: "today_context", arguments: {} })).rejects.toThrow();
+      expect(await f.ledger()).toEqual([]);
+      expect(await f.usage()).toEqual([]);
+    });
+
+    it("answers 404 for an unknown or malformed key and counts it against no connection", async () => {
+      const f = await setup();
+      const owner = await f.access.sign();
+      const unknown = newMcpConnectionSecret();
+      expect((await post(f.urlFor(unknown), owner, listTools)).status).toBe(404);
+      expect((await post(f.urlFor("short"), owner, listTools)).status).toBe(404);
+      expect((await post(f.urlFor(unknown), null, listTools)).status).toBe(401);
+      expect(await f.usage()).toEqual([]);
+      expect(await f.ledger()).toEqual([]);
+      expect(JSON.stringify(f.failures)).not.toContain(unknown);
+    });
+
+    it("rejects a paused key with 403 and a revoked key with 404 at once, and a resumed key works again", async () => {
+      const f = await setup();
+      const owner = await f.access.sign();
+      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
+      expect((await post(f.url, owner, listTools)).status).toBe(403);
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "active" });
+      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      await f.connections.change({
+        ...scope,
+        id: CONNECTION_ID,
+        updatedAt: NOW,
+        status: "revoked",
+      });
+      expect((await post(f.url, owner, listTools)).status).toBe(404);
+      expect(JSON.stringify(f.failures)).not.toContain(f.secret);
+    });
+
+    it("turns the old key away after a rotation while the id and the counts stay", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      await f.call(client, "today_context");
+      const rotated = newMcpConnectionSecret();
+      await f.connections.rotateSecret({
+        ...scope,
+        id: CONNECTION_ID,
+        secretSha256: mcpConnectionSecretDigest(rotated),
+        rotatedAt: NOW,
+      });
+      expect((await post(f.url, await f.access.sign(), listTools)).status).toBe(404);
+      const fresh = await f.connect("modern", undefined, f.urlFor(rotated));
+      await f.call(fresh, "today_context");
+      expect(counted(await f.usage())).toMatchObject({
+        [`${CONNECTION_ID}/today_context/model/calls`]: 2,
+        [`${CONNECTION_ID}/today_context/model/delivered`]: 2,
+      });
+    });
+
+    it("keeps one connection's ceiling and counts apart from another's", async () => {
+      const f = await setup({ readCeiling: "sensitive" });
+      const otherSecret = await f.createConnection("conn-public", "public");
+      const open = await f.connect("modern");
+      const closed = await f.connect("modern", undefined, f.urlFor(otherSecret));
+      const wifi = (text: string) => text.includes("家里 Wi-Fi 密码");
+      expect(wifi((await f.call(open, "find_memories", { query: "Wi-Fi" })).text)).toBe(true);
+      expect(wifi((await f.call(closed, "find_memories", { query: "Wi-Fi" })).text)).toBe(false);
+      await f.call(closed, "today_context");
+      const rows = counted(await f.usage());
+      expect(rows[`${CONNECTION_ID}/find_memories/model/calls`]).toBe(1);
+      expect(rows[`conn-public/find_memories/model/calls`]).toBe(1);
+      expect(rows[`conn-public/today_context/model/calls`]).toBe(1);
+      expect(rows[`${CONNECTION_ID}/today_context/model/calls`]).toBeUndefined();
+      expect((await f.ledger()).map(({ subjectRef }) => subjectRef).sort()).toEqual([
+        "mcp-connection:conn-mcp-read",
+        "mcp-connection:conn-public",
+        "mcp-connection:conn-public",
+      ]);
+    });
+
+    it("counts an empty automatic lookup without a decision record, and records one that delivered", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "量子色动力学", auto: true });
+      expect(await f.ledger()).toEqual([]);
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      expect(await f.ledger()).toHaveLength(1);
+      await f.call(client, "find_memories", { query: "量子色动力学" });
+      expect(await f.ledger()).toHaveLength(2);
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/auto/calls`]: 2,
+        [`${CONNECTION_ID}/find_memories/auto/empty`]: 1,
+        [`${CONNECTION_ID}/find_memories/auto/delivered`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/empty`]: 1,
+      });
+    });
+
+    it("counts a recall its time-range check turns away for a bad date as failed, not delivered", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const fixed = await f.call(client, "find_memories", {
+        query: "牙医",
+        from: "2026-02-30",
+        to: "2026-03-02",
+      });
+      expect(fixed.result.isError).toBe(true);
+      expect(fixed.text).toContain("MEMORY_RECALL_INPUT_INVALID");
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+    });
+
+    it("counts a call the input check turns away as a failed call", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const found = await f.call(client, "find_memories", { query: "牙医", auto: "yes" });
+      expect(found.result.isError).toBe(true);
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+      expect(await f.ledger()).toEqual([]);
+    });
+
+    it("counts a failed read as failed and not as delivered", async () => {
+      const f = await setup({ failRecall: true });
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "牙医" });
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+    });
+
+    it("limits automatic lookups on their own allowance and counts the refusals", async () => {
+      const f = await setup({ hookReadsPerMinute: 2 });
+      const owner = await f.access.sign();
+      const client = await f.connect("modern");
+      const auto = {
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "find_memories", arguments: { query: "牙医", auto: true } },
+      };
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      expect((await post(f.url, owner, auto)).status).toBe(429);
+      const plain = await f.call(client, "find_memories", { query: "牙医" });
+      expect(plain.result.isError).not.toBe(true);
+      expect(counted(await f.usage())).toMatchObject({
+        [`${CONNECTION_ID}/find_memories/auto/calls`]: 2,
+        [`${CONNECTION_ID}/find_memories/auto/rate_limited`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+      });
+    });
+
+    it("never writes the key or the keyed address into failures, records, counts or replies", async () => {
+      const f = await setup({ failRecall: true });
+      const owner = await f.access.sign();
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "牙医" });
+      await f.call(client, "today_context");
+      const replies = [
+        await post(f.url, owner, { jsonrpc: "2.0", id: 1, method: "nope", params: {} }),
+        await post(f.url, null, listTools),
+        await fetch(f.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          body: "{",
+        }),
+        await fetch(f.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          body: JSON.stringify({ padding: "x".repeat(70_000) }),
+        }),
+      ];
+      expect(replies.at(-1)?.status).toBe(413);
+      const bodies = await Promise.all(replies.map(async (reply) => reply.text()));
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
+      bodies.push(await (await post(f.url, owner, listTools)).text());
+      const everything = JSON.stringify({
+        failures: f.failures.map((failure) =>
+          failure instanceof Error ? { message: failure.message, stack: failure.stack } : failure,
+        ),
+        ledger: await f.ledger(),
+        usage: await f.usage(),
+        connection: await f.connections.read({ ...scope, id: CONNECTION_ID }),
+        bodies,
+      });
+      expect(everything).toContain(CONNECTION_ID);
+      expect(everything).not.toContain(f.secret);
+      expect(everything).not.toContain(mcpConnectionSecretDigest(f.secret));
     });
   });
 });

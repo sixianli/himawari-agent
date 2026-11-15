@@ -2686,6 +2686,7 @@ export async function startTenantRuntime(
               }
             : {}),
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+          connections: repository.mcpConnections(),
           requestTimeoutMs: configuration.deadlines.providerRequestMs,
           sources: {
             recall: (args, within, ceiling) => memoryRecall.recallOutsideRun(args, within, ceiling),
@@ -3018,6 +3019,9 @@ export async function startTenantRuntime(
         observation: repository.ledgerObservation(),
         ledger: repository.decisionLedger(),
         marks: repository.gapCaseMarks(),
+        ...(configuration.runPolicy?.mcpRead
+          ? { mcpConnections: repository.mcpConnections() }
+          : {}),
         ...(protector
           ? {
               seal: createProactiveSeal({

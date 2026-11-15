@@ -6,7 +6,7 @@ import sys
 import urllib.error
 import urllib.request
 
-DEFAULT_URL_FILE = "/etc/himawari/healthcheck-url"
+DEFAULT_URL_FILE = "/etc/himawari-heartbeat/healthcheck-url"
 DEFAULT_READY_URL = "http://127.0.0.1:8400/health/ready"
 PING_URL = re.compile(r"https://hc-ping\.com/[A-Za-z0-9_-]{1,64}(?:/[A-Za-z0-9_-]{1,64})?")
 MAXIMUM_URL_FILE_BYTES = 512
