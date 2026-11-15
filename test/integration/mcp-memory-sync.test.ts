@@ -700,6 +700,7 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
       expect(overview.projects).toEqual([
         {
           connectionId: first,
+          connectionName: first,
           projectId: overview.entries[0]?.projectId,
           projectName: "甲",
           approval: "pending",
@@ -750,6 +751,64 @@ describe("[P5-C] sync_memories storage and deletion rules", () => {
         now: NOW,
       });
       expect(stateOf(raw)).toEqual(["active", "active"]);
+    });
+
+    it("keeps the connection name on an approved project that has nothing waiting", async () => {
+      const { store, overview, first } = await pendingNotes();
+      const projectId = overview.entries[0]?.projectId as string;
+      await store.decideProject({
+        ...scope,
+        connectionId: first,
+        projectId,
+        decision: "approve",
+        now: NOW,
+      });
+      const after = await store.overview({ ...scope, limit: 50 });
+      expect(after.entries).toEqual([]);
+      expect(after.projects).toEqual([
+        expect.objectContaining({
+          connectionId: first,
+          connectionName: first,
+          approval: "approved",
+        }),
+      ]);
+    });
+
+    it("declining also refuses a sensitive note already waiting for confirmation, and later ones", async () => {
+      const harness = await setup();
+      await harness.sync.sync(
+        { id: harness.first, entry: OAUTH },
+        { entries: [note("s1", "体检结果记录", "甲", { category: "health" })] },
+      );
+      const store = harness.repository.mcpMemorySync();
+      const before = await store.overview({ ...scope, limit: 50 });
+      const projectId = before.entries[0]?.projectId as string;
+      await store.decideProject({
+        ...scope,
+        connectionId: harness.first,
+        projectId,
+        decision: "approve",
+        now: NOW,
+      });
+      expect(stateOf(harness.raw)).toEqual(["awaiting_confirmation"]);
+      await store.decideProject({
+        ...scope,
+        connectionId: harness.first,
+        projectId,
+        decision: "decline",
+        now: NOW,
+      });
+      expect(stateOf(harness.raw)).toEqual(["refused"]);
+      const entryId = (await store.overview({ ...scope, limit: 50 })).entries[0]?.entryId as string;
+      expect(await store.decideNote({ ...scope, entryId, decision: "confirm", now: NOW })).toEqual({
+        found: true,
+        state: "refused",
+      });
+      await harness.sync.sync(
+        { id: harness.first, entry: OAUTH },
+        { entries: [note("s2", "另一份体检记录", "甲", { category: "health" })] },
+      );
+      expect(stateOf(harness.raw)).toEqual(["refused", "refused"]);
     });
 
     it("answers not found for a project or note that is not there or belongs to nothing", async () => {

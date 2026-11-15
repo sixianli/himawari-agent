@@ -90,6 +90,7 @@ export interface McpSyncPendingEntry {
 
 export interface McpSyncProjectView {
   readonly connectionId: string;
+  readonly connectionName: string;
   readonly projectId: string;
   readonly projectName: string | null;
   readonly approval: "pending" | "approved" | "declined";
@@ -98,6 +99,7 @@ export interface McpSyncProjectView {
 export interface McpSyncAttentionView {
   readonly attentionId: string;
   readonly connectionId: string;
+  readonly connectionName: string;
   readonly projectId: string;
   readonly projectName: string | null;
   readonly createdAt: string;

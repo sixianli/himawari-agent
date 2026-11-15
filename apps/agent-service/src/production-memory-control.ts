@@ -785,8 +785,6 @@ export class ProductionMemoryControl {
     if (!store) return { entriesTotal: 0, entries: [], projects: [], attention: [] };
     const { ownerId, agentId } = this.options.configuration;
     const overview = await store.overview({ ownerId, agentId, limit: MCP_SYNC_ENTRIES_SHOWN });
-    const names = new Map<string, string>();
-    for (const row of overview.entries) names.set(row.connectionId, row.connectionName);
     const entries = [];
     for (const row of overview.entries) {
       let text: string;
@@ -822,14 +820,14 @@ export class ProductionMemoryControl {
       projects: overview.projects.map((project) => ({
         connectionId: project.connectionId,
         projectId: project.projectId,
-        connectionName: names.get(project.connectionId) ?? project.connectionId,
+        connectionName: project.connectionName,
         projectName: project.projectName,
         approval: project.approval,
       })),
       attention: overview.attention.map(
-        ({ attentionId, projectName, heldEntries, baseline, createdAt, connectionId }) => ({
+        ({ attentionId, projectName, heldEntries, baseline, createdAt, connectionName }) => ({
           attentionId,
-          connectionName: names.get(connectionId) ?? connectionId,
+          connectionName,
           projectName,
           heldEntries,
           baseline,

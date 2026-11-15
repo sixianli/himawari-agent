@@ -705,12 +705,12 @@ export class SqliteMcpMemorySyncOperations {
       return this.result("owner_deleted", item, existing.entryId, projectId);
     const approval = this.approval(input, projectId);
     const state =
-      item.classification === "sensitive"
-        ? STATE_AWAITING_CONFIRMATION
-        : approval === "approved"
-          ? STATE_ACTIVE
-          : approval === "declined"
-            ? STATE_REFUSED
+      approval === "declined"
+        ? STATE_REFUSED
+        : item.classification === "sensitive"
+          ? STATE_AWAITING_CONFIRMATION
+          : approval === "approved"
+            ? STATE_ACTIVE
             : STATE_AWAITING_APPROVAL;
     const itemStatus = (changed: boolean): McpSyncItemStatus =>
       state === STATE_ACTIVE
@@ -859,12 +859,15 @@ export class SqliteMcpMemorySyncOperations {
     const projects = (
       this.database
         .prepare(
-          `SELECT connection_id AS connectionId, project_id AS projectId, status AS approval
-           FROM mcp_project_approvals WHERE owner_id = ? AND agent_id = ?
-           ORDER BY connection_id, project_id`,
+          `SELECT p.connection_id AS connectionId, c.name AS connectionName,
+             p.project_id AS projectId, p.status AS approval
+           FROM mcp_project_approvals p JOIN mcp_connections c ON c.id = p.connection_id
+           WHERE p.owner_id = ? AND p.agent_id = ?
+           ORDER BY p.connection_id, p.project_id`,
         )
         .all(input.ownerId, input.agentId) as {
         connectionId: string;
+        connectionName: string;
         projectId: string;
         approval: McpSyncProjectView["approval"];
       }[]
@@ -872,8 +875,9 @@ export class SqliteMcpMemorySyncOperations {
     const attention = (
       this.database
         .prepare(
-          `SELECT a.id AS attentionId, a.connection_id AS connectionId, a.project_id AS projectId,
-             a.created_at AS createdAt,
+          `SELECT a.id AS attentionId, a.connection_id AS connectionId,
+             (SELECT c.name FROM mcp_connections c WHERE c.id = a.connection_id) AS connectionName,
+             a.project_id AS projectId, a.created_at AS createdAt,
              (SELECT COUNT(*) FROM mcp_sync_attention_entries x WHERE x.attention_id = a.id)
                AS heldEntries,
              COALESCE((SELECT d.baseline FROM mcp_sync_deletion_days d
@@ -911,7 +915,7 @@ export class SqliteMcpMemorySyncOperations {
       .prepare(
         `SELECT entry_id AS entryId, classification FROM mcp_sync_entries
          WHERE owner_id = ? AND agent_id = ? AND connection_id = ? AND project_id = ?
-           AND kind = 'project_note' AND state IN (?, ?)`,
+           AND kind = 'project_note' AND state IN (?, ?, ?)`,
       )
       .all(
         input.ownerId,
@@ -920,9 +924,10 @@ export class SqliteMcpMemorySyncOperations {
         input.projectId,
         STATE_AWAITING_APPROVAL,
         STATE_REFUSED,
+        input.decision === "decline" ? STATE_AWAITING_CONFIRMATION : STATE_REFUSED,
       ) as { entryId: string; classification: string }[];
     const move = this.database.prepare(
-      "UPDATE mcp_sync_entries SET state = ? WHERE entry_id = ? AND state IN (?, ?)",
+      "UPDATE mcp_sync_entries SET state = ? WHERE entry_id = ? AND state IN (?, ?, ?)",
     );
     let changed = 0;
     for (const row of rows) {
@@ -932,7 +937,13 @@ export class SqliteMcpMemorySyncOperations {
           : row.classification === "sensitive"
             ? STATE_AWAITING_CONFIRMATION
             : STATE_ACTIVE;
-      changed += move.run(state, row.entryId, STATE_AWAITING_APPROVAL, STATE_REFUSED).changes;
+      changed += move.run(
+        state,
+        row.entryId,
+        STATE_AWAITING_APPROVAL,
+        STATE_REFUSED,
+        input.decision === "decline" ? STATE_AWAITING_CONFIRMATION : STATE_REFUSED,
+      ).changes;
     }
     return { found: true, changed };
   }
