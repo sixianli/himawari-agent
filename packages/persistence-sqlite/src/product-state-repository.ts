@@ -22,7 +22,9 @@ import type {
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
   DecisionLedgerPort,
+  DeliveryTimingSettingsStorePort,
   DeploymentAuthorityStatePort,
+  DeviceActionStorePort,
   DurableGitHubMonitorHistoryPolicyPort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
@@ -37,8 +39,6 @@ import type {
   MemoryConsolidationStorePort,
   MemoryConversationReviewStorePort,
   MemoryEpisodeStorePort,
-  DeviceActionStorePort,
-  PerceptionStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   MemoryReminderStorePort,
@@ -50,10 +50,10 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
-  ThinkInboxStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
+  PerceptionStorePort,
   ProactiveStorePort,
   ProductMemoryStatePort,
   ProductStateRepositoryPort,
@@ -79,6 +79,7 @@ import type {
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
+  ThinkInboxStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
@@ -694,6 +695,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   proactive(): ProactiveStorePort {
     return this.durable.proactive();
+  }
+
+  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
+    return this.durable.deliveryTimingSettings();
   }
 
   ownerPreferences(): OwnerPreferencesStorePort {
