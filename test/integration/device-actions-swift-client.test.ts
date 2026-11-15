@@ -111,7 +111,12 @@ describe("[iOS-9B] the iPhone executor runs against the real device-action serve
       const origin = `http://127.0.0.1:${port}`;
       const h = await harness({
         origin,
-        actionRegistry: new DeviceActionRegistry([...DEVICE_ACTION_REGISTRATIONS, NOTE_ACTION, TOUCH_ACTION, NEWER_ACTION]),
+        actionRegistry: new DeviceActionRegistry([
+          ...DEVICE_ACTION_REGISTRATIONS,
+          NOTE_ACTION,
+          TOUCH_ACTION,
+          NEWER_ACTION,
+        ]),
       });
       h.actions.authorization.current = {
         authorize: async () => ({ decision: "allow", ownerPresent: false }),
