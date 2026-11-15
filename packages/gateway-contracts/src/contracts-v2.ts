@@ -13,9 +13,9 @@ import {
   nullable,
   object,
   parseJson,
+  proactiveSourceName,
   type Schema,
   timestamp,
-  proactiveSourceName,
 } from "./validation.js";
 
 export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
@@ -555,7 +555,7 @@ const ownerPreferencesSetCommandSchema = object({
 });
 const deliveryTimingSettingsQuerySchema = object({
   ...envelope("query", "delivery_timing.settings.read"),
-  payload: object({}),
+  payload: object({ locale: enumeration(["zh-CN", "en", "ja"]) }),
 });
 const deliveryTimingSettingsSnapshotSchema = object({
   ...envelope("snapshot", "delivery_timing.settings.snapshot"),
@@ -563,6 +563,9 @@ const deliveryTimingSettingsSnapshotSchema = object({
     items: array(
       object({
         key: machineString,
+        label: boundedString(80),
+        description: boundedString(240),
+        unit: boundedString(16),
         value: integer(0),
         defaultValue: integer(0),
         minimum: integer(0),
