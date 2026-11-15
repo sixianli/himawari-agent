@@ -33,6 +33,7 @@ public final class AppModel {
     @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
+    @ObservationIgnored public let search: SearchModel
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
@@ -77,6 +78,7 @@ public final class AppModel {
         let api = DeviceAPI(http: DeviceHTTPClient())
         self.api = api
         home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
+        search = SearchModel(source: GatewaySearchSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -281,6 +283,7 @@ public final class AppModel {
         chat = nil
         actions = nil
         home.reset()
+        search.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true

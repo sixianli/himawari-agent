@@ -75,6 +75,9 @@ enum DemoScene: String, CaseIterable {
     case safariGuide = "22-gaps-1-safari-guide"
     case safariOn = "22-gaps-1b-safari-on"
     case shareEntry = "19-senses-share-entry"
+    case search = "06-search"
+    case searchAnswer = "06-search-answer"
+    case searchNothing = "06-search-nothing"
     case motionShimmer = "motion-shimmer"
     case motionTabs = "motion-tab-switch"
     case motionSheet = "motion-sheet"
@@ -150,6 +153,12 @@ struct DemoSceneView: View {
             tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.withDeviceApproval)
         case .todaySettled:
             tabs(DemoChatFixtures.chatList(), tab: .today, feed: TodayDemo.settled)
+        case .search:
+            tabs(DemoChatFixtures.chatList(), tab: .today, search: SearchDemo.first, searchOpen: true)
+        case .searchAnswer:
+            tabs(DemoChatFixtures.chatList(), tab: .today, search: SearchDemo.answer, searchOpen: true)
+        case .searchNothing:
+            tabs(DemoChatFixtures.chatList(), tab: .today, search: SearchDemo.nothing, searchOpen: true)
         case .todayQuiet:
             tabs(DemoChatFixtures.chatList(), tab: .today, actions: .demo(empty: true), feed: TodayDemo.quiet)
         case .actionsDetail:
@@ -225,8 +234,8 @@ struct DemoSceneView: View {
         }
     }
 
-    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo(), feed: HomeFeedModel = HomeFeedModel(source: nil)) -> some View {
-        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, feed: feed, tab: tab)
+    private func tabs(_ state: DemoChatState, tab: MainTab = .chats, actions: DeviceActionsModel = .demo(), feed: HomeFeedModel = HomeFeedModel(source: nil), search: SearchModel = SearchModel(source: nil), searchOpen: Bool = false) -> some View {
+        MainTabsView(model: .demo(.active), chat: .demo(state), actions: actions, feed: feed, search: search, tab: tab, searchOpen: searchOpen)
     }
 
     private func approvalDetail(at index: Int) -> some View {

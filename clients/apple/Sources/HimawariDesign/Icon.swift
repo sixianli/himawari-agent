@@ -74,6 +74,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case settings
     case shieldLock = "shield-lock"
     case stack2 = "stack-2"
+    case sun
     case table
     case terminal2 = "terminal-2"
     case puzzle

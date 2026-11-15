@@ -63,3 +63,8 @@
 "watch.offer.title" = "给这块 Apple Watch 用吗";
 "watch.offer.watch" = "给手表用";
 "watch.offer.cancel" = "不用";
+"search.title" = "搜索";
+"search.basis" = "依据";
+"search.back" = "回到今天";
+"search.placeholder" = "对话、记忆、感知到的";
+"search.failed" = "暂时搜不了，下拉或稍后再试";

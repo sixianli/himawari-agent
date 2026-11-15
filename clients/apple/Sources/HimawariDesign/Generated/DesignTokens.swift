@@ -149,6 +149,32 @@ public enum DesignTokens {
         public static let wordmarkLeading: CGFloat = 104
     }
 
+    public enum Search {
+        public static let answerGap: CGFloat = 14
+        public static let answerInset: CGFloat = 6
+        public static let askInsetX: CGFloat = 20
+        public static let askMinHeight: CGFloat = 56
+        public static let backSize: CGFloat = 56
+        public static let barBottom: CGFloat = 30
+        public static let barGap: CGFloat = 10
+        public static let basisGap: CGFloat = 2
+        public static let basisMinHeight: CGFloat = 62
+        public static let basisPaddingY: CGFloat = 11
+        public static let bubbleMaxWidth: CGFloat = 286
+        public static let bubblePaddingX: CGFloat = 16
+        public static let bubblePaddingY: CGFloat = 11
+        public static let bubbleRadius: CGFloat = 22
+        public static let fadeHeight: CGFloat = 130
+        public static let fieldGap: CGFloat = 10
+        public static let fieldHeight: CGFloat = 56
+        public static let fieldPaddingX: CGFloat = 18
+        public static let fieldRadius: CGFloat = 28
+        public static let gap: CGFloat = 20
+        public static let paddingBottom: CGFloat = 130
+        public static let paddingTop: CGFloat = 58
+        public static let titleInset: CGFloat = 4
+    }
+
     public enum Pairing {
         public static let bannerRadius: CGFloat = 22
         public static let errorIcon: CGFloat = 72

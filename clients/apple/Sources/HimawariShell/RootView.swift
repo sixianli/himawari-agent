@@ -30,7 +30,7 @@ public struct HimawariRootView: View {
     private var app: some View {
         Group {
             if model.phase == .active, let chat = model.chat {
-                MainTabsView(model: model, chat: chat, feed: model.home)
+                MainTabsView(model: model, chat: chat, feed: model.home, search: model.search)
             } else {
                 PairingView(model: model)
             }
@@ -77,7 +77,9 @@ struct MainTabsView: View {
     let chat: ChatStore
     private let actionsOverride: DeviceActionsModel?
     let feed: HomeFeedModel
+    let search: SearchModel
     @State private var tab: MainTab
+    @State private var searchOpen: Bool
     @State private var openThread: OpenThread?
     @State private var settingsOpen: Bool
     @State private var listening: ListeningController?
@@ -87,11 +89,13 @@ struct MainTabsView: View {
     private let settingsOverride: AnyView?
     @Environment(\.listClock) private var listClock
 
-    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, feed: HomeFeedModel? = nil, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
+    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, feed: HomeFeedModel? = nil, search: SearchModel? = nil, tab: MainTab = .chats, searchOpen: Bool = false, memory: AnyView? = nil, settings: AnyView? = nil) {
         self.model = model
         self.chat = chat
         actionsOverride = actions
         self.feed = feed ?? model.home
+        self.search = search ?? model.search
+        _searchOpen = State(initialValue: searchOpen)
         _tab = State(initialValue: tab)
         _settingsOpen = State(initialValue: settings != nil)
         memoryOverride = memory
@@ -114,6 +118,20 @@ struct MainTabsView: View {
                 }
                 .id(openThread.nonce)
                 .transition(.move(edge: .trailing))
+            } else if searchOpen {
+                SearchPage(model: search) {
+                    withAnimation(.snappy) { searchOpen = false }
+                } openSource: { basis in
+                    withAnimation(.snappy) {
+                        searchOpen = false
+                        if basis.kind == .conversation, let threadId = basis.threadId {
+                            openThread = OpenThread(threadId: threadId)
+                        } else {
+                            tab = .memory
+                        }
+                    }
+                }
+                .transition(.move(edge: .bottom))
             } else {
                 content
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }
@@ -183,7 +201,7 @@ struct MainTabsView: View {
     private var content: some View {
         switch tab {
         case .today:
-            TodayPage(feed: feed, actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }, openSearch: nil) { threadId in
+            TodayPage(feed: feed, actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }, openSearch: search.available ? { withAnimation(.snappy) { searchOpen = true } } : nil) { threadId in
                 withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
             }
         case .chats:
