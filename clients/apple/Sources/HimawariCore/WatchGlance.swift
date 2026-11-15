@@ -247,7 +247,14 @@ public enum WatchPairingRelay {
 
     public static func offerable(_ link: String, pairedOrigin: URL?) -> Bool {
         guard let pairedOrigin, let invitation = try? PairingInvitation.parse(link) else { return false }
-        return invitation.origin == pairedOrigin
+        return sameServer(invitation.origin, pairedOrigin)
+    }
+
+    static func sameServer(_ a: URL, _ b: URL) -> Bool {
+        func key(_ url: URL) -> String {
+            "\((url.scheme ?? "").lowercased())://\((url.host ?? "").lowercased()):\(url.port ?? (url.scheme?.lowercased() == "http" ? 80 : 443))"
+        }
+        return key(a) == key(b)
     }
 
     public static func link(in message: [String: Any]) -> String? {

@@ -160,6 +160,17 @@ import Testing
         #expect(!WatchPairingRelay.offerable("himawari-pair:nonsense", pairedOrigin: origin))
     }
 
+    @Test func theSameServerWrittenTwoWaysIsStillTheSameServer() throws {
+        let plain = try #require(URL(string: "https://Host.example.test"))
+        let slash = try #require(URL(string: "https://host.example.test/"))
+        let port = try #require(URL(string: "https://host.example.test:443"))
+        #expect(WatchPairingRelay.sameServer(plain, slash))
+        #expect(WatchPairingRelay.sameServer(slash, plain))
+        #expect(WatchPairingRelay.sameServer(plain, port))
+        #expect(!WatchPairingRelay.sameServer(plain, try #require(URL(string: "https://host.example.test:8443"))))
+        #expect(!WatchPairingRelay.sameServer(plain, try #require(URL(string: "http://host.example.test"))))
+    }
+
     @Test func watchHomeReadsTheSameEndpointAsTheMacPanelAndActsByKey() async throws {
         let exchange = RecordingExchange([
             HTTPExchangeResponse(status: 200, body: Data(snapshot.utf8)),

@@ -35,7 +35,7 @@ public struct HomeSnapshot: Codable, Sendable, Equatable {
     public let revision: String
 
     public var mostPressing: HomeItem? {
-        items.first { $0.awaitsOwner && $0.sentence?.isEmpty == false }
+        items.first { $0.awaitsOwner && $0.sentence?.isEmpty == false && !$0.shownActions.isEmpty }
     }
 }
 
