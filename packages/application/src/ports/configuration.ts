@@ -390,12 +390,6 @@ export interface ThinkWorthConfiguration {
   readonly requestTimeoutMs: number;
 }
 
-export const THINK_WORTH_DEFAULTS = Object.freeze({
-  yesAtLeastPermille: 700,
-  noAtMostPermille: 300,
-  requestTimeoutMs: 15_000,
-});
-
 export interface ThinkInboxConfiguration {
   readonly worth?: ThinkWorthConfiguration;
   readonly queueLimit?: number;
@@ -411,6 +405,7 @@ export interface ThinkInboxConfiguration {
 export const THINK_SETTING_UNITS = [
   "permille",
   "count",
+  "times",
   "hours",
   "minutes",
   "characters",
@@ -424,7 +419,7 @@ export const THINK_SETTING_DEFINITIONS = Object.freeze([
   { key: "dailyLimit", unit: "count", minimum: 1, maximum: 10000, defaultValue: 50 },
   { key: "expiresAfterHours", unit: "hours", minimum: 1, maximum: 8760, defaultValue: 48 },
   { key: "stalledAfterMinutes", unit: "minutes", minimum: 1, maximum: 1440, defaultValue: 30 },
-  { key: "maxAttempts", unit: "count", minimum: 1, maximum: 20, defaultValue: 3 },
+  { key: "maxAttempts", unit: "times", minimum: 1, maximum: 20, defaultValue: 3 },
   {
     key: "summaryCharacters",
     unit: "characters",
@@ -449,6 +444,12 @@ export function thinkSettingDefinition(key: ThinkSettingKey) {
   if (!found) throw new TypeError("THINK_SETTING_UNKNOWN");
   return found;
 }
+
+export const THINK_WORTH_DEFAULTS = Object.freeze({
+  yesAtLeastPermille: thinkSettingDefinition("yesAtLeastPermille").defaultValue,
+  noAtMostPermille: thinkSettingDefinition("noAtMostPermille").defaultValue,
+  requestTimeoutMs: 15_000,
+});
 
 export const THINK_LOOP_DEFAULTS = Object.freeze({
   idleSeconds: thinkSettingDefinition("idleSeconds").defaultValue,

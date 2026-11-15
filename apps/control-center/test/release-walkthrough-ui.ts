@@ -29,6 +29,7 @@ export const RELEASE_WALKTHROUGH_UI = Object.freeze({
   ],
   conversationLoading: '.thread-loading-skeleton[data-scope="conversation"]',
   turn: ".chat-turn",
+  settledTurn: ".chat-turn:not(.chat-turn-outgoing)",
   message: { role: "article" },
   turnProcess: ".turn-process",
   turnProcessToggle: ":scope > summary",
