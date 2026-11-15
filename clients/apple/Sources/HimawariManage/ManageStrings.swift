@@ -92,8 +92,8 @@ enum M {
     static func confirmDisableCapability(_ name: String) -> String {
         text("停用“\(name)”", ja: "「\(name)」を停止", en: "Turn off \"\(name)\"")
     }
-    static var grantsTitle: String { text("你答应过的事", ja: "承認済みのこと", en: "What you've approved") }
-    static var noGrants: String { text("没有你答应过的事", ja: "承認済みのことはありません", en: "Nothing you've approved") }
+    static var grantsTitle: String { text("已授权的事", ja: "承認済みのこと", en: "What you've approved") }
+    static var noGrants: String { text("没有已授权的事", ja: "承認済みのことはありません", en: "Nothing you've approved") }
     static var grantRevoke: String { text("撤回", ja: "取り消す", en: "Revoke") }
     static var grantRevokeFailed: String { text("没能撤回", ja: "取り消せませんでした", en: "Couldn't revoke") }
     static var grantGone: String { text("这一条已经不在了", ja: "この項目はもうありません", en: "This one is already gone") }
