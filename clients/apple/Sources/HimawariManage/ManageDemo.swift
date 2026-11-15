@@ -20,8 +20,13 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case exportPacking = "19-settings-more-6-export-packing"
     case exportReady = "19-settings-more-7-export-ready"
     case capabilities = "20-himawari-self-1-capabilities"
+    case capabilitiesReactivated = "20-himawari-self-1b-capabilities-reactivated"
+    case capabilitiesReactivateFailed = "20-himawari-self-1c-capabilities-reactivate-failed"
     case loginBrowsers = "20-himawari-self-2-login-browsers"
     case proposals = "20-himawari-self-3-proposals"
+    case notifications = "19-settings-more-4-notifications"
+    case notificationsEdit = "19-settings-more-4-notifications-edit"
+    case thinkSettings = "20-himawari-self-4-think"
 }
 
 public struct ManageDemoView: View {
@@ -51,6 +56,13 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), actions: .demo(), path: [.device(ManageDemo.phoneId)]) {}
         case .capabilities:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
+        case .capabilitiesReactivated:
+            SettingsRootView(store: ManageDemo.settingsStore(reactivated: true), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
+        case .capabilitiesReactivateFailed:
+            SettingsRootView(store: ManageDemo.reactivationFailedStore(), path: [.capabilities]) {}
+                .environment(\.pairingClock, ManageDemo.frozenNow)
         case .files:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.files]) {}
         case .exportPacking:
@@ -61,6 +73,12 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.loginBrowsers]) {}
         case .proposals:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.proposals]) {}
+        case .notifications:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery)]) {}
+        case .notificationsEdit:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
+        case .thinkSettings:
+            SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -112,9 +130,15 @@ enum ManageDemo {
         MemoryStore(gateway: gateway())
     }
 
-    @MainActor static func settingsStore() -> SettingsStore {
+    @MainActor static func reactivationFailedStore() -> SettingsStore {
+        let store = settingsStore()
+        store.noteReactivationFailure(M.reactivateFailed, for: "cap-photos")
+        return store
+    }
+
+    @MainActor static func settingsStore(reactivated: Bool = false) -> SettingsStore {
         SettingsStore(
-            gateway: gateway(),
+            gateway: gateway(reactivated: reactivated),
             identity: DeviceIdentity(deviceId: phoneId, origin: URL(string: "https://himawari.example.com")!, access: nil)
         )
     }
@@ -130,8 +154,8 @@ enum ManageDemo {
         expiresAt: ISO8601DateFormatter().string(from: frozenNow.addingTimeInterval(7 * 86_400 - 3_600))
     )
 
-    static func gateway() -> ManageGateway {
-        ManageGateway(transport: DemoTransport(), makeIdentifier: { UUID().uuidString })
+    static func gateway(reactivated: Bool = false) -> ManageGateway {
+        ManageGateway(transport: DemoTransport(reactivated: reactivated), makeIdentifier: { UUID().uuidString })
     }
 
     static func answer(_ type: String) -> String {
@@ -143,20 +167,26 @@ enum ManageDemo {
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
         case "login.devices.read": loginDevices
         case "proposals.read": proposals
+        case "think.settings.read": tuning(think: true)
+        case "delivery_timing.settings.read": tuning(think: false)
         case "capability.list":
             #"{"payload":{"itemRefs":["cap-calendar","cap-search","cap-mail","cap-photos"],"nextCursor":null}}"#
         default: "{}"
         }
     }
 
-    static func capability(_ ref: String) -> String {
+    static func capability(_ ref: String, reactivated: Bool = false) -> String {
         let (name, lifecycle) = switch ref {
         case "cap-calendar": ("日历", "update_proposed")
         case "cap-search": ("网页搜索", "active")
-        case "cap-photos": ("相册整理", "disabled")
+        case "cap-photos": ("相册整理", reactivated ? "active" : "disabled")
         default: ("邮件", "active")
         }
-        let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+        var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+        if lifecycle == "disabled" {
+            let at = "2026-11-06T15:10:00+09:00"
+            assessment = #","lastInvalidation":{"lifecycle":"disabled","cancelledScheduledJobs":2,"occurredAt":"\#(at)"}"#
+        }
         return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":1\#(assessment)}}"#
     }
 
@@ -171,6 +201,37 @@ enum ManageDemo {
         let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-daysAgo * 86_400))
         let title = thread.map { #""\#($0)""# } ?? "null"
         return #"{"fileId":"\#(id)","threadId":"t1","threadTitle":\#(title),"name":"\#(name)","kind":"\#(kind)","origin":"\#(origin)","mediaType":"application/octet-stream","sizeBytes":2048,"version":1,"createdAt":"\#(at)","deleted":false,"contentPath":null}"#
+    }
+
+    private static func tuning(think: Bool) -> String {
+        let rows: [(String, String, String, String, Int, Int, Int, Int, Bool)] = think
+            ? [
+                ("yesAtLeastPermille", "值得想的门槛", "判断“值得想”至少要多有把握", "千分比", 700, 700, 501, 1000, false),
+                ("noAtMostPermille", "不值得想的门槛", "判断“不值得”最多有多少把握，中间算拿不准，不想", "千分比", 300, 300, 0, 499, false),
+                ("queueLimit", "排队上限", "最多同时排几件", "件", 20, 20, 1, 1000, false),
+                ("dailyLimit", "每天上限", "每天最多收多少件", "件", 80, 50, 1, 10000, true),
+                ("expiresAfterHours", "排队多久作废", "排队这么久还没想就作废", "小时", 48, 48, 1, 8760, false),
+            ]
+            : [
+                ("busyAtLeastPermille", "判忙门槛", "至少多有把握才算你正忙，忙就先不打扰", "千分比", 700, 700, 500, 1000, false),
+                ("recheckSeconds", "复查间隔", "扣下的通知隔多久再看一次", "秒", 120, 120, 1, 3600, false),
+                ("timeoutMs", "问模型超时", "问模型判断的最长等待", "毫秒", 4000, 4000, 100, 60000, false),
+                ("perMinute", "每分钟最多问几次", "每分钟最多问模型几次", "次", 12, 12, 1, 600, false),
+                ("reminderMaximumDeferSeconds", "提醒最多扣多久", "提醒最多往后扣这么久", "秒", 600, 600, 0, 86400, false),
+                ("maximumDeferSeconds", "其余通知最多扣多久", "其余通知最多往后扣这么久", "秒", 1800, 1800, 0, 86400, true),
+            ]
+        let items = rows.map { key, label, note, unit, value, def, low, high, overridden in
+            let (kind, storage) = switch unit {
+            case "千分比": ("ratio", "permille")
+            case "秒": ("duration", "s")
+            case "毫秒": ("duration", "ms")
+            case "小时": ("duration", "h")
+            default: ("count", "count")
+            }
+            return #"{"key":"\#(key)","label":"\#(label)","description":"\#(note)","unit":"\#(unit)","kind":"\#(kind)","storageUnit":"\#(storage)","value":\#(value),"defaultValue":\#(def),"minimum":\#(low),"maximum":\#(high),"overridden":\#(overridden)}"#
+        }
+        let enabled = think ? #""enabled":true,"# : ""
+        return #"{"payload":{"revision":4,\#(enabled)"items":[\#(items.joined(separator: ","))],"generatedAt":"2026-11-15T00:00:00.000Z"}}"#
     }
 
     private static var proposals: String {
@@ -234,6 +295,12 @@ enum ManageDemo {
 }
 
 private actor DemoTransport: DeviceTransport {
+    let reactivated: Bool
+
+    init(reactivated: Bool = false) {
+        self.reactivated = reactivated
+    }
+
     nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
         DeviceResponse(status: 200, body: Data("demo".utf8))
     }
@@ -245,7 +312,7 @@ private actor DemoTransport: DeviceTransport {
         let body = (try? JSONDecoder().decode([String: JSONValue].self, from: json)) ?? [:]
         guard case .string(let type)? = body["type"] else { return DeviceResponse(status: 200, body: Data("{}".utf8)) }
         if type == "capability.detail", case .object(let payload)? = body["payload"], case .string(let ref)? = payload["capabilityRef"] {
-            return DeviceResponse(status: 200, body: Data(ManageDemo.capability(ref).utf8))
+            return DeviceResponse(status: 200, body: Data(ManageDemo.capability(ref, reactivated: reactivated).utf8))
         }
         if type == "files.list.read", case .object(let payload)? = body["payload"], case .string(let origin)? = payload["origin"] {
             return DeviceResponse(status: 200, body: Data(ManageDemo.files(origin: origin).utf8))

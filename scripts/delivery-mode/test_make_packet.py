@@ -26,9 +26,10 @@ RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixture
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
-    'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
-    'maintenance/production-shape-config-template.json',
+    'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
+    'inputs/check-packet-consistency.py', 'inputs/verify-packet-consistency.py', 'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'maintenance/production-shape-config-template.json', 'acceptance/cloud/download-question-12.py', 'acceptance/cloud/adapters/failure-scene.py', 'acceptance/cloud/verify-failure-scene-fixtures.py',
+    'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
@@ -371,14 +372,14 @@ class TemplateTest(RenderedPacket):
 
     def test_startup_budget_leaves_the_worker_wait_a_margin(self):
         worker = lambda wait: 'const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = ' + wait + ';\n'
-        self.assertEqual(packet_maker.startup_ready_budget(INSTANCE, worker('45_000')), 30000)
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_BUDGET_LEAVES_NO_MARGIN budgetMs=30000 marginMs=15000 workerWaitMs=30000'):
-            packet_maker.startup_ready_budget(INSTANCE, worker('30_000'))
+        self.assertEqual(packet_maker.startup_ready_budget(INSTANCE, worker('105_000')), 90000)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_BUDGET_LEAVES_NO_MARGIN budgetMs=90000 marginMs=15000 workerWaitMs=45000'):
+            packet_maker.startup_ready_budget(INSTANCE, worker('45_000'))
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_WORKER_STARTUP_WAIT_NOT_READABLE'):
             packet_maker.startup_ready_budget(INSTANCE, 'const STARTUP_WAIT = 45_000;\n')
         for key, invalid in (('startupReadyBudgetSeconds', None), ('startupReadyBudgetSeconds', 0), ('startupReadyMarginSeconds', -1), ('startupReadyMarginSeconds', 1.5), ('startupReadyBudgetSeconds', '30')):
             with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STARTUP_BUDGET_INVALID'):
-                packet_maker.startup_ready_budget({**INSTANCE, key: invalid}, worker('45_000'))
+                packet_maker.startup_ready_budget({**INSTANCE, key: invalid}, worker('105_000'))
 
     def test_a_missing_parameter_is_refused(self):
         parameters = dict(TWELFTH)
@@ -420,6 +421,29 @@ class TemplateTest(RenderedPacket):
         packet_maker.regenerate_hashes(packet)
         problems = self.consistency_problems(packet)
         self.assertEqual([problem for problem in problems if not problem.startswith('CANDIDATE_ARCHIVE_MISSING')], [])
+
+    def test_the_bound_cleanup_helper_digest_follows_the_helper(self):
+        packet = self.render()
+        helper = packet / 'acceptance' / 'helpers' / 'check-p5-scratch-cleanup.py'
+        draft_path = packet / packet_maker.CLOUD_INPUTS
+        packet_maker.regenerate_hashes(packet)
+        self.assertEqual(json.loads(draft_path.read_text())['cleanupHelper']['sha256'], hashlib.sha256(helper.read_bytes()).hexdigest())
+        helper.write_text(helper.read_text() + '\n')
+        self.assertIn('CLOUD_INPUT_CLEANUP_HELPER_DIGEST_STALE ' + json.loads(draft_path.read_text())['cleanupHelper']['path'], self.consistency_problems(packet))
+        packet_maker.regenerate_hashes(packet)
+        self.assertEqual(json.loads(draft_path.read_text())['cleanupHelper']['sha256'], hashlib.sha256(helper.read_bytes()).hexdigest())
+        self.assertEqual([problem for problem in self.consistency_problems(packet) if not problem.startswith('CANDIDATE_ARCHIVE_MISSING')], [])
+
+    def test_the_bound_cleanup_helper_path_must_stay_inside_the_packet(self):
+        self.assertEqual(packet_maker.packet_member('/x/packet/acceptance/helpers/a.py'), 'acceptance/helpers/a.py')
+        for path in ['/x/packet/../secret', '/x/packet/acceptance/../../secret', '/x/packet//etc/passwd', '/x/elsewhere/a.py', '/x/packet/a/packet/b.py']:
+            with self.subTest(path=path), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_STAGED_PATH_OUTSIDE_PACKET'):
+                packet_maker.packet_member(path)
+
+    def test_the_template_cleanup_helper_digest_matches_the_template_helper(self):
+        draft = (packet_maker.TEMPLATE / 'acceptance' / 'cloud' / 'cloud-inputs.draft.json').read_text()
+        helper = packet_maker.TEMPLATE / 'acceptance' / 'helpers' / 'check-p5-scratch-cleanup.py'
+        self.assertEqual(re.findall(r'"cleanupHelper": \{\s*"path": "[^"]+",\s*"sha256": "([0-9a-f]{64})"', draft), [hashlib.sha256(helper.read_bytes()).hexdigest()])
 
     def test_carried_copies_follow_the_commit(self):
         head = packet_maker.resolve_commit('HEAD')
@@ -561,6 +585,60 @@ class DerivedExpectationsTest(RenderedPacket):
             result = subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
             self.assertEqual(result.returncode, 0, result.stderr[-2000:])
             self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
+
+    def history_fixtures(self, packet):
+        scratch = self.root / ('fixture-temp-' + packet.name)
+        scratch.mkdir()
+        return subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
+
+    def history_off(self, release='twelfth'):
+        comparison = {'mode': 'off', 'reason': INSTANCE['historyComparison']['reason'], 'authorizedBy': INSTANCE['historyComparison']['authorizedBy'], 'release': release}
+        return {'HISTORY_COMPARISON': 'off', 'HISTORY_COMPARISON_JSON': json.dumps(comparison, sort_keys=True, separators=(',', ':'), ensure_ascii=True)}
+
+    def test_twentyninth_history_comparison_is_off_only_for_that_release(self):
+        decision = INSTANCE['historyComparison']
+        self.assertEqual(packet_maker.history_comparison(INSTANCE, 'twentyninth'), {'mode': 'off', 'reason': decision['reason'], 'authorizedBy': 'cmsg_01EE1hey9cboYNfwFnBv5dgr57gFLC1LwkkuA5Tm38FypH', 'release': 'twentyninth'})
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE'):
+            packet_maker.history_comparison(INSTANCE, 'thirtieth')
+        self.assertEqual(packet_maker.history_comparison({}, 'thirtieth'), {'mode': 'on'})
+        self.assertEqual(packet_maker.history_comparison({'historyComparison': {'mode': 'on'}}, 'thirtieth'), {'mode': 'on'})
+        for broken in ({'mode': 'partial'}, {**decision, 'reason': ' '}, {**decision, 'authorizedBy': 'Andy'}, {**decision, 'tables': ['model_budget_accounts']}, {'mode': 'off', 'release': 'twentyninth'}, 'off'):
+            with self.subTest(broken=broken), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_INVALID'):
+                packet_maker.history_comparison({'historyComparison': broken}, 'twentyninth')
+
+    def test_andy_production_keeps_a_failed_deploy_and_other_instances_roll_back(self):
+        self.assertEqual(packet_maker.deploy_failure_choice(INSTANCE), 'keep')
+        self.assertEqual(packet_maker.deploy_failure_choice({}), 'rollback')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ON_DEPLOY_FAILURE_INVALID'):
+            packet_maker.deploy_failure_choice({'onDeployFailure': 'ignore'})
+
+    def test_history_comparison_off_lets_a_migration_touch_preserved_tables(self):
+        derived = packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30, 'HISTORY_COMPARISON': 'off'}, {'schema': {'current': 29, 'minimumWriter': 29}})
+        self.assertEqual(json.loads(derived['MIGRATION_LEDGER']), [{'sequence': 30, 'name': 'run_model_selection', 'phase': 'expand'}])
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES'):
+            packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30, 'HISTORY_COMPARISON': 'on'}, {'schema': {'current': 29, 'minimumWriter': 29}})
+
+    def test_history_fixtures_pass_with_comparison_off_and_changed_history_rows(self):
+        ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
+        for packet in (self.render(MIGRATION_LEDGER=ledger, TARGET_SCHEMA=57, **self.history_off()), self.render(**self.history_off())):
+            result = self.history_fixtures(packet)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            record = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertTrue(record['passed'])
+            self.assertGreaterEqual(record['counts']['historyComparisonOff'], 2)
+            self.assertIn("history_comparison = 'off'", (packet / 'systemd' / 'S7-switch-start-readback.py').read_text())
+            self.assertIn('...historyComparisonEvidence(), passed: false', (packet / 'maintenance' / 'run-maintenance.mjs').read_text())
+        self.assertIn("history_comparison = 'on'", (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
+
+    def test_s9_restore_compares_history_even_when_the_release_switch_is_off(self):
+        runner = (self.render(**self.history_off()) / 'maintenance' / 'run-maintenance.mjs').read_text()
+        restore = runner[runner.index('const reference = retained.reference;'):]
+        self.assertTrue(restore.splitlines()[1].strip().startswith('verifyHistoryUnchanged(reference, state, Object.freeze({ mode: "on" }))'))
+
+    def test_a_packet_whose_history_switch_names_another_release_refuses_to_load(self):
+        result = self.history_fixtures(self.render(**self.history_off(release='twentyninth')))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('TWELFTH_MAINTENANCE_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE', result.stderr)
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
@@ -1439,6 +1517,360 @@ class TimestampedMigrationTests(unittest.TestCase):
         files = self.LEGACY + ['20261114010000_first.sql']
         _, ledger = self.plan(files, ['0001', '0002', '0003', '20261114010000'])
         self.assertEqual(ledger, [])
+
+
+PACKET_TEMPLATE = HERE / 'packet-template'
+
+
+def template_definitions(relative, names=None, assignments=()):
+    tree = ast.parse((PACKET_TEMPLATE / relative).read_text())
+    nodes = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and (names is None or node.name in names):
+            nodes.append(node)
+        elif isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in assignments for target in node.targets):
+            nodes.append(node)
+    return nodes
+
+
+def execute_definitions(relative, nodes, namespace):
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), relative, 'exec'), namespace)
+    return namespace
+
+
+def vanishing_walk(vanishing):
+    def walk(top, onerror=None, followlinks=False):
+        for parent, directories, files in os.walk(top, onerror=onerror, followlinks=followlinks):
+            listed = (parent, directories, list(files))
+            if vanishing.exists():
+                vanishing.unlink()
+            yield listed
+    return walk
+
+
+class AcceptanceScratchSamplingTest(unittest.TestCase):
+    STAGE = 'acceptance/cloud/run-stage-03.py'
+
+    def sampling_functions(self, walk):
+        nodes = template_definitions(self.STAGE, {'file_bytes', 'directory_bytes'})
+        self.assertEqual({node.name for node in nodes}, {'file_bytes', 'directory_bytes'})
+        namespace = execute_definitions(self.STAGE, nodes, {'Path': Path, 'os': type('FakeOs', (), {'walk': staticmethod(walk)})})
+        return namespace['directory_bytes']
+
+    def tally(self):
+        return type('Tally', (), {'vanished': 0, 'warnings': None})()
+
+    def test_a_file_removed_between_listing_and_size_read_counts_as_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            kept = Path(directory) / 'kept'
+            vanishing = Path(directory) / 'node-compile-cache.tmp'
+            kept.write_bytes(b'x' * 7)
+            vanishing.write_bytes(b'y' * 11)
+            tally = self.tally()
+            tally.warnings = []
+            self.assertEqual(self.sampling_functions(vanishing_walk(vanishing))(Path(directory), tally), 7)
+            self.assertEqual((tally.vanished, tally.warnings), (1, []))
+
+    def test_regression_guard_other_size_read_errors_are_not_counted_as_vanished(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'kept').write_bytes(b'x')
+            with unittest.mock.patch.object(Path, 'lstat', side_effect=PermissionError('denied')):
+                with self.assertRaises(PermissionError):
+                    self.sampling_functions(os.walk)(Path(directory))
+
+    def test_a_directory_that_cannot_be_listed_becomes_a_warning_and_a_vanished_one_is_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'locked').mkdir()
+            (root / 'locked' / 'inside').write_bytes(b'z' * 5)
+            (root / 'gone').mkdir()
+            (root / 'kept').write_bytes(b'x' * 3)
+            real_scandir = os.scandir
+
+            def scandir(path):
+                if str(path).endswith('locked'):
+                    raise PermissionError(13, 'denied', str(path))
+                if str(path).endswith('gone'):
+                    raise FileNotFoundError(2, 'gone', str(path))
+                return real_scandir(path)
+
+            tally = self.tally()
+            tally.warnings = []
+            with unittest.mock.patch.object(os, 'scandir', side_effect=scandir):
+                total = self.sampling_functions(os.walk)(root, tally)
+            self.assertEqual(total, 3)
+            self.assertEqual(tally.vanished, 1)
+            self.assertEqual([(item['phase'], item['type']) for item in tally.warnings], [('listing', 'PermissionError')])
+
+    def stage_context(self, evidence):
+        tree = ast.parse((PACKET_TEMPLATE / self.STAGE).read_text())
+        definitions = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef))]
+        finalizers = [node for node in tree.body if isinstance(node, ast.Try) and any(isinstance(item, ast.Constant) and item.value == 'run-report.json' for statement in node.finalbody for item in ast.walk(statement))]
+        self.assertEqual(len(finalizers), 1)
+        context = execute_definitions(self.STAGE, definitions, {'__name__': 'stage_fixture', 'evidence': evidence})
+        return context, compile(ast.Module(body=finalizers[0].finalbody, type_ignores=[]), self.STAGE, 'exec')
+
+    def test_a_failed_resource_sample_is_a_warning_and_the_run_still_passes_and_cleans_up(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scratch, evidence = root / 'scratch', root / 'evidence'
+            scratch.mkdir(mode=0o700)
+            evidence.mkdir(mode=0o700)
+            (scratch / 'marker').write_bytes(b'scene')
+            helper = root / 'decision.py'
+            helper.write_text("import json, sys\nfrom pathlib import Path\narguments = sys.argv[1:]\nevidence = Path(arguments[arguments.index('--evidence') + 1])\n(evidence / 'scratch-cleanup-decision.json').write_text(json.dumps({'deleteAllowed': True}))\n")
+            context, finalizer = self.stage_context(evidence)
+            resources = context['Resources'](scratch)
+            resources.stopping.set()
+            resources.thread.start()
+            resources.thread.join(timeout=5)
+            (evidence / 'resources.jsonl').mkdir()
+            info = scratch.lstat()
+            record = {'rootFreeBeforeBytes': context['root_free'](), 'scratchCleanupPending': True, 'runnerErrors': [], 'passed': True, 'startedAt': 0.0}
+            context.update({'record': record, 'scratch': scratch, 'scratch_identity': (info.st_dev, info.st_ino, info.st_uid), 'resources': resources, 'resources_stopped': False, 'observer': None, 'process': None, 'cleanup_helper': helper, 'registry': evidence / 'owned-processes.json', 'base': root, 'manifest': {'sourceRoot': str(root)}})
+            with unittest.mock.patch('sys.stdout', new=__import__('io').StringIO()):
+                exec(finalizer, context)
+            report = json.loads((evidence / 'run-report.json').read_text())
+            self.assertEqual(report['runnerErrors'], [])
+            self.assertTrue(report['passed'])
+            self.assertFalse(scratch.exists())
+            self.assertEqual([item['type'] for item in report['resourceSamplingWarnings']], ['IsADirectoryError'])
+            self.assertEqual(report['resourceSamplingVanishedEntries'], 0)
+            self.assertNotIn('resourceSamplingErrors', report)
+
+    def test_no_consumer_still_requires_the_removed_sampling_error_field(self):
+        readers = [path.relative_to(PACKET_TEMPLATE) for path in PACKET_TEMPLATE.rglob('*') if path.is_file() and 'basis-04' not in path.parts and path.suffix in ('.py', '.mjs', '.sh') and 'resourceSamplingErrors' in path.read_text()]
+        self.assertEqual(readers, [])
+        self.assertIn("'resourceSamplingWarnings': resources.warnings", (PACKET_TEMPLATE / self.STAGE).read_text())
+
+
+class ServiceProbeSamplingTest(unittest.TestCase):
+    PROBE = 'measurement/probe/run-service-probe.py'
+
+    def probe(self, walk, scratch, evidence):
+        nodes = template_definitions(self.PROBE)
+        fake_os = type('FakeOs', (), {'walk': staticmethod(walk)})
+        record = {'errors': [], 'resourceSamplingWarnings': []}
+        return execute_definitions(self.PROBE, nodes, {'Path': Path, 'os': fake_os, 'shutil': shutil, 'json': json, 'time': __import__('time'), 'scratch': scratch, 'evidence': evidence, 'record': record, 'peak': 0, 'lowest': 1 << 62})
+
+    def test_a_scratch_file_removed_mid_walk_counts_as_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scratch, evidence = Path(directory) / 'scratch', Path(directory) / 'evidence'
+            scratch.mkdir()
+            evidence.mkdir()
+            (scratch / 'kept').write_bytes(b'x' * 7)
+            vanishing = scratch / 'node-compile-cache.tmp'
+            vanishing.write_bytes(b'y' * 11)
+            namespace = self.probe(vanishing_walk(vanishing), scratch, evidence)
+            namespace['sample']()
+            self.assertEqual(json.loads((evidence / 'resources.jsonl').read_text())['scratchBytes'], 7)
+            self.assertEqual(namespace['peak'], 7)
+
+    def test_a_failed_sample_is_a_warning_not_a_run_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scratch, evidence = Path(directory) / 'scratch', Path(directory) / 'evidence'
+            scratch.mkdir()
+            evidence.mkdir()
+            (evidence / 'resources.jsonl').mkdir()
+            namespace = self.probe(os.walk, scratch, evidence)
+            namespace['sample_or_warn']()
+            self.assertEqual(namespace['record']['errors'], [])
+            self.assertEqual([item['type'] for item in namespace['record']['resourceSamplingWarnings']], ['IsADirectoryError'])
+
+
+class ScratchRegistrationPollTest(unittest.TestCase):
+    def test_a_process_dying_while_its_stat_is_read_is_skipped(self):
+        helper = 'acceptance/helpers/check-p5-scratch-cleanup.py'
+        entries = [type('Entry', (), {'name': name})() for name in ['self', '10', '11', '12', '13']]
+        proc = type('Proc', (), {'iterdir': lambda self: iter(entries)})()
+        fake_pathlib = type('FakePathlib', (), {'Path': staticmethod(lambda value: proc)})
+
+        def process_identity(pid):
+            if pid == 11:
+                raise RuntimeError('P5_PROC_STAT_INVALID')
+            if pid == 12:
+                raise ValueError("invalid literal for int() with base 10: ''")
+            if pid == 13:
+                raise FileNotFoundError(pid)
+            return {'pid': pid, 'startTime': 1}
+
+        namespace = execute_definitions(helper, template_definitions(helper, {'identities_now'}), {'pathlib': fake_pathlib, 'process_identity': process_identity})
+        self.assertEqual(namespace['identities_now'](), {10: {'pid': 10, 'startTime': 1}})
+
+    def test_the_cleanup_inspection_still_fails_on_an_unreadable_process(self):
+        source = (PACKET_TEMPLATE / 'acceptance/helpers/check-p5-scratch-cleanup.py').read_text()
+        self.assertEqual(source.count('except (FileNotFoundError, ProcessLookupError, RuntimeError, ValueError):'), 1)
+        self.assertIn('raise RuntimeError("P5_CLEANUP_PROCESS_IDENTITY_CHANGED")', source)
+
+
+class ServiceReadCgroupTest(unittest.TestCase):
+    def test_a_cgroup_file_removed_before_reading_means_no_remaining_processes(self):
+        relative = 'measurement/S6-service-read.py'
+        namespace = execute_definitions(relative, template_definitions(relative, {'cgroup_pids'}), {})
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(namespace['cgroup_pids'](Path(directory) / 'cgroup.procs'), [])
+            present = Path(directory) / 'present.procs'
+            present.write_text('101\n102\n')
+            self.assertEqual(namespace['cgroup_pids'](present), ['101', '102'])
+        self.assertIn('remaining = cgroup_pids(pids)', (PACKET_TEMPLATE / relative).read_text())
+
+
+class QuestionTwelveDownloadRetryTest(unittest.TestCase):
+    RELATIVE = 'acceptance/cloud/download-question-12.py'
+
+    def retrying(self, outcomes):
+        import socket
+        import urllib.error
+        calls, sleeps = [], []
+
+        def download(url, limit):
+            calls.append(url)
+            outcome = outcomes[len(calls) - 1]
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        nodes = template_definitions(self.RELATIVE, {'transient', 'download_with_retry'}, assignments={'RETRY_DELAYS_SECONDS'})
+        namespace = execute_definitions(self.RELATIVE, nodes, {'urllib': urllib, 'socket': socket, 'time': __import__('time'), 'report': {}, 'download': download})
+        call = lambda: namespace['download_with_retry']('https://example.invalid/a', 10, sleep=sleeps.append)
+        return call, calls, sleeps, namespace['report']
+
+    def http_error(self, code):
+        import urllib.error
+        return urllib.error.HTTPError('https://example.invalid/a', code, 'status', {}, None)
+
+    def test_transient_outside_errors_are_retried_with_short_backoff(self):
+        import socket
+        import urllib.error
+        call, calls, sleeps, report = self.retrying([self.http_error(503), urllib.error.URLError(socket.gaierror(-3, 'Temporary failure in name resolution')), b'data'])
+        self.assertEqual(call(), b'data')
+        self.assertEqual((len(calls), sleeps), (3, [1, 3]))
+        self.assertEqual([item['type'] for item in report['downloadRetries']], ['HTTPError', 'URLError'])
+        call, calls, sleeps, report = self.retrying([ConnectionResetError(104, 'reset'), TimeoutError('timed out'), b'data'])
+        self.assertEqual((call(), len(calls)), (b'data', 3))
+
+    def test_three_transient_failures_give_up(self):
+        call, calls, sleeps, report = self.retrying([self.http_error(502), self.http_error(503), self.http_error(504)])
+        with self.assertRaises(Exception) as raised:
+            call()
+        self.assertEqual((raised.exception.code, len(calls), sleeps), (504, 3, [1, 3]))
+
+    def test_policy_and_client_results_are_checked_once(self):
+        for outcome in [RuntimeError('DOWNLOAD_REDIRECT_NOT_APPROVED'), RuntimeError('DOWNLOAD_SIZE_EXCEEDED'), self.http_error(403), self.http_error(404)]:
+            call, calls, sleeps, report = self.retrying([outcome, b'data'])
+            with self.assertRaises(type(outcome)):
+                call()
+            self.assertEqual((len(calls), sleeps, report), (1, [], {}))
+
+
+class AuthorizedNetworkRetryTest(unittest.TestCase):
+    SOURCE = PACKET_TEMPLATE / 'acceptance/cloud/adapters/probe-authorized-network.mjs'
+
+    def curl_flags(self):
+        found = re.findall(r'const curl = `/usr/bin/curl ([^`$]*?) --cacert ', self.SOURCE.read_text())
+        self.assertEqual(len(found), 1)
+        return shlex.split(found[0])
+
+    def test_the_adaptation_manifest_names_the_retry_flags_the_adapter_uses(self):
+        manifest = (PACKET_TEMPLATE / 'acceptance/cloud/adaptation-manifest.json').read_text()
+        entry = manifest.split('"adapter": "adapters/probe-authorized-network.mjs"', 1)[1].split('"timingChanges"', 1)[0]
+        source = self.SOURCE.read_text()
+        for flag in ('--retry 2', '--fetch-retries=2', '--fetch-retry-mintimeout=1000', '--fetch-retry-maxtimeout=3000'):
+            self.assertIn(flag, source)
+            self.assertIn(flag, entry)
+
+    def test_curl_retries_only_transient_results_and_never_an_allowlist_block(self):
+        flags = self.curl_flags()
+        self.assertIn('--retry', flags)
+        self.assertNotIn('--retry-all-errors', flags)
+        self.assertNotIn('--retry-connrefused', flags)
+        curl = shutil.which('curl')
+        if curl is None:
+            self.skipTest('curl not installed')
+        import socketserver
+        import threading
+        counts = {'get': 0, 'connect': 0}
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self):
+                line = self.rfile.readline().decode()
+                while self.rfile.readline() not in (b'\r\n', b''):
+                    pass
+                if line.startswith('CONNECT'):
+                    counts['connect'] += 1
+                    self.wfile.write(b'HTTP/1.1 403 Forbidden\r\nX-Proxy-Error: blocked-by-allowlist\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+                    return
+                counts['get'] += 1
+                status = b'503 Service Unavailable' if counts['get'] == 1 else b'200 OK'
+                self.wfile.write(b'HTTP/1.1 ' + status + b'\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok')
+
+        server = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            proxy = 'http://127.0.0.1:' + str(server.server_address[1])
+            environment = {key: value for key, value in os.environ.items() if 'proxy' not in key.lower()}
+            transient = subprocess.run([curl, *flags, '-x', proxy, 'http://registry.invalid/is-number'], capture_output=True, text=True, env=environment, timeout=60)
+            self.assertEqual((transient.returncode, transient.stdout, counts['get']), (0, 'ok', 2))
+            blocked = subprocess.run([curl, *flags, '-x', proxy, '-D', '/dev/stdout', 'https://example.com/'], capture_output=True, text=True, env=environment, timeout=60)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn('blocked-by-allowlist', blocked.stdout)
+            self.assertEqual(counts['connect'], 1)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_npm_install_retries_transient_fetch_failures(self):
+        source = self.SOURCE.read_text()
+        self.assertNotIn('--fetch-retries=0', source)
+        self.assertIn('--fetch-retries=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=3000', source)
+
+
+class MaintenanceSpaceSamplingTest(unittest.TestCase):
+    def test_space_sampling_problems_are_recorded_not_fatal(self):
+        source = (PACKET_TEMPLATE / 'maintenance/maintenance-common.mjs').read_text()
+        self.assertNotIn('MAINTENANCE_SPACE_SAMPLING_FAILED', source)
+        self.assertNotIn('MAINTENANCE_SPACE_SAMPLER_NOT_READY', source)
+        self.assertIn('spaceSamplingWarnings: spaceSamplingWarnings(samplerFailure, sampled)', source)
+
+
+class StartupFailureEventTest(unittest.TestCase):
+    RELATIVE = 'systemd/S7-switch-start-readback.py'
+
+    def failure_events(self):
+        nodes = template_definitions(self.RELATIVE, {'startup_failure_events'}, assignments={'STARTUP_FAILURE_TERMS', 'STARTUP_NON_FATAL_EVENTS'})
+        return execute_definitions(self.RELATIVE, nodes, {})['startup_failure_events']
+
+    def test_a_retrying_diagnostic_does_not_fail_the_switch(self):
+        messages = [
+            {'component': 'agent-service', 'event': 'memory.embedding_catch_up_failed', 'code': 'EMBEDDING_LOCAL_UNAVAILABLE', 'retryInMs': '30000'},
+            {'component': 'agent-service', 'event': 'service.ready'},
+            'plain text',
+        ]
+        self.assertEqual(self.failure_events()(messages), [])
+
+    def test_fatal_startup_events_still_fail_the_switch(self):
+        messages = [{'event': name} for name in ['pair.child_exit', 'pair.child_error', 'sandbox_runtime.content_audit_retryable', 'sandbox_runtime.content_audit_failed', 'service.failed', 'authority.lost', 'sandbox.srt_prewarm.failed']]
+        self.assertEqual(self.failure_events()(messages), [message['event'] for message in messages])
+
+    def test_an_unlisted_failure_event_fails_the_switch_even_when_it_says_it_will_retry(self):
+        self.assertEqual(self.failure_events()([{'component': 'agent-service', 'event': 'future.sync_failed', 'retryInMs': '1000'}]), ['future.sync_failed'])
+
+    def test_the_switch_loop_uses_the_shared_matcher(self):
+        source = (PACKET_TEMPLATE / self.RELATIVE).read_text()
+        self.assertIn('failure_events = startup_failure_events(messages)', source)
+        self.assertIn('assert.deepEqual(startupFailureEvents(records), [], ', (PACKET_TEMPLATE / 'systemd/S7-startup-readback.mjs').read_text())
+
+
+class ProductionStartupBudgetTest(unittest.TestCase):
+    def test_production_budget_has_headroom_over_measured_starts_and_fits_the_waits(self):
+        worker = (HERE.parent.parent / packet_maker.WORKER_SERVICE_MAIN).read_text()
+        budget_ms = packet_maker.startup_ready_budget(INSTANCE, worker)
+        self.assertGreaterEqual(budget_ms, 2 * 37700)
+        switch = (PACKET_TEMPLATE / 'systemd/S7-switch-start-readback.py').read_text()
+        deadlines = re.findall(r'deadline = time\.monotonic\(\) \+ ([0-9]+)\n', switch)
+        self.assertEqual(len(deadlines), 1)
+        self.assertGreater(int(deadlines[0]) * 1000, budget_ms + INSTANCE['startupReadyMarginSeconds'] * 1000)
 
 
 if __name__ == '__main__':

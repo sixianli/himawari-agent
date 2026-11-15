@@ -62,8 +62,8 @@ Andy 有一台 Oracle 东京区的 ARM 云服务器（aarch64，即 64 位 ARM �
 把 linux-arm64 作为测试和资格验收用的平台支持起来，分四个 PR，x64 的托管 CI 和生产行为不变。ARM 不进 GitHub 必过检查，也不切线上。
 
 1. **PR 0，只清点、不改行为。**全仓找出写死 `/lib64`、`linux-x64`、`process.arch === "x64"`、固定主机名和固定 Python 包名的地方，列成清单。固定主机名在这里指拿本机主机名和一个固定名字比较的代码；赋给变量或写在配置字段里的机器名（例如 CI 机器名）是配置值，不是对运行机器的假设，不清点。清单按文件扩展名扫 `apps`、`packages`、`scripts`、`test`、`ci`、`.github` 六个目录，外加 `Dockerfile`、`Containerfile`、`Makefile` 三种文件名（`scripts/platform-assumptions.json`，按类别和文件记次数）；加一道检查 `npm run check:platform-assumptions`：某个文件里某一类的次数比清单多就失败，比清单少也失败（要求把清单改小）。它按次数比，不看写法：同一个文件里删一处、再加一处，次数不变，检查发现不了，这一点靠代码复核。先在 ARM 机上实测 `packages/platform-node/src/capabilities/isolation.ts` 的沙箱自检（它带 `--symlink usr/lib64 /lib64`）是否通过；2026-11-12 在 ARM 机上用 bwrap 0.11.2 带同样的 `--symlink usr/lib64 /lib64` 参数实测，退出码是 0。
-2. **PR 1，修根本原因。**在生成只读目录清单的地方加一个函数：按输入顺序逐条处理；明确标为可选的条目（第一版只有 `/lib64`），用 `lstat` 确认路径本身不存在时才跳过；路径存在但取真实路径失败（例如悬空的符号链接）、权限错误、必选条目缺失，都报错；取真实路径之后按原顺序去重。函数放在新文件里。`cloud-seal.mjs`、测试夹具、探测脚本及其在上线包模板里的副本都改用它；`cloud-seal.mjs` 里的路径字面量仍留在 `readOnlyToolchainPaths: [` 到 `protectedPaths: [` 之间。沙箱策略的严格校验、`SANDBOX_READ_ROOTS`、`isolation.ts`（除非 PR 0 实测它在 ARM 上失败）都不改。
-3. **PR 2，本地检查认 linux-arm64。**平台名分两个函数：构建产物用的（`macos-arm64`、`linux-x64`、`linux-arm64`）和工具链锁用的（`darwin-arm64`、`linux-x64`、`linux-arm64`）。`local.mjs` 放行 linux-arm64，用一份显式的本地配置为 build 提供 linux-arm64 成员，`GITHUB_ACTIONS` 为 `true` 时禁止。ARM 的工具链放在独立的锁文件里，有自己的校验和自己的摘要字段；`ci/toolchain-lock.json`、`ci/policy.json`、`scripts/ci/check-policy.mjs`、`scripts/ci/aggregate.mjs` 和工作流文件不改。ARM 机上显式安装 Playwright 的浏览器。
+2. **PR 1，修根本原因。**在生成只读目录清单的地方加一个函数：按输入顺序逐条处理；明确标为可选的条目（第一版只有 `/lib64`），用 `lstat` 确认路径本身不存在时才跳过；路径存在但取真实路径失败（例如悬空的符号链接）、权限错误、必选条目缺失，都报错；取真实路径之后默认按原顺序去重（调用方可以关掉去重，`test/fixtures/mac-sandbox-deployment.ts` 为保持原来的清单就关了）。函数放在 `packages/testing/src/read-only-toolchain.mjs`，让 `npm test` 里生成这份清单的测试夹具和集成测试（`test/fixtures/product-path-harness.ts`、`test/fixtures/mac-sandbox-deployment.ts`、`test/integration/prepared-file-runner.test.ts`、`test/integration/sandbox-preparation-control.test.ts`）改用它。2026-11-12 实际动手时缩小了范围：`cloud-seal.mjs`、探测脚本及其在上线包模板里的副本、`scripts/operations/` 下的一次性封装脚本，只在出 ARM 包时才会跑，而且这些副本的内容摘要记在 `scripts/delivery-mode/probe-sources.json` 等处，改它们要同时改包的清单，所以留到 PR 3 和出包一起做；它们在 `scripts/platform-assumptions.json` 里的计数不变。沙箱策略的严格校验、`SANDBOX_READ_ROOTS`、`isolation.ts` 都不改（ARM 上实测 `isolation.ts` 的自检参数退出码是 0）。
+3. **PR 2，本地检查认 linux-arm64。**平台名分两个函数：构建产物用的（`macos-arm64`、`linux-x64`、`linux-arm64`）和工具链锁用的（`darwin-arm64`、`linux-x64`、`linux-arm64`）。`local.mjs` 放行 linux-arm64，用一份显式的本地配置为 build 提供 linux-arm64 成员，`GITHUB_ACTIONS` 为 `true` 时禁止。ARM 的工具链条目直接加进 `ci/toolchain-lock.json`（2026-11-12 改，原先定的是独立的锁文件，理由见下面的表；Andy 2026-11-12 22:52 JST 在决定卡上选了“同意，写进现有文件”）：每个工具多一个 `linux-arm64` 键，校验要求这个键下的文件名带 `arm64` 或 `aarch64`（不分平台的 wheel 除外）。这一部分提前单独做成一个小 PR，因为 Andy 2026-11-12 要把这台 ARM 机也用来跑 CI。这份 ADR 不改 `ci/policy.json`、`scripts/ci/check-policy.mjs`、`scripts/ci/aggregate.mjs` 和工作流文件；把 ARM 机接进 CI 要改它们，由 CI 那边另出方案。ARM 机上显式安装 Playwright 的浏览器。
 4. **PR 3，出包、安装和资格认 linux-arm64。**`make-packet.py` 增加显式的目标平台参数，默认仍是 linux-x64；包名、Python 包、`node_modules` 包、`fd` 下载物都按目标平台取，并在安装脚本里和产物记录交叉校验。构建机身份（平台、架构、主机名、用户编号）改成提交进仓库的配置，x64 的默认值不变，ARM 用一份固定的测试配置，不从当前机器现场探测。ARM 包标为非生产候选：这个标记是产物的一部分，安装脚本和上线预检遇到生产用途时拒绝它。ARM 机上用独立的签名密钥，不放生产密钥和真实数据。
 
 验收：ARM 上 `npm test` 通过且 `/lib64` 一类失败清零；真实沙箱探测、`check:srt-boundary`、资格回执校验通过；用测试账号真发一条消息并收到回复；模型看到的可用命令清单和沙箱里真实能执行的命令逐条对得上。x64 上：只读目录清单、沙箱策略的摘要、沙箱自检参数由自动用例和改动前的值比对一致；`check:prompt-prefix`、`check:delivery-packet`、`check:delivery-deploy` 通过。
@@ -81,7 +81,7 @@ Andy 有一台 Oracle 东京区的 ARM 云服务器（aarch64，即 64 位 ARM �
 | 改用 bwrap 的 `--ro-bind-try` | 不采用 | 它忽略任何不存在的来源，本该报错的也被吞掉 |
 | 在 ARM 机上手工建 `/lib64` 链接 | 不采用 | 只是给一台机器打补丁，机器被回收就没了，根本原因还在 |
 | 把 linux-arm64 加进 `ci/policy.json` 的必过检查 | 不采用 | 测试机可能被 Oracle 回收，不能让必过检查依赖它 |
-| 把 ARM 条目直接加进 `ci/toolchain-lock.json` | 不采用 | 这个文件的摘要写进 x64 产物记录，改它会改变 x64 的记录 |
+| ARM 的工具链放在独立的锁文件里 | 不采用（2026-11-12 改，原先采用） | 汇总和上下文只核对 `ci/toolchain-lock.json` 一份文件的摘要，出包的源码输入清单也只认这一份（`scripts/ci/verify-artifact.mjs` 里的正则），独立文件里的 ARM 工具不在这些核对里；把条目加进主锁，摘要只变一次，和平时升级一个工具一样 |
 | 构建机身份从当前机器现场探测 | 不采用 | 等于让机器自己说自己是谁，身份校验失去意义 |
 | 无条件改 `isolation.ts` 的 `/lib64` 符号链接 | 暂不采用 | bwrap 的 `--symlink` 不要求目标存在，先实测，失败再改 |
 
@@ -94,9 +94,8 @@ Andy 有一台 Oracle 东京区的 ARM 云服务器（aarch64，即 64 位 ARM �
 ## 后果
 
 - 不改系统提示、工具定义、历史消息和出口遮盖，模型已经见过的请求开头不变。
-- 新函数是新代码，x64 上沙箱运行时的摘要和整个上线包的哈希会变；能保证不变的是只读目录清单、策略摘要和自检参数这些值。
-- ARM 上暂时不能跑完整的 `npm run check`：扫描工具（semgrep、gitleaks、actionlint）的 ARM 版本第一步不固定进锁文件。
-- 以后升级工具链要多维护一份 ARM 锁文件。
+- 新函数放在测试包 `packages/testing` 里，只给测试夹具用，不进上线包（`scripts/package-node-runtime.mjs` 不打包它，`scripts/ci/verify-artifact.mjs` 拒绝产物里出现它），所以 x64 上沙箱运行时的摘要和上线包都不变；x64 上只读目录清单、策略摘要和自检参数也不变。
+- 以后升级工具链，`ci/toolchain-lock.json` 里要多更新一个 `linux-arm64` 键。
 - 还没证实的事：`JOB_HOST_NOT_READY` 这类失败是否全部由 `/lib64` 连带引起；Playwright 的浏览器在这台机器上能否装齐；`fd` 的 aarch64 发行物文件名和摘要；ARM 上模型看到的可用命令清单是否和沙箱真实能力一致。这些在对应 PR 里实测。
 - 这台 ARM 机可能被 Oracle 回收。代码改动不依赖这台机器长期存在，但 ARM 上的验收结果只在机器还在时能重做。
 

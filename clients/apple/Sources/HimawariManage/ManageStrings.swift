@@ -65,6 +65,24 @@ enum M {
     static var capabilities: String { text("它会的本事", ja: "できること", en: "What it can do") }
     static var waitingForYou: String { text("等你看", ja: "確認待ち", en: "Waiting for you") }
     static var inUse: String { text("在用", ja: "使用中", en: "In use") }
+    static func disabledAt(_ iso: String, now: Date = Date()) -> String? {
+        guard let date = Timestamp.parse(iso) else { return nil }
+        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "en_GB")))
+        let day = Calendar.current.isDate(date, inSameDayAs: now) ? text("今天", ja: "今日", en: "Today") : pairedDay(date)
+        return text("\(day) \(time) 停用", ja: "\(day) \(time) に停止", en: "\(day) \(time) turned off")
+    }
+
+    static func cancelledJobs(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return text("取消了 \(count) 个定时任务，不会自动恢复", ja: "定期タスク \(count) 件を取り消しました。自動では戻りません", en: "\(count) scheduled tasks were cancelled and won't resume on their own")
+    }
+
+    static var reactivateFailed: String { text("没能重新启用", ja: "再び有効にできませんでした", en: "Couldn't turn it back on") }
+
+    static func confirmReactivateCapability(_ name: String) -> String {
+        text("重新启用“\(name)”", ja: "「\(name)」を再び有効にする", en: "Turn \(name) back on")
+    }
+
     static var disabledCapabilities: String { text("停用了", ja: "停止中", en: "Turned off") }
     static func capabilityExpansions(_ items: [String]) -> String? {
         guard !items.isEmpty else { return nil }
@@ -268,6 +286,22 @@ enum M {
     }
 
     static var yourWords: String { text("你的原话", ja: "あなたの言葉", en: "Your words") }
+    static var on: String { text("开", ja: "オン", en: "On") }
+    static var off: String { text("关", ja: "オフ", en: "Off") }
+    static var notificationsTitle: String { text("通知", ja: "通知", en: "Notifications") }
+    static var deliveryGroup: String { text("什么时候送", ja: "いつ届けるか", en: "When to deliver") }
+    static var thinkTitle: String { text("想一想的门槛", ja: "考える基準", en: "Thinking thresholds") }
+    static var tuningDisabled: String { text("未开启", ja: "オフ", en: "Off") }
+    static var tuningSave: String { text("保存", ja: "保存", en: "Save") }
+    static var tuningRestore: String { text("恢复默认", ja: "初期値に戻す", en: "Restore default") }
+    static var tuningSaveFailed: String { text("没能保存", ja: "保存できませんでした", en: "Couldn't save") }
+    static func tuningDefault(_ value: String) -> String {
+        text("默认 \(value)", ja: "初期値 \(value)", en: "Default \(value)")
+    }
+    static func confirmTuning(_ name: String) -> String {
+        text("修改“\(name)”", ja: "「\(name)」を変更", en: "Change \(name)")
+    }
+
     static var general: String { text("通用", ja: "一般", en: "General") }
     static var exportTitle: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export memories and rules") }
     static var confirmExport: String { text("导出记忆和规则", ja: "記憶とルールを書き出す", en: "Export your memories and rules") }
