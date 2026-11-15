@@ -37,8 +37,9 @@ export function scan(paths, read = (path) => readFileSync(join(root, path))) {
     let content;
     try {
       content = read(path);
-    } catch {
-      continue;
+    } catch (error) {
+      if (error.code === "ENOENT" || error.code === "EISDIR") continue;
+      throw error;
     }
     if (content.includes(0)) continue;
     for (const marker of findConflictMarkers(content.toString("utf8"))) {
