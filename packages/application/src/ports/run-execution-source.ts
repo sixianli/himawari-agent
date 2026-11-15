@@ -14,7 +14,6 @@ export interface RunModelSelection {
   readonly thinkingLevel: RunThinkingLevel;
 }
 
-/** Canonical source of an admitted Run; never inferred from the latest Thread message. */
 export interface RunExecutionSource {
   readonly modelSelection?: RunModelSelection;
   readonly ownerId: OwnerId;
@@ -29,6 +28,11 @@ export interface RunExecutionSource {
   readonly payloadRef: PayloadRef;
   readonly dataClassification: DataClassification;
   readonly occurredAt: string;
+}
+
+export function frozenRunSourceIdentity(source: RunExecutionSource): RunExecutionSource {
+  const { ownerApprovedTask: _derivedFromProposalState, ...identity } = source;
+  return identity;
 }
 
 export interface RunExecutionSourcePort {

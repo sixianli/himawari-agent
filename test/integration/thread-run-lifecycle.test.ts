@@ -2434,6 +2434,17 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       policy: changedPolicy,
     }).create({ candidate, lease: held });
     expect(restored).toEqual(original);
+    const frozenBeforeOwnerApprovedTask = await new RunExecutionInputService({
+      ...options,
+      policy: changedPolicy,
+      source: {
+        read: async (runId) => {
+          const live = await options.source.read(runId);
+          return live ? { ...live, ownerApprovedTask: true as const } : live;
+        },
+      },
+    }).create({ candidate, lease: held });
+    expect(frozenBeforeOwnerApprovedTask).toEqual(original);
     const laterClock = { now: () => new Date(Date.parse(clock.now()) + 1000).toISOString() };
     const larger = await new RunExecutionInputService({
       ...options,
