@@ -189,6 +189,8 @@ def cleanup(plan, apply, references, stamp):
             return 'used-by-a-process'
         if path in named_by_database:
             return 'named-by-database:' + named_by_database[path]
+        if result['unreadableTables'] and path in plan.get('targetPaths', []):
+            return 'database-unreadable'
         return None
 
     def remove(path, reason):
@@ -211,6 +213,8 @@ def cleanup(plan, apply, references, stamp):
         elif in_use(path):
             keep(path, in_use(path))
         else:
+            if path in plan.get('targetPaths', []):
+                result['archived'] += archive_small_files(path, failed_attempt_destination(plan, path, stamp), plan['smallFileBytes'], apply)
             remove(path, 'old-release')
 
     for path in children(plan['tmpRoot'], STAGE_NAME) + children(plan['tmpRoot'], UPLOAD_NAME):

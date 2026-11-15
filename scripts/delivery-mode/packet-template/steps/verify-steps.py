@@ -345,6 +345,17 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
             assert stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and stored.read_bytes() == (packet / material).read_bytes(), broken
     case('a cache entry the query would never report is replaced by the next full transport', broken_entries_are_replaced)
 
+    def broken_unused_entries_and_lock_are_cleared():
+        stray = entries / ('e' * 64)
+        stray.mkdir()
+        os.utime(stray, (1, 1))
+        (cache_root / 'lock').unlink()
+        (cache_root / 'lock').mkdir()
+        result = receive_cached(without(material), 'cache-stray', [material], max_bytes=(packet / material).stat().st_size + 1)
+        assert result['passed'] and 'cacheStoreError' not in result and not stray.exists(), result
+        assert (cache_root / 'lock').is_file()
+    case('a broken lock and a directory left in the cache are cleared instead of failing the transport', broken_unused_entries_and_lock_are_cleared)
+
     def cache_spec_checked():
         encoded = lambda value: __import__('base64').b64encode(json.dumps(value).encode()).decode()
         assert transport.cache_spec(encoded(spec([material]))) == spec([material])

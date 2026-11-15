@@ -481,6 +481,22 @@ class TargetPathClearingTest(CleanupCase):
         self.assertFalse(qualification.exists())
         self.assertEqual(result['targetPathsLeft'], [])
 
+    def test_the_failed_release_keeps_its_reports_before_it_is_deleted(self):
+        self.tree.file(self.failed['prefix'] / 'install-report.json')
+        self.run_cleanup()
+        attempt = self.tree.lib / 'release-cleanup/failed-attempts/20261030T010000Z'
+        self.assertFalse(self.failed['prefix'].exists())
+        self.assertTrue((attempt / str(self.failed['prefix']).lstrip('/') / 'install-report.json').exists())
+
+    def test_an_unreadable_database_table_keeps_every_target_path(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        with unittest.mock.patch.object(remote, 'database_references', return_value={'unreadableTables': ['runs']}):
+            result = self.run_cleanup()
+        self.assertTrue(self.failed['prefix'].exists() and self.failed['operations'].exists() and qualification.exists())
+        left = {item['path']: item['reason'] for item in result['targetPathsLeft']}
+        self.assertEqual((left[str(self.failed['prefix'])], left[str(qualification)]), ('database-unreadable', 'database-unreadable'))
+
     def test_the_paths_of_a_passed_deploy_are_left_only_as_the_serving_release(self):
         result = self.run_cleanup(current=self.serving)
         self.assertEqual({item['reason'] for item in result['targetPathsLeft']}, {'serving'})

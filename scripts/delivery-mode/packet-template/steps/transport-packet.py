@@ -116,6 +116,13 @@ def fill_from_cache(entries, expected, filename, uid, gid, common):
     require(common.record(filename, uid) == {key: expected[key] for key in ('bytes', 'sha256')}, '__PKT_LABEL_UPPER___TRANSPORT_MEMBER_READBACK_CHANGED:' + expected['path'])
 
 
+def discard(path):
+    if stat.S_ISDIR(path.lstat().st_mode):
+        shutil.rmtree(path)
+    else:
+        os.unlink(path)
+
+
 def store_in_cache(entries, target, members, spec, uid, gid):
     kept = set()
     for name, expected in sorted(members.items()):
@@ -128,10 +135,7 @@ def store_in_cache(entries, target, members, spec, uid, gid):
             if stat.S_ISREG(info.st_mode) and info.st_uid == uid and info.st_nlink == 1 and not stat.S_IMODE(info.st_mode) & 0o077 and info.st_size == expected['bytes']:
                 os.utime(final, follow_symlinks=False)
                 continue
-            if stat.S_ISDIR(info.st_mode):
-                shutil.rmtree(final)
-            else:
-                os.unlink(final)
+            discard(final)
         temporary = entries / ('.incoming-' + expected['sha256'] + '-' + str(os.getpid()))
         descriptor = os.open(target / name, os.O_RDONLY | os.O_NOFOLLOW)
         try:
@@ -144,7 +148,7 @@ def store_in_cache(entries, target, members, spec, uid, gid):
         os.replace(temporary, final)
     for name in os.listdir(entries):
         if name.startswith('.incoming-'):
-            os.unlink(entries / name)
+            discard(entries / name)
     present = []
     for name in os.listdir(entries):
         info = (entries / name).lstat()
@@ -156,7 +160,7 @@ def store_in_cache(entries, target, members, spec, uid, gid):
             break
         if name in kept:
             continue
-        os.unlink(entries / name)
+        discard(entries / name)
         total -= size
         removed.append(name)
     descriptor = os.open(entries, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -221,6 +225,8 @@ def receive_archive(stream, target, expected_freeze, uid, gid, common, cache=Non
         return receive_members(stream, target, expected_freeze, uid, gid, common, None, [])[0]
     try:
         entries = cache_directories(cache, uid, gid)
+        if os.path.lexists(cache / 'lock') and not stat.S_ISREG((cache / 'lock').lstat().st_mode):
+            discard(cache / 'lock')
         lock = os.open(cache / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     except (RuntimeError, OSError) as error:
         message = str(error) if isinstance(error, RuntimeError) else '__PKT_LABEL_UPPER___TRANSPORT_CACHE_DIRECTORY_UNUSABLE:' + type(error).__name__
