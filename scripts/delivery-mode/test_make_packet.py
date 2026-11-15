@@ -526,6 +526,15 @@ class DerivedExpectationsTest(RenderedPacket):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES 0030_run_model_selection.sql runs'):
             packet_maker.schema_parameters({'COMMIT': MEMORY_PAGE_COMMIT, 'TARGET_SCHEMA': 30}, {'schema': {'current': 29, 'minimumWriter': 29}})
 
+    def test_the_owner_lost_rebuild_that_copies_every_row_back_is_allowed_and_anything_else_is_not(self):
+        sql = (packet_maker.REPO / packet_maker.MIGRATIONS / '0083_model_invocation_owner_lost.sql').read_text()
+        tables = ['model_budget_allocations', 'model_invocation_identities']
+        name = '0083_model_invocation_owner_lost.sql'
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql, tables), tables)
+        self.assertEqual(packet_maker.rebuilds_keeping_rows('0099_other.sql', sql, tables), [])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nDELETE FROM model_budget_allocations;', tables), ['model_invocation_identities'])
+        self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql.replace('INSERT INTO model_invocation_identities SELECT * FROM saved_model_invocation_identities;', ''), tables), ['model_budget_allocations'])
+
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
             packet_maker.schema_parameters({'COMMIT': TWELFTH_COMMIT, 'TARGET_SCHEMA': 56}, {'schema': {'current': 57, 'minimumWriter': 57}})

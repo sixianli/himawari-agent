@@ -182,6 +182,26 @@ def startup_phase_baseline(instance):
     return json.dumps(baseline, sort_keys=True)
 
 
+ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('model_budget_allocations', 'model_invocation_identities')}
+
+
+def rebuilds_keeping_rows(file_name, sql, touched):
+    allowed = ROW_PRESERVING_REBUILDS.get(file_name, ())
+    kept = []
+    for table in touched:
+        saved = 'saved_' + table
+        steps = (
+            r'CREATE\s+TEMP\s+TABLE\s+' + saved + r'\s+AS\s+SELECT\s+\*\s+FROM\s+' + table + r'\s*;',
+            r'INSERT\s+INTO\s+' + table + r'\s+SELECT\s+\*\s+FROM\s+' + saved + r'\s*;',
+            r'DROP\s+TABLE\s+' + saved + r'\s*;',
+        )
+        other = re.sub('|'.join(steps), '', sql, flags=re.I)
+        written_elsewhere = re.search(r'\b(?:ALTER\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', other, re.I)
+        if table in allowed and all(re.search(step, sql, re.I) for step in steps) and not written_elsewhere:
+            kept.append(table)
+    return kept
+
+
 def preserved_tables():
     source = (TEMPLATE / 's0-db' / 'read-s0-db.mjs').read_text()
     match = re.search(r'historyTables = Object\.freeze\(\[(.*?)\]\)', source, re.S)
@@ -220,6 +240,8 @@ def migration_ledger(commit, current, target, applied_ids=None):
             entry = dict(entry, sequence=sequence)
         sql = git('show', commit + ':' + MIGRATIONS + '/' + entry['file'])
         touched = sorted(table for table in tables if re.search(r'\b(?:ALTER\s+TABLE|DROP\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', sql, re.I))
+        kept = rebuilds_keeping_rows(entry['file'], sql, touched)
+        touched = [table for table in touched if table not in kept]
         if touched:
             refuse('PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES', entry['file'] + ' ' + ','.join(touched))
         ledger.append({key: entry[key] for key in ('sequence', 'name', 'phase')})
