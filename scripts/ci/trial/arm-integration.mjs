@@ -1,4 +1,5 @@
-import { mkdtempSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
@@ -51,6 +52,39 @@ const t1 = performance.now();
 process.stdout.write(
   `TRIAL_BUILD exit=${built.exitCode} seconds=${((t1 - t0) / 1000).toFixed(0)}\n`,
 );
+const focus = process.argv[6];
+if (focus) {
+  const contextPath = path.join(output, "focus-context.json");
+  writeFileSync(contextPath, `${JSON.stringify(context)}\n`);
+  const focused = spawnSync(
+    process.execPath,
+    [
+      path.join(repositoryRoot, "node_modules/vitest/vitest.mjs"),
+      "run",
+      "--config",
+      "vitest.workspace.ts",
+      "--project",
+      "integration",
+      "--reporter",
+      "verbose",
+      ...focus.split(","),
+    ],
+    {
+      cwd: repositoryRoot,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        NODE_PATH: "",
+        NODE_OPTIONS: "",
+        HIMAWARI_TEST_ARTIFACT: built.artifact.path,
+        HIMAWARI_TEST_CONTEXT: contextPath,
+      },
+    },
+  );
+  process.stdout.write(`TRIAL_FOCUS exit=${focused.status}\n`);
+  process.stdout.write(`${stopLoad()}\n`);
+  process.exit(focused.status ?? 1);
+}
 const tested = await runTests({
   artifact: built.artifact.path,
   output: `${output}/tests`,

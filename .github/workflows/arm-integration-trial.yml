@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        shard: [1, 2, 3]
+        shard: [2]
     timeout-minutes: 90
     env:
       CI_NODE: 22.22.3
@@ -41,7 +41,7 @@ jobs:
       - name: build linux-arm64 and run integration shard
         run: |
           nproc; free -g; uptime
-          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools ${{ matrix.shard }} 3
+          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools ${{ matrix.shard }} 3 test/integration/production-http-composition-process.test.ts,test/integration/data-cli.test.ts
       - name: failed test names
         if: always()
         run: |

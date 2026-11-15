@@ -2158,7 +2158,7 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
     expect(notOwner.status).toBe(401);
     const served = await call(await signToken({ audience: mcpAudience }));
     expect(served.status).toBe(200);
-    expect(served.raw).toContain(String(new Date().getUTCFullYear()));
+    expect(served.raw, served.raw).toContain(String(new Date().getUTCFullYear()));
   } finally {
     await service.stop();
   }
@@ -2191,7 +2191,9 @@ async function installedMcpToolNames(address: string, assertion: string): Promis
     }),
   );
   try {
-    return (await client.listTools()).tools.map((tool) => tool.name).sort();
+    const listed = await client.listTools();
+    process.stdout.write(`TRIAL_LIST ${JSON.stringify(listed)}\n`);
+    return listed.tools.map((tool) => tool.name).sort();
   } finally {
     await client.close();
   }
