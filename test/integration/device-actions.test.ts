@@ -1267,6 +1267,42 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await h.repository.close();
   });
 
+  it("[undo] an unconfirmed undo refused for untrusted content does not block the same action's confirmed undo", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.update"]);
+    await mirror(h, client, "calendar_event", [DENTIST]);
+    const { act } = setup(h);
+    await addRun(h, "run-1");
+    h.actions.authorization.current = ownerAllows(true);
+    await act("run-1", {
+      action: "calendar.update",
+      arguments: { eventId: "evt-1", title: "新标题" },
+    });
+    const claimed = (await devicePost(h, client, "actions/claim", {})).body["actions"] as {
+      id: string;
+    }[];
+    const id = claimed[0]?.id as string;
+    await devicePost(h, client, "actions/result", {
+      id,
+      outcome: "succeeded",
+      readBack: true,
+      evidence: { before: { title: "牙医复诊" } },
+    });
+    await h.externalContent.mark(createRunId("run-1"), "perception_read");
+    h.actions.authorization.current = {
+      authorize: async (intent) =>
+        intent.readUntrustedContent
+          ? { decision: "deny", reasonCode: "authorization_denied" }
+          : { decision: "approval", approvalId: "approval-owner" },
+    };
+    await confirmablePost(h, client, "actions/undo", { id }, false);
+    const confirmed = await confirmablePost(h, client, "actions/undo", { id }, true);
+    expect(confirmed.body).not.toMatchObject({ state: "rejected" });
+    expect(confirmed.status).toBe(200);
+    await h.repository.close();
+  });
+
   it("[undo] a failed reverse action is not retried, a second device cannot undo, and an action that did not succeed cannot be undone", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

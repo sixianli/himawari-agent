@@ -174,7 +174,8 @@ export type DeviceActionReportReply =
   | { readonly kind: "recorded" | "replayed"; readonly state: DeviceActionRecordState }
   | { readonly kind: "invalid" | "not_found" | "not_delivered" | "verify_only" };
 
-const undoToolCallId = (actionId: string) => `undo:${actionId}`;
+const undoToolCallId = (actionId: string, ownerPresent: boolean) =>
+  ownerPresent ? `undo:${actionId}:owner` : `undo:${actionId}`;
 
 const EMPTY_DETAIL: DeviceActionDetail = Object.freeze(
   Object.fromEntries(DEVICE_ACTION_LOCALES.map((locale) => [locale, ""])),
@@ -839,11 +840,15 @@ export class DeviceActionService {
   }
 
   async #undoState(record: DeviceActionRecord): Promise<DeviceActionUndoState> {
-    const reverse = await this.#options.store.readInvocation({
-      ...this.#options.scope,
-      runId: record.runId,
-      toolCallId: undoToolCallId(record.id),
-    });
+    const read = (ownerPresent: boolean) =>
+      this.#options.store.readInvocation({
+        ...this.#options.scope,
+        runId: record.runId,
+        toolCallId: undoToolCallId(record.id, ownerPresent),
+      });
+    const ownerReverse = await read(true);
+    const plainReverse = await read(false);
+    const reverse = ownerReverse ?? (plainReverse?.state === "rejected" ? null : plainReverse);
     if (reverse) {
       if (reverse.state === "succeeded") return "done";
       return reverse.state === "failed" ||
@@ -853,6 +858,19 @@ export class DeviceActionService {
         : "pending";
     }
     return (await this.#undoPlan(record)) ? "available" : "none";
+  }
+
+  async #undoKey(record: DeviceActionRecord, ownerPresent: boolean): Promise<string> {
+    const read = (owner: boolean) =>
+      this.#options.store.readInvocation({
+        ...this.#options.scope,
+        runId: record.runId,
+        toolCallId: undoToolCallId(record.id, owner),
+      });
+    if (await read(true)) return undoToolCallId(record.id, true);
+    const plain = await read(false);
+    if (plain && plain.state !== "rejected") return undoToolCallId(record.id, false);
+    return undoToolCallId(record.id, ownerPresent);
   }
 
   async undo(input: {
@@ -867,7 +885,7 @@ export class DeviceActionService {
     if (!plan) return { kind: "not_undoable" };
     return this.request({
       runId: record.runId,
-      toolCallId: undoToolCallId(record.id),
+      toolCallId: await this.#undoKey(record, input.ownerPresent),
       dataClassification: record.dataClassification,
       device: input.device,
       action: plan.action,
