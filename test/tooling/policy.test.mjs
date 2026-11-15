@@ -227,6 +227,9 @@ function workflow() {
           steps: [
             ...(check.id === "required" ? [requiredEntry()] : []),
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
+            ...(["static", "tests", "tooling"].includes(check.id)
+              ? [{ run: chromiumInstall }]
+              : []),
             {
               run:
                 check.id === "tests"
@@ -237,9 +240,6 @@ function workflow() {
             ...(check.id === "required"
               ? [shareCollect(), gateStep(), shareRemove()]
               : [sharePut(check), diagnosticSummary(check)]),
-            ...(["static", "tests", "tooling"].includes(check.id)
-              ? [{ run: chromiumInstall }]
-              : []),
           ],
         },
       ]),
@@ -779,6 +779,20 @@ describe("CI policy contract", () => {
     },
   );
   it.each([
+    ["after the checks", (steps, index) => steps.push(...steps.splice(index, 1))],
+    ["with a condition", (steps, index) => Object.assign(steps[index], { if: "false" })],
+  ])("rejects a tooling Chromium install %s", (_name, change) => {
+    const value = workflow();
+    const steps = value.jobs.tooling.steps;
+    change(
+      steps,
+      steps.findIndex((step) => step.run === chromiumInstall),
+    );
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Chromium must install unconditionally before the checks run: tooling",
+    );
+  });
+  it.each([
     "missing option",
     "always measure",
     "conditional runner",
@@ -787,13 +801,14 @@ describe("CI policy contract", () => {
   ])("rejects tests candidate workflow drift: %s", (change) => {
     const value = workflow();
     const steps = value.jobs.tests.steps;
+    const runner = steps.find((step) => step.run?.includes("scripts/ci/run.mjs"));
     if (change === "missing option")
-      steps[1].run = steps[1].run.replace(" --baseline-candidate initial-only", "");
-    if (change === "always measure") steps[1].run = steps[1].run.replace("initial-only", "always");
-    if (change === "conditional runner") steps[1].if = "false";
-    if (change === "duplicate runner") steps.push({ ...steps[1] });
+      runner.run = runner.run.replace(" --baseline-candidate initial-only", "");
+    if (change === "always measure") runner.run = runner.run.replace("initial-only", "always");
+    if (change === "conditional runner") runner.if = "false";
+    if (change === "duplicate runner") steps.push({ ...runner });
     if (change === "direct baseline write")
-      steps[1].run =
+      runner.run =
         "node scripts/ci/check-coverage.mjs --mode measure --baseline-output ci/coverage-policy.json";
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       "initial-only baseline candidate",

@@ -609,11 +609,18 @@ export function validateWorkflow(policy, source, toolchain) {
           );
       }
     }
-    if (chromiumChecks.includes(check.id))
+    if (chromiumChecks.includes(check.id)) {
+      const install = job.steps.findIndex((step) => step.run === chromiumInstall);
+      const run = job.steps.findIndex((step) => step.run?.includes("scripts/ci/run.mjs"));
+      assert(install >= 0, `Job runs browser tests without installing Chromium: ${check.id}`);
+      const step = job.steps[install];
       assert(
-        job.steps.some((step) => step.run === chromiumInstall),
-        `Job runs browser tests without installing Chromium: ${check.id}`,
+        (run < 0 || install < run) &&
+          step.if === undefined &&
+          step["continue-on-error"] === undefined,
+        `Chromium must install unconditionally before the checks run: ${check.id}`,
       );
+    }
     if (check.id === "required") {
       const [entry] = job.steps;
       assert(
