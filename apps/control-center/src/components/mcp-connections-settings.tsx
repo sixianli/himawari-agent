@@ -1,4 +1,3 @@
-import { MCP_CONNECTION_NAME_CHARACTERS } from "@himawari-agent/gateway-contracts";
 import { useEffect, useId, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gateway-client.js";
 import { useLocaleFormat } from "../i18n/locale-format.js";
@@ -13,6 +12,7 @@ import {
   readMcpConnections,
   rotateMcpConnection,
   takeMcpConnectionAddress,
+  withinNameLimit,
 } from "../mcp-connections.js";
 import { ActionButton, Dropdown } from "./primitives.js";
 
@@ -20,10 +20,6 @@ type Message = (id: MessageId, values?: Record<string, string>) => string;
 
 const CAPABILITIES = ["mcp", "command_hooks", "scheduled_tasks"] as const;
 const CEILINGS = ["public", "private", "sensitive"] as const;
-
-function withinNameLimit(value: string): string {
-  return [...value].slice(0, MCP_CONNECTION_NAME_CHARACTERS).join("");
-}
 
 export function McpUsageLines({
   usage,

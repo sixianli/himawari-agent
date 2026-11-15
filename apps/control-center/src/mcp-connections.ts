@@ -1,4 +1,7 @@
-import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  type GatewayV2Snapshot,
+  MCP_CONNECTION_NAME_CHARACTERS,
+} from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
@@ -108,4 +111,11 @@ export async function takeMcpConnectionAddress(
   if (typeof body.path !== "string" || !body.path.startsWith("/"))
     throw new Error("MCP_CONNECTION_ADDRESS_INVALID");
   return `${origin}${body.path}`;
+}
+
+export function withinNameLimit(value: string): string {
+  const lead = value.length - value.trimStart().length;
+  return (
+    value.slice(0, lead) + [...value.slice(lead)].slice(0, MCP_CONNECTION_NAME_CHARACTERS).join("")
+  );
 }

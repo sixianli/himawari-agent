@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ControlCenterRuntimeConfiguration } from "../src/gateway-client.ts";
-import { mcpConnectionsInstalled, takeMcpConnectionAddress } from "../src/mcp-connections.ts";
+import {
+  mcpConnectionsInstalled,
+  takeMcpConnectionAddress,
+  withinNameLimit,
+} from "../src/mcp-connections.ts";
 
 const base: ControlCenterRuntimeConfiguration = {
   ownerId: "owner",
@@ -65,5 +69,13 @@ describe("[P5-B] connected agents in the control center", () => {
         reply(200, { path: "https://evil.example/x" }),
       ),
     ).rejects.toThrow("MCP_CONNECTION_ADDRESS_INVALID");
+  });
+
+  it("cuts a name at 64 characters the way the service counts them, after leading spaces", () => {
+    const face = "\u{1F600}";
+    expect(withinNameLimit(face.repeat(64))).toBe(face.repeat(64));
+    expect(withinNameLimit(face.repeat(65))).toBe(face.repeat(64));
+    expect(withinNameLimit(`  ${"n".repeat(65)}`)).toBe(`  ${"n".repeat(64)}`);
+    expect(withinNameLimit("Claude Code")).toBe("Claude Code");
   });
 });

@@ -1583,6 +1583,21 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       });
     });
 
+    it("counts a recall the store turns away for a bad date as failed, not delivered", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const fixed = await f.call(client, "find_memories", {
+        query: "牙医",
+        from: "2026-02-30",
+        to: "2026-03-02",
+      });
+      expect(fixed.result.isError).toBe(true);
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+    });
+
     it("counts a call the input check turns away as a failed call", async () => {
       const f = await setup();
       const client = await f.connect("modern");

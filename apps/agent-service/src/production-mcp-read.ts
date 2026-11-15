@@ -1431,9 +1431,9 @@ const CALL_KEY = "callKey";
 const UNKNOWN_CLIENT = "unknown";
 
 function readCounts(
-  delivered: { readonly empty: boolean } | undefined,
+  delivered: { readonly empty: boolean; readonly rejected?: true } | undefined,
 ): Readonly<Partial<Record<McpUsageCounter, number>>> {
-  if (!delivered) return { failed: 1 };
+  if (!delivered || delivered.rejected) return { failed: 1 };
   return delivered.empty ? { empty: 1 } : { delivered: 1 };
 }
 

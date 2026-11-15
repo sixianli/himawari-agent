@@ -127,6 +127,8 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
       { ...base, id: "conn-ok", name: "n".repeat(65) },
       { ...base, id: "conn-ok", name: "Claude\u200bCode" },
       { ...base, id: "conn-ok", name: "Claude\u202eCode" },
+      { ...base, id: "conn-ok", name: "Claude\u{E0001}Code" },
+      { ...base, id: "conn-ok", name: "\u{1F600}".repeat(65) },
       { ...base, id: "conn-ok", readCeiling: "restricted" },
       { ...base, id: "conn-ok", capabilities: ["mcp", "mcp"] },
       { ...base, id: "conn-ok", secretSha256: "not-a-digest" },
@@ -135,6 +137,8 @@ describe("[P5-B] MCP connection store through the SQLite worker", () => {
         code: "PORT_INVALID_OPERATION",
       });
     expect(await store.list(scope)).toEqual([]);
+    await store.create({ ...base, id: "conn-64", name: "\u{1F600}".repeat(64) });
+    expect((await store.list(scope)).map(({ name }) => [...name].length)).toEqual([64]);
     expect(newMcpConnectionId()).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
   });
 
