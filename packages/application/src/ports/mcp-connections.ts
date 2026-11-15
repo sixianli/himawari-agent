@@ -23,6 +23,19 @@ export const MCP_USAGE_COUNTERS = [
   "empty",
   "failed",
   "rate_limited",
+  "entries_pending",
+  "entries_saved",
+  "entries_unchanged",
+  "entries_updated",
+  "entries_declined",
+  "entries_owner_deleted",
+  "entries_awaiting_approval",
+  "entries_invalid",
+  "deletes_applied",
+  "deletes_mismatch",
+  "deletes_held",
+  "deletes_not_accepted",
+  "deletes_invalid",
 ] as const;
 export type McpUsageCounter = (typeof MCP_USAGE_COUNTERS)[number];
 
