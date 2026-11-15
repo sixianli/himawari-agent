@@ -123,6 +123,14 @@ public enum DeviceActionState: String, Codable, Sendable, CaseIterable {
     }
 }
 
+public enum DeviceActionUndoState: String, Codable, Sendable, Equatable {
+    case none
+    case available
+    case pending
+    case done
+    case failed
+}
+
 public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let deviceId: String
@@ -141,9 +149,10 @@ public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
     public let action: String?
     public let runId: String?
     public let threadId: String?
+    public let undo: DeviceActionUndoState
 
     enum CodingKeys: String, CodingKey {
-        case id, deviceId, state, detail, risk, ownerPresence, reversible, reasonCode, reason, createdAt, updatedAt, confirmLabel, declineLabel, action, runId, threadId
+        case id, deviceId, state, detail, risk, ownerPresence, reversible, reasonCode, reason, createdAt, updatedAt, confirmLabel, declineLabel, action, runId, threadId, undo
     }
 
     public init(
@@ -162,7 +171,8 @@ public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
         declineLabel: LocalizedLine? = nil,
         action: String? = nil,
         runId: String? = nil,
-        threadId: String? = nil
+        threadId: String? = nil,
+        undo: DeviceActionUndoState = .none
     ) {
         self.id = id
         self.deviceId = deviceId
@@ -181,6 +191,7 @@ public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
         self.action = action
         self.runId = runId
         self.threadId = threadId
+        self.undo = undo
     }
 
     public init(from decoder: Decoder) throws {
@@ -201,7 +212,8 @@ public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
             declineLabel: try container.decodeIfPresent(LocalizedLine.self, forKey: .declineLabel),
             action: try container.decodeIfPresent(String.self, forKey: .action),
             runId: try container.decodeIfPresent(String.self, forKey: .runId),
-            threadId: try container.decodeIfPresent(String.self, forKey: .threadId)
+            threadId: try container.decodeIfPresent(String.self, forKey: .threadId),
+            undo: (try container.decodeIfPresent(String.self, forKey: .undo)).flatMap(DeviceActionUndoState.init(rawValue:)) ?? .none
         )
     }
 
@@ -223,6 +235,7 @@ public struct DeviceActionView: Codable, Sendable, Equatable, Identifiable {
         try container.encodeIfPresent(action, forKey: .action)
         try container.encodeIfPresent(runId, forKey: .runId)
         try container.encodeIfPresent(threadId, forKey: .threadId)
+        try container.encode(undo, forKey: .undo)
     }
 
     public var updated: Date? { DeviceActionTime.parse(updatedAt) }
@@ -267,6 +280,12 @@ public enum DevicePolicyChange: Sendable, Equatable {
 public enum DeviceActionReportReply: Sendable, Equatable {
     case recorded(state: String, replayed: Bool)
     case refused(status: Int, code: String?)
+}
+
+public enum DeviceActionUndoReply: Sendable, Equatable {
+    case recorded(state: String)
+    case notFound
+    case notUndoable
 }
 
 public enum DeviceActionTime {

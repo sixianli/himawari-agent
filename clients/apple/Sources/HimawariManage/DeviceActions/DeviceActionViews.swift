@@ -82,6 +82,8 @@ enum ApprovalWords {
 
 struct DeviceActionResultRow: View {
     let view: DeviceActionView
+    var busy = false
+    var undo: () -> Void = {}
 
     var body: some View {
         let kind = DeviceActionResultKind(view)
@@ -98,9 +100,29 @@ struct DeviceActionResultRow: View {
                     .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            undoControl
         }
         .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var undoControl: some View {
+        switch view.undo {
+        case .available:
+            Button(L.text("result.undo"), action: undo)
+                .buttonStyle(RowPillButtonStyle(filled: false))
+                .disabled(busy)
+                .opacity(busy ? 0.5 : 1)
+        case .pending:
+            Text(L.text("result.undo.pending")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
+        case .done:
+            Text(L.text("result.undo.done")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmMuted)
+        case .failed:
+            Text(L.text("result.undo.failed")).hmType(DesignTokens.TypeScale.secondary).foregroundStyle(Color.hmDanger)
+        case .none:
+            EmptyView()
+        }
     }
 
     static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
@@ -158,11 +180,20 @@ public struct TodayDeviceActionsCard: View {
             if !results.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(results.enumerated()), id: \.element.id) { index, view in
-                        DeviceActionResultRow(view: view)
+                        DeviceActionResultRow(view: view, busy: model.busy.contains(view.id)) {
+                            Task { await model.undo(view) }
+                        }
                         if index < results.count - 1 { RowSeparator() }
                     }
                 }
                 .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
+            }
+            if let problem = model.problem {
+                Text(problem)
+                    .hmType(DesignTokens.TypeScale.caption)
+                    .foregroundStyle(Color.hmDanger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
             }
         }
     }

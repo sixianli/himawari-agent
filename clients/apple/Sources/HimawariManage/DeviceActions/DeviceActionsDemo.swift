@@ -64,8 +64,11 @@ enum DeviceActionsDemo {
 
     static let recent: [DeviceActionView] = decode("""
     [
-      {"id":"dact_demo1","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,
+      {"id":"dact_demo1","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"available",
        "createdAt":"2026-11-13T05:11:00.000Z","updatedAt":"2026-11-13T05:11:04.000Z",
+       "detail":{"zh-CN":"日历里加了“牙医复诊”，11 月 18 日 15:00","en":"Added “Dentist follow-up” on Nov 18 at 15:00","ja":"11月18日 15:00 に「歯医者の再診」を追加"}},
+      {"id":"dact_demo5","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"done",
+       "createdAt":"2026-11-13T05:00:00.000Z","updatedAt":"2026-11-13T05:08:00.000Z",
        "detail":{"zh-CN":"提醒事项里加了“买转换插头”","en":"Added “Buy a plug adapter” to Reminders","ja":"リマインダーに「変換プラグを買う」を追加"}},
       {"id":"dact_demo2","deviceId":"dev_demo","state":"failed","risk":"medium","ownerPresence":false,"reversible":false,
        "createdAt":"2026-11-13T04:30:00.000Z","updatedAt":"2026-11-13T04:30:02.000Z","reasonCode":"permission",

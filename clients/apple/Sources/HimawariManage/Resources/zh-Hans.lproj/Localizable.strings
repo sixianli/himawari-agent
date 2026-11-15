@@ -42,3 +42,8 @@
 "permission.openSettings" = "打开设置";
 "common.close" = "关闭";
 "result.withReason" = "%@。%@";
+"actions.cannotUndo" = "已经撤不了了";
+"result.undo" = "撤销";
+"result.undo.pending" = "撤销中";
+"result.undo.done" = "已撤销";
+"result.undo.failed" = "没撤成";
