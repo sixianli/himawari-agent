@@ -22,6 +22,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
   LedgerObservationPort,
+  McpConnectionStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -1019,6 +1020,20 @@ export class SqliteDurableAdapters {
       reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
       dropDiscardedText: (input) =>
         this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
+  mcpConnections(): McpConnectionStorePort {
+    return Object.freeze<McpConnectionStorePort>({
+      create: (input) => this.context.write("mcpConnection.create", input),
+      list: (input) => this.context.read("mcpConnection.list", input),
+      read: (input) => this.context.read("mcpConnection.read", input),
+      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
+      change: (input) => this.context.write("mcpConnection.change", input),
+      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
+      touch: (input) => this.context.write("mcpConnection.touch", input),
+      addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
+      usage: (input) => this.context.read("mcpConnection.usage", input),
     });
   }
 

@@ -193,6 +193,7 @@ function unsetFixture(): ProactiveWeekly {
       gap: null,
       gapCases: [],
       implicit,
+      mcpConnections: null,
       prereview: {
         agreementPermille: 900,
         confidencePermille: 800,

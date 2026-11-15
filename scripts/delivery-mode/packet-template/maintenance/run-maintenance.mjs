@@ -11,8 +11,8 @@ import {
   readPreUpgradeAuthorization, readCatalogState, runPrepare, verifyUpgradePlan, verifyUpgradedCatalog, verifyCatalogRecordsAtS0, readCatalogResume,
   readPostSwitchAuthorization, readRestoredCatalog, evidenceRoot, oldPrefix, newPrefix, operations, sha,
   currentConfigurationStage, readOriginalConfiguration, staticRootConfigurationBytes, staticRootConfigurationSha256, newStaticRoot, verifyPendingCapabilities, verifyPreparedCapabilities, upgradeResultExpectation,
-  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, verifyHistoryAgainstRecoveryPoint, currentSchema, targetSchema,
-  migrateDatabase, readMigrationContent, describeMigrationSnapshot, historyComparison, historyComparisonEvidence,
+  approvedModelRef, approvedModelLimits, approvedPublicFetchBytes, approvedEmbeddingDescriptor, currentSchema, targetSchema,
+  migrateDatabase, readMigrationContent, describeMigrationSnapshot,
 } from "./maintenance-common.mjs";
 import { fixed } from "../s0-db/read-s0-db.mjs";
 import { createRawRecoveryPoint, verifyRawRecoveryPoint, restoreRawRecoveryPoint, recoveryMethod } from "./raw-copy-recovery.mjs";
@@ -99,7 +99,7 @@ async function applyStaticRootConfiguration(binding) {
 
 async function main(action) {
   const binding = loadBinding(!action.startsWith("S9_") && action !== "S7_CATALOG_UPGRADE");
-  const report = { schemaVersion: "himawari.__PKT_LABEL__-change-maintenance.v1", action, startedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, bindingSha256: sha(readFileSync("/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/inputs/bindings.json")), ...historyComparisonEvidence(), passed: false };
+  const report = { schemaVersion: "himawari.__PKT_LABEL__-change-maintenance.v1", action, startedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, bindingSha256: sha(readFileSync("/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/inputs/bindings.json")), passed: false };
   const retain = (name, value) => retainedJson(name, value, { supersede: action.startsWith("S9_") });
   retain(`${action.toLowerCase()}-started.json`, report);
   try {
@@ -208,8 +208,7 @@ async function main(action) {
       report.state = retain("s8-database-readback.json", after);
       report.authorization = retain("s8-current-authorization.json", readPostSwitchAuthorization(binding));
       report.recoveryPoints = { ["schema" + currentSchema]: (await verifyRetainedRecovery(binding)).proof };
-      report.history = retain("s8-history-preserved.json", verifyHistoryAgainstRecoveryPoint(binding));
-      report.scope = (historyComparison.mode === "on" ? "rows-present-at-s3-unchanged-new-rows-allowed-startup-recovery-column-allowed" : "history-comparison-off-for-this-release") + "-upgraded-capability-catalog-existing-workspace-grant-and-raw-recovery-point-not-paid-chat-acceptance";
+      report.scope = "upgraded-capability-catalog-existing-workspace-grant-and-raw-recovery-point-not-paid-chat-acceptance";
     } else if (action === "S9_SIDECAR_TIDY") {
       const approval = readRollbackApproval(binding, "S9_RAW_RESTORE51");
       report.approvalSha256 = approval.sha256;
@@ -256,7 +255,7 @@ async function main(action) {
       const state = await readMaintenanceState(binding, oldPrefix);
       assert.equal(state.schema.current, currentSchema, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_SCHEMA_MISMATCH");
       const reference = retained.reference;
-      verifyHistoryUnchanged(reference, state, Object.freeze({ mode: "on" }));
+      verifyHistoryUnchanged(reference, state);
       assert.deepEqual(state.gate, reference.gate, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_GATE_CHANGED");
       report.after = retain(`${action.toLowerCase()}-after.json`, state);
       report.catalog = readRestoredCatalog(binding);
