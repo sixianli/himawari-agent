@@ -23,6 +23,7 @@ import {
   type WebPushSendResult,
   type WebPushStorePort,
 } from "@himawari-agent/application";
+import type { NotificationPlacement } from "./mac-placement.js";
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const PRESENCE_WINDOW_MS = 45_000;
@@ -38,7 +39,11 @@ const RUN_WINDOW_MS = 24 * 3_600_000;
 const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 const MAX_PAYLOAD_BYTES = 3_072;
+const MAC_TITLE_BYTES = 256;
+const MAC_BODY_BYTES = 2_048;
 const SEND_BATCH = 50;
+const MAX_BATCH = 500;
+const ROWS_PER_HELD_ITEM = 4;
 const FINISHED_RUN_BATCH = 100;
 
 export const WEB_PUSH_TEXT = {
@@ -138,7 +143,7 @@ export function webPushTopic(sourceKey: string): string {
   return createHash("sha256").update(sourceKey).digest().subarray(0, 24).toString("base64url");
 }
 
-function clip(text: string, bytes: number): string {
+export function clip(text: string, bytes: number): string {
   if (Buffer.byteLength(text, "utf8") <= bytes) return text;
   let result = "";
   for (const character of text) {
@@ -190,6 +195,7 @@ export interface PushCompanionChannel {
     readonly visible: boolean;
     readonly content: (item: WebPushOutboxItem) => Promise<PushContent>;
     readonly deferred: (item: WebPushOutboxItem) => Promise<boolean>;
+    readonly batch: number;
   }): Promise<void>;
   maintain(input: {
     readonly now: string;
@@ -223,6 +229,7 @@ export interface ProductionWebPushOptions {
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
   readonly gate?: PushGate;
   readonly timing?: DeliveryTimingSource;
+  readonly placement?: NotificationPlacement;
   readonly onGateFailure?: (outcome: { readonly sourceKey: string }) => void;
   readonly now: () => string;
   readonly intervalMs?: number;
@@ -264,6 +271,8 @@ export interface ProactivePushSource {
 }
 
 type Content = PushContent;
+
+const SETTLED_LOOKUP_LIMIT = 500;
 
 export class ProductionWebPush {
   readonly #options: ProductionWebPushOptions;
@@ -529,7 +538,18 @@ export class ProductionWebPush {
       if (cached) return cached;
       const built = await this.#content(item, approvals, now);
       contents.set(item.sourceKey, built);
+      if (built.expired) this.#options.placement?.withdraw(webPushTopic(item.sourceKey));
       return built;
+    };
+    this.#options.placement?.withdrawExpired(Date.parse(now));
+    const batch = Math.min(
+      MAX_BATCH,
+      SEND_BATCH + ROWS_PER_HELD_ITEM * (this.#options.placement?.heldCount() ?? 0),
+    );
+    const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
+      if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
+      if (await this.#deferred(item, now, gated, decisions)) return true;
+      return !visible && (await this.#place(item, contentOf, accountLocale));
     };
     let counted: Promise<number | undefined> | undefined;
     const awaiting = () => {
@@ -545,10 +565,11 @@ export class ProductionWebPush {
         accountLocale,
         visible,
         content: contentOf,
-        deferred: (item) => this.#deferred(item, now, gated, decisions),
+        deferred: gate,
+        batch,
       })
       .catch(this.#options.onFailure);
-    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
+    const due = await store.listDue({ ownerId, agentId, now, limit: batch });
     for (const entry of due) {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
@@ -564,7 +585,7 @@ export class ProductionWebPush {
         await this.#record(entry, now, "expired", null);
         continue;
       }
-      if (await this.#deferred(entry.item, now, gated, decisions)) continue;
+      if (await gate(entry.item)) continue;
       if (visible) {
         await this.#record(entry, now, "suppressed", null);
         continue;
@@ -577,6 +598,54 @@ export class ProductionWebPush {
         accountLocale ?? entry.subscription.locale,
       );
     }
+  }
+
+  async #place(
+    item: WebPushOutboxItem,
+    contentOf: (item: WebPushOutboxItem) => Promise<Content>,
+    accountLocale: WebPushLocale | null,
+  ): Promise<boolean> {
+    const placement = this.#options.placement;
+    if (!placement) return false;
+    try {
+      const content = await contentOf(item);
+      if (content.expired) return false;
+      const built = content.build(accountLocale ?? "en");
+      return placement.place(
+        {
+          id: webPushTopic(item.sourceKey),
+          kind: item.kind,
+          title: clip(built.title, MAC_TITLE_BYTES),
+          body: clip(built.body, MAC_BODY_BYTES),
+          homeKey: item.threadId,
+          createdAt: item.createdAt,
+        },
+        Date.parse(item.expiresAt),
+      );
+    } catch (error) {
+      this.#options.onFailure(error);
+      return false;
+    }
+  }
+
+  async settled(ids: readonly string[]): Promise<readonly string[]> {
+    const wanted = new Set(ids);
+    if (wanted.size === 0) return [];
+    const { ownerId, agentId, store } = this.#options;
+    const now = this.#options.now();
+    const since = new Date(Date.parse(now) - PUSH_TOTAL_LIFE_MS).toISOString();
+    const recent = await store.listRecent({ ownerId, agentId, since, limit: SETTLED_LOOKUP_LIMIT });
+    const approvals = await this.#options.listApprovals();
+    const settled: string[] = [];
+    for (const item of recent) {
+      const id = webPushTopic(item.sourceKey);
+      if (!wanted.has(id)) continue;
+      const expired =
+        Date.parse(now) >= Date.parse(item.expiresAt) ||
+        (await this.#content(item, approvals, now)).expired;
+      if (expired) settled.push(id);
+    }
+    return settled;
   }
 
   async #deferred(
