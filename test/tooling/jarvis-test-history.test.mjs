@@ -73,7 +73,7 @@ describe("Jarvis Test score history", () => {
     };
     expect(() => validateRecord(proactive)).not.toThrow();
     expect(summarize(proactive).proactive_next_step).toMatchObject({ cases: 1, passAll: 0 });
-    expect(renderTrend([proactive])).toContain("#9 主动提下一步  3 次全过 0/1");
+    expect(renderTrend([proactive])).toContain("主动提下一步  3 次全过 0/1");
     const unknown = {
       ...base,
       cases: [...base.cases, { ...proactive.cases.at(-1), scenario: "not_a_scenario" }],

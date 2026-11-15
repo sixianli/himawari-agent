@@ -4,7 +4,7 @@ document_type: "backlog"
 record_id: "BL-20261028-006"
 record_state: "open"
 date: "2026-10-28"
-updated: "2026-10-28"
+updated: "2026-11-15"
 priority: "normal"
 item_type: "enhancement"
 source_idea: ""
@@ -28,3 +28,4 @@ superseded_by: ""
 ## Notes
 
 - 这类用例要检查两件事：回答里不把临时说法当成长期偏好；记忆层不因为这句话把旧偏好标成被替代。后者要等记忆写入路径能在评测里观察到。
+- 2026-11-15：前一半做了。`test/fixtures/jarvis-test/cases.json` 加了两条反例 `1g`（这次出差住哪儿都行）和 `1h`（某天要 5 点起），标 `counterExample`，只检查回答不把一次性的说法当成长期要求。后一半（记忆层不把旧偏好标成被替代）仍然测不了：评测里的记忆是直接写进去的，不经过从对话里记下记忆的那一步。

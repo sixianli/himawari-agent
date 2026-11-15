@@ -1,3 +1,6 @@
+import { MEMORY_CATEGORIES } from "@himawari-agent/application";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadCalibration, loadDataset } from "./cases.ts";
 
@@ -14,7 +17,52 @@ describe("Jarvis Test dataset", () => {
     const ids = dataset.cases.map(({ id }) => id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scenario of ["memory_correction", "state_discipline", "failure_transparency"])
-      expect(dataset.cases.filter((item) => item.scenario === scenario)).toHaveLength(6);
+      expect(
+        dataset.cases.filter((item) => item.scenario === scenario && !item.counterExample),
+      ).toHaveLength(6);
+    for (const item of dataset.cases)
+      if (item.counterExample) expect(item.scenario, item.id).toBe("memory_correction");
+  });
+
+  it("gives every counter-example a standing preference and a one-off remark that replaces nothing", () => {
+    const counterExamples = dataset.cases.filter(({ counterExample }) => counterExample);
+    expect(counterExamples.length).toBeGreaterThanOrEqual(2);
+    for (const item of counterExamples) {
+      const memories = item.memories ?? [];
+      expect(memories.length, item.id).toBeGreaterThanOrEqual(2);
+      expect(
+        memories.every(({ supersedes }) => supersedes === undefined),
+        item.id,
+      ).toBe(true);
+      expect(item.context?.present.length ?? 0, item.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("builds every forgetting case as source, inference from it, then a correction of the source", () => {
+    const cases = dataset.cases.filter(({ scenario }) => scenario === "forget_propagation");
+    expect(cases.length).toBeGreaterThanOrEqual(4);
+    for (const item of cases) {
+      const memories = item.memories ?? [];
+      const corrected = new Set(memories.flatMap(({ supersedes }) => supersedes ?? []));
+      expect(corrected.size, item.id).toBeGreaterThan(0);
+      const expected = memories
+        .filter(({ derivedFrom = [] }) => derivedFrom.some((id) => corrected.has(id)))
+        .map(({ id }) => id)
+        .sort();
+      expect(expected.length, item.id).toBeGreaterThan(0);
+      expect([...(item.flagged ?? [])].sort(), item.id).toEqual(expected);
+      for (const memory of memories) {
+        const correction = memories.find(({ supersedes }) => supersedes === memory.id);
+        for (const derived of memories.filter(({ derivedFrom = [] }) =>
+          derivedFrom.includes(memory.id),
+        )) {
+          expect(memory.recordedAt < derived.recordedAt, derived.id).toBe(true);
+          if (correction) expect(derived.recordedAt < correction.recordedAt, derived.id).toBe(true);
+        }
+      }
+    }
+    for (const item of dataset.cases)
+      if (item.scenario !== "forget_propagation") expect(item.flagged, item.id).toBeUndefined();
   });
 
   it("labels every next-step case as should or should not propose, with both labels in every question it asks", () => {
@@ -44,7 +92,9 @@ describe("Jarvis Test dataset", () => {
 
   it("dates every correction three weeks back from the fixed today", () => {
     expect(dataset.today).toBe(new Date(dataset.today).toISOString());
-    for (const item of dataset.cases.filter(({ scenario }) => scenario === "memory_correction")) {
+    for (const item of dataset.cases.filter(
+      ({ scenario, counterExample }) => scenario === "memory_correction" && !counterExample,
+    )) {
       const memories = item.memories ?? [];
       const latest = memories[memories.length - 1];
       const replaced = memories.find(({ id }) => id === latest?.supersedes);
@@ -58,8 +108,10 @@ describe("Jarvis Test dataset", () => {
     for (const memory of [
       ...dataset.sharedMemories,
       ...dataset.cases.flatMap(({ memories = [] }) => memories),
-    ])
+    ]) {
       expect(ageInDays(memory.recordedAt), memory.id).toBeGreaterThan(0);
+      expect(MEMORY_CATEGORIES, memory.id).toContain(memory.category);
+    }
   });
 
   it("gives every state question files to read and every failure case a declared or real failure", () => {
@@ -115,5 +167,75 @@ describe("Jarvis Test dataset", () => {
     );
     for (const trap of ["negation", "processing_vs_arrived", "submitted_vs_approved"])
       expect(traps).toContain(trap);
+  });
+
+  it("lists all twelve vision tests in the coverage map, each pointing at real cases, real tests or a stated gap", () => {
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const coverage = JSON.parse(
+      readFileSync(path.join(root, "test/fixtures/jarvis-test/coverage.json"), "utf8"),
+    ) as {
+      tests: {
+        number: number;
+        status: string;
+        scenarios: string[];
+        deterministicTests: string[];
+        liveEvals: string[];
+        gaps: string[];
+      }[];
+    };
+    expect(coverage.tests.map(({ number }) => number)).toEqual(
+      Array.from({ length: 12 }, (_, index) => index + 1),
+    );
+    const vision = readFileSync(path.join(root, "docs/product-vision.md"), "utf8");
+    const covered = new Set(dataset.cases.map(({ scenario }) => scenario));
+    const claimed = new Set<string>();
+    for (const test of coverage.tests) {
+      expect(vision, String(test.number)).toMatch(new RegExp(`\\| ${test.number} \\|`, "u"));
+      expect(["automated", "partial", "not_yet", "blocked"], String(test.number)).toContain(
+        test.status,
+      );
+      for (const scenario of test.scenarios) {
+        expect(covered, String(test.number)).toContain(scenario);
+        claimed.add(scenario);
+      }
+      for (const file of [...test.deterministicTests, ...test.liveEvals])
+        expect(existsSync(path.join(root, file)), file).toBe(true);
+      if (test.status === "automated")
+        expect(test.scenarios.length, String(test.number)).toBeGreaterThan(0);
+      else expect(test.gaps.length, String(test.number)).toBeGreaterThan(0);
+    }
+    expect([...covered].filter((scenario) => !claimed.has(scenario))).toEqual([]);
+  });
+
+  it("gives the #3 mail interception set one target per case, quiet noise, and a case where nothing should be raised", () => {
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const intercept = JSON.parse(
+      readFileSync(path.join(root, "test/fixtures/proactive-intercept-eval/dataset.json"), "utf8"),
+    ) as {
+      noise: { id: string }[];
+      cases: {
+        id: string;
+        expect: string[] | null;
+        target: { id: string } | null;
+        memories: { id: string }[];
+        memoryRequired?: boolean;
+      }[];
+    };
+    const ids = [
+      ...intercept.noise.map(({ id }) => id),
+      ...intercept.cases.flatMap(({ target }) => (target ? [target.id] : [])),
+    ];
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(intercept.noise.length).toBeGreaterThan(0);
+    for (const item of intercept.cases) {
+      expect(item.target === null, item.id).toBe(item.expect === null);
+      for (const result of item.expect ?? [])
+        expect(["act", "know", "check", "ignore"], item.id).toContain(result);
+      if (item.memoryRequired) expect(item.memories.length, item.id).toBeGreaterThan(0);
+    }
+    expect(intercept.cases.some(({ target }) => target === null)).toBe(true);
+    expect(intercept.cases.some(({ expect: allowed }) => allowed?.includes("act") === false)).toBe(
+      true,
+    );
   });
 });

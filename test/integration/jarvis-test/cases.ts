@@ -8,7 +8,8 @@ export type Scenario =
   | "memory_correction"
   | "state_discipline"
   | "failure_transparency"
-  | "proactive_next_step";
+  | "proactive_next_step"
+  | "forget_propagation";
 
 export interface CaseMemory {
   readonly id: string;
@@ -19,6 +20,7 @@ export interface CaseMemory {
   readonly recordedAt: string;
   readonly validFrom?: string;
   readonly supersedes?: string;
+  readonly derivedFrom?: readonly string[];
 }
 
 export interface CaseFailure {
@@ -55,9 +57,11 @@ export interface JarvisCase {
   readonly failures?: readonly CaseFailure[];
   readonly toolResults?: readonly CaseToolResult[];
   readonly shouldPropose?: boolean;
+  readonly counterExample?: boolean;
   readonly permissions?: CasePermissions;
   readonly realFailures?: readonly RealFailure[];
   readonly context?: { readonly present: readonly string[]; readonly absent: readonly string[] };
+  readonly flagged?: readonly string[];
   readonly environment?: EnvironmentSpec;
   readonly answer: AnswerSpec;
   readonly judgeRules: readonly string[];

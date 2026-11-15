@@ -4,7 +4,7 @@ document_type: "backlog"
 record_id: "BL-20261028-005"
 record_state: "open"
 date: "2026-10-28"
-updated: "2026-10-28"
+updated: "2026-11-15"
 priority: "normal"
 item_type: "enhancement"
 source_idea: ""
@@ -40,3 +40,8 @@ superseded_by: ""
 | 10 | 打扰校准 | 30 天的推送反馈数据，由 [BL-20261028-004](BL-20261028-004-proactive-notification-feedback-log.md) 开始记录。 |
 
 - 每加一条，先确认对应能力已经上线，再按第一批的做法写用例：编造的演示数据、固定“今天”、能用代码判的先用代码判。
+- 2026-11-15：按 main 上的代码重新核对了全部 12 条（愿景 v2.2 起是 12 条），结果写进 `test/fixtures/jarvis-test/coverage.json`，`test/integration/jarvis-test/dataset.test.ts` 检查这张表 12 条齐全、引用的场景和测试文件都存在、没自动测的都写了缺什么。
+  - #9 已能测：[ADR 0232](../adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md) 加了“由谁推出来”（整理时的 `reflect` 记录）和改记忆后标待重审。新场景 `forget_propagation` 四条用例：确定性层检查纠正后恰好标出由旧记忆推出的那条，别的推断不标；真模型层检查回答不再用那条推断。核对时发现：标了待重审的推断仍然原样进模型的材料。
+  - #3 只剩半边能测：系统主动提醒已能读 Gmail，但来源只有 Gmail，日程和天气没接进系统主动提醒。
+  - #10 的数据口径由“系统主动提醒和反应记录”线程在做。
+  - #2、#4、#5、#7、#11、#12 的现状见那张表。

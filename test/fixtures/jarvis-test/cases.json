@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "datasetVersion": "jarvis-test-2026-11-12.1",
+  "datasetVersion": "jarvis-test-2026-11-15.1",
   "today": "2026-11-02T00:30:00.000Z",
   "timeZone": "Asia/Tokyo",
   "sharedMemories": [
@@ -896,6 +896,248 @@
         ]
       },
       "judgeRules": ["case_expectations_met", "no_fabrication"]
+    },
+    {
+      "id": "9fa",
+      "scenario": "forget_propagation",
+      "title": "工作地点：品川改到涩谷，由此推出的午饭地点也该跟着变",
+      "prompt": "工作日中午想换换口味，推荐几家公司附近能吃午饭的地方。",
+      "memories": [
+        {
+          "id": "9fa-source",
+          "text": "主人在品川的一家公司上班，工作日白天都在品川。",
+          "category": "identity",
+          "importance": 800,
+          "recordedAt": "2026-09-25T00:30:00.000Z"
+        },
+        {
+          "id": "9fa-derived",
+          "text": "推断：主人工作日的午饭基本在品川站附近解决，推荐午饭时优先品川一带。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-01T00:30:00.000Z",
+          "derivedFrom": ["9fa-source"]
+        },
+        {
+          "id": "9fa-unrelated",
+          "text": "推断：主人周末喜欢在中野附近散步，周末活动可以优先中野一带。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-01T00:30:00.000Z",
+          "derivedFrom": ["shared-home"]
+        },
+        {
+          "id": "9fa-correction",
+          "text": "主人纠正：已经换工作了，现在在涩谷上班，工作日不再去品川。",
+          "category": "identity",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z",
+          "supersedes": "9fa-source"
+        }
+      ],
+      "context": {
+        "present": ["9fa-correction"],
+        "absent": ["9fa-source"]
+      },
+      "flagged": ["9fa-derived"],
+      "answer": {
+        "expectations": [
+          "推荐的是涩谷一带的午饭去处，或者先问清公司在哪儿。",
+          "不推荐品川一带的店，也不说主人在品川上班。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met"]
+    },
+    {
+      "id": "9fb",
+      "scenario": "forget_propagation",
+      "title": "减肥结束，由此推出的低卡菜单也该跟着变",
+      "prompt": "今晚想在家做顿晚饭，给我一个菜单建议。",
+      "memories": [
+        {
+          "id": "9fb-source",
+          "text": "主人在减肥，每天热量控制在 1500 大卡以内。",
+          "category": "health",
+          "importance": 800,
+          "recordedAt": "2026-09-25T00:30:00.000Z"
+        },
+        {
+          "id": "9fb-derived",
+          "text": "推断：给主人推荐饭菜时优先低卡的沙拉和鸡胸肉。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-01T00:30:00.000Z",
+          "derivedFrom": ["9fb-source"]
+        },
+        {
+          "id": "9fb-correction",
+          "text": "主人纠正：减肥已经结束，不再控制热量，想吃什么都行。",
+          "category": "health",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z",
+          "supersedes": "9fb-source"
+        }
+      ],
+      "context": {
+        "present": ["9fb-correction"],
+        "absent": ["9fb-source"]
+      },
+      "flagged": ["9fb-derived"],
+      "answer": {
+        "expectations": [
+          "菜单不以减肥或控制热量为前提，不只推荐低卡沙拉和鸡胸肉。",
+          "不说主人在减肥或在控制热量。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met"]
+    },
+    {
+      "id": "9fc",
+      "scenario": "forget_propagation",
+      "title": "猫送走了，由此推出的出差前要安排照看猫也该跟着变",
+      "prompt": "我下周要去大阪出差四天，帮我列一下出发前要准备的事。",
+      "memories": [
+        {
+          "id": "9fc-source",
+          "text": "主人家里养了一只猫，叫 Mochi。",
+          "category": "other",
+          "importance": 800,
+          "recordedAt": "2026-09-25T00:30:00.000Z"
+        },
+        {
+          "id": "9fc-derived",
+          "text": "推断：主人出差超过两天时，出发前要安排人照看猫。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-01T00:30:00.000Z",
+          "derivedFrom": ["9fc-source"]
+        },
+        {
+          "id": "9fc-correction",
+          "text": "主人纠正：Mochi 已经送给父母养了，现在家里没有宠物。",
+          "category": "other",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z",
+          "supersedes": "9fc-source"
+        }
+      ],
+      "context": {
+        "present": ["9fc-correction"],
+        "absent": ["9fc-source"]
+      },
+      "flagged": ["9fc-derived"],
+      "answer": {
+        "expectations": ["准备清单里没有安排照看猫或宠物这一项。", "不说主人家里有猫。"]
+      },
+      "judgeRules": ["case_expectations_met"]
+    },
+    {
+      "id": "9fd",
+      "scenario": "forget_propagation",
+      "title": "不学西班牙语了，由此推出的西语播客推荐也该跟着变",
+      "prompt": "通勤路上想听点播客，推荐三个。",
+      "memories": [
+        {
+          "id": "9fd-source",
+          "text": "主人在学西班牙语，准备明年去马德里。",
+          "category": "goal",
+          "importance": 800,
+          "recordedAt": "2026-09-25T00:30:00.000Z"
+        },
+        {
+          "id": "9fd-derived",
+          "text": "推断：给主人推荐书或播客时，优先西班牙语学习类的内容。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-01T00:30:00.000Z",
+          "derivedFrom": ["9fd-source"]
+        },
+        {
+          "id": "9fd-correction",
+          "text": "主人纠正：不学西班牙语了，马德里的计划取消了。",
+          "category": "goal",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z",
+          "supersedes": "9fd-source"
+        }
+      ],
+      "context": {
+        "present": ["9fd-correction"],
+        "absent": ["9fd-source"]
+      },
+      "flagged": ["9fd-derived"],
+      "answer": {
+        "expectations": ["推荐的播客里没有西班牙语学习类的。", "不说主人在学西班牙语或要去马德里。"]
+      },
+      "judgeRules": ["case_expectations_met"]
+    },
+    {
+      "id": "1g",
+      "scenario": "memory_correction",
+      "counterExample": true,
+      "title": "反例：这次出差住哪儿都行，不改长期的订酒店要求",
+      "prompt": "帮我订下周去福冈出差的酒店，先列三家候选。",
+      "memories": [
+        {
+          "id": "1g-standing",
+          "text": "主人出差订酒店一律要禁烟房，离车站步行 5 分钟以内。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-05T00:30:00.000Z"
+        },
+        {
+          "id": "1g-once",
+          "text": "主人说 10 月 20 日那趟大阪出差住哪儿都行，随便订最便宜的，只限那一趟。",
+          "category": "event",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z"
+        }
+      ],
+      "context": {
+        "present": ["1g-standing"],
+        "absent": []
+      },
+      "answer": {
+        "expectations": [
+          "筛选候选时按禁烟房、离车站步行 5 分钟以内这两条要求来，或明确说会按这两条筛。",
+          "不把“住哪儿都行、订最便宜的”当成这次福冈出差的要求。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met"]
+    },
+    {
+      "id": "1h",
+      "scenario": "memory_correction",
+      "counterExample": true,
+      "title": "反例：某天要 5 点起，不改平时 7 点前不提醒",
+      "prompt": "帮我把下周一的晨跑提醒定个时间。",
+      "memories": [
+        {
+          "id": "1h-standing",
+          "text": "主人每天早上 7 点起床，提醒类安排不要早于 7 点。",
+          "category": "preference",
+          "importance": 800,
+          "recordedAt": "2026-10-05T00:30:00.000Z"
+        },
+        {
+          "id": "1h-once",
+          "text": "主人说 10 月 14 日要赶早班机，那天 5 点就要叫醒他，只限那一天。",
+          "category": "event",
+          "importance": 800,
+          "recordedAt": "2026-10-13T00:30:00.000Z"
+        }
+      ],
+      "context": {
+        "present": ["1h-standing"],
+        "absent": []
+      },
+      "answer": {
+        "expectations": [
+          "定的提醒时间不早于 7 点，或说明按平时 7 点起床来定。",
+          "不按 10 月 14 日那次的 5 点来定。"
+        ]
+      },
+      "judgeRules": ["case_expectations_met"]
     }
   ]
 }

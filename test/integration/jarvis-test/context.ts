@@ -67,6 +67,51 @@ function contentRef(memory: CaseMemory): string {
   return `payload-${memory.id}`;
 }
 
+function recordReflection(stateRoot: string, memory: CaseMemory) {
+  const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+  try {
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO memory_consolidation_runs (
+          id, owner_id, agent_id, day, trigger_run_id, status, model_called, started_at
+        ) VALUES ('consolidation-jarvis-test', ?, ?, ?, 'run-jarvis-consolidation',
+          'completed', 1, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, memory.recordedAt.slice(0, 10), memory.recordedAt);
+    const change = `change-${memory.id}`;
+    database
+      .prepare(
+        `INSERT INTO memory_consolidation_changes (
+          id, consolidation_id, owner_id, agent_id, memory_id, action, after_revision, created_at
+        ) VALUES (?, 'consolidation-jarvis-test', ?, ?, ?, 'reflect', 1, ?)`,
+      )
+      .run(change, OWNER_ID, AGENT_ID, memory.id, memory.recordedAt);
+    const basis = database.prepare(
+      "INSERT INTO memory_consolidation_change_basis (change_id, position, memory_id) VALUES (?, ?, ?)",
+    );
+    for (const [position, upstream] of (memory.derivedFrom ?? []).entries())
+      basis.run(change, position, upstream);
+  } finally {
+    database.close();
+  }
+}
+
+function readFlagged(stateRoot: string): readonly string[] {
+  const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+  try {
+    return (
+      database
+        .prepare(
+          `SELECT DISTINCT memory_id AS memoryId FROM memory_review_items
+           WHERE owner_id = ? AND agent_id = ? AND status = 'open' ORDER BY memory_id`,
+        )
+        .all(OWNER_ID, AGENT_ID) as { memoryId: string }[]
+    ).map(({ memoryId }) => memoryId);
+  } finally {
+    database.close();
+  }
+}
+
 export function caseMemories(dataset: JarvisDataset, item: JarvisCase): readonly CaseMemory[] {
   return [...dataset.sharedMemories, ...(item.memories ?? [])];
 }
@@ -190,7 +235,7 @@ export async function assembleContext(
           dataClassification: "private",
           sourceThreadId: THREAD_ID,
           sourceRefs: [`message-${memory.id}`],
-          inference: false,
+          inference: memory.derivedFrom !== undefined,
           confidencePermille: 950,
           policyVersion: "memory-capture:v3",
           attributes: {
@@ -207,6 +252,7 @@ export async function assembleContext(
       },
       GENERATION_ID,
     );
+    if (memory.derivedFrom) recordReflection(stateRoot, memory);
   }
   memoryClock = dataset.today;
   while ((await durable.runProjectionBatch(100)).length > 0);
@@ -293,9 +339,20 @@ export async function assembleContext(
     dataClassification: "private",
   });
   await repository.close?.();
+  const flagged = readFlagged(stateRoot);
   const material = formed.injectedContentRefs
     .map((ref) => texts.get(ref))
     .filter((text): text is string => text !== undefined)
     .join("\n");
-  return { formed, material, profileNow, providerNow, adapters, clock, runId, sessionId };
+  return {
+    formed,
+    material,
+    flagged,
+    profileNow,
+    providerNow,
+    adapters,
+    clock,
+    runId,
+    sessionId,
+  };
 }

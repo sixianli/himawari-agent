@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "visionSection": "docs/product-vision.md#jarvis-test",
+  "tests": [
+    {
+      "number": 1,
+      "name": "跨时间记忆纠正",
+      "status": "automated",
+      "scenarios": ["memory_correction"],
+      "deterministicTests": ["test/integration/jarvis-test/memory-correction-context.test.ts"],
+      "liveEvals": ["scripts/jarvis-test/live.mjs"],
+      "gaps": [
+        "反例（BL-20261028-006）只测回答；记忆写入时会不会把一次性的说法当成取代旧偏好，用例里的记忆是直接写入的，看不到。"
+      ]
+    },
+    {
+      "number": 2,
+      "name": "跨表面连续性",
+      "status": "not_yet",
+      "scenarios": [],
+      "deterministicTests": [],
+      "liveEvals": [],
+      "gaps": [
+        "苹果客户端有聊天和会话命令（clients/apple），但还没核实在网页开始的会话能在设备端续上；要写网页网关加设备接口的双端用例。"
+      ]
+    },
+    {
+      "number": 3,
+      "name": "主动拦截",
+      "status": "partial",
+      "scenarios": ["proactive_next_step"],
+      "deterministicTests": ["test/integration/jarvis-test/memory-correction-context.test.ts"],
+      "liveEvals": ["scripts/evals/proactive-intercept-live.eval.ts"],
+      "gaps": [
+        "日程和天气没有接进系统主动提醒（packages/application/src/ports/proactive-sources.ts 的 PROACTIVE_SOURCES 只有 Gmail），评测只能用记忆里写的安排代替日程，测不了天气。",
+        "评测直接用生产的邮件判断提示和解析（proactivePrompt、parseJudgements），不经过取信、去重和推送那几步。",
+        "proactive_next_step 用例是主人先开口问天气或汇率，算主动提建议，不算“未开口时主动拦下”。"
+      ]
+    },
+    {
+      "number": 4,
+      "name": "长尾自造工具",
+      "status": "blocked",
+      "scenarios": [],
+      "deterministicTests": [],
+      "liveEvals": [],
+      "gaps": [
+        "没有“发现、沙箱构建、评测验证、登记、复用”的自造工具流程；能力只能人工登记（apps/admin-cli/src/capabilities-command.ts 的 register 要 --confirm）。"
+      ]
+    },
+    {
+      "number": 5,
+      "name": "权限不扩大",
+      "status": "partial",
+      "scenarios": [],
+      "deterministicTests": ["packages/application/test/autonomy-services.unit.test.ts"],
+      "liveEvals": [],
+      "gaps": [
+        "现有测试证明自我改进候选不能自己启用、动受保护路径会升高风险；但没有一份能导出的完整权限清单，比不了前后两个权限集合。"
+      ]
+    },
+    {
+      "number": 6,
+      "name": "状态判断纪律",
+      "status": "automated",
+      "scenarios": ["state_discipline"],
+      "deterministicTests": ["test/integration/jarvis-test/graders.test.ts"],
+      "liveEvals": ["scripts/jarvis-test/live.mjs"],
+      "gaps": []
+    },
+    {
+      "number": 7,
+      "name": "不在场推进",
+      "status": "blocked",
+      "scenarios": [],
+      "deterministicTests": [],
+      "liveEvals": [],
+      "gaps": ["没有让主人自己定“夜里做某事、到某条件就停”的规则入口，评测没地方放这条规则。"]
+    },
+    {
+      "number": 8,
+      "name": "失败透明",
+      "status": "automated",
+      "scenarios": ["failure_transparency"],
+      "deterministicTests": ["test/integration/jarvis-test/graders.test.ts"],
+      "liveEvals": ["scripts/jarvis-test/live.mjs"],
+      "gaps": []
+    },
+    {
+      "number": 9,
+      "name": "遗忘与纠正传播",
+      "status": "automated",
+      "scenarios": ["forget_propagation"],
+      "deterministicTests": ["test/integration/jarvis-test/memory-correction-context.test.ts"],
+      "liveEvals": ["scripts/jarvis-test/live.mjs"],
+      "gaps": [
+        "系统只把推出来的记忆标成待重审（ADR 0232），标了以后这条推断仍然原样送进模型的材料；后续行为改没改，全靠模型自己从纠正里看出来，真模型层量的就是这个。",
+        "只测纠正（取代）；删除一条记忆的用例还没加。"
+      ]
+    },
+    {
+      "number": 10,
+      "name": "打扰与门槛校准",
+      "status": "not_yet",
+      "scenarios": [],
+      "deterministicTests": [],
+      "liveEvals": [],
+      "gaps": [
+        "要连续 30 天的真实反应数据；统一的主动输出反应口径由“系统主动提醒和反应记录”线程在做，做好后在这里读它的命中率、误扰率和样本量。"
+      ]
+    },
+    {
+      "number": 11,
+      "name": "决策可解释",
+      "status": "partial",
+      "scenarios": [],
+      "deterministicTests": ["test/integration/decision-chain.test.ts"],
+      "liveEvals": [],
+      "gaps": ["决策链接口已有确定性测试；还没有对真实决策记录算“可解释率”的统计。"]
+    },
+    {
+      "number": 12,
+      "name": "可携带",
+      "status": "partial",
+      "scenarios": [],
+      "deterministicTests": [],
+      "liveEvals": ["scripts/evals/proactive-intercept-live.eval.ts"],
+      "gaps": [
+        "规则手册不能导出成 SKILL.md，也没有在 Claude Code、Codex 里加载的路径。",
+        "换供应商只在 #3 邮件评测里做了（DeepSeek 和智谱 GLM 两家同题各跑 3 次）；#1、#6、#8、#9 的真模型层还只跑一个被测模型。"
+      ]
+    }
+  ]
+}

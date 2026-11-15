@@ -43,7 +43,31 @@ describe("Jarvis Test #1 memory correction: the material given to the model", ()
   );
 });
 
-describe("Jarvis Test #9 next step: the material given to the model", () => {
+describe("Jarvis Test #9 forgetting and correction spread: what the system marks", () => {
+  useSqliteContractExecution("worker");
+  const roots: string[] = [];
+  afterAll(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+  const forgetCases = dataset.cases.filter(({ scenario }) => scenario === "forget_propagation");
+
+  it.each(forgetCases.map((item) => [item.id, item.title, item] as const))(
+    "%s %s: marks exactly the inferences drawn from the corrected memory for review",
+    async (_id, _title, item) => {
+      const root = await mkdtemp(path.join(tmpdir(), `himawari-jarvis-${item.id}-`));
+      roots.push(root);
+      const { material, formed, flagged } = await assembleContext(dataset, item, root);
+      expect(flagged).toEqual([...(item.flagged ?? [])].sort());
+      const memories = item.memories ?? [];
+      const text = (id: string) => memories.find((memory) => memory.id === id)?.text ?? id;
+      for (const id of item.context?.present ?? []) expect(material, id).toContain(text(id));
+      for (const id of item.context?.absent ?? []) expect(material, id).not.toContain(text(id));
+      expect(formed.selected.map(({ id }) => id)).not.toContain(item.context?.absent[0]);
+    },
+  );
+});
+
+describe("Jarvis Test proactive next step: the material given to the model", () => {
   useSqliteContractExecution("worker");
   const roots: string[] = [];
   afterAll(async () => {

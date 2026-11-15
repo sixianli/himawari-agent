@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "proactive-intercept-2026-11-15.2",
+  "now": "2026-11-02T00:30:00.000Z",
+  "timeZone": "Asia/Tokyo",
+  "noise": [
+    {
+      "id": "noise-sale",
+      "from": "ユニクロ <news@mail.uniqlo.example>",
+      "subject": "【本日限定】ヒートテック全品 20% OFF",
+      "body": "いつもご利用ありがとうございます。本日限定でヒートテック全品が 20% OFF。オンラインストアで今すぐチェック！配信停止はこちら。"
+    },
+    {
+      "id": "noise-newsletter",
+      "from": "Tech Weekly <digest@techweekly.example>",
+      "subject": "本周 AI 新闻摘要 第 212 期",
+      "body": "本周要闻：多家公司发布新模型；开源社区更新若干工具；下周活动预告。您收到此邮件是因为订阅了 Tech Weekly。"
+    },
+    {
+      "id": "noise-survey",
+      "from": "楽天トラベル <survey@travel.example>",
+      "subject": "ご宿泊のアンケートにご協力ください",
+      "body": "先日はご利用ありがとうございました。3 分で終わるアンケートにご回答いただくと、抽選で 1000 ポイントが当たります。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "i1",
+      "title": "航班提前两个半小时",
+      "expect": ["act"],
+      "target": {
+        "id": "t-i1",
+        "from": "JAL <info@jal.example>",
+        "subject": "【重要】ご予約便の出発時刻変更のお知らせ",
+        "body": "Andy 様\n11 月 4 日 JL123 便（羽田 → 福岡）の出発時刻が、機材繰りの都合により 10:00 から 07:30 に変更となりました。ご都合が合わない場合は 11 月 3 日 23:59 までに予約変更・払い戻しのお手続きをお願いいたします。"
+      },
+      "memories": []
+    },
+    {
+      "id": "i2",
+      "title": "手机话费扣款失败，过期停机",
+      "expect": ["act"],
+      "target": {
+        "id": "t-i2",
+        "from": "docomo <billing@docomo.example>",
+        "subject": "口座振替不能のお知らせ",
+        "body": "10 月分のご利用料金（7,480 円）が口座振替できませんでした。11 月 10 日までにお支払いがない場合、11 月 11 日より回線のご利用を停止いたします。お支払い方法：同封の払込票、またはアプリから。"
+      },
+      "memories": []
+    },
+    {
+      "id": "i3",
+      "title": "牙科预约和出差撞时间（只有看了记忆才知道）",
+      "expect": ["act"],
+      "target": {
+        "id": "t-i3",
+        "from": "さくら歯科 <yoyaku@sakura-dental.example>",
+        "subject": "ご予約確認：11 月 6 日（金）15:00",
+        "body": "Andy 様\n次回のご予約は 11 月 6 日（金）15:00 です。変更・キャンセルは前日 18 時までにお電話ください。当日キャンセルはキャンセル料 2,000 円がかかります。"
+      },
+      "memories": [
+        {
+          "id": "mem-i3",
+          "text": "主人 11 月 6 日整天在大阪出差，当晚才回东京。"
+        }
+      ],
+      "memoryRequired": true
+    },
+    {
+      "id": "i3r",
+      "title": "反例：群发的研讨会邀请正好在主人出差那天，不该因为记忆就提醒",
+      "expect": ["ignore"],
+      "target": {
+        "id": "t-i3r",
+        "from": "Tokyo AI Meetup <events@aimeetup.example>",
+        "subject": "11 月 6 日（金）生成 AI 勉強会のご案内",
+        "body": "コミュニティの皆さま\n11 月 6 日（金）15:00 から渋谷で生成 AI 勉強会を開催します。参加無料・申込不要、当日ふらっとお越しください。配信停止はこちら。"
+      },
+      "memories": [
+        {
+          "id": "mem-i3r",
+          "text": "主人 11 月 6 日整天在大阪出差，当晚才回东京。"
+        }
+      ]
+    },
+    {
+      "id": "i4",
+      "title": "在留期间更新要补材料",
+      "expect": ["act"],
+      "target": {
+        "id": "t-i4",
+        "from": "出入国在留管理庁 <no-reply@immi.example>",
+        "subject": "在留期間更新許可申請に係る資料提出通知",
+        "body": "申請番号 2026-TKY-048213 の在留期間更新許可申請について、審査のため下記資料の提出をお願いします。提出期限：2026 年 11 月 9 日。・住民税の課税証明書 ・在職証明書。期限までに提出がない場合、申請は資料不足のまま審査されます。"
+      },
+      "memories": []
+    },
+    {
+      "id": "i5",
+      "title": "报名的户外活动因台风改期（靠记忆知道主人报了名）",
+      "expect": ["act", "know"],
+      "target": {
+        "id": "t-i5",
+        "from": "総務部 <soumu@company.example>",
+        "subject": "【変更】11/3 社内BBQ 台風接近のため 11/10 に延期",
+        "body": "社員各位\n11 月 3 日（祝）に予定していた社内 BBQ は、台風接近のため 11 月 10 日（月）18:00 に延期します。参加できなくなった方は 11 月 7 日までに総務部へ連絡してください。"
+      },
+      "memories": [
+        {
+          "id": "mem-i5",
+          "text": "主人报名了 11 月 3 日的公司烧烤，11 月 10 日晚上已经约了朋友吃饭。"
+        }
+      ],
+      "memoryRequired": true
+    },
+    {
+      "id": "i6",
+      "title": "反例：这一批全是不用管的邮件",
+      "expect": null,
+      "target": null,
+      "memories": []
+    }
+  ]
+}

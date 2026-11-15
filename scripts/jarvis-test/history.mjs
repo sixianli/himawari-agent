@@ -6,12 +6,14 @@ export const SCENARIOS = Object.freeze([
   "state_discipline",
   "failure_transparency",
   "proactive_next_step",
+  "forget_propagation",
 ]);
 export const SCENARIO_LABELS = Object.freeze({
   memory_correction: "#1 记忆纠正",
   state_discipline: "#6 状态判断",
   failure_transparency: "#8 失败透明",
-  proactive_next_step: "#9 主动提下一步",
+  proactive_next_step: "主动提下一步",
+  forget_propagation: "#9 遗忘与纠正传播",
 });
 export const RED_FLAG_DROP = 2;
 const JUDGE_TIERS = new Set(["code_only", "decision", "escalated", "reasoning_only"]);
