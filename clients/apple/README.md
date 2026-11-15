@@ -164,6 +164,8 @@ clients/apple/scripts/mac-ui-review.sh
 <a id="watch-app"></a>
 ## Apple Watch App
 
+手表装到真机：手表 App 是 iPhone 的 Himawari 的配套 App，工程里已经有 `HimawariWatch`（手表 App）和 `HimawariWatchWidgets`（表盘小组件）两个目标，`Himawari` 目标依赖并嵌入它们（`Embed Watch Content` 阶段），所以用 Xcode 选“Himawari”方案装到 iPhone，系统会随之把手表 App 装到配对的 Apple Watch 上，不用单独装。手表 App 的 Bundle Identifier 是 `win.siyi.himawari.watchkitapp`，`Watch/Info.plist` 里的 `WKCompanionAppBundleIdentifier` 必须等于 iPhone App 的 Bundle Identifier；用免费 Apple ID 改了 iPhone App 的 Bundle Identifier 时，这三处（手表的 Bundle Identifier、`WKCompanionAppBundleIdentifier`、小组件的 `win.siyi.himawari.watchkitapp.widgets`）要一起改成同一个前缀。免费 Apple ID 不支持 App Group：照上面把 `HIMAWARI_APP_GROUP` 清空并设 `HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only` 时，手表和小组件也用空的权限文件（`Watch/Himawari.keychain-only.entitlements`、`WatchWidgets/WatchWidgets.keychain-only.entitlements`）；代价是表盘小组件读不到手表 App 存的状态，只显示向日葵，不显示件数。
+
 手表只做“一眼和一句”，照原型 Version 46 画板“每一端做什么”里的手表画面。工程里有两个目标：`HimawariWatch`（手表 App，入口 `App/Watch/HimawariWatchApp.swift`，其余代码在 `Sources/HimawariWatchUI/`）和 `HimawariWatchWidgets`（表盘小组件，`App/WatchWidgets/`）。`HimawariWatch` 嵌在 iPhone 的 Himawari 里一起安装。
 
 - 配对：手表上不打字。iPhone 的 Himawari 收到 `himawari-pair:` 开头的配对链接（只有从链接点开才会问“给手表用吗”；扫码只配这台 iPhone；已配对的 iPhone 收到链接时只会问这一句，不会重新配对，问话里写着链接指向的服务器），只有这台 iPhone 已经配对、又连着手表、而且链接指向的服务器和这台 iPhone 配对的服务器相同，才问一句“给这块 Apple Watch 用吗”；没连手表或服务器不同时什么也不提示。选了就经 WatchConnectivity（苹果的手机和手表之间传数据的接口）把链接交给手表。手表自己生成密钥、自己配对，只显示 6 位核对数字，主人在网页上确认。没配对时手表只写“在 iPhone 上打开配对链接”。
