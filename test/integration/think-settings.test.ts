@@ -219,7 +219,15 @@ describe("think settings", () => {
       payload: {
         revision: number;
         enabled: boolean;
-        items: { key: string; value: number; defaultValue: number; overridden: boolean }[];
+        items: {
+          key: string;
+          value: number;
+          defaultValue: number;
+          overridden: boolean;
+          unit: string;
+          kind: string;
+          storageUnit: string;
+        }[];
       };
     };
     expect(snapshot.type).toBe("think.settings.snapshot");
