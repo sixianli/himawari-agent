@@ -737,7 +737,7 @@ export function collectTidyState(database) {
   return {
     schema: { current: Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value), minimumWriter: Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value) },
     ledger: rows(database, "SELECT sequence,name,phase,digest,applied_at FROM schema_migration_ledger ORDER BY sequence", []),
-    history: historyDigests(database),
+    history: historyDigests(database, historyIgnoredColumns),
     capabilities: rows(database, "SELECT id,version,status,revision,integrity,record_json FROM capability_declarations ORDER BY id", []).map(({ record_json: recordJson, ...row }) => ({ ...row, recordSha256: sha(recordJson) })),
     authorization: rows(database, "SELECT key,revision,value_json FROM product_state_records WHERE key LIKE 'host-workspace:directory-grant:%' ORDER BY key", []).map(({ value_json: valueJson, ...row }) => ({ ...row, valueSha256: sha(valueJson) })),
     integrity: rows(database, "PRAGMA integrity_check", []).map((row) => row.integrity_check).join(","),
@@ -784,6 +784,9 @@ export function tidyDatabaseSidecars(options) {
 export const currentSchema = __PKT_CURRENT_SCHEMA__;
 export const targetSchema = __PKT_TARGET_SCHEMA__;
 export const migrationExpectedLedger = Object.freeze(__PKT_MIGRATION_LEDGER__.map((row) => Object.freeze(row)));
+export const addedColumnBackfills = Object.freeze({ thread_origin: Object.freeze({ threads: Object.freeze(["origin"]) }) });
+export const historyIgnoredColumnsFor = (ledger) => Object.freeze(Object.assign({}, ...ledger.map((row) => addedColumnBackfills[row.name] ?? {})));
+export const historyIgnoredColumns = historyIgnoredColumnsFor(migrationExpectedLedger);
 export const migrationComparedSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
 
 export function migrationContentState(database) {
@@ -918,7 +921,7 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
   const database = allowStartupAuthority === true ? openReadonly(sqliteDriverRoot, fixed.database) : openRecoveryReadonly(prefix, fixed.database, fixed.uid);
   try {
     database.exec("BEGIN");
-    const state = readS0State(database, binding.identity);
+    const state = readS0State(database, binding.identity, historyIgnoredColumns);
     assert.deepEqual(state.identity, binding.identity, "__PKT_LABEL_UPPER___MAINTENANCE_DB_BINDING_CHANGED");
     if (allowStartupAuthority === "rollback-current") {
       assert.equal(state.authority.authorityEpoch, binding.authority.authorityEpoch, "__PKT_LABEL_UPPER___MAINTENANCE_ROLLBACK_CURRENT_EPOCH_CHANGED");
@@ -957,19 +960,19 @@ export function verifyHistoryUnchanged(before, after) {
 
 export const startupRecoveryColumns = Object.freeze({ sandbox_execution_records: Object.freeze(["recovery_json"]) });
 
-export function compareHistoryRows(reference, current) {
+export function compareHistoryRows(reference, current, ignoredColumns = historyIgnoredColumns) {
   const tables = {};
   for (const table of historyTables) {
     const allowed = new Set(startupRecoveryColumns[table] ?? []);
     const query = `SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`;
-    const live = (function* () { for (const row of current.prepare(query).iterate()) yield historyRow(table, row); })();
+    const live = (function* () { for (const row of current.prepare(query).iterate()) yield historyRow(table, row, ignoredColumns); })();
     let referenceRows = 0;
     let liveRows = 0;
     const recoveryUpdatedRowids = [];
     try {
       let next = live.next();
       for (const raw of reference.prepare(query).iterate()) {
-        const row = historyRow(table, raw);
+        const row = historyRow(table, raw, ignoredColumns);
         while (!next.done && next.value.__rowid < row.__rowid) {
           liveRows += 1;
           next = live.next();
@@ -1007,7 +1010,7 @@ export function verifyHistoryAgainstRecoveryPoint(binding) {
       const tables = compareHistoryRows(reference, current);
       current.exec("COMMIT");
       reference.exec("COMMIT");
-      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, tables };
+      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, ignoredHistoryColumns: historyIgnoredColumns, tables };
     } finally {
       current.close();
     }

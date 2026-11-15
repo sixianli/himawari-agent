@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, renameSync 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger } from "./maintenance-common.mjs";
+import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
+import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -25,8 +25,13 @@ const rejectAll = (group, base, cases, check) => {
   }
 };
 assert(typeof process.env.HIMAWARI_TEST_TEMP_ROOT === "string", "FIXTURE_OWNED_TEMP_ROOT_REQUIRED");
-assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }), { __rowid: 1, id: "thread:1" }, "HISTORY_ROW_THREAD_ORIGIN_IGNORED");
-assert.deepEqual(historyRow("messages", { __rowid: 1, origin: "x" }), { __rowid: 1, origin: "x" }, "HISTORY_ROW_OTHER_TABLES_KEEP_EVERY_COLUMN");
+const originRelease = historyIgnoredColumnsFor([{ sequence: 97, name: "other" }, { sequence: 98, name: "thread_origin", phase: "expand" }]);
+assert.deepEqual(originRelease, { threads: ["origin"] }, "HISTORY_ORIGIN_IGNORED_ONLY_WHILE_ITS_MIGRATION_IS_PENDING");
+assert.deepEqual(historyIgnoredColumnsFor([{ sequence: 97, name: "other" }]), {}, "HISTORY_ORIGIN_COMPARED_ONCE_ITS_MIGRATION_IS_APPLIED");
+assert.deepEqual(historyIgnoredColumns, {}, "HISTORY_FIXTURE_LEDGER_HAS_NO_IGNORED_COLUMNS");
+assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }, originRelease), { __rowid: 1, id: "thread:1" }, "HISTORY_ROW_THREAD_ORIGIN_IGNORED");
+assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }), { __rowid: 1, id: "thread:1", origin: "think" }, "HISTORY_ROW_KEEPS_ORIGIN_BY_DEFAULT");
+assert.deepEqual(historyRow("messages", { __rowid: 1, origin: "x" }, originRelease), { __rowid: 1, origin: "x" }, "HISTORY_ROW_OTHER_TABLES_KEEP_EVERY_COLUMN");
 
 const releaseWithoutMigrationIds = [{ sequence: 1, name: "a" }, { sequence: 78, name: "b" }];
 const releaseWithMigrationIds = [{ sequence: 1, id: "0001", name: "a" }, { sequence: 78, id: "0078", name: "b" }, { sequence: 96, id: "20261114120000", name: "c" }];
@@ -249,6 +254,19 @@ for (const [name, code, statement, undo] of [
   count("historyRowsRejections");
 }
 assert.equal(historyRows().threads.addedRows, 1);
+withWrites(() => full.exec("ALTER TABLE threads ADD COLUMN origin TEXT NOT NULL DEFAULT 'owner'; UPDATE threads SET origin='think' WHERE id='thread:two'"));
+throwsCode(historyRows, "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COLUMNS_CHANGED:threads", "origin added by a release that does not apply thread_origin");
+count("historyRowsRejections");
+assert.equal(compareHistoryRows(historyReference, full, originRelease).threads.addedRows, 1);
+const referenceHistory = historyDigests(historyReference, originRelease).threads;
+const originHistory = historyDigests(full, originRelease).threads;
+assert.equal(originHistory.rows, referenceHistory.rows + 1);
+assert.notDeepEqual(historyDigests(full).threads, originHistory, "HISTORY_ORIGIN_DIGEST_COUNTS_ORIGIN_BY_DEFAULT");
+count("historyRowsAccepted");
+withWrites(() => full.exec("UPDATE threads SET body='changed' WHERE id='thread:one'"));
+throwsCode(() => compareHistoryRows(historyReference, full, originRelease), "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:threads", "old thread body changed beside origin");
+count("historyRowsRejections");
+withWrites(() => full.exec("UPDATE threads SET body='SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT' WHERE id='thread:one'; ALTER TABLE threads DROP COLUMN origin"));
 historyReference.close();
 
 const registeredRuntime = `${catalogRegistrationPrefix}/lib/himawari-agent`;
@@ -635,4 +653,4 @@ try {
 } finally {
   rmSync(samplerRoot, { recursive: true });
 }
-process.stdout.write(JSON.stringify({ passed: true, scope: "__PKT_LABEL__ configuration stages (original, static root moved to the __PKT_LABEL__ release, prepared snapshot), handles counted only while usable (status active), startup authority, real-sqlite S0 gate and history, S8 row-by-row history against the S3 copy (old rows kept, new rows allowed, only sandbox recovery_json may change), previous strict catalog shape, existing workspace grant and directory identity, catalog at S0, prepared capabilities with no pending registration, reviewed plain upgrade plan for all three capabilities without scope changes or registration, upgrade result, upgraded catalog before and after a restart snapshot, restored catalog, space sampler", fixtureSource: fileURLToPath(import.meta.url), counts, samplerReadback, doesNotProveProductionState: true }) + "\n");
+process.stdout.write(JSON.stringify({ passed: true, scope: "__PKT_LABEL__ configuration stages (original, static root moved to the __PKT_LABEL__ release, prepared snapshot), handles counted only while usable (status active), startup authority, real-sqlite S0 gate and history, S8 row-by-row history against the S3 copy (old rows kept, new rows allowed, only sandbox recovery_json may change; threads.origin skipped only while thread_origin is pending), previous strict catalog shape, existing workspace grant and directory identity, catalog at S0, prepared capabilities with no pending registration, reviewed plain upgrade plan for all three capabilities without scope changes or registration, upgrade result, upgraded catalog before and after a restart snapshot, restored catalog, space sampler", fixtureSource: fileURLToPath(import.meta.url), counts, samplerReadback, doesNotProveProductionState: true }) + "\n");

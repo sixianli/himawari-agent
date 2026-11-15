@@ -192,16 +192,16 @@ def added_column_backfills(file_name, sql, touched):
     digest, columns = ADDED_COLUMN_BACKFILLS.get(file_name, (None, {}))
     if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
         return []
-    ignored = history_ignored_columns()
+    ignored = history_ignored_columns().get(TIMESTAMP_MIGRATION.fullmatch(file_name).group(2), {})
     return [table for table in touched if table in columns and columns[table] in ignored.get(table, ())]
 
 
 def history_ignored_columns():
-    source = (TEMPLATE / 's0-db' / 'read-s0-db.mjs').read_text()
-    match = re.search(r'historyIgnoredColumns = Object\.freeze\(\{(.*?)\}\)', source, re.S)
+    source = (TEMPLATE / 'maintenance' / 'maintenance-common.mjs').read_text()
+    match = re.search(r'^export const addedColumnBackfills = Object\.freeze\(\{(.*)\}\);$', source, re.M)
     if not match:
         refuse('PACKET_HISTORY_IGNORED_COLUMNS_NOT_FOUND')
-    return {table: tuple(re.findall(r'"([a-z_]+)"', names)) for table, names in re.findall(r'([a-z_]+): Object\.freeze\(\[(.*?)\]\)', match.group(1))}
+    return {name: {table: tuple(re.findall(r'"([a-z_]+)"', names)) for table, names in re.findall(r'([a-z_]+): Object\.freeze\(\[(.*?)\]\)', body)} for name, body in re.findall(r'([a-z_]+): Object\.freeze\(\{(.*?)\}\)', match.group(1))}
 
 
 def rebuilds_keeping_rows(file_name, sql, touched):
