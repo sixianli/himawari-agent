@@ -1,0 +1,1 @@
+{"id": "1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1 【低】新增测试只锁住辅助函数的重读，锁不住两个真正的调用点，也没断言本账本被计入", "valid": true, "class": "better", "why": "测试确实把 out/usage.jsonl 写成空串（test/tooling/review-increment.test.mjs:492），断言不到本账本被计入；但现在的代码 opencode-review.mjs:1252 返回本账本加 linked 账本，4248 和 4294 两个调用点都用 spentRecords(options)，没有一种输入会算错，缺的只是测试覆盖，属于可以更好；同第 3 轮第 1 条的判法"}
