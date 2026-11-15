@@ -153,7 +153,7 @@ node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026
 ```bash
 cd clients/apple
 swiftc -o /tmp/make-sunflower-svg Sources/HimawariDesign/SunflowerSeeds.swift scripts/make-sunflower-svg/main.swift
-/tmp/make-sunflower-svg full App/SafariExtension/Resources/images/sunflower.svg
+/tmp/make-sunflower-svg App/SafariExtension/Resources/images/sunflower.svg
 node scripts/make-safari-icons.mjs App/SafariExtension/Resources/images/sunflower.svg App/SafariExtension/Resources/images 48 96 128 256 512
 ```
 
