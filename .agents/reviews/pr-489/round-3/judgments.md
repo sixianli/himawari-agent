@@ -1,0 +1,6 @@
+# PR 489 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1 中 角标回退条件与 `HomeLayout.badge` 的抑制条件不一致，来源不全时角标会消失或少算。来源不全时不显示角标数字，是 HomeLayout.badge 从第一版起的有意取舍（数字不可信就不显示，有反向测试 noBadgeWhenASourceCouldNotBeRead）；只有审批来源不全时，设备上自己知道的待审批数才可信，所以回退。要不要在别的来源不全时给出下限数字，是产品选择，列给 Andy
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2 低 `reset()` 无法阻止在途的 `act`/`refresh` 把旧服务器快照写回，也未清 `DeviceHomeSource` 的请求编号缓存。HomeFeedModel 没有代次判断（HomeFeedModel.swift refresh/decide）；复核第 3 轮起低问题不再修，列给 Andy；触发：用户点动作后立刻移除设备，在途的读取或动作随后返回；后果：旧服务器的首页快照被写回内存；未配对界面不展示，只是内存里多留一份；判低理由：只有用户在动作在途时移除设备才触发，且未配对界面不展示，内存里的残留在重新读取时被覆盖
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3 低 `choice` 逐条过滤 binding，若服务端给出“正向无 binding、负向有 binding”，负向动作会被当成主按钮。HomeFeed.swift choice 先逐条过滤再选极性；当前生产服务端只有 reconnect 一个无 binding 动作且它是唯一动作，不会触发；第 3 轮起低问题不再修，列给 Andy；触发：服务器给出正向动作无 binding、负向动作有 binding 的混合条目；后果：负向动作被当成主按钮；判低理由：当前服务端不会产生混合条目，属于契约允许但尚未出现的输入
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4 低 新增的审批失败提示、reset、角标回退和 TodayPage 卡片条件没有自动检查；requestId 反向用例依赖概率。审批失败提示、reset、角标回退和卡片条件的自动检查在 Linux 上只能覆盖 Core；这些在 Shell，由 Mac 跑 HimawariShellTests；requestId 反向用例用 2000 次采样，足够；补更多 Shell 测试列给 Andy

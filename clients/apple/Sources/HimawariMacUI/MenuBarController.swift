@@ -18,12 +18,14 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
     private var pairingWindow: NSWindow?
     private var observation: Task<Void, Never>?
     private let messages: MessagesSensor
+    private let presence: PresenceSensor
     private let pairingInbox = PairingInbox()
 
     init(model: MenuBarModel) {
         self.model = model
         inputBar = InputBarWindow(model: InputBarModel(api: model.app.api, chat: { [weak app = model.app] in app?.chat }, limits: { [weak app = model.app] in app?.configuration?.attachments }), menu: model)
         messages = MessagesSensor(settings: model.settings, app: model.app)
+        presence = PresenceSensor(app: model.app)
         super.init()
         configureStatusItem()
         configurePopover()
@@ -31,8 +33,16 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         applyShortcut(model.settings.settings.shortcut)
         model.settings.onShortcutChange = { [weak self] in self?.applyShortcut($0) }
         notices.prepare()
+        notices.openPanel = { [weak self] id in
+            self?.model.reveal(id)
+            self?.showPanel()
+        }
+        model.showNotice = { [weak self] in self?.notices.show($0) }
+        model.removeNotice = { [weak self] in self?.notices.withdraw($0) }
+        model.app.onDeviceNotification = { [weak model] in model?.receive($0) }
         model.startRefreshing()
         messages.start()
+        presence.start()
         observeBadge()
         if model.app.phase != .active { showPairing() }
     }
@@ -123,10 +133,15 @@ final class MenuBarController: NSObject, NSWindowDelegate, NSDraggingDestination
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            Task { await model.refresh() }
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            showPanel()
         }
+    }
+
+    func showPanel() {
+        guard let button = statusItem.button, !popover.isShown else { return }
+        Task { await model.refresh() }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     func summonInputBar(files: [URL] = []) {
@@ -299,6 +314,24 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert]) { _, _ in }
     }
 
+    var openPanel: ((String) -> Void)?
+
+    static func noticeIdentifier(_ id: String) -> String { "himawari.notice." + id }
+
+    func show(_ notice: DeviceNotification) {
+        let content = UNMutableNotificationContent()
+        content.title = notice.title
+        content.body = notice.body
+        content.userInfo = ["noticeId": notice.id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: Self.noticeIdentifier(notice.id), content: content, trigger: nil))
+    }
+
+    func withdraw(_ id: String) {
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [Self.noticeIdentifier(id)])
+        center.removePendingNotificationRequests(withIdentifiers: [Self.noticeIdentifier(id)])
+    }
+
     func announce(id: String, sentence: String, detail: String?, files: [URL], undoable: Bool) {
         let content = UNMutableNotificationContent()
         content.title = sentence
@@ -315,9 +348,14 @@ final class ResultNotices: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let id = info["actionId"] as? String ?? ""
+        let noticeId = info["noticeId"] as? String
         let files = (info["files"] as? [String] ?? []).map { URL(fileURLWithPath: $0) }
         let action = response.actionIdentifier
         await MainActor.run {
+            if let noticeId {
+                if action == UNNotificationDefaultActionIdentifier { openPanel?(noticeId) }
+                return
+            }
             switch action {
             case Self.reveal, UNNotificationDefaultActionIdentifier:
                 if !files.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(files) }

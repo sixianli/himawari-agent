@@ -23,6 +23,7 @@ import type {
   HomeUrgencyStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -1020,6 +1021,15 @@ export class SqliteDurableAdapters {
       reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
       dropDiscardedText: (input) =>
         this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
+  mcpMemorySync(): McpMemorySyncStorePort {
+    return Object.freeze<McpMemorySyncStorePort>({
+      push: (input) => this.context.write("mcpMemorySync.push", input),
+      limits: (input) => this.context.read("mcpMemorySync.limits", input),
+      projectNotes: (input) => this.context.read("mcpMemorySync.projectNotes", input),
+      replacedMemory: (input) => this.context.read("mcpMemorySync.replacedMemory", input),
     });
   }
 
