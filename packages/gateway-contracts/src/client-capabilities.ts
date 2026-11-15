@@ -152,6 +152,8 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "proactive.gapcase.mark"),
   query("v2", "owner.preferences.read"),
   change("v2", "owner.preferences.set"),
+  query("v2", "delivery_timing.settings.read"),
+  change("v2", "delivery_timing.settings.change"),
   query("v2", "perception.status.read"),
   query("v2", "perception.day.read"),
   query("v2", "perception.episode.read"),

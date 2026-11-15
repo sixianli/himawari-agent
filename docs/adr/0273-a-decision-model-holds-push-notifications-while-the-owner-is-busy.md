@@ -22,6 +22,7 @@ date: "2026-11-15"
 - [业界怎么做](#industry)
 - [放弃的做法](#options)
 - [后果和这一版没做的](#consequences)
+- [追加（2026-11-15）：各项数值可在 App 里改](#settings)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -119,6 +120,20 @@ date: "2026-11-15"
   3. 决策记录里不记模型的概率和各信号多新；`shown_in_app` 这个结果没有写入处。
   4. “一件事只在一处响”（Mac、iPhone 选一处）依赖这一版和 Mac 那批，另做。
   5. 手机上的真实表现（主人开车时是不是真的延后了、延后后送达是否自然）没有真机验证，等付费开发者账号开通后在 iPhone 上看。
+
+<a id="settings"></a>
+
+## 追加（2026-11-15）：各项数值可在 App 里改
+
+项目规则不许写死。第一版里复查间隔、最长扣多久、各类状态多新算新、判忙的门槛、每分钟次数这 11 项只能改服务器配置文件，主人在 App 里看不到也改不了。
+
+追加的做法：服务器新增两个网关操作，沿用主人设置同样的“版本号 + 旧设备不能覆盖新值”规则（[ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md)）。
+
+- 查询 `delivery_timing.settings.read`，返回 `delivery_timing.settings.snapshot`：每一项的 `key`、`value`（现在生效的值）、`defaultValue`（配置文件里的值）、`minimum`、`maximum`、`overridden`（是否被主人改过），以及整体 `revision`。
+- 命令 `delivery_timing.settings.change`，字段 `expectedRevision`、`key`、`value`；`value` 为 `null` 表示恢复成配置文件里的值。值超出范围或 `key` 不认识，整条拒绝；版本号不是最新的，整条拒绝。只有主人能改。
+- 主人改过的值存在新表 `delivery_timing_settings`（一个账号一行，JSON 加版本号），改后马上对运行中的服务生效，不用重启。
+- 只有配置文件里配了 `runPolicy.deliveryTiming`（送达时机已启用）时这两个操作才会装进网关。
+- 设置页的界面由客户端第 11 批做。
 
 <a id="references"></a>
 

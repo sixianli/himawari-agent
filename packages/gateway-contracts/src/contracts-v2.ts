@@ -62,6 +62,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "owner.preferences.read",
   "owner.preferences.snapshot",
   "owner.preferences.set",
+  "delivery_timing.settings.read",
+  "delivery_timing.settings.snapshot",
+  "delivery_timing.settings.change",
   "proposals.read",
   "proposals.snapshot",
   "proposal.respond",
@@ -546,6 +549,35 @@ const ownerPreferencesSnapshotSchema = object({
 const ownerPreferencesSetCommandSchema = object({
   ...commandEnvelope("owner.preferences.set"),
   payload: object({ ...ownerPreferencesSchema, expectedRevision: integer(0) }),
+});
+const deliveryTimingSettingsQuerySchema = object({
+  ...envelope("query", "delivery_timing.settings.read"),
+  payload: object({}),
+});
+const deliveryTimingSettingsSnapshotSchema = object({
+  ...envelope("snapshot", "delivery_timing.settings.snapshot"),
+  payload: object({
+    items: array(
+      object({
+        key: machineString,
+        value: integer(0),
+        defaultValue: integer(0),
+        minimum: integer(0),
+        maximum: integer(0),
+        overridden: booleanValue,
+      }),
+    ),
+    revision: integer(0),
+    generatedAt: timestamp,
+  }),
+});
+const deliveryTimingSettingsChangeCommandSchema = object({
+  ...commandEnvelope("delivery_timing.settings.change"),
+  payload: object({
+    expectedRevision: integer(0),
+    key: machineString,
+    value: nullable(integer(0)),
+  }),
 });
 export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
 export const DEVICE_STATUSES = ["pending", "active", "revoked"] as const;
@@ -3499,6 +3531,9 @@ const schemasByType = {
   "owner.preferences.read": ownerPreferencesQuerySchema,
   "owner.preferences.snapshot": ownerPreferencesSnapshotSchema,
   "owner.preferences.set": ownerPreferencesSetCommandSchema,
+  "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
+  "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
+  "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
   "proposals.read": proposalsQuerySchema,
   "proposals.snapshot": proposalsSnapshotSchema,
   "proposal.respond": proposalRespondCommandSchema,

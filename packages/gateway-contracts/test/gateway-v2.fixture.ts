@@ -442,6 +442,26 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
+  fixture("query", "delivery_timing.settings.read", {}),
+  fixture("snapshot", "delivery_timing.settings.snapshot", {
+    items: [
+      {
+        key: "recheckSeconds",
+        value: 600,
+        defaultValue: 300,
+        minimum: 60,
+        maximum: 3600,
+        overridden: true,
+      },
+    ],
+    revision: 2,
+    generatedAt: "2026-11-15T03:00:00.000Z",
+  }),
+  fixture("command", "delivery_timing.settings.change", {
+    expectedRevision: 2,
+    key: "recheckSeconds",
+    value: null,
+  }),
   fixture("query", "device.list.read", {}),
   fixture("snapshot", "device.list.snapshot", {
     devices: [

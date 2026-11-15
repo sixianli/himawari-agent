@@ -17,6 +17,7 @@ import {
   DEFAULT_SEARCH_ASK,
   DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
+  type DeviceActionService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
@@ -39,7 +40,6 @@ import {
   ThreadCommandService,
   ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
-  type DeviceActionService,
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
@@ -69,6 +69,7 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceActionHub,
   type DeviceGatewayAuditFailure,
   type DevicePairingAccess,
   DevicePushService,
@@ -85,7 +86,6 @@ import {
   IdentityGatewayError,
   type JwksFetcher,
   OwnerBootstrapService,
-  type DeviceActionHub,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
@@ -125,6 +125,11 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import type { DeliveryTimingHolder } from "./production-delivery-timing.js";
+import {
+  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
+  ProductionDeliveryTimingControl,
+} from "./production-delivery-timing-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -299,6 +304,7 @@ export interface ProductionHttpCompositionOptions {
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+  readonly deliveryTimingSettings?: Pick<DeliveryTimingHolder, "base" | "apply">;
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
@@ -771,6 +777,7 @@ function routeOptions(
   observationAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  deliveryTimingAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -806,6 +813,7 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
@@ -1551,6 +1559,17 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.deliveryTimingSettings
+      ? {
+          deliveryTimingControl: new ProductionDeliveryTimingControl({
+            configuration,
+            defaults: options.deliveryTimingSettings.base,
+            store: repository.deliveryTimingSettings(),
+            clock: { now: clock },
+            changed: options.deliveryTimingSettings.apply,
+          }),
+        }
+      : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1632,6 +1651,7 @@ export async function createProductionHttpComposition(
       Boolean(options.observation),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      options.deliveryTimingSettings !== undefined,
     ),
     gatewayV2,
     threadSearch,

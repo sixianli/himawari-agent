@@ -55,7 +55,6 @@ import {
   sqliteLibraryVersion,
 } from "@himawari-agent/persistence-sqlite";
 import {
-  DeviceActionHub,
   APPLE_PUSH_SECRET_PURPOSE,
   assertProductionSecretSource,
   BoundedJwksFetcher,
@@ -67,6 +66,7 @@ import {
   createGoogleOAuth,
   createWebPushSender,
   DescriptorRelativeReadOnly,
+  DeviceActionHub,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
   EXECUTION_UDS_ERROR_CODES,
@@ -114,11 +114,15 @@ import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import {
   createDeliveryTimingSource,
+  DeliveryTimingHolder,
   productionDeliveryTiming,
 } from "./production-delivery-timing.js";
+import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
+import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
@@ -126,7 +130,6 @@ import { createProductionFileReadServices } from "./production-file-read-service
 import { ProductionGapExport } from "./production-gap-export.js";
 import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
-import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -192,8 +195,6 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
-import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -734,6 +735,7 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
+  let deliveryTimingHolder: DeliveryTimingHolder | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -2842,6 +2844,16 @@ export async function startTenantRuntime(
         }
         const timingConfiguration = configuration.runPolicy?.deliveryTiming;
         const timingModel = productionDeliveryTiming(configuration, sources.provider);
+        if (timingModel && timingConfiguration)
+          deliveryTimingHolder = new DeliveryTimingHolder(
+            timingConfiguration,
+            (
+              await pushRepository.deliveryTimingSettings().read({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+              })
+            ).overrides,
+          );
         webPush = new ProductionWebPush({
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
@@ -2922,11 +2934,11 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
-          ...(timingModel && timingConfiguration
+          ...(timingModel && deliveryTimingHolder
             ? {
                 timing: createDeliveryTimingSource({
                   model: timingModel,
-                  configuration: timingConfiguration,
+                  configuration: deliveryTimingHolder.current,
                   store: pushRepository.perception(),
                   scope: {
                     ownerId: configuration.ownerId,
@@ -3316,6 +3328,7 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
+        ...(deliveryTimingHolder ? { deliveryTimingSettings: deliveryTimingHolder } : {}),
         webPush: {
           presence: webPushPresence,
           push: webPush,
