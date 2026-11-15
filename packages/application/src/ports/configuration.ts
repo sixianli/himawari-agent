@@ -381,7 +381,22 @@ export interface OwnerProposalConfiguration {
   readonly expiresAfterDays?: number;
 }
 
+export interface ThinkWorthConfiguration {
+  readonly model: string;
+  readonly secretRef: string;
+  readonly yesAtLeastPermille: number;
+  readonly noAtMostPermille: number;
+  readonly requestTimeoutMs: number;
+}
+
+export const THINK_WORTH_DEFAULTS = Object.freeze({
+  yesAtLeastPermille: 700,
+  noAtMostPermille: 300,
+  requestTimeoutMs: 15_000,
+});
+
 export interface ThinkInboxConfiguration {
+  readonly worth?: ThinkWorthConfiguration;
   readonly queueLimit?: number;
   readonly dailyLimit?: number;
   readonly expiresAfterHours?: number;

@@ -1955,6 +1955,38 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
       parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox,
     ).toEqual(thinkInbox);
   }
+  const worth = { model: "typesafe-ai/jev", secretRef: "think-worth-key" };
+  for (const thinkInbox of [
+    { worth },
+    { worth: { ...worth, yesAtLeastPermille: 800, noAtMostPermille: 200, requestTimeoutMs: 500 } },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox };
+    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox;
+    expect(parsed?.worth).toMatchObject(thinkInbox.worth);
+  }
+  expect(
+    (() => {
+      raw["runPolicy"] = { ...policy, thinkInbox: { worth } };
+      return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox
+        ?.worth;
+    })(),
+  ).toEqual({
+    ...worth,
+    yesAtLeastPermille: 700,
+    noAtMostPermille: 300,
+    requestTimeoutMs: 15_000,
+  });
+  for (const invalid of [
+    { worth: { model: "typesafe-ai/jev" } },
+    { worth: { ...worth, yesAtLeastPermille: 300, noAtMostPermille: 300 } },
+    { worth: { ...worth, noAtMostPermille: 500 } },
+    { worth: { ...worth, yesAtLeastPermille: 500 } },
+    { worth: { ...worth, requestTimeoutMs: 100 } },
+    { worth: { ...worth, extra: 1 } },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
   for (const invalid of [
     { queueLimit: 0 },
     { dailyLimit: 10001 },

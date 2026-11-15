@@ -61,6 +61,7 @@ const PARSERS: Readonly<Record<string, unknown>> = {
   parseConversationReview: review.parseConversationReview,
   parseImportDuplicateAnswers: application.parseImportDuplicateAnswers,
   parseOwnerIntentDecision: application.parseOwnerIntentDecision,
+  parseThinkWorthDecision: application.parseThinkWorthDecision,
   parseJudgements: application.parseJudgements,
   parseMailReferences: application.parseMailReferences,
   parseAutomaticReviewDecision: application.parseAutomaticReviewDecision,
@@ -121,6 +122,7 @@ describe("[PROMPT-CONTRACT] background prompts and the parsers that read their a
         "review.prereview",
         "review.typesafe-questions",
         "rule.review",
+        "think.worth-question",
         "voice.addressee-question",
       ].sort(),
     );
