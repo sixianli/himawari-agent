@@ -7,7 +7,9 @@ import type {
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
-type Input<TName extends keyof ThinkInboxStorePort> = Parameters<ThinkInboxStorePort[TName]>[0];
+type Input<TName extends keyof ThinkInboxStorePort> = Parameters<
+  ThinkInboxStorePort[TName]
+>[0];
 
 const MAX_LISTED = 200;
 const MAX_LIMIT = 100000;
@@ -19,7 +21,9 @@ const columns = `id, source_kind AS sourceKind, source_ref AS sourceRef,
   status, reason_code AS reasonCode, attempts, day, created_at AS createdAt,
   updated_at AS updatedAt`;
 
-type Row = Omit<StoredThinkEntry, "externalContent"> & { readonly externalContent: number };
+type Row = Omit<StoredThinkEntry, "externalContent"> & {
+  readonly externalContent: number;
+};
 
 function stored(row: Row): StoredThinkEntry {
   return Object.freeze({ ...row, externalContent: row.externalContent === 1 });
@@ -62,10 +66,15 @@ export class SqliteThinkInboxOperations {
         return this.usage(payload as Input<"usage">);
       case "thinkInbox.settledSummaries":
         return this.settledSummaries(payload as Input<"settledSummaries">);
+      case "thinkInbox.summaryReferenced":
+        return this.summaryReferenced(payload as Input<"summaryReferenced">);
       case "thinkInbox.clearSummary":
         return this.clearSummary(payload as Input<"clearSummary">);
       default:
-        return this.fail("PORT_INVALID_OPERATION", `Unknown think inbox operation ${operation}`);
+        return this.fail(
+          "PORT_INVALID_OPERATION",
+          `Unknown think inbox operation ${operation}`,
+        );
     }
   }
 
@@ -80,19 +89,34 @@ export class SqliteThinkInboxOperations {
   }
 
   private limit(value: unknown): number {
-    if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_LIMIT)
+    if (
+      !Number.isInteger(value) ||
+      (value as number) < 1 ||
+      (value as number) > MAX_LIMIT
+    )
       this.invalid("Think inbox limit is invalid");
     return value as number;
   }
 
-  private fetch(ownerId: string, agentId: string, id: string): StoredThinkEntry | undefined {
+  private fetch(
+    ownerId: string,
+    agentId: string,
+    id: string,
+  ): StoredThinkEntry | undefined {
     const row = this.database
-      .prepare(`SELECT ${columns} FROM think_inbox WHERE owner_id = ? AND agent_id = ? AND id = ?`)
+      .prepare(
+        `SELECT ${columns} FROM think_inbox WHERE owner_id = ? AND agent_id = ? AND id = ?`,
+      )
       .get(ownerId, agentId, id) as Row | undefined;
     return row ? stored(row) : undefined;
   }
 
-  private decline(ownerId: string, agentId: string, day: string, reasonCode: string): void {
+  private decline(
+    ownerId: string,
+    agentId: string,
+    day: string,
+    reasonCode: string,
+  ): void {
     this.database
       .prepare(
         `INSERT INTO think_inbox_declined (owner_id, agent_id, day, reason_code, declined)
@@ -107,7 +131,10 @@ export class SqliteThinkInboxOperations {
     const id = this.text(input.id, 128, "id");
     const sourceKind = this.text(input.sourceKind, 64, "source kind");
     const sourceRef = this.text(input.sourceRef, 256, "source reference");
-    if (typeof input.sourceVersion !== "string" || input.sourceVersion.length > 256)
+    if (
+      typeof input.sourceVersion !== "string" ||
+      input.sourceVersion.length > 256
+    )
       this.invalid("Think inbox source version is invalid");
     if (typeof input.externalContent !== "boolean")
       this.invalid("Think inbox external content flag is invalid");
@@ -124,9 +151,13 @@ export class SqliteThinkInboxOperations {
            WHERE owner_id = ? AND agent_id = ? AND source_kind = ? AND source_ref = ?
              AND source_version = ?`,
         )
-        .get(input.ownerId, input.agentId, sourceKind, sourceRef, input.sourceVersion) as
-        | Row
-        | undefined;
+        .get(
+          input.ownerId,
+          input.agentId,
+          sourceKind,
+          sourceRef,
+          input.sourceVersion,
+        ) as Row | undefined;
       if (existing) return { outcome: "duplicate", entry: stored(existing) };
       const queued = (
         this.database
@@ -210,7 +241,9 @@ export class SqliteThinkInboxOperations {
            WHERE owner_id = ? AND agent_id = ? AND id = ? AND status = 'thinking'`,
         )
         .run(input.to, reasonCode, input.now, input.ownerId, input.agentId, id);
-      return result.changes === 0 ? undefined : this.fetch(input.ownerId, input.agentId, id);
+      return result.changes === 0
+        ? undefined
+        : this.fetch(input.ownerId, input.agentId, id);
     })();
   }
 
@@ -225,14 +258,26 @@ export class SqliteThinkInboxOperations {
            WHERE owner_id = ? AND agent_id = ? AND status = 'thinking' AND updated_at <= ?
              AND attempts >= ?`,
         )
-        .run(input.now, input.ownerId, input.agentId, input.stalledBefore, maxAttempts).changes;
+        .run(
+          input.now,
+          input.ownerId,
+          input.agentId,
+          input.stalledBefore,
+          maxAttempts,
+        ).changes;
       const retried = this.database
         .prepare(
           `UPDATE think_inbox SET status = 'queued', updated_at = ?
            WHERE owner_id = ? AND agent_id = ? AND status = 'thinking' AND updated_at <= ?
              AND attempts < ?`,
         )
-        .run(input.now, input.ownerId, input.agentId, input.stalledBefore, maxAttempts).changes;
+        .run(
+          input.now,
+          input.ownerId,
+          input.agentId,
+          input.stalledBefore,
+          maxAttempts,
+        ).changes;
       return failed + retried;
     })();
   }
@@ -245,7 +290,8 @@ export class SqliteThinkInboxOperations {
         `UPDATE think_inbox SET status = 'expired', reason_code = 'expired', updated_at = ?
          WHERE owner_id = ? AND agent_id = ? AND status = 'queued' AND created_at <= ?`,
       )
-      .run(input.now, input.ownerId, input.agentId, input.createdBefore).changes;
+      .run(input.now, input.ownerId, input.agentId, input.createdBefore)
+      .changes;
   }
 
   private usage(input: Input<"usage">): ThinkInboxUsage {
@@ -260,6 +306,14 @@ export class SqliteThinkInboxOperations {
           )
           .get(input.ownerId, input.agentId) as { count: number }
       ).count;
+      const thinking = (
+        this.database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM think_inbox
+             WHERE owner_id = ? AND agent_id = ? AND status = 'thinking'`,
+          )
+          .get(input.ownerId, input.agentId) as { count: number }
+      ).count;
       const byStatus: Record<string, number> = {};
       let acceptedToday = 0;
       for (const row of this.database
@@ -267,7 +321,10 @@ export class SqliteThinkInboxOperations {
           `SELECT status, COUNT(*) AS count FROM think_inbox
            WHERE owner_id = ? AND agent_id = ? AND day = ? GROUP BY status ORDER BY status`,
         )
-        .all(input.ownerId, input.agentId, input.day) as { status: string; count: number }[]) {
+        .all(input.ownerId, input.agentId, input.day) as {
+        status: string;
+        count: number;
+      }[]) {
         byStatus[row.status] = row.count;
         acceptedToday += row.count;
       }
@@ -285,6 +342,7 @@ export class SqliteThinkInboxOperations {
       return Object.freeze({
         day: input.day,
         queued,
+        thinking,
         acceptedToday,
         byStatus: Object.freeze(byStatus),
         declinedToday: Object.freeze(declinedToday),
@@ -313,6 +371,17 @@ export class SqliteThinkInboxOperations {
     );
   }
 
+  private summaryReferenced(input: Input<"summaryReferenced">): boolean {
+    const summaryRef = this.text(input.summaryRef, 256, "summary reference");
+    return (
+      this.database
+        .prepare(
+          "SELECT 1 FROM think_inbox WHERE owner_id = ? AND agent_id = ? AND summary_ref = ?",
+        )
+        .get(input.ownerId, input.agentId, summaryRef) !== undefined
+    );
+  }
+
   private clearSummary(input: Input<"clearSummary">): boolean {
     const id = this.text(input.id, 128, "id");
     return (
@@ -322,7 +391,8 @@ export class SqliteThinkInboxOperations {
            WHERE owner_id = ? AND agent_id = ? AND id = ? AND summary_ref = ?
              AND status IN (${SETTLED.map(() => "?").join(", ")})`,
         )
-        .run(input.ownerId, input.agentId, id, input.summaryRef, ...SETTLED).changes > 0
+        .run(input.ownerId, input.agentId, id, input.summaryRef, ...SETTLED)
+        .changes > 0
     );
   }
 }

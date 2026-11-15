@@ -1061,6 +1061,7 @@ export class SqliteDurableAdapters {
       expireQueued: (input) => this.context.write("thinkInbox.expireQueued", input),
       usage: (input) => this.context.write("thinkInbox.usage", input),
       settledSummaries: (input) => this.context.write("thinkInbox.settledSummaries", input),
+      summaryReferenced: (input) => this.context.write("thinkInbox.summaryReferenced", input),
       clearSummary: (input) => this.context.write("thinkInbox.clearSummary", input),
     });
   }

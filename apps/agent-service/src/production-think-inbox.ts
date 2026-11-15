@@ -47,7 +47,11 @@ export interface ThinkInboxOptions {
 }
 
 export type ThinkSubmitResult =
-  | { readonly accepted: true; readonly entryId: string; readonly duplicate: boolean }
+  | {
+      readonly accepted: true;
+      readonly entryId: string;
+      readonly duplicate: boolean;
+    }
   | { readonly accepted: false; readonly reason: string };
 
 export function localDay(instant: string, timeZone: string): string {
@@ -57,18 +61,26 @@ export function localDay(instant: string, timeZone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date(instant));
-  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const pick = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
   return `${pick("year")}-${pick("month")}-${pick("day")}`;
 }
 
 function clip(text: string, maximum: number): string {
   const characters = [...text.replace(/\s+/gu, " ").trim()];
-  return characters.length <= maximum ? characters.join("") : characters.slice(0, maximum).join("");
+  return characters.length <= maximum
+    ? characters.join("")
+    : characters.slice(0, maximum).join("");
 }
 
-function entryKey(kind: string, ref: string, version: string): string {
+function entryKey(
+  scope: Scope,
+  kind: string,
+  ref: string,
+  version: string,
+): string {
   return createHash("sha256")
-    .update(JSON.stringify([kind, ref, version]))
+    .update(JSON.stringify([scope.ownerId, scope.agentId, kind, ref, version]))
     .digest("hex")
     .slice(0, 32);
 }
@@ -77,10 +89,12 @@ export class ThinkSourceRegistry {
   readonly #sources = new Map<string, ThinkSource>();
 
   register(source: ThinkSource): void {
-    if (!KIND.test(source.kind)) throw new RangeError("Think source kind is invalid");
+    if (!KIND.test(source.kind))
+      throw new RangeError("Think source kind is invalid");
     if (source.describe.trim().length === 0)
       throw new RangeError("Think source needs a description");
-    if (this.#sources.has(source.kind)) throw new RangeError("Think source is already registered");
+    if (this.#sources.has(source.kind))
+      throw new RangeError("Think source is already registered");
     this.#sources.set(source.kind, Object.freeze({ ...source }));
   }
 
@@ -89,7 +103,9 @@ export class ThinkSourceRegistry {
   }
 
   list(): readonly ThinkSource[] {
-    return Object.freeze([...this.#sources.values()].sort((a, b) => (a.kind < b.kind ? -1 : 1)));
+    return Object.freeze(
+      [...this.#sources.values()].sort((a, b) => (a.kind < b.kind ? -1 : 1)),
+    );
   }
 }
 
@@ -108,7 +124,8 @@ export class ProductionThinkInbox {
       queueLimit: limits.queueLimit ?? THINK_QUEUE_LIMIT,
       dailyLimit: limits.dailyLimit ?? THINK_DAILY_LIMIT,
       expiresAfterHours: limits.expiresAfterHours ?? THINK_EXPIRES_AFTER_HOURS,
-      stalledAfterMinutes: limits.stalledAfterMinutes ?? THINK_STALLED_AFTER_MINUTES,
+      stalledAfterMinutes:
+        limits.stalledAfterMinutes ?? THINK_STALLED_AFTER_MINUTES,
       maxAttempts: limits.maxAttempts ?? THINK_MAX_ATTEMPTS,
       summaryCharacters: limits.summaryCharacters ?? THINK_SUMMARY_CHARACTERS,
     };
@@ -121,30 +138,55 @@ export class ProductionThinkInbox {
     readonly summary: string;
     readonly externalContent?: boolean;
   }): Promise<ThinkSubmitResult> {
+    if (
+      typeof input.sourceKind !== "string" ||
+      typeof input.sourceRef !== "string" ||
+      typeof input.sourceVersion !== "string" ||
+      typeof input.summary !== "string" ||
+      (input.externalContent !== undefined &&
+        typeof input.externalContent !== "boolean")
+    )
+      return { accepted: false, reason: "THINK_INPUT_INVALID" };
     const source = this.sources.get(input.sourceKind);
-    if (!source) return { accepted: false, reason: "THINK_SOURCE_UNREGISTERED" };
+    if (!source)
+      return { accepted: false, reason: "THINK_SOURCE_UNREGISTERED" };
     if (input.sourceRef.length < 1 || input.sourceRef.length > 256)
       return { accepted: false, reason: "THINK_SOURCE_REF_INVALID" };
     if (input.sourceVersion.length > 256)
       return { accepted: false, reason: "THINK_SOURCE_VERSION_INVALID" };
     const summary = clip(input.summary, this.limits.summaryCharacters);
-    if (summary.length === 0) return { accepted: false, reason: "THINK_SUMMARY_EMPTY" };
+    if (summary.length === 0)
+      return { accepted: false, reason: "THINK_SUMMARY_EMPTY" };
     const now = this.#options.clock.now();
-    const key = entryKey(input.sourceKind, input.sourceRef, input.sourceVersion);
+    const key = entryKey(
+      this.#options.scope,
+      input.sourceKind,
+      input.sourceRef,
+      input.sourceVersion,
+    );
     const id = `think:${key}`;
     const summaryRef = `think-summary:${key}`;
-    const known = await this.#options.payloads.get(summaryRef as never);
-    if (!known) {
-      await this.#options.payloads.put(
-        await this.#options.protector.protect({
-          ...this.#options.scope,
-          ref: summaryRef,
-          contentType: "text/plain",
-          dataClassification: classificationWithIdentifiers(summary, "private"),
-          plaintext: new TextEncoder().encode(summary),
-          createdAt: now,
-        }),
-      );
+    let wrote = false;
+    if (!(await this.#options.payloads.get(summaryRef as never))) {
+      try {
+        await this.#options.payloads.put(
+          await this.#options.protector.protect({
+            ...this.#options.scope,
+            ref: summaryRef,
+            contentType: "text/plain",
+            dataClassification: classificationWithIdentifiers(
+              summary,
+              "private",
+            ),
+            plaintext: new TextEncoder().encode(summary),
+            createdAt: now,
+          }),
+        );
+        wrote = true;
+      } catch (error) {
+        if (!(await this.#options.payloads.get(summaryRef as never)))
+          throw error;
+      }
     }
     const outcome: ThinkEnqueueOutcome = await this.#options.store.enqueue({
       ...this.#options.scope,
@@ -159,28 +201,50 @@ export class ProductionThinkInbox {
       queueLimit: this.limits.queueLimit,
       dailyLimit: this.limits.dailyLimit,
     });
-    if (outcome.outcome === "queued") return { accepted: true, entryId: id, duplicate: false };
-    if (outcome.outcome === "duplicate") return { accepted: true, entryId: id, duplicate: true };
-    if (!known) await this.#options.payloads.delete(summaryRef as never).catch(() => false);
+    if (outcome.outcome === "queued")
+      return { accepted: true, entryId: id, duplicate: false };
+    if (wrote) await this.#discardUnreferenced(summaryRef);
+    if (outcome.outcome === "duplicate")
+      return { accepted: true, entryId: id, duplicate: true };
     return {
       accepted: false,
-      reason: outcome.outcome === "queue_full" ? "THINK_QUEUE_FULL" : "THINK_DAILY_LIMIT",
+      reason:
+        outcome.outcome === "queue_full"
+          ? "THINK_QUEUE_FULL"
+          : "THINK_DAILY_LIMIT",
     };
   }
 
-  async maintain(): Promise<{ readonly recovered: number; readonly expired: number }> {
+  async #discardUnreferenced(summaryRef: string): Promise<void> {
+    const referenced = await this.#options.store
+      .summaryReferenced({ ...this.#options.scope, summaryRef })
+      .catch(() => true);
+    if (!referenced)
+      await this.#options.payloads
+        .delete(summaryRef as never)
+        .catch(() => false);
+  }
+
+  async maintain(): Promise<{
+    readonly recovered: number;
+    readonly expired: number;
+  }> {
     const now = this.#options.clock.now();
     const limits = this.limits;
     const at = Date.parse(now);
     const recovered = await this.#options.store.recoverStalled({
       ...this.#options.scope,
-      stalledBefore: new Date(at - limits.stalledAfterMinutes * 60_000).toISOString(),
+      stalledBefore: new Date(
+        at - limits.stalledAfterMinutes * 60_000,
+      ).toISOString(),
       maxAttempts: limits.maxAttempts,
       now,
     });
     const expired = await this.#options.store.expireQueued({
       ...this.#options.scope,
-      createdBefore: new Date(at - limits.expiresAfterHours * 3_600_000).toISOString(),
+      createdBefore: new Date(
+        at - limits.expiresAfterHours * 3_600_000,
+      ).toISOString(),
       now,
     });
     const settled = await this.#options.store.settledSummaries({

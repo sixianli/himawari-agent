@@ -32,6 +32,7 @@ export type ThinkEnqueueOutcome =
 export interface ThinkInboxUsage {
   readonly day: string;
   readonly queued: number;
+  readonly thinking: number;
   readonly acceptedToday: number;
   readonly byStatus: Readonly<Record<string, number>>;
   readonly declinedToday: Readonly<Record<string, number>>;
@@ -77,6 +78,9 @@ export interface ThinkInboxStorePort {
   settledSummaries(
     input: OwnerRuleScope & { readonly limit: number },
   ): Promise<readonly { readonly id: string; readonly summaryRef: string }[]>;
+  summaryReferenced(
+    input: OwnerRuleScope & { readonly summaryRef: string },
+  ): Promise<boolean>;
   clearSummary(
     input: OwnerRuleScope & { readonly id: string; readonly summaryRef: string },
   ): Promise<boolean>;
