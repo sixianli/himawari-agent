@@ -90,6 +90,7 @@ export const ALLOWED_EXTERNAL_EGRESS_FILES = Object.freeze(
       ["AI Gateway decision request"],
     ],
     ["packages/platform-node/src/owner-intent-decision.ts", ["AI Gateway decision request"]],
+    ["packages/platform-node/src/think-worth-decision.ts", ["AI Gateway decision request"]],
   ]),
 );
 
@@ -105,6 +106,7 @@ export const REQUIRED_EXTERNAL_REDACTION_CALLS = Object.freeze(
     ["packages/platform-node/src/delivery-timing-decision.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/memory-import-duplicate-decision.ts", ["redactForExternalText"]],
     ["packages/platform-node/src/owner-intent-decision.ts", ["redactForExternalText"]],
+    ["packages/platform-node/src/think-worth-decision.ts", ["redactForExternalText"]],
     [
       "packages/platform-node/src/exa-public-search.ts",
       ["redactForExternalText", "redactForExternalUrl"],
