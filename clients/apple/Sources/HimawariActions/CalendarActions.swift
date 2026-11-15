@@ -17,12 +17,7 @@ public final class CalendarActions: DeviceActionHandler, @unchecked Sendable {
 
     public func snapshot(_ delivery: DeviceActionDelivery) async throws -> JSONObject? {
         guard delivery.action != "calendar.create" else { return [:] }
-        return try event(delivery).map { event in
-            var before = Self.describe(event)
-            if before["location"] == nil { before["location"] = .string("") }
-            if before["notes"] == nil { before["notes"] = .string("") }
-            return before
-        }
+        return try event(delivery).map(Self.describe)
     }
 
     public func perform(_ delivery: DeviceActionDelivery) async throws -> JSONObject {
