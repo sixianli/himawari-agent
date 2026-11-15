@@ -107,6 +107,7 @@ struct DataExportPage: View {
         .task(id: result.downloadPath) { await fetchArchive(result) }
         .fileMover(isPresented: $saving, file: archive) { outcome in
             guard case .success = outcome else { return }
+            if let moved = archive { try? FileManager.default.removeItem(at: moved.deletingLastPathComponent()) }
             archive = nil
             Task { await fetchArchive(result) }
         }

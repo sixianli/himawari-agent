@@ -119,7 +119,13 @@ public final class DataExportSession {
 
     public func archiveFile(named fileName: String) async throws -> URL {
         guard let exportId else { throw ManageGatewayError.malformedResponse }
-        let data = try await gateway.downloadArchive(exportId: exportId)
+        let data: Data
+        do {
+            data = try await gateway.downloadArchive(exportId: exportId)
+        } catch ManageGatewayError.rejected(404, _, _) {
+            if self.exportId == exportId { stage = .expired }
+            throw ManageGatewayError.rejected(status: 404, code: nil)
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent(URL(fileURLWithPath: fileName).lastPathComponent)

@@ -28,6 +28,10 @@ private actor ExportTransport: DeviceTransport {
         }
     }
 
+    nonisolated func download(path: String, query: [URLQueryItem]) async throws -> DeviceResponse {
+        DeviceResponse(status: 404, body: Data(#"{"error":{"code":"not_found"}}"#.utf8))
+    }
+
     private func record(_ body: [String: JSONValue]) {
         sent.append(body)
     }
@@ -100,6 +104,19 @@ final class DataExportSessionTests: XCTestCase {
         let export = session(transport)
         await export.start(reason: "导出")
         XCTAssertEqual(export.stage, .idle)
+    }
+
+    func testDownloadingAnExpiredArchiveTurnsTheReadyPageIntoExpired() async throws {
+        let transport = ExportTransport(statuses: [status("ready", result: readyResult)])
+        let export = session(transport)
+        await export.start(reason: "导出")
+        guard case .ready = export.stage else { return XCTFail("expected ready") }
+        do {
+            _ = try await export.archiveFile(named: "a.zip")
+            XCTFail("expected the download to fail")
+        } catch {
+            XCTAssertEqual(export.stage, .expired)
+        }
     }
 }
 
