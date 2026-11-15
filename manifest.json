@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "pr": 542,
+  "batch": "capability-reactivate",
+  "files": [
+    {
+      "path": "20-himawari-self-1-capabilities-dark.png",
+      "bytes": 237321,
+      "sha256": "3d9037743a8de50096daed3e7d478f6d61088abeec990d74a1b5611ccdd4680f"
+    },
+    {
+      "path": "20-himawari-self-1-capabilities-light.png",
+      "bytes": 339786,
+      "sha256": "2646ae582819a6d8f376fceee9a2e23e6efde16cb4e94b29446b6f0e616153f5"
+    },
+    {
+      "path": "20-himawari-self-1b-capabilities-reactivated-dark.png",
+      "bytes": 196918,
+      "sha256": "148093b7d6a176e03cff84e932b059563d913ab8d88f872dd8c7cbe8abbfd038"
+    },
+    {
+      "path": "20-himawari-self-1b-capabilities-reactivated-light.png",
+      "bytes": 292514,
+      "sha256": "c1b1cb6af9ca8565a1670fac2c841681da9d0bfa7971fc7485a620bc550a5d12"
+    },
+    {
+      "path": "20-himawari-self-1c-capabilities-reactivate-failed-dark.png",
+      "bytes": 247852,
+      "sha256": "61805d1e0ebe82a9e0cc7ed6ee0fdc3f8e1cfb96e966bcd0c0f4e4cf012ca977"
+    },
+    {
+      "path": "20-himawari-self-1c-capabilities-reactivate-failed-light.png",
+      "bytes": 353576,
+      "sha256": "cb71e7c70029196451020194481081a4a551e2ed3dc906fcf065b53edcfe6272"
+    }
+  ]
+}
