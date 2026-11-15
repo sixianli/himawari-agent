@@ -1,0 +1,41 @@
+name: ARM integration trial
+on:
+  pull_request:
+    paths:
+      - .github/workflows/arm-integration-trial.yml
+      - scripts/ci/trial/**
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  trial:
+    runs-on: ci-arm
+    timeout-minutes: 90
+    env:
+      CI_NODE: 22.22.3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: install tools
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
+      - name: install dependencies
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: build linux-arm64 and run integration 3 of 3
+        run: |
+          nproc; free -g; uptime
+          PATH="$PWD/.ci-output/tools/bin:$PATH" .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial 3 3
+      - name: failed test names
+        if: always()
+        run: |
+          uptime
+          f=.ci-output/trial/tests/integration.json
+          if [ -f "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
+          ls .ci-output/trial/build || true
+          tail -n 40 .ci-output/trial/build/*.log 2>/dev/null | tail -n 80 || true
