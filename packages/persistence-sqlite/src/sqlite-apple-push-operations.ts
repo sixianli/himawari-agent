@@ -653,6 +653,8 @@ export class SqliteApplePushOperations {
          FROM runs
          WHERE owner_id = ? AND agent_id = ? AND thread_id IS NOT NULL
            AND status NOT IN ('completed', 'failed', 'cancelled')
+           AND NOT EXISTS (SELECT 1 FROM threads hidden
+             WHERE hidden.id = runs.thread_id AND hidden.origin = 'think')
            AND created_at > ? AND created_at <= ?
          ORDER BY created_at, id LIMIT ?`,
       )

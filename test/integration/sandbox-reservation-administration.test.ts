@@ -220,8 +220,13 @@ async function fixture(
         .transaction(() => {
           for (const table of tables) {
             const rows = source.prepare(`SELECT * FROM ${table}`).all() as Row[];
+            const legacyColumns = new Set(
+              (legacy.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+                ({ name }) => name,
+              ),
+            );
             for (const row of rows) {
-              const columns = Object.keys(row);
+              const columns = Object.keys(row).filter((column) => legacyColumns.has(column));
               legacy
                 .prepare(`INSERT INTO ${table} (${columns.join(",")})
               VALUES (${columns.map(() => "?").join(",")})`)
@@ -751,7 +756,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const migrated = snapshot(f);
     for (const [table, rows] of Object.entries(before)) {
       if (table !== "schema_migration_ledger" && table !== "schema_metadata")
-        expect(migrated[table]).toEqual(rows);
+        expect(migrated[table]).toEqual(rows.map((row) => expect.objectContaining(row)));
     }
     withDatabase(f, (database) => {
       expect(

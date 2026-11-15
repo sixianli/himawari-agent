@@ -248,7 +248,22 @@ describe("think runner", () => {
         db.close();
       }
     };
-    return { think, list, prompts, thread, run, cancelled, failures, stored, proposalsAtArchive };
+    return {
+      think,
+      list,
+      prompts,
+      thread,
+      run,
+      cancelled,
+      failures,
+      stored,
+      proposalsAtArchive,
+      repository,
+      service,
+      payloads,
+      protector,
+      file,
+    };
   }
 
   it("starts a run marked as think, then turns the answer into a waiting proposal and archives the thread", async () => {
@@ -388,5 +403,98 @@ describe("think runner", () => {
     expect(row?.origin).toBe("external_content");
     expect(row?.sourceRef?.length).toBeLessThanOrEqual(256);
     expect(row?.sourceVersion?.length).toBeLessThanOrEqual(128);
+  });
+
+  it("keeps the thinking thread out of every list, feed and summary while a look-alike owner thread stays", async () => {
+    const { think, repository, service, payloads, protector, file } = await fixture({
+      status: "completed",
+      text: JSON.stringify({ action: "none", reason: "只是通知" }),
+    });
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "nothing_to_propose" });
+    const lookAlike = "thread:think:client-chosen" as never;
+    await payloads.put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "owner-look-alike-text",
+        contentType: "text/plain",
+        dataClassification: "private",
+        plaintext: new TextEncoder().encode("帮我看看明天的安排"),
+        createdAt: START,
+      }),
+    );
+    const created = await service.create({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: lookAlike,
+      idempotencyKey: "owner-look-alike",
+      resultRef: "owner-look-alike-text" as never,
+    });
+    await service.admitOwnerMessage({
+      triggerSource: "external_event",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: lookAlike,
+      expectedThreadRevision: created.thread.revision,
+      sessionId: "session-look-alike" as never,
+      idempotencyKey: "owner-look-alike-message",
+      contentRef: "owner-look-alike-text" as never,
+      sourceProofRef: "proof-look-alike",
+      dataClassification: "private",
+      resultRef: "owner-look-alike-text" as never,
+    });
+    const db = openQualifiedDatabase(file);
+    const origins = db.prepare("SELECT id, origin FROM threads ORDER BY id").all() as {
+      id: string;
+      origin: string;
+    }[];
+    db.close();
+    const thinkId = origins.find((row) => row.origin === "think")?.id;
+    expect(thinkId?.startsWith("thread:think:")).toBe(true);
+    expect(origins.find((row) => row.id === lookAlike)?.origin).toBe("owner");
+    const threads = repository.threadRepository();
+    const listed = await threads.list({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      statuses: ["active", "archived"],
+      pinnedOnly: false,
+      afterThreadId: null,
+      limit: 50,
+    } as never);
+    expect(listed.map((item) => item.id)).toEqual([lookAlike]);
+    expect((await threads.read(OWNER_ID, AGENT_ID, thinkId as never))?.origin).toBe("think");
+    const events = await threads.listGatewayEvents(OWNER_ID, AGENT_ID, null, 100);
+    expect(events.length).toBeGreaterThan(0);
+    expect(new Set(events.map((event) => event.threadId))).toEqual(new Set([lookAlike]));
+    const sources = await repository
+      .threadSearchProjectionSource()
+      .pending({ ownerId: OWNER_ID, agentId: AGENT_ID, projectionVersion: "v-test", limit: 50 });
+    expect(new Set(sources.map((source) => source.threadId))).toEqual(new Set([lookAlike]));
+    const unattended = await repository
+      .runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY)
+      .listUnattendedRuns?.({ failedSince: START, limit: 50 });
+    expect(unattended?.map((item) => item.threadId)).toEqual([lookAlike]);
+    const activity = await repository.applePush().listActivityRuns({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      createdAfter: "2000-01-01T00:00:00.000Z",
+      createdBefore: "2100-01-01T00:00:00.000Z",
+      limit: 50,
+    });
+    expect(activity.map((item) => item.threadId)).toEqual([lookAlike]);
+    const episodes = await repository
+      .memoryEpisodes()
+      .listUnsummarized({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 50 });
+    expect(episodes.map((item) => item.threadId)).toEqual([lookAlike]);
+    const finish = openQualifiedDatabase(file);
+    finish.prepare("UPDATE runs SET status = 'completed'").run();
+    finish.close();
+    const finished = await repository.webPush().listFinishedRuns({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      afterCursor: "2000-01-01T00:00:00.000Z",
+      limit: 50,
+    });
+    expect(finished.map((item) => item.threadId)).toEqual([lookAlike]);
   });
 });
