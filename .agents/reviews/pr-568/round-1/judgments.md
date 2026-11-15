@@ -1,0 +1,6 @@
+# PR 568 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1、高：既有 tooling 检查会被这次改动弄红，PR 没有同步修改测试。本轮实跑 vitest 复现失败（第 31 行 toContain keychain-access-groups）；手表不传 accessGroup，故改测试为手表目标不要求钥匙串组，保留 keychain-only 不得含 application-groups；已改，4 项测试通过；触发：CI 的 tooling 作业跑 test/tooling/apple-entitlement-variants.test.ts；后果：新增的手表/小组件模板进入匹配，完整文件缺 keychain-access-groups，测试变红，PR 合不了
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2、中：免费签名说明没让用户给手表和小组件目标选 Team，按文档操作仍可能签不过。pbxproj 1035/1063/1091/1119 的 DEVELOPMENT_TEAM 为空，README:42 只列三个目标；已把两个目标补进 README 步骤；触发：免费账号只照 README 选三个目标的 Team；后果：手表和小组件目标签名时被 Xcode 要求选 Team，现场补选即可，只是文档不全；判低理由：Xcode 在 Run 时会明确报错并让选 Team，不丢数据不误导到破坏性操作，只是步骤不全
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3、中：README 的“清空 HIMAWARI_APP_GROUP”对手表和小组件目标无效。pbxproj 原 1037/1065/1093/1122 目标级覆盖值与工程级同值；已删除这四行，仅留工程级 745/762，默认付费构建取值不变；测试新增断言该设置只有工程级两处；触发：免费账号按 README 清空工程级 HIMAWARI_APP_GROUP；后果：手表和小组件目标级仍把 group.win.siyi.himawari 写进 Info.plist，清空对它们不生效，文档说法与代码不符
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4、低：README 把 Bundle ID 的改法写成“同一个前缀”，且工程里实际有 5 处需要同步。Watch/Info.plist:35-36 的 WKCompanionAppBundleIdentifier 硬编码；已把 README 改成精确映射并提示 Debug/Release 各一份；触发：用户按 README 改 Bundle Identifier；后果：只说同一个前缀，可能漏改 companion 或 Debug/Release 配置，装机时 Xcode 会报配对不上；判低理由：模型自己给低；文字不够精确但装机失败有明确提示

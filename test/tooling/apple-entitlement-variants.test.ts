@@ -28,9 +28,11 @@ it("has an entitlements file for both signing variants, the keychain-only one wi
     const full = readFileSync(path.join(app, resolve(template, "")), "utf8");
     const keychainOnly = readFileSync(path.join(app, resolve(template, ".keychain-only")), "utf8");
     expect(full).toContain("com.apple.security.application-groups");
-    expect(full).toContain("keychain-access-groups");
     expect(keychainOnly).not.toContain("application-groups");
-    expect(keychainOnly).toContain("keychain-access-groups");
+    if (!/^(Watch|WatchWidgets)\//u.test(template)) {
+      expect(full).toContain("keychain-access-groups");
+      expect(keychainOnly).toContain("keychain-access-groups");
+    }
   }
 });
 
@@ -40,4 +42,9 @@ it("defaults the signing variant to the full App Group build in every project-le
   );
   expect(defaults.length).toBe(2);
   expect(new Set(defaults)).toEqual(new Set(['""']));
+});
+
+it("leaves HIMAWARI_APP_GROUP only at project level so clearing it reaches every target", () => {
+  const all = [...project.matchAll(/HIMAWARI_APP_GROUP = ([^;]*);/gu)];
+  expect(all.length).toBe(2);
 });
