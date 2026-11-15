@@ -93,8 +93,9 @@ def configuration_text(plan):
     return Path(plan['unitPath']).read_text() + '\n' + Path(plan['config']).read_text(errors='replace')
 
 
-def database_releases(plan):
+def database_references(plan):
     pattern = re.compile(re.escape(plan['releasesRoot']) + r'/([A-Za-z0-9._-]+)')
+    needles = [plan['releasesRoot'] + '/'] + list(plan.get('targetPaths', []))
     found = {}
     database = sqlite3.connect('file:' + plan['database'] + '?mode=ro', uri=True)
     try:
@@ -104,9 +105,9 @@ def database_releases(plan):
             if not columns:
                 continue
             values = ['cast("' + column.replace('"', '""') + '" as text)' for column in columns]
-            query = 'select ' + ', '.join(values) + ' from "' + table.replace('"', '""') + '" where ' + ' or '.join('instr(' + value + ', ?) > 0' for value in values)
+            query = 'select ' + ', '.join(values) + ' from "' + table.replace('"', '""') + '" where ' + ' or '.join('instr(' + value + ', ?) > 0' for value in values for needle in needles)
             try:
-                rows = database.execute(query, [plan['releasesRoot'] + '/'] * len(values)).fetchall()
+                rows = database.execute(query, [needle for value in values for needle in needles]).fetchall()
             except sqlite3.OperationalError:
                 found.setdefault('unreadableTables', []).append(table)
                 continue
@@ -114,6 +115,9 @@ def database_releases(plan):
                 for column, value in zip(columns, row):
                     for match in pattern.finditer(value or ''):
                         found.setdefault(plan['releasesRoot'] + '/' + match.group(1), table + '.' + column)
+                    for path in plan.get('targetPaths', []):
+                        if mentions(value or '', path):
+                            found.setdefault(path, table + '.' + column)
     finally:
         database.close()
     return found
@@ -175,11 +179,16 @@ def cleanup(plan, apply, references, stamp):
     archive = str(Path(plan['archiveRoot']) / stamp)
     result = {'serving': current, 'deleted': [], 'trimmed': [], 'renamed': [], 'kept': [], 'archived': []}
 
+    named_by_database = database_references(plan)
+    result['unreadableTables'] = named_by_database.pop('unreadableTables', [])
+
     def in_use(path):
         if mentions(configuration, path):
             return 'named-by-unit-or-config'
         if any(reference == path or reference.startswith(path + '/') or mentions(reference, path) for reference in references):
             return 'used-by-a-process'
+        if path in named_by_database:
+            return 'named-by-database:' + named_by_database[path]
         return None
 
     def remove(path, reason):
@@ -194,8 +203,6 @@ def cleanup(plan, apply, references, stamp):
     def keep(path, reason):
         result['kept'].append({'path': path, 'reason': reason})
 
-    named_by_database = database_releases(plan)
-    result['unreadableTables'] = named_by_database.pop('unreadableTables', [])
     for path in children(plan['releasesRoot']):
         if path in (current['prefix'], current['rollbackPrefix']):
             keep(path, 'serving' if path == current['prefix'] else 'rollback-target')
@@ -203,8 +210,6 @@ def cleanup(plan, apply, references, stamp):
             keep(path, 'symbolic-link')
         elif in_use(path):
             keep(path, in_use(path))
-        elif path in named_by_database:
-            keep(path, 'named-by-database:' + named_by_database[path])
         else:
             remove(path, 'old-release')
 
@@ -259,7 +264,8 @@ def cleanup(plan, apply, references, stamp):
     for path in children(preserved_root)[:-plan.get('keepFailedAcceptance', 2)]:
         remove(path, 'old-failed-acceptance')
 
-    if os.path.isdir(plan['currentOperations']) and plan['currentOperations'] != current['operations'] and not in_use(plan['currentOperations']):
+    if os.path.isdir(plan['currentOperations']) and not os.path.islink(plan['currentOperations']) and plan['currentOperations'] != current['operations'] and not in_use(plan['currentOperations']):
+        result['archived'] += archive_small_files(plan['currentOperations'], failed_attempt_destination(plan, plan['currentOperations'], stamp), plan['smallFileBytes'], apply)
         remove(plan['currentOperations'], 'failed-attempt-operations')
     for path in children(plan['operationsRoot']):
         if '.attempt' in Path(path).name and not in_use(path):
@@ -290,7 +296,7 @@ def cleanup(plan, apply, references, stamp):
                     result['trimmed'].append({'path': filename, 'bytes': info.st_blocks * 512})
                     if apply:
                         os.unlink(filename)
-        if path == plan['currentEvidence']:
+        if path == plan['currentEvidence'] and not in_use(path):
             target = path + '.attempt-failed-' + stamp
             result['renamed'].append({'from': path, 'to': target})
             if apply:
@@ -313,7 +319,7 @@ def cleanup(plan, apply, references, stamp):
             else:
                 remove(path, 'old-state-copy')
 
-    clear_target_paths(plan, current, result, named_by_database, in_use, remove, keep, apply, stamp)
+    clear_target_paths(plan, current, result, in_use, remove, keep, apply, stamp)
     result['freedBytes'] = sum(item['bytes'] for item in result['deleted'] + result['trimmed'])
     return result
 
@@ -322,7 +328,11 @@ def valid_target_path(path, parents):
     return os.path.isabs(path) and os.path.normpath(path) == path and str(Path(path).parent) in parents and Path(path).name not in ('', '.', '..')
 
 
-def clear_target_paths(plan, current, result, named_by_database, in_use, remove, keep, apply, stamp):
+def failed_attempt_destination(plan, path, stamp):
+    return str(Path(plan['archiveRoot']) / 'failed-attempts' / stamp) + str(Path(path).parent)
+
+
+def clear_target_paths(plan, current, result, in_use, remove, keep, apply, stamp):
     parents = set(plan['targetParents'])
     if any(not os.path.isabs(parent) or os.path.normpath(parent) != parent or parent == '/' for parent in parents):
         fail('CLEANUP_TARGET_PARENT_INVALID')
@@ -340,13 +350,12 @@ def clear_target_paths(plan, current, result, named_by_database, in_use, remove,
         if os.path.islink(path) or not os.path.isdir(path):
             reason = 'not-a-directory'
         else:
-            reason = protected.get(path) or in_use(path) or ('named-by-database:' + named_by_database[path] if path in named_by_database else None)
+            reason = protected.get(path) or in_use(path)
         if reason:
             keep(path, reason)
             result['targetPathsLeft'].append({'path': path, 'reason': reason})
             continue
-        destination = str(failed_root / stamp) + str(Path(path).parent)
-        result['archived'] += archive_small_files(path, destination, plan['smallFileBytes'], apply)
+        result['archived'] += archive_small_files(path, failed_attempt_destination(plan, path, stamp), plan['smallFileBytes'], apply)
         remove(path, 'failed-attempt-target-path')
     attempts = children(failed_root)
     total = 0

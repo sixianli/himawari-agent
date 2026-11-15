@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -424,6 +425,7 @@ class TargetPathClearingTest(CleanupCase):
         self.assertEqual(result['targetPathsLeft'], [])
         attempt = self.tree.lib / 'release-cleanup/failed-attempts/20261030T010000Z'
         self.assertTrue((attempt / str(qualification).lstrip('/') / 'publication.json').exists())
+        self.assertTrue((attempt / str(self.failed['operations']).lstrip('/') / 'run-01/s6-report.json').exists())
 
     def test_plan_mode_changes_nothing(self):
         qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
@@ -460,6 +462,29 @@ class TargetPathClearingTest(CleanupCase):
         self.assertTrue(self.failed['prefix'].exists())
         self.assertIn({'path': str(self.failed['prefix']), 'reason': 'named-by-database:runs.detail'}, result['targetPathsLeft'])
 
+    def test_paths_other_than_releases_named_by_the_database_stay_and_are_reported(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        self.tree.file(self.failed['operations'] / 'run-01/s6-report.json')
+        self.tree.record('fingerprints in ' + str(self.failed['operations']) + '/runtime-fingerprints.json')
+        self.tree.record('published to ' + str(qualification))
+        result = self.run_cleanup()
+        self.assertTrue((qualification / 'publication.json').exists() and (self.failed['operations'] / 'run-01/s6-report.json').exists())
+        left = {item['path']: item['reason'] for item in result['targetPathsLeft']}
+        self.assertEqual((left[str(qualification)], left[str(self.failed['operations'])]), ('named-by-database:runs.detail', 'named-by-database:runs.detail'))
+
+    def test_a_database_row_naming_a_longer_sibling_path_does_not_keep_a_target_path(self):
+        qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
+        self.tree.file(qualification / 'publication.json')
+        self.tree.record('published to ' + str(qualification) + '-older')
+        result = self.run_cleanup()
+        self.assertFalse(qualification.exists())
+        self.assertEqual(result['targetPathsLeft'], [])
+
+    def test_the_paths_of_a_passed_deploy_are_left_only_as_the_serving_release(self):
+        result = self.run_cleanup(current=self.serving)
+        self.assertEqual({item['reason'] for item in result['targetPathsLeft']}, {'serving'})
+
     def test_a_symbolic_link_stays_and_is_not_followed(self):
         elsewhere = self.tree.file(self.tree.root / 'elsewhere/keep.json')
         qualification = Path(self.failed['binding']['service']['newQualificationEvidenceRoot'])
@@ -488,6 +513,7 @@ class TargetPathClearingTest(CleanupCase):
         root = self.tree.lib / 'release-cleanup/failed-attempts'
         self.tree.file(root / '20261001T000000Z/x/report.json', 3 * MEBIBYTE)
         self.tree.file(root / '20261002T000000Z/x/report.json', 3 * MEBIBYTE)
+        shutil.rmtree(self.failed['operations'])
         self.run_cleanup(failedAttemptBytes=MEBIBYTE)
         self.assertEqual(sorted(os.listdir(root)), ['20261002T000000Z'])
 

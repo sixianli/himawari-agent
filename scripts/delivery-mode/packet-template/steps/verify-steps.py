@@ -320,6 +320,31 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
             os.chmod(cache_root, 0o700)
     case('an unsafe cache directory never blocks a full transport but refuses to fill from it', unsafe_cache_directory)
 
+    def unusable_cache_directory():
+        blocker = root / 'cache-blocker'
+        blocker.write_bytes(b'')
+        result = transport.receive_archive(io.BytesIO(good), upload_parent / 'cache-unusable', freeze, uid, gid, common, blocker / 'cache', spec())
+        assert result['passed'] and 'CACHE_DIRECTORY_UNUSABLE' in result['cacheStoreError'], result
+        rejects('__PKT_LABEL_UPPER___TRANSPORT_CACHE_DIRECTORY_UNUSABLE', lambda: transport.receive_archive(io.BytesIO(without(material)), upload_parent / 'cache-unusable-fill', freeze, uid, gid, common, blocker / 'cache', spec([material])))
+    case('a cache directory that cannot be created never blocks a full transport but refuses to fill from it', unusable_cache_directory)
+
+    def broken_entries_are_replaced():
+        stored = entries / material_sha
+        for broken in ('loose', 'directory'):
+            if os.path.isdir(stored) and not os.path.islink(stored):
+                shutil.rmtree(stored)
+            elif os.path.lexists(stored):
+                stored.unlink()
+            if broken == 'loose':
+                stored.write_bytes((packet / material).read_bytes())
+                os.chmod(stored, 0o644)
+            else:
+                stored.mkdir()
+            receive_cached(good, 'cache-repair-' + broken)
+            info = stored.lstat()
+            assert stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and stored.read_bytes() == (packet / material).read_bytes(), broken
+    case('a cache entry the query would never report is replaced by the next full transport', broken_entries_are_replaced)
+
     def cache_spec_checked():
         encoded = lambda value: __import__('base64').b64encode(json.dumps(value).encode()).decode()
         assert transport.cache_spec(encoded(spec([material]))) == spec([material])
@@ -341,6 +366,25 @@ with tempfile.TemporaryDirectory(prefix='steps-', dir=scratch) as temporary:
         assert transport.cache_spec(__import__('shlex').split(remote)[-1]) == spec([material])
         assert local.remote_command('S1_TRANSPORT', frozen)[1].endswith(' ' + freeze)
     case('the local side leaves cached members out of the stream and tells the receiver which ones', local_side_skips_cached_members)
+
+    def local_side_reads_the_frozen_cache_settings():
+        local = load('packet_local_step_settings', packet / 'steps/run-local-step.py')
+        parameters = root / 'parameters-fixture'
+        parameters.mkdir()
+        local.packet = parameters
+        frozen = {'members': {'packet-parameters.json': {}}}
+        written = parameters / 'packet-parameters.json'
+        for value, expected in (('{"maxBytes":1073741824,"minBytes":16777216}', {'minBytes': 16777216, 'maxBytes': 1073741824}), ('null', None)):
+            written.write_text(json.dumps({'MATERIAL_CACHE_JSON': value, 'LABEL': 'fixture'}))
+            os.chmod(written, 0o640)
+            assert local.cache_settings(frozen) == expected, value
+        written.write_text(json.dumps({'LABEL': 'fixture'}))
+        assert local.cache_settings(frozen) is None
+        assert local.cache_settings({'members': {}}) is None
+        for broken in ('{"minBytes":0,"maxBytes":1}', '{"minBytes":1}', '{"minBytes":"1","maxBytes":2}'):
+            written.write_text(json.dumps({'MATERIAL_CACHE_JSON': broken}))
+            rejects('__PKT_LABEL_UPPER___STEP_CACHE_SETTINGS_INVALID', lambda: local.cache_settings(frozen))
+    case('the local side reads the cache settings frozen into the packet parameters', local_side_reads_the_frozen_cache_settings)
 
     def local_tamper():
         (packet / 'steps/run-step.py').write_text((packet / 'steps/run-step.py').read_text() + '\n')

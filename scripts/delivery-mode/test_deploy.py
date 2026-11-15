@@ -796,6 +796,14 @@ class ProductionCleanupFlowTest(DeployHarness):
     def test_target_paths_left_after_a_passed_deploy_do_not_change_its_result(self):
         code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_AFTER_EXIT='3')
         self.assertEqual((code, result['result']), (0, 'passed'))
+        log = Path(result['log']).read_text()
+        self.assertNotIn('DEPLOY_CLEANUP_FAILED', log)
+        self.assertIn('DEPLOY_CLEANUP_PATHS_KEPT after', log)
+
+    def test_a_real_cleanup_failure_after_a_passed_deploy_is_still_reported(self):
+        code, result, calls = self.deploy_with_cleanup(FAKE_CLEANUP_AFTER_EXIT='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertIn('DEPLOY_CLEANUP_FAILED after', Path(result['log']).read_text())
 
     def test_failure_before_the_service_stop_cleans_the_failed_attempt(self):
         code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S1_INSTALL')

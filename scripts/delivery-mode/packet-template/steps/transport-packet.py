@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import sys
 import tarfile
@@ -123,8 +124,14 @@ def store_in_cache(entries, target, members, spec, uid, gid):
         kept.add(expected['sha256'])
         final = entries / expected['sha256']
         if os.path.lexists(final):
-            os.utime(final, follow_symlinks=False)
-            continue
+            info = final.lstat()
+            if stat.S_ISREG(info.st_mode) and info.st_uid == uid and info.st_nlink == 1 and not stat.S_IMODE(info.st_mode) & 0o077 and info.st_size == expected['bytes']:
+                os.utime(final, follow_symlinks=False)
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                shutil.rmtree(final)
+            else:
+                os.unlink(final)
         temporary = entries / ('.incoming-' + expected['sha256'] + '-' + str(os.getpid()))
         descriptor = os.open(target / name, os.O_RDONLY | os.O_NOFOLLOW)
         try:
@@ -214,12 +221,13 @@ def receive_archive(stream, target, expected_freeze, uid, gid, common, cache=Non
         return receive_members(stream, target, expected_freeze, uid, gid, common, None, [])[0]
     try:
         entries = cache_directories(cache, uid, gid)
-    except RuntimeError as error:
-        require(not spec['fill'], str(error))
+        lock = os.open(cache / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except (RuntimeError, OSError) as error:
+        message = str(error) if isinstance(error, RuntimeError) else '__PKT_LABEL_UPPER___TRANSPORT_CACHE_DIRECTORY_UNUSABLE:' + type(error).__name__
+        require(not spec['fill'], message)
         result = receive_members(stream, target, expected_freeze, uid, gid, common, None, [])[0]
-        result['cacheStoreError'] = str(error)
+        result['cacheStoreError'] = message
         return result
-    lock = os.open(cache / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
         result, members = receive_members(stream, target, expected_freeze, uid, gid, common, entries, spec['fill'])
