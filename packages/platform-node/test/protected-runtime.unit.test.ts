@@ -39,6 +39,7 @@ vi.mock("node:fs/promises", () => {
     }),
   };
 });
+
 import {
   ProtectedRuntimeVerifier,
   verifyProtectedRuntime,
@@ -554,8 +555,16 @@ it("logs a failed deferred audit under an event name that the deploy start-up re
     "utf8",
   );
   const pattern =
-    /assert\(!records\.some\(\(item\) => (\/.+\/i)\.test\(String\(item\.event\)\)\)/.exec(readback);
+    /records\.filter\(\(item\) => !nonFatal\.has\(item\.event\) && (\/.+\/i)\.test\(String\(item\.event\)\)\)/.exec(
+      readback,
+    );
   expect(pattern).not.toBeNull();
+  const nonFatal = /const nonFatal = new Set\((\[[^\]]*\])\)/.exec(readback);
+  expect(nonFatal).not.toBeNull();
+  expect(JSON.parse(String(nonFatal?.[1]))).not.toContain("sandbox_runtime.content_audit_failed");
+  expect(JSON.parse(String(nonFatal?.[1]))).not.toContain(
+    "sandbox_runtime.content_audit_retryable",
+  );
   const failureEvents = new RegExp(String(pattern?.[1]).slice(1, -2), "i");
   expect(failureEvents.test("sandbox_runtime.content_audit_failed")).toBe(true);
   expect(failureEvents.test("sandbox_runtime.content_audit_retryable")).toBe(true);
