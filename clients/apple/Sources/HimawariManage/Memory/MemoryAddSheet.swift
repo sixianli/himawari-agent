@@ -4,6 +4,8 @@ import SwiftUI
 struct MemoryAddSheet: View {
     typealias L = ManageLayout.EditSheet
 
+    static let characterLimit = 500
+
     @State private var text = ""
     @State private var saving = false
     @FocusState private var focused: Bool
@@ -39,7 +41,7 @@ struct MemoryAddSheet: View {
                         .frame(width: L.headerButton, height: L.headerButton, alignment: .trailing)
                 }
                 .buttonStyle(.plain)
-                .disabled(trimmed.isEmpty || saving)
+                .disabled(trimmed.isEmpty || trimmed.count > Self.characterLimit || saving)
             }
             TextField(M.addPlaceholder, text: $text, axis: .vertical)
                 .hmType(L.text)
@@ -56,6 +58,9 @@ struct MemoryAddSheet: View {
         .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
         .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
         .background(Color.hmBackground)
+        .onChange(of: text) {
+            if text.count > Self.characterLimit { text = String(text.prefix(Self.characterLimit)) }
+        }
         .onAppear { focused = true }
     }
 }

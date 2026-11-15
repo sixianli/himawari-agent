@@ -6,6 +6,7 @@ import XCTest
 private actor Recorder: DeviceTransport {
     private(set) var gatewayBodies: [[String: JSONValue]] = []
     private(set) var challenges = 0
+    private(set) var uploadClassifications: [String] = []
 
     nonisolated func post(path: String, json: Data, nonce: String?, confirm: ConfirmPrompt?) async throws -> DeviceResponse {
         if path == ManageGateway.challengePath {
@@ -13,7 +14,11 @@ private actor Recorder: DeviceTransport {
             return DeviceResponse(status: 201, body: Data(#"{"challenge":"c","expiresAt":"2026-11-12T00:00:30.000Z"}"#.utf8))
         }
         if path == ManageGateway.textPath {
-            return DeviceResponse(status: 200, body: Data(#"{"payloadRef":"ref-1"}"#.utf8))
+            let upload = try JSONDecoder().decode([String: JSONValue].self, from: json)
+            var classification = "private"
+            if case .string(let value)? = upload["dataClassification"] { classification = value }
+            await countUpload(classification)
+            return DeviceResponse(status: 200, body: Data(#"{"payloadRef":"ref-\#(classification)"}"#.utf8))
         }
         let body = try JSONDecoder().decode([String: JSONValue].self, from: json)
         await record(body)
@@ -26,6 +31,7 @@ private actor Recorder: DeviceTransport {
 
     private func record(_ body: [String: JSONValue]) { gatewayBodies.append(body) }
     private func countChallenge() { challenges += 1 }
+    private func countUpload(_ classification: String) { uploadClassifications.append(classification) }
 }
 
 @MainActor
@@ -74,5 +80,8 @@ final class MemoryDecisionTests: XCTestCase {
         XCTAssertEqual(payload["category"], .string("health"))
         XCTAssertEqual(payload["topic"], .string("health"))
         XCTAssertEqual(payload["pinned"], .bool(false))
+        let uploads = await recorder.uploadClassifications
+        XCTAssertEqual(uploads, ["private", "sensitive"])
+        XCTAssertEqual(payload["contentRef"], .string("ref-sensitive"))
     }
 }

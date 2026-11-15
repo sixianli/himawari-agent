@@ -9,6 +9,7 @@ import type {
   MemorySubCategoryCount,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryGenerationId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 import { insertObservationEvent } from "./sqlite-observation-operations.ts";
@@ -359,7 +360,7 @@ export class SqliteMemoryBookOperations {
                   ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL) ON CONFLICT DO NOTHING`,
                 )
                 .run(
-                  `person-suggestion:${personId}:${candidate}`,
+                  personSuggestionId(personId, candidate),
                   input.ownerId,
                   input.agentId,
                   personId,
@@ -597,4 +598,9 @@ export class SqliteMemoryBookOperations {
         .run(input.undoneAt, input.id, input.ownerId, input.agentId).changes === 1
     );
   }
+}
+
+function personSuggestionId(personId: string, candidateId: string): string {
+  const digest = createHash("sha256").update(`${personId}\n${candidateId}`).digest("hex");
+  return `person-suggestion:${digest.slice(0, 32)}`;
 }
