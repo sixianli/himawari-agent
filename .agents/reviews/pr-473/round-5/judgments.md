@@ -1,0 +1,7 @@
+# PR 473 第 5 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1（中低，条件触发）：审批详情逐条单独发签名请求，已处理列表一次最多约 1500 次请求，可能耗尽设备 nonce 存储。DeviceActionAPI.swift:138-148 逐条 detail；DeviceActionsModel.swift:86-92 loadHandled 只在切到已处理分段时调用，pending 刷新只走 1 次 list 加每条 detail；device-limits.ts:105 保留上限 10000。第 3 轮起只剩低，按流程不修，交 Andy 看（可改成批量详情或收紧条数）；触发：已处理审批累计数百条以上，且短时间内反复打开已处理分段；后果：每次最多约 1515 次签名请求，十分钟内多次可占满 10000 个 nonce 保留额度，设备请求被 429 拒绝一段时间，旧 nonce 过期后恢复；不丢数据；判低理由：需要几百条已处理审批加反复下拉才触发，只会暂时被拒、可自行恢复，不是正常使用
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2（低）：设计文档里的提醒动作名仍是 `reminder.*`，代码和服务端是 `device_reminder.*`，上一轮第 4 条未改好。沿用第 4 轮第 4 条判断：代码与服务器一致（device-action-registry.ts:541、572；ReminderActions.swift:7），设计文档由规划线程更新，本 PR 不动；触发：有人照设计文档第 537 行写 reminder.create 去登记或调用；后果：动作名对不上服务器登记的 device_reminder.create，被拒绝；代码和测试正确，只是文档不准
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3（低）：新的审批网关信封只有手写假响应测试，没有真实服务端/契约的反向检查。成立但属防未来回归的缺口：当前 Swift 信封与服务端契约手工核对一致；在 Node 集成测试里用真实网关跑 approval.list、detail、respond 是更好做法，建议另开 PR，不在本 PR 改
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4（低，推测）：`supported()` 只按名字上报，不按 `schemaVersions` 过滤；新加的 v2 用例会让客户端上报自己不能处理的 `test.note.v2`。成立但目前不触发：真实注册全是 schemaVersion 1，test.note.v2 只在测试里；版本不符时 handles() 拒绝并回 notSupported，不会误执行。supported() 按 schemaVersions 过滤是更好做法，建议留作后续
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5（低，推测）：`DeviceActionsModel` 只把 404/503 当审批不可用，网关“操作未安装”实际返回 501。成立但生产不触发：createProductionApprovalGateway 无条件安装审批操作（production-approval-gateway.ts:85-88），501 只会出现在裁剪版网关。把 501 也算审批不可用是更好做法，建议留作后续
