@@ -61,6 +61,7 @@ public final class DataExportSession {
         self.gateway = gateway
         pollInterval = .seconds(1)
         self.stage = stage
+        if case .ready = stage { exportId = "demo" }
     }
 
     public func start(reason: String) async {
@@ -113,6 +114,16 @@ public final class DataExportSession {
             }
             try? await Task.sleep(for: pollInterval)
         }
+    }
+
+    public func archiveFile(named fileName: String) async throws -> URL {
+        guard let exportId else { throw ManageGatewayError.malformedResponse }
+        let data = try await gateway.downloadArchive(exportId: exportId)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(URL(fileURLWithPath: fileName).lastPathComponent)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     public func cancel() async throws {

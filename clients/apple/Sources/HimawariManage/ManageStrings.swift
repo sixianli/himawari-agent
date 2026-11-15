@@ -271,6 +271,8 @@ enum M {
     static func exportWithheld(_ count: Int) -> String {
         text("另有 \(count) 条敏感内容没导出", ja: "ほかに \(count) 件の機密内容は書き出していません", en: "\(count) sensitive items were left out")
     }
+    static var saveToFiles: String { text("存到“文件”", ja: "「ファイル」に保存", en: "Save to Files") }
+    static var sendElsewhere: String { text("发到别处", ja: "ほかへ送る", en: "Share") }
     static var exportExpired: String { text("过期了", ja: "期限が切れました", en: "Expired") }
     static var exportAgain: String { text("重新打包", ja: "もう一度まとめる", en: "Pack again") }
     static var loginBrowsers: String { text("登录着的浏览器", ja: "ログイン中のブラウザ", en: "Signed-in browsers") }

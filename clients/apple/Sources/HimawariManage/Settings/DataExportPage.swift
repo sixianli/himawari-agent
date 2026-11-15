@@ -10,6 +10,8 @@ struct DataExportPage: View {
     let session: DataExportSession
     let back: () -> Void
     @State private var failed = false
+    @State private var archive: URL?
+    @State private var saving = false
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
@@ -76,6 +78,30 @@ struct DataExportPage: View {
         if result.withheld > 0 {
             Text(M.exportWithheld(result.withheld)).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
         }
+        Spacer(minLength: DL.askTopPadding)
+        VStack(spacing: XL.buttonGap) {
+            Button { saving = true } label: {
+                Text(M.saveToFiles)
+            }
+            .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+            .disabled(archive == nil)
+            if let archive {
+                ShareLink(item: archive) {
+                    Text(M.sendElsewhere)
+                        .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.pillBig)
+                }
+                .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+            } else {
+                Button {} label: { Text(M.sendElsewhere) }
+                    .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig, fontSize: DesignTokens.TypeScale.body.size))
+                    .disabled(true)
+            }
+        }
+        .task(id: result.downloadPath) {
+            guard archive == nil else { return }
+            do { archive = try await session.archiveFile(named: result.fileName) } catch { failed = true }
+        }
+        .fileMover(isPresented: $saving, file: archive) { _ in }
     }
 
     @ViewBuilder private func retry(_ title: String) -> some View {
