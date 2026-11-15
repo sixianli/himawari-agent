@@ -22,6 +22,7 @@ import {
 } from "@himawari-agent/application/apple-push";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { TIMING_DEFER_REFS } from "./sqlite-web-push-operations.ts";
 
 type Input<TName extends keyof ApplePushStorePort> = Parameters<ApplePushStorePort[TName]>[0];
 
@@ -348,7 +349,7 @@ export class SqliteApplePushOperations {
       .prepare(
         `SELECT o.source_key AS sourceKey, o.kind, o.source_ref AS sourceRef,
            o.thread_id AS threadId, o.created_at AS itemCreatedAt, o.expires_at AS expiresAt,
-           o.defer_until AS deferUntil,
+           o.defer_until AS deferUntil, o.defer_rule_refs AS deferRuleRefs,
            ${registrationColumns},
            a.status AS attemptStatus, a.attempts AS attemptCount,
            a.next_attempt_at AS nextAttemptAt, a.last_code AS lastCode,
@@ -374,6 +375,7 @@ export class SqliteApplePushOperations {
         itemCreatedAt: string;
         expiresAt: string;
         deferUntil: string | null;
+        deferRuleRefs: string | null;
         attemptStatus: WebPushAttemptStatus | null;
         attemptCount: number | null;
         nextAttemptAt: string | null;
@@ -392,6 +394,7 @@ export class SqliteApplePushOperations {
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
         deferUntil: row.deferUntil,
+        ...(row.deferRuleRefs === TIMING_DEFER_REFS ? { deferredByTiming: true } : {}),
       },
       registration: {
         id: row.id,
