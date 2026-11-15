@@ -96,7 +96,8 @@ final class SettingsStoreTests: XCTestCase {
             case "cap-search": ("网页搜索", "active")
             default: ("旧的", "disabled")
             }
-            let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+            var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+            if lifecycle == "disabled" { assessment = #","lastInvalidation":{"lifecycle":"disabled","cancelledScheduledJobs":2,"occurredAt":"2026-11-13T06:10:00Z"}"# }
             return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":3\#(assessment)}}"#
         case "device.list.read":
             return devices
@@ -137,6 +138,29 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(payload["reasonCode"], .string("owner_disabled"))
         XCTAssertEqual(payload["recentAuthenticationRef"], .string(ClientCapabilities.referencePlaceholder))
         XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
+    }
+
+    func testTurningADisabledCapabilityBackOnAsksForFaceIDAndReadsTheDisableDetail() async throws {
+        let transport = ScriptedTransport(answer: Self.answer)
+        let settings = store(transport)
+        await settings.load()
+        let disabled = settings.capabilitiesDisabled[0]
+        XCTAssertEqual(disabled.lastInvalidation?.cancelledScheduledJobs, 2)
+        XCTAssertEqual(disabled.lastInvalidation?.occurredAt, "2026-11-13T06:10:00Z")
+        try await settings.reactivate(disabled, reason: "启用")
+        let sent = await transport.sent
+        guard let index = sent.firstIndex(where: { $0["type"] == "capability.reactivate" }) else { return XCTFail() }
+        XCTAssertEqual(sent[index - 1], [:])
+        guard case .object(let payload)? = sent[index]["payload"] else { return XCTFail() }
+        XCTAssertEqual(payload["expectedRevision"], .number(3))
+        XCTAssertEqual(payload["reasonCode"], .string("owner_reactivated"))
+        XCTAssertEqual(Set(payload.keys), ["capabilityRef", "expectedRevision", "reasonCode", "recentAuthenticationRef"])
+    }
+
+    func testOnlyANonServerNonKeyFailureCountsAsDeclined() {
+        XCTAssertFalse(SettingsStore.isDeclined(ManageGatewayError.rejected(status: 403, code: "PORT_NOT_AUTHORITATIVE")))
+        XCTAssertFalse(SettingsStore.isDeclined(DeviceKeyError.keyUnreadable(.confirm)))
+        XCTAssertTrue(SettingsStore.isDeclined(CancellationError()))
     }
 
     func testRevokedDevicesAreLeftOutAndPresenceIsNeverGuessed() async {

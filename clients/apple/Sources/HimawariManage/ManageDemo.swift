@@ -149,7 +149,11 @@ enum ManageDemo {
         case "cap-photos": ("相册整理", "disabled")
         default: ("邮件", "active")
         }
-        let assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+        var assessment = ref == "cap-calendar" ? #","updateAssessment":{"expansions":["改日程"]}"# : ""
+        if lifecycle == "disabled" {
+            let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3_600))
+            assessment = #","lastInvalidation":{"lifecycle":"disabled","cancelledScheduledJobs":2,"occurredAt":"\#(at)"}"#
+        }
         return #"{"payload":{"capabilityRef":"\#(ref)","displayName":"\#(name)","lifecycle":"\#(lifecycle)","revision":1\#(assessment)}}"#
     }
 

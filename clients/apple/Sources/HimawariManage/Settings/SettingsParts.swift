@@ -61,6 +61,7 @@ struct SettingsRow: View {
     let title: String
     var detail: String? = nil
     var note: String? = nil
+    var warning: String? = nil
     var value: String? = nil
     var tone: Tone = .muted
     var chevron = false
@@ -80,6 +81,9 @@ struct SettingsRow: View {
                     }
                     if let note {
                         Text(note).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                    }
+                    if let warning {
+                        Text(warning).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmDanger)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

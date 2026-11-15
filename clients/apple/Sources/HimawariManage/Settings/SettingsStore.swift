@@ -70,6 +70,26 @@ public final class SettingsStore {
     }
 
     static let ownerDisabledReason = "owner_disabled"
+    static let ownerReactivatedReason = "owner_reactivated"
+
+    public func reactivate(_ capability: CapabilitySummary, reason: String) async throws {
+        defer { Task { await reloadCapabilities() } }
+        _ = try await gateway.command(
+            .v2,
+            "capability.reactivate",
+            payload: [
+                "capabilityRef": .string(capability.capabilityRef),
+                "expectedRevision": .number(Double(capability.revision)),
+                "reasonCode": .string(Self.ownerReactivatedReason),
+                "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
+
+    public static func isDeclined(_ error: Error) -> Bool {
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
+    }
 
     public func reloadCapabilities() async {
         guard let all = try? await loadCapabilities() else { return }
