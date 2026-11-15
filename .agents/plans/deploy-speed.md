@@ -1,6 +1,6 @@
 # 上线提速方案：失败残留自动处理、依赖包按内容复用
 
-2026-11-15 JST，第 3 版。第 2 版经 DeepSeek 审核（`round-2/deepseek-v4.1-flash.md`），成立的意见已并入，见文末“审核意见怎么处理的”。只是方案，Andy 同意、当前这次上线结束后才写代码。耗时数据见 `/mnt/project-files/deploy-speed/analysis-2026-11-15.md`。
+2026-11-15 JST，第 3 版。第 2 版经 DeepSeek 审核（`.agents/reviews/topic-deploy-speed/round-2/deepseek-v4.1-flash.md`），成立的意见已并入，见文末“审核意见怎么处理的”。只是方案，Andy 同意、当前这次上线结束后才写代码。耗时数据见 `/mnt/project-files/deploy-speed/analysis-2026-11-15.md`。
 
 ## 对标
 - ChatGPT/Claude 这类产品自己的上线方式没有公开资料，这里对标公开的部署工具。Docker 镜像仓库推送前先问“这一层你有没有”，有就不传：OCI 分发规范写 “the registry indicates that its not necessary because the layer is already known”（https://github.com/opencontainers/distribution-spec/blob/main/spec.md）。Nix 的 `nix-copy-closure` 只发目标机缺的路径（https://nix.dev/manual/nix/2.26/command-ref/nix-copy-closure）。这两种做法都要求同样的输入打出同样的字节，Reproducible Builds 项目把这叫可复现构建（https://reproducible-builds.org/docs/definition/）。
