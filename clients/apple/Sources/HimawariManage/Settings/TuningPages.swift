@@ -113,11 +113,15 @@ struct TuningEditPage: View {
             do {
                 try await store.changeTuning(kind, key: key, value: value, reason: M.confirmTuning(name))
                 draft = nil
-            } catch where SettingsStore.isDeclined(error) {
+            } catch where Self.declined(error) {
             } catch {
                 draft = nil
                 failed = true
             }
         }
+    }
+
+    private static func declined(_ error: Error) -> Bool {
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError)
     }
 }
