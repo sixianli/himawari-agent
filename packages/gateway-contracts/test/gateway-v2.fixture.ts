@@ -442,11 +442,14 @@ export const governanceMessages = [
     thinkingLevel: null,
     expectedRevision: 3,
   }),
-  fixture("query", "delivery_timing.settings.read", {}),
+  fixture("query", "delivery_timing.settings.read", { locale: "zh-CN" }),
   fixture("snapshot", "delivery_timing.settings.snapshot", {
     items: [
       {
         key: "recheckSeconds",
+        label: "复查间隔",
+        description: "先不推送之后，隔多久再确认你有没有空。",
+        unit: "秒",
         value: 600,
         defaultValue: 300,
         minimum: 60,
