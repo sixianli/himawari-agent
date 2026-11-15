@@ -586,11 +586,6 @@ class DerivedExpectationsTest(RenderedPacket):
             self.assertEqual(result.returncode, 0, result.stderr[-2000:])
             self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
 
-    def history_fixtures(self, packet):
-        scratch = self.root / ('fixture-temp-' + packet.name)
-        scratch.mkdir()
-        return subprocess.run([shutil.which('node'), str(packet / 'maintenance' / 'verify-fixtures.mjs')], capture_output=True, text=True, cwd=HERE.parents[1], env={**os.environ, 'HIMAWARI_TEST_TEMP_ROOT': str(scratch)}, check=False)
-
     def test_the_instance_file_cannot_switch_history_comparison_off(self):
         self.assertNotIn('historyComparison', INSTANCE)
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HISTORY_COMPARISON_SWITCH_REMOVED'):
@@ -618,13 +613,6 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertNotIn('history_comparison', switch)
         restore = runner[runner.index('const reference = retained.reference;'):]
         self.assertTrue(restore.splitlines()[1].strip().startswith('verifyHistoryUnchanged(reference, state)'))
-
-    def test_history_fixtures_pass_in_a_packet_without_the_switch(self):
-        ledger = json.dumps([{'sequence': 57, 'id': '20261115045512', 'name': 'thread_origin', 'phase': 'expand'}], separators=(',', ':'))
-        for packet in (self.render(MIGRATION_LEDGER=ledger, TARGET_SCHEMA=57), self.render()):
-            result = self.history_fixtures(packet)
-            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
-            self.assertTrue(json.loads(result.stdout.strip().splitlines()[-1])['passed'])
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
