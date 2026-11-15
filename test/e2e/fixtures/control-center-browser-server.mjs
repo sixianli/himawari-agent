@@ -1085,6 +1085,7 @@ function memoryOverview() {
       { kind: "relationship", lines: lines(["memory-peikun", "memory-lilei"]) },
     ],
     externalProposals: externalSnapshot(),
+    mcpSync: { entriesTotal: 0, entries: [], projects: [], attention: [] },
     pending: [],
     generatedAt: now,
   };
