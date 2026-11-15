@@ -7,6 +7,7 @@ import type {
   CapabilityDeclaration,
   CapabilityExecutionHandleStorePort,
   CapabilityManifest,
+  CapabilityReactivationVerifierPort,
   CapabilityRegistryRecord,
   CapabilityRegistryStorePort,
   CapabilityRuntimeQualification,
@@ -337,6 +338,7 @@ export class CapabilityLifecycleService {
     readonly clock: ClockPort;
     readonly artifacts: CapabilityArtifactVerifierPort;
     readonly runtime: CapabilityRuntimeQualifierPort;
+    readonly reactivation?: CapabilityReactivationVerifierPort;
   };
 
   constructor(dependencies: {
@@ -344,6 +346,7 @@ export class CapabilityLifecycleService {
     readonly clock: ClockPort;
     readonly artifacts: CapabilityArtifactVerifierPort;
     readonly runtime: CapabilityRuntimeQualifierPort;
+    readonly reactivation?: CapabilityReactivationVerifierPort;
   }) {
     this.dependencies = dependencies;
   }
@@ -620,6 +623,27 @@ export class CapabilityLifecycleService {
       current.revision,
       now,
     );
+  }
+
+  async reactivate(
+    capabilityRef: string,
+    expectedRevision?: number,
+  ): Promise<CapabilityRegistryRecord> {
+    const current = await this.require(capabilityRef, expectedRevision);
+    if (current.lifecycle !== "disabled") return this.invalid(current, "active");
+    const manifest = manifestFrom(current.declaration);
+    if (!manifest.reviewedBy || !manifest.reviewedAt) return this.invalid(current, "active");
+    const check = this.dependencies.reactivation
+      ? await this.dependencies.reactivation.verify(manifest)
+      : { verified: false, reasonCodes: ["capability_reactivation_check_unavailable"] };
+    if (!check.verified || check.reasonCodes.length > 0) {
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        `Capability ${manifest.ref} reactivation check failed`,
+        { capabilityRef: manifest.ref, reasons: check.reasonCodes.join(",") },
+      );
+    }
+    return this.save(current, { lifecycle: "active" });
   }
 
   disable(capabilityRef: string, expectedRevision?: number): Promise<CapabilityRegistryRecord> {

@@ -1,0 +1,1 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 高：第 7 轮修复引入未声明且不被允许的 `@himawari-agent/domain` 依赖，`check:boundaries` 必然失败", "valid": true, "class": "error", "severity": "high", "modelSeverity": "高", "trigger": "推送或 CI 跑 check:boundaries", "consequence": "推送被边界检查拦下", "reason": "读代码并实际推送被拦证实"}
