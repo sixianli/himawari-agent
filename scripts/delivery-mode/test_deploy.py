@@ -718,6 +718,55 @@ class DeployFlowTest(DeployHarness):
         self.assertNotEqual(code, 0)
 
 
+class KeepFailedDeployTest(DeployHarness):
+    def choose(self, choice):
+        parameters = json.loads((self.packet / 'packet-parameters.json').read_text())
+        parameters['ON_DEPLOY_FAILURE'] = choice
+        (self.packet / 'packet-parameters.json').write_text(json.dumps(parameters))
+
+    def test_twentyninth_incident_a_failure_after_the_stop_keeps_the_failed_release_when_the_packet_says_keep(self):
+        self.choose('keep')
+        code, result, calls = self.deploy_with_cleanup(FAKE_FAIL_AT='S8_READBACK')
+        self.assertEqual((result['result'], result['stoppedAt']), ('failed-kept', 'S8_READBACK'))
+        self.assertNotEqual(code, 0)
+        self.assertNotIn('rollback', calls)
+        self.assertEqual((calls[0], calls[-1], calls.count('cleanup-apply')), ('cleanup-apply', 'S8_READBACK', 1))
+        log = Path(result['log']).read_text()
+        self.assertIn('DEPLOY_ON_FAILURE keep from packet-parameters.json', log)
+        self.assertIn('DEPLOY_ROLLBACK_SKIPPED owner-choice', log)
+        self.assertNotIn('DEPLOY_AUTO_RECOVERY_START', log)
+
+    def test_the_operator_variable_overrides_the_packet_choice_both_ways(self):
+        code, result, calls = self.deploy(FAKE_FAIL_AT='S2_STOP', HIMAWARI_DEPLOY_ON_FAILURE='keep')
+        self.assertEqual(result['result'], 'failed-kept')
+        self.assertNotIn('rollback', calls)
+        self.assertIn('DEPLOY_ON_FAILURE keep from HIMAWARI_DEPLOY_ON_FAILURE', Path(result['log']).read_text())
+        self.choose('keep')
+        code, result, calls = self.deploy(FAKE_FAIL_AT='S7_SWITCH_START', HIMAWARI_DEPLOY_ON_FAILURE='rollback')
+        self.assertEqual(result['result'], 'recovered')
+        self.assertEqual(calls[-1], 'rollback')
+
+    def test_a_packet_without_a_choice_still_rolls_back(self):
+        code, result, calls = self.deploy(FAKE_FAIL_AT='S7_SWITCH_START')
+        self.assertEqual(result['result'], 'recovered')
+        self.assertIn('DEPLOY_ON_FAILURE rollback from packet-parameters.json', Path(result['log']).read_text())
+
+    def test_keep_does_not_change_a_failure_before_the_stop_or_a_pass(self):
+        self.choose('keep')
+        code, result, calls = self.deploy(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertEqual(result['result'], 'stopped-before-service-stop')
+        code, result, calls = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+
+    def test_an_unknown_choice_changes_nothing(self):
+        for environment, choice in (({'HIMAWARI_DEPLOY_ON_FAILURE': 'ignore'}, None), ({}, 'ignore')):
+            if choice:
+                self.choose(choice)
+            code, result, calls = self.deploy_with_cleanup(**environment)
+            self.assertEqual((code, result['result'], result['stoppedAt']), (9, 'invalid-on-failure', 'OPTION'))
+            self.assertEqual(calls, [])
+
+
 class ProductionCleanupFlowTest(DeployHarness):
     def test_successful_deploy_cleans_the_server_before_the_preflight_and_after_the_switch(self):
         code, result, calls = self.deploy_with_cleanup()

@@ -602,7 +602,7 @@ export class ProductionMcpMemoryWriter {
   }
 
   #ledgerWrite(
-    proposal: Pick<ExternalMemoryProposalRecord, "id" | "client" | "category">,
+    proposal: Pick<ExternalMemoryProposalRecord, "id" | "subjectRef" | "category">,
     batchId: string | null,
     decision: keyof typeof EXTERNAL_PROPOSAL_REASON_CODES,
     memoryId: string | null,
@@ -617,7 +617,7 @@ export class ProductionMcpMemoryWriter {
       outcome:
         decision === "kept" ? "kept" : decision === "pending" ? "pending_approval" : "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES[decision],
-      subjectRef: memoryId ?? `mcp-client:${proposal.client}`,
+      subjectRef: memoryId ?? proposal.subjectRef,
       inputs: { memoryIds: memoryId ? [memoryId] : [], ruleIds: [] },
       reasonRef: null,
       contentRef: null,

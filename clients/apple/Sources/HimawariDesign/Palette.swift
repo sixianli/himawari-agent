@@ -24,7 +24,9 @@ public struct PaletteToken: Sendable, Equatable {
     public let dark: RGBA
 
     public var color: Color {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        Color(.sRGB, red: dark.red, green: dark.green, blue: dark.blue, opacity: dark.alpha)
+        #elseif canImport(UIKit)
         Color(uiColor: UIColor { traits in
             let value = traits.userInterfaceStyle == .dark ? dark : light
             return UIColor(red: value.red, green: value.green, blue: value.blue, alpha: value.alpha)

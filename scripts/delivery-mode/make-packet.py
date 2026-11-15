@@ -185,6 +185,28 @@ def startup_phase_baseline(instance):
 ROW_PRESERVING_REBUILDS = {'0083_model_invocation_owner_lost.sql': ('f268bbd8b8999496d5e2eaa50ad8c62e7e671934511a1439d8da700d94aa8acc', ('model_budget_allocations', 'model_invocation_identities'))}
 
 
+ADDED_COLUMN_BACKFILLS = {'20261115045512_thread_origin.sql': ('817407da2a5be720c26f6a8689af2508cd85d051a9567525dfe1d80b40fcf060', {'threads': 'origin'})}
+
+
+def added_column_backfills(file_name, sql, touched):
+    digest, columns = ADDED_COLUMN_BACKFILLS.get(file_name, (None, {}))
+    if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
+        return []
+    named = TIMESTAMP_MIGRATION.fullmatch(file_name)
+    if not named:
+        refuse('PACKET_ADDED_COLUMN_BACKFILL_NAME_INVALID', file_name)
+    ignored = history_ignored_columns().get(named.group(2), {})
+    return [table for table in touched if table in columns and columns[table] in ignored.get(table, ())]
+
+
+def history_ignored_columns():
+    source = (TEMPLATE / 'maintenance' / 'maintenance-common.mjs').read_text()
+    match = re.search(r'^export const addedColumnBackfills = Object\.freeze\(\{(.*)\}\);$', source, re.M)
+    if not match:
+        refuse('PACKET_HISTORY_IGNORED_COLUMNS_NOT_FOUND')
+    return {name: {table: tuple(re.findall(r'"([a-z_]+)"', names)) for table, names in re.findall(r'([a-z_]+): Object\.freeze\(\[(.*?)\]\)', body)} for name, body in re.findall(r'([a-z_]+): Object\.freeze\(\{(.*?)\}\)', match.group(1))}
+
+
 def rebuilds_keeping_rows(file_name, sql, touched):
     digest, allowed = ROW_PRESERVING_REBUILDS.get(file_name, (None, ()))
     if hashlib.sha256(sql.strip().encode()).hexdigest() != digest:
@@ -212,7 +234,7 @@ def preserved_tables():
     return tuple(re.findall(r'"([a-z_]+)"', match.group(1))) + MIGRATION_COMPARED_TABLES
 
 
-def migration_ledger(commit, current, target, applied_ids=None):
+def migration_ledger(commit, current, target, applied_ids=None, compare_history=True):
     if target == current and applied_ids is None:
         return []
     engine = git('show', commit + ':' + MIGRATION_ENGINE)
@@ -242,9 +264,9 @@ def migration_ledger(commit, current, target, applied_ids=None):
             entry = dict(entry, sequence=sequence)
         sql = git('show', commit + ':' + MIGRATIONS + '/' + entry['file'])
         touched = sorted(table for table in tables if re.search(r'\b(?:ALTER\s+TABLE|DROP\s+TABLE|UPDATE|DELETE\s+FROM|INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO)\s+"?' + table + r'\b', sql, re.I))
-        kept = rebuilds_keeping_rows(entry['file'], sql, touched)
+        kept = rebuilds_keeping_rows(entry['file'], sql, touched) + added_column_backfills(entry['file'], sql, touched)
         touched = [table for table in touched if table not in kept]
-        if touched:
+        if touched and compare_history:
             refuse('PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES', entry['file'] + ' ' + ','.join(touched))
         ledger.append({key: entry[key] for key in ('sequence', 'name', 'phase')})
     return ledger
@@ -391,11 +413,39 @@ def embedding_target(target):
     return encoded
 
 
+HISTORY_COMPARISON_OFF_KEYS = {'mode', 'reason', 'authorizedBy', 'release'}
+DEPLOY_FAILURE_CHOICES = ('rollback', 'keep')
+
+
+def history_comparison(instance, label):
+    setting = instance.get('historyComparison', {'mode': 'on'})
+    if setting == {'mode': 'on'}:
+        return {'mode': 'on'}
+    if not isinstance(setting, dict) or setting.get('mode') != 'off' or set(setting) != HISTORY_COMPARISON_OFF_KEYS or not all(isinstance(setting[key], str) and setting[key].strip() for key in HISTORY_COMPARISON_OFF_KEYS):
+        refuse('PACKET_HISTORY_COMPARISON_INVALID', json.dumps(setting, ensure_ascii=False))
+    if not re.fullmatch(r'cmsg_[A-Za-z0-9]+', setting['authorizedBy']):
+        refuse('PACKET_HISTORY_COMPARISON_INVALID', 'authorizedBy must name the owner message that allowed it')
+    if setting['release'] != label:
+        refuse('PACKET_HISTORY_COMPARISON_OFF_FOR_OTHER_RELEASE', 'historyComparison is off for ' + setting['release'] + ' but this packet is ' + label + '; remove it from the instance file or have Andy approve it for this release')
+    return {key: setting[key] for key in ('mode', 'reason', 'authorizedBy', 'release')}
+
+
+def deploy_failure_choice(instance):
+    choice = instance.get('onDeployFailure', 'rollback')
+    if choice not in DEPLOY_FAILURE_CHOICES:
+        refuse('PACKET_ON_DEPLOY_FAILURE_INVALID', choice)
+    return choice
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
+    comparison = history_comparison(instance, label)
     return {
         **discovered,
+        'HISTORY_COMPARISON': comparison['mode'],
+        'HISTORY_COMPARISON_JSON': json.dumps(comparison, sort_keys=True, separators=(',', ':'), ensure_ascii=True),
+        'ON_DEPLOY_FAILURE': deploy_failure_choice(instance),
         'LABEL_TITLE': label.capitalize(),
         'LABEL_UPPER': label.upper(),
         'DATE': date,
@@ -435,7 +485,7 @@ def schema_parameters(parameters, s0):
             refuse('PACKET_S0_MIGRATION_NAMES_INVALID', 'ids=' + str(len(applied_ids)))
         pairs = [identifier + ':' + digest + ':' + name for identifier, digest, name in zip(applied_ids, digests, names)]
         check_migration_replay(parameters['COMMIT'], pairs)
-    ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids) if target != current or applied_ids is not None else []
+    ledger = migration_ledger(parameters['COMMIT'], current, target, applied_ids, parameters.get('HISTORY_COMPARISON', 'on') != 'off') if target != current or applied_ids is not None else []
     return {'CURRENT_SCHEMA': current, 'PREVIOUS_SCHEMA': current - 1, 'MIGRATION_LEDGER': json.dumps(ledger, separators=(',', ':'))}
 
 
@@ -606,11 +656,20 @@ def refresh_carried_copies(packet, commit):
     return refreshed
 
 
+def packet_member(staged_path):
+    marker = '/packet/'
+    member = staged_path.split(marker, 1)[-1]
+    if staged_path.count(marker) != 1 or member.startswith('/') or '..' in member.split('/'):
+        refuse('PACKET_STAGED_PATH_OUTSIDE_PACKET', staged_path)
+    return member
+
+
 def regenerate_hashes(packet):
     draft_path = packet / CLOUD_INPUTS
     manifest = json.loads(draft_path.read_text())
     for relative in manifest['files']:
         manifest['files'][relative] = file_sha(packet / 'acceptance/cloud' / relative)
+    manifest['cleanupHelper']['sha256'] = file_sha(packet / packet_member(manifest['cleanupHelper']['path']))
     draft_path.write_text(json.dumps(manifest, indent=2) + '\n')
     for name, root in OWNED_SUMS.items():
         lines = []

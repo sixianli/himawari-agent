@@ -15,6 +15,8 @@ import type {
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 
+import { DELIVERY_TIMING_COPY, DELIVERY_TIMING_VALUE } from "./delivery-timing-copy.js";
+
 export const PRODUCTION_DELIVERY_TIMING_OPERATIONS = Object.freeze([
   "delivery_timing.settings.read",
   "delivery_timing.settings.change",
@@ -44,6 +46,7 @@ export class ProductionDeliveryTimingControl {
     if (query.type !== "delivery_timing.settings.read")
       throw new Error("DELIVERY_TIMING_SETTINGS_OPERATION_NOT_INSTALLED");
     const settings = await this.#options.store.read(this.#scope());
+    const { locale } = query.payload;
     return {
       ...query,
       kind: "snapshot",
@@ -53,8 +56,14 @@ export class ProductionDeliveryTimingControl {
         items: DELIVERY_TIMING_KEYS.map((key) => {
           const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
           const override = deliveryTimingOverrideValue(key, settings.overrides);
+          const copy = DELIVERY_TIMING_COPY[key][locale];
           return {
             key,
+            label: copy.label,
+            description: copy.description,
+            unit: copy.unit,
+            kind: DELIVERY_TIMING_VALUE[key].kind,
+            storageUnit: DELIVERY_TIMING_VALUE[key].storageUnit,
             value: override ?? this.#options.defaults[key],
             defaultValue: this.#options.defaults[key],
             minimum,

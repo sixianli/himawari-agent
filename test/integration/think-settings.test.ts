@@ -9,6 +9,7 @@ import {
   createDeploymentId,
   createOwnerId,
 } from "@himawari-agent/domain";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -183,11 +184,17 @@ describe("think settings", () => {
     summary: `邮件 ${ref}：房东请在 11 月 20 日前回复是否续租`,
   });
   const head = {
-    protocolVersion: 2,
+    schemaVersion: "gateway.v2",
     kind: "query",
     type: "think.settings.read",
     messageId: "message-read",
+    correlationId: "correlation-read",
+    causationId: null,
+    dataClassification: "private",
+    risk: "low",
+    authorizationRef: null,
     scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    authority: { deploymentId: DEPLOYMENT_ID, authorityEpoch: 1, fencingToken: 1 },
     actor: { actorType: "owner", actorId: OWNER_ID },
     payload: {},
   };
@@ -212,10 +219,19 @@ describe("think settings", () => {
       payload: {
         revision: number;
         enabled: boolean;
-        items: { key: string; value: number; defaultValue: number; overridden: boolean }[];
+        items: {
+          key: string;
+          value: number;
+          defaultValue: number;
+          overridden: boolean;
+          unit: string;
+          kind: string;
+          storageUnit: string;
+        }[];
       };
     };
     expect(snapshot.type).toBe("think.settings.snapshot");
+    expect(() => gatewayV2MessageSchema.parse(JSON.parse(JSON.stringify(snapshot)))).not.toThrow();
     expect(snapshot.payload.revision).toBe(0);
     expect(snapshot.payload.enabled).toBe(true);
     expect(snapshot.payload.items.map((item) => item.key)).toEqual([
@@ -229,7 +245,40 @@ describe("think settings", () => {
       "summaryCharacters",
       "idleSeconds",
       "runTimeoutMinutes",
+      "threadRetentionDays",
     ]);
+    const expectedByUnit: Record<string, { kind: string; storageUnit: string }> = {
+      permille: { kind: "ratio", storageUnit: "permille" },
+      count: { kind: "count", storageUnit: "count" },
+      times: { kind: "count", storageUnit: "count" },
+      characters: { kind: "count", storageUnit: "count" },
+      hours: { kind: "duration", storageUnit: "h" },
+      minutes: { kind: "duration", storageUnit: "min" },
+      seconds: { kind: "duration", storageUnit: "s" },
+      days: { kind: "duration", storageUnit: "d" },
+    };
+    for (const entry of snapshot.payload.items) {
+      expect({ kind: entry.kind, storageUnit: entry.storageUnit }).toEqual(
+        expectedByUnit[entry.unit],
+      );
+    }
+    for (const invalid of [{ kind: "percent" }, { storageUnit: "seconds" }]) {
+      const broken = JSON.parse(JSON.stringify(snapshot));
+      Object.assign(broken.payload.items[0], invalid);
+      expect(() => gatewayV2MessageSchema.parse(broken)).toThrow();
+    }
+    expect(snapshot.payload.items[10]).toMatchObject({
+      value: 7,
+      minimum: 1,
+      maximum: 90,
+      unit: "days",
+      kind: "duration",
+      storageUnit: "d",
+      unitLabel: { "zh-CN": "天", en: "days", ja: "日" },
+    });
+    expect(snapshot.payload.items[0]).toMatchObject({ kind: "ratio", storageUnit: "permille" });
+    expect(snapshot.payload.items[2]).toMatchObject({ kind: "count", storageUnit: "count" });
+    expect(snapshot.payload.items[6]).toMatchObject({ kind: "count", storageUnit: "count" });
     expect(snapshot.payload.items[0]).toMatchObject({
       value: 800,
       defaultValue: 800,
@@ -239,6 +288,23 @@ describe("think settings", () => {
       overridden: false,
     });
     expect(snapshot.payload.items[2]).toMatchObject({ value: 5, defaultValue: 5 });
+    for (const item of snapshot.payload.items as unknown as {
+      label: Record<string, string>;
+      description: Record<string, string>;
+      unitLabel: Record<string, string>;
+    }[])
+      for (const text of [item.label, item.description, item.unitLabel])
+        expect(Object.keys(text).sort()).toEqual(["en", "ja", "zh-CN"]);
+    expect(snapshot.payload.items[2]).toMatchObject({
+      label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+      unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
+    });
+    expect(snapshot.payload.items[6]).toMatchObject({
+      key: "maxAttempts",
+      unit: "times",
+      label: { "zh-CN": "最多尝试次数", en: "Maximum attempts", ja: "最大試行回数" },
+      unitLabel: { "zh-CN": "次", en: "times", ja: "回" },
+    });
     expect(snapshot.payload.items[3]).toMatchObject({ value: 50, defaultValue: 50 });
     const off = await fixture();
     const plain = (await off.control.query(head as never)) as unknown as {

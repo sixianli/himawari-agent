@@ -88,10 +88,10 @@ def execute_case(name, interrupted_sample=False, final_sample_failure=False, acc
     resources.thread.join(timeout=5)
     require(not resources.thread.is_alive(), 'FIXTURE_RESOURCE_THREAD_DID_NOT_STOP')
     if interrupted_sample:
-        require(len(resources.errors) == 1, 'ORIGINAL_RESOURCE_OBSERVER_DID_NOT_RECORD_FILESYSTEM_ERROR')
+        require(len(resources.warnings) == 1, 'ORIGINAL_RESOURCE_OBSERVER_DID_NOT_RECORD_FILESYSTEM_WARNING')
         resource_log.rmdir()
     else:
-        require(not resources.errors and resource_log.is_file(), 'FIXTURE_INITIAL_RESOURCE_SAMPLE_FAILED')
+        require(not resources.warnings and resource_log.is_file(), 'FIXTURE_INITIAL_RESOURCE_SAMPLE_FAILED')
     if final_sample_failure:
         if resource_log.exists():
             (case_evidence / 'initial-resource-sample.jsonl').write_bytes(resource_log.read_bytes())
@@ -105,24 +105,25 @@ def execute_case(name, interrupted_sample=False, final_sample_failure=False, acc
         exec(finalizer_code, context)
     (case_evidence / 'finalizer.stdout').write_text(captured.getvalue())
     observed = json.loads((case_evidence / 'run-report.json').read_text())
-    readback = {'scratchExists': scratch.is_dir(), 'markerExists': marker.is_file(), 'markerSha256': hashlib.sha256(marker.read_bytes()).hexdigest() if marker.is_file() else None, 'resourceErrors': observed.get('resourceSamplingErrors', []), 'lastSampleSucceeded': resource_log.is_file(), 'cleanupHelperInvoked': (case_evidence / 'scratch-cleanup.stdout').exists(), 'runPassed': observed['passed'], 'scratchCleanupPending': observed['scratchCleanupPending'], 'runnerErrors': observed['runnerErrors']}
+    readback = {'scratchExists': scratch.is_dir(), 'markerExists': marker.is_file(), 'markerSha256': hashlib.sha256(marker.read_bytes()).hexdigest() if marker.is_file() else None, 'resourceWarnings': observed.get('resourceSamplingWarnings', []), 'lastSampleSucceeded': resource_log.is_file(), 'cleanupHelperInvoked': (case_evidence / 'scratch-cleanup.stdout').exists(), 'runPassed': observed['passed'], 'scratchCleanupPending': observed['scratchCleanupPending'], 'runnerErrors': observed['runnerErrors']}
     result = {'name': name, 'passed': False, 'input': {'sevenReportAcceptancePassed': acceptance_passed, 'interruptedResourceSample': interrupted_sample, 'finalResourceSampleFailure': final_sample_failure, 'externalCleanupDecision': 'fixture-allow-only-own-new-directory'}, 'readback': readback, 'assertionFailures': [], 'evidence': str(case_evidence)}
     try:
-        if interrupted_sample or final_sample_failure or not acceptance_passed:
-            require(observed['passed'] is False, 'FAILED_RESOURCE_OR_ACCEPTANCE_RUN_REPORTED_PASSED')
+        if not acceptance_passed:
+            require(observed['passed'] is False, 'FAILED_ACCEPTANCE_RUN_REPORTED_PASSED')
             require(scratch.is_dir(), 'FAILED_RUN_SCRATCH_SCENE_WAS_DELETED')
             require(marker.is_file() and marker.read_bytes() == marker_bytes, 'FAILED_RUN_SCENE_BYTES_NOT_RETAINED')
             require(observed['scratchCleanupPending'] is True, 'FAILED_RUN_CLEANUP_WAS_MARKED_COMPLETE')
             require(not readback['cleanupHelperInvoked'], 'FAILED_RUN_REACHED_CLEANUP_DECISION')
         else:
-            require(observed['passed'] is True, 'SUCCESS_CONTROL_REPORTED_FAILURE')
+            require(observed['passed'] is True, 'SUCCESS_OR_SAMPLING_WARNING_RUN_REPORTED_FAILURE')
+            require(not observed['runnerErrors'], 'SAMPLING_WARNING_BECAME_RUNNER_ERROR')
             require(not scratch.exists(), 'SUCCESS_CONTROL_SCRATCH_WAS_NOT_DELETED')
             require(observed['scratchCleanupPending'] is False, 'SUCCESS_CONTROL_CLEANUP_NOT_CONFIRMED')
             require(readback['cleanupHelperInvoked'], 'SUCCESS_CONTROL_CLEANUP_DECISION_NOT_EXECUTED')
         if interrupted_sample:
-            require(bool(readback['resourceErrors']) and readback['lastSampleSucceeded'], 'TRANSIENT_ERROR_WITH_SUCCESSFUL_FINAL_SAMPLE_NOT_REACHED')
+            require(bool(readback['resourceWarnings']) and readback['lastSampleSucceeded'], 'TRANSIENT_WARNING_WITH_SUCCESSFUL_FINAL_SAMPLE_NOT_REACHED')
         if final_sample_failure:
-            require(bool(readback['resourceErrors']) and not readback['lastSampleSucceeded'], 'FINAL_SAMPLE_FILESYSTEM_FAILURE_NOT_REACHED')
+            require(bool(readback['resourceWarnings']) and not readback['lastSampleSucceeded'], 'FINAL_SAMPLE_FILESYSTEM_WARNING_NOT_REACHED')
         result['passed'] = True
     except AssertionError as error:
         result['assertionFailures'].append(str(error))
@@ -130,9 +131,9 @@ def execute_case(name, interrupted_sample=False, final_sample_failure=False, acc
     return result
 
 cases = [
-    ('transient-resource-error-final-sample-success', {'interrupted_sample': True}),
+    ('transient-resource-warning-final-sample-success', {'interrupted_sample': True}),
     ('all-success-cleanup-control', {}),
-    ('final-resource-sample-error', {'final_sample_failure': True}),
+    ('final-resource-sample-warning', {'final_sample_failure': True}),
     ('acceptance-failure-retention-control', {'acceptance_passed': False}),
 ]
 report = {'schemaVersion': 'himawari.__PKT_LABEL__-change-resource-retention-fixture.v1', 'passed': False, 'productionQualificationIssued': False, 'unitBoundaryOnly': True, 'stage': {'path': str(stage), 'sha256': hashlib.sha256(stage_bytes).hexdigest(), 'executedOriginalResourcesAndFinalizer': True}, 'fixtureSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'workingRoot': str(working), 'evidenceRoot': str(evidence_root), 'cases': []}

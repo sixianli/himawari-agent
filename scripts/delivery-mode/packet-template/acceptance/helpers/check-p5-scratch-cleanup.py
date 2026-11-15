@@ -78,7 +78,7 @@ def identities_now():
         try:
             item = process_identity(int(directory.name))
             result[item["pid"]] = item
-        except (FileNotFoundError, ProcessLookupError):
+        except (FileNotFoundError, ProcessLookupError, RuntimeError, ValueError):
             pass
     return result
 

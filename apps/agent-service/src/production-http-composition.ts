@@ -54,7 +54,10 @@ import {
   type ThreadExecutionEnvironment,
 } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
-import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import {
+  SqliteGovernedDeletionAdapter,
+  type SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
@@ -147,6 +150,12 @@ import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
+import {
+  McpConnectionAddresses,
+  PRODUCTION_MCP_CONNECTION_OPERATIONS,
+  ProductionMcpConnectionsControl,
+  registerMcpConnectionAddressRoute,
+} from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
@@ -202,6 +211,7 @@ import {
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
+import { ThinkThreadRetention } from "./production-think-retention.js";
 import {
   PRODUCTION_THINK_OPERATIONS,
   ProductionThinkControl,
@@ -328,6 +338,7 @@ export interface ProductionHttpCompositionOptions {
     readonly worth: ThinkWorthRoute;
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
+  readonly thinkRetentionDiagnostic?: (event: Record<string, string>) => void;
   readonly queryPrefetch?: ProductionQueryPrefetch;
   readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
@@ -792,6 +803,7 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
   deliveryTimingAvailable: boolean,
@@ -842,6 +854,7 @@ function routeOptions(
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_THINK_OPERATIONS,
       ],
@@ -1268,6 +1281,24 @@ export async function createProductionHttpComposition(
     configuration: configuration.runPolicy?.thinkInbox,
     clock: { now: clock },
   });
+  const retentionDeletion = () =>
+    new SqliteGovernedDeletionAdapter({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+      ownerId,
+      agentId,
+      now: clock,
+    });
+  const thinkRetention = new ThinkThreadRetention({
+    deletion: {
+      deleteExpiredThinkThreads: (input) => retentionDeletion().deleteExpiredThinkThreads(input),
+      retryIncompleteThreadDeletions: (input) =>
+        retentionDeletion().retryIncompleteThreadDeletions(input),
+    },
+    settings: thinkSettings,
+    clock: { now: clock },
+    ...(options.thinkRetentionDiagnostic ? { onDiagnostic: options.thinkRetentionDiagnostic } : {}),
+  });
   const think = options.think
     ? productionThinkLoop({
         settings: thinkSettings,
@@ -1458,6 +1489,7 @@ export async function createProductionHttpComposition(
         }
       : {}),
   });
+  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
         ownerId,
@@ -1677,6 +1709,23 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.mcpRead
+      ? {
+          mcpConnectionsControl: new ProductionMcpConnectionsControl({
+            configuration,
+            store: repository.mcpConnections(),
+            addresses: mcpConnectionAddresses,
+            minute: (connectionId) =>
+              options.mcpRead?.minuteUsage(connectionId) ?? {
+                reads: 0,
+                hookReads: 0,
+              },
+            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+            clock: { now: clock },
+          }),
+        }
+      : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1698,6 +1747,7 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
       options.deliveryTimingSettings !== undefined,
@@ -1781,7 +1831,15 @@ export async function createProductionHttpComposition(
   });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
-  if (options.mcpRead) registerMcpReadRoute(app, options.mcpRead);
+  if (options.mcpRead) {
+    registerMcpReadRoute(app, options.mcpRead);
+    registerMcpConnectionAddressRoute(app, {
+      authentication,
+      sessionCookieName: httpConfiguration.sessionCookieName,
+      ownerId,
+      addresses: mcpConnectionAddresses,
+    });
+  }
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)
@@ -1818,6 +1876,7 @@ export async function createProductionHttpComposition(
         searchIndexer.start();
         home.startScoring();
         think?.loop.start();
+        thinkRetention.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1832,11 +1891,13 @@ export async function createProductionHttpComposition(
       searchIndexer.start();
       home.startScoring();
       think?.loop.start();
+      thinkRetention.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
       await think?.loop.stop();
+      await thinkRetention.stop();
       await home.stopScoring();
       try {
         await app.close();

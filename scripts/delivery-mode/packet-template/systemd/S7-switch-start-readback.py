@@ -22,6 +22,9 @@ configuration = Path('/etc/himawari/config.json')
 fragment = Path('/etc/systemd/system/himawari-prod.service')
 node = Path('/opt/himawari/node/bin/node')
 unit = 'himawari-prod.service'
+history_comparison = '__PKT_HISTORY_COMPARISON__'
+if history_comparison not in ('on', 'off'):
+    raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_HISTORY_COMPARISON_INVALID')
 old_pair_supervisor = '__PKT_OLD_OPERATIONS__/pair-supervisor.mjs'
 account = pwd.getpwnam('himawari-prod')
 if sys.argv[1:] != ['--approved-r2l13-__PKT_LABEL__-deployment-switch-start'] or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or sys.platform != 'linux' or os.getuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or (account.pw_uid, account.pw_gid) != (999, 988) or Path(__file__).resolve() != base / 'S7-switch-start-readback.py':
@@ -42,6 +45,12 @@ def directory(filename, uid, mode=None):
         raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_DIRECTORY_UNSAFE:' + str(filename))
 
 startup_phase_baseline_ms = __PKT_STARTUP_PHASE_BASELINE_MS__
+
+STARTUP_FAILURE_TERMS = ('failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable')
+STARTUP_NON_FATAL_EVENTS = frozenset({'memory.embedding_catch_up_failed'})
+
+def startup_failure_events(messages):
+    return [value.get('event', '') for value in messages if isinstance(value, dict) and value.get('event') not in STARTUP_NON_FATAL_EVENTS and any(term in str(value.get('event', '')).lower() for term in STARTUP_FAILURE_TERMS)]
 
 def content_audits_completed(messages):
     counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}, 'sandbox_runtime.content_audit_superseded': {}}
@@ -230,7 +239,7 @@ upgraded_state = json_file(evidence / 's7-catalog-after__PKT_TARGET_SCHEMA__.jso
 for value, schema in [(state, __PKT_CURRENT_SCHEMA__), (upgraded_state, __PKT_TARGET_SCHEMA__)]:
     if value['schema']['current'] != schema or value['schema']['minimumWriter'] != schema or value['gate']['unresolvedReservedCount'] != 0 or value['gate']['nonTerminalRunCount'] != 0 or value['authority'] != binding['authority']:
         raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_SCHEMA_GATE_OR_AUTHORITY_CHANGED')
-if upgraded_state['history'] != state['history']:
+if history_comparison == 'on' and upgraded_state['history'] != state['history']:
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_HISTORY_CHANGED')
 for key, expected in binding['identity'].items():
     if upgraded_state['identity'].get(key, upgraded_state['authority'].get(key)) != expected:
@@ -239,7 +248,7 @@ post_upgrade_state = json_file(evidence / 's7-post-upgrade-state.json', 999, 0o6
 if post_upgrade_state['schemaVersion'] != 'himawari.__PKT_LABEL__-change-post-upgrade-state.v1' or post_upgrade_state['action'] != 'S7_CATALOG_UPGRADE' or post_upgrade_state['deploymentId'] != binding['identity']['deploymentId'] or post_upgrade_state['schemaSequence'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['schemaMinimumWriter'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['migrationCount'] != __PKT_TARGET_SCHEMA__ or post_upgrade_state['integrityCheck'] != 'ok' or post_upgrade_state['foreignKeys'] != 'ok':
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_POST_UPGRADE_STATE_FAILED')
 qualification_run = json_file(qualification / 'acceptance-evidence/run-report.json')
-if qualification_run['passed'] is not True or qualification_run['profile'] != 'cloud-__PKT_LABEL__-change' or qualification_run['scratchDeleted'] is not True or qualification_run['scratchCleanupPending'] is not False or qualification_run['acceptanceUid'] != 999 or qualification_run['runnerErrors'] or qualification_run['resourceSamplingErrors']:
+if qualification_run['passed'] is not True or qualification_run['profile'] != 'cloud-__PKT_LABEL__-change' or qualification_run['scratchDeleted'] is not True or qualification_run['scratchCleanupPending'] is not False or qualification_run['acceptanceUid'] != 999 or qualification_run['runnerErrors']:
     raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_COMPLETE_S6_REQUIRED')
 probe = json_file(evidence / 's6-service-read-launch.json')
 if probe['passed'] is not True or probe['productionStateAccess'] is not False or probe['systemdRunExitCode'] != 0 or probe['errors'] or probe['readback']['scratchDeleted'] is not True or probe['cgroupReadback']['remainingPids']:
@@ -256,7 +265,7 @@ for filename in ['cloud-protected-prepare.mjs', 'validate-r2l6-installed.mjs', '
     regular(operations / filename)
 regular(Path(binding['service']['workerTokenFile']), 999, 0o600)
 initial_enabled = subprocess.run(['/usr/bin/systemctl', 'is-enabled', unit], capture_output=True, text=True, timeout=15).stdout.strip()
-orchestration = {'schemaVersion': 'himawari.__PKT_LABEL__-change-switch-orchestration.v1', 'passed': False, 'bindingSha256': sha(binding_bytes), 'frozenPacketReadback': frozen_packet, 'catalogUpgrade': {'reportSha256': upgrade_report_sha256, 'preparedConfigurationSha256': catalog['preparedConfigurationSha256'], 'snapshotSha256': catalog['snapshotSha256'], 'planDigest': catalog['planDigest'], 'upgraded': catalog['upgraded']}, 'startedAt': time.time(), 'commands': [], 'errors': [], 'oldProperties': original_properties, 'oldEnabledState': initial_enabled, 'unitSwitched': False, 'startRequested': False, 'rollbackPerformed': False, 'rootFreeBeforeBytes': os.statvfs('/').f_bavail * os.statvfs('/').f_frsize}
+orchestration = {'schemaVersion': 'himawari.__PKT_LABEL__-change-switch-orchestration.v1', 'passed': False, 'bindingSha256': sha(binding_bytes), 'frozenPacketReadback': frozen_packet, 'catalogUpgrade': {'reportSha256': upgrade_report_sha256, 'preparedConfigurationSha256': catalog['preparedConfigurationSha256'], 'snapshotSha256': catalog['snapshotSha256'], 'planDigest': catalog['planDigest'], 'upgraded': catalog['upgraded']}, 'historyComparison': history_comparison, 'startedAt': time.time(), 'commands': [], 'errors': [], 'oldProperties': original_properties, 'oldEnabledState': initial_enabled, 'unitSwitched': False, 'startRequested': False, 'rollbackPerformed': False, 'rootFreeBeforeBytes': os.statvfs('/').f_bavail * os.statvfs('/').f_frsize}
 retain_json(evidence / 's7-orchestration.started.json', {'bindingSha256': sha(binding_bytes), 'startedAt': orchestration['startedAt']})
 try:
     published = []
@@ -303,7 +312,7 @@ try:
                 messages.append(json.loads(entry['MESSAGE']))
             except (json.JSONDecodeError, KeyError):
                 pass
-        failure_events = [value.get('event', '') for value in messages if isinstance(value, dict) and any(term in str(value.get('event', '')).lower() for term in ['failed', 'failure', 'error', 'timeout', 'lost', 'quarantined', 'child_exit', 'child_error', 'retryable'])]
+        failure_events = startup_failure_events(messages)
         if failure_events:
             raise RuntimeError('__PKT_LABEL_UPPER___SWITCH_STARTUP_FAILURE_EVENT')
         audits_completed = content_audits_completed(messages)

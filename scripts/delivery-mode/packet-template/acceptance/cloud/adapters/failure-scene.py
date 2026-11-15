@@ -27,25 +27,28 @@ def retain_failure_scene(scratch, evidence):
         for name in sorted(directories) + sorted(files):
             path = Path(parent) / name
             relative = str(path.relative_to(scratch))
-            info = path.lstat()
-            entry = {'path': relative, 'mode': oct(stat.S_IMODE(info.st_mode)), 'uid': info.st_uid}
-            if stat.S_ISDIR(info.st_mode):
-                entry['type'] = 'directory'
-            elif stat.S_ISLNK(info.st_mode):
-                entry.update({'type': 'symlink', 'target': os.readlink(path)})
-            elif stat.S_ISREG(info.st_mode):
-                entry.update({'type': 'file', 'bytes': info.st_size, 'sha256': file_sha256(path)})
-                if name.endswith(FAILURE_TEXT_SUFFIXES) and 'node_modules' not in Path(relative).parts:
-                    if info.st_size <= FAILURE_TEXT_FILE_LIMIT and copied_bytes + info.st_size <= FAILURE_TEXT_TOTAL_LIMIT:
-                        target = copies / relative
-                        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                        shutil.copyfile(path, target, follow_symlinks=False)
-                        copied_bytes += info.st_size
-                        entry['copied'] = True
-                    else:
-                        skipped_text.append(relative)
-            else:
-                entry['type'] = 'other'
+            try:
+                info = path.lstat()
+                entry = {'path': relative, 'mode': oct(stat.S_IMODE(info.st_mode)), 'uid': info.st_uid}
+                if stat.S_ISDIR(info.st_mode):
+                    entry['type'] = 'directory'
+                elif stat.S_ISLNK(info.st_mode):
+                    entry.update({'type': 'symlink', 'target': os.readlink(path)})
+                elif stat.S_ISREG(info.st_mode):
+                    entry.update({'type': 'file', 'bytes': info.st_size, 'sha256': file_sha256(path)})
+                    if name.endswith(FAILURE_TEXT_SUFFIXES) and 'node_modules' not in Path(relative).parts:
+                        if info.st_size <= FAILURE_TEXT_FILE_LIMIT and copied_bytes + info.st_size <= FAILURE_TEXT_TOTAL_LIMIT:
+                            target = copies / relative
+                            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                            shutil.copyfile(path, target, follow_symlinks=False)
+                            copied_bytes += info.st_size
+                            entry['copied'] = True
+                        else:
+                            skipped_text.append(relative)
+                else:
+                    entry['type'] = 'other'
+            except FileNotFoundError:
+                entry = {'path': relative, 'type': 'vanished'}
             entries.append(entry)
     manifest_file = evidence / 'scratch-failure-manifest.json'
     with manifest_file.open('x') as handle:

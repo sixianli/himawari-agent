@@ -59,6 +59,36 @@ class InstallScheduleTest(unittest.TestCase):
         self.install('remove-mac')
         self.assertFalse(plist.exists())
 
+    def make_repo(self):
+        repo = self.root.parent / 'repo'
+        repo.mkdir()
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+        return repo
+
+    def test_mac_local_schedule_copies_new_scripts_and_reports_only_until_asked(self):
+        repo = self.make_repo()
+        output = self.install('mac', '--repo', str(repo), str(self.root))
+        share = self.home / '.local/share/himawari'
+        for name in ('prune-local.py', 'retention.json', 'prune-rebuildable.py'):
+            self.assertTrue((share / name).exists(), name)
+        self.assertIn('PRUNE_LOCAL_RESULT', output)
+        self.assertIn('"mode": "dry-run"', output)
+        self.assertIn('mode=report-only', output)
+        local_plist = self.home / 'Library/LaunchAgents/com.himawari.prune-local.plist'
+        text = local_plist.read_text()
+        self.assertIn(f'<string>{repo}</string>', text)
+        self.assertIn(f'<string>{share / "retention.json"}</string>', text)
+        self.assertNotIn('<string>--apply</string>', text)
+        output = self.install('mac', '--repo', str(repo), '--apply-local', str(self.root))
+        self.assertIn('"mode": "dry-run"', output)
+        self.assertIn('<string>--apply</string>', local_plist.read_text())
+        self.install('remove-mac')
+        self.assertFalse(local_plist.exists())
+
+    def test_apply_local_without_repo_is_refused(self):
+        child = subprocess.run(['bash', str(HERE / 'install-schedule.sh'), 'mac', '--apply-local', str(self.root)], capture_output=True, text=True, env=self.environment, check=False)
+        self.assertNotEqual(child.returncode, 0)
+
     def test_missing_root_is_refused(self):
         child = subprocess.run(['bash', str(HERE / 'install-schedule.sh'), 'hermes', str(self.root / 'missing')], capture_output=True, text=True, env=self.environment, check=False)
         self.assertNotEqual(child.returncode, 0)
