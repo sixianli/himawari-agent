@@ -538,10 +538,8 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql + '\nUPDATE saved_model_budget_allocations SET id = id;', tables), [])
         self.assertEqual(packet_maker.rebuilds_keeping_rows(name, sql.replace('INSERT INTO model_invocation_identities SELECT * FROM saved_model_invocation_identities;', ''), tables), [])
 
-    def test_the_owner_lost_rebuild_is_allowed_when_read_the_way_the_packet_maker_reads_it_from_git(self):
-        sql = packet_maker.git('show', 'HEAD:' + packet_maker.MIGRATIONS + '/0083_model_invocation_owner_lost.sql')
-        tables = ['model_budget_allocations', 'model_invocation_identities']
-        self.assertEqual(packet_maker.rebuilds_keeping_rows('0083_model_invocation_owner_lost.sql', sql, tables), tables)
+    def test_the_owner_lost_rebuild_is_allowed_through_the_migration_ledger_as_the_packet_maker_reads_it_from_git(self):
+        self.assertEqual(packet_maker.migration_ledger('HEAD', 82, 83), [{'sequence': 83, 'name': 'model_invocation_owner_lost', 'phase': 'expand'}])
 
     def test_a_schema_the_template_cannot_reach_is_refused_before_any_build(self):
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_COMMIT_OLDER_THAN_PRODUCTION_SCHEMA'):
