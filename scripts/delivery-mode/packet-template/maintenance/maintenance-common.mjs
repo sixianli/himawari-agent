@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
-import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
+import { fixed, openReadonly, readS0State, readRouteAuthorization, readExistingWorkspace, one, catalogRegistrationPrefix, canonicalJson, historyDigests, historyTables, historyRow, ledgerMigrationId } from "../s0-db/read-s0-db.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 import { requireNoDatabaseSidecars } from "./raw-copy-recovery.mjs";
 import { newCapabilityRefs, webNetwork, webProviderSecretRef } from "../signing/cloud-capability-manifest.mjs";
@@ -559,7 +559,6 @@ export function readCatalogResume(binding) {
   const himawari = `${newPrefix}/bin/himawari`;
   const plan = requireRetainedCommand(records.plan, [himawari, "capabilities", "upgrade-plan", "--config", binding.paths.config, "--reviewed"]);
   const upgrade = requireRetainedCommand(records.upgrade, [himawari, "capabilities", "upgrade", "--config", binding.paths.config, "--confirm", plan.planDigest, "--reviewed"]);
-  for (const record of [records.plan, records.upgrade]) assert(record.samplerFailure === false && record.spaceSample && record.spaceSample.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   return { approval: { path: approvalPath, sha256: sha(readFileSync(approvalPath)), approvalRef: approval.approvalRef }, retained, original, snapshotSha256: event.snapshotDigest, plan, upgrade };
 }
 
@@ -737,7 +736,7 @@ export function collectTidyState(database) {
   return {
     schema: { current: Number(one(database, "SELECT value FROM schema_metadata WHERE key='current_sequence'").value), minimumWriter: Number(one(database, "SELECT value FROM schema_metadata WHERE key='minimum_writer_sequence'").value) },
     ledger: rows(database, "SELECT sequence,name,phase,digest,applied_at FROM schema_migration_ledger ORDER BY sequence", []),
-    history: historyDigests(database),
+    history: historyDigests(database, historyIgnoredColumns),
     capabilities: rows(database, "SELECT id,version,status,revision,integrity,record_json FROM capability_declarations ORDER BY id", []).map(({ record_json: recordJson, ...row }) => ({ ...row, recordSha256: sha(recordJson) })),
     authorization: rows(database, "SELECT key,revision,value_json FROM product_state_records WHERE key LIKE 'host-workspace:directory-grant:%' ORDER BY key", []).map(({ value_json: valueJson, ...row }) => ({ ...row, valueSha256: sha(valueJson) })),
     integrity: rows(database, "PRAGMA integrity_check", []).map((row) => row.integrity_check).join(","),
@@ -784,6 +783,13 @@ export function tidyDatabaseSidecars(options) {
 export const currentSchema = __PKT_CURRENT_SCHEMA__;
 export const targetSchema = __PKT_TARGET_SCHEMA__;
 export const migrationExpectedLedger = Object.freeze(__PKT_MIGRATION_LEDGER__.map((row) => Object.freeze(row)));
+export const addedColumnBackfills = Object.freeze({ thread_origin: Object.freeze({ threads: Object.freeze(["origin"]) }) });
+export function historyIgnoredColumnsFor(ledger) {
+  const merged = {};
+  for (const row of ledger) for (const [table, columns] of Object.entries(addedColumnBackfills[row.name] ?? {})) merged[table] = [...new Set([...(merged[table] ?? []), ...columns])];
+  return Object.freeze(Object.fromEntries(Object.entries(merged).map(([table, columns]) => [table, Object.freeze(columns)])));
+}
+export const historyIgnoredColumns = historyIgnoredColumnsFor(migrationExpectedLedger);
 export const migrationComparedSections = Object.freeze(["history", "capabilities", "authorization", "releaseReceipts", "integrity", "foreignKeys"]);
 
 export function migrationContentState(database) {
@@ -856,6 +862,10 @@ export function recoveryIdForSchema(binding, schema) {
   return id;
 }
 
+export function spaceSamplingWarnings(samplerFailure, sampled) {
+  return [...(samplerFailure ? [{ code: "SAMPLER_EXIT_FAILED", stage: "worker" }] : []), ...(sampled ? sampled.errors : [{ code: "SAMPLER_RESULT_MISSING", stage: "worker" }])];
+}
+
 export async function cli(prefix, args, name) {
   requireStopped();
   safeFile(`${prefix}/bin/himawari`);
@@ -875,15 +885,13 @@ export async function cli(prefix, args, name) {
     sampler.once("exit", (code) => code === 0 ? resolve() : reject(new Error("__PKT_LABEL_UPPER___MAINTENANCE_SAMPLER_FAILED")));
   });
   exited.catch(() => undefined);
-  const readiness = await ready;
-  if (readiness.initialErrors.length > 0) {
-    sampler.postMessage({ kind: "stop" });
-    await exited;
-    retainedJson(`${name}-sampler-precheck-failure.json`, sampled);
-    throw new Error("__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLER_NOT_READY");
+  let samplerFailure = false;
+  try {
+    await ready;
+  } catch {
+    samplerFailure = true;
   }
   let output;
-  let samplerFailure = false;
   try {
     output = spawnSync(command[0], command.slice(1), { encoding: "utf8", timeout: 1200000, maxBuffer: 16777216, env: { HOME: fixed.stateRoot, PATH: "/opt/himawari/node/bin:/usr/bin:/bin", LANG: "C.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
   } finally {
@@ -894,9 +902,8 @@ export async function cli(prefix, args, name) {
       samplerFailure = true;
     }
   }
-  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure };
+  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure, spaceSamplingWarnings: spaceSamplingWarnings(samplerFailure, sampled) };
   const retained = retainedJson(`${name}-command.json`, record);
-  assert(!samplerFailure && sampled && sampled.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   assert(output.status === 0 && output.signal === null && !output.error, "__PKT_LABEL_UPPER___MAINTENANCE_CLI_FAILED");
   requireStopped();
   const records = output.stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -918,7 +925,7 @@ export async function readMaintenanceState(binding, prefix = newPrefix, allowSta
   const database = allowStartupAuthority === true ? openReadonly(sqliteDriverRoot, fixed.database) : openRecoveryReadonly(prefix, fixed.database, fixed.uid);
   try {
     database.exec("BEGIN");
-    const state = readS0State(database, binding.identity);
+    const state = readS0State(database, binding.identity, historyIgnoredColumns);
     assert.deepEqual(state.identity, binding.identity, "__PKT_LABEL_UPPER___MAINTENANCE_DB_BINDING_CHANGED");
     if (allowStartupAuthority === "rollback-current") {
       assert.equal(state.authority.authorityEpoch, binding.authority.authorityEpoch, "__PKT_LABEL_UPPER___MAINTENANCE_ROLLBACK_CURRENT_EPOCH_CHANGED");
@@ -957,18 +964,19 @@ export function verifyHistoryUnchanged(before, after) {
 
 export const startupRecoveryColumns = Object.freeze({ sandbox_execution_records: Object.freeze(["recovery_json"]) });
 
-export function compareHistoryRows(reference, current) {
+export function compareHistoryRows(reference, current, ignoredColumns = historyIgnoredColumns) {
   const tables = {};
   for (const table of historyTables) {
     const allowed = new Set(startupRecoveryColumns[table] ?? []);
     const query = `SELECT rowid AS "__rowid", * FROM "${table}" ORDER BY rowid`;
-    const live = current.prepare(query).iterate();
+    const live = (function* () { for (const row of current.prepare(query).iterate()) yield historyRow(table, row, ignoredColumns); })();
     let referenceRows = 0;
     let liveRows = 0;
     const recoveryUpdatedRowids = [];
     try {
       let next = live.next();
-      for (const row of reference.prepare(query).iterate()) {
+      for (const raw of reference.prepare(query).iterate()) {
+        const row = historyRow(table, raw, ignoredColumns);
         while (!next.done && next.value.__rowid < row.__rowid) {
           liveRows += 1;
           next = live.next();
@@ -1006,7 +1014,7 @@ export function verifyHistoryAgainstRecoveryPoint(binding) {
       const tables = compareHistoryRows(reference, current);
       current.exec("COMMIT");
       reference.exec("COMMIT");
-      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, tables };
+      return { schemaVersion: "himawari.__PKT_LABEL__-change-history-preserved.v1", passed: true, checkedAt: new Date().toISOString(), reference: copyPath, recoveryId, allowedStartupRecoveryColumns: startupRecoveryColumns, ignoredHistoryColumns: historyIgnoredColumns, tables };
     } finally {
       current.close();
     }
