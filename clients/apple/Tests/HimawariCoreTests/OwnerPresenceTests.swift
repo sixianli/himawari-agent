@@ -5,21 +5,6 @@ import FoundationNetworking
 import Testing
 @testable import HimawariCore
 
-private final class MemoryCursor: CursorStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: String?
-    private(set) var saved: [String?] = []
-
-    func load() -> String? { lock.withLock { value } }
-
-    func save(_ cursor: String?) {
-        lock.withLock {
-            value = cursor
-            saved.append(cursor)
-        }
-    }
-}
-
 @Suite struct DeviceNotificationStreamTests {
     private static let deliver = #"{"id":"n-1","kind":"reminder","title":"该出门了","body":"大约 25 分钟","homeKey":null,"createdAt":"2026-11-15T05:35:00.000Z"}"#
 
@@ -39,12 +24,13 @@ private final class MemoryCursor: CursorStore, @unchecked Sendable {
         let lines = [
             "event: heartbeat\nid: cursor-7\ndata: {}\n\n",
             "event: notification.deliver\nid: n-1\ndata: \(Self.deliver)\n\n",
+            "event: notification.deliver\nid: n-bad\ndata: {\"id\":\"n-bad\"}\n\n",
             "event: notification.withdraw\nid: n-1\ndata: {\"id\":\"n-1\"}\n\n",
         ]
         let exchange = RecordingExchange([], streams: [(200, lines)])
         let http = DeviceHTTPClient(exchange: exchange)
         http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
-        let cursor = MemoryCursor()
+        let cursor = StoredCursor(store: MemoryLocalStore())
         let stream = DeviceEventStream(http: http, cursors: cursor, heartbeat: { 30 })
         var events: [DeviceStreamEvent] = []
         for await event in stream.start() {
@@ -53,7 +39,7 @@ private final class MemoryCursor: CursorStore, @unchecked Sendable {
         }
         #expect(events.contains(.notificationWithdraw(id: "n-1")))
         #expect(events.contains { if case .notificationDeliver = $0 { return true } else { return false } })
-        #expect(cursor.saved == ["cursor-7"])
+        #expect(cursor.load() == "cursor-7")
     }
 }
 
@@ -79,6 +65,26 @@ private final class MemoryCursor: CursorStore, @unchecked Sendable {
         let replaced = pending.deliver(notice("a", at: "2026-11-15T05:00:00.000Z", title: "new"))
         #expect(replaced)
         #expect(pending.items.map(\.title) == ["new"])
+    }
+
+    @Test func aNoticeDismissedOrWithdrawnIsNotShownAgainWhenRedelivered() {
+        var pending = PendingNotifications()
+        pending.deliver(notice("a", at: "2026-11-15T05:00:00.000Z"))
+        pending.withdraw("a")
+        let again = pending.deliver(notice("a", at: "2026-11-15T05:00:00.000Z"))
+        pending.withdraw("early")
+        let late = pending.deliver(notice("early", at: "2026-11-15T05:10:00.000Z"))
+        #expect(!again)
+        #expect(!late)
+        #expect(pending.items.isEmpty)
+    }
+
+    @Test func orderFollowsTheTimeEvenWhenTheFractionalSecondsAreLeftOut() {
+        var pending = PendingNotifications()
+        pending.deliver(notice("whole", at: "2026-11-15T05:35:00Z"))
+        pending.deliver(notice("half", at: "2026-11-15T05:35:00.500Z"))
+        pending.deliver(notice("earlier", at: "2026-11-15T05:34:59.900Z"))
+        #expect(pending.items.map(\.id) == ["half", "whole", "earlier"])
     }
 
     @Test func withdrawRemovesOnlyThatNotice() {
@@ -118,10 +124,25 @@ private final class MemoryCursor: CursorStore, @unchecked Sendable {
         #expect(!policy.shouldReport(lastInputAt: start, now: fourMinutes, lastReport: sent, streamConnected: false))
     }
 
-    @Test func subSecondJitterInTheIdleReadingIsNotAChange() {
+    @Test func anUnreadableIdleTimeIsNotTakenAsInputJustNow() {
+        #expect(PresenceReport.lastInput(secondsSinceInput: -1, now: start) == nil)
+        #expect(PresenceReport.lastInput(secondsSinceInput: .nan, now: start) == nil)
+        #expect(PresenceReport.lastInput(secondsSinceInput: .infinity, now: start) == nil)
+        #expect(PresenceReport.lastInput(secondsSinceInput: 0, now: start) == start)
+    }
+
+    @Test func theNextCheckLandsOnTheKeepAliveInsteadOfAfterIt() {
+        #expect(policy.secondsUntilNextCheck(now: start, lastReport: nil) == 15)
+        let sent = PresenceReport(lastInputAt: start, sentAt: start)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(100), lastReport: sent) == 15)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(232), lastReport: sent) == 8)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(240), lastReport: sent) == 15)
+    }
+
+    @Test func subSecondJitterInTheIdleReadingIsNotAChange() throws {
         let sent = PresenceReport(lastInputAt: start.addingTimeInterval(0.2), sentAt: start)
         let later = start.addingTimeInterval(90)
-        let jittered = PresenceReport.lastInput(secondsSinceInput: 89.6, now: later)
+        let jittered = try #require(PresenceReport.lastInput(secondsSinceInput: 89.6, now: later))
         #expect(!policy.shouldReport(lastInputAt: jittered, now: later, lastReport: sent, streamConnected: false))
     }
 

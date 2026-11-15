@@ -23,7 +23,7 @@ final class PresenceSensor {
             while !Task.isCancelled {
                 guard let self else { return }
                 await tick()
-                try? await Task.sleep(for: .seconds(max(policy.minimumInterval / 4, 1)))
+                try? await Task.sleep(for: .seconds(policy.secondsUntilNextCheck(now: Date(), lastReport: lastReport)))
             }
         }
     }
@@ -34,9 +34,8 @@ final class PresenceSensor {
     }
 
     private func tick() async {
-        guard app.phase == .active, let seconds = Self.secondsSinceInput() else { return }
         let now = Date()
-        let lastInputAt = PresenceReport.lastInput(secondsSinceInput: seconds, now: now)
+        guard app.phase == .active, let seconds = Self.secondsSinceInput(), let lastInputAt = PresenceReport.lastInput(secondsSinceInput: seconds, now: now) else { return }
         let connected = app.chat?.connection == .online
         guard policy.shouldReport(lastInputAt: lastInputAt, now: now, lastReport: lastReport, streamConnected: connected) else { return }
         lastReport = PresenceReport(lastInputAt: lastInputAt, sentAt: now)

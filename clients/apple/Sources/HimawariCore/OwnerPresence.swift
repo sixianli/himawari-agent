@@ -20,25 +20,37 @@ public struct DeviceNotification: Codable, Sendable, Equatable, Identifiable {
 
 public struct PendingNotifications: Sendable, Equatable {
     public private(set) var items: [DeviceNotification] = []
+    private var settled: Set<String> = []
 
     public init() {}
 
     @discardableResult
     public mutating func deliver(_ notification: DeviceNotification) -> Bool {
+        guard !settled.contains(notification.id) else { return false }
         if let index = items.firstIndex(where: { $0.id == notification.id }) {
             guard items[index] != notification else { return false }
             items[index] = notification
         } else {
             items.append(notification)
         }
-        items.sort { ($0.createdAt, $0.id) > ($1.createdAt, $1.id) }
+        items = items
+            .map { (instant: Self.instant($0.createdAt), notice: $0) }
+            .sorted { ($0.instant, $0.notice.id) > ($1.instant, $1.notice.id) }
+            .map(\.notice)
         return true
     }
 
     @discardableResult
     public mutating func withdraw(_ id: String) -> DeviceNotification? {
+        settled.insert(id)
         guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
         return items.remove(at: index)
+    }
+
+    static func instant(_ value: String) -> Date {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value) ?? .distantPast
     }
 }
 
@@ -60,6 +72,13 @@ public struct PresenceReportPolicy: Sendable, Equatable {
         if PresenceReport.wholeSeconds(lastInputAt) != lastReport.lastInputAt { return true }
         return streamConnected && elapsed >= keepAliveInterval
     }
+
+    public func secondsUntilNextCheck(now: Date, lastReport: PresenceReport?) -> TimeInterval {
+        let tick = max(minimumInterval / 4, 1)
+        guard let lastReport else { return tick }
+        let untilKeepAlive = keepAliveInterval - now.timeIntervalSince(lastReport.sentAt)
+        return untilKeepAlive > 0 ? min(tick, untilKeepAlive) : tick
+    }
 }
 
 public struct PresenceReport: Sendable, Equatable {
@@ -75,8 +94,9 @@ public struct PresenceReport: Sendable, Equatable {
         Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
     }
 
-    public static func lastInput(secondsSinceInput: TimeInterval, now: Date) -> Date {
-        wholeSeconds(now.addingTimeInterval(-max(0, secondsSinceInput)))
+    public static func lastInput(secondsSinceInput: TimeInterval, now: Date) -> Date? {
+        guard secondsSinceInput.isFinite, secondsSinceInput >= 0 else { return nil }
+        return wholeSeconds(now.addingTimeInterval(-secondsSinceInput))
     }
 }
 

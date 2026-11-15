@@ -45,10 +45,14 @@ import Testing
     @Test func dismissingLocallyRemovesTheRowAndTheSystemNotice() {
         let menu = model()
         var removed: [String] = []
+        var shown: [String] = []
         menu.removeNotice = { removed.append($0) }
+        menu.showNotice = { shown.append($0.id) }
         menu.receive(.notificationDeliver(notice("n-1")))
         menu.dismiss(notice("n-1"))
+        menu.receive(.notificationDeliver(notice("n-1")))
         #expect(removed == ["n-1"])
+        #expect(shown == ["n-1"])
         #expect(menu.shownNotices.isEmpty)
     }
 

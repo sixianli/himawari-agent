@@ -13,16 +13,9 @@ public enum DeviceStreamEvent: Sendable, Equatable {
     case disconnected
 }
 
-extension DeviceStreamEvent {
-    public var isNotification: Bool {
-        switch self {
-        case .notificationDeliver, .notificationWithdraw: return true
-        default: return false
-        }
-    }
-}
-
 public enum DeviceEventDecoder {
+    public static let notificationEvents: Set<String> = ["notification.deliver", "notification.withdraw"]
+
     public static func decode(_ event: ServerSentEvent) -> DeviceStreamEvent? {
         let data = Data(event.data.utf8)
         switch event.event {
@@ -148,10 +141,9 @@ public final class DeviceEventStream: @unchecked Sendable {
                 for try await chunk in chunks {
                     deadline.touch()
                     for event in parser.feed(chunk) {
-                        let decoded = DeviceEventDecoder.decode(event)
-                        if let id = event.id, !id.isEmpty, !(decoded?.isNotification ?? false) { self.cursors?.save(id) }
+                        if let id = event.id, !id.isEmpty, !DeviceEventDecoder.notificationEvents.contains(event.event) { self.cursors?.save(id) }
                         if event.event == "device.reconnect" { return false }
-                        guard let decoded else { continue }
+                        guard let decoded = DeviceEventDecoder.decode(event) else { continue }
                         if decoded == .resyncRequired { self.cursors?.save(nil) }
                         continuation.yield(decoded)
                         if decoded == .sessionInvalid || decoded == .unavailable { return true }
