@@ -330,21 +330,57 @@ extension DeviceAPI {
 }
 
 final class PendingActionIdentities: @unchecked Sendable {
+    static let storageKey = "himawari.pendingActionIdentities"
+    static let capacity = 64
+
+    private struct Entry: Codable {
+        let identity: String
+        let sequence: Int
+    }
+
     private let lock = NSLock()
-    private var identities: [String: String] = [:]
+    private let defaults: UserDefaults?
+    private var entries: [String: Entry]
+
+    init(defaults: UserDefaults? = nil) {
+        self.defaults = defaults
+        if let data = defaults?.data(forKey: Self.storageKey), let stored = try? JSONDecoder().decode([String: Entry].self, from: data) {
+            entries = stored
+        } else {
+            entries = [:]
+        }
+    }
+
+    private static func key(_ descriptor: String) -> String {
+        Hashing.sha256(Data(descriptor.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     func identity(for descriptor: String) -> String {
         lock.lock()
         defer { lock.unlock() }
-        if let existing = identities[descriptor] { return existing }
+        let key = Self.key(descriptor)
+        if let existing = entries[key] { return existing.identity }
         let created = DeviceAPI.gatewayIdentifier("")
-        identities[descriptor] = created
+        entries[key] = Entry(identity: created, sequence: (entries.values.map(\.sequence).max() ?? 0) + 1)
+        if entries.count > Self.capacity {
+            let oldest = entries.sorted { $0.value.sequence < $1.value.sequence }.prefix(entries.count - Self.capacity)
+            for (stale, _) in oldest { entries[stale] = nil }
+        }
+        persist()
         return created
     }
 
     func settle(_ descriptor: String) {
         lock.lock()
         defer { lock.unlock() }
-        identities[descriptor] = nil
+        entries[Self.key(descriptor)] = nil
+        persist()
+    }
+
+    private func persist() {
+        guard let defaults else { return }
+        if let data = try? JSONEncoder().encode(entries) {
+            defaults.set(data, forKey: Self.storageKey)
+        }
     }
 }

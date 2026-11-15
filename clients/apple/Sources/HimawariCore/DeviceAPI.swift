@@ -32,10 +32,11 @@ public struct OutgoingMessage: Codable, Sendable, Equatable, Identifiable {
 
 public final class DeviceAPI: Sendable {
     public let http: DeviceHTTPClient
-    let pendingActions = PendingActionIdentities()
+    let pendingActions: PendingActionIdentities
 
-    public init(http: DeviceHTTPClient) {
+    public init(http: DeviceHTTPClient, pendingActionStore: UserDefaults? = nil) {
         self.http = http
+        self.pendingActions = PendingActionIdentities(defaults: pendingActionStore)
     }
 
     public func pair(

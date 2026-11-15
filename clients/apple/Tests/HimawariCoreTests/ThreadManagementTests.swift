@@ -195,6 +195,51 @@ import Testing
         #expect(try json(exchange.requests[1])["idempotencyKey"] as? String != json(exchange.requests[3])["idempotencyKey"] as? String)
     }
 
+    @Test func pendingIdentitiesSurviveARestartAndStoreNoTitleText() throws {
+        let suite = "pending-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = PendingActionIdentities(defaults: defaults)
+        let identity = first.identity(for: "rename|t1|3|a private title")
+        let restarted = PendingActionIdentities(defaults: defaults)
+        #expect(restarted.identity(for: "rename|t1|3|a private title") == identity)
+        let stored = try #require(defaults.data(forKey: PendingActionIdentities.storageKey))
+        #expect(!String(decoding: stored, as: UTF8.self).contains("private title"))
+        restarted.settle("rename|t1|3|a private title")
+        #expect(PendingActionIdentities(defaults: defaults).identity(for: "rename|t1|3|a private title") != identity)
+    }
+
+    @Test func pendingIdentitiesAreCappedKeepingTheNewest() {
+        let pending = PendingActionIdentities()
+        let kept = (0..<(PendingActionIdentities.capacity + 5)).map { pending.identity(for: "pin|t\($0)") }
+        #expect(pending.identity(for: "pin|t\(PendingActionIdentities.capacity + 4)") == kept.last)
+        #expect(pending.identity(for: "pin|t0") != kept[0])
+    }
+
+    @Test func aForkAfterAnAcceptedForkGetsANewTarget() async throws {
+        let exchange = RecordingExchange([reply(textCreated), reply(accepted), reply(textCreated), reply(accepted)])
+        let service = try api(exchange)
+        let first = try await service.forkThread(from: "t1", turnId: "turn-9", watermark: 12)
+        let second = try await service.forkThread(from: "t1", turnId: "turn-9", watermark: 12)
+        #expect(first.threadId != second.threadId)
+        #expect(try json(exchange.requests[1])["idempotencyKey"] as? String != json(exchange.requests[3])["idempotencyKey"] as? String)
+    }
+
+    @Test func composedIdentifiersFitTheServerPatterns() async throws {
+        let exchange = RecordingExchange([reply(textCreated), reply(accepted)])
+        let created = try await api(exchange).forkThread(from: "t1", turnId: "turn-9", watermark: 12)
+        let command = try json(exchange.requests[1])
+        let textKey = try #require(try json(exchange.requests[0])["idempotencyKey"] as? String)
+        let machine = #/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/#
+        let messageId = #/^[A-Za-z0-9_-]{16,64}$/#
+        #expect(messageId.wholeMatch(in: textKey) != nil)
+        let commandMessageId = try #require(command["messageId"] as? String)
+        let commandKey = try #require(command["idempotencyKey"] as? String)
+        #expect(messageId.wholeMatch(in: commandMessageId) != nil)
+        #expect(machine.wholeMatch(in: commandKey) != nil)
+        #expect(machine.wholeMatch(in: created.threadId) != nil)
+    }
+
     @Test func forkSourceIsAbsentWithoutAnyTurn() throws {
         #expect(ThreadForkSource.latest(in: []) == nil)
         #expect(ThreadForkSource.latest(in: [try message("m1", 1, turn: nil)]) == nil)

@@ -71,7 +71,7 @@ public final class AppModel {
         keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
-        api = DeviceAPI(http: DeviceHTTPClient())
+        api = DeviceAPI(http: DeviceHTTPClient(), pendingActionStore: .standard)
         if restoring { restore() }
     }
 
