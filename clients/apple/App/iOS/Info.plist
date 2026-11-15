@@ -45,6 +45,17 @@
 	<string>$(AppIdentifierPrefix)$(HIMAWARI_KEYCHAIN_GROUP)</string>
 	<key>HimawariReleaseChannel</key>
 	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>himawari-pair</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>你让 Himawari 定闹钟时，用 Himawari 自己的闹钟按时叫你</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

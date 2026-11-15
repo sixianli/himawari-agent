@@ -1,5 +1,3 @@
-import { productionThinkWorth, type ThinkWorthRoute } from "./production-think-composition.js";
-import { isThinkRunSource } from "./production-think-runner.js";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
@@ -17,6 +15,7 @@ import {
   type DataClassification,
   DEFAULT_HOME_URGENCY,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
+  DELIVERY_TIMING_DEFAULTS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -69,6 +68,8 @@ import {
   createWebPushSender,
   DescriptorRelativeReadOnly,
   DeviceActionHub,
+  DeviceNotificationHub,
+  DevicePresence,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
   EXECUTION_UDS_ERROR_CODES,
@@ -111,6 +112,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
+import { MacPlacement } from "./mac-placement.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -212,6 +214,8 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { productionThinkWorth, type ThinkWorthRoute } from "./production-think-composition.js";
+import { isThinkRunSource } from "./production-think-runner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
@@ -724,6 +728,15 @@ export async function startTenantRuntime(
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
   const deviceActionHub = new DeviceActionHub();
+  const deviceNotificationHub = new DeviceNotificationHub();
+  const devicePresence = new DevicePresence();
+  const macPlacement = new MacPlacement({
+    hub: deviceNotificationHub,
+    presence: devicePresence,
+    windowMilliseconds: () =>
+      (deliveryTimingHolder?.current() ?? DELIVERY_TIMING_DEFAULTS).macPresenceSeconds * 1000,
+    nowMilliseconds: () => Date.parse(productionClock().now()),
+  });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
@@ -2872,6 +2885,7 @@ export async function startTenantRuntime(
             ).overrides,
           );
         webPush = new ProductionWebPush({
+          placement: macPlacement,
           ownerId: configuration.ownerId,
           agentId: configuration.agentId,
           store: pushRepository.webPush(),
@@ -3354,6 +3368,11 @@ export async function startTenantRuntime(
         ...(deviceActions
           ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
           : {}),
+        deviceNotifications: {
+          hub: deviceNotificationHub,
+          presence: devicePresence,
+          settled: async (ids) => (await webPush?.settled(ids)) ?? [],
+        },
         ...(proactive ? { proactive } : {}),
         ...(thinkWorth
           ? {

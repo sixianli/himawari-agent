@@ -13,9 +13,9 @@ import {
   nullable,
   object,
   parseJson,
+  proactiveSourceName,
   type Schema,
   timestamp,
-  proactiveSourceName,
 } from "./validation.js";
 
 export const MEMORY_SOURCE_REF_MAX_LENGTH = 512;
@@ -875,6 +875,11 @@ const thinkSettingsQuerySchema = object({
   ...envelope("query", "think.settings.read"),
   payload: object({}),
 });
+const thinkSettingTextSchema = object({
+  "zh-CN": boundedString(400),
+  en: boundedString(400),
+  ja: boundedString(400),
+});
 const thinkSettingsSnapshotSchema = object({
   ...envelope("snapshot", "think.settings.snapshot"),
   payload: object({
@@ -889,6 +894,9 @@ const thinkSettingsSnapshotSchema = object({
         maximum: integer(0),
         unit: machineString,
         overridden: booleanValue,
+        label: thinkSettingTextSchema,
+        description: thinkSettingTextSchema,
+        unitLabel: thinkSettingTextSchema,
       }),
     ),
     generatedAt: timestamp,
