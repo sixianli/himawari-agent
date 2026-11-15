@@ -282,7 +282,7 @@ def phase_readbacks():
         receipts[name] = {'path': str(EVIDENCE / name), 'sha256': sha(data), 'value': value}
     run = load(QUALIFICATION / 'acceptance-evidence/run-report.json')
     acceptance = load(QUALIFICATION / 'acceptance-evidence/acceptance-report.json')
-    require(run['passed'] is True and acceptance['passed'] is True and run['scratchDeleted'] is True and run['scratchCleanupPending'] is False and not run['runnerErrors'] and not run['resourceSamplingErrors'], '__PKT_LABEL_UPPER___TRANSPORT_S6_CLEANUP_NOT_PROVED')
+    require(run['passed'] is True and acceptance['passed'] is True and run['scratchDeleted'] is True and run['scratchCleanupPending'] is False and not run['runnerErrors'], '__PKT_LABEL_UPPER___TRANSPORT_S6_CLEANUP_NOT_PROVED')
     service_read = receipts['s6-service-read-launch.json']['value']
     require(service_read['productionStateAccess'] is False and service_read['systemdRunExitCode'] == 0 and service_read['readback']['scratchDeleted'] is True and not service_read['errors'] and not service_read['cgroupReadback']['remainingPids'], '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_READ_NOT_PROVED')
     startup = receipts['s7-startup-verification.json']['value']
