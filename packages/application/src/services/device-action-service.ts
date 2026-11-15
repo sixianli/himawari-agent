@@ -41,6 +41,7 @@ import {
   type DeviceActionDetail,
   type DeviceActionReadBack,
   type DeviceActionRegistration,
+  type DeviceActionUndoPlan,
   type DeviceActionRegistry,
   describeDeviceActionParameters,
   deviceActionFingerprint,
@@ -143,6 +144,12 @@ export interface DeviceActionDelivery {
   readonly declineLabel: DeviceActionDetail;
 }
 
+export type DeviceActionUndoState = "none" | "available" | "pending" | "done" | "failed";
+
+export type DeviceActionUndoOutcome =
+  | { readonly kind: "not_found" | "not_undoable" }
+  | DeviceActionRequestOutcome;
+
 export interface DeviceActionView {
   readonly id: string;
   readonly deviceId: string;
@@ -156,6 +163,7 @@ export interface DeviceActionView {
   readonly risk: ActionRiskLevel;
   readonly ownerPresence: boolean;
   readonly reversible: boolean;
+  readonly undo: DeviceActionUndoState;
   readonly reasonCode: DeviceActionReasonCode | null;
   readonly reason: string | null;
   readonly createdAt: string;
@@ -165,6 +173,9 @@ export interface DeviceActionView {
 export type DeviceActionReportReply =
   | { readonly kind: "recorded" | "replayed"; readonly state: DeviceActionRecordState }
   | { readonly kind: "invalid" | "not_found" | "not_delivered" | "verify_only" };
+
+const undoToolCallId = (actionId: string, ownerPresent: boolean) =>
+  ownerPresent ? `undo:${actionId}:owner` : `undo:${actionId}`;
 
 const EMPTY_DETAIL: DeviceActionDetail = Object.freeze(
   Object.fromEntries(DEVICE_ACTION_LOCALES.map((locale) => [locale, ""])),
@@ -344,6 +355,7 @@ export class DeviceActionService {
     readonly device: PairedDevice;
     readonly action: string;
     readonly arguments: Readonly<Record<string, unknown>>;
+    readonly ownerInitiated?: boolean;
   }): Promise<DeviceActionRequestOutcome> {
     const { scope, store, registry } = this.#options;
     await this.settle();
@@ -410,7 +422,10 @@ export class DeviceActionService {
       reversible: registration.reversible,
       ownerPresence,
       untrustedOriginAllowed: registration.untrustedOriginAllowed,
-      readUntrustedContent: await this.#options.readUntrustedContent(input.runId),
+      readUntrustedContent:
+        input.ownerInitiated === true
+          ? false
+          : await this.#options.readUntrustedContent(input.runId),
       title: registration.title,
       detail,
       dataClassification: input.dataClassification,
@@ -809,6 +824,76 @@ export class DeviceActionService {
     return record.state;
   }
 
+  async #undoPlan(record: DeviceActionRecord): Promise<DeviceActionUndoPlan | null> {
+    if (record.state !== "succeeded") return null;
+    const registration = this.#options.registry.get(record.action);
+    if (!registration?.undo) return null;
+    const { arguments: args } = await this.#detail(record);
+    const result =
+      record.resultRef === null ? undefined : await this.#options.content.read(record.resultRef);
+    const evidence = plainObject(result?.["evidence"]) ? result["evidence"] : {};
+    const plan = registration.undo(args, evidence);
+    const target = plan && this.#options.registry.get(plan.action);
+    if (!plan || !target || !validateDeviceActionArguments(target.parameters, plan.arguments))
+      return null;
+    return plan;
+  }
+
+  async #undoState(record: DeviceActionRecord): Promise<DeviceActionUndoState> {
+    const read = (ownerPresent: boolean) =>
+      this.#options.store.readInvocation({
+        ...this.#options.scope,
+        runId: record.runId,
+        toolCallId: undoToolCallId(record.id, ownerPresent),
+      });
+    const ownerReverse = await read(true);
+    const plainReverse = await read(false);
+    const reverse = ownerReverse ?? (plainReverse?.state === "rejected" ? null : plainReverse);
+    if (reverse) {
+      if (reverse.state === "succeeded") return "done";
+      return reverse.state === "failed" ||
+        reverse.state === "rejected" ||
+        reverse.state === "expired"
+        ? "failed"
+        : "pending";
+    }
+    return (await this.#undoPlan(record)) ? "available" : "none";
+  }
+
+  async #undoKey(record: DeviceActionRecord, ownerPresent: boolean): Promise<string> {
+    const read = (owner: boolean) =>
+      this.#options.store.readInvocation({
+        ...this.#options.scope,
+        runId: record.runId,
+        toolCallId: undoToolCallId(record.id, owner),
+      });
+    if (await read(true)) return undoToolCallId(record.id, true);
+    const plain = await read(false);
+    if (plain && plain.state !== "rejected") return undoToolCallId(record.id, false);
+    return undoToolCallId(record.id, ownerPresent);
+  }
+
+  async undo(input: {
+    readonly device: PairedDevice;
+    readonly actionId: string;
+    readonly ownerPresent: boolean;
+  }): Promise<DeviceActionUndoOutcome> {
+    const { scope, store } = this.#options;
+    const record = await store.read({ ...scope, id: input.actionId });
+    if (!record || record.deviceId !== input.device.id) return { kind: "not_found" };
+    const plan = await this.#undoPlan(record);
+    if (!plan) return { kind: "not_undoable" };
+    return this.request({
+      runId: record.runId,
+      toolCallId: await this.#undoKey(record, input.ownerPresent),
+      dataClassification: record.dataClassification,
+      device: input.device,
+      action: plan.action,
+      arguments: plan.arguments,
+      ownerInitiated: input.ownerPresent,
+    });
+  }
+
   async views(input: {
     readonly deviceId: string | null;
     readonly states: readonly DeviceActionRecordState[];
@@ -835,6 +920,7 @@ export class DeviceActionService {
           risk: record.risk,
           ownerPresence: record.ownerPresence,
           reversible: this.#options.registry.get(record.action)?.reversible ?? false,
+          undo: await this.#undoState(record),
           reasonCode: record.reasonCode,
           reason: outcome.reason,
           createdAt: record.createdAt,

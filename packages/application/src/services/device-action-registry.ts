@@ -58,6 +58,16 @@ export interface DeviceActionContext {
   readonly localTime: (milliseconds: number) => string;
 }
 
+export interface DeviceActionUndoPlan {
+  readonly action: string;
+  readonly arguments: DeviceActionArguments;
+}
+
+export type DeviceActionUndo = (
+  args: DeviceActionArguments,
+  evidence: Readonly<Record<string, unknown>>,
+) => DeviceActionUndoPlan | null;
+
 export interface DeviceActionRegistration {
   readonly name: string;
   readonly schemaVersion: number;
@@ -74,6 +84,7 @@ export interface DeviceActionRegistration {
   readonly readBack: DeviceActionReadBack;
   readonly snapshotBefore: boolean;
   readonly reversible: boolean;
+  readonly undo?: DeviceActionUndo;
   readonly untrustedOriginAllowed: boolean;
   readonly usage?: string;
   readonly title: DeviceActionDetail;
@@ -193,6 +204,68 @@ export function describeDeviceActionParameters(
     ),
   );
 }
+
+const CALENDAR_FIELDS = [
+  "title",
+  "start",
+  "end",
+  "allDay",
+  "calendar",
+  "location",
+  "notes",
+] as const;
+const CALENDAR_CHANGEABLE = ["title", "start", "end", "location", "notes"] as const;
+const CONTACT_FIELDS = ["givenName", "familyName", "phones", "emails", "organization"] as const;
+
+function recordOf(value: unknown): Readonly<Record<string, unknown>> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function undoCreatedItem(action: string, idKey: string): DeviceActionUndo {
+  return (_args, evidence) => {
+    const id = evidence[idKey];
+    return typeof id === "string" && id !== "" ? { action, arguments: { [idKey]: id } } : null;
+  };
+}
+
+function undoRestoring(
+  action: string,
+  idKey: string,
+  fields: readonly string[],
+  occurrence: boolean,
+): DeviceActionUndo {
+  return (args, evidence) => {
+    const before = recordOf(evidence["before"]);
+    const id = args[idKey];
+    if (!before || typeof id !== "string") return null;
+    const changed = fields.filter((field) => args[field] !== undefined);
+    if (changed.length === 0 || changed.some((field) => before[field] === undefined)) return null;
+    return {
+      action,
+      arguments: {
+        [idKey]: id,
+        ...(occurrence && args["occurrenceStart"] !== undefined
+          ? { occurrenceStart: args["occurrenceStart"] }
+          : {}),
+        ...Object.fromEntries(changed.map((field) => [field, before[field]])),
+      },
+    };
+  };
+}
+
+const undoDeletedEvent: DeviceActionUndo = (args, evidence) => {
+  const before = recordOf(evidence["before"]);
+  if (!before || args["occurrenceStart"] !== undefined) return null;
+  const restored = Object.fromEntries(
+    CALENDAR_FIELDS.filter((field) => before[field] !== undefined).map((field) => [
+      field,
+      before[field],
+    ]),
+  );
+  return { action: "calendar.create", arguments: restored };
+};
 
 export class DeviceActionRegistry {
   readonly #byName: ReadonlyMap<string, DeviceActionRegistration>;
@@ -426,6 +499,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: false,
     reversible: true,
+    undo: undoCreatedItem("calendar.delete", "eventId"),
     untrustedOriginAllowed: false,
     title: label("新建日程", "Create events", "予定を作成"),
     confirmLabel: label("加进日历", "Add", "追加"),
@@ -452,6 +526,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "confirm_absent",
     snapshotBefore: true,
     reversible: true,
+    undo: undoDeletedEvent,
     untrustedOriginAllowed: false,
     title: label("删除日程", "Delete events", "予定を削除"),
     confirmLabel: label("删掉", "Delete", "削除"),
@@ -487,6 +562,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: true,
     reversible: true,
+    undo: undoRestoring("calendar.update", "eventId", CALENDAR_CHANGEABLE, true),
     untrustedOriginAllowed: false,
     title: label("修改日程", "Change events", "予定を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
@@ -524,6 +600,7 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: true,
     reversible: true,
+    undo: undoRestoring("contact.update", "contactId", CONTACT_FIELDS, false),
     untrustedOriginAllowed: false,
     title: label("修改联系人", "Change contacts", "連絡先を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
