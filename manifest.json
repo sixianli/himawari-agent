@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "pr": 550,
+  "batch": "panel-notice-v3",
+  "files": [
+    {
+      "path": "mac-4d-panel-notices-open-light.png",
+      "bytes": 262521,
+      "sha256": "5a332b06eb858ad0791314f4b4fca0825e43a5154f1d8234088894157f4dea33"
+    }
+  ]
+}
