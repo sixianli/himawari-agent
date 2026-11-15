@@ -858,6 +858,7 @@ export class DeviceActionService {
   async undo(input: {
     readonly device: PairedDevice;
     readonly actionId: string;
+    readonly ownerPresent: boolean;
   }): Promise<DeviceActionUndoOutcome> {
     const { scope, store } = this.#options;
     const record = await store.read({ ...scope, id: input.actionId });
@@ -871,7 +872,7 @@ export class DeviceActionService {
       device: input.device,
       action: plan.action,
       arguments: plan.arguments,
-      ownerInitiated: true,
+      ownerInitiated: input.ownerPresent,
     });
   }
 

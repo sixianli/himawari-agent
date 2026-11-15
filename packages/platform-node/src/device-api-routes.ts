@@ -879,6 +879,7 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         const outcome = await actions(authenticated).undo({
           device: authenticated.device,
           actionId: body["id"],
+          ownerPresent: authenticated.confirmed,
         });
         if (outcome.kind === "not_found" || outcome.kind === "not_undoable")
           return options.sendJson(reply, outcome.kind === "not_found" ? 404 : 409, {
