@@ -570,16 +570,14 @@ function startupReadbackTreatsAsFailure(): (event: string) => boolean {
     ),
     "utf8",
   );
-  const pattern =
-    /records\.filter\(\(item\) => !nonFatal\.has\(item\.event\) && \/(.+)\/([a-z]*)\.test\(String\(item\.event\)\)\)/.exec(
-      readback,
-    );
-  expect(pattern).not.toBeNull();
-  const nonFatalList = /const nonFatal = new Set\((\[[^\]]*\])\)/.exec(readback);
-  expect(nonFatalList).not.toBeNull();
-  const nonFatal = new Set<string>(JSON.parse(String(nonFatalList?.[1])));
-  const failureEvents = new RegExp(String(pattern?.[1]), String(pattern?.[2]));
-  return (event) => !nonFatal.has(event) && failureEvents.test(event);
+  const start = readback.indexOf("function startupFailureEvents(");
+  const end = readback.indexOf("\nfunction ", start + 1);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  const startupFailureEvents = new Function(
+    `${readback.slice(start, end)}\nreturn startupFailureEvents;`,
+  )() as (records: readonly { event: string }[]) => string[];
+  return (event) => startupFailureEvents([{ event }]).includes(event);
 }
 
 it("the deploy start-up readback treats failed and retryable deferred audits as failures, completed ones not", () => {
