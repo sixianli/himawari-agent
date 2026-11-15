@@ -395,6 +395,8 @@ describe("production HTTP composition", () => {
           "perception.episode.read",
           "perception.usage.read",
           "perception.settings.change",
+          "think.settings.read",
+          "think.settings.change",
         ],
         healthDependenciesAvailable: true,
       });
@@ -1890,7 +1892,7 @@ describe("production Thread access scope", () => {
           message: {
             ...message,
             payload: { ...message.payload, sessionId: "session" },
-          } as typeof message,
+          } as unknown as typeof message,
         }),
       ).toEqual({ allowed: true, reasonCode: "OWNER_SESSION_AUTHORIZED" });
     },

@@ -1,8 +1,11 @@
 {
   "说明": "每一项是约定里已定义、但缺后端实现、调用方或测试之一的操作（operations）；理由必须写明缺什么、为什么留着。名单里的操作一旦补齐，检查会要求移出；名单外出现缺项的操作直接报红（P1-4）。notInstalled 是控制中心清单已声明、但还没装进生产网关已安装清单的操作；它们仍要通过后端、调用方、测试三项检查，装进已安装清单后必须移出。",
   "operations": {
+    "capability.reactivate": "调用方是 iPhone 端：Andy 2026-11-12 定有 App 版就不再做网页版，控制中心不加重新启用的按钮；手机能力表已登记，手机上的按钮由 iOS 第 11 批任务做（ADR 0254）。",
     "delegation.detail": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "delegation.list": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
+    "delivery_timing.settings.change": "送达时机设置：服务器后端、测试已实现（delivery_timing 控制），App 设置页由客户端第 11 批做（缺：调用方）；设置页做完时移出名单",
+    "delivery_timing.settings.read": "送达时机设置：服务器后端、测试已实现（delivery_timing 控制），App 设置页由客户端第 11 批做（缺：调用方）；设置页做完时移出名单",
     "github.monitor.set_state": "GitHub 监控开关：integration-github 的 monitor-control 已实现并有测试，生产没有装配，前端没有页面（缺：调用方）。做监控页面时移出名单",
     "host.directory.detail": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "host.file.execute": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
@@ -27,14 +30,15 @@
     "suggestion.detail": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "suggestion.list": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "suggestion.respond": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
+    "think.settings.change": "想一想的门槛和上限的查询与命令：后端和测试已做（test/integration/think-settings.test.ts），调用方是 iPhone 第 11 批的设置页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
+    "think.settings.read": "想一想的门槛和上限的查询与命令：后端和测试已做（test/integration/think-settings.test.ts），调用方是 iPhone 第 11 批的设置页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
     "workspace.commit": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "workspace.copy.create": "工作区副本：生产已安装（PRODUCTION_COPY_OPERATIONS），前端还没有页面（缺：调用方）。前端页面做出来后移出名单",
     "workspace.copy.prepare": "工作区副本：生产已安装（PRODUCTION_COPY_OPERATIONS），前端还没有页面（缺：调用方）。前端页面做出来后移出名单",
     "workspace.copy.select": "工作区副本：生产已安装（PRODUCTION_COPY_OPERATIONS），前端还没有页面（缺：调用方）。前端页面做出来后移出名单",
     "workspace.detail": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "workspace.list": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
-    "workspace.stage": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
-    "capability.reactivate": "调用方是 iPhone 端：Andy 2026-11-12 定有 App 版就不再做网页版，控制中心不加重新启用的按钮；手机能力表已登记，手机上的按钮由 iOS 第 11 批任务做（ADR 0254）。"
+    "workspace.stage": "主机文件和工作区这一组：host-workspace-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）"
   },
   "notInstalled": {
     "capability.install.approve": "能力管理：契约和页面已有，生产网关没有安装。审核来源、批准安装、更新回应另行安排；装进已安装清单后移出名单",
