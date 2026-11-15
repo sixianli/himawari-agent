@@ -1,0 +1,1 @@
+{"id":"40","model":"opencode-go/deepseek-v4.1-flash","quote":"CLAIM|40|找不到|-|快照里的来源缺失或不是对象时，单元测试核对它和重新读出的来源比对为不一致，没有端到端核对错误码|-","outcome":"model-wrong","evidenceFile":"packages/application/test/frozen-run-source-identity.unit.test.ts","evidence":"it(\"leaves a malformed frozen source as it is so the snapshot comparison still fails\", () => {"}
