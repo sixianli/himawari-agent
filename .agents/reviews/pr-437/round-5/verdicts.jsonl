@@ -1,0 +1,4 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**1. [中] 未测试的关键启动路径没有被结构化记录，现有门槛抓不到这句话**", "valid": true, "class": "error", "severity": "low", "modelSeverity": "中", "trigger": "带着这几个提交打上线包", "consequence": "打包不会要求真实环境的证据或豁免说明，没测过的启动路径可能不经确认就上线", "reason": "不影响任何运行行为；改法是在提交说明里加一行 Untested-critical-path，打包时就会要求证据"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**2. [低] 旧记录清理发生在配置和 authority 校验之后，早期启动失败会跳过清理**", "valid": true, "class": "error", "severity": "low", "modelSeverity": "低", "trigger": "执行进程重启时 authority 文件不是 active 或和配置对不上，而 agent-service 仍在运行", "consequence": "上一次启动的记录留着，重新启用可能通过；执行进程不在，能力调用不了"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**3. [低] 新记录读取仍有 `lstat` → `readFile` 的 TOCTOU/符号链接窗口**", "valid": true, "class": "better"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "**4. [低·测试夹具] 重新启用后的 `healthStatus` 与生产语义不一致**", "valid": true, "class": "better"}

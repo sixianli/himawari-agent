@@ -1,0 +1,7 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 【中】【读代码证实】“写出记录后启动失败 → catch 删记录”没有自动测试；现有单测在写入之前就失败", "valid": true, "class": "better"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 【中】【代码行为证实，风险为推测】正常停止时记录不删；重新启用不检查执行进程是否仍在运行", "valid": true, "class": "error", "severity": "low", "modelSeverity": "中", "trigger": "执行进程正常停止而 agent-service 还在运行时，主人重新启用一个已停用的能力", "consequence": "能力回到可用清单，但执行进程不在，调用仍然失败；不会执行任何东西", "reason": "模型自己写明不算违反现有规格；重新启用只决定能力在不在清单里，真正调用要经执行进程，进程停了调用就失败；两个进程成对重启"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 【低】【读代码证实】集成测试用的“部署快照”不是真实加载器能接受的格式，不能证明 (b) 对生产快照格式有效", "valid": true, "class": "better"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 【低】【读代码证实】“没有核验入口就不进已安装清单”的反向用例很弱，不能证明安装清单本身正确", "valid": true, "class": "better"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 【低】【读代码证实】作者“启动绑定行为不变”的说法与 16384 字节上限矛盾", "valid": false, "class": "error"}
+{"id": "d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 6. 【低】【读代码证实】浏览器测试夹具重新启用后 `healthStatus` 留在 `unknown`，与生产不一致", "valid": true, "class": "better"}
+{"id": "d7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 7. 【信息/低】【读代码证实】ADR 编号顺序错位；新记录的部分错误信息仍写“Agent Service boot binding”", "valid": true, "class": "better"}
