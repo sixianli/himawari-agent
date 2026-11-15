@@ -14,6 +14,7 @@ import {
   type ProductAuthorityFence,
 } from "@himawari-agent/domain";
 import {
+  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
@@ -470,6 +471,30 @@ describe("think runner", () => {
       .threadSearchProjectionSource()
       .pending({ ownerId: OWNER_ID, agentId: AGENT_ID, projectionVersion: "v-test", limit: 50 });
     expect(new Set(sources.map((source) => source.threadId))).toEqual(new Set([lookAlike]));
+    const indexed = openQualifiedDatabase(file);
+    const indexMessages = indexed.prepare(
+      `INSERT INTO thread_search_projection
+        (owner_id, agent_id, thread_id, message_id, sequence, classification, token_ref,
+          projection_version)
+        SELECT owner_id, agent_id, thread_id, id, sequence, classification, 'token-shared',
+          'v-test'
+        FROM thread_messages`,
+    );
+    expect(indexMessages.run().changes).toBeGreaterThanOrEqual(2);
+    indexed.close();
+    const found = await threads.search({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      tokenRefs: ["token-shared"],
+      projectionVersion: "v-test",
+      statuses: ["active", "archived"],
+      jobStatuses: [],
+      updatedAfter: null,
+      updatedBefore: null,
+      afterThreadId: null,
+      limit: 50,
+    });
+    expect(found.map((item) => item.id)).toEqual([lookAlike]);
     const unattended = await repository
       .runLifecycle(OWNER_ID, AGENT_ID, AUTHORITY)
       .listUnattendedRuns?.({ failedSince: START, limit: 50 });
@@ -496,5 +521,58 @@ describe("think runner", () => {
       limit: 50,
     });
     expect(finished.map((item) => item.threadId)).toEqual([lookAlike]);
+  });
+
+  it("marks thinking threads made before the origin column as think, and leaves client look-alikes as owner", async () => {
+    const { think, service, payloads, protector, file } = await fixture({
+      status: "completed",
+      text: JSON.stringify({ action: "none", reason: "只是通知" }),
+    });
+    expect(await think()).toEqual({ outcome: "skipped", reasonCode: "nothing_to_propose" });
+    await payloads.put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "owner-forged-text",
+        contentType: "text/plain",
+        dataClassification: "private",
+        plaintext: new TextEncoder().encode("帮我看看明天的安排"),
+        createdAt: START,
+      }),
+    );
+    const forged = "thread:think:client-forged" as never;
+    await service.create({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: forged,
+      idempotencyKey: "think-thread:not-a-think-entry",
+      resultRef: "owner-forged-text" as never,
+    });
+    const migration = (await loadBundledMigrations()).find((item) =>
+      item.name.includes("thread_origin"),
+    );
+    expect(migration).toBeDefined();
+    const db = openQualifiedDatabase(file);
+    try {
+      db.prepare(
+        `INSERT INTO think_inbox
+          (id, owner_id, agent_id, source_kind, source_ref, source_version, external_content,
+            status, day, created_at, updated_at)
+          VALUES (?, ?, ?, 'email', 'mail-1', '1', 1, 'done', '2026-11-14', ?, ?)`,
+      ).run(ENTRY.id, OWNER_ID, AGENT_ID, START, START);
+      db.exec("ALTER TABLE threads DROP COLUMN origin");
+      db.exec(migration?.sql ?? "");
+      const origins = db.prepare("SELECT id, origin FROM threads ORDER BY id").all() as {
+        id: string;
+        origin: string;
+      }[];
+      expect(origins.map((row) => row.origin).toSorted()).toEqual(["owner", "think"]);
+      expect(origins.find((row) => row.id === forged)?.origin).toBe("owner");
+      expect(origins.find((row) => row.origin === "think")?.id.startsWith("thread:think:")).toBe(
+        true,
+      );
+    } finally {
+      db.close();
+    }
   });
 });
