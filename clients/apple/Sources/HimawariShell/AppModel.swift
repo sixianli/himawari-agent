@@ -402,6 +402,7 @@ public final class AppModel {
             actions.deviceActionsChanged()
             Task { await refreshConfiguration() }
             deliverWaitingHandovers()
+            registerForPush()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }

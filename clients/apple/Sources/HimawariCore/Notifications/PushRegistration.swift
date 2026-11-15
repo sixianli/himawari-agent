@@ -69,6 +69,7 @@ public actor PushTokenSync {
     private var token: String?
     private var sent: PushRegistrationRequest?
     private var ready = false
+    private var generation = 0
 
     public init(transport: any PushRegistrationTransport, context: PushRegistrationContext) {
         self.transport = transport
@@ -89,6 +90,7 @@ public actor PushTokenSync {
     public func deviceGone() {
         ready = false
         sent = nil
+        generation += 1
     }
 
     private func flush() async {
@@ -100,6 +102,8 @@ public actor PushTokenSync {
             locale: PushRegistrationValues.locale(preferred: context.preferredLanguages())
         )
         guard request != sent else { return }
-        if (try? await transport.registerPush(request)) == true { sent = request }
+        let started = generation
+        let accepted = (try? await transport.registerPush(request)) == true
+        if accepted, started == generation { sent = request }
     }
 }

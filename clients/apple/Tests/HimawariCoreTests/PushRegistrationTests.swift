@@ -18,6 +18,35 @@ final class FakePushTransport: PushRegistrationTransport, @unchecked Sendable {
     }
 }
 
+final class SuspendingPushTransport: PushRegistrationTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var held: CheckedContinuation<Void, Never>?
+    private var calls = 0
+
+    var callCount: Int { lock.withLock { calls } }
+
+    func registerPush(_ request: PushRegistrationRequest) async throws -> Bool {
+        let first = lock.withLock { () -> Bool in
+            calls += 1
+            return calls == 1
+        }
+        if first {
+            await withCheckedContinuation { continuation in
+                lock.withLock { held = continuation }
+            }
+        }
+        return true
+    }
+
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            defer { held = nil }
+            return held
+        }
+        continuation?.resume()
+    }
+}
+
 @Suite struct PushRegistrationTests {
     func sync(_ transport: FakePushTransport, languages: [String] = ["ja-JP"]) -> PushTokenSync {
         PushTokenSync(transport: transport, context: PushRegistrationContext(environment: "development", topic: "win.siyi.himawari", preferredLanguages: { languages }))
@@ -112,5 +141,35 @@ final class FakePushTransport: PushRegistrationTransport, @unchecked Sendable {
         http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
         let ok = try await DeviceAPI(http: http).registerPush(PushRegistrationRequest(token: "ab", environment: "production", topic: "win.siyi.himawari", locale: "en"))
         #expect(!ok)
+    }
+
+    @Test func aTopicTheServerDoesNotAllowIsNotAnError() async throws {
+        let exchange = RecordingExchange([HTTPExchangeResponse(status: 403, body: Data(#"{"error":{"code":"TOPIC_NOT_ALLOWED"}}"#.utf8))])
+        let http = DeviceHTTPClient(exchange: exchange)
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        let ok = try await DeviceAPI(http: http).registerPush(PushRegistrationRequest(token: "ab", environment: "production", topic: "win.siyi.himawari", locale: "en"))
+        #expect(!ok)
+    }
+
+    @Test func aMalformedRequestIsStillAnError() async throws {
+        let exchange = RecordingExchange([HTTPExchangeResponse(status: 400, body: Data(#"{"error":{"code":"INVALID_PUSH_REGISTRATION"}}"#.utf8))])
+        let http = DeviceHTTPClient(exchange: exchange)
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        await #expect(throws: DeviceAPIError.self) {
+            _ = try await DeviceAPI(http: http).registerPush(PushRegistrationRequest(token: "ab", environment: "production", topic: "win.siyi.himawari", locale: "en"))
+        }
+    }
+
+    @Test func aRequestStillInFlightWhenTheDeviceIsRemovedDoesNotStopTheNextPairingFromRegistering() async {
+        let transport = SuspendingPushTransport()
+        let sync = PushTokenSync(transport: transport, context: PushRegistrationContext(environment: "development", topic: "win.siyi.himawari", preferredLanguages: { ["en"] }))
+        await sync.tokenArrived(Data([1]))
+        let inFlight = Task { await sync.deviceReady() }
+        while transport.callCount < 1 { await Task.yield() }
+        await sync.deviceGone()
+        transport.release()
+        await inFlight.value
+        await sync.deviceReady()
+        #expect(transport.callCount == 2)
     }
 }
