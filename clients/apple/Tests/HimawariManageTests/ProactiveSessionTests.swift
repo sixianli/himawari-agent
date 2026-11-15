@@ -162,4 +162,18 @@ final class ProactiveSessionTests: XCTestCase {
         XCTAssertEqual(command["type"], "proactive.insight.respond")
         XCTAssertEqual(payload(command), ["insightId": .string("i1"), "action": .string("rate"), "rating": .string("unneeded")])
     }
+
+    func testReopeningAnInsightSendsTheReopenActionWithNullRating() async throws {
+        let transport = ProactiveTransport()
+        let proactive = session(transport)
+        let insight = try JSONDecoder().decode(
+            ProactiveInsight.self,
+            from: Data(#"{"id":"i1","result":"act","summary":"s","reason":"r","from":"x","dueAt":null,"priority":null,"status":"done","pushed":true,"pushReaction":null,"rating":null,"updatedAt":"2026-11-10T00:00:00.000Z"}"#.utf8)
+        )
+        try await proactive.respond(insight, .reopen, reason: "r")
+        let sent = await transport.commands()
+        let command = try XCTUnwrap(sent.first)
+        XCTAssertEqual(command["type"], "proactive.insight.respond")
+        XCTAssertEqual(payload(command), ["insightId": .string("i1"), "action": .string("reopen"), "rating": .null])
+    }
 }

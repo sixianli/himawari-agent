@@ -176,7 +176,8 @@ public struct ProactiveDayLimit: Decodable, Sendable, Hashable {
     public let resetsAt: String?
 
     public var step: Int {
-        let span = min(max(1, maximum - minimum), 1_000_000_000)
+        let spread = maximum.subtractingReportingOverflow(minimum)
+        let span = spread.overflow ? 1_000_000_000 : min(max(1, spread.partialValue), 1_000_000_000)
         var step = 1
         while span / (step * 10) >= 20 { step *= 10 }
         return step

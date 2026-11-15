@@ -24,15 +24,20 @@ public final class ProactiveSession {
     public private(set) var sourcesLoad: Load = .loading
 
     @ObservationIgnored private let gateway: ManageGateway
+    @ObservationIgnored private var overviewGeneration = 0
 
     init(gateway: ManageGateway) {
         self.gateway = gateway
     }
 
     public func reloadOverview() async {
+        overviewGeneration += 1
+        let generation = overviewGeneration
         do {
             let data = try await gateway.read(.v2, "proactive.overview.read")
-            overview = try JSONDecoder().decode(Snapshot<ProactiveOverview>.self, from: data).payload
+            let decoded = try JSONDecoder().decode(Snapshot<ProactiveOverview>.self, from: data).payload
+            guard generation == overviewGeneration else { return }
+            overview = decoded
             overviewLoad = .loaded
         } catch {
             overviewLoad = overview == nil ? .failed : .loaded

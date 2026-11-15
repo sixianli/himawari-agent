@@ -109,6 +109,13 @@ struct ProactiveTests {
         #expect(spec.step <= 1_000_000_000)
     }
 
+    @Test func limitStepsSurviveBoundsWhoseDifferenceOverflows() throws {
+        let json = #"{"limit":1,"defaultLimit":1,"minimum":-9223372036854775807,"maximum":9223372036854775807,"used":null,"resetsAt":null}"#
+        let spec = try JSONDecoder().decode(ProactiveDayLimit.self, from: Data(json.utf8))
+        #expect(spec.step <= 1_000_000_000)
+        #expect(spec.stepUp(from: 5) > 5)
+    }
+
     @Test func sourceNameIsShownReadably() throws {
         #expect(try source().displayName == "Gmail")
     }
