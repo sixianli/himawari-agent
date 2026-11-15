@@ -546,7 +546,7 @@ it("keeps the original audit path only when protection was not configured", asyn
   expect(readBytes).not.toHaveBeenCalled();
 });
 
-it("logs a failed deferred audit under an event name that the deploy start-up readback treats as a failure", () => {
+function startupReadbackTreatsAsFailure(): (event: string) => boolean {
   const readback = readFileSync(
     new URL(
       "../../../scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs",
@@ -555,18 +555,40 @@ it("logs a failed deferred audit under an event name that the deploy start-up re
     "utf8",
   );
   const pattern =
-    /records\.filter\(\(item\) => !nonFatal\.has\(item\.event\) && (\/.+\/i)\.test\(String\(item\.event\)\)\)/.exec(
+    /records\.filter\(\(item\) => !nonFatal\.has\(item\.event\) && \/(.+)\/([a-z]*)\.test\(String\(item\.event\)\)\)/.exec(
       readback,
     );
   expect(pattern).not.toBeNull();
-  const nonFatal = /const nonFatal = new Set\((\[[^\]]*\])\)/.exec(readback);
-  expect(nonFatal).not.toBeNull();
-  expect(JSON.parse(String(nonFatal?.[1]))).not.toContain("sandbox_runtime.content_audit_failed");
-  expect(JSON.parse(String(nonFatal?.[1]))).not.toContain(
-    "sandbox_runtime.content_audit_retryable",
-  );
-  const failureEvents = new RegExp(String(pattern?.[1]).slice(1, -2), "i");
-  expect(failureEvents.test("sandbox_runtime.content_audit_failed")).toBe(true);
-  expect(failureEvents.test("sandbox_runtime.content_audit_retryable")).toBe(true);
-  expect(failureEvents.test("sandbox_runtime.content_audit_completed")).toBe(false);
+  const nonFatalList = /const nonFatal = new Set\((\[[^\]]*\])\)/.exec(readback);
+  expect(nonFatalList).not.toBeNull();
+  const nonFatal = new Set<string>(JSON.parse(String(nonFatalList?.[1])));
+  const failureEvents = new RegExp(String(pattern?.[1]), String(pattern?.[2]));
+  return (event) => !nonFatal.has(event) && failureEvents.test(event);
+}
+
+it("the deploy start-up readback treats failed and retryable deferred audits as failures, completed ones not", () => {
+  const isFailure = startupReadbackTreatsAsFailure();
+  expect(isFailure("sandbox_runtime.content_audit_failed")).toBe(true);
+  expect(isFailure("sandbox_runtime.content_audit_retryable")).toBe(true);
+  expect(isFailure("sandbox_runtime.content_audit_completed")).toBe(false);
+});
+
+it("logs a failed deferred audit under an event name that the deploy start-up readback treats as a failure", async () => {
+  process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"] = manifestPath;
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await verifyProtectedRuntime(root, digest, async () => "c".repeat(64), [], {
+      deferContentAudit: true,
+    });
+    const settledEvent = () =>
+      logged.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as { event?: string })
+        .map(({ event }) => event)
+        .find((event) => event !== undefined && /content_audit_(?!started|retrying)/.test(event));
+    await vi.waitFor(() => expect(settledEvent()).toBeDefined());
+    expect(settledEvent()).toBe("sandbox_runtime.content_audit_failed");
+    expect(startupReadbackTreatsAsFailure()(String(settledEvent()))).toBe(true);
+  } finally {
+    logged.mockRestore();
+  }
 });
