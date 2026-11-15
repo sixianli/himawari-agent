@@ -9,6 +9,7 @@ import {
   createDeploymentId,
   createOwnerId,
 } from "@himawari-agent/domain";
+import { gatewayV2MessageSchema } from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteProductStateRepository,
@@ -183,11 +184,17 @@ describe("think settings", () => {
     summary: `邮件 ${ref}：房东请在 11 月 20 日前回复是否续租`,
   });
   const head = {
-    protocolVersion: 2,
+    schemaVersion: "gateway.v2",
     kind: "query",
     type: "think.settings.read",
     messageId: "message-read",
+    correlationId: "correlation-read",
+    causationId: null,
+    dataClassification: "private",
+    risk: "low",
+    authorizationRef: null,
     scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    authority: { deploymentId: DEPLOYMENT_ID, authorityEpoch: 1, fencingToken: 1 },
     actor: { actorType: "owner", actorId: OWNER_ID },
     payload: {},
   };
@@ -216,6 +223,7 @@ describe("think settings", () => {
       };
     };
     expect(snapshot.type).toBe("think.settings.snapshot");
+    expect(() => gatewayV2MessageSchema.parse(JSON.parse(JSON.stringify(snapshot)))).not.toThrow();
     expect(snapshot.payload.revision).toBe(0);
     expect(snapshot.payload.enabled).toBe(true);
     expect(snapshot.payload.items.map((item) => item.key)).toEqual([
@@ -239,6 +247,23 @@ describe("think settings", () => {
       overridden: false,
     });
     expect(snapshot.payload.items[2]).toMatchObject({ value: 5, defaultValue: 5 });
+    for (const item of snapshot.payload.items as unknown as {
+      label: Record<string, string>;
+      description: Record<string, string>;
+      unitLabel: Record<string, string>;
+    }[])
+      for (const text of [item.label, item.description, item.unitLabel])
+        expect(Object.keys(text).sort()).toEqual(["en", "ja", "zh-CN"]);
+    expect(snapshot.payload.items[2]).toMatchObject({
+      label: { "zh-CN": "排队上限", en: "Queue limit", ja: "待ち行列の上限" },
+      unitLabel: { "zh-CN": "件", en: "items", ja: "件" },
+    });
+    expect(snapshot.payload.items[6]).toMatchObject({
+      key: "maxAttempts",
+      unit: "times",
+      label: { "zh-CN": "最多尝试次数", en: "Maximum attempts", ja: "最大試行回数" },
+      unitLabel: { "zh-CN": "次", en: "times", ja: "回" },
+    });
     expect(snapshot.payload.items[3]).toMatchObject({ value: 50, defaultValue: 50 });
     const off = await fixture();
     const plain = (await off.control.query(head as never)) as unknown as {
