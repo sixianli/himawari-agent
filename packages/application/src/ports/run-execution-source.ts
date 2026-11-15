@@ -24,6 +24,7 @@ export interface RunExecutionSource {
   readonly threadId: ThreadId | null;
   readonly triggerId: TriggerId;
   readonly sourceType: "user_message" | "schedule" | "external_event";
+  readonly ownerApprovedTask?: true;
   readonly sourceId: string;
   readonly payloadRef: PayloadRef;
   readonly dataClassification: DataClassification;
