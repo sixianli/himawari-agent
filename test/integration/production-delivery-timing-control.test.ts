@@ -83,6 +83,7 @@ describe("delivery timing settings live on the server", () => {
         },
       });
     return {
+      stateRoot,
       device,
       store: () => repository.deliveryTimingSettings(),
       effective: () => effective,
@@ -156,6 +157,20 @@ describe("delivery timing settings live on the server", () => {
       value: 300,
       overridden: false,
     });
+  });
+
+  it("treats a stored overrides value that is not an object as no overrides", async () => {
+    const { device, stateRoot } = await setup();
+    const raw = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    raw
+      .prepare(
+        `INSERT INTO delivery_timing_settings (owner_id, agent_id, overrides, revision, updated_at)
+         VALUES (?, ?, 'null', 1, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, T0);
+    raw.close();
+    const payload = await read(device());
+    expect(item(payload, "recheckSeconds")).toMatchObject({ value: 300, overridden: false });
   });
 
   it("goes back to the default when the value is cleared", async () => {

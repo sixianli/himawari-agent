@@ -53,8 +53,13 @@ export class SqliteDeliveryTimingSettingsOperations {
       )
       .get(scope.ownerId, scope.agentId) as { overrides: string; revision: number } | undefined;
     if (!row) return EMPTY;
+    const parsed: unknown = JSON.parse(row.overrides);
+    const overrides =
+      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, number>)
+        : {};
     return Object.freeze({
-      overrides: Object.freeze(JSON.parse(row.overrides) as Record<string, number>),
+      overrides: Object.freeze(overrides),
       revision: row.revision,
     });
   }
