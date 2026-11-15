@@ -215,7 +215,7 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(self.calls.read_text().splitlines(), ["daemon-reload", "enable --now himawari-heartbeat.timer"])
         self.assertNotIn(PING, child.stdout + child.stderr)
 
-    def test_url_file_lives_in_a_directory_only_root_owns_and_the_old_copy_is_removed(self):
+    def test_url_file_lives_in_its_own_0700_directory_and_the_old_copy_is_removed(self):
         self.assertEqual(heartbeat.DEFAULT_URL_FILE, "/etc/himawari-heartbeat/healthcheck-url")
         self.assertFalse(heartbeat.DEFAULT_URL_FILE.startswith("/etc/himawari/"))
         legacy = self.root / "etc/himawari/healthcheck-url"
@@ -248,6 +248,23 @@ class InstallScriptTest(unittest.TestCase):
         url.chmod(0o644)
         self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
         self.assertEqual(stat.S_IMODE(url.stat().st_mode), 0o600)
+
+    def test_keep_url_migrates_the_url_from_the_old_location(self):
+        legacy = self.root / "etc/himawari/healthcheck-url"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(PING + "\n")
+        self.assertEqual(self.run_script("install", "--keep-url").returncode, 0)
+        self.assertEqual((self.root / "etc/himawari-heartbeat/healthcheck-url").read_text(), PING + "\n")
+        self.assertFalse(legacy.exists())
+
+    def test_remove_without_purge_keeps_the_old_location_url(self):
+        legacy = self.root / "etc/himawari/healthcheck-url"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(PING + "\n")
+        self.assertEqual(self.run_script("remove").returncode, 0)
+        self.assertTrue(legacy.exists())
+        self.assertEqual(self.run_script("remove", "--purge").returncode, 0)
+        self.assertFalse(legacy.exists())
 
     def test_status_asks_systemd_and_changes_nothing(self):
         child = self.run_script("status")
