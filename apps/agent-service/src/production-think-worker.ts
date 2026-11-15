@@ -50,7 +50,8 @@ export type ThinkWorkerStep =
       readonly outcome: string;
       readonly reasonCode: string;
     }
-  | { readonly status: "aborted"; readonly entryId: string };
+  | { readonly status: "aborted"; readonly entryId?: string }
+  | { readonly status: "unsettled"; readonly entryId: string };
 
 export class ProductionThinkWorker {
   readonly #options: ThinkWorkerOptions;
@@ -60,10 +61,15 @@ export class ProductionThinkWorker {
   }
 
   async runOnce(signal?: AbortSignal): Promise<ThinkWorkerStep> {
+    if (signal?.aborted) return { status: "aborted" };
     const { store, scope, clock } = this.#options;
-    await this.#options.inbox
-      .maintain()
-      .catch((error: unknown) => this.#options.onFailure?.("", error));
+    const report = (entryId: string, error: unknown) => {
+      if (signal?.aborted) return;
+      try {
+        this.#options.onFailure?.(entryId, error);
+      } catch {}
+    };
+    await this.#options.inbox.maintain().catch((error: unknown) => report("", error));
     const entry = await store.claimNext({ ...scope, now: clock.now() });
     if (!entry) return { status: "idle" };
     const settle = async (to: "proposed" | "skipped" | "failed", reasonCode: string) => {
@@ -77,7 +83,7 @@ export class ProductionThinkWorker {
       if (summary === undefined) return await settle("failed", "summary_missing");
       const verdict = await this.#decide(entry, source.describe, summary, signal).catch(
         (error: unknown) => {
-          this.#options.onFailure?.(entry.id, error);
+          report(entry.id, error);
           return undefined;
         },
       );
@@ -96,14 +102,12 @@ export class ProductionThinkWorker {
       });
       return await settle(run.outcome, run.reasonCode.slice(0, 64));
     } catch (error) {
-      this.#options.onFailure?.(entry.id, error);
+      report(entry.id, error);
       if (signal?.aborted) return { status: "aborted" as const, entryId: entry.id };
-      return await settle("failed", "think_failed").catch(() => ({
-        status: "done" as const,
-        entryId: entry.id,
-        outcome: "failed",
-        reasonCode: "think_failed",
-      }));
+      return await settle("failed", "think_failed").catch((settleError: unknown) => {
+        report(entry.id, settleError);
+        return { status: "unsettled" as const, entryId: entry.id };
+      });
     }
   }
 

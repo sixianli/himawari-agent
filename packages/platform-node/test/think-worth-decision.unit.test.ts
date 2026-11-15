@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ThinkWorthDecisionFailure } from "@himawari-agent/application";
+import { THINK_WORTH_QUESTION, TRUSTED_PROMPT_TEXTS } from "@himawari-agent/prompt-catalog";
 import { afterEach, describe, expect, it } from "vitest";
 import { ThinkWorthDecision, thinkWorthRequestBody } from "../src/think-worth-decision.js";
 
@@ -103,5 +104,29 @@ describe("think worth decision", () => {
     expect(() =>
       thinkWorthRequestBody("typesafe-ai/jev", { ...request, summary: "字".repeat(40_000) }),
     ).toThrow("THINK_WORTH_INPUT_TOO_LARGE");
+  });
+
+  it("cancels the response body on an HTTP error and on an oversized declared length", async () => {
+    for (const init of [{ status: 503 }, { headers: { "content-length": "2000000" } }]) {
+      let cancelled = false;
+      const body = new ReadableStream({
+        cancel: () => {
+          cancelled = true;
+        },
+      });
+      const decision = new ThinkWorthDecision({
+        model: "typesafe-ai/jev",
+        apiKey: async () => "k",
+        fetch: async () => new Response(body, init),
+      });
+      await expect(decision.decide(request, AbortSignal.timeout(5000))).rejects.toBeInstanceOf(
+        ThinkWorthDecisionFailure,
+      );
+      expect(cancelled).toBe(true);
+    }
+  });
+
+  it("sends a question the outbound redaction trusts as fixed text", () => {
+    expect(TRUSTED_PROMPT_TEXTS).toContain(THINK_WORTH_QUESTION.text);
   });
 });

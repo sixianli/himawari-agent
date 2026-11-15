@@ -131,7 +131,7 @@ describe("think worker", () => {
           return { outcome: "proposed", reasonCode: "proposal_written" };
         }),
     });
-    const worker = (baseUrl: string, think: ThinkRunner, runTimeoutMs = 5000) =>
+    const worker = (baseUrl: string, think: ThinkRunner, runTimeoutMs = 5000, extra = {}) =>
       new ProductionThinkWorker({
         scope,
         inbox,
@@ -148,6 +148,7 @@ describe("think worker", () => {
         },
         runner: think,
         runTimeoutMs,
+        ...extra,
       });
     return { inbox, store, payloads, runs, runner, worker, usage: () => inbox.usage() };
   }
@@ -256,6 +257,30 @@ describe("think worker", () => {
     );
     await inbox.submit(mail("a"));
     expect(await run.runOnce(controller.signal)).toMatchObject({ status: "aborted" });
+    expect((await usage()).byStatus).toEqual({ thinking: 1 });
+  });
+
+  it("does not claim an entry when the caller has already cancelled", async () => {
+    const { inbox, runner, worker, usage } = await fixture();
+    const stub = await jev(() => ({ status: 200, worth: 0.95 }));
+    await inbox.submit(mail("a"));
+    const step = await worker(stub.baseUrl, runner()).runOnce(AbortSignal.abort());
+    expect(step).toEqual({ status: "aborted" });
+    expect((await usage()).byStatus).toEqual({ queued: 1 });
+  });
+
+  it("reports an unsettled entry and survives a throwing failure observer", async () => {
+    const { inbox, store, runner, worker, usage } = await fixture();
+    const stub = await jev(() => ({ status: 200, worth: 0.95 }));
+    await inbox.submit(mail("a"));
+    const finish = () => Promise.reject(new Error("disk"));
+    const step = await worker(stub.baseUrl, runner(), 5000, {
+      store: { ...store, claimNext: store.claimNext.bind(store), finish },
+      onFailure: () => {
+        throw new Error("observer");
+      },
+    }).runOnce();
+    expect(step).toMatchObject({ status: "unsettled" });
     expect((await usage()).byStatus).toEqual({ thinking: 1 });
   });
 
