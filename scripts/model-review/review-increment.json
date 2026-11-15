@@ -1,0 +1,8 @@
+{
+  "inlineDiffMaxBytes": 60000,
+  "contextLines": 3,
+  "maxFilesListed": 200,
+  "toolSummaryTopFiles": 10,
+  "shadowFullTotal": 10,
+  "reportBucketLines": [30, 100, 300, 1000]
+}

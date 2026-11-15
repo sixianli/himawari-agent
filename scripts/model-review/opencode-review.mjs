@@ -50,6 +50,17 @@ import {
   safe,
   validClaimsFile,
 } from "./plan-claims.mjs";
+import {
+  incrementBlock,
+  incrementRecord,
+  incrementRecordValid,
+  incrementScope,
+  readIncrementConfig,
+  shadowCommand,
+  shadowRunsDone,
+  toolSummary,
+  toolSummaryValid,
+} from "./increment.mjs";
 import { GUARD_ENV } from "./spend-guard.mjs";
 
 export const OPENCODE_VERSION = "1.19.5";
@@ -359,8 +370,10 @@ export function buildPrompt({
   priorFindings,
   claimsBase,
   brief,
+  increment,
 }) {
   if (!MODES.includes(mode)) throw new Error(`MODE_UNKNOWN ${mode}`);
+  const scoped = Boolean(previous && increment);
   if (!brief || !brief.trim()) throw new Error("BRIEF_EMPTY");
   const text = MODE_TEXT[mode];
   const lens = lensFor(mode, model);
@@ -379,16 +392,23 @@ export function buildPrompt({
   const material = [
     "---- 本次材料 ----",
     `仓库就是当前目录，已检出 ${head}。`,
-    base ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
+    base && !scoped ? `对比基准是 ${base}，先运行 git diff ${base}..${head} 看改动。` : null,
+    base && scoped
+      ? `对比基准是 ${base}。本轮范围就是材料最后“本轮增量”里列出的改动，不必再取整个 PR 的差异；证据指向旧代码时再按文件去看。`
+      : null,
     mode === "plan-claims" && claimsBase
       ? `本 PR 的基线提交是 ${claimsBase}（main 与 ${head} 的共同祖先）。`
       : null,
-    previous
+    scoped
+      ? `上一轮复核到 ${previous}。这一轮只做三件事：一、下面列出的上一轮意见是否真的改好了；二、本轮增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。必答问题里的“这个改动”指本轮增量加上一轮意见的修复；每题先写“涉及”或“不涉及”，不涉及的一句话说明即可；增量碰到请求开头、遮盖、序列化、配置键或标识时必须完整回答。结论里写清这一轮查过哪些范围。`
+      : null,
+    previous && !scoped
       ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
       : null,
     previous && priorFindings ? priorFindings : null,
     text.materialTitle,
     brief.trim(),
+    scoped ? increment : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -1246,7 +1266,12 @@ export function claimsFileRecords(repo, claimsFile, exceptKey) {
 
 export function dailySpend(repo, date) {
   const items = [];
-  for (const key of reviewLedgers(repo)) {
+  const ledgers = reviewLedgers(repo).flatMap((key) =>
+    existsSync(join(repo, REVIEWS_DIR, key, SHADOW_DIR, "usage.jsonl"))
+      ? [key, `${key}/${SHADOW_DIR}`]
+      : [key],
+  );
+  for (const key of ledgers) {
     const records = readUsage(join(repo, REVIEWS_DIR, key)).filter((record) => {
       const ms =
         typeof record.at === "string" && record.at.endsWith("Z") ? Date.parse(record.at) : NaN;
@@ -1274,8 +1299,14 @@ export function spendDayLines({ date, total, items, over }) {
   ];
 }
 
+function incrementText(increment) {
+  if (!increment) return "";
+  if (increment.fallback) return ` increment=fallback-${increment.fallback}`;
+  return ` increment=files-${increment.files}-lines-${increment.lines}${increment.truncated ? "-truncated" : ""}`;
+}
+
 export function resultLine(record) {
-  return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}`;
+  return `REVIEW_RESULT round=${record.round} ${record.model} outcome=${record.outcome} wrapUp=${record.wrapUp ?? "none"}${record.wrapUpSkipped ? `-skipped-${record.wrapUpSkipped}` : ""} steps=${record.steps} input=${record.input} cacheRead=${record.cacheRead} output=${record.output} reasoning=${record.reasoning} cost=${record.cost.toFixed(4)}${incrementText(record.increment)}${record.shadow ? " shadow" : ""}`;
 }
 
 export const LOW_FIX_MAX_FILES = 5;
@@ -1647,6 +1678,47 @@ export function unreviewedFiles(repo, from, to, ledgerPath, mainRef) {
   const current = ownChangePrints(repo, to, mainRef, ledgerPath, only);
   if (!reviewed || !current) return outside;
   return outside.filter((file) => reviewed.get(file) !== current.get(file)).sort();
+}
+
+export const PROMPT_MAX_BYTES = 100000;
+
+export function planIncrement({
+  repo,
+  commits,
+  config,
+  ledgerPath,
+  promptBytes,
+  mainRef = "origin/main",
+}) {
+  const fallback = (reason) => ({ record: { fallback: reason }, block: null });
+  if (!config) return fallback("config-missing");
+  let files;
+  try {
+    files = unreviewedFiles(repo, commits.previous, commits.head, ledgerPath, mainRef);
+  } catch {
+    return fallback("diff-failed");
+  }
+  if (files.some((file) => file.includes("\uFFFD") || hasControlCharacter(file)))
+    return fallback("file-name-invalid");
+  if (files.length === 0) return { empty: true };
+  const scope = incrementScope({
+    repo,
+    previous: commits.previous,
+    head: commits.head,
+    mainRef,
+    files,
+  });
+  if (scope.fallback) return fallback(scope.fallback);
+  const built = incrementBlock({
+    repo,
+    previous: commits.previous,
+    head: commits.head,
+    scope,
+    config,
+    budget: Math.min(config.inlineDiffMaxBytes, PROMPT_MAX_BYTES - promptBytes - 1),
+  });
+  if (!built) return fallback("too-large");
+  return { record: incrementRecord(scope, built), block: built.block };
 }
 
 export const REVIEW_RECORD_ERRORS = ["USAGE_LEDGER_INVALID", "REVIEW_ROUND_HEADS_DIFFER"];
@@ -2021,6 +2093,11 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   const shown = gitStatus(["show", `HEAD:${ledgerPath}/usage.jsonl`], repo);
   if (shown.status !== 0) throw new Error(`REPORT_LEDGER_NOT_COMMITTED ${ledgerPath}`);
   const records = parseUsage(shown.stdout, `HEAD:${ledgerPath}`);
+  const shadowShown = gitStatus(["show", `HEAD:${ledgerPath}/${SHADOW_DIR}/usage.jsonl`], repo);
+  const shadowRecords =
+    shadowShown.status === 0
+      ? parseUsage(shadowShown.stdout, `HEAD:${ledgerPath}/${SHADOW_DIR}`)
+      : [];
   const reviews = records.filter((record) => record.mode === "code-review");
   const rounds = [...new Set(reviews.map((record) => record.round ?? 1))];
   const latest = Math.max(0, ...rounds);
@@ -2069,7 +2146,8 @@ export function reviewReport({ repo, pr, mainRef, stop, andyQuote }) {
   return [
     `REVIEW_REPORT pr=${pr}`,
     ...reviews.map(resultLine),
-    `REVIEW_SPENT_TOTAL ${spentOf(records).toFixed(4)}`,
+    ...shadowRecords.map(resultLine),
+    `REVIEW_SPENT_TOTAL ${spentOf([...records, ...shadowRecords]).toFixed(4)}`,
     ...(lowFixLines.length > 0 ? ["低严重度已改、未复核：", ...lowFixLines] : []),
     ...(deferredLines.length > 0
       ? [`低严重度未修（第 ${LOW_DEFER_FROM_ROUND} 轮起只列不修）：`, ...deferredLines]
@@ -2178,6 +2256,10 @@ export function parseUsage(text, path) {
             (Array.isArray(record.gatewayDropped) &&
               record.gatewayDropped.every((id) => typeof id === "string" && id !== ""))));
       const singleLine = !hasLineBreak(record ?? {});
+      const incrementValid =
+        incrementRecordValid(record?.increment) &&
+        toolSummaryValid(record?.toolSummary) &&
+        (record?.shadow === undefined || record.shadow === true);
       if (
         !Number.isFinite(record?.cost) ||
         record.cost < 0 ||
@@ -2189,6 +2271,7 @@ export function parseUsage(text, path) {
         !lowFixValid ||
         !claimsValid ||
         !gatewayValid ||
+        !incrementValid ||
         !singleLine
       )
         throw new Error(`USAGE_LEDGER_INVALID ${path}:${number}`);
@@ -3162,6 +3245,7 @@ export function prepareCopy({ repo, copy, commits, workRoot }) {
 }
 
 export const REVIEWS_DIR = ".agents/reviews";
+export const SHADOW_DIR = "shadow";
 export const TOPIC_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 
 export function reviewKey({ pr, topic }) {
@@ -3176,7 +3260,13 @@ export function reviewDir(repo, options) {
 
 export function rawDir(options, round) {
   const repoId = createHash("sha256").update(resolve(options.repo)).digest("hex").slice(0, 12);
-  return join(tmpdir(), "himawari-review-raw", repoId, reviewKey(options), `round-${round}`);
+  return join(
+    tmpdir(),
+    "himawari-review-raw",
+    repoId,
+    options.shadow ? `${reviewKey(options)}-${SHADOW_DIR}` : reviewKey(options),
+    `round-${round}`,
+  );
 }
 
 export function recordText(text) {
@@ -3382,6 +3472,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
       if (!TOPIC_PATTERN.test(options.topic)) throw new Error("ARG_INVALID --topic");
     } else if (key === "--timeout-minutes") options.timeoutMinutes = Number(take());
     else if (key === "--self-check-only") options.selfCheckOnly = true;
+    else if (key === "--shadow") options.shadow = true;
     else if (key === "--require-gateway") options.requireGateway = true;
     else if (key === "--assert-reviewed") options.assertReviewed = true;
     else if (key === "--report") options.report = true;
@@ -3504,6 +3595,12 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (options.shadow) {
+    if (options.mode !== "code-review") throw new Error("ARG_SHADOW_ONLY_FOR_CODE_REVIEW");
+    if (options.previous !== undefined) throw new Error("ARG_SHADOW_NOT_WITH_PREVIOUS");
+    if (options.selfCheckOnly) throw new Error("ARG_SHADOW_NOT_FOR_SELF_CHECK");
+    if (options.round !== undefined) throw new Error("ARG_SHADOW_NOT_WITH_ROUND");
+  }
   if (!options.selfCheckOnly) {
     if (options.out !== undefined) throw new Error("ARG_OUT_ONLY_FOR_SELF_CHECK");
     if (options.pr !== undefined && options.topic !== undefined)
@@ -3512,7 +3609,9 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
       throw new Error("ARG_REQUIRED --pr");
     if (options.mode !== "code-review" && options.topic === undefined)
       throw new Error("ARG_REQUIRED --topic");
-    options.out = reviewDir(options.repo, options);
+    options.out = options.shadow
+      ? join(reviewDir(options.repo, options), SHADOW_DIR)
+      : reviewDir(options.repo, options);
   }
   if (!Number.isFinite(options.timeoutMinutes) || options.timeoutMinutes <= 0) {
     throw new Error("ARG_INVALID --timeout-minutes");
@@ -3824,17 +3923,54 @@ async function main() {
           head: commits.head,
         })
       : null;
-  const prompts = Object.fromEntries(
-    options.models.map((model) => [
-      model,
-      buildPrompt({ ...options, ...commits, model, questions, priorFindings, claimsBase, brief }),
-    ]),
-  );
+  const reviewRun = options.mode === "code-review" && !options.selfCheckOnly;
+  const incrementConfig = reviewRun ? readIncrementConfig() : null;
+  const promptsWith = (increment) =>
+    Object.fromEntries(
+      options.models.map((model) => [
+        model,
+        buildPrompt({
+          ...options,
+          ...commits,
+          model,
+          questions,
+          priorFindings,
+          claimsBase,
+          brief,
+          increment,
+        }),
+      ]),
+    );
+  let prompts = promptsWith(null);
+  const planned =
+    reviewRun && commits.previous
+      ? planIncrement({
+          repo: options.repo,
+          commits,
+          config: incrementConfig,
+          ledgerPath: `${REVIEWS_DIR}/${reviewKey(options)}`,
+          promptBytes: Math.max(
+            ...Object.values(prompts).map((prompt) => Buffer.byteLength(prompt)),
+          ),
+        })
+      : null;
+  if (planned?.empty) {
+    console.log(`REVIEW_INCREMENT_EMPTY ${commits.previous}..${commits.head}`);
+    return;
+  }
+  if (planned?.record.fallback) console.log(`REVIEW_INCREMENT_FALLBACK ${planned.record.fallback}`);
+  if (planned?.block) {
+    prompts = promptsWith(planned.block);
+    console.log(
+      `REVIEW_INCREMENT files=${planned.record.files} lines=${planned.record.lines} rawLines=${planned.record.rawLines} inlineBytes=${planned.record.inlineBytes} truncated=${planned.record.truncated}`,
+    );
+  }
   for (const prompt of Object.values(prompts))
     if (Buffer.byteLength(prompt) > 100000) throw new Error("PROMPT_TOO_LARGE");
   const proxyProblems = proxyCredentialProblems(process.env);
   if (proxyProblems.length > 0) throw new Error(`PROXY_HAS_CREDENTIALS ${proxyProblems.join(" ")}`);
   const records = options.selfCheckOnly ? [] : readUsage(options.out);
+  const parentRecords = options.shadow ? readUsage(dirname(options.out)) : [];
   const sameFileRecords =
     options.selfCheckOnly || options.mode !== "plan-claims"
       ? []
@@ -3843,7 +3979,7 @@ async function main() {
     ? null
     : budgetCheck({
         mode: options.mode,
-        records: [...records, ...sameFileRecords],
+        records: [...records, ...sameFileRecords, ...parentRecords],
         models: options.models,
         approvedUsd: options.approvedUsd,
       });
@@ -3867,7 +4003,7 @@ async function main() {
           options.models.map((model) => [model, promptOnDisk(model)]),
         ),
       });
-  if (options.mode === "code-review" && !options.selfCheckOnly) {
+  if (options.mode === "code-review" && !options.selfCheckOnly && !options.shadow) {
     const ledgerPath = `${REVIEWS_DIR}/${reviewKey(options)}`;
     let claimsOwned;
     const skip = () => {
@@ -4029,6 +4165,11 @@ async function main() {
         ...(summary.apiError ? { apiError: apiErrorText(summary.apiError) } : {}),
         ...(review.retry ? { retry: review.retry } : {}),
         ...(review.retriedAfter ? { retriedAfter: review.retriedAfter } : {}),
+        ...(planned ? { increment: planned.record } : {}),
+        ...(options.shadow ? { shadow: true } : {}),
+        ...(incrementConfig
+          ? { toolSummary: toolSummary(summary.toolCalls, incrementConfig.toolSummaryTopFiles) }
+          : {}),
         ...(liveGateway
           ? {
               ...gatewayRecordFields(gatewayUsage, gateway.config, model, {
@@ -4068,13 +4209,14 @@ async function main() {
         priorFindings,
         claimsBase,
         brief,
+        increment: planned?.block ?? null,
       });
       const refused =
         Buffer.byteLength(substitutePrompt) > 100000
           ? "PROMPT_TOO_LARGE"
           : budgetCheck({
               mode: options.mode,
-              records: readUsage(options.out),
+              records: [...readUsage(options.out), ...parentRecords],
               models: [substitute.model],
               approvedUsd: options.approvedUsd,
             });
@@ -4122,6 +4264,14 @@ async function main() {
     }
     const totalSpent = spentOf(readUsage(options.out));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
+    if (
+      planned?.block &&
+      results.some((record) => record.outcome === "ok") &&
+      shadowRunsDone(join(options.repo, REVIEWS_DIR)) < incrementConfig.shadowFullTotal
+    )
+      console.log(
+        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.brief, gateway: options.gateway })}`,
+      );
     const covered = results.some((record) => record.substitute && record.outcome === "ok");
     if (
       results.some(

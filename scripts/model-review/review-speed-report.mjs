@@ -2,6 +2,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { incrementScope, readIncrementConfig } from "./increment.mjs";
+import { REVIEWS_DIR, unreviewedFiles } from "./opencode-review.mjs";
 
 const MEDIUM_HIGH = new Set(["medium-high"]);
 
@@ -239,6 +241,10 @@ export function renderCsv(rounds) {
     "selfCheckCache",
     "sincePreviousMs",
     "mediumHigh",
+    "incrementLines",
+    "incrementFiles",
+    "incrementMerged",
+    "incrementFallback",
   ];
   const lines = [columns.join(",")];
   const since = new Map();
@@ -250,12 +256,118 @@ export function renderCsv(rounds) {
         .map((column) => {
           if (column === "incremental") return round.previous ? 1 : 0;
           if (column === "sincePreviousMs") return csvCell(since.get(round));
+          if (column === "incrementLines") return csvCell(incrementLinesOf(round));
+          if (column === "incrementFiles") return csvCell(round.increment?.files);
+          if (column === "incrementMerged")
+            return round.increment?.merged === undefined ? "" : round.increment.merged ? 1 : 0;
+          if (column === "incrementFallback") return csvCell(round.increment?.fallback);
           return csvCell(round[column]);
         })
         .join(","),
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function incrementLinesOf(round) {
+  if (Number.isSafeInteger(round.increment?.lines)) return round.increment.lines;
+  if (Number.isSafeInteger(round.backfilledLines)) return round.backfilledLines;
+  return null;
+}
+
+export function backfillIncrements(rounds, repo, mainRef = "origin/main") {
+  const cache = new Map();
+  for (const round of rounds) {
+    if (!round.previous || round.increment?.lines !== undefined) continue;
+    const key = `${round.pr}\0${round.previous}\0${round.head}`;
+    if (!cache.has(key)) {
+      let lines = null;
+      try {
+        const files = unreviewedFiles(
+          repo,
+          round.previous,
+          round.head,
+          `${REVIEWS_DIR}/pr-${round.pr}`,
+          mainRef,
+        );
+        const scope =
+          files.length === 0
+            ? { fallback: null, lines: 0 }
+            : incrementScope({
+                repo,
+                previous: round.previous,
+                head: round.head,
+                mainRef,
+                files,
+              });
+        lines = scope.fallback ? null : scope.lines;
+      } catch {
+        lines = null;
+      }
+      cache.set(key, lines);
+    }
+    const lines = cache.get(key);
+    if (lines !== null) round.backfilledLines = lines;
+  }
+  return rounds;
+}
+
+export function bucketLabel(lines, buckets) {
+  const upper = buckets.find((limit) => lines <= limit);
+  if (upper === undefined) return `>${buckets.at(-1)}`;
+  const index = buckets.indexOf(upper);
+  return `${index === 0 ? 0 : buckets[index - 1] + 1}-${upper}`;
+}
+
+export function bucketStats(rounds, buckets, cutIso) {
+  const cutMs = Date.parse(cutIso);
+  if (!Number.isFinite(cutMs)) throw new Error(`REVIEW_SPEED_REPORT_INVALID_CUT ${cutIso}`);
+  const labels = [...buckets.map((limit) => bucketLabel(limit, buckets)), `>${buckets.at(-1)}`];
+  const groups = roundGroups(rounds).filter((group) => group.rows.some((row) => row.previous));
+  const cells = new Map();
+  let unknown = 0;
+  for (const group of groups) {
+    const lines = group.rows.map(incrementLinesOf).find((value) => value !== null);
+    if (lines === undefined) {
+      unknown += 1;
+      continue;
+    }
+    const key = `${bucketLabel(lines, buckets)}\0${group.end < cutMs ? "before" : "after"}`;
+    cells.set(key, [...(cells.get(key) ?? []), group]);
+  }
+  const summary = (list = []) => ({
+    rounds: list.length,
+    steps: median(list.map((group) => sum(group.rows.map((row) => row.steps)))),
+    runSeconds: median(
+      list.flatMap((group) =>
+        group.rows.filter((row) => Number.isFinite(row.runMs)).map((row) => row.runMs / 1000),
+      ),
+    ),
+    cost: median(list.map((group) => sum(group.rows.map((row) => row.cost)))),
+    mediumHigh: median(
+      list.map((group) => group.rows[0].mediumHigh).filter((count) => Number.isFinite(count)),
+    ),
+  });
+  return {
+    unknown,
+    rows: labels.map((label) => ({
+      label,
+      before: summary(cells.get(`${label}\0before`)),
+      after: summary(cells.get(`${label}\0after`)),
+    })),
+  };
+}
+
+export function renderBuckets({ unknown, rows }, cutIso) {
+  const cell = (s) =>
+    `${s.rounds} 轮 / 步数 ${fmt(s.steps, 0)} / ${fmt(s.runSeconds, 0)} 秒 / ${fmt(s.cost, 3)} 美元 / 中高 ${fmt(s.mediumHigh, 0)}`;
+  return [
+    `| 本轮增量行数 | 优化前（${cutIso} 之前） | 优化后（${cutIso} 起） |`,
+    "| --- | --- | --- |",
+    ...rows.map((row) => `| ${row.label} | ${cell(row.before)} | ${cell(row.after)} |`),
+    "",
+    `每格是：增量轮数 / 步数中位 / 一次运行时长中位 / 费用中位 / 成立的中高意见数中位。增量行数取账本的 increment.lines；旧轮次用 git 历史回算（需要 --repo），算不出的 ${unknown} 轮不在表里。`,
+  ].join("\n");
 }
 
 function main() {
@@ -277,6 +389,8 @@ function main() {
     return;
   }
   const rounds = loadRounds(reviewsDir);
+  const repo = option("--repo");
+  if (repo !== null) backfillIncrements(rounds, repo);
   if (args.includes("--csv")) {
     const cutMs = cut ? Date.parse(cut) : null;
     const kept =
@@ -294,6 +408,11 @@ function main() {
     return;
   }
   console.log(renderTable(compare(rounds, cut)));
+  const config = readIncrementConfig();
+  if (config) {
+    console.log("");
+    console.log(renderBuckets(bucketStats(rounds, config.reportBucketLines, cut), cut));
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

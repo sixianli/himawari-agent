@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: adr
-decision_status: proposed
+decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0270-faster-review-rounds.md"
@@ -108,6 +108,8 @@ Andy 2026-11-15 觉得复核太慢，要求用真实数据找根因，不接受�
 ## 要 Andy 定的事
 
 1. **抽样全量复核开不开、开多少。** 建议前 10 个增量轮各补跑一次全量，每次约 0.06 美元，在每个 PR 1 美元的额度内。不开就省钱，但没法直接证明增量轮没有漏查。
+
+Andy 2026-11-15 在决定卡上选了“同意,并抽样全量复核”：按上面的决定实施，并对前 10 个增量轮补跑全量复核。实现里次数是配置里的 `shadowFullTotal`；脚本在增量轮后打印 `SHADOW_FULL_SUGGESTED <命令>`，主线程照跑，结果写进 `.agents/reviews/pr-<编号>/shadow/`。报表分档的档位是同一配置里的 `reportBucketLines`。
 
 <a id="consequences"></a>
 
