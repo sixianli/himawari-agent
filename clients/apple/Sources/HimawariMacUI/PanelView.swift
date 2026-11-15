@@ -5,6 +5,7 @@ import SwiftUI
 
 struct PanelView: View {
     let model: MenuBarModel
+    @State private var olderListHeight: CGFloat = 0
     let talk: () -> Void
     let pair: () -> Void
 
@@ -14,8 +15,11 @@ struct PanelView: View {
                 if model.app.phase != .active {
                     card { notPaired }
                 } else {
-                    ForEach(model.shownNotices) { notice in
+                    if let notice = model.latestNotice {
                         card { noticeCard(notice) }
+                    }
+                    if !model.olderNotices.isEmpty {
+                        olderNotices
                     }
                     ForEach(model.running) { work in
                         card { running(work) }
@@ -100,7 +104,36 @@ struct PanelView: View {
     }
 
     @ViewBuilder
+    private var olderNotices: some View {
+        Button { model.toggleOlderNotices() } label: {
+            Text(model.noticesExpanded ? L.text("panel.fewerNotices") : L.format("panel.moreNotices", model.olderNotices.count))
+                .hmType(DesignTokens.TypeScale.macSmall)
+                .foregroundStyle(Color.hmMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DesignTokens.Mac.panelCardPadding)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        if model.noticesExpanded {
+            ScrollView {
+                VStack(spacing: DesignTokens.Mac.panelGap) {
+                    ForEach(model.olderNotices) { notice in
+                        card { noticeCard(notice) }
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { olderListHeight = $0 }
+            }
+            .frame(height: min(olderListHeight, DesignTokens.Mac.noticeListMaxHeight))
+        }
+    }
+
+    @ViewBuilder
     private func noticeCard(_ notice: DeviceNotification) -> some View {
+        if let received = notice.createdDate {
+            Text(received, format: .dateTime.hour().minute())
+                .hmType(DesignTokens.TypeScale.macLabel)
+                .foregroundStyle(Color.hmMuted)
+        }
         Text(notice.title)
             .hmType(DesignTokens.TypeScale.macRowStrong)
             .foregroundStyle(Color.hmText)

@@ -19,6 +19,8 @@
 "panel.actionFailed" = "That didn't go through. Click again.";
 "panel.presenceReason" = "confirm it is you approving this";
 "panel.noticeDismiss" = "Got it";
+"panel.moreNotices" = "%d more notifications";
+"panel.fewerNotices" = "Show less";
 "panel.talk" = "Ask Himawari";
 "panel.notPaired" = "Not connected to your Himawari yet";
 "panel.pair" = "Connect";

@@ -14,6 +14,7 @@ enum MacDemoScene: String, CaseIterable {
     case panel = "mac-4-panel"
     case panelQuiet = "mac-4b-panel-nothing-waiting"
     case panelNotice = "mac-4c-panel-notice"
+    case panelNoticesOpen = "mac-4d-panel-notices-open"
     case settings = "mac-6-settings"
     case settingsShortcutTaken = "mac-6b-settings-shortcut-taken"
     case settingsMessagesOn = "mac-6c-settings-messages-on"
@@ -44,14 +45,32 @@ enum MacDemo {
         return try! JSONDecoder().decode(HomeSnapshot.self, from: Data(json.utf8))
     }
 
-    static let notice = DeviceNotification(
-        id: "demo-notice",
-        kind: "reminder",
-        title: "15:00 和田中的会，现在该出门了",
-        body: "从这里过去大约 25 分钟",
-        homeKey: nil,
-        createdAt: "2026-11-15T05:35:00.000Z"
-    )
+    static let notices = [
+        DeviceNotification(
+            id: "demo-notice-3",
+            kind: "run_result",
+            title: "大阪两天的行程表做好了",
+            body: "放在文稿 / 旅行 里，酒店和新干线都按你上次的偏好选的",
+            homeKey: nil,
+            createdAt: "2026-11-15T05:35:00.000Z"
+        ),
+        DeviceNotification(
+            id: "demo-notice-2",
+            kind: "mail_reminder",
+            title: "ANA 发来改签确认",
+            body: "11 月 21 日 NH 23 改到 10:30 起飞",
+            homeKey: nil,
+            createdAt: "2026-11-15T03:12:00.000Z"
+        ),
+        DeviceNotification(
+            id: "demo-notice-1",
+            kind: "run_result",
+            title: "上周的发票都归好档了",
+            body: "12 张，放在文稿 / 发票",
+            homeKey: nil,
+            createdAt: "2026-11-15T01:48:00.000Z"
+        ),
+    ]
 
     static func settings(seesMessages: Bool = false) -> MacAccessSettings {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -96,7 +115,8 @@ enum MacDemo {
             home: scene == .panelQuiet ? nil : home(),
             running: [RunningWork(id: "w", title: "整理“下载”文件夹", progress: DeviceProgress(done: 21, total: 38), progressLabel: "已移动 21 / 38")],
             shortcut: shortcut,
-            notices: scene == .panelNotice ? [notice] : []
+            notices: scene == .panelNotice || scene == .panelNoticesOpen ? notices : [],
+            noticesExpanded: scene == .panelNoticesOpen
         )
         let input = InputBarModel(api: app.api, chat: { nil }, limits: { nil })
         switch scene {
@@ -116,7 +136,7 @@ enum MacDemo {
             return AnyView(InputBarView(model: input, shortcutLabel: nil, submit: {}))
         case .checklist, .checklistOpen:
             return AnyView(ChecklistView(list: checklist, expanded: scene == .checklistOpen, decline: {}, approve: {}))
-        case .panel, .panelQuiet, .panelNotice:
+        case .panel, .panelQuiet, .panelNotice, .panelNoticesOpen:
             return AnyView(PanelView(model: menu, talk: {}, pair: {}))
         case .settings, .settingsShortcutTaken, .settingsMessagesOn, .settingsMessagesNoAccess:
             return AnyView(MacSettingsView(store: store, shortcutState: shortcut, scrolls: false))

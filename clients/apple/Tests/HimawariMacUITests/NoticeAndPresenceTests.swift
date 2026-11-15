@@ -73,6 +73,28 @@ import Testing
         #expect(menu.shownNotices.isEmpty)
     }
 
+    @Test func onlyTheNewestNoticeIsShownAndTheCountIsTheOtherUndismissedOnes() {
+        let menu = model()
+        for (id, time) in [("n-1", "2026-11-15T01:00:00.000Z"), ("n-2", "2026-11-15T02:00:00.000Z"), ("n-3", "2026-11-15T03:00:00.000Z")] {
+            menu.receive(.notificationDeliver(DeviceNotification(id: id, kind: "run_result", title: id, body: "", homeKey: nil, createdAt: time)))
+        }
+        #expect(menu.latestNotice?.id == "n-3")
+        #expect(menu.olderNotices.map(\.id) == ["n-2", "n-1"])
+        menu.dismiss(DeviceNotification(id: "n-2", kind: "run_result", title: "n-2", body: "", homeKey: nil, createdAt: "2026-11-15T02:00:00.000Z"))
+        #expect(menu.olderNotices.map(\.id) == ["n-1"])
+    }
+
+    @Test func theOlderListFoldsBackWhenNothingOlderIsLeft() {
+        let menu = model()
+        menu.receive(.notificationDeliver(DeviceNotification(id: "n-1", kind: "run_result", title: "a", body: "", homeKey: nil, createdAt: "2026-11-15T01:00:00.000Z")))
+        menu.receive(.notificationDeliver(DeviceNotification(id: "n-2", kind: "run_result", title: "b", body: "", homeKey: nil, createdAt: "2026-11-15T02:00:00.000Z")))
+        menu.toggleOlderNotices()
+        #expect(menu.noticesExpanded)
+        menu.receive(.notificationWithdraw(id: "n-1"))
+        #expect(menu.olderNotices.isEmpty)
+        #expect(!menu.noticesExpanded)
+    }
+
     @Test func theSystemIdleTimeCanBeRead() throws {
         let seconds = try #require(PresenceSensor.secondsSinceInput())
         #expect(seconds >= 0)

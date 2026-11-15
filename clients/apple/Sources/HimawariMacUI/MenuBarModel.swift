@@ -36,6 +36,7 @@ final class MenuBarModel {
     private(set) var failedItem: String?
     private(set) var shortcutState: GlobalShortcut.State?
     private(set) var notices = PendingNotifications()
+    var noticesExpanded = false
     @ObservationIgnored var showNotice: ((DeviceNotification) -> Void)?
     @ObservationIgnored var removeNotice: ((String) -> Void)?
     @ObservationIgnored weak var work: MacWorkControl?
@@ -51,7 +52,7 @@ final class MenuBarModel {
         self.settings = settings
     }
 
-    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = []) {
+    init(demo app: AppModel, settings: MacSettingsStore, home: HomeSnapshot?, running: [RunningWork], shortcut: GlobalShortcut.State?, notices: [DeviceNotification] = [], noticesExpanded: Bool = false) {
         self.app = app
         self.settings = settings
         self.home = home
@@ -61,6 +62,7 @@ final class MenuBarModel {
         var pending = PendingNotifications()
         for notice in notices { pending.deliver(notice) }
         self.notices = pending
+        self.noticesExpanded = noticesExpanded
     }
 
     var awaitingCount: Int { home?.awaitingCount ?? 0 }
@@ -68,6 +70,14 @@ final class MenuBarModel {
     var shownNotices: [DeviceNotification] {
         let pressing = mostPressing?.key
         return notices.items.filter { $0.homeKey == nil || $0.homeKey != pressing }
+    }
+
+    var latestNotice: DeviceNotification? { shownNotices.first }
+
+    var olderNotices: [DeviceNotification] { Array(shownNotices.dropFirst()) }
+
+    func toggleOlderNotices() {
+        noticesExpanded.toggle()
     }
 
     func receive(_ event: DeviceStreamEvent) {
@@ -79,6 +89,7 @@ final class MenuBarModel {
         case let .notificationWithdraw(id):
             let gone = notices.withdraw(id)
             removeNotice?(id)
+            if olderNotices.isEmpty { noticesExpanded = false }
             if gone?.homeKey != nil { Task { await refresh() } }
         default:
             break
@@ -89,6 +100,7 @@ final class MenuBarModel {
         rememberSettled()
         notices.withdraw(notice.id)
         removeNotice?(notice.id)
+        if olderNotices.isEmpty { noticesExpanded = false }
     }
 
     private func rememberSettled() {

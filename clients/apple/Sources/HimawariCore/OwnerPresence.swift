@@ -16,6 +16,12 @@ public struct DeviceNotification: Codable, Sendable, Equatable, Identifiable {
         self.homeKey = homeKey
         self.createdAt = createdAt
     }
+
+    public var createdDate: Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: createdAt) ?? ISO8601DateFormatter().date(from: createdAt)
+    }
 }
 
 public struct PendingNotifications: Sendable {
@@ -52,7 +58,7 @@ public struct PendingNotifications: Sendable {
             items.append(notification)
         }
         items = items
-            .map { (instant: Self.instant($0.createdAt), notice: $0) }
+            .map { (instant: Self.instant($0), notice: $0) }
             .sorted { ($0.instant, $0.notice.id) > ($1.instant, $1.notice.id) }
             .map(\.notice)
         return true
@@ -74,10 +80,8 @@ public struct PendingNotifications: Sendable {
         try? store.write(Self.settledName, data)
     }
 
-    static func instant(_ value: String) -> Date {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value) ?? .distantPast
+    static func instant(_ notice: DeviceNotification) -> Date {
+        notice.createdDate ?? .distantPast
     }
 }
 

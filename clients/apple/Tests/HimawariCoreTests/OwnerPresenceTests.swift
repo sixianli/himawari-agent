@@ -44,6 +44,15 @@ import Testing
 }
 
 @Suite struct PendingNotificationsTests {
+    @Test func receivedTimeReadsBothTimestampShapesAndNothingElse() {
+        let withMilliseconds = DeviceNotification(id: "a", kind: "reminder", title: "", body: "", homeKey: nil, createdAt: "2026-11-15T05:35:00.250Z")
+        let withoutMilliseconds = DeviceNotification(id: "b", kind: "reminder", title: "", body: "", homeKey: nil, createdAt: "2026-11-15T05:35:00Z")
+        let broken = DeviceNotification(id: "c", kind: "reminder", title: "", body: "", homeKey: nil, createdAt: "yesterday")
+        #expect(withMilliseconds.createdDate == Date(timeIntervalSince1970: 1_794_720_900.25))
+        #expect(withoutMilliseconds.createdDate == Date(timeIntervalSince1970: 1_794_720_900))
+        #expect(broken.createdDate == nil)
+    }
+
     private func notice(_ id: String, at time: String, homeKey: String? = nil, title: String = "t") -> DeviceNotification {
         DeviceNotification(id: id, kind: "reminder", title: title, body: "", homeKey: homeKey, createdAt: time)
     }
