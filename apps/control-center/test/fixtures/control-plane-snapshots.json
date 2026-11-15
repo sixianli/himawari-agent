@@ -270,6 +270,8 @@
       "revokedAt": null,
       "revocationReasonCode": null,
       "affectedTaskRefs": ["task-01"],
+      "label": "Send the review email once",
+      "detail": { "zh-CN": ["已用 0/1 次"], "en": ["Used 0 of 1"], "ja": ["0/1 回使用"] },
       "generatedAt": "2026-08-26T00:00:01.000Z"
     }
   },

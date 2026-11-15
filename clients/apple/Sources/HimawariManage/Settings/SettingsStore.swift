@@ -15,11 +15,15 @@ public final class SettingsStore {
     public private(set) var waitingCapabilities: [CapabilitySummary] = []
     public private(set) var capabilitiesInUse: [CapabilitySummary] = []
     public private(set) var capabilitiesDisabled: [CapabilitySummary] = []
+    public private(set) var reactivationFailure: [String: String] = [:]
+    @ObservationIgnored private var reactivating: Set<String> = []
 
     public private(set) var devices: [PairedDevice] = []
     public private(set) var server: ServerReach?
     public private(set) var loginDevices: [LoginDevice]?
     public private(set) var shelves: [FileOrigin: FileShelf] = [:]
+    public private(set) var proposals: ProposalList?
+    public private(set) var tuning: [TuningKind: TuningSnapshot] = [:]
 
     @ObservationIgnored public private(set) lazy var export = DataExportSession(gateway: gateway)
 
@@ -38,20 +42,20 @@ public final class SettingsStore {
     public func load() async {
         async let status = loadServerReach()
         async let logins = try? loadLoginDevices()
+        async let listedProposals = try? loadProposals()
         do {
             async let capabilities = loadCapabilities()
             async let listed = loadDevices()
-            let all = try await capabilities
-            waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
-            capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
-            capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+            applyCapabilities(try await capabilities)
             devices = try await listed.devices
             phase = .loaded
         } catch {
             phase = .failed
         }
+        await loadTuning()
         server = await status
         loginDevices = await logins
+        proposals = await listedProposals
     }
 
     public func disable(_ capability: CapabilitySummary, reason: String) async throws {
@@ -70,12 +74,60 @@ public final class SettingsStore {
     }
 
     static let ownerDisabledReason = "owner_disabled"
+    static let ownerReactivatedReason = "owner_reactivated"
+
+    public func reactivate(_ capability: CapabilitySummary, reason: String) async throws {
+        do {
+            try await sendReactivation(capability, reason: reason)
+        } catch {
+            await reloadCapabilities()
+            throw error
+        }
+        await reloadCapabilities()
+    }
+
+    private func sendReactivation(_ capability: CapabilitySummary, reason: String) async throws {
+        _ = try await gateway.command(
+            .v2,
+            "capability.reactivate",
+            payload: [
+                "capabilityRef": .string(capability.capabilityRef),
+                "expectedRevision": .number(Double(capability.revision)),
+                "reasonCode": .string(Self.ownerReactivatedReason),
+                "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
+
+    public func noteReactivationFailure(_ message: String?, for ref: String) {
+        reactivationFailure[ref] = message
+    }
+
+    public func beginReactivation(_ ref: String) -> Bool {
+        reactivating.insert(ref).inserted
+    }
+
+    public func endReactivation(_ ref: String) {
+        reactivating.remove(ref)
+    }
+
+    public static func isDeclined(_ error: Error) -> Bool {
+        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError
+            || error is URLError || error is HTTPExchangeError)
+    }
 
     public func reloadCapabilities() async {
         guard let all = try? await loadCapabilities() else { return }
+        applyCapabilities(all)
+    }
+
+    private func applyCapabilities(_ all: [CapabilitySummary]) {
         waitingCapabilities = all.filter { CapabilityStanding.of($0.lifecycle) == .waitingForYou }
         capabilitiesInUse = all.filter { CapabilityStanding.of($0.lifecycle) == .inUse }
         capabilitiesDisabled = all.filter { CapabilityStanding.of($0.lifecycle) == .disabled }
+        let disabledRefs = Set(capabilitiesDisabled.map(\.capabilityRef))
+        reactivationFailure = reactivationFailure.filter { disabledRefs.contains($0.key) }
     }
 
     public func reloadLoginDevices() async {
@@ -108,6 +160,89 @@ public final class SettingsStore {
     }
 
     static let stillChangingReason: String? = "LOGIN_DEVICES_STILL_CHANGING"
+
+    public func loadTuning() async {
+        for kind in TuningKind.allCases { await reloadTuning(kind) }
+    }
+
+    public func reloadTuning(_ kind: TuningKind) async {
+        guard let data = try? await gateway.read(.v2, kind.readType, payload: kind.readPayload) else { return }
+        if let snapshot = try? JSONDecoder().decode(Snapshot<TuningSnapshot>.self, from: data).payload {
+            tuning[kind] = snapshot
+        }
+    }
+
+    public func changeTuning(_ kind: TuningKind, key: String, value: Int?, reason: String) async throws {
+        guard let snapshot = tuning[kind] else { throw ManageGatewayError.malformedResponse }
+        defer { Task { await reloadTuning(kind) } }
+        _ = try await gateway.command(
+            .v2,
+            kind.changeType,
+            payload: [
+                "expectedRevision": .number(Double(snapshot.revision)),
+                "key": .string(key),
+                "value": value.map { .number(Double($0)) } ?? .null,
+            ],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+    }
+
+    public func reloadProposals() async {
+        if let listed = try? await loadProposals() { proposals = listed }
+    }
+
+    public func respond(_ proposal: Proposal, _ action: ProposalAction, reason: String) async throws -> ProposalOutcome {
+        do {
+            var fullReadToken = JSONValue.null
+            if action == .adopt && proposal.requiresFullRead {
+                fullReadToken = .string(try await openFullText(proposal))
+            }
+            _ = try await gateway.command(
+                .v2,
+                "proposal.respond",
+                payload: [
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                    "action": .string(action.rawValue),
+                    "recentAuthenticationRef": .string(ClientCapabilities.referencePlaceholder),
+                    "fullReadToken": fullReadToken,
+                ],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+            await reloadProposals()
+            return .done(action)
+        } catch let error as ManageGatewayError {
+            guard case .rejected(let status, _, _) = error, status != 401, status != 403 else { throw error }
+            guard let listed = try? await loadProposals() else { throw error }
+            proposals = listed
+            guard let latest = listed.proposals.first(where: { $0.proposalId == proposal.proposalId }) else { return .gone }
+            guard latest.version != proposal.version || latest.fingerprint != proposal.fingerprint else { throw error }
+            return .changed(latest)
+        }
+    }
+
+    private func openFullText(_ proposal: Proposal) async throws -> String {
+        let data = try await gateway.read(
+            .v2,
+            "proposals.read",
+            payload: [
+                "open": .object([
+                    "proposalId": .string(proposal.proposalId),
+                    "expectedVersion": .number(Double(proposal.version)),
+                    "fingerprint": .string(proposal.fingerprint),
+                ]),
+            ]
+        )
+        let list = try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+        guard let token = list.opened?.fullReadToken else { throw ManageGatewayError.malformedResponse }
+        return token
+    }
+
+    private func loadProposals() async throws -> ProposalList {
+        let data = try await gateway.read(.v2, "proposals.read", payload: ["open": .null])
+        return try JSONDecoder().decode(Snapshot<ProposalList>.self, from: data).payload
+    }
 
     public func shelf(_ origin: FileOrigin) -> FileShelf {
         shelves[origin] ?? FileShelf()

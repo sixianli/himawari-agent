@@ -182,6 +182,31 @@ describe("chat export", () => {
     expect(omitted("受限")).toBe(1);
   });
 
+  it("threads Himawari opened to think something over are not exported, and are counted", async () => {
+    const s = await side("think");
+    await seedThread(s, "t-owner", { messages: [{ text: "我自己的对话" }] });
+    await seedThread(s, "thread:think:client", { messages: [{ text: "编号像想一想的普通对话" }] });
+    await seedThread(s, "t-think", { messages: [{ text: "外部内容的摘要" }] });
+    s.database.prepare("UPDATE threads SET origin = 'think' WHERE id = 't-think'").run();
+    const { files, manifest } = await exportOf(s);
+    const text = everyText(files);
+    expect(text).not.toContain("外部内容的摘要");
+    expect(text).toContain("编号像想一想的普通对话");
+    expect(
+      jsonl(files)
+        .map((thread) => thread.id)
+        .sort(),
+    ).toEqual(["t-owner", "thread:think:client"]);
+    expect(manifest.omitted.find((entry) => entry.what.includes("想一想"))?.count).toBe(1);
+    expect(manifest.omitted.find((entry) => entry.what.includes("想一想"))?.reason).toBe(
+      "不是你的对话，不导出",
+    );
+    expect(decoder.decode(files.get("CHATS.md"))).toContain(
+      "共 2 个对话、2 条消息（进行中、已归档和回收站里的对话都在；正在删除和已删除的、Himawari 自己想一想时开的不在）",
+    );
+    expect(verifyChatExport(files, s.migrationSequence).counts.threads).toBe(2);
+  });
+
   it("[多人7] a message whose text was erased by the deletion flow is skipped and counted", async () => {
     const s = await side("erased");
     await seedThread(s, "t-1", { messages: [{ text: "留着" }, { text: "被清除" }] });

@@ -33,6 +33,12 @@ def show(name):
     text = subprocess.check_output(['/usr/bin/systemctl', 'show', name, '--no-pager', '--property=' + ','.join(keys)], text=True, timeout=15)
     return dict(line.split('=', 1) for line in text.splitlines() if '=' in line)
 
+def cgroup_pids(filename):
+    try:
+        return filename.read_text().splitlines()
+    except FileNotFoundError:
+        return []
+
 def write(filename, value):
     data = (json.dumps(value, indent=2) + '\n').encode()
     with filename.open('xb') as output:
@@ -130,7 +136,7 @@ finally:
     reported_cgroups = {value for value in [record.get('effectiveProperties', {}).get('ControlGroup'), record['finalUnitProperties'].get('ControlGroup')] if value}
     cgroup_path = Path('/sys/fs/cgroup') / expected_cgroup.lstrip('/')
     pids = cgroup_path / 'cgroup.procs'
-    remaining = pids.read_text().splitlines() if pids.is_file() else []
+    remaining = cgroup_pids(pids)
     record['cgroupReadback'] = {'path': str(cgroup_path), 'reportedControlGroups': sorted(reported_cgroups), 'cgroupPresent': cgroup_path.is_dir(), 'remainingPids': remaining}
     if reported_cgroups - {expected_cgroup}:
         record['errors'].append({'code': 'PROBE_CGROUP_PATH_UNEXPECTED'})

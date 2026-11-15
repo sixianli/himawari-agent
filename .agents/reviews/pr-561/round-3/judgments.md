@@ -1,0 +1,4 @@
+# PR 561 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1. 中：`declined()` 仍是“未列入的错误一律当取消”，本轮只补了 `HTTPExchangeError`，上一轮意见未真正改好。TuningPages.swift:118-127 的“未列入即取消”是有意设计：Face ID/LAError 取消不是列入白名单的类型，必须落入取消分支；改成只认 CancellationError 会让用户取消 Face ID 变成“没能保存”。意见举的 EncodingError 只来自 ManageGateway.swift:162 的简单可编码结构体，无可达输入；SecureEnclaveKeys.swift:33 的签名错误正是取消路径。上一轮已把可达的 HTTPExchangeError.notHTTP 归入失败，本轮意见 1 无新证据，沿用上一轮判断
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低：服务器下发的 `minimum/maximum/value` 未校验，极端整数会让步进计算溢出崩溃（旧代码，非本次增量）。TuningModels.swift:69-73 与 TuningFormat.swift:47-55 无范围校验；模型自己标明旧代码、非本次增量，只有服务器被篡改或出错才触发，判低，第 3 轮起低问题不修；触发：服务器返回 Int.min/Int.max 级别的 value/minimum/maximum（受信任的自有服务器，正常不会）；后果：步进计算整数溢出，App 崩溃

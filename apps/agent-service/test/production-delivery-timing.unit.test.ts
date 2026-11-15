@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
 import {
   DELIVERY_TIMING_DEFAULTS,
   type PerceptionRecord,
   type PerceptionStorePort,
 } from "@himawari-agent/application";
-import { createDeliveryTimingSource } from "../src/production-delivery-timing.js";
+import { describe, expect, it } from "vitest";
+import {
+  createDeliveryTimingSource,
+  DeliveryTimingHolder,
+} from "../src/production-delivery-timing.js";
 
 const NOW = 10_000_000;
 
@@ -59,7 +62,7 @@ async function asked(records: readonly PerceptionRecord[]) {
         return 0.9;
       },
     } as never,
-    configuration: DELIVERY_TIMING_DEFAULTS,
+    configuration: () => DELIVERY_TIMING_DEFAULTS,
     store: pagedStore(records),
     scope: { ownerId: "o", agentId: "a" } as never,
     reserve: async () => true,
@@ -85,5 +88,48 @@ describe("delivery timing source reads", () => {
       Array.from({ length: 600 }, (_, index) => motion(index, "driving")),
     );
     expect(question).toContain("driving");
+  });
+});
+
+describe("delivery timing settings holder", () => {
+  it("uses the owner's changed values at once, and the configured values for the rest", () => {
+    const holder = new DeliveryTimingHolder(DELIVERY_TIMING_DEFAULTS, {});
+    expect(holder.current().recheckSeconds).toBe(300);
+    holder.apply({ recheckSeconds: 600 });
+    expect(holder.current().recheckSeconds).toBe(600);
+    expect(holder.current().maximumDeferSeconds).toBe(7200);
+    holder.apply({});
+    expect(holder.current().recheckSeconds).toBe(300);
+  });
+
+  it("REVERSE: ignores a stored value that is out of range or unknown", () => {
+    const holder = new DeliveryTimingHolder(DELIVERY_TIMING_DEFAULTS, {
+      recheckSeconds: 5,
+      busyAtLeastPermille: 5000,
+      model: 1,
+    });
+    expect(holder.current()).toEqual(DELIVERY_TIMING_DEFAULTS);
+  });
+
+  it("makes the source read the changed freshness window on the next question", async () => {
+    const holder = new DeliveryTimingHolder(DELIVERY_TIMING_DEFAULTS, {});
+    const seen: unknown[] = [];
+    const source = createDeliveryTimingSource({
+      model: {
+        estimateMicros: () => 1,
+        probability: async (question: unknown) => {
+          seen.push(question);
+          return 0.1;
+        },
+      } as never,
+      configuration: holder.current,
+      store: pagedStore([motion(0, "driving")]),
+      scope: { ownerId: "o", agentId: "a" } as never,
+      reserve: async () => true,
+      now: () => NOW,
+    });
+    expect(source.configuration().motionFreshSeconds).toBe(300);
+    holder.apply({ motionFreshSeconds: 60 });
+    expect(source.configuration().motionFreshSeconds).toBe(60);
   });
 });

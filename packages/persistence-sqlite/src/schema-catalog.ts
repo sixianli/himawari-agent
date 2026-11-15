@@ -727,6 +727,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; the summary link clears with its payload",
   ),
   entry(
+    "think_settings",
+    "ThinkInboxStorePort",
+    "one row per Owner and Agent holding the think limits and thresholds the owner changed in the app (for example the queue limit or the confidence Jev needs before Himawari thinks), as a small object of whole numbers, and a revision so two edits cannot overwrite each other; values the owner did not change are not stored",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "think_inbox_declined",
     "ThinkInboxStorePort",
     "one counter per day and reason for things the entrance refused because the queue or the day's limit was full, so the owner can see what was turned away",
@@ -1003,6 +1010,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "model_usage_observations",
     "ModelUsageStorePort",
     "one row per finished model request: purpose, model, input and output tokens, tokens served from the provider cache and whether the provider reported cache fields at all",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "delivery_timing_settings",
+    "DeliveryTimingSettingsStorePort",
+    "one row per Agent: the owner's changed values for the push delivery timing settings (recheck interval, longest hold, freshness windows and so on), with a revision, shared by every signed-in device",
     "metadata_only",
     "cascade with Owner or Agent deletion",
   ),

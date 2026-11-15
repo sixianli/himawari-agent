@@ -22,7 +22,14 @@
     "maxTokens": 32768,
     "publicFetchMaximumBytes": 102400
   },
-  "startupReadyBudgetSeconds": 30,
+  "historyComparison": {
+    "mode": "off",
+    "reason": "我跟你说了，线上的数据不用管，线上的数据不重要，因为之前只有我一个人用，懂我意思吗？所以请你以最快的速度去上线",
+    "authorizedBy": "cmsg_01EE1hey9cboYNfwFnBv5dgr57gFLC1LwkkuA5Tm38FypH",
+    "release": "twentyninth"
+  },
+  "onDeployFailure": "keep",
+  "startupReadyBudgetSeconds": 90,
   "startupReadyMarginSeconds": 15,
   "startupPhaseBaselineMs": {
     "state-opened": 8200,

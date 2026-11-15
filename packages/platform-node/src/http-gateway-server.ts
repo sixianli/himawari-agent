@@ -6,12 +6,12 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
-  type DeviceActionService,
   type AuditLedgerPort,
+  type DeviceActionService,
   type DeviceConfiguration,
-  type PairedDeviceScope,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
+  type PairedDeviceScope,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
   type VoiceGates,
@@ -147,6 +147,7 @@ export interface HttpGatewayServerOptions {
       readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
       readonly hub: DeviceActionHub;
     };
+    readonly notifications?: DeviceApiRouteOptions["notifications"];
     readonly home?: DeviceHomePort;
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
@@ -1323,6 +1324,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
+      ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
       ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
