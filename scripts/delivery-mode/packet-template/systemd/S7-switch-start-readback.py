@@ -47,7 +47,7 @@ STARTUP_FAILURE_TERMS = ('failed', 'failure', 'error', 'timeout', 'lost', 'quara
 STARTUP_NON_FATAL_EVENTS = frozenset({'memory.embedding_catch_up_failed'})
 
 def startup_failure_events(messages):
-    return [value.get('event', '') for value in messages if isinstance(value, dict) and 'retryInMs' not in value and value.get('event') not in STARTUP_NON_FATAL_EVENTS and any(term in str(value.get('event', '')).lower() for term in STARTUP_FAILURE_TERMS)]
+    return [value.get('event', '') for value in messages if isinstance(value, dict) and value.get('event') not in STARTUP_NON_FATAL_EVENTS and any(term in str(value.get('event', '')).lower() for term in STARTUP_FAILURE_TERMS)]
 
 def content_audits_completed(messages):
     counts = {'sandbox_runtime.content_audit_started': {}, 'sandbox_runtime.content_audit_completed': {}, 'sandbox_runtime.content_audit_superseded': {}}

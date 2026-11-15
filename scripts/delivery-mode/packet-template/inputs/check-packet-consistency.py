@@ -42,6 +42,12 @@ for relative, expected in draft['files'].items():
     elif sha(path.read_bytes()) != expected:
         problems.append(f'CLOUD_INPUT_DIGEST_STALE {relative}')
 referenced_but_unlisted(cloud, cloud, {name for name in draft['files'] if (cloud / name).is_file()}, {'cloud-inputs.draft.json'})
+helper_path = draft['cleanupHelper']['path']
+helper = packet / helper_path.split('/packet/', 1)[1] if helper_path.count('/packet/') == 1 else None
+if helper is None or not helper.is_file():
+    problems.append(f'CLOUD_INPUT_CLEANUP_HELPER_MISSING {helper_path}')
+elif sha(helper.read_bytes()) != draft['cleanupHelper']['sha256']:
+    problems.append(f'CLOUD_INPUT_CLEANUP_HELPER_DIGEST_STALE {helper_path}')
 
 consumer = (cloud / 'finalize-cloud-inputs.py').read_text()
 consumer_stage = re.search(r"^stage = Path\('([^']+)'\)$", consumer, re.M)

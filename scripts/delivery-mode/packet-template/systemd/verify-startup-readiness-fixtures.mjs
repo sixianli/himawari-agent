@@ -59,7 +59,6 @@ const startupFailureEvents = new Function(`${source.slice(failureStart, failureE
 assert.deepEqual(startupFailureEvents([
   { component: "agent-service", event: "memory.embedding_catch_up_failed", code: "EMBEDDING_LOCAL_UNAVAILABLE", retryInMs: "30000" },
   { component: "agent-service", event: "memory.embedding_catch_up_failed", code: "EMBEDDING_LOCAL_UNAVAILABLE" },
-  { component: "agent-service", event: "future.sync_failed", retryInMs: "1000" },
   { component: "agent-service", event: "service.ready" },
 ]), [], "RETRYABLE_STARTUP_DIAGNOSTICS_MUST_NOT_FAIL_THE_SWITCH");
 assert.deepEqual(startupFailureEvents([
@@ -68,5 +67,6 @@ assert.deepEqual(startupFailureEvents([
   { component: "agent-service", event: "service.failed" },
   { component: "agent-service", event: "sandbox.srt_prewarm.failed" },
   { component: "agent-service", event: "authority.lost" },
-]), ["pair.child_exit", "sandbox_runtime.content_audit_retryable", "service.failed", "sandbox.srt_prewarm.failed", "authority.lost"], "FATAL_STARTUP_EVENTS_MUST_STILL_FAIL_THE_SWITCH");
+  { component: "agent-service", event: "future.sync_failed", retryInMs: "1000" },
+]), ["pair.child_exit", "sandbox_runtime.content_audit_retryable", "service.failed", "sandbox.srt_prewarm.failed", "authority.lost", "future.sync_failed"], "FATAL_STARTUP_EVENTS_MUST_STILL_FAIL_THE_SWITCH");
 process.stdout.write("STARTUP_FAILURE_EVENT_FIXTURES_PASSED 2\n");

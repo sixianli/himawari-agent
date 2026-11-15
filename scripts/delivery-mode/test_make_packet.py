@@ -27,7 +27,7 @@ INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/check-packet-consistency.py', 'inputs/verify-packet-consistency.py', 'inputs/finalize-bindings.py', 'install/twelfth-artifact-install.mjs', 'install/verify-s9-clean-transport-fixtures.py', 'install/P5-new-prefix.md', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/P-readback-design.md', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/production-shape-config-template.json', 'acceptance/cloud/download-question-12.py', 'acceptance/cloud/adapters/failure-scene.py', 'acceptance/cloud/verify-failure-scene-fixtures.py',
     'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
@@ -421,6 +421,23 @@ class TemplateTest(RenderedPacket):
         packet_maker.regenerate_hashes(packet)
         problems = self.consistency_problems(packet)
         self.assertEqual([problem for problem in problems if not problem.startswith('CANDIDATE_ARCHIVE_MISSING')], [])
+
+    def test_the_bound_cleanup_helper_digest_follows_the_helper(self):
+        packet = self.render()
+        helper = packet / 'acceptance' / 'helpers' / 'check-p5-scratch-cleanup.py'
+        draft_path = packet / packet_maker.CLOUD_INPUTS
+        packet_maker.regenerate_hashes(packet)
+        self.assertEqual(json.loads(draft_path.read_text())['cleanupHelper']['sha256'], hashlib.sha256(helper.read_bytes()).hexdigest())
+        helper.write_text(helper.read_text() + '\n')
+        self.assertIn('CLOUD_INPUT_CLEANUP_HELPER_DIGEST_STALE ' + json.loads(draft_path.read_text())['cleanupHelper']['path'], self.consistency_problems(packet))
+        packet_maker.regenerate_hashes(packet)
+        self.assertEqual(json.loads(draft_path.read_text())['cleanupHelper']['sha256'], hashlib.sha256(helper.read_bytes()).hexdigest())
+        self.assertEqual([problem for problem in self.consistency_problems(packet) if not problem.startswith('CANDIDATE_ARCHIVE_MISSING')], [])
+
+    def test_the_template_cleanup_helper_digest_matches_the_template_helper(self):
+        draft = (packet_maker.TEMPLATE / 'acceptance' / 'cloud' / 'cloud-inputs.draft.json').read_text()
+        helper = packet_maker.TEMPLATE / 'acceptance' / 'helpers' / 'check-p5-scratch-cleanup.py'
+        self.assertEqual(re.findall(r'"cleanupHelper": \{\s*"path": "[^"]+",\s*"sha256": "([0-9a-f]{64})"', draft), [hashlib.sha256(helper.read_bytes()).hexdigest()])
 
     def test_carried_copies_follow_the_commit(self):
         head = packet_maker.resolve_commit('HEAD')
@@ -1694,6 +1711,14 @@ class AuthorizedNetworkRetryTest(unittest.TestCase):
         self.assertEqual(len(found), 1)
         return shlex.split(found[0])
 
+    def test_the_adaptation_manifest_names_the_retry_flags_the_adapter_uses(self):
+        manifest = (PACKET_TEMPLATE / 'acceptance/cloud/adaptation-manifest.json').read_text()
+        entry = manifest.split('"adapter": "adapters/probe-authorized-network.mjs"', 1)[1].split('"timingChanges"', 1)[0]
+        source = self.SOURCE.read_text()
+        for flag in ('--retry 2', '--fetch-retries=2', '--fetch-retry-mintimeout=1000', '--fetch-retry-maxtimeout=3000'):
+            self.assertIn(flag, source)
+            self.assertIn(flag, entry)
+
     def test_curl_retries_only_transient_results_and_never_an_allowlist_block(self):
         flags = self.curl_flags()
         self.assertIn('--retry', flags)
@@ -1759,7 +1784,6 @@ class StartupFailureEventTest(unittest.TestCase):
     def test_a_retrying_diagnostic_does_not_fail_the_switch(self):
         messages = [
             {'component': 'agent-service', 'event': 'memory.embedding_catch_up_failed', 'code': 'EMBEDDING_LOCAL_UNAVAILABLE', 'retryInMs': '30000'},
-            {'component': 'agent-service', 'event': 'future.sync_failed', 'retryInMs': '1000'},
             {'component': 'agent-service', 'event': 'service.ready'},
             'plain text',
         ]
@@ -1768,6 +1792,9 @@ class StartupFailureEventTest(unittest.TestCase):
     def test_fatal_startup_events_still_fail_the_switch(self):
         messages = [{'event': name} for name in ['pair.child_exit', 'pair.child_error', 'sandbox_runtime.content_audit_retryable', 'sandbox_runtime.content_audit_failed', 'service.failed', 'authority.lost', 'sandbox.srt_prewarm.failed']]
         self.assertEqual(self.failure_events()(messages), [message['event'] for message in messages])
+
+    def test_an_unlisted_failure_event_fails_the_switch_even_when_it_says_it_will_retry(self):
+        self.assertEqual(self.failure_events()([{'component': 'agent-service', 'event': 'future.sync_failed', 'retryInMs': '1000'}]), ['future.sync_failed'])
 
     def test_the_switch_loop_uses_the_shared_matcher(self):
         source = (PACKET_TEMPLATE / self.RELATIVE).read_text()

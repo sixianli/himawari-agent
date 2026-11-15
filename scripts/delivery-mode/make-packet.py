@@ -628,11 +628,19 @@ def refresh_carried_copies(packet, commit):
     return refreshed
 
 
+def packet_member(staged_path):
+    marker = '/packet/'
+    if staged_path.count(marker) != 1:
+        refuse('PACKET_STAGED_PATH_OUTSIDE_PACKET', staged_path)
+    return staged_path.split(marker, 1)[1]
+
+
 def regenerate_hashes(packet):
     draft_path = packet / CLOUD_INPUTS
     manifest = json.loads(draft_path.read_text())
     for relative in manifest['files']:
         manifest['files'][relative] = file_sha(packet / 'acceptance/cloud' / relative)
+    manifest['cleanupHelper']['sha256'] = file_sha(packet / packet_member(manifest['cleanupHelper']['path']))
     draft_path.write_text(json.dumps(manifest, indent=2) + '\n')
     for name, root in OWNED_SUMS.items():
         lines = []

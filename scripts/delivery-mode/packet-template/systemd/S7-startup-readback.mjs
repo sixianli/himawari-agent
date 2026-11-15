@@ -63,7 +63,7 @@ const startupReadyBudgetMs = __PKT_STARTUP_READY_BUDGET_MS__;
 
 function startupFailureEvents(records) {
   const nonFatal = new Set(["memory.embedding_catch_up_failed"]);
-  return records.filter((item) => !Object.hasOwn(item, "retryInMs") && !nonFatal.has(item.event) && /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error|retryable)/i.test(String(item.event))).map((item) => String(item.event));
+  return records.filter((item) => !nonFatal.has(item.event) && /(?:failed|failure|error|timeout|lost|quarantined|child_exit|child_error|retryable)/i.test(String(item.event))).map((item) => String(item.event));
 }
 
 function startupReadiness(journal, budgetMs) {
