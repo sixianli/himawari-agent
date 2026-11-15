@@ -404,7 +404,14 @@ export interface ThinkInboxConfiguration {
   readonly stalledAfterMinutes?: number;
   readonly maxAttempts?: number;
   readonly summaryCharacters?: number;
+  readonly idleSeconds?: number;
+  readonly runTimeoutMinutes?: number;
 }
+
+export const THINK_LOOP_DEFAULTS = Object.freeze({
+  idleSeconds: 60,
+  runTimeoutMinutes: 10,
+});
 
 export interface ToolRefusalConfiguration {
   readonly consecutive: number;

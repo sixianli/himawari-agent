@@ -1396,6 +1396,8 @@ function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["th
     stalledAfterMinutes: [1, 1440],
     maxAttempts: [1, 20],
     summaryCharacters: [100, 4000],
+    idleSeconds: [5, 86400],
+    runTimeoutMinutes: [1, 120],
   } as const;
   rejectUnknown(input, [...Object.keys(ranges), "worth"], field);
   const parsed: Record<string, number> = {};

@@ -194,6 +194,7 @@ import {
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
 import { registerTaskProposalHandler } from "./production-task-proposals.js";
+import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -305,6 +306,10 @@ export interface ProductionHttpCompositionOptions {
     readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly think?: {
+    readonly worth: ThinkWorthRoute;
+    readonly onDiagnostic?: (event: Record<string, string>) => void;
+  };
   readonly queryPrefetch?: ProductionQueryPrefetch;
   readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
@@ -1205,10 +1210,8 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     clock: { now: clock },
   });
-  if (options.memory)
-    registerReminderProposalHandlers({
-      box: proposalBox,
-      writer: new ProductionReminderWriter({
+  const reminderWriter = options.memory
+    ? new ProductionReminderWriter({
         configuration,
         memory: options.memory.service,
         state: repository.productMemoryState(),
@@ -1220,7 +1223,12 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
-      }),
+      })
+    : undefined;
+  if (reminderWriter)
+    registerReminderProposalHandlers({
+      box: proposalBox,
+      writer: reminderWriter,
       clock: { now: clock },
     });
   registerTaskProposalHandler({
@@ -1233,6 +1241,21 @@ export async function createProductionHttpComposition(
     clock: { now: clock },
     timeZone: configuration.runPolicy?.timeZone ?? "UTC",
   });
+  const think = options.think
+    ? productionThinkLoop({
+        configuration,
+        repository,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock,
+        commands: threadCommands,
+        threads,
+        box: proposalBox,
+        ...(reminderWriter ? { writer: reminderWriter } : {}),
+        worth: options.think.worth,
+        ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1736,6 +1759,7 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
+        think?.loop.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1749,10 +1773,12 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
+      think?.loop.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await think?.loop.stop();
       await home.stopScoring();
       try {
         await app.close();
