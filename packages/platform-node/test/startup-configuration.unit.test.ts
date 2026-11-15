@@ -10,6 +10,7 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
+  DELIVERY_TIMING_DEFAULTS,
   VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
@@ -311,6 +312,47 @@ describe("strict product configuration", () => {
       "on",
     ])
       expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
+  });
+
+  it("[IOS-4] accepts the delivery timing decision model only with a model, a key, a price and values in range", () => {
+    const withTiming = (deliveryTiming: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-delivery-timing"));
+      input["runPolicy"] = {
+        version: "policy-delivery-timing",
+        systemInstruction: "test",
+        memoryLimit: 10,
+        maxSelectedMemories: 1,
+        deliveryTiming,
+      };
+      return input;
+    };
+    const at = "2026-11-15T00:00:00.000Z";
+    const base = {
+      model: "typesafe-ai/jev",
+      secretRef: "vercel-ai-gateway-api-key",
+      inputMicrosPerMillionTokens: 42_000,
+    };
+    expect(parseProductConfiguration(withTiming(base), at).runPolicy?.deliveryTiming).toEqual({
+      ...DELIVERY_TIMING_DEFAULTS,
+      ...base,
+    });
+    expect(
+      parseProductConfiguration(
+        withTiming({ ...base, busyAtLeastPermille: 850, recheckSeconds: 120 }),
+        at,
+      ).runPolicy?.deliveryTiming,
+    ).toMatchObject({ busyAtLeastPermille: 850, recheckSeconds: 120 });
+    const { model: _model, ...withoutModel } = base;
+    for (const invalid of [
+      withoutModel,
+      { ...base, inputMicrosPerMillionTokens: 0 },
+      { ...base, busyAtLeastPermille: 400 },
+      { ...base, recheckSeconds: 10 },
+      { ...base, maximumDeferSeconds: 90_000 },
+      { ...base, baseUrl: "https://example.test" },
+      "on",
+    ])
+      expect(() => parseProductConfiguration(withTiming(invalid), at)).toThrow();
   });
 
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
@@ -1954,6 +1996,51 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     expect(
       parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox,
     ).toEqual(thinkInbox);
+  }
+  const worthSecret = (raw["secretReferences"] as Record<string, unknown>[]).find(
+    ({ purpose }) => purpose === "model-auth",
+  );
+  if (!worthSecret) throw new Error("fixture secret missing");
+  const worth = { model: "typesafe-ai/jev", secretRef: worthSecret["ref"] as string };
+  const model = "must reference exactly one model-auth secret";
+  for (const secretRef of ["missing-secret", "payload-kek"]) {
+    raw["runPolicy"] = { ...policy, thinkInbox: { worth: { ...worth, secretRef } } };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
+      expect.objectContaining({
+        details: { field: "configuration.runPolicy.thinkInbox.worth.secretRef", reason: model },
+      }),
+    );
+  }
+  for (const thinkInbox of [
+    { worth },
+    { worth: { ...worth, yesAtLeastPermille: 800, noAtMostPermille: 200, requestTimeoutMs: 500 } },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox };
+    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox;
+    expect(parsed?.worth).toMatchObject(thinkInbox.worth);
+  }
+  expect(
+    (() => {
+      raw["runPolicy"] = { ...policy, thinkInbox: { worth } };
+      return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox
+        ?.worth;
+    })(),
+  ).toEqual({
+    ...worth,
+    yesAtLeastPermille: 700,
+    noAtMostPermille: 300,
+    requestTimeoutMs: 15_000,
+  });
+  for (const invalid of [
+    { worth: { model: "typesafe-ai/jev" } },
+    { worth: { ...worth, yesAtLeastPermille: 300, noAtMostPermille: 300 } },
+    { worth: { ...worth, noAtMostPermille: 500 } },
+    { worth: { ...worth, yesAtLeastPermille: 500 } },
+    { worth: { ...worth, requestTimeoutMs: 100 } },
+    { worth: { ...worth, extra: 1 } },
+  ]) {
+    raw["runPolicy"] = { ...policy, thinkInbox: invalid };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
   for (const invalid of [
     { queueLimit: 0 },
