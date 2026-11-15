@@ -123,6 +123,7 @@ import { createProductionFileReadServices } from "./production-file-read-service
 import { ProductionGapExport } from "./production-gap-export.js";
 import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
+import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -3282,7 +3283,13 @@ export async function startTenantRuntime(
       const activeDurableMemory = durableMemory;
       if (configuration.runPolicy?.mcpRead !== undefined && !mcpRead)
         throw new Error("MCP_READ_RUNTIME_UNAVAILABLE");
+      const capabilityReactivation = createProductionCapabilityReactivationVerifier({
+        configuration,
+        layout,
+        trustedPeerBinding: () => peerBinding,
+      });
       http = await createProductionHttpComposition({
+        ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
         webPush: {
