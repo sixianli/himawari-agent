@@ -101,105 +101,102 @@ describe("[iOS-9B] the iPhone and the server name device actions the same way", 
 });
 
 describe("[iOS-9B] the iPhone executor runs against the real device-action server", () => {
-  it.skipIf(!swiftAvailable)(
-    "performs, reads back, replays and verifies through the Swift client",
-    async () => {
-      const gateway = createServer();
-      await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
-      const port = (gateway.address() as AddressInfo).port;
-      await new Promise<void>((resolve) => gateway.close(() => resolve()));
-      const origin = `http://127.0.0.1:${port}`;
-      const h = await harness({
-        origin,
-        actionRegistry: new DeviceActionRegistry([
-          ...DEVICE_ACTION_REGISTRATIONS,
-          NOTE_ACTION,
-          TOUCH_ACTION,
-          NEWER_ACTION,
-        ]),
-      });
-      h.actions.authorization.current = {
-        authorize: async () => ({ decision: "allow", ownerPresent: false }),
-      };
-      await h.app.listen({ port, host: "127.0.0.1" });
-      let runs = 0;
-      const control = createServer(async (request, response) => {
-        try {
-          const url = new URL(request.url ?? "/", "http://control");
-          const input = request.method === "POST" ? await body(request) : {};
-          if (url.pathname === "/pair") {
-            const started = await web(h, "pairing-codes");
-            const paired = await h.app.inject({
-              method: "POST",
-              url: "/api/device/v1/pair",
-              headers: { host: new URL(origin).host, "content-type": "application/json" },
-              payload: JSON.stringify({
-                pairingCode: pairingCode(started.body["pairingUri"]),
-                kind: "iphone",
-                name: "Swift client",
-                releaseChannel: "direct",
-                devicePublicKey: input["devicePublicKey"],
-                confirmPublicKey: input["confirmPublicKey"],
-              }),
-            });
-            const device = (paired.json() as { device: { id: string; revision: number } }).device;
-            await web(h, "confirm", { deviceId: device.id, expectedRevision: device.revision });
-            return reply(response, 200, { deviceId: device.id, origin });
-          }
-          if (url.pathname === "/clock") return reply(response, 200, { now: h.clock.now() });
-          if (url.pathname === "/advance") {
-            h.clock.advance(Number(input["seconds"]) * 1000);
-            return reply(response, 200, { now: h.clock.now() });
-          }
-          if (url.pathname === "/request") {
-            const runId = String(input["runId"] ?? `run-${++runs}`);
-            if (input["runId"] === undefined) await addRun(h, runId);
-            const devices = await h.repository.pairedDevices().listDevices(perceptionScope);
-            const device = devices.find((entry) => entry.id === input["deviceId"]);
-            if (!device) return reply(response, 404, {});
-            const outcome = await h.actions.service.request({
-              runId,
-              toolCallId: String(input["toolCallId"] ?? "call-1"),
-              dataClassification: "private",
-              device,
-              action: String(input["action"]),
-              arguments: (input["arguments"] ?? {}) as Record<string, unknown>,
-            });
-            return reply(response, 200, { runId, ...outcome });
-          }
-          return reply(response, 404, {});
-        } catch (error) {
-          return reply(response, 500, { error: String(error) });
-        }
-      });
-      await new Promise<void>((resolve) => control.listen(0, "127.0.0.1", resolve));
-      const controlUrl = `http://127.0.0.1:${(control.address() as AddressInfo).port}`;
+  it("performs, reads back, replays and verifies through the Swift client", async () => {
+    if (!swiftAvailable) return;
+    const gateway = createServer();
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const port = (gateway.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => gateway.close(() => resolve()));
+    const origin = `http://127.0.0.1:${port}`;
+    const h = await harness({
+      origin,
+      actionRegistry: new DeviceActionRegistry([
+        ...DEVICE_ACTION_REGISTRATIONS,
+        NOTE_ACTION,
+        TOUCH_ACTION,
+        NEWER_ACTION,
+      ]),
+    });
+    h.actions.authorization.current = {
+      authorize: async () => ({ decision: "allow", ownerPresent: false }),
+    };
+    await h.app.listen({ port, host: "127.0.0.1" });
+    let runs = 0;
+    const control = createServer(async (request, response) => {
       try {
-        const child = spawn(
-          "swift",
-          ["test", "--package-path", packagePath, "--filter", "DeviceActionServerTests"],
-          {
-            env: { ...process.env, HIMAWARI_ACTION_CONTROL: controlUrl },
-            stdio: ["ignore", "pipe", "pipe"],
-          },
-        );
-        let output = "";
-        child.stdout.on("data", (chunk) => {
-          output += String(chunk);
-        });
-        child.stderr.on("data", (chunk) => {
-          output += String(chunk);
-        });
-        const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
-        expect(code, output.slice(-6000)).toBe(0);
-        expect(output).toMatch(/DeviceActionServerTests/u);
-        expect(output).not.toMatch(/skipped/u);
-      } finally {
-        await new Promise<void>((resolve) => control.close(() => resolve()));
-        await h.app.close();
-        await h.repository.close();
+        const url = new URL(request.url ?? "/", "http://control");
+        const input = request.method === "POST" ? await body(request) : {};
+        if (url.pathname === "/pair") {
+          const started = await web(h, "pairing-codes");
+          const paired = await h.app.inject({
+            method: "POST",
+            url: "/api/device/v1/pair",
+            headers: { host: new URL(origin).host, "content-type": "application/json" },
+            payload: JSON.stringify({
+              pairingCode: pairingCode(started.body["pairingUri"]),
+              kind: "iphone",
+              name: "Swift client",
+              releaseChannel: "direct",
+              devicePublicKey: input["devicePublicKey"],
+              confirmPublicKey: input["confirmPublicKey"],
+            }),
+          });
+          const device = (paired.json() as { device: { id: string; revision: number } }).device;
+          await web(h, "confirm", { deviceId: device.id, expectedRevision: device.revision });
+          return reply(response, 200, { deviceId: device.id, origin });
+        }
+        if (url.pathname === "/clock") return reply(response, 200, { now: h.clock.now() });
+        if (url.pathname === "/advance") {
+          h.clock.advance(Number(input["seconds"]) * 1000);
+          return reply(response, 200, { now: h.clock.now() });
+        }
+        if (url.pathname === "/request") {
+          const runId = String(input["runId"] ?? `run-${++runs}`);
+          if (input["runId"] === undefined) await addRun(h, runId);
+          const devices = await h.repository.pairedDevices().listDevices(perceptionScope);
+          const device = devices.find((entry) => entry.id === input["deviceId"]);
+          if (!device) return reply(response, 404, {});
+          const outcome = await h.actions.service.request({
+            runId,
+            toolCallId: String(input["toolCallId"] ?? "call-1"),
+            dataClassification: "private",
+            device,
+            action: String(input["action"]),
+            arguments: (input["arguments"] ?? {}) as Record<string, unknown>,
+          });
+          return reply(response, 200, { runId, ...outcome });
+        }
+        return reply(response, 404, {});
+      } catch (error) {
+        return reply(response, 500, { error: String(error) });
       }
-    },
-    600_000,
-  );
+    });
+    await new Promise<void>((resolve) => control.listen(0, "127.0.0.1", resolve));
+    const controlUrl = `http://127.0.0.1:${(control.address() as AddressInfo).port}`;
+    try {
+      const child = spawn(
+        "swift",
+        ["test", "--package-path", packagePath, "--filter", "DeviceActionServerTests"],
+        {
+          env: { ...process.env, HIMAWARI_ACTION_CONTROL: controlUrl },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let output = "";
+      child.stdout.on("data", (chunk) => {
+        output += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        output += String(chunk);
+      });
+      const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+      expect(code, output.slice(-6000)).toBe(0);
+      expect(output).toMatch(/DeviceActionServerTests/u);
+      expect(output).not.toMatch(/skipped/u);
+    } finally {
+      await new Promise<void>((resolve) => control.close(() => resolve()));
+      await h.app.close();
+      await h.repository.close();
+    }
+  }, 600_000);
 });
