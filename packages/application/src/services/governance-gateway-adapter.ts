@@ -34,6 +34,7 @@ import {
   type GatewayV2Query,
   type GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
+import { approvalBodyPreview } from "./approval-display.js";
 import type { ApprovalService } from "./approval-service.js";
 import type { CapabilityLifecycleService } from "./capability-lifecycle-service.js";
 import { grantDetailLines } from "./grant-detail-lines.js";
@@ -158,6 +159,13 @@ function parseSnapshot(value: unknown): GatewayV2Snapshot {
 
 function responseId(prefix: string, messageId: string): string {
   return `${prefix}:${messageId}`.slice(0, 128);
+}
+
+function grantLabel(approval: GovernedApprovalRequest | undefined): string | null {
+  const display = approval?.display;
+  if (!display) return null;
+  if (display.displayTitle !== null) return display.displayTitle;
+  return display.bodyPreview === null ? null : approvalBodyPreview(display.bodyPreview, 300);
 }
 
 function distinctSorted(values: readonly string[]): readonly string[] {
@@ -582,7 +590,7 @@ export class GovernanceGatewayV2ReadModel implements GatewayV2ReadModelPort {
         revokedAt: grant.revokedAt,
         revocationReasonCode: grant.revocationReasonCode,
         affectedTaskRefs,
-        label: sourceApproval?.display?.displayTitle ?? null,
+        label: grantLabel(sourceApproval),
         detail: grantDetailLines({
           exactResourceRef: grant.scope.exactResourceRef,
           resourceIdentities: grant.scope.resourceIdentities,

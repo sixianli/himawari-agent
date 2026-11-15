@@ -40,6 +40,16 @@ describe("grantDetailLines", () => {
     expect(lines.ja).toContain("3/5 回使用");
   });
 
+  it("counts a resource once when the exact reference is also listed as an identity", () => {
+    const lines = grantDetailLines({
+      ...base,
+      exactResourceRef: "resource:a",
+      resourceIdentities: ["resource:a"],
+    });
+    expect(lines["zh-CN"][0]).toBe("范围：1 项");
+    expect(lines.en[0]).toBe("Scope: 1 item");
+  });
+
   it("omits scope, cost and affected-task lines when there is nothing to show", () => {
     const lines = grantDetailLines(base);
     expect(lines["zh-CN"]).toEqual(["已用 0/1 次", "到期：2026-12-12"]);

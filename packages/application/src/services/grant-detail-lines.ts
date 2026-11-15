@@ -23,11 +23,11 @@ function dollars(micros: number): string {
 }
 
 function resourceCount(input: GrantDetailInput): number {
-  return (
-    (input.exactResourceRef === null ? 0 : 1) +
-    input.resourceIdentities.length +
-    input.resourcePrefixes.length
-  );
+  return new Set([
+    ...(input.exactResourceRef === null ? [] : [input.exactResourceRef]),
+    ...input.resourceIdentities,
+    ...input.resourcePrefixes,
+  ]).size;
 }
 
 export function grantDetailLines(input: GrantDetailInput): GrantDetailLines {

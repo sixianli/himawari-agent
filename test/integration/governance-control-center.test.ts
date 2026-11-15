@@ -198,7 +198,7 @@ function query(type: GatewayV2Query["type"], messageId: string, payload: unknown
   return parsed;
 }
 
-async function fixture() {
+async function fixture(options: { readonly bodyPreview?: string } = {}) {
   const clock = new ManualClock(NOW);
   const ids = createReferenceAdapterSet({ clock }).ids;
   const authorization = new InMemoryAuthorizationStore();
@@ -259,6 +259,16 @@ async function fixture() {
     finalRisk: "HIGH",
     recentAuthenticationRequired: true,
     recentAuthenticationRef: null,
+    ...(options.bodyPreview === undefined
+      ? {}
+      : {
+          display: {
+            displayTitle: null,
+            bodyPreview: options.bodyPreview,
+            askedBecause: { kind: "no_rule_allows" as const },
+            origin: null,
+          },
+        }),
   };
   await authorization.createApproval(approval);
   await lifecycle.discover(manifest());
@@ -442,6 +452,30 @@ describe("S4 Task 11 governance Control Center boundary", () => {
     expect(legacy).toMatchObject({ payload: { display: null } });
   });
 
+  it("labels a Grant with the body preview frozen on its source approval, capped at 301 characters", async () => {
+    const setup = await fixture({ bodyPreview: "x".repeat(400) });
+    await setup.control.execute({
+      authentication: AUTHENTICATION,
+      command: command("approval.respond", "command-approve-label", "idem-approve-label", {
+        approvalRequestId: setup.approval.id,
+        expectedRevision: 1,
+        decision: "approved",
+        semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+        editedPayloadRef: null,
+        recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+      }),
+    });
+    const resolved = await setup.authorization.getApproval(setup.approval.id);
+    if (!resolved?.grantId) throw new Error("expected Grant");
+    const grantSnapshot = await setup.reads.query(
+      query("grant.detail", "query-grant-label", { grantId: resolved.grantId }),
+    );
+    expect(grantSnapshot).toMatchObject({
+      type: "grant.snapshot",
+      payload: { label: `${"x".repeat(300)}…` },
+    });
+  });
+
   it("projects frozen Approval and Grant truth, then resolves and revokes with revision and idempotency", async () => {
     const setup = await fixture();
     const approvalBefore = await setup.reads.query(
@@ -501,6 +535,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
         capabilityRef: "governed-ui-tool",
         capabilityVersion: "1.0.0",
         affectedTaskRefs: ["task-grant-dependent"],
+        label: null,
         detail: {
           "zh-CN": expect.arrayContaining(["会影响 1 个任务"]),
           en: expect.arrayContaining(["Affects 1 task"]),
