@@ -4,9 +4,7 @@ import HimawariDesign
 import SwiftUI
 
 enum ProactiveErrors {
-    static func declined(_ error: Error) -> Bool {
-        !(error is ManageGatewayError || error is DeviceAPIError || error is DeviceKeyError || error is DecodingError || error is URLError || error is HTTPExchangeError)
-    }
+    static func declined(_ error: Error) -> Bool { SettingsStore.isDeclined(error) }
 }
 
 struct ProactivePage: View {
@@ -15,6 +13,7 @@ struct ProactivePage: View {
     let back: () -> Void
     @State private var failed = false
     @State private var busy: String?
+    @State private var handled: ProactiveInsight?
 
     private var session: ProactiveSession { store.proactive }
     private static let insightLimit = 20
@@ -32,7 +31,10 @@ struct ProactivePage: View {
             await session.reloadOverview()
             await session.reloadSources()
         }
-        .refreshable { await session.reloadOverview() }
+        .refreshable {
+            await session.reloadOverview()
+            await session.reloadSources()
+        }
         .alert(M.actionFailed, isPresented: $failed) {}
     }
 
@@ -78,6 +80,17 @@ struct ProactivePage: View {
             .himawariCard()
         }
         links(overview)
+        if let handled {
+            HStack(spacing: PL.buttonGap) {
+                Text(handled.summary).hmType(DesignTokens.TypeScale.caption).foregroundStyle(Color.hmMuted)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button { undo(handled) } label: { Text(M.proactiveUndo) }
+                    .buttonStyle(CapsuleButtonStyle(.secondary, height: PL.buttonHeight, fontSize: DesignTokens.TypeScale.caption.size))
+                    .fixedSize()
+            }
+            .himawariCard()
+        }
         let pending = overview.openInsights(limit: Self.insightLimit)
         if !pending.isEmpty {
             Text(M.proactiveToHandle).hmType(DesignTokens.TypeScale.groupLabel).foregroundStyle(Color.hmMuted)
@@ -135,6 +148,14 @@ struct ProactivePage: View {
     private func respond(_ insight: ProactiveInsight, _ action: ProactiveInsightAction, _ rating: ProactiveRating?) {
         run(insight.id) {
             try await session.respond(insight, action, rating: rating, reason: action == .rate ? M.confirmProactiveRate : M.confirmProactiveRespond)
+            handled = action == .done || action == .mute ? insight : nil
+        }
+    }
+
+    private func undo(_ insight: ProactiveInsight) {
+        run(insight.id) {
+            try await session.respond(insight, .reopen, reason: M.confirmProactiveRespond)
+            handled = nil
         }
     }
 }
@@ -184,8 +205,10 @@ struct ProactiveInsightCard: View {
                 Button { respond(.done, nil) } label: { Text(M.proactiveDone) }
                     .buttonStyle(CapsuleButtonStyle(.primary, height: PL.buttonHeight, fontSize: DesignTokens.TypeScale.body.size))
             }
-            RatingChoices(choices: [.useful, .unneeded], current: insight.ownerRating, label: M.proactiveRating) { rating in
-                if rating != insight.ownerRating { respond(.rate, rating) }
+            if insight.pushed {
+                RatingChoices(choices: [.useful, .unneeded], current: insight.ownerRating, label: M.proactiveRating) { rating in
+                    if rating != insight.ownerRating { respond(.rate, rating) }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -371,6 +394,8 @@ struct ProactiveSourcePage: View {
                 EmptyStateView(Text(M.loadFailed)).frame(minHeight: DesignTokens.Size.emptyMinHeight)
             }
         }
+        .task { await store.proactive.reloadSources() }
+        .refreshable { await store.proactive.reloadSources() }
     }
 
     private func limit(title: String, note: String, defaultValue: Int, spec: ProactiveDayLimit, value: Int, set: @escaping (Int) -> Void) -> some View {

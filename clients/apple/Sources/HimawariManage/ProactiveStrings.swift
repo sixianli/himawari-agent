@@ -57,6 +57,7 @@ extension M {
 
     static var proactiveToHandle: String { text("待处理", ja: "対応待ち", en: "To handle") }
     static var proactiveDone: String { text("完成", ja: "完了", en: "Done") }
+    static var proactiveUndo: String { text("撤销", ja: "元に戻す", en: "Undo") }
     static var proactiveMute: String { text("不再提醒", ja: "通知しない", en: "Don’t remind") }
     static var proactiveLog: String { text("提醒检查记录", ja: "リマインダー確認の記録", en: "Reminder check record") }
     static var proactiveLogEmpty: String {

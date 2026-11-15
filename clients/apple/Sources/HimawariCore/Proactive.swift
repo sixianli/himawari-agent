@@ -176,15 +176,15 @@ public struct ProactiveDayLimit: Decodable, Sendable, Hashable {
     public let resetsAt: String?
 
     public var step: Int {
-        let span = max(1, maximum - minimum)
+        let span = min(max(1, maximum - minimum), 1_000_000_000)
         var step = 1
         while span / (step * 10) >= 20 { step *= 10 }
         return step
     }
 
     public func clamped(_ value: Int) -> Int { min(maximum, max(minimum, value)) }
-    public func stepUp(from value: Int) -> Int { clamped(value + step) }
-    public func stepDown(from value: Int) -> Int { clamped(value - step) }
+    public func stepUp(from value: Int) -> Int { clamped(value.addingReportingOverflow(step).overflow ? maximum : value + step) }
+    public func stepDown(from value: Int) -> Int { clamped(value.subtractingReportingOverflow(step).overflow ? minimum : value - step) }
 }
 
 public struct ProactiveSource: Decodable, Sendable, Hashable, Identifiable {

@@ -101,6 +101,14 @@ struct ProactiveTests {
         #expect(perDay.clamped(1000) == 200)
     }
 
+    @Test func limitStepsDoNotOverflowOnHugeBounds() throws {
+        let json = #"{"limit":1,"defaultLimit":1,"minimum":1,"maximum":9223372036854775807,"used":null,"resetsAt":null}"#
+        let spec = try JSONDecoder().decode(ProactiveDayLimit.self, from: Data(json.utf8))
+        #expect(spec.stepUp(from: Int.max) == Int.max)
+        #expect(spec.stepDown(from: 1) == 1)
+        #expect(spec.step <= 1_000_000_000)
+    }
+
     @Test func sourceNameIsShownReadably() throws {
         #expect(try source().displayName == "Gmail")
     }
