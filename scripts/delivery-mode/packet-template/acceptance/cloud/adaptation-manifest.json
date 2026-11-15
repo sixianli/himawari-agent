@@ -41,13 +41,14 @@
       "source": "packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
       "sourceSha256": "b9d308220215e005d14bd64ebd05405cce19fa30e188b2fafa0eea837bc206ea",
       "adapter": "adapters/probe-authorized-network.mjs",
-      "adapterSha256": "599c50954368e4162405871643bf3f6b24ac0021fec65c4bfcd25d5d5f7660d8",
+      "adapterSha256": "d19739fa2a92357d76590d71ec208133a38abd002e5e6fede152417649a94029",
       "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
       "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
       "unchangedBeyondGuardAndImport": false,
       "additionalChanges": [
         "print the host diagnostic on stderr when host.ready fails (D-57 follow-up)",
-        "remove two comments (project no-comment rule)"
+        "remove two comments (project no-comment rule)",
+        "I-107: curl gets --retry 2, which retries only timeouts, DNS failures, 408, 429 and 5xx, so an allowlist 403 or any other 4xx is sent once; npm install gets --fetch-retries=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=3000"
       ],
       "timingChanges": [
         "revision-04 (G175): job deadline 25 s -> 60 s; cleanupTimeoutMs 2000 -> 5000; the cpu scenario busy-waits 20 s of wall time instead of 5 s, because the product reads CPU time from ps in whole seconds and a starved task did not reach 1 s of CPU within 5 s on the slowed Hermes rehearsal; other commands and all resource limits unchanged",

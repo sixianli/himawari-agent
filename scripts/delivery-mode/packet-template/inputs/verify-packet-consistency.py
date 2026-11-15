@@ -65,6 +65,15 @@ def edited_listed_script(target):
     path.write_bytes(path.read_bytes() + b'\n')
 
 
+def edited_cleanup_helper(target):
+    path = target / 'acceptance/helpers/check-p5-scratch-cleanup.py'
+    path.write_bytes(path.read_bytes() + b'\n')
+
+
+def escaping_cleanup_helper_path(target):
+    edit_draft(target, lambda manifest: manifest['cleanupHelper'].update({'path': manifest['cleanupHelper']['path'].replace('/packet/', '/packet/acceptance/../')}))
+
+
 def edit_draft(target, change):
     path = target / 'acceptance/cloud/cloud-inputs.draft.json'
     manifest = json.loads(path.read_text())
@@ -94,6 +103,8 @@ case('rejects a loaded helper missing from the cloud input list', unlisted_loade
 case('rejects a stale owned digest', stale_owned_digest, 'OWNED_DIGEST_STALE acceptance/OWNED-SHA256SUMS')
 case('rejects an imported module missing from an owned list', unlisted_imported_module, 'REFERENCED_BUT_UNLISTED maintenance/raw-copy-recovery.mjs')
 case('rejects a listed script edited after its digest was recorded', edited_listed_script, 'CLOUD_INPUT_DIGEST_STALE run-stage-03.py')
+case('rejects a cleanup helper edited after its bound digest was recorded', edited_cleanup_helper, 'CLOUD_INPUT_CLEANUP_HELPER_DIGEST_STALE')
+case('rejects a cleanup helper path that climbs out with ..', escaping_cleanup_helper_path, 'CLOUD_INPUT_CLEANUP_HELPER_MISSING')
 case('rejects a cloud input schema left from another deployment', previous_deployment_schema, 'CLOUD_INPUT_IDENTITY_STALE schema')
 case('rejects a cloud input profile left from another deployment', previous_deployment_profile, 'CLOUD_INPUT_IDENTITY_STALE profile')
 case('rejects a cloud input path under another deployment stage', previous_deployment_stage_path, 'CLOUD_INPUT_IDENTITY_STALE candidate.artifact')

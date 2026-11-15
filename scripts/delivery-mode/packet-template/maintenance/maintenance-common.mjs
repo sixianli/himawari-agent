@@ -559,7 +559,6 @@ export function readCatalogResume(binding) {
   const himawari = `${newPrefix}/bin/himawari`;
   const plan = requireRetainedCommand(records.plan, [himawari, "capabilities", "upgrade-plan", "--config", binding.paths.config, "--reviewed"]);
   const upgrade = requireRetainedCommand(records.upgrade, [himawari, "capabilities", "upgrade", "--config", binding.paths.config, "--confirm", plan.planDigest, "--reviewed"]);
-  for (const record of [records.plan, records.upgrade]) assert(record.samplerFailure === false && record.spaceSample && record.spaceSample.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   return { approval: { path: approvalPath, sha256: sha(readFileSync(approvalPath)), approvalRef: approval.approvalRef }, retained, original, snapshotSha256: event.snapshotDigest, plan, upgrade };
 }
 
@@ -863,6 +862,10 @@ export function recoveryIdForSchema(binding, schema) {
   return id;
 }
 
+export function spaceSamplingWarnings(samplerFailure, sampled) {
+  return [...(samplerFailure ? [{ code: "SAMPLER_EXIT_FAILED", stage: "worker" }] : []), ...(sampled ? sampled.errors : [{ code: "SAMPLER_RESULT_MISSING", stage: "worker" }])];
+}
+
 export async function cli(prefix, args, name) {
   requireStopped();
   safeFile(`${prefix}/bin/himawari`);
@@ -882,15 +885,13 @@ export async function cli(prefix, args, name) {
     sampler.once("exit", (code) => code === 0 ? resolve() : reject(new Error("__PKT_LABEL_UPPER___MAINTENANCE_SAMPLER_FAILED")));
   });
   exited.catch(() => undefined);
-  const readiness = await ready;
-  if (readiness.initialErrors.length > 0) {
-    sampler.postMessage({ kind: "stop" });
-    await exited;
-    retainedJson(`${name}-sampler-precheck-failure.json`, sampled);
-    throw new Error("__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLER_NOT_READY");
+  let samplerFailure = false;
+  try {
+    await ready;
+  } catch {
+    samplerFailure = true;
   }
   let output;
-  let samplerFailure = false;
   try {
     output = spawnSync(command[0], command.slice(1), { encoding: "utf8", timeout: 1200000, maxBuffer: 16777216, env: { HOME: fixed.stateRoot, PATH: "/opt/himawari/node/bin:/usr/bin:/bin", LANG: "C.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
   } finally {
@@ -901,9 +902,8 @@ export async function cli(prefix, args, name) {
       samplerFailure = true;
     }
   }
-  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure };
+  const record = { checkedAt: new Date().toISOString(), actor: { uid: process.getuid(), account: "himawari-prod", hostname: hostname() }, command, status: output.status, signal: output.signal, stdout: output.stdout ?? "", stderr: output.stderr ?? "", errorCode: output.error?.code ?? null, spaceSample: sampled ?? null, samplerFailure, spaceSamplingWarnings: spaceSamplingWarnings(samplerFailure, sampled) };
   const retained = retainedJson(`${name}-command.json`, record);
-  assert(!samplerFailure && sampled && sampled.errors.length === 0, "__PKT_LABEL_UPPER___MAINTENANCE_SPACE_SAMPLING_FAILED");
   assert(output.status === 0 && output.signal === null && !output.error, "__PKT_LABEL_UPPER___MAINTENANCE_CLI_FAILED");
   requireStopped();
   const records = output.stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line));

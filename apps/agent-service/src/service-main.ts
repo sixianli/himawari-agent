@@ -3374,6 +3374,8 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
+        thinkRetentionDiagnostic: (event: Record<string, string>) =>
+          writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         ...(thinkWorth
           ? {
               think: {
