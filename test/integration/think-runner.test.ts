@@ -575,4 +575,32 @@ describe("think runner", () => {
       db.close();
     }
   });
+
+  it("replays a thinking thread created before origin was recorded instead of conflicting", async () => {
+    const { service, payloads, protector } = await fixture({
+      status: "completed",
+      text: JSON.stringify({ action: "none", reason: "只是通知" }),
+    });
+    await payloads.put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "think-task:before-upgrade",
+        contentType: "text/plain",
+        dataClassification: "private",
+        plaintext: new TextEncoder().encode("想一想"),
+        createdAt: START,
+      }),
+    );
+    const request = {
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: "thread:think:before-upgrade" as never,
+      idempotencyKey: "think-thread:before-upgrade",
+      resultRef: "think-task:before-upgrade" as never,
+    };
+    const before = await service.create(request);
+    const after = await service.create({ ...request, origin: "think" });
+    expect(after.thread.id).toBe(before.thread.id);
+  });
 });

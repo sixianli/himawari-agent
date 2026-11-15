@@ -502,7 +502,7 @@ export async function buildChatExport(options: ChatExportOptions): Promise<ChatE
       {
         what: "Himawari 自己想一想时开的对话",
         count: snapshot.thinkThreads,
-        reason: "不是你的对话，到期自动删除，不导出",
+        reason: "不是你的对话，不导出",
       },
       {
         what: "分级为受限（restricted）的消息",

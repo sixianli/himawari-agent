@@ -198,6 +198,9 @@ describe("chat export", () => {
         .sort(),
     ).toEqual(["t-owner", "thread:think:client"]);
     expect(manifest.omitted.find((entry) => entry.what.includes("想一想"))?.count).toBe(1);
+    expect(manifest.omitted.find((entry) => entry.what.includes("想一想"))?.reason).toBe(
+      "不是你的对话，不导出",
+    );
     expect(decoder.decode(files.get("CHATS.md"))).toContain(
       "共 2 个对话、2 条消息（进行中、已归档和回收站里的对话都在；正在删除和已删除的、Himawari 自己想一想时开的不在）",
     );

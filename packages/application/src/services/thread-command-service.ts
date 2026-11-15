@@ -101,7 +101,6 @@ export class ThreadCommandService {
         agentId: thread.agentId,
         threadId: thread.id,
         answerLocale: thread.answerLocale,
-        ...(thread.origin === undefined ? {} : { origin: thread.origin }),
       }),
       resultRef: input.resultRef,
       authority: this.dependencies.authority(),
