@@ -258,6 +258,15 @@ export function capabilityLifecycleHasActiveAuthority(
   );
 }
 
+export interface CapabilityReactivationCheck {
+  readonly verified: boolean;
+  readonly reasonCodes: readonly string[];
+}
+
+export interface CapabilityReactivationVerifierPort {
+  verify(manifest: CapabilityManifest): Promise<CapabilityReactivationCheck>;
+}
+
 export interface CapabilityInvalidationOutcome {
   readonly lifecycle: "disabled";
   readonly cancelledScheduledJobs: number;

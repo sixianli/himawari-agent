@@ -52,6 +52,7 @@ export * from "./muse-intake.js";
 export * from "./observability.js";
 export * from "./owner-preferences.js";
 export * from "./owner-proposals.js";
+export * from "./think-inbox.js";
 export * from "./owner-rules.js";
 export * from "./paired-devices.js";
 export * from "./persistence.js";

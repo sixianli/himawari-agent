@@ -169,6 +169,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "capability.install.approve", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "capability.update.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "capability.disable", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "capability.reactivate", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "capability.rollback", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "host.file.prepare", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "host.file.execute", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),

@@ -1380,6 +1380,25 @@ function parseOwnerProposals(
   });
 }
 
+function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["thinkInbox"]> {
+  const field = "configuration.runPolicy.thinkInbox";
+  const input = record(value, field);
+  const ranges = {
+    queueLimit: [1, 1000],
+    dailyLimit: [1, 10000],
+    expiresAfterHours: [1, 8760],
+    stalledAfterMinutes: [1, 1440],
+    maxAttempts: [1, 20],
+    summaryCharacters: [100, 4000],
+  } as const;
+  rejectUnknown(input, Object.keys(ranges), field);
+  const parsed: Record<string, number> = {};
+  for (const [key, [low, high]] of Object.entries(ranges)) {
+    if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
+  }
+  return Object.freeze(parsed);
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1760,6 +1779,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "realEval",
       "mcpRead",
       "ownerProposals",
+      "thinkInbox",
     ],
     "configuration.runPolicy",
   );
@@ -1833,6 +1853,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["ownerProposals"] === undefined
       ? {}
       : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
+    ...(input["thinkInbox"] === undefined
+      ? {}
+      : { thinkInbox: parseThinkInbox(input["thinkInbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
