@@ -45,7 +45,8 @@
   --size-empty-min-height: 300px;
   --size-fade-composer: 130px;
   --size-fade-tab-bar: 140px;
-  --size-fade-top: 110px;
+  --size-fade-top: 134px;
+  --size-fade-top-solid: 102px;
   --size-glass-button: 48px;
   --size-min-tap-target: 44px;
   --size-nav-bar-height: 64px;
@@ -78,6 +79,8 @@
   --icon-stroke-large: 1.3px;
   --icon-tab: 26px;
   --icon-today-row: 22px;
+  --icon-today-top: 26px;
+  --icon-why-chevron: 15px;
   --handover-button-font-size: 17px;
   --handover-card-padding: 14px 16px;
   --handover-close-icon: 18px;
@@ -192,6 +195,12 @@
   --type-title-1-size: 34px;
   --type-title-1-weight: 700;
   --type-title-1-line-height: 44px;
+  --type-today-top-size: 24px;
+  --type-today-top-weight: 600;
+  --type-today-top-line-height: 1.5;
+  --type-upcoming-time-size: 15px;
+  --type-upcoming-time-weight: 600;
+  --type-upcoming-time-line-height: normal;
   --type-watch-answer-size: 16px;
   --type-watch-answer-weight: 400;
   --type-watch-answer-line-height: normal;
