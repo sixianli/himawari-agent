@@ -35,8 +35,11 @@ function projectConfiguration(value) {
 describe("test timeout configuration", () => {
   it("[R2-E3] keeps the existing defaults when the variable is absent", () => {
     const projects = projectConfiguration(undefined);
-    expect(projects.find(({ name }) => name === "integration").testTimeout).toBe(30_000);
-    for (const project of projects.filter(({ name }) => name !== "integration")) {
+    for (const name of ["integration", "tooling"])
+      expect(projects.find((project) => project.name === name).testTimeout).toBe(30_000);
+    for (const project of projects.filter(
+      ({ name }) => !["integration", "tooling"].includes(name),
+    )) {
       expect(project).not.toHaveProperty("testTimeout");
     }
   });

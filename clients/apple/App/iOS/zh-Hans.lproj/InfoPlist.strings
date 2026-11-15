@@ -1,5 +1,10 @@
 "NSCameraUsageDescription" = "扫电脑上 Himawari 设置里的配对码";
 "NSFaceIDUsageDescription" = "改动 Himawari 里的设置和记忆前确认是你本人";
+"NSAlarmKitUsageDescription" = "你让 Himawari 定闹钟时，用 Himawari 自己的闹钟按时叫你";
+"NSCalendarsFullAccessUsageDescription" = "你让 Himawari 加、改、删日历里的事时，先读一遍再动手，做完读回来确认";
+"NSContactsUsageDescription" = "你让 Himawari 改联系人的电话或邮箱时使用";
+"NSHomeKitUsageDescription" = "你让 Himawari 开关家里的灯、调空调时使用";
+"NSRemindersFullAccessUsageDescription" = "你让 Himawari 在提醒事项里加一条或勾掉时使用";
 "NSMicrophoneUsageDescription" = "你点“开始听”后，听周围的话并在这台 iPhone 上转成字；录音转完就删";
 "NSSpeechRecognitionUsageDescription" = "在这台 iPhone 上把听到的话转成字";
 "NSMotionUsageDescription" = "判断 AirPods 是不是戴在耳朵上，好知道是不是你在叫它";

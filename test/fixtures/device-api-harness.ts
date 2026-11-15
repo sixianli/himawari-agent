@@ -97,7 +97,7 @@ export const authority: ProductAuthorityFence = {
   authorityEpoch: 1,
   fencingToken: 1,
 };
-const authorityLease = {
+export const authorityLease = {
   leaseId: createAuthorityLeaseId("lease-device-api"),
   fencingToken: 1,
 };
@@ -380,7 +380,11 @@ export async function harness(
     clock,
     onSourceFailure: () => undefined,
   });
+  const approvalResolved: { current: (() => Promise<void>) | undefined } = { current: undefined };
   const gatewayV2 = createProductionApprovalGateway({
+    onApprovalResolved: async () => {
+      await approvalResolved.current?.();
+    },
     homeControl: home,
     configuration: { ownerId, agentId },
     repository,
@@ -503,6 +507,7 @@ export async function harness(
     },
     ...(options.actionRegistry ? { registry: options.actionRegistry } : {}),
   });
+  approvalResolved.current = () => actions.service.reconcile();
   const prefetchLimits = { current: QUERY_PREFETCH_LIMIT_DEFAULTS };
   const prefetch = new QueryPrefetch({
     limits: () => prefetchLimits.current,

@@ -45,6 +45,16 @@
 	<string>$(AppIdentifierPrefix)$(HIMAWARI_KEYCHAIN_GROUP)</string>
 	<key>HimawariReleaseChannel</key>
 	<string>$(HIMAWARI_RELEASE_CHANNEL)</string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>你让 Himawari 定闹钟时，用 Himawari 自己的闹钟按时叫你</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>你让 Himawari 加、改、删日历里的事时，先读一遍再动手，做完读回来确认</string>
+	<key>NSContactsUsageDescription</key>
+	<string>你让 Himawari 改联系人的电话或邮箱时使用</string>
+	<key>NSHomeKitUsageDescription</key>
+	<string>你让 Himawari 开关家里的灯、调空调时使用</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>你让 Himawari 在提醒事项里加一条或勾掉时使用</string>
 	<key>NSCameraUsageDescription</key>
 	<string>扫电脑上 Himawari 设置里的配对码</string>
 	<key>NSFaceIDUsageDescription</key>
