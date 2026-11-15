@@ -13,6 +13,8 @@
     "./thread-artifacts": "./src/ports/thread-artifacts.ts",
     "./thread-prompt-bundles": "./src/ports/thread-prompt-bundles.ts",
     "./sensitive-interceptions": "./src/ports/sensitive-interceptions.ts",
+    "./mcp-connections": "./src/ports/mcp-connections.ts",
+    "./mcp-memory-sync": "./src/ports/mcp-memory-sync.ts",
     "./model-usage": "./src/ports/model-usage.ts",
     "./real-eval": "./src/ports/real-eval.ts",
     "./decision-ledger": "./src/ports/decision-ledger.ts",

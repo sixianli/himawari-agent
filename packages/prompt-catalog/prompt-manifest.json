@@ -365,9 +365,14 @@
     "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
   },
   "mcp.find-memories": {
-    "sha256": "01d2d22db95c24492af1b2b773a89e601243e73c48a1b79da3595cbcb79ad13c",
-    "changedIn": "ADR 0262",
-    "reason": "新增 includeHistory 参数，说明里写明什么时候填"
+    "sha256": "6fd9481afe255532d4cc2501e2fdfcb61ca1f8cde112e1442d1577371163245b",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+  },
+  "mcp.find-project-notes-label": {
+    "sha256": "6ab582d0769d02b59f931fb8c9026ab6c325b17fe5c81d8ffcbebe6686520b98",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
   },
   "mcp.propose-memories": {
     "sha256": "f75b853df7d4a7a9e00f60981b07066014f3f68105df73f5ce30419d3bdfce7f",
@@ -519,6 +524,11 @@
     "changedIn": "ADR 0219",
     "reason": "规则手册也列出主人在对话里立的长期规则（ADR 0213）"
   },
+  "mcp.server-connection-required": {
+    "sha256": "01ff98c366520f0f79c71beb70ddcccbf08cde89c351a5c2b0de41bfc6758bf9",
+    "changedIn": "ADR 0242",
+    "reason": "外部 agent 接入：网址不带接入密钥时只给这句说明，不提供工具"
+  },
   "mcp.server-instructions": {
     "sha256": "98d911bf287a39e40b7348c077b6258cf4dd95be67b3b4275dbefcc5e0a9b62e",
     "changedIn": "ADR 0242",
@@ -543,6 +553,31 @@
     "sha256": "8a1041495b5bb495569ece1904a384281958bd49d20cb205edc880aa523e643b",
     "changedIn": "ADR 0242",
     "reason": "外部 agent 读记忆：新增规则摘要截断提示，指向 rule_book"
+  },
+  "mcp.sync-memories": {
+    "sha256": "cacb5aa1b6b8f3acb77d849262e3d78b69e6287ef3231dbc90fb870778a0ed86",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+  },
+  "mcp.sync-memories-failed": {
+    "sha256": "ff394d7cd440a07139a4a3f9e55dc42b5fb588375b080634befa85b390cb0a6f",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+  },
+  "mcp.sync-memories-full": {
+    "sha256": "25a4925834886a86376085ed13dfef870b44355373eca63975cfa06ab0f38cac",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+  },
+  "mcp.sync-memories-invalid": {
+    "sha256": "3780c219d82ca4f62ba72aaeb02ff8223c53010717f19e33ca394f7c0fe58af0",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
+  },
+  "mcp.sync-memories-result": {
+    "sha256": "ca0e9f7a76dfae77b38fc841c5062baf43eabe6a9d4c734c7526b80a8d78ddae",
+    "changedIn": "ADR 0242",
+    "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
   },
   "mcp.today-context": {
     "sha256": "bc3035b642c736cfa6946e2c9b2ce88ec9f2b0e066266f5352db0d24050d3374",

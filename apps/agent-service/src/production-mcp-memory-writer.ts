@@ -134,6 +134,7 @@ export interface ProductionMcpMemoryWriterOptions {
   readonly book: Pick<MemoryBookStorePort, "latestGeneration">;
   readonly ledger: Pick<DecisionLedgerPort, "append" | "read">;
   readonly proposals: ExternalMemoryProposalStorePort;
+  readonly replaced?: (proposalId: string) => Promise<string | null>;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
@@ -316,9 +317,17 @@ export class ProductionMcpMemoryWriter {
         const dataClassification =
           proposal.dataClassification === "sensitive" ? "sensitive" : raised;
         await this.#storeText(contentRef, text, dataClassification);
+        const replacedId = (await this.#options.replaced?.(proposal.id)) ?? null;
+        const replaced = replacedId
+          ? await this.#options.state.read(replacedId as MemoryId)
+          : undefined;
         await this.#options.memory.applyProposal(
           {
             decision: "create",
+            ...(replaced?.status === "active" &&
+            (replaced.attributes?.supersededBy ?? null) === null
+              ? { supersedes: replaced.id }
+              : {}),
             memory: {
               id: memoryId,
               ...this.#scope(),
@@ -602,7 +611,7 @@ export class ProductionMcpMemoryWriter {
   }
 
   #ledgerWrite(
-    proposal: Pick<ExternalMemoryProposalRecord, "id" | "client" | "category">,
+    proposal: Pick<ExternalMemoryProposalRecord, "id" | "subjectRef" | "category">,
     batchId: string | null,
     decision: keyof typeof EXTERNAL_PROPOSAL_REASON_CODES,
     memoryId: string | null,
@@ -617,7 +626,7 @@ export class ProductionMcpMemoryWriter {
       outcome:
         decision === "kept" ? "kept" : decision === "pending" ? "pending_approval" : "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES[decision],
-      subjectRef: memoryId ?? `mcp-client:${proposal.client}`,
+      subjectRef: memoryId ?? proposal.subjectRef,
       inputs: { memoryIds: memoryId ? [memoryId] : [], ruleIds: [] },
       reasonRef: null,
       contentRef: null,

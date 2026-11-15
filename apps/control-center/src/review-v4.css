@@ -5256,3 +5256,77 @@ details.settings-details > summary::-webkit-details-marker {
   align-items: center;
   justify-content: space-between;
 }
+
+.mcp-connections {
+  display: grid;
+  gap: 12px;
+}
+
+.mcp-create {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-create fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mcp-connection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.mcp-connection {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-connection[data-status="revoked"] {
+  opacity: 0.6;
+}
+
+.mcp-status {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.mcp-usage,
+.weekly-agents,
+.mcp-limits ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.mcp-actions,
+.mcp-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mcp-address {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.mcp-address code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}

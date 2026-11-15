@@ -288,6 +288,7 @@ beforeEach(() => {
     "memoryIndex",
     "memoryEpisodes",
     "externalMemoryProposals",
+    "mcpMemorySync",
     "memoryConsolidation",
     "threadRepository",
     "sensitiveInterceptions",

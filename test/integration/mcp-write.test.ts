@@ -51,6 +51,10 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../../apps/agent-service/src/production-mcp-connections.ts";
+import {
   EXTERNAL_PROPOSAL_MEMORY_PREFIX,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
   externalProposalBatchId,
@@ -72,6 +76,8 @@ import {
   EXTERNAL_RULE_MEMORY_PREFIX,
   ProductionMcpRuleWriter,
 } from "../../apps/agent-service/src/production-mcp-rule-writer.ts";
+import { MCP_FIND_PROJECT_NOTES_LABEL } from "@himawari-agent/prompt-catalog";
+import { ProductionMcpSync } from "../../apps/agent-service/src/production-mcp-sync.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
 import { ProductionOwnerRuleWriter } from "../../apps/agent-service/src/production-owner-rules.ts";
@@ -85,6 +91,7 @@ const OWNER_ID = createOwnerId("owner-mcp-write");
 const AGENT_ID = createAgentId("agent-mcp-write");
 const THREAD_ID = createThreadId("thread-mcp-write");
 const GENERATION_ID = createMemoryGenerationId("generation-mcp-write");
+const CONNECTION_ID = "conn-mcp-write";
 const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const NOW = "2026-11-11T03:00:00.000Z";
 const SINCE = "1970-01-01T00:00:00.000Z";
@@ -342,6 +349,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
           };
         },
       });
+    const mcpSync = new ProductionMcpSync({
+      configuration: scope,
+      store: repository.mcpMemorySync(),
+      payloads,
+      protector: adapters.payloadProtector,
+      clock,
+      timeZone: TIME_ZONE,
+    });
     const access = await createMcpAccess(() => new Date(clock.now()));
     const owners = repository.ownerIdentityState();
     await owners.bindFirstOwner({
@@ -357,9 +372,14 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       ...(options.readOnly
         ? {}
         : {
-            write: { proposals: slowDecided(writer), rules: slowDecided(ruleProposals) },
+            write: {
+              proposals: slowDecided(writer),
+              rules: slowDecided(ruleProposals),
+              sync: mcpSync,
+            },
           }),
       timeZone: TIME_ZONE,
+      connections: repository.mcpConnections(),
       requestTimeoutMs: 30_000,
       sources: {
         recall: (args, within, ceiling) => recall.recallOutsideRun(args, within, ceiling),
@@ -375,9 +395,22 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
+    const secret = newMcpConnectionSecret();
+    await repository.mcpConnections().create({
+      ...scope,
+      id: CONNECTION_ID,
+      name: CONNECTION_ID,
+      secretSha256: mcpConnectionSecretDigest(secret),
+      capabilities: ["mcp"],
+      readCeiling: "private",
+      pushPolicy: "ask",
+      createdAt: clock.now(),
+    });
     const url = new URL(
-      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
+      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}/${secret}`,
     );
+    const usage = async () =>
+      repository.mcpConnections().usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
     const elicitations: Record<string, unknown>[] = [];
     const connect = async (
       input: {
@@ -477,7 +510,9 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       }
     };
     return {
+      usage,
       hooks,
+      mcpSync,
       connect,
       propose,
       proposeRule,
@@ -516,7 +551,10 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES, ...MCP_WRITE_TOOL_NAMES]);
     expect(tools.at(-1)?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false });
     const legacy = await f.connect({ era: "legacy" });
-    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([...READ_TOOL_NAMES]);
+    expect((await legacy.listTools()).tools.map(({ name }) => name)).toEqual([
+      ...READ_TOOL_NAMES,
+      "sync_memories",
+    ]);
     await expect(
       legacy.callTool({ name: "propose_memory", arguments: { text: COFFEE } }),
     ).rejects.toThrow();
@@ -575,7 +613,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(row).toMatchObject({
       outcome: "discarded",
       reasonCode: EXTERNAL_PROPOSAL_REASON_CODES.declined,
-      subjectRef: "mcp-client:claude-code",
+      subjectRef: `mcp-connection:${CONNECTION_ID}`,
     });
     const other = await f.connect({ name: "muse", elicitation: false });
     const again = await f.propose(other, { text: ` ${COFFEE}\u200b` });
@@ -797,7 +835,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     );
   });
 
-  it("records the client name the owner saw in the dialog, not the one on the answer", async () => {
+  it("records the connection as the source, not the client name on the answer", async () => {
     const f = await setup();
     const client = await f.connect({ autoFulfill: false });
     const first = await f.raw(client, { arguments: { text: COFFEE } });
@@ -809,7 +847,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     });
     expect(declined.content?.[0]?.text).toBe(MCP_PROPOSE_MEMORY_DECLINED.text);
     const [row] = await f.decisions();
-    expect(row?.subjectRef).toBe("mcp-client:claude-code");
+    expect(row?.subjectRef).toBe(`mcp-connection:${CONNECTION_ID}`);
   });
 
   it("removes invisible formatting before checking the length and showing the text", async () => {
@@ -995,7 +1033,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     const rows = await f.storedRules();
     expect(rows).toHaveLength(1);
     const [row] = rows;
-    expect(row).toMatchObject({ status: "active", source: "mcp:claude-code" });
+    expect(row).toMatchObject({ status: "active", source: `mcp:${CONNECTION_ID}` });
     expect(row?.ruleId).toMatch(/^owner:[0-9a-f]{24}$/u);
     expect(row?.sourceMemoryId?.startsWith(EXTERNAL_RULE_MEMORY_PREFIX)).toBe(true);
     const ruleMemory = await f.repository.productMemoryState().read(row?.sourceMemoryId as never);
@@ -2031,5 +2069,176 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
     expect(await f.writer.undoBatch("external-batch-two", async () => undefined)).toEqual([
       left[0]?.id,
     ]);
+  });
+
+  it("[P5-B] counts every push call on the connection and the rejected ones as failed", async () => {
+    const f = await setup();
+    const client = await f.connect();
+    await f.propose(client, { text: COFFEE });
+    expect((await f.propose(client, { text: "" })).result.isError).toBe(true);
+    const many = await client.callTool({
+      name: "propose_memories",
+      arguments: { items: [{ text: PARK }] },
+    });
+    expect(many.isError).not.toBe(true);
+    expect(
+      (
+        await f.proposeRule(client, {
+          type: "mail_must_notify",
+          params: { senderDomains: ["isa.go.jp"] },
+          summary: "入管局的邮件一律提醒",
+          reason: " ",
+        })
+      ).result.isError,
+    ).toBe(true);
+    const rows = Object.fromEntries(
+      (await f.usage()).map((row) => [`${row.connectionId}/${row.tool}/${row.counter}`, row.value]),
+    );
+    expect(rows).toEqual({
+      [`${CONNECTION_ID}/propose_memory/calls`]: 3,
+      [`${CONNECTION_ID}/propose_memory/failed`]: 1,
+      [`${CONNECTION_ID}/propose_memories/calls`]: 1,
+      [`${CONNECTION_ID}/propose_rule/calls`]: 1,
+      [`${CONNECTION_ID}/propose_rule/failed`]: 1,
+    });
+  });
+  describe("[P5-C] sync_memories through the real MCP route", () => {
+    type SyncBody = {
+      entries: { status: string; reason?: string; versionTag?: string }[];
+      deletes: { status: string }[];
+    };
+    const callSync = async (client: Client, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name: "sync_memories", arguments: args });
+      const [content] = result.content as { type: string; text: string }[];
+      return { result, text: content?.text ?? "" };
+    };
+    const callFind = async (client: Client, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name: "find_memories", arguments: args });
+      const [content] = result.content as { type: string; text: string }[];
+      return JSON.parse(content?.text ?? "{}") as {
+        note?: string;
+        notes?: { text: string; source: string; project: string }[];
+        memories?: unknown[];
+      };
+    };
+
+    it("counts each kind of result and never accepts a deletion that arrives through the OAuth login", async () => {
+      const f = await setup();
+      const client = await f.connect();
+      const { result, text } = await callSync(client, {
+        entries: [
+          { id: "a.md", text: COFFEE, kind: "about_owner" },
+          { id: "b.md", text: "", kind: "about_owner" },
+        ],
+        deletes: [{ id: "a.md", versionTag: "0".repeat(64) }],
+      });
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(text) as SyncBody;
+      expect(body.entries.map(({ status }) => status)).toEqual(["pending", "invalid"]);
+      expect(body.deletes.map(({ status }) => status)).toEqual(["not_accepted"]);
+      const rows = Object.fromEntries(
+        (await f.usage()).map((row) => [`${row.tool}/${row.counter}`, row.value]),
+      );
+      expect(rows).toEqual({
+        "sync_memories/calls": 1,
+        "sync_memories/entries_pending": 1,
+        "sync_memories/entries_invalid": 1,
+        "sync_memories/deletes_not_accepted": 1,
+      });
+      expect((await f.pending()).map(({ category }) => category)).toEqual(["other"]);
+    });
+
+    it("rejects a batch over the limit as a whole, with a tool error that says to split it", async () => {
+      const f = await setup();
+      const client = await f.connect();
+      const entries = Array.from({ length: 51 }, (_, index) => ({
+        id: `file-${index}`,
+        text: `内容 ${index}`,
+        kind: "about_owner",
+      }));
+      const { result, text } = await callSync(client, { entries });
+      expect(result.isError).toBe(true);
+      expect(text).toContain("batch_too_large");
+      expect(await f.pending()).toEqual([]);
+    });
+
+    it("hands project notes only to a search that names the project, after the owner approved it", async () => {
+      const f = await setup();
+      const client = await f.connect();
+      const note = "发布之前先跑 npm run check，再合并";
+      const first = JSON.parse(
+        (
+          await callSync(client, {
+            entries: [
+              { id: "docs/release.md", text: note, kind: "project_note", project: "Himawari" },
+            ],
+          })
+        ).text,
+      ) as SyncBody;
+      expect(first.entries[0]?.status).toBe("awaiting_project_approval");
+      const search = { query: "npm check 合并前", project: "Himawari" };
+      expect((await callFind(client, search)).notes).toEqual([]);
+      const database = openQualifiedDatabase(f.databasePath);
+      try {
+        database.exec(
+          "UPDATE mcp_project_approvals SET status = 'approved'; UPDATE mcp_sync_entries SET state = 'active' WHERE kind = 'project_note'",
+        );
+      } finally {
+        database.close();
+      }
+      const found = await callFind(client, search);
+      expect(found.notes).toEqual([
+        {
+          project: "Himawari",
+          source: CONNECTION_ID,
+          id: "docs/release.md",
+          category: "other",
+          text: note,
+          updatedAt: NOW,
+        },
+      ]);
+      expect(found.note).toBe(MCP_FIND_PROJECT_NOTES_LABEL.text);
+      expect((await callFind(client, { ...search, query: "香蕉" })).notes).toEqual([]);
+      expect((await callFind(client, { ...search, project: "Other" })).notes).toEqual([]);
+      const plain = await callFind(client, { query: "npm check 合并前" });
+      expect(JSON.stringify(plain)).not.toContain("npm run check");
+      const profile = await client.callTool({ name: "start_here", arguments: {} });
+      expect(JSON.stringify(profile)).not.toContain("npm run check");
+      expect(await f.external()).toEqual([]);
+    });
+
+    it("keeps a confirmed sensitive project note above a private ceiling", async () => {
+      const f = await setup();
+      const client = await f.connect();
+      await callSync(client, {
+        entries: [
+          {
+            id: "health.md",
+            text: "主人每周三去医院复查",
+            kind: "project_note",
+            project: "Health",
+            category: "health",
+          },
+        ],
+      });
+      const database = openQualifiedDatabase(f.databasePath);
+      try {
+        database.exec(
+          "UPDATE mcp_project_approvals SET status = 'approved'; UPDATE mcp_sync_entries SET state = 'active'",
+        );
+      } finally {
+        database.close();
+      }
+      const search = { query: "医院复查", project: "Health" };
+      expect((await callFind(client, search)).notes).toEqual([]);
+      await f.repository.mcpConnections().change({
+        ...scope,
+        id: CONNECTION_ID,
+        updatedAt: NOW,
+        readCeiling: "sensitive",
+      });
+      const raised = await f.connect();
+      expect((await callFind(raised, search)).notes).toHaveLength(1);
+    });
   });
 });

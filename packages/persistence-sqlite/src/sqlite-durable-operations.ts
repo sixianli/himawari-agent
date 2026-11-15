@@ -86,6 +86,8 @@ import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-ope
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
 import { SqliteDeliveryTimingSettingsOperations } from "./sqlite-delivery-timing-settings-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
+import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
+import { SqliteMcpMemorySyncOperations } from "./sqlite-mcp-memory-sync-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
@@ -393,6 +395,8 @@ export class SqliteDurableOperations {
   private readonly reviewPrereview: SqliteReviewPrereviewOperations;
   private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
+  private readonly mcpConnections: SqliteMcpConnectionOperations;
+  private readonly mcpMemorySync: SqliteMcpMemorySyncOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
   private readonly museIntake: SqliteMuseIntakeOperations;
@@ -504,6 +508,8 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
+    this.mcpConnections = new SqliteMcpConnectionOperations(database, fail, assertDiskHeadroom);
+    this.mcpMemorySync = new SqliteMcpMemorySyncOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(
       database,
       fail,
@@ -702,6 +708,10 @@ export class SqliteDurableOperations {
     if (operation.startsWith("homeUrgency.")) return this.homeUrgency.execute(operation, payload);
     if (operation.startsWith("externalMemoryProposal."))
       return this.externalMemoryProposals.execute(operation, payload);
+    if (operation.startsWith("mcpConnection."))
+      return this.mcpConnections.execute(operation, payload);
+    if (operation.startsWith("mcpMemorySync."))
+      return this.mcpMemorySync.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("ownerProposal."))

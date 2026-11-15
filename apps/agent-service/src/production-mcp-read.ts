@@ -5,6 +5,9 @@ import type {
   DecisionLedgerPort,
   DecisionLedgerWrite,
   JsonObject,
+  McpConnectionEntry,
+  McpConnectionStorePort,
+  McpUsageCounter,
   OwnerIdentityStatePort,
   OwnerProfileOutline,
   ProactiveSettings,
@@ -18,6 +21,7 @@ import {
   ruleBookFor,
 } from "@himawari-agent/application";
 import {
+  MCP_FIND_PROJECT_NOTES_LABEL,
   MCP_PROPOSE_MEMORIES_RESULT,
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
@@ -44,6 +48,7 @@ import {
   MCP_PROPOSE_RULE_REPLAY,
   MCP_PROPOSE_RULE_REPLAY_UNAVAILABLE,
   MCP_PROPOSE_RULE_SAVED,
+  MCP_SERVER_CONNECTION_REQUIRED,
   MCP_SERVER_INSTRUCTIONS,
   MCP_START_HERE_OMITTED,
   MCP_START_HERE_RULES_NOTE,
@@ -52,7 +57,12 @@ import {
   MCP_TOOL_PROPOSE_MEMORIES,
   MCP_TOOL_PROPOSE_MEMORY,
   MCP_TOOL_PROPOSE_RULE,
+  MCP_TOOL_SYNC_MEMORIES,
   MCP_TOOL_RESULT_FAILED,
+  MCP_SYNC_MEMORIES_FAILED,
+  MCP_SYNC_MEMORIES_FULL,
+  MCP_SYNC_MEMORIES_INVALID,
+  MCP_SYNC_MEMORIES_RESULT,
   MCP_TOOL_RULE_BOOK,
   MCP_TOOL_START_HERE,
   MCP_TOOL_TODAY_CONTEXT,
@@ -80,6 +90,14 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AdmissionWindows } from "./bearer-admission.js";
 import {
+  MCP_CONNECTION_SECRET_PATTERN,
+  type McpUsageRecorder,
+  mcpConnectionSecretDigest,
+  mcpConnectionSubject,
+  recordMcpUsage,
+  touchMcpConnection,
+} from "./production-mcp-connections.js";
+import {
   EXTERNAL_PROPOSAL_CATEGORIES,
   EXTERNAL_PROPOSAL_KEY_MAXIMUM,
   EXTERNAL_PROPOSAL_TEXT_MAXIMUM,
@@ -97,6 +115,14 @@ import {
   type ExternalRuleProposal,
   type ExternalRuleType,
 } from "./production-mcp-rule-writer.js";
+import { checkProjectName } from "./mcp-project-name.js";
+import {
+  MCP_SYNC_BATCH_TOO_LARGE,
+  MCP_SYNC_FULL,
+  MCP_SYNC_KIND_NAMES,
+  type McpSyncOutcome,
+  type ProjectNotesFound,
+} from "./production-mcp-sync.js";
 import type { RecallResult } from "./production-memory-recall.js";
 import type { RulePreview } from "./production-owner-rules.js";
 import type { ListedReminder } from "./production-reminder-writer.js";
@@ -105,9 +131,17 @@ import type { MailEmbeddingContext } from "./production-run-memory.js";
 export const MCP_READ_PATH = "/api/mcp/v1";
 export const MCP_READ_BODY_LIMIT = 65_536;
 const MCP_ACCESS_OWNER_NOT_BOUND = Object.freeze({ code: "MCP_ACCESS_OWNER_NOT_BOUND" });
+const MCP_CONNECTION_NOT_FOUND = Object.freeze({ code: "MCP_CONNECTION_NOT_FOUND" });
+const MCP_CONNECTION_PAUSED = Object.freeze({ code: "MCP_CONNECTION_PAUSED" });
+export const MCP_HOOK_READS_PER_MINUTE = 60;
 
 export const MCP_ACCESS_ASSERTION_HEADER = "cf-access-jwt-assertion";
-export const MCP_WRITE_TOOL_NAMES = ["propose_memory", "propose_memories", "propose_rule"] as const;
+export const MCP_WRITE_TOOL_NAMES = [
+  "propose_memory",
+  "propose_memories",
+  "sync_memories",
+  "propose_rule",
+] as const;
 export const MCP_PROPOSE_MEMORIES_MAXIMUM = 50;
 export const MCP_PROPOSAL_CONFIRM_KEY = "confirm";
 export const MCP_PROPOSAL_UNSEEN_ANSWER_MS = 1_500;
@@ -183,6 +217,11 @@ export interface McpCeilingReader {
   }) => Promise<FoundSummaries | undefined>;
   readonly ownerRules: () => Promise<readonly StoredOwnerRule[]>;
   readonly builtInRules: () => Promise<readonly SharedRule[]>;
+  readonly projectNotes: (input: {
+    readonly project: string;
+    readonly query: string;
+    readonly limit: number;
+  }) => Promise<ProjectNotesFound>;
 }
 
 export type McpReadSourceName = keyof McpCeilingReader;
@@ -194,6 +233,7 @@ const MCP_READ_SOURCE_NAMES: readonly McpReadSourceName[] = Object.freeze([
   "summaries",
   "ownerRules",
   "builtInRules",
+  "projectNotes",
 ]);
 
 export interface McpReadContext {
@@ -284,9 +324,21 @@ export interface McpRuleProposals {
   readonly accept: (proposal: ExternalRuleProposal) => Promise<string>;
 }
 
+export interface McpSyncAccess {
+  readonly sync: (
+    connection: { readonly id: string; readonly entry: McpConnectionEntry },
+    args: unknown,
+  ) => Promise<McpSyncOutcome>;
+  readonly projectNotes: (
+    input: { readonly project: string; readonly query: string; readonly limit: number },
+    ceiling: McpReadCeiling,
+  ) => Promise<ProjectNotesFound>;
+}
+
 export interface McpWriteAccess {
   readonly proposals: McpMemoryProposals;
   readonly rules: McpRuleProposals;
+  readonly sync?: McpSyncAccess;
 }
 
 export interface McpAccessVerifier {
@@ -295,7 +347,15 @@ export interface McpAccessVerifier {
 
 export type McpAdmission =
   | { readonly status: "ok"; readonly authInfo: AuthInfo }
-  | { readonly status: "unauthorized" | "rate_limited" | "unavailable" };
+  | {
+      readonly status: "unauthorized" | "not_found" | "paused" | "rate_limited" | "unavailable";
+    };
+
+interface ConnectionRef {
+  readonly id: string;
+  readonly entry: McpConnectionEntry;
+  readonly callKey: string | null;
+}
 
 interface ProposalState {
   readonly tool: "propose_memory" | "propose_rule";
@@ -325,7 +385,8 @@ export interface ProductionMcpReadOptions {
   readonly owners: Pick<OwnerIdentityStatePort, "readBySubject">;
   readonly write?: McpWriteAccess;
   readonly timeZone: string;
-  readonly readCeiling?: McpReadCeiling;
+  readonly connections: Pick<McpConnectionStorePort, "findBySecret" | "touch" | "addUsage">;
+  readonly hookReadsPerMinute?: number;
   readonly readTools?: readonly McpReadToolEntry[];
   readonly requestTimeoutMs: number;
   readonly sources: McpReadSources;
@@ -345,6 +406,7 @@ export interface ToolOutcome {
   readonly output: Record<string, unknown>;
   readonly memoryIds: readonly string[];
   readonly summaries?: SummaryRead;
+  readonly empty?: boolean;
   readonly rejected?: true;
 }
 
@@ -465,7 +527,7 @@ function clientNameOf(envelope: unknown, userAgent: string | null): string {
     info !== null && typeof info === "object" && "name" in info && typeof info.name === "string"
       ? info.name
       : null;
-  return (declared ?? userAgent ?? "").trim().match(CLIENT_NAME)?.[0] ?? "unknown";
+  return (declared ?? userAgent ?? "").trim().match(CLIENT_NAME)?.[0] ?? UNKNOWN_CLIENT;
 }
 
 function proposalReply(text: string, isError: boolean): CallToolResult {
@@ -489,6 +551,15 @@ export class ProductionMcpRead {
   readonly #options: ProductionMcpReadOptions;
   readonly #readTools: readonly McpReadToolEntry[];
   readonly #windows: AdmissionWindows;
+  readonly #connectionWindows = new Map<
+    string,
+    { readonly regular: AdmissionWindows; readonly hook: AdmissionWindows }
+  >();
+  readonly #usage: McpUsageRecorder;
+  readonly #unsettled = new Map<
+    string,
+    ConnectionRef & { readonly tool: string; readonly auto: boolean }
+  >();
   readonly handler: McpHttpHandler;
 
   readonly #stateCodec: RequestStateCodec<ProposalState>;
@@ -499,6 +570,13 @@ export class ProductionMcpRead {
     this.#options = options;
     this.#readTools = mcpReadToolRegistry(options.readTools ?? MCP_READ_TOOLS);
     this.#windows = new AdmissionWindows(options.clock);
+    this.#usage = {
+      connections: options.connections,
+      scope: options.scope,
+      timeZone: options.timeZone,
+      now: () => options.clock.now(),
+      onFailure: options.onFailure,
+    };
     this.#stateCodec = createRequestStateCodec<ProposalState>({
       key: randomBytes(32),
       ttlSeconds: MCP_PROPOSAL_STATE_TTL_SECONDS,
@@ -509,7 +587,7 @@ export class ProductionMcpRead {
     });
   }
 
-  async admit(assertion: string | undefined): Promise<McpAdmission> {
+  async admit(assertion: string | undefined, secret?: string): Promise<McpAdmission> {
     let subject: string | undefined;
     let rejection: unknown;
     if (assertion) {
@@ -533,32 +611,175 @@ export class ProductionMcpRead {
         else rejection = MCP_ACCESS_OWNER_NOT_BOUND;
       }
     }
-    const status = this.#windows.admit(subject !== undefined);
-    if (status === "unauthorized" && assertion) this.#options.onFailure(rejection);
-    if (status !== "ok" || subject === undefined)
-      return { status: status === "ok" ? "unauthorized" : status };
+    if (subject === undefined) return this.#reject("unauthorized", assertion ? rejection : null);
+    if (secret === undefined) {
+      if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
+      return { status: "ok", authInfo: { token: "", clientId: "", scopes: [], extra: {} } };
+    }
+    if (!MCP_CONNECTION_SECRET_PATTERN.test(secret))
+      return this.#reject("not_found", MCP_CONNECTION_NOT_FOUND);
+    let connection: Awaited<ReturnType<McpConnectionStorePort["findBySecret"]>>;
+    try {
+      connection = await this.#options.connections.findBySecret({
+        ...this.#options.scope,
+        secretSha256: mcpConnectionSecretDigest(secret),
+      });
+    } catch (error) {
+      if (this.#windows.admit(true) === "rate_limited") return { status: "rate_limited" };
+      this.#options.onFailure(error);
+      return { status: "unavailable" };
+    }
+    if (connection === null || connection.status === "revoked")
+      return this.#reject("not_found", MCP_CONNECTION_NOT_FOUND);
+    if (connection.status === "paused")
+      return this.#reject("paused", { ...MCP_CONNECTION_PAUSED, connectionId: connection.id });
     const scopes = this.#options.write ? [READ_ACCESS, WRITE_ACCESS] : [READ_ACCESS];
     return {
-      status,
+      status: "ok",
       authInfo: {
         token: "",
-        clientId: subject,
+        clientId: connection.id,
         scopes,
-        extra: { [READ_CEILING_KEY]: this.#options.readCeiling ?? MCP_READ_DEFAULT_CEILING },
+        extra: {
+          [READ_CEILING_KEY]: connection.readCeiling,
+          [ENTRY_KEY]: "oauth" satisfies McpConnectionEntry,
+        },
       },
     };
   }
 
+  #reject(status: "unauthorized" | "not_found" | "paused", rejection: unknown): McpAdmission {
+    if (this.#windows.admit(false) === "rate_limited") return { status: "rate_limited" };
+    if (rejection !== null) this.#options.onFailure(rejection);
+    return { status };
+  }
+
+  async begin(
+    authInfo: AuthInfo,
+    body: unknown,
+  ): Promise<
+    { readonly status: "ok"; readonly authInfo: AuthInfo } | { readonly status: "rate_limited" }
+  > {
+    const connection = connectionOf(authInfo);
+    if (connection === null) return { status: "ok", authInfo };
+    const call = toolCallOf(body);
+    const known = call !== null && this.#knownTool(call.name);
+    const auto = call?.auto === true;
+    let windows = this.#connectionWindows.get(connection.id);
+    if (!windows) {
+      windows = {
+        regular: new AdmissionWindows(this.#options.clock),
+        hook: new AdmissionWindows(
+          this.#options.clock,
+          this.#options.hookReadsPerMinute ?? MCP_HOOK_READS_PER_MINUTE,
+        ),
+      };
+      this.#connectionWindows.set(connection.id, windows);
+    }
+    const limited = (auto ? windows.hook : windows.regular).admit(true) === "rate_limited";
+    if (!known || call === null)
+      return limited ? { status: "rate_limited" } : { status: "ok", authInfo };
+    await recordMcpUsage(this.#usage, {
+      connectionId: connection.id,
+      entry: connection.entry,
+      tool: call.name,
+      auto,
+      counts: limited ? { rate_limited: 1 } : { calls: 1 },
+    });
+    if (limited) return { status: "rate_limited" };
+    const callKey = randomUUID();
+    this.#unsettled.set(callKey, { ...connection, tool: call.name, auto });
+    return {
+      status: "ok",
+      authInfo: { ...authInfo, extra: { ...authInfo.extra, [CALL_KEY]: callKey } },
+    };
+  }
+
+  minuteUsage(connectionId: string): { readonly reads: number; readonly hookReads: number } {
+    const windows = this.#connectionWindows.get(connectionId);
+    return { reads: windows?.regular.used() ?? 0, hookReads: windows?.hook.used() ?? 0 };
+  }
+
+  get hookReadsPerMinute(): number {
+    return this.#options.hookReadsPerMinute ?? MCP_HOOK_READS_PER_MINUTE;
+  }
+
+  async finish(authInfo: AuthInfo): Promise<void> {
+    const callKey = authInfo.extra?.[CALL_KEY];
+    if (typeof callKey !== "string") return;
+    const call = this.#unsettled.get(callKey);
+    if (!call) return;
+    this.#unsettled.delete(callKey);
+    await recordMcpUsage(this.#usage, {
+      connectionId: call.id,
+      entry: call.entry,
+      tool: call.tool,
+      auto: call.auto,
+      counts: { failed: 1 },
+    });
+  }
+
+  async #settle(
+    connection: ConnectionRef,
+    tool: string,
+    auto: boolean,
+    counts: Readonly<Partial<Record<McpUsageCounter, number>>>,
+  ): Promise<void> {
+    if (connection.callKey !== null) this.#unsettled.delete(connection.callKey);
+    if (Object.keys(counts).length === 0) return;
+    await recordMcpUsage(this.#usage, {
+      connectionId: connection.id,
+      entry: connection.entry,
+      tool,
+      auto,
+      counts,
+    });
+  }
+
+  #knownTool(name: string): boolean {
+    return (
+      this.#readTools.some((tool) => tool.name === name) ||
+      (MCP_WRITE_TOOL_NAMES as readonly string[]).includes(name)
+    );
+  }
+
+  async #counted(
+    connection: ConnectionRef,
+    tool: string,
+    client: string,
+    work: () => Promise<CallToolResult | InputRequiredResult>,
+  ): Promise<CallToolResult | InputRequiredResult> {
+    await touchMcpConnection(this.#usage, connection.id, client === UNKNOWN_CLIENT ? null : client);
+    let result: CallToolResult | InputRequiredResult | undefined;
+    try {
+      result = await work();
+      return result;
+    } finally {
+      await this.#settle(
+        connection,
+        tool,
+        false,
+        result === undefined || ("isError" in result && result.isError === true)
+          ? { failed: 1 }
+          : {},
+      );
+    }
+  }
+
   #server(context: McpRequestContext): McpServer {
     const request = context.requestInfo ?? null;
+    const connection = connectionOf(context.authInfo);
     const server = new McpServer(
       { name: SERVER_NAME, version: SERVER_VERSION },
       {
-        instructions: MCP_SERVER_INSTRUCTIONS.text,
+        instructions: connection
+          ? MCP_SERVER_INSTRUCTIONS.text
+          : MCP_SERVER_CONNECTION_REQUIRED.text,
         requestState: { verify: this.#stateCodec.verify },
         inputRequired: { legacyShim: false },
       },
     );
+    if (connection === null) return server;
     const userAgent = request?.headers.get("user-agent") ?? null;
     const ceiling = ceilingOf(context.authInfo);
     for (const tool of this.#readTools)
@@ -573,13 +794,14 @@ export class ProductionMcpRead {
           this.#call(
             tool,
             ceiling,
+            connection,
             clientNameOf(handlerContext.mcpReq.envelope, userAgent),
             args,
             handlerContext.mcpReq.signal,
           ),
       );
     const proposals = this.#options.write?.proposals;
-    const subjectRef = context.authInfo?.clientId ?? "";
+    const subjectRef = mcpConnectionSubject(connection.id);
     if (
       proposals &&
       context.era === "modern" &&
@@ -607,14 +829,12 @@ export class ProductionMcpRead {
             openWorldHint: false,
           },
         },
-        async (args: JsonObject, handlerContext) =>
-          this.#proposeMemory(
-            proposals,
-            args,
-            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
-            subjectRef,
-            handlerContext,
-          ),
+        async (args: JsonObject, handlerContext) => {
+          const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
+          return this.#counted(connection, "propose_memory", client, () =>
+            this.#proposeMemory(proposals, args, client, subjectRef, handlerContext),
+          );
+        },
       );
       server.registerTool(
         "propose_memories",
@@ -645,13 +865,64 @@ export class ProductionMcpRead {
             openWorldHint: false,
           },
         },
-        async (args: JsonObject, handlerContext) =>
-          this.#proposeMemories(
-            proposals,
-            args,
-            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
-            subjectRef,
-          ),
+        async (args: JsonObject, handlerContext) => {
+          const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
+          return this.#counted(connection, "propose_memories", client, () =>
+            this.#proposeMemories(proposals, args, client, subjectRef),
+          );
+        },
+      );
+    }
+    const sync = this.#options.write?.sync;
+    if (sync && context.authInfo?.scopes.includes(WRITE_ACCESS) === true) {
+      const text = { type: "string" };
+      server.registerTool(
+        "sync_memories",
+        {
+          description: MCP_TOOL_SYNC_MEMORIES.text,
+          inputSchema: fromJsonSchema<JsonObject>({
+            type: "object",
+            properties: {
+              entries: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: text,
+                    text,
+                    kind: { type: "string", enum: [...MCP_SYNC_KIND_NAMES] },
+                    category: { type: "string" },
+                    project: { type: "string" },
+                  },
+                  required: ["id", "text", "kind"],
+                  additionalProperties: false,
+                },
+              },
+              deletes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { id: text, project: { type: "string" }, versionTag: text },
+                  required: ["id", "versionTag"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            additionalProperties: false,
+          } as never),
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+        },
+        async (args: JsonObject, handlerContext) => {
+          const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
+          return this.#counted(connection, "sync_memories", client, () =>
+            this.#syncMemories(sync, connection, args),
+          );
+        },
       );
     }
     const rules = this.#options.write?.rules;
@@ -693,22 +964,59 @@ export class ProductionMcpRead {
             openWorldHint: false,
           },
         },
-        async (args: JsonObject, handlerContext) =>
-          this.#proposeRule(
-            rules,
-            args,
-            clientNameOf(handlerContext.mcpReq.envelope, userAgent),
-            handlerContext,
-          ),
+        async (args: JsonObject, handlerContext) => {
+          const client = clientNameOf(handlerContext.mcpReq.envelope, userAgent);
+          return this.#counted(connection, "propose_rule", client, () =>
+            this.#proposeRule(rules, args, client, connection.id, handlerContext),
+          );
+        },
       );
     }
     return server;
+  }
+
+  async #syncMemories(
+    sync: McpSyncAccess,
+    connection: ConnectionRef,
+    args: JsonObject,
+  ): Promise<CallToolResult> {
+    try {
+      const outcome = await sync.sync({ id: connection.id, entry: connection.entry }, args);
+      await recordMcpUsage(this.#usage, {
+        connectionId: connection.id,
+        entry: connection.entry,
+        tool: "sync_memories",
+        auto: false,
+        counts: outcome.counts,
+      });
+      return proposalReply(
+        JSON.stringify({
+          note: MCP_SYNC_MEMORIES_RESULT.text,
+          entries: outcome.entries,
+          deletes: outcome.deletes,
+        }),
+        false,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === MCP_SYNC_BATCH_TOO_LARGE)
+        return proposalReply(
+          JSON.stringify({ error: "batch_too_large", note: MCP_SYNC_MEMORIES_INVALID.text }),
+          true,
+        );
+      if (error instanceof Error && error.message === MCP_SYNC_FULL)
+        return proposalReply(MCP_SYNC_MEMORIES_FULL.text, true);
+      if (error instanceof Error && error.message === "MCP_SYNC_REQUEST_INVALID")
+        return proposalReply(MCP_SYNC_MEMORIES_INVALID.text, true);
+      this.#options.onFailure(error);
+      return proposalReply(MCP_SYNC_MEMORIES_FAILED.text, true);
+    }
   }
 
   async #proposeRule(
     rules: McpRuleProposals,
     args: JsonObject,
     client: string,
+    connectionId: string,
     context: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> {
     const received = Date.parse(this.#options.clock.now());
@@ -763,6 +1071,7 @@ export class ProductionMcpRead {
         summary: parsed.summary,
         reason,
         client: state.client,
+        connectionId,
       };
       return await this.#oneAtATime(state.proposalId, async () => {
         const now = Date.now();
@@ -1121,11 +1430,18 @@ export class ProductionMcpRead {
       ownerRules: () => ownerRulesWithin(sources, ceiling),
       builtInRules: async () =>
         sharedRulesWithin((sources.ruleBook ?? ruleBookFor)(await sources.settings()), ceiling),
+      projectNotes: async (input) =>
+        (await this.#options.write?.sync?.projectNotes(input, ceiling)) ?? {
+          found: false,
+          notes: [],
+          more: false,
+        },
     };
     const reader: Partial<Record<McpReadSourceName, unknown>> = {};
     for (const name of declared) {
       if (name === "profile" && !profile) continue;
       if (name === "summaries" && !summaries) continue;
+      if (name === "projectNotes" && !this.#options.write?.sync) continue;
       reader[name] = full[name];
     }
     return reader as Partial<McpCeilingReader>;
@@ -1134,11 +1450,14 @@ export class ProductionMcpRead {
   async #call(
     tool: McpReadToolEntry,
     ceiling: McpReadCeiling,
+    connection: ConnectionRef,
     client: string,
     args: JsonObject,
     signal: AbortSignal,
   ): Promise<CallToolResult> {
     const started = Date.parse(this.#options.clock.now());
+    const auto = args["auto"] === true;
+    await touchMcpConnection(this.#usage, connection.id, client === UNKNOWN_CLIENT ? null : client);
     const trace: ReadTrace = { costMicros: 0, summariesTried: false };
     const read = this.#reader(ceiling, tool.readCeiling.sources);
     let delivered:
@@ -1146,6 +1465,7 @@ export class ProductionMcpRead {
           readonly text: string;
           readonly memoryIds: readonly string[] | undefined;
           readonly summaries?: SummaryRead;
+          readonly empty: boolean;
           readonly rejected?: true;
         }
       | undefined;
@@ -1167,6 +1487,7 @@ export class ProductionMcpRead {
         text: JSON.stringify(maskForExternalRead(outcome.output)),
         memoryIds: outcome.rejected ? undefined : outcome.memoryIds,
         ...(outcome.summaries ? { summaries: outcome.summaries } : {}),
+        empty: outcome.empty === true,
         ...(outcome.rejected ? { rejected: true as const } : {}),
       };
     } catch (error) {
@@ -1175,19 +1496,21 @@ export class ProductionMcpRead {
     const summaries = read.summaries
       ? (delivered?.summaries ?? (trace.summariesTried ? SUMMARIES_FAILED : SUMMARIES_NOT_TRIED))
       : undefined;
-    try {
-      await this.#record(
-        tool.name,
-        client,
-        delivered?.memoryIds,
-        summaries,
-        trace.costMicros,
-        started,
-      );
-    } catch (error) {
-      this.#options.onFailure(error);
-      delivered = undefined;
-    }
+    if (!(auto && delivered?.empty === true))
+      try {
+        await this.#record(
+          tool.name,
+          connection.id,
+          delivered?.memoryIds,
+          summaries,
+          trace.costMicros,
+          started,
+        );
+      } catch (error) {
+        this.#options.onFailure(error);
+        delivered = undefined;
+      }
+    await this.#settle(connection, tool.name, auto, readCounts(delivered));
     return delivered
       ? {
           content: [{ type: "text", text: delivered.text }],
@@ -1198,7 +1521,7 @@ export class ProductionMcpRead {
 
   async #record(
     name: string,
-    client: string,
+    connectionId: string,
     memoryIds: readonly string[] | undefined,
     summaries: SummaryRead | undefined,
     costMicros: number,
@@ -1212,7 +1535,7 @@ export class ProductionMcpRead {
       decidedAt,
       outcome: "read",
       reasonCode: memoryIds ? name : `${name}${MCP_READ_FAILED_SUFFIX}`,
-      subjectRef: `mcp-client:${client}`,
+      subjectRef: mcpConnectionSubject(connectionId),
       inputs: {
         memoryIds: memoryIds ?? [],
         ruleIds: [],
@@ -1236,6 +1559,43 @@ export class ProductionMcpRead {
 }
 
 const READ_CEILING_KEY = "readCeiling";
+const ENTRY_KEY = "entry";
+const CALL_KEY = "callKey";
+const UNKNOWN_CLIENT = "unknown";
+
+function readCounts(
+  delivered: { readonly empty: boolean; readonly rejected?: true } | undefined,
+): Readonly<Partial<Record<McpUsageCounter, number>>> {
+  if (!delivered || delivered.rejected) return { failed: 1 };
+  return delivered.empty ? { empty: 1 } : { delivered: 1 };
+}
+
+function connectionOf(authInfo: AuthInfo | undefined): ConnectionRef | null {
+  const id = authInfo?.clientId;
+  const entry = authInfo?.extra?.[ENTRY_KEY];
+  if (typeof id !== "string" || id.length === 0) return null;
+  if (entry !== "oauth" && entry !== "service_token") return null;
+  const callKey = authInfo?.extra?.[CALL_KEY];
+  return { id, entry, callKey: typeof callKey === "string" ? callKey : null };
+}
+
+function toolCallOf(body: unknown): { readonly name: string; readonly auto: boolean } | null {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
+  const message = body as Record<string, unknown>;
+  if (message["method"] !== "tools/call") return null;
+  const params = message["params"];
+  if (params === null || typeof params !== "object") return null;
+  const name = (params as Record<string, unknown>)["name"];
+  const args = (params as Record<string, unknown>)["arguments"];
+  if (typeof name !== "string") return null;
+  return {
+    name,
+    auto:
+      args !== null &&
+      typeof args === "object" &&
+      (args as Record<string, unknown>)["auto"] === true,
+  };
+}
 
 export function sharedRulesWithin(
   rules: readonly RuleRecord[],
@@ -1289,6 +1649,52 @@ function declaredSource<K extends McpReadSourceName>(
   return source as McpCeilingReader[K];
 }
 
+const PROJECT_NOTES_DEFAULT_LIMIT = 5;
+const PROJECT_NOTES_NAME_MAXIMUM = 256;
+
+async function findProjectNotes(
+  read: Partial<McpCeilingReader>,
+  project: unknown,
+  recallArgs: JsonObject,
+  auto: boolean,
+): Promise<ToolOutcome> {
+  const name = checkProjectName(project, PROJECT_NOTES_NAME_MAXIMUM);
+  const query = recallArgs["query"];
+  if (!name.ok || name.value === null || typeof query !== "string" || query.length === 0)
+    return {
+      output: {
+        error: "MEMORY_RECALL_INPUT_INVALID",
+        note: TOOL_RESULT_RECALL_INPUT_INVALID.text,
+      },
+      memoryIds: [],
+      rejected: true,
+    };
+  const requested = recallArgs["limit"];
+  const limit = Math.min(
+    typeof requested === "number" ? requested : PROJECT_NOTES_DEFAULT_LIMIT,
+    auto ? AUTO_FIND_LIMIT : PROJECT_NOTES_DEFAULT_LIMIT * 2,
+  );
+  const found = await declaredSource(
+    read,
+    "projectNotes",
+  )({
+    project: name.value,
+    query,
+    limit,
+  });
+  const empty = found.notes.length === 0;
+  return {
+    output: {
+      note: MCP_FIND_PROJECT_NOTES_LABEL.text,
+      project: name.value,
+      notes: found.notes,
+      ...(found.more ? { more: true } : {}),
+    },
+    memoryIds: [],
+    empty,
+  };
+}
+
 async function findMemories({
   args,
   signal,
@@ -1296,8 +1702,9 @@ async function findMemories({
   read,
   context: options,
 }: McpReadRequest): Promise<ToolOutcome> {
+  const { auto, project, ...recallArgs } = args;
+  if (project !== undefined) return findProjectNotes(read, project, recallArgs, auto === true);
   const recall = declaredSource(read, "recall");
-  const { auto, ...recallArgs } = args;
   const requested = recallArgs["limit"];
   const forwarded: JsonObject =
     auto === true
@@ -1317,16 +1724,15 @@ async function findMemories({
       options.embedOutsideRun(context, operation),
     );
     const empty =
-      auto === true &&
       Array.isArray(result.output["memories"]) &&
       result.output["memories"].length === 0 &&
       Array.isArray(result.output["conversations"]) &&
       result.output["conversations"].length === 0;
-    if (empty) {
+    if (empty && auto === true) {
       const { note: _note, tentativeNote: _tentativeNote, ...rest } = result.output;
-      return { output: rest, memoryIds: result.memoryIds };
+      return { output: rest, memoryIds: result.memoryIds, empty };
     }
-    return { output: result.output, memoryIds: result.memoryIds };
+    return { output: result.output, memoryIds: result.memoryIds, empty };
   } catch (error) {
     if (error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID")
       return {
@@ -1516,11 +1922,12 @@ export const MCP_READ_TOOLS: readonly McpReadToolEntry[] = mcpReadToolRegistry([
         includeHistory: { type: "boolean" },
         limit: { type: "integer", minimum: 1, maximum: 10 },
         auto: { type: "boolean" },
+        project: { type: "string", minLength: 1, maxLength: 256 },
       },
       required: ["query"],
       additionalProperties: false,
     },
-    readCeiling: { sources: ["recall"] },
+    readCeiling: { sources: ["recall", "projectNotes"] },
     run: findMemories,
   },
   {
@@ -1550,20 +1957,32 @@ function webRequest(request: FastifyRequest): Request {
     for (const entry of Array.isArray(value) ? value : [value]) headers.append(name, entry);
   }
   const host = request.headers.host ?? "localhost";
-  return new Request(new URL(request.url, `${request.protocol}://${host}`), {
+  return new Request(new URL(MCP_READ_PATH, `${request.protocol}://${host}`), {
     method: request.method,
     headers,
     ...(request.method === "POST" ? { body: JSON.stringify(request.body ?? null) } : {}),
   });
 }
 
-async function sendWebResponse(reply: FastifyReply, response: Response): Promise<FastifyReply> {
+async function sendWebResponse(
+  reply: FastifyReply,
+  response: Response,
+  body: Buffer,
+): Promise<FastifyReply> {
   reply.code(response.status).header("cache-control", "no-store");
   response.headers.forEach((value, name) => {
     if (name !== "content-length" && name !== "cache-control") reply.header(name, value);
   });
-  return reply.send(Buffer.from(await response.arrayBuffer()));
+  return reply.send(body);
 }
+
+const MCP_ADMISSION_STATUS = {
+  unauthorized: 401,
+  paused: 403,
+  not_found: 404,
+  rate_limited: 429,
+  unavailable: 503,
+} as const;
 
 export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRead): void {
   const admitted = new WeakMap<FastifyRequest, AuthInfo>();
@@ -1579,30 +1998,53 @@ export function registerMcpReadRoute(app: FastifyInstance, mcp: ProductionMcpRea
         .header("cache-control", "no-store")
         .send({ error: known ? "request_invalid" : "failed" });
     });
-    scope.route({
-      method: ["GET", "POST", "DELETE"],
-      url: MCP_READ_PATH,
-      bodyLimit: MCP_READ_BODY_LIMIT,
-      onRequest: async (request, reply) => {
-        const header = request.headers[MCP_ACCESS_ASSERTION_HEADER];
-        const gate = await mcp.admit(typeof header === "string" ? header : undefined);
-        if (gate.status === "ok") {
-          admitted.set(request, gate.authInfo);
-          return;
-        }
-        return reply
-          .code(gate.status === "unauthorized" ? 401 : gate.status === "unavailable" ? 503 : 429)
-          .header("cache-control", "no-store")
-          .send();
-      },
-      handler: async (request, reply) =>
-        sendWebResponse(
-          reply,
-          await mcp.handler.fetch(webRequest(request), {
-            ...(request.method === "POST" ? { parsedBody: request.body } : {}),
-            ...(admitted.has(request) ? { authInfo: admitted.get(request) as AuthInfo } : {}),
-          }),
-        ),
-    });
+    const route = (url: string) =>
+      scope.route({
+        method: ["GET", "POST", "DELETE"],
+        url,
+        bodyLimit: MCP_READ_BODY_LIMIT,
+        logLevel: "silent",
+        onRequest: async (request, reply) => {
+          const header = request.headers[MCP_ACCESS_ASSERTION_HEADER];
+          const params = request.params as { readonly secret?: unknown };
+          const gate = await mcp.admit(
+            typeof header === "string" ? header : undefined,
+            typeof params.secret === "string" ? params.secret : undefined,
+          );
+          if (gate.status === "ok") {
+            admitted.set(request, gate.authInfo);
+            return;
+          }
+          return reply
+            .code(MCP_ADMISSION_STATUS[gate.status])
+            .header("cache-control", "no-store")
+            .send();
+        },
+        preHandler: async (request, reply) => {
+          const authInfo = admitted.get(request);
+          if (!authInfo) return;
+          const begun = await mcp.begin(authInfo, request.body);
+          if (begun.status === "ok") {
+            admitted.set(request, begun.authInfo);
+            return;
+          }
+          return reply.code(429).header("cache-control", "no-store").send();
+        },
+        handler: async (request, reply) => {
+          const authInfo = admitted.get(request);
+          try {
+            const response = await mcp.handler.fetch(webRequest(request), {
+              ...(request.method === "POST" ? { parsedBody: request.body } : {}),
+              ...(authInfo ? { authInfo } : {}),
+            });
+            const body = Buffer.from(await response.arrayBuffer());
+            return sendWebResponse(reply, response, body);
+          } finally {
+            if (authInfo) await mcp.finish(authInfo);
+          }
+        },
+      });
+    route(MCP_READ_PATH);
+    route(`${MCP_READ_PATH}/:secret`);
   });
 }

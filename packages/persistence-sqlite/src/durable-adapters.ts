@@ -22,6 +22,8 @@ import type {
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
   LedgerObservationPort,
+  McpConnectionStorePort,
+  McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
   MemoryCheckupStorePort,
@@ -1019,6 +1021,29 @@ export class SqliteDurableAdapters {
       reopenBatch: (input) => this.context.write("externalMemoryProposal.reopenBatch", input),
       dropDiscardedText: (input) =>
         this.context.write("externalMemoryProposal.dropDiscardedText", input),
+    });
+  }
+
+  mcpMemorySync(): McpMemorySyncStorePort {
+    return Object.freeze<McpMemorySyncStorePort>({
+      push: (input) => this.context.write("mcpMemorySync.push", input),
+      limits: (input) => this.context.read("mcpMemorySync.limits", input),
+      projectNotes: (input) => this.context.read("mcpMemorySync.projectNotes", input),
+      replacedMemory: (input) => this.context.read("mcpMemorySync.replacedMemory", input),
+    });
+  }
+
+  mcpConnections(): McpConnectionStorePort {
+    return Object.freeze<McpConnectionStorePort>({
+      create: (input) => this.context.write("mcpConnection.create", input),
+      list: (input) => this.context.read("mcpConnection.list", input),
+      read: (input) => this.context.read("mcpConnection.read", input),
+      findBySecret: (input) => this.context.read("mcpConnection.findBySecret", input),
+      change: (input) => this.context.write("mcpConnection.change", input),
+      rotateSecret: (input) => this.context.write("mcpConnection.rotateSecret", input),
+      touch: (input) => this.context.write("mcpConnection.touch", input),
+      addUsage: (input) => this.context.write("mcpConnection.addUsage", input),
+      usage: (input) => this.context.read("mcpConnection.usage", input),
     });
   }
 
