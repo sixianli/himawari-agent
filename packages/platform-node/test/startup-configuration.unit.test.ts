@@ -10,6 +10,7 @@ import {
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
+  VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
@@ -266,6 +267,50 @@ describe("strict product configuration", () => {
       "on",
     ])
       expect(() => parseProductConfiguration(withRetrieval(invalid), at)).toThrow();
+  });
+
+  it("[iOS-8] accepts the name-call decision model only with a model, a key, a price and sane thresholds", () => {
+    const withAddressee = (voiceAddressee: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-voice-addressee"));
+      input["runPolicy"] = {
+        version: "policy-voice-addressee",
+        systemInstruction: "test",
+        memoryLimit: 10,
+        maxSelectedMemories: 1,
+        voiceAddressee,
+      };
+      return input;
+    };
+    const at = "2026-11-13T00:00:00.000Z";
+    const base = {
+      model: "typesafe-ai/jev",
+      secretRef: "vercel-ai-gateway-api-key",
+      inputMicrosPerMillionTokens: 42_000,
+    };
+    expect(parseProductConfiguration(withAddressee(base), at).runPolicy?.voiceAddressee).toEqual({
+      ...VOICE_ADDRESSEE_DEFAULTS,
+      ...base,
+    });
+    expect(
+      parseProductConfiguration(
+        withAddressee({ ...base, yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 }),
+        at,
+      ).runPolicy?.voiceAddressee,
+    ).toMatchObject({ yesAtLeastPermille: 850, noAtMostPermille: 150, timeoutMs: 800 });
+    const { model: _model, ...withoutModel } = base;
+    const { secretRef: _secret, ...withoutSecret } = base;
+    for (const invalid of [
+      withoutModel,
+      withoutSecret,
+      { ...base, inputMicrosPerMillionTokens: 0 },
+      { ...base, yesAtLeastPermille: 400 },
+      { ...base, noAtMostPermille: 600 },
+      { ...base, yesAtLeastPermille: 500, noAtMostPermille: 500 },
+      { ...base, timeoutMs: 50 },
+      { ...base, baseUrl: "https://example.test" },
+      "on",
+    ])
+      expect(() => parseProductConfiguration(withAddressee(invalid), at)).toThrow();
   });
 
   it("accepts a Magpie primary on a loopback address without gateway routing", () => {
@@ -1113,17 +1158,23 @@ it("reads the search answer limits from runPolicy.searchAsk and rejects values o
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk,
   ).toBeUndefined();
-  raw["runPolicy"] = { ...policy, searchAsk: { askLimit: 8, basisLimit: 3 } };
+  raw["runPolicy"] = {
+    ...policy,
+    searchAsk: { askLimit: 8, basisLimit: 3, indexTermLimit: 300 },
+  };
   expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.searchAsk).toEqual({
     ...DEFAULT_SEARCH_ASK,
     askLimit: 8,
     basisLimit: 3,
+    indexTermLimit: 300,
   });
   for (const searchAsk of [
     { candidateLimit: 0 },
     { basisLimit: 11 },
     { minimumCoveragePercent: 101 },
     { answerCharacters: 1.5 },
+    { indexTermLimit: 0 },
+    { indexRebuildBatch: 1001 },
     { unknownSetting: 1 },
   ]) {
     raw["runPolicy"] = { ...policy, searchAsk };

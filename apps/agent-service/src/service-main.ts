@@ -7,9 +7,6 @@ import type {
   ProductMemoryRecord,
 } from "@himawari-agent/application";
 import {
-  DEVICE_CONFIGURATION_DEFAULTS,
-  defaultDeviceHardLimits,
-  PERCEPTION_CONFIGURATION_DEFAULTS,
   autoCommitThreshold,
   type ClockPort,
   claimFromRunExecutionLease,
@@ -17,16 +14,19 @@ import {
   createProactiveSeal,
   type DataClassification,
   DEFAULT_HOME_URGENCY,
-  type HomeUrgencyRunResult,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
+  DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
+  defaultDeviceHardLimits,
   ExecutionLiveFeed,
   enforceableOwnerRule,
+  type HomeUrgencyRunResult,
   type IdGeneratorPort,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
   OwnerProfileService,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
   type ProductConfiguration,
   prereviewPromptId,
   RemoteExecutionBackend,
@@ -92,6 +92,7 @@ import {
   SystemdProviderSecretSource,
   stableErrorCode,
   TypeSafeJevTransport,
+  type VoiceAddresseeDecision,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -119,6 +120,7 @@ import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import { ProductionGapExport } from "./production-gap-export.js";
+import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createConfiguredHostWeb } from "./production-host-web.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
@@ -138,6 +140,7 @@ import {
 } from "./production-memory-classification.js";
 import {
   createProductionMemoryCompositionFromConfiguration,
+  outsideRunQueryPrefetch,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
 import { quoteRefOfMemory } from "./production-memory-consolidation.js";
@@ -163,8 +166,9 @@ import { createMuseChannelPushSource, ProductionMuseIntake } from "./production-
 import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
-import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
+import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
+import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import {
   createProactivePushSource,
   PREREVIEW_MAX_OUTPUT_TOKENS,
@@ -174,17 +178,15 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
-import { HOME_URGENCY_MAX_OUTPUT_TOKENS } from "./production-home.js";
 import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
 import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
+import { PENDING_PROPOSAL_CEILING, ProductionProposalBox } from "./production-proposals.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
-import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
-import { ProductionPerceptionTools } from "./production-perception-tools.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
@@ -202,6 +204,7 @@ import {
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
+import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
@@ -269,6 +272,14 @@ let sandboxCommandInventoryOnce: Promise<SandboxCommandInventory> | undefined;
 function sandboxCommandInventory(): Promise<SandboxCommandInventory> {
   sandboxCommandInventoryOnce ??= inspectSandboxCommands();
   return sandboxCommandInventoryOnce;
+}
+
+function voiceAddresseeOption(
+  configuration: ProductConfiguration,
+  secretSource: ReturnType<typeof hostModelSources>["provider"],
+): { readonly voiceAddressee?: VoiceAddresseeDecision } {
+  const voiceAddressee = productionVoiceAddressee(configuration, secretSource);
+  return voiceAddressee ? { voiceAddressee } : {};
 }
 
 function productionClock(): ClockPort {
@@ -2784,6 +2795,9 @@ export async function startTenantRuntime(
             threadTitle,
             publicOrigin: configuration.publicOrigin,
             now: () => clock.now(),
+            approvalCopy: async (input) => ({
+              affirmLabel: (await http?.home.approvalCopy(input))?.affirmLabel ?? null,
+            }),
             onDelivery: (outcome) =>
               writeServiceDiagnostic(errorOutput, {
                 component: "agent-service",
@@ -2834,6 +2848,17 @@ export async function startTenantRuntime(
                 }),
               }
             : {}),
+          proposals: {
+            listReady: async (now) =>
+              (
+                await pushRepository.ownerProposals().listPending({
+                  ownerId: configuration.ownerId,
+                  agentId: configuration.agentId,
+                  now,
+                  limit: PENDING_PROPOSAL_CEILING,
+                })
+              ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
+          },
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -3251,6 +3276,17 @@ export async function startTenantRuntime(
           ...(applePush ? { applePush } : {}),
         },
         ...(proactive ? { proactive } : {}),
+        ...(memoryComposition?.queryPrefetch
+          ? {
+              queryPrefetch: outsideRunQueryPrefetch(
+                memoryComposition.queryPrefetch,
+                (context, operation) => memory.embedForExternalRead(context, operation),
+                () => clock.now(),
+                configuration.deadlines.providerRequestMs,
+              ),
+            }
+          : {}),
+        ...voiceAddresseeOption(configuration, sources.provider),
         ...(homeUrgency ? { homeUrgency } : {}),
         ...(museIntake ? { museIntake } : {}),
         ...(gapExport ? { gapExport } : {}),

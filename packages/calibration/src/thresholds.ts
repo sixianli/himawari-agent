@@ -66,10 +66,55 @@ export const MEMORY_PERCEPTION_COMMIT_GATE: ThresholdGate = Object.freeze({
   byCategory: Object.freeze({}),
 });
 
+export const VOICE_SCORE_MAX = 1000 as const;
+export const VOICE_GATE_NEVER = VOICE_SCORE_MAX + 1;
+
+export const OWNER_SPOKEN_GATE: ThresholdGate = Object.freeze({
+  key: "perception.owner_spoken",
+  decisionKind: "voice_speaker",
+  label: "认出是主人在说话",
+  scoreField: "confidencePermille",
+  scoreMax: VOICE_SCORE_MAX,
+  gatedReasons: Object.freeze(["owner_spoken", "speaker_below_threshold"]),
+  ambiguousReasons: Object.freeze([]),
+  positiveOutcomes: Object.freeze(["owner_spoken"]),
+  defaultThreshold: VOICE_GATE_NEVER,
+  byCategory: Object.freeze({}),
+});
+
+export const VOICE_COMMAND_AMBIENT_GATE: ThresholdGate = Object.freeze({
+  key: "voice.command.ambient",
+  decisionKind: "voice_command",
+  label: "对着一旁的设备叫名字算主人的口头指令",
+  scoreField: "confidencePermille",
+  scoreMax: VOICE_SCORE_MAX,
+  gatedReasons: Object.freeze(["voice_command_accepted", "voice_command_confirm"]),
+  ambiguousReasons: Object.freeze([]),
+  positiveOutcomes: Object.freeze(["voice_command_accepted"]),
+  defaultThreshold: VOICE_GATE_NEVER,
+  byCategory: Object.freeze({}),
+});
+
+export const VOICE_AIRPODS_NEAR_GATE: ThresholdGate = Object.freeze({
+  key: "voice.airpods.near_loudness",
+  decisionKind: "voice_command",
+  label: "AirPods 收到的是戴耳机的人自己的近处大声音",
+  scoreField: "confidencePermille",
+  scoreMax: VOICE_SCORE_MAX,
+  gatedReasons: Object.freeze(["voice_command_accepted", "voice_command_far"]),
+  ambiguousReasons: Object.freeze([]),
+  positiveOutcomes: Object.freeze(["voice_command_accepted"]),
+  defaultThreshold: 700,
+  byCategory: Object.freeze({}),
+});
+
 export const THRESHOLD_GATES: readonly ThresholdGate[] = Object.freeze([
   MEMORY_AUTO_COMMIT_GATE,
   MEMORY_TENTATIVE_CONFIRM_GATE,
   MEMORY_PERCEPTION_COMMIT_GATE,
+  OWNER_SPOKEN_GATE,
+  VOICE_COMMAND_AMBIENT_GATE,
+  VOICE_AIRPODS_NEAR_GATE,
 ]);
 
 export function thresholdFor(gate: ThresholdGate, category: string | null): number {

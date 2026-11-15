@@ -1,0 +1,10 @@
+# PR 533 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高：`reminder.create` 提议没有绑定主人看到的绝对时间，年度提醒会在过期后悄悄滚到明年。production-reminder-proposals.ts verify/execute 用 schedulePreview(due) 重算；已改为数据里存 dueAt，verify 重算不等则取代；test 年度反向用例；触发：年度重复提醒在提议后、采纳前跨过主人看到的日期（提议有效期内）；后果：verify 用采纳时的当前时间重算，通过后建出的是明年那条，与主人看到的日期不同；判低理由：只有跨过日期后采纳才触发，结果是日期偏到下一年而非丢数据；仍修
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 中：改时间的 `verify`/`readBack` 没有重新校验 `dueAt`/`remindAt` 的全部规则，不可信提议数据可能写出“提醒时间在到期之后”等异常值。verify 只查 dueAt>now；已加有限性和 remindAt<=dueAt 检查；触发：提议 basis 被导入或改写成非有限时间或 remindAt 晚于 dueAt；后果：可能写出提醒时间在到期之后的值；正常提议路径不会产生；判低理由：只有构造过的 basis 才触发，本代码生成端不会产出
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3. 中：改时间的撤销不是幂等的，撤销成功但后续状态写入失败后，重试会永久失败。production-proposals.ts:752-760 两步非原子；undo 已改为先读当前值，已等于改前则直接返回；test 撤销已恢复用例；触发：撤销已把时间改回但 moveExecution 写入失败后再次撤销；后果：第二次撤销因 updatedAt 已变永远失败，提议停在 succeeded
+- 4（deepseek-v4.1-flash）成立，会出错，中高：### 4. 中：通过提议新建的提醒记忆丢掉了对话来源和外部内容标记。writer.create 支持 sourceThreadId/externalOrigins 而提议没传；已存进 data 并传入；test 来源用例；触发：经提议新建提醒，提议带有对话或外部内容来源；后果：新建的提醒记忆 sourceThreadId 为空且没有 external-content 来源引用，召回时被当作普通内部记忆
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5. 中低：提议入口没有按导出结构校验 `source.ref`/`source.version`（I-73 同一类）。本 PR 没有调用方传 context.source，默认来源是提醒编号（<=128）；来源长度校验属于 box.propose 的通用入口，在 PR 520 范围，建议另行统一加
+- 6（deepseek-v4.1-flash）成立，可以更好：### 6. 中低：显示用 `context.timeZone`、计算用 writer 自己的 `timeZone`，两处没有一致性检查。本 PR 没有调用方，context.timeZone 目前由调用方传入；让 writer 暴露只读 timeZone 并去掉 context.timeZone 更稳，建议后续接入口时一并做
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7. 低：`withdraw` 在 `memory.delete` 缺失时静默跳过删除，撤销会报成功但留下记忆。writer.withdraw 原先 remove===undefined 直接 return；已改为取消前先检查并抛 REMINDER_MEMORY_NOT_READY；触发：构造一个没有 memory.delete 的 writer 并撤销新建；后果：提醒被取消但记忆静默留下，撤销却报成功；生产 composition 传完整服务不会触发
+- 8（deepseek-v4.1-flash）成立，会出错，低：### 8. 低：撤销失败时抛出的是 `ReminderInputError`，没有映射成 `ProposalError`。production-proposals.ts:752 不包装 handler 异常；已在提醒处理方 undo 里把 ReminderInputError 转成 ProposalError；test 错误码用例；触发：主人改过提醒后撤销改时间；后果：客户端收到 ReminderInputError 而不是稳定的 PROPOSAL_NOT_UNDOABLE 错误码

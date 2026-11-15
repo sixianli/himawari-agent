@@ -1,2 +1,5 @@
 "NSCameraUsageDescription" = "パソコンの Himawari 設定に表示されたペアリングコードを読み取ります。";
 "NSFaceIDUsageDescription" = "Himawari の設定や記憶を変える前に、本人であることを確認します。";
+"NSMicrophoneUsageDescription" = "「聞き始める」をタップすると、まわりの声を聞いてこの iPhone で文字にします。録音は文字にしたら消します。";
+"NSSpeechRecognitionUsageDescription" = "聞こえた言葉をこの iPhone で文字にします。";
+"NSMotionUsageDescription" = "AirPods が耳に入っているかを確かめ、呼んだのがあなたかを見分けます。";
