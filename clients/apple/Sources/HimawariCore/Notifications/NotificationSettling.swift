@@ -41,6 +41,13 @@ public enum SilentWithdrawPush {
 
 public struct NotificationSettler: Sendable {
     public static let maxIdsPerCheck = 200
+    public static let maxIdLength = 64
+
+    static func isCheckable(_ id: String) -> Bool {
+        !id.isEmpty && id.utf8.count <= maxIdLength && id.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (scalar.properties.isAlphabetic || ("0" ... "9").contains(Character(scalar)) || scalar == "_" || scalar == "-")
+        }
+    }
 
     private let center: any DeliveredNotificationCenter
     private let source: (any NotificationSettlementSource)?
@@ -61,7 +68,7 @@ public struct NotificationSettler: Sendable {
         guard let source else { return 0 }
         let delivered = await center.delivered()
         var seen = Set<String>()
-        let ids = delivered.compactMap(\.notificationId).filter { seen.insert($0).inserted }
+        let ids = delivered.compactMap(\.notificationId).filter { Self.isCheckable($0) && seen.insert($0).inserted }
         var removed = 0
         var start = 0
         while start < ids.count {

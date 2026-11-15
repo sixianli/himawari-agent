@@ -89,6 +89,14 @@ final class FakeSettlement: NotificationSettlementSource, @unchecked Sendable {
         #expect(Set(source.asked.flatMap { $0 }).count == 430)
     }
 
+    @Test func identifiersTheServerWouldRejectAreNeverAskedAbout() async {
+        let long = String(repeating: "a", count: 65)
+        let center = FakeNotificationCenter(shown([("r1", "good_id-1"), ("r2", "has space"), ("r3", long), ("r4", ""), ("r5", "日本語")]))
+        let source = FakeSettlement(settled: [])
+        _ = await NotificationSettler(center: center, source: source).reconcile()
+        #expect(source.asked == [["good_id-1"]])
+    }
+
     @Test func nothingShownMeansNoServerCall() async {
         let source = FakeSettlement(settled: [])
         #expect(await NotificationSettler(center: FakeNotificationCenter([]), source: source).reconcile() == 0)
