@@ -74,7 +74,10 @@ import type {
   TraceQuery,
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
-import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
+import {
+  SqliteAuthorizationReservations,
+  terminalRunStatuses,
+} from "./sqlite-authorization-reservations.ts";
 import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
@@ -2128,7 +2131,12 @@ export class SqliteDurableOperations {
         const run = this.database
           .prepare("SELECT status FROM runs WHERE id=? AND owner_id=? AND agent_id=?")
           .get(current.runId, current.ownerId, current.agentId) as { status: string } | undefined;
-        if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+        if (
+          !run ||
+          terminalRunStatuses(
+            (current.intentSnapshot as { capabilityRef?: string }).capabilityRef ?? "",
+          ).includes(run.status)
+        )
           this.fail(
             "PORT_NOT_AUTHORITATIVE",
             "A terminal Run cannot acquire new approval authority",

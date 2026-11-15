@@ -140,6 +140,7 @@ export interface DeviceActionStorePort {
       readonly states: readonly DeviceActionRecordState[];
       readonly limit: number;
       readonly finishedSince?: string;
+      readonly approvalId?: string;
     },
   ): Promise<readonly DeviceActionRecord[]>;
   settleDue(input: PairedDeviceScope & { readonly now: string }): Promise<DeviceActionSettlement>;

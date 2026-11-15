@@ -1001,6 +1001,54 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await h.repository.close();
   });
 
+  it("[approval] reconciles the answered approval even when more than a batch of earlier actions still wait", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    await supports(h, client, ["calendar.delete"]);
+    const total = 101;
+    await mirror(
+      h,
+      client,
+      "calendar_event",
+      Array.from({ length: total }, (_, index) => ({ ...DENTIST, externalId: `evt-${index}` })),
+    );
+    const { act } = setup(h);
+    const answers = new Map<string, DeviceActionResolution>();
+    h.actions.authorization.current = {
+      authorize: async (intent) => ({
+        decision: "approval",
+        approvalId: `approval:${intent.runId}`,
+      }),
+      resolve: async (approvalId) => answers.get(approvalId) ?? { decision: "pending" },
+    };
+    for (let index = 0; index < total; index += 1) {
+      await addRun(h, `run-${index}`);
+      h.clock.advance(10);
+      await act(`run-${index}`, {
+        action: "calendar.delete",
+        arguments: { eventId: `evt-${index}` },
+      });
+    }
+    answers.set(`approval:run-${total - 1}`, { decision: "allow", ownerPresent: true });
+    await h.actions.service.reconcile(`approval:run-${total - 1}`);
+    const answered = await h.repository.deviceActions().list({
+      ...perceptionScope,
+      deviceId: null,
+      states: DEVICE_ACTION_RECORD_STATES,
+      limit: 1,
+      approvalId: `approval:run-${total - 1}`,
+    });
+    expect(answered.map(({ state }) => state)).toEqual(["queued"]);
+    const waiting = await h.repository.deviceActions().list({
+      ...perceptionScope,
+      deviceId: null,
+      states: ["waiting_owner"],
+      limit: 500,
+    });
+    expect(waiting).toHaveLength(total - 1);
+    await h.repository.close();
+  });
+
   it("[reverse] is not carried out while the device is offline or the owner's presence is unproven", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);

@@ -1518,8 +1518,8 @@ export async function createProductionHttpComposition(
     authority: options.authority,
     ...(options.deviceActions
       ? {
-          onApprovalResolved: async () => {
-            await options.deviceActions?.service.reconcile();
+          onApprovalResolved: async (approval) => {
+            await options.deviceActions?.service.reconcile(approval.id);
           },
         }
       : {}),

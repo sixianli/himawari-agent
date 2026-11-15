@@ -78,6 +78,7 @@ export function productionDeviceActionAuthorization(
           ...row,
           actionKind: intent.actionKind,
           reversible: intent.reversible,
+          sideEffect: intent.reversible ? "reversible" : "irreversible",
           ownerPresenceRequired: intent.ownerPresence,
         },
         identity,

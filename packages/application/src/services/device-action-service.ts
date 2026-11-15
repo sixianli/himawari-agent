@@ -286,7 +286,7 @@ export class DeviceActionService {
     });
   }
 
-  async reconcile(): Promise<void> {
+  async reconcile(approvalId?: string): Promise<void> {
     const { authorization, store, scope } = this.#options;
     const resolve = authorization.resolve?.bind(authorization);
     if (!resolve) return;
@@ -295,6 +295,7 @@ export class DeviceActionService {
       deviceId: null,
       states: ["waiting_owner"],
       limit: RECONCILE_BATCH,
+      ...(approvalId === undefined ? {} : { approvalId }),
     });
     for (const record of waiting) {
       if (record.approvalId === null) continue;

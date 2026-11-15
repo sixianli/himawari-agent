@@ -110,9 +110,15 @@ async function setup() {
           : { decision: "denied" },
     } as never);
   };
+  const setRunStatus = (status: string) => {
+    const handle = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, RUN_ID);
+    handle.close();
+  };
   return {
     authorization,
     externalContent,
+    setRunStatus,
     approvals,
     respond,
     close: async () => {
@@ -150,6 +156,8 @@ function intent(overrides: Partial<DeviceActionIntent> = {}): DeviceActionIntent
   } as DeviceActionIntent;
 }
 
+const ASKED = { untrustedOriginAllowed: true, readUntrustedContent: true } as const;
+
 it("[ADR-0257] lets an ordinary device action run on the built-in preauthorization and records it", async () => {
   const s = await setup();
   try {
@@ -167,7 +175,7 @@ it("[ADR-0257] asks the owner through the unified approval once outside content 
   const s = await setup();
   try {
     await s.externalContent.mark(RUN_ID, "perception_read");
-    const asked = await s.authorization.authorize(intent());
+    const asked = await s.authorization.authorize(intent(ASKED));
     const [pending] = await s.approvals();
     expect(asked).toEqual({ decision: "approval", approvalId: pending?.id });
     expect(pending).toMatchObject({
@@ -194,7 +202,7 @@ it("[ADR-0257] turns an owner denial into a refusal and never lets an unknown ap
   const s = await setup();
   try {
     await s.externalContent.mark(RUN_ID, "perception_read");
-    await s.authorization.authorize(intent());
+    await s.authorization.authorize(intent(ASKED));
     const [pending] = await s.approvals();
     if (!pending) throw new Error("approval expected");
     await s.respond(pending, "denied");
@@ -238,10 +246,59 @@ it("[ADR-0257] refuses a device action that reads untrusted content without aski
     ).toEqual({ decision: "deny", reasonCode: "authorization_denied" });
     expect(await s.approvals()).toHaveLength(0);
     await s.externalContent.mark(RUN_ID, "perception_read");
-    expect(await s.authorization.authorize(intent({ toolCallId: "call:device-4" }))).toMatchObject({
+    expect(
+      await s.authorization.authorize(intent({ ...ASKED, toolCallId: "call:device-4" })),
+    ).toMatchObject({
       decision: "approval",
     });
     expect(await s.approvals()).toHaveLength(1);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] still lets an approval given after the run completed drive the action, but not after the run failed", async () => {
+  const s = await setup();
+  try {
+    await s.externalContent.mark(RUN_ID, "perception_read");
+    await s.authorization.authorize(intent(ASKED));
+    const [pending] = await s.approvals();
+    if (!pending) throw new Error("approval expected");
+    s.setRunStatus("completed");
+    await s.respond(pending, "approved");
+    expect(await s.authorization.resolve?.(pending.id)).toEqual({
+      decision: "allow",
+      ownerPresent: false,
+    });
+  } finally {
+    await s.close();
+  }
+  const failed = await setup();
+  try {
+    await failed.externalContent.mark(RUN_ID, "perception_read");
+    await failed.authorization.authorize(intent(ASKED));
+    const [pending] = await failed.approvals();
+    if (!pending) throw new Error("approval expected");
+    failed.setRunStatus("failed");
+    await expect(failed.respond(pending, "approved")).rejects.toThrow(/terminal Run/);
+    expect(await failed.authorization.resolve?.(pending.id)).toEqual({ decision: "pending" });
+  } finally {
+    await failed.close();
+  }
+});
+
+it("[ADR-0257] records an irreversible device action as irreversible in the approval snapshot", async () => {
+  const s = await setup();
+  try {
+    await s.externalContent.mark(RUN_ID, "perception_read");
+    await s.authorization.authorize(
+      intent({ ...ASKED, reversible: false, toolCallId: "call:device-5", ownerPresence: true }),
+    );
+    const [pending] = await s.approvals();
+    expect(pending?.intentSnapshot as GovernedActionIntent).toMatchObject({
+      sideEffect: "irreversible",
+      reversible: false,
+    });
   } finally {
     await s.close();
   }
