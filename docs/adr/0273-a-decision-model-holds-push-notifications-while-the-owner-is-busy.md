@@ -133,6 +133,7 @@ date: "2026-11-15"
 - 命令 `delivery_timing.settings.change`，字段 `expectedRevision`、`key`、`value`；`value` 为 `null` 表示恢复成配置文件里的值。值超出范围或 `key` 不认识，整条拒绝；版本号不是最新的，整条拒绝。只有主人能改。
 - 主人改过的值存在新表 `delivery_timing_settings`（一个账号一行，JSON 加版本号），改后马上对运行中的服务生效，不用重启（配置立即替换；已经判过的同一组事实，判断结果最多沿用到复查间隔，所以判忙门槛、超时、每分钟次数的新值对这类已判过的事实要等到复查间隔过后才起作用）。
 - 只有配置文件里配了 `runPolicy.deliveryTiming`（送达时机已启用）、并且网页推送（`runPolicy.webPush`、它的密钥和 episode 保护）可用时，这两个操作才会装进网关。
+- 查询的请求体带 `locale`（`zh-CN`、`en`、`ja` 三选一，必填）；返回的每一项再带 `label`（名称）、`description`（一句说明）、`unit`（单位），按 `locale` 给。各端显示的是这同一句话，客户端不自己写文案；文案表在 `apps/agent-service/src/delivery-timing-copy.ts`，测试保证每一项三种语言都有。
 - 设置页的界面由客户端第 11 批做。
 
 ## 追加（2026-11-15）：一处只响，服务器部分
