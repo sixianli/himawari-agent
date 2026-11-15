@@ -1,0 +1,8 @@
+# PR 584 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高：替补模型分支引用了已删除的 `parentRecords`，一旦触发就会整轮抛 ReferenceError。opencode-review.mjs 旧 4241 行引用 parentRecords，全文件无定义（biome noUndeclaredVariables 报 1 处）；已改为 substituteRefusal 函数并传 linkedRecords、用 PROMPT_MAX_BYTES，补测试，并在 biome.json 给 scripts 和 test/tooling 开 noUndeclaredVariables 作为门槛；触发：单模型代码复核遇到可重试的 api-error 且 substituteFor 给出替补模型；后果：替补分支求值 parentRecords 抛 ReferenceError，脚本未捕获退出，已花的钱有记录但替补不跑、不打印 REVIEW_SUBSTITUTE
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 中：`shadow/` 记录会被 `delegate.mjs check` 当作 `unexpected-file` 拒绝。委托流程里云端线程只跑任务说明里的一条复核命令、只提交那一轮的记录（delegate.mjs 150-158 行），不会照跑 SHADOW_FULL_SUGGESTED，所以不会推 shadow/ 文件、check 也不会因此拒绝；真实缺口是委托复核的轮次不做抽样全量复核，属于覆盖面可以更好，不是会出错
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低：文档说所有 `plan-claims` 核对记录都不算，代码只排除本 PR 新增 ADR 对应的记录。plan-claims.mjs claimsProblems 在 addedAdrs 为空时返回空 files，只排除本 PR 新增 ADR 对应的记录；已把文档改成“本 PR 新增 ADR 对应的 plan-claims 核对记录”；触发：读 model-review.md 第 165 行的线程以为任何 plan-claims 记录都不算增量；后果：文字范围写大，但后半句“和合并前检查一样”成立，实际判断不受影响
+- 4（deepseek-v4.1-flash）不成立：### 4. 低：上一轮第 6 条只修了一半：预算仍按“未加增量的提示”算，超长时整轮放弃增量。用 buildPrompt 实测：增量轮材料（不含差异块）比未加增量的提示短 55 字节（脚本输出 2792 vs 2738，加块和换行后差 -55），所以 budget=PROMPT_MAX_BYTES-promptBytes-1 足以保证加块后不超限，withIncrement 的 too-large 退回在当前文案下不可达；沿用第 1 轮第 6 条的判断。顺序相关的贪心只影响截断边界上的个别文件，模型可按列出的命令自取
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5. 低：`incrementBlock` 的新循环对每个文件重渲染全部候选，文件数很多时是 O(n²)（推测）。render 每次 filter 全部 pieces，确是文件数的平方；但单块受 inlineDiffMaxBytes 限制，几百上千个文件也只是百万次轻量操作，没有错误结果；不建议为此改结构
+- 6（deepseek-v4.1-flash）成立，可以更好：### 6. 低：文件名检查只挡 C0/DEL，不挡 C1 和 Cf；本轮收紧的 `toolSummary` 校验却挡 Cc/Cf。hasControlCharacter 只挡 C0/DEL 属实；但差异内容本身就是任意文本并原样放进提示（标明是数据），文件名多挡 C1/Cf 不改变提示里能出现的字符，没有可达的错误结果；口径统一属于可以更好
