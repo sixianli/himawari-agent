@@ -105,7 +105,11 @@ struct DataExportPage: View {
             }
         }
         .task(id: result.downloadPath) { await fetchArchive(result) }
-        .fileMover(isPresented: $saving, file: archive) { _ in }
+        .fileMover(isPresented: $saving, file: archive) { outcome in
+            guard case .success = outcome else { return }
+            archive = nil
+            Task { await fetchArchive(result) }
+        }
     }
 
     private func fetchArchive(_ result: DataExportResult) async {
