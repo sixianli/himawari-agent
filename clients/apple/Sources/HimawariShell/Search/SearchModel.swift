@@ -16,6 +16,7 @@ public final class SearchModel {
     public var text = ""
 
     @ObservationIgnored private let source: (any SearchSource)?
+    @ObservationIgnored private var generation = 0
 
     public init(source: (any SearchSource)?) {
         self.source = source
@@ -32,11 +33,11 @@ public final class SearchModel {
 
     public func load() async {
         guard let source, suggestions.isEmpty else { return }
+        let mine = generation
         do {
-            suggestions = try await source.ask(nil).asks
-        } catch {
-            suggestions = []
-        }
+            let asks = try await source.ask(nil).asks
+            if mine == generation { suggestions = asks }
+        } catch {}
     }
 
     public func submit() async {
@@ -47,18 +48,24 @@ public final class SearchModel {
     public func ask(_ question: String) async {
         guard let source, asking == nil else { return }
         text = ""
+        let mine = generation
         asking = question
-        defer { asking = nil }
+        defer { if mine == generation { asking = nil } }
         do {
-            answer = try await source.ask(question)
+            let result = try await source.ask(question)
+            guard mine == generation else { return }
+            answer = result
             failed = false
         } catch {
+            guard mine == generation else { return }
             answer = nil
             failed = true
         }
     }
 
     public func reset() {
+        generation += 1
+        asking = nil
         suggestions = []
         answer = nil
         failed = false
