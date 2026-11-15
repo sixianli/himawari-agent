@@ -1,4 +1,5 @@
 import Foundation
+import HimawariCore
 import Observation
 
 @MainActor
@@ -13,8 +14,10 @@ public final class MemoryStore {
     public private(set) var phase: Phase = .loading
     public private(set) var overview: MemoryOverview?
     public private(set) var rules: [RuleSummary] = []
+    public private(set) var tidy: MemoryTidySnapshot?
+    public private(set) var review: MemoryReviewSnapshot?
 
-    @ObservationIgnored private let gateway: ManageGateway
+    @ObservationIgnored let gateway: ManageGateway
 
     public init(gateway: ManageGateway) {
         self.gateway = gateway
@@ -24,8 +27,12 @@ public final class MemoryStore {
         do {
             async let overviewData = gateway.read(.v2, "memory.overview.read")
             async let rulesData = gateway.read(.v2, "memory.rules.read")
+            async let reviewData = try? gateway.read(.v2, "memory.review.read")
             let decoder = JSONDecoder()
-            overview = try decoder.decode(Snapshot<MemoryOverview>.self, from: try await overviewData).payload
+            let overviewBytes = try await overviewData
+            overview = try decoder.decode(Snapshot<MemoryOverview>.self, from: overviewBytes).payload
+            tidy = try? decoder.decode(Snapshot<MemoryTidySnapshot>.self, from: overviewBytes).payload
+            review = (await reviewData).flatMap { try? decoder.decode(Snapshot<MemoryReviewSnapshot>.self, from: $0).payload }
             rules = try decoder.decode(Snapshot<RuleBook>.self, from: try await rulesData).payload.rules
             phase = .loaded
         } catch let ManageGatewayError.rejected(_, code, _) {

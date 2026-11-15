@@ -12,6 +12,7 @@ public struct MemoryRootView: View {
         case memory(String)
         case edit(String)
         case rule(String)
+        case tidy
     }
 
     @State private var store: MemoryStore
@@ -23,6 +24,7 @@ public struct MemoryRootView: View {
     @State private var detailHeight: CGFloat = 0
     @State private var actionFailed = false
     @State private var selectedRule: RuleSummary?
+    @State private var tidyOpen = false
     private let talk: (String) -> Void
     private let opening: Opening?
 
@@ -41,27 +43,16 @@ public struct MemoryRootView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .topTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    ScreenTitle(Text(M.memoryTitle))
-                    MemorySegment(selection: $tab)
-                    content
+        ZStack {
+            if tidyOpen {
+                MemoryTidyPage(store: store, openMemory: openFromTidy) {
+                    withAnimation(.snappy) { tidyOpen = false }
                 }
-                .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                .padding(.top, 14)
-                .padding(.bottom, DesignTokens.Size.fadeTabBar)
+                .transition(.move(edge: .trailing))
+            } else {
+                rootPage.transition(.opacity)
             }
-            .scrollIndicators(.hidden)
-            .refreshable { await store.load() }
-
-            GlassCircleButton(Text(M.search), action: {}) {
-                Icon(.search, size: DesignTokens.IconSize.glassButton)
-            }
-            .padding(.trailing, DesignTokens.Size.pagePaddingX)
-            .padding(.top, 10)
         }
-        .himawariScreenBackground()
         .task {
             await store.load()
             open(opening)
@@ -76,7 +67,8 @@ public struct MemoryRootView: View {
                 edit: {
                     pendingEdit = item
                     selected = nil
-                }
+                },
+                loadSources: { await store.basisSources(of: item) }
             )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailHeight = $0 }
             .presentationDetents(detailHeight > 0 ? [.height(detailHeight)] : [.medium])
@@ -120,14 +112,49 @@ public struct MemoryRootView: View {
         .alert(M.actionFailed, isPresented: $actionFailed) {}
     }
 
+    private var rootPage: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ScreenTitle(Text(M.memoryTitle))
+                    MemorySegment(selection: $tab)
+                    content
+                }
+                .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+                .padding(.top, 14)
+                .padding(.bottom, DesignTokens.Size.fadeTabBar)
+            }
+            .scrollIndicators(.hidden)
+            .refreshable { await store.load() }
+
+            HStack(spacing: DesignTokens.Size.rowGap) {
+                GlassCircleButton(Text(M.tidyTitle), action: { withAnimation(.snappy) { tidyOpen = true } }) {
+                    Icon(.listCheck, size: DesignTokens.IconSize.glassButton)
+                }
+                GlassCircleButton(Text(M.search), action: {}) {
+                    Icon(.search, size: DesignTokens.IconSize.glassButton)
+                }
+            }
+            .padding(.trailing, DesignTokens.Size.pagePaddingX)
+            .padding(.top, 10)
+        }
+        .himawariScreenBackground()
+    }
+
     private func open(_ opening: Opening?) {
         let memories = store.overview?.memories ?? []
         switch opening {
         case .memory(let id): selected = memories.first { $0.memoryId == id }
         case .edit(let id): editing = memories.first { $0.memoryId == id }
         case .rule(let id): selectedRule = store.rules.first { $0.ruleId == id }
+        case .tidy: tidyOpen = true
         case nil: break
         }
+    }
+
+    private func openFromTidy(_ id: String) {
+        withAnimation(.snappy) { tidyOpen = false }
+        open(.memory(id))
     }
 
     private func openPendingMemory() {

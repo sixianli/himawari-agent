@@ -27,6 +27,7 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case memoryTidy = "18-memory-more-5-tidy"
 }
 
 public struct ManageDemoView: View {
@@ -44,6 +45,8 @@ public struct ManageDemoView: View {
             MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m1"))
         case .memoryEdit:
             MemoryRootView(store: ManageDemo.memoryStore(), opening: .edit("m5"))
+        case .memoryTidy:
+            MemoryRootView(store: ManageDemo.memoryStore(), opening: .tidy)
         case .rules:
             MemoryRootView(store: ManageDemo.memoryStore(), tab: .rules)
         case .ruleDetail:
@@ -162,6 +165,7 @@ enum ManageDemo {
         switch type {
         case "memory.overview.read": memories
         case "memory.rules.read": rules
+        case "memory.review.read": memoryReview
         case "device.list.read": devices
         case "server.status.read":
             #"{"payload":{"live":true,"ready":true,"status":"healthy","dependencies":[],"generatedAt":"2026-11-12T00:00:00Z"}}"#
@@ -270,8 +274,23 @@ enum ManageDemo {
             memory("m6", "工作", "第一次给外面的人发邮件先让我看，同事不用", inference: false, recordedAt: "2026-11-08T03:00:00Z", lastUsedAt: nil, quote: "同事就不用问我了"),
             memory("m3", "身体", "对花生过敏", inference: false, recordedAt: "2026-10-21T03:00:00Z", lastUsedAt: "2026-11-05T03:00:00Z", quote: "我花生过敏"),
         ]
-        return #"{"payload":{"memories":[\#(items.joined(separator: ","))],"imports":[],"capturePaused":false}}"#
+        return #"{"payload":{"memories":[\#(items.joined(separator: ","))],"imports":[],"capturePaused":false,\#(tidyUps)}}"#
     }
+
+    private static let tidyUps = #"""
+    "tidyUps":[
+      {"changeId":"c1","memoryId":"m5","action":"merge","text":"坐新干线喜欢靠窗","relatedText":"订新干线要靠窗的座位","createdAt":"2026-11-11T18:00:00Z","undone":false,"undoable":true},
+      {"changeId":"c2","memoryId":"m8","action":"archive","text":"每月 25 号交房租","relatedText":null,"createdAt":"2026-11-11T18:00:00Z","undone":false,"undoable":true},
+      {"changeId":"c3","memoryId":"m9","action":"supersede","text":"周三晚上去健身房","relatedText":"周二晚上去健身房","createdAt":"2026-11-10T18:00:00Z","undone":false,"undoable":false}
+    ],
+    "conversationReviews":[
+      {"reviewId":"v1","finishedAt":"2026-11-11T18:30:00Z","undone":false,"undoable":true,"changes":[{"memoryId":"m1","action":"created"},{"memoryId":"m3","action":"confirmed"}]}
+    ]
+    """#
+
+    private static let memoryReview = #"""
+    {"payload":{"memories":[{"memoryId":"m2","text":"每周五下午和田中有例会","upstreamMemoryId":"m7","upstreamText":"田中的例会改到周四","reason":"memory_edited","depth":1,"truncated":false,"flaggedAt":"2026-11-11T18:00:00Z"}],"rules":[],"agreement":{"handled":0,"agreed":0,"missed":0,"openMemories":1,"openRules":0},"generatedAt":"2026-11-12T00:00:00Z"}}
+    """#
 
     private static let rules = #"""
     {"payload":{"rules":[

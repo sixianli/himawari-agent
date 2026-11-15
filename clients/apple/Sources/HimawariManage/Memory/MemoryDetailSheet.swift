@@ -10,6 +10,26 @@ struct MemoryDetailSheet: View {
     let close: () -> Void
     let delete: () -> Void
     let edit: () -> Void
+    let loadSources: (() async -> [MemoryItem])?
+    @State private var sources: [MemoryItem] = []
+
+    init(
+        item: MemoryItem,
+        basis: String,
+        lastUsed: String,
+        close: @escaping () -> Void,
+        delete: @escaping () -> Void,
+        edit: @escaping () -> Void,
+        loadSources: (() async -> [MemoryItem])? = nil
+    ) {
+        self.item = item
+        self.basis = basis
+        self.lastUsed = lastUsed
+        self.close = close
+        self.delete = delete
+        self.edit = edit
+        self.loadSources = loadSources
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: L.gap) {
@@ -33,7 +53,7 @@ struct MemoryDetailSheet: View {
                 .accessibilityLabel(Text(M.close))
             }
             VStack(spacing: 0) {
-                field(M.howKnown, basis)
+                field(M.howKnown, M.howKnownLine(basis, sources: sources.map(\.text)))
                 RowSeparator()
                 field(M.lastUsed, lastUsed)
             }
@@ -64,6 +84,7 @@ struct MemoryDetailSheet: View {
         .padding(.horizontal, L.paddingHorizontal)
         .padding(.bottom, L.paddingBottom)
         .background(Color.hmBackground)
+        .task { sources = await loadSources?() ?? [] }
     }
 
     private func field(_ label: String, _ value: String) -> some View {

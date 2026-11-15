@@ -10,7 +10,6 @@
     "improvement.detail": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "improvement.list": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "improvement.review": "自主建议、反思、委派、改进这一组：autonomy-gateway-adapter 已实现，生产没有装配，前端没有页面（缺：调用方）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
-    "memory.basis.read": "记忆整理依据查询：P1-2 刚合入，生产已安装，记忆页还没接上（缺：调用方）。记忆页接入后移出名单",
     "perception.episode.read": "感知记录和用量的查询与命令：iOS 第 3 批已实现后端和测试（test/integration/production-perception-control.test.ts），调用方是 iPhone 第 5 批的“感知到的”页和用量页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
     "perception.usage.read": "感知记录和用量的查询与命令：iOS 第 3 批已实现后端和测试（test/integration/production-perception-control.test.ts），调用方是 iPhone 第 5 批的“感知到的”页和用量页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
     "proactive.audit.respond": "主动检查的审计回应：生产已安装，前端没有入口（缺：调用方）。要么做入口要么删，由 Andy 另行决定",
