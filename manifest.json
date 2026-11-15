@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "pr": 573,
+  "batch": "grants",
+  "files": [
+    {
+      "path": "20-himawari-self-5-grants-dark.png",
+      "bytes": 194447,
+      "sha256": "5cf0ec8f7d528950553450ce4efd9e4925632a39dac73c0b968910dd80d11843"
+    },
+    {
+      "path": "20-himawari-self-5-grants-light.png",
+      "bytes": 273288,
+      "sha256": "f99441eecfc7af7f8386186400dfb71d188c5fb909d781da299791adab313d49"
+    },
+    {
+      "path": "20-himawari-self-5b-grants-open-dark.png",
+      "bytes": 240285,
+      "sha256": "f5204801a5b0996cead6d663a395a1e8de5f884ace4918800e7602c3bffcbfb7"
+    },
+    {
+      "path": "20-himawari-self-5b-grants-open-light.png",
+      "bytes": 332964,
+      "sha256": "cff37f3c457384545608a1d65d21fc881473800ff1c89ed11a4685cac32ada71"
+    },
+    {
+      "path": "20-himawari-self-5c-grants-revoked-dark.png",
+      "bytes": 179931,
+      "sha256": "abfabf68dc42acb595e0f3e7c60703b17bb93e479de8501f036ec6387225f024"
+    },
+    {
+      "path": "20-himawari-self-5c-grants-revoked-light.png",
+      "bytes": 233022,
+      "sha256": "2d781b72dc8071487acde01d980c018cf3ba83a1119a1ada4c4c423c6e7c7c22"
+    },
+    {
+      "path": "20-himawari-self-5d-grants-empty-dark.png",
+      "bytes": 96190,
+      "sha256": "7b634560b706f734fcf09c14146e05a2010a972c96f116c3654d181e37058112"
+    },
+    {
+      "path": "20-himawari-self-5d-grants-empty-light.png",
+      "bytes": 99040,
+      "sha256": "c995e27b40ad18c7ae5a869995b8bc2943e28a5fa5491b5635d28cc29cdccf98"
+    }
+  ]
+}
