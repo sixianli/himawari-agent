@@ -97,18 +97,19 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     if (result.exitCode !== 0)
       fail(checkId, matrixKey, source, `Command exit code is ${result.exitCode}`);
     const { check, member } = expectation;
+    const memberProjects = member.projects ?? check.projects;
     const related = new Set(result.relatedProjects ?? []);
     if (related.size) {
       relatedScope = true;
       if (context.event !== "pull_request")
         fail(checkId, matrixKey, source, "Related test scope outside pull_request");
       for (const id of related)
-        if (!check.projects.includes(id) || !relatedEligibleProjects.includes(id))
+        if (!memberProjects.includes(id) || !relatedEligibleProjects.includes(id))
           fail(checkId, matrixKey, source, `Related test scope for ${id} is not allowed`);
     }
     const skipped = (counts) =>
       related.size > 0 && JSON.stringify(counts) === JSON.stringify(zeroCounts());
-    if (!(skipped(result.counts) && check.projects.every((id) => related.has(id))))
+    if (!(skipped(result.counts) && memberProjects.every((id) => related.has(id))))
       for (const reason of countsProblems(result.counts)) fail(checkId, matrixKey, source, reason);
     for (const field of ["node", "os"])
       if (result.toolchain[field] !== member[field])
@@ -122,7 +123,7 @@ export function aggregate({ policy, context, needs, reports, toolchainLock }) {
     const projectIds = result.projects.map((project) => project.id);
     if (new Set(projectIds).size !== projectIds.length)
       fail(checkId, matrixKey, source, "Duplicate project counts");
-    if (JSON.stringify([...projectIds].sort()) !== JSON.stringify([...check.projects].sort()))
+    if (JSON.stringify([...projectIds].sort()) !== JSON.stringify([...memberProjects].sort()))
       fail(checkId, matrixKey, source, "Project count set differs from policy");
     for (const project of result.projects)
       if (!(related.has(project.id) && skipped(project.counts)))
