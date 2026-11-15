@@ -256,7 +256,7 @@ async function main(action) {
       const state = await readMaintenanceState(binding, oldPrefix);
       assert.equal(state.schema.current, currentSchema, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_SCHEMA_MISMATCH");
       const reference = retained.reference;
-      verifyHistoryUnchanged(reference, state);
+      verifyHistoryUnchanged(reference, state, Object.freeze({ mode: "on" }));
       assert.deepEqual(state.gate, reference.gate, "__PKT_LABEL_UPPER___MAINTENANCE_RESTORED_GATE_CHANGED");
       report.after = retain(`${action.toLowerCase()}-after.json`, state);
       report.catalog = readRestoredCatalog(binding);

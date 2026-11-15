@@ -39,7 +39,7 @@
 2. `S7_DB_STATUS` 读到的状态 `s7-preswitch-state.json` 等于 `s3-copy-after56.json`。
 3. `S7_CONFIG_APPLY` 改配置前再读一次，等于 `s7-preswitch-state.json`；它另外保存两份证据：`s7-config-apply.json`（配置改动前后的 SHA-256 和字节数）和 `s7-web-config-authorization.json`（新配置下的授权和能力登记读回）。
 4. `S7_CATALOG_UPGRADE` 升级前等于 `s7-preswitch-state.json`，升级后读回 `s7-catalog-after56.json` 等于升级前。
-5. `S8_READBACK` 先核对保存的 `s3-copy-after56.json` 和 `s7-catalog-after56.json` 两份读回相同，再和 S3 保存的数据库副本逐行比较：上线前已有的行不能删、列不能变、内容不能改，例外只有两处：`sandbox_execution_records.recovery_json`（服务启动时的恢复逻辑会改写它），以及这次上线要补的迁移里有 `thread_origin` 时 `threads.origin` 这一列（这个迁移给对话表加了它并回填，所以这次上线前后两边都不比它；`maintenance-common.mjs` 的 `addedColumnBackfills` 按迁移名登记，之后的上线不再补这个迁移，就照常比较这一列）；允许出现新行。结果写进 `s8-history-preserved.json`，列出每张表的原有行数、现有行数、新增行数、被改写 `recovery_json` 的行号，以及这次不比较的列（`ignoredHistoryColumns`）。
+5. `S8_READBACK` 先核对保存的 `s3-copy-after56.json` 和 `s7-catalog-after56.json` 两份读回相同，再和 S3 保存的数据库副本逐行比较：上线前已有的行不能删、列不能变、内容不能改，例外只有两处：`sandbox_execution_records.recovery_json`（服务启动时的恢复逻辑会改写它），以及这次上线要补的迁移里有 `thread_origin` 时 `threads.origin` 这一列（这个迁移给对话表加了它并回填，所以这次上线前后两边都不比它；`maintenance-common.mjs` 的 `addedColumnBackfills` 按迁移名登记，之后的上线不再补这个迁移，就照常比较这一列）；允许出现新行。结果写进 `s8-history-preserved.json`，列出每张表的原有行数、现有行数、新增行数、被改写 `recovery_json` 的行号，以及这次不比较的列（`ignoredHistoryColumns`）。实例文件的 `historyComparison` 为这个版本关掉比对时，S3、S7 按表摘要做的历史比较、迁移前后的历史比较和这里的逐行比较都跳过，`s8-history-preserved.json` 只写 `historyComparison: "off"`、原因（`historyComparisonReason`）、授权消息（`historyComparisonAuthorizedBy`）和版本标签（`historyComparisonRelease`），`tables` 为 `null`，没有 `allowedStartupRecoveryColumns` 和 `ignoredHistoryColumns`；S9 恢复后和 S3 读回的历史比较不受这个开关影响，照常进行。
 
 能力登记和升级审计不在这 12 张表里，所以升级不影响历史比较；它们另有各自的前后检查（见上表“能力登记”一行）。
 

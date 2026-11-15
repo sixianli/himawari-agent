@@ -630,6 +630,11 @@ class DerivedExpectationsTest(RenderedPacket):
             self.assertIn('...historyComparisonEvidence(), passed: false', (packet / 'maintenance' / 'run-maintenance.mjs').read_text())
         self.assertIn("history_comparison = 'on'", (self.render() / 'systemd' / 'S7-switch-start-readback.py').read_text())
 
+    def test_s9_restore_compares_history_even_when_the_release_switch_is_off(self):
+        runner = (self.render(**self.history_off()) / 'maintenance' / 'run-maintenance.mjs').read_text()
+        restore = runner[runner.index('const reference = retained.reference;'):]
+        self.assertTrue(restore.splitlines()[1].strip().startswith('verifyHistoryUnchanged(reference, state, Object.freeze({ mode: "on" }))'))
+
     def test_a_packet_whose_history_switch_names_another_release_refuses_to_load(self):
         result = self.history_fixtures(self.render(**self.history_off(release='twentyninth')))
         self.assertNotEqual(result.returncode, 0)
