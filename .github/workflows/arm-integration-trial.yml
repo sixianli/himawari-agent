@@ -35,7 +35,8 @@ jobs:
         if: always()
         run: |
           uptime
-          f=$(ls .ci-output/trial/tests/*/integration.json .ci-output/trial/tests/integration.json 2>/dev/null | head -1)
+          f=$(find .ci-output/trial/tests -name integration.json | head -n 1 || true)
+          echo "report=$f"
           if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
           ls .ci-output/trial/build || true
           tail -n 40 .ci-output/trial/build/*.log 2>/dev/null | tail -n 80 || true
