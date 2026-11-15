@@ -5947,16 +5947,18 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
           return {
             status: response.status,
             contentType: response.headers.get("content-type"),
-            bytes: (await response.arrayBuffer()).byteLength,
+            bytes: response.status === 200 ? -1 : (await response.arrayBuffer()).byteLength,
           };
         });
       const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
       try {
         const strangerPage = await stranger.newPage();
+        await strangerPage.route("**/api/identity/v1/sessions", (route) => route.abort());
         await strangerPage.goto(`${installation.origin}/`);
         const refused = await archive(strangerPage);
         expect(refused.status).toBe(401);
         expect(refused.bytes).toBe(0);
+        expect((await stranger.cookies()).length).toBe(0);
         const allowed = await archive(page);
         expect(allowed.status).toBe(200);
         expect(allowed.contentType).toBe("application/zip");
