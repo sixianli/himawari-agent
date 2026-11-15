@@ -909,6 +909,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion",
   ),
   entry(
+    "device_actions",
+    "DeviceActionStorePort",
+    "one row per action Himawari asked a paired device to do: which device, the action name, references to its arguments and to what the device read back, its risk, whether the owner must be present, its state from queued to succeeded, failed or result unknown, and the run and tool call that asked",
+    "metadata_only",
+    "cascade with the device, Owner or Agent deletion; a revoked device's queued rows become rejected and its delivered rows become result unknown",
+  ),
+  entry(
+    "device_policies",
+    "DeviceActionStorePort",
+    "one row per paired device whose owner narrowed what Himawari may do on it: the action names switched off, with a revision for concurrent edits",
+    "metadata_only",
+    "cascade with the device, Owner or Agent deletion",
+  ),
+  entry(
     "limit_usage",
     "PerceptionStorePort",
     "how much of each daily limit is used per owner-local day; rows with a device id hold the latest number that device reported",

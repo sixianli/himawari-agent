@@ -6,8 +6,10 @@ import {
   type AgentGatewayV2Port,
   type AgentThreadGatewayPort,
   ApplicationPortError,
+  type DeviceActionService,
   type AuditLedgerPort,
   type DeviceConfiguration,
+  type PairedDeviceScope,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
   PORT_ERROR_CODES,
@@ -36,6 +38,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import type { DeviceActionHub } from "./device-action-hub.js";
 import {
   type DeviceApiRouteOptions,
   type DeviceHomePort,
@@ -140,6 +143,10 @@ export interface HttpGatewayServerOptions {
     readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly actions?: {
+      readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
+      readonly hub: DeviceActionHub;
+    };
     readonly home?: DeviceHomePort;
     readonly voiceGates?: () => VoiceGates;
     readonly prefetch?: UtterancePrefetchPort;
@@ -1315,6 +1322,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
+      ...(options.devices.actions ? { actions: options.devices.actions } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
       ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),

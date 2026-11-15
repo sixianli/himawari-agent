@@ -123,6 +123,11 @@ async function noSideScroll(page: Page): Promise<void> {
   ).toBe(true);
 }
 
+function middayTimezone() {
+  const offset = 12 - new Date().getUTCHours();
+  return offset === 0 ? "Etc/GMT" : `Etc/GMT${offset > 0 ? "-" : "+"}${Math.abs(offset)}`;
+}
+
 describe("[SI-4] 敏感信息拦截记录（真实网页验收）", () => {
   beforeAll(async () => {
     staticRoot = await mkdtemp(path.join(tmpdir(), "sensitive-browser-"));
@@ -159,6 +164,7 @@ describe("[SI-4] 敏感信息拦截记录（真实网页验收）", () => {
     const page = await browser.newPage({
       viewport: { width: 1280, height: 820 },
       colorScheme: "light",
+      timezoneId: middayTimezone(),
     });
     try {
       await openDataSettings(page);

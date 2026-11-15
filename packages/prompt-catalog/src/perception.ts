@@ -3,6 +3,8 @@ import { fixedPrompt, slot, templatePrompt, text } from "./entry.js";
 const TOOLS_FILE = "apps/agent-service/src/production-perception-tools.ts";
 const EXTRACTION_FILE = "packages/application/src/services/perception-extraction.ts";
 const SOURCES_FILE = "packages/application/src/services/perception-source-prompts.ts";
+const ACTIONS_FILE = "packages/application/src/services/device-action-service.ts";
+const REGISTRY_FILE = "packages/application/src/services/device-action-registry.ts";
 
 export const TOOL_DEVICE_ACTION = fixedPrompt({
   id: "tools.device-action",
@@ -290,13 +292,112 @@ export const TOOL_RESULT_DEVICE_ACTION_WAITING_OWNER = fixedPrompt({
   text: "这个动作要主人确认后才会做，确认卡已经发给主人。现在什么都还没做；告诉主人去确认，不要说已经做好了。",
 });
 
-export const TOOL_RESULT_DEVICE_ACTION_UNCONFIRMED = fixedPrompt({
-  id: "tools.result.device-action.unconfirmed",
-  purpose: "device_action 的动作要主人确认、而这次没有拿到确认时的说明",
-  usedBy: [TOOLS_FILE],
+export const TOOL_RESULT_DEVICE_ACTION_REASON_APPROVAL_NOT_CONNECTED = fixedPrompt({
+  id: "tools.result.device-action.reason.approval-not-connected",
+  purpose: "device_action 结果里的原因：这类动作的审批还没接上时的原因",
+  usedBy: [ACTIONS_FILE],
   layer: "tool-result",
   output: "free-text",
-  text: "这个动作要主人确认后才能做，这次没有拿到主人的确认，所以什么都没有做。照实告诉主人，不要说已经做好了，也不要换一个工具去达到同样的结果。",
+  text: "这类动作要先请主人确认，而确认这一步的审批还没接上，所以现在做不了。照实告诉主人暂时做不了；读取类的动作不受影响。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_DENIED = fixedPrompt({
+  id: "tools.result.device-action.reason.denied",
+  purpose: "device_action 结果里的原因：权限规则不允许这个动作时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "权限规则不允许这个动作，所以没有做。照实告诉主人；需要放开时由主人自己改规则。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_OWNER_DENIED = fixedPrompt({
+  id: "tools.result.device-action.reason.owner-denied",
+  purpose: "device_action 结果里的原因：主人拒绝了这个动作时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人看过之后没有同意这个动作，所以没有做。不要再发起同样的动作，除非主人重新提出。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_PRESENCE_UNPROVEN = fixedPrompt({
+  id: "tools.result.device-action.reason.presence-unproven",
+  purpose: "device_action 结果里的原因：要主人本人在场而没有证明时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这个动作要主人本人在设备上用面容或密码确认，这一次没有拿到这个确认，所以没有做。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_DEVICE_POLICY = fixedPrompt({
+  id: "tools.result.device-action.reason.device-policy",
+  purpose: "device_action 结果里的原因：主人关掉了这台设备上的这个动作时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "主人在这台设备的设置里关掉了这个动作，所以没有做。需要时请主人在设备上“它能替你做的”里打开。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_DEVICE_REVOKED = fixedPrompt({
+  id: "tools.result.device-action.reason.device-revoked",
+  purpose: "device_action 结果里的原因：设备已被吊销时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这台设备已经被主人取消配对，排着的动作全部作废；已经发给它的动作不确定做没做。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_DEVICE_UNSUPPORTED = fixedPrompt({
+  id: "tools.result.device-action.reason.device-unsupported",
+  purpose: "device_action 结果里的原因：设备不支持这个动作时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这台设备不支持这个动作，所以没有做。用 describe 看哪台设备支持。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_REPORT_MISSING = fixedPrompt({
+  id: "tools.result.device-action.reason.report-missing",
+  purpose: "device_action 结果里的原因：设备没有回报结果时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "动作已经发给设备，但过了有效期还没有收到设备的回报，不确定做没做；设备下次上线时会读回核实。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_DEVICE_LOST_RECORD = fixedPrompt({
+  id: "tools.result.device-action.reason.device-lost-record",
+  purpose: "device_action 结果里的原因：设备丢了本地记录时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "设备重装或清过数据，它不记得这个动作做没做；设备不会重做，只会读回核实。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_NOT_DELIVERED = fixedPrompt({
+  id: "tools.result.device-action.reason.not-delivered",
+  purpose: "device_action 结果里的原因：动作过期没送到时的原因",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "过了有效期还没有送到设备，这个动作已经作废，没有做。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_REASON_TARGET_UNKNOWN = fixedPrompt({
+  id: "tools.result.device-action.reason.target-unknown",
+  purpose: "device_action 结果里的原因：动作指向的东西在设备同步来的数据里找不到时的说明",
+  usedBy: [ACTIONS_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数里的编号在这台设备同步来的数据里找不到，什么都没有做。先读出这件东西现在的编号再试，不要猜编号。",
+});
+
+export const TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER = fixedPrompt({
+  id: "tools.result.device-action.usage.device-reminder",
+  purpose: "device_action describe 结果里 device_reminder 两个动作的用法说明",
+  usedBy: [REGISTRY_FILE],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这个动作操作的是设备上苹果的“提醒事项”App。主人说“提醒我……”时默认用 Himawari 自己的提醒，不用这个动作；只有主人明说要放进“提醒事项”App 或其中某个清单时才用它。",
 });
 
 export const TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE = fixedPrompt({
