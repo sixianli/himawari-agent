@@ -76,10 +76,15 @@ export class ThinkWorthDecision implements ThinkWorthPort {
       body: thinkWorthRequestBody(this.#options.model, request),
       signal,
     });
-    if (!response.ok) throw new ThinkWorthDecisionFailure(`THINK_WORTH_HTTP_${response.status}`);
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new ThinkWorthDecisionFailure(`THINK_WORTH_HTTP_${response.status}`);
+    }
     const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > MAX_RESPONSE_BYTES)
+    if (declared > MAX_RESPONSE_BYTES) {
+      await response.body?.cancel();
       throw new ThinkWorthDecisionFailure("THINK_WORTH_RESPONSE_TOO_LARGE");
+    }
     const chunks: Uint8Array[] = [];
     let received = 0;
     const reader = response.body?.getReader();

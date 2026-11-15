@@ -2204,6 +2204,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
     );
+  if (runPolicy?.thinkInbox?.worth)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.thinkInbox.worth.secretRef,
+      "model-auth",
+      "configuration.runPolicy.thinkInbox.worth.secretRef",
+    );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(
       secretReferences,

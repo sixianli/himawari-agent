@@ -131,7 +131,7 @@ describe("think worker", () => {
           return { outcome: "proposed", reasonCode: "proposal_written" };
         }),
     });
-    const worker = (baseUrl: string, think: ThinkRunner) =>
+    const worker = (baseUrl: string, think: ThinkRunner, runTimeoutMs = 5000) =>
       new ProductionThinkWorker({
         scope,
         inbox,
@@ -147,7 +147,7 @@ describe("think worker", () => {
           }),
         },
         runner: think,
-        runTimeoutMs: 5000,
+        runTimeoutMs,
       });
     return { inbox, store, payloads, runs, runner, worker, usage: () => inbox.usage() };
   }
@@ -213,5 +213,61 @@ describe("think worker", () => {
     await inbox.submit(mail("a"));
     expect(await run.runOnce()).toMatchObject({ outcome: "failed", reasonCode: "think_failed" });
     expect(await run.runOnce()).toEqual({ status: "idle" });
+  });
+
+  it("still times the runner out when the caller passes a long-lived signal", async () => {
+    const { inbox, runner, worker } = await fixture();
+    const stub = await jev(() => ({ status: 200, worth: 0.95 }));
+    let runnerSignal: AbortSignal | undefined;
+    const run = worker(
+      stub.baseUrl,
+      runner(
+        ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            runnerSignal = signal;
+            signal.addEventListener("abort", () => reject(new Error("timed out")));
+          }),
+      ),
+      50,
+    );
+    await inbox.submit(mail("a"));
+    const longLived = new AbortController();
+    expect(await run.runOnce(longLived.signal)).toMatchObject({
+      outcome: "failed",
+      reasonCode: "think_failed",
+    });
+    expect(runnerSignal?.aborted).toBe(true);
+    expect(longLived.signal.aborted).toBe(false);
+  });
+
+  it("leaves the entry in thinking for recovery when the caller cancels", async () => {
+    const { inbox, runner, worker, usage } = await fixture();
+    const stub = await jev(() => ({ status: 200, worth: 0.95 }));
+    const controller = new AbortController();
+    const run = worker(
+      stub.baseUrl,
+      runner(
+        ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("cancelled")));
+            controller.abort();
+          }),
+      ),
+    );
+    await inbox.submit(mail("a"));
+    expect(await run.runOnce(controller.signal)).toMatchObject({ status: "aborted" });
+    expect((await usage()).byStatus).toEqual({ thinking: 1 });
+  });
+
+  it("shortens an over-long runner reason code instead of failing the settled run", async () => {
+    const { inbox, runner, worker, usage } = await fixture();
+    const stub = await jev(() => ({ status: 200, worth: 0.95 }));
+    const run = worker(
+      stub.baseUrl,
+      runner(async () => ({ outcome: "skipped", reasonCode: "x".repeat(100) })),
+    );
+    await inbox.submit(mail("a"));
+    expect(await run.runOnce()).toMatchObject({ outcome: "skipped" });
+    expect((await usage()).byStatus).toEqual({ skipped: 1 });
   });
 });

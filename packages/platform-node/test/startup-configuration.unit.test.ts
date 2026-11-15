@@ -1955,7 +1955,16 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
       parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox,
     ).toEqual(thinkInbox);
   }
-  const worth = { model: "typesafe-ai/jev", secretRef: "think-worth-key" };
+  const worthSecret = (raw["secretReferences"] as Record<string, unknown>[]).find(
+    ({ purpose }) => purpose === "model-auth",
+  );
+  if (!worthSecret) throw new Error("fixture secret missing");
+  const worth = { model: "typesafe-ai/jev", secretRef: worthSecret["ref"] as string };
+  raw["runPolicy"] = {
+    ...policy,
+    thinkInbox: { worth: { ...worth, secretRef: "missing-secret" } },
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   for (const thinkInbox of [
     { worth },
     { worth: { ...worth, yesAtLeastPermille: 800, noAtMostPermille: 200, requestTimeoutMs: 500 } },

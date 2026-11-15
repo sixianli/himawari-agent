@@ -49,7 +49,8 @@ export type ThinkWorkerStep =
       readonly entryId: string;
       readonly outcome: string;
       readonly reasonCode: string;
-    };
+    }
+  | { readonly status: "aborted"; readonly entryId: string };
 
 export class ProductionThinkWorker {
   readonly #options: ThinkWorkerOptions;
@@ -80,17 +81,23 @@ export class ProductionThinkWorker {
           return undefined;
         },
       );
-      if (verdict === undefined) return await settle("failed", "worth_unavailable");
+      if (verdict === undefined) {
+        if (signal?.aborted) return { status: "aborted" as const, entryId: entry.id };
+        return await settle("failed", "worth_unavailable");
+      }
       if (verdict === "skip") return await settle("skipped", "worth_no");
       if (verdict === "unsure") return await settle("skipped", "worth_unsure");
       const run = await this.#options.runner.think({
         entry,
         summary,
-        signal: signal ?? AbortSignal.timeout(this.#options.runTimeoutMs),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(this.#options.runTimeoutMs)])
+          : AbortSignal.timeout(this.#options.runTimeoutMs),
       });
-      return await settle(run.outcome, run.reasonCode);
+      return await settle(run.outcome, run.reasonCode.slice(0, 64));
     } catch (error) {
       this.#options.onFailure?.(entry.id, error);
+      if (signal?.aborted) return { status: "aborted" as const, entryId: entry.id };
       return await settle("failed", "think_failed").catch(() => ({
         status: "done" as const,
         entryId: entry.id,
