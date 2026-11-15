@@ -1,0 +1,7 @@
+{"id": "d1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 严重度：中 — 「现场检查通过后才写记录」的自动测试没有真正覆盖「绑定成功、检查失败」这条路径", "valid": true, "class": "better"}
+{"id": "d2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 严重度：中 — 新增的 16384 字节上限没有测试，启动绑定也受影响但没有反向用例", "valid": true, "class": "better"}
+{"id": "d3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 严重度：低 — 正常停止删除记录没有自动测试（作者已承认）", "valid": true, "class": "better"}
+{"id": "d4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 严重度：低 — 崩溃恢复重放分支没有反向用例；`deploymentId` / `workerInstanceId` 不一致也没有用例", "valid": true, "class": "better"}
+{"id": "d5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 严重度：低（推测）— 异常终止后旧记录可能残留，使重新启用通过但执行进程已死", "valid": true, "class": "better"}
+{"id": "d6", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 6. 严重度：低（推测）— `readWorkerRuntimeRecord` 存在 lstat/readFile 之间的 TOCTOU 和符号链接替换窗口", "valid": true, "class": "better"}
+{"id": "d7", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 7. 严重度：极低 — 「启动绑定行为不变」与「16384 上限共用」在严格意义上有冲突", "valid": false, "class": "better"}

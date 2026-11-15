@@ -1326,6 +1326,12 @@ export const governanceMessages = [
     reasonCode: "owner-rollback",
     recentAuthenticationRef: "recent-auth-01",
   }),
+  fixture("command", "capability.reactivate", {
+    capabilityRef: "capability-01",
+    expectedRevision: 9,
+    reasonCode: "owner-reactivate",
+    recentAuthenticationRef: "recent-auth-01",
+  }),
   fixture("query", "approval.detail", { approvalRequestId: "approval-01" }),
   fixture("query", "capability.list", {
     lifecycle: null,
