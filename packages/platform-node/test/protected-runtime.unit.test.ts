@@ -14,6 +14,22 @@ const fixture = vi.hoisted(() => ({
 vi.mock("../src/capabilities/artifact-verifier.js", () => ({
   digestRegularFile: fixture.artifactDigest,
 }));
+vi.mock("node:worker_threads", async () => {
+  const { EventEmitter } = await import("node:events");
+  class InstallationAuditPasses extends EventEmitter {
+    constructor() {
+      super();
+      queueMicrotask(() => {
+        this.emit("message", { protected: true });
+        this.emit("exit", 0);
+      });
+    }
+    terminate() {
+      return Promise.resolve(0);
+    }
+  }
+  return { Worker: InstallationAuditPasses };
+});
 vi.mock("node:fs/promises", () => {
   const metadata = (name: string) => {
     const node = fixture.nodes.get(name);
@@ -39,6 +55,7 @@ vi.mock("node:fs/promises", () => {
     }),
   };
 });
+
 import {
   ProtectedRuntimeVerifier,
   verifyProtectedRuntime,
@@ -545,7 +562,7 @@ it("keeps the original audit path only when protection was not configured", asyn
   expect(readBytes).not.toHaveBeenCalled();
 });
 
-it("logs a failed deferred audit under an event name that the deploy start-up readback treats as a failure", () => {
+function startupReadbackTreatsAsFailure(): (event: string) => boolean {
   const readback = readFileSync(
     new URL(
       "../../../scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs",
@@ -553,11 +570,39 @@ it("logs a failed deferred audit under an event name that the deploy start-up re
     ),
     "utf8",
   );
-  const pattern =
-    /assert\(!records\.some\(\(item\) => (\/.+\/i)\.test\(String\(item\.event\)\)\)/.exec(readback);
-  expect(pattern).not.toBeNull();
-  const failureEvents = new RegExp(String(pattern?.[1]).slice(1, -2), "i");
-  expect(failureEvents.test("sandbox_runtime.content_audit_failed")).toBe(true);
-  expect(failureEvents.test("sandbox_runtime.content_audit_retryable")).toBe(true);
-  expect(failureEvents.test("sandbox_runtime.content_audit_completed")).toBe(false);
+  const start = readback.indexOf("function startupFailureEvents(");
+  const end = readback.indexOf("\nfunction ", start + 1);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  const startupFailureEvents = new Function(
+    `${readback.slice(start, end)}\nreturn startupFailureEvents;`,
+  )() as (records: readonly { event: string }[]) => string[];
+  return (event) => startupFailureEvents([{ event }]).includes(event);
+}
+
+it("the deploy start-up readback treats failed and retryable deferred audits as failures, completed ones not", () => {
+  const isFailure = startupReadbackTreatsAsFailure();
+  expect(isFailure("sandbox_runtime.content_audit_failed")).toBe(true);
+  expect(isFailure("sandbox_runtime.content_audit_retryable")).toBe(true);
+  expect(isFailure("sandbox_runtime.content_audit_completed")).toBe(false);
+});
+
+it("logs a failed deferred audit under an event name that the deploy start-up readback treats as a failure", async () => {
+  process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"] = manifestPath;
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await verifyProtectedRuntime(root, digest, async () => "c".repeat(64), [], {
+      deferContentAudit: true,
+    });
+    const settledEvent = () =>
+      logged.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as { event?: string })
+        .map(({ event }) => event)
+        .find((event) => event !== undefined && /content_audit_(?!started|retrying)/.test(event));
+    await vi.waitFor(() => expect(settledEvent()).toBeDefined());
+    expect(settledEvent()).toBe("sandbox_runtime.content_audit_failed");
+    expect(startupReadbackTreatsAsFailure()(String(settledEvent()))).toBe(true);
+  } finally {
+    logged.mockRestore();
+  }
 });
