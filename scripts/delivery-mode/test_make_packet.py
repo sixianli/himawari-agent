@@ -24,6 +24,7 @@ MEMORY_PAGE_COMMIT = '4ca2d24c4af3dba5868a1d18ea882b371462845b'
 ADDED_FILES = {'install/source-cache.mjs', 'install/verify-source-cache-fixtures.mjs', 'maintenance/verify-migrate-fixtures.mjs', 'measurement/verify-s6-report-contract.py', 'systemd/verify-startup-readiness-fixtures.mjs'}
 RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixtures/verify-doctor.test.mjs'}
 INTENDED_CHANGES = {
+    'acceptance/helpers/collect-installer-dependencies.mjs', 'install/collect-installer-dependencies.mjs',
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/adaptation-manifest.json',
     'acceptance/cloud/adapters/probe-authorized-network.mjs', 'acceptance/cloud/adapters/probe-foreground.mjs', 'acceptance/cloud/adapters/probe-network-boundary.mjs', 'acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-stage-03.py', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
