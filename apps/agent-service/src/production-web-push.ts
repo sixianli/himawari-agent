@@ -43,6 +43,7 @@ const MAC_TITLE_BYTES = 256;
 const MAC_BODY_BYTES = 2_048;
 const SEND_BATCH = 50;
 const MAX_BATCH = 500;
+const ROWS_PER_HELD_ITEM = 4;
 const FINISHED_RUN_BATCH = 100;
 
 export const WEB_PUSH_TEXT = {
@@ -541,7 +542,10 @@ export class ProductionWebPush {
       return built;
     };
     this.#options.placement?.withdrawExpired(Date.parse(now));
-    const batch = Math.min(MAX_BATCH, SEND_BATCH + (this.#options.placement?.heldCount() ?? 0));
+    const batch = Math.min(
+      MAX_BATCH,
+      SEND_BATCH + ROWS_PER_HELD_ITEM * (this.#options.placement?.heldCount() ?? 0),
+    );
     const gate = async (item: WebPushOutboxItem): Promise<boolean> => {
       if (this.#options.placement?.holds(webPushTopic(item.sourceKey))) return true;
       if (await this.#deferred(item, now, gated, decisions)) return true;

@@ -37,7 +37,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { MacPlacement } from "../../apps/agent-service/src/mac-placement.ts";
+import { MAC_PLACEMENT_LIMIT, MacPlacement } from "../../apps/agent-service/src/mac-placement.ts";
 import {
   applePushAlertPayload,
   ProductionApplePush,
@@ -1632,6 +1632,45 @@ describe("[IOS-4] push channels", () => {
     expect(context.apns.ofType("alert")[0]?.json).toMatchObject({
       notificationId: webPushTopic(`reminder:late:${at(T0, 60)}`),
     });
+  });
+
+  it("[IOS-9] with two iPhones and the Mac holding many notifications, a new one still reaches both iPhones", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    context.device(SECOND, "iphone");
+    await context.register(IPHONE, "alert");
+    await context.register(SECOND, "alert");
+    context.setClock(T0);
+    const disconnect = mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 1_000);
+    for (let index = 0; index < 60; index += 1) context.reminder(`pile${index}`);
+    for (let round = 0; round < 3; round += 1) await context.push.tick();
+    await settle();
+    expect(mac.frames).toHaveLength(60);
+    disconnect();
+    await settle();
+    context.reminder("late", at(T0, 60));
+    context.setClock(at(T0, 60));
+    await context.push.tick();
+    expect(context.apns.ofType("alert")).toHaveLength(2);
+  });
+
+  it("[IOS-9] once the Mac holds its limit, further notifications go to the iPhone and none is placed twice", async () => {
+    const mac = macSetup();
+    const context = await setup({}, { placement: mac.placement });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    mac.connect("dev_mac");
+    mac.presence.record("dev_mac", Date.parse(T0) - 1_000);
+    const total = MAC_PLACEMENT_LIMIT + 5;
+    for (let index = 0; index < total; index += 1) context.reminder(`full${index}`);
+    for (let round = 0; round < 5; round += 1) await context.push.tick();
+    await settle();
+    expect(mac.frames).toHaveLength(MAC_PLACEMENT_LIMIT);
+    expect(mac.frames.every((frame) => frame.event === "notification.deliver")).toBe(true);
+    expect(context.apns.ofType("alert")).toHaveLength(5);
   });
 
   it("[IOS-9] cuts a Mac title and body to their byte limits without breaking a character", () => {

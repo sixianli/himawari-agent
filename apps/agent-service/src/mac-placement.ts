@@ -4,7 +4,7 @@ import type {
   DevicePresence,
 } from "@himawari-agent/platform-node";
 
-const REMEMBER_LIMIT = 500;
+export const MAC_PLACEMENT_LIMIT = 100;
 
 export interface NotificationPlacement {
   place(notification: DeviceNotificationDeliver, expiresAtMilliseconds: number): boolean;
@@ -44,7 +44,7 @@ export class MacPlacement implements NotificationPlacement {
       .filter((deviceId) => hub.connected(deviceId))
       .slice(0, 1);
     if (devices.length === 0) return false;
-    if (this.#placed.size >= REMEMBER_LIMIT) return false;
+    if (this.#placed.size >= MAC_PLACEMENT_LIMIT) return false;
     for (const deviceId of devices)
       hub.send(deviceId, { event: "notification.deliver", data: notification });
     this.#placed.set(notification.id, { devices, expiresAt: expiresAtMilliseconds });
