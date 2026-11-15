@@ -64,7 +64,8 @@ public enum DesignTokens {
         public static let emptyMinHeight: CGFloat = 300
         public static let fadeComposer: CGFloat = 130
         public static let fadeTabBar: CGFloat = 140
-        public static let fadeTop: CGFloat = 110
+        public static let fadeTop: CGFloat = 134
+        public static let fadeTopSolid: CGFloat = 102
         public static let glassButton: CGFloat = 48
         public static let minTapTarget: CGFloat = 44
         public static let navBarHeight: CGFloat = 64
@@ -104,6 +105,8 @@ public enum DesignTokens {
         public static let strokeLarge: CGFloat = 1.3
         public static let tab: CGFloat = 26
         public static let todayRow: CGFloat = 22
+        public static let todayTop: CGFloat = 26
+        public static let whyChevron: CGFloat = 15
     }
 
     public enum ProcessRow {
@@ -116,6 +119,34 @@ public enum DesignTokens {
         public static let emptyMark: Double = 0.55
         public static let watchHalo: Double = 0.3
         public static let watchPressed: Double = 0.7
+    }
+
+    public enum Home {
+        public static let buttonGap: CGFloat = 10
+        public static let flowerWidth: CGFloat = 390
+        public static let flowerHeight: CGFloat = 180
+        public static let gap: CGFloat = 26
+        public static let glowWidth: CGFloat = 320
+        public static let glowHeight: CGFloat = 340
+        public static let glowCenterY: CGFloat = 20
+        public static let leadGap: CGFloat = 14
+        public static let leadIconBox: CGFloat = 36
+        public static let leadIndent: CGFloat = 38
+        public static let linkRowGap: CGFloat = 12
+        public static let linkRowPaddingY: CGFloat = 14
+        public static let linkRowTextGap: CGFloat = 2
+        public static let paddingBottom: CGFloat = 130
+        public static let paddingTop: CGFloat = 152
+        public static let paddingX: CGFloat = 16
+        public static let rowIconBox: CGFloat = 31
+        public static let rowsLeading: CGFloat = 16
+        public static let rowsTrailing: CGFloat = 14
+        public static let statusBar: CGFloat = 47
+        public static let upcomingGap: CGFloat = 10
+        public static let upcomingInsetX: CGFloat = 20
+        public static let upcomingTime: CGFloat = 84
+        public static let wordmarkHeight: CGFloat = 48
+        public static let wordmarkLeading: CGFloat = 104
     }
 
     public enum Pairing {
@@ -289,6 +320,8 @@ public enum DesignTokens {
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
+        public static let todayTop = TypeToken(size: 24, weight: 600, lineHeight: 24 * 1.5, face: .himawari, tracking: 0)
+        public static let upcomingTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
         public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let watchAnswerStrong = TypeToken(size: 16, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
         public static let watchButton = TypeToken(size: 16, weight: 500, lineHeight: nil, face: .rounded, tracking: 0)
