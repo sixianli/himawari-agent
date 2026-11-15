@@ -5,6 +5,12 @@ public struct ThreadTaskBinding: Sendable, Equatable {
     public let revision: Int
     public let status: String
 
+    public init(taskId: String, revision: Int, status: String) {
+        self.taskId = taskId
+        self.revision = revision
+        self.status = status
+    }
+
     public var isActive: Bool { status == "active" }
 }
 
@@ -13,6 +19,13 @@ public struct ThreadDeletionImpact: Sendable, Equatable {
     public let threadRevision: Int
     public let tasks: [ThreadTaskBinding]
     public let deletionAllowed: Bool
+
+    public init(threadId: String, threadRevision: Int, tasks: [ThreadTaskBinding], deletionAllowed: Bool) {
+        self.threadId = threadId
+        self.threadRevision = threadRevision
+        self.tasks = tasks
+        self.deletionAllowed = deletionAllowed
+    }
 
     public var activeTasks: [ThreadTaskBinding] { tasks.filter(\.isActive) }
 }

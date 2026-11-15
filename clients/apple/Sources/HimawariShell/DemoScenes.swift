@@ -41,6 +41,10 @@ enum DemoScene: String, CaseIterable {
     case pairingExpired = "15-pairing-flow-3-expired"
     case pairingUnreachable = "15-pairing-flow-4-unreachable"
     case pairingRemoved = "15-pairing-flow-5-removed"
+    case chatListSearch = "24-list-manage-1-search"
+    case chatDelete = "24-list-manage-2-delete"
+    case chatDeleteWithTasks = "24-list-manage-3-delete-tasks"
+    case chatArchived = "24-list-manage-4-archived"
     case chatEmpty = "16-chat-states-1-empty"
     case chatNew = "16-chat-states-2-new"
     case chatSending = "16-chat-states-3-sending"
@@ -130,6 +134,14 @@ struct DemoSceneView: View {
             tabs(DemoChatFixtures.chatList())
         case .chatEmpty:
             tabs(DemoChatState())
+        case .chatListSearch:
+            ChatListManageDemo.search(DemoChatFixtures.chatList(), query: "大阪")
+        case .chatDelete:
+            ChatListManageDemo.deleteSheet(DemoChatFixtures.chatList(), activeTasks: 0)
+        case .chatDeleteWithTasks:
+            ChatListManageDemo.deleteSheet(DemoChatFixtures.chatList(), activeTasks: 2)
+        case .chatArchived:
+            ChatListManageDemo.archived(DemoChatFixtures.chatList())
         case .tabTodayOneDigit:
             tabs(DemoChatFixtures.chatList())
                 .environment(\.listClock, DemoChatFixtures.now.addingTimeInterval(-3 * 86_400))

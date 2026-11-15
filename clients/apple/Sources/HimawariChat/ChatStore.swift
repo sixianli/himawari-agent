@@ -32,7 +32,7 @@ public final class ChatStore {
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
 
-    @ObservationIgnored private let api: DeviceAPI
+    @ObservationIgnored let api: DeviceAPI
     @ObservationIgnored private let outbox: Outbox
     @ObservationIgnored private let cache: ThreadCache
     @ObservationIgnored private let events: DeviceEventStream
@@ -374,13 +374,13 @@ public final class ChatStore {
         }
     }
 
-    private func handle(_ error: Error) async {
+    func handle(_ error: Error) async {
         if let error = error as? DeviceAPIError, error.isRevoked {
             onSessionInvalid()
         }
     }
 
-    private func loadTexts(_ refs: [String]) async {
+    func loadTexts(_ refs: [String]) async {
         let missing = Array(Set(refs).subtracting(texts.keys).subtracting(pendingTextRefs)).sorted()
         guard !missing.isEmpty else { return }
         pendingTextRefs.formUnion(missing)
@@ -399,7 +399,7 @@ public final class ChatStore {
 
     static func listOrder(_ left: ThreadSummary, _ right: ThreadSummary) -> Bool {
         switch (left.pinOrder, right.pinOrder) {
-        case let (l?, r?): return l < r
+        case let (l?, r?) where l != r: return l < r
         case (_?, nil): return true
         case (nil, _?): return false
         default:

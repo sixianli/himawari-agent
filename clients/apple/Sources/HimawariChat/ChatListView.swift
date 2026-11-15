@@ -6,10 +6,20 @@ public struct ChatListView: View {
     private let store: ChatStore
     private let open: (String?) -> Void
     @Environment(\.listClock) private var listClock
+    @State private var actions: ThreadListActions
+    @State private var searching = false
+    @State private var query = ""
 
-    public init(store: ChatStore, open: @escaping (String?) -> Void) {
+    public init(store: ChatStore, open: @escaping (String?) -> Void, searchText: String? = nil) {
         self.store = store
         self.open = open
+        _actions = State(initialValue: ThreadListActions(store: store, open: open))
+        _searching = State(initialValue: searchText != nil)
+        _query = State(initialValue: searchText ?? "")
+    }
+
+    private var shown: [ThreadSummary] {
+        searching && !query.isEmpty ? store.visibleThreads(matching: query) : store.threads
     }
 
     public var body: some View {
@@ -26,8 +36,14 @@ public struct ChatListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ScreenTitle(Text(L.text("chat.title")))
+                    if searching {
+                        ChatSearchBar(text: $query) {
+                            query = ""
+                            searching = false
+                        }
+                    }
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(store.threads.enumerated()), id: \.element.id) { index, thread in
+                        ForEach(Array(shown.enumerated()), id: \.element.id) { index, thread in
                             Button {
                                 open(thread.threadId)
                             } label: {
@@ -35,28 +51,56 @@ public struct ChatListView: View {
                                     title: store.title(for: thread) ?? L.text("chat.untitled"),
                                     snippet: store.lastMessageText(in: thread.threadId),
                                     time: RelativeTime.label(thread.updatedAt, now: listClock ?? Date()),
-                                    showsSeparator: index < store.threads.count - 1
+                                    showsSeparator: index < shown.count - 1
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu { ThreadMenuItems(actions: actions, thread: thread) }
                             .onAppear { store.prefetch(thread.threadId) }
                         }
                     }
+                    if searching && !query.isEmpty && shown.isEmpty {
+                        Text(L.text("chat.search.none"))
+                            .hmType(DesignTokens.TypeScale.secondary)
+                            .foregroundStyle(Color.hmMuted)
+                    }
+                    Button { actions.archivedOpen = true } label: {
+                        HStack {
+                            Text(L.text("chat.archived"))
+                                .hmType(DesignTokens.TypeScale.secondary)
+                                .foregroundStyle(Color.hmMuted)
+                            Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
+                                .foregroundStyle(Color.hmMuted)
+                        }
+                        .frame(minHeight: DesignTokens.Size.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
                 .padding(.bottom, 130)
             }
             .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
             .refreshable { await store.refreshThreads() }
 
-            GlassCircleButton(Text(L.text("chat.new")), action: { open(nil) }) {
-                Icon(ChromeIcon.newChat, size: DesignTokens.IconSize.glassButton)
+            HStack(spacing: DesignTokens.Size.composerGap * 2) {
+                GlassCircleButton(Text(L.text("chat.search")), action: {
+                    withAnimation(.snappy) { searching.toggle() }
+                    if !searching { query = "" }
+                }) {
+                    Icon(.search, size: DesignTokens.IconSize.glassButton)
+                }
+                GlassCircleButton(Text(L.text("chat.new")), action: { open(nil) }) {
+                    Icon(ChromeIcon.newChat, size: DesignTokens.IconSize.glassButton)
+                }
             }
             .padding(.trailing, 16)
             .padding(.top, 10)
         }
         .himawariScreenBackground()
+        .modifier(ThreadManagementPresentations(actions: actions))
     }
 }
 
