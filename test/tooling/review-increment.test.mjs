@@ -1,5 +1,12 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -19,6 +26,7 @@ import {
   buildPrompt,
   dailySpend,
   linkedLedgerRecords,
+  spentRecords,
   PROMPT_MAX_BYTES,
   parseArgs,
   parseUsage,
@@ -489,6 +497,12 @@ describe("shadow spend and command", () => {
       const linked = linkedLedgerRecords({ out });
       expect(linked.map((record) => record.cost)).toEqual([0.15]);
       expect(linkedLedgerRecords({ out, selfCheckOnly: true })).toEqual([]);
+      expect(spentRecords({ out }).map((record) => record.cost)).toEqual([0.15]);
+      appendFileSync(
+        join(out, "shadow", "usage.jsonl"),
+        `${JSON.stringify({ mode: "code-review", head: "c".repeat(40), model: "m", outcome: "ok", cost: 0.07, shadow: true })}\n`,
+      );
+      expect(spentRecords({ out }).map((record) => record.cost)).toEqual([0.15, 0.07]);
       const parent = [{ cost: 0.7, round: 1 }];
       const models = ["opencode-go/deepseek-v4.1-flash"];
       expect(budgetCheck({ mode: "code-review", records: parent, models })).toBeNull();

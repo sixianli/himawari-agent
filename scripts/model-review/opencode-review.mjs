@@ -1248,6 +1248,10 @@ export function linkedLedgerRecords(options) {
     : readUsage(join(options.out, SHADOW_DIR));
 }
 
+export function spentRecords(options) {
+  return [...readUsage(options.out), ...linkedLedgerRecords(options)];
+}
+
 export const DAILY_SPEND_LINE_USD = 5;
 const JAPAN_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -4241,7 +4245,7 @@ async function main() {
       const refused = substituteRefusal({
         prompt: substitutePrompt,
         mode: options.mode,
-        records: [...readUsage(options.out), ...linkedRecords],
+        records: spentRecords(options),
         model: substitute.model,
         approvedUsd: options.approvedUsd,
       });
@@ -4287,7 +4291,7 @@ async function main() {
         }
       }
     }
-    const totalSpent = spentOf([...readUsage(options.out), ...linkedRecords]);
+    const totalSpent = spentOf(spentRecords(options));
     console.log(`REVIEW_SPENT_TOTAL ${totalSpent.toFixed(4)} ${options.out}`);
     if (
       planned?.block &&
