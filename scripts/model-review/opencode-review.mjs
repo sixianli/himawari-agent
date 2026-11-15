@@ -1733,6 +1733,11 @@ export function planIncrement({
   return { record: incrementRecord(scope, built), block: built.block };
 }
 
+export function substituteRefusal({ prompt, mode, records, model, approvedUsd }) {
+  if (Buffer.byteLength(prompt) > PROMPT_MAX_BYTES) return "PROMPT_TOO_LARGE";
+  return budgetCheck({ mode, records, models: [model], approvedUsd });
+}
+
 export function withIncrement({ planned, prompts, promptsWith }) {
   if (!planned?.block) return { planned, prompts };
   const scoped = promptsWith(planned.block);
@@ -4233,15 +4238,13 @@ async function main() {
         brief,
         increment: planned?.block ?? null,
       });
-      const refused =
-        Buffer.byteLength(substitutePrompt) > 100000
-          ? "PROMPT_TOO_LARGE"
-          : budgetCheck({
-              mode: options.mode,
-              records: [...readUsage(options.out), ...parentRecords],
-              models: [substitute.model],
-              approvedUsd: options.approvedUsd,
-            });
+      const refused = substituteRefusal({
+        prompt: substitutePrompt,
+        mode: options.mode,
+        records: [...readUsage(options.out), ...linkedRecords],
+        model: substitute.model,
+        approvedUsd: options.approvedUsd,
+      });
       if (refused) console.log(`REVIEW_SUBSTITUTE_SKIPPED ${substitute.model} ${refused}`);
       else {
         console.log(`REVIEW_SUBSTITUTE ${substitute.model} for=${substitute.for}`);

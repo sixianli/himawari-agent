@@ -19,12 +19,14 @@ import {
   buildPrompt,
   dailySpend,
   linkedLedgerRecords,
+  PROMPT_MAX_BYTES,
   parseArgs,
   parseUsage,
   planIncrement,
   rawDir,
   resultLine,
   reviewQuestions,
+  substituteRefusal,
   withIncrement,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
@@ -496,6 +498,24 @@ describe("shadow spend and command", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("[ADR 0280] a substitute model's budget counts the linked shadow ledger and the prompt limit", () => {
+    const model = "opencode-go/deepseek-v4.1-flash";
+    const own = [{ cost: 0.7, round: 1 }];
+    const linked = [{ cost: 0.15, round: 1, shadow: true }];
+    expect(substituteRefusal({ prompt: "p", mode: "code-review", records: own, model })).toBeNull();
+    expect(
+      substituteRefusal({ prompt: "p", mode: "code-review", records: [...own, ...linked], model }),
+    ).toMatch(/^BUDGET_NEEDS_APPROVAL /);
+    expect(
+      substituteRefusal({
+        prompt: "x".repeat(PROMPT_MAX_BYTES + 1),
+        mode: "code-review",
+        records: [],
+        model,
+      }),
+    ).toBe("PROMPT_TOO_LARGE");
   });
 
   it("[ADR 0280] the suggested shadow command keeps the brief path whole and the run's choices", () => {
