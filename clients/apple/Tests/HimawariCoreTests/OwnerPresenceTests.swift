@@ -163,10 +163,10 @@ import Testing
 
     @Test func aNewerInputIsReportedOnlyAfterTheMinimumInterval() {
         let sent = PresenceReport(lastInputAt: start, sentAt: start)
-        let later = start.addingTimeInterval(30)
+        let later = start.addingTimeInterval(10)
         #expect(!policy.shouldReport(lastInputAt: later, now: later, lastReport: sent, streamConnected: true))
-        let minute = start.addingTimeInterval(60)
-        #expect(policy.shouldReport(lastInputAt: minute, now: minute, lastReport: sent, streamConnected: false))
+        let interval = start.addingTimeInterval(15)
+        #expect(policy.shouldReport(lastInputAt: interval, now: interval, lastReport: sent, streamConnected: false))
     }
 
     @Test func unchangedInputIsResentOnlyAsAKeepAliveWhileTheStreamIsConnected() {
@@ -178,6 +178,22 @@ import Testing
         #expect(!policy.shouldReport(lastInputAt: start, now: fourMinutes, lastReport: sent, streamConnected: false))
     }
 
+    @Test func whileTheOwnerKeepsTypingTheServerNeverSeesAnInputOlderThanItsShortestWindowAllows() {
+        let networkAllowance: TimeInterval = 10
+        var now = start
+        var lastReport: PresenceReport?
+        var oldestSeenByServer: TimeInterval = 0
+        while now.timeIntervalSince(start) < 600 {
+            if let lastReport { oldestSeenByServer = max(oldestSeenByServer, now.timeIntervalSince(lastReport.lastInputAt)) }
+            if policy.shouldReport(lastInputAt: now, now: now, lastReport: lastReport, streamConnected: true) {
+                lastReport = PresenceReport(lastInputAt: now, sentAt: now)
+            }
+            now = now.addingTimeInterval(policy.secondsUntilNextCheck(now: now, lastReport: lastReport))
+        }
+        #expect(oldestSeenByServer > 0)
+        #expect(oldestSeenByServer + networkAllowance <= PresenceReportPolicy.shortestServerWindow)
+    }
+
     @Test func anUnreadableIdleTimeIsNotTakenAsInputJustNow() {
         #expect(PresenceReport.lastInput(secondsSinceInput: -1, now: start) == nil)
         #expect(PresenceReport.lastInput(secondsSinceInput: .nan, now: start) == nil)
@@ -186,11 +202,11 @@ import Testing
     }
 
     @Test func theNextCheckLandsOnTheKeepAliveInsteadOfAfterIt() {
-        #expect(policy.secondsUntilNextCheck(now: start, lastReport: nil) == 15)
+        #expect(policy.secondsUntilNextCheck(now: start, lastReport: nil) == 3.75)
         let sent = PresenceReport(lastInputAt: start, sentAt: start)
-        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(100), lastReport: sent) == 15)
-        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(232), lastReport: sent) == 8)
-        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(240), lastReport: sent) == 15)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(100), lastReport: sent) == 3.75)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(238), lastReport: sent) == 2)
+        #expect(policy.secondsUntilNextCheck(now: start.addingTimeInterval(240), lastReport: sent) == 3.75)
     }
 
     @Test func subSecondJitterInTheIdleReadingIsNotAChange() throws {

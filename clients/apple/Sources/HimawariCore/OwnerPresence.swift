@@ -89,7 +89,8 @@ public struct PresenceReportPolicy: Sendable, Equatable {
     public let minimumInterval: TimeInterval
     public let keepAliveInterval: TimeInterval
 
-    public static let standard = PresenceReportPolicy(minimumInterval: 60, keepAliveInterval: 240)
+    public static let shortestServerWindow: TimeInterval = 30
+    public static let standard = PresenceReportPolicy(minimumInterval: 15, keepAliveInterval: 240)
 
     public init(minimumInterval: TimeInterval, keepAliveInterval: TimeInterval) {
         self.minimumInterval = minimumInterval
