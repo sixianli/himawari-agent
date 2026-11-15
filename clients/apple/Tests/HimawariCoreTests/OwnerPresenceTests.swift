@@ -79,6 +79,51 @@ import Testing
         #expect(pending.items.isEmpty)
     }
 
+    @Test func aNoticeSettledBeforeARestartIsNotShownAgainAfterIt() {
+        let store = MemoryLocalStore()
+        var before = PendingNotifications(rememberingIn: store)
+        before.deliver(notice("dismissed", at: "2026-11-15T05:00:00.000Z"))
+        before.withdraw("dismissed")
+        before.withdraw("withdrawn")
+        var after = PendingNotifications(rememberingIn: store)
+        let dismissed = after.deliver(notice("dismissed", at: "2026-11-15T05:00:00.000Z"))
+        let withdrawn = after.deliver(notice("withdrawn", at: "2026-11-15T05:10:00.000Z"))
+        let fresh = after.deliver(notice("fresh", at: "2026-11-15T05:20:00.000Z"))
+        #expect(!dismissed)
+        #expect(!withdrawn)
+        #expect(fresh)
+        #expect(after.items.map(\.id) == ["fresh"])
+    }
+
+    @Test func noticesSettledBeforeTheStoreWasReadyAreKeptAndTheirRowsLeave() {
+        let store = MemoryLocalStore()
+        var earlier = PendingNotifications(rememberingIn: store)
+        earlier.withdraw("saved")
+        var pending = PendingNotifications()
+        pending.deliver(notice("saved", at: "2026-11-15T05:00:00.000Z"))
+        pending.withdraw("in-memory")
+        pending.remember(in: store)
+        var restarted = PendingNotifications(rememberingIn: store)
+        let saved = restarted.deliver(notice("saved", at: "2026-11-15T05:00:00.000Z"))
+        let inMemory = restarted.deliver(notice("in-memory", at: "2026-11-15T05:00:00.000Z"))
+        #expect(pending.items.isEmpty)
+        #expect(!saved)
+        #expect(!inMemory)
+    }
+
+    @Test func onlyTheLatestSettledIdsAreKept() {
+        let store = MemoryLocalStore()
+        var pending = PendingNotifications(rememberingIn: store)
+        for index in 0...PendingNotifications.settledLimit { pending.withdraw("n-\(index)") }
+        let saved = try? JSONDecoder().decode([String].self, from: store.read(PendingNotifications.settledName) ?? Data())
+        #expect(saved?.count == PendingNotifications.settledLimit)
+        #expect(saved?.first == "n-1")
+        let oldest = pending.deliver(notice("n-0", at: "2026-11-15T05:00:00.000Z"))
+        let kept = pending.deliver(notice("n-1", at: "2026-11-15T05:00:00.000Z"))
+        #expect(oldest)
+        #expect(!kept)
+    }
+
     @Test func orderFollowsTheTimeEvenWhenTheFractionalSecondsAreLeftOut() {
         var pending = PendingNotifications()
         pending.deliver(notice("whole", at: "2026-11-15T05:35:00Z"))

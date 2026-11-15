@@ -18,11 +18,29 @@ public struct DeviceNotification: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-public struct PendingNotifications: Sendable, Equatable {
+public struct PendingNotifications: Sendable {
+    public static let settledLimit = 500
+    public static let settledName = "settled-notices.json"
+
     public private(set) var items: [DeviceNotification] = []
-    private var settled: Set<String> = []
+    private var settled: [String] = []
+    private var store: LocalStore?
 
     public init() {}
+
+    public init(rememberingIn store: LocalStore) {
+        remember(in: store)
+    }
+
+    public mutating func remember(in store: LocalStore) {
+        let saved = store.read(Self.settledName).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        var merged = saved.filter { !settled.contains($0) }
+        merged.append(contentsOf: settled)
+        settled = Array(merged.suffix(Self.settledLimit))
+        self.store = store
+        save()
+        items.removeAll { settled.contains($0.id) }
+    }
 
     @discardableResult
     public mutating func deliver(_ notification: DeviceNotification) -> Bool {
@@ -42,9 +60,18 @@ public struct PendingNotifications: Sendable, Equatable {
 
     @discardableResult
     public mutating func withdraw(_ id: String) -> DeviceNotification? {
-        settled.insert(id)
+        if !settled.contains(id) {
+            settled.append(id)
+            if settled.count > Self.settledLimit { settled.removeFirst(settled.count - Self.settledLimit) }
+            save()
+        }
         guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
         return items.remove(at: index)
+    }
+
+    private func save() {
+        guard let store, let data = try? JSONEncoder().encode(settled) else { return }
+        try? store.write(Self.settledName, data)
     }
 
     static func instant(_ value: String) -> Date {

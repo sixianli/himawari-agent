@@ -135,6 +135,8 @@ public final class AppModel {
         didSet { chat?.onNotification = onDeviceNotification }
     }
 
+    public var deviceStore: FileLocalStore? { store }
+
     public func ownerPresence(reason: String) -> OwnerPresenceSigner {
         OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
     }

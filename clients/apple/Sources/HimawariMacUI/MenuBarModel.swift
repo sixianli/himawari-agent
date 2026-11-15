@@ -44,6 +44,7 @@ final class MenuBarModel {
     @ObservationIgnored private var localProgress: [String: DeviceProgress] = [:]
     @ObservationIgnored private var actionRequestIds: [String: String] = [:]
     @ObservationIgnored private var demoShowsStop = false
+    @ObservationIgnored private weak var settledStore: FileLocalStore?
 
     init(app: AppModel, settings: MacSettingsStore) {
         self.app = app
@@ -70,6 +71,7 @@ final class MenuBarModel {
     }
 
     func receive(_ event: DeviceStreamEvent) {
+        rememberSettled()
         switch event {
         case let .notificationDeliver(notice):
             if notices.deliver(notice) { showNotice?(notice) }
@@ -84,9 +86,17 @@ final class MenuBarModel {
     }
 
     func dismiss(_ notice: DeviceNotification) {
+        rememberSettled()
         notices.withdraw(notice.id)
         removeNotice?(notice.id)
     }
+
+    private func rememberSettled() {
+        guard let store = app.deviceStore, store !== settledStore else { return }
+        notices.remember(in: store)
+        settledStore = store
+    }
+
     var mostPressing: HomeItem? { home?.mostPressing }
 
     func shortcutChanged(_ state: GlobalShortcut.State?) {
