@@ -3,6 +3,7 @@ import { createOwnerId } from "@himawari-agent/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   harness,
+  ownerSpokenAt,
   pairAndConfirm,
   removeDeviceHarnessDirectories,
 } from "../fixtures/device-api-harness.ts";
@@ -52,16 +53,21 @@ describe("perception records", () => {
   it("keeps every record as origin other until owner voice recognition is qualified", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
-    const claimed = utterance(h, "我说的话", { speaker: { kind: "owner" } });
+    const claimed = utterance(h, "我说的话", { speaker: { kind: "owner", score: 1000 } });
     await ingest(h, client, [claimed]);
-    h.ownerVoiceQualified.current = true;
+    h.voiceGates.current = ownerSpokenAt(800);
     const qualified = utterance(h, "资格通过后我说的话", {
       seconds: 1,
-      speaker: { kind: "owner" },
+      speaker: { kind: "owner", score: 900 },
     });
+    const unsure = utterance(h, "分数不够的话", {
+      seconds: 1,
+      speaker: { kind: "owner", score: 799 },
+    });
+    const unscored = utterance(h, "没带分数的话", { seconds: 1, speaker: { kind: "owner" } });
     const stranger = utterance(h, "别人说的话", { seconds: 2, speaker: { kind: "unknown" } });
     const environment = power(h, 3);
-    await ingest(h, client, [qualified, stranger, environment]);
+    await ingest(h, client, [qualified, unsure, unscored, stranger, environment]);
     const page = await h.perception.listDay({
       scope: perceptionScope,
       day: null,
@@ -76,6 +82,8 @@ describe("perception records", () => {
     );
     expect(origins.get(claimed.id)).toBe("other");
     expect(origins.get(qualified.id)).toBe("owner_spoken");
+    expect(origins.get(unsure.id)).toBe("other");
+    expect(origins.get(unscored.id)).toBe("other");
     expect(origins.get(stranger.id)).toBe("other");
     expect(origins.get(environment.id)).toBe("other");
   });

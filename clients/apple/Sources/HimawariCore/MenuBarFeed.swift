@@ -81,7 +81,13 @@ extension DeviceAPI {
         return try decode(HomeSnapshot.self, data)
     }
 
-    public func act(on item: HomeItem, action: HomeAction, requestId: String) async throws {
+    public func confirmChallenge() async throws -> String {
+        struct Reply: Decodable { let challenge: String }
+        let data = try await http.send(DeviceRequest(method: "POST", path: "approvals/challenge", body: Data("{}".utf8)))
+        return try decode(Reply.self, data).challenge
+    }
+
+    public func act(on item: HomeItem, action: HomeAction, requestId: String, presence: OwnerPresenceSigner? = nil) async throws {
         struct Body: Encodable {
             let key: String
             let action: String
@@ -89,7 +95,49 @@ extension DeviceAPI {
             let requestId: String
         }
         let body = try JSONEncoder().encode(Body(key: item.key, action: action.action, binding: action.binding, requestId: requestId))
-        _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
+        guard action.ownerPresence else {
+            _ = try await http.send(DeviceRequest(method: "POST", path: "home/act", body: body))
+            return
+        }
+        guard let presence else { throw OwnerPresenceError.unavailable }
+        let challenge = try await confirmChallenge()
+        _ = try await http.send(DeviceRequest(
+            method: "POST",
+            path: "home/act",
+            body: body,
+            nonce: challenge,
+            confirmSigner: presence,
+            confirmReason: presence.reason
+        ))
+    }
+}
+
+public enum OwnerPresenceError: Error, Equatable, Sendable {
+    case unavailable
+    case declined
+}
+
+public struct OwnerPresenceSigner: DeviceKeySigner {
+    public let key: DeviceKeySigner
+    public let reason: String
+
+    public init(key: DeviceKeySigner, reason: String) {
+        self.key = key
+        self.reason = reason
+    }
+
+    public func publicKeySPKI() throws -> Data {
+        try key.publicKeySPKI()
+    }
+
+    public func sign(_ message: Data, reason: String?) async throws -> Data {
+        do {
+            return try await key.sign(message, reason: reason ?? self.reason)
+        } catch let error as DeviceKeyError {
+            throw error
+        } catch {
+            throw OwnerPresenceError.declined
+        }
     }
 }
 

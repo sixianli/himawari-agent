@@ -156,6 +156,14 @@ export class ProductionProposalControl {
           resultRef: (
             await this.#options.box.adopt(proposalId, expected, {
               fullReadToken,
+              ...(authentication.sessionId
+                ? {
+                    session: {
+                      sessionId: authentication.sessionId,
+                      proofRef: authentication.authenticationRef,
+                    },
+                  }
+                : {}),
               ...(guard
                 ? {
                     assertPresence: async () => {

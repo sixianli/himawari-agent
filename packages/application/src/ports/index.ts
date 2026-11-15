@@ -56,6 +56,7 @@ export * from "./owner-rules.js";
 export * from "./paired-devices.js";
 export * from "./persistence.js";
 export * from "./proactive-checks.js";
+export * from "./proactive-sources.js";
 export * from "./proactivity.js";
 export * from "./real-eval.js";
 export * from "./recent-authentication.js";

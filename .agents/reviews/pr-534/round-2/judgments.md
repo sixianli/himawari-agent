@@ -1,0 +1,10 @@
+# PR 534 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 高：`task.run` 一律记成 `external_event`，授权层把这次运行当成外部内容，所有非读取动作被直接拒绝。沿用第 1 轮 2 号判断：owner-scope-authorization.ts:243-252 与 action-rules.ts:233-239 对 external_event 拒绝写操作是安全默认；效果句已写明需要写入、发送、花钱、删除的动作会被直接拒绝，主人不再被误导；是否放开写操作是产品决定，已报协调者，代码不改
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 高：同一 pending 提议被再次提议时，仍可把“读全文/外部内容”标记降级。沿用第 1 轮 5 号判断；已改为把外部内容标记算进提议编号，两种来源是两个提议，不再互相覆盖，测试 does not downgrade it 证明；触发：同一任务说明加依据，先从外部内容提议、再从普通上下文提议；后果：第二次提议覆盖 pending 行的 origin 和 requires_full_read，短任务不再要求读全文；判低理由：目前没有来源调用 proposeTaskRun，要同一调用方前后不一致才触发，只影响短任务的读全文要求
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3. 中：`task_text` 全文展示并不等于执行字节，非 BMP 字符还会被网关截掉一半。production-task-proposals.ts chunks 原按 code point 切；production-proposals.ts:195-205 shownText 按 UTF-16 长度截；已改为按 UTF-16 单元切且不拆字符，测试 cuts the task text by the gateway's UTF-16 budget 证明；换行换空格、bidi 控制符去掉属展示层清洗，不影响可读内容，文档不写逐字节相同；触发：任务说明含 emoji 等非基本平面字符且超过 250 个字符；后果：每片按 500 个字符切，网关按 500 个 UTF-16 单元截，主人看到的全文缺一半却被要求读全文后同意
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 中：执行失败或进程崩溃会留下空对话和永久 `failed`/`unknown` 的提议，同一个提议不能再办。沿用第 1 轮 3 号判断，相关代码未改，模型没给新证据；记失败或结果不明是既有文档化行为，architecture-v0.1.md 已写空对话残留；触发：执行在建对话之后、开运行之前失败或进程崩溃；后果：留下没有消息的空对话，提议记失败或结果不明，同一提议不能重办；判低理由：崩溃窗口很窄，只留低量残留，不丢数据也不重复执行
+- 5（deepseek-v4.1-flash）成立，会出错，低：### 5. 中：`readBack` 只查消息和运行是否存在，运行已失败或取消仍判 `succeeded`。沿用第 1 轮 8 号判断，代码未改，模型没给新证据；触发：运行建好后在读回前被取消或失败；后果：提议仍记成功，字面上像已办成；判低理由：只是文字不准，architecture-v0.1.md 已把成功定义为运行已建立并被受理，不误导主人的决定
+- 6（deepseek-v4.1-flash）成立，可以更好：### 6. 中：新增的 `task_text` 证据在仓库内没有消费者；现有客户端也拿不到 `fullReadToken`。仓库内客户端还没有渲染提议依据和取全文凭据的流程是客户端后续工作；目前没有来源调用 proposeTaskRun，不会出现在主人面前；接上来源时要同时做客户端，留作建议
+- 7（deepseek-v4.1-flash）成立，可以更好：### 7. 低：线程标题生成会把程序抬头当成用户任务，标题兜底会取“这是主人在 2026-11-14 …”。production-thread-titles.ts:101 只在标题模型失败时才取开头文字；任务对话的标题只是外观，不丢数据不误导，改动要让标题模块认识任务抬头，耦合不值；留作建议
+- 8（deepseek-v4.1-flash）成立，会出错，低：### 8. 低：`proposalId` 仍用 `localeCompare` 排序，跨 locale 或排序相等时同一集合可能得到不同编号。production-task-proposals.ts 排序原用 localeCompare；已改为按 UTF-16 码元比较的 compareText，不依赖语言环境；模型自称跨语言环境的差异是推测；触发：不同主机或语言环境下 localeCompare 对依据排序不一致；后果：同一任务同一批依据得到不同编号，多开一次提议

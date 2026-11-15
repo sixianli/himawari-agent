@@ -183,7 +183,7 @@ VPS 上没有受保护测试，平时不用暂停；重装或维护 runner 时�
 
 1. 确认两台机器都连得上、`sudo` 不要密码。
 2. 把脚本传到两台机器的 `/home/ubuntu/ci-runner/`。
-3. 在 ARM 机器上运行 `prepare-arm.sh`：打印机器的实际情况（主机名、系统版本、内存、磁盘、`/home` 下各目录的权限、`/srv` 和 `/opt` 下的目录、在监听的端口，每行以 `CI_ARM_PROBE` 开头），不是 Ubuntu 24.04 的 aarch64、根分区剩余不到 40 GiB、内存不到 20 GB，或 `/home` 下有目录对所有账号可读时拒绝（`CI_ARM_PREPARE_FAILED` 加原因）；然后装 `nftables`、编译工具和 runner 需要的系统库，再用固定版本的 Node 和 Playwright 装 Chromium 需要的系统库（static 检查里的布局检查要用 Chromium，少了这些库会在“安装布局检查用的 Chromium”一步报缺库）。脚本可以重复运行，不动正在运行的 runner；机器已经装好 runner、只缺这些库时，单独重跑它即可。
+3. 在 ARM 机器上运行 `prepare-arm.sh`：打印机器的实际情况（主机名、系统版本、内存、磁盘、`/home` 下各目录的权限、`/srv` 和 `/opt` 下的目录、在监听的端口，每行以 `CI_ARM_PROBE` 开头），不是 Ubuntu 24.04 的 aarch64、根分区剩余不到 40 GiB、内存不到 20 GB，或 `/home` 下有目录对所有账号可读时拒绝（`CI_ARM_PREPARE_FAILED` 加原因）；然后装 `nftables`、编译工具和 runner 需要的系统库，再用固定版本的 Node 和 Playwright 装 Chromium 需要的系统库（static 检查里的布局检查和 tooling 检查里的 Safari 面板测试都要用 Chromium，少了这些库会在“安装布局检查用的 Chromium”或“安装工具测试用的 Chromium”一步报缺库）。脚本可以重复运行，不动正在运行的 runner；机器已经装好 runner、只缺这些库时，单独重跑它即可。
 4. 在 CI VPS 上运行 `install-gate-remote.sh key`：生成汇总 runner 取报告用的钥匙（已有就沿用），放在 `/etc/gh-runner/remote-share/`，只有 root 和汇总 runner 的账号读得到，检查 runner 读不到。
 5. 在 ARM 机器上运行 `install-runner.sh`：建两个 runner 账号、systemd 服务、防火墙规则和内存分组，另建一个只用来交报告的账号 `gh-ci-send`。这个账号的 `authorized_keys` 只放第 4 步的公钥，并写明只接受来自 CI VPS 地址的连接、只能执行 `/usr/local/lib/gh-runner/send-reports` 这一个脚本。失败时把改过的东西放回去。已经有 runner 服务在跑时跳过这一步。
 6. 把 ARM 机器的主机密钥和地址交给 CI VPS（`install-gate-remote.sh trust`），再用 `install-gate-remote.sh check` 以汇总 runner 的身份取一份不存在的报告，对方回答“没有这份报告”才算通（`GATE_REMOTE_OK`）。

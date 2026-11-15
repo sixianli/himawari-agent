@@ -104,7 +104,10 @@ import { SqliteLedgerObservationOperations } from "./sqlite-observation-operatio
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
 import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
-import { SqliteProactiveOperations } from "./sqlite-proactive-operations.ts";
+import {
+  type SqliteProactiveSource,
+  SqliteProactiveOperations,
+} from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
 import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
 import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
@@ -415,6 +418,7 @@ export class SqliteDurableOperations {
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
     vectorEngine: SqliteVectorEngine = "javascript",
+    proactiveSources?: readonly SqliteProactiveSource[],
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
     this.automaticReviews = new SqliteAutomaticActionReview(
@@ -492,7 +496,12 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
-    this.proactive = new SqliteProactiveOperations(database, fail, assertDiskHeadroom);
+    this.proactive = new SqliteProactiveOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      proactiveSources,
+    );
     this.decisionLedger = new SqliteDecisionLedgerOperations(database, fail, assertDiskHeadroom);
     this.museIntake = new SqliteMuseIntakeOperations(database, fail, assertDiskHeadroom);
     this.ledgerObservation = new SqliteLedgerObservationOperations(

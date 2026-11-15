@@ -13,7 +13,9 @@ import {
   DEVICE_HARD_LIMITS,
   type DeviceActionService,
   type DeviceConfiguration,
+  decideVoiceCommand,
   type GatewayAuthenticationContext,
+  isVoiceScore,
   type PairedDevice,
   type PairedDeviceScope,
   PERCEPTION_SENSES,
@@ -21,6 +23,13 @@ import {
   PORT_ERROR_CODES,
   type ThreadGatewayRequestMessage,
   type UploadGrantPurpose,
+  VOICE_HEARD_NAME_MAXIMUM_CHARACTERS,
+  VOICE_TRIGGERS,
+  type VoiceAddresseeOutcome,
+  type VoiceAddresseeRequest,
+  type VoiceEvidence,
+  type VoiceGates,
+  type VoiceTrigger,
 } from "@himawari-agent/application";
 import {
   HOME_LOCALES,
@@ -66,6 +75,7 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "GET", path: "config", signed: true },
   { method: "GET", path: "stream", signed: true },
   { method: "POST", path: "messages", signed: true },
+  { method: "POST", path: "utterances/partial", signed: true },
   { method: "GET", path: "threads", signed: true },
   { method: "POST", path: "approvals/challenge", signed: true },
   { method: "POST", path: "approvals/respond", signed: true },
@@ -138,6 +148,64 @@ const UTTERANCE_ID_PATTERN = PERCEPTION_UTTERANCE_ID_PATTERN;
 const MACHINE_STRING = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MESSAGE_TEXT_MAXIMUM = PLAIN_TEXT_MAXIMUM_CHARACTERS;
 export type DeviceTextClassification = TextAdmissionClassification;
+const VOICE_KEYS = [
+  "trigger",
+  "speakerScore",
+  "inputRoute",
+  "inEar",
+  "loudnessScore",
+  "heardName",
+] as const;
+const VOICE_INPUT_ROUTES = ["airpods", "device_microphone", "wearable_microphone"] as const;
+export interface UtterancePrefetchPort {
+  prepare(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly deviceId: string;
+    readonly utteranceId: string;
+    readonly text: string;
+  }): Promise<{ readonly prepared: boolean; readonly reason: string | null }>;
+  settle(input: {
+    readonly deviceId: string;
+    readonly utteranceId: string;
+    readonly finalText: string;
+  }): void;
+}
+
+export const VOICE_COMMAND_UNCONFIRMED_CODE = "VOICE_COMMAND_UNCONFIRMED" as const;
+
+function parseVoiceEvidence(value: unknown): VoiceEvidence | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const voice = value as Record<string, unknown>;
+  if (Object.keys(voice).some((key) => !(VOICE_KEYS as readonly string[]).includes(key)))
+    return null;
+  const { trigger, speakerScore, inputRoute, inEar, loudnessScore, heardName } = voice;
+  if (!(VOICE_TRIGGERS as readonly unknown[]).includes(trigger)) return null;
+  if (speakerScore !== undefined && !isVoiceScore(speakerScore)) return null;
+  if (loudnessScore !== undefined && !isVoiceScore(loudnessScore)) return null;
+  if (inEar !== undefined && typeof inEar !== "boolean") return null;
+  if (inputRoute !== undefined && !(VOICE_INPUT_ROUTES as readonly unknown[]).includes(inputRoute))
+    return null;
+  if (heardName !== undefined && (trigger === "hands_on" || !isHeardName(heardName))) return null;
+  return {
+    trigger: trigger as VoiceTrigger,
+    speakerScore: (speakerScore as number | undefined) ?? null,
+    inputRoute: (inputRoute as VoiceEvidence["inputRoute"] | undefined) ?? null,
+    inEar: (inEar as boolean | undefined) ?? null,
+    loudnessScore: (loudnessScore as number | undefined) ?? null,
+    heardName: (heardName as string | undefined) ?? null,
+  };
+}
+
+function isHeardName(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const length = [...value].length;
+  return (
+    length >= 1 &&
+    length <= VOICE_HEARD_NAME_MAXIMUM_CHARACTERS &&
+    value.trim() === value &&
+    !/[\p{Cc}\p{Cf}]/u.test(value)
+  );
+}
 
 export interface DeviceApiAuthority {
   readonly agentId: string;
@@ -184,6 +252,12 @@ export interface DeviceApiRouteOptions {
     readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
     readonly hub: DeviceActionHub;
   };
+  readonly voiceGates?: () => VoiceGates;
+  readonly addressee?: (input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly request: VoiceAddresseeRequest;
+  }) => Promise<VoiceAddresseeOutcome>;
+  readonly prefetch?: UtterancePrefetchPort;
   readonly threadGateway: AgentThreadGatewayPort;
   readonly gateways: DeviceGateways;
   readonly audit: AuditLedgerPort;
@@ -987,8 +1061,17 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         if (
           Object.keys(body).some(
             (key) =>
-              !["messageId", "threadId", "expectedRevision", "text", "utteranceId"].includes(key),
+              ![
+                "messageId",
+                "threadId",
+                "expectedRevision",
+                "text",
+                "utteranceId",
+                "voice",
+              ].includes(key),
           ) ||
+          (body["voice"] !== undefined &&
+            (body["utteranceId"] === undefined || parseVoiceEvidence(body["voice"]) === null)) ||
           (body["utteranceId"] !== undefined &&
             (typeof body["utteranceId"] !== "string" ||
               !UTTERANCE_ID_PATTERN.test(body["utteranceId"]))) ||
@@ -1003,6 +1086,38 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
           body["text"].length > MESSAGE_TEXT_MAXIMUM
         )
           options.rejectBody(400);
+        if (body["voice"] !== undefined) {
+          const evidence = parseVoiceEvidence(body["voice"]) as VoiceEvidence;
+          const verdict = decideVoiceCommand(evidence, options.voiceGates?.());
+          if (!verdict.accepted)
+            return options.sendJson(reply, 409, {
+              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: verdict.reason },
+            });
+          const addressed = options.addressee
+            ? await options.addressee({
+                authentication,
+                request: {
+                  deviceId: authenticated.device.id,
+                  utteranceId: body["utteranceId"] as string,
+                  trigger: evidence.trigger,
+                  heardName: evidence.heardName,
+                  text: body["text"] as string,
+                },
+              })
+            : evidence.trigger === "hands_on"
+              ? "addressed"
+              : "addressed_unsure";
+          if (addressed !== "addressed")
+            return options.sendJson(reply, 409, {
+              error: { code: VOICE_COMMAND_UNCONFIRMED_CODE, reason: addressed },
+            });
+        }
+        if (typeof body["utteranceId"] === "string")
+          options.prefetch?.settle({
+            deviceId: authenticated.device.id,
+            utteranceId: body["utteranceId"],
+            finalText: body["text"] as string,
+          });
         const suffix = stableSuffix(authenticated.device.id, body["messageId"] as string);
         const contentRef = await options.protectText({
           authentication,
@@ -1283,6 +1398,32 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
             auditAction: "device.home.act",
             ...(options.onAuditFailed ? { onAuditFailed: options.onAuditFailed } : {}),
             now,
+          }),
+        );
+      });
+
+      device.post("/utterances/partial", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const body = json(request);
+        if (
+          Object.keys(body).some((key) => !["utteranceId", "text"].includes(key)) ||
+          typeof body["utteranceId"] !== "string" ||
+          !UTTERANCE_ID_PATTERN.test(body["utteranceId"]) ||
+          typeof body["text"] !== "string" ||
+          body["text"].trim().length === 0 ||
+          body["text"].length > MESSAGE_TEXT_MAXIMUM
+        )
+          options.rejectBody(400);
+        if (!options.prefetch)
+          return options.sendJson(reply, 200, { prepared: false, reason: "unavailable" });
+        return options.sendJson(
+          reply,
+          200,
+          await options.prefetch.prepare({
+            authentication: authenticated.authentication,
+            deviceId: authenticated.device.id,
+            utteranceId: body["utteranceId"] as string,
+            text: body["text"] as string,
           }),
         );
       });

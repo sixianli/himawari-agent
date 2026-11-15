@@ -1,7 +1,7 @@
 import type {
-  ProactiveRelatedFetch,
+  FlatRelatedFetch,
   ProactiveRelatedLimits,
-  ProactiveSourceItem,
+  ProactiveMail,
   ProactiveWholeThread,
 } from "@himawari-agent/application";
 
@@ -15,19 +15,19 @@ export function normalizeSubject(subject: string): string {
   return subject.replace(SUBJECT_PREFIX, "").replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
-export function counterparts(item: ProactiveSourceItem): readonly string[] {
+export function counterparts(item: ProactiveMail): readonly string[] {
   if (!item.sentByOwner) return item.fromAddress === "" ? [] : [item.fromAddress];
   return (item.participants ?? []).filter((address) => address !== item.fromAddress);
 }
 
-function sharesCounterpart(item: ProactiveSourceItem, other: ProactiveSourceItem): boolean {
+function sharesCounterpart(item: ProactiveMail, other: ProactiveMail): boolean {
   const mine = counterparts(item);
   if (mine.length === 0) return false;
   const theirs = new Set([other.fromAddress, ...(other.participants ?? [])]);
   return mine.some((address) => theirs.has(address));
 }
 
-function mentions(candidate: ProactiveSourceItem, reference: string): boolean {
+function mentions(candidate: ProactiveMail, reference: string): boolean {
   const haystack = `${candidate.subject}\n${candidate.body ?? candidate.snippet}`.toUpperCase();
   let from = haystack.indexOf(reference);
   while (from >= 0) {
@@ -41,23 +41,23 @@ function mentions(candidate: ProactiveSourceItem, reference: string): boolean {
   return false;
 }
 
-function isEarlier(candidate: ProactiveSourceItem, item: ProactiveSourceItem): boolean {
+function isEarlier(candidate: ProactiveMail, item: ProactiveMail): boolean {
   return (
     candidate.receivedAt < item.receivedAt ||
     (candidate.receivedAt === item.receivedAt && candidate.messageId < item.messageId)
   );
 }
 
-function chronological(left: ProactiveSourceItem, right: ProactiveSourceItem): number {
+function chronological(left: ProactiveMail, right: ProactiveMail): number {
   return (
     left.receivedAt.localeCompare(right.receivedAt) || left.messageId.localeCompare(right.messageId)
   );
 }
 
 export interface GmailRelatedTransport {
-  thread(threadId: string): Promise<readonly ProactiveSourceItem[] | undefined>;
+  thread(threadId: string): Promise<readonly ProactiveMail[] | undefined>;
   search(query: string, maxResults: number): Promise<readonly string[] | undefined>;
-  message(id: string): Promise<ProactiveSourceItem | undefined>;
+  message(id: string): Promise<ProactiveMail | undefined>;
 }
 
 class Budget {
@@ -74,21 +74,21 @@ class Budget {
 }
 
 export async function findRelatedMail(input: {
-  readonly items: readonly ProactiveSourceItem[];
+  readonly items: readonly ProactiveMail[];
   readonly limits: ProactiveRelatedLimits;
   readonly wholeThread?: ReadonlySet<string>;
   readonly references?: ReadonlyMap<string, readonly string[]>;
   readonly signal: AbortSignal;
   readonly transport: GmailRelatedTransport;
-}): Promise<ProactiveRelatedFetch> {
+}): Promise<FlatRelatedFetch> {
   const { items, limits, signal, transport } = input;
   const wholeThread = new Map<string, ProactiveWholeThread>();
   const budget = new Budget(limits.requestsPerCheck);
-  const known = new Map<string, ProactiveSourceItem | null>();
-  const byMail = new Map<string, readonly ProactiveSourceItem[]>();
+  const known = new Map<string, ProactiveMail | null>();
+  const byMail = new Map<string, readonly ProactiveMail[]>();
   const failed = new Map<string, string>();
 
-  const fetchMessage = async (id: string): Promise<ProactiveSourceItem | undefined> => {
+  const fetchMessage = async (id: string): Promise<ProactiveMail | undefined> => {
     if (known.has(id)) return known.get(id) ?? undefined;
     if (!budget.take()) throw new RelatedStop("budget");
     const message = await transport.message(id);
@@ -101,8 +101,8 @@ export async function findRelatedMail(input: {
     return (await transport.search(query, SEARCH_RESULTS)) ?? [];
   };
 
-  const fetchMany = async (ids: readonly string[]): Promise<ProactiveSourceItem[]> => {
-    const found: ProactiveSourceItem[] = [];
+  const fetchMany = async (ids: readonly string[]): Promise<ProactiveMail[]> => {
+    const found: ProactiveMail[] = [];
     for (let start = 0; start < ids.length; start += FETCH_PARALLEL) {
       const chunk = await Promise.all(ids.slice(start, start + FETCH_PARALLEL).map(fetchMessage));
       for (const message of chunk) if (message) found.push(message);
@@ -115,10 +115,10 @@ export async function findRelatedMail(input: {
       failed.set(item.messageId, "timeout");
       continue;
     }
-    const pool = new Map<string, ProactiveSourceItem>();
-    const threadMessages: ProactiveSourceItem[] = [];
+    const pool = new Map<string, ProactiveMail>();
+    const threadMessages: ProactiveMail[] = [];
     let threadRead = false;
-    const add = (candidate: ProactiveSourceItem) => {
+    const add = (candidate: ProactiveMail) => {
       if (candidate.messageId !== item.messageId && isEarlier(candidate, item))
         pool.set(candidate.messageId, candidate);
     };
@@ -159,7 +159,7 @@ export async function findRelatedMail(input: {
     if (input.wholeThread?.has(item.messageId)) {
       const thread = [...threadMessages].sort(chronological);
       const kept = thread.slice(-limits.wholeThreadPerMail);
-      const chosen = new Map<string, ProactiveSourceItem>();
+      const chosen = new Map<string, ProactiveMail>();
       for (const message of [...kept, ...ordered.slice(-limits.perMail)])
         chosen.set(message.messageId, message);
       byMail.set(item.messageId, [...chosen.values()].sort(chronological));

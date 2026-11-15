@@ -178,7 +178,7 @@ export class OwnerIntentGate {
       intentId: input.intent.id,
       runId: input.source.runId,
       tool: input.row.tool,
-      modelRef: settings.modelRef,
+      model: settings.model,
       minConfidence: settings.minConfidence,
       externalSources: [...input.externalSources],
       ...result,

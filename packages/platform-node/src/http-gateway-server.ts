@@ -14,6 +14,7 @@ import {
   type GatewayV2StreamItem,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
+  type VoiceGates,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -25,6 +26,7 @@ import {
   type GatewayV2Query,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
+  isGatewayErrorReasonCode,
   type StreamEvent,
   type ThreadExecutionEventsSubscription,
   type ThreadExecutionStreamEvent,
@@ -32,16 +34,17 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
-  isGatewayErrorReasonCode,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
 import type { DeviceActionHub } from "./device-action-hub.js";
 import {
+  type DeviceApiRouteOptions,
   type DeviceHomePort,
   type DevicePairingAccess,
   registerDeviceApiRoutes,
+  type UtterancePrefetchPort,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
 import { DevicePushError, type DevicePushPort } from "./device-push.js";
@@ -145,6 +148,9 @@ export interface HttpGatewayServerOptions {
       readonly hub: DeviceActionHub;
     };
     readonly home?: DeviceHomePort;
+    readonly voiceGates?: () => VoiceGates;
+    readonly prefetch?: UtterancePrefetchPort;
+    readonly addressee?: DeviceApiRouteOptions["addressee"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -1316,6 +1322,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
+      ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
+      ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
+      ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,

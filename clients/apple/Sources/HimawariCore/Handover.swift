@@ -170,6 +170,7 @@ public enum HandoverProblem: String, Codable, Sendable, Equatable {
     case limitReached
     case serverOutdated
     case rejected
+    case notSent
 }
 
 public enum HandoverOutcome: Sendable, Equatable {
@@ -401,7 +402,7 @@ public final class HandoverCourier: Sendable {
                 if let budget = configuration.limit("device.upload.file_bytes"), data.count > budget { return .failed(.tooLarge) }
                 do {
                     try await api.uploadMedia(data, kind: kind, batchId: handover.id, contentType: contentType)
-                } catch DeviceAPIError.server(let status, _, _) where status == 404 || status == 405 {
+                } catch DeviceAPIError.server(let status, _, _, _) where status == 404 || status == 405 {
                     return .failed(.serverOutdated)
                 }
                 return .delivered(answered: false)
@@ -419,7 +420,7 @@ public final class HandoverCourier: Sendable {
         switch error {
         case .invalidResponse:
             return .queued
-        case let .server(status, code, _):
+        case let .server(status, code, _, _):
             if error.isRevoked || code == "DEVICE_NOT_PAIRED" { return .deviceRemoved }
             if status == 413 || code == "DEVICE_UPLOAD_TOO_LARGE" { return .failed(.tooLarge) }
             if status == 429 || status >= 500 || status == 408 { return .queued }
@@ -523,10 +524,13 @@ public final class HandoverDesk: @unchecked Sendable {
     private let courier: HandoverCourier
     private let now: @Sendable () -> Date
 
-    public init(store: LocalStore, courier: HandoverCourier, now: @escaping @Sendable () -> Date = Date.init) {
+    private let queuesOffline: Bool
+
+    public init(store: LocalStore, courier: HandoverCourier, queuesOffline: Bool = true, now: @escaping @Sendable () -> Date = Date.init) {
         self.store = store
         self.queue = HandoverQueue(store: store)
         self.courier = courier
+        self.queuesOffline = queuesOffline
         self.now = now
     }
 
@@ -542,6 +546,7 @@ public final class HandoverDesk: @unchecked Sendable {
         _ = await queue.drain(using: courier)
         let outcome = await courier.deliver(handover)
         if outcome == .queued {
+            guard queuesOffline else { return .failed(.notSent) }
             do { try queue.add(handover) } catch { return .failed(.rejected) }
         }
         return outcome

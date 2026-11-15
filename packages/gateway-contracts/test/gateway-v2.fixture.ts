@@ -245,6 +245,43 @@ export const governanceMessages = [
   }),
   fixture("command", "proactive.source.manage", { source: "gmail", action: "disconnect" }),
   fixture("command", "proactive.backoff.restore", { classKey: "due:service.example.com" }),
+  fixture("query", "proactive.sources.read", {}),
+  fixture("snapshot", "proactive.sources.snapshot", {
+    sources: [
+      {
+        source: "gmail",
+        intake: "reader",
+        trust: "external",
+        enabled: true,
+        perDay: {
+          limit: 5000,
+          defaultLimit: 5000,
+          minimum: 1,
+          maximum: 1000000,
+          used: 12,
+          resetsAt: "2026-11-12T15:00:00.000Z",
+          onReach: "hold_until_reset",
+        },
+        perCheck: {
+          limit: 500,
+          defaultLimit: 500,
+          minimum: 1,
+          maximum: 500,
+          onReach: "hold_until_next_check",
+        },
+        dailyLimitReached: false,
+        updatedAt: null,
+      },
+    ],
+    generatedAt: "2026-11-12T00:00:00.000Z",
+  }),
+  fixture("command", "proactive.source.settings.set", {
+    source: "gmail",
+    enabled: true,
+    perDay: 5000,
+    perCheck: 500,
+  }),
+  fixture("command", "proactive.source.switch_off", { source: "gmail" }),
   fixture("query", "proactive.weekly.read", { end: null }),
   fixture("snapshot", "proactive.weekly.snapshot", {
     serviceRevision: "rev-01",

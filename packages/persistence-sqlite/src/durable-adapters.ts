@@ -1144,6 +1144,9 @@ export class SqliteDurableAdapters {
       previewBackoff: (input) => this.context.read("proactive.previewBackoff", input),
       listBackoff: (input) => this.context.read("proactive.listBackoff", input),
       restoreBackoff: (input) => this.context.write("proactive.restoreBackoff", input),
+      listSourceSettings: (input) => this.context.read("proactive.listSourceSettings", input),
+      writeSourceSettings: (input) => this.context.write("proactive.writeSourceSettings", input),
+      processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
   ownerPreferences(): OwnerPreferencesStorePort {
@@ -1287,6 +1290,9 @@ export class SqliteDurableAdapters {
       ingestRecords: (input) => this.context.write("perception.ingestRecords", input),
       listDay: (input) => this.context.read("perception.listDay", input),
       searchRecords: (input) => this.context.read("perception.searchRecords", input),
+      listStaleSearchRecords: (input) =>
+        this.context.read("perception.listStaleSearchRecords", input),
+      replaceSearchTerms: (input) => this.context.write("perception.replaceSearchTerms", input),
       countDay: (input) => this.context.read("perception.countDay", input),
       readEpisode: (input) => this.context.read("perception.readEpisode", input),
       setRecordStatus: (input) => this.context.write("perception.setRecordStatus", input),

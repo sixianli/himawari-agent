@@ -103,18 +103,18 @@ extension DeviceAPI {
         do {
             _ = try await perceive(records)
             return []
-        } catch DeviceAPIError.server(status: 400, _, _) where records.count > 1 {
+        } catch DeviceAPIError.server(status: 400, _, _, _) where records.count > 1 {
             var skipped: [String] = []
             for record in records {
                 do {
                     _ = try await perceive([record])
-                } catch DeviceAPIError.server(status: 400, _, _) {
+                } catch DeviceAPIError.server(status: 400, _, _, _) {
                     skipped.append(record.id)
                 }
             }
             guard skipped.count < records.count else { throw PerceptionUploadError.allRejected(ids: skipped) }
             return skipped
-        } catch DeviceAPIError.server(status: 400, _, _) {
+        } catch DeviceAPIError.server(status: 400, _, _, _) {
             throw PerceptionUploadError.allRejected(ids: records.map(\.id))
         }
     }
