@@ -595,6 +595,7 @@ export interface GovernanceGatewayV2ControlPlaneDependencies {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly recentAuthentication?: RecentAuthenticationGuardPort;
+  readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }
 
 interface ReceiptAttempt {
@@ -801,6 +802,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
       current.status === command.payload.decision &&
       current.semanticSnapshotHash === command.payload.semanticSnapshotHash
     ) {
+      await this.#dependencies.onApprovalResolved?.(current).catch(() => undefined);
       return `approval:${current.id}:revision-${current.revision}`;
     }
     if (command.payload.decision === "approved" && current.recentAuthenticationRequired) {
@@ -867,6 +869,7 @@ export class GovernanceGatewayV2ControlPlane implements GatewayV2ControlPlanePor
         throw error;
       resolved = winner;
     }
+    await this.#dependencies.onApprovalResolved?.(resolved).catch(() => undefined);
     return `approval:${resolved.id}:revision-${resolved.revision}`;
   }
 

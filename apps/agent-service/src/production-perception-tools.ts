@@ -249,7 +249,7 @@ export class ProductionPerceptionTools {
   ): Promise<PerceptionToolResult> {
     return invocation.capabilityRef === PERCEPTION_READ_CAPABILITY_REF
       ? this.#read(invocation, hooks)
-      : this.#action(invocation, hooks);
+      : this.#action(invocation);
   }
 
   #kinds(raw: unknown): readonly PerceptionRecordType[] | null | undefined {
@@ -419,10 +419,7 @@ export class ProductionPerceptionTools {
     };
   }
 
-  async #action(
-    invocation: RuntimeToolInvocation,
-    hooks: PerceptionToolHooks,
-  ): Promise<PerceptionToolResult> {
+  async #action(invocation: RuntimeToolInvocation): Promise<PerceptionToolResult> {
     const args = invocation.arguments;
     const action = args["action"];
     const device = args["device"];
@@ -521,7 +518,6 @@ export class ProductionPerceptionTools {
       action: definition,
       arguments: parameters as Readonly<Record<string, unknown>>,
     };
-    if (!definition.reads) await hooks.authorize();
     const outcome = await this.#options.perform(request);
     return {
       value: {
