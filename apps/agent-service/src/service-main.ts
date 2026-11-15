@@ -187,6 +187,7 @@ import {
   type ProductionRealEval,
   RealEvalSampleExpiry,
 } from "./production-real-eval.js";
+import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionReminderTools, ProductionReminderWriter } from "./production-reminder-writer.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
@@ -1601,38 +1602,6 @@ export async function startTenantRuntime(
         authority: () => invocationAuthority().lease,
         clock,
       });
-      deviceActions = createProductionDeviceActions({
-        scope: perceptionScope,
-        store: repository.deviceActions(),
-        perception: repository.perception(),
-        externalContent,
-        devices: repository.pairedDevices().listDevices,
-        ledger: repository.decisionLedger(),
-        payloads,
-        protector: recallProtector,
-        delivery: deviceActionHub,
-        configuration: () =>
-          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
-        timeZone: reminderTimeZone ?? "UTC",
-        now: () => clock.now(),
-      });
-      const perceptionTools = new ProductionPerceptionTools({
-        scope: perceptionScope,
-        store: repository.perception(),
-        devices: repository.pairedDevices().listDevices,
-        ...deviceActions.tools,
-        readText: async (contentRef) => {
-          const payload = await payloads.get(contentRef);
-          if (!payload || payload.contentType !== "text/plain") return undefined;
-          return new TextDecoder("utf-8", { fatal: true }).decode(
-            await recallProtector.unprotect({ ...perceptionScope, payload }),
-          );
-        },
-        configuration: () =>
-          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
-        now: () => clock.now(),
-        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
-      });
       const toolActions = productionToolActionRegistry();
       const installedCapabilities = repository.capabilityStore(
         configuration.ownerId,
@@ -1671,6 +1640,39 @@ export async function startTenantRuntime(
         clock,
         ids,
         intentLifetimeMs: configuration.deadlines.workerRequestMs,
+      });
+      deviceActions = createProductionDeviceActions({
+        scope: perceptionScope,
+        store: repository.deviceActions(),
+        perception: repository.perception(),
+        externalContent,
+        devices: repository.pairedDevices().listDevices,
+        ledger: repository.decisionLedger(),
+        payloads,
+        protector: recallProtector,
+        delivery: deviceActionHub,
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        timeZone: reminderTimeZone ?? "UTC",
+        now: () => clock.now(),
+        authorization: productionDeviceActionAuthorization({ ownerScope, registry: toolActions }),
+      });
+      const perceptionTools = new ProductionPerceptionTools({
+        scope: perceptionScope,
+        store: repository.perception(),
+        devices: repository.pairedDevices().listDevices,
+        ...deviceActions.tools,
+        readText: async (contentRef) => {
+          const payload = await payloads.get(contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({ ...perceptionScope, payload }),
+          );
+        },
+        configuration: () =>
+          configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS,
+        now: () => clock.now(),
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
       });
       const tools = new ProductionRuntimeTools({
         memoryRecall,

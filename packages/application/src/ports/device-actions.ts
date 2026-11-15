@@ -209,6 +209,8 @@ export interface DeviceActionIntent extends PairedDeviceScope {
   readonly ownerPresence: boolean;
   readonly untrustedOriginAllowed: boolean;
   readonly readUntrustedContent: boolean;
+  readonly title: Readonly<Record<string, string>>;
+  readonly detail: Readonly<Record<string, string>>;
   readonly dataClassification: DataClassification;
   readonly requestedAt: string;
   readonly expiresAt: string;
@@ -219,8 +221,14 @@ export type DeviceActionAuthorization =
   | { readonly decision: "approval"; readonly approvalId: string }
   | { readonly decision: "deny"; readonly reasonCode: DeviceActionReasonCode };
 
+export type DeviceActionResolution =
+  | { readonly decision: "pending" }
+  | { readonly decision: "allow"; readonly ownerPresent: boolean }
+  | { readonly decision: "deny"; readonly reasonCode: DeviceActionReasonCode };
+
 export interface DeviceActionAuthorizationPort {
   authorize(intent: DeviceActionIntent): Promise<DeviceActionAuthorization>;
+  resolve?(approvalId: string): Promise<DeviceActionResolution>;
 }
 
 export interface DeviceActionDeliveryPort {
