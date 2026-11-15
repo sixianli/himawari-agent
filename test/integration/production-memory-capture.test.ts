@@ -4868,6 +4868,8 @@ describe("production memory capture", () => {
     const [suggestion] = second.personSuggestions;
     expect(suggestion?.candidateId).toBe(zhang.personId);
     if (!suggestion) throw new Error("suggestion");
+    expect(suggestion.suggestionId).toMatch(/^person-suggestion:[0-9a-f]{32}$/);
+    expect(suggestion.suggestionId).not.toContain(suggestion.personId);
     await command(context.control, "memory.person.respond", {
       suggestionId: suggestion.suggestionId,
       merge: true,
