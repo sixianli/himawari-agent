@@ -676,7 +676,33 @@ describe("think runner", () => {
     overrides = { threadRetentionDays: 500 };
     expect(await retention.retentionDays()).toBe(7);
     overrides = { threadRetentionDays: 2 };
+    await payloads.put(
+      await protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "think-title",
+        contentType: "text/plain",
+        dataClassification: "private",
+        plaintext: new TextEncoder().encode("想一想的标题"),
+        createdAt: START,
+      }),
+    );
+    sql("UPDATE threads SET title_ref = 'think-title' WHERE id = ?", thinkId);
+    sql(
+      `INSERT INTO scheduled_jobs (id, owner_id, agent_id, thread_id, revision, status, authorization_ref, definition_ref)
+       VALUES ('job:think-hold', ?, ?, ?, 0, 'active', 'auth:test', 'owner-old-text')`,
+      OWNER_ID,
+      AGENT_ID,
+      thinkId,
+    );
+    expect(await retention.runOnce()).toBe(0);
+    sql("UPDATE scheduled_jobs SET status = 'paused' WHERE id = 'job:think-hold'");
+    sql("UPDATE threads SET archived_at = NULL, updated_at = ? WHERE id = ?", START, thinkId);
+    clock.value = new Date(Date.parse(START) + 2.5 * 86_400_000).toISOString();
+    expect(await retention.runOnce()).toBe(0);
+    clock.value = later(3);
     expect(await retention.runOnce()).toBe(1);
+    expect(sql("SELECT ref FROM payloads WHERE ref = 'think-title'")).toEqual([]);
     expect(sql("SELECT id FROM threads WHERE id = ?", thinkId)).toEqual([]);
     expect(sql("SELECT id FROM thread_messages WHERE thread_id = ?", thinkId)).toEqual([]);
     expect(sql("SELECT id FROM runs WHERE thread_id = ?", thinkId)).toEqual([]);
