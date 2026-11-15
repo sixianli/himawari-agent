@@ -46,6 +46,7 @@ const files = {
   e2e: "test/e2e/example.test.ts",
   "pi-compat": "packages/runtime-pi/example.compat.test.ts",
 };
+const secondIntegrationFile = "test/integration/second.test.ts";
 const put = (root, filename, content) => {
   const target = path.join(root, filename);
   mkdirSync(path.dirname(target), { recursive: true });
@@ -98,7 +99,8 @@ describe("test runner timeout environment", () => {
       writeFileSync(process.argv[process.argv.indexOf('--output') + 1], '{}');
     `,
       );
-      for (const file of Object.values(files)) put(root, file, "export {};\n");
+      for (const file of [...Object.values(files), secondIntegrationFile])
+        put(root, file, "export {};\n");
       put(
         root,
         "node_modules/vitest/vitest.mjs",
@@ -113,9 +115,11 @@ describe("test runner timeout environment", () => {
           timeout: process.env.HIMAWARI_TEST_TIMEOUT_MS ?? null,
           unrelated: process.env.HIMAWARI_TEST_UNRELATED_ENV ?? null,
         }));
-      const report = { success: true, testResults: ids.map((id) => ({
-        name: path.resolve(files[id]), assertionResults: [{ status: 'passed' }],
-      })) };
+      const named = process.argv.filter((arg) => arg.startsWith('test/') || arg.startsWith('packages/'));
+      const report = { success: true, testResults: ids.flatMap((id) =>
+        (named.length ? named : [files[id]]).map((file) => ({
+          name: path.resolve(file), assertionResults: [{ status: 'passed' }],
+        }))) };
       const option = (prefix) => process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
       writeFileSync(option('--outputFile.json=') ?? option('--outputFile='), JSON.stringify(report));
       const junit = option('--outputFile.junit=');
@@ -134,21 +138,26 @@ describe("test runner timeout environment", () => {
       git("config", "user.email", "fixture@example.invalid");
       git("add", ".");
       git("commit", "-qm", "fixture");
-      const result = await runCheck({
-        root,
-        context: createContext({ root }),
-        checkId: "tests",
-        output: ".ci-output/tests",
-        toolsDirectory: root,
-        artifact: path.join(root, "runtime.tar.gz"),
-        hosted: false,
-      });
-      expect(
-        result.status,
-        readFileSync(path.join(root, ".ci-output/tests/details.json"), "utf8"),
-      ).toBe("passed");
+      const projects = [];
+      for (const matrixKey of ["integration-1", "integration-2", "others"]) {
+        const result = await runCheck({
+          root,
+          context: createContext({ root }),
+          checkId: "tests",
+          matrixKey,
+          output: `.ci-output/tests-${matrixKey}`,
+          toolsDirectory: root,
+          artifact: path.join(root, "runtime.tar.gz"),
+          hosted: false,
+        });
+        expect(
+          result.status,
+          readFileSync(path.join(root, `.ci-output/tests-${matrixKey}/details.json`), "utf8"),
+        ).toBe("passed");
+        projects.push(...result.projects.map(({ id }) => id));
+      }
       const tested = Object.keys(files).filter((id) => id !== "tooling");
-      expect(result.projects.map(({ id }) => id)).toEqual(tested);
+      expect([...new Set(projects)].sort()).toEqual([...tested].sort());
       for (const id of tested) {
         expect(JSON.parse(readFileSync(path.join(root, `${id}-environment.json`), "utf8"))).toEqual(
           {

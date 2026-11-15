@@ -44,6 +44,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case handStop = "hand-stop"
     case heartbeat
     case history
+    case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
     case listCheck = "list-check"
     case mail
