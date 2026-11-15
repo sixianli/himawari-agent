@@ -720,6 +720,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; the source thread link clears with the thread",
   ),
   entry(
+    "think_inbox",
+    "ThinkInboxStorePort",
+    "one row per thing a source (an email, a new memory, a reminder) asked Himawari to think about: the source and its version, whether the source is outside content, the queue state (queued, thinking, proposed, skipped, failed or expired), why it ended, how many times it was tried and the day it was accepted; the short summary the thinking reads stays in a protected payload the row points to and is cleared once the entry settles; a transient queue, not exported",
+    "payload_reference",
+    "cascade with Owner or Agent deletion; the summary link clears with its payload",
+  ),
+  entry(
+    "think_inbox_declined",
+    "ThinkInboxStorePort",
+    "one counter per day and reason for things the entrance refused because the queue or the day's limit was full, so the owner can see what was turned away",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
     "memory_review_items",
     "MemoryReviewStorePort",
     "one row per Memory and upstream Memory whose change put it up for review, with the reason, chain depth, the Memory it was reached through, whether the chain was cut short and how the owner answered; the upstream id carries no foreign key so a deleted upstream still explains the row",

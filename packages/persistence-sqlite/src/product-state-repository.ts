@@ -49,6 +49,7 @@ import type {
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
   OwnerProposalStorePort,
+  ThinkInboxStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -604,6 +605,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   ownerProposals(): OwnerProposalStorePort {
     return this.durable.ownerProposals();
+  }
+
+  thinkInbox(): ThinkInboxStorePort {
+    return this.durable.thinkInbox();
   }
 
   memoryReminders(): MemoryReminderStorePort {
