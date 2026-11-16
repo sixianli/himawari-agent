@@ -1,13 +1,15 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: docs/adr/0134-adopt-product-vision-v2-2.md
-superseded_by: ""
+superseded_by: docs/adr/0284-adopt-product-vision-v2-4.md
 date: "2026-11-02"
 ---
 
 # ADR 0153：采纳产品愿景 v2.3，「决策账本」改称「决策记录」
+
+> 2026-11-16 被 [ADR 0284](0284-adopt-product-vision-v2-4.md) 取代：愿景换为 v2.4（去掉「以 Muse 为对照组量化」），地位决定在 0284 里重述。下文是采纳 v2.3 时的记录，不再改写。
 
 <a id="contents"></a>
 
