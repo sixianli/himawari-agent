@@ -74,6 +74,6 @@ date: "2026-09-29"
 
 ## 关联文档
 
-- 实现设计：[SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md]，见[工具超时交付与 Run 到期收尾设计](../execution/specs/2026-09-29-sandbox-deadline-settlement-design.md)。
-- 排查计划：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+- 实现设计：[2026-09-29-sandbox-deadline-settlement-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md)，见[工具超时交付与 Run 到期收尾设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md)。
+- 排查计划：[2026-09-28-tool-execution-audit-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-28-tool-execution-audit-plan.md)
 - 执行隔离的总体决定：[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]

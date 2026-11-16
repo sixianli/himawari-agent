@@ -87,14 +87,14 @@ date: "2026-10-26"
 - 代价：生产对公网多了一个入口，安全完全依赖 Cloudflare Access 规则和 Gmail 账号；Cloudflare 故障时要手动切回；Hermes 的网址要改，用到旧网址的 Runbook 要跟着改。
 - 未验证：iPhone 上网页推送和声明式推送的实际到达率；Cloudflare Access 是否会挡住浏览器取 manifest 和后台脚本（挡住时只给这三类公开文件加不检查登录的规则）；`cloudflare-access` 方式下高风险审批前“最近登录过”的检查在生产配置里怎么设。
 - 后续：
-  - Backlog [BL-20261026-004](../backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)（入口）和 [BL-20261026-005](../backlog/BL-20261026-005-home-screen-web-app-and-web-push.md)（主屏应用和推送）按本 ADR 更新；[BL-20261026-007](../backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md) 以“不做”关闭。
+  - Backlog [BL-20261026-004](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)（入口）和 [BL-20261026-005](../backlog/BL-20261026-005-home-screen-web-app-and-web-push.md)（主屏应用和推送）按本 ADR 更新；[BL-20261026-007](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md) 以“不做”关闭。
   - 实现规格见 [网页推送实现规格](../execution/specs/2026-10-26-web-push-design.md)。
   - 设置页“通知”等前端改动等“重构整个用户界面”线程第一期合入 `main` 后再做。
 - 2026-10-27 实施记录（日本时间，本 ADR 的决定不变）：
   - 网页推送随第十四版上线；11:39 生产推送开启。12:54 生产入口切为只用 Cloudflare 邮箱验证码登录，Access 只放行 Andy 的邮箱。Hermes 改用 `himawari-test.siyi.win`。
   - 11:53 的第一次切换失败，停服约 9 分钟，见[工程案例 30](../engineering-casebook.md#case-login-switch-outage) 和 [BL-20261027-008](../backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md)。
   - 上面“未验证”里的 manifest 一项已有结论：从外网取 `/manifest.webmanifest` 和 `/sw.js` 返回 200。
-  - Andy 在 iPhone 主屏应用上收到了测试通知。三类真实推送等其余真机项见 [BL-20261027-009](../backlog/BL-20261027-009-web-push-real-device-acceptance.md)；到达率在 BL-20261026-005 里于 2026-11-09 核对；[BL-20261026-004](../backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md) 已完成。
+  - Andy 在 iPhone 主屏应用上收到了测试通知。三类真实推送等其余真机项见 [BL-20261027-009](../backlog/BL-20261027-009-web-push-real-device-acceptance.md)；到达率在 BL-20261026-005 里于 2026-11-09 核对；[BL-20261026-004](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md) 已完成。
   - 高风险审批前“最近登录过”的检查在生产配置里怎么设，仍未验证。
 
 [↑ 返回阅读导航](#contents)

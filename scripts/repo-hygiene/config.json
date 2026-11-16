@@ -20,6 +20,10 @@
     {
       "path": "package-lock.json",
       "reason": "npm 锁文件，依赖变化时整体重写"
+    },
+    {
+      "path": "docs/engineering-casebook.md",
+      "reason": "面试用的工程案例库，main 上已有约 695KB；在拆分之前，改其中的链接也会被大小上限拦下"
     }
   ]
 }

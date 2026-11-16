@@ -94,7 +94,7 @@ date: "2026-10-26"
   - 第十三次在 Andy 的 Mac 上连真实生产机和 Hermes 只出包不上线的演练（2026-10-26 第六次通过，提交 `500817f`，数据库 56 → 57）：整次出包 385.7 秒，其中 Hermes 构建约 259 秒；17 项检查约 50 秒，网页验收和检查并行。前五次演练分别在出包阶段拦下了上传目录、过期构建、文件权限、验收工具和验收文字的问题，生产一次都没停。检查的临时目录放在 Hermes 的 `/tmp`，那里在根分区（约 7.4 GB 空闲），每次检查结束都会删掉。
 - 代价：
   - 第十三次真正上线（2026-10-26，提交 `d39e7a9`，数据库 56 → 57）实测停服 4 分 28 秒：23:24:26.6Z 服务停止，23:28:54.4Z 新版本报告就绪，和约 4 分钟的推算相符。出包 414.8 秒；上线全程约 19 分钟，停服前 14 分钟（传包 4 分 01 秒、安装 2 分 11 秒、验收 7 分 50 秒），停服后最慢的是 `S7_SWITCH_START` 2 分 17 秒，其中新版本启动到就绪约 51 秒。
-  - 第一次上线停在停服前的验收：上线前检查只要求空闲不少于包大小的 2 倍，装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停，删掉旧版本的临时目录后第二次成功。改进记在 [BL-20261027-001](../backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md) 和 [BL-20261027-002](../backlog/BL-20261027-002-prune-production-release-leftovers.md)。
+  - 第一次上线停在停服前的验收：上线前检查只要求空闲不少于包大小的 2 倍，装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停，删掉旧版本的临时目录后第二次成功。改进记在 [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md) 和 [BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md)。
   - 模板来自第十二次冻结的操作包，带着历史名字和说明文字；改模板时要同时改 `test_make_packet.py` 里的有意改动清单。
   - 手工写一份 `packet-parameters.json` 和 `packet-checks.json` 也能骗过上线前的检查；这道检查拦的是“忘了用生成器”，不是有意绕过。
 - 后续：

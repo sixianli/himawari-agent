@@ -53,7 +53,7 @@ Apple 的正式产品边界是签名并带 entitlement 的 App Sandbox；Seatbel
 
 - 历史前序决定：[SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]；本文曾替代该决定。当前有效替代决定：[SOURCE: docs/adr/0024-srt-unified-execution.md]。
 
-- [SOURCE: docs/execution/plans/2026-08-26-host-files-code-workspaces-plan.md#task-2完成-machermes-文件与执行-qualification]
+- [2026-08-26-host-files-code-workspaces-plan.md「task-2完成-machermes-文件与执行-qualification」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/plans/2026-08-26-host-files-code-workspaces-plan.md#task-2完成-machermes-文件与执行-qualification)
 - [SOURCE: docs/architecture-v0.1.md#capability-registry-and-execution-boundary]
 - [Apple App Sandbox](https://developer.apple.com/documentation/security/app-sandbox)
 - [Apple container releases](https://github.com/apple/container/releases)

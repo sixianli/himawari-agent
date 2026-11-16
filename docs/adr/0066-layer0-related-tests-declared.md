@@ -49,7 +49,7 @@ date: "2026-10-22"
    - `pre-push` 对每个待推送的非合并提交按“父提交到该提交”重查，覆盖 `git commit --amend`（这时 `commit-msg` 的基线是被修改的旧提交，只看到这次修改的增量）和跳过 `commit-msg` 的提交。
    - git 出错、读到的对象不完整、`ci/policy.json` 或 `package.json` 不可用时，以 `L0_RELATED_TESTS_ERROR` 拒绝，不放行。
    - 合并提交不做这项检查，打印 `L0_RELATED_TESTS_SKIPPED_MERGE` 后放行：项目只在用户要求时合并，合并里解决冲突改了产品源时，说明里照常写声明行，由审核核对。根提交和还没有提交的分支按空树作基线检查。
-   - 钩子文件和自测是本机文件，不在仓库里；安装、摘要和排障见[代理工具 Runbook](../runbooks/agent-tooling-runbook.md)。opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
+   - 钩子文件和自测是本机文件，不在仓库里；安装、摘要和排障见[代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md)。opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
 
 [↑ 返回阅读导航](#contents)
 
@@ -100,6 +100,6 @@ date: "2026-10-22"
 - [ADR 0060：第三次重复就加硬约束](0060-hard-constraint-on-third-repeat.md)
 - [ADR 0064：第 3 层单独触发的范围](0064-layer3-individual-trigger-scope.md)
 - [经验教训：第 0 层漏跑直接相关测试](../lessons.md#layer0-related-tests)
-- [代理工具 Runbook](../runbooks/agent-tooling-runbook.md)
+- [代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md)
 
 [↑ 返回阅读导航](#contents)

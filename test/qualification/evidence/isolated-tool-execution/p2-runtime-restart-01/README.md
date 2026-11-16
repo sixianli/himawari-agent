@@ -1,6 +1,6 @@
 # P2：容器运行时重启后的核实
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)中“验证停止在 `setsid`、两次 fork、daemon 场景下覆盖整个环境……”这一项里还缺的部分：运行时本身（OrbStack 或 Hermes 的 Docker）重启以后，后端给出的结论是否正确。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)中“验证停止在 `setsid`、两次 fork、daemon 场景下覆盖整个环境……”这一项里还缺的部分：运行时本身（OrbStack 或 Hermes 的 Docker）重启以后，后端给出的结论是否正确。
 
 ## 用词
 

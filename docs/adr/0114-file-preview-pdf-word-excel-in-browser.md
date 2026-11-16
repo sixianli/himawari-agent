@@ -102,7 +102,7 @@ Himawari 网页右侧的文件预览栏（[ADR 0091](0091-chat-ui-v6-file-previe
 
 - [ADR 0091：文件预览和侧栏](0091-chat-ui-v6-file-preview-and-sidebar.md) [SOURCE: docs/adr/0091-chat-ui-v6-file-preview-and-sidebar.md]
 - [ADR 0100：“更多”栏、文件和后台命令](0100-conversation-more-panel-files-and-background-commands.md) [SOURCE: docs/adr/0100-conversation-more-panel-files-and-background-commands.md]
-- [文件交付和“更多”栏产物页实施计划](../execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md) [SOURCE: docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md]
+- [文件交付和“更多”栏产物页实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md) [2026-10-28-file-delivery-and-more-panel-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)
 - [产品愿景](../product-vision.md) [SOURCE: docs/product-vision.md]
 - [工程案例库：案例 58](../engineering-casebook.md#case-file-preview) [SOURCE: docs/engineering-casebook.md#case-file-preview]
 - 浏览器测试：`scripts/test-file-preview-browser.mjs`；单元测试：`apps/control-center/test/spreadsheet-model.unit.test.ts`、`apps/control-center/test/file-preview-info.unit.test.ts`
