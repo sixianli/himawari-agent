@@ -22,6 +22,7 @@ date: "2026-11-15"
 - [效果怎么证明](#measurement)
 - [要 Andy 定的事](#owner-decisions)
 - [后果](#consequences)
+- [增量轮的任务也只限增量](#round-task-scope)
 
 <a id="premises"></a>
 
@@ -119,3 +120,30 @@ Andy 2026-11-15 在决定卡上选了“同意,并抽样全量复核”：按上
 - 风险：增量只改了一行，用到它的代码却在别处，而且这一轮 main 也改了那里。这种情况模型可能看不到。兜底有三层：必答问题第 4 条要求找直接使用端，证据指向旧代码时要跟下去，抽样全量复核用来衡量漏查。
 - 现有测试里断言旧提示文字的用例要改：`test/tooling/opencode-review.test.mjs`、`test/tooling/review-round-tools.test.mjs`、`test/tooling/opencode-review-merge-gate.test.mjs`。
 - `.agents/instructions/model-review.md` 的代码复核一节和流程卡同步更新。
+
+<a id="round-task-scope"></a>
+
+## 增量轮的任务也只限增量
+
+2026-11-16 补充，Andy 在决定卡上选了“同意,在 584 里改”。
+
+**根因还是表面：根因。** 上面的决定实施后，PR 584 自己的增量轮仍然慢：增量 289、53、24、6 行，步数 40、37、39、27。逐步读 PR 496、521、584 增量轮的原始调用记录，模型 70% 到 90% 的读文件不在改动处上下 40 行以内，把差异放进提示前后都一样。原因有两条，都在我们给模型的提示里：
+
+1. 任务自相矛盾。增量轮提示已经写了“只做三件事”（ADR 0270），但紧跟着是整个 PR 的材料文件：每轮用同一份（PR 496、502、521 各轮材料文件的哈希相同），里面是覆盖全 PR 的作者说法，而固定任务要求“每一条都要对照代码核对”。PR 584 第 4 轮（增量 24 行）第 19 到 36 步、第 5 轮（只改 ADR 6 行）第 7 到 27 步都在逐条核对整个 PR 的说法。
+2. 提示叫它用的工具被禁。范围说明写着“用 git grep 找”，`git grep` 却不在放行名单里；模型于是反复换写法（管道、`&&`、`cd`、`cat`），PR 584 每轮 4 到 9 次、PR 496 每轮 15 到 22 次工具报错。
+
+**业界做法。** 后续复查默认只管新改动，全量重审是单独的、显式的动作：
+
+- [Claude Code Review](https://code.claude.com/docs/en/code-review-pull-requests.md)：推送后的复查 “focuses on what changed since the last review and posts fewer nits and pre-existing findings”，没改的代码上的发现 “outside the scope of this re-review and not posted”。
+- [OpenAI Codex 复核规则](https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/review/rubric.md)：“The bug was introduced in the commit (pre-existing bugs should not be flagged)”；说影响别处时 “one must identify the other parts of the code that are provably affected”。
+- [CodeRabbit](https://docs.coderabbit.ai/reference/review-commands)：`review` “Reviews the commits pushed since CodeRabbit's last review”，`full review` “Reviews every file in the pull request again from scratch.”
+
+**实验。** 不改脚本，只把 PR 584 第 4、5 轮的材料换成本轮材料，并加范围说明和工具用法，在独立副本上重放：第 4 轮 39 步、520 秒、0.0454 美元变成 14 步、116 秒、0.0140 美元，第 5 轮 27 步、0.0468 美元变成 10 步、0.0216 美元，原来的意见都找到了。样本只有 2 次，漏查继续靠抽样全量复核衡量。
+
+**决定。**
+
+1. 带 `--previous` 的代码复核只用本轮材料：本轮改了什么、为什么改、只针对本轮增量的作者说法，由判断上一轮的子代理写好并提交。账本每条代码复核记录多记 `briefSha256`；材料和这个 PR 别的提交上用过的一样时，脚本以 `REVIEW_BRIEF_REUSED` 拒绝开跑（同一个提交上重跑、抽样全量复核不算）。抽样全量复核用 `--pr-brief` 指定的第 1 轮材料。
+2. 增量轮提示把材料标成“本轮材料”，并按 Codex 的标准写明范围：没改的代码不在本轮范围内，只有能指出增量里哪一行、通过哪条调用或数据流影响到它才去看；必答问题里要求找使用端的，只找增量产生或修改的值的使用端。第 1 轮不变。
+3. 固定前缀加一句工具用法（每次只跑一条列出的 git 命令，不用 cd、管道、`&&`、重定向，搜内容用 grep 工具，复核记录目录读不到），范围说明里的“用 git grep 找”改为“用 grep 工具找”。不放开 `git grep`：grep 工具已能搜内容，放开 `git grep` 还要另外挡住 `--untracked`、`-f` 这类会读到副本以外内容的选项。固定前缀只在这次变一次，之后各轮开头仍然一致，可以命中缓存。
+
+放弃的做法：限制步数（用数字代替判断，模型照样在做不该做的事）；只把“不要重审”写得更重（这句已经有了，被后面的全 PR 材料压过）；拆小 `opencode-review.mjs`（只是放大因素，和这个问题无关）。验收：之后 3 个有增量轮的 PR，比较增量轮的步数、时长，并看抽样全量复核有没有报出增量轮漏掉的中高问题，报给 Andy。

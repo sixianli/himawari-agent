@@ -177,6 +177,12 @@ export const FOCUS_SENTENCE =
   "做法：先想清楚要回答哪几个问题、需要看哪些文件或资料，再直接去读这些地方；不要漫无目的地浏览代码，也不要用相同或相近的参数反复调用工具。读到的内容一旦足以下结论，就停止调用工具，写出结论；没读到的地方标「未核实」，不要为了查全而一直查下去。";
 export const WRAP_UP_PROMPT =
   "现在停止读代码和调用工具。根据你已经读到的内容，按上面要求的输出格式写出完整结论；结论要写在正文里，不要只写在思考里。没核实的地方标「未核实」。";
+export const TOOL_USAGE_SENTENCE =
+  "bash 每次只能跑一条上面列出的 git 命令，不能用 cd、管道、&&、重定向，也不能用 cat、sed、git grep 等别的命令；要换目录用 bash 的 workdir 参数；搜内容用 grep 工具，读文件用 read 工具。复核记录目录 .agents/reviews/ 读不到，也不需要读。";
+export const SCOPE_SENTENCE =
+  "上一轮复核过、本轮没有改动的代码不在本轮范围内：只有能指出增量里的哪一行、通过哪条调用或数据流影响到它时才去看，不要重新核对整个 PR；材料里的作者说法只针对本轮增量。必答问题里要求找使用端的，只找增量产生或修改的值的使用端。";
+export const ROUND_MATERIAL_TITLE =
+  "本轮材料（本轮改了什么、为什么改、只针对本轮增量的作者说法，可能有错，请核对）：";
 export const RULE_16_SENTENCE = "列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -381,6 +387,7 @@ export function buildPrompt({
   const fixed = [
     text.role,
     `你能用的工具：read、grep、glob${OFFLINE_MODES.includes(mode) ? "" : "、websearch、webfetch"}，以及 ${GIT_READ_COMMANDS.join("、")} 这几条 git 命令。不能修改任何文件，不能运行别的命令。${text.network}`,
+    TOOL_USAGE_SENTENCE,
     text.task,
     FOCUS_SENTENCE,
     ...(mode === "plan-claims" ? [] : [RULE_16_SENTENCE]),
@@ -401,19 +408,35 @@ export function buildPrompt({
       ? `本 PR 的基线提交是 ${claimsBase}（main 与 ${head} 的共同祖先）。`
       : null,
     scoped
-      ? `上一轮复核到 ${previous}。这一轮只做三件事：一、下面列出的上一轮意见是否真的改好了；二、本轮增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。必答问题里的“这个改动”指本轮增量加上一轮意见的修复；每题先写“涉及”或“不涉及”，不涉及的一句话说明即可；增量碰到请求开头、遮盖、序列化、配置键或标识时必须完整回答。结论里写清这一轮查过哪些范围。`
+      ? `上一轮复核到 ${previous}。这一轮只做三件事：一、下面列出的上一轮意见是否真的改好了；二、本轮增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 grep 工具找。${SCOPE_SENTENCE}必答问题里的“这个改动”指本轮增量加上一轮意见的修复；每题先写“涉及”或“不涉及”，不涉及的一句话说明即可；增量碰到请求开头、遮盖、序列化、配置键或标识时必须完整回答。结论里写清这一轮查过哪些范围。`
       : null,
     previous && !scoped
-      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 git grep 找。增量没有碰到、行为也没被增量改变的旧代码前几轮已经复核过，不必整份重读；但证据指向旧代码时要跟下去。必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
+      ? `上一轮复核到 ${previous}，这一轮先看 git diff ${previous}..${head} 的增量，只做三件事：一、下面列出的上一轮意见是否真的改好了；二、增量改动的那些行有没有新错；三、增量产生或修改的值（导出的函数、配置键、字段、格式）的直接使用端能不能接受，用 grep 工具找。${SCOPE_SENTENCE}必答问题照样回答，和这次增量无关的，一句话写明不涉及即可。结论里写清这一轮查过哪些范围。`
       : null,
     previous && priorFindings ? priorFindings : null,
-    text.materialTitle,
+    previous && mode === "code-review" ? ROUND_MATERIAL_TITLE : text.materialTitle,
     brief.trim(),
     scoped ? increment : null,
   ]
     .filter(Boolean)
     .join("\n");
   return `${fixed}\n\n${material}\n`;
+}
+
+export function briefSha256(brief) {
+  return createHash("sha256").update(brief).digest("hex");
+}
+
+export function reusedBriefRecord({ records, head, sha }) {
+  return (
+    records.find(
+      (record) =>
+        record.mode === "code-review" &&
+        !record.shadow &&
+        record.head !== head &&
+        record.briefSha256 === sha,
+    ) ?? null
+  );
 }
 
 export const PRIOR_FINDINGS_MAX_ITEMS = 20;
@@ -2095,7 +2118,7 @@ export function finishRound({ repo, pr }) {
   const gateway = record.gateway ? ` --gateway ${record.gateway}` : "";
   if (high.length > 0)
     lines.push(
-      `NEXT fix-and-rereview node scripts/model-review/opencode-review.mjs --mode code-review --base ${record.base} --head <修改后的提交> --previous ${reviewed} --pr ${pr} --brief <材料文件>${gateway}`,
+      `NEXT fix-and-rereview node scripts/model-review/opencode-review.mjs --mode code-review --base ${record.base} --head <修改后的提交> --previous ${reviewed} --pr ${pr} --brief <本轮材料> --pr-brief <整份 PR 材料>${gateway}`,
     );
   else if (low.length > 0 && round < LOW_DEFER_FROM_ROUND)
     lines.push(
@@ -3488,6 +3511,7 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     else if (key === "--base") options.base = take();
     else if (key === "--previous") options.previous = take();
     else if (key === "--brief") options.brief = resolve(take());
+    else if (key === "--pr-brief") options.prBrief = resolve(take());
     else if (key === "--claims-file") {
       options.claimsFile = take();
       if (!validClaimsFile(options.claimsFile) || claimsFileSecretLike(options.claimsFile))
@@ -3624,6 +3648,11 @@ export function parseArgs(argv, { defaultGateway = "" } = {}) {
     if (!options[required]) throw new Error(`ARG_REQUIRED --${required}`);
   }
   if (options.mode === "code-review" && !options.base) throw new Error("ARG_REQUIRED --base");
+  if (options.prBrief !== undefined) {
+    if (options.mode !== "code-review" || options.previous === undefined || options.shadow)
+      throw new Error("ARG_PR_BRIEF_ONLY_WITH_PREVIOUS");
+    if (!existsSync(options.prBrief)) throw new Error(`ARG_PR_BRIEF_MISSING ${options.prBrief}`);
+  }
   if (options.shadow) {
     if (options.mode !== "code-review") throw new Error("ARG_SHADOW_ONLY_FOR_CODE_REVIEW");
     if (options.previous !== undefined) throw new Error("ARG_SHADOW_NOT_WITH_PREVIOUS");
@@ -3933,6 +3962,18 @@ async function main() {
         `方案文件：${options.claimsFile}（在提交 ${commits.head} 里的内容）\n\n${claimsBlob.toString("utf8")}`,
       )
     : recordText(readFileSync(options.brief, "utf8"));
+  const briefDigest = briefSha256(brief);
+  if (options.mode === "code-review" && commits.previous && !options.selfCheckOnly) {
+    const reused = reusedBriefRecord({
+      records: readUsage(options.out),
+      head: commits.head,
+      sha: briefDigest,
+    });
+    if (reused)
+      throw new Error(
+        `REVIEW_BRIEF_REUSED round-${reused.round} ${reused.head}：带 --previous 的轮次要换成本轮自己的材料（本轮改了什么、为什么改、只针对本轮增量的作者说法）`,
+      );
+  }
   const claimsBase = claimsMode
     ? (() => {
         const base = spawnSync("git", ["merge-base", "origin/main", commits.head], {
@@ -4181,6 +4222,7 @@ async function main() {
         previous: commits.previous ?? null,
         promptSha256: createHash("sha256").update(prompt).digest("hex"),
         promptFileSha256: createHash("sha256").update(maskSecretLike(prompt)).digest("hex"),
+        ...(options.mode === "code-review" ? { briefSha256: briefDigest } : {}),
         ...claimsRecord,
         outcome: review.outcome,
         wrapUp: review.wrapUp,
@@ -4299,7 +4341,7 @@ async function main() {
       shadowRunsDone(join(options.repo, REVIEWS_DIR)) < incrementConfig.shadowFullTotal
     )
       console.log(
-        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.brief, gateway: options.gateway, models: options.models, providers: options.providers, approvedUsd: options.approvedUsd })}`,
+        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.prBrief ?? options.brief, gateway: options.gateway, models: options.models, providers: options.providers, approvedUsd: options.approvedUsd })}`,
       );
     const covered = results.some((record) => record.substitute && record.outcome === "ok");
     if (

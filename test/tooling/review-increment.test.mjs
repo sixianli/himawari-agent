@@ -22,19 +22,24 @@ import {
   toolSummaryValid,
 } from "../../scripts/model-review/increment.mjs";
 import {
+  briefSha256,
   budgetCheck,
   buildPrompt,
   dailySpend,
   linkedLedgerRecords,
-  spentRecords,
   PROMPT_MAX_BYTES,
   parseArgs,
   parseUsage,
   planIncrement,
+  ROUND_MATERIAL_TITLE,
   rawDir,
   resultLine,
+  reusedBriefRecord,
   reviewQuestions,
+  SCOPE_SENTENCE,
+  spentRecords,
   substituteRefusal,
+  TOOL_USAGE_SENTENCE,
   withIncrement,
 } from "../../scripts/model-review/opencode-review.mjs";
 import {
@@ -311,6 +316,56 @@ describe("increment prompt", () => {
     expect(buildPrompt({ ...base, previous: "eee", increment: null })).toBe(old);
     expect(old).toContain("先运行 git diff ddd..ccc 看改动");
     expect(old).toContain("这一轮先看 git diff eee..ccc 的增量");
+  });
+});
+
+describe("incremental round scope", () => {
+  const questions = reviewQuestions(instructions);
+  const base = { mode: "code-review", questions, head: "ccc", base: "ddd", brief: "作者说 B" };
+
+  it("[increment-scope] every mode states the tool rules once in the fixed part and never asks for git grep", () => {
+    for (const mode of ["code-review", "plan", "plan-review"]) {
+      const prompt = buildPrompt({ ...base, mode });
+      const fixed = prompt.slice(0, prompt.indexOf("---- 本次材料 ----"));
+      expect(fixed).toContain(TOOL_USAGE_SENTENCE);
+    }
+    for (const increment of [`${INCREMENT_BEGIN}\nX\n${INCREMENT_END}`, null]) {
+      const prompt = buildPrompt({ ...base, previous: "eee", increment });
+      expect(prompt).not.toContain("用 git grep 找");
+      expect(prompt).toContain("用 grep 工具找");
+    }
+  });
+
+  it("[increment-scope] later rounds limit the review to the increment and label the material as this round's", () => {
+    for (const increment of [`${INCREMENT_BEGIN}\nX\n${INCREMENT_END}`, null]) {
+      const prompt = buildPrompt({ ...base, previous: "eee", increment });
+      expect(prompt).toContain(SCOPE_SENTENCE);
+      expect(prompt).toContain(`${ROUND_MATERIAL_TITLE}\n作者说 B`);
+      expect(prompt).not.toContain("作者的说法（可能有错，请核对）：");
+    }
+  });
+
+  it("[increment-scope] [negative] the first round keeps the whole-PR wording", () => {
+    const first = buildPrompt(base);
+    expect(first).not.toContain(SCOPE_SENTENCE);
+    expect(first).not.toContain(ROUND_MATERIAL_TITLE);
+    expect(first).toContain("作者的说法（可能有错，请核对）：\n作者说 B");
+  });
+
+  it("[increment-scope] refuses an earlier round's material and allows a rerun of the same head", () => {
+    const sha = briefSha256("整份 PR 材料");
+    const records = [
+      { mode: "code-review", round: 1, head: "a1", briefSha256: sha },
+      { mode: "code-review", round: 2, head: "b2", briefSha256: briefSha256("第 2 轮") },
+      { mode: "code-review", round: 2, head: "c3", briefSha256: briefSha256("影子"), shadow: true },
+    ];
+    expect(reusedBriefRecord({ records, head: "c3", sha })).toEqual(records[0]);
+    expect(reusedBriefRecord({ records, head: "a1", sha })).toBeNull();
+    expect(reusedBriefRecord({ records, head: "c3", sha: briefSha256("第 3 轮") })).toBeNull();
+    expect(reusedBriefRecord({ records, head: "d4", sha: briefSha256("影子") })).toBeNull();
+    expect(
+      reusedBriefRecord({ records: [{ mode: "code-review", head: "a1" }], head: "c3", sha }),
+    ).toBeNull();
   });
 });
 

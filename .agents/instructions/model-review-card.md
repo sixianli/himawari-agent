@@ -15,7 +15,7 @@
 
 PR 开好、测试过了以后，每一轮分两步：
 
-1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<材料文件>` 换成材料文件的路径，`--previous` 已经填好；带 `--previous` 的轮次，脚本自动把上一轮已提交的 `verdicts.jsonl` 里成立的“会出错”意见带进提示，并让模型只查上一轮意见是否改好、增量改的行、增量产生或修改的值的直接使用端，所以上一轮的 `verdicts.jsonl` 要先提交（[ADR 0270](../../docs/adr/0270-faster-review-rounds.md)）；脚本还把 PR 自己这一轮的差异直接放进提示（[ADR 0280](../../docs/adr/0280-incremental-review-rounds-see-only-the-pr-s-own-increment.md)）。输出 `REVIEW_INCREMENT_EMPTY` 表示这一轮 PR 自己没改东西，不起子代理，直接收尾；输出 `SHADOW_FULL_SUGGESTED <命令>` 时，在后台照跑那条命令（抽样全量复核，不进复核链、不起子代理），跑完把 `shadow/` 目录随复核记录一起提交。等待时不调工具，后台命令结束会叫醒主线程。
+1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<本轮材料>` 换成它交回的本轮材料路径、`<整份 PR 材料>` 换成第 1 轮用的材料路径（只在脚本建议抽样全量复核时用到），`--previous` 已经填好；带 `--previous` 的轮次不能再用前几轮的材料，脚本按内容比对，重用就报 `REVIEW_BRIEF_REUSED` 不开跑；带 `--previous` 的轮次，脚本自动把上一轮已提交的 `verdicts.jsonl` 里成立的“会出错”意见带进提示，并让模型只查上一轮意见是否改好、增量改的行、增量产生或修改的值的直接使用端，所以上一轮的 `verdicts.jsonl` 要先提交（[ADR 0270](../../docs/adr/0270-faster-review-rounds.md)）；脚本还把 PR 自己这一轮的差异直接放进提示（[ADR 0280](../../docs/adr/0280-incremental-review-rounds-see-only-the-pr-s-own-increment.md)）。输出 `REVIEW_INCREMENT_EMPTY` 表示这一轮 PR 自己没改东西，不起子代理，直接收尾；输出 `SHADOW_FULL_SUGGESTED <命令>` 时，在后台照跑那条命令（抽样全量复核，不进复核链、不起子代理），跑完把 `shadow/` 目录随复核记录一起提交。等待时不调工具，后台命令结束会叫醒主线程。
 2. 命令退出码是 0、输出里有 `outcome=ok` 的 `REVIEW_RESULT` 行，并且这一轮该跑的每个模型都有 `outcome=ok` 的结果（用 `--round` 只补跑了一部分的不算）以后，用 Agent 工具起一个新的子代理 `code-review-round`（定义在 `.claude/agents/code-review-round.md`，在后台跑），提示照下面写，把尖括号换成实际值。退出码不是 0（模型的 `outcome` 不是 `ok`、报错、要先问花钱）时不起子代理，按[常见报错查哪里](#errors)处理。
 
 ```
@@ -42,7 +42,7 @@ PR <编号>，仓库 <路径>，分支 <分支>。材料文件：<brief 路径>�
    - 判“不成立”要给反例、运行结果或证明没有可达输入的代码引用。
 3. 收尾这一轮：`node scripts/model-review/opencode-review.mjs --finish-round --pr <编号>`。它核对每条原话都在答案里、不成立和可以更好的都写了 `why`，写出 `judgments.md`，打印 `ROUND_SUMMARY` 和下一步 `NEXT`。把这一轮的记录目录提交。
 4. 按 `NEXT` 做：
-   - `fix-and-rereview`：修中高问题、补能证明它的测试、跑相关测试、提交推送，把打印的命令和新提交交回主线程，由主线程跑下一轮复核、再起下一个子代理。
+   - `fix-and-rereview`：修中高问题、补能证明它的测试、跑相关测试、提交推送，再写下一轮的本轮材料：本轮改了什么、为什么改、只针对这次增量的作者说法，不抄整个 PR 的材料（整个 PR 的说法第 1 轮已经核过，再给模型就会让它重核整个 PR）。材料写到 `.agents/reviews/pr-<编号>/briefs/<新提交前 12 位>-code-review.md` 并随修改一起提交。把打印的命令、新提交和本轮材料路径交回主线程，由主线程跑下一轮复核、再起下一个子代理。
    - `fix-low-then`：第 1、2 轮只剩低问题，照常修并补测试，提交后跑打印的 `--accept-low` 命令，再提交账本。规模上限见[代码复核](model-review.md#code-review)第 3 步。
    - `low-deferred`：第 3 轮起只剩低问题，不修、不再复核；`--report` 会在“低严重度未修”一节列出它们，交给 Andy 看。
    - `done`：没有“会出错”的意见。
@@ -63,6 +63,7 @@ PR <编号>，仓库 <路径>，分支 <分支>。材料文件：<brief 路径>�
 | 输出 | 读哪一节 |
 | --- | --- |
 | `REVIEW_RESULT` 的 `outcome` 不是 `ok`、`ROUND_NOT_OK` | [代码复核](model-review.md#code-review)第 3 步（服务报错的重跑和替补）、[怎么跑](model-review.md#how-to-run)（按 `outcome` 处理，不原样重跑） |
+| `REVIEW_BRIEF_REUSED` | 上面[子代理每一轮怎么做](#each-round)第 4 步：写本轮自己的材料 |
 | `REVIEW_PREVIOUS_REFUSED`、`chain-broken` | [代码复核](model-review.md#code-review)第 6 步；用 `--finish-round` 打印的命令就不会传错 |
 | `VERDICTS_INVALID`、`FINISH_ROUND_REFUSED` | [代码复核](model-review.md#code-review)第 2 步的字段说明 |
 | `REVIEW_LOW_FIX_REFUSED` | [代码复核](model-review.md#code-review)第 3 步；拒绝原因同时记在 `.agents/reviews/pr-<编号>/low-fix-refusals.jsonl` |

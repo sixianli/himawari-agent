@@ -233,7 +233,7 @@ describe("review round tools", () => {
       brief: "x",
     });
     expect(prompt).toContain(`这一轮先看 git diff ${base}..${head} 的增量`);
-    expect(prompt).toContain("证据指向旧代码时要跟下去");
+    expect(prompt).toContain("只有能指出增量里的哪一行、通过哪条调用或数据流影响到它时才去看");
     expect(prompt).not.toContain("但可以读任何文件");
   });
 
@@ -269,7 +269,7 @@ describe("review card", () => {
     const script = readFileSync("scripts/model-review/opencode-review.mjs", "utf8");
     const nextLine = script.split("\n").find((line) => line.includes("NEXT fix-and-rereview"));
     const placeholders = [...nextLine.matchAll(/<[^<>$]+>/g)].map((match) => match[0]);
-    expect(placeholders).toEqual(["<修改后的提交>", "<材料文件>"]);
+    expect(placeholders).toEqual(["<修改后的提交>", "<本轮材料>", "<整份 PR 材料>"]);
     const mainThread = card.slice(
       card.indexOf('<a id="main-thread">'),
       card.indexOf('<a id="each-round">'),
