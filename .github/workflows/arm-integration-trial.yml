@@ -3,53 +3,19 @@ on:
   pull_request:
     paths:
       - .github/workflows/arm-integration-trial.yml
-      - scripts/ci/trial/**
-      - scripts/ci/platforms.mjs
 permissions:
   contents: read
-defaults:
-  run:
-    shell: bash
 jobs:
-  trial:
-    runs-on: ci-arm
+  checkout-probe:
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        shard: [2]
-    timeout-minutes: 90
-    env:
-      CI_NODE: 22.22.3
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
+        runner: [ci-arm, ci-vps]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22.22.3
-      - name: install tools
-        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
-      - name: install dependencies
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
-      - name: install chromium shell
-        run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ci-output/browsers
-      - name: build linux-arm64 and run integration shard
-        run: |
-          nproc; free -g; uptime
-          .ci-output/tools/bin/node scripts/ci/trial/arm-integration.mjs .ci-output/trial .ci-output/tools ${{ matrix.shard }} 3 test/integration/production-http-composition-process.test.ts,test/integration/data-cli.test.ts
-      - name: failed test names
-        if: always()
-        run: |
-          uptime
-          f=$(find .ci-output/trial/tests -name integration.json | head -n 1 || true)
-          echo "report=$f"
-          if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed")console.log(t.name.split("/test/")[1],">",a.title,"|",(a.failureMessages[0]||"").split("\n")[0].slice(0,300))' "$PWD/$f" | head -80; fi
-          if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);const seen=new Set();for(const t of r.testResults)for(const a of t.assertionResults)if(a.status==="failed"){const m=(a.failureMessages[0]||"");const k=m.split("\n")[0];if(seen.has(k))continue;seen.add(k);console.log("=== "+t.name.split("/test/")[1]+" > "+a.title);console.log(m.split("\n").slice(0,40).join("\n"))}' "$PWD/$f"; fi
-          if [ -n "$f" ]; then .ci-output/tools/bin/node -e 'const r=require(process.argv[1]);for(const t of r.testResults){const sk=t.assertionResults.filter(a=>a.status!=="passed"&&a.status!=="failed");if(t.status!=="passed"||sk.length)console.log("FILE",t.name.split("/test/")[1],t.status,(t.message||"").split("\n").slice(0,30).join("\n"));for(const a of sk)console.log("  SKIP",a.status,a.fullName)}' "$PWD/$f"; fi
-          d=$(dirname "$f"); [ -n "$f" ] && grep -nE "Unhandled|Error:|onUnhandled|errors? occurred" "$d/integration.log" | head -40 || true
-          tail -n 40 .ci-output/trial/build/*.log 2>/dev/null | tail -n 80 || true
+      - run: git log -1 --format=%H
