@@ -1,6 +1,6 @@
 # SRT 模式：同一次开机里 Job Host 崩溃后核对身份再释放
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第一项的剩余部分，规则见 [Spec 的 SRT 模式的停止与释放](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-release)第 6 条。前两步的记录见[进程组消失即释放](../p3-srt-release-01/README.md)和[重启后释放](../p3-srt-restart-01/README.md)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第一项的剩余部分，规则见 [Spec 的 SRT 模式的停止与释放](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-release)第 6 条。前两步的记录见[进程组消失即释放](../p3-srt-release-01/README.md)和[重启后释放](../p3-srt-restart-01/README.md)。
 
 ## 用词
 

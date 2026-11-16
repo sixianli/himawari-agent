@@ -36,5 +36,5 @@ Pi 负责原生消息、模型转换、压缩和工具循环。Himawari 提供�
 ## 引用
 
 - [SOURCE: docs/architecture-v0.1.md]
-- [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]
+- [2026-09-11-native-runtime-history-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md)
 - [Codex 原生中断持久化实现](https://github.com/openai/codex/blob/02a8f038b87ad34d4a1dc5058eda26972ed7aa6c/codex-rs/core/src/tasks/mod.rs)

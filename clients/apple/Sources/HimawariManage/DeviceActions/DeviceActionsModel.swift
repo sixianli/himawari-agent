@@ -134,6 +134,20 @@ public final class DeviceActionsModel {
         await refresh()
     }
 
+    public func undo(_ view: DeviceActionView) async {
+        guard let api, view.undo == .available, !busy.contains(view.id) else { return }
+        busy.insert(view.id)
+        defer { busy.remove(view.id) }
+        problem = nil
+        do {
+            let reply = try await api.undoAction(id: view.id, confirm: confirm, reason: view.detail.localized())
+            if case .recorded = reply {} else { problem = DeviceActionsText.cannotUndo }
+        } catch {
+            problem = DeviceActionsText.notSent
+        }
+        await refresh()
+    }
+
     public func setAllowed(_ name: String, allowed: Bool) async {
         guard let api, let confirm, let policy else { return }
         var blocked = policy.blocked

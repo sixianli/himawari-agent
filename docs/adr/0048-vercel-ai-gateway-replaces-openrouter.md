@@ -56,7 +56,7 @@ date: "2026-10-04"
 
 ### 2026-10-04 补充决定：服务商路由
 
-用户要求“我希望vercel能进行合理路由，目的是达到性价比最高”。同一个模型在网关上有多家服务商（实际运行模型的公司），价格和速度差别很大。分析和实测数据见[迁移待办的路由方案分析](../backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md#routing-analysis)。用户在两个选项里作了选择：
+用户要求“我希望vercel能进行合理路由，目的是达到性价比最高”。同一个模型在网关上有多家服务商（实际运行模型的公司），价格和速度差别很大。分析和实测数据见[迁移待办的路由方案分析](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md#routing-analysis)。用户在两个选项里作了选择：
 
 - 采用“均衡”路由：每次请求在 `providerOptions.gateway` 里先按 `order: ["runware", "deepinfra", "morph"]` 尝试，其余服务商按 `sort: "cost"`（网关估算的费用从低到高）兜底。按 2026-10-04 的价格，每轮约 0.0014 美元，800 token 约 4 秒生成完。
 - 不限制服务商的训练数据条款：不发送 `disallowPromptTraining`，DeepSeek 官方等服务商也可以作为兜底。
@@ -116,6 +116,6 @@ date: "2026-10-04"
 
 - 现有模型路由决定：[SOURCE: docs/adr/0007-policy-controlled-model-routing.md]
 - 现有模型路径说明：[SOURCE: docs/architecture-v0.1.md]
-- 迁移待办：[SOURCE: docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md]
+- 迁移待办：[BL-20261004-002-模-型-网-关-迁-移-到-vercel.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md)
 
 [返回导航](#contents)

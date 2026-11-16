@@ -1,6 +1,6 @@
 # P3 第三批：任务环境接入产品
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)中“把任务环境接入产品的工具调用路线”这一项。本批分几步提交，本文按提交顺序记录每一步和对应的测试结果。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)中“把任务环境接入产品的工具调用路线”这一项。本批分几步提交，本文按提交顺序记录每一步和对应的测试结果。
 
 ## 用词
 

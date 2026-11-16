@@ -33,7 +33,7 @@ date: "2026-10-30"
 
 | 日期（日本时间） | 版本 | 现象 | 当时怎么办 |
 | --- | --- | --- | --- |
-| 2026-10-27 | 第十三版 | 上线前检查通过，装完新版本只剩 8.19 GB，验收要 10 GiB，停在停服前的验收 | 删掉第一到第九版的 8 个上线临时目录（17.6 GB）后重来；改进只记成 [BL-20261027-001](../backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md) 和 [BL-20261027-002](../backlog/BL-20261027-002-prune-production-release-leftovers.md) |
+| 2026-10-27 | 第十三版 | 上线前检查通过，装完新版本只剩 8.19 GB，验收要 10 GiB，停在停服前的验收 | 删掉第一到第九版的 8 个上线临时目录（17.6 GB）后重来；改进只记成 [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md) 和 [BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md) |
 | 2026-10-29 | 第十九版 | 上线前空间不够 | 人手清出 4.8 GB |
 | 2026-10-30 | 第二十版 | 上线前只剩 14.0 GB，每版装上去约用 4 GB | 人手删第十四、十八版失败上线留下的临时副本和上传包约 7.7 GB；第一次上线失败后 Andy 又打“删”清掉失败副本 |
 
@@ -145,5 +145,5 @@ date: "2026-10-30"
 - 代码：`scripts/delivery-mode/deploy.sh`、`scripts/delivery-mode/release-cleanup.py`、`scripts/delivery-mode/release-cleanup-remote.py`、`scripts/delivery-mode/deploy-preflight.py`
 - [ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断](0074-claude-runs-production-deployments.md)
 - [ADR 0086](0086-generate-release-packets-from-parameters.md)
-- [BL-20261027-001](../backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](../backlog/BL-20261027-002-prune-production-release-leftovers.md)
+- [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md)
 - [工程案例库：案例 65](../engineering-casebook.md#case-release-cleanup)

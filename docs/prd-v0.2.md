@@ -13,7 +13,7 @@ date: "2026-08-26"
 
 ## 已确认的控制中心交互补充（2026-09-10）
 
-控制中心保留既有管理入口与授权流程，采用已确认的聊天布局、Logo、Light/Dark 和六种独立主题色。每个产品 Turn 的输出、工具与执行状态可独立回看；模型选择只影响下一次提交，并显示当前 Run 的实际选择。仅展示模型明确可展示的内容和真实事件，缺少 thinking 摘要时明确说明。附件限定为用户主动选择的 UTF-8 文本，沿用 private Payload；执行模式只有实际支持的执行。详细范围及本机验收限制见 [重构设计](archive/specs/2026-09-10-control-center-product-refactor-design.md)。
+控制中心保留既有管理入口与授权流程，采用已确认的聊天布局、Logo、Light/Dark 和六种独立主题色。每个产品 Turn 的输出、工具与执行状态可独立回看；模型选择只影响下一次提交，并显示当前 Run 的实际选择。仅展示模型明确可展示的内容和真实事件，缺少 thinking 摘要时明确说明。附件限定为用户主动选择的 UTF-8 文本，沿用 private Payload；执行模式只有实际支持的执行。详细范围及本机验收限制见 [重构设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)。
 
 用户于 2026-09-11 确认可撤销的固定 Exa 联网搜索授权：开启后不逐次询问搜索，清楚说明查询词可能包含聊天信息；它不授权文件、命令或附件。其他必要审批在当前聊天展示具体输入并完成批准或拒绝。运行状态显示真实思考活动、当前工具、最近进度时间和错误；没有可公开摘要时不得编造思考内容。
 
@@ -47,7 +47,7 @@ date: "2026-08-26"
 - 固定的行动分类、风险等级和 `ALLOW / ASK / DENY` 授权结果，以及不可被模型降低的确定性安全下限。
 - 受统一治理的 Tools、Skills、MCP、本地程序和第三方 API，以及公共 Web 研究、受控的认证 Web 操作、按目录授权的文件能力、授权代码工作区和经过审查的适配器管理；Apple/iCloud Calendar 是可选连接，未配置或未通过自身资格验证不阻塞 v0.2 核心生产资格。
 - 公开与私有 GitHub 仓库的在线只读监控、模型相关性分析、Web 收件箱投递和可观察的覆盖缺口。
-- 2026-09-07 确认的 SRT 首批范围：文件读取、授权原项目内编辑/写入/搜索、受限 Shell、MCP、经过授权的联网与依赖安装、真实 Web Search，以及明确授权后向指定 GitHub 仓库推送已有 commit。目标设计与当前完成情况分开记录：[SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]。
+- 2026-09-07 确认的 SRT 首批范围：文件读取、授权原项目内编辑/写入/搜索、受限 Shell、MCP、经过授权的联网与依赖安装、真实 Web Search，以及明确授权后向指定 GitHub 仓库推送已有 commit。目标设计与当前完成情况分开记录：[2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)。
 - 一个云端主要生成模型、一个固定云端备用生成模型，以及独立管理的非生成式嵌入模型。
 - 受预算约束的周期反思、主动任务建议、临时内部专业 Worker 和隔离环境中的自我改进候选验证。
 - 中、英、日三种 Web UI 语言，以及桌面和移动浏览器的无障碍关键流程。

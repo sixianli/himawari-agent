@@ -104,7 +104,7 @@ ADR 0049 规定：每次在 Hermes 上运行测试前用 `df` 检查根盘（Her
 ### 测试时限不放宽
 
 - Hermes 上使用项目原有的时限：`ci/policy.json` 的总时限，Vitest 各项目的默认时限，测试里写死的时限，都不改。
-- 不设置 `HIMAWARI_TEST_TIMEOUT_MS`。为云端增加的这个变量及其代码，按 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉。
+- 不设置 `HIMAWARI_TEST_TIMEOUT_MS`。为云端增加的这个变量及其代码，按 [BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉。
 - 2026-10-02 为云端设计的“总时限 110 分钟、测试自己的时限 4 倍”没有实施，也不再实施。
 - Hermes 上出现超时，作为缺陷查原因并修复，不再提议放宽。
 
@@ -176,7 +176,7 @@ ADR 0049 规定：每次在 Hermes 上运行测试前用 `df` 检查根盘（Her
 
 - 前序历史：[ADR 0049](0049-first-production-host-acceptance-exception.md)、[ADR 0047](0047-test-checkout-on-hermes-nvme.md)。
 - 当前架构：[SOURCE: docs/architecture-v0.1.md]
-- 生产准备及真实响应时间：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
+- 生产准备及真实响应时间：[2026-09-30-production-first-deployment-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-30-production-first-deployment-plan.md)
 - 安装操作合同：[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 
 [↑ 返回阅读导航](#contents)

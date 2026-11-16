@@ -19,7 +19,6 @@ interface JourneyMapping {
 
 interface JourneyManifest {
   readonly schemaVersion: number;
-  readonly sourcePlan: string;
   readonly scopeTask: string;
   readonly journeys: readonly JourneyMapping[];
 }
@@ -31,7 +30,6 @@ describe("S4 to S0 canonical journey mapping", () => {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as JourneyManifest;
     expect(manifest).toMatchObject({
       schemaVersion: 1,
-      sourcePlan: "docs/archive/plans/2026-08-26-authorization-capability-governance-plan.md",
       scopeTask: "S4-T12",
     });
     expect(manifest.journeys.map(({ id }) => id)).toEqual(REQUIRED_JOURNEYS);

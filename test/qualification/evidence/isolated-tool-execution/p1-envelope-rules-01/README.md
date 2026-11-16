@@ -1,6 +1,6 @@
 # P1 第二批：环境权限上限、扩权分类与缩小上限
 
-日期：2026-09-25 UTC。对应[隔离执行实施计划的 P1](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p1)前四项。规则来源是 Spec 的[环境权限上限与换新环境](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#envelope)和[谁可以批准扩权](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#expansion-approval)。本批实现的是判断规则和协调服务的换新环境操作；它们还没有接到真实的工具调用路径（属于 P3），测试里的后端仍是测试替身（只模拟后端应答的测试程序）。
+日期：2026-09-25 UTC。对应[隔离执行实施计划的 P1](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p1)前四项。规则来源是 Spec 的[环境权限上限与换新环境](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#envelope)和[谁可以批准扩权](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#expansion-approval)。本批实现的是判断规则和协调服务的换新环境操作；它们还没有接到真实的工具调用路径（属于 P3），测试里的后端仍是测试替身（只模拟后端应答的测试程序）。
 
 <a id="contents"></a>
 

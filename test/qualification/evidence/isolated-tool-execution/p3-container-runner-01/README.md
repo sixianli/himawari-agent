@@ -1,6 +1,6 @@
 # P3 第二批（前半）：Pi 工具在容器环境里运行
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)中“把完整的 Pi 工具实现及其内置搜索和临时文件读写移进环境内的 runner；复用现有工厂、Operations、输出保护和产物导出”这一项的前一半。本批让七个 Pi 工具在容器环境里真正运行，并由宿主读回写入结果；固定目标文件、另存副本、移动目录这三类要由宿主核对版本的写入，留到后一半。产品仍未接入。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)中“把完整的 Pi 工具实现及其内置搜索和临时文件读写移进环境内的 runner；复用现有工厂、Operations、输出保护和产物导出”这一项的前一半。本批让七个 Pi 工具在容器环境里真正运行，并由宿主读回写入结果；固定目标文件、另存副本、移动目录这三类要由宿主核对版本的写入，留到后一半。产品仍未接入。
 
 ## 用词
 

@@ -33,7 +33,7 @@ date: "2026-09-25"
 - 两个平台的容器运行时都没有给挂载目录限额的选项。容器向挂载目录写入 96 MB 没有被拦截；Hermes 上的 `--storage-opt` 选项被接受，却没有生效。macOS 的 APFS 文件系统不能给任意目录设额度。Linux 的 ext4 项目配额（按目录树统计用量）需要改动服务器文件系统设置，本次没有采用。
 - 按路径遮挡敏感文件（创建容器时用空文件或空目录盖住它们）对已知路径有效，但有两个漏洞：同一文件在授权目录里的另一个硬链接名（硬链接是指向同一份文件内容的另一个文件名），以及容器启动后才新建的敏感文件。
 
-[Spec 的平台门禁](../execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)规定这种情况由用户选择。用户在 2026-09-25 作出了下面两项决定。
+[Spec 的平台门禁](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)规定这种情况由用户选择。用户在 2026-09-25 作出了下面两项决定。
 
 [↑ 返回阅读导航](#contents)
 
@@ -84,9 +84,9 @@ date: "2026-09-25"
 ## 关联文档
 
 - 被部分修正的决定：[SOURCE: docs/adr/0031-isolated-tool-execution.md]
-- [详细 Spec](../execution/specs/2026-09-24-isolated-tool-execution-design.md)：[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
-- [实施 Plan](../execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]
-- 工作区合同：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+- [详细 Spec](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)：[2026-09-24-isolated-tool-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
+- [实施 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[2026-09-24-isolated-tool-execution-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)
+- 工作区合同：[2026-09-16-workspace-authorization-lifecycle-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md)
 
 <a id="multi-user-follow-up"></a>
 

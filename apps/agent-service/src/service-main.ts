@@ -141,9 +141,9 @@ import {
 } from "./production-http-composition.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
-import { ProductionMcpSync } from "./production-mcp-sync.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
+import { ProductionMcpSync } from "./production-mcp-sync.js";
 import {
   MEMORY_CLASSIFICATION_BATCH_CHARACTERS,
   MEMORY_CLASSIFICATION_OUTPUT_TOKENS_PER_ITEM,
@@ -3440,6 +3440,7 @@ export async function startTenantRuntime(
             : {}),
           service: activeDurableMemory,
           externalProposals,
+          mcpSync: mcpSyncStore,
           actionRules: new BuiltInActionRuleSwitches({
             configuration,
             state: repository,

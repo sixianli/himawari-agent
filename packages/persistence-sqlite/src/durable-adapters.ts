@@ -1030,6 +1030,10 @@ export class SqliteDurableAdapters {
       limits: (input) => this.context.read("mcpMemorySync.limits", input),
       projectNotes: (input) => this.context.read("mcpMemorySync.projectNotes", input),
       replacedMemory: (input) => this.context.read("mcpMemorySync.replacedMemory", input),
+      overview: (input) => this.context.read("mcpMemorySync.overview", input),
+      decideProject: (input) => this.context.write("mcpMemorySync.decideProject", input),
+      decideNote: (input) => this.context.write("mcpMemorySync.decideNote", input),
+      resolveAttention: (input) => this.context.write("mcpMemorySync.resolveAttention", input),
     });
   }
 
