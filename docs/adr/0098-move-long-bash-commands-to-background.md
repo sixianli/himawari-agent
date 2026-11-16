@@ -102,7 +102,7 @@ date: "2026-10-27"
 ## 后果
 
 - 好处：30 秒以上的命令不卡住对话；命令跑完一定会有一轮汇报；重启、停止、超时都会告诉用户结果；管理工具只在有对象时出现。
-- 限制一：后台命令的最长时间是 `deadlines.backgroundCommandMs`，2026-10-28 Andy 定为 30 分钟（原话“30 分钟”），并要求和一轮回答的总时限脱钩（原话“现在脱钩”）。做法：每条 bash 命令开始时记下自己的截止时间“开始时刻 + 30 分钟”（存成这一轮的一条记录，重启后恢复用同一个值），这条命令的执行句柄（系统发给这一次工具调用的一次性执行许可）、沙箱执行计划和结果恢复都用它，不再取本轮截止时间；命令另外仍受目录授权到期时间和沙箱签名上限约束。其他工具和普通一轮回答仍用 `deadlines.runMs`（生产 5 分钟）。为让同一轮里后开始的命令也能用满 30 分钟，这一轮沙箱环境的期限改为“第一次用沙箱时的截止时间 + 30 分钟”（不超过目录授权到期时间）；轮次到期结算对 bash 计划放行比本轮更晚的截止时间，仍要求计划期限已过、资源已释放。签名模板 `scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 的 `maximumResourceCeiling` 在本 PR 改为墙钟 1800000 毫秒、CPU 1800000 毫秒（下一次出包生效）。前提：`runMs` 不大于 `backgroundCommandMs`；否则同一轮很晚才开始的命令会超过沙箱环境期限，被沙箱以 `SRT_ENVIRONMENT_DEADLINE_EXCEEDED` 明确拒绝。原来“上线时把 `runMs` 放宽到 35 分钟”的做法不再需要，[BL-20261028-001](../backlog/BL-20261028-001-background-command-deadline-independent-of-run.md) 已随本 PR 关闭。业界做法相同：Claude Code 的后台命令跨轮运行，直到结束或 Claude Code 退出；Codex 的后台终端会话也比单次工具调用活得久（见[关联文档](#references)）。
+- 限制一：后台命令的最长时间是 `deadlines.backgroundCommandMs`，2026-10-28 Andy 定为 30 分钟（原话“30 分钟”），并要求和一轮回答的总时限脱钩（原话“现在脱钩”）。做法：每条 bash 命令开始时记下自己的截止时间“开始时刻 + 30 分钟”（存成这一轮的一条记录，重启后恢复用同一个值），这条命令的执行句柄（系统发给这一次工具调用的一次性执行许可）、沙箱执行计划和结果恢复都用它，不再取本轮截止时间；命令另外仍受目录授权到期时间和沙箱签名上限约束。其他工具和普通一轮回答仍用 `deadlines.runMs`（生产 5 分钟）。为让同一轮里后开始的命令也能用满 30 分钟，这一轮沙箱环境的期限改为“第一次用沙箱时的截止时间 + 30 分钟”（不超过目录授权到期时间）；轮次到期结算对 bash 计划放行比本轮更晚的截止时间，仍要求计划期限已过、资源已释放。签名模板 `scripts/delivery-mode/packet-template/signing/cloud-seal.mjs` 的 `maximumResourceCeiling` 在本 PR 改为墙钟 1800000 毫秒、CPU 1800000 毫秒（下一次出包生效）。前提：`runMs` 不大于 `backgroundCommandMs`；否则同一轮很晚才开始的命令会超过沙箱环境期限，被沙箱以 `SRT_ENVIRONMENT_DEADLINE_EXCEEDED` 明确拒绝。原来“上线时把 `runMs` 放宽到 35 分钟”的做法不再需要，[BL-20261028-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261028-001-background-command-deadline-independent-of-run.md) 已随本 PR 关闭。业界做法相同：Claude Code 的后台命令跨轮运行，直到结束或 Claude Code 退出；Codex 的后台终端会话也比单次工具调用活得久（见[关联文档](#references)）。
 - 限制二：挂着期间这一轮的沙箱环境和工作目录占用不释放；同一工作目录的下一轮会不会因此排队，没有在真实沙箱里验证。
 - 限制三：第一轮的回答不单独发手机推送，推送来自汇报那一轮。
 - 限制四：登记表本身仍不保存命令原文和输出（命令可能含敏感内容），只存加密内容的编号（见第 10 条）。输出只保留最后 20 行、最多 4000 个字符；完整输出要等设计第二期的下载功能。
@@ -125,7 +125,7 @@ date: "2026-10-27"
 - [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]
 - [SOURCE: docs/backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md]
 - [SOURCE: docs/backlog/BL-20261027-011-background-command-live-output.md]
-- [SOURCE: docs/backlog/BL-20261027-012-background-commands-outlive-turn.md]
+- [BL-20261027-012-background-commands-outlive-turn.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)
 - [SOURCE: docs/engineering-casebook.md]
 - Claude Code 官方文档 [Tools reference](https://code.claude.com/docs/en/tools-reference)：“When a foreground command reaches its timeout without finishing, Claude Code moves it to the background instead of stopping it”。
 - Claude Code 官方文档 [Environment variables](https://code.claude.com/docs/en/env-vars)：`BASH_DEFAULT_TIMEOUT_MS`“default: 120000”，`BASH_MAX_TIMEOUT_MS`“default: 600000”。

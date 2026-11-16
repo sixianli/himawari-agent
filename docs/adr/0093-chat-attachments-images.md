@@ -89,7 +89,7 @@ date: "2026-10-27"
 - 好处：截图、照片、图表可以直接贴进对话问；不加新模型，费用只多出图片占的输入 token。
 - 风险已核对，但还没实测：DeepSeek 官方视觉指南（`https://api-docs.deepseek.com/guides/vision`，2026-10-27 读取）写明 `deepseek-flash` 收图片，支持 “JPEG, PNG, GIF, and WebP”，图片 token “are billed together with your text tokens”，每张缩放后约 1024 token 封顶；网关供应商列表里 digitalocean、fireworks、morph、deepseek、runware、deepinfra 这几家的标签都带 `vision`。按 digitalocean 的输入价每百万 token 0.30 美元算，一张图约 0.0003 美元。真实请求还没跑过，**上线后必须用一张真图实测一次**（云端会话没有网关密钥）。
 - 上线要做的事：生产机 `/etc/himawari/config.json` 里主模型的 `input` 加上 `"image"`（[配置模板](../../scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json)已经改了）。不改的话，网页会如实提示“看不了图片”，图片被略过，不会出错。
-- 还没做的：扫描件 PDF、旧版 .doc/.xls/.ppt 仍在 [BL-20261026-012](../backlog/BL-20261026-012-attachments-images-pdf-office.md)；预览面板里看图片仍在 [BL-20261026-013](../backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+- 还没做的：扫描件 PDF、旧版 .doc/.xls/.ppt 仍在 [BL-20261026-012](../backlog/BL-20261026-012-attachments-images-pdf-office.md)；预览面板里看图片仍在 [BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 
 [↑ 返回阅读导航](#contents)
 

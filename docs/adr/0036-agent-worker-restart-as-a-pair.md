@@ -73,6 +73,6 @@ Hermes（局域网里运行 Himawari 的 Linux 服务器）上的启动脚本 `s
 
 ## 关联文档
 
-- 成对重启与离线就绪边界：[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#成对重启与离线就绪边界]
+- 成对重启与离线就绪边界：[2026-09-29-sandbox-foreground-result-durability-design.md「成对重启与离线就绪边界」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#成对重启与离线就绪边界)
 - Mac 与 Hermes 服务部署的设计：[2026-08-26-portable-durable-web-agent-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md)
 - 相关待办：[SOURCE: docs/backlog/BL-20260929-002-mac-主-机-名-变-化-后-状.md]

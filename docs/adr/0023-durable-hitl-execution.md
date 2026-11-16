@@ -52,4 +52,4 @@ Run 状态转换与 Thread 版本及持久事件在同一事务提交，使浏�
 - [SOURCE: docs/adr/0015-product-state-over-pi-runtime-projection.md]
 - [SOURCE: docs/adr/0004-deterministic-authorization.md]
 - [SOURCE: docs/architecture-v0.1.md]
-- [SOURCE: docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md]
+- [2026-09-07-real-file-summary-agent-loop-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)

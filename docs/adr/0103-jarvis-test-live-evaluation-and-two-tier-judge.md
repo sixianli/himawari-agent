@@ -84,7 +84,7 @@ Andy 2026-10-28 14:12（日本时间）回复“了解，那就做我们现在�
 
 ## 和现有记忆评测的区别
 
-仓库已有的记忆评测（`scripts/memory-evaluation/`，设计见[自研记忆引擎设计的评测集和关口](../execution/specs/2026-10-25-self-built-memory-engine-design.md#evaluation)）量的是**检索层**：给定问题，记忆库能不能把对的记忆排在前面（召回率、排序）。它不经过上下文拼装，也不让模型回答。
+仓库已有的记忆评测（`scripts/memory-evaluation/`，设计见[自研记忆引擎设计的评测集和关口](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md#evaluation)）量的是**检索层**：给定问题，记忆库能不能把对的记忆排在前面（召回率、排序）。它不经过上下文拼装，也不让模型回答。
 
 Jarvis Test 量的是**拼装层和行为**：
 

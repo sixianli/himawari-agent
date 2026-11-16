@@ -8,6 +8,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const DOCS_DIRECTORY = "docs";
 const ARCHIVE_DIRECTORY = "docs/archive";
 const EXPLICIT_ANCHOR = /<a id="([^"]+)">/g;
+const DELETED_VERSION_SECTION_LABEL = /「([^」]+)」（已删除，链接指向删除前的版本）$/;
+const GOVERNED_DOCUMENT_PATH = /^docs\/(?:backlog|execution|runbooks)\/[^\s*<>…]+\.md$/;
 
 function plainText(tokens) {
   return tokens
@@ -70,6 +72,32 @@ function linkTargets(text) {
   return targets;
 }
 
+function decode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function deletedVersionLinksWithoutSection(text) {
+  const targets = new Set();
+  walkTokens(lex(text), (token) => {
+    if (token.type !== "link") return;
+    const section = DELETED_VERSION_SECTION_LABEL.exec(token.text)?.[1];
+    if (section && !decode(token.href).endsWith(`#${section}`)) targets.add(token.href);
+  });
+  return targets;
+}
+
+function governedPathsInCode(text) {
+  const paths = new Set();
+  walkTokens(lex(text), (token) => {
+    if (token.type === "codespan" && GOVERNED_DOCUMENT_PATH.test(token.text)) paths.add(token.text);
+  });
+  return paths;
+}
+
 export function docsMarkdownFiles(root = repositoryRoot, directory = DOCS_DIRECTORY) {
   const files = [];
   if (!existsSync(path.join(root, directory))) return files;
@@ -84,14 +112,6 @@ export function docsMarkdownFiles(root = repositoryRoot, directory = DOCS_DIRECT
   return files;
 }
 
-function decode(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export function checkDocsLinks({ root = repositoryRoot } = {}) {
   const errors = [];
   let checked = 0;
@@ -104,6 +124,11 @@ export function checkDocsLinks({ root = repositoryRoot } = {}) {
   for (const file of docsMarkdownFiles(root)) {
     const text = readFileSync(path.join(root, file), "utf8");
     const directory = path.dirname(path.join(root, file));
+    for (const target of deletedVersionLinksWithoutSection(text))
+      errors.push(`DOCS_DELETED_LINK_SECTION_MISSING ${file} -> ${target}`);
+    for (const mentioned of governedPathsInCode(text))
+      if (!existsSync(path.join(root, mentioned)))
+        errors.push(`DOCS_PATH_MISSING ${file} -> ${mentioned}`);
     for (const target of linkTargets(text)) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("//")) continue;
       checked += 1;

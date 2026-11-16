@@ -47,7 +47,7 @@ date: "2026-08-26"
 - 固定的行动分类、风险等级和 `ALLOW / ASK / DENY` 授权结果，以及不可被模型降低的确定性安全下限。
 - 受统一治理的 Tools、Skills、MCP、本地程序和第三方 API，以及公共 Web 研究、受控的认证 Web 操作、按目录授权的文件能力、授权代码工作区和经过审查的适配器管理；Apple/iCloud Calendar 是可选连接，未配置或未通过自身资格验证不阻塞 v0.2 核心生产资格。
 - 公开与私有 GitHub 仓库的在线只读监控、模型相关性分析、Web 收件箱投递和可观察的覆盖缺口。
-- 2026-09-07 确认的 SRT 首批范围：文件读取、授权原项目内编辑/写入/搜索、受限 Shell、MCP、经过授权的联网与依赖安装、真实 Web Search，以及明确授权后向指定 GitHub 仓库推送已有 commit。目标设计与当前完成情况分开记录：[SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]。
+- 2026-09-07 确认的 SRT 首批范围：文件读取、授权原项目内编辑/写入/搜索、受限 Shell、MCP、经过授权的联网与依赖安装、真实 Web Search，以及明确授权后向指定 GitHub 仓库推送已有 commit。目标设计与当前完成情况分开记录：[2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)。
 - 一个云端主要生成模型、一个固定云端备用生成模型，以及独立管理的非生成式嵌入模型。
 - 受预算约束的周期反思、主动任务建议、临时内部专业 Worker 和隔离环境中的自我改进候选验证。
 - 中、英、日三种 Web UI 语言，以及桌面和移动浏览器的无障碍关键流程。

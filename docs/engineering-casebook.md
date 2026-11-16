@@ -1404,7 +1404,7 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 **相关 ADR/PR**
 
-[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog `docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md`、`BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、`BL-20261026-007-enable-bark-reminder-push-in-production.md`；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
+[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog [BL-20261026-004-production-cloudflare-entry-for-owner-phone.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)、`docs/backlog/BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、[BL-20261026-007-enable-bark-reminder-push-in-production.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md)；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
 
 **面试 30 秒版**
 
@@ -1466,7 +1466,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0084](adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
+[ADR 0084](adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
 
 **面试 30 秒版**
 
@@ -1596,7 +1596,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
@@ -1667,7 +1667,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 - 整次出包时间：6 分 26 秒（385.7 秒），原来约 49 分钟到 1 小时，目标 15–20 分钟。来源：2026-10-26 第六次 Mac 只出包演练的 `PACKET_STEP` 输出（提交 `500817f`，数据库 56 → 57，包已冻结，没有上线）。分步：读生产 14.8 秒，S0 读回到 22.3 秒，Hermes 构建约 4 分 19 秒（到 284.9 秒），取回材料到 320.8 秒，渲染到 321.5 秒，17 项检查到 371.6 秒，网页验收和检查并行、到 372.5 秒已完成，冻结到 385.7 秒。最大的一块是 Hermes 构建。
 - 停服时间：第十三次真正上线（2026-10-26，包 `2026-10-26-thirteenth-change-packet-05`，提交 `d39e7a9`）实测 4 分 28 秒：23:24:26.6Z 服务停止，23:28:54.4Z 新版本报告就绪，和推算的约 4 分钟相符（来源：生产服务日志）。
 - 第十三次上线各步耗时（`deploy.sh` 的 `DEPLOY_STEP_START` 时间）：上线前检查 2 秒，传包 4 分 01 秒，安装 2 分 11 秒，验收 7 分 50 秒，以上都在停服前；停服 10 秒，复制数据库 20 秒，发布材料 3 秒，确定绑定 8 秒，签名 21 秒，运行保护 35 秒，读回 14 秒，查数据库状态 6 秒，写配置并升库 15 秒，升级能力目录 38 秒，切换启动 2 分 17 秒，最后读回约 10 秒。出包 414.8 秒，上线全程约 19 分钟。
-- 第十三次第一次上线停在验收：上线前检查只要求空闲不少于包大小的 2 倍（当时 11.17 GB 通过），装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停；Andy 同意删掉第一到第九版的旧临时目录（17.6 GB）后第二次成功。改进记在 [BL-20261027-001](backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](backlog/BL-20261027-002-prune-production-release-leftovers.md)。
+- 第十三次第一次上线停在验收：上线前检查只要求空闲不少于包大小的 2 倍（当时 11.17 GB 通过），装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停；Andy 同意删掉第一到第九版的旧临时目录（17.6 GB）后第二次成功。改进记在 [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md)。
 - 演练本身挡住的问题：前五次演练都在出包阶段失败，生产一次都没停：上传目录不在 Hermes 包装脚本允许的范围、上传前目录还没建、升库检查用了测试机上过期的构建（只认 51 个迁移）、Hermes 登录默认文件权限 `umask 002` 让检查自己建的目录被判不安全、网页验收缺锁定版本的 Python 和 `fd` 工具、验收测试还在找改版前记忆页的文字。每一处都先在云端复现、加测试再修，后两类的前置条件改成出包第一步约 10 秒内检查。
 - 检查耗时：Hermes 上 17 项检查从约 469 秒降到约 50 秒。最慢的 `verify-raw-copy-fixtures.mjs` 从 457.7 秒降到 22.5 秒，原因是它的临时目录原来在 Hermes 的 `/data` 盘上，复制时每个文件都要落盘同步；改到 `/tmp` 后变快（第五、六次演练的逐项秒数）。同一项在云端容器里只要 2.9 秒。
 
@@ -1680,7 +1680,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **后续（2026-10-27）：同一次出包又卡了两处，都是“合并前没人跑出包才跑的检查”**
 
-- 构建缺依赖：第十四版第一次出包在 Hermes 构建一步失败（`HERMES_BUILD_FAILED BUILD_NOT_PASSED`）。PR #49 新加了 `web-push` 依赖，但 Hermes 测试目录里装好的依赖还是旧的，`scripts/delivery-mode/hermes/build-candidate.sh` 只切到新提交就构建，不会因为 `package-lock.json` 变了而重装。手动跑 `scripts/ci/install-dependencies.mjs` 后才过。改进记在 [BL-20261027-003](backlog/BL-20261027-003-build-candidate-reinstall-dependencies-on-lockfile-change.md)。
+- 构建缺依赖：第十四版第一次出包在 Hermes 构建一步失败（`HERMES_BUILD_FAILED BUILD_NOT_PASSED`）。PR #49 新加了 `web-push` 依赖，但 Hermes 测试目录里装好的依赖还是旧的，`scripts/delivery-mode/hermes/build-candidate.sh` 只切到新提交就构建，不会因为 `package-lock.json` 变了而重装。手动跑 `scripts/ci/install-dependencies.mjs` 后才过。改进记在 [BL-20261027-003](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-003-build-candidate-reinstall-dependencies-on-lockfile-change.md)。
 - 走查找不到输入框：修好夹具序号后，网页走查失败（`HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1`）。PR #48 改了输入框的提示文字，走查测试 `test/integration/product-path-browser.test.ts` 还按旧文字找输入框。这条测试只在出包时跑，改界面的 PR 合并前没人跑它。[PR #54](https://github.com/sixianli/himawari-agent/pull/54) 改成按无障碍名称“消息草稿”找。改进记在 [BL-20261027-004](backlog/BL-20261027-004-ui-pr-runs-release-walkthrough.md)、[BL-20261027-005](backlog/BL-20261027-005-walkthrough-stable-locators.md)。
 - 教训：出包阶段的检查拦住了这三处（连同上面的序号问题），生产都没停；但每处都要多改一个 PR、多出一次包。只在出包时才跑的检查，要么在环境变化时自己补齐前提（依赖），要么在会影响它的 PR 合并前就跑（走查）；测试定位界面元素用稳定的名字，不用给人看的文案。
 
@@ -1896,7 +1896,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
 
-网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 
 取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
 
@@ -2232,7 +2232,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
+[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
 
 **面试 30 秒版**
 
@@ -2423,7 +2423,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 

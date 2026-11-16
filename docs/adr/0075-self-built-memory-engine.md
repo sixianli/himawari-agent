@@ -44,7 +44,7 @@ date: "2026-10-25"
 3. 检索为向量、FTS5 全文、实体三路，用倒数排名融合（RRF）合并，再加重要度、把握分和新近度。中文用 Node 内置 `Intl.Segmenter` 预分词。向量存普通表的 BLOB 列，用 sqlite-vec 0.1.9 的标量函数在 SQLite 内暴力计算；扩展加载失败时退回 JavaScript 计算，嵌入服务不可用时退回全文加实体两路。
 4. 嵌入模型继续用云端 Qwen3-Embedding-8B（经 Vercel AI Gateway），由产品自己的 OpenAI 兼容嵌入客户端调用，每次调用照旧经过模型准入和预算登记。维度默认保持 4096；只有评测集上 1024 维没有损失、且实测网关支持时才降维，配置改动单独进行。
 5. 每条自动写入的新记忆必须附主人原话引文，由宿主程序核对原文中确有这句话才保存。每轮对话只保留一次提炼调用，其余整理放到夜间。
-6. 实施按[设计规格](../execution/specs/2026-10-25-self-built-memory-engine-design.md#phases)的四个阶段推进；每个阶段过评测关口才上线，阶段一的关口是新引擎在中文评测集上不低于 Mem0 基线。
+6. 实施按[设计规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md#phases)的四个阶段推进；每个阶段过评测关口才上线，阶段一的关口是新引擎在中文评测集上不低于 Mem0 基线。
 
 <a id="options"></a>
 
@@ -90,6 +90,6 @@ date: "2026-10-25"
 ## 关联文档
 
 - [ADR 0005：将长期记忆作为可替换外部能力](0005-replaceable-memory-boundary.md)
-- [自研记忆引擎设计规格](../execution/specs/2026-10-25-self-built-memory-engine-design.md)
+- [自研记忆引擎设计规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md)
 - [方案文档（Claude Doc，已批准）](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)
 - [方案存档（全文和批注记录）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)
