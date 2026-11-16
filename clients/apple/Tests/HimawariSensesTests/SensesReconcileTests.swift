@@ -107,4 +107,14 @@ struct SensesReconcileTests {
         await model.turnOn(.calendar)
         #expect(!model.serverCopyRemovable(.calendar))
     }
+
+    @Test func anEmptyServerCopyOrANonMirrorItemOffersNoRemoval() async throws {
+        let service = RecordingSensesService()
+        service.mirrorCounts = [.calendar: 0, .contacts: 0, .location: 5]
+        let model = try makeModel(on: .clipboard, service: service)
+        await model.refresh()
+        #expect(!model.serverCopyRemovable(.calendar))
+        #expect(!model.serverCopyRemovable(.contacts))
+        #expect(!model.serverCopyRemovable(.location))
+    }
 }
