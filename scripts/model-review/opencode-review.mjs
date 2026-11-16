@@ -47,8 +47,8 @@ import {
   incrementScope,
   readIncrementConfig,
   SHADOW_DIR,
-  shadowCommand,
   shadowRunsDone,
+  shadowSuggestion,
   toolSummary,
   toolSummaryValid,
 } from "./increment.mjs";
@@ -4341,7 +4341,16 @@ async function main() {
       shadowRunsDone(join(options.repo, REVIEWS_DIR)) < incrementConfig.shadowFullTotal
     )
       console.log(
-        `SHADOW_FULL_SUGGESTED ${shadowCommand({ pr: options.pr, base: commits.base, head: commits.head, brief: options.prBrief ?? options.brief, gateway: options.gateway, models: options.models, providers: options.providers, approvedUsd: options.approvedUsd })}`,
+        shadowSuggestion({
+          pr: options.pr,
+          base: commits.base,
+          head: commits.head,
+          prBrief: options.prBrief,
+          gateway: options.gateway,
+          models: options.models,
+          providers: options.providers,
+          approvedUsd: options.approvedUsd,
+        }),
       );
     const covered = results.some((record) => record.substitute && record.outcome === "ok");
     if (

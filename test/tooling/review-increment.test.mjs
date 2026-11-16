@@ -18,6 +18,7 @@ import {
   parseIncrementConfig,
   shadowCommand,
   shadowRunsDone,
+  shadowSuggestion,
   toolSummary,
   toolSummaryValid,
 } from "../../scripts/model-review/increment.mjs";
@@ -608,6 +609,16 @@ describe("shadow spend and command", () => {
     expect(argv[argv.indexOf("--providers") + 1]).toBe("p1");
     expect(argv[argv.indexOf("--approved-usd") + 1]).toBe("1.5");
     expect(argv[argv.indexOf("--gateway") + 1]).toBe("magpie");
+  });
+
+  it("[ADR 0280] the shadow suggestion uses the whole-PR brief and is skipped without one", () => {
+    const run = { pr: 7, base: "b", head: "h", gateway: "magpie" };
+    const suggested = shadowSuggestion({ ...run, prBrief: "/r/first.md" });
+    expect(suggested.startsWith("SHADOW_FULL_SUGGESTED ")).toBe(true);
+    expect(suggested).toContain("--brief /r/first.md");
+    expect(shadowSuggestion({ ...run, brief: "/r/round.md" })).toBe(
+      "SHADOW_FULL_SKIPPED pr-brief-missing",
+    );
   });
 });
 

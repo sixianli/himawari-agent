@@ -342,3 +342,9 @@ export function shadowCommand({ pr, base, head, brief, gateway, models, provider
   ];
   return args.filter(Boolean).join(" ");
 }
+
+export function shadowSuggestion({ prBrief, ...run }) {
+  return prBrief === undefined
+    ? "SHADOW_FULL_SKIPPED pr-brief-missing"
+    : `SHADOW_FULL_SUGGESTED ${shadowCommand({ ...run, brief: prBrief })}`;
+}
