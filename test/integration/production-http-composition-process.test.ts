@@ -2133,8 +2133,9 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
   const mcpAudience = "mcp-access-audience-production-process";
   const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
   try {
+    const secret = seedMcpConnection();
     const call = async (assertion?: string) =>
-      httpRequest(service.running().address, "/api/mcp/v1", {
+      httpRequest(service.running().address, `/api/mcp/v1/${secret}`, {
         ...jsonRequestBody({
           jsonrpc: "2.0",
           id: 1,
@@ -2170,7 +2171,7 @@ function seedMcpConnection(): string {
   try {
     seeded
       .prepare(
-        `INSERT INTO mcp_connections (
+        `INSERT OR IGNORE INTO mcp_connections (
           id, owner_id, agent_id, name, secret_sha256, capabilities, read_ceiling, push_policy,
           status, reported_client, created_at, updated_at, secret_rotated_at, last_seen_at
         ) VALUES (?, ?, ?, ?, ?, '["mcp"]', 'private', 'ask', 'active', NULL, ?, ?, NULL, NULL)`,
