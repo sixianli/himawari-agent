@@ -120,7 +120,7 @@ v15 的 Hermes 新读取轮次已完成，原 read 结果经现有交付意图�
 
 ## 最新验收边界
 
-最终状态以 [SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md] 的“最终 Hermes 验收事实”及遮盖证据为准。v15 服务端和 v17 网页已通过真实聊天、Web 搜索、文件、审批与重启续聊，但对话列表搜索生产接口缺失、工具耗时数分钟、Hermes 内置账号迁移尚未执行；不能将前述中间阶段结果误认为全部成品验收通过。原失败 Run、未知费用与未完成项保留，本文保持 active。
+最终状态以 [2026-09-10-control-center-local-acceptance-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md) 的“最终 Hermes 验收事实”及遮盖证据为准。v15 服务端和 v17 网页已通过真实聊天、Web 搜索、文件、审批与重启续聊，但对话列表搜索生产接口缺失、工具耗时数分钟、Hermes 内置账号迁移尚未执行；不能将前述中间阶段结果误认为全部成品验收通过。原失败 Run、未知费用与未完成项保留，本文保持 active。
 
 
 ## 2026-09-11 用户实际使用后的修复范围

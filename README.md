@@ -77,7 +77,7 @@ Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在�
 
 `.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、安全复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
 
-正常 PR 在 `718ef1b` 的真实 Actions 运行中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Active Ruleset `22256403` 已启用并回读确认：必须通过 PR、GitHub Actions 来源的 `ci/required`、分支保持最新、讨论解决，禁止强推和删除且无 bypass。目标 fork 审批策略及其专项实测仍未完成。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
+正常 PR 在 `718ef1b` 的真实 Actions 运行中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Active Ruleset `22256403` 已启用并回读确认：必须通过 PR、GitHub Actions 来源的 `ci/required`、分支保持最新、讨论解决，禁止强推和删除且无 bypass。目标 fork 审批策略及其专项实测仍未完成。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
 
 ## Local reference composition
 
@@ -176,7 +176,7 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 
 `npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
 
-文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
+文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
 
 通用 HITL 已接入受保护暂停记录、SQLite checkpoint、审批后新租约恢复和 Pi 原工具批次回放；文件读取使用同一契约。审批等待不依赖存活进程，也不重新发送原模型请求。未知副作用继续核查，不能通过再次批准重做。设计与实际验证边界见 [通用 HITL 决策](docs/adr/0023-durable-hitl-execution.md)。
 

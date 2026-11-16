@@ -25,7 +25,7 @@ date: "2026-10-13"
 
 2026-10-13 opencode 第 19 批在 Hermes 产品路径上验证七个编码工具时发现：沙箱（用操作系统机制限制程序能访问的文件和网络的隔离环境）里的 `bash` 工具只能找到安装目录 `runtimeRoot/pi-tools/bin/` 里的 `bash`、`rg`、`fd` 三个程序。`ls`、`cat`、`wc`、`git`、`python3` 这类常用命令都找不到，测试只能改用 bash 内建命令。证据见 `.ci-output/handoff/2026-10-13-r2t1-oc-stop-19.md` 第 6.2 节。
 
-原因是一条有意的设计：命令的查找路径（PATH，决定去哪些目录找命令）只设为这个固定目录，目的是让每个能运行的程序都计入 runtimeDigest（整个安装内容的摘要，用来核验安装没被改动）。这条规定写在[安装启停 Runbook](../runbooks/install-start-stop-runbook.md)、[架构文档](../architecture-v0.1.md)和 [SRT 统一执行设计](../execution/specs/2026-09-07-srt-unified-execution-design.md)中。
+原因是一条有意的设计：命令的查找路径（PATH，决定去哪些目录找命令）只设为这个固定目录，目的是让每个能运行的程序都计入 runtimeDigest（整个安装内容的摘要，用来核验安装没被改动）。这条规定写在[安装启停 Runbook](../runbooks/install-start-stop-runbook.md)、[架构文档](../architecture-v0.1.md)和 [SRT 统一执行设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)中。
 
 用户的目标是把 Himawari 做成个人全能 Agent（长任务目标 G88）。Codex 和 Claude Code 在沙箱里执行命令时都使用系统自带的命令，沙箱只限制写入范围和联网。
 

@@ -22,7 +22,7 @@ date: "2026-10-06"
 
 - 决定：[SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 - 架构：[SOURCE: docs/architecture-v0.1.md]
-- 迁移范围：[SOURCE: docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md]
+- 迁移范围：[BL-20261004-002-模-型-网-关-迁-移-到-vercel.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md)
 
 本设计由Codex按G39/G40独立规划及自审，规定本次迁移的实现及验收边界。G44/G45在Hermes上的原响应确定：文本末帧的usage.cost与choices[0].delta.provider_metadata.gateway.cost一致；嵌入使用providerMetadata.gateway.cost，usage只提供token数。两种字段不可混用。真实请求只证明本次输入和服务商结果，不能代替产品迁移验收或生产服务器资格。
 

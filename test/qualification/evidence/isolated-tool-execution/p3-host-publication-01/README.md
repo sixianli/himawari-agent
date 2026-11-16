@@ -1,6 +1,6 @@
 # 严格模式下由宿主一侧发布文件
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式下的固定目标文件发布”一项（原 C3），做法按 [ADR 0033](../../../../../docs/adr/0033-process-sandbox-default-and-optional-containers.md#decision) 中用户批准的方案：发布不进容器、不运行命令，由 Worker 在宿主一侧完成，但登记在本轮任务环境名下。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式下的固定目标文件发布”一项（原 C3），做法按 [ADR 0033](../../../../../docs/adr/0033-process-sandbox-default-and-optional-containers.md#decision) 中用户批准的方案：发布不进容器、不运行命令，由 Worker 在宿主一侧完成，但登记在本轮任务环境名下。
 
 ## 用词
 

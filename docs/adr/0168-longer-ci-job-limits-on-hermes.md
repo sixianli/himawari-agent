@@ -63,7 +63,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）从 2026-11-04 起在 H
 
 1. 任务整体时限改为：`build`、`test`、`node-floor`、`browser` 90 分钟（原 45）；`policy`、`static`、`coverage`、`security` 60 分钟（原 30）；`ci/required` 15 分钟（原 5）。main 推送后的确认运行：`plan` 15 分钟（原 5），`confirm` 90 分钟（原 45）。
 2. `ci/policy.schema.json` 里 `timeoutMinutes` 的上限从 60 提到 120，给以后留一次调整的余地。
-3. 只改任务整体时限。Andy 也说了放开单条测试的时限（Vitest 默认 5 秒，`integration` 项目 30 秒），但这条暂缓：[BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 记录过，2026-10 在不限 CPU 的 Hermes 上用默认时限跑通了第 3 层 5133/5133；[测试主机操作手册](../runbooks/test-host-operations-runbook.md) 写明“超时是要诊断修复的缺陷，不是环境问题”。Claude 已把这两条交给 Andy，他看过后再定，定了再在这里记录。
+3. 只改任务整体时限。Andy 也说了放开单条测试的时限（Vitest 默认 5 秒，`integration` 项目 30 秒），但这条暂缓：[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 记录过，2026-10 在不限 CPU 的 Hermes 上用默认时限跑通了第 3 层 5133/5133；[测试主机操作手册](../runbooks/test-host-operations-runbook.md) 写明“超时是要诊断修复的缺陷，不是环境问题”。Claude 已把这两条交给 Andy，他看过后再定，定了再在这里记录。
 4. 放宽之后要查清 Hermes 为什么慢，查到的原因按“修 bug 先查根因”处理；查清后如果整体时限可以收回，再改回来并在这里记录。
 
 [↑ 返回阅读导航](#contents)
