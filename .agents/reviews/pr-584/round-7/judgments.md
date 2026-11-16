@@ -1,0 +1,6 @@
+# PR 584 第 7 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 低 — `--finish-round` 的 `NEXT` 仍无条件带 `--pr-brief`，上一轮第 2 条只靠人工看文档删除。NEXT 里的 --pr-brief 后面是占位符 <整份 PR 材料>，和 <修改后的提交>、<本轮材料> 一样本来就要主线程按流程卡第 18 行替换，第 18 行已写明第 1 轮材料不在就去掉 --pr-brief 并说明会打印 SHADOW_FULL_SKIPPED；finishRound 不知道第 1 轮材料路径（opencode-review.mjs:2119-2121 只有 record.base/gateway），无从判断存在与否；漏看说明时 parseArgs 在花钱前以 ARG_PR_BRIEF_MISSING 拒绝（opencode-review.mjs:3651-3655）。照现在的代码和说明没有会做错的用法，结构上再改是可以更好
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低 — 委托轮次不再错误顶替，但也永远不会抽样，漏查衡量的样本会缺一块。是有意取舍，model-review.md:165 写明委托轮次 delegate.mjs 不传 --pr-brief、只打印 SHADOW_FULL_SKIPPED pr-brief-missing；increment.mjs:346-350 不再顶替，不会产生错误结果或错误花费；抽样只是衡量用，样本来自非委托轮次也能凑满 shadowFullTotal，功能缺口属于可以更好
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低 — ADR 0280 仍写增量轮一定打印 `SHADOW_FULL_SUGGESTED`，没有同步新增的 `SKIPPED` 分支。ADR 0280:113 记的是 Andy 2026-11-15 的决定和当时的实现，给了 --pr-brief 时确实打印 SHADOW_FULL_SUGGESTED，不算写错；照着操作的规则在 model-review.md:165 和流程卡第 18 行，两处都写了 SHADOW_FULL_SKIPPED 分支，读者不会因此做错。补上分支更完整，属于可以更好
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4. 低 — 新增测试只覆盖 `shadowSuggestion` 辅助函数，没有覆盖 `opencode-review.mjs` 的调用端。缺的是测试覆盖，不是照现在的代码会出错的输入：调用端 opencode-review.mjs:4344-4353 现在只传 options.prBrief，读代码可证；沿用第 6 轮第 3 条对同类测试缺口的原判
