@@ -20,7 +20,7 @@ Andy 的原话（协调者转来）：“想一想，这一步要上网查资料
 
 **花费重估（带工具）**
 
-- 一次想一想运行：约 6 步，每步输入 5 到 10 千 token（后面的步骤大部分是缓存读取），总输入约 5 万、输出加思考约 8 千。按 DeepSeek V4 Flash 目录价（输入 0.06、输出 0.18、缓存读取 0.015，美元每百万 token，`docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md`）：约 0.003 + 0.0015 ≈ 0.005 美元，留余量按 0.01 美元算。搜索不花钱（公开端点）。
+- 一次想一想运行：约 6 步，每步输入 5 到 10 千 token（后面的步骤大部分是缓存读取），总输入约 5 万、输出加思考约 8 千。按 DeepSeek V4 Flash 目录价（输入 0.06、输出 0.18、缓存读取 0.015，美元每百万 token，[2026-09-07-real-file-summary-agent-loop-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)）：约 0.003 + 0.0015 ≈ 0.005 美元，留余量按 0.01 美元算。搜索不花钱（公开端点）。
 - 一天 50 个入口记录进门、10 个过第一次判断（Jev）：50×0.0001 + 10×0.01 ≈ 0.1 美元/天，按 10 倍留余量约 1 美元/天以内。
 - “去办一件事”点头后的运行，花费和主人自己发一条消息让她办一样，走同一套模型路由。
 - 上线前评测约 60 个用例 × 一次带工具运行 ≈ 0.6 美元，**超过 0.5 美元，要先报 Andy 同意**。
@@ -96,7 +96,7 @@ Andy 的原话（协调者转来）：“想一想，这一步要上网查资料
 
 ### 模型花费预估（估的，没实测）
 
-价格有仓库里的出处：Jev 在 Vercel 上叫 `typesafe-ai/jev`，每百万输入 token 0.042 美元，输出不收钱（`docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md:56`）；DeepSeek V4 Flash 的目录价是每百万 token 输入 0.06、输出 0.18、缓存读取 0.015 美元（`docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md` 的价格表，是 2026-09-07 读公开目录的观察值，当时的价，实际账单可能不同）。
+价格有仓库里的出处：Jev 在 Vercel 上叫 `typesafe-ai/jev`，每百万输入 token 0.042 美元，输出不收钱（`docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md:56`）；DeepSeek V4 Flash 的目录价是每百万 token 输入 0.06、输出 0.18、缓存读取 0.015 美元（[2026-09-07-real-file-summary-agent-loop-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md) 的价格表，是 2026-09-07 读公开目录的观察值，当时的价，实际账单可能不同）。
 - 第一次判断（Jev）：输入约 3 千 token，每次约 0.0001 美元。
 - 第二次判断（DeepSeek 一次生成）：输入约 6 千、输出约 500，再加思考 token 按 2 千算，每次约 0.001 美元。
 - 假设一天 50 个入口记录进门、其中 10 个过第一次判断：50×0.0001 + 10×0.001 ≈ 0.015 美元/天，按 10 倍留余量也不到 0.2 美元/天。

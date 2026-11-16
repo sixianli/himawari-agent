@@ -136,7 +136,7 @@ date: "2026-10-29"
 ## 关联文档
 
 - [SOURCE: docs/product-vision.md]
-- [2026-10-25-self-built-memory-engine-design.md「profile」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md)
+- [2026-10-25-self-built-memory-engine-design.md「profile」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md#profile)
 - [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md#v12-memory-page]
 - [ADR 0075 自研记忆引擎](0075-self-built-memory-engine.md)
 - [ADR 0105 UI 批次（记忆页独立）](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)

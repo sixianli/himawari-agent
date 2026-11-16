@@ -48,7 +48,7 @@ date: "2026-09-15"
 
 ## v5 增补：执行环境显示（2026-09-27 批准）
 
-用户于 2026-09-27 在三个效果图方案中选择“输入框上方状态条”，并要求加上侧栏“有程序在运行”的灰色转圈标记。批准的原型保存为新版本：[v5 原型](../../assets/control-center/2026-09-27-v5/index.html)、[原始片段](../../assets/control-center/2026-09-27-v5/source.html)、[校验清单](../../assets/control-center/2026-09-27-v5/SHA256SUMS)。v5 只增加下列内容，其余布局与交互仍以 v4 为准。需求来源：[2026-09-24-isolated-tool-execution-design.md「mode-disclosure」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
+用户于 2026-09-27 在三个效果图方案中选择“输入框上方状态条”，并要求加上侧栏“有程序在运行”的灰色转圈标记。批准的原型保存为新版本：[v5 原型](../../assets/control-center/2026-09-27-v5/index.html)、[原始片段](../../assets/control-center/2026-09-27-v5/source.html)、[校验清单](../../assets/control-center/2026-09-27-v5/SHA256SUMS)。v5 只增加下列内容，其余布局与交互仍以 v4 为准。需求来源：[2026-09-24-isolated-tool-execution-design.md「mode-disclosure」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#mode-disclosure)
 
 1. 输入框上方一行小字：当前模式（“默认模式”或“严格模式”）和仍在运行的程序数量，没有时写“没有程序在运行”。点开弹出面板，再点或按 Esc 关闭。
 2. 面板分三段：当前模式及含义（默认模式要说明停止只保证工具的进程组已结束）、仍在运行的后台或服务程序（工具名、类型、开始时间和所属对话，点对话名打开该对话）、严格模式下不可用的工具及原因。模式由安装配置决定，页面不提供切换。

@@ -1404,7 +1404,7 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 **相关 ADR/PR**
 
-[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog `docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md`、`BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、`BL-20261026-007-enable-bark-reminder-push-in-production.md`；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
+[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog [BL-20261026-004-production-cloudflare-entry-for-owner-phone.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)、`docs/backlog/BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、[BL-20261026-007-enable-bark-reminder-push-in-production.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md)；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
 
 **面试 30 秒版**
 
