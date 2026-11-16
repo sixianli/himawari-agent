@@ -559,7 +559,7 @@ date: "2026-09-24"
 - [ ] 清理之后，用户数据和验证证据仍然保留；没有残留的任务自有执行资源。
 - [ ] 当前事实文档和 Runbook 已按实现更新；必要的 verification skill 已维护。
 - [ ] 未完成但另有范围的后续能力按需要记入 Backlog，不用空占位掩盖未交付的要求。
-- [ ] 全部完成后，才按 document-governance 归档本 Spec/Plan；ADR 留在 `docs/adr/`。
+- [ ] 全部完成后，才用 `git rm` 删除本 Spec/Plan，不归档，旧版本在 git 历史里；ADR 留在 `docs/adr/`。
 
 <a id="document-review"></a>
 

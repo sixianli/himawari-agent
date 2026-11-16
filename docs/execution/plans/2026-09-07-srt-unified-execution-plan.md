@@ -421,7 +421,7 @@ npm run typecheck
 npm run check:boundaries
 npm run check:pi-compat
 node_modules/.bin/vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-execution-contract.test.ts
-npm run check:v0.2-invariants
+npm run check:security-invariants
 npm run check:secrets
 npm run check:ci-policy
 python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py . --strict
@@ -512,4 +512,4 @@ Owner 明确将 MCP 接入和 GitHub 已有 commit 推送移出本次 Spec/Plan�
 - [ ] 资源监管与清理义务有明确结论，未知未被默认成功或自动重放。
 - [ ] 安装行为、架构当前事实、UI 和 Runbook 与实际一致。
 - [ ] 未完成必要能力不以归档/Backlog 隐藏；其他后续事项按治理记录。
-- [ ] 整批实际交付完成后才归档本 Plan；本次设计完成不关闭实施计划。
+- [ ] 整批实际交付完成后才用 `git rm` 删除本 Plan，不归档，旧版本在 git 历史里；本次设计完成不关闭实施计划。

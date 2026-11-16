@@ -1,6 +1,6 @@
 # P4 完成验收
 
-[返回 Plan](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed) · [Spec](../../../../../docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#optional-workcopies)
+[返回 Plan](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed) · [Spec](../../../../../docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#optional-workcopies)
 
 ## 实现与可观察结果
 

@@ -48,7 +48,7 @@
 <a id="code-and-documentation-consistency"></a>
 ## 代码与文档一致
 
-在快速模式下，本节由本文件前面几节和[交付模式](delivery-mode.md#fast-mode)中较轻的规则替代：严格校验不再自动运行；改动了 `docs/` 的提交，提交前必须用 `document-governance` 技能手动运行它，且不得新增校验错误；Runbook（操作手册）的重新封存推迟进行。
+在快速模式下，本节由本文件前面几节和[交付模式](delivery-mode.md#fast-mode)中较轻的规则替代：严格校验不再自动运行；改动了 `docs/` 的提交，提交前必须用 `document-governance` 技能手动运行它，且不得新增校验错误；完整的偏差核对推迟到完整模式。
 
 代码和文档绝不能脱节。
 
