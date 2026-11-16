@@ -33,6 +33,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>win.siyi.himawari</string>
+	<string>$(HIMAWARI_BUNDLE_PREFIX)</string>
 </dict>
 </plist>

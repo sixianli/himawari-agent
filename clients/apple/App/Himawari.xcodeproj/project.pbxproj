@@ -742,6 +742,7 @@
 		8B9CAD7C6EFB636363373D5E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HIMAWARI_BUNDLE_PREFIX = win.siyi.himawari.app;
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
 				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
@@ -759,6 +760,7 @@
 		21DD80C87DF0E73F06479F80 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HIMAWARI_BUNDLE_PREFIX = win.siyi.himawari.app;
 				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
 				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
 				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
@@ -787,7 +789,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX)";
 				PRODUCT_NAME = Himawari;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -812,7 +814,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX)";
 				PRODUCT_NAME = Himawari;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -887,7 +889,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.share;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).share";
 				PRODUCT_NAME = HimawariShareExtension;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -913,7 +915,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.share;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).share";
 				PRODUCT_NAME = HimawariShareExtension;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -939,7 +941,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).safari";
 				PRODUCT_NAME = HimawariSafariExtension;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -965,7 +967,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).safari";
 				PRODUCT_NAME = HimawariSafariExtension;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -989,7 +991,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "win.siyi.himawari.listen-activity";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).listen-activity";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1013,7 +1015,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "win.siyi.himawari.listen-activity";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).listen-activity";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1039,7 +1041,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = NO;
@@ -1066,7 +1068,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = NO;
@@ -1094,7 +1096,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).watchkitapp.widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -1122,7 +1124,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HIMAWARI_BUNDLE_PREFIX).watchkitapp.widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;

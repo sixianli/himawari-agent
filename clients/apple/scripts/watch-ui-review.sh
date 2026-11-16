@@ -6,7 +6,7 @@ out="$root/ui-review/watch-latest"
 derived="$root/ui-review/DerivedDataWatch"
 device_name="Himawari Watch"
 lang="zh-Hans"
-bundle="win.siyi.himawari.watchkitapp"
+bundle="${HIMAWARI_BUNDLE_PREFIX:-win.siyi.himawari.app}.watchkitapp"
 
 usage() {
   echo "usage: clients/apple/scripts/watch-ui-review.sh [--out DIR] [--lang zh-Hans|en|ja]" >&2
