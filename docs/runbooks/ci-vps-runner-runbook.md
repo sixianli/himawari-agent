@@ -3,7 +3,7 @@ status: active
 document_type: runbook
 execution_risk: critical
 contract_sha256: "sha256:11bf4f414df75dd72ad9fdc64b5553f4691b32d8e9d2d9a02a3091b85c1d1f33"
-supersedes: "docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-11-07"
 ---

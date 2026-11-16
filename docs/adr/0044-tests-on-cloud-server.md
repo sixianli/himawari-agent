@@ -176,5 +176,5 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 - 被取代的决定：[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]
 - 更早的测试位置和测试时机决定，原先由 ADR 0043 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以四者的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
 - Ubuntu 24.04 的 bwrap 限制：[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
-- 首次生产部署计划（目前暂缓）：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
-- 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+- 首次生产部署计划（目前暂缓）：[2026-09-30-production-first-deployment-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-30-production-first-deployment-plan.md)
+- 进行中的工具执行排查：[2026-09-28-tool-execution-audit-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-28-tool-execution-audit-plan.md)

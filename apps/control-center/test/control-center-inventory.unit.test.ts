@@ -85,9 +85,6 @@ describe("control center information architecture inventory", () => {
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       expect(surface.requiredUiStates).toEqual(CONTROL_CENTER_REQUIRED_UI_STATES);
       expect(surface.stableObjects.length).toBeGreaterThan(0);
-      expect(surface.sourceSpec).toMatch(
-        /^docs\/(?:execution\/specs|archive\/specs)\/.+-design\.md$/,
-      );
     }
   });
 

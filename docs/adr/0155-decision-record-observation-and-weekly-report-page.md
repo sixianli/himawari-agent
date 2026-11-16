@@ -25,7 +25,7 @@ date: "2026-11-03"
 
 任务块 P0-8（Andy 2026-10-31 写，2026-11-03 定稿）要求：完成生产机上的“连续运行验收”，决策记录（数据库表 `decision_ledger`，记录 Himawari 每次拿主意的那张表，[ADR 0143](0143-decision-ledger-for-model-gate-decisions.md)）上线即数据起点；验收失败照修、数据照记；记下起始日期与版本。做到什么算完：生产机运行、决策记录持续写入、首份校准周报可生成。注意事项：验收失败不重置数据起点。
 
-仓库里原来没有“连续运行验收”：Andy 在 2026-09-04 取消了连续运行天数门槛（[生产资格规格](../execution/specs/2026-08-26-production-qualification-upgrade-design.md)第 182 行）。2026-11-03 Andy 在云端线程里选定：
+仓库里原来没有“连续运行验收”：Andy 在 2026-09-04 取消了连续运行天数门槛（[生产资格规格](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md)第 182 行）。2026-11-03 Andy 在云端线程里选定：
 
 - “连续运行验收” = 上线 + 7 天观察期 + 到期出首份校准周报。
 - 周报网页和 P0-8 一起做：放在提醒页的“校准周报”标签里；数字由服务从数据库实时计算；每天的写入检查由服务自己做，结果显示在网页上。

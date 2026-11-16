@@ -79,7 +79,7 @@ date: "2026-10-29"
 - 时间：检查只在提交和推送时跑，不在出包或上线时跑，对发布时间没有直接影响。对快速模式下漏跑的提交 `bfa6162` 运行一次检查用时约 1.2 秒（本线程云端实测）。要跑的测试本来就是快速模式规则要求的，多出来的只是漏跑时补跑的时间。
 - 复现：对 `bfa6162` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝，并点名当时漏掉的 `test/integration/sqlite-sandbox-execution-v2.test.ts`。`test/tooling/layer0-hooks.test.mjs` 用旧的“快速模式放行”钩子会失败，换成新钩子后 4 个用例通过。
 - 限制：ADR 0066 写的限制仍然有效，只证明声明里包含推导出的文件，不证明它们真的跑过并通过。还没跑过 `npm run check` 的新克隆在第一次提交时没有钩子；Mac 上不跑 `npm run check` 就提交的远程线程同样没有，这时由 Mac 原有的钩子兜底，但那些钩子在快速模式下仍会放行。
-- 后续：`.agents/instructions/delivery-mode.md`、`.agents/instructions/test-trigger-timing.md`、[代理工具 Runbook](../runbooks/agent-tooling-runbook.md)、[lessons](../lessons.md#layer0-related-tests) 和[事故清单](../incidents-and-gates.md)已同步更新。Mac 上 `.ci-output/handoff/l0-guard/` 里的副本不再是来源，以后只改仓库里的文件。
+- 后续：`.agents/instructions/delivery-mode.md`、`.agents/instructions/test-trigger-timing.md`、[代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md)、[lessons](../lessons.md#layer0-related-tests) 和[事故清单](../incidents-and-gates.md)已同步更新。Mac 上 `.ci-output/handoff/l0-guard/` 里的副本不再是来源，以后只改仓库里的文件。
 
 [↑ 返回阅读导航](#contents)
 

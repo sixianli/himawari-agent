@@ -2457,6 +2457,13 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
           "refuse-missing",
         ),
       ).rejects.toThrow("MEMORY_MCP_SYNC_TARGET_NOT_FOUND");
+      await expect(
+        web.command(
+          "memory.mcpSync.attentionResolve",
+          { attentionId: "attn-missing", decision: "keep" },
+          "resolve-missing",
+        ),
+      ).rejects.toThrow("MEMORY_MCP_SYNC_TARGET_NOT_FOUND");
     });
 
     it("counts each kind of result and never accepts a deletion that arrives through the OAuth login", async () => {
