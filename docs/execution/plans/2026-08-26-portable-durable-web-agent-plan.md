@@ -140,7 +140,7 @@ testing → application + domain + product contracts
 - [x] 定义每个 Task 的证据记录格式：改动范围、设计来源、验证命令、结果、未验证项、外部副作用和 Git commit。
 - [x] 证明当前 `main` 与 `origin/main` 的关系，并在每个后续任务开始前重新盘点工作树；不把干净工作树误当成远端同步证明。
 
-Task 1 的 evidence format 位于 `test/fixtures/v0.2/task-evidence.schema.json`，fresh baseline 位于 `test/integration/qualification/evidence/s1-task1-baseline.json`；S1-A01–S1-A09 的任务、证据和验证入口由 `test/fixtures/v0.2/coverage-manifest.json` 固定。
+Task 1 的 evidence format 位于 `test/fixtures/v0.2/task-evidence.schema.json`，fresh baseline 位于 `test/integration/qualification/evidence/s1-task1-baseline.json`；S1-A01–S1-A09 的任务、证据和验证入口原由 `test/fixtures/v0.2/coverage-manifest.json` 固定（这份清单和读它的 `check:v0.2-coverage` 已于 2026-11-16 退役并删除）。
 
 ### Task 2：完成外部依赖与平台兼容性 preflight
 
