@@ -36,7 +36,7 @@ date: "2026-10-25"
 ## 文档
 
 - 侧栏规格 `docs/execution/specs/2026-09-13-control-center-sidebar-design.md` 改写后台刷新描述。
-- `docs/runbooks/hermes-control-center-upgrade-runbook.md` 里“当前可见会话每两秒重新只读核验”改为推送描述，核对其他引用本次源码的 Runbook 并重新封存。
+- `docs/runbooks/hermes-control-center-upgrade-runbook.md` 里“当前可见会话每两秒重新只读核验”改为推送描述，核对其他引用本次源码的 Runbook。
 - Backlog `BL-20261025-001`。
 
 ## 交付

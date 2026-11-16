@@ -192,7 +192,7 @@ Andy 2026-11-11 21:32（日本时间）同意开工：“那这样，我们先�
 
 - [ ] 每批的检查都跑过并记在 PR 里。
 - [x] `.agents/instructions/prompt-prefix.md`、`docs/glossary.md`（加“感知记录”）、`docs/kv-cache-guide.md` 随第 5 批一起改。
-- [ ] 两份 Runbook 里不许在 MacBook 上构建和跑测试的句子在切回完整模式时重新封存。
+- [ ] 两份 Runbook 里不许在 MacBook 上构建和跑测试的句子在切回完整模式时对照 Runbook 的 `Authoritative Sources` 重新核对（Runbook 不再封存）。
 - [ ] 工程案例库写一个案例：为什么从“不做原生 App”改成四样设备。
 - [ ] 没做完的事记进 Backlog。
 - [ ] 全部完成后，这份计划和详细设计用 `git rm` 删除，不归档；旧版本在 git 历史里。
