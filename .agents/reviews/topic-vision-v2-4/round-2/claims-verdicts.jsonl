@@ -1,0 +1,1 @@
+{"id": "18", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|18|找不到|-|它在本 ADR 写成时还在起草，尚未进仓库|-", "outcome": "model-wrong", "evidenceFile": "docs/prd-v0.2.md", "evidence": "# Himawari Agent 产品需求 v0.2", "why": "这句讲的是仓库里还没有 PRD v0.3，没有文件可引所以模型标“找不到”；docs/ 下现行 PRD 仍是 v0.2，git ls-tree HEAD docs/ 里没有 prd-v0.3.md。"}
