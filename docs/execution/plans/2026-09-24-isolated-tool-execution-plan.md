@@ -1,7 +1,7 @@
 ---
 status: active
 document_type: plan
-supersedes: "docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-09-24"
 ---
@@ -78,7 +78,7 @@ date: "2026-09-24"
 相关既有工作：
 
 - [SRT Plan](2026-09-07-srt-unified-execution-plan.md)：[SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]。保留既有实现及历史证据；新任务环境、严格停止与 backend 路线由本 Plan 接续，不重新执行旧 Host-first 目标。
-- [Workspace lifecycle 历史 Plan](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md)：[SOURCE: docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md]。旧计划以“任务转交”结束独立实施，55 项任务及 68 项验收由本 Plan 接续；未完成项不因归档变为完成。原 Spec 保持 active，审批、文件发布、队列与展示合同不被 ITE 验收取代。
+- [Workspace lifecycle 历史 Plan](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md)：[2026-09-16-workspace-authorization-lifecycle-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md)。旧计划以“任务转交”结束独立实施，55 项任务及 68 项验收由本 Plan 接续；未完成项不因归档变为完成。原 Spec 保持 active，审批、文件发布、队列与展示合同不被 ITE 验收取代。
 - ADR 0030 的释放事实和现有“预留阶段的停止标记”必须保留。任何在途实现如果仍用单次调用完成来释放整个环境的占用，须在 P1/P3 完成集成后才能开启新 backend。
 
 本 Plan 的执行改造主线实现一个本地 Docker-compatible backend 及现有工具迁移；浏览器只做 containment fixture 与绕过拒绝测试，不新增浏览器产品功能。Remote browser、MicroVM、远端工作区同步及跨 Run 常驻服务留在扩展边界，不要求本轮实现。旧计划尚未完成的自动审查、页面与真实端到端、迁移交付纳入 P5～P8。实施、安装、生产迁移、真实外部服务调用分别按当时授权执行；本次文档整合请求不授权这些操作。
@@ -95,10 +95,10 @@ date: "2026-09-24"
 
 ### 继承证据及其边界
 
-- [P2 完成记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-completed)：生产审批、真实 Worker、额度和撤权已局部验收；不能推断共享环境权限安全已验证。
+- [P2 完成记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-completed)：生产审批、真实 Worker、额度和撤权已局部验收；不能推断共享环境权限安全已验证。
 - [P3 证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p3-completion-01/README.md)与[P4 证据](../../../test/qualification/evidence/workspace-authorization-lifecycle/p4-completion-01/README.md)：文件提交、恢复、可选副本已完成相应 Mac/Linux 固定执行器验证。新容器挂载、任意 Bash 后代和安装资格必须另验。
-- [9 月 23 日自动审查修复](../../archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)：TypeSafe 实际 Choice 协议、用量、预算、模型身份和超时的本地修复已有受控测试；真实服务、实际费用和生产启用仍未验证，早期错误替身证据不能覆盖此次修复。
-- [旧 Plan 的 P1 页面记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-next-action)及[P6 资源投影](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-projection)：已有局部分类与投影，仍有在途源码/证据；真实 DOM 与完整用户路径尚不能宣布通过。
+- [9 月 23 日自动审查修复](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-23-automatic-review-defect-repair-plan.md)：TypeSafe 实际 Choice 协议、用量、预算、模型身份和超时的本地修复已有受控测试；真实服务、实际费用和生产启用仍未验证，早期错误替身证据不能覆盖此次修复。
+- [旧 Plan 的 P1 页面记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-next-action)及[P6 资源投影](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-projection)：已有局部分类与投影，仍有在途源码/证据；真实 DOM 与完整用户路径尚不能宣布通过。
 - 旧 Plan 引用的 OrbStack `setsid` 候选探针仅证明受限探针中的环境停止；未接产品 Job Host、环境级 `lease` 或持久释放证明，不能代替 ITE-03/05/06。
 
 <a id="obsolete-guidance"></a>
@@ -121,7 +121,7 @@ date: "2026-09-24"
 
 每组链接包含原任务全文及其局部证据。原勾选只描述转交时工作树中旧路线的实施记录，不能替代新 backend 回归；未勾选不等于完全没有代码。
 
-#### 旧 P0：[历史 P0 任务及身份合同](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p0)
+#### 旧 P0：[历史 P0 任务及身份合同](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p0)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -133,7 +133,7 @@ date: "2026-09-24"
 | 旧 P0-T06 | r3 新场景批准 | 已勾选 | 保留 | [P6](#p6) | 沿用已确认交互，不重新申请相同视觉批准 |
 | 旧 P0-T07 | 首次加载测试入口 | 已勾选 | 保留 | [P6](#p6) | 保留 fixture 回归，补真实服务启动路径 |
 
-#### 旧 P1：[历史 P1 实施及恢复记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1)
+#### 旧 P1：[历史 P1 实施及恢复记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ date: "2026-09-24"
 | 旧 P1-T06 | 期限、无进展与安全重试 | 已勾选 | 适配 | [P2](#p2) | 环境期限覆盖后台程序；恢复仍不得重放未知写操作 |
 | 旧 P1-T07 | 页面错误分类 | 未勾选 | 待验收 | [P6](#p6) | 已有局部投影不等于真实执行与页面联合通过 |
 
-#### 旧 P2：[P2 六项完成记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-completed)
+#### 旧 P2：[P2 六项完成记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-completed)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -156,7 +156,7 @@ date: "2026-09-24"
 | 旧 P2-T05 | 单次批准与范围授权 | 已勾选 | 适配 | [P3](#p3) | 一次批准不能累加成环境常驻权限 |
 | 旧 P2-T06 | 执行中撤销 | 已勾选 | 适配 | [P3](#p3) | 撤权触发整体 stop 与出口关闭，P4 验迟到竞争 |
 
-#### 旧 P3：[P3 七项完成记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p3-completed)
+#### 旧 P3：[P3 七项完成记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p3-completed)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -168,7 +168,7 @@ date: "2026-09-24"
 | 旧 P3-T06 | 冲突保留与 Pi 重生成 | 已勾选 | 保留 | [P3](#p3) | 复用 Pi 循环，候选等待不占提交锁；环境级 `lease` 另行处理 |
 | 旧 P3-T07 | 完整版本读取 | 已勾选 | 适配 | [P3](#p3) | 新 backend 文件系统重新 qualification；不夸大外部写者 CAS |
 
-#### 旧 P4：[P4 七项完成记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)
+#### 旧 P4：[P4 七项完成记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -180,7 +180,7 @@ date: "2026-09-24"
 | 旧 P4-T06 | 可选副本逐文件保存 | 已勾选 | 适配 | [P3](#p3) | 已实现 save_copy 继续复用；原队列与独立读回重新验 |
 | 旧 P4-T07 | 端口/Git/数据库/后台 owner | 已勾选 | 适配 | [P4](#p4) | 环境终止与远端效果分别核实，不把启动返回当释放 |
 
-#### 旧 P5：[P5 本地接入记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p5-batch-contract)
+#### 旧 P5：[P5 本地接入记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p5-batch-contract)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -191,7 +191,7 @@ date: "2026-09-24"
 | 旧 P5-T05 | 审查等待/迟到/重复结果 | 未勾选 | 待验收 | [P5](#p5) | 适配“等待时没有本次调用的 `claim`”；已有环境的能力不能忽略 |
 | 旧 P5-T06 | 真实配置启用 | 未勾选 | 待授权验证 | [P5](#p5) | 已有 JEV 选择记录保留；具体外发目的地/额度/启用另按授权 |
 
-#### 旧 P6：[P6 部分投影记录](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-projection)
+#### 旧 P6：[P6 部分投影记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-projection)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -204,7 +204,7 @@ date: "2026-09-24"
 | 旧 P6-T07 | 效果与归属独立读回 | 未勾选 | 待验收 | [P6](#p6) | 批准前零、批准后一次、拒绝零；补串会话和失败续接 |
 | 旧 P6-T08 | 真实服务测试与 CI | 未勾选 | 待完成 | [P6](#p6) | 保留启动/就绪/清理方法与报告，确保 runner 收集 |
 
-#### 旧 P7：[P7 任务与门禁](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p7)
+#### 旧 P7：[P7 任务与门禁](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p7)
 
 | 转交编号 | 原任务要点 | 原勾选 | 处理 | 新主责 | 必须保留或补验的内容 |
 | --- | --- | --- | --- | --- | --- |
@@ -222,7 +222,7 @@ date: "2026-09-24"
 
 ### 68 项原验收的责任映射
 
-原验收含义继续以[Workspace Spec](../specs/2026-09-16-workspace-authorization-lifecycle-design.md)和[原测试入口与断言](../../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#acceptance)为准。下表完整保留 ID 与必须证明的结果；ITE 是新增隔离边界的关联，不代表同义替换。标为“独立产品验收”的条目仍是必做项，不因没有 ITE 对应而删除。所有条目在新组合路径下均待最终验收；历史局部通过见上文证据，不在本轮伪造通过状态。
+原验收含义继续以[Workspace Spec](../specs/2026-09-16-workspace-authorization-lifecycle-design.md)和[原测试入口与断言](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#acceptance)为准。下表完整保留 ID 与必须证明的结果；ITE 是新增隔离边界的关联，不代表同义替换。标为“独立产品验收”的条目仍是必做项，不因没有 ITE 对应而删除。所有条目在新组合路径下均待最终验收；历史局部通过见上文证据，不在本轮伪造通过状态。
 
 | 原 ID | 必须读回或证明的结果 | 新主责阶段 | 相关 ITE / 独立要求 |
 | --- | --- | --- | --- |
@@ -492,7 +492,7 @@ date: "2026-09-24"
 - [ ] 针对性场景通过后，运行完整的项目 E2E、已登记的真实容器资格验证，以及必需的 lint、类型、构建、集成、兼容等检查，留存成功和失败证据。默认 CI 没有运行 opt-in 的资格验证时，不能算作已通过。
 - [ ] 严格模式在 Linux 的 Docker 兼容运行时上完成资格验证（2026-09-26 起不再要求 macOS 上的容器资格验证）；SRT 模式在 macOS 和 Linux 上按 ITE-22～27 验证；宿主专有工具、不同挂载模式和未覆盖的后端，明确标为“不可用”或“未验证”。
 - [ ] 检查项目是否已有 verification skill（2026-09-25 核查时 `.agents/skills/` 为空，没有项目 verification skill）。如果届时已有，按该 skill 自己的维护说明更新并实际验证；没有就不自动创建。执行环境里另有维护类技能（例如 Codex 全局指令中的 `maintain-verification-skill`）时可以使用，但它不是本阶段的前置条件。
-- [ ] 按真实实现更新 Architecture、README 和安装/停止/恢复 Runbook；Runbook 必须按 document-governance 重新核对静态合同和操作步骤后再封存（seal），不把本计划当运行手册。
+- [ ] 按真实实现更新 Architecture、README 和安装/停止/恢复 Runbook；Runbook 必须按 document-governance 重新核对 `Authoritative Sources` 和操作步骤（Runbook 不再封存），不把本计划当运行手册。
 - [ ] 核对 P7 的迁移/回退演练和启用条件。没有部署就只报告本地交付；自动审查没有启用就只报告默认关闭的路径和本地验证。
 - [ ] 上述必需验证全部通过，并取得具体部署目标和效果的授权后，按 P7 的 Runbook 完成当次的只读预检、备份、受控切换和独立读回；本地演练、平台资格和实际部署分别记录。缺少现场证明就保持阻塞，不强行解锁。
 - [ ] 核对所有验收和剩余缺口；只提交本任务内完成的改动，保留用户其他未提交的工作。
@@ -559,7 +559,7 @@ date: "2026-09-24"
 - [ ] 清理之后，用户数据和验证证据仍然保留；没有残留的任务自有执行资源。
 - [ ] 当前事实文档和 Runbook 已按实现更新；必要的 verification skill 已维护。
 - [ ] 未完成但另有范围的后续能力按需要记入 Backlog，不用空占位掩盖未交付的要求。
-- [ ] 全部完成后，才按 document-governance 归档本 Spec/Plan；ADR 留在 `docs/adr/`。
+- [ ] 全部完成后，才用 `git rm` 删除本 Spec/Plan，不归档，旧版本在 git 历史里；ADR 留在 `docs/adr/`。
 
 <a id="document-review"></a>
 

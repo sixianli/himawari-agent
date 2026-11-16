@@ -8,7 +8,7 @@ date: "2026-10-25"
 
 # 自研记忆引擎
 
-**审阅状态：已批准。** Andy 在 2026-10-25 的[方案文档](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)里批注“同意”，并要求四个阶段全部实施（“不用担心时间，我们全都要！”）。三项待定事项按推荐执行：去掉 Mem0；嵌入继续用云端，维度默认保持 4096，评测确认 1024 维没有损失才降；常驻档案移入阶段一。决定记录在 [ADR 0075](../../adr/0075-self-built-memory-engine.md)。方案文档是调研过程，以本规格为准。方案文档全文和批注记录存档在[方案存档](../../archive/specs/2026-10-25-self-built-memory-engine-proposal.md)。
+**审阅状态：已批准。** Andy 在 2026-10-25 的[方案文档](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)里批注“同意”，并要求四个阶段全部实施（“不用担心时间，我们全都要！”）。三项待定事项按推荐执行：去掉 Mem0；嵌入继续用云端，维度默认保持 4096，评测确认 1024 维没有损失才降；常驻档案移入阶段一。决定记录在 [ADR 0075](../../adr/0075-self-built-memory-engine.md)。方案文档是调研过程，以本规格为准。方案文档全文和批注记录存档在[方案存档](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)。
 
 ## 阅读导航
 
@@ -169,7 +169,7 @@ date: "2026-10-25"
 
 ## 批注记录
 
-Andy 在方案文档里的批注和结论如下（2026-10-25 UTC）。逐条原文和回复见[方案存档](../../archive/specs/2026-10-25-self-built-memory-engine-proposal.md#review-comments)。
+Andy 在方案文档里的批注和结论如下（2026-10-25 UTC）。逐条原文和回复见[方案存档](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md#review-comments)。
 
 | 时间 | 批注 | 结论 |
 | --- | --- | --- |

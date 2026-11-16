@@ -19,7 +19,6 @@ interface JourneyMapping {
 
 interface JourneyManifest {
   readonly schemaVersion: number;
-  readonly sourcePlan: string;
   readonly scopeTask: string;
   readonly journeys: readonly JourneyMapping[];
 }
@@ -63,7 +62,6 @@ describe("S2 to S0 canonical journey mapping", () => {
     const manifest = await readManifest();
     expect(manifest).toMatchObject({
       schemaVersion: 1,
-      sourcePlan: "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
       scopeTask: "S2-T12",
     });
     expect(manifest.journeys.map(({ id }) => id)).toEqual(Object.keys(requiredClaims));

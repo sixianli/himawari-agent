@@ -14,9 +14,9 @@ date: "2026-09-03"
 
 **协同来源：**
 
-- [SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
-- [SOURCE: docs/execution/plans/2026-08-26-production-qualification-upgrade-plan.md]
+- [2026-08-26-v0.2-spec-suite-integration-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md)
+- [2026-08-26-production-qualification-upgrade-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md)
+- [2026-08-26-production-qualification-upgrade-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/plans/2026-08-26-production-qualification-upgrade-plan.md)
 - [SOURCE: docs/architecture-v0.1.md]
 
 **目标：** 实现来源 Spec 的 CI-A01 至 CI-A14，并分别交付本地可运行检查、GitHub 工作流证据和服务端强制门禁的实际生效证据。
@@ -90,7 +90,7 @@ date: "2026-09-03"
 - 不改 Pi 源码，不引入 local link，不将 Pi import 移出 `packages/runtime-pi`。
 - 不扩大 S0 的十个产品 Spec 数量，不修改 PRD digest 或验收归属来容纳 CI 文档。
 - 不改 S9 的候选状态机、资格要求或 Owner 签署，不将其待完成 checkbox 勾选。
-- 本次文档交付不提前创建或 seal CI Runbook。实际操作稳定后如确需 Runbook，按治理 Skill 创建并执行三重门禁。
+- 本次文档交付不提前创建 CI Runbook。实际操作稳定后如确需 Runbook，按治理 Skill 创建并执行三重门禁。
 
 ## 任务依赖与验证单元
 
@@ -244,7 +244,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [x] 完成下方 CI-A01–CI-A14 映射，引用确切 SHA、命令、报告和远端证据。任务数或测试数变化时从当前结果重新计算。
 - [x] 明确交付是本地工具完成、工作流已运行还是 GitHub 强制门禁已生效，不把其中一个状态代替另外两个。
 - [x] 将真正独立且未关闭的未来工作按 document-governance 写入 Backlog；本 Plan 仍负责的未完成项留在本 Plan，不创建重复任务索引。
-- [ ] 仅在下面的关闭条件成立后归档 Spec/Plan。S9 的生产资格任务保留原状态，本工程 Plan 的完成不代表产品可发布。
+- [ ] 仅在下面的关闭条件成立后用 `git rm` 删除 Spec/Plan，不归档；旧版本在 git 历史里。S9 的生产资格任务保留原状态，本工程 Plan 的完成不代表产品可发布。
 
 ## 负向验证矩阵
 
@@ -442,11 +442,11 @@ Task 14 准备审查发现原代码永久拒绝启用状态、未识别周期事
 - [ ] CI-A01–CI-A14 均有对应当前实现证据，没有缺失矩阵或未授权动作被标成通过。
 - [ ] 本地工具、GitHub workflow、fork 审批设置与 GitHub 强制门禁分别验收。规则未配置、权限受限或实际检查未完成时，不把本 Plan 标记全部完成。
 - [ ] 所有负向验证场景被正确拒绝，正常对照通过，真实 GitHub 结果与汇总逻辑一致。
-- [ ] README、Architecture 与已采用的操作文档只描述已实现事实；不存在未验证的 Runbook seal。
+- [ ] README、Architecture 与已采用的操作文档只描述已实现事实。
 - [ ] S0 验收归属、S9 待完成事项、历史 evidence、Pi 边界和用户数据保持正确。
 - [ ] 严格文档校验、项目检查、差异校验及适用测试通过，远端修改有独立授权和回读。
 - [ ] 已合并、拒绝、被替代或另有明确关闭决定，剩余工作有唯一归属。
-- [ ] 使用 document-governance 的 `archive_doc.py` 归档 Spec 和 Plan，随后重新执行 strict validation，不手动移动文件。
+- [ ] 用 `git rm` 删除 Spec 和 Plan（不归档，旧版本在 git 历史里），随后重新执行 strict validation。
 
 ## 2026-09-14 独立精确例外审批补充
 

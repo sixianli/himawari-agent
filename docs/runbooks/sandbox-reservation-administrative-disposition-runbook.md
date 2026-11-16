@@ -160,7 +160,7 @@ Hermes 安装权限回归若超时，保留完整报告，并使用既有 `HIMAW
 
 ## Stop Conditions
 
-- 静态合同未封存或不匹配、安装或 Schema 不匹配、目标归属不明、缺少恢复点或受保护证据目录。
+- `runbook.py check` 未通过或步骤与 `Authoritative Sources` 列出的文件不一致、安装或 Schema 不匹配、目标归属不明、缺少恢复点或受保护证据目录。
 - Agent/Worker 未停止、存活或未知 state-root 锁、无法确认三项现场条件、现场报告缺失。
 - 不是单个前台 SRT 已停止 reserved、存在其他未处置资源或保护、预览摘要或版本改变。
 - 参数、确认串、报告 SHA 或管理员声明不符合接口；已有不同处置回执；任一事务或独立读回失败。

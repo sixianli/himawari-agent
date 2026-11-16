@@ -26,11 +26,11 @@ date: "2026-08-25"
 
 当前生产组合还提供独立的 `thread.execution_state` / `thread.execution_state_snapshot` 查询。浏览器仅在配置声明 `executionStateAvailable` 时使用它，原 `thread.execution` 记录查询的严格合同保持不变。后端从归属校验后的全部 Trace 分页与 Run 版本生成阶段、原因、操作结果、现有 Stop/审批/清理动作、真实审查与工具执行区间的并集、稳定内容 revision 和最后观察时间；读取期间 Run revision 或资源清单变化时丢弃本次结果并从头重读，最多 3 次（含第一次），仍不一致、分页停滞或超出有限读取预算时不返回部分结论。工具行与整体状态保留每个操作的未知结果，已成功操作不因其他操作失败而丢失；解密失败不能当作空的成功结果。页面断线提示与该持久结论分开，客户端不再用墙钟估算新查询中的工具执行时长。
 
-此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
+此投影只汇总目前已有的持久 Run/Trace 事实，`effectSummary` 表达操作 outcome，不构成文件已回滚、资源已释放或整个任务树已停止的证明。已选择会话的红点与可用动作使用匹配 Run revision 的状态；其他会话仍使用原待审批查询。资源 journal 的停止/核验/清理、队列等待、文件发布细节、其他阶段计时与全部会话统一注意状态仍待接入，见[统一状态实施记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-unified-state)。即使所有工具已经返回，单独的 `Run.cancelled` 也只证明取消决定已保存；缺少资源证明时统一状态仍为“结果未确认”，保留已知成功操作及原有再次停止/清理入口。本批不改变 Pi 工具协议，不升级数据库，也不增加执行或重放入口。
 
 用户提交仍对应产品 Turn/Run，Pi 内部 turn 是轮内执行步骤。可选模型由已配置、允许 private 数据的 generation descriptor 与 Pi 1.5.0 能力共同决定；`thread.message.submit_configured` 在 migration 0030 的 `runs.model_selection_json` 保存本次选择，后续仍由 RunExecutionInputService 冻结策略并执行原预算/披露/授权检查。界面中的下一轮选择不会改变活动 Run。停止复用 RunCoordinator；文本附件经既有 private Payload 发送，仅“执行”模式可用。
 
-本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]。
+本轮实际验收按用户要求限于本机版本；真实服务与真实模型资格需单独取得。具体设计见 [2026-09-10-control-center-product-refactor-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)。
 
 ### 当前实现基线（2026-09-09）
 
@@ -121,7 +121,7 @@ flowchart TB
 
 工具结果落库、模型披露、后续动作准入、环境复用和 Run 完成分别判断。受管理任务可以在调用返回句柄后运行；首批以原 Run 和授权期限为上限，Run 结束要停止其资源，不默认跨 Run 续命。失联后的输出可作为带限制的事实展示，不能触发未经核实的后续副作用或伪造整体成功。详细判定只由 Spec 定义，避免架构文档维护另一套状态机。
 
-当前资源恢复沿用 SQLite 中的有期限任务。核验观察的写入与任务的 owner、revision 和运行状态在同一事务内比较；旧任务被接管或结束后不能继续写入释放证明。超时后的后端返回不再触发新校验或写入，仍持有处理权的任务只能记录无结论并保留相交资源保护。恢复结束前重新读取资源与操作事实，保留同期收到的工具结果和永久释放记录。这些约束属于 Himawari 的持久恢复职责，继续复用 Pi 的工具及取消信号，不证明宿主进程与后代已退出。实现进度与本地验证见[工作区授权计划的恢复尝试隔离记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-recovery-fencing)。
+当前资源恢复沿用 SQLite 中的有期限任务。核验观察的写入与任务的 owner、revision 和运行状态在同一事务内比较；旧任务被接管或结束后不能继续写入释放证明。超时后的后端返回不再触发新校验或写入，仍持有处理权的任务只能记录无结论并保留相交资源保护。恢复结束前重新读取资源与操作事实，保留同期收到的工具结果和永久释放记录。这些约束属于 Himawari 的持久恢复职责，继续复用 Pi 的工具及取消信号，不证明宿主进程与后代已退出。实现进度与本地验证见[工作区授权计划的恢复尝试隔离记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-recovery-fencing)。
 
 资源恢复只保存固定安全原因码，区分权限拒绝、宿主不可用、身份与证据变化、控制连接超时和整体核查到期；后端无结论不能抹去具体原因。原始错误经既有受保护 Trace 保存，关联原 Job、环境、动作与失败阶段，不进入公共资源事实。并发释放得到充分证明时，恢复终点以最新持久事实为准。已绑定资源（`bound`）仍沿用原单次有期限 inspect/stop 和暂停规则；未知结果不能变成工具重试。
 
@@ -139,7 +139,7 @@ Schema 42 在原工作区保护表增加资源矛盾事件：永久释放后，�
 
 SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资格的可选后端方向，当前未启用且不构成自动 fallback。Git push 继续使用 Pi Bash 意图、产品内部专用动作和标准 Git，冻结仓库/ref/OID，凭据只由专用传输使用；本地兼容实验不等于真实 GitHub 验收。
 
-现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史、本 Run 的任务环境调用登记和执行租约及旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
+现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史、本 Run 的任务环境调用登记和执行租约及旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
 
 ## 架构总览图
 
@@ -161,7 +161,7 @@ SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资
 
 `apps/agent-service` 现有可编程的本地前台组合根、严格 `gateway.v1` in-process transport、production `execution.v2` UDS client、可安装 `main`，以及从严格配置创建并在启动/关闭生命周期中管理的 production Model/Pi 与 Mem0 composition；支持的 Vercel AI Gateway 配置会把独立 embedding descriptor 交给 Mem0，deterministic fixture 只报告显式 descriptor，不创建任何 Pi、Mem0 或隐式模型路径。`apps/execution-worker` 同时保留确定性的 `execution.v1` in-process test profile，并实现验证 authority fence、adapter registry、resource ceiling、去重、cursor、取消与对账的 production Worker runtime。两项服务均有可重定位 Node runtime、稳定诊断/退出码和信号 drain，公开模式的最终 `main` 已组合 HTTP、身份、持久 Run、Pi、Memory consumer 与已授权 Worker 工具；GitHub 总组合和结构化 Worker subtask adapter 仍待完成。`apps/control-center` 已实现 browser-only React/Vite 控制中心基础、typed Gateway client、v2/Thread v3 SSE 恢复、native History typed routes、11 入口响应式三栏/单栏 Shell、`react-intl` 三语 runtime 和 native-first 语义组件；Thread、Approval、Capabilities/Adapters 与 Authorizations/Grants surface 已接通严格权威 read model 和 mutation contract，Task、Inbox、Memory、Trace、Session/Device、Health 仍为 `baseline_only`，Settings 保持 `blocked`，因此全入口仍不等于全业务操作面已接通。`apps/admin-cli` 已实现可执行 doctor、只读 db status 和受 offline lock/confirm 保护的 migration 入口。
 
-已关闭 Foundation Spec 的 Task 1 至 Task 20 已按确定性参考配置实现并验证：[SOURCE: docs/archive/specs/2026-08-25-agent-foundation-design.md] [SOURCE: docs/archive/plans/2026-08-25-agent-foundation-plan.md] 当前 portable durable web-agent Plan 的 Task 20–27 已有代码与确定性资格证据，其中真实 GitHub/Cloudflare、跨主机 transfer、完整浏览器矩阵和最终 Agent Service 生产组合仍按各自证据保持未验证。Task 20 的受保护 transport、配置路由、Pi模型绑定及4096维Mem0组合已接入Agent Service。当前配置按[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)使用Vercel AI Gateway：文本只用`deepseek/deepseek-v4.1-flash`，嵌入用`alibaba/qwen3-embedding-8b`，删除GLM备用。历史OpenRouter的primary/fallback及旧Mem0资格只证明对应旧版本，不能证明本次迁移。日期化catalog版本用于冻结产品身份，不是上游不可变版本。[SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
+已关闭 Foundation Spec 的 Task 1 至 Task 20 已按确定性参考配置实现并验证：[2026-08-25-agent-foundation-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-08-25-agent-foundation-design.md) [2026-08-25-agent-foundation-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-08-25-agent-foundation-plan.md) 当前 portable durable web-agent Plan 的 Task 20–27 已有代码与确定性资格证据，其中真实 GitHub/Cloudflare、跨主机 transfer、完整浏览器矩阵和最终 Agent Service 生产组合仍按各自证据保持未验证。Task 20 的受保护 transport、配置路由、Pi模型绑定及4096维Mem0组合已接入Agent Service。当前配置按[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)使用Vercel AI Gateway：文本只用`deepseek/deepseek-v4.1-flash`，嵌入用`alibaba/qwen3-embedding-8b`，删除GLM备用。历史OpenRouter的primary/fallback及旧Mem0资格只证明对应旧版本，不能证明本次迁移。日期化catalog版本用于冻结产品身份，不是上游不可变版本。[SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 
 ## Boundaries
 
@@ -397,7 +397,7 @@ Owner 通过 `workspace.copy.create/select/prepare` 指定当前输入和允许�
 
 副本不隔离外部业务对象。当前 SRT 不开放宿主 TCP 监听、任意 Unix socket 或 Git index 写入；受管服务的就绪 socket 位于各自私有目录，原资源记录一直保留 owner，启动返回不释放资源。产品数据库仍只由 Agent 的带权威检查事务访问，外部服务沿用独立网络授权与调用回执，未知效果不自动重发。本实现不提供通用外部数据库事务或任意远端对象互斥。
 
-实现验收见[P4 完成记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。生产启用仍要求 Agent/Worker 同时支持合同 5、配置 `save_copy` 及匹配的固定执行器资格；本地验收不替代实例安装资格。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+实现验收见[P4 完成记录](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。生产启用仍要求 Agent/Worker 同时支持合同 5、配置 `save_copy` 及匹配的固定执行器资格；本地验收不替代实例安装资格。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
 ### Memory and context formation
 
@@ -690,7 +690,7 @@ Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适�
 
 ## Backlog Links
 
-- Foundation Spec 明确排除生产部署、真实外部供应商和高可用；当前没有已承诺的持久 Backlog item。上述 Known Limitations 是当前事实，不代表已承诺实施日期。[SOURCE: docs/archive/specs/2026-08-25-agent-foundation-design.md#excluded]
+- Foundation Spec 明确排除生产部署、真实外部供应商和高可用；当前没有已承诺的持久 Backlog item。上述 Known Limitations 是当前事实，不代表已承诺实施日期。[2026-08-25-agent-foundation-design.md「excluded」（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-08-25-agent-foundation-design.md)
 
 ## Decision Links
 
@@ -724,7 +724,7 @@ Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适�
 
 普通活动更新空闲时间，绝对期限与真正完成 MFA 的时间不会随刷新重置。流式连接在每次输出和心跳前重新检查会话，不以心跳延长空闲期限。再次验证保留产品 Session/Device ID，轮换认证摘要及 CSRF 关联，当前浏览器刷新配置后由用户重新提交敏感动作。账号重置、验证码、Cookie 与恢复码均不进入模型上下文或普通业务事件。
 
-配置了内置账号的本机 HTTP 使用与公网相同的正式 Web/Run/Worker 组合；仅 transport 允许明确的 loopback HTTP。跨设备入口应由 TLS 反向代理连接 loopback listener。身份接入成功不替代 Worker capability qualification、真实模型或服务管理器的目标环境验证。技术设计与验证范围：[SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]
+配置了内置账号的本机 HTTP 使用与公网相同的正式 Web/Run/Worker 组合；仅 transport 允许明确的 loopback HTTP。跨设备入口应由 TLS 反向代理连接 loopback listener。身份接入成功不替代 Worker capability qualification、真实模型或服务管理器的目标环境验证。技术设计与验证范围：[2026-09-10-built-in-account-authentication-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md)
 
 
 ### 已授权公开搜索与聊天执行反馈

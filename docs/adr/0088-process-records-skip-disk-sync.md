@@ -61,7 +61,7 @@ Himawari 的产品数据库是 SQLite（一种单文件数据库），用 WAL（
 
 ## 与 ADR 0018 的关系
 
-[ADR 0018](0018-sqlite-product-state-authority.md) 要求“明确 durability pragma”。本 ADR 把它具体化：产品状态和外部动作相关的提交仍用 `FULL`，只有过程记录用 `NORMAL`。ADR 0018 的其他决定不变。[便携持久化设计](../execution/specs/2026-08-26-portable-durable-web-agent-design.md)里“authority 与 product commit 默认 synchronous = FULL；改变持久性契约必须另立 ADR”这一条也仍然成立，本 ADR 就是那条要求的 ADR。
+[ADR 0018](0018-sqlite-product-state-authority.md) 要求“明确 durability pragma”。本 ADR 把它具体化：产品状态和外部动作相关的提交仍用 `FULL`，只有过程记录用 `NORMAL`。ADR 0018 的其他决定不变。[便携持久化设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md)里“authority 与 product commit 默认 synchronous = FULL；改变持久性契约必须另立 ADR”这一条也仍然成立，本 ADR 就是那条要求的 ADR。
 
 [↑ 返回阅读导航](#contents)
 

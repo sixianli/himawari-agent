@@ -26,7 +26,7 @@ date: "2026-09-16"
 ## 来源
 
 - 当前视觉合同：[SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md]
-- 工作区与文件边界：[SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
+- 工作区与文件边界：[2026-08-26-host-files-code-workspaces-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md)
 - 统一执行合同：[SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
 - 单一逻辑 Agent authority：[SOURCE: docs/adr/0003-single-logical-agent-authority.md]
 - 持久化权威：[SOURCE: docs/adr/0018-sqlite-product-state-authority.md]

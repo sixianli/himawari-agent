@@ -132,7 +132,7 @@ Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等�
 - 真实 SQLite 验证 Worker、恢复导入、LOST 任意先后和两个恢复者并发；负向覆盖分块不连续、结束块缺失、摘要或长度不符、跨 job/attempt、取消、过期、撤权。
 - 矛盾 IPC 用例核对模型正文只含一次指定错误说明，不含原文件内容或 `isError:false`；成对重启后错误不被覆盖且工具不重跑。以没有最终 IPC 的真实宿主崩溃恢复原输出作为对照。
 - 沿用 TE-06 交替测量，改前改后各 30 个成功样本，中位耗时增量不超过 100 毫秒。超过门槛写停止文件，不能减少保存或同步来达标。
-- 完成相关测试、完整 `npm run check`、完整 `npm test` 和最终无筛选 Mac 产品资格；检查文档并重新封存受影响 Runbook。Linux/Hermes 是否执行由 Claude 决定。
+- 完成相关测试、完整 `npm run check`、完整 `npm test` 和最终无筛选 Mac 产品资格；检查文档并核对受影响 Runbook。Linux/Hermes 是否执行由 Claude 决定。
 
 ## 考虑过但不采用的分块输出描述
 

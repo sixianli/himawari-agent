@@ -15,7 +15,7 @@ date: "2026-09-10"
 
 用户要求将已确认的 Web 设计落实为可日常使用的 AI Agent。天气搜索、文件读写、脚本编写是代表性场景，不能以硬编码示例或受控服务代替真实模型、工具、审批和恢复。用户于 2026-09-11 明确最终运行主机为 Hermes Linux，Mac 仅承担开发与浏览器访问。
 
-- [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]
+- [2026-09-10-control-center-product-refactor-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)
 - [SOURCE: docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md]
 - [SOURCE: docs/adr/0027-built-in-owner-authentication.md]
 - [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]

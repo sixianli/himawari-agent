@@ -372,7 +372,7 @@ Owner 批准的 `https://himawari.siyi.win` 已通过 Cloudflare Access 现有 A
 - [ ] 打包固定依赖与 runner，校验安装产物摘要/权限、schema/mode 协商、主机资格；真实安装后执行对应探针，不复制签名或静态模板当资格。
 - [ ] 完成全部模型可达调用方归属检查，移除已经迁移且无调用方的旧后端执行入口；保留旧数据只读，不维护隐含运行 fallback。
 - [ ] 执行停准入、在途核查、资源释放/隔离、版本切换和拒绝不兼容回退的安装测试；不逆写 migration、不 reset 用户变更。
-- [ ] 实现改变操作合同时，语义复核安装/备份/权威迁移 Runbook，运行相应静态检查和实际授权 preflight 后再封存；本设计阶段不预封存。
+- [ ] 实现改变操作合同时，语义复核安装/备份/权威迁移 Runbook，运行相应静态检查和实际授权 preflight；Runbook 不再封存。
 - [ ] 更新架构当前事实、覆盖清单及必要运行文档；验证通过后分目的本地提交，远端 push/发布按具体指令执行。
 
 完成条件：本次有效的 16 项 EX 验收全部映射到可信证据（不含 EX-08、EX-16），必须能力无遗漏，历史/合成/真实主机证据明确区分。
@@ -421,7 +421,7 @@ npm run typecheck
 npm run check:boundaries
 npm run check:pi-compat
 node_modules/.bin/vitest run --config vitest.workspace.ts --project integration test/integration/sandbox-execution-contract.test.ts
-npm run check:v0.2-invariants
+npm run check:security-invariants
 npm run check:secrets
 npm run check:ci-policy
 python3 /Users/triggerjames/.codex/skills/document-governance/scripts/validate_docs.py . --strict
@@ -512,4 +512,4 @@ Owner 明确将 MCP 接入和 GitHub 已有 commit 推送移出本次 Spec/Plan�
 - [ ] 资源监管与清理义务有明确结论，未知未被默认成功或自动重放。
 - [ ] 安装行为、架构当前事实、UI 和 Runbook 与实际一致。
 - [ ] 未完成必要能力不以归档/Backlog 隐藏；其他后续事项按治理记录。
-- [ ] 整批实际交付完成后才归档本 Plan；本次设计完成不关闭实施计划。
+- [ ] 整批实际交付完成后才用 `git rm` 删除本 Plan，不归档，旧版本在 git 历史里；本次设计完成不关闭实施计划。

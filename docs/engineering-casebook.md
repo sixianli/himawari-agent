@@ -206,7 +206,7 @@ date: "2026-10-26"
 - ✅ SQLite FTS5 文档（[sqlite.org/fts5.html](https://www.sqlite.org/fts5.html)）：“A contentless FTS5 table is created by setting the "content" option to an empty string.”，并且“It is also possible to create custom tokenizers for FTS5.”。我们用的“无内容索引 + 自定义分词”都是官方支持的用法。
 - ✅ Generative Agents（[arXiv 2304.03442](https://arxiv.org/abs/2304.03442)）：检索时“scores all memories as a weighted combination of the three elements”（新近度、重要度、相关度），另有“reflection, which synthesizes memories into higher-level inferences over time”。我们的“重要度 + 新鲜度”加权和“整理记忆”分别对应这两点。
 - ✅ Letta 文档（[Memory & dreaming](https://docs.letta.com/configuration/memory)）：“Dreaming uses background subagents to review recent conversations, consolidate useful lessons, and update memory without interrupting your active work.”，触发时机是完成一定步数后或上下文被压缩时。我们改成每天固定整理一次，并且每处改动可撤销。
-- 📎 自研记忆提案（[已归档的提案](archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
+- 📎 自研记忆提案（[已归档的提案](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
 
 **对比与取舍**
 
@@ -2830,7 +2830,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 

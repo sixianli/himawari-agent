@@ -80,4 +80,4 @@ P1 页面下一步指引和命令失败效果提示已有定向单测及 SQLite 
 
 Git Graph 的本地坏分支引用已更名修复；提交树及 pack 校验通过。原 pack 损坏判断已被后续核验证伪。Git Graph 面板是否需点击 Retry/重开未在 GUI 中观察。
 
-进一步决策见[单一决策日志](../decisions.tsv)；阶段边界见[已归档的 P1 实施计划](../../../../../docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-next-action)；后续实施由[隔离执行实施计划](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer)接续。
+进一步决策见[单一决策日志](../decisions.tsv)；阶段边界见[已归档的 P1 实施计划](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-next-action)；后续实施由[隔离执行实施计划](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer)接续。

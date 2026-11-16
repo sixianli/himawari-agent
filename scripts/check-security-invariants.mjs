@@ -4,7 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const manifestPath = path.join(repositoryRoot, "test/fixtures/v0.2/security-invariants.json");
+const manifestPath = path.join(repositoryRoot, "test/fixtures/security-invariants.json");
 
 async function filesUnder(directory) {
   const result = [];
