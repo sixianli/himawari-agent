@@ -24,7 +24,7 @@ superseded_by: ""
 
 ## 决定
 
-用户在 2026-10-24 的下一次生产变更方案文档里选择完整方案 C，并同意规格：[对话执行状态改为服务端推送](../execution/specs/2026-10-25-thread-execution-push-design.md)，实施计划见 [实施计划](../execution/plans/2026-10-25-thread-execution-push-plan.md)。
+用户在 2026-10-24 的下一次生产变更方案文档里选择完整方案 C，并同意规格：[对话执行状态改为服务端推送](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-thread-execution-push-design.md)，实施计划见 [实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-25-thread-execution-push-plan.md)。
 
 ## 状态
 

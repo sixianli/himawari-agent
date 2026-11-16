@@ -1,6 +1,6 @@
 # 严格模式配置：runner 摘要自动计算
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式的配置尽量少”一项，要求见 [Spec 的两种执行模式](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式的配置尽量少”一项，要求见 [Spec 的两种执行模式](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。
 
 ## 用词
 

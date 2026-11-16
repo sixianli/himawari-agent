@@ -1,6 +1,6 @@
 # 会话页面显示执行环境
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“界面说清当前状态”一项（ITE-27）的其余部分，规则见 [Spec 的界面必须说清的状态](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#mode-disclosure)，页面样式按用户批准的 [v5 增补：执行环境显示](../../../../../docs/execution/specs/2026-09-15-control-center-v4-design.md#v5-execution-environment)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“界面说清当前状态”一项（ITE-27）的其余部分，规则见 [Spec 的界面必须说清的状态](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#mode-disclosure)，页面样式按用户批准的 [v5 增补：执行环境显示](../../../../../docs/execution/specs/2026-09-15-control-center-v4-design.md#v5-execution-environment)。
 
 ## 用词
 

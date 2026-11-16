@@ -26,6 +26,7 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import {
+  MCP_FIND_PROJECT_NOTES_LABEL,
   MCP_PROPOSE_MEMORIES_RESULT,
   MCP_PROPOSE_MEMORY_ALREADY_SAVED,
   MCP_PROPOSE_MEMORY_CHANGED,
@@ -76,7 +77,6 @@ import {
   EXTERNAL_RULE_MEMORY_PREFIX,
   ProductionMcpRuleWriter,
 } from "../../apps/agent-service/src/production-mcp-rule-writer.ts";
-import { MCP_FIND_PROJECT_NOTES_LABEL } from "@himawari-agent/prompt-catalog";
 import { ProductionMcpSync } from "../../apps/agent-service/src/production-mcp-sync.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { ProductionMemoryRecall } from "../../apps/agent-service/src/production-memory-recall.ts";
@@ -1348,6 +1348,7 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
       protector: f.protector,
       clock: f.clock,
       externalProposals: f.writer,
+      mcpSync: f.repository.mcpMemorySync(),
       unitOfWork: f.repository.unitOfWork(),
       onAudit: () => {},
     });
@@ -2121,6 +2122,53 @@ describe("[P5-2] external agents propose memories through MCP and the owner conf
         memories?: unknown[];
       };
     };
+
+    it("shows waiting project notes in the Himawari page with their text and lets the owner approve or refuse them", async () => {
+      const f = await setup();
+      const client = await f.connect();
+      const web = control(f);
+      const note = "发布之前先跑 npm run check，再合并";
+      await callSync(client, {
+        entries: [{ id: "docs/release.md", text: note, kind: "project_note", project: "Himawari" }],
+      });
+      const waiting = (await web.overview()).mcpSync;
+      expect(waiting.entriesTotal).toBe(1);
+      expect(waiting.entries[0]).toMatchObject({
+        text: note,
+        projectName: "Himawari",
+        state: "awaiting_project_approval",
+        previousText: null,
+        sourceDeleted: false,
+      });
+      expect(waiting.projects).toHaveLength(1);
+      expect(await callFind(client, { query: "发布", project: "Himawari" })).toMatchObject({
+        notes: [],
+      });
+      const project = waiting.projects[0];
+      await web.command(
+        "memory.mcpSync.projectDecide",
+        { connectionId: project?.connectionId, projectId: project?.projectId, decision: "approve" },
+        "approve-project",
+      );
+      expect((await web.overview()).mcpSync.entriesTotal).toBe(0);
+      expect((await callFind(client, { query: "发布", project: "Himawari" })).notes).toHaveLength(
+        1,
+      );
+      await expect(
+        web.command(
+          "memory.mcpSync.noteDecide",
+          { entryId: "entry-missing", decision: "refuse" },
+          "refuse-missing",
+        ),
+      ).rejects.toThrow("MEMORY_MCP_SYNC_TARGET_NOT_FOUND");
+      await expect(
+        web.command(
+          "memory.mcpSync.attentionResolve",
+          { attentionId: "attn-missing", decision: "keep" },
+          "resolve-missing",
+        ),
+      ).rejects.toThrow("MEMORY_MCP_SYNC_TARGET_NOT_FOUND");
+    });
 
     it("counts each kind of result and never accepts a deletion that arrives through the OAuth login", async () => {
       const f = await setup();

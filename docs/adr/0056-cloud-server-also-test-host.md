@@ -105,7 +105,7 @@ Claude 随后说明了代价：云服务器只有 4 核、7.8 GiB 内存、没�
 
 ### 时限不放宽、测试层级、提交推送（不变）
 
-- **时限：** `ci/policy.json` 的总时限、Vitest 各项目的默认时限、测试里写死的时限都不改；不设 `HIMAWARI_TEST_TIMEOUT_MS`（按 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉）；超时作为缺陷查原因修复。两台测试机都一样。
+- **时限：** `ci/policy.json` 的总时限、Vitest 各项目的默认时限、测试里写死的时限都不改；不设 `HIMAWARI_TEST_TIMEOUT_MS`（按 [BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉）；超时作为缺陷查原因修复。两台测试机都一样。
 - **测试层级：** 第 0 层定向测试、第 1 层 `npm run check`、第 2 层受影响模块测试、第 3 层构建加完整 `npm test`、第 4 层真实产品路径、第 5 层生产部署，触发时机和提前跑完整测试的情况全部按 [ADR 0052 的测试层级](0052-third-production-host-acceptance-exception.md#layers)和[提前运行完整测试的情况](0052-third-production-host-acceptance-exception.md#early-full)。唯一变化是第 0–4 层的运行位置可以是 Hermes 或云服务器测试账号。
 - **提交推送：** 每个提交创建后立即推送到 `origin` 的同名分支；不 force-push、不改写已推送的历史、不绕过 hook；推送失败就停下报告；提交说明写清实际跑过的层级和运行位置（哪台机器）。开分支、打标签、开 PR、合并仍要用户明确要求。GitHub 上合并前必须通过的检查仍由 `ci/policy.json` 规定。
 
@@ -141,7 +141,7 @@ Claude 随后说明了代价：云服务器只有 4 核、7.8 GiB 内存、没�
 
 - 前序历史：[ADR 0052](0052-third-production-host-acceptance-exception.md)、[ADR 0051](0051-second-production-host-acceptance-exception.md)、[ADR 0046](0046-tests-back-on-hermes.md)。
 - 当前架构：[SOURCE: docs/architecture-v0.1.md]
-- 生产准备及真实响应时间：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
+- 生产准备及真实响应时间：[2026-09-30-production-first-deployment-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-30-production-first-deployment-plan.md)
 - 安装操作合同：[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 
 [↑ 返回阅读导航](#contents)
