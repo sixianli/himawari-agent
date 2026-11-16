@@ -51,8 +51,18 @@ describe("the listening audio session never silences the phone's haptics", () =>
     expect(tearDown).toContain("capture?.stop(deactivate: true)");
     expect(tearDown).toContain("capture = nil");
     const start = body(controller, "public func start() async");
-    expect(start.indexOf("capture?.stop(deactivate: true)")).toBeLessThan(
-      start.indexOf("AudioCapture()"),
-    );
+    const release = start.indexOf("capture?.stop(deactivate: true)");
+    expect(release).toBeGreaterThan(-1);
+    expect(release).toBeLessThan(start.indexOf("AudioCapture()"));
+  });
+
+  it("tracks whether the capture holds the session so a dropped capture releases it", () => {
+    expect(body(capture, "func configureSession()")).toContain("holdsSession = true");
+    expect(body(capture, "func restart()")).toContain("holdsSession = true");
+    expect(body(capture, "func stop(deactivate: Bool)")).toContain("holdsSession = false");
+    const dropped = body(capture, "deinit");
+    const guarded = dropped.indexOf("if holdsSession");
+    expect(guarded).toBeGreaterThan(-1);
+    expect(dropped.indexOf("setActive(false")).toBeGreaterThan(guarded);
   });
 });
