@@ -127,7 +127,7 @@ Andy 2026-11-15 在决定卡上选了“同意,并抽样全量复核”：按上
 
 2026-11-16 补充，Andy 在决定卡上选了“同意,在 584 里改”。
 
-**根因还是表面：根因。** 上面的决定实施后，PR 584 自己的增量轮仍然慢：增量 289、53、24、6 行，步数 40、37、39、27。逐步读 PR 496、521、584 增量轮的原始调用记录，模型 70% 到 90% 的读文件不在改动处上下 40 行以内，把差异放进提示前后都一样。原因有两条，都在我们给模型的提示里：
+**根因还是表面：根因。** 上面的决定实施后，PR 584 自己的增量轮仍然慢：增量 289、53、24、6 行，步数 40、37、39、27。逐步读 PR 496、521、584 增量轮的原始调用记录，模型 70% 到 90% 的读文件不在改动处上下 40 行以内，把差异放进提示前后都一样。数据和取法见 [2026-11-16 增量轮数据](../assets/review-cost/2026-11-16-incremental-round-task-scope.txt)。原因有两条，都在我们给模型的提示里：
 
 1. 任务自相矛盾。增量轮提示已经写了“只做三件事”（ADR 0270），但紧跟着是整个 PR 的材料文件：每轮用同一份（PR 496、502、521 各轮材料文件的哈希相同），里面是覆盖全 PR 的作者说法，而固定任务要求“每一条都要对照代码核对”。PR 584 第 4 轮（增量 24 行）第 19 到 36 步、第 5 轮（只改 ADR 6 行）第 7 到 27 步都在逐条核对整个 PR 的说法。
 2. 提示叫它用的工具被禁。范围说明写着“用 git grep 找”，`git grep` 却不在放行名单里；模型于是反复换写法（管道、`&&`、`cd`、`cat`），PR 584 每轮 4 到 9 次、PR 496 每轮 15 到 22 次工具报错。
@@ -138,7 +138,7 @@ Andy 2026-11-15 在决定卡上选了“同意,并抽样全量复核”：按上
 - [OpenAI Codex 复核规则](https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/review/rubric.md)：“The bug was introduced in the commit (pre-existing bugs should not be flagged)”；说影响别处时 “one must identify the other parts of the code that are provably affected”。
 - [CodeRabbit](https://docs.coderabbit.ai/reference/review-commands)：`review` “Reviews the commits pushed since CodeRabbit's last review”，`full review` “Reviews every file in the pull request again from scratch.”
 
-**实验。** 不改脚本，只把 PR 584 第 4、5 轮的材料换成本轮材料，并加范围说明和工具用法，在独立副本上重放：第 4 轮 39 步、520 秒、0.0454 美元变成 14 步、116 秒、0.0140 美元，第 5 轮 27 步、0.0468 美元变成 10 步、0.0216 美元，原来的意见都找到了。样本只有 2 次，漏查继续靠抽样全量复核衡量。
+**实验。** 不改脚本，只把 PR 584 第 4、5 轮的材料换成本轮材料，并加范围说明和工具用法，在独立副本上重放：第 4 轮 39 步、520 秒、0.0454 美元变成 14 步、116 秒、0.0140 美元，第 5 轮 27 步、668 秒、0.0468 美元变成 10 步、151 秒、0.0216 美元，原来的意见都找到了。样本只有 2 次，漏查继续靠抽样全量复核衡量。
 
 **决定。**
 
