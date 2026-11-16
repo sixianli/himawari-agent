@@ -24,9 +24,9 @@
 "item.calendar.keep" = "跟着日历走：日历里删了，这里也删";
 "item.calendar.denied" = "iPhone 没让它看日历";
 "item.calendar.deniedDetail" = "打开前它看不到你的任何安排。";
-"item.calendar.deleteAll" = "关掉并删掉服务器上的日程";
+"item.calendar.deleteAll" = "删掉服务器上的日程";
 "item.calendar.synced" = "同步了 %d 个日程";
-"item.calendar.confirm" = "会关掉“日程”这一项，服务器上的日程副本删掉，手机日历里的不动。";
+"item.calendar.confirm" = "服务器上的日程副本会删掉，手机日历里的不动。";
 
 "item.health.name" = "健康和运动";
 "item.health.detail" = "步数、睡眠、心率";
@@ -42,9 +42,9 @@
 "item.contacts.keep" = "跟着通讯录走：通讯录里删了，这里也删";
 "item.contacts.denied" = "iPhone 没让它看通讯录";
 "item.contacts.deniedDetail" = "打开前它不认得你的联系人。";
-"item.contacts.deleteAll" = "关掉并删掉服务器上的联系人";
+"item.contacts.deleteAll" = "删掉服务器上的联系人";
 "item.contacts.synced" = "同步了 %d 位联系人";
-"item.contacts.confirm" = "会关掉“通讯录”这一项，服务器上的联系人副本删掉，手机通讯录里的不动。";
+"item.contacts.confirm" = "服务器上的联系人副本会删掉，手机通讯录里的不动。";
 
 "item.photos.name" = "相册";
 "item.photos.detail" = "新拍的照片";
@@ -79,6 +79,14 @@
 "detail.keepSection" = "怎么留";
 "detail.track" = "走过的路线";
 "detail.days" = "%d 天";
+"detail.route" = "路线";
+"detail.routeDays" = "留 %d 天";
+"detail.places" = "到过的地方";
+"detail.placesKept" = "一直留着，直到你删";
+"detail.stopTitle" = "关掉“%@”？";
+"detail.stopBody" = "关掉以后，手机上的变化不再同步。服务器上已经存的，可以留着，也可以一起删掉；手机里的原数据不动。";
+"detail.stopKeep" = "只停同步，保留已经存的";
+"detail.stopDelete" = "停同步，并删掉服务器上的";
 "detail.always" = "一直允许";
 "detail.alwaysDetail" = "不打开 App 也记，系统会再问你一次";
 "detail.kept" = "记下的";

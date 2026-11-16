@@ -29,7 +29,8 @@ final class RecordingSensesService: SensesService {
     func refreshServer() async { server = serverAfterRefresh }
     func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {}
     func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult { throw SensesGatewayError.notInstalled }
-    func mirrorCount(_ item: SenseItem) async -> Int? { nil }
+    var mirrorCounts: [SenseItem: Int] = [:]
+    func mirrorCount(_ item: SenseItem) async -> Int? { mirrorCounts[item] }
     func clearMirror(_ item: SenseItem) async throws {}
 }
 
@@ -93,5 +94,17 @@ struct SensesReconcileTests {
         let model = SensesModel(service: service, store: store)
         await model.refresh()
         #expect(service.started.isEmpty)
+    }
+
+    @Test func theServerCopyCanBeRemovedOnlyWhileTheMirrorIsOffAndHoldsData() async throws {
+        let service = RecordingSensesService()
+        service.mirrorCounts = [.calendar: 4, .contacts: 0]
+        let model = try makeModel(on: .contacts, service: service)
+        await model.refresh()
+        #expect(model.serverCopyRemovable(.calendar))
+        #expect(!model.serverCopyRemovable(.contacts))
+        #expect(!model.serverCopyRemovable(.location))
+        await model.turnOn(.calendar)
+        #expect(!model.serverCopyRemovable(.calendar))
     }
 }
