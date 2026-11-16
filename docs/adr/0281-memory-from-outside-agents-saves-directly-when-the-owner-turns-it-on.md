@@ -25,7 +25,7 @@ date: "2026-11-15"
 
 ## 背景
 
-外部 agent（例如 Muse、Claude）经 MCP（让 agent 调用外部工具的协议）的写工具 `propose_memory`、`propose_memories` 推来记忆，本 ADR 之前一律先存进“待确认”，主人在 Himawari 里点过才保存。Andy 2026-11-15 在项目聊天里回答“MCP 写操作要不要改成直接写”：“直接写就行了”。对同一问题的另一个提问，他在决定卡上选了“记忆直接存，规则仍要你点头”。
+外部 agent（例如 Muse、Claude）经 MCP（让 agent 调用外部工具的协议）的写工具 `propose_memory`、`propose_memories` 推来记忆，在接入设为“先问我”时一律先存进“待确认”，主人在 Himawari 里点过才保存。Andy 2026-11-15 在项目聊天里回答“MCP 写操作要不要改成直接写”：“直接写就行了”。对同一问题的另一个提问，他在决定卡上选了“记忆直接存，规则仍要你点头”。
 
 ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，可整批撤销”的开关，默认先问，只有主人能改；接入记录里也已经有 `push_policy` 一列，但网关一直拒绝把它设成“直接存”（`MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE`），写工具也不看这一列。本 ADR 把这条路接通。
 
@@ -36,7 +36,7 @@ ADR 0242 决定 9 早已设计了每个接入一个“先问我 / 直接存，�
 1. 开关已设计好：`docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md` 决定 9 的原文是“每个接入有一个开关“先问我 / 直接存，可整批撤销”，默认先问；只有主人能改。”
 2. “直接存”只管记忆：同文件决定 9 的 2026-11-12 补注原文是““直接存”只管记忆。规则提议不管开关怎么设，都要主人在 Himawari 里点头才生效”。Andy 本次在决定卡选的“记忆直接存，规则仍要你点头”与它一致。
 3. 待确认表和整批撤销已经存在：`ProductionMcpMemoryWriter.undoBatch`（`apps/agent-service/src/production-mcp-memory-writer.ts`）按批次号撤销，网关操作 `memory.external.undo`。
-4. 改动前网关拒绝“直接存”：改动前的 `apps/agent-service/src/production-mcp-connections-control.ts` 里 `askFirstOnly` 对 `pushPolicy !== "ask"` 抛 `MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE`。
+4. 本 ADR 要改掉的限制：此前网关不接受把接入设成“直接存”。
 5. 愿景 v2.2 起规则是 Andy 定的硬设定：`AGENTS.md` 产品愿景一节。
 
 <a id="decision"></a>
