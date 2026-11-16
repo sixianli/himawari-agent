@@ -7,6 +7,7 @@ struct SenseDetailView: View {
     let item: SenseItem
     let back: () -> Void
     @State private var confirming = false
+    @State private var stopping = false
 
     var body: some View {
         SenseSheet(title: item.name, back: back) {
@@ -22,6 +23,13 @@ struct SenseDetailView: View {
             .scrollIndicators(.hidden)
         }
         .task(id: collecting) { await model.loadDay(item) }
+        .confirmationDialog(L.format("detail.stopTitle", item.name), isPresented: $stopping, titleVisibility: .visible) {
+            Button(L.text("detail.stopKeep")) { Task { await model.turnOff(item) } }
+            Button(L.text("detail.stopDelete"), role: .destructive) { Task { await model.turnOffAndClear(item) } }
+            Button(L.text("detail.cancel"), role: .cancel) {}
+        } message: {
+            Text(L.text("detail.stopBody"))
+        }
         .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
             Button(confirmButton, role: .destructive) {
                 Task {
@@ -49,7 +57,13 @@ struct SenseDetailView: View {
     private var hasLines: Bool { !lines.isEmpty }
 
     private var switchCard: some View {
-        Toggle(isOn: Binding(get: { collecting }, set: { on in Task { await model.setSwitch(item, on: on) } })) {
+        Toggle(isOn: Binding(get: { collecting }, set: { on in
+            if !on, item.isMirror {
+                stopping = true
+            } else {
+                Task { await model.setSwitch(item, on: on) }
+            }
+        })) {
             VStack(alignment: .leading, spacing: DesignTokens.Senses.factLabelGap) {
                 Text(item.text("headline"))
                     .hmType(DesignTokens.TypeScale.body)
@@ -116,11 +130,15 @@ struct SenseDetailView: View {
                 NavigationLink {
                     SenseRetentionView(model: model, item: item, retention: retention)
                 } label: {
-                    SenseValueRow(title: L.text("detail.\(item.retentionLabel)"), value: L.format("detail.days", retention.days), showsChevron: true)
+                    SenseValueRow(title: L.text("detail.route"), value: L.format("detail.routeDays", retention.days), showsChevron: true)
                 }
                 .buttonStyle(.plain)
             } else {
                 SenseValueRow(title: L.text("detail.kept"), value: L.text("intro.keepUntilDeleted"), showsChevron: false)
+            }
+            if item.retentionKey != nil {
+                RowSeparator()
+                placesRow
             }
             if let always = model.always[item] {
                 RowSeparator()
@@ -144,9 +162,29 @@ struct SenseDetailView: View {
         }
     }
 
+    private var placesRow: some View {
+        HStack(spacing: DesignTokens.Size.rowGap) {
+            SenseValueRow(title: L.text("detail.places"), value: L.text("detail.placesKept"), showsChevron: false)
+            if model.canDelete {
+                Button { confirming = true } label: {
+                    Text(L.text("detail.delete"))
+                        .hmType(DesignTokens.TypeScale.body)
+                        .foregroundStyle(Color.hmDanger)
+                        .frame(minHeight: DesignTokens.Size.minTapTarget)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.working == item)
+            }
+        }
+    }
+
+    private var showsDangerLink: Bool {
+        item.isMirror ? model.serverCopyRemovable(item) : model.canDelete && item.retentionKey == nil
+    }
+
     @ViewBuilder
     private var dangerLink: some View {
-        if item.isMirror || model.canDelete {
+        if showsDangerLink {
             Button { confirming = true } label: {
                 Text(item.isMirror ? item.text("deleteAll") : L.format("detail.deleteAll", item.name))
                     .hmType(DesignTokens.TypeScale.body)

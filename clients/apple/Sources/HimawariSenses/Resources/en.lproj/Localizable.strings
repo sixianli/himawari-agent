@@ -24,9 +24,9 @@
 "item.calendar.keep" = "Follows your calendar: delete it there and it's deleted here";
 "item.calendar.denied" = "iPhone hasn't let it see your calendar";
 "item.calendar.deniedDetail" = "Until then it can't see any of your events.";
-"item.calendar.deleteAll" = "Turn off and delete events on the server";
+"item.calendar.deleteAll" = "Delete events on the server";
 "item.calendar.synced" = "%d events synced";
-"item.calendar.confirm" = "Calendar will be turned off and the copy on your server deleted. Your iPhone calendar stays as it is.";
+"item.calendar.confirm" = "The copy of your events on the server will be deleted. Your iPhone calendar stays as it is.";
 
 "item.health.name" = "Health & Motion";
 "item.health.detail" = "Steps, sleep, heart rate";
@@ -42,9 +42,9 @@
 "item.contacts.keep" = "Follows your contacts: delete one there and it's deleted here";
 "item.contacts.denied" = "iPhone hasn't let it see your contacts";
 "item.contacts.deniedDetail" = "Until then it doesn't know your contacts.";
-"item.contacts.deleteAll" = "Turn off and delete contacts on the server";
+"item.contacts.deleteAll" = "Delete contacts on the server";
 "item.contacts.synced" = "%d contacts synced";
-"item.contacts.confirm" = "Contacts will be turned off and the copy on your server deleted. Your iPhone contacts stay as they are.";
+"item.contacts.confirm" = "The copy of your contacts on the server will be deleted. Your iPhone contacts stay as they are.";
 
 "item.photos.name" = "Photos";
 "item.photos.detail" = "New photos you take";
@@ -79,6 +79,14 @@
 "detail.keepSection" = "Keeping";
 "detail.track" = "Routes";
 "detail.days" = "%d days";
+"detail.route" = "Routes";
+"detail.routeDays" = "Kept %d days";
+"detail.places" = "Places you have been";
+"detail.placesKept" = "Kept until you delete them";
+"detail.stopTitle" = "Turn off “%@”?";
+"detail.stopBody" = "Changes on your iPhone will no longer sync. You can keep what is already on the server or delete it too; the originals on your iPhone stay as they are.";
+"detail.stopKeep" = "Stop syncing, keep what is saved";
+"detail.stopDelete" = "Stop syncing and delete it from the server";
 "detail.always" = "Always Allow";
 "detail.alwaysDetail" = "Records even when the app isn't open; iOS will ask you again";
 "detail.kept" = "Records";
