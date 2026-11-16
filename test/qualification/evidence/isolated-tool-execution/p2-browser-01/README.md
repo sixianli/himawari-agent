@@ -1,6 +1,6 @@
 # P2：真实浏览器测试样例
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)中“用真实浏览器测试样例验证进程、profile、下载和出口一起被管住；没有登记浏览器后端的产品入口继续拒绝”，验收条目是 ITE-13。规则来源是 Spec 的[浏览器与外部资源](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#browser)：第一阶段不新增浏览器产品工具，只用测试样例验证容器后端能管住浏览器这类进程。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)中“用真实浏览器测试样例验证进程、profile、下载和出口一起被管住；没有登记浏览器后端的产品入口继续拒绝”，验收条目是 ITE-13。规则来源是 Spec 的[浏览器与外部资源](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#browser)：第一阶段不新增浏览器产品工具，只用测试样例验证容器后端能管住浏览器这类进程。
 
 ## 用词
 

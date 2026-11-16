@@ -130,4 +130,4 @@ date: "2026-09-29"
 - 被取代的测试时机决定：[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
 - CI 必需检查与证据边界：[SOURCE: docs/architecture-v0.1.md#ci-政策与证据边界]
 - Mac 自带 Bash：[SOURCE: docs/adr/0037-macos-bundled-bash.md]
-- 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+- 进行中的工具执行排查：[2026-09-28-tool-execution-audit-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-28-tool-execution-audit-plan.md)

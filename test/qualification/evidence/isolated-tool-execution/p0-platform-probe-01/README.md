@@ -1,6 +1,6 @@
 # P0 平台探针：容器停止、挂载门禁与硬期限
 
-日期：2026-09-25 UTC。对应[隔离执行实施计划的 P0](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p0)。本目录只保存容器运行时本身的实测结果，**不是**产品已接入容器的证据：Himawari 的工具目前仍由 SRT（现有的进程级沙箱）执行，本次没有改动产品代码。
+日期：2026-09-25 UTC。对应[隔离执行实施计划的 P0](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p0)。本目录只保存容器运行时本身的实测结果，**不是**产品已接入容器的证据：Himawari 的工具目前仍由 SRT（现有的进程级沙箱）执行，本次没有改动产品代码。
 
 <a id="contents"></a>
 
@@ -70,7 +70,7 @@
 
 ## 原目录模式的平台门禁
 
-[Spec 的平台门禁](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)要求同时满足三项。本次结论如下：
+[Spec 的平台门禁](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)要求同时满足三项。本次结论如下：
 
 1. **挂进容器的工作目录能强制磁盘额度：两个平台都不满足。** 容器运行时本身做不到；要做到只能靠宿主文件系统的额度功能。Linux 的 ext4 和 XFS 支持项目配额（按目录树统计用量），但 Hermes 的 `/data` 没有开启，开启需要修改服务器的文件系统设置，本次没有做，也没有验证。macOS 的 APFS 只能给整个卷设额度，不能给任意目录设。
 2. **嵌套敏感文件能被隔离：两个平台都只部分满足。** 按路径遮挡对已知路径有效，但硬链接和启动后新增的文件会漏出来。要用原目录模式，宿主一侧必须在创建前拒绝“敏感文件有多个硬链接”的授权目录，并且接受“运行期间新增的敏感文件无法遮挡”这一限制，或者改用不含敏感文件的工作副本。

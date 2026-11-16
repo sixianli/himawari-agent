@@ -90,7 +90,7 @@ v2.1 由 [ADR 0101](0101-adopt-product-vision-v2-1.md) 采纳，并定下规矩�
 
 | 文档 | 位置 | 现在写的 | 和 v2.2 的关系 |
 | --- | --- | --- | --- |
-| 自建记忆引擎 Spec | [`2026-10-25-self-built-memory-engine-design.md`](../execution/specs/2026-10-25-self-built-memory-engine-design.md) 第 42 行、第 58 行 | 「规矩」层「提炼为 `rule` 类别时」写入，「每轮常驻，排在档案前」；`rule` 是记忆 `category` 的一个取值 | v2.2 原则 3：规则不是记忆，记忆只保存规则的出处和修改历史。「每轮常驻」在代码里也不成立：`rule` 类和档案共用 2000 字预算，超出排队 |
+| 自建记忆引擎 Spec | [`2026-10-25-self-built-memory-engine-design.md`](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md) 第 42 行、第 58 行 | 「规矩」层「提炼为 `rule` 类别时」写入，「每轮常驻，排在档案前」；`rule` 是记忆 `category` 的一个取值 | v2.2 原则 3：规则不是记忆，记忆只保存规则的出处和修改历史。「每轮常驻」在代码里也不成立：`rule` 类和档案共用 2000 字预算，超出排队 |
 | 记忆页 ADR | [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 第 79 行 | 手动添加的要求类（`rule`）记忆重要度 800 | 同上：规则仍按记忆条目存储和挑选 |
 | 主人档案代码 | `packages/application/src/services/owner-profile-service.ts` 第 12、16、183 行 | `rule` 类记忆先于档案选取，不受 600 门槛限制，但受 2000 字预算限制 | 愿景附录第 10 条已按代码写法修正 |
 | PRD v0.2 | [`prd-v0.2.md`](../prd-v0.2.md) 第 227–242 行「注意力与 Web 投递」、第 375 行「注意力与提醒」 | 注意力只有 `SILENT / INBOX / DIGEST / NOTIFY / INTERRUPT` 五档；所有者可以降低等级 | 没有每日介入次数与时间上限，没有「规则手册预先授权、不逐次确认」（v2.2 原则 2） |
@@ -107,7 +107,7 @@ v2.1 由 [ADR 0101](0101-adopt-product-vision-v2-1.md) 采纳，并定下规矩�
 - [SOURCE: docs/backlog/BL-20261028-002-per-task-budget-for-unattended-work.md]
 - [SOURCE: docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
 - [SOURCE: docs/adr/0112-memory-page-carried-memories-and-topic-browsing.md]
-- [SOURCE: docs/execution/specs/2026-10-25-self-built-memory-engine-design.md]
+- [2026-10-25-self-built-memory-engine-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-10-25-self-built-memory-engine-design.md)
 - [SOURCE: docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md]
 - [SOURCE: docs/prd-v0.2.md]
 - 工程案例库：[案例 37](../engineering-casebook.md#case-product-vision)（v2.1 的采纳；v2.2 不另开案例，Andy 2026-10-31 定）

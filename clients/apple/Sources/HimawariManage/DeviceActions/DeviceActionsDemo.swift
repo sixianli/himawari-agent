@@ -64,9 +64,15 @@ enum DeviceActionsDemo {
 
     static let recent: [DeviceActionView] = decode("""
     [
-      {"id":"dact_demo1","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,
+      {"id":"dact_demo1","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"available",
        "createdAt":"2026-11-13T05:11:00.000Z","updatedAt":"2026-11-13T05:11:04.000Z",
-       "detail":{"zh-CN":"提醒事项里加了“买转换插头”","en":"Added “Buy a plug adapter” to Reminders","ja":"リマインダーに「変換プラグを買う」を追加"}},
+       "detail":{"zh-CN":"日历里加了“牙医复诊”，11 月 18 日 15:00","en":"Added “Dentist follow-up” on Nov 18 at 15:00","ja":"11月18日 15:00 に「歯医者の再診」を追加"}},
+      {"id":"dact_demo6","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"failed",
+       "createdAt":"2026-11-13T05:05:00.000Z","updatedAt":"2026-11-13T05:10:00.000Z",
+       "detail":{"zh-CN":"把日历里“周会”挪到 16:00","en":"Moved “Weekly sync” to 16:00","ja":"「定例会」を 16:00 に変更"}},
+      {"id":"dact_demo5","deviceId":"dev_demo","state":"succeeded","risk":"medium","ownerPresence":false,"reversible":true,"undo":"done",
+       "createdAt":"2026-11-13T05:00:00.000Z","updatedAt":"2026-11-13T05:08:00.000Z",
+       "detail":{"zh-CN":"日历里加了“和田中吃饭”，11 月 20 日 19:00","en":"Added “Dinner with Tanaka” on Nov 20 at 19:00","ja":"11月20日 19:00 に「田中さんと食事」を追加"}},
       {"id":"dact_demo2","deviceId":"dev_demo","state":"failed","risk":"medium","ownerPresence":false,"reversible":false,
        "createdAt":"2026-11-13T04:30:00.000Z","updatedAt":"2026-11-13T04:30:02.000Z","reasonCode":"permission",
        "reason":"这台 iPhone 没允许 Himawari 使用通讯录。要用的话，去“设置 › 隐私与安全性 › 通讯录”里打开",

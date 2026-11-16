@@ -1,6 +1,6 @@
 # P2 第二批：原目录模式的目录挂载、敏感文件遮挡与磁盘保护
 
-日期：2026-09-25 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 1、2、9 项。规则来源是 Spec 的[授权与安全策略](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#policy)、[原目录模式的平台门禁](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)，以及 [ADR 0032 的决定](../../../../../docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision)。
+日期：2026-09-25 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 1、2、9 项。规则来源是 Spec 的[授权与安全策略](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#policy)、[原目录模式的平台门禁](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#host-mount-gate)，以及 [ADR 0032 的决定](../../../../../docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md#decision)。
 
 本批让[第一批的容器后端](../p2-container-lifecycle-01/README.md)能把用户批准的真实目录直接挂进容器（原目录模式），并在 Mac（OrbStack）和 Hermes（Linux）上用真实容器验证。**磁盘保护不是硬性额度**：它按固定间隔检查剩余空间，两次检查之间写入的量不受限制，实测最多超出阈值 238 MiB（见[磁盘保护的数值与实测超出量](#disk-guard)）。所以本记录不签发“全面合格”，只证明下文逐项列出的行为。后端仍没有接进产品，新任务执行仍然关闭。
 

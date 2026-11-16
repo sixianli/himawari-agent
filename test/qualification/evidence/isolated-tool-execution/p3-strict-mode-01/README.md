@@ -1,6 +1,6 @@
 # 严格模式下拒绝走 SRT 的工具
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式下所有工具走容器”一项（ITE-25），规则见 [Spec 的两种执行模式](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)中“严格模式下所有工具走容器”一项（ITE-25），规则见 [Spec 的两种执行模式](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。
 
 ## 用词
 

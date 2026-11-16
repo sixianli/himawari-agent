@@ -154,4 +154,30 @@ describe("docs link check", () => {
     });
     expect(checkDocsLinks({ root }).errors).toEqual(["DOCS_ANCHOR_MISSING docs/a.md -> b.md#x"]);
   });
+
+  it("fails when a link to a deleted document names a section but drops its anchor", () => {
+    const base = "https://github.com/o/r/blob/abc/docs/execution/specs/old.md";
+    const root = fixture({
+      "docs/a.md": `[old.md「启动 监督」（已删除，链接指向删除前的版本）](${base}) [old.md「启动 监督」（已删除，链接指向删除前的版本）](${base}#%E5%90%AF%E5%8A%A8%20%E7%9B%91%E7%9D%A3) [old.md「profile」（已删除，链接指向删除前的版本）](${base}#profile) [old.md（已删除，链接指向删除前的版本）](${base})\n`,
+    });
+    expect(checkDocsLinks({ root })).toEqual({
+      checked: 0,
+      errors: [`DOCS_DELETED_LINK_SECTION_MISSING docs/a.md -> ${base}`],
+    });
+  });
+
+  it("fails when a governed document path written as code no longer exists", () => {
+    const root = fixture({
+      "docs/a.md":
+        "`docs/backlog/BL-1-gone.md` `docs/execution/specs/kept.md` `docs/runbooks/gone-runbook.md` `docs/adr/NNNN-*.md` `docs/execution/specs/<名字>.md` `docs/sdk.md`\n",
+      "docs/execution/specs/kept.md": "",
+    });
+    expect(checkDocsLinks({ root })).toEqual({
+      checked: 0,
+      errors: [
+        "DOCS_PATH_MISSING docs/a.md -> docs/backlog/BL-1-gone.md",
+        "DOCS_PATH_MISSING docs/a.md -> docs/runbooks/gone-runbook.md",
+      ],
+    });
+  });
 });

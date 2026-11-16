@@ -16,8 +16,8 @@ date: "2026-09-10"
 
 ## 来源上下文
 
-- 控制中心的业务、三语与无障碍要求：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- Thread、消息与 Run 语义：[SOURCE: docs/execution/specs/2026-08-26-owner-thread-conversation-design.md]
+- 控制中心的业务、三语与无障碍要求：[2026-08-26-control-center-experience-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-control-center-experience-design.md)
+- Thread、消息与 Run 语义：[2026-08-26-owner-thread-conversation-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-owner-thread-conversation-design.md)
 - 用户在本次设计对话中提供现有控制中心截图、Codex 深色界面截图和向日葵照片，并逐次确认设计；本版本保存最后确认的结果。
 - 交互研究参考：[Codex 项目与对话组织](https://learn.chatgpt.com/docs/projects)、[Claude Code 桌面界面](https://code.claude.com/docs/en/desktop)、[Cursor Agent](https://cursor.com/docs/agent/overview)。深色配色直接参考用户提供的 Codex 截图。
 

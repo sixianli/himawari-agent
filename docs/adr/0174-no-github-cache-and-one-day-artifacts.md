@@ -83,7 +83,7 @@ CI（持续集成，每次推送后 GitHub Actions 自动跑的检查）原来�
 
 ## 后果
 
-- 每个任务都要重新下载工具和 npm 包。按 [CI 计划](../execution/plans/2026-09-03-github-ci-quality-gates-plan.md) 里同一台机器上的实测，锁文件重装冷缓存 120.6 秒、热缓存 77.9 秒，每个任务大约多 40 多秒；完整 CI 有 9 个任务。新的 CI 服务器上实际多多少，等第一次完整 CI 再看。
+- 每个任务都要重新下载工具和 npm 包。按 [CI 计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md) 里同一台机器上的实测，锁文件重装冷缓存 120.6 秒、热缓存 77.9 秒，每个任务大约多 40 多秒；完整 CI 有 9 个任务。新的 CI 服务器上实际多多少，等第一次完整 CI 再看。
 - CI 跑完 1 天后 GitHub 就删掉报告和诊断。要查失败原因，必须在 1 天内下载；`quality.yml` 手动交接任务读取的 CI 证据也必须在 1 天内用，`scripts/ci/export-evidence.mjs` 按 1 天判断过期，超过时报 `CI_HANDOFF_EVIDENCE_EXPIRED`。
 - 目前三个工作流在 GitHub 上是停用状态：Hermes 跑 CI 太慢，要等新的 CI 服务器装好再打开。[ADR 0160](0160-self-hosted-runner-on-hermes.md) 定的“CI 在自己的服务器上跑”不变，停用只是等新服务器期间的临时状态。
 - `quality.yml` 的任务仍在 GitHub 自己的机器（`ubuntu-24.04`）上跑。私有仓库按分钟计费，所以重新打开工作流之前，要另外决定它搬到自己的服务器还是继续停着。
