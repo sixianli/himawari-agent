@@ -211,7 +211,6 @@ export class ProductionMcpConnectionsControl {
     const now = this.#options.clock.now();
     if (command.type === "mcp.connection.create") {
       const scope = this.#scope(authentication, command.scope);
-      askFirstOnly(command.payload.pushPolicy);
       const id = mcpConnectionIdFor(scope, command.idempotencyKey);
       const created = async () =>
         (await this.#options.store.list(scope)).some((connection) => connection.id === id);
@@ -239,7 +238,6 @@ export class ProductionMcpConnectionsControl {
     if (command.type === "mcp.connection.change") {
       const scope = this.#scope(authentication, command.scope);
       const { connectionId, name, capabilities, readCeiling, pushPolicy, status } = command.payload;
-      if (pushPolicy !== null) askFirstOnly(pushPolicy);
       if (
         name === null &&
         capabilities === null &&
@@ -283,14 +281,6 @@ export class ProductionMcpConnectionsControl {
     }
     throw new Error("MCP_CONNECTIONS_OPERATION_NOT_INSTALLED");
   }
-}
-
-function askFirstOnly(pushPolicy: string): void {
-  if (pushPolicy !== "ask")
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      "MCP_CONNECTION_PUSH_POLICY_NOT_AVAILABLE",
-    );
 }
 
 export interface McpConnectionAddressRouteOptions {
