@@ -1,7 +1,12 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { ownerDayBounds } from "@himawari-agent/application";
+import {
+  DEVICE_MIRROR_KINDS,
+  ownerDayBounds,
+  PERCEPTION_RECORD_TYPES,
+  PERCEPTION_TEXT_MAXIMUM,
+} from "@himawari-agent/application";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type Harness,
@@ -347,5 +352,31 @@ describe("usage limits", () => {
     expect(perception.state).toBe("sensing");
     expect(perception.senses.every(({ enabled }) => enabled)).toBe(true);
     expect(perception.usageLimits.map(({ key }) => key)).toContain("perception.audio.daily");
+  });
+
+  it("hands a device the record types, mirror rules and text limit it must build uploads from", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const config = await deviceGet(h, client, "config");
+    expect(config.status).toBe(200);
+    const perception = config.body["perception"] as {
+      recordTextCharacters: number;
+      recordTypes: Record<string, { sense: string; text: string; evidence: unknown }>;
+      mirrorKinds: unknown;
+    };
+    expect(perception.recordTextCharacters).toBe(PERCEPTION_TEXT_MAXIMUM);
+    expect(Object.keys(perception.recordTypes).sort()).toEqual(
+      Object.keys(PERCEPTION_RECORD_TYPES).sort(),
+    );
+    for (const [type, definition] of Object.entries(PERCEPTION_RECORD_TYPES)) {
+      expect(perception.recordTypes[type], type).toEqual({
+        sense: definition.sense,
+        text: definition.text,
+        evidence: definition.evidence,
+      });
+    }
+    expect(perception.mirrorKinds).toEqual(JSON.parse(JSON.stringify(DEVICE_MIRROR_KINDS)));
+    expect(perception.recordTypes["location.visit"]).toBeDefined();
+    expect(perception.recordTypes["nonexistent.type"]).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 # 删除旧的未确认 SRT 执行记录：管理命令
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第二项（ITE-26），规则见 [Spec 的删除旧的未确认记录](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#legacy-purge)，操作步骤见[运维手册的删除旧的未确认 SRT 执行记录](../../../../../docs/runbooks/install-start-stop-runbook.md#purge-unconfirmed-srt-records)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第二项（ITE-26），规则见 [Spec 的删除旧的未确认记录](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#legacy-purge)，操作步骤见[运维手册的删除旧的未确认 SRT 执行记录](../../../../../docs/runbooks/install-start-stop-runbook.md#purge-unconfirmed-srt-records)。
 
 ## 用词
 

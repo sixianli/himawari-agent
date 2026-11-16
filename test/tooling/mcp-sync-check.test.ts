@@ -15,14 +15,14 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { EXTERNAL_PROPOSAL_CATEGORIES as EXPORT_CATEGORIES } from "../../packages/persistence-sqlite/src/data-export/schemas.ts";
-import { EXTERNAL_PROPOSAL_STORE_CATEGORIES } from "../../packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts";
-import { SqliteMcpMemorySyncOperations } from "../../packages/persistence-sqlite/src/sqlite-mcp-memory-sync-operations.ts";
 import { EXTERNAL_PROPOSAL_CATEGORIES as WRITER_CATEGORIES } from "../../apps/agent-service/src/production-mcp-memory-writer.ts";
 import {
   MCP_SYNC_CATEGORIES,
   ProductionMcpSync,
 } from "../../apps/agent-service/src/production-mcp-sync.ts";
+import { EXTERNAL_PROPOSAL_CATEGORIES as EXPORT_CATEGORIES } from "../../packages/persistence-sqlite/src/data-export/schemas.ts";
+import { EXTERNAL_PROPOSAL_STORE_CATEGORIES } from "../../packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts";
+import { SqliteMcpMemorySyncOperations } from "../../packages/persistence-sqlite/src/sqlite-mcp-memory-sync-operations.ts";
 
 const OWNER_ID = createOwnerId("owner-sync-check");
 const AGENT_ID = createAgentId("agent-sync-check");
@@ -115,6 +115,11 @@ describe("[P5-C][check] one list of external memory categories, one set of keys"
         projectNotes: async (input) => ops.execute("mcpMemorySync.projectNotes", input) as never,
         replacedMemory: async (input) =>
           ops.execute("mcpMemorySync.replacedMemory", input) as never,
+        overview: async (input) => ops.execute("mcpMemorySync.overview", input) as never,
+        decideProject: async (input) => ops.execute("mcpMemorySync.decideProject", input) as never,
+        decideNote: async (input) => ops.execute("mcpMemorySync.decideNote", input) as never,
+        resolveAttention: async (input) =>
+          ops.execute("mcpMemorySync.resolveAttention", input) as never,
       };
       const payloads = new Map<string, never>();
       const adapters = createReferenceAdapterSet();

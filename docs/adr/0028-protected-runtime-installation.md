@@ -40,4 +40,4 @@ root 在受 root 保护的路径下发布 `protected-runtime.v1` 记录，精确
 
 - [SOURCE: docs/adr/0024-srt-unified-execution.md]
 - [SOURCE: docs/execution/specs/2026-09-10-control-center-local-acceptance-design.md]
-- [SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md]
+- [2026-09-10-control-center-local-acceptance-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md)

@@ -1,6 +1,6 @@
 # P3 第一批：环境操作经 Agent–Worker 认证通道转发
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)，是“Agent 在本轮第一次需要工具时创建主环境，Worker 后续调用复用它”这一项的前置部分。依据 Spec 的[组件职责与后端合同](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#backend)：协调服务、数据库和 `lease` 留在 Agent 一侧；调用 Docker 的容器适配器在 Worker 一侧；两边沿现有 execution.v2 通道扩展版本通信，application 层不直接调用 Docker。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3)，是“Agent 在本轮第一次需要工具时创建主环境，Worker 后续调用复用它”这一项的前置部分。依据 Spec 的[组件职责与后端合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#backend)：协调服务、数据库和 `lease` 留在 Agent 一侧；调用 Docker 的容器适配器在 Worker 一侧；两边沿现有 execution.v2 通道扩展版本通信，application 层不直接调用 Docker。
 
 本批只加通道和两端的处理代码，产品里还没有装配它们，新任务执行仍然关闭。协调服务接入产品是第三批的内容。
 

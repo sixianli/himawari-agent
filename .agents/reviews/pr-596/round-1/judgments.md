@@ -1,0 +1,12 @@
+# PR 596 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 高：含换行或制表符的项目笔记会让整页 `memory.overview.snapshot` 解析失败。contracts-v2.ts 快照 text 用 boundedString 拒绝 0x20 以下字符，而 production-mcp-sync.ts:44-52 normalizeNoteText 保留 \n \t；已改用 codePointString(allowLineBreaks)，validation-boundaries.contract.test.ts 加了用例；触发：项目笔记正文含换行或制表符（多行笔记很常见），出现在待处理列表里；后果：memory.overview.snapshot 解析失败，整个记忆页打不开
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2. 高：拒绝项目不会拒绝已等确认的敏感笔记，敏感笔记还能绕过“已拒绝”的项目。sqlite-mcp-memory-sync-operations.ts decideProject 只迁 awaiting_project_approval/refused，applyNote 先判分级；已改为拒绝时把 awaiting_confirmation 也转 refused，applyNote 先判 declined；mcp-memory-sync.test.ts 加反向用例；触发：拒绝项目时已有等确认的敏感笔记；或已拒绝的项目再推敏感笔记；后果：敏感笔记仍可被确认存入已被拒绝的项目，与“拒绝则全部被拒”不符
+- 3（deepseek-v4.1-flash）成立，会出错，中高：### 3. 中：项目列表和刹车待办的“接入名”常常退回成 connectionId。production-memory-control.ts 原先只用 overview.entries 反推接入名；已让存储层的 projects/attention 直接带 connectionName（JOIN mcp_connections），加了用例；触发：项目批准后没有待处理笔记，或刹车待办的项目没有等处理的笔记；后果：页面上接入名显示成 conn-… 编号
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 中：文档说“被拒的关于主人的条目在列表里、可恢复”，代码里这条路径不存在。applyOwner 只写 STATE_ACTIVE，关于主人的条目不会 refused；已改 ADR 补注，代码里的 OR state=refused 分支对 project_note 之外永不命中，保留无害；触发：读 ADR 0242 的补注，以为被拒的关于主人条目能在列表里恢复；后果：只是文档说法不准，不影响运行；没人会因此做错事；判低理由：判低：只是 ADR 补注文字与代码不符，不影响任何运行行为，也不会让人误操作
+- 5（deepseek-v4.1-flash）成立，可以更好：### 5. 中：`decideNote` 在不适用的状态下静默返回成功，调用方会以为处理了。decideNote 对不适用状态返回真实的当前状态且不改数据，重复点击是幂等的，没有数据错误；命令只回 resultRef，页面以刷新后的快照为准。可以更好：不适用时报错，但不采纳也不会出错
+- 6（deepseek-v4.1-flash）成立，会出错，中高：### 6. 中：端到端浏览器假服务器没有补 `mcpSync`，现有记忆页浏览器测试会失败。test/e2e/fixtures/control-center-browser-server.mjs memoryOverview() 原先没有 mcpSync；已补空的 mcpSync；触发：运行使用 HIMAWARI_MEMORY_FIXTURE=1 的浏览器端到端测试；后果：记忆页快照缺必填的 mcpSync，客户端严格解析失败，现有浏览器测试失败；判低理由：判高：现有测试在 CI 上会直接失败，会挡住合并
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7. 低：刹车待办显示的“当天开始基数”可能来自另一天。确认：attention 表没有 day 列，取的是该项目最近一天的 baseline（sqlite-mcp-memory-sync-operations.ts 的 attention 查询）；只影响一个显示数字，修它要改表，本轮不改；触发：刹车待办跨天未处理，之后同一项目又有新一天的删除记录；后果：待办上显示的当天开始基数可能是另一天的
+- 8（deepseek-v4.1-flash）成立，会出错，低：### 8. 低：长度校验用 UTF-16 长度，写入校验用码点数，表情接近上限时快照会失败。确认：boundedString 按 UTF-16 长度，写入端按码点；已改用按码点数的 codePointString，加了 64 个表情的用例；触发：连接名、项目名、正文接近上限且含表情等 UTF-16 代理对；后果：写入通过但快照校验失败，整页打不开
+- 9（deepseek-v4.1-flash）成立，可以更好：### 9. 低：新增自动检查缺少关键反向用例，`check:mcp-sync` 只加了透传。测试覆盖不足属实，本轮已为第 1、2、3、6、8 条补了反向用例；check:mcp-sync 只是透传存储方法，不需要新检查，不会出错
+- 10（deepseek-v4.1-flash）成立，可以更好：### 10. 低（部分推测）：`projects`/`attention` 无上限且逐行查项目名，页面可能变慢。推测的性能问题：projects 受接入和项目数限制，项目名按项目编号查是主键查询；没有实测，也没有会出错的输入，属于可以更好

@@ -64,7 +64,7 @@ opencode 本地服务的接口 `GET /api/model` 会列出每个模型当前的�
 
 - 正面：档位过期这类错误不会再发生；`LIVE_VARIANTS` 行留在每次启动的输出里，可以回查当时有哪些档位。
 - 负面：表的 `variants` 字段删除后，`order` 和 `show` 不再显示档位，要看当前档位只能看启动输出或自己请求接口。
-- 后续：`AGENTS.md` 的模型一条改为引用本 ADR；ADR 0061 加一行指向本 ADR；[代理工具 Runbook](../runbooks/agent-tooling-runbook.md) 的拒绝码表补上新的拒绝码。
+- 后续：`AGENTS.md` 的模型一条改为引用本 ADR；ADR 0061 加一行指向本 ADR；[代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md) 的拒绝码表补上新的拒绝码。
 
 [↑ 返回阅读导航](#contents)
 

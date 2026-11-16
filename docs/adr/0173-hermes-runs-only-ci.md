@@ -91,7 +91,7 @@ Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态�
 - 好处（待验证）：CI 可以用满 4 个核和约 14 GB 内存，不再和其他服务抢磁盘。
 - 代价：langfuse、just-rag、feeding-me、flashanki、keycloak、mem0、firecrawl、`hermes-gateway`、监控、X 自动发帖等服务全部停止，依赖它们的功能都不可用，直到把它们迁到别处或重新启动。
 - 不能保证 CI 一定变快：2026-11-06 的采样显示，等磁盘时多半是 runner 自己在写盘，不全是被别的服务挤占（推断，没有用 `iostat` 核实）。
-- 生效要在 Hermes 上用 sudo：先暂停 runner，再重新运行 `install-runner.sh`，最后恢复（见 [已归档的 Runbook](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#install)）。
+- 生效要在 Hermes 上用 sudo：先暂停 runner，再重新运行 `install-runner.sh`，最后恢复（见 [已归档的 Runbook](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#install)）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -101,6 +101,6 @@ Hermes（家里的 Linux 服务器，4 核，16 GB 内存，系统盘是固态�
 
 - [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0170：Hermes 上两个 runner 的内存上限从 6 GB 提到 9 GB](0170-more-memory-for-hermes-runners.md)
-- [Hermes 自托管 runner 操作手册（已归档）](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
+- [Hermes 自托管 runner 操作手册（已归档）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
 
 [↑ 返回阅读导航](#contents)
