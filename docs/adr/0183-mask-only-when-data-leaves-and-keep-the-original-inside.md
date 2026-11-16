@@ -81,7 +81,7 @@ date: "2026-11-08"
 - [ADR 0167：敏感信息识别包](0167-sensitive-capture-package.md)
 - [ADR 0166：提示词措辞第 1 批](0166-prompt-wording-batch-1-system-and-tools.md)
 - [ADR 0143：模型门槛决定的账本](0143-decision-ledger-for-model-gate-decisions.md)
-- [产品愿景 v2.3：自有优先、数据自持](../product-vision.md)
+- [产品愿景：自有优先、数据自持](../product-vision.md)（写本 ADR 时是 v2.3）
 - 代码：`packages/sensitive-capture/src/restoration.ts`、`packages/sensitive-capture/src/identifiers.ts`、`apps/agent-service/src/production-memory-capture.ts`、`apps/agent-service/src/production-thread-titles.ts`
 
 [返回阅读导航](#contents)

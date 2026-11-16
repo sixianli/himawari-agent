@@ -74,7 +74,7 @@ date: "2026-11-04"
 ## 关联文档
 
 - [ADR 0134](0134-adopt-product-vision-v2-2.md)：采纳愿景 v2.2，规则成为硬性设定。
-- [ADR 0153](0153-adopt-product-vision-v2-3.md)：采纳现行的愿景 v2.3。
+- [ADR 0153](0153-adopt-product-vision-v2-3.md)：采纳愿景 v2.3（写本 ADR 时的现行版本；2026-11-16 起现行的是 v2.4，见 [ADR 0284](0284-adopt-product-vision-v2-4.md)）。
 - [ADR 0122](0122-every-owner-setting-on-the-server-with-revision.md)：主人的设置存在服务器上，带版本号。
 - [ADR 0161](0161-keep-every-model-prompt-in-one-catalog-package.md)：提示词集中管理，第二步另出方案。
 - [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
