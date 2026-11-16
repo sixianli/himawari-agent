@@ -20,9 +20,9 @@ P0-01 至 P0-04 的交付是验收样本、接入设计、模型与 Memory 配�
 ## 来源上下文
 
 - 系统边界：[SOURCE: docs/architecture-v0.1.md]
-- 文件授权与主机边界：[SOURCE: docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md]
-- 持久运行与模型边界：[SOURCE: docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md]
-- 真实调用授权要求：[SOURCE: docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md]
+- 文件授权与主机边界：[2026-08-26-host-files-code-workspaces-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md)
+- 持久运行与模型边界：[2026-08-26-portable-durable-web-agent-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md)
+- 真实调用授权要求：[2026-08-26-portable-durable-web-agent-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md)
 
 ## 范围
 

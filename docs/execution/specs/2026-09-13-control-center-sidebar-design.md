@@ -13,7 +13,7 @@ date: "2026-09-13"
 用户于 2026-09-13 指出现有侧栏把按钮、筛选、对话和未启用功能堆在一起，要求参考其提供的 Codex 与 ChatGPT 网页版截图改善界面与交互。此次调整导航层级、列表滚动和标题栏，保留既有向日葵品牌、明暗主题、聊天与工具记录。
 
 - 原始视觉与交互基准：[SOURCE: docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md]
-- 控制中心功能和无障碍要求：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
+- 控制中心功能和无障碍要求：[2026-08-26-control-center-experience-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-control-center-experience-design.md)
 
 原始 v1 原型与效果图保持原样。本说明记录后续修订，不代表 Codex 或 ChatGPT 的内部实现，也不引入演示项目、虚构账号或未实现的能力。
 

@@ -24,9 +24,9 @@ date: "2026-09-03"
 - Node 运行时：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace 边界：[SOURCE: docs/adr/0017-workspace-monorepo.md]
 - Mac 命令隔离：[SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
-- S0 需求归属与跨切片验收：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
-- S3 控制中心与浏览器要求：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- S9 发布资格与候选身份：[SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
+- S0 需求归属与跨切片验收：[2026-08-26-v0.2-spec-suite-integration-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md)
+- S3 控制中心与浏览器要求：[2026-08-26-control-center-experience-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-control-center-experience-design.md)
+- S9 发布资格与候选身份：[2026-08-26-production-qualification-upgrade-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md)
 
 本 Spec 使用 `CI-A01` 至 `CI-A14` 作为工程验收编号，不向 S0 的十个产品 Spec 增加 `S10`，不接管 S9 的发布资格状态。对应 Plan 只以本 Spec 为主来源，协同引用 S0 和 S9。
 

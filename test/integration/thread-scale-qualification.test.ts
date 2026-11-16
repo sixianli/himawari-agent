@@ -443,7 +443,6 @@ async function qualifyThreadScale() {
     const evidence = {
       schemaVersion: 1,
       recordedAt: new Date().toISOString(),
-      plan: "docs/execution/plans/2026-08-26-owner-thread-conversation-plan.md",
       taskIds: ["S2-T12"],
       status: "local_complete",
       candidateRevision: gitValue(["rev-parse", "HEAD"]),

@@ -92,4 +92,4 @@ date: "2026-10-25"
 - [ADR 0005：将长期记忆作为可替换外部能力](0005-replaceable-memory-boundary.md)
 - [自研记忆引擎设计规格](../execution/specs/2026-10-25-self-built-memory-engine-design.md)
 - [方案文档（Claude Doc，已批准）](https://claude.ai/artifact/JULHuYEDYGdKHvbCNcp1T2)
-- [方案存档（全文和批注记录）](../archive/specs/2026-10-25-self-built-memory-engine-proposal.md)
+- [方案存档（全文和批注记录）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)

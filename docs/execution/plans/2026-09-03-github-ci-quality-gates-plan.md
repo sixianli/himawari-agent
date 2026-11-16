@@ -14,9 +14,9 @@ date: "2026-09-03"
 
 **协同来源：**
 
-- [SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
-- [SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
-- [SOURCE: docs/execution/plans/2026-08-26-production-qualification-upgrade-plan.md]
+- [2026-08-26-v0.2-spec-suite-integration-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md)
+- [2026-08-26-production-qualification-upgrade-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md)
+- [2026-08-26-production-qualification-upgrade-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/plans/2026-08-26-production-qualification-upgrade-plan.md)
 - [SOURCE: docs/architecture-v0.1.md]
 
 **目标：** 实现来源 Spec 的 CI-A01 至 CI-A14，并分别交付本地可运行检查、GitHub 工作流证据和服务端强制门禁的实际生效证据。
