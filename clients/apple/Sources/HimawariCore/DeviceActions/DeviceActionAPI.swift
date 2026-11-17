@@ -49,6 +49,22 @@ extension DeviceAPI: DeviceActionTransport {
         return try decode(Reply.self, data).challenge
     }
 
+    public func undoAction(id: String, confirm: DeviceKeySigner?, reason: String) async throws -> DeviceActionUndoReply {
+        struct Body: Encodable { let id: String }
+        struct Reply: Decodable { let state: String }
+        let body = try JSONEncoder().encode(Body(id: id))
+        do {
+            var challenge: String?
+            if confirm != nil { challenge = try await issueConfirmChallenge() }
+            let data = try await http.send(DeviceRequest(method: "POST", path: "actions/undo", body: body, nonce: challenge, confirmSigner: confirm, confirmReason: confirm == nil ? nil : reason))
+            return .recorded(state: try decode(Reply.self, data).state)
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 404 {
+            return .notFound
+        } catch let DeviceAPIError.server(status, _, _, _) where status == 409 {
+            return .notUndoable
+        }
+    }
+
     public func changeActionPolicy(expectedRevision: Int, blocked: [String], confirm: DeviceKeySigner, reason: String) async throws -> DevicePolicyChange {
         struct Body: Encodable { let expectedRevision: Int; let blockedActions: [String] }
         let body = try JSONEncoder().encode(Body(expectedRevision: expectedRevision, blockedActions: blocked.sorted()))

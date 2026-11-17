@@ -229,7 +229,10 @@ public actor DeviceActionExecutor {
 
     static func evidence(made: JSONObject? = nil, found: JSONObject? = nil, before: JSONObject? = nil) -> JSONObject? {
         var evidence: JSONObject = [:]
-        if let made { evidence["done"] = .object(made) }
+        if let made {
+            evidence["done"] = .object(made)
+            if let eventId = made["eventId"]?.string, !eventId.isEmpty { evidence["eventId"] = .string(eventId) }
+        }
         if let found { evidence["readBack"] = .object(found) }
         if let before { evidence["before"] = .object(before) }
         return evidence.isEmpty ? nil : evidence

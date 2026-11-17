@@ -1175,15 +1175,6 @@ describe("production HTTP composition", () => {
           },
         });
       expect((await read()).connections).toEqual([]);
-      const direct = await command("mcp.connection.create", "mcp-create-direct", {
-        name: "Direct",
-        capabilities: ["mcp"],
-        readCeiling: "private",
-        pushPolicy: "direct",
-      });
-      expect(direct.statusCode).not.toBe(200);
-      expect(direct.body).toContain("PORT_INVALID_OPERATION");
-      expect((await read()).connections).toEqual([]);
       const created = await command("mcp.connection.create", "mcp-create-01", {
         name: "  Claude Code  ",
         capabilities: ["mcp", "command_hooks"],
@@ -1202,6 +1193,17 @@ describe("production HTTP composition", () => {
       expect(again.statusCode, again.body).toBe(200);
       expect(again.json()).toEqual({ resultRef: connectionId, replayed: true });
       expect((await read()).connections).toHaveLength(1);
+      expect((await read()).connections[0]?.pushPolicy).toBe("ask");
+      const switched = await command("mcp.connection.change", "mcp-direct-01", {
+        connectionId,
+        name: null,
+        capabilities: null,
+        readCeiling: null,
+        pushPolicy: "direct",
+        status: null,
+      });
+      expect(switched.statusCode, switched.body).toBe(200);
+      expect((await read()).connections[0]?.pushPolicy).toBe("direct");
       expect((await address(connectionId, "")).statusCode).toBe(401);
       const shown = await address(connectionId);
       expect(shown.statusCode).toBe(200);
@@ -1248,16 +1250,6 @@ describe("production HTTP composition", () => {
         status: "paused",
       });
       expect(paused.statusCode, paused.body).toBe(200);
-      const toDirect = await command("mcp.connection.change", "mcp-direct-01", {
-        connectionId,
-        name: null,
-        capabilities: null,
-        readCeiling: null,
-        pushPolicy: "direct",
-        status: null,
-      });
-      expect(toDirect.statusCode).not.toBe(200);
-      expect((await read()).connections[0]).toMatchObject({ pushPolicy: "ask" });
       expect((await mcp(keyedPath)).statusCode).toBe(403);
       expect((await read()).connections[0]).toMatchObject({
         status: "paused",

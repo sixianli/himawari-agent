@@ -83,4 +83,4 @@ Claude Code、Anthropic API 的服务端压缩、OpenAI Codex 都是同一个做
 - [规则文件：发给模型的内容](../../.agents/instructions/prompt-prefix.md)
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md) 第 7 条“压缩请求原样放行”：本 ADR 之后，压缩期间的无工具摘要请求在条件满足时改写成共享开头，其余仍原样放行；“上一次普通请求”指上一次已通过检查、即将发出的普通请求
 - [事故与门槛清单](../incidents-and-gates.md)（I-92）
-- [BL-20261109-8w6ct3](../backlog/BL-20261109-8w6ct3-compaction-request-reuses-conversation-head.md)
+- [BL-20261109-8w6ct3](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261109-8w6ct3-compaction-request-reuses-conversation-head.md)

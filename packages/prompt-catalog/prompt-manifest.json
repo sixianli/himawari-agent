@@ -375,19 +375,19 @@
     "reason": "P5-C: 新增 sync_memories 写工具、结果说明和项目笔记的固定标签；find_memories 加 project 参数"
   },
   "mcp.propose-memories": {
-    "sha256": "f75b853df7d4a7a9e00f60981b07066014f3f68105df73f5ce30419d3bdfce7f",
-    "changedIn": "ADR 0228",
-    "reason": "P5-3: full also covers kept text of recently replaced or rejected proposals"
+    "sha256": "c904863eff0f0c0abc5e63e2422a8d7efcbaffd0ec16a837e4d8067033ab5a5f",
+    "changedIn": "MCP 直接存",
+    "reason": "按接入设置直接存记忆：工具说明、回执文字"
   },
   "mcp.propose-memories-result": {
-    "sha256": "026254c2eb0ddcf54e2cd12d7e39597d85e77e4a4bbab7b0f2b83ecb296bac0f",
-    "changedIn": "ADR 0228",
-    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
+    "sha256": "fec5a2d74221249b64a3b9da5c9d23eb17951fb9f43b2da52fadf6d0d5d0f598",
+    "changedIn": "MCP 直接存",
+    "reason": "按接入设置直接存记忆：工具说明、回执文字"
   },
   "mcp.propose-memory": {
-    "sha256": "71097efb7312054b44b1d2981ebe2e99286a24d10eba18682c54abd7554fe461",
-    "changedIn": "ADR 0228",
-    "reason": "P5-3: external memory proposals wait as pending until the owner confirms in Himawari; batch propose_memories"
+    "sha256": "af115498b1311aa371c3ea86751c2af24af17ce099fd2db2d54365782768cb1d",
+    "changedIn": "MCP 直接存（PR 589 复核第 3 轮）",
+    "reason": "工具说明里敏感分类改成与代码一致，只写健康、财务和正文里的证件号、银行卡号"
   },
   "mcp.propose-memory-already-saved": {
     "sha256": "f213567f4ace8b14f14d2f753e32498763ecc2f9008501e2c1a9ee51aaf37921",
@@ -433,6 +433,11 @@
     "sha256": "844d784b588aa8650d685b823ae424e4775c2bc2c8a741d1c31d8dabc1b7db57",
     "changedIn": "ADR 0225",
     "reason": "P5-2: propose_memory tool and in-client confirmation text for external agents"
+  },
+  "mcp.propose-memory-saved-direct": {
+    "sha256": "15e20e1c56e1e765aa6df93c0a280fdcae15866b96cfaa61e912f622cf6623e4",
+    "changedIn": "MCP 直接存",
+    "reason": "按接入设置直接存记忆：工具说明、回执文字"
   },
   "mcp.propose-memory-secret": {
     "sha256": "cf2b819b8852f0eb55177378c407a603bc7498396178ed6971fd4e96789c3a14",

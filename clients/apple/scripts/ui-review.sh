@@ -12,6 +12,7 @@ expected_width=1170
 only=""
 calm_below=40
 calm_patience=600
+prompt_wait=5
 
 usage() {
   echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE]" >&2
@@ -119,10 +120,22 @@ bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist
 if ! xcrun simctl list devices booted | grep -qF "$udid"; then
   shutdown_simulator=1
 fi
-xcrun simctl boot "$udid" 2>/dev/null || true
-xcrun simctl bootstatus "$udid" -b >/dev/null
-simulator_launchd="$(pgrep -f "launchd_sim .*$udid" | head -1 || true)"
-[ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
+simulator_launchd=""
+boot_device() {
+  xcrun simctl boot "$udid" 2>/dev/null || true
+  xcrun simctl bootstatus "$udid" -b >/dev/null
+  simulator_launchd="$(pgrep -f "launchd_sim .*$udid" | head -1 || true)"
+  [ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
+}
+boot_device
+if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n()"' | cut -d, -f1)" != "zh-Hans" ] \
+  || [ "$(xcrun simctl spawn "$udid" defaults read -g AppleICUForce12HourTime 2>/dev/null)" != "1" ]; then
+  xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array zh-Hans
+  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string zh_CN
+  xcrun simctl spawn "$udid" defaults write -g AppleICUForce12HourTime -bool true
+  xcrun simctl shutdown "$udid"
+  boot_device
+fi
 
 simulator_load() {
   ps -A -o ppid=,%cpu= | awk -v parent="$simulator_launchd" '$1 == parent { total += $2 } END { printf "%d", total }'
@@ -143,8 +156,12 @@ wait_until_calm() {
   done
 }
 
+override_status_bar() {
+  xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+}
+
 wait_until_calm
-xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+override_status_bar
 xcrun simctl install "$udid" "$app"
 
 if [ "$mode" = "check" ]; then
@@ -173,9 +190,9 @@ marker="$(xcrun simctl get_app_container "$udid" "$bundle" data)/tmp/$(sed -nE '
 case "$marker" in */tmp/?*) ;; *) echo "UI_REVIEW_FAILED cannot locate the scene marker" >&2; exit 1 ;; esac
 
 settle() {
-  local scene="$1" file="$2" previous="" current="" tries=0 launches=1
+  local scene="$1" file="$2" marked="${3:-marked}" previous="" current="" tries=0 launches=1
   while :; do
-    if shown "$scene" && calm; then
+    if { [ "$marked" = "unmarked" ] || shown "$scene"; } && calm; then
       xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
       current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
       if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
@@ -196,6 +213,17 @@ settle() {
     fi
     sleep 1
   done
+}
+
+restart_device() {
+  xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+  xcrun simctl shutdown "$udid"
+  boot_device
+  wait_until_calm
+  override_status_bar
+  xcrun simctl ui "$udid" appearance "$1"
+  sleep 3
+  wait_until_calm
 }
 
 xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
@@ -227,6 +255,17 @@ for appearance in light dark; do
         if command -v avconvert >/dev/null; then
           avconvert --preset Preset960x540 --source "$raw" --output "$shots/$scene-$appearance.mp4" --replace >/dev/null 2>&1 && rm -f "$raw"
         fi
+        ;;
+      *-system-prompt*)
+        xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+        xcrun simctl privacy "$udid" reset all "$bundle"
+        launch "$scene"
+        file="$shots/$scene-$appearance.png"
+        sleep "$prompt_wait"
+        settle "$scene" "$file" unmarked
+        restart_device "$appearance"
+        width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
+        [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }
         ;;
       *)
         launch "$scene"

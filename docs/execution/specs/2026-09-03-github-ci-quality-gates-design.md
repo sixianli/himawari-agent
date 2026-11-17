@@ -24,9 +24,9 @@ date: "2026-09-03"
 - Node 运行时：[SOURCE: docs/adr/0016-typescript-node-runtime.md]
 - Workspace 边界：[SOURCE: docs/adr/0017-workspace-monorepo.md]
 - Mac 命令隔离：[SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
-- S0 需求归属与跨切片验收：[SOURCE: docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md]
-- S3 控制中心与浏览器要求：[SOURCE: docs/execution/specs/2026-08-26-control-center-experience-design.md]
-- S9 发布资格与候选身份：[SOURCE: docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md]
+- S0 需求归属与跨切片验收：[2026-08-26-v0.2-spec-suite-integration-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-v0.2-spec-suite-integration-design.md)
+- S3 控制中心与浏览器要求：[2026-08-26-control-center-experience-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-control-center-experience-design.md)
+- S9 发布资格与候选身份：[2026-08-26-production-qualification-upgrade-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md)
 
 本 Spec 使用 `CI-A01` 至 `CI-A14` 作为工程验收编号，不向 S0 的十个产品 Spec 增加 `S10`，不接管 S9 的发布资格状态。对应 Plan 只以本 Spec 为主来源，协同引用 S0 和 S9。
 
@@ -44,7 +44,7 @@ date: "2026-09-03"
 | `npm test` 未包含 `pi-compat`；其他四个命名 project 是主 project 的子集 | 使用五个主 project，避免遗漏及重复计算 |
 | `test:browser` 实际运行 Node 测试；真实浏览器脚本使用构建产物和 fixture 服务 | 单列真实浏览器检查，明确 fixture 证明范围 |
 | 安装测试会内部执行 `build:node`；规模脚本默认写回受跟踪 evidence | 移除测试内隐式构建，分离 CI 输出目录 |
-| `check:v0.2-coverage` 是需求映射检查；尚无代码覆盖率 provider | 保留需求映射检查，另建可测量的代码覆盖率策略 |
+| `check:v0.2-coverage` 是需求映射检查；尚无代码覆盖率 provider | 当时决定保留需求映射检查，另建可测量的代码覆盖率策略。2026-11-16 起这项检查已退役（Andy 同意）：它只核对 PRD v0.2 与规格、计划之间的对应，不读产品代码，脚本、测试和覆盖清单已删除，没有替代的需求映射检查 |
 | 文档治理校验器在个人 Skill 目录，并导入同目录其他模块 | 将完整校验运行依赖固定到仓库，保留原始来源和摘要 |
 
 上述静态及本机结果不证明干净 runner 安装、GitHub 工作流执行、目标 Mac/Hermes 状态或生产资格。S6 的历史 blocked evidence 只能作为待验证事项，不能代替当前目标主机探测。
@@ -56,7 +56,7 @@ date: "2026-09-03"
 - 可在本地和 GitHub Actions 执行的同一组检查入口与政策。
 - Linux x64、macOS arm64 和三个浏览器引擎的确定性验证（2026-11-08 起不再单独验证最低 Node 版本，见 [ADR 0189](../../adr/0189-drop-node-floor-and-fold-test-into-coverage.md)）。
 - 精确依赖、原生依赖构建、Pi 发布包、安装产物、证据摘要和输出隔离。
-- 格式、lint、类型、架构、需求映射、文档、覆盖率、安全扫描和门禁自身的负向验证。
+- 格式、lint、类型、架构、文档、覆盖率、安全扫描和门禁自身的负向验证（需求映射检查 `check:v0.2-coverage` 已于 2026-11-16 退役，不再在范围内）。
 - PR、默认分支、周期检测、手动验证的触发规则和最小权限。
 - GitHub 分支规则的目标配置、只读核查和授权后的生效验收。
 - 向 S9 提供 CI 证据的格式和边界。
@@ -79,7 +79,7 @@ date: "2026-09-03"
 | CI-A03 | PR 引入失败测试、空 project、`.only`、未登记 skip 或未归属测试 | 合并检查失败；五个主 project 的文件归属和实际执行均可核验 |
 | CI-A04 | 构建产物被安装、传递或修改 | 安装测试消费同一份内容；校验缺失、跨平台复用、混合 revision 或篡改均失败 |
 | CI-A05 | 构建后的控制中心出现关键交互、三语、键盘或自动无障碍回归 | 对应真实浏览器 job 失败，保留可定位证据，模拟设备不冒充实体设备 |
-| CI-A06 | 类型、依赖方向、产品不变量、需求映射或文档合同被破坏 | 现有检查和严格治理校验失败，检查过程不更新基线或 seal |
+| CI-A06 | 类型、依赖方向、产品不变量或文档合同被破坏（需求映射检查已于 2026-11-16 退役，不再属于本条） | 现有检查和严格治理校验失败，检查过程不更新基线或 seal |
 | CI-A07 | 新增可执行代码、删测或覆盖率报告缺失 | 按固定分母执行增量和基线策略；未导入生产文件仍被统计 |
 | CI-A08 | 出现密钥泄漏、未豁免阻断规则命中或扫描不可用 | 安全检查失败，结果遮盖，不能通过自动更新例外转绿 |
 | CI-A09 | 上游失败、取消、跳过、少一个矩阵成员、旧报告或空报告 | `ci/required` 不成功，且报告具体原因 |
@@ -143,7 +143,7 @@ date: "2026-09-03"
 - integration 启用文件并行，并保留文件隔离：每个文件使用独立测试进程与模块状态。`ci/policy.json` 的 `workerLimits` 定义最多 3 个 worker（同时执行测试文件的进程），每个至少对应 1 个可用 CPU 核心和 2048 MiB 物理内存。实际数量取三个上限的最小值并至少为 1，因此 8 核、8 GiB 的机器使用 3，4 核、16 GiB 的机器使用 3，2 核机器使用 2；不使用某台机器的固定数字作为所有环境的并发数。
 - `vitest.workspace.ts` 与正式五项目入口共用 `test-concurrency.mjs` 计算数量。integration 使用 `sequence.groupOrder: 1`，其他主/资格项目使用默认阶段 0；同一次覆盖率或多项目调用先完成阶段 0，再运行 integration 阶段内部的文件并行，避免 Vitest 对同阶段不同 worker 数量的拒绝。政策检查拒绝无资源限制的并行、数量不一致、关闭文件隔离或调度阶段冲突；其余主项目维持正式入口原有的 1 worker。只迁移已接受旧政策中的 integration 调度字段，保留原始政策摘要、测试文件清单、资格排除项、阈值及其他门禁。2026-10-14 起另有一次固定迁移：只把已接受的 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 换成 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`，其他任何已接受值都不迁移，由政策检查照常报漂移。
 - 当前 100 个普通 integration 文件的完整并行和构建负载实验均未复现跨文件共享数据库、套接字或固定端口冲突，没有新增独占串行文件。临时数据库、UDS（本机进程间通信套接字）、安装 prefix 和可写测试目录必须按测试创建；公共源码和构建归档只读。正式入口需要运行时的测试从校验过的本次归档安装并运行；直接开发运行仍可能读取 `dist/node-runtime`，并发构建必须使用 CI 的独立输出目录，不能同时覆盖这些输入。新增真实共享资源时先消除共享写入；确实需要独占的文件必须先形成具体证据、显式分组和禁止误入并行组的政策测试，不能静默排除或跳过。
-- 不改变 integration 的既有 30 秒测试预算，也不放宽各例产品期限、断言和超时。后续变更并行规则时保留完整测试报告、逐条断言状态、资源采样与失败记录；历史试验和当前托管验证的边界见[实施记录](../plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20260929)，最近一次规则调整见[2026-10-14 集成测试并行规则调整](../plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20261014)。
+- 不改变 integration 的既有 30 秒测试预算，也不放宽各例产品期限、断言和超时。后续变更并行规则时保留完整测试报告、逐条断言状态、资源采样与失败记录；历史试验和当前托管验证的边界见[实施记录](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20260929)，最近一次规则调整见[2026-10-14 集成测试并行规则调整](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20261014)。
 - CI 默认禁用测试重试。基础设施失败可以重跑整个检查并保留 attempt，禁止只选成功重试隐藏不稳定测试。
 
 本地 `npm test` 与 CI 通过同一个主测试执行入口消费政策。该入口显式准备需要的产物，再执行测试。测试文件自身不构建，不更改全局目录或工具版本。
@@ -152,7 +152,7 @@ date: "2026-09-03"
 
 按用户 2026-10-02 的决定，测试回到 Hermes 并撤掉云端测试时限例外，见 [ADR 0046 的测试时限规则](../../adr/0046-tests-back-on-hermes.md#time-limits)。[SOURCE: docs/adr/0046-tests-back-on-hermes.md] `vitest.workspace.ts` 不再读取或校验 `HIMAWARI_TEST_TIMEOUT_MS`。无论这个已撤销变量缺省、设为原先合法的值或非法的值，配置加载均不受它影响：没有自设时限的项目仍使用 Vitest 默认 5000ms，integration 保留原 30000ms；配置不新增 `hookTimeout`，用例显式时限和产品期限不变。
 
-正式 `npm test` 使用的共享 runner 不再将 `HIMAWARI_TEST_TIMEOUT_MS` 加入隔离环境，也不透传其他未声明变量。带 `[R2-E3]` 标签的 `test/tooling/test-timeout.test.mjs` 用真实 Node 子进程加载配置，对照缺省、原合法值及非法值时所有项目的配置；`test/tooling/test-timeout-entry.test.mjs` 通过真实 `runCheck`、`runTests` 与子进程调度，独立读取五个项目的环境，断言已撤销变量和无关变量均不存在。后者沿用固定工具、归档校验和 Vitest 本体的受控传输夹具，环境构造和进程调用不 mock；真实 Vitest 和完整正式入口的执行另由第 2、3 层验证。本次撤销只恢复已有时限，不改变 `ci/policy.json` 或 GitHub 必需检查集合；代码撤销和默认时限复验记录见 [BL-20261001-002 的恢复工作](../../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md#恢复时要做的事)。[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md]
+正式 `npm test` 使用的共享 runner 不再将 `HIMAWARI_TEST_TIMEOUT_MS` 加入隔离环境，也不透传其他未声明变量。带 `[R2-E3]` 标签的 `test/tooling/test-timeout.test.mjs` 用真实 Node 子进程加载配置，对照缺省、原合法值及非法值时所有项目的配置；`test/tooling/test-timeout-entry.test.mjs` 通过真实 `runCheck`、`runTests` 与子进程调度，独立读取五个项目的环境，断言已撤销变量和无关变量均不存在。后者沿用固定工具、归档校验和 Vitest 本体的受控传输夹具，环境构造和进程调用不 mock；真实 Vitest 和完整正式入口的执行另由第 2、3 层验证。本次撤销只恢复已有时限，不改变 `ci/policy.json` 或 GitHub 必需检查集合；代码撤销和默认时限复验记录见 [BL-20261001-002 的恢复工作](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md#恢复时要做的事)。[BL-20261001-002-回-到-同-步-写-入-快-的.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)
 
 `execution-worker-process.test.ts` 的独立 Agent/Worker 子进程直接执行测试侧 `.mjs`，加载真实构建的 UDS 服务器和执行客户端，继续核对崩溃恢复及独立状态读回。Agent 仅导入 `production-execution-client.js`，避免测试夹具加载无关服务启动依赖；产品入口不变。父测试沿用 prepared 的准备流程：同时提供 `HIMAWARI_TEST_ARTIFACT` 与 `HIMAWARI_TEST_CONTEXT` 时，用现有安装器校验并安装到测试临时目录，子进程从该目录运行；两者都没有时读取 `dist/node-runtime`，只设置一个时报错。安装子进程期限 180000ms、准备 hook 期限 240000ms，安装目录在 `afterAll` 删除；原 Worker 就绪和 Agent 接受期限均保持 15000ms。每次运行的阶段记录保存在 `HIMAWARI_TEST_DIAGNOSTIC_OUTPUT`。
 
@@ -366,7 +366,7 @@ Plan 必须按 CI-A01 至 CI-A14 建立双向映射。机械验证与真实 GitH
 
 负向验证至少包含以下独立场景。
 
-1. 格式/类型错误、越界 Pi import、需求映射断链和无效文档 SOURCE。
+1. 格式/类型错误、越界 Pi import 和无效文档 SOURCE（需求映射断链的场景随 `check:v0.2-coverage` 于 2026-11-16 退役）。
 2. 主 project 没有测试、新文件未归属、`.only`、未登记 skip 和原始测试失败。
 3. 依赖阶段失败使下游被跳过、工作流取消、矩阵缺项/重复、空报告和旧 attempt 报告。
 4. 产物单字节修改、缺迁移资源、错误 OS/ABI、源码依赖泄漏及安装测试重新构建。

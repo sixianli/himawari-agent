@@ -60,7 +60,7 @@ Owner 已确认 SRT 方向和首批产品范围：文件读取、原项目内编
 
 ## Links
 
-- [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
+- [2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)
 - [SOURCE: docs/architecture-v0.1.md]
 - [SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
 - [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]

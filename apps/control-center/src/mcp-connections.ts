@@ -39,6 +39,7 @@ export interface McpConnectionDraft {
   readonly name: string;
   readonly capabilities: readonly ("command_hooks" | "mcp" | "scheduled_tasks")[];
   readonly readCeiling: "public" | "private" | "sensitive";
+  readonly pushPolicy: "ask" | "direct";
 }
 
 export async function createMcpConnection(
@@ -50,7 +51,7 @@ export async function createMcpConnection(
     commandMessage(
       configuration,
       "mcp.connection.create",
-      { ...draft, capabilities: [...draft.capabilities], pushPolicy: "ask" },
+      { ...draft, capabilities: [...draft.capabilities] },
       { risk: "medium" },
     ),
   );
@@ -60,6 +61,7 @@ export async function createMcpConnection(
 export interface McpConnectionEdit {
   readonly name?: string;
   readonly readCeiling?: McpConnectionDraft["readCeiling"];
+  readonly pushPolicy?: McpConnectionDraft["pushPolicy"];
   readonly status?: "active" | "paused" | "revoked";
 }
 
@@ -78,7 +80,7 @@ export async function changeMcpConnection(
         name: edit.name ?? null,
         capabilities: null,
         readCeiling: edit.readCeiling ?? null,
-        pushPolicy: null,
+        pushPolicy: edit.pushPolicy ?? null,
         status: edit.status ?? null,
       },
       { risk: "medium" },

@@ -1,0 +1,144 @@
+"senses.title" = "Let Himawari Sense";
+"senses.thisDevice" = "This iPhone";
+"senses.handedOver" = "Things you hand over";
+"senses.footnote" = "Each one can be turned off on its own. Once off, nothing new is recorded; what was already recorded stays in Sensed, where you can delete it.";
+"senses.back" = "Back";
+
+"state.on" = "On";
+"state.off" = "Off";
+"state.systemDenied" = "Not allowed in iOS";
+"state.paused" = "Paused";
+"state.unsupported" = "Server doesn't support this yet";
+
+"item.location.name" = "Location";
+"item.location.detail" = "Where you went, how long you stayed";
+"item.location.headline" = "Let it know where you are";
+"item.location.records" = "Places you arrive at and how long you stay";
+"item.location.denied" = "iPhone hasn't let it use location";
+"item.location.deniedDetail" = "Until then it can't tell where you are.";
+
+"item.calendar.name" = "Calendar";
+"item.calendar.detail" = "Events in your calendar";
+"item.calendar.headline" = "Let it see your schedule";
+"item.calendar.records" = "The time, place and title of each calendar event";
+"item.calendar.keep" = "Follows your calendar: delete it there and it's deleted here";
+"item.calendar.denied" = "iPhone hasn't let it see your calendar";
+"item.calendar.deniedDetail" = "Until then it can't see any of your events.";
+"item.calendar.deleteAll" = "Delete events on the server";
+"item.calendar.synced" = "%d events synced";
+"item.calendar.confirm" = "The copy of your events on the server will be deleted. Your iPhone calendar stays as it is.";
+
+"item.health.name" = "Health & Motion";
+"item.health.detail" = "Steps, sleep, heart rate";
+"item.health.headline" = "Let it know how your body is doing";
+"item.health.records" = "Steps, sleep, heart rate, workouts, and whether you're walking, running or driving";
+"item.health.denied" = "iPhone hasn't let it read health data";
+"item.health.deniedDetail" = "Until then it can't tell how you slept or how far you walked.";
+
+"item.contacts.name" = "Contacts";
+"item.contacts.detail" = "Who's who";
+"item.contacts.headline" = "Let it know the people you know";
+"item.contacts.records" = "Names, organizations, phone numbers, emails and birthdays";
+"item.contacts.keep" = "Follows your contacts: delete one there and it's deleted here";
+"item.contacts.denied" = "iPhone hasn't let it see your contacts";
+"item.contacts.deniedDetail" = "Until then it doesn't know your contacts.";
+"item.contacts.deleteAll" = "Delete contacts on the server";
+"item.contacts.synced" = "%d contacts synced";
+"item.contacts.confirm" = "The copy of your contacts on the server will be deleted. Your iPhone contacts stay as they are.";
+
+"item.photos.name" = "Photos";
+"item.photos.detail" = "New photos you take";
+"item.photos.headline" = "Let it know what you photograph";
+"item.photos.records" = "When and where new photos and screenshots were taken, not the photos themselves";
+"item.photos.denied" = "iPhone hasn't let it see your photos";
+"item.photos.deniedDetail" = "Until then it can't see a single photo.";
+
+"item.clipboard.name" = "Clipboard";
+"item.clipboard.detail" = "Text you copy";
+"item.clipboard.headline" = "Let it see the text you copy";
+"item.clipboard.records" = "Text you just copied, when you come back to Himawari; iOS asks whether it may paste";
+"item.clipboard.denied" = "iPhone hasn't let it read the clipboard";
+"item.clipboard.deniedDetail" = "Until then it can't see what you copy.";
+
+"intro.records" = "What it records";
+"intro.keep" = "How long it's kept";
+"intro.where" = "Where it's stored";
+"intro.whereValue" = "Only on your own server";
+"intro.keepTrack" = "Routes are kept %d days; you can change this";
+"intro.keepUntilDeleted" = "Until you delete it";
+"intro.open" = "Turn On %@";
+"intro.later" = "Not Now";
+"intro.serverReason" = "Turn on %@";
+
+"denied.body" = "Turn this on in iPhone Settings.";
+"denied.openSettings" = "Open Settings";
+"denied.skip" = "Never Mind";
+
+"detail.today" = "%d recorded today";
+"detail.todayList" = "Recorded today";
+"detail.keepSection" = "Keeping";
+"detail.track" = "Routes";
+"detail.days" = "%d days";
+"detail.route" = "Routes";
+"detail.routeDays" = "Kept %d days";
+"detail.places" = "Places you have been";
+"detail.placesKept" = "Kept until you delete them";
+"detail.stopTitle" = "Turn off “%@”?";
+"detail.stopBody" = "Changes on your iPhone will no longer sync. You can keep what is already on the server or delete it too; the originals on your iPhone stay as they are.";
+"detail.stopKeep" = "Stop syncing, keep what is saved";
+"detail.stopDelete" = "Stop syncing and delete it from the server";
+"detail.always" = "Always Allow";
+"detail.alwaysDetail" = "Records even when the app isn't open; iOS will ask you again";
+"detail.kept" = "Records";
+"detail.loadFailed" = "Can't reach your server right now. Today's records will show once it's back";
+"detail.deleteAll" = "Delete All %@ Records";
+"detail.deleteConfirmTitle" = "Delete all %@ records?";
+"detail.deleteConfirmBody" = "Every %@ record from this iPhone will be deleted, along with what Himawari remembered only from them. Anything already read into a conversation stays in that conversation.";
+"detail.delete" = "Delete";
+"detail.cancel" = "Cancel";
+"detail.deleted" = "Deleted %d";
+"detail.turnOffReason" = "Turn off %@";
+"detail.retentionReason" = "Change how long routes are kept";
+"detail.failed" = "Couldn't change it. Try again in a moment";
+
+"row.arrived" = "Arrived at %@";
+"row.stayed" = " · stayed %@";
+"row.left" = "Left %@";
+"row.entered" = "Entered %@";
+"row.place" = "a place";
+"row.steps" = "Walked %@ steps";
+"row.sleep" = "Slept %@";
+"row.heartRate" = "Heart rate %@ bpm";
+"row.workout" = "Workout %@";
+"row.activity.walking" = "Walking";
+"row.activity.running" = "Running";
+"row.activity.cycling" = "Cycling";
+"row.activity.driving" = "Driving";
+"row.activity.stationary" = "Stopped";
+"row.photo" = "Took a photo";
+"row.screenshot" = "Took a screenshot";
+"row.clipboard" = "Copied: %@";
+
+"record.time" = "Time";
+"record.place" = "Place";
+"record.coordinate" = "Location";
+"record.accuracy" = "Within about %@ m";
+"record.value" = "Value";
+"record.text" = "Text";
+
+"detail.ok" = "OK";
+"detail.nothingYet" = "Nothing recorded yet today";
+"detail.alwaysOn" = "Recording even when the app is closed";
+"detail.save" = "Save";
+"detail.daysUnit" = "days";
+"detail.defaultDays" = "Default is %d days.";
+"detail.range" = "Enter %d to %d.";
+"record.what" = "What happened";
+
+
+"demo.office" = "the office";
+"demo.lunch" = "near Osaka Station";
+
+"duration.hm" = "%d h %d min";
+"duration.h" = "%d h";
+"duration.m" = "%d min";
