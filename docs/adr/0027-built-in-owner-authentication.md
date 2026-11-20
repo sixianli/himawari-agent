@@ -36,5 +36,5 @@ Himawari 提供单一 Owner 的内置账号：密码与 TOTP 验证器，验证�
 
 - [SOURCE: docs/prd-v0.2.md]
 - [SOURCE: docs/architecture-v0.1.md]
-- [SOURCE: docs/archive/specs/2026-09-10-built-in-account-authentication-design.md]
-- [SOURCE: docs/archive/plans/2026-09-10-built-in-account-authentication-plan.md]
+- [2026-09-10-built-in-account-authentication-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md)
+- [2026-09-10-built-in-account-authentication-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-09-10-built-in-account-authentication-plan.md)

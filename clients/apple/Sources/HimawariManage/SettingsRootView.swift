@@ -22,12 +22,15 @@ public struct SettingsRootView: View {
     private let removedThisDevice: () -> Void
     private let actions: DeviceActionsModel?
     private let openThread: ((String) -> Void)?
+    private let senses: AnyView?
+    @State private var sensesOpen = false
 
     public init(
         api: DeviceAPI,
         confirmKey: DeviceKeySigner,
         actions: DeviceActionsModel? = nil,
         openThread: ((String) -> Void)? = nil,
+        senses: AnyView? = nil,
         close: @escaping () -> Void,
         removedThisDevice: @escaping () -> Void
     ) {
@@ -40,6 +43,7 @@ public struct SettingsRootView: View {
         self.removedThisDevice = removedThisDevice
         self.actions = actions
         self.openThread = openThread
+        self.senses = senses
     }
 
     init(store: SettingsStore, actions: DeviceActionsModel? = nil, path: [Page] = [], close: @escaping () -> Void) {
@@ -49,6 +53,7 @@ public struct SettingsRootView: View {
         removedThisDevice = {}
         self.actions = actions
         openThread = nil
+        senses = nil
     }
 
     static let exportDownloadAvailable = true
@@ -82,6 +87,14 @@ public struct SettingsRootView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                        }
+                    }
+                    if senses != nil {
+                        SettingsGroup(label: nil) {
+                            Button { sensesOpen = true } label: {
+                                SettingsRow(icon: .eye, title: M.senses, chevron: true, last: true)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     SettingsGroup(label: M.himawariSelf) {
@@ -159,6 +172,9 @@ public struct SettingsRootView: View {
             }
         }
         .task { await store.load() }
+        .sheet(isPresented: $sensesOpen) {
+            senses
+        }
     }
 }
 

@@ -174,6 +174,6 @@ flowchart TD
 - 当前事实：[SOURCE: docs/architecture-v0.1.md]
 - 被部分修正的决定：[SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]、[SOURCE: docs/adr/0026-job-scoped-network-egress.md]
 - 持久释放：[SOURCE: docs/adr/0030-durable-workspace-release-facts.md]
-- 工作区合同：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
-- [详细 Spec](../execution/specs/2026-09-24-isolated-tool-execution-design.md)：[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
-- [迁移 Plan](../execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]
+- 工作区合同：[2026-09-16-workspace-authorization-lifecycle-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md)
+- [详细 Spec](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)：[2026-09-24-isolated-tool-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
+- [迁移 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[2026-09-24-isolated-tool-execution-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)

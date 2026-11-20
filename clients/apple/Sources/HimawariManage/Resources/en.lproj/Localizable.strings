@@ -42,3 +42,7 @@
 "permission.openSettings" = "Open Settings";
 "common.close" = "Close";
 "result.withReason" = "%@. %@";
+"actions.cannotUndo" = "This can't be undone any more";
+"result.undo" = "Undo";
+"result.undone" = "Undone";
+"result.undo.failed" = "Couldn't undo";

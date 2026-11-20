@@ -2133,8 +2133,9 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
   const mcpAudience = "mcp-access-audience-production-process";
   const service = await openInstalledMain({ runPolicy: { mcpRead: { audience: mcpAudience } } });
   try {
+    const secret = seedMcpConnection();
     const call = async (assertion?: string) =>
-      httpRequest(service.running().address, "/api/mcp/v1", {
+      httpRequest(service.running().address, `/api/mcp/v1/${secret}`, {
         ...jsonRequestBody({
           jsonrpc: "2.0",
           id: 1,
@@ -2164,7 +2165,37 @@ it("[P5-3] checks the MCP entry against its own Cloudflare Access audience, not 
   }
 }, 120_000);
 
-async function installedMcpToolNames(address: string, assertion: string): Promise<string[]> {
+function seedMcpConnection(): string {
+  const secret = "A".repeat(43);
+  const seeded = openQualifiedDatabase(databasePath);
+  try {
+    seeded
+      .prepare(
+        `INSERT OR IGNORE INTO mcp_connections (
+          id, owner_id, agent_id, name, secret_sha256, capabilities, read_ceiling, push_policy,
+          status, reported_client, created_at, updated_at, secret_rotated_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, '["mcp"]', 'private', 'ask', 'active', NULL, ?, ?, NULL, NULL)`,
+      )
+      .run(
+        "conn-installed-process",
+        ownerId,
+        agentId,
+        "installed-process",
+        createHash("sha256").update(secret, "utf8").digest("hex"),
+        "2026-11-16T00:00:00.000Z",
+        "2026-11-16T00:00:00.000Z",
+      );
+  } finally {
+    seeded.close();
+  }
+  return secret;
+}
+
+async function installedMcpToolNames(
+  address: string,
+  assertion: string,
+  secret: string,
+): Promise<string[]> {
   const client = new Client(
     { name: "claude-code", version: "2.1.400" },
     {
@@ -2173,7 +2204,7 @@ async function installedMcpToolNames(address: string, assertion: string): Promis
     },
   );
   await client.connect(
-    new StreamableHTTPClientTransport(new URL("/api/mcp/v1", address), {
+    new StreamableHTTPClientTransport(new URL(`/api/mcp/v1/${secret}`, address), {
       fetch: async (input, init) => {
         const headers = new Headers(init?.headers);
         headers.set("cf-access-jwt-assertion", assertion);
@@ -2204,9 +2235,11 @@ it("[P5-3] shows the memory proposal tool only when runPolicy.mcpRead.proposals 
       runPolicy: { mcpRead: { audience: mcpAudience, ...(proposals ? { proposals } : {}) } },
     });
     try {
+      const secret = seedMcpConnection();
       const names = await installedMcpToolNames(
         service.running().address,
         await signToken({ audience: mcpAudience }),
+        secret,
       );
       expect(names).toContain("today_context");
       expect(names.includes("propose_memory")).toBe(proposals);

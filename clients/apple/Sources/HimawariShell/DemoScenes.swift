@@ -3,7 +3,7 @@ import Foundation
 import HimawariChat
 import HimawariCore
 import HimawariDesign
-import HimawariManage
+import HimawariSenses
 import HimawariListenUI
 import HimawariManage
 import HimawariShare
@@ -48,6 +48,11 @@ enum DemoScene: String, CaseIterable {
     case chatAnswering = "16-chat-states-5-answering"
     case chatSteps = "16-chat-states-6-steps"
     case tabTodayOneDigit = "tab-today-1-digit"
+    case sensesOverview = "19-senses-1-overview"
+    case sensesIntro = "19-senses-2-intro"
+    case sensesSystemPrompt = "19-senses-3-system-prompt"
+    case sensesDetail = "19-senses-4-detail"
+    case sensesDenied = "19-senses-5-denied"
     case actionsToday = "01-today-device-actions"
     case actionsDetail = "17-today-more-2-detail"
     case actionsDetailFace = "17-today-more-3-detail-face-id"
@@ -215,6 +220,16 @@ struct DemoSceneView: View {
             HandoverDemo.entry(.shareOn)
         case .pairingRemoved:
             PairingView(model: .demo(.unpaired(.removed)))
+        case .sensesOverview:
+            DemoSensesHost(scene: .overview)
+        case .sensesIntro:
+            DemoSensesHost(scene: .intro)
+        case .sensesSystemPrompt:
+            DemoSensesHost(scene: .systemPrompt)
+        case .sensesDetail:
+            DemoSensesHost(scene: .detail)
+        case .sensesDenied:
+            DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
@@ -236,6 +251,21 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+    }
+}
+
+struct DemoSensesHost: View {
+    @State private var demo: (model: SensesModel, opening: SenseItem?, opensAutomatically: Bool)
+
+    init(scene: DemoSensesScene) {
+        _demo = State(initialValue: DemoSensesService.scene(scene, now: DemoChatFixtures.now))
+    }
+
+    var body: some View {
+        SensesView(model: demo.model, opening: demo.opening, close: {}) {
+            HandoverEntryRows()
+        }
+        .environment(\.senseOpensAutomatically, demo.opensAutomatically)
     }
 }
 

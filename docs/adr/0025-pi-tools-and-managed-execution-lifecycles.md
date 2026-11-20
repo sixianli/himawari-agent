@@ -75,6 +75,6 @@ Pi 提供工具定义、执行算法及 Operations 注入点，并提供 SRT、S
 - [SOURCE: docs/adr/0024-srt-unified-execution.md]
 - [SOURCE: docs/adr/0023-durable-hitl-execution.md]
 - [SOURCE: docs/architecture-v0.1.md]
-- [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
-- [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]
+- [2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)
+- [2026-09-07-srt-unified-execution-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-07-srt-unified-execution-plan.md)
 - 具体官方资料、固定 Pi 源码及适用边界见 Spec 的“调研依据与可复用边界”。

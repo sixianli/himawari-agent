@@ -583,7 +583,10 @@ function MemoryDetail({
           <dd>
             {message("memory.page.importanceValue", {
               value: item.importance,
-              by: origin === "owner" || origin === "external" ? "owner" : "model",
+              by:
+                origin === "owner" || origin === "external" || origin === "external_direct"
+                  ? "owner"
+                  : "model",
             })}
           </dd>
           <dt>{message("memory.page.source")}</dt>

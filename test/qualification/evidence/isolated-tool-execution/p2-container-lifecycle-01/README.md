@@ -1,6 +1,6 @@
 # P2 第一批：容器后端的生命周期与最小权限
 
-日期：2026-09-25 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)。规则来源是 Spec 的[组件职责与后端合同](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#backend)、[停止顺序](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#stop-order)和[不依赖控制进程存活的硬期限](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#deadline)。
+日期：2026-09-25 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)。规则来源是 Spec 的[组件职责与后端合同](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#backend)、[停止顺序](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#stop-order)和[不依赖控制进程存活的硬期限](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#deadline)。
 
 本批实现了第一个真实的执行后端：它通过 Docker 命令行（容器运行时的管理命令）创建、执行、查看、停止、核查和删除任务环境，并在 Mac（OrbStack）和 Hermes（Linux）上用真实容器验证。本批的环境**不挂载目录、不联网**：挂目录要先实现原目录模式的磁盘保护和敏感文件遮挡，联网要先实现任务专属出口，都在 P2 后续批次。后端还没有接进产品，新任务执行仍然关闭。
 

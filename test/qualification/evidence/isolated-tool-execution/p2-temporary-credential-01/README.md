@@ -1,6 +1,6 @@
 # P2 第四批：凭据必须进入容器时的临时凭据
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 4 项“凭据进入容器的路径”，以及第 3 项里“临时凭据的发放和撤销”在容器后端这一层的部分。规则来源是 Spec 的[凭据的使用方式](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#credentials)和验收条目 ITE-21 的容器部分。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 4 项“凭据进入容器的路径”，以及第 3 项里“临时凭据的发放和撤销”在容器后端这一层的部分。规则来源是 Spec 的[凭据的使用方式](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#credentials)和验收条目 ITE-21 的容器部分。
 
 本批让容器后端能在一次调用里交给任务一份临时凭据，调用一结束就在签发方那里作废。作废之后，任务抄走的副本和调用期间留下的后台程序再用它都会失败。后端仍没有接进产品，新任务执行仍然关闭；由人逐次批准、审批文字和“先停旧环境再换新环境”的调度属于 P3。
 

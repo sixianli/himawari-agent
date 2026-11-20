@@ -4,6 +4,7 @@ import HimawariCore
 import HimawariActions
 import HimawariDesign
 import HimawariManage
+import HimawariSenses
 import HimawariShare
 import Observation
 #if canImport(UIKit)
@@ -31,6 +32,7 @@ public final class AppModel {
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
+    public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
     @ObservationIgnored public let home: HomeFeedModel
@@ -299,6 +301,8 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        senses?.suspend()
+        senses = nil
         actions = nil
         home.reset()
         do {
@@ -415,10 +419,24 @@ public final class AppModel {
             )
             chat.onNotification = onDeviceNotification
             self.chat = chat
+            let service = LiveSensesService(
+                api: api,
+                store: store,
+                deviceId: record.deviceId,
+                confirmation: EnclaveConfirmation(keys: keys),
+                operations: Self.phoneOperations([SenseOperation.deleteRecords]),
+                configuration: { [weak self] in self?.configuration },
+                refreshConfiguration: { [weak self] in await self?.refreshConfiguration() }
+            )
+            let senses = SensesModel(service: service, store: store)
+            self.senses = senses
             phase = .active
             chat.start()
             actions.deviceActionsChanged()
-            Task { await refreshConfiguration() }
+            Task {
+                await refreshConfiguration()
+                await senses.refresh()
+            }
             deliverWaitingHandovers()
             registerForPush()
         } catch {
@@ -497,7 +515,10 @@ public final class AppModel {
         deliverWaitingHandovers()
         removeSettledNotifications()
         registerForPush()
-        Task { await refreshConfiguration() }
+        Task {
+            await refreshConfiguration()
+            await senses?.refresh()
+        }
     }
 
     private func registerForPush() {
@@ -546,6 +567,14 @@ public final class AppModel {
     }
 }
 
+struct EnclaveConfirmation: ConfirmationSigner {
+    let keys: SecureEnclaveKeyStore
+
+    func confirmKey() -> DeviceKeySigner {
+        keys.signer(.confirm)
+    }
+}
+
 final class HeartbeatSetting: @unchecked Sendable {
     private let lock = NSLock()
     private var value: TimeInterval = .infinity
@@ -553,5 +582,14 @@ final class HeartbeatSetting: @unchecked Sendable {
     var seconds: TimeInterval {
         get { lock.withLock { value } }
         set { lock.withLock { value = newValue } }
+    }
+}
+
+extension AppModel {
+    static func phoneOperations(_ types: [String]) -> Set<String> {
+        Set(types.filter { type in
+            guard let capability = ClientCapabilities.find(.v2, type) else { return false }
+            return capability.tier != .notOnPhone
+        })
     }
 }

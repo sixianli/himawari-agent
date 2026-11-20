@@ -8,7 +8,7 @@ Himawari Agent 是一个自有优先、数据自持（运行环境和数据由�
 
 当前审查修复将工作区变更归属、Git index 事务、删除内容版本、建议/反思/委派状态转换和候选资源清理落实为明确的持久合同。恢复与并发测试使用本地临时仓库和受控适配器；真实模型恢复、Mac/Hermes 隔离资格仍按上述门禁独立验收。
 
-控制中心的本机重构采用已确认的 Himawari 品牌、Light/Dark 与六种主题色；聊天按每轮持久记录显示输出、工具和审批等待，输入区的模型/思考深度由配置能力决定，并在提交时冻结。实现与本机验收边界见 [控制中心重构设计](docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)。原型与测试服务中的消息不代表真实模型验收。
+控制中心的本机重构采用已确认的 Himawari 品牌、Light/Dark 与六种主题色；聊天按每轮持久记录显示输出、工具和审批等待，输入区的模型/思考深度由配置能力决定，并在提交时冻结。实现与本机验收边界见 [控制中心重构设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)。原型与测试服务中的消息不代表真实模型验收。
 
 ## 已确认的 Web 设计
 
@@ -77,7 +77,7 @@ Ubuntu coverage 作业显式传入 `--baseline-candidate initial-only`，仅在�
 
 `.github/workflows/quality.yml` 提供默认分支的手动规模、品牌浏览器、安全复扫和额外 Node 观察；schedule 保持停用，拟定时间记录在 `ci/quality-policy.json`。检测结果与历史 qualification evidence 分离。`export-evidence.mjs` 只接受完整默认分支 CI、同一平台产物和 24 小时内的安全报告；导出格式不代表 S9 资格、Owner 签署或持久证据转存已完成。
 
-正常 PR 在 `718ef1b` 的真实 Actions 运行中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Active Ruleset `22256403` 已启用并回读确认：必须通过 PR、GitHub Actions 来源的 `ci/required`、分支保持最新、讨论解决，禁止强推和删除且无 bypass。目标 fork 审批策略及其专项实测仍未完成。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
+正常 PR 在 `718ef1b` 的真实 Actions 运行中 13 个 job 全部通过。Owner 于 2026-09-04 授权分支收尾，`main` 的 Active Ruleset `22256403` 已启用并回读确认：必须通过 PR、GitHub Actions 来源的 `ci/required`、分支保持最新、讨论解决，禁止强推和删除且无 bypass。目标 fork 审批策略及其专项实测仍未完成。本地平台结果不能代替完整托管矩阵或服务端拒绝合并证据。当前验证、初始化基线和未完成项见 [CI 实施 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-03-github-ci-quality-gates-plan.md)。
 
 ## Local reference composition
 
@@ -176,7 +176,7 @@ VS Code 可以用下列 launch 配置在 Vitest 中断进 sibling TypeScript sou
 
 `npm run check:boundaries` 会检查根和 workspace 清单以及 TypeScript import，拒绝非精确的直接外部依赖、非法反向依赖、依赖环、未声明的内部依赖、逃出 workspace 根的相对 import、纯产品层的 `node:` import，以及 `packages/runtime-pi` 之外的直接 Pi import。
 
-文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
+文件总结的 P007–P009 已接入正式 `read` 的两阶段 Worker 路径：先用独立凭证检查文件身份，再分别授权读取和当前模型披露，保存新输入并签发单次读取凭证。可选 `runPolicy.fileRead` 只选择主机、Worker、目录 Grant 和能力版本；现有授权记录与平台资格仍须独立有效。文件程序由 Worker 的受隔离 program runtime 启动，复用 Pi read；Agent Service 不旁路读取。配置、完成证据与未完成的正式 Mac/ego Lite 验收见 [真实文件总结设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-real-file-summary-agent-loop-design.md)。
 
 通用 HITL 已接入受保护暂停记录、SQLite checkpoint、审批后新租约恢复和 Pi 原工具批次回放；文件读取使用同一契约。审批等待不依赖存活进程，也不重新发送原模型请求。未知副作用继续核查，不能通过再次批准重做。设计与实际验证边界见 [通用 HITL 决策](docs/adr/0023-durable-hitl-execution.md)。
 
@@ -274,12 +274,12 @@ npm run qualify:thread-scale -- --output .ci-output/thread-scale-run
 ## Project documents
 
 - 当前实现：[Architecture v0.1](docs/architecture-v0.1.md)
-- 已关闭设计：[Foundation Spec](docs/archive/specs/2026-08-25-agent-foundation-design.md)
-- 已完成计划：[Foundation Plan](docs/archive/plans/2026-08-25-agent-foundation-plan.md)
+- 已关闭设计：[Foundation Spec](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-08-25-agent-foundation-design.md)
+- 已完成计划：[Foundation Plan](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/plans/2026-08-25-agent-foundation-plan.md)
 
 
 ### 内置账号登录
 
 控制中心可通过 `identity.kind: "built-in"` 使用 Himawari 自己的账号，登录流程为用户名/密码加验证器验证码，恢复码可代替第二步验证码。账号用于本机或经 HTTPS 反向代理访问的服务器，不要求 Cloudflare；现有 Cloudflare 配置继续可用。仍为单一 Owner，不开放公众注册。登录后的“会话与设备”提供再次验证、设备撤销和退出登录。
 
-首次账号由服务所在主机的管理命令创建，输入与验证器设置资料通过权限为 0600 的文件传递；不能把密码放在命令参数或日志中。账号恢复需停机、活动权威验证和独占状态目录锁，并撤销旧会话。配置、命令和验证边界见 [内置账号设计](docs/archive/specs/2026-09-10-built-in-account-authentication-design.md) 与 [安装运行说明](docs/runbooks/install-start-stop-runbook.md)。登录能力不替代真实 Worker、模型或公网入口的独立验收。
+首次账号由服务所在主机的管理命令创建，输入与验证器设置资料通过权限为 0600 的文件传递；不能把密码放在命令参数或日志中。账号恢复需停机、活动权威验证和独占状态目录锁，并撤销旧会话。配置、命令和验证边界见 [内置账号设计](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md) 与 [安装运行说明](docs/runbooks/install-start-stop-runbook.md)。登录能力不替代真实 Worker、模型或公网入口的独立验收。
