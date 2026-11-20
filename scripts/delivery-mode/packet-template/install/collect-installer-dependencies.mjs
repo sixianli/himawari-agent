@@ -76,10 +76,20 @@ function copyTree(filename, relative) {
   const after = lstatSync(filename);
   fail(before.dev === after.dev && before.ino === after.ino && before.size === after.size && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs, `P5_MODULE_CHANGED:${relative}`);
 }
+const TOOL_CACHE_ENTRIES = new Set([".vite", ".vite-temp", ".cache"]);
+const NPM_ENTRIES = new Set([".bin", ".package-lock.json"]);
 for (const relative of dependencyRoots) {
-  const target = path.join(payload, relative);
+  const target = path.join(payload, relative), root = path.join(path.dirname(modules), relative);
+  const locked = new Set(packages.filter((item) => item.path.startsWith(`${relative}/`) && !item.path.slice(relative.length + 1).includes("/node_modules/")).map((item) => item.path.slice(relative.length + 1).split("/")[0]));
   mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
-  copyTree(path.join(path.dirname(modules), relative), relative);
+  fail(lstatSync(root).isDirectory(), `P5_DEPENDENCY_ROOT_INVALID:${relative}`);
+  mkdirSync(target, { mode: 0o755 });
+  entries.push({ path: relative, type: "directory", mode: 0o755 });
+  for (const name of readdirSync(root).sort()) {
+    if (TOOL_CACHE_ENTRIES.has(name)) continue;
+    fail(locked.has(name) || NPM_ENTRIES.has(name), `P5_MODULE_UNEXPECTED_ENTRY:${relative}/${name}`);
+    copyTree(path.join(root, name), `${relative}/${name}`);
+  }
 }
 entries.sort((a, b) => a.path.localeCompare(b.path));
 const list = path.join(output, "files.list");

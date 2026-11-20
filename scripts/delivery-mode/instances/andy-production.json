@@ -24,6 +24,10 @@
     "publicFetchMaximumBytes": 102400
   },
   "onDeployFailure": "keep",
+  "materialCache": {
+    "minBytes": 16777216,
+    "maxBytes": 1073741824
+  },
   "startupReadyBudgetSeconds": 90,
   "startupReadyMarginSeconds": 15,
   "startupPhaseBaselineMs": {

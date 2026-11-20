@@ -8,7 +8,7 @@ amends: "0253, 0266"
 date: "2026-11-20"
 ---
 
-# ADR 0282：生产迁到 Oracle 东京的 ARM 机器
+# ADR 0283：生产迁到 Oracle 东京的 ARM 机器
 
 <a id="contents"></a>
 

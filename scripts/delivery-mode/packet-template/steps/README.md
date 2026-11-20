@@ -45,6 +45,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 - 第一个成员必须是冻结清单，且 SHA 等于参数；
 - 独占新建 `/var/tmp/__PKT_LABEL__-packet-upload/__PKT_DATE__-__PKT_LABEL__-change-packet-01`（root:0700，父目录也必须是 root:0700）；目录已存在就拒绝；
 - 每个文件边写边算 SHA，字节数和 SHA 与清单不符、多出成员、重复成员、路径越界或缺成员都失败；
+- 依赖缓存：包参数 `MATERIAL_CACHE_JSON`（来自实例文件的 `materialCache`）不为空时，包装先经 SSH 只读查一次服务器上的 `/opt/himawari/material-cache/sha256/<SHA>` 里有哪些不小于 `minBytes` 的成员，tar 流里不再放这些成员，并把它们的路径作为命令最后一个参数告诉接收端。接收端只允许这些成员不在流里：从缓存逐个核对大小和 SHA 后复制进上传目录，核对不符就把这条缓存删掉并失败，下次自动整包传；没声明的缺成员照旧失败。传完后把不小于 `minBytes` 的成员存进缓存（root:0700 目录，0600 文件），总量超过 `maxBytes` 时先删本次没用到的最旧条目。缓存目录不安全或建不起来时，整包传输照常进行，只是不读也不写缓存；缓存里已有、但查询不会报命中的条目（权限、属主、大小不对或是目录），本次包里有同名成员的传完后被替换，其余的在超出 `maxBytes` 修剪时照常删掉；锁文件 `lock` 不是普通文件时先删掉再新建；
 - 写完后重新读回整个目录，确认与清单完全一致；
 - 在父目录留下 `transport-<时间>-started.json` 和 `-result.json`。失败时保留不完整目录供检查，不自动删除。
 
@@ -74,7 +75,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 | `S7_CONFIG_APPLY` | 服务停着时：要求 `S7_DB_STATUS` 已通过、当前配置等于原配置；在 `/etc/himawari/config.json.next`（权限 0600）写出只改了 `http.staticRoot` 的新配置，先用新版本的配置解析器检查（静态目录是新值、文件和解析结果里都没有 `budgets`），通过后改名替换，再读回核对；数据库不升级，换配置后再读一次，要求 Schema 56、历史表与换配置前完全一样（`s7-config-apply-after56.json`）。见 [S7 说明](../systemd/P9-switch-start-readback.md)。 |
 | `S7_CATALOG_UPGRADE` | 服务停着时：要求 `S7_CONFIG_APPLY` 已通过；运行准备脚本（写第十二次快照、启动证明、最后切换配置里的 `capabilityDeployment`），再运行 `himawari capabilities upgrade-plan --reviewed` 和 `upgrade --confirm <计划摘要> --reviewed`：三个能力都只换运行程序，审计动作都是 `owner.capability.upgrade`。读回核对并写入 `s7-post-upgrade-state.json`（Schema 56，升级后读回 `s7-catalog-after56.json`）；不运行末尾的 `db status`，因此不会留下 `-wal`/`-shm` 附属文件。见 [S7 说明](../systemd/P9-switch-start-readback.md#能力升级与配置切换)。配置已准备过时改走续做分支，只读回、不重复升级，见 [从升级后的失败现场续做](../systemd/P9-switch-start-readback.md#从升级后的失败现场续做)。 |
 | `S7_SWITCH_START` | 核对 S6、`S7_DB_STATUS`、`S7_CONFIG_APPLY` 和 `S7_CATALOG_UPGRADE` 的报告后，切换 unit 并启动；要求配置只比原配置改了 `S7_CONFIG_APPLY` 的那些字段和 `capabilityDeployment`。启动前的准备脚本再按严格检查读回启动绑定。 |
-| `S8_READBACK` | 启动后数据库读回：Schema 56；S3 读回和 S7 读回相同（历史数据只在服务停着时比较，启动后不再逐行比较；见 ADR 0279），三个能力的登记等于快照声明、授权不变、S3 的 Schema 56 恢复点仍能校验。 |
+| `S8_READBACK` | 启动后数据库读回：Schema 56；S3 读回和 S7 读回的历史摘要相同（历史数据只在服务停着时比较，启动后不再逐行比较；见 ADR 0279），三个能力的登记等于快照声明、授权不变、S3 的 Schema 56 恢复点仍能校验。 |
 | `S2_INSPECT` | 只检查服务和进程是否都已停止，不停服、不删锁。S9 恢复控制文件前会自动调用。 |
 | `S9_SIDECAR_TIDY` | 仅在需要回退且数据库旁边留有 `-wal`/`-shm`（SQLite 的预写日志和共享内存文件）时，在 S9 回滚前以生产账号整理这两个附属文件；不删文件、不改数据，见 [附属文件整理](../maintenance/S9-rollback.md#附属文件整理)。 |
 | `S9_RAW_RESTORE51` | 仅在 Andy 具体批准后：先把当前数据（Schema 56）另存一份，再放回 S3 原样数据，能力登记随之回到 S0 的样子，见 [S9 恢复](../maintenance/S9-rollback.md)。 |
@@ -87,7 +88,7 @@ S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执�
 
 ## 包自带检查
 
-[verify-steps.py](verify-steps.py) 是一个固定样例检查，不是整包演练。它要求在主机名为 `hermes-home` 的 Hermes 上用普通账号运行，参数是 10 字节的私有临时目录。它用一个假的 `ssh` 程序记录命令和标准输入，不连网络，检查：动作映射、拒绝未批准动作、退出码保留、远端 SHA 检查内容、S1 传输流内容，以及接收端对改字节、多成员、缺成员、重复成员、路径越界、错误冻结 SHA、目标已存在、父目录权限不安全的拒绝；还检查本地冻结核对只忽略包根目录下的 `run-logs/`，其他位置的 `run-logs/` 或多出的文件仍被拒绝。
+[verify-steps.py](verify-steps.py) 是一个固定样例检查，不是整包演练。它要求在主机名为 `hermes-home` 的 Hermes 上用普通账号运行，参数是 10 字节的私有临时目录。它用一个假的 `ssh` 程序记录命令和标准输入，不连网络，检查：动作映射、拒绝未批准动作、退出码保留、远端 SHA 检查内容、S1 传输流内容，以及接收端对改字节、多成员、缺成员、重复成员、路径越界、错误冻结 SHA、目标已存在、父目录权限不安全的拒绝；还检查本地冻结核对只忽略包根目录下的 `run-logs/`，其他位置的 `run-logs/` 或多出的文件仍被拒绝；依赖缓存一组：存入缓存、从缓存补上声明的成员并照旧整体核对、没声明或没冻结的缺成员被拒绝、改过或是符号链接的缓存条目被删掉并失败、权限不对或是目录的条目被下次整包传输替换、超上限时修剪、缓存目录不安全或建不起来时整包传输照常、接收端核对缓存指令、本地一侧读包参数里的 `MATERIAL_CACHE_JSON` 并把命中的成员留在流外。
 
 这个检查不运行任何一个生产步骤，所以 `S7_CONFIG_APPLY` 和能力升级，第一次完整运行就在生产上。
 

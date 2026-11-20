@@ -447,6 +447,15 @@ def platform_parameters(instance):
     }
 
 
+def material_cache(instance):
+    setting = instance.get('materialCache')
+    if setting is None:
+        return json.dumps(None)
+    if not isinstance(setting, dict) or set(setting) != {'minBytes', 'maxBytes'} or any(type(setting[key]) is not int or setting[key] <= 0 for key in setting) or setting['minBytes'] > setting['maxBytes']:
+        refuse('PACKET_MATERIAL_CACHE_INVALID', json.dumps(setting, ensure_ascii=False))
+    return json.dumps(setting, sort_keys=True, separators=(',', ':'))
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
@@ -456,6 +465,7 @@ def base_parameters(instance, commit, date, discovered):
         **discovered,
         **platform_parameters(instance),
         'ON_DEPLOY_FAILURE': deploy_failure_choice(instance),
+        'MATERIAL_CACHE_JSON': material_cache(instance),
         'LABEL_TITLE': label.capitalize(),
         'LABEL_UPPER': label.upper(),
         'DATE': date,
