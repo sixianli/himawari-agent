@@ -44,5 +44,5 @@ Himawari 需要维护 HTTP 转发、CONNECT、解析地址分类和有界关闭�
 ## 关联
 
 - [SOURCE: docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md]
-- [SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
-- [SOURCE: docs/execution/plans/2026-09-07-srt-unified-execution-plan.md]
+- [2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)
+- [2026-09-07-srt-unified-execution-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-07-srt-unified-execution-plan.md)

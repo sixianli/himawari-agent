@@ -1,0 +1,144 @@
+"senses.title" = "让 Himawari 感知";
+"senses.thisDevice" = "这台 iPhone";
+"senses.handedOver" = "你交给它的";
+"senses.footnote" = "每一项都能单独关。关掉后不再记新的，已经记下的留在“感知到的”里，可以删。";
+"senses.back" = "返回";
+
+"state.on" = "开着";
+"state.off" = "关着";
+"state.systemDenied" = "系统里没允许";
+"state.paused" = "暂停中";
+"state.unsupported" = "服务器还不支持";
+
+"item.location.name" = "位置";
+"item.location.detail" = "到了哪、停了多久";
+"item.location.headline" = "让它知道你到了哪";
+"item.location.records" = "到了哪个地方、停了多久";
+"item.location.denied" = "iPhone 没让它用位置";
+"item.location.deniedDetail" = "打开前它不知道你到了哪。";
+
+"item.calendar.name" = "日程";
+"item.calendar.detail" = "日历里的安排";
+"item.calendar.headline" = "让它看到你的日程";
+"item.calendar.records" = "日历里每个安排的时间、地点和标题";
+"item.calendar.keep" = "跟着日历走：日历里删了，这里也删";
+"item.calendar.denied" = "iPhone 没让它看日历";
+"item.calendar.deniedDetail" = "打开前它看不到你的任何安排。";
+"item.calendar.deleteAll" = "删掉服务器上的日程";
+"item.calendar.synced" = "同步了 %d 个日程";
+"item.calendar.confirm" = "服务器上的日程副本会删掉，手机日历里的不动。";
+
+"item.health.name" = "健康和运动";
+"item.health.detail" = "步数、睡眠、心率";
+"item.health.headline" = "让它知道你的身体状况";
+"item.health.records" = "步数、睡眠、心率、锻炼，和你在走路、跑步还是开车";
+"item.health.denied" = "iPhone 没让它读健康数据";
+"item.health.deniedDetail" = "打开前它不知道你睡了多久、走了多少。";
+
+"item.contacts.name" = "通讯录";
+"item.contacts.detail" = "谁是谁";
+"item.contacts.headline" = "让它认得你认识的人";
+"item.contacts.records" = "联系人的名字、单位、电话、邮箱和生日";
+"item.contacts.keep" = "跟着通讯录走：通讯录里删了，这里也删";
+"item.contacts.denied" = "iPhone 没让它看通讯录";
+"item.contacts.deniedDetail" = "打开前它不认得你的联系人。";
+"item.contacts.deleteAll" = "删掉服务器上的联系人";
+"item.contacts.synced" = "同步了 %d 位联系人";
+"item.contacts.confirm" = "服务器上的联系人副本会删掉，手机通讯录里的不动。";
+
+"item.photos.name" = "相册";
+"item.photos.detail" = "新拍的照片";
+"item.photos.headline" = "让它知道你拍了什么";
+"item.photos.records" = "新拍的照片和截屏的时间、地点，不传照片本身";
+"item.photos.denied" = "iPhone 没让它看相册";
+"item.photos.deniedDetail" = "打开前它一张照片也看不到。";
+
+"item.clipboard.name" = "剪贴板";
+"item.clipboard.detail" = "你拷贝的文字";
+"item.clipboard.headline" = "让它看到你拷贝的文字";
+"item.clipboard.records" = "回到 Himawari 时你刚拷贝的文字，系统会问你能不能粘贴";
+"item.clipboard.denied" = "iPhone 没让它读剪贴板";
+"item.clipboard.deniedDetail" = "打开前它看不到你拷贝的文字。";
+
+"intro.records" = "它记什么";
+"intro.keep" = "留多久";
+"intro.where" = "存在哪";
+"intro.whereValue" = "只存在你自己的服务器上";
+"intro.keepTrack" = "走过的路线留 %d 天，可以改";
+"intro.keepUntilDeleted" = "一直留，直到你删";
+"intro.open" = "打开%@";
+"intro.later" = "先不开";
+"intro.serverReason" = "打开“%@”";
+
+"denied.body" = "这一项要在 iPhone 的“设置”里打开。";
+"denied.openSettings" = "去“设置”打开";
+"denied.skip" = "不用了";
+
+"detail.today" = "今天记了 %d 件";
+"detail.todayList" = "今天记下的";
+"detail.keepSection" = "怎么留";
+"detail.track" = "走过的路线";
+"detail.days" = "%d 天";
+"detail.route" = "路线";
+"detail.routeDays" = "留 %d 天";
+"detail.places" = "到过的地方";
+"detail.placesKept" = "一直留着，直到你删";
+"detail.stopTitle" = "关掉“%@”？";
+"detail.stopBody" = "关掉以后，手机上的变化不再同步。服务器上已经存的，可以留着，也可以一起删掉；手机里的原数据不动。";
+"detail.stopKeep" = "只停同步，保留已经存的";
+"detail.stopDelete" = "停同步，并删掉服务器上的";
+"detail.always" = "一直允许";
+"detail.alwaysDetail" = "不打开 App 也记，系统会再问你一次";
+"detail.kept" = "记下的";
+"detail.loadFailed" = "现在连不上服务器，今天的记录等连上再看";
+"detail.deleteAll" = "删掉全部%@记录";
+"detail.deleteConfirmTitle" = "删掉全部%@记录？";
+"detail.deleteConfirmBody" = "这台 iPhone 记下的%@记录会全部删掉，由它们记住的事也一起删。已经读进对话里的留在那个对话里。";
+"detail.delete" = "删掉";
+"detail.cancel" = "取消";
+"detail.deleted" = "删掉了 %d 条";
+"detail.turnOffReason" = "关掉“%@”";
+"detail.retentionReason" = "改走过的路线保留多久";
+"detail.failed" = "没改成，过一会儿再试";
+
+"row.arrived" = "到%@";
+"row.stayed" = " · 停了 %@";
+"row.left" = "离开%@";
+"row.entered" = "进入%@";
+"row.place" = "一个地方";
+"row.steps" = "走了 %@ 步";
+"row.sleep" = "睡了 %@";
+"row.heartRate" = "心率 %@ 次/分";
+"row.workout" = "锻炼 %@";
+"row.activity.walking" = "在走路";
+"row.activity.running" = "在跑步";
+"row.activity.cycling" = "在骑车";
+"row.activity.driving" = "在开车";
+"row.activity.stationary" = "停下来了";
+"row.photo" = "拍了一张照片";
+"row.screenshot" = "截了一张屏";
+"row.clipboard" = "拷贝了：%@";
+
+"record.time" = "时间";
+"record.place" = "地方";
+"record.coordinate" = "位置";
+"record.accuracy" = "误差约 %@ 米";
+"record.value" = "数值";
+"record.text" = "内容";
+
+"detail.ok" = "好";
+"detail.nothingYet" = "今天还没记下什么";
+"detail.alwaysOn" = "不打开 App 也在记";
+"detail.save" = "保存";
+"detail.daysUnit" = "天";
+"detail.defaultDays" = "默认 %d 天。";
+"detail.range" = "可以填 %d 到 %d。";
+"record.what" = "记下的事";
+
+
+"demo.office" = "公司";
+"demo.lunch" = "大阪站附近";
+
+"duration.hm" = "%d 小时 %d 分钟";
+"duration.h" = "%d 小时";
+"duration.m" = "%d 分钟";

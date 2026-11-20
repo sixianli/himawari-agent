@@ -144,7 +144,7 @@ describe("[P5-B] the owner manages connected agents on the real page", () => {
             name: "Claude Code",
             capabilities: ["mcp"],
             readCeiling: "private",
-            pushPolicy: "ask",
+            pushPolicy: "direct",
           },
         },
       ]);

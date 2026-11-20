@@ -16,6 +16,10 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         self.streams = streams
     }
 
+    func enqueue(_ response: HTTPExchangeResponse) {
+        lock.withLock { responses.append(response) }
+    }
+
     func send(_ request: URLRequest) async throws -> HTTPExchangeResponse {
         lock.withLock {
             requests.append(request)

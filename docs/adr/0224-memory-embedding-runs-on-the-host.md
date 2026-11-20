@@ -25,7 +25,7 @@ date: "2026-11-11"
 
 ## 背景
 
-按意思找记忆，要先把文字变成一串数字（向量，这一步叫嵌入，embedding），再比较两串数字有多接近。到这次为止，嵌入一律经 Vercel AI Gateway（Vercel 的模型网关）发给外网的 Qwen3-Embedding-8B：每次找记忆都要把主人的问题、每条记忆的正文发到第三方，一次往返约 0.8 到 1.4 秒（[BL-20261028-008](../archive/backlog/BL-20261028-008-local-memory-embedding.md)），断网或额度用完时只能退回关键词（[ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。
+按意思找记忆，要先把文字变成一串数字（向量，这一步叫嵌入，embedding），再比较两串数字有多接近。到这次为止，嵌入一律经 Vercel AI Gateway（Vercel 的模型网关）发给外网的 Qwen3-Embedding-8B：每次找记忆都要把主人的问题、每条记忆的正文发到第三方，一次往返约 0.8 到 1.4 秒（[BL-20261028-008](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)），断网或额度用完时只能退回关键词（[ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。
 
 产品愿景要求“自有优先、数据自持”。Andy 在实施清单 P3-1 里要求：先交候选报告，他选定后用本机模型替换外网服务、重建索引；外网服务保留为可选；嵌入请求照旧走统一出口（Himawari 所有发给模型的请求都经过的那一层，负责遮盖敏感信息和记账）；不动检索结构（向量、关键词、实体三路加融合排名）；写明检索索引的威胁模型。
 
@@ -104,7 +104,7 @@ date: "2026-11-11"
 
 ## 参考
 
-- [BL-20261028-008 找记忆的向量化改在生产机本机计算](../archive/backlog/BL-20261028-008-local-memory-embedding.md)
+- [BL-20261028-008 找记忆的向量化改在生产机本机计算](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)
 - [ADR 0075 自研记忆引擎](0075-self-built-memory-engine.md)
 - [ADR 0223 聊天找记忆时嵌入失败退回关键词](0223-chat-memory-lookup-falls-back-to-keywords.md)
 - [记忆检索索引的威胁模型](../memory-index-threat-model.md)

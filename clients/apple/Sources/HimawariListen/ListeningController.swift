@@ -117,6 +117,7 @@ public final class ListeningController {
         #if os(iOS)
         do {
             await notices.prepare()
+            capture?.stop(deactivate: true)
             let capture = AudioCapture()
             self.capture = capture
             try capture.configureSession()
@@ -231,6 +232,7 @@ public final class ListeningController {
         tasks.removeAll()
         #if os(iOS)
         capture?.stop(deactivate: true)
+        capture = nil
         inEar.stop()
         reader.stop()
         let pipeline = pipeline

@@ -1,0 +1,144 @@
+"senses.title" = "Himawari に感じ取らせる";
+"senses.thisDevice" = "この iPhone";
+"senses.handedOver" = "あなたが渡すもの";
+"senses.footnote" = "どれも個別にオフにできます。オフにすると新しくは記録しません。記録済みのものは「感じ取ったこと」に残り、削除できます。";
+"senses.back" = "戻る";
+
+"state.on" = "オン";
+"state.off" = "オフ";
+"state.systemDenied" = "iOS で未許可";
+"state.paused" = "一時停止中";
+"state.unsupported" = "サーバーが未対応";
+
+"item.location.name" = "位置情報";
+"item.location.detail" = "どこに行き、どれだけいたか";
+"item.location.headline" = "どこにいるかを知らせる";
+"item.location.records" = "着いた場所と、そこにいた時間";
+"item.location.denied" = "iPhone が位置情報を許可していません";
+"item.location.deniedDetail" = "許可するまで、どこにいるかはわかりません。";
+
+"item.calendar.name" = "予定";
+"item.calendar.detail" = "カレンダーの予定";
+"item.calendar.headline" = "予定を見られるようにする";
+"item.calendar.records" = "カレンダーの各予定の時間・場所・タイトル";
+"item.calendar.keep" = "カレンダーに合わせます。カレンダーで消すとここでも消えます";
+"item.calendar.denied" = "iPhone がカレンダーを許可していません";
+"item.calendar.deniedDetail" = "許可するまで、予定は何も見えません。";
+"item.calendar.deleteAll" = "サーバー上の予定を削除";
+"item.calendar.synced" = "%d 件の予定を同期済み";
+"item.calendar.confirm" = "サーバー上の予定のコピーを削除します。iPhone のカレンダーはそのままです。";
+
+"item.health.name" = "ヘルスケアと運動";
+"item.health.detail" = "歩数・睡眠・心拍数";
+"item.health.headline" = "体の調子を知らせる";
+"item.health.records" = "歩数・睡眠・心拍数・ワークアウトと、歩いている・走っている・運転中かどうか";
+"item.health.denied" = "iPhone がヘルスケアデータを許可していません";
+"item.health.deniedDetail" = "許可するまで、睡眠や歩数はわかりません。";
+
+"item.contacts.name" = "連絡先";
+"item.contacts.detail" = "誰が誰か";
+"item.contacts.headline" = "知り合いを覚えさせる";
+"item.contacts.records" = "連絡先の名前・会社・電話番号・メール・誕生日";
+"item.contacts.keep" = "連絡先に合わせます。連絡先で消すとここでも消えます";
+"item.contacts.denied" = "iPhone が連絡先を許可していません";
+"item.contacts.deniedDetail" = "許可するまで、連絡先はわかりません。";
+"item.contacts.deleteAll" = "サーバー上の連絡先を削除";
+"item.contacts.synced" = "%d 件の連絡先を同期済み";
+"item.contacts.confirm" = "サーバー上の連絡先のコピーを削除します。iPhone の連絡先はそのままです。";
+
+"item.photos.name" = "写真";
+"item.photos.detail" = "新しく撮った写真";
+"item.photos.headline" = "何を撮ったかを知らせる";
+"item.photos.records" = "新しい写真とスクリーンショットの日時と場所。写真そのものは送りません";
+"item.photos.denied" = "iPhone が写真を許可していません";
+"item.photos.deniedDetail" = "許可するまで、写真は一枚も見えません。";
+
+"item.clipboard.name" = "クリップボード";
+"item.clipboard.detail" = "コピーした文字";
+"item.clipboard.headline" = "コピーした文字を見られるようにする";
+"item.clipboard.records" = "Himawari に戻ったときにコピーしたばかりの文字。ペーストしてよいか iOS が確認します";
+"item.clipboard.denied" = "iPhone がクリップボードを許可していません";
+"item.clipboard.deniedDetail" = "許可するまで、コピーした文字は見えません。";
+
+"intro.records" = "記録するもの";
+"intro.keep" = "保存期間";
+"intro.where" = "保存場所";
+"intro.whereValue" = "あなた自身のサーバーだけ";
+"intro.keepTrack" = "移動の経路は %d 日保存。変更できます";
+"intro.keepUntilDeleted" = "削除するまで保存";
+"intro.open" = "%@をオンにする";
+"intro.later" = "今はしない";
+"intro.serverReason" = "「%@」をオンにする";
+
+"denied.body" = "iPhone の「設定」でオンにしてください。";
+"denied.openSettings" = "「設定」を開く";
+"denied.skip" = "やめておく";
+
+"detail.today" = "今日 %d 件記録";
+"detail.todayList" = "今日の記録";
+"detail.keepSection" = "保存のしかた";
+"detail.track" = "移動の経路";
+"detail.days" = "%d 日";
+"detail.route" = "経路";
+"detail.routeDays" = "%d 日間保存";
+"detail.places" = "行った場所";
+"detail.placesKept" = "削除するまで保存";
+"detail.stopTitle" = "「%@」をオフにしますか？";
+"detail.stopBody" = "オフにすると、iPhone での変更は同期されなくなります。サーバーに保存済みのものは残すことも、一緒に削除することもできます。iPhone 側の元のデータはそのままです。";
+"detail.stopKeep" = "同期だけ止めて、保存済みは残す";
+"detail.stopDelete" = "同期を止めて、サーバー上のも削除";
+"detail.always" = "常に許可";
+"detail.alwaysDetail" = "アプリを開いていなくても記録します。iOS がもう一度確認します";
+"detail.kept" = "記録";
+"detail.loadFailed" = "今サーバーにつながりません。つながったら今日の記録を表示します";
+"detail.deleteAll" = "%@の記録をすべて削除";
+"detail.deleteConfirmTitle" = "%@の記録をすべて削除しますか？";
+"detail.deleteConfirmBody" = "この iPhone で記録した%@の記録をすべて削除し、それだけから覚えたことも削除します。会話に読み込まれた分はその会話に残ります。";
+"detail.delete" = "削除";
+"detail.cancel" = "キャンセル";
+"detail.deleted" = "%d 件削除しました";
+"detail.turnOffReason" = "「%@」をオフにする";
+"detail.retentionReason" = "移動の経路の保存期間を変更";
+"detail.failed" = "変更できませんでした。少ししてからもう一度";
+
+"row.arrived" = "%@に到着";
+"row.stayed" = " · %@滞在";
+"row.left" = "%@を出発";
+"row.entered" = "%@に入った";
+"row.place" = "ある場所";
+"row.steps" = "%@ 歩";
+"row.sleep" = "%@ 睡眠";
+"row.heartRate" = "心拍数 %@";
+"row.workout" = "ワークアウト %@";
+"row.activity.walking" = "歩いている";
+"row.activity.running" = "走っている";
+"row.activity.cycling" = "自転車";
+"row.activity.driving" = "運転中";
+"row.activity.stationary" = "止まった";
+"row.photo" = "写真を撮った";
+"row.screenshot" = "スクリーンショットを撮った";
+"row.clipboard" = "コピー：%@";
+
+"record.time" = "時刻";
+"record.place" = "場所";
+"record.coordinate" = "位置";
+"record.accuracy" = "誤差 約 %@ m";
+"record.value" = "値";
+"record.text" = "内容";
+
+"detail.ok" = "OK";
+"detail.nothingYet" = "今日はまだ何も記録していません";
+"detail.alwaysOn" = "App を開いていなくても記録しています";
+"detail.save" = "保存";
+"detail.daysUnit" = "日";
+"detail.defaultDays" = "初期設定は %d 日です。";
+"detail.range" = "%d から %d まで入力できます。";
+"record.what" = "記録したこと";
+
+
+"demo.office" = "会社";
+"demo.lunch" = "大阪駅の近く";
+
+"duration.hm" = "%d 時間 %d 分";
+"duration.h" = "%d 時間";
+"duration.m" = "%d 分";

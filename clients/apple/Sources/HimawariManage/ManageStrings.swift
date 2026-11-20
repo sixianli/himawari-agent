@@ -62,6 +62,7 @@ enum M {
         )
     }
     static func proposalFigure(_ figure: ProposalFigure) -> String { "\(figure.name) \(figure.value)" }
+    static var senses: String { text("让 Himawari 感知", ja: "Himawari に感じ取らせる", en: "Let Himawari Sense") }
     static var capabilities: String { text("它会的本事", ja: "できること", en: "What it can do") }
     static var waitingForYou: String { text("等你看", ja: "確認待ち", en: "Waiting for you") }
     static var inUse: String { text("在用", ja: "使用中", en: "In use") }

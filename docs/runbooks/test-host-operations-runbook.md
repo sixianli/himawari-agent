@@ -58,7 +58,7 @@ date: "2026-10-21"
 - 云服务器上只用 `himawari-ci`（uid 1001，没有 sudo），只在 `/srv/himawari-ci/` 下工作；不用 root，不用生产账号，不读生产密钥，不碰 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 和生产服务（不停、不重启、不发请求）。
 - Hermes 上还跑着别的服务，包括 `/data/hermes/himawari/releases/` 下已有的 Himawari 服务：测试不读写它们的目录和数据，不停止、不重启它们。
 - 需要 sudo 或改 Hermes 系统设置、服务的事，写成可执行脚本、逐步说明，由用户运行。
-- 不放宽测试时限；不设 `HIMAWARI_TEST_TIMEOUT_MS`（按 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 正在移除）。超时是要诊断修复的缺陷，不是环境问题。
+- 不放宽测试时限；不设 `HIMAWARI_TEST_TIMEOUT_MS`（按 [BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 正在移除）。超时是要诊断修复的缺陷，不是环境问题。
 - 不改 SSH 配置、凭据、Cloudflare 设置、防火墙或主机密钥校验来绕过连接失败；报告用户。
 - 第一个会改变目标的动作是在测试主机上建检出目录和临时目录；日常测试工作已由 ADR 0056 授权，不需要逐次请示。
 

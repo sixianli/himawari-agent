@@ -31,10 +31,11 @@ let interfaceTargets: [Target] = [
     .target(name: "HimawariChat", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(name: "HimawariActions", dependencies: ["HimawariCore", "HimawariDesign"]),
     .target(name: "HimawariManage", dependencies: ["HimawariCore", "HimawariDesign", "HimawariActions"], resources: [.process("Resources")]),
+    .target(name: "HimawariSenses", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(name: "HimawariShare", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(
         name: "HimawariShell",
-        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage", "HimawariShare", "HimawariListen", "HimawariListenUI", "HimawariActions"],
+        dependencies: ["HimawariCore", "HimawariDesign", "HimawariChat", "HimawariManage", "HimawariSenses", "HimawariShare", "HimawariListen", "HimawariListenUI", "HimawariActions"],
         resources: [.process("Resources")]
     ),
     .testTarget(name: "HimawariManageTests", dependencies: ["HimawariManage", "HimawariCore"]),
@@ -50,6 +51,7 @@ let interfaceTargets: [Target] = [
         resources: [.process("Resources")]
     ),
     .testTarget(name: "HimawariMacUITests", dependencies: ["HimawariMacUI", "HimawariCore"]),
+    .testTarget(name: "HimawariSensesTests", dependencies: ["HimawariCore", "HimawariSenses"]),
     .target(name: "HimawariListenUI", dependencies: ["HimawariCore", "HimawariDesign"], resources: [.process("Resources")]),
     .target(
         name: "HimawariListen",
@@ -77,6 +79,7 @@ let interfaceProducts: [Product] = [
     .library(name: "HimawariChat", targets: ["HimawariChat"]),
     .library(name: "HimawariActions", targets: ["HimawariActions"]),
     .library(name: "HimawariManage", targets: ["HimawariManage"]),
+    .library(name: "HimawariSenses", targets: ["HimawariSenses"]),
     .library(name: "HimawariShare", targets: ["HimawariShare"]),
     .library(name: "HimawariShell", targets: ["HimawariShell"]),
     .library(name: "HimawariMacUI", targets: ["HimawariMacUI"]),
