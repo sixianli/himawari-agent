@@ -10,6 +10,9 @@ import Observation
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 #if canImport(os)
 import os
 #endif
@@ -44,6 +47,7 @@ public final class AppModel {
     }
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
+    @ObservationIgnored private let pushSync: PushTokenSync
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
@@ -78,6 +82,22 @@ public final class AppModel {
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
         let api = DeviceAPI(http: DeviceHTTPClient())
         self.api = api
+        #if DEBUG
+        let debugBuild = true
+        #else
+        let debugBuild = false
+        #endif
+        pushSync = PushTokenSync(
+            transport: api,
+            context: PushRegistrationContext(
+                environment: PushRegistrationValues.environment(debugBuild: debugBuild),
+                topic: bundle.bundleIdentifier ?? "",
+                preferredLanguages: { Locale.preferredLanguages }
+            )
+        )
+        #if os(iOS)
+        PushBridge.sync = pushSync
+        #endif
         home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
@@ -418,6 +438,7 @@ public final class AppModel {
                 await senses.refresh()
             }
             deliverWaitingHandovers()
+            registerForPush()
         } catch {
             phase = .unpaired(.storageUnavailable)
         }
@@ -493,10 +514,22 @@ public final class AppModel {
         actions?.deviceActionsChanged()
         deliverWaitingHandovers()
         removeSettledNotifications()
+        registerForPush()
         Task {
             await refreshConfiguration()
             await senses?.refresh()
         }
+    }
+
+    private func registerForPush() {
+        #if os(iOS)
+        let sync = pushSync
+        Task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            UIApplication.shared.registerForRemoteNotifications()
+            await sync.deviceReady()
+        }
+        #endif
     }
 
     private func removeSettledNotifications() {
@@ -521,6 +554,7 @@ public final class AppModel {
         try? keys.delete(.confirm)
         try? save(nil)
         api.http.use(nil)
+        Task { [pushSync] in await pushSync.deviceGone() }
         phase = .unpaired(ForgetOutcome.problem(wanted: problem, storeEmptied: emptied))
     }
 
