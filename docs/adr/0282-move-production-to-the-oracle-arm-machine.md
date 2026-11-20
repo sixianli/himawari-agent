@@ -8,7 +8,7 @@ amends: "0253, 0266"
 date: "2026-11-20"
 ---
 
-# ADR 0282：生产迁到 Oracle 东京的 ARM 机器（方案，待 Andy 定）
+# ADR 0282：生产迁到 Oracle 东京的 ARM 机器
 
 <a id="contents"></a>
 
@@ -20,7 +20,7 @@ date: "2026-11-20"
 - [两次模型审核的意见怎么处理](#review)
 - [业界怎么做](#industry)
 - [放弃的做法](#options)
-- [要 Andy 拍板的事](#owner-decisions)
+- [Andy 的决定](#owner-decisions)
 - [后果](#consequences)
 
 <a id="context"></a>
@@ -57,6 +57,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 18. 工具链锁已有 ARM 条目：`ci/toolchain-lock.json` 有 Node 22.22.3 和 Python 3.12.10 的 `linux-arm64`；better-sqlite3 是 `"decision": "build"`（在构建机上从源码编译）。
 19. Cloudflare 同一条隧道的多个连接器是副本，请求按就近分给副本，原话 “Replicas do not support traffic steering”（https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-availability/）。
 20. SQLite 文件跨架构可移植，原话 “SQLite databases are portable across 32-bit and 64-bit machines and between big-endian and little-endian architectures.”（https://www.sqlite.org/onefile.html）
+21. 目标机内存 23 GiB；两个 runner 所在的 `gh-arm-runners.slice` 上限 `MemoryMax=19327352832`（18 GiB），`oracle-keepalive` 常驻约 7 GiB（目标机 `systemctl show` 实测）。两者都到上限时合计超过整机内存。
 
 <a id="decision"></a>
 
@@ -67,7 +68,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 ### 代码，分 5 个 PR，按顺序
 
 1. **PR 1 目标平台和服务账号参数化。** 根本原因：平台和账号是写死的常量（前提 1、2、4、5、8）。实例文件 `scripts/delivery-mode/instances/*.json` 加 `platform`（`linux-x64` / `linux-arm64`）和服务账号的 uid、gid；`make-packet.py` 把它们渲染进模板，取代所有写死的 `x64`、`999`、`988`、x64 Node 摘要、x86_64 的 `fd`；Node 和 Python 按平台从 `ci/toolchain-lock.json` 取。`/lib64` 改为“不存在时不列入”，但只读目录清单仍保持字面数组（前提 9），在封存时过滤，不改上线前检查的解析方式。`scripts/platform-assumptions.json` 的次数随改动下调。验收：用现有 Contabo 实例文件重新出包，渲染出的每个文件除工具链锁摘要外字节不变（工具链锁的摘要会变，这一点如实写进 PR）。
-2. **PR 2 ARM 候选的构建机。** 根本原因：构建脚本写死 Hermes 的主机名、x64 和 uid 1000（前提 2；`capture-build-source-inputs.template.mjs:115`）。构建机身份改为仓库里的构建机配置，x64 仍是 Hermes；ARM 用哪台见[要 Andy 拍板的事](#owner-decisions)第 2 项。better-sqlite3 和 `rename-native` 在 ARM 构建机上原生编译，浏览器发布验收也在 ARM 上跑；不在 Hermes 上交叉编译，因为原生模块必须在真实 ARM 上验过。
+2. **PR 2 ARM 候选的构建机。** 根本原因：构建脚本写死 Hermes 的主机名、x64 和 uid 1000（前提 2；`capture-build-source-inputs.template.mjs:115`）。构建机身份改为仓库里的构建机配置，x64 仍是 Hermes；ARM 在目标机上一个独立的构建账号里构建（[Andy 的决定](#owner-decisions)第 2 项）：没有 sudo，不在 runner 和服务账号的组里，读不到 `/var/lib/himawari` 和 `/etc/himawari`，产物经 `make-packet.py` 取走后由安装步骤按摘要核对。better-sqlite3 和 `rename-native` 在 ARM 构建机上原生编译，浏览器发布验收也在 ARM 上跑；不在 Hermes 上交叉编译，因为原生模块必须在真实 ARM 上验过。
 3. **PR 3 新主机首装包。** 根本原因：项目只有“升级运行中的服务”这一条路（前提 3）。新增一种首装包，仍由 `make-packet.py` 生成、`deploy.sh` 执行，不手工编辑：
    - 第一步核对目标机“空”：服务单元不存在、`/var/lib/himawari` 和 `/opt/himawari` 不存在、端口 8400、3425、3430、20241 空闲；任何一项不满足就停。
    - 安装锁定版本的 Node，建服务账号（用实例文件里的 uid、gid），装服务单元，装 bwrap 的 AppArmor 配置（目标机已装，核对摘要）。
@@ -79,7 +80,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 
 ### 运维第一阶段（代码合并后，验证完停下等 Andy）
 
-1. 目标机准备：用 cloud-init 配置持久化主机名 `himawari-prod`（前提 15）；内核按[要 Andy 拍板的事](#owner-decisions)第 4 项处理后锁定（`apt-mark hold` 内核和受检程序的包，关掉自动更新里的这些包和自动重启）；给 runner 账号加防火墙规则，拒绝连本机 8400、3425、3430、20241（前提 13）。
+1. 目标机准备：用 cloud-init 配置持久化主机名 `himawari-prod`（前提 15）；重启一次进已装好的内核，再锁定（`apt-mark hold` 内核和受检程序的包，关掉自动更新里的这些包和自动重启，[Andy 的决定](#owner-decisions)第 4 项）；在一张独立的 nftables 表里拒绝 runner 账号连本机 8400、3425、3430、20241（前提 13），不改 runner 已有的规则和服务单元；Himawari 的服务单元设 `MemoryMin` 和较高的 `CPUWeight`，内存和 CPU 紧张时先保生产（前提 21）。
 2. 用首装包装好，得到新回执（主机名、arm64、内核版本）。
 3. 数据：在 Contabo 上用 SQLite backup 做一致性拷贝，连同整个记忆目录经 SSH 传到目标机；核对文件大小、`PRAGMA integrity_check`、迁移账本最后一条、关键表行数、几份加密内容能解密。目录授权在新主机上会判无效（前提 11），记为预期结果，不改代码绕过。
 4. 以 `validationOnly: true` 启动，不装心跳、不装 cloudflared，用 `ssh -L` 把目标机 127.0.0.1:8400 转到本地，验证问答、网络搜索、网页抓取、文件读写、记忆读写；同时确认 Contabo 状态不变、没有重复消息。
@@ -102,7 +103,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 | 构建链写死 Hermes | 采纳 | PR 2 |
 | 数据要带整个记忆目录、目录授权按主机核对 | 采纳 | 前提 11 |
 | 只删配置键关不全后台任务，要白名单模式 | 采纳 | 前提 12；PR 4 |
-| 和 CI 同机有网络、内存、组权限风险 | 采纳 | 前提 13 实测 runner 能连本机 8400；交 Andy 定（第 1 项） |
+| 和 CI 同机有网络、内存、组权限风险 | 采纳 | 前提 13、21 实测；Andy 定不移走 runner，改为同机隔离（决定第 1 项） |
 | “x64 产出字节不变”可能不成立 | 部分采纳 | 工具链锁摘要会变；其余文件要求不变 |
 | 内核、包名、GRUB、自动重启按实际锁 | 采纳 | 前提 14：下一个内核已装好待重启 |
 | 切换清单补入站、隧道、OAuth、心跳顺序、回退 | 采纳 | 已写进第二阶段 |
@@ -129,14 +130,16 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 
 <a id="owner-decisions"></a>
 
-## 要 Andy 拍板的事
+## Andy 的决定
 
-1. **生产和 CI runner 是否同机。** 目标机现在跑着 `ci-arm-1`、`ci-arm-2`，它们执行仓库里任意 PR 的代码，防火墙不拦它们连本机 Himawari 端口（前提 13）。推荐：第一阶段同机，加防火墙规则和内存上限；切换前把 runner 挪走，三项检查用 `arm-fallback.sh on` 退回 CI 服务器（ADR 0266 第 3 条已有）。代价：CI 少两个 runner，排队变长。另一选择是一直同机，靠防火墙和账号隔离。
-2. **ARM 候选在哪里构建。** 推荐：在目标机上用现有 runner 账号之外的独立构建账号，第一阶段可行；但若第 1 项选“切换前挪走 runner”，生产机上留构建账号就违反“不把构建工具带进生产”，那时要另找一台 ARM 构建机（Oracle 免费额度已被这台机器用满，另开要花钱）。请 Andy 定：接受生产机上留一个隔离的构建账号，还是另租 ARM 构建机。
-3. **用本 ADR 取代 ADR 0253 的“线上不切换”。**
-4. **内核。** 目标机已装好 `7.0.0-1016` 等待重启（前提 14）。推荐：首装前重启一次进 1016 再锁定；重启会让两个 CI runner 中断几分钟。另一选择是锁在当前的 1013，删掉 1016 的引导项，不重启，但留着已知的待装安全更新。
-5. **每台主机自己的签名钥匙。** 推荐首装时在新主机生成；Contabo 的钥匙不复制。
-6. **验证副本用不用生产机密。** 第一阶段要验证问答、搜索、抓取，就要模型和搜索的密钥。推荐：用另一把测试用的 Magpie 网关钥匙和搜索钥匙，不放生产那份；代价是要 Andy 另开一把钥匙。
+Andy 2026-11-20 回复，原话：“CI 的 runner 不要移走，其余的按照你的推荐”。
+
+1. **生产和 CI runner 同机，runner 不移走。** runner 执行仓库里 PR 的代码，防火墙原本不拦它连本机 Himawari 端口（前提 13），两者合计内存可超过整机（前提 21）。所以同机长期靠三样隔离：独立 nftables 表拒绝 runner 账号连 Himawari 端口；Himawari 的数据和机密目录只给服务账号，runner 账号不在它的组里；Himawari 服务单元设 `MemoryMin` 和较高的 `CPUWeight`。代价：内存紧张时被系统回收或杀掉的是 CI 任务而不是生产，CI 偶尔会因此失败重跑。仓库私有、只有 Andy 和他的代理线程推送，这是接受这份风险的前提；以后若接受外部 PR，要重新评估。
+2. **ARM 候选在目标机上一个独立的构建账号里构建**（见 PR 2）。
+3. **本 ADR 取代 ADR 0253 的“线上不切换”。**
+4. **内核：首装前重启一次进已装好的 `7.0.0-1016`，再锁定。** 重启会让两个 CI runner 中断几分钟，在没有 CI 任务时做。
+5. **每台主机自己的签名钥匙：** 首装时在新主机生成，Contabo 的钥匙不复制。
+6. **验证副本不用生产机密：** 第一阶段用另一把测试用的 Magpie 网关钥匙和搜索钥匙，需要 Andy 另开。
 
 <a id="consequences"></a>
 
