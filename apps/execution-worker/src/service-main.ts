@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EXECUTION_V2_SCHEMA_VERSION } from "@himawari-agent/execution-contracts";
 import {
+  clearWorkerQualifiedDeployment,
   ExecutionUdsServer,
   initializeStateRoot,
   JsonFileConfigurationPort,
@@ -8,9 +9,11 @@ import {
   readAgentServiceBootBinding,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
+  type StateRootLayout,
   stableErrorCode,
   waitForTerminationSignal,
   writeServiceDiagnostic,
+  writeWorkerQualifiedDeployment,
   writeWorkerServiceBootBinding,
 } from "@himawari-agent/platform-node";
 import {
@@ -26,7 +29,7 @@ export const EXECUTION_WORKER_SERVICE_ERROR_CODES = Object.freeze({
   STARTUP_TIMEOUT: "WORKER_STARTUP_TIMEOUT",
 } as const);
 
-const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = 45_000;
+const DEFAULT_STARTUP_WAIT_TIMEOUT_MS = 105_000;
 const DEFAULT_STARTUP_RETRY_DELAY_MS = 50;
 
 export type ExecutionWorkerServiceDependencies = Readonly<{
@@ -140,21 +143,23 @@ export async function runExecutionWorkerService(
 ): Promise<number> {
   let server: ExecutionUdsServer | undefined;
   let composition: ProductionWorkerComposition | undefined;
+  let publishedLayout: StateRootLayout | undefined;
   try {
     const timing = resolveStartupTiming(dependencies);
     const args = parseServiceArguments(arguments_);
     const configuration = await new JsonFileConfigurationPort(args.configurationPath).load();
     const layout = await initializeStateRoot(configuration.stateRoot);
     const authority = await readAuthorityFile(layout);
-    if (authority.status !== "active") {
-      throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
-    }
     if (
       authority.id !== configuration.deploymentId ||
       authority.ownerId !== configuration.ownerId ||
       authority.agentId !== configuration.agentId
     ) {
       throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_MISMATCH);
+    }
+    await clearWorkerQualifiedDeployment(layout);
+    if (authority.status !== "active") {
+      throw new Error(EXECUTION_WORKER_SERVICE_ERROR_CODES.AUTHORITY_INACTIVE);
     }
     const workerInstanceId = `execution-worker:${configuration.deploymentId}`;
     const workerBootId = `worker-boot:${randomUUID()}`;
@@ -169,6 +174,13 @@ export async function runExecutionWorkerService(
       }),
       qualifyProductionWorkerDeployment({ configuration }),
     );
+    publishedLayout = layout;
+    await writeWorkerQualifiedDeployment(layout, {
+      workerInstanceId,
+      workerBootId,
+      deploymentId: configuration.deploymentId,
+      snapshotDigest: qualified.deployment.snapshotDigest,
+    });
     composition = await createProductionWorkerComposition(
       {
         configuration,
@@ -213,11 +225,14 @@ export async function runExecutionWorkerService(
     await server.stop();
     await composition.close();
     composition = undefined;
+    await clearWorkerQualifiedDeployment(layout);
     writeServiceDiagnostic(output, { component: "execution-worker", event: "service.stopped" });
     return 0;
   } catch (error) {
     await server?.stop().catch(() => undefined);
     await composition?.close().catch(() => undefined);
+    if (publishedLayout)
+      await clearWorkerQualifiedDeployment(publishedLayout).catch(() => undefined);
     writeServiceDiagnostic(errorOutput, {
       component: "execution-worker",
       event: "service.failed",

@@ -634,6 +634,78 @@
   color: var(--text-muted);
   margin-top: 14px;
 }
+.device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.device-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.device-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.device-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.device-row[data-status="pending"] .device-detail {
+  color: var(--text);
+}
+.device-actions,
+.device-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.device-pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.device-pairing-code {
+  width: min(220px, 100%);
+  height: auto;
+  border-radius: 8px;
+}
+.device-limits {
+  margin-top: 20px;
+}
+.device-limits h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.device-limits dl {
+  margin: 12px 0 0;
+}
+.device-limits dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.device-limits dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .search-authorization-panel {
   position: static;
   width: auto;
@@ -5183,4 +5255,78 @@ details.settings-details > summary::-webkit-details-marker {
   gap: 4px 10px;
   align-items: center;
   justify-content: space-between;
+}
+
+.mcp-connections {
+  display: grid;
+  gap: 12px;
+}
+
+.mcp-create {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-create fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mcp-connection-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.mcp-connection {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-connection[data-status="revoked"] {
+  opacity: 0.6;
+}
+
+.mcp-status {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.mcp-usage,
+.weekly-agents,
+.mcp-limits ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.mcp-actions,
+.mcp-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mcp-address {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.mcp-address code {
+  overflow-wrap: anywhere;
+  user-select: all;
 }

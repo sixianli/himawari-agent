@@ -1,9 +1,16 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testsMembers } from "./check-policy.mjs";
 import { createContext, outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, readJson, repositoryRoot } from "./contracts.mjs";
 import { verifyInstalledTools } from "./install-tools.mjs";
+import {
+  artifactPlatformKey,
+  buildPlatformKey,
+  hostPlatform,
+  supportedPlatforms,
+} from "./platforms.mjs";
 import { publish } from "./publish.mjs";
 import { runCheck } from "./run.mjs";
 import { redactText } from "./security-redaction.mjs";
@@ -17,15 +24,11 @@ export async function local({
   artifact,
   root = repositoryRoot,
 }) {
-  if (
-    !(
-      (process.platform === "darwin" && process.arch === "arm64") ||
-      (process.platform === "linux" && process.arch === "x64")
-    )
-  )
+  if (!supportedPlatforms().includes(hostPlatform()))
     throw new Error("CI_LOCAL_PLATFORM_UNSUPPORTED");
-  if (check && !["policy", "static", "build", "coverage", "security"].includes(check))
+  if (check && !["policy", "static", "build", "tests", "tooling", "security"].includes(check))
     throw new Error("CI_LOCAL_CHECK_UNSUPPORTED");
+  if (!check || check === "build" || check === "tests") artifactPlatformKey();
   if (!existsSync(path.join(toolsDirectory, "installation.json")))
     throw new Error("CI_LOCAL_TOOLS_REQUIRED: npm run ci:tools，然后使用 --tools 指定该目录");
   if (process.env.GITHUB_ACTIONS === "true")
@@ -35,7 +38,7 @@ export async function local({
   if (existsSync(directory)) throw new Error("CI_LOCAL_OUTPUT_EXISTS");
   mkdirSync(directory, { recursive: true });
   writeFileSync(path.join(directory, "context.json"), `${JSON.stringify(identity, null, 2)}\n`);
-  const platform = process.platform === "darwin" ? "macos-arm64" : "linux-x64";
+  const platform = buildPlatformKey();
   const results = [];
   const publicationFailures = [];
   const execute = async (checkId, matrixKey = "default", input) => {
@@ -67,7 +70,7 @@ export async function local({
     return result;
   };
   let built = artifact;
-  const requiresBuild = !check || check === "build" || (check === "coverage" && !built);
+  const requiresBuild = !check || check === "build" || (check === "tests" && !built);
   if (!check || check === "policy") await execute("policy");
   if (!check || check === "static") await execute("static");
   if (requiresBuild) {
@@ -77,7 +80,9 @@ export async function local({
   }
   if (!check && built)
     for (const engine of ["chromium", "firefox", "webkit"]) await execute("browser", engine, built);
-  if ((!check || check === "coverage") && built) await execute("coverage", "default", built);
+  if ((!check || check === "tests") && built)
+    for (const member of testsMembers) await execute("tests", member.key, built);
+  if (!check || check === "tooling") await execute("tooling");
   if (!check || check === "security") await execute("security");
   const summary = {
     schemaVersion: 1,

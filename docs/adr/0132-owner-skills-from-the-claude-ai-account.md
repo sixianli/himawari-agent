@@ -51,7 +51,7 @@ date: "2026-10-31"
 ## 决定
 
 1. 删除 `.claude/skills/`。
-2. `document-governance` 也不留副本（Andy 2026-10-31 00:50 JST：“这个技能删掉啊”）。线程通过技能工具使用账号里的这份（Andy 2026-10-26 已上传）。给已停用的 CI 用的旧副本 `tools/document-governance/` 也删掉（Andy 2026-10-31 01:27 JST：“删掉”），连同 `scripts/ci/sync-governance.mjs`、`ci/toolchain-lock.json` 的 `governance` 一节、`scripts/ci/run.mjs` 里 CI `policy` 和 `static` 两步的治理检查及其测试；[BL-20261026-002](../backlog/BL-20261026-002-sync-ci-document-governance-validator.md) 随之不再需要。以后若重新打开 GitHub Actions，CI 也不再校验文档。
+2. `document-governance` 也不留副本（Andy 2026-10-31 00:50 JST：“这个技能删掉啊”）。线程通过技能工具使用账号里的这份（Andy 2026-10-26 已上传）。给已停用的 CI 用的旧副本 `tools/document-governance/` 也删掉（Andy 2026-10-31 01:27 JST：“删掉”），连同 `scripts/ci/sync-governance.mjs`、`ci/toolchain-lock.json` 的 `governance` 一节、`scripts/ci/run.mjs` 里 CI `policy` 和 `static` 两步的治理检查及其测试；[BL-20261026-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-002-sync-ci-document-governance-validator.md) 随之不再需要。以后若重新打开 GitHub Actions，CI 也不再校验文档。
 3. `.claude/rules/owner-skills.md` 改为说明各类会话从哪里拿技能：云端线程用 claude.ai 账号里启用的技能，Mac 会话用 `~/.claude/skills/`；技能工具里没有某个技能时，在计划或回复里说出来，不凭印象猜它的内容。
 4. 同时删除 `.agents/tasks/`（`long-task-planning` 技能完整模式留下的 12 个任务记录，最早 2026-10-28 进仓库；Andy 2026-10-31 00:55 JST：“全部删掉”），连同 `scripts/machine-secret-scan-baseline.json` 里指向它的 2 条豁免和 `biome.json` 里的排除项。
 

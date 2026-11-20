@@ -9,6 +9,7 @@ import {
   type PortableFiles,
   proposalTextDigest,
   SEALED_FILE,
+  sealJson,
   sha256Hex,
   unsealJson,
 } from "@himawari-agent/persistence-sqlite";
@@ -80,7 +81,7 @@ async function seedProposal(target: Side, seed: ProposalSeed): Promise<void> {
       `mcp-client:${seed.client ?? "Muse"}`,
       seed.client ?? "Muse",
       seed.sourceKey ?? null,
-      seed.textSha256 ?? digest(`${seed.id}:${seed.text ?? ""}`),
+      seed.textSha256 ?? (seed.text === null ? digest(seed.id) : proposalTextDigest(seed.text)),
       contentRef,
       classification,
       seed.status,
@@ -112,7 +113,6 @@ async function seeded(): Promise<Side> {
     id: "proposal-rejected",
     text: null,
     status: "rejected",
-    batchId: "batch-1",
   });
   await seedProposal(source, {
     id: "proposal-superseded",
@@ -261,7 +261,7 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
   it("exports every proposal, imports it into an empty database and keeps rows, texts, keys and unkeyed clients identical", async () => {
     const source = await seeded();
     const { files, manifest } = await exportOf(source);
-    expect(manifest.format).toBe("himawari.data-export.v3");
+    expect(manifest.format).toBe("himawari.data-export.v4");
     expect(manifest.counts.externalProposals).toBe(5);
     expect(manifest.omitted.map(({ what }) => what).join("\n")).not.toContain("MCP");
     expect(files.has("schema/external-memory-proposals.schema.json")).toBe(true);
@@ -379,6 +379,84 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     ).toBe(0);
   });
 
+  it("[reverse] leaves out a proposal whose text is a restricted memory's original words", async () => {
+    const source = await seeded();
+    await seedMemory(source, {
+      id: "memory-restricted",
+      text: "受限的记忆正文",
+      classification: "restricted",
+      versions: [{ kind: "created", text: "受限记忆的旧版本", at: "2026-11-01T00:00:00.000Z" }],
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted-quote",
+      text: "主人原话：受限记忆的旧版本",
+      status: "pending",
+      textSha256: proposalTextDigest("主人原话：受限记忆的旧版本"),
+    });
+    const { files, manifest } = await exportOf(source);
+    for (const [path, bytes] of files)
+      if (path !== SEALED_FILE) expect(decoder.decode(bytes)).not.toContain("主人原话");
+    const sealedQuote = await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array());
+    expect(JSON.stringify(sealedQuote)).not.toContain("主人原话");
+    expect(manifest.counts.externalProposals).toBe(5);
+    expect(
+      manifest.omitted.find(({ what }) => what.includes("受限（restricted）记忆的其他 agent 提议"))
+        ?.count,
+    ).toBe(1);
+  });
+
+  it("[reverse] writes no key, unkeyed client or replacement link of a left-out proposal, and numbers placeholders without it", async () => {
+    const source = await seeded();
+    await seedMemory(source, {
+      id: "memory-restricted",
+      text: "受限的记忆正文",
+      classification: "restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-restricted",
+      text: "受限的记忆正文",
+      status: "pending",
+      client: "Hidden",
+      sourceKey: "[已扣留:9]",
+      textSha256: proposalTextDigest("受限的记忆正文"),
+    });
+    await seedProposal(source, {
+      id: "proposal-replaced",
+      text: null,
+      status: "superseded",
+      supersededBy: "proposal-restricted",
+    });
+    await seedProposal(source, {
+      id: "proposal-secret-key",
+      text: "编号像机密的提议",
+      status: "pending",
+      sourceKey: SECRET_API_KEY,
+    });
+    const insertKey = source.database.prepare(
+      `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+      VALUES (?, ?, ?, ?, ?)`,
+    );
+    insertKey.run(source.ownerId, source.agentId, "Hidden", "[已扣留:9]", "proposal-restricted");
+    insertKey.run(source.ownerId, source.agentId, "Muse", SECRET_API_KEY, "proposal-secret-key");
+    source.database
+      .prepare(
+        "INSERT INTO external_memory_proposal_unkeyed (proposal_id, client) VALUES ('proposal-restricted', 'Hidden')",
+      )
+      .run();
+    const { files } = await exportOf(source);
+    const plain = decoder.decode(files.get(PROPOSALS_FILE));
+    expect(plain).not.toContain("Hidden");
+    expect(plain).not.toContain("proposal-restricted");
+    const lines = plain
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.find(({ id }) => id === "proposal-replaced")?.["supersededBy"]).toBeNull();
+    expect(lines.find(({ id }) => id === "proposal-secret-key")?.["keys"]).toEqual([
+      { client: "Muse", sourceKey: "[已扣留:1]" },
+    ]);
+  });
+
   it("keeps a proposal whose text only resembles a restricted memory", async () => {
     const source = await seeded();
     await seedMemory(source, {
@@ -416,12 +494,50 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     ).toEqual({ status: "committed", memory_id: null, batch_id: null });
     expect(
       target.database
+        .prepare("SELECT batch_id FROM external_memory_proposals WHERE id = 'proposal-committed'")
+        .pluck()
+        .all(),
+    ).toEqual(["batch-1"]);
+  });
+
+  it("[reverse] drops the batch of a rejected proposal whose text is gone, on export and on import", async () => {
+    const source = await seeded();
+    await seedProposal(source, {
+      id: "proposal-rejected-old",
+      text: null,
+      status: "rejected",
+      batchId: "batch-1",
+    });
+    await seedProposal(source, {
+      id: "proposal-rejected-kept",
+      text: "主人不想记下的事",
+      status: "rejected",
+      batchId: "batch-1",
+    });
+    const { files } = await exportOf(source);
+    const line = (from: PortableFiles) =>
+      JSON.parse(
+        decoder
+          .decode(from.get(PROPOSALS_FILE))
+          .split("\n")
+          .find((entry) => entry.includes('"id":"proposal-rejected-old"')) ?? "{}",
+      ) as { batchId: string | null };
+    expect(line(files).batchId).toBeNull();
+    const edited = editLine(files, "proposal-rejected-old", (entry) => ({
+      ...entry,
+      batchId: "batch-1",
+    }));
+    expect(line(edited).batchId).toBe("batch-1");
+    const target = await side("proposals-rejected-old");
+    await importInto(target, edited, PASSPHRASE);
+    expect(
+      target.database
         .prepare(
-          "SELECT batch_id FROM external_memory_proposals WHERE id IN ('proposal-committed', 'proposal-rejected') ORDER BY id",
+          "SELECT coalesce(batch_id, '-') FROM external_memory_proposals WHERE id LIKE 'proposal-rejected-%' ORDER BY id",
         )
         .pluck()
         .all(),
-    ).toEqual(["batch-1", "batch-1"]);
+    ).toEqual(["batch-1", "-"]);
   });
 
   it("imports a replaced proposal and a waiting one that share the same text digest", async () => {
@@ -605,6 +721,12 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
       DATA_EXPORT_ERROR_CODES.LINE_INVALID,
     ],
     [
+      "a proposal whose text does not match its digest",
+      (files: PortableFiles) =>
+        editLine(files, "proposal-pending", (line) => ({ ...line, textSha256: "0".repeat(64) })),
+      DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
+    ],
+    [
       "a proposal replaced by one that is not in the export",
       (files: PortableFiles) =>
         editLine(files, "proposal-superseded", (line) => ({ ...line, supersededBy: "missing" })),
@@ -633,6 +755,21 @@ describe("[P1-6][P5-3] proposals from other agents travel with the data export",
     expect(
       target.database.prepare("SELECT COUNT(*) FROM external_memory_proposals").pluck().get(),
     ).toBe(0);
+  });
+
+  it("[reverse] refuses a withheld proposal whose sealed digest does not match its text", async () => {
+    const { files } = await exportOf(await seeded());
+    const sealed = (await unsealJson(PASSPHRASE, files.get(SEALED_FILE) ?? new Uint8Array())) as {
+      originals: Record<string, string>;
+    };
+    sealed.originals["externalProposal/proposal-secret/textSha256"] = "0".repeat(64);
+    const next: PortableFiles = new Map(files).set(SEALED_FILE, await sealJson(PASSPHRASE, sealed));
+    const failure = await importInto(
+      await side("sealed"),
+      rehash(next, (t) => t),
+      PASSPHRASE,
+    ).catch((e: unknown) => e);
+    expect((failure as DataExportError).code).toBe(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH);
   });
 
   it("[reverse] refuses to import into a database that already holds proposals", async () => {

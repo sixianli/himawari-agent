@@ -76,7 +76,7 @@ date: "2026-10-26"
 
 ## 比较过的方案
 
-- **新加“按对话读工作目录文件”的接口：** 能显示任何文件（图片、PDF、命令生成的文件、超过 64K 字的文件），也是主流产品的做法；但要做这段对话的权限检查、只读、限大小，是一块带安全审查的后端工作。Andy 的选择卡片还没回答前，按推荐先做不需要后端的文本类文件，接口记成待办 [BL-20261026-013](../backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+- **新加“按对话读工作目录文件”的接口：** 能显示任何文件（图片、PDF、命令生成的文件、超过 64K 字的文件），也是主流产品的做法；但要做这段对话的权限检查、只读、限大小，是一块带安全审查的后端工作。Andy 的选择卡片还没回答前，按推荐先做不需要后端的文本类文件，接口记成待办 [BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 - **网页文件用 `iframe srcdoc` 直接渲染：** 实现最简单；但控制中心的安全策略是 `default-src 'none'; style-src 'self'`，没有 `frame-src`，内嵌页面会继承这条策略（[W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”，并点名 srcdoc 文档），网页自带的样式会被挡掉，显示出来反而是错的。正确做法是单独一个隔离的预览地址，同样放进 BL-20261026-013。
 - **代码高亮：** 原型里代码有颜色；产品现在没有高亮库，这一期只做行号，避免为一个视觉细节引入新依赖。
 - **卡片里的“+N”把新写的行也算进去：** 先写后改的文件会显示成“+5 −1”，和“改动”页里看到的“+2 −1”对不上。改成只数改动页里的增删行。
@@ -89,7 +89,7 @@ date: "2026-10-26"
 
 - 好处：不改服务端就能看到 Himawari 写出的 Markdown、表格和代码，Markdown 的阅读效果接近阅读软件；每轮写了什么文件、改了多少行一眼可见。
 - 代价：命令生成的文件、图片、PDF 和超过 64K 字的文件看不到内容；网页只能看源码；侧栏“今天/昨天”按浏览器所在时区算。
-- 后续：[BL-20261026-013](../backlog/BL-20261026-013-file-preview-images-pdf-html.md)（读文件接口、图片和 PDF 预览、网页隔离渲染）。
+- 后续：[BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)（读文件接口、图片和 PDF 预览、网页隔离渲染）。
 
 [↑ 返回阅读导航](#contents)
 

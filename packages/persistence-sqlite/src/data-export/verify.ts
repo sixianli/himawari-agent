@@ -22,6 +22,11 @@ import {
   MANIFEST_SCHEMA,
   MAXIMUM_LINE_LENGTH,
   MEMORY_SCHEMA,
+  OWNER_PROPOSAL_SCHEMA,
+  PAIRED_DEVICE_SCHEMA,
+  PERCEPTION_FILE_KEYS,
+  PERCEPTION_FILE_SCHEMAS,
+  type PerceptionFileKey,
   PERSON_SCHEMA,
   RULE_SCHEMA,
 } from "./schemas.js";
@@ -104,7 +109,64 @@ export interface ParsedExternalProposal {
   readonly unkeyedClients: readonly string[];
 }
 
-const STORED_TIME = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+export interface ParsedOwnerProposal {
+  readonly id: string;
+  readonly type: string;
+  readonly summary: string;
+  readonly effect: string;
+  readonly origin: string;
+  readonly sourceRef: string | null;
+  readonly sourceVersion: string | null;
+  readonly version: number;
+  readonly fingerprint: string;
+  readonly status: string;
+  readonly execStatus: string;
+  readonly proposedAt: string;
+  readonly expiresAt: string;
+  readonly decidedAt: string | null;
+  readonly proposedCount: number;
+  readonly rejectCount: number;
+  readonly lastRejectedAt: string | null;
+  readonly attempts: number;
+  readonly executedAt: string | null;
+  readonly requiresFullRead: boolean;
+  readonly requiresPresence: boolean;
+  readonly basis: ParsedText | null;
+  readonly execution: ParsedText | null;
+}
+
+const OWNER_PROPOSAL_ID = /^[a-z][a-z0-9-]{0,31}:[0-9a-f]{32}$/u;
+const STORED_TIME_SHAPE = /^.{4}-.{2}-.{2}T.{2}:.{2}:.{2}\..{3}Z$/u;
+const STORED_TIME = {
+  test(value: string): boolean {
+    if (!STORED_TIME_SHAPE.test(value)) return false;
+    const parsed = new Date(value);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+  },
+};
+
+export function ownerProposalProblem(proposal: ParsedOwnerProposal): string | null {
+  const where = `提给主人的提议 ${proposal.id}`;
+  if (!OWNER_PROPOSAL_ID.test(proposal.id)) return `${where}：编号不是提议箱用的格式`;
+  for (const value of [
+    proposal.proposedAt,
+    proposal.expiresAt,
+    proposal.decidedAt,
+    proposal.lastRejectedAt,
+    proposal.executedAt,
+  ])
+    if (value !== null && !STORED_TIME.test(value))
+      return `${where}：时间不是库里存的格式（例如 2026-11-12T00:00:00.000Z）`;
+  if ((proposal.status === "pending") !== (proposal.decidedAt === null))
+    return `${where}：只有待采纳的没有处理时间`;
+  if (proposal.rejectCount > 0 && proposal.lastRejectedAt === null)
+    return `${where}：拒绝过但没有最近拒绝时间`;
+  if (proposal.sourceRef === null && proposal.sourceVersion !== null)
+    return `${where}：有来源版本却没有来源`;
+  if (proposal.status === "pending" && proposal.execStatus !== "not_started")
+    return `${where}：待采纳的不能有执行记录`;
+  return null;
+}
 
 export function externalProposalProblem(proposal: ParsedExternalProposal): string | null {
   const where = `其他 agent 的提议 ${proposal.id}`;
@@ -157,6 +219,18 @@ export interface ParsedBatch {
   readonly itemCount: number;
   readonly createdAt: string;
   readonly undoneAt: string | null;
+}
+
+export interface ParsedPairedDevice {
+  readonly id: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly releaseChannel: string;
+  readonly status: string;
+  readonly pairedAt: string;
+  readonly confirmedAt: string | null;
+  readonly revokedAt: string | null;
+  readonly lastSeenAt: string | null;
 }
 
 export interface ParsedConsolidation {
@@ -243,11 +317,14 @@ export interface ParsedPortable {
   readonly memories: readonly ParsedMemory[];
   readonly people: readonly ParsedPerson[];
   readonly importBatches: readonly ParsedBatch[];
+  readonly pairedDevices: readonly ParsedPairedDevice[];
+  readonly perception: Readonly<Record<PerceptionFileKey, readonly Record<string, unknown>[]>>;
   readonly consolidations: readonly ParsedConsolidation[];
   readonly conversationReviews: readonly ParsedConversationReview[];
   readonly decisions: readonly ParsedDecision[];
   readonly rules: readonly PortableRule[];
   readonly externalProposals: readonly ParsedExternalProposal[];
+  readonly ownerProposals: readonly ParsedOwnerProposal[];
 }
 
 export function assertSafePath(path: string): void {
@@ -381,6 +458,26 @@ export function parsePortable(
   const manifest = verifyIntegrity(files, expectedMigrationSequence);
   const memories = parseLines<ParsedMemory>(files, DATA_FILES.memories, MEMORY_SCHEMA);
   const people = parseLines<ParsedPerson>(files, DATA_FILES.people, PERSON_SCHEMA);
+  const pairedDevices = parseLines<ParsedPairedDevice>(
+    files,
+    DATA_FILES.pairedDevices,
+    PAIRED_DEVICE_SCHEMA,
+  );
+  unique(
+    pairedDevices.map(({ id }) => id),
+    "配对设备",
+  );
+  const perception = Object.fromEntries(
+    PERCEPTION_FILE_KEYS.map((key) => [
+      key,
+      parseLines<Record<string, unknown>>(files, DATA_FILES[key], PERCEPTION_FILE_SCHEMAS[key]),
+    ]),
+  ) as Record<PerceptionFileKey, Record<string, unknown>[]>;
+  for (const key of ["perceptionRecords", "perceptionEpisodes"] as const)
+    unique(
+      perception[key].map(({ id }) => String(id)),
+      DATA_FILES[key],
+    );
   const importBatches = parseLines<ParsedBatch>(
     files,
     DATA_FILES.importBatches,
@@ -403,6 +500,19 @@ export function parsePortable(
     DATA_FILES.externalProposals,
     EXTERNAL_PROPOSAL_SCHEMA,
   );
+  const ownerProposals = parseLines<ParsedOwnerProposal>(
+    files,
+    DATA_FILES.ownerProposals,
+    OWNER_PROPOSAL_SCHEMA,
+  );
+  unique(
+    ownerProposals.map(({ id }) => id),
+    "提给主人的提议",
+  );
+  for (const proposal of ownerProposals) {
+    const problem = ownerProposalProblem(proposal);
+    if (problem !== null) throw new DataExportError(DATA_EXPORT_ERROR_CODES.LINE_INVALID, problem);
+  }
   const memoryIds = unique(
     memories.map(({ id }) => id),
     "记忆",
@@ -527,6 +637,10 @@ export function parsePortable(
     memoryHistoryEvents: memories.reduce((total, { history }) => total + history.length, 0),
     people: people.length,
     importBatches: importBatches.length,
+    pairedDevices: pairedDevices.length,
+    ...(Object.fromEntries(
+      PERCEPTION_FILE_KEYS.map((key) => [key, perception[key].length]),
+    ) as Record<PerceptionFileKey, number>),
     consolidations: consolidations.length,
     consolidationChanges: consolidations.reduce((total, { changes }) => total + changes.length, 0),
     conversationReviews: conversationReviews.length,
@@ -540,6 +654,7 @@ export function parsePortable(
     rules: rules.length,
     enforcedRules: enforcedRuleCount(rules),
     externalProposals: externalProposals.length,
+    ownerProposals: ownerProposals.length,
     ruleHistoryVersions: rules.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: manifest.counts.sealedOriginals,
     sealedEvidenceRows: manifest.counts.sealedEvidenceRows,
@@ -574,11 +689,14 @@ export function parsePortable(
     memories,
     people,
     importBatches,
+    pairedDevices,
+    perception,
     consolidations,
     conversationReviews,
     decisions,
     rules,
     externalProposals,
+    ownerProposals,
   };
 }
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, expect } from "@playwright/test";
+import { collectPageErrors } from "../../scripts/browser-page-errors.mjs";
 import { qualifyExecutionChainFixture } from "../../scripts/test-execution-chain-browser.mjs";
 
 export async function qualifySandboxBrowser(run, output) {
@@ -14,8 +15,7 @@ export async function qualifySandboxBrowser(run, output) {
         viewport: { width: 1280, height: 900 },
       });
       const page = await context.newPage();
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = collectPageErrors(page);
       let readState;
       let lastState;
       let queries = 0;

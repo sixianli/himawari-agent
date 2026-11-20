@@ -1,7 +1,9 @@
-import type {
-  ProactiveFetchResult,
-  ProactiveSourceItem,
-  ProactiveSourceReader,
+import {
+  GMAIL_SOURCE,
+  mailReader,
+  type FlatMailFetchResult,
+  type ProactiveMail,
+  type ProactiveMailReader,
 } from "@himawari-agent/application";
 import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
@@ -192,7 +194,7 @@ function participantsOf(headers: GmailPart["headers"]): readonly string[] {
 export function gmailItem(
   message: GmailMessage,
   options: { readonly history?: boolean } = {},
-): ProactiveSourceItem | undefined {
+): ProactiveMail | undefined {
   const labels = message.labelIds ?? [];
   if (!message.id || !message.threadId) return undefined;
   if (labels.includes("DRAFT") || labels.includes("CHAT")) return undefined;
@@ -203,7 +205,7 @@ export function gmailItem(
   const from = header(message.payload?.headers, "From");
   const body = extractGmailBody(message.payload);
   return Object.freeze({
-    source: "gmail" as const,
+    source: GMAIL_SOURCE.name,
     messageId: message.id,
     threadId: message.threadId,
     from: from.slice(0, 320),
@@ -246,11 +248,11 @@ export async function readGmailAccount(input: {
 export function createGmailReader(options: {
   readonly oauth: Pick<GoogleOAuth, "accessToken">;
   readonly fetch?: Fetch;
-}): ProactiveSourceReader {
+}): ProactiveMailReader {
   const send = options.fetch ?? ((url, init) => fetch(url, init));
-  return Object.freeze<ProactiveSourceReader>({
-    source: "gmail",
-    async related({ token, items, limits, wholeThread, signal }) {
+  return mailReader({
+    source: GMAIL_SOURCE.name,
+    async related({ token, items, limits, wholeThread, references, signal }) {
       const access = await options.oauth.accessToken(token, signal);
       const get = async <T>(url: string): Promise<T | undefined> => {
         const response = await send(url, {
@@ -266,6 +268,7 @@ export function createGmailReader(options: {
         items,
         limits,
         ...(wholeThread ? { wholeThread } : {}),
+        ...(references ? { references } : {}),
         signal,
         transport: {
           async thread(threadId) {
@@ -294,7 +297,7 @@ export function createGmailReader(options: {
         },
       });
     },
-    async fetch({ token, cursor, since, signal, unseen }): Promise<ProactiveFetchResult> {
+    async fetch({ token, cursor, since, signal, unseen }): Promise<FlatMailFetchResult> {
       let access: string;
       try {
         access = await options.oauth.accessToken(token, signal);
@@ -370,7 +373,7 @@ export function createGmailReader(options: {
         const wanted: string[] = [];
         for (let start = 0; start < distinct.length; start += UNSEEN_CHUNK)
           wanted.push(...(await unseen(distinct.slice(start, start + UNSEEN_CHUNK))));
-        const items: ProactiveSourceItem[] = [];
+        const items: ProactiveMail[] = [];
         const queue = wanted.slice(0, MESSAGE_LIMIT);
         while (queue.length > 0) {
           const batch = queue.splice(0, PARALLEL_READS);

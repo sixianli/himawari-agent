@@ -8,6 +8,7 @@ import {
 import {
   REAL_EVAL_ANSWER,
   REAL_EVAL_JUDGE,
+  REAL_EVAL_LEAK_JUDGE,
   REAL_EVAL_QUESTION,
 } from "@himawari-agent/prompt-catalog";
 import { placeholderTable } from "@himawari-agent/sensitive-capture";
@@ -88,83 +89,31 @@ function numbers(value: string): Set<string> {
   return new Set(value.normalize("NFKC").match(/\d{2,}/gu) ?? []);
 }
 
-const CHINESE_DIGITS: Readonly<Record<string, number>> = {
-  〇: 0,
-  零: 0,
-  一: 1,
-  二: 2,
-  两: 2,
-  三: 3,
-  四: 4,
-  五: 5,
-  六: 6,
-  七: 7,
-  八: 8,
-  九: 9,
-};
-
-const DATE_UNITS: Readonly<Record<string, string>> = {
-  號: "号",
-  日: "号",
-  點: "时",
-  点: "时",
-  時: "时",
-};
-
-function chineseNumber(value: string): number | null {
-  if (/^\d+$/u.test(value)) return Number(value);
-  const tenAt = value.indexOf("十");
-  if (tenAt === -1)
-    return [...value].reduce<number | null>((total, char) => {
-      const digit = CHINESE_DIGITS[char];
-      return total === null || digit === undefined ? null : total * 10 + digit;
-    }, 0);
-  const tens = tenAt === 0 ? 1 : CHINESE_DIGITS[value.slice(0, tenAt)];
-  const rest = value.slice(tenAt + 1);
-  const ones = rest === "" ? 0 : CHINESE_DIGITS[rest];
-  return tens === undefined || ones === undefined ? null : tens * 10 + ones;
-}
-
-const PART_OF_DAY = /(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|夜裡|半夜|深夜|午夜)\s*$/u;
-const AFTER_HOUR = /^\s*(钟|鐘|整|半|[0-9〇零一二三四五六七八九十几幾]+\s*分)/u;
-
-function oneMeansHour(text: string, start: number, end: number): boolean {
-  return (
-    PART_OF_DAY.test(text.slice(Math.max(0, start - 4), start)) || AFTER_HOUR.test(text.slice(end))
-  );
-}
-
-function dateTokens(value: string): Set<string> {
-  const tokens = new Set<string>();
-  const text = value.normalize("NFKC");
-  for (const match of text.matchAll(/(\d{1,2})\s*:\s*\d{2}/gu)) tokens.add(`${Number(match[1])}时`);
-  for (const match of text.matchAll(
-    /([0-9〇零一二两三四五六七八九十]+)\s*([年月日号號点點时時])/gu,
-  )) {
-    const amount = chineseNumber(match[1] ?? "");
-    const unit = match[2] ?? "";
-    if (amount === null) continue;
-    if (
-      match[1] === "一" &&
-      (unit === "点" || unit === "點") &&
-      !oneMeansHour(text, match.index, match.index + match[0].length)
-    )
-      continue;
-    tokens.add(`${amount}${DATE_UNITS[unit] ?? unit}`);
-  }
-  return tokens;
-}
-
 export function leaksAnswer(question: string, sources: readonly string[]): boolean {
   const asked = ngrams(question, LEAK_NGRAM);
   const askedNumbers = numbers(question);
-  const askedDates = dateTokens(question);
   return sources.some((source) => {
     for (const gram of ngrams(source, LEAK_NGRAM)) if (asked.has(gram)) return true;
     for (const value of numbers(source)) if (askedNumbers.has(value)) return true;
-    for (const token of dateTokens(source)) if (askedDates.has(token)) return true;
     return false;
   });
+}
+
+export function leakJudgePrompt(input: {
+  readonly question: string;
+  readonly memory: string;
+  readonly quote: string;
+}): string {
+  return [
+    REAL_EVAL_LEAK_JUDGE.text,
+    JSON.stringify({ question: input.question, memory: input.memory, quote: input.quote }),
+  ].join("\n");
+}
+
+export function parseLeakVerdict(output: string): boolean | null {
+  const parsed = jsonObject(output);
+  const leaks = parsed?.["leaks"];
+  return typeof leaks === "boolean" ? leaks : null;
 }
 
 export function hasSensitiveValue(value: string): boolean {

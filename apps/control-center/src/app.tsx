@@ -1,4 +1,3 @@
-import { RuleReceiptCard } from "./components/rule-receipt.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
@@ -14,10 +13,11 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
-import { SignOutSetting } from "./components/sign-out-setting.js";
+import { DeviceSettings } from "./components/device-settings.js";
 import { AccountDevices, AccountLogin, accountRequest } from "./components/account-login.js";
 import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
 import { ActionButton, Banner } from "./components/index.js";
+import { McpConnectionsSettings } from "./components/mcp-connections-settings.js";
 import {
   focusedMemoryIds,
   MemoryReminders,
@@ -26,17 +26,19 @@ import {
 } from "./components/memory-panel.js";
 import { MuseDataSettings } from "./components/muse-reference.js";
 import { NotificationSettings } from "./components/notification-settings.js";
+import { AutoMemorySetting } from "./components/personalization-settings.js";
 import {
   ProactiveAppsSettings,
   ProactiveDataSettings,
   ProactiveNotificationSettings,
 } from "./components/proactive-settings.js";
-import { AutoMemorySetting } from "./components/personalization-settings.js";
+import { RuleReceiptCard } from "./components/rule-receipt.js";
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import {
   SensitiveInterceptionsEntry,
   SensitiveInterceptionsPage,
 } from "./components/sensitive-interceptions.js";
+import { SignOutSetting } from "./components/sign-out-setting.js";
 import {
   GatewayClient,
   loadRuntimeConfiguration,
@@ -50,10 +52,10 @@ import {
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
+import { mcpConnectionsInstalled } from "./mcp-connections.js";
 import { useMemory } from "./memory.js";
 import { requestMessageFocus } from "./message-focus.js";
 import { useMuse } from "./muse.js";
-import { useSensitiveInterceptions } from "./sensitive-interceptions.js";
 import { useOwnerPreferenceSync } from "./owner-preferences.js";
 import { resumedAfterLongAbsence } from "./page-resume.js";
 import {
@@ -65,6 +67,7 @@ import {
   reminderFocusOf,
   useProactive,
 } from "./proactive.js";
+import { useSensitiveInterceptions } from "./sensitive-interceptions.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { type SidePage, useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
@@ -593,6 +596,21 @@ function LocalizedControlCenterApp({
             {muse ? <MuseDataSettings muse={muse} message={message} /> : null}
           </>
         )
+      }
+      settingsAgents={
+        client && configuration && mcpConnectionsInstalled(configuration) ? (
+          <McpConnectionsSettings
+            client={client}
+            configuration={configuration}
+            connected={threadConnection !== "offline"}
+            message={message}
+          />
+        ) : undefined
+      }
+      settingsDevices={
+        configuration?.installedDeviceApi ? (
+          <DeviceSettings csrfToken={configuration.csrfToken} message={message} />
+        ) : undefined
       }
       settingsNotifications={
         (client && configuration?.installedGatewayV2Operations?.includes("push.status.read")) ||

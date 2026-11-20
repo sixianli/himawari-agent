@@ -1,22 +1,24 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
+  applyMigrations,
   GOVERNED_DELETION_ERROR_CODES,
   GovernedDeletionError,
-  SqliteGovernedDeletionAdapter,
-  applyMigrations,
+  type GovernedDeletionTarget,
   loadBundledMigrations,
   managedDeletionArtifactPath,
   openQualifiedDatabase,
-  type GovernedDeletionTarget,
+  SqliteGovernedDeletionAdapter,
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-governed-deletion");
 const AGENT_ID = createAgentId("agent-governed-deletion");
 const T0 = "2026-08-01T00:00:00.000Z";
+const T1 = "2026-08-02T00:00:00.000Z";
+const T7 = "2026-08-08T00:00:00.000Z";
 const T8 = "2026-08-09T00:00:00.000Z";
 const roots: string[] = [];
 
@@ -590,6 +592,110 @@ describe("SQLite governed deletion", () => {
     ).toBe(`rejected|-|-|-|${"b".repeat(64)}`);
   });
 
+  it("[P5-3] deleting a restricted Memory removes the proposals with its text, digest included", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    insertPayload(database, { ref: "payload-proposal-text" });
+    insertPayload(database, { ref: "payload-proposal-other" });
+    database
+      .prepare(
+        "UPDATE memory_records SET classification = 'restricted' WHERE id = 'memory-retained'",
+      )
+      .run();
+    const insert = database.prepare(
+      `INSERT INTO external_memory_proposals (
+        id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+        content_ref, category, classification, status, received_at, decided_at, batch_id,
+        memory_id
+      ) VALUES (?, ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1', ?, 'other', 'private', ?, ?, ?, ?, ?)`,
+    );
+    insert.run(
+      "proposal-linked",
+      OWNER_ID,
+      AGENT_ID,
+      "b".repeat(64),
+      "payload-proposal-text",
+      "committed",
+      T0,
+      T0,
+      "batch-one",
+      "memory-retained",
+    );
+    insert.run(
+      "proposal-copy",
+      OWNER_ID,
+      AGENT_ID,
+      "b".repeat(64),
+      null,
+      "superseded",
+      T0,
+      T0,
+      null,
+      null,
+    );
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposals (
+          id, owner_id, agent_id, subject_ref, client, source_key, text_sha256, normalization,
+          content_ref, category, classification, status, received_at, decided_at, superseded_by
+        ) VALUES ('proposal-older', ?, ?, 'subject', 'muse', NULL, ?, 'mcp-text:v1', NULL,
+          'other', 'private', 'superseded', ?, ?, 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID, "d".repeat(64), T0, T0);
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposal_keys (owner_id, agent_id, client, source_key, proposal_id)
+        VALUES (?, ?, 'muse', 'muse-key-linked', 'proposal-linked')`,
+      )
+      .run(OWNER_ID, AGENT_ID);
+    insert.run(
+      "proposal-other",
+      OWNER_ID,
+      AGENT_ID,
+      "c".repeat(64),
+      "payload-proposal-other",
+      "pending",
+      T0,
+      null,
+      null,
+      null,
+    );
+    database
+      .prepare(
+        `INSERT INTO external_memory_proposal_unkeyed (proposal_id, client)
+        VALUES ('proposal-linked', 'muse'), ('proposal-other', 'muse')`,
+      )
+      .run();
+    database.close();
+
+    const memory = await resource.adapter.deleteImmediately({
+      objectType: "memory",
+      objectId: "memory-retained",
+    });
+    expect(memory.lifecycle).toBe("deleted_verified");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT group_concat(id || '|' || text_sha256 || '|' || coalesce(superseded_by, '-'), ',') FROM (SELECT * FROM external_memory_proposals ORDER BY id)",
+      ),
+    ).toBe(`proposal-older|${"d".repeat(64)}|-,proposal-other|${"c".repeat(64)}|-`);
+    expect(
+      scalar(resource.databasePath, "SELECT COUNT(*) FROM external_memory_proposal_keys"),
+    ).toBe(0);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT group_concat(proposal_id) FROM external_memory_proposal_unkeyed",
+      ),
+    ).toBe("proposal-other");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT COUNT(*) FROM payloads WHERE ref IN ('payload-proposal-text', 'payload-proposal-other')",
+      ),
+    ).toBe(1);
+  });
+
   it("persists Memory provider cleanup and rejects deleting a referenced Payload directly", async () => {
     const resource = await fixture();
     const database = openQualifiedDatabase(resource.databasePath);
@@ -674,5 +780,124 @@ describe("SQLite governed deletion", () => {
     expect(reports).toHaveLength(1);
     expect(reports[0]?.lifecycle).toBe("deleted_verified");
     expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(0);
+  });
+
+  it("purges a trashed Thread left incomplete but skips a Thread recreated after deletion", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    database
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    const threadRow = database
+      .prepare("SELECT * FROM threads WHERE id = 'thread-delete'")
+      .get() as Record<string, unknown>;
+    const taskRow = database
+      .prepare("SELECT * FROM scheduled_jobs WHERE id = 'task-delete'")
+      .get() as Record<string, unknown>;
+    const taskColumns = Object.keys(taskRow);
+    database.close();
+    const columns = Object.keys(threadRow);
+    const recreate = () => {
+      const current = openQualifiedDatabase(resource.databasePath);
+      current.pragma("foreign_keys = OFF");
+      current
+        .prepare(
+          `INSERT INTO threads (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+        )
+        .run(...columns.map((column) => threadRow[column]));
+      current.close();
+    };
+
+    resource.failTarget("payload");
+    const failed = await resource.adapter.deleteImmediately({
+      objectType: "thread",
+      objectId: "thread-delete",
+    });
+    expect(failed.lifecycle).toBe("deletion_pending");
+    recreate();
+    resource.failTarget(null);
+    expect(await resource.adapter.purgeExpiredTrash(T8)).toEqual([]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(1);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT status FROM deletion_tombstones WHERE object_id = 'thread-delete'",
+      ),
+    ).toBe("incomplete");
+    expect(await readFile(resource.payloadFile, "utf8")).toBe("owner-content");
+
+    const withTask = openQualifiedDatabase(resource.databasePath);
+    withTask.pragma("foreign_keys = OFF");
+    withTask
+      .prepare(
+        `INSERT OR REPLACE INTO scheduled_jobs (${taskColumns.join(", ")}) VALUES (${taskColumns.map(() => "?").join(", ")})`,
+      )
+      .run(...taskColumns.map((column) => (column === "status" ? "active" : taskRow[column])));
+    withTask.close();
+    expect(await resource.adapter.purgeExpiredTrash(T8)).toEqual([]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(1);
+    const pauseTask = openQualifiedDatabase(resource.databasePath);
+    pauseTask
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    pauseTask.close();
+
+    resource.failTarget("search");
+    await resource.adapter.trashThread("thread-delete");
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT purge_deadline_at FROM deletion_tombstones WHERE object_id = 'thread-delete'",
+      ),
+    ).toBe(T7);
+    expect(await resource.adapter.purgeExpiredTrash(T1)).toEqual([]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(1);
+    expect(
+      scalar(
+        resource.databasePath,
+        "SELECT status FROM deletion_tombstones WHERE object_id = 'thread-delete'",
+      ),
+    ).toBe("incomplete");
+    resource.failTarget(null);
+    const reports = await resource.adapter.purgeExpiredTrash(T8);
+    expect(reports.map((report) => report.lifecycle)).toEqual(["deleted_verified"]);
+    expect(scalar(resource.databasePath, "SELECT COUNT(*) FROM threads")).toBe(0);
+    await expect(readFile(resource.payloadFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("gives a Thread recreated after permanent deletion a fresh Trash period it can be restored from", async () => {
+    const resource = await fixture();
+    const database = openQualifiedDatabase(resource.databasePath);
+    database
+      .prepare("UPDATE scheduled_jobs SET status = 'paused', revision = revision + 1 WHERE id = ?")
+      .run("task-delete");
+    const threadRow = database
+      .prepare("SELECT * FROM threads WHERE id = 'thread-delete'")
+      .get() as Record<string, unknown>;
+    database.close();
+    const columns = Object.keys(threadRow);
+
+    const deleted = await resource.adapter.deleteImmediately({
+      objectType: "thread",
+      objectId: "thread-delete",
+    });
+    expect(deleted.lifecycle).toBe("deleted_verified");
+    const current = openQualifiedDatabase(resource.databasePath);
+    current.pragma("foreign_keys = OFF");
+    current
+      .prepare(
+        `INSERT INTO threads (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+      )
+      .run(...columns.map((column) => threadRow[column]));
+    current.close();
+
+    const trashed = await resource.adapter.trashThread("thread-delete");
+    expect(trashed.purgeDeadlineAt).toBe(T7);
+    expect(await resource.adapter.purgeExpiredTrash(T1)).toEqual([]);
+    const restored = await resource.adapter.restoreThread("thread-delete");
+    expect(restored.lifecycle).toBe("active");
+    expect(
+      scalar(resource.databasePath, "SELECT status FROM threads WHERE id = 'thread-delete'"),
+    ).toBe("open");
   });
 });

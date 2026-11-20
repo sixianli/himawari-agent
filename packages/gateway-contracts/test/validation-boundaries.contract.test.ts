@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   array,
   booleanValue,
+  codePointString,
   enumeration,
   integer,
   machineString,
@@ -10,6 +11,20 @@ import {
   parseJson,
   timestamp,
 } from "../src/validation.ts";
+
+describe("code point strings", () => {
+  it("counts emoji as one character and rejects them past the limit", () => {
+    expect(codePointString(64).parse("😀".repeat(64))).toBe("😀".repeat(64));
+    expect(() => codePointString(64).parse("😀".repeat(65))).toThrow();
+  });
+  it("accepts line breaks and tabs only when asked, and never other control characters", () => {
+    const text = "第一行\n\t第二行";
+    expect(codePointString(100, { allowLineBreaks: true }).parse(text)).toBe(text);
+    expect(() => codePointString(100).parse(text)).toThrow();
+    expect(() => codePointString(100, { allowLineBreaks: true }).parse("a\u0000b")).toThrow();
+    expect(() => codePointString(100, { allowLineBreaks: true }).parse("")).toThrow();
+  });
+});
 
 describe("strict wire value boundaries", () => {
   it.each([undefined, null, "true", 1])("does not coerce boolean %j", (value) => {

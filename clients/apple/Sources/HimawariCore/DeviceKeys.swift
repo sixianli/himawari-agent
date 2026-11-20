@@ -1,0 +1,20 @@
+import Foundation
+
+public protocol DeviceKeySigner: Sendable {
+    func publicKeySPKI() throws -> Data
+    func sign(_ message: Data, reason: String?) async throws -> Data
+}
+
+public enum DeviceKeyRole: String, Sendable, CaseIterable {
+    case device
+    case confirm
+}
+
+public enum DeviceKeyError: Error, Equatable, Sendable {
+    case secureEnclaveUnavailable
+    case keyMissing(DeviceKeyRole)
+    case keyUnreadable(DeviceKeyRole)
+    case keychain(Int32)
+    case accessControl
+    case signatureLength(Int)
+}

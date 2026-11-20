@@ -1,0 +1,6 @@
+# PR 550 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1. 低：持久化接线的反向用例不会失败，删掉 `rememberSettled` 测试仍会通过。MenuBarModel.swift:94-98 rememberSettled 依赖 app.deviceStore，AppModel.demo 的 store 为 nil（AppModel.swift:138,322-331 只在 activate 赋值），所以 MacUI 测试走不到接线；这是测试覆盖缺口，不是现在的代码有错误结果：持久化本身由 HimawariCoreTests 的重启用例覆盖。补测要让 AppModel 可注入设备库，只能在 macOS 编译验证
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低：settled 文件读失败或损坏时会被当成空并立即覆盖，已收走的通知可能重新弹。OwnerPresence.swift:35-43,72-75 读失败与解码失败都变成 []，随后 save() 覆盖；要磁盘损坏或读失败才触发，后果只是旧提醒再弹一次，不丢主人数据；触发：settled-notices.json 读出 IO 失败或内容损坏（FileLocalStore.read 用 try? 返回 nil，OwnerPresence.swift:36 解码失败也当空）；后果：已收走记录被当成空并立即覆盖（OwnerPresence.swift:41 save），服务器之后重发旧通知时会再弹一次
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 低：换设备重配对后，旧设备的 settled 会被写进新设备库。MenuBarModel.swift:94-98 store !== settledStore 时调 remember 合并旧 settled；PanelView.swift:14 未配对时不显示通知；要不重启应用就忘记再配对才触发，误压需服务器 id 重复（推测），后果可由点知道了消除；触发：同一次运行内忘记设备（AppModel.swift:425-437 forget 只把 store 置 nil）后重新配对，新 store 实例与 settledStore 不同；后果：旧配对的已收走 id 合并进新设备库（OwnerPresence.swift:37-41），只有服务器 id 跨设备重复时才误压新通知；旧配对留在内存的面板卡片在重新配对后会重新显示，点知道了可清
+- 4（deepseek-v4.1-flash）成立，可以更好：### 4. 低：服务端 id 无长度上限，且伪造 withdraw 会挤掉真实的已收走记录。沿用第 1 轮第 5 条原判：通知 id 来自已认证的自有服务器（DeviceEvents.swift:38-42），超长 id 或大量伪造 withdraw 要服务器出错或被控制才出现；条数已限 500（OwnerPresence.swift:63-66），给 id 设长度上限或分开淘汰是加固选择

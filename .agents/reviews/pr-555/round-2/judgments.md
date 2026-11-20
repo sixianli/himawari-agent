@@ -1,0 +1,6 @@
+# PR 555 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，中高：### 1. 中高：`.failed` 被做成可点的“撤销”按钮，但服务端明确不重试已失败的撤销。DeviceActionViews.swift 原 case .available, .failed 出按钮；device-action-service.ts:876-888 undo 复用已有反向 invocation；test/integration/device-actions.test.ts:1343 期望重放仍 failed。已改：.failed 只显示文字，model.undo 只放行 .available；触发：iPhone 上某条撤销失败的结果行（undo=failed），用户点“撤销”；后果：白过一次面容，服务端幂等重放返回 failed，界面没变化；用户被诱导重复点
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 中：删掉空串补丁后，改地点/备注原值为空仍撤不回；作者说法与代码相反。device-action-registry.ts:239-244 缺字段返回 null；CalendarActions.swift:118-119 只在非 nil 时写字段；ContactActions.swift:81-89 同第 1 轮 #3；触发：改地点/备注或联系人字段，而被改字段原值为空；后果：计划算不出，undo=none，不出撤销按钮，诚实地不可撤，不会撤错；判低理由：只是少一个撤销入口，要支持需服务端设计清除语义，属产品决定；与第 1 轮 #3 同类，沿用原判；材料里“补空串”的说法已过时，应在 PR 描述里改成原值缺失不给撤销
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3. 中：撤销失败的红字原因取错了字段，生产环境只会显示兜底文案；演示数据伪造了原因。device-action-service.ts #outcome 用原动作 record.reasonCode；#undoState 的失败来自反向 invocation，原因未带入 view；触发：撤销失败的结果行显示红字原因；后果：生产里 view.reason 来自原动作（成功时为空），只会显示兜底文字，不会错；演示数据却伪造了原因；判低理由：只显示兜底文案，不误导；已改成固定“没撤成”并去掉演示里的伪造原因
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4. 中：空串补丁的修复没有对应的自动检查，新增断言在修复前也会通过。CalendarActions.swift 整个文件在 #if canImport(EventKit) 内，测试需在 Mac 上用 Xcode 跑；触发：有人把 CalendarActions 的空串补丁加回去；后果：JS 侧断言仍过，回归无门槛；判低理由：describe 依赖 EventKit，只在 Apple 平台编译，本机无 Swift 编译器写不了也验不了新 Swift 测试；服务端对空串和缺字段的校验已有断言；不单独让用户碰到错误

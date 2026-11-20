@@ -50,6 +50,11 @@ export interface MemoryBasisChainNode {
   readonly truncated: boolean;
 }
 
+export interface DerivedMemories {
+  readonly memoryIds: readonly MemoryId[];
+  readonly truncated: boolean;
+}
+
 export interface MemoryConsolidationStorePort {
   begin(run: MemoryConsolidationRun): Promise<boolean>;
   lastCompleted(ownerId: OwnerId, agentId: AgentId): Promise<MemoryConsolidationRun | undefined>;
@@ -78,5 +83,10 @@ export interface MemoryConsolidationStorePort {
     readonly agentId: AgentId;
     readonly memoryId: MemoryId;
   }): Promise<MemoryBasisChainNode>;
+  readDerived(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly memoryId: MemoryId;
+  }): Promise<DerivedMemories>;
   markUndone(input: { readonly id: string; readonly undoneAt: string }): Promise<boolean>;
 }

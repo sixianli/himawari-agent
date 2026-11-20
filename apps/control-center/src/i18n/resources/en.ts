@@ -616,6 +616,9 @@ export const messages = {
   "governance.updateAssessment": "Update diff and assessment",
   "governance.rollback": "Rollback version",
   "governance.lastTransition": "Latest version transition",
+  "governance.lastInvalidation": "Latest disable",
+  "governance.lastInvalidationValue":
+    "{time}: cancelled {count} scheduled jobs; they are not restored",
   "governance.rollbackBoundary": "Side-effect / product-state rollback boundary",
   "governance.notAvailable": "Not available",
   "governance.capability": "Capability",
@@ -698,6 +701,7 @@ export const messages = {
     'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
   "memory.page.add": "Add",
   "memory.page.addTitle": "Tell Himawari something to remember",
+  "memory.page.autoCategory": "Let Himawari decide",
   "memory.page.addPlaceholder": "For example: no reminders before 9 am on weekends",
   "memory.page.added":
     "Saved under “{cat}”{pinned, select, true {, and brought into every conversation} other {}}. Open it to change anything that is wrong.",
@@ -739,7 +743,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
+    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} external_direct {Sent by an outside agent and saved right away, no confirmation} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -783,7 +787,7 @@ export const messages = {
   "memory.page.importAgain": "Choose another source",
   "memory.page.importSummary": "{all} found, {on} selected",
   "memory.page.importFlag":
-    "{f, select, duplicate {Already remembered} sensitive {Sensitive, off by default} other {Coding notes, off by default}}",
+    "{f, select, duplicate {Already remembered} classifying {Sorting…} unclassified {Could not sort, kept private and off} sensitive {Sensitive, off by default} similar {May already be remembered, off by default} unchecked {Could not check for duplicates, off by default} other {Coding notes, off by default}}",
   "memory.page.importCommit": "Import {count} selected",
   "memory.page.importDone": "Imported {count}. Undo the whole import from the timeline.",
   "memory.page.importEmpty":
@@ -915,14 +919,56 @@ export const messages = {
   "rules.note":
     "These rules are enforced by code, not by the model remembering them. Undo one and the next mail check stops using it.",
   "rules.type":
-    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} other {Other rule}}",
+    "{t, select, mail_must_notify {Always notify} mail_read_whole_thread {Read the whole thread first} push_quiet_hours {Push delay} other {Other rule}}",
   "rules.needsReview": "Its source memory changed; confirm it again (still enforced)",
+  "rules.suspended":
+    "Paused, not enforced: its source memory changed and no longer matches this rule; waiting for you",
+  "rules.resume": "Enforce again",
   "rules.notEnforced": "This rule can't be read, so it isn't enforced for now",
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
+  "rules.builtIn.title": "Built-in rules · {count}",
+  "rules.builtIn.note":
+    "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
+  "rules.builtIn.name":
+    "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_preauthorize_owner_intent_confirmed {After reading outside content, something you clearly asked for: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
+  "rules.builtIn.when":
+    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded. A task you agreed to is the exception: a card asks you instead.} other {}}",
+  "rules.builtIn.examples": "Examples: {hit} should match, {miss} should not",
+  "rules.builtIn.askFirst": "Ask me every time",
+  "review.title": "To recheck after memory edits · {count}",
+  "review.note":
+    "When you edit or delete a memory, memories inferred from it and rules set from it are listed here. They are only flagged; memory text is never changed for you, and paused rules do not run until you decide.",
+  "review.reason":
+    "{r, select, memory_edited {a memory it is based on was edited} memory_superseded {a memory it is based on was replaced by a newer statement} memory_removed {a memory it is based on was deleted or archived} memory_restored {a memory it is based on was restored} memory_reclassified {a memory it is based on changed category} owner_reported {you said it should change too} other {a memory it is based on changed}}",
+  "review.upstream": "Based on: {t}",
+  "review.upstreamGone": "The memory it was based on is deleted",
+  "review.truncated":
+    "Too many memories are inferred from it; those past the limit are not flagged",
+  "review.open": "Open to edit",
+  "review.dismiss": "Looks fine",
+  "review.suspendReason":
+    "{r, select, source_removed {Paused: its source memory was deleted or is no longer a rule} no_longer_standing {Paused: its source memory no longer reads as a standing request} parameters_changed {Paused: its source memory no longer matches the rule} other {Paused}}",
+  "review.checking":
+    "The source memory changed; the system checks it before a mail check (the rule keeps running until then)",
+  "review.notChecking":
+    "The source memory changed, but the system cannot check it automatically (the source memory cannot be found, or the check kept failing). The rule keeps running; please take a look",
+  "review.condition":
+    "{f, select, senderDomains {Sender domains} senderAddresses {Sender addresses} phrases {Phrases} words {Words} excludePhrases {Excluded phrases} other {Condition}}: {v}",
+  "review.textGone": "The text of this memory cannot be read",
+  "review.rechecking":
+    "The source memory changed again; the system checks once more before a mail check (it stays paused until then)",
+  "review.suggestion": "Suggested change: {s}",
+  "review.adopt": "Use suggestion",
+  "review.confirmSuspended": "Turn off for good",
+  "review.restore": "Restore rule",
+  "memory.page.missed": "Another memory should change too",
+  "memory.page.missedPick": "Pick the memory that should change too",
+  "memory.page.missedSubmit": "Note it",
+  "memory.page.missedSaved": "Noted. It now appears in the recheck list",
   "rules.receipt.label": "Standing rule receipt",
   "rules.receipt.status":
-    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} other {Standing rule}}",
+    "{s, select, active {Saved as a standing rule} proposed {Suggested rule; it takes effect only when you tap Apply} soft {Saved as a preference; not enforced by code} undone {Undone} rejected {Declined; it will not take effect} other {Standing rule}}",
   "rules.receipt.trials": "Trial run",
   "rules.receipt.trial":
     "{hit, select, true {Would match} other {Would not match}}: {from} · {subject}",
@@ -932,6 +978,7 @@ export const messages = {
     "The replay uses what was stored at the time. Ignored mails only kept the sender and subject, so the numbers are estimates and may be too high or too low.",
   "rules.receipt.replayNone": "The replay couldn't run this time; the rule is in effect anyway.",
   "rules.receipt.confirm": "Apply",
+  "proposals.reject": "Don't want",
   "memory.page.carry.title": "Brought into every conversation",
   "memory.page.carry.summary": "{count} memories · {used} of {limit} characters used",
   "memory.page.carry.queued": "{count} more do not fit",
@@ -940,7 +987,7 @@ export const messages = {
   "memory.page.carry.open": "View and adjust",
   "memory.page.carry.meter": "Characters used",
   "memory.page.carry.note":
-    "Himawari reads these before every answer. They are picked by importance, highest first, from your rules, identity, preferences, people, goals and work in progress, until {limit} characters are used. Sensitive memories such as health or money, and events, are never included here; they come up only when relevant. When you turn “Bring into every conversation” on or off for a memory, your choice wins.",
+    "Himawari reads these before every answer. They are picked by importance, highest first, from your rules, identity, preferences, people, goals and work in progress, until {limit} characters are used. Sensitive memories such as health or money, and events, are never included here; they come up only when relevant. Separately, any memory dated within the next 7 days, including those not included here, is brought in as an upcoming plan. When you turn “Bring into every conversation” on or off for a memory, your choice wins.",
   "memory.page.carry.none":
     "Nothing is brought into every conversation yet. Your identity, preferences and long-term goals are added as you mention them.",
   "memory.page.carry.yours": "Your choice",
@@ -1078,13 +1125,13 @@ export const messages = {
     "This hard rule came from something you said; that memory changed. The rule still applies and waits for you to have a look",
   "dailyReview.tag.captureRetrying": "Memory capture failed, retried",
   "dailyReview.tag.captureQueued": "Memory capture failed, retrying next turn",
-  "dailyReview.tag.captureGaveUp": "Not fully saved from this turn",
+  "dailyReview.tag.captureGaveUp": "Not saved from this turn",
   "dailyReview.captureRetrying":
     "The model call that picks memories from this turn failed once; the system tried again right away",
   "dailyReview.captureQueued":
     "Picking memories from this turn did not work; the system will try again when you next send a message",
   "dailyReview.captureGaveUp":
-    "Picking memories from this turn still failed after 3 more tries, or what was picked could not be fully saved (some of it may be saved); the system stopped trying",
+    "Picking or saving memories from this turn still failed after 3 tries, so nothing from this turn was saved; the system stopped trying",
   "dailyReview.hidden": "Text not shown here",
   "dailyReview.fetched": "Checked {count, plural, one {# email} other {# emails}}",
   "dailyReview.allFine": "This page is all fine",
@@ -1126,18 +1173,19 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} web_push {Push deferral} memory_review {Review after a memory edit} limit_change {Usage limit change} delivery_timing {Reminder delivery time} proposal {Proposed next step} device_action {Device action} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
-    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: money-related words in the message} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} other {{id}}}",
+    "{k, select, important_sender {Never miss important mail: sender is on your important list} public_domain {Never miss important mail: from a government or school domain} money_words {Never miss important mail: the model judged the message to be about money} quiet_hours {Quiet hours: no notifications now, sent when quiet hours end} amount_threshold {Small amounts: no notification for mail below the threshold} mail_must_notify {Your rule: always tell you about this kind of mail} mail_read_whole_thread {Your rule: read the whole thread before deciding} push_quiet_hours {Your rule: during quiet hours, the chosen pushes wait until they end} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {Set by you} built_in {Built-in rule} other {Unregistered rule}}",
   "decision.chain.ruleMails": "Hit {count, plural, one {# email} other {# emails}}",
   "decision.chain.ruleNeedsReview": "Needs review",
+  "decision.chain.ruleSuspended": "Paused",
   "decision.chain.ruleQuote": "Your words: {text}",
   "decision.chain.ruleWording":
-    "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {Words: {text}} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",
+    "{k, select, important_sender {{empty, select, yes {Important list is empty} other {Important list: {text}}}} public_domain {Domain endings: {text}} money_words {The model reads each message and answers yes or no: is it about money you pay, are charged, get back or receive} quiet_hours {{empty, select, yes {No quiet hours set} other {Hours: {text}}}} amount_threshold {Threshold: {text}} other {{text}}}",
   "decision.chain.ruleWordingMissing": "The content of this version cannot be found",
   "decision.chain.ruleSource": "Source: {source} · version {revision}",
   "decision.chain.ruleCurrent": "Only the rule name was recorded; showing the current version",
@@ -1412,7 +1460,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "{rows} Gmail records are gone from days already checked; you cleared them",
   "weekly.check.rowsMissing":
-    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} web_push {push deferral} memory_review {review-after-edit} limit_change {usage limit change} delivery_timing {reminder delivery time} proposal {proposed next step} device_action {device action} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
   "weekly.check.timeOk": "All times in the decision record are well formed",
   "weekly.check.timeBad": "{rows} times in the decision record are malformed",
   "weekly.check.other":
@@ -1512,6 +1560,12 @@ export const messages = {
     "These three signals are what can be observed without you rating anything. They are observations only: they are not your ratings, they are never mixed into the rating shares above, and they never change any threshold automatically. The denominator is this week's decisions that sent a reminder; repeats of the same signal on one decision count once.",
   "weekly.goRate": "Rate them in “Reminders”",
   "weekly.prereview.title": "Model pre-rating agreement",
+  "weekly.correction.title": "Agreement with follow-up flags after memory edits",
+  "weekly.correction.agreed": "Flagged {n}, you agreed with {k}",
+  "weekly.correction.missed": "Missed: items you said should change too that were not flagged",
+  "weekly.correction.open": "Still waiting for you in the review list",
+  "weekly.correction.note":
+    "Running totals, not per week. When you edit or delete a memory, memories inferred from it and rules set from it are flagged for review. Only items you handled in the review list count: for a rule, Use suggestion or Turn off for good, and for a memory, editing it, count as agreeing; Restore rule and Looks fine count as not agreeing. Unhandled items are left out. Below 5 handled items only Not enough samples is shown.",
   "weekly.prereview.empty": "No decision this week has both a model pre-rating and your rating.",
   "weekly.prereview.emptyCurrent":
     "No pre-rating this week from the current model and prompt version.",
@@ -1568,6 +1622,8 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "email check",
   "sensitive.purpose.action-review": "action review",
   "sensitive.purpose.review-prereview": "model pre-rating",
+  "sensitive.purpose.home-urgency": "home urgency scoring",
+  "sensitive.purpose.rule-review": "rule recheck",
   "sensitive.purpose.other": "other",
   "sensitive.maskedOnce": "{time} hidden once",
   "sensitive.maskedMany":
@@ -1584,4 +1640,112 @@ export const messages = {
     "Clear all blocked-information records? Your conversations are not affected.",
   "sensitive.clearButton": "Clear",
   "sensitive.cleared": "Cleared.",
+  "review.settings.agents": "Connected agents",
+  "agents.title": "Connected agents",
+  "agents.intro":
+    "Create a connection for each other agent (for example Claude Code or Codex). Each connection has its own address and read ceiling. Pausing or revoking takes effect at once.",
+  "agents.rotateHint":
+    "The address contains this connection's key. If Cloudflare Logpush records the request path (the ClientRequestURI field), the key appears in those logs; rotate the key if you suspect a leak.",
+  "agents.rotateHintLink": "Logpush field reference",
+  "agents.name": "Name",
+  "agents.capabilities": "What the agent supports",
+  "agents.capability.mcp": "Can use MCP",
+  "agents.capability.command_hooks": "Can run command hooks",
+  "agents.capability.scheduled_tasks": "Can run scheduled tasks",
+  "agents.ceiling": "Can read up to",
+  "agents.ceiling.public": "Public",
+  "agents.ceiling.private": "Private",
+  "agents.ceiling.sensitive": "Sensitive",
+  "agents.push": "When it sends memories",
+  "agents.push.direct": "Save right away (undo anytime)",
+  "agents.push.ask": "Ask me first",
+  "agents.create": "Create connection",
+  "agents.address.title": "Connection address (shown only once)",
+  "agents.address.hint":
+    "Copy it into the agent's MCP settings. It will not be shown again after you leave this page; rotate the key if you lose it.",
+  "agents.copy": "Copy",
+  "agents.copied": "Copied",
+  "agents.status.active": "Active",
+  "agents.status.paused": "Paused",
+  "agents.status.revoked": "Revoked",
+  "agents.reported": "Reports itself as: {client}",
+  "agents.lastSeen": "Last used: {time}",
+  "agents.neverSeen": "Not used yet",
+  "agents.window":
+    "The numbers below cover the last {days} days ({from} to {to}, in your time zone).",
+  "agents.definitions": "How each number is counted",
+  "agents.definitionsText":
+    "Reads: calls to read tools, split by tool in brackets. Delivered: reads that returned at least one item. Empty: reads that found nothing. Automatic searches: searches the agent's program makes on every message (with the auto argument); the number after the slash is how many delivered something. Empty automatic searches are only counted, with no decision record. Model reads: reads without the auto argument. Memory pushes: calls to the memory push tools, including failed ones. Rule proposals: calls to the rule proposal tool, with refusals for exceeding the per-minute limit in brackets. Failed: calls from a recognised connection that errored or had invalid arguments. Rate-limited: tool calls (not rule proposals) refused for exceeding the per-minute limit; requests that are not tool calls, such as the connection handshake, also use the per-minute limit but are not counted here. Requests with a wrong key or no recognised connection count towards no connection.",
+  "agents.stat.reads": "Reads: {n}",
+  "agents.stat.byTool": "{tool} {n}",
+  "agents.stat.delivered": "Delivered: {n}",
+  "agents.stat.empty": "Empty: {n}",
+  "agents.stat.auto": "Automatic searches: {n} / delivered {delivered}",
+  "agents.stat.model": "Model reads: {n}",
+  "agents.stat.pushes": "Memory pushes: {n}",
+  "agents.stat.rules": "Rule proposals: {n} (refused for rate: {limited})",
+  "agents.stat.failed": "Failed: {n}",
+  "agents.stat.limited": "Rate-limited: {n}",
+  "agents.rename": "Rename",
+  "agents.save": "Save",
+  "agents.cancel": "Cancel",
+  "agents.pause": "Pause",
+  "agents.resume": "Resume",
+  "agents.rotate": "Rotate key",
+  "agents.revoke": "Revoke",
+  "agents.rotateConfirm":
+    "The old address stops working at once and the new one must go into the agent's settings. Continue?",
+  "agents.revokeConfirm": "The connection stops working for good and cannot be restored. Continue?",
+  "agents.rotateYes": "Rotate key",
+  "agents.revokeYes": "Revoke",
+  "agents.limits": "Limits and current use",
+  "agents.limit.connections":
+    "Connections: up to {value}, {used} in use (revoked ones not counted)",
+  "agents.limit.name": "Name: up to {value} characters; the longest current name has {used}",
+  "agents.limit.body":
+    "One request: up to {value} bytes (request sizes are not recorded, so only the limit is shown)",
+  "agents.limit.reads":
+    "Requests per connection per minute (automatic searches counted separately): up to {value}; the busiest connection used {used} this minute",
+  "agents.limit.hook":
+    "Automatic searches per connection per minute: up to {value}; the busiest connection used {used} this minute",
+  "agents.empty": "No connections yet. Enter a name above to create one.",
+  "agents.error": "Could not load or save connections. Try again shortly.",
+  "agents.weekly.title": "Connected agents",
+  "agents.weekly.window": "{from} to {to}",
+  "agents.weekly.empty": "No connections this week.",
+  "review.settings.devices": "Devices",
+  "devices.help": "Pair Himawari on an iPhone, Apple Watch or Mac by scanning a QR code.",
+  "devices.add": "Add device",
+  "devices.qrLabel": "Pairing QR code",
+  "devices.qrHelp":
+    "Scan this code in Himawari on the device. It works once, until {time}. The device then appears below and works only after you confirm it.",
+  "devices.empty": "No paired devices yet.",
+  "devices.listLabel": "Paired devices",
+  "devices.pendingNotice":
+    "A {kind} named “{name}” wants to pair. If you don't recognize it, remove it.",
+  "devices.revoked": "{kind}, removed",
+  "devices.pairingNumber":
+    "Check number {number}. Confirm only if your device shows the same number.",
+  "devices.confirm": "Confirm",
+  "devices.rename": "Rename",
+  "devices.name": "Device name",
+  "devices.save": "Save",
+  "devices.revoke": "Remove",
+  "devices.failed": "That didn't work. Refresh and try again.",
+  "devices.kind.iphone": "iPhone",
+  "devices.kind.watch": "Apple Watch",
+  "devices.kind.mac": "Mac",
+  "devices.limitsLabel": "Device limits",
+  "devices.limitsHelp":
+    "The server's limit for each kind of device data. Going over is rejected or handled as listed; nothing is silently cut.",
+  "devices.limit.requestBody": "Size of one request",
+  "devices.limit.uploadFile": "Size of one uploaded file",
+  "devices.limit.uploadExpanded": "Size of an upload after unpacking",
+  "devices.limit.perceptionBatch": "Records in one sensing batch",
+  "devices.limit.mirrorBatch": "Items in one sync batch",
+  "devices.limit.trackBatch": "Points in one location batch",
+  "devices.limit.prefetchEntries": "Prefetched entries kept on the device",
+  "devices.limit.prefetchBytes": "Size of the prefetch cache on the device",
+  "devices.limit.extractChars": "Characters in one extraction",
+  "devices.limit.nonces": "Request nonces kept per device",
 } satisfies MessageCatalog;

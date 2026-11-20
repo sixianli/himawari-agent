@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readGatewayConfig } from "../../scripts/model-review/gateway.mjs";
 import {
   API_ERROR_MESSAGE_MAX,
   apiErrorText,
@@ -23,6 +24,7 @@ import {
   COST_LIMIT_PER_MODEL_USD,
   checkGitArgs,
   checkProbeRequests,
+  DEFAULT_REVIEW_MODELS,
   envFilesInHistory,
   expectedTools,
   FOCUS_SENTENCE,
@@ -36,12 +38,14 @@ import {
   killProcessGroup,
   MIN_OUTPUT_TOKENS,
   MODEL_LENSES,
+  MODEL_OUTPUT_LIMITS,
   OPENCODE_KEPT_ENV,
   OPENCODE_LOCK_DIR,
   OPENCODE_VERSION,
   opencodeChildEnv,
   opencodeEnv,
   opencodeInstallDir,
+  outsideImports,
   parseArgs,
   prepareCopy,
   prepareRawDir,
@@ -56,16 +60,26 @@ import {
   REVIEWS_DIR,
   RULE_16_SENTENCE,
   rawDir,
+  readReviewModels,
   recordText,
   resolveCommits,
   retryAfterApiError,
   reviewConfig,
   reviewDir,
   reviewModel,
+  reviewModelsProblems,
   reviewQuestions,
   runOutcome,
+  SELF_CHECK_CACHE_ENV,
+  SELF_CHECK_CACHE_MAX_AGE_MS,
   SHELL_LOG_NAME,
   SUBSTITUTES,
+  selfCheckCacheDir,
+  selfCheckCacheHit,
+  selfCheckCacheLabel,
+  selfCheckCacheKey,
+  selfCheckCacheWrite,
+  selfCheckSteps,
   spentOf,
   substituteFor,
   summarizeEvents,
@@ -76,6 +90,7 @@ import {
 import { GUARD_ENV } from "../../scripts/model-review/spend-guard.mjs";
 import {
   expectAppendedTo,
+  firstChangedMessage,
   instructions,
   isWrapUp,
   lstatExists,
@@ -503,6 +518,61 @@ describe("opencode review output", () => {
   });
 });
 
+describe("opencode review model list", () => {
+  const valid = {
+    allowed: ["a/one", "a/two"],
+    default: ["a/one"],
+    substitutes: { "a/one": "a/two" },
+    lowDeferFromRound: 3,
+  };
+  const changed = (change) => Object.assign({}, valid, change);
+
+  it("[review models] reads the allowed, default and substitute models from the committed file", () => {
+    const config = readReviewModels();
+    expect(REVIEW_MODELS).toEqual(config.allowed);
+    expect(DEFAULT_REVIEW_MODELS).toEqual(config.default);
+    expect(SUBSTITUTES).toEqual(config.substitutes);
+    expect(DEFAULT_REVIEW_MODELS).toEqual(["opencode-go/deepseek-v4.1-flash"]);
+    for (const model of REVIEW_MODELS) {
+      const name = model.split("/").pop();
+      expect(MODEL_LENSES[name]).toEqual(expect.any(String));
+      expect(MODEL_OUTPUT_LIMITS[name]).toEqual(expect.any(Number));
+      expect(readGatewayConfig(undefined, REVIEW_MODELS).models[model]).toBeDefined();
+    }
+    expect(reviewModelsProblems(valid)).toEqual([]);
+    expect(reviewModelsProblems(changed({ default: valid.allowed, substitutes: {} }))).toEqual([]);
+  });
+
+  it("[review models] refuses a list that is empty, repeats, or names a model outside the allowed ones", () => {
+    const bad = [
+      [changed({ allowed: [] }), "allowed"],
+      [changed({ allowed: ["a/one", "a/one"] }), "allowed"],
+      [changed({ allowed: ["a/one", "b/one"], substitutes: {} }), "allowed.short-name-repeats"],
+      [changed({ allowed: ["one"] }), "allowed"],
+      [changed({ default: [] }), "default"],
+      [changed({ default: ["a/three"] }), "default"],
+      [changed({ default: "a/one" }), "default"],
+      [changed({ substitutes: { "a/one": "a/three" } }), "substitutes"],
+      [changed({ substitutes: { "a/one": "a/one" } }), "substitutes"],
+      [changed({ substitutes: undefined }), "substitutes"],
+      [changed({ lowDeferFromRound: undefined }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: 1 }), "lowDeferFromRound"],
+      [changed({ lowDeferFromRound: "3" }), "lowDeferFromRound"],
+      [null, "allowed"],
+    ];
+    for (const [config, problem] of bad) expect(reviewModelsProblems(config)).toContain(problem);
+    const dir = mkdtempSync(join(tmpdir(), "review-models-"));
+    try {
+      const path = join(dir, "review-models.json");
+      expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID unreadable");
+      writeFileSync(path, JSON.stringify(changed({ default: [] })));
+      expect(() => readReviewModels(path)).toThrow("REVIEW_MODELS_CONFIG_INVALID default");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("opencode review retry and substitute", () => {
   const failed = (apiError, usage = { cost: 0.01 }) => ({
     outcome: "api-error",
@@ -530,12 +600,13 @@ describe("opencode review retry and substitute", () => {
   const glm = REVIEW_MODELS[1];
   const later = { mode: "code-review", previous: "a".repeat(40), models: [deepseek] };
 
-  it("[substitute] lets GLM take a later code-review round only when DeepSeek's service refused", () => {
+  it("[substitute] lets GLM take a code-review round, the first included, only when DeepSeek's service refused", () => {
     expect(SUBSTITUTES).toEqual({ [deepseek]: glm });
-    expect(substituteFor({ ...later, runs: [run("api-error", busy)] })).toEqual({
-      model: glm,
-      for: deepseek,
-    });
+    for (const options of [later, { ...later, previous: undefined }])
+      expect(substituteFor({ ...options, runs: [run("api-error", busy)] })).toEqual({
+        model: glm,
+        for: deepseek,
+      });
     const none = [
       { ...later, runs: [run("ok", null)] },
       { ...later, runs: [run("timeout", null)] },
@@ -543,7 +614,6 @@ describe("opencode review retry and substitute", () => {
       { ...later, runs: [run("api-error", busy, "no-time")] },
       { ...later, runs: [run("api-error", busy, "no-budget")] },
       { ...later, runs: [run("api-error", busy, null)] },
-      { ...later, previous: undefined, runs: [run("api-error", busy)] },
       { ...later, mode: "plan-review", runs: [run("api-error", busy)] },
       { ...later, models: [glm], runs: [run("api-error", busy)] },
       {
@@ -1300,6 +1370,121 @@ describe("opencode review installed guard", () => {
     expect(ctypeOf({ LC_ALL: "", LC_CTYPE: "", LANG: "" })).toBe("");
   });
 
+  it("[self-check cache] only a pass for the same code, binary, mode and tools counts, and it expires", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-cache-"));
+    try {
+      const binary = join(root, "opencode");
+      writeFileSync(binary, "#!/bin/sh\necho one\n");
+      const env = { [SELF_CHECK_CACHE_ENV]: join(root, "cache") };
+      const key = selfCheckCacheKey({ binary, mode: "code-review", gateway: null });
+      expect(selfCheckCacheKey({ binary, mode: "code-review", gateway: null })).toBe(key);
+      expect(selfCheckCacheHit({ key, env })).toBe(false);
+      selfCheckCacheWrite({ key, now: 1000, env });
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(true);
+      expect(selfCheckCacheHit({ key, now: 1000 + SELF_CHECK_CACHE_MAX_AGE_MS - 1, env })).toBe(
+        true,
+      );
+      expect(selfCheckCacheHit({ key, now: 1000 + SELF_CHECK_CACHE_MAX_AGE_MS, env })).toBe(false);
+      expect(selfCheckCacheHit({ key, now: 500, env })).toBe(false);
+      expect(selfCheckCacheKey({ binary, mode: "plan", gateway: null })).not.toBe(key);
+      const withEnv = (extra) =>
+        selfCheckCacheKey({
+          binary,
+          mode: "code-review",
+          gateway: null,
+          env: { ...process.env, ...extra },
+        });
+      expect(withEnv({})).toBe(key);
+      expect(withEnv({ HTTPS_PROXY: "http://127.0.0.1:9" })).not.toBe(withEnv({}));
+      expect(withEnv({ HOME: join(root, "elsewhere") })).not.toBe(withEnv({}));
+      expect(withEnv({ TZ: "Pacific/Apia" })).not.toBe(withEnv({}));
+      expect(withEnv({ LC_ALL: "C" })).not.toBe(withEnv({ LC_ALL: "zh_CN.UTF-8" }));
+      writeFileSync(binary, "#!/bin/sh\necho two\n");
+      const changed = selfCheckCacheKey({ binary, mode: "code-review", gateway: null });
+      expect(changed).not.toBe(key);
+      expect(selfCheckCacheHit({ key: changed, now: 1000, env })).toBe(false);
+      writeFileSync(join(root, "cache", `${key}.json`), "not json");
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(false);
+      writeFileSync(join(root, "cache", `${key}.json`), JSON.stringify({ key: "x", at: 1000 }));
+      expect(selfCheckCacheHit({ key, now: 1000, env })).toBe(false);
+      expect(selfCheckCacheDir({ [SELF_CHECK_CACHE_ENV]: "off" })).toBeNull();
+      selfCheckCacheWrite({ key: "k".repeat(64), env: { [SELF_CHECK_CACHE_ENV]: "off" } });
+      expect(selfCheckCacheHit({ key, now: 1000, env: { [SELF_CHECK_CACHE_ENV]: "off" } })).toBe(
+        false,
+      );
+      expect(selfCheckCacheDir({})).toMatch(/himawari-review-selfcheck$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("[self-check cache] a cached pass probes only the first model and skips the guard, passthrough and failover probes; a full check runs all of them", () => {
+    const gateway = { install: {} };
+    const hit = selfCheckSteps({ cached: true, gateway });
+    expect(hit.models).toEqual(REVIEW_MODELS.slice(0, 1));
+    expect(hit.guardProbe).toBe(false);
+    expect(hit.passthroughProbe).toBe(false);
+    expect(hit.failoverProbe).toBe(false);
+    expect(hit.installCheck).toBe(true);
+    const hitDirect = selfCheckSteps({ cached: true, gateway: null });
+    expect(hitDirect.models).toEqual(REVIEW_MODELS.slice(0, 1));
+    expect(hitDirect.guardProbe).toBe(false);
+    expect(hitDirect.passthroughProbe).toBe(false);
+    expect(hitDirect.failoverProbe).toBe(false);
+    expect(hitDirect.installCheck).toBe(false);
+    const miss = selfCheckSteps({ cached: false, gateway });
+    expect(miss.models).toEqual(REVIEW_MODELS);
+    expect(miss.guardProbe).toBe(true);
+    expect(miss.passthroughProbe).toBe(true);
+    expect(miss.failoverProbe).toBe(true);
+    const direct = selfCheckSteps({ cached: false, gateway: null });
+    expect(direct.guardProbe).toBe(true);
+    expect(direct.passthroughProbe).toBe(false);
+    expect(direct.failoverProbe).toBe(false);
+    expect(direct.installCheck).toBe(false);
+  });
+
+  it("[self-check cache] scripts imported from outside the script folder are part of the key, and changing one changes it", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-selfcheck-imports-"));
+    try {
+      const dir = join(root, "model-review");
+      mkdirSync(dir);
+      mkdirSync(join(root, "ci"));
+      writeFileSync(
+        join(dir, "a.mjs"),
+        'import { x } from "../ci/helper.mjs";\nimport "./b.mjs";\n',
+      );
+      writeFileSync(join(dir, "b.mjs"), 'const y = await import("../shared/late.mjs");\n');
+      writeFileSync(join(root, "ci", "helper.mjs"), 'export { z } from "./deeper.mjs";\n');
+      expect(outsideImports(dir)).toEqual([
+        join(root, "ci", "deeper.mjs"),
+        join(root, "ci", "helper.mjs"),
+        join(root, "shared", "late.mjs"),
+      ]);
+      expect(
+        outsideImports(fileURLToPath(new URL("../../scripts/model-review", import.meta.url))),
+      ).toContain(
+        fileURLToPath(new URL("../../scripts/ci/verified-download.mjs", import.meta.url)),
+      );
+      const binary = join(root, "opencode");
+      writeFileSync(binary, "#!/bin/sh\necho one\n");
+      const keyOf = () =>
+        selfCheckCacheKey({ binary, mode: "code-review", gateway: null, scriptDir: dir });
+      const before = keyOf();
+      expect(keyOf()).toBe(before);
+      writeFileSync(
+        join(root, "ci", "helper.mjs"),
+        'export { z } from "./deeper.mjs";\nexport const v = 2;\n',
+      );
+      const afterHelper = keyOf();
+      expect(afterHelper).not.toBe(before);
+      writeFileSync(join(root, "ci", "deeper.mjs"), "export const z = 1;\n");
+      expect(keyOf()).not.toBe(afterHelper);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("[review env] the real self-check passes with secrets in the script's environment", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-env-"));
     try {
@@ -1924,4 +2109,39 @@ describe("opencode review wrap-up", () => {
       rmSync(slow, { recursive: true, force: true });
     }
   }, 120000);
+});
+
+describe("append-only failure message", () => {
+  it("points at the first differing character, even deep inside a long message", () => {
+    const long = "x".repeat(5000);
+    const earlier = {
+      messages: [
+        { role: "user", content: "a" },
+        { role: "tool", content: `${long}OLD` },
+      ],
+    };
+    const later = {
+      messages: [
+        { role: "user", content: "a" },
+        { role: "tool", content: `${long}NEW` },
+        { role: "user", content: "b" },
+      ],
+    };
+    const message = firstChangedMessage(earlier, later);
+    expect(message).toContain("message 1 of 2 changed (later request has 3)");
+    expect(message).toContain("first difference at character 5026");
+    expect(message).toContain("OLD");
+    expect(message).toContain("NEW");
+    expect(
+      firstChangedMessage(earlier, { messages: [...earlier.messages, { role: "user" }] }),
+    ).toBe("");
+  });
+});
+
+describe("selfCheckCacheLabel", () => {
+  it("names off, miss and hit for the ledger", () => {
+    expect(selfCheckCacheLabel({ cacheKey: "", cached: false })).toBe("off");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: false })).toBe("miss");
+    expect(selfCheckCacheLabel({ cacheKey: "k", cached: true })).toBe("hit");
+  });
 });

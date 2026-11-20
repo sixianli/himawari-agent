@@ -519,7 +519,7 @@ export function summarizeGatewayUsage(lines, config) {
       const price = priceOf(config, model);
       const usd =
         (required(line.in) * price.input +
-          (required(line.out) + tokens(line.reasoning)) * price.output +
+          required(line.out) * price.output +
           tokens(line.cache_read) * price.cache_read) /
         1e6;
       if (Number.isNaN(usd)) unreadable();
@@ -537,6 +537,68 @@ export function summarizeGatewayUsage(lines, config) {
     unattributed,
     unreadableByModel,
   };
+}
+
+export function gatewayTiming(lines, model) {
+  const group = `group/${groupName(model)}`;
+  const own = (lines ?? []).filter(
+    (line) => line && typeof line === "object" && line.req === group && line.effort !== "low",
+  );
+  if (own.length === 0) return null;
+  const number = (value) => (nonNegative(value) ? value : 0);
+  let cacheMisses = 0;
+  let missTokens = 0;
+  const previousContext = new Map();
+  for (const line of own) {
+    const answered = line.status >= 200 && line.status < 300;
+    if (!answered || typeof line.session !== "string" || line.session === "") continue;
+    const context = number(line.in) + number(line.cache_read);
+    const before = previousContext.get(line.session) ?? 0;
+    if (before > 0 && number(line.cache_read) < before / 2) {
+      cacheMisses += 1;
+      missTokens += number(line.in);
+    }
+    previousContext.set(line.session, context);
+  }
+  const sum = (field) => own.reduce((total, line) => total + number(line[field]), 0);
+  return {
+    requests: own.length,
+    modelMs: sum("ms"),
+    firstTokenMs: sum("ttft_ms"),
+    slowestMs: Math.max(...own.map((line) => number(line.ms))),
+    cacheMisses,
+    missTokens,
+  };
+}
+
+export function readGatewayRests(root) {
+  let text;
+  try {
+    text = readFileSync(join(root, "config", "magpie", "rests.json"), "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    return [`- unreadable:${error?.code ?? "read-failed"} - -`];
+  }
+  let rests;
+  try {
+    rests = JSON.parse(text);
+  } catch {
+    return ["- unreadable:bad-json - -"];
+  }
+  if (!rests || typeof rests !== "object" || Array.isArray(rests))
+    return ["- unreadable:not-a-map - -"];
+  return Object.entries(rests)
+    .filter(([, rest]) => rest && typeof rest === "object")
+    .map(([provider, rest]) =>
+      [provider, rest.why ?? "unknown", rest.status ?? "-", rest.until ?? "-"]
+        .map((part) =>
+          Array.from(String(part).replace(/[\s\p{Cc}\p{Cf}]+/gu, "_"))
+            .slice(0, 80)
+            .join(""),
+        )
+        .join(" "),
+    )
+    .sort();
 }
 
 export function readGatewayUsage(root) {
@@ -587,6 +649,7 @@ export function getJson(url, timeoutMs = 5000) {
   return new Promise((resolveGet) => {
     const request = http.get(url, { timeout: timeoutMs }, (response) => {
       let body = "";
+      response.setEncoding("utf8");
       response.on("data", (chunk) => {
         body += chunk;
       });
@@ -619,6 +682,7 @@ export function postJson(url, payload, timeoutMs = 60000) {
       },
       (response) => {
         let text = "";
+        response.setEncoding("utf8");
         response.on("data", (chunk) => {
           text += chunk;
         });
@@ -765,6 +829,7 @@ export async function startGateway({
     child.on("error", (error) => {
       spawnError = error.message;
     });
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr = `${stderr}${chunk}`.slice(-4000);
     });
@@ -792,6 +857,7 @@ export async function startGateway({
     child: () => child,
     usage: () => readGatewayUsage(root),
     stableUsage: () => readStableUsage(root),
+    rests: () => readGatewayRests(root),
   };
 }
 

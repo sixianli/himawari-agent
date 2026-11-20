@@ -4,7 +4,7 @@
 <a id="delivery-mode"></a>
 ## 交付模式
 
-在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。CI（持续集成，即每次推送后 GitHub Actions 自动跑的检查）按 [ADR 0176](docs/adr/0176-ci-on-ovh-vps.md) 在 CI VPS（Andy 在 OVH 租的一台只跑 CI 的云服务器）上的自托管 runner（装在自己机器上、替 GitHub 执行 CI 任务的程序）里运行，macOS 检查暂停；合并前 PR 最新提交上的 `ci/required` 必须是成功，本地的快速模式检查也仍是必过的门槛；草稿 PR 不跑 CI，CI 本身坏了、失败已确认与本 PR 无关时，按 Andy 2026-11-12 的长期授权不等 CI 直接合并，PR 描述写明失败原因；CI 因本 PR 的改动变红时先查先修（[ADR 0241](docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md)）。
+在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。合并前 PR 最新提交上的 `ci/required` 必须是成功；草稿 PR 不跑 CI、CI 本身坏了时可以不等 CI 合并的长期授权、CI 在哪台机器上跑，见[快速模式](.agents/instructions/delivery-mode.md#fast-mode)。
 
 <a id="product-vision"></a>
 ## 产品愿景
@@ -40,19 +40,27 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="prompt-prefix-append-only"></a>
 ## 发给模型的内容只追加
 
-设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.claude/rules/prompt-prefix.md](.claude/rules/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。每条做法的理由、一手来源和本项目的现状见 [模型请求的 KV 缓存规范](docs/kv-cache-guide.md)。`npm run check:prompt-prefix` 是阻断检查。
+设计或修改任何发给模型的上下文（系统提示、工具定义、历史、资料块、遮盖、压缩）之前，先读 [.agents/instructions/prompt-prefix.md](.agents/instructions/prompt-prefix.md)：已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。那份规则不在开局自动载入，只要动到上面这些内容就必须先读，不能靠自己判断“影响不大”而跳过。拿不准一个改动算不算动到这些内容时，问自己下面几个问题，只要有一个答“会”或“不确定”，就算动到了，先去读它：
+
+- 这个改动会不会让模型已经见过的请求开头变化？
+- 我加的值是不是每轮都一样？不一样的只能放在最后一条消息里。
+- 我是不是在存历史之前处理了消息？
+- 我加进去的列表或 JSON，顺序是不是固定的？
+- 这个改动会不会让同一对话换模型、换服务方，或者增删工具？
+
+每条做法的理由、一手来源和本项目的现状见 [模型请求的 KV 缓存规范](docs/kv-cache-guide.md)。`npm run check:prompt-prefix` 是阻断检查。
 
 <a id="model-review-before-merge"></a>
 <a id="working-with-opencode"></a>
 ## 和 OpenCode 协作：方案讨论和代码复核
 
-下面两个时机都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的 `opencode-go/deepseek-v4.1-flash` 和 `opencode-go/glm-5.3-flash` 看：方案讨论两个模型各看一遍；代码复核第 1 轮两个模型各看一遍，之后默认只用 DeepSeek。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
+方案讨论和合并前的代码复核，都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的模型看：默认只用 `opencode-go/deepseek-v4.1-flash`，只有 Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`（[ADR 0259](docs/adr/0259-review-models-default-to-deepseek.md)）。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 
-- 写代码之前要出方案时（大改动一定要）：先让两个模型在不看线程结论的情况下各自出方案（`--mode plan`），再请它们审核线程自己的方案（`--mode plan-review`）。线程把三方逐条比较，先替 Andy 判断采纳什么、不采纳什么、为什么，只把整合后的方案和真正要他拍板的几项交给他。
-- 合并 PR 之前：对最终提交做一次代码复核（`--mode code-review`），第 1 轮两个模型都跑，之后的轮次默认只用 DeepSeek。线程把成立的意见分成“会出错”和“可以更好”，“会出错”的再分中、高和低两档：中、高的要修改并对修改再复核，连续三轮没过就先停下报告 Andy，否则复核到没有中、高的“会出错”意见为止；低的照样修改、补测试，但改动够小时用 `--accept-low` 记进账本，不再复核，汇报里逐条列给 Andy 抽查；可以更好的不修改，列给 Andy，他说采纳才改，改完同样再复核。Andy 明确说跳过复核时，不论复核了几轮，都按那份文件用 `--accept-unreviewed` 记下他的原话后合并；他也可以随时叫停正在跑的复核或指定这一次用哪家服务方。Mac 本地线程不在本机跑复核，按那份文件把复核交给 himawari-cloud 里的云端线程，结果先经 `delegate.mjs check` 核对再采用。
-- 方案交给 Andy 之前（凡是会写进新 ADR 的整合方案）：用 `--mode plan-claims` 让低价模型把方案里每一句关于代码和仓库文档现状的话对着代码核一遍，线程逐条处理“不一致”和“找不到”；PR 新增了 ADR 而没有这一步的记录，`--assert-reviewed` 不通过。它不保证方案一定对，只保证每句现状说法都被对着代码看过、每条对不上的都有人处理过。做法和判定见[核对代码说法](.agents/instructions/model-review.md#plan-claims)，起因见[审核时直接采信代理自报的检查结果](docs/lessons.md#trust-reported-checks)。
+- 写代码之前要出方案时（大改动一定要）：先 `--mode plan` 让模型独立出方案，再 `--mode plan-review` 审核线程自己的方案；线程逐条比较后，只把整合后的方案和真正要 Andy 拍板的几项交给他（[方案讨论](.agents/instructions/model-review.md#plan-discussion)）。
+- 方案交给 Andy 之前（凡是会写进新 ADR 的整合方案）：`--mode plan-claims` 把方案里关于代码和文档现状的每句话对着代码核一遍；PR 新增了 ADR 而没有这一步的记录，`--assert-reviewed` 不通过（[核对代码说法](.agents/instructions/model-review.md#plan-claims)）。
+- 合并 PR 之前：`--mode code-review`，每一轮由主线程在后台跑 DeepSeek 复核，答案出来后交给子代理 `code-review-round` 在新的小上下文里判断和修改，复核到没有中、高的“会出错”意见为止。开始前先读一页的[代码复核流程卡](.agents/instructions/model-review-card.md)；意见怎么分级、几轮停下、低严重度怎么处理，见[代码复核](.agents/instructions/model-review.md#code-review)；Andy 说跳过、叫停或指定服务方时怎么做，见[Andy 怎样控制复核](.agents/instructions/model-review.md#owner-control)；Mac 本地线程不在本机跑复核，见[Mac 线程把复核交给云端线程](.agents/instructions/model-review.md#delegate)（[ADR 0263](docs/adr/0263-cheaper-claude-side-of-code-review.md)）。
 
-除 `plan-claims` 外，每次的提示里必须有那份文件列出的问题，包括「这个改动会不会改变模型已经见过的请求开头」（`plan-claims` 只核事实，提示里没有这些问题）。步骤、材料怎么写、费用先问门槛和只读限制，见 [.agents/instructions/model-review.md](.agents/instructions/model-review.md)。
+除 `plan-claims` 外，每次的提示里必须有[每次都要问的问题](.agents/instructions/model-review.md#checklist)，包括「这个改动会不会改变模型已经见过的请求开头」。
 
 <a id="proposal-premises"></a>
 ## 方案的前提
@@ -99,9 +107,7 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="pi-first-development-principle"></a>
 ## Pi 优先与工作区
 
-涉及模型连接、提供方、路由、流式输出、模型运行时、Agent 循环（模型一步步调用工具的那套流程）、工具、会话或扩展，或者要改依赖、导入 `@earendil-works/pi-*` 包、查看 `pi-mono` 源码之前，先读 [Pi 优先与工作区约定](.agents/instructions/pi-and-workspace.md)。
-
-在 Pi 上加功能或改接入点（会话、工具、工具调用前后的拦截、系统提示、发给模型的请求、模型服务方、压缩、往运行中插消息、中止）之前，必须先读 [Pi 二次开发规范](docs/pi-development-guide.md)：官方有写法就照官方写；只有官方没有好写法或官方写法有缺陷时才能自己设计，而且要先出方案给 Andy 看，他同意后才能写进代码。照官方写不免除“大改动先出方案”（见上文 [Andy 定的长期规则](#owners-standing-rules)）。规范里“现有的偏离”一节列出的写法不得照抄。决定见 [ADR 0203](docs/adr/0203-follow-pi-official-extension-patterns.md)。
+涉及模型连接、提供方、路由、流式输出、模型运行时、Agent 循环（模型一步步调用工具的那套流程）、工具、会话或扩展，或者要改依赖、导入 `@earendil-works/pi-*` 包、查看 `pi-mono` 源码之前，先读 [Pi 优先与工作区约定](.agents/instructions/pi-and-workspace.md)。在 Pi 上加功能或改接入点之前，必须先读 [Pi 二次开发规范](docs/pi-development-guide.md)：官方有写法就照官方写，偏离官方要先出方案经 Andy 同意（[ADR 0203](docs/adr/0203-follow-pi-official-extension-patterns.md)）；照官方写也不免除“大改动先出方案”。
 
 <a id="pushing-commits"></a>
 ## 推送提交
@@ -121,6 +127,11 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 ## 测试触发时机
 
 在决定运行哪些测试层、把测试层写进提交说明或添加测试之前，先读 [.agents/instructions/test-trigger-timing.md](.agents/instructions/test-trigger-timing.md)。它定义了第 0-5 层，以及共享钩子强制要求的 `Layer-0-tests:` 提交说明行。
+
+<a id="database-migrations"></a>
+## 数据库迁移
+
+新增或修改产品库的迁移之前，先读 [.agents/instructions/migrations.md](.agents/instructions/migrations.md)：编号用 `npm run migration:new` 生成，不再向协调者要编号，也不改共用的清单。决定见 [ADR 0265](docs/adr/0265-migrations-get-unique-ids-and-merge-in-any-order.md)。
 
 <a id="disk-space-hygiene"></a>
 ## 磁盘空间清理

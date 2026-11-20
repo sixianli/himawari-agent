@@ -11,6 +11,7 @@ import {
   parseArgs,
   parseUsage,
   resultLine,
+  DEFAULT_REVIEW_MODELS,
   REVIEW_MODELS,
   REVIEWS_DIR,
   reviewKey,
@@ -111,7 +112,8 @@ export function reviewArgv(task) {
     "--head",
     task.head,
     ...(task.previous ? ["--previous", task.previous] : []),
-    ...(task.models ? ["--models", task.models.join(",")] : []),
+    "--models",
+    (task.models ?? DEFAULT_REVIEW_MODELS.map(shortModel)).join(","),
     ...(task.round !== undefined ? ["--round", String(task.round)] : []),
     "--brief",
     task.brief,
@@ -132,7 +134,7 @@ export function delegationPrompt(task) {
   const command = `node scripts/model-review/opencode-review.mjs ${argv.join(" ")}`;
   const retryText =
     task.round === undefined
-      ? `只有一种情况可以补跑：某个模型的 REVIEW_RESULT 里 outcome 是 ${RETRYABLE_OUTCOMES.join(" 或 ")} 时，只对那一个模型补跑一次，命令是上面那条去掉 --models 后，加 --round <那一轮的序号> --models <那个模型的短名>。补跑照样受 --approved-usd 和脚本的先问门槛约束，遇到 BUDGET_NEEDS_APPROVAL 就停下报告。`
+      ? `只有一种情况可以补跑：某个模型的 REVIEW_RESULT 里 outcome 是 ${RETRYABLE_OUTCOMES.join(" 或 ")} 时，只对那一个模型补跑一次，命令是上面那条去掉 --models 和它后面的值之后，加 --round <那一轮的序号> --models <那个模型的短名>。补跑照样受 --approved-usd 和脚本的先问门槛约束，遇到 BUDGET_NEEDS_APPROVAL 就停下报告。`
       : "这条命令本身就是补跑，不再补跑。";
   return `你是 himawari-agent 的复核执行线程，只负责跑一次模型复核并把原始记录推回分支；你不做判断、不改代码。
 
@@ -160,7 +162,7 @@ ${
   task.replyTo
     ? `如果你有给其他会话发消息的工具，就给会话 ${task.replyTo} 发消息；没有就跳过，不要因此算失败，结果以推送到分支上的提交为准。\n开跑前发一行 REVIEW_DELEGATION_STARTED ${key}；\n结束后发一行 JSON：{"event":"REVIEW_DELEGATION_DONE","dir":"${key}","tip":"${task.tip}","exit":<脚本退出码>}，失败时 event 写 REVIEW_DELEGATION_FAILED 并加 "reason":"<错误码>"。\n`
     : ""
-}在你自己的最后回复里写：推送后的分支头提交、每个模型的 REVIEW_RESULT 行、GATEWAY_USAGE 行、REVIEW_SPENT_TOTAL 行。
+}在你自己的最后回复里写：推送后的分支头提交、每个模型的 REVIEW_RESULT 行、GATEWAY_USAGE 行、REVIEW_TIMING 行、全部 GATEWAY_REST 行、REVIEW_SPENT_TOTAL 行。
 
 ## 不许做的事
 
@@ -362,8 +364,8 @@ export function checkResult(task, { repo, fetch = true }) {
     added.some(
       (record) =>
         record.outcome === "ok" &&
-        ((record.model === model && !record.substitute) ||
-          (record.substitute && record.substituteFor === model)),
+        ((record.model === model && record.substitute === undefined) ||
+          (record.substitute === true && record.substituteFor === model)),
     );
   const notOk = expectedModels.filter((model) => !finished(model));
   const estimated = added.some((record) => record.costUnknown || record.inFlight);

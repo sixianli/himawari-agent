@@ -1,0 +1,12 @@
+# PR 497 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1、中高：完整 CI 的静态检查脚本不在保护范围，PR 可以让候选的 `npm run check` 变成空操作。不是这次改动引入的风险：PR 自己的 CI 本来就运行 PR 里的 npm run check，改坏检查脚本在原流程里同样变绿，队列没有放宽；要防的是复核，不是路径表。把 package.json 列进保护范围会让改依赖的 PR 全部进不了队列
+- 2（deepseek-v4.1-flash）成立，会出错，中高：### 2、中高：受保护路径检查漏掉“重命名移出”，可以把 CI 文件从保护目录移走而不触发拒收。读代码证实；merge-queue 和 test-scope 的 diff 都加 --no-renames，新增改名用例在旧代码上失败、新代码上通过；触发：PR 用 git mv 把 ci/ 或 scripts/ci 下的文件改名到别处；后果：git diff --name-only 只给新路径，队列不拒收；test-scope 也只看新路径
+- 3（deepseek-v4.1-flash）成立，会出错，低：### 3、中：main 在“合并前检查”和 merge API 之间变化时，合并会先发生，队列只能事后停下。代码无法消除，ADR 后果一节写明这个空当；触发：队列核对 main 后、调用合并接口前，有人往 main 推了提交；后果：这个 PR 合到新 main 上，队列事后发现树不一致才停下；判低理由：GitHub 合并接口没有锁 main 的参数，窗口只有一次 API 调用那么长，队列已会停下并留言；只能写进 ADR 作为已知限制
+- 4（deepseek-v4.1-flash）成立，会出错，中高：### 4、中：候选 CI 的基础设施失败会被当成 PR 失败，单个 PR 会被加 `merge-queue-failed` 移出。读代码证实；只有运行结论和 ci/required 都是 failure 才拆半或移出，其余丢掉候选重建，补了四种结论的用例；触发：候选的 CI 因 runner 启动失败、超时或 ci/required 没有结论而不是 success；后果：单个 PR 被加 merge-queue-failed 移出，PR 没错也要人工重新排队
+- 5（deepseek-v4.1-flash）不成立：### 5、中低：合并队列的复核门槛读取 PR 自己提交的 `.agents/reviews` 记录，PR 可以改写/伪造这份输入。复核记录在 PR 里、由 --assert-reviewed 核对，这是手动合并前已有的信任方式，队列没有放宽；ADR 后果一节补一句说明信任程度相同
+- 6（deepseek-v4.1-flash）成立，会出错，低：### 6、中低：`merge-queue-failed` 标签在仓库里没有创建步骤，`addLabel` 失败会中断整个 eject。addLabel 先建标签（已存在的 422 不算错）再加，补了接口用例；触发：仓库里还没有 merge-queue-failed 标签时第一次移出 PR；后果：加标签可能失败，移出流程中断，PR 没有留言；判低理由：只在第一次移出或进程中断这种少见时机触发，不会合错代码，改动小
+- 7（deepseek-v4.1-flash）成立，会出错，低：### 7、中低：dispatch/saveState 失败或进程中断会留下孤儿候选分支，复核子进程没有超时。建新候选前删掉状态外的 mq 分支，停下时删当前候选分支，复核子进程 5 分钟超时，各补了用例；触发：推了候选分支并触发 CI 后进程中断，或复核检查卡住；后果：留下状态外的 mq 分支；复核卡住时队列作业跑满 30 分钟；判低理由：只在第一次移出或进程中断这种少见时机触发，不会合错代码，改动小
+- 8（deepseek-v4.1-flash）成立，会出错，低：### 8、低：`scope` 的消费端只排除 `"related"`，不要求 `"full"`，缺字段或未来新值会被当作可用证据。改成只接受缺省或 full，补了 partial 的反向用例；触发：将来 summary 的 scope 出现 full、related 以外的值；后果：main 的轻量门槛把它当成完整证据
+- 9（deepseek-v4.1-flash）成立，可以更好：### 9、低：作者说法与代码不一致：`.md`/`.agents/` 不会退回全量，重命名和“孤儿分支”说法也过度概括。说的是复核材料措辞不准，ADR 和代码一致（.md 和 .agents 不触发全量），不改代码
+- 10（deepseek-v4.1-flash）成立，可以更好：### 10、低：测试缺少几条关键反向用例，已写的反向用例从代码路径看会命中对应分支，但我没有执行测试。缺的用例已随第 2、4、6、7、8 条补上；main 中途变化写成 ADR 已知限制

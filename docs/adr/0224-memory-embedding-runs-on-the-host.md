@@ -25,7 +25,7 @@ date: "2026-11-11"
 
 ## 背景
 
-按意思找记忆，要先把文字变成一串数字（向量，这一步叫嵌入，embedding），再比较两串数字有多接近。到这次为止，嵌入一律经 Vercel AI Gateway（Vercel 的模型网关）发给外网的 Qwen3-Embedding-8B：每次找记忆都要把主人的问题、每条记忆的正文发到第三方，一次往返约 0.8 到 1.4 秒（[BL-20261028-008](../archive/backlog/BL-20261028-008-local-memory-embedding.md)），断网或额度用完时只能退回关键词（[ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。
+按意思找记忆，要先把文字变成一串数字（向量，这一步叫嵌入，embedding），再比较两串数字有多接近。到这次为止，嵌入一律经 Vercel AI Gateway（Vercel 的模型网关）发给外网的 Qwen3-Embedding-8B：每次找记忆都要把主人的问题、每条记忆的正文发到第三方，一次往返约 0.8 到 1.4 秒（[BL-20261028-008](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)），断网或额度用完时只能退回关键词（[ADR 0223](0223-chat-memory-lookup-falls-back-to-keywords.md)）。
 
 产品愿景要求“自有优先、数据自持”。Andy 在实施清单 P3-1 里要求：先交候选报告，他选定后用本机模型替换外网服务、重建索引；外网服务保留为可选；嵌入请求照旧走统一出口（Himawari 所有发给模型的请求都经过的那一层，负责遮盖敏感信息和记账）；不动检索结构（向量、关键词、实体三路加融合排名）；写明检索索引的威胁模型。
 
@@ -84,7 +84,7 @@ date: "2026-11-11"
 - **上线：**生产机要先放好模型目录（约 600 MB，属于“往生产机放模型文件”，要 Andy 同意），上线包配置里写 `configTargets.embedding`；没放好时上线前检查会停。回滚到旧版本会恢复旧配置，回到网关模型，同样要重算一次向量。
 - **内存：**常驻多约 1.35 GB（生产机当时可用约 6.6 GB）。
 - **每日摘要：**`memory_episodes` 的向量补算只看有关键词条目的摘要（`JOIN memory_episode_terms`）。没有关键词条目的是只含 sensitive 内容、本来就不进索引的摘要，这是有意的，这次不改。
-- **遮盖用的固定文字清单不变：**出口遮盖会跳过提示词目录里不少于 24 个字符的固定文字（[KV 缓存规则第 11 条](../../.claude/rules/prompt-prefix.md#deterministic)），清单变了，含这段文字的老对话请求开头会变一次。新增的向量前缀里，除了原有的 Qwen3 查询指令（本来就在清单里），每段都短于 24 个字符（EmbeddingGemma 的查询前缀拆成两段写），清单和改动前完全一样，`prompt-rendering-golden.unit.test.ts` 检查向量前缀不往清单里加东西。
+- **遮盖用的固定文字清单不变：**出口遮盖会跳过提示词目录里不少于 24 个字符的固定文字（[KV 缓存规则第 11 条](../../.agents/instructions/prompt-prefix.md#deterministic)），清单变了，含这段文字的老对话请求开头会变一次。新增的向量前缀里，除了原有的 Qwen3 查询指令（本来就在清单里），每段都短于 24 个字符（EmbeddingGemma 的查询前缀拆成两段写），清单和改动前完全一样，`prompt-rendering-golden.unit.test.ts` 检查向量前缀不往清单里加东西。
 - **依赖：**新增 `onnxruntime-node` 1.30.0 和 `@huggingface/tokenizers` 0.2.0，版本写死；出包时只保留当前平台的 ONNX Runtime 二进制，去掉 CUDA 和 TensorRT 的部分。
 
 <a id="verification"></a>
@@ -104,7 +104,7 @@ date: "2026-11-11"
 
 ## 参考
 
-- [BL-20261028-008 找记忆的向量化改在生产机本机计算](../archive/backlog/BL-20261028-008-local-memory-embedding.md)
+- [BL-20261028-008 找记忆的向量化改在生产机本机计算](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)
 - [ADR 0075 自研记忆引擎](0075-self-built-memory-engine.md)
 - [ADR 0223 聊天找记忆时嵌入失败退回关键词](0223-chat-memory-lookup-falls-back-to-keywords.md)
 - [记忆检索索引的威胁模型](../memory-index-threat-model.md)

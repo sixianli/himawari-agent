@@ -19,17 +19,25 @@ import {
   type RunExecutionPolicy,
   type RunExecutionSource,
   RuntimeContinuationService,
+  type RuntimeProjectionRequest,
   type RuntimeRequest,
   type RuntimeToolPort,
   type SandboxExecutionRecord,
   SessionTraceRecorder,
   ThreadPromptBundleService,
+  type ToolRefusalConfiguration,
   type TraceStorePort,
   type WorkerRunPort,
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
+import {
+  type ContextExternalContent,
+  markRecalledExternalRecords,
+  runExternalOrigins,
+  threadExternalOrigins,
+} from "./context-external-content.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 import type { ProductionBackgroundCommands } from "./production-background-commands.js";
 import { ProductionBackgroundRuns } from "./production-background-runs.js";
@@ -75,6 +83,8 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
+  readonly toolRefusalLimits?: ToolRefusalConfiguration;
   readonly generateTitle?: (
     request: RuntimeRequest,
     prompt: string,
@@ -250,6 +260,15 @@ export function createProductionRunComposition(options: ProductionRunComposition
       const found = await timings.measure(request.runId, "memory.search", () =>
         options.memory.search(request),
       );
+      if (options.externalContent && request.runId)
+        await markRecalledExternalRecords({
+          marker: options.externalContent,
+          state: repository.productMemoryState(),
+          runId: request.runId,
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          memoryIds: found.map(({ id }) => id),
+        });
       if (options.memoryCapture && request.runId) {
         recalled.delete(request.runId);
         recalled.set(
@@ -316,7 +335,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     }),
     { form: "context.form" },
   );
-  const projection = timings.methods(
+  const resolvedProjection = timings.methods(
     new ContextProjectionService({
       ownerId,
       agentId,
@@ -335,6 +354,17 @@ export function createProductionRunComposition(options: ProductionRunComposition
       captureFinalAnswer: "pi.final_answer",
     },
   );
+  const externalContent = options.externalContent;
+  const projection: typeof resolvedProjection = externalContent
+    ? Object.assign(Object.create(resolvedProjection) as typeof resolvedProjection, {
+        resolveProjection: async (request: RuntimeProjectionRequest) => {
+          const resolved = await resolvedProjection.resolveProjection(request);
+          if (resolved.ownerAttachments)
+            await externalContent.mark(request.runId, "owner_attachment");
+          return resolved;
+        },
+      })
+    : resolvedProjection;
   const toolResultRecoveryParts = {
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }
@@ -425,6 +455,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         );
   const runtime = new PiAgentRuntimeAdapter({
     egress: options.egress,
+    ...(options.toolRefusalLimits ? { toolRefusalLimits: options.toolRefusalLimits } : {}),
     continuations,
     projection,
     ...(promptBundles ? { promptBundles } : {}),
@@ -523,6 +554,11 @@ export function createProductionRunComposition(options: ProductionRunComposition
         generations: repository.threadDistillationState(),
         state: repository.productMemoryState(),
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
+        ...(options.externalContent
+          ? {
+              externalOrigins: runExternalOrigins(externalContent),
+            }
+          : {}),
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
         reminders: repository.memoryReminders(),
@@ -535,6 +571,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         assertActive: () => authority.assertActive(),
         externalTag: () => options.egress.externalTag(),
         backlog: repository.memoryCaptureBacklog(),
+        unitOfWork: repository.unitOfWork(),
         generate: (request, prompt, onAdmitted, call) =>
           auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture", call),
         onAudit: memoryCaptureOptions.onAudit,
@@ -582,6 +619,11 @@ export function createProductionRunComposition(options: ProductionRunComposition
           reminders: repository.memoryReminders(),
           book: repository.memoryBook(),
           ledger: repository.decisionLedger(),
+          ...(options.externalContent
+            ? {
+                externalOrigins: threadExternalOrigins(externalContent),
+              }
+            : {}),
           ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
           payloads,
           protector,

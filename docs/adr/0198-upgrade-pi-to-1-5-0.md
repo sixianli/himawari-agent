@@ -41,7 +41,7 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 5. Pi 只在两处追加 `context_edit`（把失败的那次回答从模型上下文里拿掉）：自动重试（`agent-session.ts` 里 `_omitRecoveryAttempt(message)`，注释“Keep the failed attempt in raw history while durably omitting it from model projection.”），以及上下文溢出或截断恢复，后者紧接着压缩（同一文件，“Persistently omit the selected final attempt before post-run recovery compaction.”）。Himawari 一直关着 Pi 的自动重试：`packages/runtime-pi/src/pi-runtime-adapter.ts` 设置 `retry: { enabled: false, maxRetries: 0 }`。
 6. pi-durable 是实验性的：`packages/durable/README.md`（v1.5.0）“**Experimental.** The API changes without notice between releases.”
 7. 同类开源项目 OpenClaw 在 2026.5.22 把 Pi 的 Agent 运行时收回自己维护，并关掉 Pi 内置重试：`CHANGELOG/2026.5.22.md` 第 29 行“internalize the former Pi agent runtime into OpenClaw”、第 255 行“disable the embedded pi-coding-agent runtime auto-retry so OpenClaw's own retry and failover loop does not replay failed tool calls through a nested SDK retry”。
-8. 发给模型的内容只能往后追加，系统提示和工具按对话冻结：[.claude/rules/prompt-prefix.md](../../.claude/rules/prompt-prefix.md) 第 4、6 条。
+8. 发给模型的内容只能往后追加，系统提示和工具按对话冻结：[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 4、6 条。
 
 <a id="decision"></a>
 

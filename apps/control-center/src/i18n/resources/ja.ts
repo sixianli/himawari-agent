@@ -622,6 +622,9 @@ export const messages = {
   "governance.updateAssessment": "更新差分と評価",
   "governance.rollback": "ロールバック版",
   "governance.lastTransition": "最新のバージョン切り替え",
+  "governance.lastInvalidation": "直近の無効化",
+  "governance.lastInvalidationValue":
+    "{time}：スケジュール済みジョブ {count} 件を取り消しました（自動では復元されません）",
   "governance.rollbackBoundary": "副作用 / 製品状態のロールバック境界",
   "governance.notAvailable": "利用不可",
   "governance.capability": "機能",
@@ -705,6 +708,7 @@ export const messages = {
     "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
   "memory.page.add": "追加",
   "memory.page.addTitle": "Himawari に覚えてほしいこと",
+  "memory.page.autoCategory": "Himawari に任せる",
   "memory.page.addPlaceholder": "例：週末の朝 9 時前は通知しないで",
   "memory.page.added":
     "「{cat}」に記憶しました{pinned, select, true {。今後は毎回の会話に持っていきます} other {}}。違う場合は開いて直せます。",
@@ -746,7 +750,7 @@ export const messages = {
   "memory.page.changed": "{count} 回変更",
   "memory.page.source": "出どころ",
   "memory.page.origin":
-    "{o, select, owner {手動で追加} external {外部エージェントが提案し、あなたが確認して保存} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
+    "{o, select, owner {手動で追加} external {外部エージェントが提案し、あなたが確認して保存} external_direct {外部エージェントが送り、確認なしですぐ保存} import {インポート} deleted {元の会話は削除済み} reminder {リマインダーから作成、元の発言なし} other {記憶の整理}}",
   "memory.page.used": "最後に使用",
   "memory.page.notUsed": "まだ使っていません",
   "memory.page.history": "変更の流れ",
@@ -790,7 +794,7 @@ export const messages = {
   "memory.page.importAgain": "別の取り込み元",
   "memory.page.importSummary": "{all} 件中 {on} 件を選択",
   "memory.page.importFlag":
-    "{f, select, duplicate {記憶済み} sensitive {機微な情報のため既定でオフ} other {コーディングのメモのため既定でオフ}}",
+    "{f, select, duplicate {記憶済み} classifying {分類中…} unclassified {分類できなかったため非公開・既定でオフ} sensitive {機微な情報のため既定でオフ} similar {記憶済みの可能性があるため既定でオフ} unchecked {重複を確認できなかったため既定でオフ} other {コーディングのメモのため既定でオフ}}",
   "memory.page.importCommit": "選んだ {count} 件をインポート",
   "memory.page.importDone":
     "{count} 件をインポートしました。タイムラインからまとめて取り消せます。",
@@ -921,14 +925,55 @@ export const messages = {
   "rules.note":
     "これらのルールはモデルの記憶ではなく、プログラムが必ず守ります。取り消すと次のメール確認から適用されません。",
   "rules.type":
-    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} other {その他のルール}}",
+    "{t, select, mail_must_notify {必ず通知} mail_read_whole_thread {スレッド全体を先に読む} push_quiet_hours {通知の延期} other {その他のルール}}",
   "rules.needsReview": "元の記憶が変わったため再確認待ち（適用は継続中）",
+  "rules.suspended":
+    "停止中（適用していません）：元の記憶が変わり、このルールと合わなくなりました。確認待ちです",
+  "rules.resume": "適用を再開",
   "rules.notEnforced": "このルールを読み取れないため、いまは適用していません",
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
+  "rules.builtIn.title": "組み込みルール · {count} 件",
+  "rules.builtIn.note":
+    "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
+  "rules.builtIn.name":
+    "{id, select, action_preauthorize_owner_data {あなた自身のデータの変更：そのまま実行} action_preauthorize_own_task_cancel {自分で始めたタスクの停止：そのまま実行} action_preauthorize_owner_intent_confirmed {外部の内容を読んだ後、あなた自身が明確に求めた操作：そのまま実行} action_ask_after_external_content {外部の内容を読んだ後の操作：先に確認} action_refuse_background_after_external_content {バックグラウンドで外部の内容を読んだ後の操作：実行しない} other {その他の組み込みルール}}",
+  "rules.builtIn.when":
+    "{id, select, action_preauthorize_owner_data {例：リマインダーの設定やルールの保存。取り消せて、誰にも送らず、リスクは中程度で、この会話でウェブページやタスク出力などの外部の内容を読んでいない場合。} action_preauthorize_own_task_cancel {例：Himawari が自分で始めたバックグラウンドタスクを止める。それ以外のタスクは対象外です。} action_preauthorize_owner_intent_confirmed {例：ウェブページを読んだ後に、あなた自身の言葉で頼んだリマインダー。意図確認が有効で確信が十分高いときだけそのまま実行し、それ以外はカードで確認します。} action_ask_after_external_content {例：ウェブページやタスク出力を読んだ後にリマインダーを設定したりルールを変えたりするとき、カードで確認します。} action_refuse_background_after_external_content {例：定期実行や外部イベントで始まった処理が外部の内容を読んだ後にルールを変えようとした場合、実行せずカードも出さず、何をしようとしたかだけを記録します。あなたが同意したタスクは例外で、カードで確認します。} other {}}",
+  "rules.builtIn.examples": "例：当てはまる {hit} 件、当てはまらない {miss} 件",
+  "rules.builtIn.askFirst": "毎回確認する",
+  "review.title": "記憶の修正後に再確認 · {count} 件",
+  "review.note":
+    "直したり消したりした記憶を根拠にした記憶や、それから決めたルールがここに並びます。フラグを付けるだけで、記憶の文面は自動では変えません。停止中のルールは、あなたが決めるまで実行しません。",
+  "review.reason":
+    "{r, select, memory_edited {根拠の記憶が直されました} memory_superseded {根拠の記憶が新しい内容に置き換わりました} memory_removed {根拠の記憶が削除かアーカイブされました} memory_restored {根拠の記憶が元に戻されました} memory_reclassified {根拠の記憶の分類が変わりました} owner_reported {あなたが一緒に直すべきと指摘しました} other {根拠の記憶が変わりました}}",
+  "review.upstream": "根拠の記憶：{t}",
+  "review.upstreamGone": "根拠の記憶は削除済みです",
+  "review.truncated": "これを根拠にした記憶が多すぎて、上限を超えた分にはフラグを付けていません",
+  "review.open": "開いて直す",
+  "review.dismiss": "問題なし",
+  "review.suspendReason":
+    "{r, select, source_removed {停止中：元の記憶が削除されたか、ルールではなくなりました} no_longer_standing {停止中：元の記憶がもう継続的な指示として読めません} parameters_changed {停止中：元の記憶と今のルールが合いません} other {停止中}}",
+  "review.checking":
+    "元の記憶が変わりました。メール確認の前に自動で照合します（それまでは今まで通り実行）",
+  "review.notChecking":
+    "元の記憶が変わりましたが、自動で照合できません（元の記憶が見つからないか、照合が続けて失敗）。ルールは今まで通り実行されます。確認してください",
+  "review.condition":
+    "{f, select, senderDomains {送信元ドメイン} senderAddresses {送信元アドレス} phrases {含むフレーズ} words {含む単語} excludePhrases {除外フレーズ} other {条件}}：{v}",
+  "review.textGone": "この記憶の文章を読み出せません",
+  "review.rechecking":
+    "元の記憶がまた変わったため、メール確認の前にもう一度照合します（終わるまで停止のまま）",
+  "review.suggestion": "変更の提案：{s}",
+  "review.adopt": "提案を採用",
+  "review.confirmSuspended": "無効にする",
+  "review.restore": "元のルールに戻す",
+  "memory.page.missed": "ほかにも一緒に直すべき記憶がある",
+  "memory.page.missedPick": "一緒に直すべき記憶を選ぶ",
+  "memory.page.missedSubmit": "記録する",
+  "memory.page.missedSaved": "記録しました。再確認リストに表示されます",
   "rules.receipt.label": "常設ルールの控え",
   "rules.receipt.status":
-    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} other {常設ルール}}",
+    "{s, select, active {常設ルールにしました} proposed {ルールの提案です。「適用」を押すと有効になります} soft {好みとして記録しました（プログラムでは強制しません）} undone {取り消しました} rejected {不要としました。有効にはなりません} other {常設ルール}}",
   "rules.receipt.trials": "試算",
   "rules.receipt.trial": "{hit, select, true {該当する} other {該当しない}}：{from} · {subject}",
   "rules.receipt.replay":
@@ -937,6 +982,7 @@ export const messages = {
     "再計算は当時保存した内容で行います。「対応不要」と判断したメールは差出人と件名しか残っていないため、件数は推定で、多めにも少なめにもなりえます。",
   "rules.receipt.replayNone": "今回は再計算ができませんでしたが、ルールは有効になっています。",
   "rules.receipt.confirm": "適用",
+  "proposals.reject": "不要",
   "memory.page.carry.title": "毎回の会話に持っていく記憶",
   "memory.page.carry.summary": "{count} 件 · {limit} 字中 {used} 字を使用",
   "memory.page.carry.queued": "ほかに {count} 件が入りきりません",
@@ -945,7 +991,7 @@ export const messages = {
   "memory.page.carry.open": "見る・調整する",
   "memory.page.carry.meter": "使用中の文字数",
   "memory.page.carry.note":
-    "Himawari は回答の前に毎回これを読みます。ルール、プロフィール、好み、人間関係、目標、進行中のことから重要度の高い順に選び、{limit} 字まで入れます。健康やお金などの機微な記憶と予定は入れず、関係があるときだけ使います。記憶ごとに「毎回の会話に持っていく」をオン・オフでき、その選択が優先されます。",
+    "Himawari は回答の前に毎回これを読みます。ルール、プロフィール、好み、人間関係、目標、進行中のことから重要度の高い順に選び、{limit} 字まで入れます。健康やお金などの機微な記憶と予定はここには入れず、関係があるときだけ使います。これとは別に、日付が今後 7 日以内の記憶は、ここに入れないものも含めて、近い予定として持っていきます。記憶ごとに「毎回の会話に持っていく」をオン・オフでき、その選択が優先されます。",
   "memory.page.carry.none":
     "毎回持っていく記憶はまだありません。会話で話したプロフィール、好み、長期目標が自動で入ります。",
   "memory.page.carry.yours": "あなたが選択",
@@ -1078,13 +1124,13 @@ export const messages = {
     "このハードルールはあなたの言葉から作られました。元の記憶が変わりました。ルールはそのまま適用され、確認を待っています",
   "dailyReview.tag.captureRetrying": "記憶の抽出に失敗、再試行済み",
   "dailyReview.tag.captureQueued": "記憶の抽出に失敗、次の発言で再試行",
-  "dailyReview.tag.captureGaveUp": "このターンは記憶しきれなかった",
+  "dailyReview.tag.captureGaveUp": "このターンは記憶できなかった",
   "dailyReview.captureRetrying":
     "このターンから記憶を抽出するモデル呼び出しが一度失敗し、その場でもう一度試しました",
   "dailyReview.captureQueued":
     "このターンの記憶の抽出がうまくいかなかったため、次にメッセージを送ったときに再試行します",
   "dailyReview.captureGaveUp":
-    "このターンは 3 回再試行しても抽出できなかったか、抽出した内容を保存しきれなかったため（一部は保存されている場合があります）、これ以上は試しません",
+    "このターンは抽出と保存を 3 回試しても成功せず、何も保存されていません。これ以上は試しません",
   "dailyReview.hidden": "本文はここには表示しません",
   "dailyReview.fetched": "メール {count} 通を確認",
   "dailyReview.allFine": "このページは問題なし",
@@ -1126,18 +1172,19 @@ export const messages = {
   "decision.chain.rating": "あなたの評価",
   "decision.chain.unrated": "未評価",
   "decision.chain.kind":
-    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {その他}}",
+    "{k, select, proactive {自発的なリマインダー} memory_candidate {記憶を保存する判断} consolidation {記憶の整理} context_truncation {コンテキストの切り詰め} retrieval_degrade {記憶検索の縮退} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} device_action {デバイスの操作} other {その他}}",
   "decision.chain.rules": "該当したルール",
   "decision.chain.reviewRules": "再確認待ちのルール",
   "decision.chain.rule":
-    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：金額に関する語がある} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} other {{id}}}",
+    "{k, select, important_sender {重要なメールを逃さない：送信者が重要リストにある} public_domain {重要なメールを逃さない：官公庁・学校のドメインから} money_words {重要なメールを逃さない：お金に関わるメールとモデルが判断した} quiet_hours {通知しない時間帯：この時間は通知せず、終わってから送る} amount_threshold {少額は通知しない：金額が基準未満のメールは通知しない} mail_must_notify {あなたのルール：この種類のメールは必ず知らせる} mail_read_whole_thread {あなたのルール：スレッド全体を読んでから判断する} push_quiet_hours {あなたのルール：通知しない時間帯は、指定した通知を終わってから送る} other {{id}}}",
   "decision.chain.origin":
     "{o, select, owner_setting {あなたの設定} built_in {組み込みルール} other {未登録のルール}}",
   "decision.chain.ruleMails": "{count} 件のメールが該当",
   "decision.chain.ruleNeedsReview": "再確認待ち",
+  "decision.chain.ruleSuspended": "停止中",
   "decision.chain.ruleQuote": "あなたの言葉：{text}",
   "decision.chain.ruleWording":
-    "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {語の一覧：{text}} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",
+    "{k, select, important_sender {{empty, select, yes {重要リストは空です} other {重要リスト：{text}}}} public_domain {ドメインの末尾：{text}} money_words {モデルがメールごとに「支払う・引き落とされる・戻る・入金されるお金に関わるか」を判断し、はいなら該当} quiet_hours {{empty, select, yes {通知しない時間帯は未設定} other {時間帯：{text}}}} amount_threshold {基準：{text}} other {{text}}}",
   "decision.chain.ruleWordingMissing": "この版のルールの内容が見つかりません",
   "decision.chain.ruleSource": "出典：{source} · 第 {revision} 版",
   "decision.chain.ruleCurrent": "ルール名だけが記録されているため、現在の版を表示しています",
@@ -1402,7 +1449,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "確認済みの日から Gmail の記録が {rows} 件減ったが、すべて自分で消したもの",
   "weekly.check.rowsMissing":
-    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
+    "{day}の{kind, select, proactive {Gmail の確認} memory_candidate {記憶} consolidation {記憶の整理} context_truncation {回答に入れなかった古い内容} retrieval_degrade {記憶検索} external_read {外部プログラムによる記憶の読み取り} rule_review {ハードルールの再確認} web_push {通知の延期} memory_review {記憶修正後の再確認} limit_change {利用上限の変更} delivery_timing {リマインダーの配信時刻} proposal {次の一手の提案} device_action {デバイスの操作} other {判断}}の記録が確認時より減った：当時 {before} 件、今 {after} 件",
   "weekly.check.timeOk": "判断の記録の時刻の形式はすべて正しい",
   "weekly.check.timeBad": "判断の記録に形式の正しくない時刻が {rows} 件",
   "weekly.check.other":
@@ -1499,6 +1546,12 @@ export const messages = {
     "この 3 つのシグナルは、あなたが評価しなくても観察できることです。観察だけで、あなたの評価としては扱わず、上の評価の割合と混ぜて計算せず、しきい値を自動で変えることにも使いません。分母は今週、通知を送った判断です。同じ判断に同じシグナルが何度あっても 1 回と数えます。",
   "weekly.goRate": "「リマインダー」で採点する",
   "weekly.prereview.title": "モデル事前採点の一致率",
+  "weekly.correction.title": "記憶の修正に伴う再確認フラグの一致率",
+  "weekly.correction.agreed": "システムが {n} 件にフラグ、あなたが認めたのは {k} 件",
+  "weekly.correction.missed": "フラグ漏れ：あなたが一緒に直すべきと指摘し、フラグがなかったもの",
+  "weekly.correction.open": "再確認リストであなたの対応待ち",
+  "weekly.correction.note":
+    "累計の数字で、週ごとではありません。記憶を直したり消したりすると、それを根拠にした記憶とそれから決めたルールに再確認のフラグが付きます。再確認リストで対応したものだけを数えます。ルールで「提案を採用」か「無効にする」、記憶を直した場合は認めたことに、「元のルールに戻す」「問題なし」は認めなかったことになります。未対応は数えません。対応済みが 5 件未満のときはサンプル不足とだけ表示します。",
   "weekly.prereview.empty": "今週は、モデルの事前採点とあなたの採点が両方ある判断がありません。",
   "weekly.prereview.emptyCurrent":
     "今週は現在のモデルとプロンプトの版による事前採点がまだありません。",
@@ -1556,6 +1609,8 @@ export const messages = {
   "sensitive.purpose.mail-judgment": "メールの判定",
   "sensitive.purpose.action-review": "操作の確認",
   "sensitive.purpose.review-prereview": "モデルの事前採点",
+  "sensitive.purpose.home-urgency": "ホームの緊急度採点",
+  "sensitive.purpose.rule-review": "ルールの再確認",
   "sensitive.purpose.other": "その他",
   "sensitive.maskedOnce": "{time} 1 回隠しました",
   "sensitive.maskedMany": "{time} 最初に隠し、その後の {later} 回の送信でも隠しました",
@@ -1569,4 +1624,110 @@ export const messages = {
   "sensitive.clearConfirm": "ブロック記録をすべて消去しますか？会話そのものには影響しません。",
   "sensitive.clearButton": "消去",
   "sensitive.cleared": "消去しました。",
+  "review.settings.agents": "接続した agent",
+  "agents.title": "接続した agent",
+  "agents.intro":
+    "ほかの agent（Claude Code、Codex など）ごとに接続を作ります。接続ごとに専用のアドレスと読み取りの上限があります。一時停止と取り消しはすぐに効きます。",
+  "agents.rotateHint":
+    "アドレスにはこの接続の鍵が含まれます。Cloudflare の Logpush がリクエストのパス（ClientRequestURI フィールド）を記録していると、鍵がログに残ります。漏れた疑いがあれば鍵を作り直してください。",
+  "agents.rotateHintLink": "Logpush のフィールド説明",
+  "agents.name": "名前",
+  "agents.capabilities": "相手ができること",
+  "agents.capability.mcp": "MCP を使える",
+  "agents.capability.command_hooks": "コマンドフックを実行できる",
+  "agents.capability.scheduled_tasks": "定期タスクを実行できる",
+  "agents.ceiling": "読める範囲の上限",
+  "agents.ceiling.public": "公開",
+  "agents.ceiling.private": "個人",
+  "agents.ceiling.sensitive": "機微",
+  "agents.push": "メモリーを送ってきたとき",
+  "agents.push.direct": "すぐ保存（いつでも取り消せる）",
+  "agents.push.ask": "先に確認する",
+  "agents.create": "接続を作成",
+  "agents.address.title": "専用アドレス（表示は今回だけ）",
+  "agents.address.hint":
+    "コピーして相手の MCP 設定に貼ってください。このページを閉じると二度と表示されません。忘れたら鍵を作り直してください。",
+  "agents.copy": "コピー",
+  "agents.copied": "コピーしました",
+  "agents.status.active": "使用中",
+  "agents.status.paused": "一時停止中",
+  "agents.status.revoked": "取り消し済み",
+  "agents.reported": "自己申告：{client}",
+  "agents.lastSeen": "最後の利用：{time}",
+  "agents.neverSeen": "まだ使われていません",
+  "agents.window": "以下の数字は直近 {days} 日間（{from}〜{to}、あなたのタイムゾーン）です。",
+  "agents.definitions": "各数字の数え方",
+  "agents.definitionsText":
+    "読み取り：読み取りツールの呼び出し回数（括弧内はツール別）。内容あり：1 件以上返した読み取り。空振り：何も見つからなかった読み取り。自動検索：相手のプログラムが毎回自動で行う検索（auto 引数つき）、スラッシュの後は内容を返した回数。空振りの自動検索は数えるだけで判断の記録は残しません。モデルの呼び出し：auto 引数なしの読み取り。送られた記憶：記憶を送るツールの呼び出し回数（失敗も含む）。ルールの提案：ルール提案ツールの呼び出し回数、括弧内は 1 分あたりの上限を超えて断った回数。失敗：接続は特定できたがエラーか引数不正だった呼び出し。制限超過：ルールの提案を除き、ツール呼び出しが 1 分あたりの上限を超えて断られた回数。接続のハンドシェイクなどツール呼び出しでないリクエストも 1 分あたりの上限を使いますが、この数には含めません。鍵が違う、接続を特定できないリクエストはどの接続にも数えません。",
+  "agents.stat.reads": "読み取り {n} 回",
+  "agents.stat.byTool": "{tool} {n}",
+  "agents.stat.delivered": "内容あり {n} 回",
+  "agents.stat.empty": "空振り {n} 回",
+  "agents.stat.auto": "自動検索 {n} 回 / 内容あり {delivered} 回",
+  "agents.stat.model": "モデルの読み取り {n} 回",
+  "agents.stat.pushes": "送られた記憶 {n} 回",
+  "agents.stat.rules": "ルールの提案 {n} 回（頻度超過で拒否 {limited} 回）",
+  "agents.stat.failed": "失敗 {n} 回",
+  "agents.stat.limited": "制限超過 {n} 回",
+  "agents.rename": "名前を変更",
+  "agents.save": "保存",
+  "agents.cancel": "キャンセル",
+  "agents.pause": "一時停止",
+  "agents.resume": "再開",
+  "agents.rotate": "鍵を作り直す",
+  "agents.revoke": "取り消す",
+  "agents.rotateConfirm":
+    "作り直すと古いアドレスはすぐ使えなくなり、新しいアドレスを相手の設定に入れる必要があります。続けますか？",
+  "agents.revokeConfirm": "取り消すとこの接続は二度と使えず、元に戻せません。続けますか？",
+  "agents.rotateYes": "作り直す",
+  "agents.revokeYes": "取り消す",
+  "agents.limits": "上限と現在の使用量",
+  "agents.limit.connections": "接続数：最大 {value}、使用中 {used}（取り消し済みは数えません）",
+  "agents.limit.name": "名前：最大 {value} 文字、今いちばん長い名前は {used} 文字",
+  "agents.limit.body":
+    "1 回のリクエスト：最大 {value} バイト（リクエストの大きさは記録しないため上限だけを表示）",
+  "agents.limit.reads":
+    "接続ごとの 1 分あたりのリクエスト（自動検索は別枠）：最大 {value} 回、この 1 分で最も多い接続は {used} 回",
+  "agents.limit.hook":
+    "接続ごとの 1 分あたりの自動検索：最大 {value} 回、この 1 分で最も多い接続は {used} 回",
+  "agents.empty": "まだ接続がありません。上で名前を入れると作れます。",
+  "agents.error": "接続を読み込めないか保存できませんでした。少し後でもう一度試してください。",
+  "agents.weekly.title": "接続した agent",
+  "agents.weekly.window": "{from}〜{to}",
+  "agents.weekly.empty": "この週は接続がありません。",
+  "review.settings.devices": "デバイス",
+  "devices.help": "iPhone・Apple Watch・Mac の Himawari で QR コードを読み取ってペアリングします。",
+  "devices.add": "デバイスを追加",
+  "devices.qrLabel": "ペアリング用 QR コード",
+  "devices.qrHelp":
+    "デバイスの Himawari でこのコードを読み取ってください。{time} まで 1 回だけ使えます。読み取ったデバイスは下に表示され、「確認」を押すまで使えません。",
+  "devices.empty": "ペアリング済みのデバイスはまだありません。",
+  "devices.listLabel": "ペアリング済みのデバイス",
+  "devices.pendingNotice":
+    "「{name}」という {kind} がペアリングを求めています。心当たりがなければ削除してください。",
+  "devices.revoked": "{kind}・削除済み",
+  "devices.pairingNumber":
+    "確認番号 {number}：デバイスの表示と同じ場合だけ「確認」を押してください。",
+  "devices.confirm": "確認",
+  "devices.rename": "名前を変更",
+  "devices.name": "デバイス名",
+  "devices.save": "保存",
+  "devices.revoke": "削除",
+  "devices.failed": "操作できませんでした。再読み込みしてもう一度お試しください。",
+  "devices.kind.iphone": "iPhone",
+  "devices.kind.watch": "Apple Watch（腕時計）",
+  "devices.kind.mac": "Mac",
+  "devices.limitsLabel": "デバイスの上限",
+  "devices.limitsHelp":
+    "サーバーがデバイスに設けている上限です。超えた場合は拒否などの決まった扱いになり、黙って切り捨てることはありません。",
+  "devices.limit.requestBody": "1 回のリクエストのサイズ",
+  "devices.limit.uploadFile": "アップロード 1 ファイルのサイズ",
+  "devices.limit.uploadExpanded": "アップロードの展開後のサイズ",
+  "devices.limit.perceptionBatch": "センシング 1 回分の件数",
+  "devices.limit.mirrorBatch": "同期 1 回分の件数",
+  "devices.limit.trackBatch": "位置情報 1 回分の点数",
+  "devices.limit.prefetchEntries": "デバイスに先読みしておく件数",
+  "devices.limit.prefetchBytes": "デバイスの先読みキャッシュのサイズ",
+  "devices.limit.extractChars": "1 回の抽出の文字数",
+  "devices.limit.nonces": "デバイスごとに保持するリクエスト乱数の数",
 } satisfies MessageCatalog;

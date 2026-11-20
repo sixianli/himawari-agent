@@ -116,6 +116,7 @@ date: "2026-10-26"
   89. [其他 agent 往记忆里写东西，确认框弹不出来怎么办：先存成“待确认”，主人在自己的界面里批](#case-external-memory-proposals)
   90. [让模型替主人先打一遍分，什么时候才敢少给主人看：一致率按区间下限算，还要比瞎猜准](#case-model-prereview)
   91. [对外开了 MCP 入口，别的 agent 却未必来读来存：补上触发和身份，把 Himawari 做成记忆中心](#case-memory-hub)
+  92. [改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停](#case-correction-propagation)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -137,7 +138,7 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[真模型跑 Jarvis Test](#case-jarvis-test-evals)、[找记忆的向量化绕路](#case-memory-embedding-route)、[新消息被当成档案的一行](#case-owner-material-position)、[记忆搜索没有相关度门槛](#case-memory-relevance-threshold)、[检索合并后怎么划“相关”的线](#case-relevance-cutoff)、[记忆变化历史完整保留](#case-memory-history)、[档案改成“每次对话都带上”开关](#case-carried-memories)、[用真实记忆每周评测](#case-real-memory-eval)、[其他 agent 写记忆先待确认](#case-external-memory-proposals)、[别的 agent 共用一个记忆中心](#case-memory-hub)、[改记忆后沿依据链标待重审](#case-correction-propagation) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[文档技能：提示里一行索引](#case-document-tools)、[工具隔离架构](#case-tool-isolation)、[长命令转后台、跑完另起一轮汇报](#case-background-bash)、[并行搜索各要一次审批](#case-approval-stall)、[命令和主服务断联](#case-command-disconnect)、[执行进程卡住没人发现](#case-command-hang-heartbeat)、[对话并发](#case-concurrent-dispatch) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user)、[命令可写工作目录并留档](#case-bash-workspace-write)、[生产机防火墙](#case-prod-firewall)、[最低 TLS 改 1.2](#case-min-tls)、[不放宽安全策略显示 Word](#case-file-preview)、[发给模型的敏感信息统一遮盖](#case-model-egress-redaction)、[自己写的指令不该被当成外来内容检查](#case-trusted-prompt-text)、[沙箱保护不能静默失效](#case-srt-locked-seccomp-helper) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[做 Word 要 50 秒：服务器没装文档库](#case-document-tools)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline)、[发送后先上屏](#case-optimistic-send)、[找记忆的向量化绕路](#case-memory-embedding-route)、[启动时逐个查权限](#case-startup-permission-audit)、[工具前后空等](#case-tool-gap-host-check)、[简单问题也要 10 秒](#case-conversation-speed)、[回答写完才整块出现](#case-streaming-answers)、[提前收尾抢掉迟到结果恢复](#case-unknown-settle-vs-late-recovery) |
@@ -205,7 +206,7 @@ date: "2026-10-26"
 - ✅ SQLite FTS5 文档（[sqlite.org/fts5.html](https://www.sqlite.org/fts5.html)）：“A contentless FTS5 table is created by setting the "content" option to an empty string.”，并且“It is also possible to create custom tokenizers for FTS5.”。我们用的“无内容索引 + 自定义分词”都是官方支持的用法。
 - ✅ Generative Agents（[arXiv 2304.03442](https://arxiv.org/abs/2304.03442)）：检索时“scores all memories as a weighted combination of the three elements”（新近度、重要度、相关度），另有“reflection, which synthesizes memories into higher-level inferences over time”。我们的“重要度 + 新鲜度”加权和“整理记忆”分别对应这两点。
 - ✅ Letta 文档（[Memory & dreaming](https://docs.letta.com/configuration/memory)）：“Dreaming uses background subagents to review recent conversations, consolidate useful lessons, and update memory without interrupting your active work.”，触发时机是完成一定步数后或上下文被压缩时。我们改成每天固定整理一次，并且每处改动可撤销。
-- 📎 自研记忆提案（[已归档的提案](archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
+- 📎 自研记忆提案（[已归档的提案](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
 
 **对比与取舍**
 
@@ -1403,7 +1404,7 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 **相关 ADR/PR**
 
-[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog `docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md`、`BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、`BL-20261026-007-enable-bark-reminder-push-in-production.md`；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
+[ADR 0082](adr/0082-mobile-pwa-push-before-native-app.md)；[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)（取代 ADR 0081）；Backlog [BL-20261026-004-production-cloudflare-entry-for-owner-phone.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)、`docs/backlog/BL-20261026-005-home-screen-web-app-and-web-push.md`、`BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md`、[BL-20261026-007-enable-bark-reminder-push-in-production.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md)；Bark 推送实现提交 `f73b0b7`；评估文档 <https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
 
 **面试 30 秒版**
 
@@ -1465,7 +1466,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0084](adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
+[ADR 0084](adr/0084-himawari-identity-system-prompt.md)；[原生运行历史规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)（2026-10-26 补充）；提交 `d30d59c`（原做法）；发现问题的 [PR #39](https://github.com/sixianli/himawari-agent/pull/39)。
 
 **面试 30 秒版**
 
@@ -1595,7 +1596,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
@@ -1666,7 +1667,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 - 整次出包时间：6 分 26 秒（385.7 秒），原来约 49 分钟到 1 小时，目标 15–20 分钟。来源：2026-10-26 第六次 Mac 只出包演练的 `PACKET_STEP` 输出（提交 `500817f`，数据库 56 → 57，包已冻结，没有上线）。分步：读生产 14.8 秒，S0 读回到 22.3 秒，Hermes 构建约 4 分 19 秒（到 284.9 秒），取回材料到 320.8 秒，渲染到 321.5 秒，17 项检查到 371.6 秒，网页验收和检查并行、到 372.5 秒已完成，冻结到 385.7 秒。最大的一块是 Hermes 构建。
 - 停服时间：第十三次真正上线（2026-10-26，包 `2026-10-26-thirteenth-change-packet-05`，提交 `d39e7a9`）实测 4 分 28 秒：23:24:26.6Z 服务停止，23:28:54.4Z 新版本报告就绪，和推算的约 4 分钟相符（来源：生产服务日志）。
 - 第十三次上线各步耗时（`deploy.sh` 的 `DEPLOY_STEP_START` 时间）：上线前检查 2 秒，传包 4 分 01 秒，安装 2 分 11 秒，验收 7 分 50 秒，以上都在停服前；停服 10 秒，复制数据库 20 秒，发布材料 3 秒，确定绑定 8 秒，签名 21 秒，运行保护 35 秒，读回 14 秒，查数据库状态 6 秒，写配置并升库 15 秒，升级能力目录 38 秒，切换启动 2 分 17 秒，最后读回约 10 秒。出包 414.8 秒，上线全程约 19 分钟。
-- 第十三次第一次上线停在验收：上线前检查只要求空闲不少于包大小的 2 倍（当时 11.17 GB 通过），装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停；Andy 同意删掉第一到第九版的旧临时目录（17.6 GB）后第二次成功。改进记在 [BL-20261027-001](backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](backlog/BL-20261027-002-prune-production-release-leftovers.md)。
+- 第十三次第一次上线停在验收：上线前检查只要求空闲不少于包大小的 2 倍（当时 11.17 GB 通过），装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停；Andy 同意删掉第一到第九版的旧临时目录（17.6 GB）后第二次成功。改进记在 [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md)。
 - 演练本身挡住的问题：前五次演练都在出包阶段失败，生产一次都没停：上传目录不在 Hermes 包装脚本允许的范围、上传前目录还没建、升库检查用了测试机上过期的构建（只认 51 个迁移）、Hermes 登录默认文件权限 `umask 002` 让检查自己建的目录被判不安全、网页验收缺锁定版本的 Python 和 `fd` 工具、验收测试还在找改版前记忆页的文字。每一处都先在云端复现、加测试再修，后两类的前置条件改成出包第一步约 10 秒内检查。
 - 检查耗时：Hermes 上 17 项检查从约 469 秒降到约 50 秒。最慢的 `verify-raw-copy-fixtures.mjs` 从 457.7 秒降到 22.5 秒，原因是它的临时目录原来在 Hermes 的 `/data` 盘上，复制时每个文件都要落盘同步；改到 `/tmp` 后变快（第五、六次演练的逐项秒数）。同一项在云端容器里只要 2.9 秒。
 
@@ -1679,7 +1680,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **后续（2026-10-27）：同一次出包又卡了两处，都是“合并前没人跑出包才跑的检查”**
 
-- 构建缺依赖：第十四版第一次出包在 Hermes 构建一步失败（`HERMES_BUILD_FAILED BUILD_NOT_PASSED`）。PR #49 新加了 `web-push` 依赖，但 Hermes 测试目录里装好的依赖还是旧的，`scripts/delivery-mode/hermes/build-candidate.sh` 只切到新提交就构建，不会因为 `package-lock.json` 变了而重装。手动跑 `scripts/ci/install-dependencies.mjs` 后才过。改进记在 [BL-20261027-003](backlog/BL-20261027-003-build-candidate-reinstall-dependencies-on-lockfile-change.md)。
+- 构建缺依赖：第十四版第一次出包在 Hermes 构建一步失败（`HERMES_BUILD_FAILED BUILD_NOT_PASSED`）。PR #49 新加了 `web-push` 依赖，但 Hermes 测试目录里装好的依赖还是旧的，`scripts/delivery-mode/hermes/build-candidate.sh` 只切到新提交就构建，不会因为 `package-lock.json` 变了而重装。手动跑 `scripts/ci/install-dependencies.mjs` 后才过。改进记在 [BL-20261027-003](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-003-build-candidate-reinstall-dependencies-on-lockfile-change.md)。
 - 走查找不到输入框：修好夹具序号后，网页走查失败（`HERMES_WALKTHROUGH_FAILED VITEST_EXIT 1`）。PR #48 改了输入框的提示文字，走查测试 `test/integration/product-path-browser.test.ts` 还按旧文字找输入框。这条测试只在出包时跑，改界面的 PR 合并前没人跑它。[PR #54](https://github.com/sixianli/himawari-agent/pull/54) 改成按无障碍名称“消息草稿”找。改进记在 [BL-20261027-004](backlog/BL-20261027-004-ui-pr-runs-release-walkthrough.md)、[BL-20261027-005](backlog/BL-20261027-005-walkthrough-stable-locators.md)。
 - 教训：出包阶段的检查拦住了这三处（连同上面的序号问题），生产都没停；但每处都要多改一个 PR、多出一次包。只在出包时才跑的检查，要么在环境变化时自己补齐前提（依赖），要么在会影响它的 PR 合并前就跑（走查）；测试定位界面元素用稳定的名字，不用给人看的文案。
 
@@ -1895,7 +1896,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
 
-网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
 
 取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
 
@@ -2231,7 +2232,7 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 
 **相关 ADR/PR**
 
-[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
+[ADR 0098](adr/0098-move-long-bash-commands-to-background.md)；PR #63；[BL-20261027-011](backlog/BL-20261027-011-background-command-live-output.md)、[BL-20261027-012](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-012-background-commands-outlive-turn.md)（已完成）；相关：[BL-20261016-003](backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)、[工具隔离架构](#case-tool-isolation)。
 
 **面试 30 秒版**
 
@@ -2422,7 +2423,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
+[ADR 0100](adr/0100-conversation-more-panel-files-and-background-commands.md)、[控制中心 Spec 的 v8 增补](execution/specs/2026-09-15-control-center-v4-design.md#v8-more-panel)、[实施计划](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-10-28-file-delivery-and-more-panel-plan.md)、[ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md)、[ADR 0097](adr/0097-bash-writes-workspace-with-change-ledger.md)；PR #63（后台命令）、本设计的文档 PR 见分支 `claude/project-thread-3hdzxk`。
 
 **面试 30 秒版**
 
@@ -2829,7 +2830,7 @@ Agent 一轮里会跑后台命令、写出文件，这些都是附属结果，�
 
 **相关 ADR/PR**
 
-PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
+PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，没有新 ADR。改成本机模型这一步 Andy 2026-10-28 决定以后再做，记为 [BL-20261028-008](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/backlog/BL-20261028-008-local-memory-embedding.md)，动手时另写 ADR。
 
 **面试 30 秒版**
 
@@ -5243,7 +5244,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **我们的方案**
 
-历史存实际发出去的那条消息，删掉换回原话的函数；每轮变化的时间和资料仍只放最后一条消息，并在资料块开头加一句「更早的消息里附的资料只反映当时」。再加四道防线，让别的线程不再犯：①`npm run check:prompt-prefix` 阻断检查：真实 Pi 适配器加真实出口遮盖对回环服务跑多轮对话（工具调用、搜索、银行卡号遮盖、附件长文本、每轮变化的记忆和时间），逐字节检查后一次请求以前一次为开头，三条反向用例（改写历史、系统提示带每轮变化的值、检查器自己对删除重排的判断）必须失败；②`AGENTS.md` 加硬规则，规则全文在 `.claude/rules/prompt-prefix.md`；③生产监控：后续轮次命中率低于 50% 写日志 `cache.follow_up_low_hit`，命中率报告脚本加 `--by turn`；④双模型复核问题清单加「是否改变已发前缀」。复用 Pi：保存历史仍走 Pi 会话的 `message_end` 快照，没有自建消息转换。
+历史存实际发出去的那条消息，删掉换回原话的函数；每轮变化的时间和资料仍只放最后一条消息，并在资料块开头加一句「更早的消息里附的资料只反映当时」。再加四道防线，让别的线程不再犯：①`npm run check:prompt-prefix` 阻断检查：真实 Pi 适配器加真实出口遮盖对回环服务跑多轮对话（工具调用、搜索、银行卡号遮盖、附件长文本、每轮变化的记忆和时间），逐字节检查后一次请求以前一次为开头，三条反向用例（改写历史、系统提示带每轮变化的值、检查器自己对删除重排的判断）必须失败；②`AGENTS.md` 加硬规则，规则全文在 `.agents/instructions/prompt-prefix.md`；③生产监控：后续轮次命中率低于 50% 写日志 `cache.follow_up_low_hit`，命中率报告脚本加 `--by turn`；④双模型复核问题清单加「是否改变已发前缀」。复用 Pi：保存历史仍走 Pi 会话的 `message_end` 快照，没有自建消息转换。
 
 **方案讨论与备选**
 
@@ -5418,7 +5419,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
   - 按内容匹配固定文字，所以外来内容原样抄一整段固定指令时也会被信任。
   - 遮盖要多跑一遍空跑，换来不改共享规则、冲突时宁可多遮。
   - 退回整段检查时，固定文字又会被检查，“1000”可能再被遮。外来内容可以故意带上全部 34 个候选字符来触发，让那一次请求的开头和平时不同、缓存未命中一次；方向是多遮，不会漏遮。
-  - 清单随提示词目录变化：以后改提示词文字，老对话里冻结的旧文字不再受信任，那个对话的请求开头可能变一次。这一点已写进规则文件 `.claude/rules/prompt-prefix.md` 第 11 条。
+  - 清单随提示词目录变化：以后改提示词文字，老对话里冻结的旧文字不再受信任，那个对话的请求开头可能变一次。这一点已写进规则文件 `.agents/instructions/prompt-prefix.md` 第 11 条。
 
 **结果数据**
 
@@ -5435,7 +5436,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 **相关 ADR/PR**
 
 - 事故：[I-78](incidents-and-gates.md#incidents)
-- 规则：`.claude/rules/prompt-prefix.md` 第 11 条
+- 规则：`.agents/instructions/prompt-prefix.md` 第 11 条
 - PR：#268（PR #258 的拦截记录页面暴露了这个问题）
 - 前置决定：[ADR 0148](adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - 方案讨论和逐条判断：`.agents/reviews/topic-trusted-prompt-egress/`、`.agents/reviews/pr-268/`
@@ -5836,6 +5837,48 @@ Himawari 的每个关键判断（读完邮件提醒没提醒、记忆存没存�
 
 **面试 30 秒版**
 “我给个人 agent 开了 MCP 入口，想让别的 AI 都来读写同一份记忆，做完才发现入口不等于会被用：读和存都靠对方模型自觉，身份是自报的，敏感记忆也读得到。我重做了方案：读和推各一个动作，能跑钩子的客户端装一个只读的小助手，开场自动读、结束自动把它记的笔记推过来；每个接入由主人建、有自己的密钥和读取上限；不采集对话原文，所以不花模型的钱。方案让两个低价模型独立审了一遍，查出我原稿六处会出错，花了 0.26 美元。”
+
+[返回目录](#contents)
+
+<a id="case-correction-propagation"></a>
+
+## 案例 92：改了一条记忆，依据它推出来的记忆和由它立的规则还按旧的走：沿依据链标待重审，规则由模型重读后对不上就暂停
+
+**背景与现象**
+Himawari 整理记忆时会从几条记忆推出一条新结论（`reflect`），Andy 用一句话立的硬规则也指回一条规则类记忆（ADR 0211）。Andy 改了、删了一条记忆后，以前只有“来源记忆直接被改”的规则会被标成待重审，而且规则照常执行、没人核对；推出来的二级、三级记忆完全没人管，会继续被用。
+
+**根因**
+这不是 bug，而是缺一条“改了上游，下游跟着复查”的机制。难点有三：SQLite 触发器里不能写递归查询，没法在改记忆的同一个事务里一次标完整条链；一条推出的记忆可能有好几个上游，上游还可能被永久删除；规则“意思变没变”不能靠关键词判断（项目硬规则：理解用户意思一律交给模型）。
+
+**我们的方案**
+- 触发器只在同一事务里标直接下游（`memory_review_items` 一行是“哪条记忆、因为哪条上游”），程序在打开清单和后台查邮件前沿依据链展开，最多 8 层、200 条，超过的写明“已截断”。上游编号不设外键，上游被删后标记还在。
+- 规则多一个“已暂停”状态。待重审的规则在每次查邮件前由低价模型重读来源记忆，给出类型和参数，程序比较：一样就清掉标记，不一样就暂停并给出建议值，不再是长期要求就暂停。模型调用失败最多重试 3 次，失败不暂停，规则照常执行。每次写入都核对修订号，核对期间被改过就丢掉这次结果。
+- 记忆页一张清单：规则可以采用建议、确认停用、恢复原规则；记忆可以打开修改或标“看过没问题”。记忆文字一律不自动改。
+- Andy 每点一次都写决策记录，周报算“系统标了 N 条，你认可 M 条”，少于 5 条只显示“样本不足”；Andy 还能指出“还有哪条也该跟着改”，单独算漏标。
+
+**方案讨论与备选**
+- 触发器里递归一次标完：SQLite 不允许。
+- 单独的事件表加游标：多一张表，触发器直接写直接下游已经覆盖删除、多上游和截断。
+- 模型调用失败就停规则：失败不是规则错了的证据，停掉等于主人的要求悄悄失效，放弃。
+- 方案先由两个低价模型独立出方案、再审线程方案，查出触发器不能用 WITH、删除前写入的行会被外键级联删掉、只看“离开有效”会漏掉恢复等问题，讨论花了 0.48 美元。
+
+**业界主流做法**
+- ✅ [SQLite 文档：WITH 子句](https://sqlite.org/lang_with.html)：“The WITH clause cannot be used within a CREATE TRIGGER.”
+- ✅ [dbt 节点选择文档](https://docs.getdbt.com/reference/node-selection/methods)：“`state:modified`: All new nodes, plus any changes to existing nodes.”，CI 里用 `state:modified+`（“including downstreams”）把下游一起带上。
+
+**对比与取舍**
+和 dbt 一样，上游一变就沿依赖图把下游一起拿出来；不同的是 dbt 直接重算下游，我们只标记，因为记忆是主人的话，系统不能替他改；规则是程序执行的，所以自动核对，对不上就先停、等主人定。代价是多一次后台模型调用，只在来源记忆变了时发生。
+
+**结果数据**
+- 三级链 A→B→C 改 A 后 B、C 都进清单、无关记忆不受影响、规则被暂停后采用建议、过期修订号被拒：`test/integration/production-memory-capture.test.ts` 的 `[P4-1]` 用例和 `packages/persistence-sqlite/test/correction-propagation-migration.contract.test.ts`。
+- 生产上的一致率、漏标数：未测量（还没上线）。
+- 方案讨论费用 0.48 美元，出处是 `/mnt/project-files/p4-1-correction-propagation/integrated-plan.md` 开头。
+
+**相关 ADR/PR**
+[ADR 0232](adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md)；被它补充的 [ADR 0211](adr/0211-hard-rule-points-back-to-its-rule-memory.md)、[ADR 0219](adr/0219-read-only-mcp-entry-with-static-token.md)；迁移 0095。
+
+**面试 30 秒版**
+“我的个人 agent 会从几条记忆推出新结论，主人的硬规则也挂在某条记忆上。主人改了一条记忆，下游的结论和规则还按旧的走。我让数据库触发器在同一事务里标直接下游，程序再沿依据链展开，因为 SQLite 触发器里不能递归；规则由模型重读来源后程序比参数，对不上就暂停、给建议值，模型挂了不停规则。主人每次处理都记进决策记录，周报算‘标了多少、认可多少’，样本不到 5 条不出比例。”
 
 [返回目录](#contents)
 

@@ -1,15 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { PayloadRecord } from "@himawari-agent/application";
+import { PROACTIVE_SOURCE_NAMES } from "@himawari-agent/application/proactive-sources";
 import type Database from "better-sqlite3";
+import { proposalTextDigest } from "../external-proposal-text.js";
 import type { JsonValue } from "./canonical.js";
-import { validateAgainst } from "./schema.js";
-import {
-  externalProposalDigestKey,
-  externalProposalTextKey,
-  RULE_PARAMETERS_MAXIMUM_LENGTH,
-  SEALED_FILE,
-  SEALED_SCHEMA,
-} from "./schemas.js";
 import {
   assertRuleHistory,
   enforcedRuleCount,
@@ -18,6 +12,17 @@ import {
   ruleParametersKey,
   storedRuleProblem,
 } from "./rules.js";
+import { validateAgainst } from "./schema.js";
+import {
+  externalProposalDigestKey,
+  EMPTY_PERCEPTION_COUNTS,
+  externalProposalTextKey,
+  ownerProposalBasisKey,
+  ownerProposalExecutionKey,
+  RULE_PARAMETERS_MAXIMUM_LENGTH,
+  SEALED_FILE,
+  SEALED_SCHEMA,
+} from "./schemas.js";
 import { unsealJson } from "./seal.js";
 import {
   DATA_EXPORT_ERROR_CODES,
@@ -27,9 +32,11 @@ import {
   type PortableFiles,
   type PortableTextDependencies,
 } from "./types.js";
+import { isKnownMemorySourceType, PERCEPTION_MEMORY_SOURCE_ID } from "../memory-source-types.ts";
 import {
   type ParsedExternalProposal,
   type ParsedMemory,
+  type ParsedOwnerProposal,
   type ParsedText,
   parsePortable,
 } from "./verify.js";
@@ -42,6 +49,7 @@ export interface ImportOptions extends PortableTextDependencies {
   readonly passphrase?: string;
   readonly dryRun?: boolean;
   readonly newPayloadRef?: () => string;
+  readonly proactiveSources?: readonly string[];
 }
 
 export interface ImportReport {
@@ -53,6 +61,7 @@ export interface ImportReport {
     readonly decisionTextsWithoutOriginal: number;
     readonly rulesWithoutOriginal: number;
     readonly externalProposalsWithoutOriginal: number;
+    readonly ownerProposalsWithoutOriginal: number;
     readonly evidenceNotImported: boolean;
   };
 }
@@ -88,6 +97,7 @@ const EMPTY_TARGET_TABLES = [
   "rule_book_rules",
   "rule_book_history",
   "external_memory_proposals",
+  "owner_proposals",
 ] as const;
 
 function assertEmptyTarget(database: Database.Database, scope: ExportScope): void {
@@ -121,6 +131,19 @@ export async function importPortableExport(
     )
       throw new DataExportError(DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH, "密封文件条数和清单不符");
   }
+  const proactiveSources: readonly string[] = options.proactiveSources ?? PROACTIVE_SOURCE_NAMES;
+  const registered = (value: unknown, where: string): void => {
+    if (value !== null && value !== undefined && !proactiveSources.includes(value as string))
+      throw new DataExportError(
+        DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+        `${where} 的来源 ${String(value)} 没有登记`,
+      );
+  };
+  for (const decision of parsed.decisions) registered(decision.scenario, "决策记录");
+  for (const row of sealed?.evidence?.sourceInsights ?? []) registered(row["source"], "提醒条目");
+  for (const row of sealed?.evidence?.processedMessages ?? [])
+    registered(row["source"], "已处理条目");
+  for (const row of sealed?.evidence?.prereviews ?? []) registered(row["mailSource"], "预审记录");
   assertEmptyTarget(options.database, options.scope);
 
   const sealedText = (key: string): string | null => {
@@ -307,7 +330,7 @@ export async function importPortableExport(
       proposalsWithout += 1;
       continue;
     }
-    if (!/^[0-9a-f]{64}$/.test(digest))
+    if (!/^[0-9a-f]{64}$/.test(digest) || (text !== null && proposalTextDigest(text) !== digest))
       throw new DataExportError(
         DATA_EXPORT_ERROR_CODES.SEAL_MISMATCH,
         `其他 agent 的提议 ${proposal.id} 的正文摘要不对`,
@@ -329,12 +352,49 @@ export async function importPortableExport(
       );
     liveDigests.add(textSha256);
   }
+  const ownerProposalPlans: {
+    readonly proposal: ParsedOwnerProposal;
+    readonly basisRef: string | null;
+    readonly executionRef: string | null;
+    readonly execStatus: string;
+  }[] = [];
+  let ownerProposalsWithout = 0;
+  for (const proposal of parsed.ownerProposals) {
+    const basis =
+      proposal.basis === null ? null : original(ownerProposalBasisKey(proposal.id), proposal.basis);
+    const execution =
+      proposal.execution === null
+        ? null
+        : original(ownerProposalExecutionKey(proposal.id), proposal.execution);
+    if (
+      (proposal.basis !== null && basis === null) ||
+      (proposal.execution !== null && execution === null)
+    ) {
+      ownerProposalsWithout += 1;
+      continue;
+    }
+    ownerProposalPlans.push({
+      proposal,
+      basisRef:
+        proposal.basis === null || basis === null ? null : await protect(proposal.basis, basis),
+      executionRef:
+        proposal.execution === null || execution === null
+          ? null
+          : await protect(proposal.execution, execution),
+      execStatus:
+        proposal.execStatus === "running" || proposal.execStatus === "executed_unverified"
+          ? "unknown"
+          : proposal.execStatus,
+    });
+  }
   const importedProposalIds = new Set(proposalPlans.map(({ proposal }) => proposal.id));
   const imported: PortableCounts = {
     memories: plans.length,
     memoryHistoryEvents: plans.reduce((total, { history }) => total + history.length, 0),
     people: parsed.people.length,
     importBatches: parsed.importBatches.length,
+    pairedDevices: 0,
+    ...EMPTY_PERCEPTION_COUNTS,
     consolidations: parsed.consolidations.length,
     consolidationChanges: 0,
     conversationReviews: parsed.conversationReviews.length,
@@ -345,6 +405,7 @@ export async function importPortableExport(
     rules: rulePlans.length,
     enforcedRules: enforcedRuleCount(rulePlans.map(({ rule }) => rule)),
     externalProposals: proposalPlans.length,
+    ownerProposals: ownerProposalPlans.length,
     ruleHistoryVersions: rulePlans.reduce((total, { history }) => total + history.length, 0),
     sealedOriginals: options.passphrase === undefined ? 0 : parsed.manifest.counts.sealedOriginals,
     sealedEvidenceRows: evidence
@@ -377,9 +438,20 @@ export async function importPortableExport(
       decisionTextsWithoutOriginal: decisionWithout,
       rulesWithoutOriginal: rulesWithout,
       externalProposalsWithoutOriginal: proposalsWithout,
+      ownerProposalsWithoutOriginal: ownerProposalsWithout,
       evidenceNotImported: evidence === null && parsed.manifest.counts.sealedEvidenceRows > 0,
     },
   });
+  for (const { memory } of plans)
+    for (const source of memory.provenance)
+      if (
+        !isKnownMemorySourceType(source.sourceType) ||
+        (source.sourceType === "perception" && !PERCEPTION_MEMORY_SOURCE_ID.test(source.sourceId))
+      )
+        throw new DataExportError(
+          DATA_EXPORT_ERROR_CODES.LINE_INVALID,
+          "记忆出处的类型或编号不合规",
+        );
   if (options.dryRun === true) return report(true);
 
   const { ownerId, agentId } = options.scope;
@@ -509,8 +581,14 @@ export async function importPortableExport(
             event.event.sourceDeleted ? 1 : 0,
             event.event.occurredAt,
           );
-        for (const source of item.provenance)
-          provenance.run(item.id, source.sourceType, source.sourceId, source.sourceDeleted ? 1 : 0);
+        for (const source of item.provenance) {
+          provenance.run(
+            item.id,
+            source.sourceType,
+            source.sourceId,
+            source.sourceDeleted || source.sourceType === "perception" ? 1 : 0,
+          );
+        }
         for (const name of item.entities) entity.run(item.id, name);
         for (const personId of item.personIds) mention.run(item.id, personId);
         if (item.pin)
@@ -697,8 +775,8 @@ export async function importPortableExport(
           );
       }
       const ruleRow = database.prepare(
-        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rule_book_rules (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, updated_at, suspend_reason, review_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const ruleVersion = database.prepare(
         `INSERT INTO rule_book_history (owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id, change_reason, changed_at)
@@ -715,6 +793,8 @@ export async function importPortableExport(
           rule.source,
           rule.sourceMemoryId,
           rule.updatedAt,
+          rule.suspendReason ?? null,
+          rule.status === "needs_review" ? rule.updatedAt : null,
         );
         for (const version of versions)
           ruleVersion.run(
@@ -761,7 +841,8 @@ export async function importPortableExport(
           item.status,
           item.receivedAt,
           item.decidedAt,
-          item.status === "committed" && keptMemoryLink(item.memoryId) === null
+          (item.status === "committed" && keptMemoryLink(item.memoryId) === null) ||
+            plan.contentRef === null
             ? null
             : item.batchId,
           keptMemoryLink(item.memoryId),
@@ -772,6 +853,45 @@ export async function importPortableExport(
         for (const key of item.keys)
           proposalKey.run(ownerId, agentId, key.client, key.sourceKey, item.id);
         for (const client of item.unkeyedClients) proposalUnkeyed.run(item.id, client);
+      }
+      const ownerProposal = database.prepare(
+        `INSERT INTO owner_proposals (
+          id, owner_id, agent_id, type, summary, effect, origin, thread_id, source_ref,
+          source_version, version, fingerprint, evidence_ref, status, proposed_at, expires_at,
+          decided_at, proposed_count, reject_count, last_rejected_at, exec_status, lease_id,
+          lease_expires_at, attempts, requires_full_read, requires_presence, executed_at,
+          execution_ref
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)`,
+      );
+      for (const plan of ownerProposalPlans) {
+        const item = plan.proposal;
+        ownerProposal.run(
+          item.id,
+          ownerId,
+          agentId,
+          item.type,
+          item.summary,
+          item.effect,
+          item.origin,
+          item.sourceRef,
+          item.sourceVersion,
+          item.version,
+          item.fingerprint,
+          plan.basisRef,
+          item.status,
+          item.proposedAt,
+          item.expiresAt,
+          item.decidedAt,
+          item.proposedCount,
+          item.rejectCount,
+          item.lastRejectedAt,
+          plan.execStatus,
+          item.attempts,
+          item.requiresFullRead ? 1 : 0,
+          item.requiresPresence ? 1 : 0,
+          item.executedAt,
+          plan.executionRef,
+        );
       }
       if (evidence) writeEvidence(database, ownerId, agentId, evidence, evidenceRefs);
     })

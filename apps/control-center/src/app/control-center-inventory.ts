@@ -38,10 +38,10 @@ export interface ControlCenterSurfaceInventoryEntry {
     | "sessions-devices"
     | "health-deployment";
   readonly route: string;
-  readonly sourceSpec: string;
   readonly stableObjects: readonly string[];
   readonly queries: readonly string[];
   readonly mutations: readonly string[];
+  readonly mutationsOfferedWhenInstalled?: true;
   readonly revisionControl: readonly string[];
   readonly authorization: {
     readonly ownerAgentScope: true;
@@ -63,7 +63,9 @@ export function isSurfaceInstalled(
 ): boolean {
   if (surface.id === "health-deployment") return healthDependenciesAvailable;
   // Conversations use the separately composed Thread v3 gateway.
-  const operations = [...surface.queries, ...surface.mutations];
+  const operations = surface.mutationsOfferedWhenInstalled
+    ? surface.queries
+    : [...surface.queries, ...surface.mutations];
   return (
     surface.id === "threads" ||
     (operations.length > 0 &&
@@ -71,24 +73,12 @@ export function isSurfaceInstalled(
   );
 }
 
-const CONTROL_CENTER_SPEC = "docs/execution/specs/2026-08-26-control-center-experience-design.md";
-const THREAD_SPEC = "docs/execution/specs/2026-08-26-owner-thread-conversation-design.md";
-const AUTHORIZATION_SPEC =
-  "docs/archive/specs/2026-08-26-authorization-capability-governance-design.md";
-const PROACTIVITY_SPEC =
-  "docs/execution/specs/2026-08-26-proactivity-workers-self-improvement-design.md";
-const FOUNDATION_SPEC = "docs/execution/specs/2026-08-26-portable-durable-web-agent-design.md";
-const PRODUCTION_SPEC =
-  "docs/execution/specs/2026-08-26-production-qualification-upgrade-design.md";
-const HOST_WORKSPACE_SPEC = "docs/execution/specs/2026-08-26-host-files-code-workspaces-design.md";
-
 const ALL_STATES = CONTROL_CENTER_REQUIRED_UI_STATES;
 
 export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "threads",
     route: "/threads",
-    sourceSpec: THREAD_SPEC,
     stableObjects: ["Thread", "Message", "Turn", "Run", "Checkpoint"],
     queries: [
       "thread.list",
@@ -130,7 +120,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "approvals",
     route: "/approvals",
-    sourceSpec: AUTHORIZATION_SPEC,
     stableObjects: ["ActionIntent", "ApprovalRequest", "AuthorizationDecision"],
     queries: ["approval.list", "approval.detail"],
     mutations: ["approval.respond"],
@@ -152,7 +141,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "tasks",
     route: "/tasks",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["ScheduledJob", "TaskOccurrence", "Run", "Result", "BudgetReservation"],
     queries: [],
     mutations: ["github.monitor.set_state"],
@@ -174,7 +162,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "inbox-digest",
     route: "/inbox",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["InboxItem", "Digest", "Result", "AttentionDecision"],
     queries: [],
     mutations: [],
@@ -193,7 +180,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "memory",
     route: "/memory",
-    sourceSpec: FOUNDATION_SPEC,
     stableObjects: ["Memory", "MemoryVersion", "SourceProof"],
     queries: ["memory.overview.read"],
     mutations: ["memory.mutate"],
@@ -212,7 +198,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "capabilities-adapters",
     route: "/capabilities",
-    sourceSpec: AUTHORIZATION_SPEC,
     stableObjects: ["CapabilityDefinition", "CapabilityVersion", "Adapter", "InstallProposal"],
     queries: ["capability.list", "capability.detail"],
     mutations: [
@@ -222,6 +207,7 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
       "capability.disable",
       "capability.rollback",
     ],
+    mutationsOfferedWhenInstalled: true,
     revisionControl: ["CapabilityRegistryRecord.revision", "idempotencyKey"],
     authorization: {
       ownerAgentScope: true,
@@ -240,7 +226,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "authorizations-grants",
     route: "/authorizations",
-    sourceSpec: AUTHORIZATION_SPEC,
     stableObjects: ["ActionIntent", "AuthorizationDecision", "CapabilityGrant"],
     queries: ["grant.list", "grant.detail"],
     mutations: ["grant.revoke"],
@@ -262,7 +247,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "host-workspaces",
     route: "/workspaces",
-    sourceSpec: HOST_WORKSPACE_SPEC,
     stableObjects: [
       "HostDirectoryGrant",
       "FileOperation",
@@ -294,7 +278,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "suggestions",
     route: "/suggestions",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["SuggestionCandidate", "Evidence", "TaskDraft", "InboxDelivery"],
     queries: ["suggestion.list", "suggestion.detail"],
     mutations: ["suggestion.respond"],
@@ -310,7 +293,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "reflection",
     route: "/reflection",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["ReflectionDefinition", "ReflectionCheckpoint", "InputWatermark"],
     queries: ["reflection.detail"],
     mutations: ["reflection.configure"],
@@ -326,7 +308,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "workers",
     route: "/workers",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["Delegation", "WorkerRun", "WorkerResult", "CapabilityHandle"],
     queries: ["delegation.list", "delegation.detail"],
     mutations: [],
@@ -342,7 +323,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "improvements",
     route: "/improvements",
-    sourceSpec: PROACTIVITY_SPEC,
     stableObjects: ["ImprovementCandidate", "CandidateWorkspace", "Validation", "Comparison"],
     queries: ["improvement.list", "improvement.detail"],
     mutations: ["improvement.review"],
@@ -358,7 +338,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "trace",
     route: "/trace",
-    sourceSpec: FOUNDATION_SPEC,
     stableObjects: ["TraceEvent", "Run", "ActionIntent", "AuthorizationDecision", "Result"],
     queries: [],
     mutations: [],
@@ -377,7 +356,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "settings",
     route: "/settings",
-    sourceSpec: CONTROL_CENTER_SPEC,
     stableObjects: ["ModelPolicy", "BudgetPolicy", "AttentionPolicy", "IntegrationSetting"],
     queries: [],
     mutations: [],
@@ -396,7 +374,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "sessions-devices",
     route: "/sessions",
-    sourceSpec: FOUNDATION_SPEC,
     stableObjects: ["Session", "Device", "AuthenticationEvent"],
     queries: [],
     mutations: [],
@@ -418,7 +395,6 @@ export const CONTROL_CENTER_SURFACE_INVENTORY = [
   {
     id: "health-deployment",
     route: "/health",
-    sourceSpec: PRODUCTION_SPEC,
     stableObjects: ["Deployment", "AuthorityLease", "ComponentHealth", "OperationCheckpoint"],
     queries: [],
     mutations: [],

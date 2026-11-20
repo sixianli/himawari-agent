@@ -431,6 +431,8 @@ describe("published fixture admission", () => {
   });
 });
 
+const installedFileScanTimeoutMs = 60_000;
+
 describe("真实台账和当前扫描规则一致", () => {
   it.each([
     "docs/custom-provider.md",
@@ -443,42 +445,36 @@ describe("真实台账和当前扫描规则一致", () => {
     const bytes = readFileSync(join(repository, name.replace(/^runtime\//, "")));
     expect(findBuildSecrets({ name, bytes })).toEqual([]);
   });
-  it("每条published-synthetic-fixture登记的命中等于用当前扫描规则扫已安装文件的结果", () => {
-    const ledger = JSON.parse(
-      readFileSync(join(repository, "ci/security-exceptions.json"), "utf8"),
-    );
-    const entries = ledger.exceptions.filter(
-      (entry) => entry.kind === "published-synthetic-fixture",
-    );
-    expect(entries.length).toBeGreaterThan(0);
-    const tally = (findings) =>
-      [
-        ...findings.reduce(
-          (counts, finding) =>
-            counts.set(
-              `${finding.rule}:${finding.digest}`,
-              (counts.get(`${finding.rule}:${finding.digest}`) ?? 0) + 1,
-            ),
-          new Map(),
-        ),
-      ].sort();
-    for (const entry of entries) {
+  const syntheticFixtureEntries = JSON.parse(
+    readFileSync(join(repository, "ci/security-exceptions.json"), "utf8"),
+  ).exceptions.filter((entry) => entry.kind === "published-synthetic-fixture");
+  const tally = (findings) =>
+    [
+      ...findings.reduce(
+        (counts, finding) =>
+          counts.set(
+            `${finding.rule}:${finding.digest}`,
+            (counts.get(`${finding.rule}:${finding.digest}`) ?? 0) + 1,
+          ),
+        new Map(),
+      ),
+    ].sort();
+  it("台账里有published-synthetic-fixture登记", () => {
+    expect(syntheticFixtureEntries.length).toBeGreaterThan(0);
+  });
+  it.each(syntheticFixtureEntries.map((entry) => [entry.path, entry]))(
+    "published-synthetic-fixture登记%s的命中等于用当前扫描规则扫已安装文件的结果",
+    (_path, entry) => {
       expect(entry.path).toMatch(/^runtime\/node_modules\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\]+$/);
       expect(entry.path.startsWith(`runtime/${entry.packageLockPath}/`)).toBe(true);
       const bytes = readFileSync(join(repository, entry.path.replace(/^runtime\//, "")));
-      expect({ path: entry.path, sha: sha(bytes) }).toEqual({
-        path: entry.path,
-        sha: entry.fileSha256,
-      });
-      expect({
-        path: entry.path,
-        findings: tally(findBuildSecrets({ name: entry.path, bytes })),
-      }).toEqual({
-        path: entry.path,
-        findings: entry.findings
+      expect(sha(bytes)).toBe(entry.fileSha256);
+      expect(tally(findBuildSecrets({ name: entry.path, bytes }))).toEqual(
+        entry.findings
           .map((finding) => [`${finding.rule}:${finding.digest}`, finding.count])
           .sort(),
-      });
-    }
-  });
+      );
+    },
+    installedFileScanTimeoutMs,
+  );
 });

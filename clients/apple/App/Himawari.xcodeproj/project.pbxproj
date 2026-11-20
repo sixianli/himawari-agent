@@ -1,0 +1,1274 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C9D4F8AC9D41B74890B61F32 /* HimawariApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADF293663ED8D3B76E120EFA /* HimawariApp.swift */; };
+		3AD8E9E59ADBCB8617AD85B5 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A84F66C1F7B74AA353331800 /* InfoPlist.strings */; };
+		765D931A81F8F07B25AF082C /* HimawariShell in Frameworks */ = {isa = PBXBuildFile; productRef = 82EB59FFBA779388F14F89C2 /* HimawariShell */; };
+		86E21892FBDB8BFEEC9FB0E4 /* HimawariMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03208B1CC6911FDF1F876174 /* HimawariMacApp.swift */; };
+		D1215A90F81A89EE591FFCD0 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 1E17481E482E39B29BABD837 /* InfoPlist.strings */; };
+		7089A2F6E74DD9FE8ACA8EA2 /* HimawariMacUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */; };
+		BB733CCB49BC8D6E85C1BC75 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22DEA3DFE9F4B32E23464BF /* ShareViewController.swift */; };
+		B967CB8FFE0AB40B3C07351F /* PagePreprocessor.js in Resources */ = {isa = PBXBuildFile; fileRef = 9FD306FF8697DA45F7B1EF00 /* PagePreprocessor.js */; };
+		A8B061155A86F0B854236053 /* HimawariShare in Frameworks */ = {isa = PBXBuildFile; productRef = 96743D41027DDE4B6C84F126 /* HimawariShare */; };
+		ACEC33EEFCBAC40BF6104DBA /* HimawariShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 28DA91D0DAF05AF1E4F36B6D /* HimawariShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		6A18741E756099616421F123 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8179851C2FC18EAD82390BA9 /* SafariWebExtensionHandler.swift */; };
+		2C0265BAFC453BC01126A7DA /* HimawariShare in Frameworks */ = {isa = PBXBuildFile; productRef = 6564BE5AA2A91221056E58FE /* HimawariShare */; };
+		E5F7918A97082EF40902017E /* HimawariSafariExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 035DE4BB5F71F4D30B255382 /* HimawariSafariExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A269CE5FF6D7217CBEF74833 /* _locales in Resources */ = {isa = PBXBuildFile; fileRef = 3FAA89708D1BC841CA04F666 /* _locales */; };
+		7A36E7BBB3C441D6C6D57986 /* images in Resources */ = {isa = PBXBuildFile; fileRef = 702E23C6439173C64687B499 /* images */; };
+		B2AA01EE8A3D6332B001FD3B /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = E626DF59C1E1939FECE8E9C7 /* manifest.json */; };
+		35B6C085BB563D88FABCFF7F /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = BCB7930DDA4AB714A30BECE7 /* background.js */; };
+		D7CC7332E74248EC90FE41A7 /* page.js in Resources */ = {isa = PBXBuildFile; fileRef = C40675941004AA03DC55CE79 /* page.js */; };
+		6231CBE009F98CB346107244 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = F96CFE9B8C6D598A780D7C49 /* popup.html */; };
+		6481AF81BEF76D159066824E /* popup.css in Resources */ = {isa = PBXBuildFile; fileRef = 283E044CDE04DA541B8CF0ED /* popup.css */; };
+		A9E2C97AD5B839BB954D4F2A /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = A7E77A27AE1A4C3E5D3ACA8C /* popup.js */; };
+		CD2D4176438C5CA0E17DB32A /* tokens.css in Resources */ = {isa = PBXBuildFile; fileRef = CA4F27F8E119183637310FCB /* tokens.css */; };
+		55EA8762D167786BF3B4D793 /* ListenActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9A5F960FA9D76C2FEAC106 /* ListenActivityBundle.swift */; };
+		9A13DC35CF04E3F4E0C71086 /* HimawariListenUI in Frameworks */ = {isa = PBXBuildFile; productRef = 4B7156D72D2A31134B9683B9 /* HimawariListenUI */; };
+		CA033EC66B9209773141065C /* HimawariListenUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9810B204B1F0AF622898B506 /* HimawariListenUI */; };
+		268C5774DA72F73C5ABCEE42 /* HimawariListenActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4F54B23756842FA2134945C7 /* HimawariListenActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DE7BF5C60F6E8DE406851E7D /* HimawariWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E6C9C48A534FE0B36735C0A /* HimawariWatchApp.swift */; };
+		3940EC1D7AED0738DCCC0EDE /* HimawariWatchUI in Frameworks */ = {isa = PBXBuildFile; productRef = E2673B494288B432D066F62E /* HimawariWatchUI */; };
+		F4216EA1334C54E9C01DC393 /* HimawariWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B0608658B4823105EE7032 /* HimawariWatchWidgets.swift */; };
+		F4F90DE18EFC819D768B15DF /* HimawariDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C2DC1C1D268758D34401CA33 /* HimawariDesign */; };
+		A7C3E1D95B2F4806B1D4E7A1 /* HimawariWatchUI in Frameworks */ = {isa = PBXBuildFile; productRef = B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */; };
+		6CE3221F13E53AFE571CAF96 /* HimawariCore in Frameworks */ = {isa = PBXBuildFile; productRef = 51E8EE40F93C27556DED3B13 /* HimawariCore */; };
+		E444F86A4A2A3E5BC7AC234A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7C6B3CED21C8F4D4BB953482 /* Localizable.strings */; };
+		9F77C3D7CAFD5F6272B56278 /* HimawariWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1A29A5FD88E92CB77BFD7397 /* HimawariWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C782E7CFB846E7ED080D3FB2 /* HimawariWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+
+/* Begin PBXContainerItemProxy section */
+		36DCBDFF85827537DE053359 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7C877FA276E8B73607624EEC;
+			remoteInfo = HimawariShareExtension;
+		};
+		3300119E7FED89AFDA185900 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 396D53FC669BC4409542A627;
+			remoteInfo = HimawariSafariExtension;
+		};
+		F91DCB467A89A011D72547E0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2330D670C9DF278261995A21;
+			remoteInfo = HimawariListenActivity;
+		};
+		1E46933D875D10CDD578EEC8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5B7F226195276BF2C8D4623C;
+			remoteInfo = HimawariWatch;
+		};
+		D4FF9E9EDF803F7821FAF6FE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1B4530B5C03453949F249C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EA779591B4B8B78247BF76BE;
+			remoteInfo = HimawariWatchWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		24E5AE86ED6E1FEA33FD8CFA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				ACEC33EEFCBAC40BF6104DBA /* HimawariShareExtension.appex in Embed Foundation Extensions */,
+				E5F7918A97082EF40902017E /* HimawariSafariExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		00DA5BEEE0A834DD6A97EF25 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				268C5774DA72F73C5ABCEE42 /* HimawariListenActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88236C803E21071E41109238 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9F77C3D7CAFD5F6272B56278 /* HimawariWatchWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8E5E0D0DC949C795EA45A013 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				1A29A5FD88E92CB77BFD7397 /* HimawariWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+/* Begin PBXFileReference section */
+		ADF293663ED8D3B76E120EFA /* HimawariApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HimawariApp.swift; sourceTree = "<group>"; };
+		7AD8A95A623F32E0346C679A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D29F15F0F29D9798EE7D81B8 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		BFC2A0D3172D5AF6A036310B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		778DBA69879BFB30458B93F6 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A96B2EB5618DC097A6E7F15C /* Himawari.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Himawari.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		03208B1CC6911FDF1F876174 /* HimawariMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HimawariMacApp.swift; sourceTree = "<group>"; };
+		3F2FB9C999B8BBB75F11CFFD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CCF40E290F93041E8D48D331 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		8121C0AB16C9F8433AE04480 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		968FC9EB4DC7D4637694AB98 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		2F90346D857B3E586AA21721 /* HimawariMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HimawariMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CEABDA7AFB0F1C0102AB6B57 /* Himawari.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Himawari.entitlements; sourceTree = "<group>"; };
+		C22DEA3DFE9F4B32E23464BF /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		9FD306FF8697DA45F7B1EF00 /* PagePreprocessor.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = PagePreprocessor.js; sourceTree = "<group>"; };
+		F10B008AE3AB0A37D5ACECE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4DF9051B0C88CBBA52CB8BC2 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
+		28DA91D0DAF05AF1E4F36B6D /* HimawariShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HimawariShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8179851C2FC18EAD82390BA9 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		C2912639929BF7DABF883564 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		659C390AB9521C1A3410CF1A /* SafariExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SafariExtension.entitlements; sourceTree = "<group>"; };
+		035DE4BB5F71F4D30B255382 /* HimawariSafariExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HimawariSafariExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3FAA89708D1BC841CA04F666 /* _locales */ = {isa = PBXFileReference; lastKnownFileType = folder; path = _locales; sourceTree = "<group>"; };
+		702E23C6439173C64687B499 /* images */ = {isa = PBXFileReference; lastKnownFileType = folder; path = images; sourceTree = "<group>"; };
+		E626DF59C1E1939FECE8E9C7 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
+		BCB7930DDA4AB714A30BECE7 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
+		C40675941004AA03DC55CE79 /* page.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = page.js; sourceTree = "<group>"; };
+		F96CFE9B8C6D598A780D7C49 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
+		283E044CDE04DA541B8CF0ED /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = popup.css; sourceTree = "<group>"; };
+		A7E77A27AE1A4C3E5D3ACA8C /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
+		CA4F27F8E119183637310FCB /* tokens.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = tokens.css; sourceTree = "<group>"; };
+		9E9A5F960FA9D76C2FEAC106 /* ListenActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenActivityBundle.swift; sourceTree = "<group>"; };
+		2C90BD7FD234B1F9C6FA5B0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4F54B23756842FA2134945C7 /* HimawariListenActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HimawariListenActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E6C9C48A534FE0B36735C0A /* HimawariWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HimawariWatchApp.swift; sourceTree = "<group>"; };
+		14295A5C56B1EDB026784DB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		738DF75C41B69FBD9486D451 /* Himawari.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Himawari.entitlements; sourceTree = "<group>"; };
+		C782E7CFB846E7ED080D3FB2 /* HimawariWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HimawariWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B0608658B4823105EE7032 /* HimawariWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HimawariWatchWidgets.swift; sourceTree = "<group>"; };
+		3841D3848C05C95AC8E704F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		786A97E517C9E75FDA7F7471 /* WatchWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WatchWidgets.entitlements; sourceTree = "<group>"; };
+		CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HimawariWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		07D46FA691E96988B9252455 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		C5E688A2DCCE9C85433F6155 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		9978D058279653003F112BD5 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		ABA489076D8B5F5098C67C30 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				765D931A81F8F07B25AF082C /* HimawariShell in Frameworks */,
+				CA033EC66B9209773141065C /* HimawariListenUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC975EEF39A8987385D45556 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7089A2F6E74DD9FE8ACA8EA2 /* HimawariMacUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1C9712F097A6436ACF609C36 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8B061155A86F0B854236053 /* HimawariShare in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1BCFE8819F502C0EB1FA4877 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C0265BAFC453BC01126A7DA /* HimawariShare in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C68C3F7599BE0A513AEF10B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A13DC35CF04E3F4E0C71086 /* HimawariListenUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E178CF857218378769B5A8EE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3940EC1D7AED0738DCCC0EDE /* HimawariWatchUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F667E88C7226C8094EB0BA36 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4F90DE18EFC819D768B15DF /* HimawariDesign in Frameworks */,
+				6CE3221F13E53AFE571CAF96 /* HimawariCore in Frameworks */,
+				A7C3E1D95B2F4806B1D4E7A1 /* HimawariWatchUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8A364990CEB2ABC0976F3B40 = {
+			isa = PBXGroup;
+			children = (
+				EE9F1E369667469326B96D28 /* iOS */,
+				B072B8D0CCC5C97E07CD08D5 /* ShareExtension */,
+				5ED9A9A41E1AD984C7F0445F /* SafariExtension */,
+				7254D1451A523CC2FD904CF2 /* macOS */,
+				A3CF9E94B9BDE59BC8B24077 /* Watch */,
+				E1B2E1E7EEA285F45BD9561C /* WatchWidgets */,
+				E7DC9E439858A3B1E2174D8A /* ListenActivity */,
+				70C166AFCB661E3D73C8AB48 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		70C166AFCB661E3D73C8AB48 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A96B2EB5618DC097A6E7F15C /* Himawari.app */,
+				28DA91D0DAF05AF1E4F36B6D /* HimawariShareExtension.appex */,
+				035DE4BB5F71F4D30B255382 /* HimawariSafariExtension.appex */,
+				2F90346D857B3E586AA21721 /* HimawariMac.app */,
+				C782E7CFB846E7ED080D3FB2 /* HimawariWatch.app */,
+				CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */,
+				4F54B23756842FA2134945C7 /* HimawariListenActivity.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EE9F1E369667469326B96D28 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				ADF293663ED8D3B76E120EFA /* HimawariApp.swift */,
+				CEABDA7AFB0F1C0102AB6B57 /* Himawari.entitlements */,
+				7AD8A95A623F32E0346C679A /* Info.plist */,
+				A84F66C1F7B74AA353331800 /* InfoPlist.strings */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		7254D1451A523CC2FD904CF2 /* macOS */ = {
+			isa = PBXGroup;
+			children = (
+				03208B1CC6911FDF1F876174 /* HimawariMacApp.swift */,
+				3F2FB9C999B8BBB75F11CFFD /* Info.plist */,
+				1E17481E482E39B29BABD837 /* InfoPlist.strings */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
+		B072B8D0CCC5C97E07CD08D5 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				C22DEA3DFE9F4B32E23464BF /* ShareViewController.swift */,
+				9FD306FF8697DA45F7B1EF00 /* PagePreprocessor.js */,
+				F10B008AE3AB0A37D5ACECE0 /* Info.plist */,
+				4DF9051B0C88CBBA52CB8BC2 /* ShareExtension.entitlements */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		5ED9A9A41E1AD984C7F0445F /* SafariExtension */ = {
+			isa = PBXGroup;
+			children = (
+				8179851C2FC18EAD82390BA9 /* SafariWebExtensionHandler.swift */,
+				08329202012E646E73B83587 /* Resources */,
+				C2912639929BF7DABF883564 /* Info.plist */,
+				659C390AB9521C1A3410CF1A /* SafariExtension.entitlements */,
+			);
+			path = SafariExtension;
+			sourceTree = "<group>";
+		};
+		08329202012E646E73B83587 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				3FAA89708D1BC841CA04F666 /* _locales */,
+				702E23C6439173C64687B499 /* images */,
+				E626DF59C1E1939FECE8E9C7 /* manifest.json */,
+				BCB7930DDA4AB714A30BECE7 /* background.js */,
+				C40675941004AA03DC55CE79 /* page.js */,
+				F96CFE9B8C6D598A780D7C49 /* popup.html */,
+				283E044CDE04DA541B8CF0ED /* popup.css */,
+				A7E77A27AE1A4C3E5D3ACA8C /* popup.js */,
+				CA4F27F8E119183637310FCB /* tokens.css */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		E7DC9E439858A3B1E2174D8A /* ListenActivity */ = {
+			isa = PBXGroup;
+			children = (
+				9E9A5F960FA9D76C2FEAC106 /* ListenActivityBundle.swift */,
+				2C90BD7FD234B1F9C6FA5B0E /* Info.plist */,
+			);
+			path = ListenActivity;
+			sourceTree = "<group>";
+		};
+		A3CF9E94B9BDE59BC8B24077 /* Watch */ = {
+			isa = PBXGroup;
+			children = (
+				9E6C9C48A534FE0B36735C0A /* HimawariWatchApp.swift */,
+				14295A5C56B1EDB026784DB3 /* Info.plist */,
+				738DF75C41B69FBD9486D451 /* Himawari.entitlements */,
+			);
+			path = Watch;
+			sourceTree = "<group>";
+		};
+		E1B2E1E7EEA285F45BD9561C /* WatchWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				A1B0608658B4823105EE7032 /* HimawariWatchWidgets.swift */,
+				3841D3848C05C95AC8E704F9 /* Info.plist */,
+				786A97E517C9E75FDA7F7471 /* WatchWidgets.entitlements */,
+				7C6B3CED21C8F4D4BB953482 /* Localizable.strings */,
+			);
+			path = WatchWidgets;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D3DC968DCAF7E04C4C4E67A5 /* Himawari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 00319044224BEAE948232A23 /* Build configuration list for PBXNativeTarget "Himawari" */;
+			buildPhases = (
+				C326337EDDF82FE86622BF36 /* Sources */,
+				ABA489076D8B5F5098C67C30 /* Frameworks */,
+				F5D1F46154FC182FA415FB9B /* Resources */,
+				8E5E0D0DC949C795EA45A013 /* Embed Watch Content */,
+				00DA5BEEE0A834DD6A97EF25 /* Embed Foundation Extensions */,
+				24E5AE86ED6E1FEA33FD8CFA /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7D28740FEF93AB1D23914451 /* PBXTargetDependency */,
+				FD11990279E32D63E2CDA59E /* PBXTargetDependency */,
+				A5AFC13034D41FDE983744B8 /* PBXTargetDependency */,
+				D27A9C226D3BFAB68250D571 /* PBXTargetDependency */,
+			);
+			name = Himawari;
+			packageProductDependencies = (
+				82EB59FFBA779388F14F89C2 /* HimawariShell */,
+				9810B204B1F0AF622898B506 /* HimawariListenUI */,
+			);
+			productName = Himawari;
+			productReference = A96B2EB5618DC097A6E7F15C /* Himawari.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7EA2244DE767330F473CA760 /* HimawariMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B52B3290735EACF4247A21F /* Build configuration list for PBXNativeTarget "HimawariMac" */;
+			buildPhases = (
+				2ED2F7466D6F32A38940EB78 /* Sources */,
+				FC975EEF39A8987385D45556 /* Frameworks */,
+				3FBFC5190EE4CEED843EBB66 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HimawariMac;
+			packageProductDependencies = (
+				7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */,
+			);
+			productName = HimawariMac;
+			productReference = 2F90346D857B3E586AA21721 /* HimawariMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7C877FA276E8B73607624EEC /* HimawariShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE97812CF24972F4CF843983 /* Build configuration list for PBXNativeTarget "HimawariShareExtension" */;
+			buildPhases = (
+				D17F9358576ECF7315FA51E7 /* Sources */,
+				1C9712F097A6436ACF609C36 /* Frameworks */,
+				9E2875321DA7CA51ED6F3894 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HimawariShareExtension;
+			packageProductDependencies = (
+				96743D41027DDE4B6C84F126 /* HimawariShare */,
+			);
+			productName = HimawariShareExtension;
+			productReference = 28DA91D0DAF05AF1E4F36B6D /* HimawariShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		396D53FC669BC4409542A627 /* HimawariSafariExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 52AD99FABCF29A964BDC78B5 /* Build configuration list for PBXNativeTarget "HimawariSafariExtension" */;
+			buildPhases = (
+				D3B8C063439AEF3F1AE66111 /* Sources */,
+				1BCFE8819F502C0EB1FA4877 /* Frameworks */,
+				F27A48E00BCFDFE8D4D300E4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HimawariSafariExtension;
+			packageProductDependencies = (
+				6564BE5AA2A91221056E58FE /* HimawariShare */,
+			);
+			productName = HimawariSafariExtension;
+			productReference = 035DE4BB5F71F4D30B255382 /* HimawariSafariExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		2330D670C9DF278261995A21 /* HimawariListenActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B6CF19F444365BE49789503A /* Build configuration list for PBXNativeTarget "HimawariListenActivity" */;
+			buildPhases = (
+				E0D4E5B69A3C3AF9A7CBA924 /* Sources */,
+				C68C3F7599BE0A513AEF10B0 /* Frameworks */,
+				CCBDD32B1C1A2CBE9B80394B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HimawariListenActivity;
+			packageProductDependencies = (
+				4B7156D72D2A31134B9683B9 /* HimawariListenUI */,
+			);
+			productName = HimawariListenActivity;
+			productReference = 4F54B23756842FA2134945C7 /* HimawariListenActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		5B7F226195276BF2C8D4623C /* HimawariWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 92EDDEC93BAC97DDAA5B5CCC /* Build configuration list for PBXNativeTarget "HimawariWatch" */;
+			buildPhases = (
+				EAD08E60FDAE4387636AA8CA /* Sources */,
+				E178CF857218378769B5A8EE /* Frameworks */,
+				606A39763FFC00823ED77C00 /* Resources */,
+				88236C803E21071E41109238 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3D92FEEB4983D6767FFB1EFA /* PBXTargetDependency */,
+			);
+			name = HimawariWatch;
+			packageProductDependencies = (
+				E2673B494288B432D066F62E /* HimawariWatchUI */,
+			);
+			productName = HimawariWatch;
+			productReference = C782E7CFB846E7ED080D3FB2 /* HimawariWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EA779591B4B8B78247BF76BE /* HimawariWatchWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 098C113AD0225A503594FAF9 /* Build configuration list for PBXNativeTarget "HimawariWatchWidgets" */;
+			buildPhases = (
+				DE68AA6C5262CCB5C9708178 /* Sources */,
+				F667E88C7226C8094EB0BA36 /* Frameworks */,
+				775B7C681C7F81EE385419B1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HimawariWatchWidgets;
+			packageProductDependencies = (
+				C2DC1C1D268758D34401CA33 /* HimawariDesign */,
+				51E8EE40F93C27556DED3B13 /* HimawariCore */,
+				B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */,
+			);
+			productName = HimawariWatchWidgets;
+			productReference = CFAE68B3CB72329EB0805157 /* HimawariWatchWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C1B4530B5C03453949F249C1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+			};
+			buildConfigurationList = 824BB5819594FF28DC947173 /* Build configuration list for PBXProject "Himawari" */;
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				ja,
+				Base,
+			);
+			mainGroup = 8A364990CEB2ABC0976F3B40;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 70C166AFCB661E3D73C8AB48 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D3DC968DCAF7E04C4C4E67A5 /* Himawari */,
+				7C877FA276E8B73607624EEC /* HimawariShareExtension */,
+				396D53FC669BC4409542A627 /* HimawariSafariExtension */,
+				7EA2244DE767330F473CA760 /* HimawariMac */,
+				5B7F226195276BF2C8D4623C /* HimawariWatch */,
+				EA779591B4B8B78247BF76BE /* HimawariWatchWidgets */,
+				2330D670C9DF278261995A21 /* HimawariListenActivity */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F5D1F46154FC182FA415FB9B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3AD8E9E59ADBCB8617AD85B5 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3FBFC5190EE4CEED843EBB66 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1215A90F81A89EE591FFCD0 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E2875321DA7CA51ED6F3894 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B967CB8FFE0AB40B3C07351F /* PagePreprocessor.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F27A48E00BCFDFE8D4D300E4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A269CE5FF6D7217CBEF74833 /* _locales in Resources */,
+				7A36E7BBB3C441D6C6D57986 /* images in Resources */,
+				B2AA01EE8A3D6332B001FD3B /* manifest.json in Resources */,
+				35B6C085BB563D88FABCFF7F /* background.js in Resources */,
+				D7CC7332E74248EC90FE41A7 /* page.js in Resources */,
+				6231CBE009F98CB346107244 /* popup.html in Resources */,
+				6481AF81BEF76D159066824E /* popup.css in Resources */,
+				A9E2C97AD5B839BB954D4F2A /* popup.js in Resources */,
+				CD2D4176438C5CA0E17DB32A /* tokens.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CCBDD32B1C1A2CBE9B80394B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		775B7C681C7F81EE385419B1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E444F86A4A2A3E5BC7AC234A /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		606A39763FFC00823ED77C00 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C326337EDDF82FE86622BF36 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C9D4F8AC9D41B74890B61F32 /* HimawariApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2ED2F7466D6F32A38940EB78 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86E21892FBDB8BFEEC9FB0E4 /* HimawariMacApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D17F9358576ECF7315FA51E7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB733CCB49BC8D6E85C1BC75 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D3B8C063439AEF3F1AE66111 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A18741E756099616421F123 /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E0D4E5B69A3C3AF9A7CBA924 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				55EA8762D167786BF3B4D793 /* ListenActivityBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EAD08E60FDAE4387636AA8CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DE7BF5C60F6E8DE406851E7D /* HimawariWatchApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DE68AA6C5262CCB5C9708178 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4216EA1334C54E9C01DC393 /* HimawariWatchWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+
+/* Begin PBXTargetDependency section */
+		A5AFC13034D41FDE983744B8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7C877FA276E8B73607624EEC /* HimawariShareExtension */;
+			targetProxy = 36DCBDFF85827537DE053359 /* PBXContainerItemProxy */;
+		};
+		D27A9C226D3BFAB68250D571 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 396D53FC669BC4409542A627 /* HimawariSafariExtension */;
+			targetProxy = 3300119E7FED89AFDA185900 /* PBXContainerItemProxy */;
+		};
+		FD11990279E32D63E2CDA59E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2330D670C9DF278261995A21 /* HimawariListenActivity */;
+			targetProxy = F91DCB467A89A011D72547E0 /* PBXContainerItemProxy */;
+		};
+		7D28740FEF93AB1D23914451 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5B7F226195276BF2C8D4623C /* HimawariWatch */;
+			targetProxy = 1E46933D875D10CDD578EEC8 /* PBXContainerItemProxy */;
+		};
+		3D92FEEB4983D6767FFB1EFA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EA779591B4B8B78247BF76BE /* HimawariWatchWidgets */;
+			targetProxy = D4FF9E9EDF803F7821FAF6FE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+/* Begin PBXVariantGroup section */
+		A84F66C1F7B74AA353331800 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D29F15F0F29D9798EE7D81B8 /* zh-Hans */,
+				BFC2A0D3172D5AF6A036310B /* en */,
+				778DBA69879BFB30458B93F6 /* ja */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		1E17481E482E39B29BABD837 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				CCF40E290F93041E8D48D331 /* zh-Hans */,
+				8121C0AB16C9F8433AE04480 /* en */,
+				968FC9EB4DC7D4637694AB98 /* ja */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		7C6B3CED21C8F4D4BB953482 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				07D46FA691E96988B9252455 /* zh-Hans */,
+				C5E688A2DCCE9C85433F6155 /* en */,
+				9978D058279653003F112BD5 /* ja */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		8B9CAD7C6EFB636363373D5E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
+				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
+				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+			};
+			name = Debug;
+		};
+		21DD80C87DF0E73F06479F80 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				HIMAWARI_APP_GROUP = group.win.siyi.himawari;
+				HIMAWARI_ENTITLEMENTS_SUFFIX = "";
+				HIMAWARI_KEYCHAIN_GROUP = win.siyi.himawari.shared;
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+			name = Release;
+		};
+		0DC93FEAAF4F00EADF729573 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				CODE_SIGN_ENTITLEMENTS = "iOS/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari;
+				PRODUCT_NAME = Himawari;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7C09E8D96A99A2ABD74DD0AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				CODE_SIGN_ENTITLEMENTS = "iOS/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari;
+				PRODUCT_NAME = Himawari;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D71646EAD2545C8B2F1CD75F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = mac_direct;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.mac;
+				PRODUCT_NAME = HimawariMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		DBC97794828153F7AB6539F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = mac_direct;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.mac;
+				PRODUCT_NAME = HimawariMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		FE9A56148A4C490C766ED608 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "ShareExtension/ShareExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.share;
+				PRODUCT_NAME = HimawariShareExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D70FC6A4C5BA8AEB26512E59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "ShareExtension/ShareExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.share;
+				PRODUCT_NAME = HimawariShareExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		8345D7BF8DD6D7E52415DBF1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/SafariExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = SafariExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.safari;
+				PRODUCT_NAME = HimawariSafariExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		81B9C1A3F681204B73274051 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "SafariExtension/SafariExtension$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = SafariExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.safari;
+				PRODUCT_NAME = HimawariSafariExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		5022339AD962581F104CAB88 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ListenActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "win.siyi.himawari.listen-activity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A0870294EC59D2AC66C90740 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ListenActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "win.siyi.himawari.listen-activity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		25809669069A5BFEE57D11C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = "Watch/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = Watch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		8500722322CA228BBFEDA08D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = "Watch/Himawari$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = Watch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		7270F1AEEE5323041A419D2D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = "WatchWidgets/WatchWidgets$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = WatchWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		236CCA5EF381B69C4DF054E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = "WatchWidgets/WatchWidgets$(HIMAWARI_ENTITLEMENTS_SUFFIX).entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HIMAWARI_RELEASE_CHANNEL = direct;
+				INFOPLIST_FILE = WatchWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = win.siyi.himawari.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		824BB5819594FF28DC947173 /* Build configuration list for PBXProject "Himawari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B9CAD7C6EFB636363373D5E /* Debug */,
+				21DD80C87DF0E73F06479F80 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		00319044224BEAE948232A23 /* Build configuration list for PBXNativeTarget "Himawari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0DC93FEAAF4F00EADF729573 /* Debug */,
+				7C09E8D96A99A2ABD74DD0AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1B52B3290735EACF4247A21F /* Build configuration list for PBXNativeTarget "HimawariMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D71646EAD2545C8B2F1CD75F /* Debug */,
+				DBC97794828153F7AB6539F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AE97812CF24972F4CF843983 /* Build configuration list for PBXNativeTarget "HimawariShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE9A56148A4C490C766ED608 /* Debug */,
+				D70FC6A4C5BA8AEB26512E59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		52AD99FABCF29A964BDC78B5 /* Build configuration list for PBXNativeTarget "HimawariSafariExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8345D7BF8DD6D7E52415DBF1 /* Debug */,
+				81B9C1A3F681204B73274051 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B6CF19F444365BE49789503A /* Build configuration list for PBXNativeTarget "HimawariListenActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5022339AD962581F104CAB88 /* Debug */,
+				A0870294EC59D2AC66C90740 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		92EDDEC93BAC97DDAA5B5CCC /* Build configuration list for PBXNativeTarget "HimawariWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				25809669069A5BFEE57D11C1 /* Debug */,
+				8500722322CA228BBFEDA08D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		098C113AD0225A503594FAF9 /* Build configuration list for PBXNativeTarget "HimawariWatchWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7270F1AEEE5323041A419D2D /* Debug */,
+				236CCA5EF381B69C4DF054E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		82EB59FFBA779388F14F89C2 /* HimawariShell */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariShell;
+		};
+		7A5B2B339A6D883C9F4732C3 /* HimawariMacUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariMacUI;
+		};
+		96743D41027DDE4B6C84F126 /* HimawariShare */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariShare;
+		};
+		6564BE5AA2A91221056E58FE /* HimawariShare */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariShare;
+		};
+		4B7156D72D2A31134B9683B9 /* HimawariListenUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariListenUI;
+		};
+		9810B204B1F0AF622898B506 /* HimawariListenUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariListenUI;
+		};
+		E2673B494288B432D066F62E /* HimawariWatchUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariWatchUI;
+		};
+		B8D4F2EA6C305917C2E5F8B2 /* HimawariWatchUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariWatchUI;
+		};
+		C2DC1C1D268758D34401CA33 /* HimawariDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariDesign;
+		};
+		51E8EE40F93C27556DED3B13 /* HimawariCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8D364225FE11DD806293641B /* XCLocalSwiftPackageReference ".." */;
+			productName = HimawariCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C1B4530B5C03453949F249C1 /* Project object */;
+}

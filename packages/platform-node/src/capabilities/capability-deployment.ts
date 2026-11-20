@@ -15,6 +15,8 @@ import {
 import {
   type SandboxHostBinding,
   sandboxHostBindingSchema,
+  sandboxEnforcementClaimsMatchEvidence,
+  sandboxRequiredControlsEnforced,
   sandboxRuntimeQualificationSchema,
 } from "@himawari-agent/execution-contracts";
 import type {
@@ -581,10 +583,14 @@ function parseQualification(
       : sandboxRuntimeQualificationSchema.parse(input["sandbox"]);
   if (
     sandbox &&
-    (sandbox.platform !== qualificationPlatform ||
-      input["runtimeIdentity"] !== `srt:${sandbox.srtVersion}` ||
-      checkedEnforcement.resourceCeilings !== false ||
-      checkedEnforcement.termination !== (sandbox.platform === "linux"))
+    !sandboxEnforcementClaimsMatchEvidence(
+      {
+        platform: qualificationPlatform,
+        runtimeIdentity: input["runtimeIdentity"],
+        enforcement: checkedEnforcement,
+      },
+      sandbox,
+    )
   ) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
@@ -592,15 +598,11 @@ function parseQualification(
       "sandbox evidence conflicts with enforcement claims",
     );
   }
-  const requiredControls = sandbox
-    ? [
-        checkedEnforcement.filesystem,
-        checkedEnforcement.network,
-        checkedEnforcement.processes,
-        checkedEnforcement.secrets,
-      ]
-    : Object.values(checkedEnforcement);
-  if (requiredControls.some((value) => value !== true)) {
+  if (
+    sandbox
+      ? !sandboxRequiredControlsEnforced(checkedEnforcement)
+      : Object.values(checkedEnforcement).some((value) => value !== true)
+  ) {
     throw failure(
       CAPABILITY_DEPLOYMENT_ERROR_CODES.QUALIFICATION_INVALID,
       `${field}.enforcement`,
@@ -1485,4 +1487,47 @@ export async function revalidateCapabilityDeploymentSnapshot(
       "Running capability deployment changed",
     );
   return admitted;
+}
+
+export type SealedCapabilityMembership =
+  | "member"
+  | "capability_deployment_snapshot_unreadable"
+  | "capability_deployment_snapshot_digest_mismatch"
+  | "capability_not_in_deployment_snapshot";
+
+/** Runtime check for an already admitted deployment: the sealed snapshot bytes still
+ * match the configured digest and carry exactly this capability identity. It does not
+ * judge qualification freshness and never admits a new or changed installation. */
+export async function checkSealedCapabilityMembership(input: {
+  readonly snapshotPath: string;
+  readonly sha256: string;
+  readonly ref: string;
+  readonly version: string;
+  readonly integrity: string;
+}): Promise<SealedCapabilityMembership> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await readSnapshotBytes(input.snapshotPath, CAPABILITY_DEPLOYMENT_MAX_BYTES);
+  } catch {
+    return "capability_deployment_snapshot_unreadable";
+  }
+  if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== input.sha256)
+    return "capability_deployment_snapshot_digest_mismatch";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return "capability_deployment_snapshot_unreadable";
+  }
+  const capabilities = (parsed as { capabilities?: unknown } | null)?.capabilities;
+  if (!Array.isArray(capabilities)) return "capability_deployment_snapshot_unreadable";
+  const member = capabilities.some((entry) => {
+    const manifest = (entry as { manifest?: Record<string, unknown> } | null)?.manifest;
+    return (
+      manifest?.["ref"] === input.ref &&
+      manifest?.["version"] === input.version &&
+      manifest?.["integrity"] === input.integrity
+    );
+  });
+  return member ? "member" : "capability_not_in_deployment_snapshot";
 }

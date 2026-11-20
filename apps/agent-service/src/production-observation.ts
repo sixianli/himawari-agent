@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
   ApplicationPortError,
+  type CorrectionAgreementCounts,
   type DecisionLedgerPort,
   daysDue,
   dayWindow,
@@ -12,6 +13,7 @@ import {
   type LedgerObservationPort,
   latestByDay,
   MAIL_TRACE_MUSE_LIMIT,
+  type McpConnectionStorePort,
   type ObservationScope,
   PORT_ERROR_CODES,
   type ProactiveSchedule,
@@ -27,12 +29,14 @@ import {
   type MuseSummary,
   mailComparisonBucket,
   pairEntriesByMail,
+  proportion,
   resolveWindow,
   summarizeDecisions,
   summarizeGap,
   summarizeImplicit,
   summarizeMuse,
 } from "@himawari-agent/calibration";
+import { summarizeMcpUsage } from "@himawari-agent/calibration/mcp-connections";
 import {
   DEFAULT_PREREVIEW_AGREEMENT_PERMILLE,
   DEFAULT_PREREVIEW_AUDIT_PERMILLE,
@@ -49,6 +53,7 @@ import {
 import { displayRuleId } from "./production-decision-chain.js";
 import { buildGapCases, clean } from "./production-gap-cases.js";
 import { type GapCaseSnapshot, maskForExport } from "./production-gap-export.js";
+import { MCP_TOOL_KINDS } from "./production-mcp-connections-control.js";
 
 export const PRODUCTION_OBSERVATION_OPERATIONS = Object.freeze([
   "proactive.weekly.read",
@@ -87,6 +92,8 @@ export interface ProductionObservationOptions {
   readonly serviceRevision: string;
   readonly tickMs?: number;
   readonly onFailure?: (error: unknown) => void;
+  readonly mcpConnections?: Pick<McpConnectionStorePort, "list" | "usage">;
+  readonly correction?: () => Promise<CorrectionAgreementCounts>;
   readonly prereview?: {
     readonly version?: { readonly modelRef: string; readonly promptId: string };
     readonly agreementPermille: number;
@@ -243,9 +250,11 @@ export class ProductionObservation {
       prereviewSettings,
       this.#options.prereview?.version,
     );
+    const correction = this.#options.correction ? await this.#options.correction() : null;
     const summary = start
       ? summarizeObservation({ start, checks: await observation.listChecks(scope), now })
       : null;
+    const mcpConnections = await this.#mcpConnections(window);
     const snapshot: GatewayV2Snapshot = {
       ...query,
       kind: "snapshot",
@@ -325,6 +334,7 @@ export class ProductionObservation {
               rate: complete ? item.rate : null,
             })),
           },
+          mcpConnections,
           prereview: {
             agreementPermille: prereviewSettings.agreementPermille,
             confidencePermille: prereviewSettings.confidencePermille,
@@ -346,12 +356,50 @@ export class ProductionObservation {
               gate: complete ? { ...group.gate } : null,
             })),
           },
+          correction: correction
+            ? {
+                ...correction,
+                agreement: proportion(correction.agreed, correction.handled),
+              }
+            : null,
         },
         generatedAt: now,
       },
     };
     gatewayV2MessageSchema.parse(snapshot);
     return snapshot;
+  }
+
+  async #mcpConnections(window: { readonly startDate: string; readonly endDate: string }) {
+    const store = this.#options.mcpConnections;
+    if (!store) return null;
+    const range = {
+      fromDay: window.startDate,
+      toDay: new Date(Date.parse(`${window.endDate}T00:00:00.000Z`) - 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+    };
+    const connections = await store.list(this.#options.scope);
+    const rows = await store.usage({ ...this.#options.scope, ...range });
+    const usage = summarizeMcpUsage(
+      connections.map(({ id }) => id),
+      rows,
+      MCP_TOOL_KINDS,
+      range,
+    );
+    return {
+      ...range,
+      connections: connections.map((connection, index) => {
+        const { connectionId: _connectionId, ...counts } = usage[index] as (typeof usage)[number];
+        return {
+          id: connection.id,
+          name: connection.name,
+          status: connection.status,
+          lastSeenAt: connection.lastSeenAt,
+          usage: { ...counts, readsByTool: counts.readsByTool.map((entry) => ({ ...entry })) },
+        };
+      }),
+    };
   }
 
   async #emailTrace(

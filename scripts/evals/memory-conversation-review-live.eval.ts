@@ -2,6 +2,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { describe, it } from "vitest";
+import { judgeOrDefault } from "../../apps/agent-service/src/auxiliary-judgment.ts";
+import {
+  memoryConfirmationJudgePrompt,
+  parseSupportVerdict,
+} from "../../apps/agent-service/src/production-memory-capture.ts";
 import {
   conversationReviewPrompt,
   parseConversationReview,
@@ -43,6 +48,7 @@ interface Outcome {
   superseded: string[];
   held: string[];
   confirmed: string[];
+  judgeFailures: number;
   skipped: Record<string, number>;
   error: string | null;
 }
@@ -117,6 +123,7 @@ async function review(item: Item): Promise<Outcome> {
     superseded: [],
     held: [],
     confirmed: [],
+    judgeFailures: 0,
     skipped: {},
     error: null,
   };
@@ -150,22 +157,44 @@ async function review(item: Item): Promise<Outcome> {
   const body = await chat(prompt);
   const output = String(body.choices?.[0]?.message?.content ?? "");
   try {
-    const parsed = parseConversationReview({
-      output,
-      messages: item.messages.map(({ id, role, at, text }) => ({
-        message: {
-          id,
-          role,
-          committedAt: at,
-          contentRef: `payload:${id}`,
-          dataClassification: "private",
-        },
-        text,
-      })) as never,
-      existing: existing as never,
-      timeZone: dataset.timeZone,
-      newMemoriesAllowed: 5,
-    });
+    const parse = (supportVerdicts?: ReadonlyMap<string, boolean>) =>
+      parseConversationReview({
+        output,
+        messages: item.messages.map(({ id, role, at, text }) => ({
+          message: {
+            id,
+            role,
+            committedAt: at,
+            contentRef: `payload:${id}`,
+            dataClassification: "private",
+          },
+          text,
+        })) as never,
+        existing: existing as never,
+        timeZone: dataset.timeZone,
+        newMemoriesAllowed: 5,
+        ...(supportVerdicts ? { supportVerdicts } : {}),
+      });
+    const first = parse();
+    const verdicts = new Map<string, boolean>();
+    for (const check of first.supportChecks) {
+      if (verdicts.has(check.key)) continue;
+      const judgePrompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
+      verdicts.set(
+        check.key,
+        await judgeOrDefault(
+          {
+            ask: async () => String((await chat(judgePrompt)).choices?.[0]?.message?.content ?? ""),
+            parse: parseSupportVerdict,
+          },
+          false,
+          () => {
+            outcome.judgeFailures += 1;
+          },
+        ),
+      );
+    }
+    const parsed = verdicts.size === 0 ? first : parse(verdicts);
     outcome.skipped = { ...parsed.skipped };
     for (const group of parsed.groups)
       for (const candidate of group.parsed.candidates) {
@@ -215,6 +244,7 @@ function score(item: Item, outcome: Outcome) {
       extraCreates === 0 &&
       wrongSupersedes === 0 &&
       extraConfirms === 0 &&
+      outcome.judgeFailures === 0 &&
       !outcome.error,
   };
 }
@@ -267,6 +297,7 @@ describe.skipIf(!(CAP_USD > 0 || FLAT_RATE))("回看对话评测（真实模型�
         ).length,
         negatives: negatives.length,
         errors: results.filter(({ outcome }) => outcome.error).length,
+        judgeFailures: results.reduce((sum, { outcome }) => sum + outcome.judgeFailures, 0),
         failed: results.filter(({ score: value }) => !value.pass).map(({ outcome }) => outcome),
       };
     });

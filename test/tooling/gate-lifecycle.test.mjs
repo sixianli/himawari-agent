@@ -33,6 +33,9 @@ const write = (filename, value) => {
   return filename;
 };
 const count = () => ({ files: 1, executed: 1, passed: 1, failed: 0, skipped: 0 });
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {
@@ -238,9 +241,9 @@ function gateFixture(event = "workflow_dispatch") {
     gate = path.join(state.root, ".ci-output/source-gate");
   for (const { check, member } of expectedMembers(policy)) {
     const output = path.join(reports, check.id, member.key),
-      projects = check.projects.map((id) => ({ id, counts: count() })),
+      projects = (member.projects ?? check.projects).map((id) => ({ id, counts: count() })),
       total = Math.max(1, projects.length),
-      artifactPlatform = ["browser", "coverage"].includes(check.id) ? "linux-x64" : member.key;
+      artifactPlatform = ["browser", "tests"].includes(check.id) ? "linux-x64" : member.key;
     const items = check.outputs.map((kind) => {
       const name = check.id === "security" ? "security-report.json" : `report.${kind}`;
       const contents =
@@ -478,7 +481,7 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
         for (const step of summaries)
           expect(step.if).toBe(githubExpression("always() && steps.publish.outcome == 'success'"));
       }
-      expect(publishers).toBe(6);
+      expect(publishers).toBe(name === "ci.yml" ? 7 : 6);
     }
   });
 });
@@ -734,7 +737,7 @@ describe(
       const leaked = `ghp_${"C".repeat(36)}`;
       vi.stubEnv(
         "CI_NEEDS",
-        JSON.stringify({ ...f.needs, coverage: { result: `cancelled ${leaked}` } }),
+        JSON.stringify({ ...f.needs, tests: { result: `cancelled ${leaked}` } }),
       );
       await entry("required.mjs", ["--reports", f.reports, "--output", ".ci-output/cancelled"]);
       expect(process.exitCode).toBe(1);

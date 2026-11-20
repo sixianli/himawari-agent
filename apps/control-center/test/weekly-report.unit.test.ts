@@ -61,6 +61,7 @@ const memory = {
   people: [],
   imports: [],
   externalProposals: { total: 0, items: [], batches: [] },
+  mcpSync: { entriesTotal: 0, entries: [], projects: [], attention: [] },
   capturePaused: false,
   generatedAt: NOW.toISOString(),
 } as unknown as MemoryOverview;
@@ -193,6 +194,7 @@ function unsetFixture(): ProactiveWeekly {
       gap: null,
       gapCases: [],
       implicit,
+      mcpConnections: null,
       prereview: {
         agreementPermille: 900,
         confidencePermille: 800,
@@ -202,6 +204,7 @@ function unsetFixture(): ProactiveWeekly {
         otherVersions: 0,
         groups: [],
       },
+      correction: null,
     },
     generatedAt: NOW.toISOString(),
   };
@@ -1143,6 +1146,66 @@ describe("[P0-8] calibration report tab", () => {
     );
   });
 
+  it("[P4-1] shows how often the follow-up flags after a memory edit were right, the misses and what is still open", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        correction: {
+          handled: 8,
+          agreed: 6,
+          missed: 2,
+          openMemories: 3,
+          openRules: 1,
+          agreement: { successes: 6, samples: 8, enough: true, value: 0.75, low: 0.41, high: 0.93 },
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="改记忆后跟着标的一致率"]');
+    expect(card).toContain("75.0%（6/8）");
+    expect(card).toContain("系统标了 8 条，你认可 6 条");
+    expect(document.querySelector('[data-correction-tile="missed"] b')?.textContent).toBe("2");
+    expect(document.querySelector('[data-correction-tile="open"] b')?.textContent).toBe("4");
+    expect(card).toContain("没处理的不算");
+  });
+
+  it("[P4-1] [negative] says too few instead of a ratio below five handled flags, and shows no card without the numbers", async () => {
+    weekly = {
+      ...weekly,
+      report: {
+        ...weekly.report,
+        correction: {
+          handled: 3,
+          agreed: 3,
+          missed: 0,
+          openMemories: 0,
+          openRules: 0,
+          agreement: {
+            successes: 3,
+            samples: 3,
+            enough: false,
+            value: null,
+            low: null,
+            high: null,
+          },
+        },
+      },
+    };
+    await render();
+    await openReport();
+    const card = text('#page [aria-label="改记忆后跟着标的一致率"]');
+    expect(card).toContain("样本不足（3 条）");
+    expect(card).not.toContain("%");
+    weekly = { ...weekly, report: { ...weekly.report, correction: null } };
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    await openReport();
+    expect(document.querySelector("[data-correction]")).toBeNull();
+  });
+
   it("[P0-11] still counts signals on undelivered decisions when no decision sent a reminder", async () => {
     weekly = {
       ...weekly,
@@ -1352,15 +1415,15 @@ describe("[P1-5] email decision detail page", () => {
       items: [
         {
           ruleId: "floor_money_words",
-          revision: 1,
-          current: false,
+          revision: 2,
+          current: true,
           kind: "money_words",
           origin: "built_in",
-          source: "ADR 0106",
+          source: "ADR 0106；ADR 0248",
           status: "active",
           changedAt: null,
           memory: null,
-          wording: { values: ["invoice"], quietHours: [], amount: null },
+          wording: { values: [], quietHours: [], amount: null },
           tests: { state: "passed", total: 5, failedAt: null },
           mailCount: 1,
         },
@@ -1507,7 +1570,7 @@ describe("[P1-5] email decision detail page", () => {
     expect(page).toContain("不用管");
     expect(page).toContain("命中规则 1 条 · 用到记忆 1 条 · 相关邮件 无记录 封");
     expect(page).toContain("内置规则 · 这封邮件用到");
-    expect(page).toContain("出处：ADR 0106 · 第 1 版");
+    expect(page).toContain("出处：ADR 0106；ADR 0248 · 第 2 版");
     expect(page).toContain("记忆 memory-a");
     expect(page).toContain("发票到期 · 明天截止");
     expect(page).toContain("只有 Muse 提醒了你，Himawari 没有");

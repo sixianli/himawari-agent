@@ -25,7 +25,7 @@ date: "2026-11-10"
 
 ## 背景
 
-Pi（Himawari 用的模型运行库）的自动压缩会另外发一次模型请求，把较早的历史总结成一段摘要。这个请求原来把历史序列化成一条新的用户消息，系统提示换成 Pi 自己的一份，也不带工具，所以请求开头和原对话完全对不上，整段历史按未命中价计算；规则文件 `.claude/rules/prompt-prefix.md` 第 13 条要求压缩请求沿用原对话的系统提示和工具，一直是“已知差距”。
+Pi（Himawari 用的模型运行库）的自动压缩会另外发一次模型请求，把较早的历史总结成一段摘要。这个请求原来把历史序列化成一条新的用户消息，系统提示换成 Pi 自己的一份，也不带工具，所以请求开头和原对话完全对不上，整段历史按未命中价计算；规则文件 `.agents/instructions/prompt-prefix.md` 第 13 条要求压缩请求沿用原对话的系统提示和工具，一直是“已知差距”。
 
 第一步（PR 346，[事故 I-92](../incidents-and-gates.md#incidents)）先修了更严重的问题：按对话冻结工具时，这个不带工具的摘要请求被我们自己的流函数包装拦下，压缩一次都发不出去。这份 ADR 是第二步：让摘要请求和原对话共用开头。来源：Andy 的待办 BL-20261109-8w6ct3，方案由两个模型各自出方案、再互审（记录在 `.agents/reviews/topic-compaction-cache/`）。
 
@@ -80,7 +80,7 @@ Claude Code、Anthropic API 的服务端压缩、OpenAI Codex 都是同一个做
 ## 关联文档
 
 - [模型请求的 KV 缓存规范](../kv-cache-guide.md)
-- [规则文件：发给模型的内容](../../.claude/rules/prompt-prefix.md)
+- [规则文件：发给模型的内容](../../.agents/instructions/prompt-prefix.md)
 - [ADR 0165](0165-freeze-the-request-head-per-conversation.md) 第 7 条“压缩请求原样放行”：本 ADR 之后，压缩期间的无工具摘要请求在条件满足时改写成共享开头，其余仍原样放行；“上一次普通请求”指上一次已通过检查、即将发出的普通请求
 - [事故与门槛清单](../incidents-and-gates.md)（I-92）
-- [BL-20261109-8w6ct3](../backlog/BL-20261109-8w6ct3-compaction-request-reuses-conversation-head.md)
+- [BL-20261109-8w6ct3](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261109-8w6ct3-compaction-request-reuses-conversation-head.md)

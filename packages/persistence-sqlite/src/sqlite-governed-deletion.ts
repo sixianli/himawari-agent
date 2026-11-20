@@ -337,19 +337,21 @@ export class SqliteGovernedDeletionAdapter {
                 )
                 .run(now, objectId);
             }
+            const stillTrashed = previous?.lifecycle === "trashed" ? previous : undefined;
+            const pendingPayloadFiles = Object.freeze([...(previous?.pendingPayloadFiles ?? [])]);
             const next: StoredDeletionRecord = Object.freeze({
               deletionId: deletionId(input.objectType, objectId),
               objectType: input.objectType,
               objectId,
               lifecycle: "trashed",
-              purgeDeadlineAt: previous?.purgeDeadlineAt ?? deadline,
+              purgeDeadlineAt: stillTrashed?.purgeDeadlineAt ?? deadline,
               targets: initialTargets("trash"),
-              payloadFileCount: 0,
-              pendingPayloadFiles: Object.freeze([]),
+              payloadFileCount: pendingPayloadFiles.length,
+              pendingPayloadFiles,
               externalEffectTombstoneCount: 0,
-              associatedTaskIds: previous?.associatedTaskIds ?? associatedTaskIds,
+              associatedTaskIds: stillTrashed?.associatedTaskIds ?? associatedTaskIds,
               pausedTaskIds: Object.freeze([]),
-              priorProductStatus: previous?.priorProductStatus ?? row.status,
+              priorProductStatus: stillTrashed?.priorProductStatus ?? row.status,
               updatedAt: now,
             });
             this.#upsertTombstone(database, next, "pending", null);
@@ -457,152 +459,293 @@ export class SqliteGovernedDeletionAdapter {
     readonly objectType: GovernedDeletionObjectType;
     readonly objectId: string;
   }): Promise<GovernedDeletionReport> {
-    const objectId = safeIdentity(input.objectId, "object ID");
+    return await this.#deleteLocked(input.objectType, safeIdentity(input.objectId, "object ID"));
+  }
+
+  async #deleteLocked(
+    objectType: GovernedDeletionObjectType,
+    objectId: string,
+    stillEligible?: (database: InstanceType<typeof BetterSqlite3>) => void,
+  ): Promise<GovernedDeletionReport> {
     const lock = await this.#lock();
     try {
       const database = this.#database();
       try {
-        const now = this.#now();
-        const previous = this.#storedRecord(database, input.objectType, objectId);
-        if (input.objectType === "thread") {
-          const activeTaskIds = this.#values(
-            database,
-            `SELECT id FROM scheduled_jobs WHERE thread_id = ? AND status = 'active' ORDER BY id`,
-            [objectId],
-          );
-          if (activeTaskIds.length > 0) {
-            throw new GovernedDeletionError(
-              GOVERNED_DELETION_ERROR_CODES.CONFLICT,
-              "Active tasks must be resolved before permanent Thread deletion",
-              { objectId, activeTaskIds: activeTaskIds.join(",") },
-            );
-          }
-        }
-        const base: StoredDeletionRecord = previous
-          ? Object.freeze({ ...previous, lifecycle: "deletion_pending", updatedAt: now })
-          : Object.freeze({
-              deletionId: deletionId(input.objectType, objectId),
-              objectType: input.objectType,
-              objectId,
-              lifecycle: "deletion_pending",
-              purgeDeadlineAt: now,
-              targets: initialTargets("delete"),
-              payloadFileCount: 0,
-              pendingPayloadFiles: Object.freeze([]),
-              externalEffectTombstoneCount: 0,
-              associatedTaskIds:
-                input.objectType === "thread"
-                  ? this.#values(
-                      database,
-                      `SELECT id FROM scheduled_jobs
-                      WHERE thread_id = ? AND status != 'revoked' ORDER BY id`,
-                      [objectId],
-                    )
-                  : Object.freeze([]),
-              pausedTaskIds: Object.freeze([]),
-              priorProductStatus: null,
-              updatedAt: now,
-            });
-        if (input.objectType === "memory") {
-          const memory = database
-            .prepare(
-              `SELECT status, provider_record_id AS providerRecordId
-              FROM memory_records WHERE id = ? AND owner_id = ? AND agent_id = ?`,
-            )
-            .get(objectId, this.#options.ownerId, this.#options.agentId) as
-            | { status: string; providerRecordId: string | null }
-            | undefined;
-          if (memory && (memory.providerRecordId || memory.status === "deletion_pending")) {
-            const pending = database
-              .transaction(() => {
-                database
-                  .prepare(
-                    `UPDATE memory_records SET status = 'deletion_pending', revision = revision + 1,
-                      updated_at = ?
-                    WHERE id = ? AND status NOT IN ('deletion_pending', 'deleted_verified')`,
-                  )
-                  .run(now, objectId);
-                const record: StoredDeletionRecord = Object.freeze({
-                  ...base,
-                  targets: Object.freeze({
-                    ...base.targets,
-                    product: targetState(
-                      "failed",
-                      base.targets.product.attempts + 1,
-                      GOVERNED_DELETION_ERROR_CODES.PROVIDER_CLEANUP_REQUIRED,
-                    ),
-                  }),
-                });
-                this.#upsertTombstone(database, record, "incomplete", null);
-                return record;
-              })
-              .immediate();
-            const afterArtifacts: StoredDeletionRecord = Object.freeze({
-              ...pending,
-              targets: await this.#deleteDerivedArtifacts(pending, ["search", "cache", "archive"]),
-              updatedAt: this.#now(),
-            });
-            this.#upsertTombstone(database, afterArtifacts, "incomplete", null);
-            return this.#publicReport(afterArtifacts);
-          }
-        }
-        const prepared = database
-          .transaction(() => {
-            this.#upsertTombstone(database, base, "incomplete", null);
-            const core = this.#deleteCore(
-              database,
-              input.objectType,
-              objectId,
-              previous !== undefined,
-            );
-            const next: StoredDeletionRecord = Object.freeze({
-              ...base,
-              targets: Object.freeze({
-                ...base.targets,
-                product: targetState("verified", base.targets.product.attempts + 1, null, now),
-                trace: targetState("verified", base.targets.trace.attempts + 1, null, now),
-                inbox: targetState("verified", base.targets.inbox.attempts + 1, null, now),
-              }),
-              pendingPayloadFiles: Object.freeze(
-                unique([...base.pendingPayloadFiles, ...core.pendingPayloadFiles]),
-              ),
-              payloadFileCount: unique([...base.pendingPayloadFiles, ...core.pendingPayloadFiles])
-                .length,
-              externalEffectTombstoneCount:
-                base.externalEffectTombstoneCount + core.externalEffectTombstoneCount,
-              updatedAt: now,
-            });
-            this.#upsertTombstone(database, next, "incomplete", null);
-            return next;
-          })
-          .immediate();
-
-        const afterPayload = await this.#deletePayloadFiles(prepared);
-        const afterArtifacts = Object.freeze({
-          ...afterPayload,
-          targets: await this.#deleteDerivedArtifacts(afterPayload, ["search", "cache", "archive"]),
-          updatedAt: this.#now(),
-        });
-        const verified = TARGETS.every(
-          (target) => afterArtifacts.targets[target].status === "verified",
-        );
-        const finalRecord: StoredDeletionRecord = Object.freeze({
-          ...afterArtifacts,
-          lifecycle: verified ? "deleted_verified" : "deletion_pending",
-        });
-        this.#upsertTombstone(
-          database,
-          finalRecord,
-          verified ? "verified" : "incomplete",
-          verified ? finalRecord.updatedAt : null,
-        );
-        return this.#publicReport(finalRecord);
+        return await this.#deleteOpen(database, objectType, objectId, stillEligible);
       } finally {
         database.close();
       }
     } finally {
       await lock.release();
     }
+  }
+
+  async deleteExpiredThinkThreads(input: {
+    readonly archivedBefore: string;
+    readonly activeBefore: string;
+    readonly limit: number;
+  }): Promise<readonly GovernedDeletionReport[]> {
+    if (
+      !Number.isFinite(Date.parse(input.archivedBefore)) ||
+      !Number.isFinite(Date.parse(input.activeBefore)) ||
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 500
+    ) {
+      throw new GovernedDeletionError(
+        GOVERNED_DELETION_ERROR_CODES.INVALID_INPUT,
+        "Think thread retention input is invalid",
+      );
+    }
+    const database = this.#database();
+    database.pragma("busy_timeout = 5000");
+    try {
+      const expired = this.#expiredThinkThreadIds(database, input, null);
+      const reports: GovernedDeletionReport[] = [];
+      for (const threadId of expired) {
+        const objectId = safeIdentity(threadId, "thread ID");
+        try {
+          reports.push(
+            await this.#deleteOpen(database, "thread", objectId, (current) => {
+              if (this.#expiredThinkThreadIds(current, input, objectId).length === 0) {
+                throw new GovernedDeletionError(
+                  GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                  "Think thread is no longer eligible for retention deletion",
+                  { objectId },
+                );
+              }
+            }),
+          );
+        } catch (error) {
+          if (
+            error instanceof GovernedDeletionError &&
+            error.code === GOVERNED_DELETION_ERROR_CODES.CONFLICT
+          )
+            continue;
+          throw error;
+        }
+      }
+      return Object.freeze(reports);
+    } finally {
+      database.close();
+    }
+  }
+
+  async retryIncompleteThreadDeletions(input: {
+    readonly limit: number;
+  }): Promise<readonly GovernedDeletionReport[]> {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+      throw new GovernedDeletionError(
+        GOVERNED_DELETION_ERROR_CODES.INVALID_INPUT,
+        "Thread deletion retry input is invalid",
+      );
+    }
+    const database = this.#database();
+    database.pragma("busy_timeout = 5000");
+    try {
+      const incomplete = this.#values(
+        database,
+        `SELECT d.object_id FROM deletion_tombstones d
+        WHERE d.owner_id = ? AND d.agent_id = ? AND d.object_type = 'thread'
+          AND d.status = 'incomplete' AND d.purge_deadline_at <= ?
+          AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.id = d.object_id)
+        ORDER BY d.requested_at, d.id LIMIT ?`,
+        [this.#options.ownerId, this.#options.agentId, this.#now(), input.limit],
+      );
+      const reports: GovernedDeletionReport[] = [];
+      for (const threadId of incomplete) {
+        const objectId = safeIdentity(threadId, "thread ID");
+        try {
+          reports.push(
+            await this.#deleteOpen(database, "thread", objectId, this.#threadStillGone(objectId)),
+          );
+        } catch (error) {
+          if (
+            error instanceof GovernedDeletionError &&
+            error.code === GOVERNED_DELETION_ERROR_CODES.CONFLICT
+          )
+            continue;
+          throw error;
+        }
+      }
+      return Object.freeze(reports);
+    } finally {
+      database.close();
+    }
+  }
+
+  #expiredThinkThreadIds(
+    database: InstanceType<typeof BetterSqlite3>,
+    input: {
+      readonly archivedBefore: string;
+      readonly activeBefore: string;
+      readonly limit: number;
+    },
+    threadId: string | null,
+  ): readonly string[] {
+    return this.#values(
+      database,
+      `SELECT t.id FROM threads t
+      WHERE t.owner_id = ? AND t.agent_id = ? AND t.origin = 'think' AND t.status = 'open'
+        AND (? IS NULL OR t.id = ?)
+        AND ((t.archived_at IS NOT NULL AND t.archived_at <= ?)
+          OR (t.archived_at IS NULL AND t.updated_at <= ?))
+        AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.thread_id = t.id
+          AND r.status NOT IN ('completed', 'failed', 'cancelled'))
+        AND NOT EXISTS (SELECT 1 FROM scheduled_jobs j WHERE j.thread_id = t.id
+          AND j.status = 'active')
+      ORDER BY COALESCE(t.archived_at, t.updated_at), t.id LIMIT ?`,
+      [
+        this.#options.ownerId,
+        this.#options.agentId,
+        threadId,
+        threadId,
+        input.archivedBefore,
+        input.activeBefore,
+        input.limit,
+      ],
+    );
+  }
+
+  async #deleteOpen(
+    database: InstanceType<typeof BetterSqlite3>,
+    objectType: GovernedDeletionObjectType,
+    objectId: string,
+    stillEligible?: (database: InstanceType<typeof BetterSqlite3>) => void,
+  ): Promise<GovernedDeletionReport> {
+    const input = { objectType, objectId };
+    const now = this.#now();
+    const previous = this.#storedRecord(database, input.objectType, objectId);
+    stillEligible?.(database);
+    if (input.objectType === "thread") {
+      const activeTaskIds = this.#values(
+        database,
+        `SELECT id FROM scheduled_jobs WHERE thread_id = ? AND status = 'active' ORDER BY id`,
+        [objectId],
+      );
+      if (activeTaskIds.length > 0) {
+        throw new GovernedDeletionError(
+          GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+          "Active tasks must be resolved before permanent Thread deletion",
+          { objectId, activeTaskIds: activeTaskIds.join(",") },
+        );
+      }
+    }
+    const base: StoredDeletionRecord = previous
+      ? Object.freeze({ ...previous, lifecycle: "deletion_pending", updatedAt: now })
+      : Object.freeze({
+          deletionId: deletionId(input.objectType, objectId),
+          objectType: input.objectType,
+          objectId,
+          lifecycle: "deletion_pending",
+          purgeDeadlineAt: now,
+          targets: initialTargets("delete"),
+          payloadFileCount: 0,
+          pendingPayloadFiles: Object.freeze([]),
+          externalEffectTombstoneCount: 0,
+          associatedTaskIds:
+            input.objectType === "thread"
+              ? this.#values(
+                  database,
+                  `SELECT id FROM scheduled_jobs
+                  WHERE thread_id = ? AND status != 'revoked' ORDER BY id`,
+                  [objectId],
+                )
+              : Object.freeze([]),
+          pausedTaskIds: Object.freeze([]),
+          priorProductStatus: null,
+          updatedAt: now,
+        });
+    if (input.objectType === "memory") {
+      const memory = database
+        .prepare(
+          `SELECT status, provider_record_id AS providerRecordId
+          FROM memory_records WHERE id = ? AND owner_id = ? AND agent_id = ?`,
+        )
+        .get(objectId, this.#options.ownerId, this.#options.agentId) as
+        | { status: string; providerRecordId: string | null }
+        | undefined;
+      if (memory && (memory.providerRecordId || memory.status === "deletion_pending")) {
+        const pending = database
+          .transaction(() => {
+            database
+              .prepare(
+                `UPDATE memory_records SET status = 'deletion_pending', revision = revision + 1,
+                  updated_at = ?
+                WHERE id = ? AND status NOT IN ('deletion_pending', 'deleted_verified')`,
+              )
+              .run(now, objectId);
+            const record: StoredDeletionRecord = Object.freeze({
+              ...base,
+              targets: Object.freeze({
+                ...base.targets,
+                product: targetState(
+                  "failed",
+                  base.targets.product.attempts + 1,
+                  GOVERNED_DELETION_ERROR_CODES.PROVIDER_CLEANUP_REQUIRED,
+                ),
+              }),
+            });
+            this.#upsertTombstone(database, record, "incomplete", null);
+            return record;
+          })
+          .immediate();
+        const afterArtifacts: StoredDeletionRecord = Object.freeze({
+          ...pending,
+          targets: await this.#deleteDerivedArtifacts(pending, ["search", "cache", "archive"]),
+          updatedAt: this.#now(),
+        });
+        this.#upsertTombstone(database, afterArtifacts, "incomplete", null);
+        return this.#publicReport(afterArtifacts);
+      }
+    }
+    const prepared = database
+      .transaction(() => {
+        stillEligible?.(database);
+        this.#upsertTombstone(database, base, "incomplete", null);
+        const core = this.#deleteCore(database, input.objectType, objectId, previous !== undefined);
+        const next: StoredDeletionRecord = Object.freeze({
+          ...base,
+          targets: Object.freeze({
+            ...base.targets,
+            product: targetState("verified", base.targets.product.attempts + 1, null, now),
+            trace: targetState("verified", base.targets.trace.attempts + 1, null, now),
+            inbox: targetState("verified", base.targets.inbox.attempts + 1, null, now),
+          }),
+          pendingPayloadFiles: Object.freeze(
+            unique([...base.pendingPayloadFiles, ...core.pendingPayloadFiles]),
+          ),
+          payloadFileCount: unique([...base.pendingPayloadFiles, ...core.pendingPayloadFiles])
+            .length,
+          externalEffectTombstoneCount:
+            base.externalEffectTombstoneCount + core.externalEffectTombstoneCount,
+          updatedAt: now,
+        });
+        this.#upsertTombstone(database, next, "incomplete", null);
+        return next;
+      })
+      .immediate();
+
+    const afterPayload = await this.#deletePayloadFiles(prepared);
+    const afterArtifacts = Object.freeze({
+      ...afterPayload,
+      targets: await this.#deleteDerivedArtifacts(afterPayload, ["search", "cache", "archive"]),
+      updatedAt: this.#now(),
+    });
+    const verified = TARGETS.every(
+      (target) => afterArtifacts.targets[target].status === "verified",
+    );
+    const finalRecord: StoredDeletionRecord = Object.freeze({
+      ...afterArtifacts,
+      lifecycle: verified ? "deleted_verified" : "deletion_pending",
+    });
+    this.#upsertTombstone(
+      database,
+      finalRecord,
+      verified ? "verified" : "incomplete",
+      verified ? finalRecord.updatedAt : null,
+    );
+    return this.#publicReport(finalRecord);
   }
 
   async purgeExpiredTrash(asOf: string): Promise<readonly GovernedDeletionReport[]> {
@@ -635,9 +778,47 @@ export class SqliteGovernedDeletionAdapter {
       if (!(["thread", "run", "task", "memory", "payload"] as const).includes(entry.objectType)) {
         continue;
       }
-      reports.push(await this.deleteImmediately(entry));
+      const objectId = safeIdentity(entry.objectId, "object ID");
+      if (entry.objectType !== "thread") {
+        reports.push(await this.#deleteLocked(entry.objectType, objectId));
+        continue;
+      }
+      let live = false;
+      try {
+        reports.push(
+          await this.#deleteLocked("thread", objectId, (current) => {
+            if (
+              current
+                .prepare("SELECT 1 FROM threads WHERE id = ? AND status != 'trashed'")
+                .get(objectId)
+            ) {
+              live = true;
+              throw new GovernedDeletionError(
+                GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+                "Thread is no longer in Trash",
+                { objectId },
+              );
+            }
+          }),
+        );
+      } catch (error) {
+        if (live) continue;
+        throw error;
+      }
     }
     return Object.freeze(reports);
+  }
+
+  #threadStillGone(objectId: string): (database: InstanceType<typeof BetterSqlite3>) => void {
+    return (current) => {
+      if (current.prepare("SELECT 1 FROM threads WHERE id = ?").get(objectId)) {
+        throw new GovernedDeletionError(
+          GOVERNED_DELETION_ERROR_CODES.CONFLICT,
+          "Thread was recreated before its incomplete deletion was retried",
+          { objectId },
+        );
+      }
+    };
   }
 
   inspect(
@@ -780,6 +961,7 @@ export class SqliteGovernedDeletionAdapter {
         );
         database.prepare("DELETE FROM memory_episodes WHERE thread_id = ?").run(objectId);
         this.#detachThreadTasks(database, objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, runIds));
         database.prepare("DELETE FROM runs WHERE thread_id = ?").run(objectId);
         if (triggerIds.length > 0) {
           database
@@ -803,6 +985,7 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_provenance SET source_deleted = 1 WHERE source_id = ?")
           .run(objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, [objectId]));
         database.prepare("DELETE FROM runs WHERE id = ?").run(objectId);
         database.prepare("DELETE FROM triggers WHERE id = ?").run(run.triggerId);
       }
@@ -841,6 +1024,7 @@ export class SqliteGovernedDeletionAdapter {
             .run(...runIds);
         }
         database.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(objectId);
+        payloadRefs.push(...this.#removeDeviceActions(database, runIds));
         if (runIds.length > 0) {
           database.prepare(`DELETE FROM runs WHERE id IN (${placeholders(runIds)})`).run(...runIds);
         }
@@ -853,11 +1037,17 @@ export class SqliteGovernedDeletionAdapter {
     } else if (objectType === "memory") {
       const memory = database
         .prepare(
-          `SELECT content_ref AS contentRef, status, provider_record_id AS providerRecordId
+          `SELECT content_ref AS contentRef, status, provider_record_id AS providerRecordId,
+            classification
           FROM memory_records WHERE id = ? AND owner_id = ? AND agent_id = ?`,
         )
         .get(objectId, this.#options.ownerId, this.#options.agentId) as
-        | { contentRef: string; status: string; providerRecordId: string | null }
+        | {
+            contentRef: string;
+            status: string;
+            providerRecordId: string | null;
+            classification: string;
+          }
         | undefined;
       if (!memory && !retry) this.#failNotFound(objectType, objectId);
       if (memory) {
@@ -889,17 +1079,28 @@ export class SqliteGovernedDeletionAdapter {
         );
         const proposals = database
           .prepare(
-            `SELECT id, content_ref AS contentRef FROM external_memory_proposals
-            WHERE owner_id = ? AND agent_id = ? AND memory_id = ?`,
+            memory.classification === "restricted"
+              ? `SELECT id, content_ref AS contentRef FROM external_memory_proposals
+                WHERE owner_id = @ownerId AND agent_id = @agentId AND text_sha256 IN (
+                  SELECT text_sha256 FROM external_memory_proposals
+                  WHERE owner_id = @ownerId AND agent_id = @agentId AND memory_id = @memoryId)`
+              : `SELECT id, content_ref AS contentRef FROM external_memory_proposals
+                WHERE owner_id = @ownerId AND agent_id = @agentId AND memory_id = @memoryId`,
           )
-          .all(this.#options.ownerId, this.#options.agentId, objectId) as Array<{
+          .all({
+            ownerId: this.#options.ownerId,
+            agentId: this.#options.agentId,
+            memoryId: objectId,
+          }) as Array<{
           id: string;
           contentRef: string | null;
         }>;
         const forget = database.prepare(
-          `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
-            content_ref = NULL, batch_id = NULL
-          WHERE id = ?`,
+          memory.classification === "restricted"
+            ? "DELETE FROM external_memory_proposals WHERE id = ?"
+            : `UPDATE external_memory_proposals SET status = 'rejected', memory_id = NULL,
+              content_ref = NULL, batch_id = NULL
+            WHERE id = ?`,
         );
         for (const proposal of proposals) {
           forget.run(proposal.id);
@@ -940,6 +1141,11 @@ export class SqliteGovernedDeletionAdapter {
       ...this.#values(
         database,
         "SELECT metadata_ref FROM threads WHERE id = ? AND metadata_ref IS NOT NULL",
+        [threadId],
+      ),
+      ...this.#values(
+        database,
+        "SELECT title_ref FROM threads WHERE id = ? AND title_ref IS NOT NULL",
         [threadId],
       ),
       ...this.#values(database, "SELECT content_ref FROM thread_messages WHERE thread_id = ?", [
@@ -1003,6 +1209,27 @@ export class SqliteGovernedDeletionAdapter {
     }
   }
 
+  #removeDeviceActions(
+    database: InstanceType<typeof BetterSqlite3>,
+    runIds: readonly string[],
+  ): readonly string[] {
+    if (runIds.length === 0) return [];
+    const scope = [this.#options.ownerId, this.#options.agentId, ...runIds];
+    const where = `owner_id = ? AND agent_id = ? AND run_id IN (${placeholders(runIds)})`;
+    const refs = (
+      database
+        .prepare(
+          `SELECT arguments_ref AS argumentsRef, result_ref AS resultRef
+          FROM device_actions WHERE ${where}`,
+        )
+        .all(...scope) as Array<{ argumentsRef: string; resultRef: string | null }>
+    ).flatMap(({ argumentsRef, resultRef }) =>
+      resultRef === null ? [argumentsRef] : [argumentsRef, resultRef],
+    );
+    database.prepare(`DELETE FROM device_actions WHERE ${where}`).run(...scope);
+    return unique(refs);
+  }
+
   #runPayloadRefs(
     database: InstanceType<typeof BetterSqlite3>,
     runIds: readonly string[],
@@ -1040,6 +1267,16 @@ export class SqliteGovernedDeletionAdapter {
         ),
       );
     }
+    refs.push(
+      ...this.#values(
+        database,
+        `SELECT sentence_ref FROM home_item_scores
+        WHERE sentence_ref IS NOT NULL AND approval_request_id IN (
+          SELECT id FROM approval_requests WHERE run_id IN (${placeholders(runIds)})
+        )`,
+        runIds,
+      ),
+    );
     return unique(refs);
   }
 

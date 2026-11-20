@@ -37,6 +37,12 @@ export const DECISION_KINDS = [
   "retrieval_degrade",
   "external_read",
   "rule_review",
+  "web_push",
+  "memory_review",
+  "limit_change",
+  "delivery_timing",
+  "proposal",
+  "device_action",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
@@ -56,13 +62,50 @@ export const DECISION_OUTCOMES = {
   context_truncation: ["truncated"],
   retrieval_degrade: ["degraded"],
   external_read: ["read"],
-  rule_review: ["needs_review"],
+  rule_review: [
+    "needs_review",
+    "suspended",
+    "cleared",
+    "recheck_failed",
+    "owner_adopted",
+    "owner_confirmed",
+    "owner_restored",
+  ],
+  web_push: ["deferred"],
+  memory_review: ["flagged", "owner_edited", "owner_dismissed", "owner_reported_missed"],
+  limit_change: ["changed"],
+  delivery_timing: ["delivered", "deferred", "deadline_reached", "shown_in_app"],
+  proposal: [
+    "proposed",
+    "blocked",
+    "accepted",
+    "dismissed",
+    "expired",
+    "executed",
+    "failed",
+    "undone",
+    "not_proposed",
+    "superseded",
+    "told",
+  ],
+  device_action: [
+    "waiting_owner",
+    "queued",
+    "delivered",
+    "succeeded",
+    "failed",
+    "result_unknown",
+    "expired",
+    "rejected",
+    "policy_changed",
+  ],
 } as const satisfies Record<LedgerWriteKind, readonly string[]>;
 
 export const EXTERNAL_PROPOSAL_REASON_PREFIX = "mcp_proposal_";
 
 export const EXTERNAL_PROPOSAL_REASON_CODES = {
   kept: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept`,
+  keptDirect: `${EXTERNAL_PROPOSAL_REASON_PREFIX}kept_direct`,
   declined: `${EXTERNAL_PROPOSAL_REASON_PREFIX}declined`,
   pending: `${EXTERNAL_PROPOSAL_REASON_PREFIX}pending`,
   superseded: `${EXTERNAL_PROPOSAL_REASON_PREFIX}superseded`,
@@ -130,7 +173,16 @@ export interface DecisionInputs {
   readonly summaryRead?: "off" | "ok" | "partial" | "failed";
   readonly summaryGenerated?: number;
   readonly profileBudget?: ProfileBudget | null;
+  readonly limitChange?: LimitChangeInput | null;
 }
+
+export interface LimitChangeInput {
+  readonly key: string;
+  readonly from: number | null;
+  readonly to: number | null;
+}
+
+export const LIMIT_CHANGE_REASON_CODE = "limit_changed_by_owner";
 
 export interface ProfileBudget {
   readonly limit: number;
@@ -281,6 +333,13 @@ export interface MailTrace {
   readonly museEntries: readonly MailTraceMuseEntry[];
 }
 
+export interface RuleLastUse {
+  readonly ruleId: string;
+  readonly decisionId: string;
+  readonly kind: DecisionKind;
+  readonly decidedAt: string;
+}
+
 export interface DecisionLedgerScope {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -338,6 +397,9 @@ export interface DecisionLedgerPort {
   listMuse(
     input: DecisionLedgerScope & { readonly since: string; readonly limit: number },
   ): Promise<readonly MuseReferenceEntry[]>;
+  lastRuleUses(
+    input: DecisionLedgerScope & { readonly ruleIds: readonly string[] },
+  ): Promise<readonly RuleLastUse[]>;
   readMailTrace(input: DecisionLedgerScope & { readonly messageId: string }): Promise<MailTrace>;
   readGapCandidates(input: {
     readonly ownerId: OwnerId;

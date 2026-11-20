@@ -4,7 +4,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv from "ajv";
 
+export {
+  artifactPlatformKey,
+  buildPlatformKey,
+  hostArch,
+  hostOs,
+  hostPlatform,
+  supportedPlatforms,
+} from "./platforms.mjs";
+
 export const linuxRunnerLabel = "ci-vps";
+export const gateRunnerLabel = "ci-vps-gate";
+export const armRunnerLabel = "ci-arm";
+export const armChecks = Object.freeze(["policy", "static", "tooling", "security"]);
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const identityFields = [
   "repository",

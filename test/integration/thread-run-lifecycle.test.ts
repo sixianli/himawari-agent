@@ -16,6 +16,7 @@ import {
   RunCoordinator,
   type RunDispatchPort,
   RunExecutionInputService,
+  type RunExecutionSource,
   type RunExecutionLease,
   type RunLifecyclePort,
   type RunModelSelection,
@@ -2434,6 +2435,17 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       policy: changedPolicy,
     }).create({ candidate, lease: held });
     expect(restored).toEqual(original);
+    const frozenBeforeOwnerApprovedTask = await new RunExecutionInputService({
+      ...options,
+      policy: changedPolicy,
+      source: {
+        read: async (runId) => {
+          const live = await options.source.read(runId);
+          return live ? { ...live, ownerApprovedTask: true as const } : live;
+        },
+      },
+    }).create({ candidate, lease: held });
+    expect(frozenBeforeOwnerApprovedTask).toEqual(original);
     const laterClock = { now: () => new Date(Date.parse(clock.now()) + 1000).toISOString() };
     const larger = await new RunExecutionInputService({
       ...options,
@@ -4232,6 +4244,72 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         ).filter((message) => message.role === "agent"),
       ).toEqual([]);
       expect(f.failure).not.toHaveBeenCalled();
+    } finally {
+      await f.dispose();
+    }
+  });
+
+  it("[R2-D3] settles an expired snapshot frozen before ownerApprovedTask existed and still refuses a changed stored source", async () => {
+    const f = await unknownToolFixture();
+    try {
+      const { createProductionRunExpiry } = await import(
+        "../../apps/agent-service/src/production-run-expiry.ts"
+      );
+      const target = await f.addUnknown();
+      const stored = await f.runs.readRun(target.runId);
+      if (!stored) throw new Error("D3_RUN_MISSING");
+      const { revision: leaseRevision } = f.readback(target).lease as { revision: number };
+      const candidate = {
+        ownerId,
+        agentId,
+        runId: target.runId,
+        sessionId: stored.run.sessionId,
+        triggerId: stored.run.triggerId,
+        threadId: target.threadId,
+        runRevision: stored.revision,
+        runStatus: stored.run.status,
+        checkpointPhase: "reconciling_external_result" as const,
+        leaseRevision,
+        action: "reconcile" as const,
+      };
+      const liveSource = (change: (source: RunExecutionSource) => RunExecutionSource) =>
+        new Proxy(f.repository, {
+          get(repository, key) {
+            if (key === "runExecutionSource")
+              return (...scope: Parameters<SqliteProductStateRepository["runExecutionSource"]>) => {
+                const port = repository.runExecutionSource(...scope);
+                return {
+                  read: async (runId: RunId) => {
+                    const source = await port.read(runId);
+                    return source ? change(source) : source;
+                  },
+                };
+              };
+            const value = Reflect.get(repository, key);
+            return typeof value === "function" ? value.bind(repository) : value;
+          },
+        });
+      const expiry = (repository: SqliteProductStateRepository) =>
+        createProductionRunExpiry({
+          repository,
+          protector: f.protector,
+          clock,
+          ids: createReferenceAdapterSet({ clock }).ids,
+          scope: [ownerId, agentId, authority, lease, "d3-expiry"],
+          executionLeaseDurationMs: 30_000,
+        });
+      clock.set(target.deadlineAt);
+      await expect(
+        expiry(liveSource((source) => ({ ...source, sourceId: `${source.sourceId}-changed` })))(
+          candidate,
+        ),
+      ).rejects.toThrow("RUN_EXPIRY_INPUT_INVALID");
+      await expect(
+        expiry(liveSource((source) => ({ ...source, ownerApprovedTask: true as const })))(
+          candidate,
+        ),
+      ).resolves.toBe(true);
+      expect(await f.runs.readRun(target.runId)).toMatchObject({ run: { status: "failed" } });
     } finally {
       await f.dispose();
     }

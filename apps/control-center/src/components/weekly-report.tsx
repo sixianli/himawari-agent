@@ -10,6 +10,7 @@ import type {
 } from "../proactive.js";
 import { AccountLogin } from "./account-login.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
+import { McpUsageLines } from "./mcp-connections-settings.js";
 import { ModalDialog } from "./overlays.js";
 import { ActionButton } from "./primitives.js";
 
@@ -1454,6 +1455,69 @@ export function WeeklyReport({
             : message("weekly.prereview.reductionOff")}
         </p>
       </section>
+
+      {report.mcpConnections ? (
+        <section className="weekly-card" aria-label={message("agents.weekly.title")}>
+          <h3>{message("agents.weekly.title")}</h3>
+          <p className="weekly-muse-foot">
+            {message("agents.weekly.window", {
+              from: report.mcpConnections.fromDay,
+              to: report.mcpConnections.toDay,
+            })}
+          </p>
+          {report.mcpConnections.connections.length === 0 ? (
+            <p className="weekly-empty">{message("agents.weekly.empty")}</p>
+          ) : (
+            <ul className="weekly-agents">
+              {report.mcpConnections.connections.map((connection) => (
+                <li key={connection.id} data-connection={connection.id}>
+                  <strong>{connection.name}</strong>{" "}
+                  <span>{message(`agents.status.${connection.status}`)}</span>
+                  <McpUsageLines usage={connection.usage} message={message} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
+      {report.correction ? (
+        <section
+          className="weekly-card"
+          aria-label={message("weekly.correction.title")}
+          data-correction=""
+        >
+          <CardHead title={message("weekly.correction.title")} infoKey={null} info={infoButton} />
+          <div className="weekly-tiles" data-count="3">
+            <div className="weekly-tile" data-correction-tile="agreement">
+              <b>
+                {report.correction.agreement?.enough && report.correction.agreement.value !== null
+                  ? message("weekly.ratio", {
+                      pct: format.percent(report.correction.agreement.value),
+                      k: format.count(report.correction.agreed),
+                      n: format.count(report.correction.handled),
+                    })
+                  : message("weekly.few", { n: report.correction.handled })}
+              </b>
+              <span>
+                {message("weekly.correction.agreed", {
+                  n: format.count(report.correction.handled),
+                  k: format.count(report.correction.agreed),
+                })}
+              </span>
+            </div>
+            <div className="weekly-tile" data-correction-tile="missed">
+              <b>{format.count(report.correction.missed)}</b>
+              <span>{message("weekly.correction.missed")}</span>
+            </div>
+            <div className="weekly-tile" data-correction-tile="open">
+              <b>{format.count(report.correction.openMemories + report.correction.openRules)}</b>
+              <span>{message("weekly.correction.open")}</span>
+            </div>
+          </div>
+          <p className="weekly-muse-foot">{message("weekly.correction.note")}</p>
+        </section>
+      ) : null}
 
       <div className="weekly-foot">
         <button type="button" className="weekly-link" onClick={onRate}>

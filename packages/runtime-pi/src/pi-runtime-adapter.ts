@@ -110,7 +110,11 @@ import {
   piToolBatchSessionManager,
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
-import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
+import {
+  PiToolProgressGuard,
+  type PiToolProgressState,
+  type PiToolRefusalLimits,
+} from "./pi-tool-progress-guard.js";
 import {
   contextBlockMarker,
   runtimeEnvironmentAfterCompaction,
@@ -189,6 +193,7 @@ export interface PiRuntimeResourcePort {
 
 export interface PiAgentRuntimeAdapterDependencies {
   readonly egress: ModelEgress;
+  readonly toolRefusalLimits?: PiToolRefusalLimits;
   readonly projection: RuntimeProjectionPort;
   readonly promptBundles?: RuntimePromptBundlePort;
   readonly onHandleTools?: (
@@ -1461,7 +1466,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         messageSequence = continuation.messageSequence;
       }
       let streamOrdinal = continuation?.batch.completedStreamOrdinal ?? 0;
-      const toolProgress = new PiToolProgressGuard(continuation?.toolProgress);
+      const toolProgress = new PiToolProgressGuard(
+        continuation?.toolProgress,
+        this.#dependencies.toolRefusalLimits,
+      );
       let loopStoppedAppended = false;
       const appendLoopStopped = () => {
         const active = this.#activeSessions.get(request.runId);
@@ -1548,7 +1556,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               });
               pi.on("tool_result", (event) => {
                 const details = event.details as
-                  | { productOutcome?: unknown; errorCode?: unknown }
+                  | { productOutcome?: unknown; errorCode?: unknown; refused?: unknown }
                   | undefined;
                 if (!suspended && !unknownTool && !replayedResults.delete(event.toolCallId))
                   toolProgress.observe(
@@ -1560,6 +1568,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
                       typeof details?.errorCode === "string"
                       ? details.errorCode
                       : undefined,
+                    details?.refused === true,
                   );
                 if (toolProgress.blocked) appendLoopStopped();
                 if (
@@ -2186,6 +2195,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               reasonCode: decision.reasonCode,
               productOutcome: "failed",
               dispatchState: "not_sent",
+              refused: true,
             },
             isError: true,
           };
@@ -2239,6 +2249,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         details: {
           ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
           productOutcome: result.outcome,
+          ...(result.refused ? { refused: true } : {}),
           ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
           productRunId: request.runId,
           resultRef: result.resultRef,

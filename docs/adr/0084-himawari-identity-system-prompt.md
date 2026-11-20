@@ -31,7 +31,7 @@ date: "2026-10-26"
 
 - `packages/runtime-pi/src/pi-runtime-adapter.ts` 给 Pi 的 `DefaultResourceLoader`（Pi 读取系统提示、技能等资源的组件）传了 `systemPrompt: ""`，再用 `appendSystemPromptOverride` 把产品系统指令追加在后面。
 - Pi 的 `buildSystemPrompt`（`dist/core/system-prompt.js`）在“自定义提示”为空时，就用它默认的编程助手开头；只有给了自定义提示，才跳过这段。
-- 2026-09-13 的提交 `d30d59c` 有意这样做：[原生运行历史规格](../execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)要求保留 Pi 为内置工具生成的工具简介（`promptSnippet`）和用法规则（`promptGuidelines`），而 Pi 在使用自定义提示时会把这两样一起丢掉。
+- 2026-09-13 的提交 `d30d59c` 有意这样做：[原生运行历史规格](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md#数据与流程)要求保留 Pi 为内置工具生成的工具简介（`promptSnippet`）和用法规则（`promptGuidelines`），而 Pi 在使用自定义提示时会把这两样一起丢掉。
 
 所以问题不是“忘了写身份说明”，而是 Pi 0.84.2 只给两个选择：要么用它的编程助手开头并保留工具说明，要么用自己的开头但丢掉工具说明。
 
@@ -68,7 +68,7 @@ date: "2026-10-26"
 
 ## 关联文档
 
-- [SOURCE: docs/execution/specs/2026-09-11-native-runtime-history-design.md]
+- [2026-09-11-native-runtime-history-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-11-native-runtime-history-design.md)
 - [SOURCE: docs/adr/0029-protected-native-runtime-history.md]
 - [SOURCE: docs/adr/0081-isolated-instance-per-person.md]
 - [SOURCE: docs/engineering-casebook.md]

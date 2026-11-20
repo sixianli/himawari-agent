@@ -1,0 +1,114 @@
+import type { RunExecutionSource } from "@himawari-agent/application";
+import { expect, it } from "vitest";
+import { collectOwnerWords } from "../src/production-owner-intent.js";
+
+interface Message {
+  readonly id: string;
+  readonly sequence: number;
+  readonly role: "owner" | "agent";
+  readonly status: "committed" | "pending";
+  readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
+  readonly contentRef: string;
+  readonly text: string;
+}
+
+const message = (sequence: number, text: string, overrides: Partial<Message> = {}): Message => ({
+  id: `m${sequence}`,
+  sequence,
+  role: "owner",
+  status: "committed",
+  dataClassification: "private",
+  contentRef: `ref:${sequence}`,
+  text,
+  ...overrides,
+});
+
+function dependencies(messages: readonly Message[]) {
+  return {
+    ownerId: "owner:a" as never,
+    agentId: "agent:a" as never,
+    threads: {
+      readCommittedMessagesByIds: async ({ messageIds }: { messageIds: readonly string[] }) =>
+        messages.filter(({ id }) => messageIds.includes(id)) as never,
+      listMessages: async (_o: unknown, _a: unknown, _t: unknown, after: number, limit: number) =>
+        messages.filter(({ sequence }) => sequence > after).slice(0, limit) as never,
+    },
+    readText: async (ref: string) => messages.find(({ contentRef }) => contentRef === ref)?.text,
+  };
+}
+
+const source = (sequence: number): RunExecutionSource =>
+  ({
+    sourceType: "user_message",
+    threadId: "thread:a",
+    sourceId: `m${sequence}`,
+    payloadRef: `ref:${sequence}`,
+  }) as never;
+
+it("[ADR-0257] sends only the owner's own sendable words: no agent text, no sensitive or secret-looking messages, nothing after the triggering message", async () => {
+  const messages = [
+    message(1, "帮我看看这个网页"),
+    message(2, "好的，我读了这个网页", { role: "agent" }),
+    message(3, "我的健康情况不好", { dataClassification: "sensitive" }),
+    message(4, "我的银行卡是 4111 1111 1111 1111"),
+    message(5, "明天九点提醒我给房东回电话"),
+    message(6, "之后才说的话"),
+  ];
+  expect(await collectOwnerWords(dependencies(messages), source(5))).toEqual([
+    "帮我看看这个网页",
+    "明天九点提醒我给房东回电话",
+  ]);
+});
+
+it("[ADR-0257] returns nothing, so the owner is asked, when the run is not a user message, has no thread, or the message is not the owner's own", async () => {
+  const messages = [message(1, "明天九点提醒我", { role: "agent" }), message(2, "帮我设提醒")];
+  const deps = dependencies(messages);
+  expect(
+    await collectOwnerWords(deps, {
+      ...source(2),
+      sourceType: "schedule",
+    } as never),
+  ).toEqual([]);
+  expect(await collectOwnerWords(deps, { ...source(2), threadId: null } as never)).toEqual([]);
+  expect(await collectOwnerWords(deps, source(1))).toEqual([]);
+  expect(
+    await collectOwnerWords(deps, {
+      ...source(2),
+      payloadRef: "ref:other",
+    } as never),
+  ).toEqual([]);
+});
+
+it("[ADR-0257] keeps at most the six most recent owner messages and cuts each at 2000 characters", async () => {
+  const messages = Array.from({ length: 10 }, (_, index) =>
+    message(index + 1, `第 ${index + 1} 句，${"字".repeat(2500)}`),
+  );
+  const words = await collectOwnerWords(dependencies(messages), source(10));
+  expect(words.length).toBeLessThanOrEqual(6);
+  expect(words.at(-1)).toContain("第 10 句");
+  expect(words.every((text) => [...text].length <= 2000)).toBe(true);
+});
+
+it("[ADR-0257] keeps the total owner words within the byte budget, dropping the oldest first", async () => {
+  const messages = Array.from({ length: 10 }, (_, index) =>
+    message(index + 1, `第 ${index + 1} 句，${"字".repeat(2500)}`),
+  );
+  const words = await collectOwnerWords(dependencies(messages), source(10));
+  const total = words.reduce((sum, text) => sum + Buffer.byteLength(text, "utf8"), 0);
+  expect(total).toBeLessThanOrEqual(20_000);
+  expect(words.at(-1)).toContain("第 10 句");
+  expect(words.join("")).not.toContain("第 5 句");
+});
+
+it("[ADR-0257] counts the JSON-escaped size of the owner words against the byte budget", async () => {
+  const messages = Array.from({ length: 6 }, (_, index) =>
+    message(index + 1, `第 ${index + 1} 句${"\u0001a".repeat(1000)}`),
+  );
+  const words = await collectOwnerWords(dependencies(messages), source(6));
+  const wire = words.reduce(
+    (sum, text) => sum + Buffer.byteLength(JSON.stringify(text), "utf8"),
+    0,
+  );
+  expect(wire).toBeLessThanOrEqual(20_000 + 2 * words.length);
+  expect(words.at(-1)).toContain("第 6 句");
+});

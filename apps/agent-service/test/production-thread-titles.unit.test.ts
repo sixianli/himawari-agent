@@ -127,6 +127,16 @@ it("does not send a model request for an already named thread", async () => {
   expect(f.update).not.toHaveBeenCalled();
 });
 
+it("does not send a model request for a thread Himawari opened to think something over", async () => {
+  const f = await fixture();
+  f.setThread({ ...f.thread(), origin: "think" });
+  f.service.start(f.request);
+  await f.service.stop();
+  expect(f.generate).not.toHaveBeenCalled();
+  expect(f.update).not.toHaveBeenCalled();
+  expect(f.thread().titleRef).toBeNull();
+});
+
 it("keeps an Owner rename made while the model request is in flight", async () => {
   const f = await fixture();
   f.generate.mockImplementation(async () => {

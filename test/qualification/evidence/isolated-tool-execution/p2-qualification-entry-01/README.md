@@ -1,6 +1,6 @@
 # P2：真实容器资格验证的固定入口
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)最后一项“按 P0 确定的放置方式登记真实容器的资格验证入口”。放置方式来自 [P0 的决定](../p0-baseline-01/README.md#placement)：沿用 `qualify:scale` 的做法，默认不是必需检查。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)最后一项“按 P0 确定的放置方式登记真实容器的资格验证入口”。放置方式来自 [P0 的决定](../p0-baseline-01/README.md#placement)：沿用 `qualify:scale` 的做法，默认不是必需检查。
 
 本批只增加运行入口，不改变容器后端或产品行为。
 

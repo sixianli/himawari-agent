@@ -57,20 +57,26 @@ describe("[P2-7] decision records point at a rule version", () => {
       expect(ruleKindOf(unknown)).toBe("unknown");
   });
 
-  it("[P2-7] shows a built-in rule with its word list, source and passing examples", () => {
-    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 1 }, undefined);
+  it("[P2-7] shows the money rule as one the model's yes/no feeds, with its source and passing examples", () => {
+    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 2 }, undefined);
     expect(view).toMatchObject({
       kind: "money_words",
       origin: "built_in",
       status: "active",
       current: false,
-      revision: 1,
-      source: "ADR 0106 第 4 条；ADR 0209",
+      revision: 2,
+      source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
       tests: { state: "passed", failedAt: null },
     });
     expect(view.tests.total).toBeGreaterThan(1);
-    expect(view.wording?.values).toEqual(BUILT_IN_RULE_VALUES[RULE_IDS.moneyWords]);
-    expect(view.wording?.values).toContain("invoice");
+    expect(view.wording?.values).toEqual([]);
+    expect(BUILT_IN_RULE_VALUES[RULE_IDS.moneyWords]).toBeUndefined();
+  });
+
+  it("[P2-7] REVERSE: the word-list revision 1 of the money rule is no longer in the code", () => {
+    const view = describeRuleVersion({ ruleId: RULE_IDS.moneyWords, revision: 1 }, undefined);
+    expect(view.wording).toBeNull();
+    expect(view.tests.state).toBe("unavailable");
   });
 
   it("[P2-7] refuses to describe a built-in revision the code does not have", () => {
@@ -191,6 +197,39 @@ describe("[P2-3] a rule the owner set in one sentence shows its kind in the deci
       wording: { values: ["日本入管局相关的邮件一律提醒"] },
       tests: { state: "passed" },
     });
+  });
+
+  it("[HR-4] reads a push_quiet_hours rule's periods and passes its own examples", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:night@2"),
+      stored("owner:night", 2, {
+        type: "push_quiet_hours",
+        summary: "夜里别推任务结果",
+        params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+      }),
+    );
+    expect(view).toMatchObject({
+      kind: "push_quiet_hours",
+      revision: 2,
+      origin: "owner_setting",
+      wording: {
+        values: ["夜里别推任务结果"],
+        quietHours: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+      },
+      tests: { state: "passed" },
+    });
+  });
+
+  it("[HR-4] REVERSE: a push_quiet_hours version with unreadable periods cannot be checked", () => {
+    const view = describeRuleVersion(
+      parseRuleRef("owner:night@1"),
+      stored("owner:night", 1, {
+        type: "push_quiet_hours",
+        summary: "x",
+        params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] },
+      }),
+    );
+    expect(view).toMatchObject({ tests: { state: "unavailable" } });
   });
 
   it("[P2-3] REVERSE: an owner rule with a type it cannot read stays unknown and untested", () => {

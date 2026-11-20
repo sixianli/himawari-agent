@@ -1,0 +1,27 @@
+CLAIM|1|一致|.claude/rules/owner-global-instructions.md:61|- 每个提交创建后立即推送到 `origin` 上的同名分支，第一次推送时设置上游；绝不强制推送、改写已推送的历史或绕过钩子，推送被拒绝时停下并报告。|不得改写已推送的历史。`.claude/rules/owner-global-instructions.md:61`：“绝不强制推送、改写已推送的历史或绕过钩子”。
+CLAIM|2|一致|.agents/instructions/disk-space-hygiene.md:10|清理是自动的（不要等 Mac 快满了才清理）。|清理要自动、由脚本做；新的可重建产物要加进脚本和测试。`.agents/instructions/disk-space-hygiene.md:10`：“清理是自动的（不要等 Mac 快满了才清理）”
+CLAIM|3|一致|.agents/instructions/disk-space-hygiene.md:10|当一种新的可重建产物开始堆积时，把它的匹配模式加进脚本及其测试，而不是手工清理。|`.agents/instructions/disk-space-hygiene.md:10`：“当一种新的可重建产物开始堆积时，把它的匹配模式加进脚本及其测试，而不是手工清理。”
+CLAIM|4|一致|.agents/instructions/disk-space-hygiene.md:8|始终保留测试报告、日志、状态回读、跟踪记录、截图、所有被引为证据的东西|证据要保留，减少证据先问。`.agents/instructions/disk-space-hygiene.md:8`：“始终保留测试报告、日志、状态回读、跟踪记录、截图、所有被引为证据的东西”
+CLAIM|5|一致|.agents/instructions/disk-space-hygiene.md:8|优先删除可重建产物而不是证据；减少证据之前要先问。|`.agents/instructions/disk-space-hygiene.md:8`：“减少证据之前要先问。”
+CLAIM|6|一致|.claude/rules/owner-standing-rules.md:42|唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。|删除 Andy Mac 上的文件只认他在 Mac 线程亲手打的字。`.claude/rules/owner-standing-rules.md:42`：“唯一的例外是删除 Andy 的 Mac 上的文件：只认他在 Mac 线程（通过 Remote Control 在他 MacBook 上运行的那个线程）里亲手打的字。”
+CLAIM|7|一致|scripts/disk-hygiene/prune-rebuildable.py:12|REBUILDABLE_FILES = ('*.bundle', 'node-modules.tar.gz', '*-abi[0-9]*-*.tar.gz', 'python-[0-9]*.tar.gz')|现有清理只认四种文件名。`scripts/disk-hygiene/prune-rebuildable.py:12`：`REBUILDABLE_FILES = ('*.bundle', 'node-modules.tar.gz', '*-abi[0-9]*-*.tar.gz', 'python-[0-9]*.tar.gz')`
+CLAIM|8|一致|scripts/disk-hygiene/prune-rebuildable.py:53|            if name == 'tools' and current.name == '.ci-output':|第 53 行跳过 `.ci-output/tools`：`if name == 'tools' and current.name == '.ci-output':`。
+CLAIM|9|一致|scripts/disk-hygiene/install-schedule.sh:88|    echo '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>'|现有定时任务每天 04:00 跑。
+CLAIM|10|不一致|scripts/disk-hygiene/install-schedule.sh:60|  [[ -d "$root" ]] || { echo "PRUNE_SCHEDULE_ROOT_MISSING $root" >&2; exit 2; }|`scripts/disk-hygiene/install-schedule.sh:60`：`<key>Hour</key><integer>4</integer>`。
+CLAIM|11|一致|clients/apple/scripts/ui-review.sh:6@07181db904ac5cdb18fa9b801bcc774e100b100d|out="$root/ui-review/latest"|截图脚本把截图和编译缓存都写在仓库目录里。`clients/apple/scripts/ui-review.sh:6`：`out="$root/ui-review/latest"`
+CLAIM|12|一致|clients/apple/scripts/ui-review.sh:11@07181db904ac5cdb18fa9b801bcc774e100b100d|derived="$root/ui-review/DerivedData"|第 11 行：`derived="$root/ui-review/DerivedData"`
+CLAIM|13|一致|clients/apple/scripts/mac-ui-review.sh:6@07181db904ac5cdb18fa9b801bcc774e100b100d|derived="$root/ui-review/DerivedData-mac"|`clients/apple/scripts/mac-ui-review.sh:6`：`derived="$root/ui-review/DerivedData-mac"`。
+CLAIM|14|一致|clients/apple/scripts/ui-review.sh:125@07181db904ac5cdb18fa9b801bcc774e100b100d|  shots="$(mktemp -d)"|本 PR 之前，`--check` 的临时截图目录（`shots="$(mktemp -d)"`）没有删除它的语句
+CLAIM|15|一致|clients/apple/ui-review/.gitignore:2|latest/|截图目录已写进忽略清单。`clients/apple/ui-review/.gitignore:2`：`latest/`
+CLAIM|16|一致|clients/apple/ui-review/.gitignore:6|mac-latest/|第 6 行：`mac-latest/`。
+CLAIM|17|一致|.gitignore:1@07181db904ac5cdb18fa9b801bcc774e100b100d|node_modules/\ndist/\ncoverage/\n.ci-output/\n.playwright-cli/\noutput/playwright/\n*.tsbuildinfo\n__pycache__/\n*.log\n.DS_Store\n.env\n.env.*\n!.env.example\n\n# 本地放置的 Muse 提示词资料，不进仓库\n/muse_prompt/|本 PR 之前，根 `.gitignore` 没有忽略工作副本目录（`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出，2026-11-15 云端运行）
+CLAIM|18|找不到|-|未核实|云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）。
+CLAIM|19|一致|scripts/delivery-mode/make-packet.py:678|        self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))|`.ci-output/handoff/scripts` 里是上线工具在用的脚本。`scripts/delivery-mode/make-packet.py:678`：`self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))`。
+CLAIM|20|一致|.agents/opencode-models.py:131|    base = root / ".ci-output" / "worktrees"|`.ci-output/worktrees` 被模型目录工具使用。`.agents/opencode-models.py:131`：`base = root / ".ci-output" / "worktrees"`。
+CLAIM|21|一致|scripts/disk-hygiene/install-schedule.sh:12|copy="$share/prune-rebuildable.py"|定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`
+CLAIM|22|不一致|scripts/disk-hygiene/install-schedule.sh:44|apply_local=""|第 44 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
+CLAIM|23|一致|scripts/disk-hygiene/prune-rebuildable.py:16|BUSY_PATTERN = r'vitest|playwright|scripts/ci/(run|local|test|build|execute)\.mjs|npm (test|run (build|check|test))'|现有“忙时跳过”的进程名单里没有 Xcode。`scripts/disk-hygiene/prune-rebuildable.py:16`：`BUSY_PATTERN = r'vitest｜playwright｜scripts/ci/(run｜local｜test｜build｜execute)\.mjs｜npm (test｜run (build｜check｜test))'`
+CLAIM|24|一致|scripts/repo-hygiene/config.json:6|    "clients/apple/ui-review/latest/",|`check:repo-hygiene` 拦它再被提交
+CLAIM|25|一致|clients/apple/scripts/ui-review.sh:237|  "$inspector" "$snapshots" "$shots"|`ui-review.sh --check` 要拿它逐像素比较。
+
+未核对的部分：Mac/云端磁盘统计与 pack、分支、提交数量等数字（16G、0.5G、340.64MiB、355 个分支、260M/309M/131M/74M/36M/153M、40 个工作副本、5.1G、3.0G、37 个/31G、857MB 等）无法从仓库文件核实；前提 11 的 `git fetch` 和前提 10 的 `git check-ignore` 也未重跑（仅读基线 `.gitignore`）。第 10、22 条引用的行号只在基线提交成立，当前提交对应内容已移到 `install-schedule.sh:88` 和 `:64`，因此按当前文件判为不一致；外部网站和第三方产品的内容不在核对范围。

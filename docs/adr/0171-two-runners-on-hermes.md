@@ -116,7 +116,7 @@ date: "2026-11-05"
 ## 关联文档
 
 - [SOURCE: docs/adr/0160-self-hosted-runner-on-hermes.md]
-- [SOURCE: docs/runbooks/hermes-self-hosted-runner-runbook.md]
+- [hermes-self-hosted-runner-runbook.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
 - GitHub 官方文档：[Self-hosted runners reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners)
 - systemd 官方文档：[systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)
 - Linux 内核文档：[Control Group v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)
