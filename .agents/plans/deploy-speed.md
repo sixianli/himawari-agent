@@ -75,7 +75,7 @@
 
 ## 实施时与方案不同的地方
 
-最终做法以 ADR 0281 和代码为准；下面几处与上面的方案文字不同：
+最终做法以 ADR 0282 和代码为准；下面几处与上面的方案文字不同：
 
 - 上传目录没有加进 `target_paths()`：预检不要求它不存在，上次留下的 `/var/tmp/<代号>-packet-upload` 由清理里原有的那一段（`release-cleanup-remote.py` 的 `UPLOAD_NAME`）先留小文件再删掉。
 - “由缓存补”的名单不放在 tar 流开头，而是 base64 编码后作为接收命令的最后一个参数（`run-local-step.py` 的 `remote_command`）。
