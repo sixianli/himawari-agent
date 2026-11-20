@@ -15,7 +15,7 @@ date: "2026-09-10"
 
 用户要求将已确认的 Web 设计落实为可日常使用的 AI Agent。天气搜索、文件读写、脚本编写是代表性场景，不能以硬编码示例或受控服务代替真实模型、工具、审批和恢复。用户于 2026-09-11 明确最终运行主机为 Hermes Linux，Mac 仅承担开发与浏览器访问。
 
-- [SOURCE: docs/archive/specs/2026-09-10-control-center-product-refactor-design.md]
+- [2026-09-10-control-center-product-refactor-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-control-center-product-refactor-design.md)
 - [SOURCE: docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md]
 - [SOURCE: docs/adr/0027-built-in-owner-authentication.md]
 - [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]
@@ -36,7 +36,7 @@ Pi 提供模型连接、流式事件、会话、Agent Loop 和 read/write/edit/b
 
 `runPolicy.coding` 选择已安装 Pi 工具；`runPolicy.publicSearch` 选择独立搜索程序。均引用 host、Worker instance、目录 Grant、Capability 版本与输出上限。模型目录和思考深度来自实际配置与 Pi 能力；选择随新 Run 固定，运行中变更只影响后续消息。每轮系统上下文保存真实请求时间，查询“今天”时不能沿用模型知识中的日期。
 
-工具参数冻结到受保护的 Run artifact。动作 Intent 只包含工具、范围、输入摘要和明确接收方；原始文件内容、命令和凭据不放进公开审批摘要。动作/披露批准后签发单次 Handle，继续走现有 Worker 准入、scope 与隔离；拒绝和暂停不签发可执行 Handle。恢复复查原输入、目录版本、模型身份、执行租约、截止时间和当前授权，不能因刷新改变操作或重新授予期限。
+工具参数冻结到受保护的 Run artifact。动作 Intent 只包含工具、范围、输入摘要和明确接收方；原始文件内容、命令和凭据不放进公开审批摘要；例外是审批详情的展示字段 `display.bodyPreview` 和 `display.origin.threadTitle`：发起审批时由服务器从这次工具调用的实际参数取一小段，先过出口遮盖再按 `runPolicy.approvalBodyPreviewCharacters`（默认 300，上限 2000）截断，截断时末尾多加一个省略号，所以网关接受的最大长度是上限加 1（正文 2001、对话标题 121）；对话标题只在其内容分级为 public 或 private 时才取；两者随审批记录一起保存，对话删除时随运行一起删除，其中能认出的凭据按出口遮盖的规则遮掉。动作/披露批准后签发单次 Handle，继续走现有 Worker 准入、scope 与隔离；拒绝和暂停不签发可执行 Handle。恢复复查原输入、目录版本、模型身份、执行租约、截止时间和当前授权，不能因刷新改变操作或重新授予期限。
 
 `workspace grant` 离线登记明确确认的规范目录及真实设备/inode，默认 read/create/update、private/model 披露；它不代替逐次动作批准。`capabilities register` 只登记经严格 loader 验证且 Owner 明确确认摘要的安装声明，不生成主机资格。已登记能力只换程序字节或安装目录时，用 `capabilities upgrade-plan` 列出差异并给出确认摘要，再用 `capabilities upgrade --confirm <planDigest>` 在一个事务里更新登记、撤销该能力尚未用完的执行 Handle（每次工具调用前签发的一次性执行授权）并写审计；声明的其他任何变化仍须按新能力重新审核，操作步骤见[升级 Runbook 的能力升级一节](../../runbooks/hermes-control-center-upgrade-runbook.md#capability-upgrade)。
 
@@ -120,7 +120,7 @@ v15 的 Hermes 新读取轮次已完成，原 read 结果经现有交付意图�
 
 ## 最新验收边界
 
-最终状态以 [SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md] 的“最终 Hermes 验收事实”及遮盖证据为准。v15 服务端和 v17 网页已通过真实聊天、Web 搜索、文件、审批与重启续聊，但对话列表搜索生产接口缺失、工具耗时数分钟、Hermes 内置账号迁移尚未执行；不能将前述中间阶段结果误认为全部成品验收通过。原失败 Run、未知费用与未完成项保留，本文保持 active。
+最终状态以 [2026-09-10-control-center-local-acceptance-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md) 的“最终 Hermes 验收事实”及遮盖证据为准。v15 服务端和 v17 网页已通过真实聊天、Web 搜索、文件、审批与重启续聊，但对话列表搜索生产接口缺失、工具耗时数分钟、Hermes 内置账号迁移尚未执行；不能将前述中间阶段结果误认为全部成品验收通过。原失败 Run、未知费用与未完成项保留，本文保持 active。
 
 
 ## 2026-09-11 用户实际使用后的修复范围

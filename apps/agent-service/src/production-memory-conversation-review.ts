@@ -38,13 +38,19 @@ import {
   placeholderTable,
   restorePlaceholders,
 } from "@himawari-agent/sensitive-capture";
+import { judgeOrDefault } from "./auxiliary-judgment.js";
 import {
   captureErrorCode,
   createProductionAutomaticMemory,
   type MemoryCaptureCall,
+  memoryConfirmationJudgePrompt,
   type ParsedMemoryCandidates,
   parseMemoryCandidates,
+  parseSupportVerdict,
+  type SupportCheck,
+  SupportVerdictCache,
 } from "./production-memory-capture.js";
+import { externalContentSourceRefs } from "./context-external-content.js";
 
 type MemoryId = ProductMemoryRecord["id"];
 type ProductThreadMessage = Awaited<ReturnType<ThreadRepositoryPort["listMessages"]>>[number];
@@ -159,6 +165,7 @@ export interface ReviewMessageCandidates {
 export interface ParsedConversationReview {
   readonly groups: readonly ReviewMessageCandidates[];
   readonly skipped: Readonly<Record<ReviewSkipReason, number>>;
+  readonly supportChecks: readonly SupportCheck[];
 }
 
 export type ReviewSkipReason =
@@ -202,6 +209,8 @@ export function parseConversationReview(input: {
   readonly knownPersonIds?: ReadonlySet<string>;
   readonly newMemoriesAllowed: number;
   readonly restore?: (text: string) => string;
+  readonly supportVerdicts?: ReadonlyMap<string, boolean>;
+  readonly externalOrigins?: readonly string[];
 }): ParsedConversationReview {
   const parsed = jsonObject(input.output);
   if (typeof parsed !== "object" || parsed === null || !("memories" in parsed))
@@ -265,23 +274,30 @@ export function parseConversationReview(input: {
   );
   let newAllowed = Math.max(0, input.newMemoriesAllowed);
   const groups: ReviewMessageCandidates[] = [];
+  const supportChecks: SupportCheck[] = [];
   for (const source of input.messages) {
     const raw = byMessage.get(source.message.id);
     if (!raw) continue;
     const parsedGroup = parseMemoryCandidates({
       output: JSON.stringify({ memories: raw }),
       sourceRef: source.message.contentRef,
+      extraSourceRefs: externalContentSourceRefs(
+        source.message.contentRef,
+        input.externalOrigins ?? [],
+      ),
       sourceClassification: source.message.dataClassification,
       existingIds: new Set(existing.keys()),
       tentativeMemories,
       ownerMessage: source.text,
       sentAt: source.message.committedAt,
       timeZone: input.timeZone,
+      ...(input.supportVerdicts ? { supportVerdicts: input.supportVerdicts } : {}),
       ...(input.subCategories ? { subCategories: input.subCategories } : {}),
       ...(input.knownPersonIds ? { knownPersonIds: input.knownPersonIds } : {}),
       ...(input.restore ? { restore: input.restore } : {}),
     });
     skipped.invalid += parsedGroup.invalidCandidates;
+    supportChecks.push(...parsedGroup.supportChecks);
     const kept: ExtractedMemoryCandidate[] = [];
     for (const candidate of parsedGroup.candidates) {
       if (sensitive(candidate)) {
@@ -317,7 +333,7 @@ export function parseConversationReview(input: {
       },
     });
   }
-  return { groups, skipped };
+  return { groups, skipped, supportChecks };
 }
 
 function withReplacementRule(
@@ -376,6 +392,7 @@ export interface ProductionMemoryConversationReviewOptions {
   >;
   readonly ledger?: DecisionLedgerPort;
   readonly timeZone?: string;
+  readonly externalOrigins?: (threadId: string) => Promise<readonly string[]>;
   readonly assertActive: () => Promise<void>;
   readonly externalTag: () => Promise<(kind: EgressPlaceholderKind, value: string) => string>;
   readonly generate: (
@@ -406,6 +423,7 @@ export class ProductionMemoryConversationReview {
   readonly #options: ProductionMemoryConversationReviewOptions;
   readonly #pending = new Map<string, Promise<void>>();
   #attemptedAt = Number.NEGATIVE_INFINITY;
+  readonly #supportCache = new SupportVerdictCache();
   #stopping = false;
 
   constructor(options: ProductionMemoryConversationReviewOptions) {
@@ -713,26 +731,73 @@ export class ProductionMemoryConversationReview {
     if (!plan) return { reviewId: review.id, changes: [], skipped: emptySkips() };
     const output = await this.#output(plan, settings, onAdmitted);
     const tag = await this.#options.externalTag();
+    const externalOrigins = (await this.#options.externalOrigins?.(episode.threadId)) ?? [];
     const table = placeholderTable(plan.prompt, tag, {
       trusted: TRUSTED_PROMPT_TEXTS,
       jsonEmbedded: true,
     });
-    const parsed = parseConversationReview({
-      output,
-      messages: plan.messages,
-      existing: plan.existing,
-      timeZone: this.#options.timeZone ?? "UTC",
-      subCategories: plan.subCategories,
-      knownPersonIds: new Set(plan.people.map(({ id }) => id)),
-      newMemoriesAllowed: plan.newMemoriesAllowed,
-      restore: (text) => restorePlaceholders(text, table),
-    });
+    const parse = (supportVerdicts?: ReadonlyMap<string, boolean>) =>
+      parseConversationReview({
+        output,
+        messages: plan.messages,
+        existing: plan.existing,
+        timeZone: this.#options.timeZone ?? "UTC",
+        subCategories: plan.subCategories,
+        knownPersonIds: new Set(plan.people.map(({ id }) => id)),
+        newMemoriesAllowed: plan.newMemoriesAllowed,
+        restore: (text) => restorePlaceholders(text, table),
+        externalOrigins,
+        ...(supportVerdicts ? { supportVerdicts } : {}),
+      });
+    const first = parse();
+    const parsed =
+      first.supportChecks.length === 0
+        ? first
+        : parse(await this.#judgeSupport(plan, first.supportChecks));
     const changes: MemoryConversationReviewChange[] = [];
     for (const group of parsed.groups)
       changes.push(...(await this.#commit(plan, group, parsed.skipped)));
     const result = { reviewId: review.id, changes, skipped: parsed.skipped };
     this.#options.onResult?.(result);
     return result;
+  }
+
+  async #judgeSupport(
+    plan: ReviewPlan,
+    checks: readonly SupportCheck[],
+  ): Promise<ReadonlyMap<string, boolean>> {
+    const { review, request } = plan;
+    const verdicts = new Map<string, boolean>();
+    for (const [index, check] of checks.entries()) {
+      if (verdicts.has(check.key)) continue;
+      if (this.#stopping) throw new Error("MEMORY_CONVERSATION_REVIEW_STOPPING");
+      const known = this.#supportCache.get(check, request.dataClassification);
+      if (known !== undefined) {
+        verdicts.set(check.key, known);
+        continue;
+      }
+      await this.#options.assertActive();
+      const prompt = memoryConfirmationJudgePrompt(check.memoryText, check.quote);
+      let settled = true;
+      const verdict = await judgeOrDefault(
+        {
+          ask: (attempt) =>
+            this.#options.generate(request, prompt, () => {}, {
+              invocationId: `${review.id}:${review.attempts}:support:${index}:${attempt}`,
+              retryToolCall: false,
+            }),
+          parse: parseSupportVerdict,
+        },
+        false,
+        (error) => {
+          settled = false;
+          this.#options.onFailure(error);
+        },
+      );
+      if (settled) this.#supportCache.set(check, request.dataClassification, verdict);
+      verdicts.set(check.key, verdict);
+    }
+    return verdicts;
   }
 
   async #commit(

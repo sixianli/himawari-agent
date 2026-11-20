@@ -39,6 +39,7 @@ date: "2026-10-13"
 - [复制上一次操作包时留下旧文件和旧文件名](#copied-packet-stale-names)
 - [上线验收只查了首页 200 没真点网页](#release-without-browser-walkthrough)
 - [新建 ADR 时只看了 main，和别的线程撞了编号](#adr-number-collision)
+- [记过低意见修改后，复核传错了上一轮的提交](#review-previous-after-low-fix)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -643,7 +644,7 @@ date: "2026-10-13"
 - 硬约束（2026-10-19 写好，2026-10-21 审核通过并启用）：
   - 判定脚本 `.ci-output/handoff/scripts/layer3-verdict.py <local-summary.json> <被测提交> <要求的检查>`：读 `local.mjs` 写出的 `local-summary.json`，要求 `context.testedSha` 等于被测提交、`checks` 恰好是要求的几项（同一项出现两次判 `DUPLICATE_CHECK`）且都是 `passed`、`publicationFailures` 里只有 `SECURITY_REVIEW_HTTP_NOT_FOUND`；全部满足打印 `LAYER3_VERDICT_PASSED` 并以 0 退出，否则打印 `LAYER3_VERDICT_FAILED <原因>` 并以 1 退出。文件缺失、不是 JSON、字段缺失都判失败。
   - 云测试账号的 `ci-lane.sh` `l3` 分支：`local.mjs` 的退出码只接受 0 和 1，其他值写 `layer3_abnormal_exit=<退出码>` 并判失败；是 0 或 1 时用锁定的 Python（`$HIMAWARI_CI_PYTHON -I`）运行判定脚本，`layer3=` 一行记判定结果，`seconds=` 从 `local.mjs` 启动时算起。两份脚本已放到 `/srv/himawari-ci/lane/`。
-  - 所有代理：往测试主机传文件只能经过 `hermes-upload.sh` 和 `ci-upload.sh`。两个入口在连接之前检查要上传的文件：出现 `local.mjs` 而没有出现 `layer3-verdict.py` 时打印 `*_LAYER3_VERDICT_MISSING` 并以退出码 72 结束，不连接（[代理工具 Runbook 的排障表](runbooks/agent-tooling-runbook.md#troubleshooting)）。
+  - 所有代理：往测试主机传文件只能经过 `hermes-upload.sh` 和 `ci-upload.sh`。两个入口在连接之前检查要上传的文件：出现 `local.mjs` 而没有出现 `layer3-verdict.py` 时打印 `*_LAYER3_VERDICT_MISSING` 并以退出码 72 结束，不连接（[代理工具 Runbook 的排障表](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md#troubleshooting)）。
   - 验证：
     - `.ci-output/handoff/scripts/test-layer3-verdict.sh` 的 11 个样例全部通过（通过、`test` 失败、多一项、少一项、重复项、别的发布失败、被测提交不同、缺字段、缺文件、坏 JSON、期望提交不同）。
     - `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 115 个用例全部通过；其中每个入口有 2 拒 2 放的上传用例。改动前的入口把按退出码判定的旧版 `ci-lane.sh` 直接发出（替身 `ssh` 被调用）；第一轮只匹配 `scripts/ci/local.mjs` 的入口把“先 `cd scripts/ci` 再 `node local.mjs`”的文件直接发出；现在的入口对两者都以 72 拒绝。
@@ -671,7 +672,7 @@ date: "2026-10-13"
   - 同目录的 `commit-msg`（SHA-256 `9613e6e6eb6098f2ba1c9222194c9c0f526d4da09ac8d06da3aab02babb8aa01`）和 `pre-push`（SHA-256 `e6f64f47d03d225185c90f1d5ca0cee3b2c44e41cdb574848d65878993264334`；2026-10-25 起仓库根目录 `DELIVERY_MODE` 为 `fast` 时两个钩子打印 `DELIVERY_MODE_FAST_SKIP_LAYER0` 直接放行，见 [ADR 0073](adr/0073-fast-delivery-mode.md)）钩子运行它：改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里必须逐行写 `Layer-0-tests: <路径>` 包含每个推导出的文件（推导为空时写 `Layer-0-tests: none`），否则拒绝提交；推送前对每个待推送提交按“父提交到该提交”再查一遍，覆盖 `--amend` 和跳过 `commit-msg` 的提交。合并提交打印 `L0_RELATED_TESTS_SKIPPED_MERGE` 后放行。所有工作树、所有代理的提交和推送都经过这两个钩子；opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
   - 验证：自测 `.ci-output/handoff/l0-guard/selftest.sh <仓库>`（SHA-256 `d131d0db36da7539a5f7f5c968150f821bf4d704053128a27367cba2deb2151c`）78 项全部通过（2026-10-22，`selftest-04.log`），结果在 `.ci-output/handoff/l0-guard/` 下。其中：用三次当时第 0 层实际跑过的文件写成声明行，检查都拒绝并点名漏掉的文件，补上后放行；三次的真实提交说明（文件名只在正文里）都被拒；临时仓库里用真实的 `git commit` 和 `git push` 验证只改文档或测试不需要声明，缺声明、漏文件、写了不是测试的路径被拒，同一提交里改 `ci/policy.json` 排除必需测试仍被拒，`--no-verify` 跳过的提交和 `--amend` 去掉声明的提交被 `pre-push` 拦下，合并提交打印跳过。审核：opencode（DeepSeek V4.1 Flash）四轮逐行审核，记录在 `.ci-output/handoff/2026-10-22-l0-omission-oc-stop-2.md` 到 `-stop-4.md`。
 - 2026-10-29 更新（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)，Andy 同意）：快速模式下钩子直接放行、云端会话根本没有检查脚本，是这几次又漏掉的原因。检查脚本原样（SHA-256 `0b66a9ec…`）放进仓库 `scripts/layer0-tests/check-layer0-tests.py`，钩子放在 `scripts/git-hooks/`，`npm run check` 把 `core.hooksPath` 指过去；快速模式下也检查。复现：对快速模式下漏跑的提交 `bfa6162` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝并点名当时漏掉的 `test/integration/sqlite-sandbox-execution-v2.test.ts`，用时约 1.2 秒；`test/tooling/layer0-hooks.test.mjs` 用旧的“快速模式放行”钩子会失败，换新钩子通过。
-  - 限制：只证明声明里包含推导出的文件，不证明它们真的跑过并通过；经包名引用又不整体替换的测试、经上层调用者到达的场景测试、按构建产物路径引用的产品路径测试找不到，仍靠写方案的人判断和第 2 层；改 `test/fixtures/` 下的辅助文件不要求引用者；钩子只在本机生效，新克隆要按[代理工具 Runbook](runbooks/agent-tooling-runbook.md#procedure) 安装。
+  - 限制：只证明声明里包含推导出的文件，不证明它们真的跑过并通过；经包名引用又不整体替换的测试、经上层调用者到达的场景测试、按构建产物路径引用的产品路径测试找不到，仍靠写方案的人判断和第 2 层；改 `test/fixtures/` 下的辅助文件不要求引用者；钩子只在本机生效，新克隆要按[代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md#procedure) 安装。
 - 2026-11-08 又一次（PR #282，I-84）：改了 `apps/agent-service/src/production-sandbox-tool-result.ts` 里给模型看的上限说明，第 0 层只跑了直接引用它的那几个文件，没跑 `apps/agent-service/test/prompt-catalog.unit.test.ts`。那条门槛扫 `apps/*/src`、`packages/*/src` 下所有字符串字面量，发现提示词标记词（`你是`、`只返回`、`只输出`、`不要编造` 等）出现在提示词目录之外就失败；新写的那句「请改成只输出需要的部分」带了 `只输出`，以 `PROMPT_OUTSIDE_CATALOG apps/agent-service/src/production-sandbox-tool-result.ts:162 只输出` 失败。它按路径扫源码、不 import 被改的文件，所以 `check-layer0-tests.py derive` 推不出它，三轮模型复核读的是改动差异也没有发现，直到合并前跑整个 `apps/agent-service/test` 才暴露。处理：那句改成「请缩小输出范围后重试」，门槛恢复通过。教训：凡是改了会发给模型或显示给用户的固定文字，第 0 层清单里必须手工加上按路径扫源码的门槛（`apps/agent-service/test/prompt-catalog.unit.test.ts`、`npm run check:glossary`），`derive` 永远找不到这一类，因为它们按路径扫源码、不 import 被改的文件。（原来这里还列了 `test/tooling/safe-tool-reason-codes.test.mjs`，它比对界面原因码白名单的两份拷贝；PR #312 把白名单合成一处导出之后这个文件已删除。）
 
 [回到目录](#编码代理反复犯的错误)
@@ -741,5 +742,20 @@ date: "2026-10-13"
   - 验证：在改名之前的 main（`f91950b`）上，检查报 `ADR_NUMBER_DUPLICATE 0148` 并以 1 退出；把 Gmail 那份改成 `0158-bring-related-memories-into-gmail-checks.md` 后通过。两份各有 3 处入链。改 Gmail 那份而不改出口那份，是因为出口那份被 ADR 0146 文件开头的 `superseded_by` 字段引用，改它的编号要动 ADR 的生命周期字段；Gmail 那份只有正文里的普通链接。
   - 新建 ADR 前，除了看 main，还要看还没合并的 PR 新加的 `docs/adr/` 文件，取所有这些编号里最大的加一。
   - 限制：检查只能在两个撞号的 PR 先后进了同一棵树时才失败，例如后合并的那个 PR 先把 main 合并进来再跑 `npm run check`；两个 PR 各自单独跑都会通过。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="review-previous-after-low-fix"></a>
+
+## 记过低意见修改后，复核传错了上一轮的提交
+
+- 反复出现的情况：合并前代码复核（`scripts/model-review/opencode-review.mjs --mode code-review`）的某一轮之后，线程用 `--accept-low` 把低意见的修改记进复核账本（账本是 `.agents/reviews/pr-<编号>/usage.jsonl`，每轮复核一行），再提交账本。下一轮复核时，线程把“提交账本的那个提交”当成上一轮复核到的地方传给 `--previous`，而复核链认的是 low-fix 记录里的 `head`（`--assert-reviewed` 打印的 `REVIEW_CURRENT … reviewed=` 那个提交）。账本提交不是那个 `head` 的祖先，这一轮接不上复核链（`chain-broken`），钱花了却不算数。
+- 发生记录（都可以在对应分支的账本里看到）：
+  - 2026-11-12：PR 436 第 6、7 轮传 `a00a7253`，该传 `f35bb782`。
+  - 2026-11-13：PR 466 第 3 轮传账本提交 `19644ba2`，该传 `8f40158b`，第 3、4 轮作废，只能从分叉点整份重跑。
+  - 2026-11-13：PR 460 第 3 轮传账本提交 `01debf3f`，该传 `4456a13c`，第 4 轮重跑。
+- 为什么要紧：每轮复核都花 Andy 的钱，而且要到合并前检查才发现，后面接着它的轮次也一起作废。
+- 硬约束（2026-11-13，[I-98](incidents-and-gates.md#incidents)）：代码复核传了 `--previous` 时，脚本开跑前用本地账本算复核链（`previousProblem`，判断逻辑和合并前检查共用 `walkChain` 和 `lowFixChecker`），接不上就以 `REVIEW_PREVIOUS_REFUSED` 退出、不花钱，并写出该传的提交。测试在 `test/tooling/opencode-review-merge-gate.test.mjs` 的 `[I-98]` 用例。
+- 同一轮补跑（`--round <n>`）时，`--previous` 还必须和这一轮已有结果用的相同（这一轮已有结果本身接不上链时提示 `use=new-round`：不带 `--round`、`--previous` 新开一轮）；账本里的 low-fix 记录按合并前检查同样的规则重新核对，不合格就判链已断。
 
 [回到目录](#编码代理反复犯的错误)

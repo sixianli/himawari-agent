@@ -1,0 +1,13 @@
+CLAIM|1|一致|CLAUDE.md:1|本仓库根目录的 `CLAUDE.md` 只有一行 `@AGENTS.md`（`CLAUDE.md:1`）。|@AGENTS.md
+CLAIM|2|一致|120fdd9:.claude/rules/incident-gates.md:9|改动前，事故规则要求每个线程开工时通读事故清单：`.claude/rules/incident-gates.md` 第 9 行（提交 `120fdd9`）原话“读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。”|读 [docs/incidents-and-gates.md](../../docs/incidents-and-gates.md)。如果这次工作涉及某个有未结条目（状态为 `缺门槛` 或 `等 Andy`）的领域，在计划里说明。
+CLAIM|3|一致|docs/adr/0107-every-incident-gets-an-automatic-gate.md:46|[ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 决定 3 原话“每个线程开工时读，收尾时更新”。|3. **事故与门槛清单。** [docs/incidents-and-gates.md](../incidents-and-gates.md) 每条写日期、现象、根因、出现次数、门槛（文件或命令）和状态。每个线程开工时读，收尾时更新。`npm run check` 运行 `scripts/check-incident-gates.mjs` 核对这张表：“已落门槛”必须写出仓库里真实存在的门槛文件，次数达到 3 的条目不能是“缺门槛”。
+CLAIM|4|一致|docs/incidents-and-gates.md:38|事故清单 `docs/incidents-and-gates.md` 的每一行写的是一个事故的完整经过（日期、现象、根因、次数、门槛、状态）| | 编号 | 日期 | 现象 | 根因 | 次数 | 门槛（文件或命令） | 状态 |
+CLAIM|5|一致|docs/incidents-and-gates.md:42|绝大多数行的状态是“已落门槛”。| | I-03 | 2026-10-25 | 生产一直在跑 10 月 7 日的旧前端，设置里的联网搜索开关点不动 | 配置里的前端目录没跟着新版本更新 | 1 | `scripts/delivery-mode/make-packet.py` 发现运行中的前端目录不是当前版本就拒绝出包；`scripts/delivery-mode/packet-template/systemd/verify-switch-config-fixtures.py` 核对切换时写入新前端目录 | 已落门槛 |
+CLAIM|6|一致|120fdd9:.claude/rules/prompt-prefix.md:4|改动前，只追加规则放在 `.claude/rules/prompt-prefix.md`，属于前提 1 里开局自动载入的范围（提交 `120fdd9`）。|这份规则约束所有会话，包括协调者和云端线程，快速模式和完整模式都适用。凡是组装或修改发给模型的内容，都要先读它。“发给模型的内容”包括系统提示、工具定义、历史、资料块、遮盖和压缩。
+CLAIM|7|一致|scripts/check-incident-gates.mjs:66|“第三次必须有硬门槛”仍由 `npm run check:incident-gates` 拦|      errors.push(`INCIDENT_THIRD_REPEAT_WITHOUT_HARD_GATE ${where} count=${count}`);
+CLAIM|8|一致|package.json:30|这一步现在也跑 `test/tooling/incident-gates.test.mjs`。|    "check:incident-gates": "node scripts/check-incident-gates.mjs && vitest run --config vitest.workspace.ts --project tooling test/tooling/incident-gates.test.mjs",
+CLAIM|9|一致|.agents/instructions/prompt-prefix.md:74|`npm run check:prompt-prefix` 照旧是阻断检查。|**阻断检查：**`npm run check:prompt-prefix`（属于 `npm run check` 的一步）。
+CLAIM|10|一致|docs/glossary.md:66|后续：`docs/` 下指向只追加规则的链接已同步改成新路径 `.agents/instructions/prompt-prefix.md`。|- 发给模型的提示词和工具结果文字：已发出的内容只能往后追加（见 [prompt-prefix.md](../.agents/instructions/prompt-prefix.md)），不为改名而改动。
+CLAIM|11|一致|.agents/instructions/model-review.md:80|合并前复核的必问题“这个改动会不会改变模型已经见过的请求开头”|1. 这个改动会不会改变模型已经见过的请求开头？包括系统提示、工具定义、历史消息、遮盖结果。要求回答：发给模型的内容是不是仍然只在末尾追加，每轮会变的值是不是都在最后一条消息里。依据：[发给模型的内容只追加](../../.agents/instructions/prompt-prefix.md#rules)。
+
+未能核对的部分：前提 1、2 引用的 Claude Code 线上文档，以及 PR 495 说明里的 token 估算和提交统计（仓库内读不到该说明）；背景中“只有少数线程用得上”等主观判断也未核实。决定 1-4 中描述的改动按题目要求未当作现状核对。

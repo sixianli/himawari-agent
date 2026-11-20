@@ -7,7 +7,7 @@ permissions:
   actions: read
   pull-requests: read
 concurrency:
-  group: main-confirmation-${{ github.run_id }}
+  group: main-confirmation
   cancel-in-progress: false
 defaults:
   run:
@@ -64,7 +64,7 @@ jobs:
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
-        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache .ci-output/npm-cache
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
       - name: 重新查找并取回本次确认的 PR 汇总结论
         env:
           HIMAWARI_CI_GITHUB_TOKEN: ${{ github.token }}

@@ -32,7 +32,8 @@ function validSource(value: string): value is RecentAuthenticationEvidence["sour
   return (
     value === "cloudflare_access_login_time" ||
     value === "provider_step_up" ||
-    value === "built_in_mfa"
+    value === "built_in_mfa" ||
+    value === "device_confirmation_key"
   );
 }
 

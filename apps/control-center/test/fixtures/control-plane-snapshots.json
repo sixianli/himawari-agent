@@ -97,6 +97,7 @@
       "expiresAt": "2026-08-26T01:00:00.000Z",
       "decidedAt": null,
       "grantId": null,
+      "display": null,
       "intent": {
         "intentId": "intent-01",
         "threadId": "thread-01",
@@ -204,6 +205,7 @@
       },
       "rollbackVersion": "0.9.0",
       "rollbackAvailable": true,
+      "lastInvalidation": null,
       "lastTransition": {
         "fromVersion": "0.9.0",
         "toVersion": "1.0.0",
@@ -268,6 +270,8 @@
       "revokedAt": null,
       "revocationReasonCode": null,
       "affectedTaskRefs": ["task-01"],
+      "label": "Send the review email once",
+      "detail": { "zh-CN": ["已用 0/1 次"], "en": ["Used 0 of 1"], "ja": ["0/1 回使用"] },
       "generatedAt": "2026-08-26T00:00:01.000Z"
     }
   },

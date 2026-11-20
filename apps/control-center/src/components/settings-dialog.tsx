@@ -7,8 +7,8 @@ import {
 import { readBuildInfo } from "../build-info.js";
 import { useLocaleFormat } from "../i18n/locale-format.js";
 import { UI_LOCALES, useControlCenterIntl } from "../i18n/runtime.js";
-import { ActionButton, Dropdown, ModalDialog } from "./index.js";
 import { Glyph, type GlyphName } from "./glyphs.js";
+import { ActionButton, Dropdown, ModalDialog } from "./index.js";
 
 const THEMES = ["light", "dark", "system"] as const;
 const themeIcons: Readonly<Record<(typeof THEMES)[number], GlyphName>> = {
@@ -27,6 +27,8 @@ export function SettingsDialog({
   tools,
   data,
   notifications,
+  agents,
+  devices,
   personalization,
   account,
   initialTab = "general",
@@ -41,6 +43,8 @@ export function SettingsDialog({
   tools?: ReactNode;
   data?: ReactNode;
   notifications?: ReactNode;
+  agents?: ReactNode;
+  devices?: ReactNode;
   personalization?: ReactNode;
   account?: ReactNode;
   initialTab?: string;
@@ -67,7 +71,9 @@ export function SettingsDialog({
               "personalization",
               "general",
               ...(notifications ? (["notifications"] as const) : []),
+              ...(devices ? (["devices"] as const) : []),
               "tools",
+              ...(agents ? (["agents"] as const) : []),
               "data",
             ] as const
           ).map((id) => (
@@ -163,6 +169,10 @@ export function SettingsDialog({
             tools
           ) : tab === "notifications" ? (
             notifications
+          ) : tab === "agents" ? (
+            agents
+          ) : tab === "devices" ? (
+            devices
           ) : (
             data
           )}

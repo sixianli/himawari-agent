@@ -45,6 +45,12 @@ const identity = () => ({
   policySha256: "c".repeat(64),
   toolchainSha256: "d".repeat(64),
 });
+
+import { withHost } from "./artifact-host.mjs";
+
+vi.mock("../../scripts/ci/platforms.mjs", async (original) =>
+  (await import("./artifact-host.mjs")).artifactCapablePlatforms(await original()),
+);
 vi.mock("../../scripts/ci/contracts.mjs", async (original) => ({
   ...(await original()),
   get repositoryRoot() {
@@ -493,6 +499,10 @@ describe("periodic quality policy and evidence", () => {
       "node-browser-typecheck",
       "node-tooling",
     ]);
+    for (const name of ["node-typecheck", "node-browser-typecheck"])
+      expect(state.calls.find((entry) => entry.name === name).args[0]).toBe(
+        "--max-old-space-size=4096",
+      );
     expect(state.calls[0].artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(report.observations[0]).toMatchObject({
       productSupported: false,
@@ -549,24 +559,48 @@ describe("periodic quality policy and evidence", () => {
 });
 
 describe("local shared-runner boundary", () => {
+  it("[ADR-0267] package.json 里调 local.mjs 的每个 --check 都是策略里现有的检查，npm test 跑 tests，test:tooling 跑 tooling", () => {
+    const scripts = JSON.parse(
+      readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+    ).scripts;
+    const checks = JSON.parse(readFileSync(path.join(process.cwd(), "ci/policy.json"), "utf8"))
+      .checks.map((check) => check.id)
+      .filter((id) => id !== "required");
+    const used = Object.values(scripts).flatMap((command) =>
+      [...command.matchAll(/scripts\/ci\/local\.mjs --check (\S+)/gu)].map((match) => match[1]),
+    );
+    expect(used.length).toBeGreaterThan(0);
+    for (const check of used) expect(checks).toContain(check);
+    expect(scripts.test).toBe("node scripts/ci/local.mjs --check tests");
+    expect(scripts["test:tooling"]).toBe("node scripts/ci/local.mjs --check tooling");
+  });
   it("rejects unsupported physical platforms instead of relabeling their evidence", async () => {
-    const platform = Object.getOwnPropertyDescriptor(process, "platform");
-    const arch = Object.getOwnPropertyDescriptor(process, "arch");
-    try {
-      for (const [os, cpu] of [
-        ["darwin", "x64"],
-        ["linux", "arm64"],
-        ["win32", "x64"],
-      ]) {
-        Object.defineProperty(process, "platform", { value: os });
-        Object.defineProperty(process, "arch", { value: cpu });
-        await expect(runLocal()).rejects.toThrow("PLATFORM_UNSUPPORTED");
+    for (const [os, cpu] of [
+      ["darwin", "x64"],
+      ["linux", "riscv64"],
+      ["win32", "x64"],
+    ])
+      await withHost(os, cpu, () => expect(runLocal()).rejects.toThrow("PLATFORM_UNSUPPORTED"));
+    expect(state.calls).toEqual([]);
+  });
+  it("on linux-arm64 runs the three checks that need no build artifact and labels them linux-arm64", async () => {
+    await withHost("linux", "arm64", async () => {
+      for (const check of ["policy", "static", "security"]) {
+        state.calls.length = 0;
+        const summary = await runLocal({ check, output: `.ci-output/local-${check}` });
+        expect(summary.platform).toBe("linux-arm64");
+        expect(
+          state.calls.filter((entry) => entry.name === "check").map((entry) => entry.checkId),
+        ).toEqual([check]);
       }
+      state.calls.length = 0;
+      for (const check of [undefined, "build", "tests"])
+        await expect(
+          runLocal({ check, output: `.ci-output/local-refused-${check}` }),
+        ).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
       expect(state.calls).toEqual([]);
-    } finally {
-      Object.defineProperty(process, "platform", platform);
-      Object.defineProperty(process, "arch", arch);
-    }
+      expect(existsSync(path.join(state.root, ".ci-output/local-refused-build"))).toBe(false);
+    });
   });
   it("runs the full local graph with one build artifact and explicit hosted/production limitations", async () => {
     const summary = await runLocal();
@@ -578,13 +612,19 @@ describe("local shared-runner boundary", () => {
       "browser",
       "browser",
       "browser",
-      "coverage",
+      "tests",
+      "tests",
+      "tests",
+      "tooling",
       "security",
     ]);
     expect(
       calls.filter((entry) => entry.checkId === "browser").map((entry) => entry.matrixKey),
     ).toEqual(["chromium", "firefox", "webkit"]);
-    const consumers = calls.filter((entry) => ["browser", "coverage"].includes(entry.checkId));
+    expect(
+      calls.filter((entry) => entry.checkId === "tests").map((entry) => entry.matrixKey),
+    ).toEqual(["integration-1", "integration-2", "others"]);
+    const consumers = calls.filter((entry) => ["browser", "tests"].includes(entry.checkId));
     expect(new Set(consumers.map((entry) => entry.artifact)).size).toBe(1);
     expect(consumers[0].artifact).toContain("runtime.tar.gz");
     expect(calls.every((entry) => entry.hosted === false)).toBe(true);
@@ -630,35 +670,34 @@ describe("local shared-runner boundary", () => {
     );
   });
   it("selects individual checks and reuses a supplied archive without rebuilding", async () => {
-    for (const check of ["policy", "static", "build", "coverage", "security"]) {
+    for (const check of ["policy", "static", "build", "tests", "tooling", "security"]) {
       state.calls = [];
       expect((await runLocal({ check, output: `.ci-output/local-${check}` })).status).toBe(
         "local_passed",
       );
       expect(state.calls.map((entry) => entry.checkId)).toEqual(
-        check === "coverage" ? ["build", "coverage"] : [check],
+        check === "tests" ? ["build", "tests", "tests", "tests"] : [check],
       );
     }
     state.calls = [];
     await runLocal({
-      check: "coverage",
+      check: "tests",
       artifact: "/fixture/existing.tar.gz",
       output: ".ci-output/local-coverage-artifact",
     });
-    expect(state.calls.map((entry) => entry.checkId)).toEqual(["coverage"]);
-    expect(state.calls[0].artifact).toBe("/fixture/existing.tar.gz");
+    expect(state.calls.map((entry) => entry.checkId)).toEqual(["tests", "tests", "tests"]);
+    expect(state.calls.every((entry) => entry.artifact === "/fixture/existing.tar.gz")).toBe(true);
   });
   it("does not run artifact consumers after failed build and preserves failed check outcomes", async () => {
     state.fail = "build";
     const failedBuild = await runLocal();
     expect(failedBuild.status).toBe("failed");
-    expect(state.calls.some((entry) => ["browser", "coverage"].includes(entry.checkId))).toBe(
-      false,
-    );
+    expect(state.calls.some((entry) => ["browser", "tests"].includes(entry.checkId))).toBe(false);
     expect(state.calls.map((entry) => entry.checkId)).toEqual([
       "policy",
       "static",
       "build",
+      "tooling",
       "security",
     ]);
     state.fail = "security";
@@ -697,7 +736,7 @@ describe("local shared-runner boundary", () => {
       (
         await localMain([
           "--check",
-          "coverage",
+          "tests",
           "--output",
           ".ci-output/local-cli",
           "--tools",
@@ -711,8 +750,8 @@ describe("local shared-runner boundary", () => {
     ).toBe("local_passed");
     expect(process.exitCode).toBe(0);
     vi.stubEnv("HIMAWARI_CI_TOOLS", path.join(state.root, "tools"));
-    state.fail = "coverage";
-    expect((await localMain(["--check", "coverage"])).status).toBe("failed");
+    state.fail = "tests";
+    expect((await localMain(["--check", "tests"])).status).toBe("failed");
     expect(process.exitCode).toBe(1);
   });
 });

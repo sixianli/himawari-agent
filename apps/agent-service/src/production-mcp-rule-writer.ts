@@ -24,6 +24,7 @@ export interface ExternalRuleProposal {
   readonly summary: string;
   readonly reason: string;
   readonly client: string;
+  readonly connectionId: string;
 }
 
 export interface ProductionMcpRuleWriterOptions {
@@ -76,7 +77,8 @@ export class ProductionMcpRuleWriter {
       params: proposal.params,
       summary: proposal.summary,
       threadId: null,
-      source: `${EXTERNAL_RULE_SOURCE_PREFIX}${proposal.client}`,
+      source: `${EXTERNAL_RULE_SOURCE_PREFIX}${proposal.connectionId}`,
+      listed: false,
     });
     if (receipt.status !== "proposed" || receipt.proposalId === null)
       throw new Error("MCP_RULE_PROPOSAL_NOT_STORED");

@@ -12,6 +12,8 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostPlatform, supportedPlatforms } from "./platforms.mjs";
+import { runnerTracking } from "./runner-tracking.mjs";
 import {
   cacheEnvironmentKey,
   downloadVerified,
@@ -22,7 +24,7 @@ import {
 } from "./verified-download.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const platforms = ["darwin-arm64", "linux-x64"];
+const platforms = supportedPlatforms();
 const downloadHosts = new Set([
   "nodejs.org",
   "github.com",
@@ -77,9 +79,52 @@ function license(value) {
   digest(value.sha256, "许可证据摘要");
 }
 
-function platformArtifacts(value) {
+const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const exactly = (filename) => new RegExp(`^${escaped(filename)}$`);
+const PLATFORM_FILENAMES = Object.freeze({
+  "darwin-arm64": Object.freeze({
+    node: (version) => exactly(`node-v${version}-darwin-arm64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-aarch64-apple-darwin-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_darwin_arm64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_darwin_arm64.tar.gz`),
+    wheel: () => /(?:-macosx_\d+_\d+_(?:arm64|universal2)|-none-any)\.whl$/,
+  }),
+  "linux-x64": Object.freeze({
+    node: (version) => exactly(`node-v${version}-linux-x64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_linux_amd64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_linux_x64.tar.gz`),
+    wheel: () => /(?:-(?:many|musl)linux[\w.]*_x86_64|-none-any)\.whl$/,
+  }),
+  "linux-arm64": Object.freeze({
+    node: (version) => exactly(`node-v${version}-linux-arm64.tar.gz`),
+    python: (version) =>
+      exactly(`cpython-${version}-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz`),
+    actionlint: (version) => exactly(`actionlint_${version}_linux_arm64.tar.gz`),
+    gitleaks: (version) => exactly(`gitleaks_${version}_linux_arm64.tar.gz`),
+    wheel: () => /(?:-(?:many|musl)linux[\w.]*_aarch64|-none-any)\.whl$/,
+  }),
+});
+
+function platformFilename(platform, kind, version, filename) {
+  const rule = Object.hasOwn(PLATFORM_FILENAMES, platform)
+    ? PLATFORM_FILENAMES[platform][kind]
+    : undefined;
+  assert(rule, `${platform} 的 ${kind} 下载物没有文件名规则`);
+  assert(
+    rule(version).test(filename),
+    `${platform} 的 ${kind} 下载物文件名不是这个平台、这个工具、这个版本的: ${filename}`,
+  );
+}
+
+function platformArtifacts(value, kind, version) {
   fields(value, platforms, "平台下载物");
-  for (const item of Object.values(value)) artifact(item);
+  for (const [platform, item] of Object.entries(value)) {
+    artifact(item);
+    platformFilename(platform, kind, version, item.filename);
+  }
 }
 
 export function validateToolchainLock(lock) {
@@ -93,9 +138,9 @@ export function validateToolchainLock(lock) {
   assert(lock.node.baseline === "22.22.3", "Node 基线不符合已确认合同");
   license(lock.node.license);
   fields(lock.node.releases, [lock.node.baseline], "Node releases");
-  for (const release of Object.values(lock.node.releases)) {
+  for (const [version, release] of Object.entries(lock.node.releases)) {
     fields(release, ["artifacts", "headers"], "Node release");
-    platformArtifacts(release.artifacts);
+    platformArtifacts(release.artifacts, "node", version);
     artifact(release.headers);
   }
   fields(lock.npm, ["version", "artifact", "license"], "npm");
@@ -118,7 +163,11 @@ export function validateToolchainLock(lock) {
   );
   license(lock.python.license);
   license(lock.python.buildLicense);
-  platformArtifacts(lock.python.artifacts);
+  platformArtifacts(
+    lock.python.artifacts,
+    "python",
+    `${lock.python.version}+${lock.python.release}`,
+  );
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
   const expectedActions = ["actions/checkout", "actions/setup-node", "actions/setup-python"].sort();
   assert(
@@ -140,7 +189,7 @@ export function validateToolchainLock(lock) {
     fields(tool, ["version", "license", "artifacts"], name);
     assert(/^\d+\.\d+\.\d+$/.test(tool.version), `${name} 版本不精确`);
     license(tool.license);
-    platformArtifacts(tool.artifacts);
+    platformArtifacts(tool.artifacts, name, tool.version);
   }
   const semgrep = lock.tools.semgrep;
   fields(semgrep, ["version", "edition", "license", "wheels"], "Semgrep");
@@ -150,7 +199,7 @@ export function validateToolchainLock(lock) {
   );
   license(semgrep.license);
   fields(semgrep.wheels, platforms, "Semgrep wheels");
-  for (const wheels of Object.values(semgrep.wheels)) {
+  for (const [platform, wheels] of Object.entries(semgrep.wheels)) {
     assert(Array.isArray(wheels) && wheels.length > 0, "Semgrep wheel 闭包缺失");
     const names = new Set();
     for (const wheel of wheels) {
@@ -163,6 +212,13 @@ export function validateToolchainLock(lock) {
       assert(!names.has(name), "重复 wheel 包");
       names.add(name);
       artifact({ filename: wheel.filename, url: wheel.url, sha256: wheel.sha256 });
+      platformFilename(platform, "wheel", wheel.version, wheel.filename);
+      const [distribution, version] = wheel.filename.split("-");
+      assert(
+        distribution.toLowerCase().replace(/[-_.]+/g, "-") ===
+          wheel.name.toLowerCase().replace(/[-_.]+/g, "-") && version === wheel.version,
+        `wheel 文件名和它的包名、版本对不上: ${wheel.filename}`,
+      );
       assert(
         wheel.filename.endsWith(".whl") && new URL(wheel.url).hostname === "files.pythonhosted.org",
         "只允许官方 PyPI wheel",
@@ -302,6 +358,7 @@ export function isolatedEnvironment(directory, binDirectory, { temporaryDirector
     PIP_DISABLE_PIP_VERSION_CHECK: "1",
     SEMGREP_SEND_METRICS: "off",
     SEMGREP_ENABLE_VERSION_CHECK: "0",
+    ...runnerTracking(),
   };
 }
 
@@ -325,7 +382,7 @@ export function verifyInstalledTools({ directory, root = repositoryRoot }) {
   const prefix = realpathSync(directory);
   const installation = JSON.parse(readFileSync(join(prefix, "installation.json"), "utf8"));
   const lock = loadToolchainLock(root);
-  assert(installation.platform === `${process.platform}-${process.arch}`, "已安装工具平台不匹配");
+  assert(installation.platform === hostPlatform(), "已安装工具平台不匹配");
   assert(installation.node === lock.node.baseline, "已安装 Node 不受支持");
   const version = installation.node;
   const platform = installation.platform;
@@ -461,7 +518,7 @@ export async function installTools({
   const lock = loadToolchainLock(root);
   const version = nodeVersion ?? lock.node.baseline;
   assert(version === lock.node.baseline, "不支持的 Node 版本");
-  const platform = `${process.platform}-${process.arch}`;
+  const platform = hostPlatform();
   assert(platforms.includes(platform), `不支持的平台: ${platform}`);
   mkdirSync(prefix, { recursive: true });
   const downloads = join(prefix, "downloads");

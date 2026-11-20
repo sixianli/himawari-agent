@@ -1,6 +1,6 @@
 # SRT 模式的新释放规则：进程组消失即释放
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第一项，规则见 [Spec 的 SRT 模式的停止与释放](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-release)和 [ADR 0033](../../../../../docs/adr/0033-process-sandbox-default-and-optional-containers.md#decision)。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第一项，规则见 [Spec 的 SRT 模式的停止与释放](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-release)和 [ADR 0033](../../../../../docs/adr/0033-process-sandbox-default-and-optional-containers.md#decision)。
 
 ## 用词
 

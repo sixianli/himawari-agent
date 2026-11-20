@@ -64,7 +64,7 @@ CI 的检查规则写在 `ci/policy.json`（CI 策略文件，规定有哪些检
 1. **Linux 检查全部改在 Hermes 上跑。** `ci/policy.json` 里所有 Linux 成员的 `runner` 由 `ubuntu-24.04` 改为 `hermes-home`，`ci.yml` 和 `main.yml` 的 `runs-on` 同步改为 `hermes-home`。`hermes-home` 是只有这台 runner 才有的标签。检查名 `ci/required` 不变。
 2. **由 Hermes 的 Ubuntu 22.04 结果判定 `ci/required`。** 生产服务器是 Ubuntu 24.04，所以 CI 通过不代表生产机上也通过；这一点和[测试主机规则](../../.agents/instructions/test-and-production-hosts.md)“一个平台的结果绝不能代替另一个平台”一致。
 3. **macOS 的构建和测试保留定义，暂不运行。** 这两个成员在 `ci/policy.json` 里加上 `"paused": true`，不进 workflow 的任务矩阵，`ci/required` 和 `main` 分支的证据收集也不等它们的结果。只有 macOS 成员可以暂停，每个检查至少要有一个没暂停的成员，这两条由 `check:ci-policy` 强制。恢复办法：把 `paused` 去掉，再把这两个成员加回 `ci.yml` 的矩阵。恢复的条件是 Andy 决定了 macOS 检查在哪里跑（例如在一台 Mac 上装 runner，或者为托管 Mac 付费），并且那里的机器准备好。
-4. **runner 的身份和限额。** runner 以专用系统用户 `gh-runner` 运行，不在 sudo 组或 docker 组里，看不到 `/data` 和 `/home`，防火墙规则禁止它访问局域网、Tailscale 地址和本机已有服务的端口。服务限额：CPU 最多两个核、内存最多 5 GB、不用交换分区，CPU 和磁盘读写的优先级低于 Hermes 上的其他服务。工作目录在根盘 `/srv/gh-runner/`，每个任务结束后删除它的检出，每天再清理一次三天前的残留。具体配置和操作步骤见 [Hermes 自托管 runner Runbook](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)。
+4. **runner 的身份和限额。** runner 以专用系统用户 `gh-runner` 运行，不在 sudo 组或 docker 组里，看不到 `/data` 和 `/home`，防火墙规则禁止它访问局域网、Tailscale 地址和本机已有服务的端口。服务限额：CPU 最多两个核、内存最多 5 GB、不用交换分区，CPU 和磁盘读写的优先级低于 Hermes 上的其他服务。工作目录在根盘 `/srv/gh-runner/`，每个任务结束后删除它的检出，每天再清理一次三天前的残留。具体配置和操作步骤见 [Hermes 自托管 runner Runbook](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)。
 5. **受保护测试和出包之前先暂停 runner。** 在 Hermes 上跑受保护的第 3、4 层测试或出上线包之前，先运行 `/srv/gh-runner/bin/runner-pause.sh`：它等正在跑的任务结束，再停掉 runner 服务；结束后运行 `/srv/gh-runner/bin/runner-resume.sh`。暂停期间新的 CI 任务在 GitHub 上排队，不会丢。
 6. **让验收 PR 自己能通过闸门。** `ci/required` 用的是目标分支上那份 `ci/policy.json`，不是 PR 里的，所以改策略的 PR 会被旧策略判失败。按项目已有的做法（integration 和 coverage 两次策略迁移），`resolvePolicySource` 在读到目标分支上的策略时，只要它和改之前的托管写法完全一样（所有 Linux 成员是 `ubuntu-24.04`、macOS 成员是 `macos-15`、没有任何 `paused`），就把它升级成新写法；其他写法一律不动，照常校验。Andy 于 2026-11-04 选择了这个做法。
 7. **Actions 总开关在验收 PR 推送之前打开**，打开前再向 Andy 确认一次。`quality.yml` 只能手动触发，其中的 `container` 任务要用 Docker，而 runner 用户按要求不能用 Docker，所以 `quality.yml` 继续用 GitHub 托管的 `ubuntu-24.04`；手动触发它会花托管分钟数。
@@ -104,7 +104,7 @@ CI 的检查规则写在 `ci/policy.json`（CI 策略文件，规定有哪些检
 ## 关联文档
 
 - [SOURCE: docs/adr/0092-pause-github-actions.md]
-- [SOURCE: docs/runbooks/hermes-self-hosted-runner-runbook.md]
+- [hermes-self-hosted-runner-runbook.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
 - GitHub 官方计费页：[GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)（“GitHub Actions usage is free for self-hosted runners”）
 - GitHub 官方文档：[About self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners)
 - GitHub 更新日志：[Update to GitHub Actions pricing](https://github.blog/changelog/2025-12-16-coming-soon-simpler-pricing-and-a-better-experience-for-github-actions/)（自托管 runner 收费推迟）

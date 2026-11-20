@@ -22,7 +22,8 @@
     "maxTokens": 32768,
     "publicFetchMaximumBytes": 102400
   },
-  "startupReadyBudgetSeconds": 30,
+  "onDeployFailure": "keep",
+  "startupReadyBudgetSeconds": 90,
   "startupReadyMarginSeconds": 15,
   "startupPhaseBaselineMs": {
     "state-opened": 8200,

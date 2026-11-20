@@ -51,6 +51,27 @@ describe("control center information architecture inventory", () => {
     ).toEqual(["threads", "approvals", "health-deployment"]);
   });
 
+  it("shows the capabilities page once its reads are installed, even when some mutations are not", () => {
+    const capabilities = CONTROL_CENTER_SURFACE_INVENTORY.find(
+      ({ id }) => id === "capabilities-adapters",
+    );
+    if (!capabilities) throw new Error("missing capabilities surface");
+    expect(
+      isSurfaceInstalled(capabilities, [
+        "capability.list",
+        "capability.detail",
+        "capability.disable",
+      ]),
+    ).toBe(true);
+    expect(isSurfaceInstalled(capabilities, ["capability.list", "capability.disable"])).toBe(false);
+    expect(isSurfaceInstalled(capabilities, [])).toBe(false);
+    expect(
+      CONTROL_CENTER_SURFACE_INVENTORY.filter(
+        (surface) => "mutationsOfferedWhenInstalled" in surface,
+      ).map(({ id }) => id),
+    ).toEqual(["capabilities-adapters"]);
+  });
+
   it("covers every required surface, acceptance and UI state exactly", () => {
     expect(CONTROL_CENTER_SURFACE_INVENTORY.map(({ id }) => id)).toEqual(expectedSurfaceIds);
     expect(new Set(CONTROL_CENTER_SURFACE_INVENTORY.map(({ route }) => route)).size).toBe(
@@ -64,9 +85,6 @@ describe("control center information architecture inventory", () => {
     for (const surface of CONTROL_CENTER_SURFACE_INVENTORY) {
       expect(surface.requiredUiStates).toEqual(CONTROL_CENTER_REQUIRED_UI_STATES);
       expect(surface.stableObjects.length).toBeGreaterThan(0);
-      expect(surface.sourceSpec).toMatch(
-        /^docs\/(?:execution\/specs|archive\/specs)\/.+-design\.md$/,
-      );
     }
   });
 

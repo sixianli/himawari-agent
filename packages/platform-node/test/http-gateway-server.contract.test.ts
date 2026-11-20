@@ -371,6 +371,57 @@ describe("HTTP Gateway contract and security boundary", () => {
       await app.close();
     }
   });
+  it("[P5-B] reports a slow request by its route, so a key in the path never reaches the log", async () => {
+    let clock = 1_000;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const slow: HttpGatewaySlowRequest[] = [];
+    const { app } = createFixture(undefined, undefined, {
+      onSlowRequest: (request) => slow.push(request),
+    });
+    const key = "k".repeat(43);
+    app.get("/api/mcp/v1/:secret", async () => {
+      clock += 2_500;
+      return { ok: true };
+    });
+    try {
+      expect(
+        (await app.inject({ url: `/api/mcp/v1/${key}?probe=1`, headers: requestHeaders() }))
+          .statusCode,
+      ).toBe(200);
+      expect(slow).toEqual([
+        {
+          method: "GET",
+          path: "/api/mcp/v1/:secret",
+          outcome: "answered",
+          statusCode: 200,
+          totalMs: 2_500,
+          concurrentRequests: 1,
+        },
+      ]);
+      now.mockImplementation(() => {
+        clock += 2_500;
+        return clock;
+      });
+      const fallback = await app.inject({
+        url: `/api/mcp/v1/${key}/extra`,
+        headers: requestHeaders(),
+      });
+      expect(fallback.statusCode).toBe(404);
+      expect(slow.at(-1)).toMatchObject({ method: "GET", path: "/*", statusCode: 404 });
+      const unmatched = await app.inject({
+        method: "POST",
+        url: `/api/mcp/v1/${key}/extra`,
+        headers: { ...requestHeaders(), "content-type": "application/json" },
+        payload: {},
+      });
+      expect(unmatched.statusCode).toBe(404);
+      expect(slow.at(-1)).toMatchObject({ method: "POST", path: "(no route)", statusCode: 404 });
+      expect(JSON.stringify(slow)).not.toContain(key);
+    } finally {
+      now.mockRestore();
+      await app.close();
+    }
+  });
   it("stops an already open stream before emitting another event after session revocation", async () => {
     const fixture = createFixture({
       request: async () => {
@@ -451,6 +502,50 @@ describe("HTTP Gateway contract and security boundary", () => {
       });
       expect(response.statusCode).toBe(501);
       expect(response.json()).toEqual({ error: { code: "PORT_OPERATION_NOT_INSTALLED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("passes only listed reason codes through as reasonCode", async () => {
+    const reasons = ["LOGIN_DEVICES_STILL_CHANGING", "EMBEDDING_LOCAL_NOT_READY", "disk headroom"];
+    const { app } = createFixture({
+      async request() {
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, reasons.shift() ?? "", {
+          internal: "private detail",
+        });
+      },
+      async *subscribe() {},
+    });
+    let attempt = 0;
+    const query = () => {
+      attempt += 1;
+      const idempotencyKey = `idempotency-reason-${attempt}`;
+      return app.inject({
+        method: "POST",
+        url: "/api/gateway/v2/commands",
+        headers: requestHeaders(idempotencyKey),
+        payload: {
+          ...envelope("command", "login.devices.revoke_others"),
+          schemaVersion: "gateway.v2",
+          risk: "low",
+          authorizationRef: null,
+          authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+          idempotencyKey,
+          payload: { recentAuthenticationRef: null },
+        },
+      });
+    };
+    try {
+      const machine = await query();
+      expect(machine.statusCode).toBe(409);
+      expect(machine.json()).toEqual({
+        error: { code: "PORT_CONFLICT", reasonCode: "LOGIN_DEVICES_STILL_CHANGING" },
+      });
+      for (const unlisted of [await query(), await query()]) {
+        expect(unlisted.statusCode).toBe(409);
+        expect(unlisted.json()).toEqual({ error: { code: "PORT_CONFLICT" } });
+      }
     } finally {
       await app.close();
     }

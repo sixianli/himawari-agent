@@ -22,7 +22,7 @@ if [ "${1:-}" = --status ]; then
 fi
 
 if [ "${1:-}" != --labels-removed ]; then
-  echo "RUNNER_PAUSE_REFUSED run pause-runners.sh on the Mac: it removes the $RUNNER_LABEL label first so GitHub sends no new job" >&2
+  echo "RUNNER_PAUSE_REFUSED run pause-runners.sh on the Mac: it removes the $RUNNER_LABELS labels first so GitHub sends no new job" >&2
   exit 64
 fi
 QUIET=${2:-90}

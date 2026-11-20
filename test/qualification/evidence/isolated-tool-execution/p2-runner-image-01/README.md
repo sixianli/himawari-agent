@@ -1,6 +1,6 @@
 # P2：运行 Pi 工具的 runner 镜像
 
-日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 2 项里还缺的“运行 Pi 工具的 runner 镜像”。runner 是容器里替 Pi 工具实际干活的程序，见 Spec 的[环境内 runner 的可信程度](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#runner-trust)。本批只准备镜像，并让后端能使用它；runner 程序本身和 Pi 工具的接入属于 P3。
+日期：2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 2 项里还缺的“运行 Pi 工具的 runner 镜像”。runner 是容器里替 Pi 工具实际干活的程序，见 Spec 的[环境内 runner 的可信程度](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#runner-trust)。本批只准备镜像，并让后端能使用它；runner 程序本身和 Pi 工具的接入属于 P3。
 
 ## 用词
 
@@ -26,7 +26,7 @@
 
 - Pi 的 bash 工具先找 `/bin/bash`，找不到就退回 `sh`（`utils/shell.ts` 的 `getShellConfig`）。
 - grep 和 find 工具通过 `ensureTool` 找 `rg`、`fd`（`utils/tools-manager.ts`）：先看 Pi 自己的工具目录，再看 PATH，都没有就去下载。环境里通常不能联网，所以要事先装好。
-- Spec 的[凭据的使用方式](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#credentials)要求本地 Git 提交在环境内执行，所以要有 `git`。
+- Spec 的[凭据的使用方式](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#credentials)要求本地 Git 提交在环境内执行，所以要有 `git`。
 - runner 用 Node.js 运行，版本和产品一致，都是 22.22.3。
 
 ## 做了什么

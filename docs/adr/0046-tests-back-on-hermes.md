@@ -31,7 +31,7 @@ date: "2026-10-02"
 
 [ADR 0045](0045-short-test-temp-root.md) 规定测试在云服务器 `84.247.157.41` 上以普通用户 `himawari-test` 运行，Hermes（局域网里的 Linux 服务器）不再使用。
 
-在云服务器上跑测试遇到的主要问题是慢：这块虚拟磁盘每次同步写入要 11–19 毫秒，产品的 SQLite 每次提交都要等数据落盘，所以完整 `npm test` 的五个测试项目合计约 70.8 分钟，远超 `ci/policy.json` 的 30 分钟总时限。为此用户在 2026-10-01 和 10-02 先后同意只在云端放宽测试时限（[BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。作为对照，2026-09-28 在 Hermes 上同样的完整测试（临时数据放在固态根盘）五个项目合计约 26 分钟。
+在云服务器上跑测试遇到的主要问题是慢：这块虚拟磁盘每次同步写入要 11–19 毫秒，产品的 SQLite 每次提交都要等数据落盘，所以完整 `npm test` 的五个测试项目合计约 70.8 分钟，远超 `ci/policy.json` 的 30 分钟总时限。为此用户在 2026-10-01 和 10-02 先后同意只在云端放宽测试时限（[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。作为对照，2026-09-28 在 Hermes 上同样的完整测试（临时数据放在固态根盘）五个项目合计约 26 分钟。
 
 2026-10-02 用户决定：
 
@@ -87,7 +87,7 @@ date: "2026-10-02"
 ### 测试时限不放宽
 
 - Hermes 上使用项目原有的时限：`ci/policy.json` 的总时限，Vitest 各项目的默认时限，测试里写死的时限，都不改。
-- 不设置 `HIMAWARI_TEST_TIMEOUT_MS`。为云端增加的这个变量及其代码，按 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉。
+- 不设置 `HIMAWARI_TEST_TIMEOUT_MS`。为云端增加的这个变量及其代码，按 [BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 撤掉。
 - 2026-10-02 为云端设计的“总时限 110 分钟、测试自己的时限 4 倍”没有实施，也不再实施。
 - Hermes 上出现超时，作为缺陷查原因并修复，不再提议放宽。
 
@@ -150,7 +150,7 @@ date: "2026-10-02"
 
 - `AGENTS.md` 的 “Test and Production Hosts”、“Test Trigger Timing”、“Pushing Commits”、“Disk Space Hygiene” 改为引用本 ADR，原 “Cloud Test Server Connectivity” 改为 Hermes 的连接规则。
 - 第二轮工具执行排查的条目 R2-E2（云端放宽时限）按用户决定撤回；各条目完成条件里的测试主机从云服务器改为 Hermes。
-- [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 的恢复工作开始执行：撤掉 `HIMAWARI_TEST_TIMEOUT_MS`，在 Hermes 上按默认时限跑通第 2、3 层。
+- [BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 的恢复工作开始执行：撤掉 `HIMAWARI_TEST_TIMEOUT_MS`，在 Hermes 上按默认时限跑通第 2、3 层。
 - **待核对**：产品的 Linux 隔离后端要求 bubblewrap 0.11.2 或更新版本，Hermes 只有系统自带的 0.6.1。需要真实 0.11.2 的测试在 Hermes 上会跳过还是失败，第一次运行时核对；如果要在 Hermes 上安装 0.11.2，属于新下载和系统改动，先问用户。
 - 首次生产部署计划要改为：安装包在 Hermes 上构建，带着提交号和 SHA-256 到生产机安装；部署前先按用户决定清理云服务器上的测试环境。
 - 生产 `privateRoot` 不超过 27 字节的长度上限（[BL-20261002-002](../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)）不受影响。
@@ -163,9 +163,9 @@ date: "2026-10-02"
 
 - 被取代的决定：[SOURCE: docs/adr/0045-short-test-temp-root.md]
 - 更早的测试位置和测试时机决定，原先由 ADR 0045 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以它们的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0044-tests-on-cloud-server.md]、[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]、[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
-- 测试时限的放宽与撤销：[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md]
+- 测试时限的放宽与撤销：[BL-20261001-002-回-到-同-步-写-入-快-的.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)
 - 生产机的 bwrap 前提：[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
 - 测试账号 umask：[SOURCE: docs/backlog/BL-20261001-004-安-装-结-果-继-承-安-装.md]
 - 生产 `privateRoot` 的长度上限：[SOURCE: docs/backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md]
-- 首次生产部署计划（目前暂缓）：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
-- 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+- 首次生产部署计划（目前暂缓）：[2026-09-30-production-first-deployment-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-30-production-first-deployment-plan.md)
+- 进行中的工具执行排查：[2026-09-28-tool-execution-audit-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-28-tool-execution-audit-plan.md)

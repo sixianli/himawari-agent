@@ -1,6 +1,6 @@
 # P0 基线：当前版本、三条现状基线与验收覆盖
 
-日期：2026-09-25 UTC。对应[隔离执行实施计划的 P0](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p0)。本目录记录改造**之前**的现状，供 P1～P4 做前后对比；容器运行时的实测见 [P0 平台探针](../p0-platform-probe-01/README.md)。
+日期：2026-09-25 UTC。对应[隔离执行实施计划的 P0](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p0)。本目录记录改造**之前**的现状，供 P1～P4 做前后对比；容器运行时的实测见 [P0 平台探针](../p0-platform-probe-01/README.md)。
 
 <a id="contents"></a>
 
@@ -24,7 +24,7 @@
 | Node.js | 22.22.3 |
 | 生产执行路由 | Pi 的七个工具和 web_search 由 Worker 启动独立的 Job Host 进程，Job Host 再用 SRT 运行已登记的 runner 程序。详见[工具入口盘点](../p0-platform-probe-01/README.md#tool-inventory) |
 
-[Spec 的代码差距表](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)已按当前代码复核，关键事实仍成立：
+[Spec 的代码差距表](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)已按当前代码复核，关键事实仍成立：
 - 生产准入仍按每次调用生成作业和环境身份，见 `apps/agent-service/src/production-sandbox-services.ts` 第 988 和 1009 行的 `jobId(input.invocationId)` 与 `environment:${hash(input.invocationId)}`。
 - Job Host 在任务启动后，进程树清理结果固定为 `unknown`，见 `packages/runtime-sandbox/src/job-host.ts` 第 392 行。
 
@@ -55,7 +55,7 @@
 
 ## ITE-01～21 的覆盖与缺口
 
-新后端还没有实现，所以没有一项 ITE 已经通过。下表列出现有可复用的覆盖和缺口；“旧覆盖”只证明旧的按调用执行路线，不能算作新环境的验收。ITE 的完整定义见 [Spec 的验收标准](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#acceptance)。
+新后端还没有实现，所以没有一项 ITE 已经通过。下表列出现有可复用的覆盖和缺口；“旧覆盖”只证明旧的按调用执行路线，不能算作新环境的验收。ITE 的完整定义见 [Spec 的验收标准](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#acceptance)。
 
 | ITE | 现有可复用的覆盖 | 缺口 |
 | --- | --- | --- |
@@ -87,7 +87,7 @@
 
 ## 旧计划的 55 项任务与 68 项验收
 
-[逐项转交表](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer-tasks)共 55 行，[验收责任映射](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer-acceptance)共 68 行，均已核对行数。转交核查基于提交 `2725547`；之后改动产品代码的提交只有 `d570bc9`（失败分类与页面下一步提示）和 `c18b70a`（只调整格式）。因此表中只有旧 P1-T05（错误与效果分类）需要补充说明：本地分类已提交，页面组件测试已在 2026-09-25 通过，真实页面联合路径仍待验。其余行的状态不变。本次没有逐项复跑 68 项旧验收。
+[逐项转交表](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer-tasks)共 55 行，[验收责任映射](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#transfer-acceptance)共 68 行，均已核对行数。转交核查基于提交 `2725547`；之后改动产品代码的提交只有 `d570bc9`（失败分类与页面下一步提示）和 `c18b70a`（只调整格式）。因此表中只有旧 P1-T05（错误与效果分类）需要补充说明：本地分类已提交，页面组件测试已在 2026-09-25 通过，真实页面联合路径仍待验。其余行的状态不变。本次没有逐项复跑 68 项旧验收。
 
 [↑ 返回目录](#contents)
 

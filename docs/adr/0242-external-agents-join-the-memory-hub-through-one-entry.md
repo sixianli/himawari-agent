@@ -55,11 +55,11 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 9. **外部读取现在能读到 sensitive（敏感）级别的记忆。** 来源：`apps/agent-service/src/production-memory-recall.ts`：`const allowed = modelVisibleClassifications();`；`packages/application/src/services/model-visibility.ts`：`MODEL_VISIBLE` 是 `"public"`、`"private"`、`"sensitive"` 三级。`recallOutsideRun` 传的 `"public"` 只是输出级别的下限（`highestClassification(requestClassification, …)`），不是上限。`today_context` 也一样：近两天的对话摘要同样按 `modelVisibleClassifications()` 取（`apps/agent-service/src/service-main.ts`：`allowedClassifications: modelVisibleClassifications()`），提醒正文只排除 restricted（`apps/agent-service/src/production-reminder-writer.ts`：`memory.dataClassification !== "restricted"`）。对外遮盖只按格式遮密码、验证码、证件号、银行卡号这类值（`production-mcp-read.ts` 的 `maskForExternalRead`），不按级别整条隐藏。
 10. **记忆编号有格式限制，文件路径过不了。** 来源：`packages/gateway-contracts/src/validation.ts` 的 `machineString`：`input.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)`；`apps/agent-service/src/production-mcp-memory-writer.ts`：`` return `${EXTERNAL_PROPOSAL_MEMORY_PREFIX}${proposalId}` ``。
 11. **入口有请求体上限和频率上限。** 来源：`production-mcp-read.ts`：`MCP_READ_BODY_LIMIT = 65_536`；`apps/agent-service/src/bearer-admission.ts`：`AUTHORIZED_PER_MINUTE = 30`；`production-mcp-memory-writer.ts`：`EXTERNAL_PROPOSAL_TEXT_MAXIMUM = 2000`。
-12. **外部 agent 能提的规则只有两种邮件规则；转述的偏好按记忆提。** 来源：`apps/agent-service/src/production-mcp-rule-writer.ts`：`EXTERNAL_RULE_TYPES = ["mail_must_notify", "mail_read_whole_thread"]`；[ADR 0226 放弃的做法](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md#options)：“外部 agent 的转述不是原话，提议偏好用 `propose_memory`。”
+12. **外部 agent 能提的规则只有两种邮件规则；转述的偏好按记忆提。** 来源：`apps/agent-service/src/production-mcp-rule-writer.ts`：`EXTERNAL_RULE_TYPES = ["mail_must_notify", "mail_read_whole_thread"]`；[ADR 0226 放弃的做法](0226-external-agents-propose-rules-through-the-rule-proposal-flow.md#options)：“外部 agent 的转述不是原话，提议偏好用 `propose_memory`。”（2026-11-12 补：以后能提哪些，以各规则类型自己的声明为准，见决定 7 下面的补注。）
 13. **Claude Code 的钩子（agent 在固定时刻自动执行的一条命令）。** 来源 <https://code.claude.com/docs/en/hooks>：命令钩子从标准输入拿到完整事件；`mcp_tool` 钩子“call a tool on a configured MCP server”，参数只能做 `${path}` 替换，不能读文件；“The hook never starts an OAuth flow”；UserPromptSubmit 上默认超时 30 秒；“Claude Code adds plain-text stdout as context that Claude can see and act on”。
 14. **Codex 有同名钩子，输出同样进上下文。** 来源 <https://learn.chatgpt.com/docs/hooks.md>：它列出的事件里有 `SessionStart`、`UserPromptSubmit`、`Stop`，和 Claude Code 的事件同名；“Plain text on `stdout` is added as extra developer context.”“Hooks are enabled by default”。Codex 的钩子里跑命令行程序有什么限制没有核实，列在[后果](#consequences)的实测项里。
 15. **两家自己记的笔记都是磁盘上的文件。** 来源 <https://code.claude.com/docs/en/memory>：“Each project gets its own memory directory at `~/.claude/projects/<project>/memory/`”，目录可用 `autoMemoryDirectory` 改；<https://developers.openai.com/codex/memories>：`~/.codex/memories/`，新安装用 `memories_v2`，“Memories may not update right away when a chat ends”。
-16. **已有“主人概况”的生成代码，MCP 入口没用。** 来源：`packages/application/src/services/owner-profile-service.ts`：`OWNER_PROFILE_CHARACTER_BUDGET = 2000`，`compose` 接受 `maxClassification`。
+16. **已有“主人概况”的生成代码，MCP 入口没用。** 来源：`packages/application/src/services/owner-profile-service.ts`：`OWNER_PROFILE_CHARACTER_BUDGET = 2000`，`compose` 接受 `maxClassification`。（2026-11-12 补：这是写本 ADR 时 main 上的样子；PR 413 合并后 `start_here` 已经用上它，见[后果](#consequences)。）
 17. **不经浏览器登录的程序入口已有先例。** 来源：[ADR 0162](0162-receive-muse-data-through-a-service-token-and-an-app-secret.md) 决定第 1 条：“边缘层用 Cloudflare Access 的服务令牌（Service Auth 策略，请求头 `CF-Access-Client-Id` 与 `CF-Access-Client-Secret`）”“应用层再要求 `Authorization: Bearer <应用密钥>`”。
 18. **多人时是一个网址。** 来源：[ADR 0234](0234-one-program-per-person-database-file.md) 决定第 5 条：“一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。”
 19. **待确认表还没进 main。** 写本 ADR 时 main 上没有 ADR 0228，也没有 `external_memory_proposals` 表；它在任务 P5-3 的 PR 里，设计见 `/mnt/project-files/p5-3-pending-writes/integrated-plan.md`。本 ADR 把它当正在落地的依赖。
@@ -94,12 +94,16 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 3. **`find_memories` 加两个可选参数。** `project`：只搜某个项目的项目笔记（见决定 8）。`auto`：调用方是钩子时用，最多 3 条，相关度不够就返回空（也不带“没有找到记忆”这类提示文字），门槛沿用 [ADR 0221](0221-memory-retrieval-relevance-cutoff-and-same-source-dedupe.md) 已有的那个。两个参数在 MCP 这一层处理，不原样交给检索代码。
 4. **每个接入有读取级别上限，新建的接入默认到 private。**
    - 四个读工具 `start_here`、`find_memories`、`today_context`、`rule_book` 走同一道检查。`today_context` 和 `start_here` 里“今天的情况”带的提醒正文、近两天的对话摘要也按这个上限过滤（前提 9）。主人可以在页面上把某个接入调高到 sensitive。
+   - 2026-11-12 补（[通用，不按场景写死](#general-not-per-scenario)）：这道检查管的是对外 MCP 服务上的每一个读工具，上面四个只是现在有的。以后加读工具，不接读取上限就过不了自动检查。这道自动检查现在还没有，任务 B 新建：读工具统一登记，登记时必须带上读取上限，没带的登记不上。
    - `start_here` 默认不带邮件规则的参数（免打扰时段、重要发件人）。
+   - 2026-11-12 补：这一条对所有规则都一样，不只是邮件规则。`start_here` 的规则摘要每条只有一句话，不带任何规则的参数；要看参数用 `rule_book`。PR 413 的实现已经是这样（`apps/agent-service/src/production-mcp-read.ts` 的 `#startHere` 只取 `enforcedOwnerRule(row)?.summary`）。
    - 依据：边界与可逆性，以及前提 6。内容给了别家就收不回来；编码 agent 用不上主人的健康、财务情况。
    - 改掉前提 9 的现状。Andy 2026-11-12 同意。
 5. **服务带使用说明，同样的触发条件也写进每个工具的描述。** MCP 规范里使用说明是可选的，客户端不一定给模型看，工具描述更可靠。这些文字是固定的，登记进提示词目录，不含时间、名字这类会变的值。
 6. **推：新工具 `sync_memories`，取代 `propose_memory` 和 ADR 0228 计划中的 `propose_memories`。**
    - 一批若干条。每条有对方自己的稳定编号（笔记文件路径之类的文字）、正文、种类（“关于主人”或“项目笔记”）、类别提示、项目名（可空）。稳定编号和项目名按普通文字存，有长度上限，统一成 NFC 写法；带控制字符或其他看不见的字符（零宽字符、改变文字方向的字符、不成对的代理项、行分隔符）的拒绝，字符集和 `apps/agent-service/src/production-mcp-memory-writer.ts` 里清洗正文用的 `INVISIBLE_FORMATTING` 相同。它们不进任何要求 `machineString` 的字段。
+   - 2026-11-12 补：`INVISIBLE_FORMATTING` 现在定义在 `packages/persistence-sqlite/src/external-proposal-text.ts`，`production-mcp-memory-writer.ts` 经 `normalizeProposalText` 用到它。正文是把这些字符换成空格；稳定编号和项目名是遇到就拒绝，要用同一个字符集单独校验，不能直接套 `normalizeProposalText`。
+   - 2026-11-12 补：种类只按“是不是关于主人的话”分成这两种，不按来源、不按场景分；对方是编码 agent、聊天 agent 还是以后别的什么，都用这两种。类别提示能给哪些值，以记忆类别的那一份清单（`packages/application/src/ports/memory-projection.ts` 的 `MEMORY_CATEGORIES`，去掉 `rule`）为准。不给，按“其他”收。给了清单里没有的值，这一条的结果是不合格，原因里列出能给的值；不悄悄改成“其他”，因为现在判敏感会看类别（`apps/agent-service/src/production-mcp-memory-writer.ts` 的 `proposalClassification`：类别是健康、财务的直接判敏感），悄悄改掉会让本该敏感的内容少一道保护。这份清单现在抄了好几份，写的一侧和读的一侧都有：`production-mcp-memory-writer.ts` 的 `EXTERNAL_PROPOSAL_CATEGORIES`、`packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts` 的 `CATEGORIES`、`packages/persistence-sqlite/src/data-export/schemas.ts` 的 `EXTERNAL_PROPOSAL_CATEGORIES`、待确认表的 CHECK（迁移 `0093_external_memory_proposals.sql` 建的）、`packages/gateway-contracts/src/contracts-v2.ts` 的 `MEMORY_EXTERNAL_CATEGORY_NAMES`（网页读待确认内容时用它校验）。任务 C 加一条自动检查：每一份都恰好等于 `MEMORY_CATEGORIES` 去掉 `rule`，多一个、少一个都失败；表的 CHECK 按全部迁移跑完之后的建表结果比，不读某一个迁移文件；动工时全仓库再搜一遍，搜到别的不含 `rule` 的外部类别抄本一起纳入。含 `rule` 的完整类别清单（例如 `packages/persistence-sqlite/src/sqlite-memory-operations.ts` 的 `CATEGORIES`）不归这条检查。
    - 对方的稳定编号只当业务键，存在“接入编号 + 项目编号 + 稳定编号”的唯一键表里，三样分三列存、联合唯一，不拼成一个字符串；记忆自己的编号由服务端生成（前提 10）。项目编号是服务端生成的、不会变的编号（决定 8）；没有项目的条目用一个固定的项目编号，不存空值，免得唯一键挡不住重复；这个固定编号是保留值，生成项目编号时不会生成它，写入时也校验。
    - 可以重复推：同编号同内容不产生任何东西；同编号新内容算更新，留历史版本。
    - 认得出删除，靠助手程序明说，不靠服务端猜，所以只有第一档（决定 10）做得到。第二、三档只同步新增和改动；对方那边删掉的，Himawari 认不出来，由主人在页面上清理。决定 7、8 里“对方删了”之后的处理，都是指助手程序报来、服务端认了的删除。
@@ -117,6 +121,9 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
    - 关于主人的：进待确认，主人整批确认后成为正式记忆（前提 4）。
    - 判出是敏感的（健康、财务、带证件号等）：不管对方标成什么，一律进待确认。
    - 像规则的（“以后都不要……”）：按偏好类记忆进待确认（前提 12）。只有对得上那两种邮件规则的才走 `propose_rule`。
+   - 2026-11-12 补：“那两种邮件规则”是写本 ADR 时规则类型登记表（`packages/application/src/rules/rule-types.ts` 的 `RULE_TYPES`）里的全部。外部 agent 能提哪些规则，由登记表里每种规则类型自己声明，不在对外入口另写一份清单。一种规则类型要让外部 agent 能提，它自己的定义里要写明“外部可提”，并带上三样：对外的参数说明、这种规则做什么的说明文字、给主人确认时怎样把参数写出来。`propose_rule` 的类型、参数说明和主人确认时看到的内容都从这些声明生成。这样加一种规则类型时，改的是这种规则自己的定义，不用改对外入口。没写“外部可提”的类型外部提不了；没有测试的类型本来就不能承载规则（`writableRuleType` 以 `RULE_TYPE_UNTESTED` 拒绝）。
+   - 现状离上一条还差两处，任务 C 一起做，做完之前保留现在的清单（`apps/agent-service/src/production-mcp-rule-writer.ts` 的 `EXTERNAL_RULE_TYPES = ["mail_must_notify", "mail_read_whole_thread"]`），不得只把清单换成登记表：登记表的接口写死了邮件匹配参数（`RuleTypeDefinition` 的 `parse` 返回 `MailMatchParameters`）；对外入口的参数格式和确认内容写死了五个邮件字段，并把不是 `mail_must_notify` 的类型一律写成另一种邮件规则的做法（`production-mcp-read.ts`：`preview.type === "mail_must_notify" ? MCP_PROPOSE_RULE_KIND_NOTIFY.text : MCP_PROPOSE_RULE_KIND_WHOLE_THREAD.text`）。只换清单的话，新类型能提上来，主人确认时看到的却是别的规则的做法和空的参数，而主人点头是规则生效前唯一的一道关。
+   - 规则提议按接入单独限频率，提了几次、因为超过频率被拒几次在页面上看得见（决定 13 的补注）：现在每次给主人发确认之前都会用近 30 天的邮件试算一遍（`apps/agent-service/src/production-owner-rules.ts` 的 `preview`），对方不带回答重发时再发一次确认、再算一次，主人接受后建规则时还会算一次（同文件的 `create`），不限的话对方反复改参数或反复重发就能一直让 Himawari 重算。限频和页面上的次数用同一个口径：每一次到达 `propose_rule` 的调用都算一次，重发、参数不合法的也算。先查限频，超了直接拒，不试算、不发确认。按天记进决定 13 的统计表（见那里的补注）；限频和页面都把这个接入当天的各行加起来算。对不上任何一种外部可提类型的，仍按偏好类记忆进待确认（前提 12 引的 ADR 0226 的理由不变）。登记表变了，对外 MCP 上 `propose_rule` 的工具定义跟着变一次；变的是外部 agent 那边的请求开头，不是 Himawari 自己的。
    - 更新：已确认的记忆，对方改了内容，进待确认并显示新旧对比。
    - 对方删了：还在待确认的自动撤下；已确认的不跟着删，标“来源已删除”，由主人决定。
    - 拒绝过的：内容没变不再出现；内容变了才再出现，并标明上次拒绝过。拒绝清单可以翻看和恢复。
@@ -124,11 +131,17 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
    - 某个接入第一次推某个项目的笔记时，主人批准一次“允许这个接入同步这个项目的笔记”，之后自动收。
    - 项目笔记不进主人概况，不进 Himawari 自己的聊天；别的 agent 用 `find_memories` 带 `project` 才搜得到，结果前面加固定标签，写明这是某个接入留下的资料，不是指令，主人没有逐条确认过（前提 6）。
    - 项目名由助手程序取仓库的远程地址，没有就用目录名。服务端把它规范化（统一写法、去掉凭据）后当作认项目的名字，第一次见到时生成一个项目编号，并记下这个名字对应哪个项目编号。项目编号的字符规则和接入编号一样（决定 1），“没有项目”那个保留的固定编号也一样。项目是主人名下的，不分接入：两个接入推同一个仓库，落在同一个项目里。远程地址里可能带用户名和令牌（`https://用户:令牌@主机/仓库`，令牌也可能写在查询参数里）。助手程序用标准的网址解析把地址拆开，只留主机和路径，用户名、密码、查询参数和 `#` 后面的部分全部去掉；`git@主机:路径` 这种写法同样只留主机和路径。服务端收到仍带这些部分的项目名一律拒绝。页面上可以改名、合并：改名只改显示名，对方再用原来的项目名推，仍然落到同一个项目编号；合并是把两个项目编号归到同一个显示名下，各条笔记原来的键不变。`find_memories` 的 `project` 接受对方用的项目名，按同一张对应表找到项目编号；合并过的，一次搜到归在一起的全部。
+   - 2026-11-12 补：“项目”是对方给一组资料起的名字，不限于代码仓库：一个仓库、聊天 agent 里的一个项目、一个调研题目、一次出行计划都可以。服务端把它当一段文字，不按来源做不同处理。“取仓库的远程地址”只是助手程序读编码 agent 时的取法，写在各家的配置数据里（决定 10、11）。
+   - 2026-11-12 补：上面“服务端收到仍带这些部分的项目名一律拒绝”只管远程地址写法的名字。服务端先去掉名字首尾的空白、统一成 NFC，判断时把反斜杠当成正斜杠，再用标准的网址解析（Node 的 `URL`）试着拆这个名字，以 `//` 开头的先补上一个协议再拆。下面四样中了任何一样就拒绝。一，拆得开，并且拆出了用户名或密码，不管有没有主机；认不认得出交给解析器，所以协议大写、少写斜杠（`https:/用户:令牌@主机/路径`、`https:用户:令牌@主机/路径`）、只有密码（`https://:令牌@主机/路径`）的写法都拦得住。二，拆得开，拆出了主机，并且带查询参数或 `#` 后面的部分。三，名字里有 `://` 或者以 `//` 开头，并且名字里任何位置有 `@`、`?` 或 `#`；这一样不靠解析器，解析器拆不开的（主机是空的 `//用户:令牌@/路径`、夹在一句话里的地址）也拦得住。四，名字开头到第一个 `@` 之间没有空白和 `/`，并且是下面两种之一：这一段里有 `:`（`用户:令牌@主机/路径`）；`@` 后面紧跟一段没有空白、`/` 和 `:` 的文字，再接一个 `:`（`用户@主机:路径`）。拒绝的原因只写是哪一类问题，不带项目名和它里面的任何一段；决策记录和日志里也不记被拒的名字原文，解析器抛出的错误信息也不原样写进去。这样会错拒一些普通名字（例如“小王@公司:周报”、`meeting:bob@corp.com`、`file:///home/me/proj#2`），对方换个写法就能推；错拒比把令牌存下来好。四样都没中的名字是普通文字，里面的 `?`、`#`、`@`、`:` 都是普通字符，除了去掉首尾空白和统一成 NFC，不拆开、不改写（例如“调研#2”“Q3?计划”“Q3: 计划 #2”“看 https://x.com/a 的笔记”照常收）。不带协议、形如 `主机/路径?token=…` 的名字四样都不中，按普通文字收：仓库的远程地址没有这种写法，助手程序给出的也是拆过的主机和路径。这道检查排在助手程序之后，不保证认出每一种变形。
    - 对方删了的项目笔记跟着删，留历史。
    - 依据：前提 5。它不是关于主人的断言。Andy 2026-11-12 同意。
 9. **确认统一在 Himawari 里做，去掉对方客户端里的确认框。**
    - 记忆和规则提议都是。每个接入有一个开关“先问我 / 直接存，可整批撤销”，默认先问；只有主人能改。
+   - 2026-11-12 补：“直接存”只管记忆。规则提议不管开关怎么设，都要主人在 Himawari 里点头才生效（[ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md)：“模型推断出来的只生成提议，主人点头才生效”）。
+   - 2026-11-15 补：“直接存”已由 [ADR 0281](0281-memory-from-outside-agents-saves-directly-when-the-owner-turns-it-on.md) 接通：网关允许设置，写工具按接入的设置直接保存非敏感记忆，整批可撤销。设置页新建接入默认选“直接存”，取代上面“默认先问”里新建时的默认值。
    - 待确认页面按接入、再按项目分组，沿用 ADR 0228 的整批确认和整批撤销。条目多时主人可以点“先帮我筛一遍”，由低价模型标出建议收、建议不收、拿不准；点之前显示预计费用。
+   - 2026-11-12 补（[设计时不考虑花费](#design-ignores-spend)）：点“先帮我筛一遍”之前不再显示预计费用，点了就筛，用了多少在用量页上看。筛只给建议，收不收仍然由主人定；筛失败不影响已经存下的内容，只是这几条没有建议；筛的结果不进 Himawari 自己的聊天。筛的时候待确认的正文会进一次独立的后台模型调用，这是主人自己点的。[ADR 0228](0228-external-memory-proposals-wait-for-owner-confirmation.md) 决定 1 说的“确认前 Himawari 不用它”照旧：没确认的内容不进记忆、不进概况、不进对话请求。
+   - 2026-11-12 补：筛这个功能（主人点的也算）任务 C 先不做，等另出的一份 ADR。筛的结果存哪里、进不进导出、按分级能发给哪些模型、正文怎样遮盖、数据怎么排、一次筛多少条，都在那份 ADR 里定；上一条补注是那份 ADR 要守的约束，不是让任务 C 现在就做。那份 ADR 还要定要不要更进一步：内容一到就自动筛，不用主人点。这样做，待确认的正文在主人没有任何动作时就进了模型，动到 ADR 0228 决定 1 依据“用户主权”划的线，按接入怎样限频也要定，由 Andy 定。任务 C 别的部分不等它。
    - 取代 ADR 0225 决定 2、6 和 ADR 0226 决定 1 至 3 里“在客户端里确认”的部分。默认仍然每条都要主人确认，没有绕过确认的后门，只是确认的地方换成 Himawari。
    - 理由：确认框在 Andy 的主力客户端上不弹（ADR 0225 决定 2 记录了 Claude 桌面 App 的 Code 标签“声明支持确认框，却不显示它”），两条路并存只多出错的地方。Andy 2026-11-12 同意。
 10. **触发按对方的能力分四档，档位不写死在代码里，不按产品名判断。**
@@ -151,9 +164,11 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
     - Himawari 的 Mac 客户端（[ADR 0229](0229-native-apple-clients-and-device-api.md)）做出来之后，助手程序的活并进去，凭据换成设备密钥。
     - 不用 `mcp_tool` 钩子做推送，因为它读不了文件（前提 13）。Andy 2026-11-12 同意在他的 Mac 上放这个程序。
 12. **存量搬家。** 第一档的 agent 第一次同步就是全量，不需要单独搬家。其他的在向导里：给一段提示词让对方列出记住的内容，主人贴回 Himawari，用低价模型解析，开始前显示预计费用，结果进同一个待确认页面。不能挂 MCP 的 agent，网页生成一段“关于我”文本，主人勾选包含哪几类、预览后贴进对方的自定义指令。
+    - 2026-11-12 补（[设计时不考虑花费](#design-ignores-spend)）：贴回之后直接解析，不先显示预计费用、不等主人再点一次。贴回的文本是别的 agent 写的，解析时只当资料、不当指令，长度有上限。
 13. **“接入的 agent”页面和周报显示每个接入的用量。**
     - 每个接入：读了几次（按工具）、空手而归几次、自动搜了几次其中有内容几次、推来几条（待确认、已存、被拒、项目笔记）、自动和模型调用各几次、失败几次、最近一次的时间。
     - 周报加同样的一节，和网页用同一套统计函数（[ADR 0155](0155-decision-record-observation-and-weekly-report-page.md)）。
+    - 2026-11-12 补：每个接入还显示规则提议提了几次、因为超过频率被拒几次（决定 7 的补注）。按天记在下面那张统计表里：`propose_rule` 的行除了调用次数，另有一个单独的计数记因为超过频率被拒的次数，不混在失败次数里；页面按接入把当天各行加起来显示。
     - 用量数字存在单独的按天统计表里，同一个键只累加，不新增行。读取按“接入 + 天 + 工具 + 进门方式 + 是不是 `auto`”计调用次数、空手而归次数、有内容次数、失败次数。进门方式分服务令牌（助手程序）和 OAuth 登录（模型所在的客户端）两种。`auto` 是工具参数，现在谁都能传（`apps/agent-service/src/production-mcp-read.ts` 的 `#findMemories` 不看进门方式），所以单独记，“自动搜了几次”按这个参数算。
     - 推送也在统计表里计：每次调用记一次，失败的也记（整批回滚不影响这个计数），逐条结果按种类累加。只统计认出了接入的调用，密钥不对、认不出是哪个接入的请求不计入任何接入的数字；失败次数在业务事务之外记，参数不合格和超过上限被拒的也算。最近一次的时间和最近一次删除被刹车的时间记在接入记录上。每个数字的定义在编码任务里逐个写明。
     - 不用决策记录存这些数。外部读取的决策记录是每次读取新写一条（`production-mcp-read.ts` 里编号是 `ledger:${randomUUID()}`）；写入它的 `insertLedgerRow`（`packages/persistence-sqlite/src/sqlite-decision-ledger-operations.ts`）用的是 `ON CONFLICT (id) DO NOTHING`，同一个编号写第二次不会改已有的那条；`packages/application/src/ports/decision-ledger.ts` 的 `DecisionInputs.relatedStats` 这类数字字段记的是那一次决定自己的数。所以这条路上没有按接入、按天累加的写法。
@@ -168,6 +183,34 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
     - 服务令牌的请求要同时满足两条才放行：索引里找得到这把密钥的摘要；那个人库里有这条接入记录，而且没有暂停、没有撤销。任何一边对不上就拒绝，宁可拒绝，不放行。所以撤销后索引没删干净、或者建到一半只写了本人库，结果都是这条路进不来，不会进到别人的库。
     - 只建了一半的接入在页面上显示“助手程序这条路还没建好”，可以重试或删掉。
     - 本人库写失败，这次操作就算失败，页面如实报错，不写索引。本人库写成了、索引没写成，暂停和撤销已经生效（本人库说了算），索引稍后重试，页面上标“索引还没同步”。换密钥时本人库写成了、索引没写成：旧密钥已经进不来，新密钥走 OAuth 登录的路能用，走服务令牌的路要等索引补上。
+
+<a id="general-not-per-scenario"></a>
+
+### 2026-11-12 补：通用，不按场景写死
+
+Andy 2026-11-12 定了一条产品总原则，原话：“提议下一步应该是一个很广泛的能力，而不是写死在某一种场景里。”“我其实想做的是一个能帮我处理所有事情、既主动又聪明的 AI agent，而不是一套固定死的工作流。”对照这条原则，本 ADR 里按场景写的几处改成通用的说法，补在各条决定下面，原文不动：
+
+- 读取上限管每一个读工具，不是点名的四个（决定 4）。
+- `start_here` 不带任何规则的参数，不只是邮件规则（决定 4）。
+- 推来的内容只按“是不是关于主人的话”分两种；类别提示以一份清单为准，另外几处抄的清单由一条检查守着一致（决定 6）。
+- 外部 agent 能提哪些规则，由每种规则类型自己声明，对外入口不另写一份“两种邮件规则”的清单（决定 7）。
+- “项目”是对方给一组资料起的名字，不限于代码仓库；只有远程地址写法的名字才查凭据（决定 8）。
+- “直接存”只管记忆，规则一律要主人点头（决定 9）。
+
+没有变的：门只有 MCP 一个；关于主人的内容先进待确认；外部 agent 提的规则只能是登记表里带测试、又声明了外部可提的规则类型，不是随便一句话（[产品愿景](../product-vision.md)：“规则是硬性设定：带出处、带回归测试”）。确认之后的记忆和主人自己在 Himawari 里产生的记忆走同一条路（见[后果](#consequences)），后面的检索、概况、主动提议不得按“它是哪个 agent 推来的”分别处理。
+
+实施时现有代码里还有一处按规则编号写死的地方要一起改：`apps/agent-service/src/production-mcp-read.ts` 的 `ruleParameters` 用 `rule.id === "quiet_hours"`、`rule.id === "floor_important_sender"` 决定 `rule_book` 给出哪些参数。这两条是内置规则手册（`packages/application/src/rules/rule-book.ts` 的 `ruleBookFor`）里的规则，和上面说的外部可提的规则类型登记表是两套东西；它们的参数存在设置里，`RuleRecord` 现在没有地方写“对外给哪些参数”。任务 B 让内置规则自己声明对外给哪些参数（加在手册条目上，或者单独一张声明表，由编码线程按改动小的定），`rule_book` 照声明给，加一条带参数的内置规则不用改对外入口。
+
+<a id="design-ignores-spend"></a>
+
+### 2026-11-12 补：设计时不考虑花费
+
+Andy 2026-11-12 定的规矩，原话：“贵不是问题，我要的是极致的体验”“你在设计、思考方案的时候，不要老是想着有一个费用上限，然后就去想一些折中的方案来”。他同时说明，产品里的费用上限功能照常保留（“我没有说在 Himawari 这个应用里面把设上限这个功能去掉”）。按它复查本 ADR：
+
+- 改了的：点“先帮我筛一遍”之前不再显示预计费用（决定 9），存量搬家贴回就解析（决定 12），主人不用先看费用再点一次。这两处用了多少，在用量页上看；模型走现有的路由，模型名不写死；这两处是后台调用，固定的指令在前、这次的数据在后，数据按固定的顺序排。本 ADR 不给它们另设花费门槛；产品里已有的花费上限功能不动。
+- 还没定的：筛这个功能怎么做（结果存哪里、按分级能发给哪些模型、怎样遮盖），和要不要改成内容一到就自动筛、不用主人点。自动筛按这条规矩是更好的做法，但挡着它的不是钱，是 ADR 0228 依据“用户主权”划的线。两件事都在另出的一份 ADR 里定（见决定 9 的补注），那之前任务 C 不做筛。
+- 问过 Andy、他定了不做的：下面“这次不做的”里的对话原文导入，和“放弃的做法”里的“把别家的原始对话送到 Himawari”，当初的理由是贵（前提 2 是 Andy 自己的话）；“让项目笔记进 Himawari 自己的聊天”当初的理由是老对话的请求开头要换新一次。2026-11-12 在方案线程的卡片上问他这两件现在要不要做，他选了“都不做”，所以保持原样：只收对方记好的笔记，Himawari 自己不看项目笔记。
+- 不是因为钱定的、所以不动的：入口的请求体上限和频率上限（防滥用）；`start_here` 的字数预算（对方的上下文有限）；`auto` 最多 3 条和相关度门槛（不相关的内容塞给对方是打扰）。
 
 **这次不做的：** 对话历史压缩包的导入（要用 Himawari 的模型逐段抽取，和前提 2 的理由一样贵）；让项目笔记进 Himawari 自己的聊天（要改它自己的检索工具的参数，会让每个老对话的请求开头换新一次，要做另出方案）；在对方执行工具之前来问 Himawari 的规则检查（现在没有管工具调用的规则）。
 
@@ -207,7 +250,32 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
 ## 后果
 
 - **实施前，代码仍按原来的 ADR。** 本 ADR 只记决定，没有改代码。实施分成几个编码任务，清单在 `/mnt/project-files/p5-memory-hub/coding-tasks.md`：读的一侧（决定 2、3、5、14；读取上限在决定 4 的任务里统一接到四个读工具上）；接入记录、读取上限和统计（决定 1、4、13，改表）；`sync_memories`、项目笔记和待确认页面（决定 6 至 9，改表，依赖 ADR 0228 的待确认表）；助手程序、插件和向导（决定 10、11）；存量搬家（决定 12）。每个任务合并时在被改的 ADR 上补注。进度：读的一侧已由 PR 413 合并（2026-11-12），做了 `start_here`、服务使用说明和 `find_memories` 的 `auto`；`start_here` 已按读取上限过滤，另外三个读工具的上限和 `project` 参数还没做。
+  - 2026-11-13 补：任务 B 的第一部分（不改表）做了三件事。一，对外 MCP 服务上的读工具统一登记在 `apps/agent-service/src/production-mcp-read.ts` 的 `MCP_READ_TOOLS`，每一条必须写明它读哪几样数据（`readCeiling.sources`），没写、写空、写了不认识的，`mcpReadToolRegistry` 拒绝登记，服务起不来；工具拿到的只有它写明的那几样，而且都已经按这次请求的读取上限过滤过。二，四个读工具都按读取上限过滤：`find_memories` 的记忆和对话摘要、`today_context` 的提醒和摘要、`rule_book` 和 `start_here` 里的主人规则（按规则出处那句话的分级，出处找不到的不给）。读取上限现在还是全局一个（`readCeiling`，默认 private），按接入分开的上限在第二部分接上。三，内置规则自己声明对外给哪些参数和这些参数的分级（`RuleRecord.sharedParameters`），`rule_book` 照声明给，去掉了按规则编号取参数的那段。
+  - 2026-11-13 补：任务 B 的第二部分（改表，不含多人）做了这些。一，新表 `mcp_connections`（接入记录，只存密钥的 sha256 摘要）和 `mcp_connection_usage_daily`（按“接入 + 天 + 工具 + 进门方式 + 是不是 `auto` + 计数名”只累加）。每个接入有自己的地址 `/api/mcp/v1/<密钥>`；不带密钥的地址不给工具，只回提示；认不出的密钥回 404，暂停的回 403，撤销的回 404，都在 Cloudflare 登录检查之后；密钥在进 MCP 程序库之前就从请求地址里拿掉，日志、错误信息、决策记录只写接入编号（`conn-` 加 24 位十六进制）。二，读取上限按接入分开，默认 private，页面上可改。决策记录的来源改成接入编号（`mcp-connection:<编号>`），对方自称的名字只留作附注；规则提议的出处改成 `mcp:<接入编号>`。三，计数在路由这一层做：每次到达工具的调用先记一次，再按结果记交出内容、空手而归、失败或被限流；参数不合格被程序库拒掉的调用也记成失败；空手而归的自动搜只计数，不写决策记录。四，钩子读取（带 `auto`）用单独的每分钟额度。五，网关新增 `mcp.connections.read`、`mcp.connection.create`、`mcp.connection.change`、`mcp.connection.rotate` 四个操作；新建和换密钥后，服务在内存里留新地址 10 分钟，网页通过 `/api/mcp-connections/address` 取一次，取过就没有了，服务重启也没有了（地址丢了就再换一次密钥）。六，设置里加“接入的 agent”一页：新建、改名、暂停、恢复、撤销、改读取上限、换密钥；每个接入最近 7 天（按主人时区）的各项数字，每个数字的定义写在页面上；每个上限都显示数值，接入个数、名称字数和两种每分钟额度同时显示当前用量，单次请求体大小不单独记录，只显示上限；页面引用 Cloudflare Logpush 的字段说明（`ClientRequestURI` 会记下带密钥的路径），提示怀疑泄露时换密钥。统计函数在 `packages/calibration/src/mcp-connections.ts`，周报的“接入的 agent”一节用同一个函数，范围是报告那一周。
+    - 上限的数值：接入最多 200 个（不算已撤销的）、名称最多 64 个字、单次请求体最多 65,536 字节、每个接入每分钟请求 30 次（握手这类不是工具调用的请求也算在里面，带 `auto` 的自动搜另算）、自动搜 60 次。钩子每句话都会读一次，所以额度比普通读取高一倍；这几个数还没有按主人真实的使用实测过，Hermes 验收时看实际用量再调。
+    - 推送策略现在只收“先问我”：“直接存”要等任务 C 的开关接上，在那之前网关拒绝把它设成“直接存”，免得存下一个不生效的设置。接入上勾选的“对方能做什么”只用来给向导选步骤，不是权限。
+    - 已撤销的接入不占 200 个名额，记录留着，好让统计里的数字仍能对上是哪个接入。
+    - 新建接入按命令的幂等键算出接入编号，同一条命令重发只算一次，不会多出一个接入。
+    - 新建、换密钥不要求最近重新登录：这两步只影响主人自己的接入，撤销、暂停都随时可以，少点一次（Andy 反感多余点击）。
+    - 还没做的：多人用的“密钥摘要对应哪个人”索引和服务令牌入口（等 PR 462 合并后在同一分支上做，决定 16）；接入记录进数据导出；“建好 7 天没有读取”的每日回顾提示；推送逐条结果按种类（待确认、已存、被拒、项目笔记）的计数在任务 C 接上，现在只计推送调用次数。
+  - 2026-11-15 补：任务 C 的第一部分（服务端，改表，不含多人）做了这些；页面、开关和 `propose_rule` 的改动在后面两个 PR。
+    - 一，新工具 `sync_memories`（对外 MCP 写工具，不需要客户端弹确认框，所以老版本的连接也有）。每次调用带 `entries`（新增或更新）和 `deletes`（报删除）。每条 entry 是 `id`（对方的稳定编号）、`text`、`kind`（`about_owner` 或 `project_note`）、可选的 `category`、可选的 `project`；每条 delete 是 `project`、`id`、`versionTag`。逐条返回结果：`pending`、`saved`、`unchanged`、`updated`、`declined_before`、`owner_deleted`、`awaiting_project_approval`、`invalid`（带原因），成功的带 `versionTag`（对存下来的正文算的 sha256，服务端算）。删除的结果是 `deleted`、`version_mismatch`、`awaiting_owner`、`not_accepted`，格式不合格的是 `invalid`。
+    - 二，一次请求里合格的条目和删除在同一个数据库事务里写完，待确认内容太多等失败整批回滚、库里不留半批；每条的稳定编号、项目名、正文、类别各自校验，不合格的只在这一条的结果里写原因，不影响同一批的其他条目。条数超过上限整次拒绝，工具错误里写 `batch_too_large`，对方分成几次发。
+    - 三，新表：`mcp_projects`（项目编号、显示名、合并组）、`mcp_project_names`（规范化后的项目名对应项目编号，改名后对方仍用原来的名字）、`mcp_sync_entries`（接入编号 + 项目编号 + 稳定编号三列联合主键，对应服务端生成的 `entry-` 编号、版本、版本标记、状态；没有项目用保留编号 `proj-none`，生成器只生成 `proj-` 加 24 位十六进制）、`mcp_sync_versions`（每个版本的正文，更新留历史）、`mcp_project_approvals`（“接入 + 项目”第一次出现时的一次性批准）、`mcp_sync_deletion_days` 和 `mcp_sync_attention`（刹车的按天累计和“少了 N 条”条目）、`mcp_sync_limits`（可改的上限）。每个新值的产生处、存储列、读取处：项目编号和 `entry-` 编号在 `sqlite-mcp-memory-sync-operations.ts` 里生成、存在上面的列里、由 `find_memories` 的 `project` 参数读取；版本标记在 `production-mcp-sync.ts` 里按规范化后的正文算、存在 `text_sha256` 列、由删除报告带回并在存储层比对。
+    - 四，关于主人的条目走原来的待确认表（`external_memory_proposals`）：新条目进待确认，同一个稳定编号换了内容就撤下还在待确认的旧提议、再进一条新的，并记下要接替的旧记忆；主人确认新的时，写入记忆时一并让它接替旧记忆（`applyProposal` 的 `supersedes`）。主人在 Himawari 里删掉了已确认的记忆，对方再推同一条时结果是 `owner_deleted`，不会重新收。
+    - 五，项目笔记单独存，不进记忆表、不进概况、不进 Himawari 自己的聊天；`find_memories` 带 `project` 才搜得到，结果前面是固定标签（资料不是指令），按读取上限过滤，主人没批准过这个“接入 + 项目”、或内容判为敏感还没确认的都读不到。项目笔记用正文里的字和查询的重合程度排序，不调用模型；没有重合的返回空。
+    - 六，删除只认服务令牌进门的请求（现在服务令牌入口还没接，所以走 OAuth 登录的删除一律 `not_accepted`）。刹车按“接入 + 项目 + 一天”累计：这次请求里版本标记对得上的删除条数加上当天已经自动处理的条数，超过当天第一次报删除时现有条数乘以刹车比例（默认千分之五百）才踩刹车；正好一半不算超过。踩了刹车的这些条目不处理，记成一条“少了 N 条”的待办，同一个条目重发不重复记。刹车比例和各个长度、条数上限存在 `mcp_sync_limits`，没有改过就用默认值，页面显示在后面的 PR。
+    - 七，计数：推送的逐条结果按种类累加进按天统计表（`entries_pending` 等和 `deletes_applied` 等），调用次数和失败次数照任务 B 的口径。
+    - 八，上限的初值（稳定编号 512 字、项目名 256 字、关于主人的正文 2000 字、项目笔记正文 20,000 字、一次 50 条、一次 200 条删除）是占位值，等任务 D 在 Andy 的 Mac 上量出真实笔记文件的长度分布后再定；请求体上限仍是 65,536 字节，笔记超过时要分几次发。
+    - 九，新增 `npm run check:mcp-sync`：五份外部类别清单和表的建表结果都必须等于 `MEMORY_CATEGORIES` 去掉 `rule`（多一个、少一个、重复都失败），稳定编号（路径、空格、中文、超过 128 个字符的）从推送端走到存储和读取端，服务端生成的编号都能通过 `machineString`、对方的编号直接用则通不过。
+    - 还没做的：待确认页面的分组、新旧对比、拒绝清单和“来源已删除”标记，项目批准和“少了 N 条”的页面，“先问我 / 直接存”开关，项目改名和合并的页面，去掉 `propose_memory` 和 `propose_memories`，`propose_rule` 按规则类型声明和限频，推送计数在“接入的 agent”页面和周报里显示。
+  - 2026-11-15 补：任务 C 第二部分的服务端（页面要用的数据和三个操作，页面本身在下一个 PR）做了这些。“先问我 / 直接存”开关归 ADR 0281（PR 589 合并后在 docs/adr 里），这里不重做。
+    - 一，页面快照 `memory.overview.snapshot` 多一块 `mcpSync`：`entries` 是等主人处理的项目笔记（状态 `awaiting_project_approval`、`awaiting_confirmation`、`refused`；关于主人的条目仍走原来的待确认流程，不在这里），带接入名、项目名、类别、分级、版本、正文、上一版正文（没有上一版是空）、来源是否已删除；`projects` 是各个“接入 + 项目”的批准状态；`attention` 是刹车拦下的“少了 N 条”，带被拦条数和当天开始时的基数。一次最多给 200 条，`entriesTotal` 是总数。正文在页面所在的服务里解密后给出，不进别的地方。
+    - 二，三个新网关操作，都只认主人本人，都不用重新登录：`memory.mcpSync.projectDecide`（批准或拒绝一个“接入 + 项目”，批准后这个项目下等批准的笔记变成已存，判为敏感的变成等确认，拒绝则全部变成被拒，包括已经在等确认的敏感笔记；以后这个项目再来的笔记按这次的决定直接处理，拒绝了的项目再来敏感笔记也直接被拒）；`memory.mcpSync.noteDecide`（确认、拒绝或恢复一条笔记，恢复回到等批准或等确认）；`memory.mcpSync.attentionResolve`（对“少了 N 条”选“放行”就按对方的报告删掉这些条目，选“保留”则一条不删；两种选择都把这条待办记为已处理）。目标不存在时报 `MEMORY_MCP_SYNC_TARGET_NOT_FOUND`。
+    - 三，主人放行的删除不计入当天的自动删除条数：它是主人自己点的，不该让刹车越踩越紧。
+    - 还没做的：页面界面（三种语言）、项目改名和合并、限额的显示和修改、计数在“接入的 agent”页面和周报里显示，以及 C3 的两项（`propose_rule` 按规则类型声明和限频、去掉 `propose_memory` 和 `propose_memories`）。
 - **对发给模型的请求：** Himawari 自己发给模型的请求不变。新工具只注册在对外的 MCP 服务上；待确认的内容和项目笔记不进 Himawari 自己的任何请求；确认后的记忆和网页新建的记忆走同一条路；复用 `OwnerProfileService` 时不改它。外部 agent 那边，工具清单会变一次。新登记进提示词目录的使用说明和工具描述只用在对外的 MCP 服务上，不得进入 Himawari 自己的系统提示和工具定义；带这些改动的编码 PR 照常要过 `npm run check:prompt-prefix`。“先筛一遍”和“解析贴回的文本”是两处新的后台模型调用，固定指令在前、数据在后，只用低价模型。
+  - 2026-11-12 补：上面“Himawari 自己发给模型的请求不变”“不进 Himawari 自己的任何请求”说的是对话请求和已有的后台调用。“先帮我筛一遍”和“解析贴回的文本”是两处新的、独立的后台调用：主人点了筛，待确认的正文才进前一处；主人贴回的文本进后一处。这两处之外没有别的代码把待确认的内容发给模型。筛这一处等决定 9 补注说的另一份 ADR 定下按分级能发给哪些模型、怎样遮盖之后才做。
 - **要补的自动检查**（`npm run check:prompt-prefix` 只管 Himawari 自己的请求，管不到 MCP 这一侧）。每条带反向用例：
   - 新增一步 `npm run check`：稳定编号（含路径、空格、中文、比 128 个字符长但没超过上限的）、种类、类别、项目名，从推送端走到存储和读取端都通过；把服务端生成编号换成直接用对方的编号，必须失败。
   - 同编号同内容不新增，新内容出新版本，重试不重复。
@@ -222,6 +290,13 @@ P5 系列已经做了入口：[ADR 0219](0219-read-only-mcp-entry-with-static-to
   - 稳定编号或项目名超过上限、带控制字符、零宽字符、改变文字方向的字符、不成对的代理项、行分隔符（U+2028、U+2029），项目名带用户名、密码、令牌、查询参数或 `#` 后面的部分，都被拒绝。
   - 接入编号：生成出来的都能通过 `machineString`；129 个字符的、以符号开头的、空的编号被拒绝。项目编号和保留的固定项目编号同样能通过。
   - 对外 MCP 服务的使用说明和工具描述不出现在 Himawari 自己发给模型的系统提示和工具定义里；故意让它出现时这条用例失败。
+  - 2026-11-12 补（[通用，不按场景写死](#general-not-per-scenario)）。下面几条要用到的东西现在都还没有，任务 B、C 先把它们做出来再写用例：对外入口能换一份测试用的规则类型登记表；读工具统一登记；类别提示有单独的解析入口。
+    - 在测试用的登记表里加一种声明了“外部可提”的规则类型，`propose_rule` 接受它，主人确认时看到的做法和参数是这种规则自己声明的那些（逐类型断言，不能只断言“接受”）；去掉声明就拒绝；没有测试的类型被拒绝。
+    - 登记一个没带读取上限的读工具，登记失败。
+    - 项目名四样都不中的一批（中文、带空格、带 `?`、`#`、`@`、`:` 的普通名字，例如“调研#2”“Q3: 计划 #2”“meeting: bob@corp.com”“看 https://x.com/a 的笔记”、`C:\Users\me\notes`）照常收，用同一个名字搜得到；同一个名字的 NFC 和非 NFC 两种写法、前后带不带空白，落到同一个项目。四样拒绝各有用例：`协议://用户:令牌@主机/路径`、协议大写的、以 `//` 开头的、少写斜杠的（`https:/用户:令牌@主机/路径`、`https:用户:令牌@主机/路径`）、只有密码的（`协议://:令牌@主机/路径`）、用反斜杠的（一个和两个各一条）、前后带空白的；`协议://主机/路径?token=1`、`协议://主机/路径#frag`、`https:/主机/路径?token=1`；主机是空的 `协议://用户:令牌@/路径`、`//用户:令牌@/路径`、夹在一句话里的 `看 https://用户:令牌@主机/路径`；不带协议的 `用户:令牌@主机/路径`、`用户@主机:路径`、`meeting:bob@corp.com`。每条被拒的用例里，返回的原因、决策记录和日志里都搜不到名字里的令牌。上面那条用例里“项目名带用户名、密码、令牌、查询参数或 `#` 后面的部分，都被拒绝”只对中了这四样的名字成立。稳定编号和项目名里带看不见的字符时是拒绝，不是换成空格后收下。
+    - 类别提示不给，按“其他”收；给了清单里没有的值，这一条不合格并列出能给的值；决定 6 的补注列的每一份类别清单（加上动工时搜到的）和 `MEMORY_CATEGORIES` 去掉 `rule` 不一致时检查失败，表的 CHECK 按建表结果比。
+    - 接入设成“直接存”时推来的规则提议仍然停在待确认；规则提议超过这个接入的频率额度被拒，页面上这个接入当天的“提了几次”“被拒几次”跟着变（每一次到达 `propose_rule` 的调用算一次，重发、参数不合法的也算），没提过规则的接入这两个数是 0；超过额度的调用和参数不合法的提议都不触发试算。
+    - 给内置规则手册加一条带参数的规则，不改对外入口的代码，`rule_book` 也能给出它声明的参数。
   - 不同的“接入 + 项目 + 稳定编号”组合不会撞成同一个键，用项目名和稳定编号里带分隔符的用例验证。没有项目的条目重复推不新增；项目改名、合并之后，同一个稳定编号仍然认得出是同一条；改名后对方用原来的项目名推，不新建项目；`find_memories` 带合并前任何一个项目名都搜得到；保留的固定项目编号不会被生成器生成。
   - 正常的删除：版本标记一致、没超过门槛时，待确认的撤下，已确认的标“来源已删除”，项目笔记删掉并留历史。
   - 记忆目录被清空后同步：报删除的条数超过门槛，库里什么都不自动删，待确认页面出现一条“少了 N 条”；把同样的删除拆成几个请求报，一天里自动处理的不超过一半；正好一半不算超过。

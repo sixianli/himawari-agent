@@ -46,14 +46,27 @@ export function enumeration<const TValues extends readonly string[]>(
   };
 }
 
+export const MACHINE_STRING_MAX_LENGTH = 128;
+
 export const machineString: Schema<string> = {
   parse(input, path = "$") {
     if (
       typeof input !== "string" ||
-      input.length > 128 ||
+      input.length > MACHINE_STRING_MAX_LENGTH ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(input)
     ) {
-      fail(path, "expected a 1-128 character machine string");
+      fail(path, `expected a 1-${MACHINE_STRING_MAX_LENGTH} character machine string`);
+    }
+    return input;
+  },
+};
+
+export const PROACTIVE_SOURCE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+
+export const proactiveSourceName: Schema<string> = {
+  parse(input, path = "$") {
+    if (typeof input !== "string" || !PROACTIVE_SOURCE_NAME_PATTERN.test(input)) {
+      fail(path, "expected a registered proactive source name");
     }
     return input;
   },
@@ -101,6 +114,30 @@ export function boundedString(maximum = 2048): Schema<string> {
         fail(path, `expected a 1-${maximum} character string without control characters`);
       }
       return input;
+    },
+  };
+}
+
+export function codePointString(
+  maximum: number,
+  options: { readonly allowLineBreaks?: boolean } = {},
+): Schema<string> {
+  return {
+    parse(input, path = "$") {
+      if (typeof input !== "string") fail(path, `expected a 1-${maximum} character string`);
+      const characters = [...(input as string)];
+      if (
+        characters.length === 0 ||
+        characters.length > maximum ||
+        characters.some((character) => {
+          const code = character.charCodeAt(0);
+          if (options.allowLineBreaks === true && (code === 0x0a || code === 0x09)) return false;
+          return code < 0x20 || code === 0x7f;
+        })
+      ) {
+        fail(path, `expected a 1-${maximum} character string without control characters`);
+      }
+      return input as string;
     },
   };
 }

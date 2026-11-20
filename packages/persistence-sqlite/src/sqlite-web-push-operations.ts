@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   WebPushAttempt,
   WebPushAttemptStatus,
@@ -12,6 +13,7 @@ import type {
 } from "@himawari-agent/application";
 import type Database from "better-sqlite3";
 import { recordDecisionSignal } from "./decision-signals.ts";
+import { insertLedgerRow } from "./sqlite-decision-ledger-operations.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input<TName extends keyof WebPushStorePort> = Parameters<WebPushStorePort[TName]>[0];
@@ -21,6 +23,8 @@ const subscriptionColumns = `s.id, s.owner_id AS ownerId, s.agent_id AS agentId,
   s.failure_code AS failureCode, s.created_at AS createdAt, s.updated_at AS updatedAt,
   s.last_delivered_at AS lastDeliveredAt`;
 
+export const TIMING_DEFER_REFS = '["delivery_timing"]';
+const TIMING_OUTCOMES = ["delivered", "deferred", "deadline_reached"] as const;
 const WEB_PUSH_LOCALES: readonly WebPushSubscription["locale"][] = ["zh-CN", "en", "ja"];
 
 const WEB_PUSH_KINDS: readonly WebPushKind[] = ["reminder", "approval", "run"];
@@ -78,6 +82,12 @@ export class SqliteWebPushOperations {
         return this.enqueue(payload as Input<"enqueue">);
       case "webPush.listDue":
         return this.listDue(payload as Input<"listDue">);
+      case "webPush.listRecent":
+        return this.listRecent(payload as Input<"listRecent">);
+      case "webPush.deferItem":
+        return this.deferItem(payload as Input<"deferItem">);
+      case "webPush.recordDeliveryTiming":
+        return this.recordDeliveryTiming(payload as Input<"recordDeliveryTiming">);
       case "webPush.recordAttempt":
         return this.recordAttempt(payload as Input<"recordAttempt">);
       case "webPush.recordReactions":
@@ -311,6 +321,22 @@ export class SqliteWebPushOperations {
       this.fail("PORT_INVALID_OPERATION", "Web push item is invalid");
   }
 
+  private listRecent(input: Input<"listRecent">): readonly WebPushOutboxItem[] {
+    this.time(input.since);
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `SELECT owner_id AS ownerId, agent_id AS agentId, source_key AS sourceKey, kind,
+           source_ref AS sourceRef, thread_id AS threadId, created_at AS createdAt,
+           expires_at AS expiresAt
+         FROM web_push_outbox
+         WHERE owner_id = ? AND agent_id = ? AND created_at >= ?
+         ORDER BY created_at DESC, source_key
+         LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.since, input.limit) as WebPushOutboxItem[];
+  }
+
   private listDue(input: Input<"listDue">): readonly WebPushDue[] {
     this.time(input.now);
     this.limit(input.limit);
@@ -318,6 +344,7 @@ export class SqliteWebPushOperations {
       .prepare(
         `SELECT o.source_key AS sourceKey, o.kind, o.source_ref AS sourceRef,
            o.thread_id AS threadId, o.created_at AS itemCreatedAt, o.expires_at AS expiresAt,
+           o.defer_until AS deferUntil, o.defer_rule_refs AS deferRuleRefs,
            ${subscriptionColumns},
            a.status AS attemptStatus, a.attempts AS attemptCount,
            a.next_attempt_at AS nextAttemptAt, a.last_code AS lastCode,
@@ -326,14 +353,17 @@ export class SqliteWebPushOperations {
          JOIN web_push_subscriptions s ON s.owner_id = o.owner_id AND s.agent_id = o.agent_id
            AND s.state = 'active'
          LEFT JOIN web_push_attempts a ON a.owner_id = o.owner_id AND a.agent_id = o.agent_id
-           AND a.source_key = o.source_key AND a.subscription_id = s.id
+           AND a.source_key = o.source_key AND a.channel = 'web_push'
+           AND a.subscription_id = s.id
          WHERE o.owner_id = ? AND o.agent_id = ?
+           AND (o.channel IS NULL OR o.channel = 'web_push')
+           AND (o.defer_until IS NULL OR o.defer_until <= ?)
            AND (a.status IS NULL OR (a.status = 'pending'
              AND (a.next_attempt_at IS NULL OR a.next_attempt_at <= ?)))
          ORDER BY o.created_at, o.source_key, s.created_at, s.id
          LIMIT ?`,
       )
-      .all(input.ownerId, input.agentId, input.now, input.limit) as Array<
+      .all(input.ownerId, input.agentId, input.now, input.now, input.limit) as Array<
       WebPushSubscription & {
         sourceKey: string;
         kind: WebPushOutboxItem["kind"];
@@ -341,6 +371,8 @@ export class SqliteWebPushOperations {
         threadId: string | null;
         itemCreatedAt: string;
         expiresAt: string;
+        deferUntil: string | null;
+        deferRuleRefs: string | null;
         attemptStatus: WebPushAttemptStatus | null;
         attemptCount: number | null;
         nextAttemptAt: string | null;
@@ -358,6 +390,8 @@ export class SqliteWebPushOperations {
         threadId: row.threadId,
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
+        deferUntil: row.deferUntil,
+        ...(row.deferRuleRefs === TIMING_DEFER_REFS ? { deferredByTiming: true } : {}),
       },
       subscription: {
         id: row.id,
@@ -389,6 +423,147 @@ export class SqliteWebPushOperations {
     }));
   }
 
+  private deferItem(input: Input<"deferItem">): boolean {
+    this.time(input.now);
+    this.time(input.deferUntil);
+    this.time(input.expiresAt);
+    if (
+      input.ruleRefs.length < 1 ||
+      input.ruleRefs.length > 16 ||
+      input.ruleRefs.some((ref) => ref.length < 1 || ref.length > 256) ||
+      new Set(input.ruleRefs).size !== input.ruleRefs.length
+    )
+      this.fail("PORT_INVALID_OPERATION", "Web push deferral rule references are invalid");
+    const refs = [...input.ruleRefs].sort();
+    const digest = createHash("sha256")
+      .update(JSON.stringify([input.ownerId, input.agentId, input.sourceKey, input.deferUntil]))
+      .digest("hex");
+    return this.database
+      .transaction(() => {
+        const current = this.database.prepare(
+          `SELECT 1 FROM rule_book_rules
+           WHERE owner_id = ? AND agent_id = ? AND rule_id = ? AND revision = ? AND status IN ('active', 'needs_review')`,
+        );
+        const stale = refs.some((ref) => {
+          const at = ref.lastIndexOf("@");
+          return (
+            at < 1 ||
+            current.get(
+              input.ownerId,
+              input.agentId,
+              ref.slice(0, at),
+              Number(ref.slice(at + 1)),
+            ) === undefined
+          );
+        });
+        if (stale) return true;
+        const stored =
+          this.database
+            .prepare(
+              `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
+             WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+            )
+            .run(
+              input.deferUntil,
+              JSON.stringify(refs),
+              input.expiresAt,
+              input.ownerId,
+              input.agentId,
+              input.sourceKey,
+            ).changes > 0;
+        if (!stored) return false;
+        insertLedgerRow(this.database, {
+          id: `web-push-${digest}`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "web_push",
+          decidedAt: input.now,
+          outcome: "deferred",
+          reasonCode: "push_quiet_hours",
+          subjectRef: input.sourceKey,
+          inputs: { memoryIds: [], ruleIds: refs },
+          reasonRef: null,
+          contentRef: null,
+          costMicros: 0,
+          durationMs: 0,
+        });
+        return true;
+      })
+      .immediate();
+  }
+
+  private recordDeliveryTiming(input: Input<"recordDeliveryTiming">): boolean {
+    this.time(input.now);
+    if (
+      !TIMING_OUTCOMES.includes(input.outcome) ||
+      !/^[a-z0-9_+]{1,64}$/u.test(input.reasonCode) ||
+      !Number.isSafeInteger(input.costMicros) ||
+      input.costMicros < 0
+    )
+      this.fail("PORT_INVALID_OPERATION", "Web push delivery timing record is invalid");
+    if (input.outcome === "deferred") {
+      if (input.deferUntil === null || input.expiresAt === null)
+        this.fail("PORT_INVALID_OPERATION", "Web push delivery timing deferral is invalid");
+      this.time(input.deferUntil);
+      this.time(input.expiresAt);
+    }
+    const digest = createHash("sha256")
+      .update(
+        JSON.stringify([
+          input.ownerId,
+          input.agentId,
+          input.sourceKey,
+          input.outcome,
+          input.outcome === "deferred" ? input.deferUntil : null,
+        ]),
+      )
+      .digest("hex");
+    return this.database
+      .transaction(() => {
+        if (input.outcome === "deferred") {
+          const stored =
+            this.database
+              .prepare(
+                `UPDATE web_push_outbox SET defer_until = ?, defer_rule_refs = ?, expires_at = ?
+                 WHERE owner_id = ? AND agent_id = ? AND source_key = ?`,
+              )
+              .run(
+                input.deferUntil,
+                TIMING_DEFER_REFS,
+                input.expiresAt,
+                input.ownerId,
+                input.agentId,
+                input.sourceKey,
+              ).changes > 0;
+          if (!stored) return false;
+        } else {
+          this.database
+            .prepare(
+              `UPDATE web_push_outbox SET defer_rule_refs = NULL
+               WHERE owner_id = ? AND agent_id = ? AND source_key = ? AND defer_rule_refs = ?`,
+            )
+            .run(input.ownerId, input.agentId, input.sourceKey, TIMING_DEFER_REFS);
+        }
+        insertLedgerRow(this.database, {
+          id: `delivery-timing-${digest}`,
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          kind: "delivery_timing",
+          decidedAt: input.now,
+          outcome: input.outcome,
+          reasonCode: input.reasonCode,
+          subjectRef: input.sourceKey,
+          inputs: { memoryIds: [], ruleIds: [] },
+          reasonRef: null,
+          contentRef: null,
+          costMicros: input.costMicros,
+          durationMs: 0,
+        });
+        return true;
+      })
+      .immediate();
+  }
+
   private recordAttempt(input: Input<"recordAttempt">): boolean {
     this.time(input.now);
     if (input.nextAttemptAt !== null) this.time(input.nextAttemptAt);
@@ -406,12 +581,12 @@ export class SqliteWebPushOperations {
         this.database
           .prepare(
             `INSERT INTO web_push_attempts (
-              owner_id, agent_id, source_key, subscription_id, status, attempts, next_attempt_at,
-              last_code, updated_at
-            ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+              owner_id, agent_id, source_key, channel, push_type, subscription_id, status,
+              attempts, next_attempt_at, last_code, updated_at
+            ) SELECT ?, ?, ?, 'web_push', NULL, ?, ?, ?, ?, ?, ?
               WHERE EXISTS (SELECT 1 FROM web_push_outbox
                 WHERE owner_id = ? AND agent_id = ? AND source_key = ?)
-            ON CONFLICT (owner_id, agent_id, source_key, subscription_id) DO UPDATE SET
+            ON CONFLICT (owner_id, agent_id, source_key, channel, subscription_id) DO UPDATE SET
               status = excluded.status, attempts = excluded.attempts,
               next_attempt_at = excluded.next_attempt_at, last_code = excluded.last_code,
               updated_at = excluded.updated_at
@@ -549,6 +724,8 @@ export class SqliteWebPushOperations {
            FROM runs
            WHERE owner_id = ? AND agent_id = ? AND thread_id IS NOT NULL
              AND status IN ('completed', 'failed')
+             AND NOT EXISTS (SELECT 1 FROM threads hidden
+               WHERE hidden.id = runs.thread_id AND hidden.origin = 'think')
              AND NOT EXISTS (SELECT 1 FROM run_background_holds hold
                WHERE hold.owner_id = runs.owner_id AND hold.agent_id = runs.agent_id
                  AND hold.run_id = runs.id)

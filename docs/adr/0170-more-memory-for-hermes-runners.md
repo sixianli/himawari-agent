@@ -92,7 +92,7 @@ CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 01
 
 - 好处（待验证）：文件缓存不再被反复清掉，磁盘重读和排队减少，任务变快。
 - 代价：runner 最多能占 9 GB。整机 16 GB，runner 忙时其他服务和系统还剩约 6 GB 以上，加上可回收的文件缓存。没有查 docker 容器（clickhouse、minio 跑在里面）自己的内存限制；如果之后其他服务变慢或交换空间明显增加，先把上限调回去。
-- 生效要在 Hermes 上用一次临时 sudo，先暂停 runner，再重新运行 `install-runner.sh`，最后恢复（见 [已归档的 Runbook](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#install)）。
+- 生效要在 Hermes 上用一次临时 sudo，先暂停 runner，再重新运行 `install-runner.sh`，最后恢复（见 [已归档的 Runbook](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#install)）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -102,6 +102,6 @@ CI 任务在 Hermes 上比 GitHub 托管机器慢得多，要查原因（[ADR 01
 
 - [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0168：放宽 Hermes 上 CI 任务的整体时限](0168-longer-ci-job-limits-on-hermes.md)
-- [Hermes 自托管 runner 操作手册（已归档）](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
+- [Hermes 自托管 runner 操作手册（已归档）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md)
 
 [↑ 返回阅读导航](#contents)

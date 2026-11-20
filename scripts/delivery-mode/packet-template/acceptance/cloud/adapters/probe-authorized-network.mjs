@@ -91,7 +91,7 @@ try {
     };
     const compiled = await compileSandboxPolicy(policy);
     const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-    const curl = `/usr/bin/curl --silent --show-error --fail --max-time 15 --cacert ${quote(certificate)} --noproxy ''`;
+    const curl = `/usr/bin/curl --silent --show-error --fail --max-time 15 --retry 2 --cacert ${quote(certificate)} --noproxy ''`;
     const download = `${curl} ${scenario === "socks-download" ? `--proxy "socks5h://\${ALL_PROXY#http://}"` : ""} https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz -o package.tgz`;
     const tunnel = `const net=require('node:net');const p=new URL(process.env.HTTPS_PROXY);const s=net.connect(Number(p.port),p.hostname);s.on('error',e=>console.log(e.code));s.on('connect',()=>s.write('CONNECT registry.npmjs.org:443 HTTP/1.1\\r\\nHost: registry.npmjs.org:443\\r\\nProxy-Authorization: Basic '+Buffer.from(decodeURIComponent(p.username)+':'+decodeURIComponent(p.password)).toString('base64')+'\\r\\n\\r\\n'));s.on('data',b=>{if(b.toString().includes('200 Connection Established'))console.log('tunnel-established')});setTimeout(()=>process.exit(),45000)`;
     const commands = {
@@ -99,7 +99,7 @@ try {
       "plain-http": `${curl} --include http://registry.npmjs.org/is-number/7.0.0`,
       download,
       "socks-download": download,
-      install: `${quote(node)} ${quote(npm)} install is-number@7.0.0 --ignore-scripts --no-audit --no-fund --fetch-retries=0 --registry=https://registry.npmjs.org --cache="$TMPDIR/cache"`,
+      install: `${quote(node)} ${quote(npm)} install is-number@7.0.0 --ignore-scripts --no-audit --no-fund --fetch-retries=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=3000 --registry=https://registry.npmjs.org --cache="$TMPDIR/cache"`,
       "redirect-denied": `${curl} -D redirect.headers -L 'https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.com'; cat redirect.headers`,
       cpu: `${quote(node)} -e 'const end=Date.now()+45000;while(Date.now()<end){}'`,
       memory: `${quote(node)} -e 'const b=Buffer.alloc(80*1024*1024,1);setTimeout(()=>console.log(b.length),5000)'`,

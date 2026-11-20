@@ -6,7 +6,10 @@ export {
   CONTRACT_ERROR_CODE,
   ContractValidationError,
   GMAIL_MESSAGE_ID_PATTERN,
+  MACHINE_STRING_MAX_LENGTH,
+  machineString,
   modelRefString,
 } from "./validation.js";
 export * from "./memory-source.js";
 export * from "./process-step.js";
+export * from "./client-capabilities.js";

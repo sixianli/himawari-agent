@@ -3,6 +3,7 @@ import { lstat, open, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertWritableSchema,
+  bundledSchemaFingerprint,
   buildChatExport,
   buildDemoPack,
   buildPortableExport,
@@ -225,7 +226,7 @@ export async function runDataCommand(
       path.join(configuration.stateRoot, "data", "product.sqlite"),
     );
     try {
-      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE);
+      assertWritableSchema(database, LATEST_MIGRATION_SEQUENCE, bundledSchemaFingerprint());
       if (action === "export") {
         const out = values.get("--out");
         if (!out) throw new Error(DATA_COMMAND_ERROR_CODES.ARGUMENT_INVALID);

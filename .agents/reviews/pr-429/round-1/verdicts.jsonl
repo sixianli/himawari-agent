@@ -1,0 +1,12 @@
+{"id": "D1", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 1. 高（读代码证实）`quote` 可能含换行/控制字符，违反网关契约，导致整份规则列表无法解析", "valid": true, "class": "error", "reason": "quote 含换行时契约拒绝，整份规则列表解析失败；已用 singleLine 清理并加多行原话用例", "severity": "high"}
+{"id": "D2", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 2. 中（读代码证实）`lastUsed` 会把“待重审”记录当成“最近一次使用”", "valid": true, "class": "error", "reason": "重审记录也会被当成使用；已改为只统计 kind=proactive，测试改用真实的 proactive 决定并加重审不覆盖的反向用例", "severity": "medium"}
+{"id": "D3", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 3. 低（推测）`changes` 会把自动重审和重新确认也算进“修改次数”", "valid": false, "class": "better", "reason": "changes 的定义就是版本号减 1，作者说明已写明；是否改成只数主人修改交 Andy 决定，不改"}
+{"id": "D4", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 4. 低（推测）严格对象契约使新旧客户端不能混跑", "valid": false, "class": "error", "reason": "网页和 iOS 与服务器同版本发布，契约严格对象是仓库一贯做法（PR 425 已同样处理）；不改"}
+{"id": "D5", "model": "opencode-go/deepseek-v4.1-flash", "quote": "### 5. 低（推测）每条规则一次账本查询，账本大时可能变慢", "valid": false, "class": "better", "reason": "每条规则一次查询，规则最多 32 条，推测性能问题；不改，列给 Andy"}
+{"id": "G1", "model": "opencode-go/glm-5.3-flash", "quote": "**1.【高】quote 含控制字符会让 `memory.rules.read` 整体失败 —— 产生端没按消费端校验（I-73 同型）**【读代码证实】", "valid": true, "class": "error", "reason": "同 D1，已修", "severity": "high"}
+{"id": "G2", "model": "opencode-go/glm-5.3-flash", "quote": "**2.【中】改动确实波及发给模型的内容，作者「不改发给模型的内容」的说法不成立**【读代码证实】", "valid": true, "class": "error", "reason": "rule_list 的模型可见结果多出内部 id 和版本号；已在工具结果里去掉 revision 和 sourceMemoryId，并加用例", "severity": "medium"}
+{"id": "G3", "model": "opencode-go/glm-5.3-flash", "quote": "**3.【中低】`lastRuleUses` 每条规则一次全量 JSON 扫描，性能隐患**【读代码证实（行数与索引）；量级为推算】", "valid": false, "class": "better", "reason": "同 D5；不改，列给 Andy"}
+{"id": "G4", "model": "opencode-go/glm-5.3-flash", "quote": "**4.【低】`changes` 语义与「修改次数」有出入**【读代码证实】", "valid": false, "class": "better", "reason": "同 D3；不改"}
+{"id": "G5", "model": "opencode-go/glm-5.3-flash", "quote": "**5.【低】给已有 snapshot 类型加必填字段，旧客户端会解析失败**【代码证实机制；iOS 发布耦合为推测】", "valid": false, "class": "error", "reason": "同 D4；不改"}
+{"id": "G6", "model": "opencode-go/glm-5.3-flash", "quote": "**6.【低】测试覆盖缺口**【读代码证实】", "valid": false, "class": "better", "reason": "契约反向用例缺口：新增的多行原话和重审反向用例已覆盖实际风险；其余不改"}
+{"id": "G7", "model": "opencode-go/glm-5.3-flash", "quote": "**7.【备注】「网页共用」只是数据层面**【读代码证实】：web 规则区（apps/control-center/src/components/rule-receipt.tsx:197）仍只渲染 summary，未渲染新字段；本次 diff 未改 UI。不是缺陷，但展示待做。", "valid": false, "class": "better", "reason": "本 PR 只做服务器端，界面由 iOS 第 11 批展示；不改"}

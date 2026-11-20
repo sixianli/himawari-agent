@@ -258,6 +258,21 @@ export function capabilityLifecycleHasActiveAuthority(
   );
 }
 
+export interface CapabilityReactivationCheck {
+  readonly verified: boolean;
+  readonly reasonCodes: readonly string[];
+}
+
+export interface CapabilityReactivationVerifierPort {
+  verify(manifest: CapabilityManifest): Promise<CapabilityReactivationCheck>;
+}
+
+export interface CapabilityInvalidationOutcome {
+  readonly lifecycle: "disabled";
+  readonly cancelledScheduledJobs: number;
+  readonly occurredAt: string;
+}
+
 export interface CapabilityRegistryRecord {
   readonly ref: string;
   readonly revision: number;
@@ -270,6 +285,7 @@ export interface CapabilityRegistryRecord {
   readonly rollbackDeclaration: CapabilityDeclaration | null;
   readonly rollbackQualification: CapabilityRuntimeQualification | null;
   readonly lastVersionTransition: CapabilityVersionTransition | null;
+  readonly lastInvalidation?: CapabilityInvalidationOutcome | null;
   readonly approvalRefs: readonly string[];
   readonly discoveredAt: string;
   readonly updatedAt: string;
@@ -289,6 +305,8 @@ export interface CapabilityRegistryStorePort {
     expectedRevision: number,
     revokedAt: string,
   ): Promise<CapabilityRegistryRecord>;
+  /** Lists the scheduled jobs still depending on the capability (not cancelled). */
+  listScheduledJobRefs?(capabilityRef: string): Promise<readonly string[]>;
   /** Atomically switches a capability version and revokes Handles bound to the previous version. */
   switchCapabilityVersion?(
     record: CapabilityRegistryRecord,

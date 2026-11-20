@@ -1,0 +1,4 @@
+# PR 516 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 低 — 合并队列触发器的删除没有自动断言，现有测试在改动前后都会通过。test/tooling/merge-queue.test.mjs:753-760 只查检出和并发组，不查 on: 触发；已加一条用例只认 workflow_dispatch，并用 main 上旧的 yml 验证它会失败；触发：以后有人在例外期间把 workflow_run 或 schedule 加回 merge-queue.yml；后果：合并队列又自动占 ARM 机器，没有测试拦下
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低 — ADR 0268 仍把 `workflow_run` 和每 10 分钟定时写成合并队列的触发方式，与当前代码不一致。ADR 0268 第 69 行记的是合并队列的设计决定，这次只是临时例外期间停用自动触发，现行规则和恢复方法写在 .agents/instructions/delivery-mode.md:27；改 ADR 要走文档治理，例外结束就恢复，不值得改决定记录

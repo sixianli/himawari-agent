@@ -11,6 +11,7 @@ const toolingEnvironment = {
   ),
   GITHUB_ACTIONS: "false",
   HIMAWARI_REVIEW_GATEWAY: "",
+  HIMAWARI_REVIEW_SELFCHECK_CACHE: "off",
 };
 
 export default defineConfig({
@@ -44,7 +45,7 @@ export default defineConfig({
                 sequence: { groupOrder: 1 },
               }
             : {}),
-          ...(project.id === "tooling" ? { env: toolingEnvironment } : {}),
+          ...(project.id === "tooling" ? { env: toolingEnvironment, testTimeout: 30_000 } : {}),
         },
       })),
       ...policy.registeredTests

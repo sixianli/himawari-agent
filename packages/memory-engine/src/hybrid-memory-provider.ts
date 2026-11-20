@@ -18,7 +18,6 @@ import {
   validRelevanceTuning,
 } from "./relevance.js";
 import { indexableTerms, queryTerms } from "./segmentation.js";
-import { parseTimeScope } from "./time-scope.js";
 
 export const MEMORY_INDEX_RECORD_PREFIX = "memory-index:" as const;
 const CANDIDATES_PER_SIGNAL = 50;
@@ -140,6 +139,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly relevanceCutoff?: boolean;
     readonly includeTentative?: boolean;
     readonly tentativeOnly?: boolean;
+    readonly lexicalOnly?: boolean;
   }): Promise<readonly MemoryProviderHit[]> {
     if (input.query.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
@@ -149,7 +149,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     const minimumSimilarity = input.minimumSimilarity ?? this.#options.minimumSimilarity ?? 0;
     if (!Number.isFinite(minimumSimilarity) || minimumSimilarity < 0 || minimumSimilarity > 1)
       throw new RangeError("MEMORY_MINIMUM_SIMILARITY_INVALID");
-    const embedder = this.#options.embedder;
+    const embedder = input.lexicalOnly === true ? null : this.#options.embedder;
     let embedding = null;
     if (embedder) {
       try {
@@ -163,7 +163,6 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       }
     }
     const now = this.#options.now();
-    const scope = input.scope ?? parseTimeScope(input.query, now, this.#options.timeZone);
     const relevance = this.relevance;
     const result = await this.#options.index.search({
       ownerId: input.ownerId,
@@ -174,7 +173,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       limit: Math.min(200, Math.max(CANDIDATES_PER_SIGNAL, input.limit)),
       minimumSimilarity,
       now,
-      includeHistory: scope?.includeHistory === true,
+      includeHistory: input.scope?.includeHistory === true,
       ...(input.includeTentative === true ? { includeTentative: true } : {}),
       ...(input.tentativeOnly === true ? { tentativeOnly: true } : {}),
     });
@@ -182,7 +181,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       now,
       limit: input.limit,
       weights: this.#options.weights ?? DEFAULT_FUSION_WEIGHTS,
-      scope,
+      scope: input.scope ?? null,
       ...(input.relevanceCutoff === true
         ? {
             cutoff: {

@@ -1,6 +1,6 @@
 # P2 第三批：任务专属的联网出口
 
-日期：2026-09-25 至 2026-09-26 UTC。对应[隔离执行实施计划的 P2](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 3 项的“网络出口”部分；同一项里的“临时凭据的发放和撤销”本批没有做。规则来源是 Spec 的[网络与特权](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#policy)和 [ADR 0026](../../../../../docs/adr/0026-job-scoped-network-egress.md)。
+日期：2026-09-25 至 2026-09-26 UTC。对应[隔离执行实施计划的 P2](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p2)第 3 项的“网络出口”部分；同一项里的“临时凭据的发放和撤销”本批没有做。规则来源是 Spec 的[网络与特权](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#policy)和 [ADR 0026](../../../../../docs/adr/0026-job-scoped-network-egress.md)。
 
 本批让容器后端能执行“允许访问某些网络目标”的环境：任务容器只能经过本环境专属的出口代理访问被批准的 `主机名:端口`，其他所有路径都被挡住。后端因此开始声明联网保证 `task-egress-policy.v1`，六项保证齐全。后端仍没有接进产品，新任务执行仍然关闭。
 

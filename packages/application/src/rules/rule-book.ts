@@ -1,4 +1,5 @@
-import { currencyExponent, type MailAmount, MISSING_AMOUNT } from "./amount.js";
+import type { DataClassification } from "../ports/common.js";
+import { currencyExponent, type MailAmount, MISSING_AMOUNT, type MoneyState } from "./amount.js";
 import { type RuleGate, ruleFields } from "./field-catalog.js";
 import { compileRuleExpression, type RuleFacts } from "./rule-expression.js";
 
@@ -7,9 +8,12 @@ export type RuleOutcome =
   | "suppress_push"
   | "require_notify"
   | "require_whole_thread"
-  | "defer_to_quiet_hours";
+  | "defer_to_quiet_hours"
+  | "allow_preauthorized"
+  | "ask_owner"
+  | "refuse";
 export type RuleOrigin = "built_in" | "owner_setting";
-export type RuleStatus = "active" | "needs_review" | "retired";
+export type RuleStatus = "active" | "needs_review" | "suspended" | "retired";
 
 export function ruleIsEnforced(status: RuleStatus): boolean {
   return status === "active" || status === "needs_review";
@@ -18,6 +22,11 @@ export function ruleIsEnforced(status: RuleStatus): boolean {
 export interface RuleExample {
   readonly facts: RuleFacts;
   readonly hit: boolean;
+}
+
+export interface RuleSharedParameters {
+  readonly classification: Exclude<DataClassification, "restricted">;
+  readonly values: Readonly<Record<string, unknown>>;
 }
 
 export interface RuleRecord {
@@ -30,6 +39,7 @@ export interface RuleRecord {
   readonly source: string;
   readonly status: RuleStatus;
   readonly examples: readonly RuleExample[];
+  readonly sharedParameters?: RuleSharedParameters;
 }
 
 export const RULE_IDS = Object.freeze({
@@ -50,43 +60,6 @@ export interface QuietPeriod {
 
 const PUBLIC_DOMAIN_SUFFIXES = Object.freeze(["go.jp", "lg.jp", "ac.jp", "ed.jp"]);
 
-const MONEY_SUBSTRINGS = Object.freeze([
-  "收费",
-  "扣款",
-  "入账",
-  "付款",
-  "退款",
-  "账单",
-  "缴费",
-  "汇款",
-  "转账",
-  "还款",
-  "发票",
-  "請求",
-  "引落",
-  "引き落とし",
-  "振込",
-  "振り込み",
-  "入金",
-  "返金",
-  "支払",
-  "料金",
-  "決済",
-  "ご利用代金",
-]);
-
-const MONEY_WORDS = Object.freeze([
-  "invoice",
-  "payment",
-  "refund",
-  "billing",
-  "bill",
-  "charge",
-  "charged",
-  "receipt",
-  "statement",
-]);
-
 export function celString(value: string): string {
   return JSON.stringify(value);
 }
@@ -102,6 +75,7 @@ function senderFacts(
   words: readonly string[] = [],
   amount: MailAmount = MISSING_AMOUNT,
   content = text,
+  money: MoneyState = "unknown",
 ) {
   return {
     sender_address: address,
@@ -110,6 +84,7 @@ function senderFacts(
     content_folded: foldText(content),
     text_words: words,
     content_words: [...new Set(foldText(content).match(/[a-z0-9_]+/gu) ?? [])],
+    money_state: money,
     amount_state: amount.state,
     amount_minor: amount.state === "known" ? amount.minor : 0,
     amount_currency: amount.state === "missing" ? "" : amount.currency,
@@ -132,6 +107,7 @@ export function mailItemFacts(
     readonly body?: string | null;
   },
   amount: MailAmount = MISSING_AMOUNT,
+  money: MoneyState = "unknown",
 ): RuleFacts {
   const address = item.fromAddress.toLowerCase();
   const text = `${item.subject}\n${item.snippet}`;
@@ -142,12 +118,12 @@ export function mailItemFacts(
     (text.match(/[a-z0-9_]+/giu) ?? []).map(foldCase),
     amount,
     `${item.subject}\n${item.body ?? item.snippet}`,
+    money,
   );
 }
 
 export const BUILT_IN_RULE_VALUES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   [RULE_IDS.publicDomain]: PUBLIC_DOMAIN_SUFFIXES,
-  [RULE_IDS.moneyWords]: Object.freeze([...MONEY_SUBSTRINGS, ...MONEY_WORDS]),
 });
 
 export const BUILT_IN_RULES: readonly RuleRecord[] = Object.freeze([
@@ -169,48 +145,52 @@ export const BUILT_IN_RULES: readonly RuleRecord[] = Object.freeze([
   }),
   Object.freeze({
     id: RULE_IDS.moneyWords,
-    revision: 1,
+    revision: 2,
     gate: "mail_item",
-    expression: `${celStringList(MONEY_SUBSTRINGS)}.exists(word, text.contains(word)) || ${celStringList(MONEY_WORDS)}.exists(word, word in text_words)`,
+    expression: 'money_state == "yes"',
     outcome: "raise_floor",
     origin: "built_in",
-    source: "ADR 0106 第 4 条；ADR 0209",
+    source: "ADR 0106 第 4 条；ADR 0209；ADR 0248",
     status: "active",
     examples: Object.freeze([
       Object.freeze({
-        facts: mailItemFacts({
-          fromAddress: "a@b.com",
-          subject: "Your Invoice is ready",
-          snippet: "",
-        }),
+        facts: mailItemFacts(
+          { fromAddress: "a@b.com", subject: "Your Invoice is ready", snippet: "" },
+          MISSING_AMOUNT,
+          "yes",
+        ),
         hit: true,
       }),
       Object.freeze({
-        facts: mailItemFacts({
-          fromAddress: "a@b.com",
-          subject: "クレジットの引落のお知らせ",
-          snippet: "",
-        }),
+        facts: mailItemFacts(
+          { fromAddress: "a@b.com", subject: "クレジットの引落のお知らせ", snippet: "" },
+          MISSING_AMOUNT,
+          "yes",
+        ),
         hit: true,
       }),
       Object.freeze({
-        facts: mailItemFacts({ fromAddress: "a@b.com", subject: "本月账单", snippet: "" }),
-        hit: true,
-      }),
-      Object.freeze({
-        facts: mailItemFacts({
-          fromAddress: "a@b.com",
-          subject: "billingual newsletter",
-          snippet: "",
-        }),
+        facts: mailItemFacts(
+          { fromAddress: "a@b.com", subject: "billingual newsletter", snippet: "" },
+          MISSING_AMOUNT,
+          "no",
+        ),
         hit: false,
       }),
       Object.freeze({
-        facts: mailItemFacts({
-          fromAddress: "a@b.com",
-          subject: "Lunch on Friday",
-          snippet: "see you",
-        }),
+        facts: mailItemFacts(
+          { fromAddress: "a@b.com", subject: "Lunch on Friday", snippet: "see you" },
+          MISSING_AMOUNT,
+          "no",
+        ),
+        hit: false,
+      }),
+      Object.freeze({
+        facts: mailItemFacts(
+          { fromAddress: "a@b.com", subject: "本月账单", snippet: "" },
+          MISSING_AMOUNT,
+          "unknown",
+        ),
         hit: false,
       }),
     ]),
@@ -249,6 +229,10 @@ export function importantSenderRule(senders: readonly string[], revision: number
     source: "ADR 0106 第 4 条；主人的设置“重要发件人”",
     status: "active",
     examples: importantSenderExamples(senders),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ importantSenders: senders }),
+    }),
   });
 }
 
@@ -325,6 +309,10 @@ export function quietHoursRule(periods: readonly QuietPeriod[], revision: number
     source: "ADR 0106；主人的设置“静默时段”",
     status: "active",
     examples: quietHoursExamples(periods),
+    sharedParameters: Object.freeze({
+      classification: "private",
+      values: Object.freeze({ quietHours: periods }),
+    }),
   });
 }
 
@@ -341,7 +329,11 @@ function inQuietPeriod(period: QuietPeriod, weekday: number, minutes: number): b
   );
 }
 
-function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExample[] {
+export function quietHoursExamples(
+  periods: readonly QuietPeriod[],
+  extraFacts: Readonly<Record<string, unknown>> = {},
+  hitWhen: (extra: Readonly<Record<string, unknown>>) => boolean = () => true,
+): readonly RuleExample[] {
   const moments = new Map<string, { readonly weekday: number; readonly minutes: number }>();
   const add = (weekday: number, minutes: number) => {
     const day = (weekday + Math.floor(minutes / MINUTES_PER_DAY) + 7) % 7;
@@ -364,11 +356,13 @@ function quietHoursExamples(periods: readonly QuietPeriod[]): readonly RuleExamp
     [...moments.values()].map(({ weekday, minutes }) =>
       Object.freeze({
         facts: {
+          ...extraFacts,
           local_minutes: minutes,
           local_weekday: weekday,
           local_previous_weekday: (weekday + 6) % 7,
         },
-        hit: periods.some((period) => inQuietPeriod(period, weekday, minutes)),
+        hit:
+          hitWhen(extraFacts) && periods.some((period) => inQuietPeriod(period, weekday, minutes)),
       }),
     ),
   );
@@ -440,6 +434,8 @@ const GATE_OUTCOMES: Readonly<Record<RuleGate, readonly RuleOutcome[]>> = Object
     "require_whole_thread",
   ] as const),
   mail_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  push_delivery: Object.freeze(["defer_to_quiet_hours"] as const),
+  action: Object.freeze(["allow_preauthorized", "ask_owner", "refuse"] as const),
 });
 
 const AMOUNT_FIELD_NAMES: readonly string[] = ruleFields("mail_item")

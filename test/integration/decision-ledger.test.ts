@@ -293,6 +293,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
             resultMemoryIds: [],
             sourceIds: [],
             floorHits: {},
+            limitChange: null,
             ruleHits: {},
             memoryInjected: false,
             usedMemoryIds: [],
@@ -426,6 +427,98 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
           now: "2026-10-31T02:00:00.000Z",
         }),
       ).rejects.toThrow();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("finds the last proactive decision that used each rule, by exact rule id with or without a revision", async () => {
+    const { repository } = await fixture();
+    try {
+      const ledger = repository.decisionLedger();
+      const proactive = repository.proactive();
+      const use = (id: string, checkedAt: string, ruleIds: string[]) =>
+        proactive.record({
+          ...scope,
+          decision: {
+            id,
+            scenario: "gmail",
+            checkedAt,
+            counts: {
+              fetched: 0,
+              skipped: 0,
+              judged: 0,
+              act: 0,
+              know: 0,
+              check: 0,
+              ignore: 0,
+              floorRaised: 0,
+              pushed: 0,
+            },
+            verdict: "silent",
+            reasonCode: "nothing_new",
+            pushSourceKey: null,
+            costMicros: 0,
+            durationMs: 1,
+            ownerRating: null,
+            ratedAt: null,
+          },
+          inputs: {
+            ruleIds,
+            sourceIds: [],
+            floorHits: {},
+            memoryInjected: false,
+            memoryIds: [],
+            usedMemoryIds: [],
+            tentativeMemoryIds: [],
+            memoryByMail: {},
+            memoryRecall: "off",
+          },
+          modelPayloads: [],
+          processed: [],
+          insights: [],
+          repliedThreads: [],
+          push: null,
+          cursor: null,
+        });
+      await use("use-old", "2026-10-31T01:00:00.000Z", ["owner:aaaa@1", "floor_money_words@2"]);
+      await use("use-new", "2026-10-31T05:00:00.000Z", ["owner:aaaa@2"]);
+      await use("other-rule", "2026-10-31T09:00:00.000Z", ["owner:aaaab@1", "owner:bbbb"]);
+      await ledger.append(
+        ledgerWrite("review-only", {
+          kind: "rule_review",
+          outcome: "needs_review",
+          decidedAt: "2026-10-31T11:00:00.000Z",
+          inputs: { memoryIds: [], ruleIds: ["owner:aaaa@2", "owner:cccc"] },
+        } as never),
+      );
+      await ledger.append(ledgerWrite("no-rules", { decidedAt: "2026-10-31T10:00:00.000Z" }));
+      expect(
+        await ledger.lastRuleUses({
+          ...scope,
+          ruleIds: ["owner:aaaa", "owner:bbbb", "owner:cccc", "owner:aaa"],
+        }),
+      ).toEqual([
+        {
+          ruleId: "owner:aaaa",
+          decisionId: "use-new",
+          kind: "proactive",
+          decidedAt: "2026-10-31T05:00:00.000Z",
+        },
+        {
+          ruleId: "owner:bbbb",
+          decisionId: "other-rule",
+          kind: "proactive",
+          decidedAt: "2026-10-31T09:00:00.000Z",
+        },
+      ]);
+      expect(
+        await ledger.lastRuleUses({
+          ownerId: createOwnerId("another-owner"),
+          agentId: AGENT_ID,
+          ruleIds: ["owner:aaaa"],
+        }),
+      ).toEqual([]);
     } finally {
       await repository.close();
     }
@@ -1152,7 +1245,7 @@ describe.each(["worker", "direct"] as const)("decision ledger through %s", (exec
       expect(
         (await proactive.listDecisions({ ...scope, since: SINCE, limit: 10 })).map(({ id }) => id),
       ).toEqual(["gmail-check"]);
-      await proactive.clearRecords(scope);
+      await proactive.clearRecords({ ...scope, source: "gmail" });
       expect((await list()).map(({ id }) => id)).toEqual(["keep-me"]);
     } finally {
       await repository.close();

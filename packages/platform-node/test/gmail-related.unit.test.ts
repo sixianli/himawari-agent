@@ -1,15 +1,14 @@
-import type { ProactiveSourceItem } from "@himawari-agent/application";
+import { flatMailReader, type ProactiveMail } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 import {
   counterparts,
-  extractReferenceIds,
   findRelatedMail,
   type GmailRelatedTransport,
   normalizeSubject,
 } from "../src/gmail-related.ts";
 import { createGmailReader, gmailItem } from "../src/gmail-source.ts";
 
-function item(id: string, overrides: Partial<ProactiveSourceItem> = {}): ProactiveSourceItem {
+function item(id: string, overrides: Partial<ProactiveMail> = {}): ProactiveMail {
   return {
     source: "gmail",
     messageId: id,
@@ -34,7 +33,7 @@ function item(id: string, overrides: Partial<ProactiveSourceItem> = {}): Proacti
 const limits = { perMail: 6, requestsPerCheck: 100, wholeThreadPerMail: 50 };
 
 function mailbox(
-  mails: readonly ProactiveSourceItem[],
+  mails: readonly ProactiveMail[],
   hooks: { onRequest?: () => void; failThread?: boolean } = {},
 ): GmailRelatedTransport {
   return {
@@ -62,23 +61,6 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     expect(normalizeSubject("Re: RE：Fwd: 注文のご確認")).toBe("注文のご確認");
     expect(normalizeSubject("回复：转发：  Your   Order")).toBe("your order");
     expect(normalizeSubject("返信: 予約のお知らせ")).toBe("予約のお知らせ");
-  });
-
-  it("extracts order, booking and case numbers only when a label precedes them and a digit is present", () => {
-    expect(extractReferenceIds("注文番号: 250-1234567-8901234 をご確認ください")).toEqual([
-      "250-1234567-8901234",
-    ]);
-    expect(extractReferenceIds("Booking number ABC123456 and case #CS-778899")).toEqual([
-      "ABC123456",
-      "CS-778899",
-    ]);
-    expect(extractReferenceIds("ID 123456 and No. 99887766 and # 12345678")).toEqual([]);
-    expect(extractReferenceIds("order 2026-11-07 shipped")).toEqual([]);
-    expect(extractReferenceIds("order number: ABCDEFGH")).toEqual([]);
-    expect(extractReferenceIds("お問い合わせ番号 12")).toEqual([]);
-    expect(
-      extractReferenceIds("注文 11111111 注文 22222222 注文 33333333 注文 44444444"),
-    ).toHaveLength(3);
   });
 
   it("uses the other side as the counterpart for the owner's own mail", () => {
@@ -124,6 +106,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     });
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["250-1234567-8901234"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([
@@ -162,6 +145,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     const exact = item("exact", { subject: "別件2", body: "ご注文 12345678 を発送" });
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["12345678"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([current, longer, exact]),
@@ -170,6 +154,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     const dashed = item("dashed", { subject: "別件3", body: "ご注文 12345678-の件" });
     const again = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["12345678"]]]),
       limits,
       signal: new AbortController().signal,
       transport: mailbox([current, dashed]),
@@ -188,6 +173,7 @@ describe("[PA-1] finding the earlier mails about the same matter", () => {
     };
     const result = await findRelatedMail({
       items: [current],
+      references: new Map([["now", ["250-1234567-8901234"]]]),
       limits,
       signal: new AbortController().signal,
       transport,
@@ -366,10 +352,12 @@ describe("[PA-1] Gmail wiring", () => {
         );
       return new Response(JSON.stringify({}), { status: 200 });
     };
-    const reader = createGmailReader({
-      oauth: { accessToken: async () => "access-1" },
-      fetch,
-    });
+    const reader = flatMailReader(
+      createGmailReader({
+        oauth: { accessToken: async () => "access-1" },
+        fetch,
+      }),
+    );
     const current = item("new", { threadId: "t-1", subject: "Re: 返金について" });
     const result = await reader.related?.({
       token: "refresh",

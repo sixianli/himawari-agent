@@ -114,6 +114,6 @@ Hermes（家里的 Linux 服务器）上有两个常驻的 GitHub 自托管 runn
 - [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行](0160-self-hosted-runner-on-hermes.md)
 - [ADR 0171：Hermes 上跑两个常驻 runner](0171-two-runners-on-hermes.md)
 - [ADR 0168：放宽 Hermes 上 CI 任务的整体时限](0168-longer-ci-job-limits-on-hermes.md)
-- [Hermes 自托管 runner 操作手册（已归档）](../archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#pause-and-resume)
+- [Hermes 自托管 runner 操作手册（已归档）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/runbooks/2026-11-07-hermes-self-hosted-runner-runbook.md#pause-and-resume)
 
 [↑ 返回阅读导航](#contents)

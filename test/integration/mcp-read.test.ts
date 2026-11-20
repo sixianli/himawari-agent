@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   classificationRank,
+  type DataClassification,
   DEFAULT_MEMORY_ATTRIBUTES,
   DurableMemoryService,
-  type DataClassification,
   type MemoryCategory,
   OwnerProfileService,
+  ruleBookFor,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -34,8 +35,15 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  mcpConnectionSecretDigest,
+  newMcpConnectionSecret,
+} from "../../apps/agent-service/src/production-mcp-connections.ts";
+import {
   MCP_READ_PATH,
-  MCP_READ_TOOL_NAMES,
+  MCP_READ_TOOL_CEILING_MISSING,
+  MCP_READ_TOOLS,
+  type McpReadSources,
+  type McpReadToolEntry,
   ProductionMcpRead,
   registerMcpReadRoute,
 } from "../../apps/agent-service/src/production-mcp-read.ts";
@@ -59,6 +67,7 @@ const YESTERDAY = "昨天和主人商量了京都红叶行程，主人说民宿�
 const OLDER = "三天前主人整理了书架";
 
 const TOPICS = ["牙医", "Wi-Fi", "京都"];
+const CONNECTION_ID = "conn-mcp-read";
 
 const embedder: Embedder = {
   model: "fixture-embedding",
@@ -108,7 +117,12 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       readonly binding?: { readonly status?: "disabled"; readonly ownerId?: string };
       readonly failBinding?: boolean;
       readonly readCeiling?: Exclude<DataClassification, "restricted">;
+      readonly hookReadsPerMinute?: number;
       readonly sensitiveSummary?: boolean;
+      readonly hiddenRules?: boolean;
+      readonly failProfile?: boolean;
+      readonly ruleBook?: McpReadSources["ruleBook"];
+      readonly readTools?: readonly McpReadToolEntry[];
     } = {},
   ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-mcp-read-"));
@@ -144,9 +158,10 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     const insertRule = database.prepare(
       `INSERT INTO rule_book_rules (
         owner_id, agent_id, rule_id, revision, parameters, status, source, source_memory_id,
-        updated_at
-      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', NULL, ?)`,
+        updated_at, review_after
+      ) VALUES (?, ?, ?, 1, ?, ?, 'chat:thread-1', ?, ?, ?)`,
     );
+    const ruleSources: [string, DataClassification][] = [];
     for (const [ruleId, status, updatedAt, parameters] of [
       [
         "owner:immigration",
@@ -190,8 +205,45 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         NOW,
         { type: "mail_must_notify", summary: "参数不全的规则", params: {} },
       ],
-    ] as const)
-      insertRule.run(OWNER_ID, AGENT_ID, ruleId, JSON.stringify(parameters), status, updatedAt);
+      ...(options.hiddenRules
+        ? ([
+            [
+              "owner:clinic",
+              "active",
+              NOW,
+              {
+                type: "mail_must_notify",
+                summary: "心理诊所的邮件一律提醒",
+                params: { senderDomains: ["clinic.example"] },
+              },
+            ],
+            [
+              "owner:orphan",
+              "active",
+              NOW,
+              {
+                type: "mail_must_notify",
+                summary: "找不到出处的规则",
+                params: { senderDomains: ["orphan.example"] },
+              },
+            ],
+          ] as const)
+        : []),
+    ] as const) {
+      const sourceMemoryId = ruleId === "owner:orphan" ? null : `memory-source-${ruleId}`;
+      if (sourceMemoryId)
+        ruleSources.push([sourceMemoryId, ruleId === "owner:clinic" ? "sensitive" : "private"]);
+      insertRule.run(
+        OWNER_ID,
+        AGENT_ID,
+        ruleId,
+        JSON.stringify(parameters),
+        status,
+        sourceMemoryId,
+        updatedAt,
+        status === "needs_review" ? updatedAt : null,
+      );
+    }
     database.close();
     const clock = new ManualClock(NOW);
     const repository = await SqliteProductStateRepository.open({
@@ -339,19 +391,23 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         },
       },
       timeZone: TIME_ZONE,
-      ...(options.readCeiling ? { readCeiling: options.readCeiling } : {}),
+      connections: repository.mcpConnections(),
+      ...(options.hookReadsPerMinute ? { hookReadsPerMinute: options.hookReadsPerMinute } : {}),
+      ...(options.readTools ? { readTools: options.readTools } : {}),
       requestTimeoutMs: 30_000,
       sources: {
-        profile: (maxClassification) =>
-          new OwnerProfileService({
+        profile: (maxClassification) => {
+          if (options.failProfile) throw new Error("PROFILE_STORE_DOWN");
+          return new OwnerProfileService({
             state: repository.productMemoryState(),
             pins: repository.memoryBook(),
             readText: async (record) => readText(record.contentRef),
             storeText: async () => undefined,
             digest: (text) => createHash("sha256").update(text).digest("hex"),
             timeZone: TIME_ZONE,
-          }).outline({ ...scope, maxClassification, now: clock.now() }),
-        recall: (args, within) => recall.recallOutsideRun(args, within),
+          }).outline({ ...scope, maxClassification, now: clock.now() });
+        },
+        recall: (args, within, ceiling) => recall.recallOutsideRun(args, within, ceiling),
         embedOutsideRun: async (context, operation) => {
           embeddingContexts.push({
             deadlineAt: context.deadlineAt,
@@ -365,7 +421,17 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           return writer.list(windowMs, ceiling);
         },
         settings: () => settingsStore.readSettings(scope),
+        ...(options.ruleBook ? { ruleBook: options.ruleBook } : {}),
         ownerRules: () => repository.ownerRules().list({ ...scope, includeRetired: false }),
+        memoryClassifications: async (memoryIds) =>
+          new Map(
+            (
+              await repository.productMemoryState().readMany({
+                ...scope,
+                memoryIds: memoryIds.map((memoryId) => createMemoryId(memoryId)),
+              })
+            ).map((record) => [record.id as string, record.dataClassification]),
+          ),
         ...(options.withoutSummaries
           ? {}
           : {
@@ -410,20 +476,42 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       onFailure: (error) => failures.push(error),
       onSummariesFailed: (error) => summaryFailures.push(error),
     });
+    const connections = repository.mcpConnections();
+    const createConnection = async (
+      id: string,
+      readCeiling: Exclude<DataClassification, "restricted"> = "private",
+    ) => {
+      const secret = newMcpConnectionSecret();
+      await connections.create({
+        ...scope,
+        id,
+        name: id,
+        secretSha256: mcpConnectionSecretDigest(secret),
+        capabilities: ["mcp"],
+        readCeiling,
+        pushPolicy: "ask",
+        createdAt: clock.now(),
+      });
+      return secret;
+    };
+    const secret = await createConnection(CONNECTION_ID, options.readCeiling);
     const app = Fastify({ logger: false });
     registerMcpReadRoute(app, mcp);
     closers.push(() => app.close());
     await app.listen({ host: "127.0.0.1", port: 0 });
-    const url = new URL(
-      `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`,
-    );
-    const connect = async (era: Era, assertion?: string) => {
+    const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}${MCP_READ_PATH}`;
+    const bareUrl = new URL(base);
+    const urlFor = (key: string) => new URL(`${base}/${key}`);
+    const url = urlFor(secret);
+    const usage = async () =>
+      connections.usage({ ...scope, fromDay: "2000-01-01", toDay: "2100-01-01" });
+    const connect = async (era: Era, assertion?: string, target: URL = url) => {
       const client = new Client(
         { name: `mcp-read-test-${era}`, version: "1.0.0" },
         era === "modern" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {},
       );
       await client.connect(
-        new StreamableHTTPClientTransport(url, {
+        new StreamableHTTPClientTransport(target, {
           requestInit: {
             headers: { "cf-access-jwt-assertion": assertion ?? (await access.sign()) },
           },
@@ -449,6 +537,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       importancePermille: number,
       text: string,
       classification: DataClassification = "private",
+      status: "active" | "archived" = "active",
     ) => {
       const contentRef = `payload:profile:${id}` as Parameters<typeof payloads.get>[0];
       await payloads.put(
@@ -466,7 +555,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
           id: createMemoryId(id),
           ...scope,
           revision: 1,
-          status: "active",
+          status,
           contentRef,
           dataClassification: classification,
           sourceThreadId: null,
@@ -482,8 +571,23 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         null,
       );
     };
+    for (const [sourceMemoryId, classification] of ruleSources)
+      await seedProfile(
+        sourceMemoryId,
+        "rule",
+        800,
+        "主人定的规则原话",
+        classification,
+        "archived",
+      );
     return {
       url,
+      bareUrl,
+      urlFor,
+      secret,
+      createConnection,
+      connections,
+      usage,
       seedProfile,
       runProjection: () => memory.runProjectionBatch(20),
       connect,
@@ -504,7 +608,12 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const f = await setup();
       const client = await f.connect(era);
       const { tools } = await client.listTools();
-      expect(tools.map(({ name }) => name)).toEqual([...MCP_READ_TOOL_NAMES]);
+      expect(tools.map(({ name }) => name)).toEqual([
+        "start_here",
+        "find_memories",
+        "today_context",
+        "rule_book",
+      ]);
       expect(tools.every(({ annotations }) => annotations?.readOnlyHint === true)).toBe(true);
     },
   );
@@ -512,7 +621,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   it.each(["legacy", "modern"] as const)(
     "finds the owner's memory through the existing recall, masks secrets and records an external read (%s)",
     async (era) => {
-      const f = await setup();
+      const f = await setup({ readCeiling: "sensitive" });
       const client = await f.connect(era);
       const found = await f.call(client, "find_memories", { query: "牙医" });
       expect(found.result.isError).not.toBe(true);
@@ -521,7 +630,8 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(f.embeddingContexts.length).toBeGreaterThan(0);
       expect(f.embeddingContexts.every(({ aborted }) => !aborted)).toBe(true);
       const wifi = await f.call(client, "find_memories", { query: "Wi-Fi" });
-      expect(wifi.text).toContain("Wi-Fi");
+      const wifiOutput = JSON.parse(wifi.text) as { memories: { text: string }[] };
+      expect(wifiOutput.memories.some(({ text }) => text.includes("家里 Wi-Fi 密码"))).toBe(true);
       expect(wifi.text).not.toContain("Sunflower-8841");
       const rows = await f.ledger();
       expect(rows).toHaveLength(2);
@@ -532,9 +642,13 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
         kind: "external_read",
         outcome: "read",
         reasonCode: "find_memories",
-        subjectRef: `mcp-client:${era === "modern" ? "mcp-read-test-modern" : "node"}`,
+        subjectRef: `mcp-connection:${CONNECTION_ID}`,
       });
       expect(dentistRow?.costMicros).toBeGreaterThan(0);
+      expect(await f.connections.read({ ...scope, id: CONNECTION_ID })).toMatchObject({
+        reportedClient: era === "modern" ? "mcp-read-test-modern" : "node",
+        lastSeenAt: NOW,
+      });
     },
   );
 
@@ -550,7 +664,7 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
   });
 
   it("gives today's date and only the reminders due within 48 hours, with secrets masked", async () => {
-    const f = await setup();
+    const f = await setup({ readCeiling: "sensitive" });
     const client = await f.connect("modern");
     const today = await f.call(client, "today_context");
     const output = JSON.parse(today.text) as {
@@ -849,6 +963,28 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(f.failures.length).toBeGreaterThan(0);
   });
 
+  it("[T6] tells the caller how to fix a date that is not on the calendar and records the read as failed", async () => {
+    const f = await setup();
+    const client = await f.connect("modern");
+    const fixed = await f.call(client, "find_memories", {
+      query: "牙医",
+      from: "2026-02-30",
+      to: "2026-03-02",
+    });
+    expect(fixed.result.isError).toBe(true);
+    expect(fixed.text).toContain("MEMORY_RECALL_INPUT_INVALID");
+    expect(fixed.text).toContain("改正后再查一次");
+    expect((await f.ledger()).map(({ reasonCode, outcome }) => [reasonCode, outcome])).toEqual([
+      ["find_memories_failed", "read"],
+    ]);
+    const history = await f.call(client, "find_memories", { query: "牙医", includeHistory: true });
+    expect(history.result.isError).not.toBe(true);
+    expect((await f.ledger()).map(({ reasonCode }) => reasonCode).sort()).toEqual([
+      "find_memories",
+      "find_memories_failed",
+    ]);
+  });
+
   it("withholds the result when the read cannot be recorded", async () => {
     const f = await setup({ failLedger: true });
     const client = await f.connect("modern");
@@ -857,6 +993,208 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
     expect(found.text).not.toContain("牙医");
     expect(found.text).not.toContain("LEDGER_WRITE_DOWN");
     expect(f.failures.length).toBeGreaterThan(0);
+  });
+
+  describe("[P5-B] every read tool honours the read ceiling", () => {
+    const memoriesOf = (text: string) =>
+      (JSON.parse(text) as { memories: { text: string }[] }).memories.map(({ text }) => text);
+
+    it("find_memories leaves a sensitive memory out under the default ceiling and shows it when allowed", async () => {
+      const closed = await setup();
+      const closedClient = await closed.connect("modern");
+      const hidden = await closed.call(closedClient, "find_memories", { query: "Wi-Fi" });
+      expect(memoriesOf(hidden.text).some((text) => text.includes("家里 Wi-Fi 密码"))).toBe(false);
+      const [closedRow] = await closed.ledger();
+      expect(closedRow?.inputs.memoryIds).not.toContain("memory:reminder:wifi");
+      const open = await setup({ readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const shown = await open.call(openClient, "find_memories", { query: "Wi-Fi" });
+      expect(memoriesOf(shown.text).some((text) => text.includes("家里 Wi-Fi 密码"))).toBe(true);
+    });
+
+    it("REVERSE: find_memories under a public ceiling gives none of the private memories", async () => {
+      const f = await setup({ readCeiling: "public" });
+      const client = await f.connect("modern");
+      const found = await f.call(client, "find_memories", { query: "牙医" });
+      expect(memoriesOf(found.text)).not.toContain(DENTIST);
+    });
+
+    it("today_context leaves sensitive reminders and day summaries out under the default ceiling", async () => {
+      const closed = await setup({ sensitiveSummary: true });
+      const closedClient = await closed.connect("modern");
+      const hidden = await closed.call(closedClient, "today_context");
+      expect(hidden.text).toContain("牙医");
+      expect(hidden.text).not.toContain("Wi-Fi");
+      expect(hidden.text).not.toContain("慢性病");
+      const [row] = await closed.ledger();
+      expect(row?.inputs.memoryIds).toEqual(["memory:reminder:dentist"]);
+      const open = await setup({ sensitiveSummary: true, readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const shown = await open.call(openClient, "today_context");
+      expect(shown.text).toContain("Wi-Fi");
+      expect(shown.text).toContain("慢性病");
+    });
+
+    it("rule_book hides rules whose source sentence is above the ceiling, and rules with no known source", async () => {
+      const closed = await setup({ hiddenRules: true });
+      const closedClient = await closed.connect("modern");
+      const hidden = await closed.call(closedClient, "rule_book");
+      expect(hidden.text).not.toContain("心理诊所");
+      expect(hidden.text).not.toContain("找不到出处");
+      expect(hidden.text).toContain("日本入管局");
+      const open = await setup({ hiddenRules: true, readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const shown = await open.call(openClient, "rule_book");
+      expect(shown.text).toContain("心理诊所");
+      expect(shown.text).not.toContain("找不到出处");
+    });
+
+    it("REVERSE: rule_book under a public ceiling gives no owner rules and no private rule parameters", async () => {
+      const f = await setup({ readCeiling: "public" });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "rule_book")).text) as {
+        rules: Record<string, unknown>[];
+      };
+      expect(output.rules.map(({ id }) => id)).toEqual([
+        "floor_important_sender",
+        "floor_public_domain",
+        "floor_money_words",
+        "quiet_hours",
+      ]);
+      expect(output.rules[0]).not.toHaveProperty("importantSenders");
+      expect(output.rules[3]).not.toHaveProperty("quietHours");
+    });
+
+    it("start_here leaves rules from sensitive sentences out of the rule summaries under the default ceiling", async () => {
+      const closed = await setup({ hiddenRules: true });
+      const closedClient = await closed.connect("modern");
+      const hidden = JSON.parse((await closed.call(closedClient, "start_here")).text) as StartHere;
+      expect(hidden.rules.items).toEqual(["退款邮件先读完整串", "日本入管局相关的邮件一律提醒"]);
+      const open = await setup({ hiddenRules: true, readCeiling: "sensitive" });
+      const openClient = await open.connect("modern");
+      const shown = JSON.parse((await open.call(openClient, "start_here")).text) as StartHere;
+      expect(shown.rules.items).toContain("心理诊所的邮件一律提醒");
+      expect(shown.rules.items).not.toContain("找不到出处的规则");
+    });
+
+    it("rule_book gives the parameters a built-in rule declares, only within the ceiling", async () => {
+      const extra = {
+        id: "floor_project_sender",
+        revision: 2,
+        gate: "mail_item" as const,
+        expression: "false",
+        outcome: "raise_floor" as const,
+        origin: "owner_setting" as const,
+        source: "测试用的内置规则",
+        status: "active" as const,
+        examples: [],
+        sharedParameters: {
+          classification: "private" as const,
+          values: { projects: ["京都"], id: "spoofed", revision: 9 },
+        },
+      };
+      const withRule: NonNullable<McpReadSources["ruleBook"]> = (settings) => [
+        ...ruleBookFor(settings),
+        extra,
+      ];
+      const f = await setup({ ruleBook: withRule });
+      const client = await f.connect("modern");
+      const output = JSON.parse((await f.call(client, "rule_book")).text) as {
+        rules: Record<string, unknown>[];
+      };
+      expect(output.rules.find(({ id }) => id === "floor_project_sender")).toMatchObject({
+        projects: ["京都"],
+        revision: 2,
+      });
+      const closed = await setup({ ruleBook: withRule, readCeiling: "public" });
+      const closedClient = await closed.connect("modern");
+      const hidden = JSON.parse((await closed.call(closedClient, "rule_book")).text) as {
+        rules: Record<string, unknown>[];
+      };
+      expect(hidden.rules.find(({ id }) => id === "floor_project_sender")).not.toHaveProperty(
+        "projects",
+      );
+    });
+
+    it("refuses to register a read tool that does not declare its read ceiling", async () => {
+      const bare = {
+        name: "peek",
+        description: "看一眼",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        run: async () => ({ output: {}, memoryIds: [] }),
+      } as unknown as McpReadToolEntry;
+      await expect(setup({ readTools: [...MCP_READ_TOOLS, bare] })).rejects.toThrow(
+        `${MCP_READ_TOOL_CEILING_MISSING}:peek`,
+      );
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...bare, readCeiling: { sources: [] } }] }),
+      ).rejects.toThrow(MCP_READ_TOOL_CEILING_MISSING);
+      await expect(
+        setup({
+          readTools: [
+            ...MCP_READ_TOOLS,
+            { ...bare, readCeiling: { sources: ["settings"] } } as unknown as McpReadToolEntry,
+          ],
+        }),
+      ).rejects.toThrow(MCP_READ_TOOL_CEILING_MISSING);
+    });
+
+    it("refuses a read tool whose name is reused, taken by a write tool or cannot be recorded", async () => {
+      const [first] = MCP_READ_TOOLS;
+      if (!first) throw new Error("MCP_READ_TOOLS_EMPTY");
+      await expect(setup({ readTools: [...MCP_READ_TOOLS, first] })).rejects.toThrow(
+        "MCP_READ_TOOL_DUPLICATE:start_here",
+      );
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "propose_rule" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:propose_rule");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "rule_book_failed" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:rule_book_failed");
+      await expect(
+        setup({
+          readTools: [
+            { ...first, name: "peek_failed" },
+            { ...first, name: "peek" },
+          ],
+        }),
+      ).rejects.toThrow("MCP_READ_TOOL_DUPLICATE:peek");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "p".repeat(58) }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_NAME_INVALID");
+      await expect(
+        setup({ readTools: [...MCP_READ_TOOLS, { ...first, name: "Peek Tool" }] }),
+      ).rejects.toThrow("MCP_READ_TOOL_NAME_INVALID");
+      const longest = { ...first, name: "p".repeat(57) };
+      const f = await setup({ readTools: [...MCP_READ_TOOLS, longest] });
+      const client = await f.connect("modern");
+      expect((await client.listTools()).tools.map(({ name }) => name)).toContain(longest.name);
+    });
+
+    it("a newly registered read tool reads only through its declared sources, bounded by the ceiling", async () => {
+      const peek: McpReadToolEntry = {
+        name: "peek",
+        description: "看一眼提醒",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        readCeiling: { sources: ["reminders"] },
+        run: async ({ read }) => {
+          const listed = await read.reminders?.(48 * 3_600_000);
+          if (read.recall) throw new Error("RECALL_LEAKED_TO_PEEK");
+          return {
+            output: { texts: (listed?.reminders ?? []).map(({ text }) => text) },
+            memoryIds: [],
+          };
+        },
+      };
+      const f = await setup({ readTools: [...MCP_READ_TOOLS, peek] });
+      const client = await f.connect("modern");
+      const result = await f.call(client, "peek");
+      expect(result.result.isError).not.toBe(true);
+      expect(result.text).toContain("牙医");
+      expect(result.text).not.toContain("Wi-Fi");
+      const [row] = await f.ledger();
+      expect(row?.reasonCode).toBe("peek");
+    });
   });
 
   describe("[P5-A] start_here and auto lookup", () => {
@@ -999,6 +1337,83 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       expect(output.profile.omitted).toContain(`${40 - lines.length} 条`);
     });
 
+    it("changes the profile version when only the count of left-out lines changes", async () => {
+      const versionWith = async (extra: boolean) => {
+        const f = await setup();
+        for (let index = 0; index < 40; index += 1)
+          await f.seedProfile(
+            `memory-fact-${String(index).padStart(2, "0")}`,
+            "preference",
+            700,
+            `偏好${index}：${"很长的说明".repeat(20)}`,
+          );
+        if (extra)
+          await f.seedProfile(
+            "memory-fact-zz",
+            "preference",
+            650,
+            `偏好额外：${"很长".repeat(400)}`,
+          );
+        const client = await f.connect("modern");
+        return JSON.parse((await f.call(client, "start_here")).text) as StartHere;
+      };
+      const without = await versionWith(false);
+      const withExtra = await versionWith(true);
+      expect(JSON.stringify(withExtra.profile.sections)).toBe(
+        JSON.stringify(without.profile.sections),
+      );
+      expect(withExtra.profile.omitted).not.toBe(without.profile.omitted);
+      expect(withExtra.profile.version).not.toBe(without.profile.version);
+      expect((await versionWith(false)).profile.version).toBe(without.profile.version);
+    });
+
+    it("answers a tool error and records start_here as failed when the profile cannot be read", async () => {
+      const f = await setup({ failProfile: true });
+      const client = await f.connect("modern");
+      const result = await f.call(client, "start_here");
+      expect(result.result.isError).toBe(true);
+      expect(result.text).not.toContain("PROFILE_STORE_DOWN");
+      expect(result.text).not.toContain("牙医");
+      const [row] = await f.ledger();
+      expect(row).toMatchObject({ reasonCode: "start_here_failed", outcome: "read" });
+      expect(row?.inputs.memoryIds).toEqual([]);
+      expect(f.failures.length).toBeGreaterThan(0);
+    });
+
+    it("keeps a value masked by today's part out of the profile version", async () => {
+      const versionFor = async (code: string, named: boolean) => {
+        const f = await setup({ readCeiling: "sensitive" });
+        await f.seedProfile("memory-number", "preference", 900, `常用的号码 ${code}`);
+        await f.writer.create({
+          key: "login-code",
+          text: named ? `登录验证码是 ${code}` : "明天登录一下网银",
+          due: "2026-11-12T09:00",
+          repeat: "none",
+        });
+        const client = await f.connect("modern");
+        return (JSON.parse((await f.call(client, "start_here")).text) as StartHere).profile.version;
+      };
+      expect(await versionFor("482913", true)).toBe(await versionFor("517204", true));
+      expect(await versionFor("482913", false)).not.toBe(await versionFor("517204", false));
+    });
+
+    it("masks a code named in today's part where the same value stands alone in the profile, through a real start_here call", async () => {
+      const f = await setup({ readCeiling: "sensitive" });
+      await f.seedProfile("memory-number", "preference", 900, "常用的号码 482913");
+      await f.writer.create({
+        key: "login-code",
+        text: "登录验证码是 482913",
+        due: "2026-11-12T09:00",
+        repeat: "none",
+      });
+      const client = await f.connect("modern");
+      const result = await f.call(client, "start_here");
+      expect(result.result.isError).not.toBe(true);
+      expect(result.text).toContain("常用的号码");
+      expect(result.text).toContain("登录验证码");
+      expect(result.text).not.toContain("482913");
+    });
+
     it("auto returns at most three memories where a plain lookup returns more", async () => {
       const f = await setup();
       for (let index = 0; index < 5; index += 1)
@@ -1038,6 +1453,232 @@ describe("[P5-1] read-only MCP entry over HTTP", () => {
       const client = await f.connect("modern");
       const found = await f.call(client, "find_memories", { query: "牙医", auto: "yes" });
       expect(found.result.isError).toBe(true);
+    });
+  });
+
+  describe("[P5-B] each connection has its own address, ceiling and counts", () => {
+    const post = async (target: URL, assertion: string | null, body: unknown) =>
+      fetch(target, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          ...(assertion ? { "cf-access-jwt-assertion": assertion } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} };
+    const counted = (
+      rows: readonly {
+        connectionId: string;
+        tool: string;
+        auto: boolean;
+        counter: string;
+        value: number;
+      }[],
+    ) =>
+      Object.fromEntries(
+        rows.map((row) => [
+          `${row.connectionId}/${row.tool}/${row.auto ? "auto" : "model"}/${row.counter}`,
+          row.value,
+        ]),
+      );
+
+    it("offers no tools on the address without a key, only the hint, and counts nothing", async () => {
+      const f = await setup();
+      const client = await f.connect("modern", undefined, f.bareUrl);
+      expect(client.getInstructions()).toContain("接入的 agent");
+      expect((await client.listTools()).tools).toEqual([]);
+      await expect(client.callTool({ name: "today_context", arguments: {} })).rejects.toThrow();
+      expect(await f.ledger()).toEqual([]);
+      expect(await f.usage()).toEqual([]);
+    });
+
+    it("answers 404 for an unknown or malformed key and counts it against no connection", async () => {
+      const f = await setup();
+      const owner = await f.access.sign();
+      const unknown = newMcpConnectionSecret();
+      expect((await post(f.urlFor(unknown), owner, listTools)).status).toBe(404);
+      expect((await post(f.urlFor("short"), owner, listTools)).status).toBe(404);
+      expect((await post(f.urlFor(unknown), null, listTools)).status).toBe(401);
+      expect(await f.usage()).toEqual([]);
+      expect(await f.ledger()).toEqual([]);
+      expect(JSON.stringify(f.failures)).not.toContain(unknown);
+    });
+
+    it("rejects a paused key with 403 and a revoked key with 404 at once, and a resumed key works again", async () => {
+      const f = await setup();
+      const owner = await f.access.sign();
+      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
+      expect((await post(f.url, owner, listTools)).status).toBe(403);
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "active" });
+      expect((await post(f.url, owner, listTools)).status).toBe(200);
+      await f.connections.change({
+        ...scope,
+        id: CONNECTION_ID,
+        updatedAt: NOW,
+        status: "revoked",
+      });
+      expect((await post(f.url, owner, listTools)).status).toBe(404);
+      expect(JSON.stringify(f.failures)).not.toContain(f.secret);
+    });
+
+    it("turns the old key away after a rotation while the id and the counts stay", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      await f.call(client, "today_context");
+      const rotated = newMcpConnectionSecret();
+      await f.connections.rotateSecret({
+        ...scope,
+        id: CONNECTION_ID,
+        secretSha256: mcpConnectionSecretDigest(rotated),
+        rotatedAt: NOW,
+      });
+      expect((await post(f.url, await f.access.sign(), listTools)).status).toBe(404);
+      const fresh = await f.connect("modern", undefined, f.urlFor(rotated));
+      await f.call(fresh, "today_context");
+      expect(counted(await f.usage())).toMatchObject({
+        [`${CONNECTION_ID}/today_context/model/calls`]: 2,
+        [`${CONNECTION_ID}/today_context/model/delivered`]: 2,
+      });
+    });
+
+    it("keeps one connection's ceiling and counts apart from another's", async () => {
+      const f = await setup({ readCeiling: "sensitive" });
+      const otherSecret = await f.createConnection("conn-public", "public");
+      const open = await f.connect("modern");
+      const closed = await f.connect("modern", undefined, f.urlFor(otherSecret));
+      const wifi = (text: string) => text.includes("家里 Wi-Fi 密码");
+      expect(wifi((await f.call(open, "find_memories", { query: "Wi-Fi" })).text)).toBe(true);
+      expect(wifi((await f.call(closed, "find_memories", { query: "Wi-Fi" })).text)).toBe(false);
+      await f.call(closed, "today_context");
+      const rows = counted(await f.usage());
+      expect(rows[`${CONNECTION_ID}/find_memories/model/calls`]).toBe(1);
+      expect(rows[`conn-public/find_memories/model/calls`]).toBe(1);
+      expect(rows[`conn-public/today_context/model/calls`]).toBe(1);
+      expect(rows[`${CONNECTION_ID}/today_context/model/calls`]).toBeUndefined();
+      expect((await f.ledger()).map(({ subjectRef }) => subjectRef).sort()).toEqual([
+        "mcp-connection:conn-mcp-read",
+        "mcp-connection:conn-public",
+        "mcp-connection:conn-public",
+      ]);
+    });
+
+    it("counts an empty automatic lookup without a decision record, and records one that delivered", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "量子色动力学", auto: true });
+      expect(await f.ledger()).toEqual([]);
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      expect(await f.ledger()).toHaveLength(1);
+      await f.call(client, "find_memories", { query: "量子色动力学" });
+      expect(await f.ledger()).toHaveLength(2);
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/auto/calls`]: 2,
+        [`${CONNECTION_ID}/find_memories/auto/empty`]: 1,
+        [`${CONNECTION_ID}/find_memories/auto/delivered`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/empty`]: 1,
+      });
+    });
+
+    it("counts a recall its time-range check turns away for a bad date as failed, not delivered", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const fixed = await f.call(client, "find_memories", {
+        query: "牙医",
+        from: "2026-02-30",
+        to: "2026-03-02",
+      });
+      expect(fixed.result.isError).toBe(true);
+      expect(fixed.text).toContain("MEMORY_RECALL_INPUT_INVALID");
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+    });
+
+    it("counts a call the input check turns away as a failed call", async () => {
+      const f = await setup();
+      const client = await f.connect("modern");
+      const found = await f.call(client, "find_memories", { query: "牙医", auto: "yes" });
+      expect(found.result.isError).toBe(true);
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+      expect(await f.ledger()).toEqual([]);
+    });
+
+    it("counts a failed read as failed and not as delivered", async () => {
+      const f = await setup({ failRecall: true });
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "牙医" });
+      expect(counted(await f.usage())).toEqual({
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/failed`]: 1,
+      });
+    });
+
+    it("limits automatic lookups on their own allowance and counts the refusals", async () => {
+      const f = await setup({ hookReadsPerMinute: 2 });
+      const owner = await f.access.sign();
+      const client = await f.connect("modern");
+      const auto = {
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "find_memories", arguments: { query: "牙医", auto: true } },
+      };
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      await f.call(client, "find_memories", { query: "牙医", auto: true });
+      expect((await post(f.url, owner, auto)).status).toBe(429);
+      const plain = await f.call(client, "find_memories", { query: "牙医" });
+      expect(plain.result.isError).not.toBe(true);
+      expect(counted(await f.usage())).toMatchObject({
+        [`${CONNECTION_ID}/find_memories/auto/calls`]: 2,
+        [`${CONNECTION_ID}/find_memories/auto/rate_limited`]: 1,
+        [`${CONNECTION_ID}/find_memories/model/calls`]: 1,
+      });
+    });
+
+    it("never writes the key or the keyed address into failures, records, counts or replies", async () => {
+      const f = await setup({ failRecall: true });
+      const owner = await f.access.sign();
+      const client = await f.connect("modern");
+      await f.call(client, "find_memories", { query: "牙医" });
+      await f.call(client, "today_context");
+      const replies = [
+        await post(f.url, owner, { jsonrpc: "2.0", id: 1, method: "nope", params: {} }),
+        await post(f.url, null, listTools),
+        await fetch(f.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          body: "{",
+        }),
+        await fetch(f.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-access-jwt-assertion": owner },
+          body: JSON.stringify({ padding: "x".repeat(70_000) }),
+        }),
+      ];
+      expect(replies.at(-1)?.status).toBe(413);
+      const bodies = await Promise.all(replies.map(async (reply) => reply.text()));
+      await f.connections.change({ ...scope, id: CONNECTION_ID, updatedAt: NOW, status: "paused" });
+      bodies.push(await (await post(f.url, owner, listTools)).text());
+      const everything = JSON.stringify({
+        failures: f.failures.map((failure) =>
+          failure instanceof Error ? { message: failure.message, stack: failure.stack } : failure,
+        ),
+        ledger: await f.ledger(),
+        usage: await f.usage(),
+        connection: await f.connections.read({ ...scope, id: CONNECTION_ID }),
+        bodies,
+      });
+      expect(everything).toContain(CONNECTION_ID);
+      expect(everything).not.toContain(f.secret);
+      expect(everything).not.toContain(mcpConnectionSecretDigest(f.secret));
     });
   });
 });

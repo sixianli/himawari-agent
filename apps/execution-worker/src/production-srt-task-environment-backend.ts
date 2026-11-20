@@ -358,7 +358,7 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
         await this.fail(withRecord, "SRT_SESSION_START_FAILED");
         throw error;
       }
-      const pid = session.pid ?? null;
+      const pid = (await session.spawned) ?? null;
       const spawned = {
         ...withRecord,
         sessions: { ...withRecord.sessions, [input.kind]: { ...record, pid } },
