@@ -24,9 +24,9 @@
 "item.calendar.keep" = "カレンダーに合わせます。カレンダーで消すとここでも消えます";
 "item.calendar.denied" = "iPhone がカレンダーを許可していません";
 "item.calendar.deniedDetail" = "許可するまで、予定は何も見えません。";
-"item.calendar.deleteAll" = "オフにしてサーバー上の予定を削除";
+"item.calendar.deleteAll" = "サーバー上の予定を削除";
 "item.calendar.synced" = "%d 件の予定を同期済み";
-"item.calendar.confirm" = "「予定」をオフにし、サーバー上の予定のコピーを削除します。iPhone のカレンダーはそのままです。";
+"item.calendar.confirm" = "サーバー上の予定のコピーを削除します。iPhone のカレンダーはそのままです。";
 
 "item.health.name" = "ヘルスケアと運動";
 "item.health.detail" = "歩数・睡眠・心拍数";
@@ -42,9 +42,9 @@
 "item.contacts.keep" = "連絡先に合わせます。連絡先で消すとここでも消えます";
 "item.contacts.denied" = "iPhone が連絡先を許可していません";
 "item.contacts.deniedDetail" = "許可するまで、連絡先はわかりません。";
-"item.contacts.deleteAll" = "オフにしてサーバー上の連絡先を削除";
+"item.contacts.deleteAll" = "サーバー上の連絡先を削除";
 "item.contacts.synced" = "%d 件の連絡先を同期済み";
-"item.contacts.confirm" = "「連絡先」をオフにし、サーバー上の連絡先のコピーを削除します。iPhone の連絡先はそのままです。";
+"item.contacts.confirm" = "サーバー上の連絡先のコピーを削除します。iPhone の連絡先はそのままです。";
 
 "item.photos.name" = "写真";
 "item.photos.detail" = "新しく撮った写真";
@@ -79,6 +79,14 @@
 "detail.keepSection" = "保存のしかた";
 "detail.track" = "移動の経路";
 "detail.days" = "%d 日";
+"detail.route" = "経路";
+"detail.routeDays" = "%d 日間保存";
+"detail.places" = "行った場所";
+"detail.placesKept" = "削除するまで保存";
+"detail.stopTitle" = "「%@」をオフにしますか？";
+"detail.stopBody" = "オフにすると、iPhone での変更は同期されなくなります。サーバーに保存済みのものは残すことも、一緒に削除することもできます。iPhone 側の元のデータはそのままです。";
+"detail.stopKeep" = "同期だけ止めて、保存済みは残す";
+"detail.stopDelete" = "同期を止めて、サーバー上のも削除";
 "detail.always" = "常に許可";
 "detail.alwaysDetail" = "アプリを開いていなくても記録します。iOS がもう一度確認します";
 "detail.kept" = "記録";

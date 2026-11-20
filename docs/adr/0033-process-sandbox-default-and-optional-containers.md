@@ -91,7 +91,7 @@ Himawari 计划作为 Agent 产品分发给其他用户，其中包括 macOS 用
 - “删除 SRT 执行路线”不再是目标。
 - 删除旧的未确认记录后，这些记录不再保存。历史对话里对应的工具步骤可能显示不出来，界面要能正常处理这种缺失，不能报错或显示成成功。删除前不做备份，删除后无法找回；删除命令如果选错范围，误删的数据也无法恢复，所以删除范围必须由测试严格验证。
 - 严格模式在容器支持全部工具之前，功能少于 SRT 模式，例如暂时不能写文件；界面要说明哪些工具在严格模式下不可用。
-- [实施 Plan](../execution/plans/2026-09-24-isolated-tool-execution-plan.md) 中以容器为默认前提的阶段（例如 macOS 上的容器资格验证、默认切换到容器、以及把 SRT 只当作历史路线的迁移步骤）需要按本决定调整。
+- [实施 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md) 中以容器为默认前提的阶段（例如 macOS 上的容器资格验证、默认切换到容器、以及把 SRT 只当作历史路线的迁移步骤）需要按本决定调整。
 
 [↑ 返回阅读导航](#contents)
 
@@ -101,5 +101,5 @@ Himawari 计划作为 Agent 产品分发给其他用户，其中包括 macOS 用
 
 - 被部分修正的决定：[SOURCE: docs/adr/0031-isolated-tool-execution.md]、[SOURCE: docs/adr/0030-durable-workspace-release-facts.md]
 - 相关修正：[SOURCE: docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md]
-- [详细 Spec](../execution/specs/2026-09-24-isolated-tool-execution-design.md)：[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
-- [实施 Plan](../execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]
+- [详细 Spec](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)：[2026-09-24-isolated-tool-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md)
+- [实施 Plan](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)：[2026-09-24-isolated-tool-execution-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md)

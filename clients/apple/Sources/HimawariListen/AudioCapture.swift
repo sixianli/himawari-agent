@@ -21,6 +21,7 @@ final class AudioCapture: @unchecked Sendable {
     private var bufferContinuation: AsyncStream<CapturedBuffer>.Continuation?
     private var eventContinuation: AsyncStream<CaptureEvent>.Continuation?
     private var observers: [NSObjectProtocol] = []
+    private var holdsSession = false
 
     let buffers: AsyncStream<CapturedBuffer>
     let events: AsyncStream<CaptureEvent>
@@ -37,6 +38,11 @@ final class AudioCapture: @unchecked Sendable {
 
     deinit {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        if holdsSession {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        }
     }
 
     var inputFormat: AVAudioFormat {
@@ -49,7 +55,9 @@ final class AudioCapture: @unchecked Sendable {
 
     func configureSession() throws {
         try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP, .bluetoothHighQualityRecording, .defaultToSpeaker, .mixWithOthers])
+        try session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         try session.setActive(true, options: [])
+        holdsSession = true
     }
 
     func start() throws {
@@ -68,11 +76,13 @@ final class AudioCapture: @unchecked Sendable {
         engine.stop()
         if deactivate {
             try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            holdsSession = false
         }
     }
 
     func restart() throws {
         try session.setActive(true, options: [])
+        holdsSession = true
         if !engine.isRunning {
             try start()
         }

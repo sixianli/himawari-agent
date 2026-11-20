@@ -743,7 +743,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
+    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} external_direct {Sent by an outside agent and saved right away, no confirmation} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -1656,6 +1656,9 @@ export const messages = {
   "agents.ceiling.public": "Public",
   "agents.ceiling.private": "Private",
   "agents.ceiling.sensitive": "Sensitive",
+  "agents.push": "When it sends memories",
+  "agents.push.direct": "Save right away (undo anytime)",
+  "agents.push.ask": "Ask me first",
   "agents.create": "Create connection",
   "agents.address.title": "Connection address (shown only once)",
   "agents.address.hint":

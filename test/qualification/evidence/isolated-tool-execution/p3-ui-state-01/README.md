@@ -1,6 +1,6 @@
 # 会话页面：停止未经严格确认、执行记录已删除
 
-日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](../../../../../docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第二项（ITE-26）的界面部分和第三项（ITE-27）的一部分，要求见 [Spec 的界面必须说清的状态](../../../../../docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#mode-disclosure)。
+日期：2026-09-27 UTC。对应[隔离执行实施计划的 P3 补充](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md#p3-modes)第二项（ITE-26）的界面部分和第三项（ITE-27）的一部分，要求见 [Spec 的界面必须说清的状态](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#mode-disclosure)。
 
 ## 用词
 

@@ -172,6 +172,9 @@ public struct SettingsRootView: View {
             }
         }
         .task { await store.load() }
+        .sheet(isPresented: $sensesOpen) {
+            senses
+        }
     }
 }
 
@@ -192,9 +195,6 @@ struct SettingsPage<Content: View>: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
-        .sheet(isPresented: $sensesOpen) {
-            senses
-        }
     }
 }
 

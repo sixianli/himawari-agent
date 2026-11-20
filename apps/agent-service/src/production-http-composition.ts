@@ -23,6 +23,7 @@ import {
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
   OwnerProfileService,
   type PayloadProtectorPort,
@@ -320,6 +321,7 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly mcpSync?: McpMemorySyncStorePort;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: NonNullable<
@@ -1388,6 +1390,7 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
+        ...(options.memory.mcpSync ? { mcpSync: options.memory.mcpSync } : {}),
         ...(options.memory.externalProposals
           ? { externalProposals: options.memory.externalProposals }
           : {}),

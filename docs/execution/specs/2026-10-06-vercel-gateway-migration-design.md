@@ -22,7 +22,7 @@ date: "2026-10-06"
 
 - 决定：[SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 - 架构：[SOURCE: docs/architecture-v0.1.md]
-- 迁移范围：[SOURCE: docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md]
+- 迁移范围：[BL-20261004-002-模-型-网-关-迁-移-到-vercel.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md)
 
 本设计由Codex按G39/G40独立规划及自审，规定本次迁移的实现及验收边界。G44/G45在Hermes上的原响应确定：文本末帧的usage.cost与choices[0].delta.provider_metadata.gateway.cost一致；嵌入使用providerMetadata.gateway.cost，usage只提供token数。两种字段不可混用。真实请求只证明本次输入和服务商结果，不能代替产品迁移验收或生产服务器资格。
 
@@ -64,7 +64,7 @@ ModelInvocationUsage增加产品已经检查过的reportedCostMicros，以整数
 
 先通过既有公开产品入口及受控网关响应写中等复杂度的自动测试：至少包含工具往返或查询/投影、实际费用与估价不同、身份及预算独立读回、失败后再恢复不重发。数值精度、非法内部费用和流分块边界在聚焦测试中检查，因为真实服务不能稳定制造这些输入。每个测试预期取自上述契约，而非实施输出。
 
-先在Hermes运行红测试，再修改产品并重跑同一测试。稳定后执行第1–2层和自审，按项目规则在最终版本执行第3层。迁移最终版本覆盖Linux安装资格及不筛选资格，补齐container-execution-backend-qualification、quality-local和artifact当前版本检查；报告实际执行的层与版本，不能以真实探测成功替代产品验收。更新架构、配置、操作脚本、测试说明与受影响Runbook，在同一提交严格验证并重新封存。
+先在Hermes运行红测试，再修改产品并重跑同一测试。稳定后执行第1–2层和自审，按项目规则在最终版本执行第3层。迁移最终版本覆盖Linux安装资格及不筛选资格，补齐container-execution-backend-qualification、quality-local和artifact当前版本检查；报告实际执行的层与版本，不能以真实探测成功替代产品验收。更新架构、配置、操作脚本、测试说明与受影响Runbook，在同一提交严格验证。
 
 异步权威检查也会消耗时间。嵌入响应后的这次检查返回时，产品在结算前同步核对取消信号和冻结的原期限；在等待中取消或到期时保留原unknown保护，不返回成功、不释放已经开始的费用预约。定向红测试分别复现取消、到期及请求选项越过配置上限，验收使用同一组断言。
 

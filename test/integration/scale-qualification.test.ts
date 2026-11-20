@@ -489,7 +489,6 @@ async function qualifyScale() {
     const evidence = {
       schemaVersion: 1,
       recordedAt: new Date().toISOString(),
-      plan: "docs/execution/plans/2026-08-26-portable-durable-web-agent-plan.md",
       taskId: "S1-T28",
       status: "partial",
       candidateRevision: gitValue(["rev-parse", "HEAD"]),

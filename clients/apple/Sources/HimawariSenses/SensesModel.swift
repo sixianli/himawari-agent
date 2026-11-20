@@ -56,6 +56,11 @@ public final class SensesModel {
         }
     }
 
+    public func serverCopyRemovable(_ item: SenseItem) -> Bool {
+        guard item.isMirror, !(switchStates[item]?.on ?? false) else { return false }
+        return (mirrorCounts[item] ?? 0) > 0
+    }
+
     public var canDelete: Bool { service.operations.contains(SenseOperation.deleteRecords) }
 
     public func retention(_ item: SenseItem) -> PerceptionRetentionSetting? {
