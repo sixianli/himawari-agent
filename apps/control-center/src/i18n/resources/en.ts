@@ -616,6 +616,9 @@ export const messages = {
   "governance.updateAssessment": "Update diff and assessment",
   "governance.rollback": "Rollback version",
   "governance.lastTransition": "Latest version transition",
+  "governance.lastInvalidation": "Latest disable",
+  "governance.lastInvalidationValue":
+    "{time}: cancelled {count} scheduled jobs; they are not restored",
   "governance.rollbackBoundary": "Side-effect / product-state rollback boundary",
   "governance.notAvailable": "Not available",
   "governance.capability": "Capability",
@@ -740,7 +743,7 @@ export const messages = {
   "memory.page.changed": "Changed {count}×",
   "memory.page.source": "Source",
   "memory.page.origin":
-    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
+    "{o, select, owner {Added by you} external {Proposed by an outside agent, saved after you confirmed} external_direct {Sent by an outside agent and saved right away, no confirmation} import {Imported} deleted {Source conversation deleted} reminder {Created from a reminder, no original sentence} other {Memory tidy-up}}",
   "memory.page.used": "Last used",
   "memory.page.notUsed": "Not used yet",
   "memory.page.history": "How it changed",
@@ -930,7 +933,7 @@ export const messages = {
   "rules.builtIn.name":
     "{id, select, action_preauthorize_owner_data {Changing your own data: just do it} action_preauthorize_own_task_cancel {Stopping its own task: just do it} action_preauthorize_owner_intent_confirmed {After reading outside content, something you clearly asked for: just do it} action_ask_after_external_content {Acting after reading outside content: ask you first} action_refuse_background_after_external_content {Acting in the background after reading outside content: don’t do it} other {Other built-in rule}}",
   "rules.builtIn.when":
-    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded.} other {}}",
+    "{id, select, action_preauthorize_owner_data {For example setting a reminder or saving a rule: undoable, sent to no one, medium risk, and nothing from outside such as a web page or task output was read in this conversation.} action_preauthorize_own_task_cancel {For example stopping a background task Himawari started itself. Tasks it did not start are not covered.} action_preauthorize_owner_intent_confirmed {For example setting a reminder you asked for in your own words after a web page was read. Only used when the intent check is on and sure; otherwise a card asks you.} action_ask_after_external_content {For example setting a reminder or changing a rule after reading a web page or task output: a card asks for your OK.} action_refuse_background_after_external_content {For example a scheduled or event-started run that read outside content and wants to change a rule: it is not done and no card is shown; only what it wanted is recorded. A task you agreed to is the exception: a card asks you instead.} other {}}",
   "rules.builtIn.examples": "Examples: {hit} should match, {miss} should not",
   "rules.builtIn.askFirst": "Ask me every time",
   "review.title": "To recheck after memory edits · {count}",
@@ -1170,7 +1173,7 @@ export const messages = {
   "decision.chain.rating": "Your rating",
   "decision.chain.unrated": "Not rated yet",
   "decision.chain.kind":
-    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} web_push {Push deferral} memory_review {Review after a memory edit} limit_change {Usage limit change} delivery_timing {Reminder delivery time} proposal {Proposed next step} other {Other}}",
+    "{k, select, proactive {Proactive reminder} memory_candidate {Memory-saving decision} consolidation {Memory tidy-up} context_truncation {Context trimming} retrieval_degrade {Memory lookup fallback} external_read {Outside program read memories} rule_review {Hard rule review} web_push {Push deferral} memory_review {Review after a memory edit} limit_change {Usage limit change} delivery_timing {Reminder delivery time} proposal {Proposed next step} device_action {Device action} other {Other}}",
   "decision.chain.rules": "Rules hit",
   "decision.chain.reviewRules": "Rules waiting for review",
   "decision.chain.rule":
@@ -1457,7 +1460,7 @@ export const messages = {
   "weekly.check.rowsCleared":
     "{rows} Gmail records are gone from days already checked; you cleared them",
   "weekly.check.rowsMissing":
-    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} web_push {push deferral} memory_review {review-after-edit} limit_change {usage limit change} delivery_timing {reminder delivery time} proposal {proposed next step} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
+    "Fewer {kind, select, proactive {Gmail check} memory_candidate {memory} consolidation {memory tidy-up} context_truncation {left-out older content} retrieval_degrade {memory search} external_read {outside memory read} rule_review {hard rule review} web_push {push deferral} memory_review {review-after-edit} limit_change {usage limit change} delivery_timing {reminder delivery time} proposal {proposed next step} device_action {device action} other {decision}} records for {day} than when it was checked: {before} then, {after} now",
   "weekly.check.timeOk": "All times in the decision record are well formed",
   "weekly.check.timeBad": "{rows} times in the decision record are malformed",
   "weekly.check.other":
@@ -1637,6 +1640,79 @@ export const messages = {
     "Clear all blocked-information records? Your conversations are not affected.",
   "sensitive.clearButton": "Clear",
   "sensitive.cleared": "Cleared.",
+  "review.settings.agents": "Connected agents",
+  "agents.title": "Connected agents",
+  "agents.intro":
+    "Create a connection for each other agent (for example Claude Code or Codex). Each connection has its own address and read ceiling. Pausing or revoking takes effect at once.",
+  "agents.rotateHint":
+    "The address contains this connection's key. If Cloudflare Logpush records the request path (the ClientRequestURI field), the key appears in those logs; rotate the key if you suspect a leak.",
+  "agents.rotateHintLink": "Logpush field reference",
+  "agents.name": "Name",
+  "agents.capabilities": "What the agent supports",
+  "agents.capability.mcp": "Can use MCP",
+  "agents.capability.command_hooks": "Can run command hooks",
+  "agents.capability.scheduled_tasks": "Can run scheduled tasks",
+  "agents.ceiling": "Can read up to",
+  "agents.ceiling.public": "Public",
+  "agents.ceiling.private": "Private",
+  "agents.ceiling.sensitive": "Sensitive",
+  "agents.push": "When it sends memories",
+  "agents.push.direct": "Save right away (undo anytime)",
+  "agents.push.ask": "Ask me first",
+  "agents.create": "Create connection",
+  "agents.address.title": "Connection address (shown only once)",
+  "agents.address.hint":
+    "Copy it into the agent's MCP settings. It will not be shown again after you leave this page; rotate the key if you lose it.",
+  "agents.copy": "Copy",
+  "agents.copied": "Copied",
+  "agents.status.active": "Active",
+  "agents.status.paused": "Paused",
+  "agents.status.revoked": "Revoked",
+  "agents.reported": "Reports itself as: {client}",
+  "agents.lastSeen": "Last used: {time}",
+  "agents.neverSeen": "Not used yet",
+  "agents.window":
+    "The numbers below cover the last {days} days ({from} to {to}, in your time zone).",
+  "agents.definitions": "How each number is counted",
+  "agents.definitionsText":
+    "Reads: calls to read tools, split by tool in brackets. Delivered: reads that returned at least one item. Empty: reads that found nothing. Automatic searches: searches the agent's program makes on every message (with the auto argument); the number after the slash is how many delivered something. Empty automatic searches are only counted, with no decision record. Model reads: reads without the auto argument. Memory pushes: calls to the memory push tools, including failed ones. Rule proposals: calls to the rule proposal tool, with refusals for exceeding the per-minute limit in brackets. Failed: calls from a recognised connection that errored or had invalid arguments. Rate-limited: tool calls (not rule proposals) refused for exceeding the per-minute limit; requests that are not tool calls, such as the connection handshake, also use the per-minute limit but are not counted here. Requests with a wrong key or no recognised connection count towards no connection.",
+  "agents.stat.reads": "Reads: {n}",
+  "agents.stat.byTool": "{tool} {n}",
+  "agents.stat.delivered": "Delivered: {n}",
+  "agents.stat.empty": "Empty: {n}",
+  "agents.stat.auto": "Automatic searches: {n} / delivered {delivered}",
+  "agents.stat.model": "Model reads: {n}",
+  "agents.stat.pushes": "Memory pushes: {n}",
+  "agents.stat.rules": "Rule proposals: {n} (refused for rate: {limited})",
+  "agents.stat.failed": "Failed: {n}",
+  "agents.stat.limited": "Rate-limited: {n}",
+  "agents.rename": "Rename",
+  "agents.save": "Save",
+  "agents.cancel": "Cancel",
+  "agents.pause": "Pause",
+  "agents.resume": "Resume",
+  "agents.rotate": "Rotate key",
+  "agents.revoke": "Revoke",
+  "agents.rotateConfirm":
+    "The old address stops working at once and the new one must go into the agent's settings. Continue?",
+  "agents.revokeConfirm": "The connection stops working for good and cannot be restored. Continue?",
+  "agents.rotateYes": "Rotate key",
+  "agents.revokeYes": "Revoke",
+  "agents.limits": "Limits and current use",
+  "agents.limit.connections":
+    "Connections: up to {value}, {used} in use (revoked ones not counted)",
+  "agents.limit.name": "Name: up to {value} characters; the longest current name has {used}",
+  "agents.limit.body":
+    "One request: up to {value} bytes (request sizes are not recorded, so only the limit is shown)",
+  "agents.limit.reads":
+    "Requests per connection per minute (automatic searches counted separately): up to {value}; the busiest connection used {used} this minute",
+  "agents.limit.hook":
+    "Automatic searches per connection per minute: up to {value}; the busiest connection used {used} this minute",
+  "agents.empty": "No connections yet. Enter a name above to create one.",
+  "agents.error": "Could not load or save connections. Try again shortly.",
+  "agents.weekly.title": "Connected agents",
+  "agents.weekly.window": "{from} to {to}",
+  "agents.weekly.empty": "No connections this week.",
   "review.settings.devices": "Devices",
   "devices.help": "Pair Himawari on an iPhone, Apple Watch or Mac by scanning a QR code.",
   "devices.add": "Add device",

@@ -2,16 +2,17 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+. "$root/scripts/xcode-cache.sh"
 mode="record"
-out="$root/ui-review/latest"
+out="$himawari_apple_cache/ui-review/latest"
 snapshots="$root/Tests/Snapshots/iPhone-390"
 device_name="Himawari 390pt"
 device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e"
 expected_width=1170
-derived="$root/ui-review/DerivedData"
 only=""
 calm_below=40
 calm_patience=600
+prompt_wait=5
 
 usage() {
   echo "usage: clients/apple/scripts/ui-review.sh [--check | --approve] [--out DIR] [--only SCENE,SCENE]" >&2
@@ -62,9 +63,23 @@ missing_in() {
 
 if [ "$mode" = "approve" ]; then
   missing_in "$out" || { echo "UI_REVIEW_FAILED $out does not hold every scene in light and dark; run the screenshots again" >&2; exit 1; }
-  mkdir -p "$snapshots"
-  rm -f "$snapshots"/*.png
-  cp "$out"/*.png "$snapshots"/
+  staged="$(dirname "$snapshots")/.approve-$$"
+  previous="$(dirname "$snapshots")/.previous-$$"
+  rm -rf "$staged" "$previous"
+  mkdir -p "$staged"
+  cp "$out"/*.png "$staged"/
+  missing_in "$staged" || { rm -rf "$staged"; echo "UI_REVIEW_FAILED copying the screenshots into $staged lost some; snapshots left as they were" >&2; exit 1; }
+  [ ! -d "$snapshots" ] || mv "$snapshots" "$previous"
+  if ! mv "$staged" "$snapshots"; then
+    rm -rf "$staged"
+    if [ -d "$previous" ] && ! mv "$previous" "$snapshots"; then
+      echo "UI_REVIEW_FAILED could not move $staged into $snapshots, and the old snapshots stayed in $previous; move them back by hand" >&2
+      exit 1
+    fi
+    echo "UI_REVIEW_FAILED could not move $staged into $snapshots; the old snapshots were put back" >&2
+    exit 1
+  fi
+  rm -rf "$previous"
   echo "UI_REVIEW_APPROVED $(ls "$snapshots"/*.png | wc -l | tr -d ' ') snapshots -> $snapshots"
   exit 0
 fi
@@ -82,7 +97,20 @@ udid="$(xcrun simctl list devices available | grep -F "$device_name (" | head -1
 if [ -z "$udid" ]; then
   udid="$(xcrun simctl create "$device_name" "$device_type" "$runtime")"
 fi
-echo "UI_REVIEW_BUILD device=$udid"
+shutdown_simulator=""
+shots=""
+cleanup() {
+  local status=$?
+  [ -z "$shutdown_simulator" ] || xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+  if [ "$mode" = "check" ] && [ -n "$shots" ]; then
+    if [ "$status" -eq 0 ]; then rm -rf "$shots"; else echo "UI_REVIEW_CHECK_KEPT $shots (screenshots from the failed check, left for diagnosis)" >&2; fi
+  fi
+  himawari_release_lock
+}
+trap cleanup EXIT
+himawari_lock_derived_data ios
+derived="$himawari_locked_derived"
+echo "UI_REVIEW_BUILD device=$udid derived=$derived"
 taskpolicy -b xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme Himawari -configuration Debug \
   -destination "id=$udid" -derivedDataPath "$derived" -jobs 2 \
   COMPILER_INDEX_STORE_ENABLE=NO build -quiet
@@ -90,12 +118,24 @@ app="$derived/Build/Products/Debug-iphonesimulator/Himawari.app"
 bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
 
 if ! xcrun simctl list devices booted | grep -qF "$udid"; then
-  trap 'xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true' EXIT
+  shutdown_simulator=1
 fi
-xcrun simctl boot "$udid" 2>/dev/null || true
-xcrun simctl bootstatus "$udid" -b >/dev/null
-simulator_launchd="$(pgrep -f "launchd_sim .*$udid" | head -1 || true)"
-[ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
+simulator_launchd=""
+boot_device() {
+  xcrun simctl boot "$udid" 2>/dev/null || true
+  xcrun simctl bootstatus "$udid" -b >/dev/null
+  simulator_launchd="$(pgrep -f "launchd_sim .*$udid" | head -1 || true)"
+  [ -n "$simulator_launchd" ] || { echo "UI_REVIEW_FAILED cannot find the simulator's launchd_sim process for $udid" >&2; exit 1; }
+}
+boot_device
+if [ "$(xcrun simctl spawn "$udid" defaults read -g AppleLanguages 2>/dev/null | tr -d ' \n()"' | cut -d, -f1)" != "zh-Hans" ] \
+  || [ "$(xcrun simctl spawn "$udid" defaults read -g AppleICUForce12HourTime 2>/dev/null)" != "1" ]; then
+  xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array zh-Hans
+  xcrun simctl spawn "$udid" defaults write -g AppleLocale -string zh_CN
+  xcrun simctl spawn "$udid" defaults write -g AppleICUForce12HourTime -bool true
+  xcrun simctl shutdown "$udid"
+  boot_device
+fi
 
 simulator_load() {
   ps -A -o ppid=,%cpu= | awk -v parent="$simulator_launchd" '$1 == parent { total += $2 } END { printf "%d", total }'
@@ -116,13 +156,18 @@ wait_until_calm() {
   done
 }
 
+override_status_bar() {
+  xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+}
+
 wait_until_calm
-xcrun simctl status_bar "$udid" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+override_status_bar
 xcrun simctl install "$udid" "$app"
 
-shots="$out"
 if [ "$mode" = "check" ]; then
   shots="$(mktemp -d)"
+else
+  shots="$out"
 fi
 mkdir -p "$shots"
 rm -f "$shots"/*.png "$shots"/*.mp4 "$shots"/*.mov
@@ -145,9 +190,9 @@ marker="$(xcrun simctl get_app_container "$udid" "$bundle" data)/tmp/$(sed -nE '
 case "$marker" in */tmp/?*) ;; *) echo "UI_REVIEW_FAILED cannot locate the scene marker" >&2; exit 1 ;; esac
 
 settle() {
-  local scene="$1" file="$2" previous="" current="" tries=0 launches=1
+  local scene="$1" file="$2" marked="${3:-marked}" previous="" current="" tries=0 launches=1
   while :; do
-    if shown "$scene" && calm; then
+    if { [ "$marked" = "unmarked" ] || shown "$scene"; } && calm; then
       xcrun simctl io "$udid" screenshot --type=png "$file" >/dev/null
       current="$(shasum -a 256 "$file" | cut -d' ' -f1)"
       if [ "$current" = "$previous" ] && [ "$current" != "$last_shot" ]; then
@@ -168,6 +213,17 @@ settle() {
     fi
     sleep 1
   done
+}
+
+restart_device() {
+  xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+  xcrun simctl shutdown "$udid"
+  boot_device
+  wait_until_calm
+  override_status_bar
+  xcrun simctl ui "$udid" appearance "$1"
+  sleep 3
+  wait_until_calm
 }
 
 xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
@@ -199,6 +255,17 @@ for appearance in light dark; do
         if command -v avconvert >/dev/null; then
           avconvert --preset Preset960x540 --source "$raw" --output "$shots/$scene-$appearance.mp4" --replace >/dev/null 2>&1 && rm -f "$raw"
         fi
+        ;;
+      *-system-prompt*)
+        xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+        xcrun simctl privacy "$udid" reset all "$bundle"
+        launch "$scene"
+        file="$shots/$scene-$appearance.png"
+        sleep "$prompt_wait"
+        settle "$scene" "$file" unmarked
+        restart_device "$appearance"
+        width="$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')"
+        [ "$width" = "$expected_width" ] || { echo "UI_REVIEW_FAILED $file is $width px wide, expected $expected_width (390 pt at 3x)" >&2; exit 1; }
         ;;
       *)
         launch "$scene"

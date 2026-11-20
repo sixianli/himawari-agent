@@ -17,6 +17,10 @@
 "panel.progress" = "%1$d / %2$d";
 "panel.awaiting" = "決めてほしいこと";
 "panel.actionFailed" = "うまくいきませんでした。もう一度押してください";
+"panel.presenceReason" = "ご本人の承認であることを確認";
+"panel.noticeDismiss" = "了解";
+"panel.moreNotices" = "ほかに %d 件の通知";
+"panel.fewerNotices" = "閉じる";
 "panel.talk" = "Himawari に話しかける";
 "panel.notPaired" = "まだ Himawari とつながっていません";
 "panel.pair" = "つなぐ";

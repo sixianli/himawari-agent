@@ -9,6 +9,7 @@ export const PUSH_CLASSES = [
   "approval",
   "run_result",
   "mail_reminder",
+  "proposal",
   "muse_outage",
   "unknown",
 ] as const;
@@ -17,6 +18,7 @@ export type PushClass = (typeof PUSH_CLASSES)[number];
 export const PUSH_RULE_PROTECTED_CLASSES: readonly PushClass[] = Object.freeze([
   "approval",
   "muse_outage",
+  "proposal",
   "unknown",
 ]);
 
@@ -32,6 +34,7 @@ export function pushClassOf(input: {
   if (input.kind === "reminder") {
     if (input.sourceKey.startsWith("muse-channel:")) return "muse_outage";
     if (input.sourceKey.startsWith("proactive:")) return "mail_reminder";
+    if (input.sourceKey.startsWith("proposal:")) return "proposal";
     if (input.sourceKey.startsWith("reminder:")) return "scheduled_reminder";
   }
   return "unknown";

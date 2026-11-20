@@ -1,0 +1,6 @@
+# PR 552 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，可以更好：### 1、低：核心“改后立即生效”的生产装配链路没有自动检查。测试缺口：test/integration/production-delivery-timing-control.test.ts 只测控制类，装配链路（service-main.ts:2774-2856）靠阅读确认；没有一种输入会让现有代码出错，只是覆盖可以更广，建议不在本 PR 加
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2、低：作者说“只配 deliveryTiming 就创建 holder”，代码还要求 web push、密钥和 episode 保护。与第 1 轮第 3 条同一件事：service-main.ts:2774 holder 创建在 webPush 条件块内；ADR 0273 第 135 行已在提交 b4bf80a 对齐代码，沿用原判，代码行为合理不改；触发：只配 deliveryTiming 而没有网页推送配置、密钥或 episode 保护；后果：两个操作不装进网关，与作者在材料里的说法不符
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3、低：作者说“不涉及发给模型的内容”，但 freshness 设置会改变模型收到的 ownerReports。与第 1 轮第 4 条同一件事，沿用原判：作者说法只在材料文件里，ADR 和代码都没有这句；新鲜度窗口只改变原有判断请求最后一条用户消息里的事实集合，不改请求开头，只需收窄材料措辞
+- 4（deepseek-v4.1-flash）成立，会出错，低：### 4、低：读取端不校验 overrides 的 JSON 类型，异常行会让查询/启动抛错。sqlite-delivery-timing-settings-operations.ts read 里 JSON.parse 结果未检查形状，复现：插入 overrides='null' 后读接口抛错（新增测试在修复前失败）；正常写入路径写的是 JSON.stringify(对象)，已在本轮修复；触发：库里 overrides 列存了合法 JSON 但不是对象（如 null），只有绕过本 PR 写入路径直写库才会出现；后果：读接口或启动初始化 holder 时 overrides[key] 抛 TypeError

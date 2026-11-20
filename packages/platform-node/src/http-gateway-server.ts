@@ -7,11 +7,14 @@ import {
   type AgentThreadGatewayPort,
   ApplicationPortError,
   type AuditLedgerPort,
+  type DeviceActionService,
   type DeviceConfiguration,
   type GatewayAuthenticationContext,
   type GatewayV2StreamItem,
+  type PairedDeviceScope,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
+  type VoiceGates,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
 import {
@@ -23,6 +26,7 @@ import {
   type GatewayV2Query,
   gatewayMessageSchema,
   gatewayV2MessageSchema,
+  isGatewayErrorReasonCode,
   type StreamEvent,
   type ThreadExecutionEventsSubscription,
   type ThreadExecutionStreamEvent,
@@ -30,17 +34,20 @@ import {
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
   type ThreadGatewaySubscription,
-  isGatewayErrorReasonCode,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { BrowserThreadFileContent, HttpGatewayFilesPort } from "./browser-thread-files.js";
+import type { DeviceActionHub } from "./device-action-hub.js";
 import {
+  type DeviceApiRouteOptions,
   type DeviceHomePort,
   type DevicePairingAccess,
   registerDeviceApiRoutes,
+  type UtterancePrefetchPort,
 } from "./device-api-routes.js";
 import { type DeviceGatewayAuditFailure, DeviceGatewayError } from "./device-gateway.js";
+import { DevicePushError, type DevicePushPort } from "./device-push.js";
 import { DeviceSignatureError } from "./device-request-signature.js";
 import {
   PAIRED_DEVICE_ERROR_CODES,
@@ -133,9 +140,19 @@ export interface HttpGatewayServerOptions {
     readonly configuration: () => DeviceConfiguration;
     readonly audit: AuditLedgerPort;
     readonly onAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
+    readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly actions?: {
+      readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
+      readonly hub: DeviceActionHub;
+    };
+    readonly notifications?: DeviceApiRouteOptions["notifications"];
     readonly home?: DeviceHomePort;
+    readonly voiceGates?: () => VoiceGates;
+    readonly prefetch?: UtterancePrefetchPort;
+    readonly addressee?: DeviceApiRouteOptions["addressee"];
+    readonly exportArchive?: DeviceApiRouteOptions["exportArchive"];
   };
   readonly health?: HttpGatewayHealthPort;
   readonly metrics?: HttpGatewayMetricsPort;
@@ -227,6 +244,7 @@ const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 const SLOW_REQUEST_MILLISECONDS = 2_000;
 const STREAM_PATH = /\/(?:execution-)?events$/;
+const UNMATCHED_ROUTE = "(no route)";
 
 class HttpGatewayError extends Error {
   readonly code: string;
@@ -868,8 +886,9 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       started.delete(request);
       inFlight -= 1;
       const totalMs = Math.round(performance.now() - start.at);
-      const path = requestPath(request);
-      if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(path)) return;
+      const raw = requestPath(request);
+      if (totalMs < SLOW_REQUEST_MILLISECONDS || STREAM_PATH.test(raw)) return;
+      const path = request.routeOptions.url ?? UNMATCHED_ROUTE;
       const body = request.body as { readonly type?: unknown } | undefined;
       onSlowRequest({
         method: request.method,
@@ -915,7 +934,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
-    if (error instanceof DeviceGatewayError) {
+    if (error instanceof DeviceGatewayError || error instanceof DevicePushError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
     }
@@ -1306,6 +1325,29 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       configuration: options.devices.configuration,
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
+      ...(options.devices.actions ? { actions: options.devices.actions } : {}),
+      ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
+      ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
+      ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),
+      ...(options.devices.addressee ? { addressee: options.devices.addressee } : {}),
+      ...(options.devices.exportArchive ? { exportArchive: options.devices.exportArchive } : {}),
+      ...(options.files
+        ? {
+            readFile: async ({ authentication, fileId }) => {
+              const content = await (options.files as HttpGatewayFilesPort).content({
+                authentication,
+                agentId: browserConfiguration.agentId,
+                fileId,
+                download: true,
+              });
+              return {
+                bytes: content.bytes,
+                mediaType: content.mediaType,
+                fileName: content.fileName,
+              };
+            },
+          }
+        : {}),
       authority: {
         agentId: browserConfiguration.agentId,
         deploymentId: browserConfiguration.deploymentId,
@@ -1320,6 +1362,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       },
       audit: options.devices.audit,
       ...(options.devices.onAuditFailed ? { onAuditFailed: options.devices.onAuditFailed } : {}),
+      ...(options.devices.push ? { push: options.devices.push } : {}),
       protectText: async (input) =>
         (
           await payloadAdmission.protect({

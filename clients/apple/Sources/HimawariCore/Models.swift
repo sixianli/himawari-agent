@@ -55,9 +55,37 @@ public struct AttachmentLimits: Codable, Sendable, Equatable {
     }
 }
 
+public struct PerceptionSenseSwitch: Codable, Sendable, Equatable {
+    public let sense: String
+    public let enabled: Bool
+}
+
 public struct PerceptionSummary: Codable, Sendable, Equatable {
     public let recordTextCharacters: Int?
     public let recordTypes: [String: PerceptionTypeRule]?
+    public let state: String?
+    public let pausedUntil: String?
+    public let senses: [PerceptionSenseSwitch]?
+    public let retentionDays: [String: Int]?
+    public let mirrorKinds: [String: [String: PerceptionFieldRule]]?
+
+    public init(
+        recordTextCharacters: Int? = nil,
+        recordTypes: [String: PerceptionTypeRule]? = nil,
+        state: String? = nil,
+        pausedUntil: String? = nil,
+        senses: [PerceptionSenseSwitch]? = nil,
+        retentionDays: [String: Int]? = nil,
+        mirrorKinds: [String: [String: PerceptionFieldRule]]? = nil
+    ) {
+        self.recordTextCharacters = recordTextCharacters
+        self.recordTypes = recordTypes
+        self.state = state
+        self.pausedUntil = pausedUntil
+        self.senses = senses
+        self.retentionDays = retentionDays
+        self.mirrorKinds = mirrorKinds
+    }
 }
 
 public struct DeviceConfiguration: Codable, Sendable, Equatable {

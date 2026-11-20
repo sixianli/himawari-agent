@@ -1,0 +1,4 @@
+# PR 574 第 1 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1 中 测试没有逐项锁定 kind/storageUnit，反向用例缺失。test/integration/production-delivery-timing-control.test.ts:137 只断言 3 项，think-settings.test.ts 只断言第 10 项；已改为逐项对照并加反向用例，两个测试文件通过；触发：以后有人改错 DELIVERY_TIMING_VALUE 或 THINK_SETTING_UNIT_VALUE 里某一项（如 macPresenceSeconds 改成 ms），旧测试仍通过；后果：手机会把该项显示成错误单位；当前代码映射本身正确（逐项核对 delivery-timing-copy.ts:232-243、production-think-settings.ts:157-164），只是回归保护不足；判低理由：当前代码正确，只在以后误改映射时测试拦不住，不是现有输入会出错；已补逐项表驱动断言和非法 kind/storageUnit 反向用例
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2 中 架构文档和 ADR 的字段清单没有同步，违反同提交更新要求。docs/architecture-v0.1.md:438 原文漏列；已补上显示方式和存储单位；ADR 0273 不改，ADR 是历史决定；触发：读 docs/architecture-v0.1.md:438 的人看字段清单；后果：清单少列 kind/storageUnit 两个新字段，文字不准但不误导；ADR 0273 是决定记录，其字段清单是当时决定，不属于必须随代码改的现状文档；判低理由：只是清单漏列新增字段，没有写错现有内容，不会让人做错

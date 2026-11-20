@@ -5,13 +5,18 @@ public enum DeviceStreamEvent: Sendable, Equatable {
     case thread(ThreadEvent)
     case executionText(ExecutionText)
     case executionChanged(threadId: String, runId: String)
+    case notificationDeliver(DeviceNotification)
+    case notificationWithdraw(id: String)
     case resyncRequired
+    case deviceActions
     case sessionInvalid
     case unavailable
     case disconnected
 }
 
 public enum DeviceEventDecoder {
+    public static let notificationEvents: Set<String> = ["notification.deliver", "notification.withdraw"]
+
     public static func decode(_ event: ServerSentEvent) -> DeviceStreamEvent? {
         let data = Data(event.data.utf8)
         switch event.event {
@@ -31,6 +36,13 @@ public enum DeviceEventDecoder {
             default:
                 return nil
             }
+        case "notification.deliver":
+            return (try? JSONDecoder().decode(DeviceNotification.self, from: data)).map { .notificationDeliver($0) }
+        case "notification.withdraw":
+            struct Withdraw: Decodable { let id: String }
+            return (try? JSONDecoder().decode(Withdraw.self, from: data)).map { .notificationWithdraw(id: $0.id) }
+        case "device.actions":
+            return .deviceActions
         case "thread.snapshot_required":
             return .resyncRequired
         case "thread.execution_unavailable":
@@ -132,7 +144,7 @@ public final class DeviceEventStream: @unchecked Sendable {
                 for try await chunk in chunks {
                     deadline.touch()
                     for event in parser.feed(chunk) {
-                        if let id = event.id, !id.isEmpty { self.cursors?.save(id) }
+                        if let id = event.id, !id.isEmpty, !DeviceEventDecoder.notificationEvents.contains(event.event) { self.cursors?.save(id) }
                         if event.event == "device.reconnect" { return false }
                         guard let decoded = DeviceEventDecoder.decode(event) else { continue }
                         if decoded == .resyncRequired { self.cursors?.save(nil) }

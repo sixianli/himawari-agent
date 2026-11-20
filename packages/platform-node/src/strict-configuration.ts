@@ -2,7 +2,13 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  APPLE_PUSH_CONFIGURATION_BOUNDS,
+  APPLE_PUSH_CONFIGURATION_DEFAULTS,
+  APPLE_PUSH_ENVIRONMENTS,
+  APPLE_PUSH_TOPIC_PATTERN,
   APPROVAL_BODY_PREVIEW_MAXIMUM_CHARACTERS,
+  type ApplePushConfiguration,
+  type ApplePushEnvironment,
   type CapabilityDeploymentConfiguration,
   type ConfigurationPort,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -15,14 +21,15 @@ import {
   DEFAULT_HOME_URGENCY,
   DEFAULT_REVIEW_PREREVIEW,
   DEFAULT_SEARCH_ASK,
+  DELIVERY_TIMING_DEFAULTS,
+  DELIVERY_TIMING_RANGES,
   DEVICE_CONFIGURATION_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   DEVICE_HARD_LIMITS,
+  type DeliveryTimingConfiguration,
+  type DeliveryTimingRouteConfiguration,
   type DeviceConfiguration,
   type DeviceHardLimitKey,
-  PERCEPTION_CONFIGURATION_DEFAULTS,
-  PERCEPTION_CONFIGURATION_RANGES,
-  type PerceptionConfiguration,
   findEmbeddingProfile,
   GATEWAY_EMBEDDING_PROVIDER,
   type HttpConfiguration,
@@ -33,10 +40,18 @@ import {
   IMPORT_DUPLICATE_RANGES,
   type ImportDuplicateConfiguration,
   type ImportDuplicateTuning,
+  THINK_SETTING_DEFINITIONS,
+  THINK_WORTH_DEFAULTS,
+  thinkSettingDefinition,
+  type ThinkWorthConfiguration,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
   type ModelProviderRouting,
+  type OwnerIntentCheckConfiguration,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_CONFIGURATION_RANGES,
+  type PerceptionConfiguration,
   type ProactiveConfiguration,
   type ProductConfiguration,
   REAL_EVAL_MODES,
@@ -44,10 +59,13 @@ import {
   type RealEvalMode,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
-  type OwnerIntentCheckConfiguration,
-  type ToolRefusalConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  type ToolRefusalConfiguration,
+  VOICE_ADDRESSEE_DEFAULTS,
+  VOICE_ADDRESSEE_RANGES,
+  type VoiceAddresseeConfiguration,
+  type VoiceAddresseeRouteConfiguration,
   WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
@@ -1073,6 +1091,7 @@ function parseAutomaticReview(
 }
 
 export const WEB_PUSH_SECRET_PURPOSE = "web-push";
+export const APPLE_PUSH_SECRET_PURPOSE = "apple-push";
 export const GOOGLE_OAUTH_CLIENT_SECRET_PURPOSE = "google-oauth-client";
 export const MUSE_INTAKE_SECRET_PURPOSE = "muse-intake";
 export const GAP_EXPORT_SECRET_PURPOSE = "gap-export";
@@ -1369,6 +1388,65 @@ function parseOwnerProposals(
   });
 }
 
+function parseThinkInbox(value: unknown): NonNullable<RunPolicyConfiguration["thinkInbox"]> {
+  const field = "configuration.runPolicy.thinkInbox";
+  const input = record(value, field);
+  const ranges = Object.fromEntries(
+    THINK_SETTING_DEFINITIONS.filter((definition) => definition.unit !== "permille").map(
+      (definition) => [definition.key, [definition.minimum, definition.maximum] as const],
+    ),
+  );
+  rejectUnknown(input, [...Object.keys(ranges), "worth"], field);
+  const parsed: Record<string, number> = {};
+  for (const [key, [low, high]] of Object.entries(ranges)) {
+    if (input[key] !== undefined) parsed[key] = integer(input[key], `${field}.${key}`, low, high);
+  }
+  return Object.freeze({
+    ...parsed,
+    ...(input["worth"] === undefined ? {} : { worth: parseThinkWorth(input["worth"]) }),
+  });
+}
+
+function parseThinkWorth(value: unknown): ThinkWorthConfiguration {
+  const field = "configuration.runPolicy.thinkInbox.worth";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["model", "secretRef", "yesAtLeastPermille", "noAtMostPermille", "requestTimeoutMs"],
+    field,
+  );
+  const yesAtLeastPermille =
+    input["yesAtLeastPermille"] === undefined
+      ? THINK_WORTH_DEFAULTS.yesAtLeastPermille
+      : integer(
+          input["yesAtLeastPermille"],
+          `${field}.yesAtLeastPermille`,
+          thinkSettingDefinition("yesAtLeastPermille").minimum,
+          thinkSettingDefinition("yesAtLeastPermille").maximum,
+        );
+  const noAtMostPermille =
+    input["noAtMostPermille"] === undefined
+      ? THINK_WORTH_DEFAULTS.noAtMostPermille
+      : integer(
+          input["noAtMostPermille"],
+          `${field}.noAtMostPermille`,
+          thinkSettingDefinition("noAtMostPermille").minimum,
+          thinkSettingDefinition("noAtMostPermille").maximum,
+        );
+  if (noAtMostPermille >= yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    yesAtLeastPermille,
+    noAtMostPermille,
+    requestTimeoutMs:
+      input["requestTimeoutMs"] === undefined
+        ? THINK_WORTH_DEFAULTS.requestTimeoutMs
+        : integer(input["requestTimeoutMs"], `${field}.requestTimeoutMs`, 500, 120_000),
+  });
+}
+
 function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
   const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
@@ -1390,6 +1468,62 @@ function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPu
   });
 }
 
+function parseApplePush(value: unknown): ApplePushConfiguration {
+  const field = "configuration.runPolicy.applePush";
+  const input = record(value, field);
+  const tunables = Object.keys(
+    APPLE_PUSH_CONFIGURATION_DEFAULTS,
+  ) as (keyof typeof APPLE_PUSH_CONFIGURATION_DEFAULTS)[];
+  rejectUnknown(
+    input,
+    ["secretRef", "teamId", "keyId", "topics", "environments", ...tunables],
+    field,
+  );
+  const identifier = (key: "teamId" | "keyId") => {
+    const value = string(input[key], `${field}.${key}`);
+    if (!/^[A-Z0-9]{10}$/u.test(value))
+      throw invalid(`${field}.${key}`, "must be the 10-character identifier Apple issued");
+    return value;
+  };
+  const list = <T extends string>(
+    key: string,
+    accept: (value: string) => boolean,
+  ): readonly T[] => {
+    const values = input[key];
+    if (
+      !Array.isArray(values) ||
+      values.length < 1 ||
+      values.length > 16 ||
+      values.some((value) => typeof value !== "string" || !accept(value)) ||
+      new Set(values).size !== values.length
+    )
+      throw invalid(`${field}.${key}`, "must be a non-empty list of distinct valid values");
+    return Object.freeze([...(values as T[])]);
+  };
+  return Object.freeze({
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    teamId: identifier("teamId"),
+    keyId: identifier("keyId"),
+    topics: list<string>("topics", (value) => APPLE_PUSH_TOPIC_PATTERN.test(value)),
+    environments: list<ApplePushEnvironment>("environments", (value) =>
+      (APPLE_PUSH_ENVIRONMENTS as readonly string[]).includes(value),
+    ),
+    ...(Object.fromEntries(
+      tunables.map((key) => [
+        key,
+        input[key] === undefined
+          ? APPLE_PUSH_CONFIGURATION_DEFAULTS[key]
+          : integer(
+              input[key],
+              `${field}.${key}`,
+              APPLE_PUSH_CONFIGURATION_BOUNDS[key].minimum,
+              APPLE_PUSH_CONFIGURATION_BOUNDS[key].maximum,
+            ),
+      ]),
+    ) as Record<keyof typeof APPLE_PUSH_CONFIGURATION_DEFAULTS, number>),
+  });
+}
+
 function parseDevice(value: unknown): DeviceConfiguration {
   const field = "configuration.runPolicy.device";
   const input = record(value, field);
@@ -1400,6 +1534,7 @@ function parseDevice(value: unknown): DeviceConfiguration {
       "heartbeatSeconds",
       "connectionMaxSeconds",
       "streamConnections",
+      "prefetchSeconds",
       ...DEVICE_HARD_LIMIT_KEYS,
     ],
     field,
@@ -1441,6 +1576,12 @@ function parseDevice(value: unknown): DeviceConfiguration {
       1,
       64,
     ),
+    prefetchSeconds: optional(
+      "prefetchSeconds",
+      DEVICE_CONFIGURATION_DEFAULTS.prefetchSeconds,
+      5,
+      600,
+    ),
     limits: Object.freeze(limits),
   });
 }
@@ -1480,6 +1621,8 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
     askLimit: [0, 20],
     answerCharacters: [1, 2000],
     minimumCoveragePercent: [1, 100],
+    indexTermLimit: [1, 100000],
+    indexRebuildBatch: [1, 1000],
   } as const satisfies Record<keyof typeof DEFAULT_SEARCH_ASK, readonly [number, number]>;
   const keys = Object.keys(bounds) as (keyof typeof bounds)[];
   rejectUnknown(input, keys, field);
@@ -1493,6 +1636,66 @@ function parseSearchAsk(value: unknown): NonNullable<RunPolicyConfiguration["sea
       ]),
     ) as Record<keyof typeof bounds, number>,
   );
+}
+
+function parseDeliveryTiming(value: unknown): DeliveryTimingRouteConfiguration {
+  const field = "configuration.runPolicy.deliveryTiming";
+  const input = record(value, field);
+  const keys = Object.keys(DELIVERY_TIMING_DEFAULTS) as (keyof DeliveryTimingConfiguration)[];
+  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = DELIVERY_TIMING_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? DELIVERY_TIMING_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as DeliveryTimingConfiguration;
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    inputMicrosPerMillionTokens: integer(
+      input["inputMicrosPerMillionTokens"],
+      `${field}.inputMicrosPerMillionTokens`,
+      1,
+      100_000_000,
+    ),
+  });
+}
+
+function parseVoiceAddressee(value: unknown): VoiceAddresseeRouteConfiguration {
+  const field = "configuration.runPolicy.voiceAddressee";
+  const input = record(value, field);
+  const keys = Object.keys(VOICE_ADDRESSEE_DEFAULTS) as (keyof VoiceAddresseeConfiguration)[];
+  rejectUnknown(input, [...keys, "model", "secretRef", "inputMicrosPerMillionTokens"], field);
+  const tuning = Object.fromEntries(
+    keys.map((key) => {
+      const [minimum, maximum] = VOICE_ADDRESSEE_RANGES[key];
+      return [
+        key,
+        input[key] === undefined
+          ? VOICE_ADDRESSEE_DEFAULTS[key]
+          : integer(input[key], `${field}.${key}`, minimum, maximum),
+      ];
+    }),
+  ) as unknown as VoiceAddresseeConfiguration;
+  if (tuning.noAtMostPermille >= tuning.yesAtLeastPermille)
+    throw invalid(`${field}.noAtMostPermille`, "must be smaller than yesAtLeastPermille");
+  return Object.freeze({
+    ...tuning,
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    inputMicrosPerMillionTokens: integer(
+      input["inputMicrosPerMillionTokens"],
+      `${field}.inputMicrosPerMillionTokens`,
+      1,
+      100_000_000,
+    ),
+  });
 }
 
 function parsePerception(value: unknown): PerceptionConfiguration {
@@ -1609,12 +1812,13 @@ function parseToolRefusals(value: unknown): ToolRefusalConfiguration {
 function parseOwnerIntentCheck(value: unknown): OwnerIntentCheckConfiguration {
   const field = "configuration.runPolicy.ownerIntentCheck";
   const input = record(value, field);
-  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "modelRef"], field);
+  rejectUnknown(input, ["enabled", "minConfidence", "timeoutMs", "model", "secretRef"], field);
   return Object.freeze({
     enabled: boolean(input["enabled"], `${field}.enabled`),
     minConfidence: integer(input["minConfidence"], `${field}.minConfidence`, 500, 1000),
     timeoutMs: integer(input["timeoutMs"], `${field}.timeoutMs`, 500, 30000),
-    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    model: safeReference(input["model"], `${field}.model`),
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
   });
 }
 
@@ -1639,10 +1843,13 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicFetch",
       "automaticReview",
       "webPush",
+      "applePush",
       "device",
       "homeFeed",
       "searchAsk",
       "perception",
+      "voiceAddressee",
+      "deliveryTiming",
       "homeUrgency",
       "proactive",
       "museIntake",
@@ -1650,6 +1857,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "realEval",
       "mcpRead",
       "ownerProposals",
+      "thinkInbox",
     ],
     "configuration.runPolicy",
   );
@@ -1701,12 +1909,19 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
+    ...(input["applePush"] === undefined ? {} : { applePush: parseApplePush(input["applePush"]) }),
     ...(input["device"] === undefined ? {} : { device: parseDevice(input["device"]) }),
     ...(input["homeFeed"] === undefined ? {} : { homeFeed: parseHomeFeed(input["homeFeed"]) }),
     ...(input["searchAsk"] === undefined ? {} : { searchAsk: parseSearchAsk(input["searchAsk"]) }),
     ...(input["perception"] === undefined
       ? {}
       : { perception: parsePerception(input["perception"]) }),
+    ...(input["voiceAddressee"] === undefined
+      ? {}
+      : { voiceAddressee: parseVoiceAddressee(input["voiceAddressee"]) }),
+    ...(input["deliveryTiming"] === undefined
+      ? {}
+      : { deliveryTiming: parseDeliveryTiming(input["deliveryTiming"]) }),
     ...(input["homeUrgency"] === undefined
       ? {}
       : { homeUrgency: parseHomeUrgency(input["homeUrgency"]) }),
@@ -1719,6 +1934,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["ownerProposals"] === undefined
       ? {}
       : { ownerProposals: parseOwnerProposals(input["ownerProposals"]) }),
+    ...(input["thinkInbox"] === undefined
+      ? {}
+      : { thinkInbox: parseThinkInbox(input["thinkInbox"]) }),
     ...(input["importDuplicates"] === undefined
       ? {}
       : { importDuplicates: parseImportDuplicates(input["importDuplicates"]) }),
@@ -2013,12 +2231,31 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       WEB_PUSH_SECRET_PURPOSE,
       "configuration.runPolicy.webPush.secretRef",
     );
+  if (runPolicy?.applePush && !runPolicy.webPush)
+    throw invalid(
+      "configuration.runPolicy.applePush",
+      "requires configuration.runPolicy.webPush, which produces the notifications both channels send",
+    );
+  if (runPolicy?.applePush)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.applePush.secretRef,
+      APPLE_PUSH_SECRET_PURPOSE,
+      "configuration.runPolicy.applePush.secretRef",
+    );
   if (runPolicy?.importDuplicates)
     assertIdentitySecretReference(
       secretReferences,
       runPolicy.importDuplicates.secretRef,
       "model-auth",
       "configuration.runPolicy.importDuplicates.secretRef",
+    );
+  if (runPolicy?.thinkInbox?.worth)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.thinkInbox.worth.secretRef,
+      "model-auth",
+      "configuration.runPolicy.thinkInbox.worth.secretRef",
     );
   if (runPolicy?.museIntake)
     assertIdentitySecretReference(

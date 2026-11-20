@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, renameSync 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, strictCapabilityKeys, verifyHistoryUnchanged, compareHistoryRows, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation } from "./maintenance-common.mjs";
+import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
@@ -25,6 +25,22 @@ const rejectAll = (group, base, cases, check) => {
   }
 };
 assert(typeof process.env.HIMAWARI_TEST_TEMP_ROOT === "string", "FIXTURE_OWNED_TEMP_ROOT_REQUIRED");
+const originRelease = historyIgnoredColumnsFor([{ sequence: 97, name: "other" }, { sequence: 98, name: "thread_origin", phase: "expand" }]);
+assert.deepEqual(originRelease, { threads: ["origin"] }, "HISTORY_ORIGIN_IGNORED_WHEN_THE_PACKET_LEDGER_HAS_THREAD_ORIGIN");
+assert.deepEqual(historyIgnoredColumnsFor([{ sequence: 97, name: "other" }]), {}, "HISTORY_ORIGIN_COMPARED_WHEN_THE_PACKET_LEDGER_LACKS_THREAD_ORIGIN");
+const packetAppliesThreadOrigin = migrationExpectedLedger.some((row) => row.name === "thread_origin");
+assert.deepEqual(historyIgnoredColumns, packetAppliesThreadOrigin ? { threads: ["origin"] } : {}, "HISTORY_IGNORED_COLUMNS_FOLLOW_THE_PACKET_LEDGER");
+assert.deepEqual(historyIgnoredColumnsFor([{ sequence: 97, name: "thread_origin" }, { sequence: 98, name: "thread_origin" }]), { threads: ["origin"] }, "HISTORY_IGNORED_COLUMNS_MERGED_WITHOUT_DUPLICATES");
+assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }, originRelease), { __rowid: 1, id: "thread:1" }, "HISTORY_ROW_THREAD_ORIGIN_IGNORED");
+assert.deepEqual(historyRow("threads", { __rowid: 1, id: "thread:1", origin: "think" }), { __rowid: 1, id: "thread:1", origin: "think" }, "HISTORY_ROW_KEEPS_ORIGIN_BY_DEFAULT");
+assert.deepEqual(historyRow("messages", { __rowid: 1, origin: "x" }, originRelease), { __rowid: 1, origin: "x" }, "HISTORY_ROW_OTHER_TABLES_KEEP_EVERY_COLUMN");
+
+const releaseWithoutMigrationIds = [{ sequence: 1, name: "a" }, { sequence: 78, name: "b" }];
+const releaseWithMigrationIds = [{ sequence: 1, id: "0001", name: "a" }, { sequence: 78, id: "0078", name: "b" }, { sequence: 96, id: "20261114120000", name: "c" }];
+assert.deepEqual(definitionsForLedger(releaseWithoutMigrationIds, [{ sequence: 1 }, { sequence: 78 }]).map((definition) => definition?.name), ["a", "b"], "MIGRATION_DEFINITIONS_OLD_RELEASE_NO_ID_COLUMN");
+assert.deepEqual(definitionsForLedger(releaseWithMigrationIds, [{ sequence: 1 }, { sequence: 78 }]).map((definition) => definition?.name), ["a", "b"], "MIGRATION_DEFINITIONS_NEW_RELEASE_NO_ID_COLUMN");
+assert.deepEqual(definitionsForLedger(releaseWithMigrationIds, [{ sequence: 1, id: "0001" }, { sequence: 96, id: "20261114120000" }]).map((definition) => definition?.name), ["a", "c"], "MIGRATION_DEFINITIONS_ID_COLUMN");
+assert.equal(definitionsForLedger(releaseWithoutMigrationIds, [{ sequence: 2 }])[0], undefined, "MIGRATION_DEFINITIONS_UNKNOWN_SEQUENCE");
 
 const plan = { decisionRef: "G90", routeKey: "coding", grantId: "directory:himawari-prod-workspace-20261015", canonicalPath: "/var/lib/himawari/workspace", subdirectories: ["files", "repos"] };
 const fourthPlan = { decisionRef: "G90", routeKey: "coding", oldGrantId: "directory:himawari-prod-workspace-20261012", oldCanonicalPath: "/var/lib/himawari/qualification-workspace", newGrantId: plan.grantId, canonicalPath: plan.canonicalPath, subdirectories: ["files", "repos"], durationDays: 90 };
@@ -209,37 +225,20 @@ withWrites(() => {
   full.prepare("INSERT INTO threads(id,body) VALUES(?,?)").run("thread:one", "SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT");
 });
 const historyReference = new BetterSqlite3(full.serialize());
-const historyRows = () => compareHistoryRows(historyReference, full);
-const unchangedRows = historyRows();
-assert.deepEqual(unchangedRows.runs, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [] });
-assert.deepEqual(unchangedRows.sandbox_execution_records, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [] });
-assert(!JSON.stringify(unchangedRows).includes("CANARY"), "HISTORY_ROWS_LEAKED_ROW_CONTENT");
-count("historyRowsAccepted");
 withWrites(() => {
   full.prepare("INSERT INTO runs(id,status,body) VALUES(?,?,?)").run("run:two", "completed", "new");
   full.prepare("INSERT INTO threads(id,body) VALUES(?,?)").run("thread:two", "new");
 });
-const grownRows = historyRows();
-assert.deepEqual(grownRows.runs, { referenceRows: 1, liveRows: 2, addedRows: 1, recoveryUpdatedRowids: [] });
-assert.equal(grownRows.threads.addedRows, 1);
-count("historyRowsAccepted");
-withWrites(() => full.exec(`UPDATE sandbox_execution_records SET recovery_json='{"status":"unresolved","revision":3}' WHERE job_id='job:recovered'`));
-const recoveredRow = historyReference.prepare("SELECT rowid AS id FROM sandbox_execution_records WHERE job_id='job:recovered'").get().id;
-assert.deepEqual(historyRows().sandbox_execution_records, { referenceRows: 1, liveRows: 1, addedRows: 0, recoveryUpdatedRowids: [recoveredRow] });
-count("historyRowsAccepted");
-for (const [name, code, statement, undo] of [
-  ["old run body changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:runs", "UPDATE runs SET body='changed' WHERE id='run:one'", "UPDATE runs SET body='SECRET_RUN_CANARY_NOT_ALLOWED_IN_OUTPUT' WHERE id='run:one'"],
-  ["old run status changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:runs", "UPDATE runs SET status='failed' WHERE id='run:one'", "UPDATE runs SET status='completed' WHERE id='run:one'"],
-  ["old sandbox state changed", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_CHANGED:sandbox_execution_records", "UPDATE sandbox_execution_records SET preparation_state='reserved' WHERE job_id='job:recovered'", "UPDATE sandbox_execution_records SET preparation_state='terminal' WHERE job_id='job:recovered'"],
-  ["old thread deleted", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_ROW_REMOVED:threads", "DELETE FROM threads WHERE id='thread:one'", "INSERT INTO threads(rowid,id,body) VALUES(1,'thread:one','SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT')"],
-  ["history column added", "__PKT_LABEL_UPPER___MAINTENANCE_HISTORY_COLUMNS_CHANGED:threads", "ALTER TABLE threads ADD COLUMN extra TEXT", "ALTER TABLE threads DROP COLUMN extra"],
-]) {
-  withWrites(() => full.exec(statement));
-  throwsCode(historyRows, code, name);
-  withWrites(() => full.exec(undo));
-  count("historyRowsRejections");
-}
-assert.equal(historyRows().threads.addedRows, 1);
+withWrites(() => full.exec("ALTER TABLE threads ADD COLUMN origin TEXT NOT NULL DEFAULT 'owner'; UPDATE threads SET origin='think' WHERE id='thread:two'"));
+const referenceHistory = historyDigests(historyReference, originRelease).threads;
+const originHistory = historyDigests(full, originRelease).threads;
+assert.equal(originHistory.rows, referenceHistory.rows + 1);
+assert.notDeepEqual(historyDigests(full).threads, originHistory, "HISTORY_ORIGIN_DIGEST_COUNTS_ORIGIN_BY_DEFAULT");
+count("historyDigestsAccepted");
+withWrites(() => full.exec("UPDATE threads SET body='changed' WHERE id='thread:one'"));
+assert.notDeepEqual(historyDigests(full, originRelease).threads.sha256, referenceHistory.sha256, "HISTORY_DIGEST_SEES_AN_OLD_THREAD_CHANGE_BESIDE_ORIGIN");
+count("historyDigestsRejections");
+withWrites(() => full.exec("UPDATE threads SET body='SECRET_THREAD_CANARY_NOT_ALLOWED_IN_OUTPUT' WHERE id='thread:one'; ALTER TABLE threads DROP COLUMN origin"));
 historyReference.close();
 
 const registeredRuntime = `${catalogRegistrationPrefix}/lib/himawari-agent`;
@@ -626,4 +625,9 @@ try {
 } finally {
   rmSync(samplerRoot, { recursive: true });
 }
-process.stdout.write(JSON.stringify({ passed: true, scope: "__PKT_LABEL__ configuration stages (original, static root moved to the __PKT_LABEL__ release, prepared snapshot), handles counted only while usable (status active), startup authority, real-sqlite S0 gate and history, S8 row-by-row history against the S3 copy (old rows kept, new rows allowed, only sandbox recovery_json may change), previous strict catalog shape, existing workspace grant and directory identity, catalog at S0, prepared capabilities with no pending registration, reviewed plain upgrade plan for all three capabilities without scope changes or registration, upgrade result, upgraded catalog before and after a restart snapshot, restored catalog, space sampler", fixtureSource: fileURLToPath(import.meta.url), counts, samplerReadback, doesNotProveProductionState: true }) + "\n");
+assert.deepEqual(spaceSamplingWarnings(false, { errors: [] }), []);
+assert.deepEqual(spaceSamplingWarnings(false, { errors: [{ code: "EACCES", stage: "temporary-tree" }] }), [{ code: "EACCES", stage: "temporary-tree" }]);
+assert.deepEqual(spaceSamplingWarnings(true, undefined), [{ code: "SAMPLER_EXIT_FAILED", stage: "worker" }, { code: "SAMPLER_RESULT_MISSING", stage: "worker" }]);
+assert(!/SPACE_SAMPLING_FAILED|SPACE_SAMPLER_NOT_READY/.test(maintenanceCli.toString()), "SPACE_SAMPLING_MUST_STAY_A_WARNING");
+count("spaceSamplingWarningsNotFatal");
+process.stdout.write(JSON.stringify({ passed: true, scope: "__PKT_LABEL__ configuration stages (original, static root moved to the __PKT_LABEL__ release, prepared snapshot), handles counted only while usable (status active), startup authority, real-sqlite S0 gate and stopped-service history digests, previous strict catalog shape, existing workspace grant and directory identity, catalog at S0, prepared capabilities with no pending registration, reviewed plain upgrade plan for all three capabilities without scope changes or registration, upgrade result, upgraded catalog before and after a restart snapshot, restored catalog, space sampler", fixtureSource: fileURLToPath(import.meta.url), counts, samplerReadback, doesNotProveProductionState: true }) + "\n");

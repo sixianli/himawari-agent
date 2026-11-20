@@ -3,6 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
   CancelCoordinatedRunInput,
+  CapabilityReactivationVerifierPort,
   DurableMemoryService,
   MemoryExtractionAuditRecord,
   PayloadProtectionRequest,
@@ -14,20 +15,25 @@ import {
   ApplicationPortError,
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
+  DEFAULT_VOICE_GATES,
   DEVICE_CONFIGURATION_DEFAULTS,
-  PERCEPTION_CONFIGURATION_DEFAULTS,
+  type DeviceActionService,
   defaultDeviceHardLimits,
   type ExecutionLiveFeed,
   type GatewayAccessDecision,
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
+  type McpMemorySyncStorePort,
   type OwnerIdentityStatePort,
   OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  PERCEPTION_CONFIGURATION_DEFAULTS,
+  PERCEPTION_SEARCH_INDEX_RULES,
   PORT_ERROR_CODES,
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
+  perceptionSearchEvidenceText,
   RecentAuthenticationGuard,
   type RunLifecyclePort,
   readThreadExecutionEnvironment,
@@ -38,13 +44,21 @@ import {
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
+  type VoiceAddresseeConfiguration,
+  VoiceAddresseeJudge,
+  type VoiceAddresseeModel,
+  type VoiceAddresseeOutcome,
+  type VoiceAddresseeRequest,
 } from "@himawari-agent/application";
 import {
   isDeviceAccessText,
   type ThreadExecutionEnvironment,
 } from "@himawari-agent/gateway-contracts";
 import { MemoryConsolidationService, undoConversationReview } from "@himawari-agent/memory-engine";
-import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import {
+  SqliteGovernedDeletionAdapter,
+  type SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
   assertProductionSecretSource,
@@ -59,8 +73,12 @@ import {
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
   DEVICE_ACCESS_SECRET_PURPOSES,
+  type DeviceActionHub,
   type DeviceGatewayAuditFailure,
+  type DeviceNotificationHub,
   type DevicePairingAccess,
+  type DevicePresence,
+  DevicePushService,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
@@ -75,9 +93,9 @@ import {
   type JwksFetcher,
   OwnerBootstrapService,
   PairedDeviceService,
+  type PairedDeviceWarning,
   type PerceptionLimitWarning,
   PerceptionService,
-  type PairedDeviceWarning,
   ProductSessionAuthenticationService,
   type ProductSessionAuthenticationServiceOptions,
   prepareUnixSocketPath,
@@ -92,26 +110,32 @@ import {
   ThreadSearchBackgroundIndexer,
   ThreadSearchProjector,
   type UnixSocketIdentity,
+  type UtterancePrefetchPort,
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
+import type { ProductionApplePush } from "./production-apple-push.js";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
+  PRODUCTION_CAPABILITY_OPERATIONS,
+  PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS,
 } from "./production-approval-gateway.js";
 import { backgroundCommandRef } from "./production-background-commands.js";
 import { registerChatExportRoute } from "./production-chat-export.js";
 import {
   DataExportJobs,
+  deviceExportArchive,
   PRODUCTION_DATA_EXPORT_OPERATIONS,
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
+import type { DeliveryTimingHolder } from "./production-delivery-timing.js";
 import {
-  PRODUCTION_PERCEPTION_OPERATIONS,
-  ProductionPerceptionControl,
-} from "./production-perception-control.js";
+  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
+  ProductionDeliveryTimingControl,
+} from "./production-delivery-timing-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -124,17 +148,19 @@ import {
   type ProductionHomeUrgencyOptions,
 } from "./production-home.js";
 import {
-  PRODUCTION_SEARCH_OPERATIONS,
-  ProductionSearchControl,
-  type ProductionSearchOptions,
-} from "./production-search.js";
-import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
   ProductionLoginDevicesControl,
 } from "./production-login-devices-control.js";
+import {
+  McpConnectionAddresses,
+  PRODUCTION_MCP_CONNECTION_OPERATIONS,
+  ProductionMcpConnectionsControl,
+  registerMcpConnectionAddressRoute,
+} from "./production-mcp-connections-control.js";
 import type { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { type ProductionMcpRead, registerMcpReadRoute } from "./production-mcp-read.js";
 import type { ProductionMemoryClassifier } from "./production-memory-classification.js";
+import type { ProductionQueryPrefetch } from "./production-memory-composition.js";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
@@ -153,18 +179,29 @@ import {
   PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
   ProductionOwnerPreferencesControl,
 } from "./production-owner-preferences-control.js";
-import {
-  PRODUCTION_PROPOSAL_OPERATIONS,
-  ProductionProposalControl,
-} from "./production-proposal-control.js";
-import { ProductionProposalBox } from "./production-proposals.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import {
+  PRODUCTION_PERCEPTION_OPERATIONS,
+  ProductionPerceptionControl,
+} from "./production-perception-control.js";
 import {
   PROACTIVE_GOOGLE_CALLBACK_PATH,
   PROACTIVE_GOOGLE_START_PATH,
   PRODUCTION_PROACTIVE_OPERATIONS,
   type ProductionProactive,
 } from "./production-proactive.js";
+import {
+  PRODUCTION_PROPOSAL_OPERATIONS,
+  ProductionProposalControl,
+} from "./production-proposal-control.js";
+import { ProductionProposalBox } from "./production-proposals.js";
+import { registerReminderProposalHandlers } from "./production-reminder-proposals.js";
+import { ProductionReminderWriter } from "./production-reminder-writer.js";
+import {
+  PRODUCTION_SEARCH_OPERATIONS,
+  ProductionSearchControl,
+  type ProductionSearchOptions,
+} from "./production-search.js";
 import {
   PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
   ProductionSensitiveInterceptionsControl,
@@ -173,6 +210,14 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import { registerTaskProposalHandler } from "./production-task-proposals.js";
+import { productionThinkLoop, type ThinkWorthRoute } from "./production-think-composition.js";
+import { ThinkThreadRetention } from "./production-think-retention.js";
+import {
+  PRODUCTION_THINK_OPERATIONS,
+  ProductionThinkControl,
+  ProductionThinkSettings,
+} from "./production-think-settings.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import {
   PRODUCTION_WEB_PUSH_OPERATIONS,
@@ -217,6 +262,7 @@ export interface ProductionHttpCompositionSecretSources {
 }
 
 export interface ProductionHttpCompositionOptions {
+  readonly capabilityReactivation?: CapabilityReactivationVerifierPort;
   readonly listenUnixSocketPath?: string;
   readonly modelCatalog?: readonly {
     ref: string;
@@ -237,7 +283,17 @@ export interface ProductionHttpCompositionOptions {
   readonly onSlowRequest?: (request: HttpGatewaySlowRequest) => void;
   readonly onDeviceAuditFailed?: (failure: DeviceGatewayAuditFailure) => void;
   readonly onSearchIndexDiagnostic?: (event: Record<string, string>) => void;
+  readonly deviceActions?: {
+    readonly service: DeviceActionService;
+    readonly hub: DeviceActionHub;
+  };
+  readonly deviceNotifications?: {
+    readonly hub: DeviceNotificationHub;
+    readonly presence: DevicePresence;
+    readonly settled: (ids: readonly string[]) => Promise<readonly string[]>;
+  };
   readonly onDeviceWarning?: (warning: PairedDeviceWarning) => void;
+  readonly onDevicePushFailed?: (error: unknown) => void;
   readonly onHomeDiagnostic?: (event: Record<string, string>) => void;
   readonly onPerceptionLimitWarning?: (warning: PerceptionLimitWarning) => void;
   readonly homeUrgency?: Omit<ProductionHomeUrgencyOptions, "scope" | "store" | "onFailure">;
@@ -265,6 +321,7 @@ export interface ProductionHttpCompositionOptions {
       | "archive"
     >;
     readonly externalProposals?: ProductionMcpMemoryWriter;
+    readonly mcpSync?: McpMemorySyncStorePort;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: NonNullable<
@@ -272,11 +329,20 @@ export interface ProductionHttpCompositionOptions {
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
+  readonly deliveryTimingSettings?: Pick<DeliveryTimingHolder, "base" | "apply">;
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
+    readonly applePush?: ProductionApplePush;
   };
   readonly proactive?: ProductionProactive;
+  readonly think?: {
+    readonly worth: ThinkWorthRoute;
+    readonly onDiagnostic?: (event: Record<string, string>) => void;
+  };
+  readonly thinkRetentionDiagnostic?: (event: Record<string, string>) => void;
+  readonly queryPrefetch?: ProductionQueryPrefetch;
+  readonly voiceAddressee?: VoiceAddresseeModel;
   readonly museIntake?: ProductionMuseIntake;
   readonly gapExport?: ProductionGapExport;
   readonly mcpRead?: ProductionMcpRead;
@@ -308,6 +374,7 @@ export interface ProductionHttpComposition {
   readonly health: RuntimeHealthModel;
   readonly metrics: RuntimeMetricsRegistry;
   readonly home: Pick<ProductionHomeControl, "awaitingCount" | "approvalCopy" | "score">;
+  readonly perception: Pick<PerceptionService, "reserveModelCost">;
   listen(): Promise<string>;
   close(): Promise<void>;
 }
@@ -738,7 +805,10 @@ function routeOptions(
   proactiveAvailable: boolean,
   museAvailable: boolean,
   observationAvailable: boolean,
+  mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
+  capabilityReactivationAvailable: boolean,
+  deliveryTimingAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -774,16 +844,21 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
+        ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
+        ...PRODUCTION_CAPABILITY_OPERATIONS,
+        ...(capabilityReactivationAvailable ? PRODUCTION_CAPABILITY_REACTIVATION_OPERATIONS : []),
         ...PRODUCTION_DEVICE_OPERATIONS,
         ...PRODUCTION_HOME_OPERATIONS,
         ...(searchAvailable ? PRODUCTION_SEARCH_OPERATIONS : []),
         ...PRODUCTION_DATA_EXPORT_OPERATIONS,
         ...PRODUCTION_FILES_OPERATIONS,
         ...PRODUCTION_LOGIN_DEVICE_OPERATIONS,
+        ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
+        ...PRODUCTION_THINK_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1171,6 +1246,78 @@ export async function createProductionHttpComposition(
     protector: payloadProtector,
     clock: { now: clock },
   });
+  const reminderWriter = options.memory
+    ? new ProductionReminderWriter({
+        configuration,
+        memory: options.memory.service,
+        state: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        reminders: repository.memoryReminders(),
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock: { now: clock },
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+      })
+    : undefined;
+  if (reminderWriter)
+    registerReminderProposalHandlers({
+      box: proposalBox,
+      writer: reminderWriter,
+      clock: { now: clock },
+    });
+  registerTaskProposalHandler({
+    box: proposalBox,
+    configuration,
+    commands: threadCommands,
+    threads,
+    payloads: memoryPayloads,
+    protector: payloadProtector,
+    clock: { now: clock },
+    timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+  });
+  const thinkSettings = new ProductionThinkSettings({
+    scope: { ownerId, agentId },
+    store: repository.thinkInbox(),
+    configuration: configuration.runPolicy?.thinkInbox,
+    clock: { now: clock },
+  });
+  const retentionDeletion = () =>
+    new SqliteGovernedDeletionAdapter({
+      stateRoot: configuration.stateRoot,
+      databasePath: path.join(configuration.stateRoot, "data", "product.sqlite"),
+      ownerId,
+      agentId,
+      now: clock,
+    });
+  const thinkRetention = new ThinkThreadRetention({
+    deletion: {
+      deleteExpiredThinkThreads: (input) => retentionDeletion().deleteExpiredThinkThreads(input),
+      retryIncompleteThreadDeletions: (input) =>
+        retentionDeletion().retryIncompleteThreadDeletions(input),
+    },
+    settings: thinkSettings,
+    clock: { now: clock },
+    ...(options.thinkRetentionDiagnostic ? { onDiagnostic: options.thinkRetentionDiagnostic } : {}),
+  });
+  const think = options.think
+    ? productionThinkLoop({
+        settings: thinkSettings,
+        configuration,
+        repository,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock,
+        commands: threadCommands,
+        threads,
+        box: proposalBox,
+        ...(reminderWriter ? { writer: reminderWriter } : {}),
+        worth: options.think.worth,
+        ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
+        ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1243,6 +1390,7 @@ export async function createProductionHttpComposition(
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
           : {}),
+        ...(options.memory.mcpSync ? { mcpSync: options.memory.mcpSync } : {}),
         ...(options.memory.externalProposals
           ? { externalProposals: options.memory.externalProposals }
           : {}),
@@ -1269,6 +1417,23 @@ export async function createProductionHttpComposition(
     },
     now,
     ...(options.onDeviceWarning ? { onWarning: options.onDeviceWarning } : {}),
+    prepareRevoke: async (deviceId) => {
+      const report = (error: unknown) => options.onDevicePushFailed?.(error);
+      const wipe = await options.webPush?.applePush?.prepareWipe(deviceId).catch(report);
+      return wipe ? () => wipe().catch(report) : undefined;
+    },
+  });
+  const pushPresence = options.webPush?.presence ?? new WebPushPresence();
+  const applePush = options.webPush?.applePush;
+  const devicePush = new DevicePushService({
+    store: repository.applePush(),
+    reactions: repository.webPush(),
+    configuration: () => (applePush ? configuration.runPolicy?.applePush : undefined),
+    now,
+    onPresence: (deviceId, visible, at) => pushPresence.beat(`device:${deviceId}`, visible, at),
+    onRegistered: (_deviceId, pushType) => {
+      if (pushType === "widgets") applePush?.requestWidgetRefresh();
+    },
   });
   const home = new ProductionHomeControl({
     settings: configuration.runPolicy?.homeFeed ?? DEFAULT_HOME_FEED,
@@ -1327,6 +1492,7 @@ export async function createProductionHttpComposition(
         }
       : {}),
   });
+  const mcpConnectionAddresses = new McpConnectionAddresses({ now: clock });
   const searchControl = options.memory?.search
     ? new ProductionSearchControl({
         ownerId,
@@ -1337,6 +1503,38 @@ export async function createProductionHttpComposition(
           : {}),
         provider: options.memory.search.provider,
         ...(options.memory.search.episodes ? { episodes: options.memory.search.episodes } : {}),
+        perception: {
+          search: async ({ query, limit }) => {
+            const found = await perception.search({
+              scope: { ownerId, agentId },
+              query,
+              limit,
+            });
+            const rows = await Promise.all(
+              found.map(async (record) => {
+                const spoken =
+                  record.contentRef === null
+                    ? undefined
+                    : await readPerceptionText(record.contentRef).catch(() => undefined);
+                const written = perceptionSearchEvidenceText(record.type, record.evidence);
+                const text =
+                  [spoken ?? "", written].filter((part) => part !== "").join(" · ") || undefined;
+                return text === undefined
+                  ? []
+                  : [
+                      {
+                        recordId: record.id,
+                        origin: record.origin,
+                        occurredAt: new Date(record.occurredAtMs).toISOString(),
+                        dataClassification: record.dataClassification,
+                        text,
+                      },
+                    ];
+              }),
+            );
+            return rows.flat();
+          },
+        },
         state: repository.productMemoryState(),
         readText: async (record) => {
           const payload = await memoryPayloads.get(record.contentRef);
@@ -1348,6 +1546,14 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const readPerceptionText = async (contentRef: string) => {
+    const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);
+    if (!payload || payload.contentType !== "text/plain") return undefined;
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      await payloadProtector.unprotect({ ownerId, agentId, payload }),
+    );
+  };
+  const perceptionSearchSettings = configuration.runPolicy?.searchAsk ?? DEFAULT_SEARCH_ASK;
   const dataExportJobs = new DataExportJobs({
     ownerId,
     agentId,
@@ -1366,6 +1572,20 @@ export async function createProductionHttpComposition(
     protectText: async (input) =>
       (await payloadAdmission.protect({ ...input, contentType: "text/plain" })).payloadRef,
     uploadDirectory: path.join(configuration.stateRoot, "data", "device-uploads"),
+    searchIndex: {
+      version: `${searchTokenizer.projectionVersion}:${PERCEPTION_SEARCH_INDEX_RULES}:${perceptionSearchSettings.indexTermLimit}`,
+      rebuildBatch: perceptionSearchSettings.indexRebuildBatch,
+      termLimit: perceptionSearchSettings.indexTermLimit,
+      readText: readPerceptionText,
+      document: (scope, text) =>
+        searchTokenizer.tokenizeDocument({
+          ownerId: scope.ownerId,
+          agentId: scope.agentId,
+          text,
+        }),
+      query: (scope, text) =>
+        searchTokenizer.tokenize({ ownerId: scope.ownerId, agentId: scope.agentId, text }),
+    },
     ...(proactiveConfiguration
       ? {
           proactiveUsage: {
@@ -1383,6 +1603,9 @@ export async function createProductionHttpComposition(
   await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
+    ...(options.capabilityReactivation
+      ? { capabilityReactivation: options.capabilityReactivation }
+      : {}),
     repository,
     access: threadAccess,
     homeControl: home,
@@ -1390,13 +1613,20 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(options.deviceActions
+      ? {
+          onApprovalResolved: async (approval) => {
+            await options.deviceActions?.service.reconcile(approval.id);
+          },
+        }
+      : {}),
     ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
     ...(memoryControl ? { memoryControl } : {}),
     webPushControl: new ProductionWebPushControl({
       configuration,
       store: repository.webPush(),
-      presence: options.webPush?.presence ?? new WebPushPresence(),
+      presence: pushPresence,
       push: options.webPush?.push,
       clock: { now: clock },
     }),
@@ -1406,8 +1636,20 @@ export async function createProductionHttpComposition(
     proposalControl: new ProductionProposalControl({
       configuration,
       box: proposalBox,
+      recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.deliveryTimingSettings
+      ? {
+          deliveryTimingControl: new ProductionDeliveryTimingControl({
+            configuration,
+            defaults: options.deliveryTimingSettings.base,
+            store: repository.deliveryTimingSettings(),
+            clock: { now: clock },
+            changed: options.deliveryTimingSettings.apply,
+          }),
+        }
+      : {}),
     ownerPreferencesControl: new ProductionOwnerPreferencesControl({
       configuration,
       store: repository.ownerPreferences(),
@@ -1424,6 +1666,11 @@ export async function createProductionHttpComposition(
       devices: pairedDevices,
       deviceConfiguration: () => deviceConfiguration,
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      clock: { now: clock },
+    }),
+    thinkControl: new ProductionThinkControl({
+      settings: thinkSettings,
+      scope: { ownerId, agentId },
       clock: { now: clock },
     }),
     perceptionControl: new ProductionPerceptionControl({
@@ -1466,6 +1713,23 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
+    ...(options.mcpRead
+      ? {
+          mcpConnectionsControl: new ProductionMcpConnectionsControl({
+            configuration,
+            store: repository.mcpConnections(),
+            addresses: mcpConnectionAddresses,
+            minute: (connectionId) =>
+              options.mcpRead?.minuteUsage(connectionId) ?? {
+                reads: 0,
+                hookReads: 0,
+              },
+            hookReadsPerMinute: options.mcpRead.hookReadsPerMinute,
+            timeZone: configuration.runPolicy?.timeZone ?? "UTC",
+            clock: { now: clock },
+          }),
+        }
+      : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -1487,7 +1751,10 @@ export async function createProductionHttpComposition(
       Boolean(options.proactive),
       Boolean(options.museControl),
       Boolean(options.observation),
+      Boolean(options.mcpRead),
       Boolean(searchControl),
+      options.capabilityReactivation !== undefined,
+      options.deliveryTimingSettings !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1497,9 +1764,45 @@ export async function createProductionHttpComposition(
       home: { resolveAction: (input) => home.resolveAction(input) },
       configuration: () => deviceConfiguration,
       audit: repository.auditLedger(),
+      push: devicePush,
       ...(options.onDeviceAuditFailed ? { onAuditFailed: options.onDeviceAuditFailed } : {}),
       ...(devicePairingAccess ? { pairingAccess: devicePairingAccess } : {}),
+      exportArchive: deviceExportArchive({ ownerId, jobs: dataExportJobs }),
       perception,
+      ...(options.deviceNotifications
+        ? {
+            notifications: {
+              hub: options.deviceNotifications.hub,
+              presence: options.deviceNotifications.presence,
+              settled: async ({ scope, ids }) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? ((await options.deviceNotifications?.settled(ids)) ?? [])
+                  : [],
+            },
+          }
+        : {}),
+      ...(options.deviceActions
+        ? {
+            actions: {
+              service: (scope) =>
+                scope.ownerId === ownerId && scope.agentId === agentId
+                  ? options.deviceActions?.service
+                  : undefined,
+              hub: options.deviceActions.hub,
+            },
+          }
+        : {}),
+      voiceGates: () => DEFAULT_VOICE_GATES,
+      ...(options.queryPrefetch
+        ? { prefetch: utterancePrefetch(options.queryPrefetch, perception, agentId) }
+        : {}),
+      addressee: voiceAddressee(
+        options.voiceAddressee,
+        voiceAddresseeConfiguration(configuration),
+        perception,
+        agentId,
+        () => now().getTime(),
+      ),
     },
     ...(httpConfiguration.previewOrigin ? { previewOrigin: httpConfiguration.previewOrigin } : {}),
     ...(options.onSlowRequest ? { onSlowRequest: options.onSlowRequest } : {}),
@@ -1532,7 +1835,15 @@ export async function createProductionHttpComposition(
   });
   if (options.museIntake) registerMuseIntakeRoute(app, options.museIntake);
   if (options.gapExport) registerGapExportRoute(app, options.gapExport);
-  if (options.mcpRead) registerMcpReadRoute(app, options.mcpRead);
+  if (options.mcpRead) {
+    registerMcpReadRoute(app, options.mcpRead);
+    registerMcpConnectionAddressRoute(app, {
+      authentication,
+      sessionCookieName: httpConfiguration.sessionCookieName,
+      ownerId,
+      addresses: mcpConnectionAddresses,
+    });
+  }
   registerAuthentication(app, csrf, recentAuthentication);
   const onCommandAccepted = options.onCommandAccepted;
   if (onCommandAccepted)
@@ -1559,6 +1870,7 @@ export async function createProductionHttpComposition(
     health,
     metrics,
     home,
+    perception,
     listen: async () => {
       if (unixSocketPath === undefined) {
         const address = await app.listen({
@@ -1567,6 +1879,8 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
+        think?.loop.start();
+        thinkRetention.start();
         return address;
       }
       await prepareUnixSocketPath(unixSocketPath, { adoptExistingDirectory: false });
@@ -1580,10 +1894,14 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
+      think?.loop.start();
+      thinkRetention.start();
       return unixSocketPath;
     },
     close: async () => {
       searchIndexer.stop();
+      await think?.loop.stop();
+      await thinkRetention.stop();
       await home.stopScoring();
       try {
         await app.close();
@@ -1598,4 +1916,62 @@ export async function createProductionHttpComposition(
       }
     },
   });
+}
+
+function voiceAddresseeConfiguration(
+  configuration: ProductConfiguration,
+): (() => VoiceAddresseeConfiguration) | undefined {
+  const route = configuration.runPolicy?.voiceAddressee;
+  return route ? () => route : undefined;
+}
+
+export function voiceAddressee(
+  model: VoiceAddresseeModel | undefined,
+  configuration: (() => VoiceAddresseeConfiguration) | undefined,
+  perception: PerceptionService,
+  agentId: AgentId,
+  now: () => number,
+): (input: {
+  readonly authentication: GatewayAuthenticationContext;
+  readonly request: VoiceAddresseeRequest;
+}) => Promise<VoiceAddresseeOutcome> {
+  if (!model || !configuration)
+    return async ({ request }) =>
+      request.trigger === "hands_on" ? "addressed" : "addressed_unsure";
+  const judges = new Map<string, VoiceAddresseeJudge>();
+  return ({ authentication, request }) => {
+    const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
+    let judge = judges.get(scope.ownerId);
+    if (!judge) {
+      judge = new VoiceAddresseeJudge({
+        model,
+        configuration,
+        reserve: (micros) => perception.reserveModelCost(scope, micros),
+        now,
+      });
+      judges.set(scope.ownerId, judge);
+    }
+    return judge.decide(request);
+  };
+}
+
+export function utterancePrefetch(
+  prefetch: ProductionQueryPrefetch,
+  perception: PerceptionService,
+  agentId: AgentId,
+): UtterancePrefetchPort {
+  return {
+    prepare: async ({ authentication, deviceId, utteranceId, text }) => {
+      const scope = { ownerId: authentication.ownerId as OwnerId, agentId };
+      if (!(await perception.reserveModelCost(scope, prefetch.estimateMicros(text))))
+        return { prepared: false, reason: "limit_reached" };
+      const prepared = await prefetch.queue.prepare({ deviceId, utteranceId, text }, (query) =>
+        prefetch.embedQuery(query),
+      );
+      return { prepared, reason: prepared ? null : "nothing_to_search" };
+    },
+    settle: (input) => {
+      prefetch.queue.settle(input);
+    },
+  };
 }

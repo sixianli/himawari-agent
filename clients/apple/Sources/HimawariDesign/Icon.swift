@@ -2,33 +2,46 @@ import Foundation
 import SwiftUI
 
 public enum IconName: String, CaseIterable, Sendable {
+    case addressBook = "address-book"
+    case addressBookLarge = "address-book-large"
     case affiliate
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
     case appWindow = "app-window"
+    case arrowBackUp = "arrow-back-up"
     case arrowUp = "arrow-up"
     case bell
+    case bolt
     case brandSafari = "brand-safari"
     case brandSafariLarge = "brand-safari-large"
     case bulb
     case calculator
     case calendar
     case calendarFrame = "calendar-frame"
+    case calendarLarge = "calendar-large"
     case camera
     case car
     case check
+    case clipboard
+    case clipboardLarge = "clipboard-large"
     case clipboardList = "clipboard-list"
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"
+    case clock
+    case compass
     case cloud
     case code
     case creditCard = "credit-card"
     case currentLocation = "current-location"
+    case deviceLaptop = "device-laptop"
     case deviceMobile = "device-mobile"
+    case deviceWatch = "device-watch"
     case download
     case ear
+    case earLarge = "ear-large"
     case eye
+    case faceId = "face-id"
     case filePencil = "file-pencil"
     case fileSpreadsheet = "file-spreadsheet"
     case fileText = "file-text"
@@ -37,11 +50,14 @@ public enum IconName: String, CaseIterable, Sendable {
     case folderSymlink = "folder-symlink"
     case handStop = "hand-stop"
     case heartbeat
+    case heartbeatLarge = "heartbeat-large"
     case history
+    case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
     case listCheck = "list-check"
     case mail
     case mapPin = "map-pin"
+    case mapPinLarge = "map-pin-large"
     case message
     case message2 = "message-2"
     case messagePlus = "message-plus"
@@ -53,20 +69,26 @@ public enum IconName: String, CaseIterable, Sendable {
     case pencilPlus = "pencil-plus"
     case phone
     case photo
+    case photoLarge = "photo-large"
     case plane
+    case playerPause = "player-pause"
     case playerStop = "player-stop"
     case plus
+    case point
+    case qrcodeOff = "qrcode-off"
     case scan
     case search
     case server
     case serverLarge = "server-large"
     case share2 = "share-2"
     case settings
+    case shieldLock = "shield-lock"
     case stack2 = "stack-2"
     case table
     case terminal2 = "terminal-2"
     case puzzle
     case train
+    case upload
     case trash
     case user
     case users
@@ -102,7 +124,7 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
     public let text: String
 
     public static var all: [ThirdPartyLicense] {
-        [load(id: "tabler-icons", name: "Tabler Icons")].compactMap { $0 }
+        [load(id: "tabler-icons", name: "Tabler Icons"), load(id: "cormorant-garamond", name: "Cormorant Garamond")].compactMap { $0 }
     }
 
     private static func load(id: String, name: String) -> ThirdPartyLicense? {

@@ -155,6 +155,7 @@ describe("data export: round trip", () => {
       decisionTextsWithoutOriginal: 0,
       rulesWithoutOriginal: 0,
       externalProposalsWithoutOriginal: 0,
+      ownerProposalsWithoutOriginal: 0,
       evidenceNotImported: false,
     });
     const second = await exportOf(target, { evidence: true });
@@ -462,7 +463,7 @@ describe("data export: manifest and files are checked before anything is written
       "an unknown format version",
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
-        manifest.format = "himawari.data-export.v4";
+        manifest.format = "himawari.data-export.v5";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -481,6 +482,15 @@ describe("data export: manifest and files are checked before anything is written
       (files) => {
         const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
         manifest.format = "himawari.data-export.v2";
+        return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+      },
+      DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
+    ],
+    [
+      "an export in the old v3 format, which had no owner proposals",
+      (files) => {
+        const manifest = JSON.parse(decoder.decode(files.get(MANIFEST_FILE)));
+        manifest.format = "himawari.data-export.v3";
         return new Map(files).set(MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
       },
       DATA_EXPORT_ERROR_CODES.FORMAT_UNSUPPORTED,
@@ -1026,6 +1036,51 @@ describe("data export: paired devices", () => {
     expect(target.database.prepare("SELECT COUNT(*) AS count FROM paired_devices").get()).toEqual({
       count: 0,
     });
+  });
+
+  it("[P1-6][reverse] Apple push tokens and notification button credentials appear in no exported file", async () => {
+    const source = await withDevice();
+    const pushToken = "ab".repeat(32);
+    const actionTokenHash = "c1".repeat(32);
+    const snapshotHash = "snapshot-hash-for-export-test";
+    source.database
+      .prepare(
+        `INSERT INTO apns_registrations
+           (id, owner_id, agent_id, device_id, push_type, activity_ref, token, environment, topic,
+            locale, status, failure_code, created_at, updated_at, last_delivered_at)
+         VALUES (?, ?, ?, ?, 'alert', '', ?, 'production', 'win.siyi.himawari.exporttest', 'zh-CN',
+           'active', NULL, ?, ?, NULL)`,
+      )
+      .run(`apn_${"B".repeat(22)}`, source.ownerId, source.agentId, deviceId, pushToken, NOW, NOW);
+    source.database
+      .prepare(
+        `INSERT INTO notification_action_tokens
+           (token_hash, owner_id, agent_id, device_id, source_key, action, owner_presence,
+            approval_request_id, approval_revision, approval_snapshot_hash, created_at, expires_at,
+            used_at)
+         VALUES (?, ?, ?, ?, 'approval:export-test:1', 'approve', 1, 'approval-export-test', 1, ?,
+           ?, '2026-11-11T00:00:00.000Z', NULL)`,
+      )
+      .run(actionTokenHash, source.ownerId, source.agentId, deviceId, snapshotHash, NOW);
+    const { files, manifest } = await exportOf(source);
+    for (const [path, bytes] of files) {
+      const text = decoder.decode(bytes);
+      for (const credential of [
+        pushToken,
+        actionTokenHash,
+        snapshotHash,
+        "win.siyi.himawari.exporttest",
+        `apn_${"B".repeat(22)}`,
+      ])
+        expect(text, path).not.toContain(credential);
+    }
+    expect(manifest.omitted.map(({ what }) => what)).toContain("苹果推送令牌和通知按钮凭据");
+    const target = await side("push-not-restored");
+    await importInto(target, files, { passphrase: PASSPHRASE });
+    for (const table of ["apns_registrations", "notification_action_tokens"])
+      expect(target.database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({
+        count: 0,
+      });
   });
 
   it("[P1-6][reverse] a device line with a public key added is refused", async () => {

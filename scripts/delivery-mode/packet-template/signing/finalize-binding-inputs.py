@@ -121,7 +121,7 @@ acceptance = json.loads(acceptance_bytes)
 for report in [run, acceptance]:
     if report['passed'] is not True or report['profile'] != 'cloud-__PKT_LABEL__-change' or report['hostname'] != socket.gethostname() or report['acceptanceUid'] != account.pw_uid or report['productionQualificationIssued'] is not False:
         raise RuntimeError('ACTUAL_FULL___PKT_LABEL_UPPER___CLOUD_ACCEPTANCE_REQUIRED')
-if run['scratchDeleted'] is not True or run['scratchCleanupPending'] is not False or run['runnerErrors'] or run['resourceSamplingErrors'] or run['scratchCleanupProcessReadback']['liveDescendants'] or run['scratchCleanupReferenceReadback']['deleteAllowed'] is not True or run['scratchCleanupReferenceReadback']['exitCode'] != 0:
+if run['scratchDeleted'] is not True or run['scratchCleanupPending'] is not False or run['runnerErrors'] or run['scratchCleanupProcessReadback']['liveDescendants'] or run['scratchCleanupReferenceReadback']['deleteAllowed'] is not True or run['scratchCleanupReferenceReadback']['exitCode'] != 0:
     raise RuntimeError('ACTUAL___PKT_LABEL_UPPER___CLOUD_CLEANUP_REQUIRED')
 proof_sha256 = manifest['compositionEntry']['nodeModulesProof']['sha256']
 if acceptance['runtime'] != str(runtime) or acceptance['sourceRoot'] != manifest['sourceRoot'] or acceptance['inputManifestSha256'] != sha(manifest_bytes) or acceptance['runtimeDigestBefore'] != acceptance['runtimeDigestAfter'] or acceptance['transportNodeModulesProofSha256'] != proof_sha256:

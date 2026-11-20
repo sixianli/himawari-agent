@@ -37,6 +37,7 @@ public final class ChatStore {
     @ObservationIgnored private let cache: ThreadCache
     @ObservationIgnored private let events: DeviceEventStream
     @ObservationIgnored private let onSessionInvalid: @MainActor () -> Void
+    @ObservationIgnored private let onDeviceActions: @MainActor () -> Void
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var flushing = false
     @ObservationIgnored private var flushAgain = false
@@ -51,13 +52,15 @@ public final class ChatStore {
     @ObservationIgnored private let answerLocale: AnswerLocale
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
+    @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
 
     public init(
         api: DeviceAPI,
         store: LocalStore,
         heartbeatSeconds: @escaping @Sendable () -> TimeInterval,
         answerLocale: AnswerLocale = .matching(preferredLanguages: Locale.preferredLanguages),
-        onSessionInvalid: @escaping @MainActor () -> Void
+        onSessionInvalid: @escaping @MainActor () -> Void,
+        onDeviceActions: @escaping @MainActor () -> Void = {}
     ) {
         self.api = api
         self.heartbeatSeconds = heartbeatSeconds
@@ -66,6 +69,7 @@ public final class ChatStore {
         cache = ThreadCache(store: store)
         events = DeviceEventStream(http: api.http, cursors: StoredCursor(store: store), heartbeat: heartbeatSeconds)
         self.onSessionInvalid = onSessionInvalid
+        self.onDeviceActions = onDeviceActions
         let snapshot = cache.load()
         threads = snapshot.threads
         texts = snapshot.texts
@@ -340,7 +344,10 @@ public final class ChatStore {
         switch event {
         case .connected:
             connection = .online
+            onDeviceActions()
             await flush()
+        case .deviceActions:
+            onDeviceActions()
         case .disconnected:
             connection = .connecting
         case let .thread(threadEvent):
@@ -357,6 +364,8 @@ public final class ChatStore {
                 await load(threadId)
                 await loadExecution(runId, in: threadId)
             }
+        case .notificationDeliver, .notificationWithdraw:
+            onNotification?(event)
         case .unavailable:
             break
         case .resyncRequired:

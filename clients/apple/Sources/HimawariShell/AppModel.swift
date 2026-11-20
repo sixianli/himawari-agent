@@ -1,7 +1,10 @@
 import Foundation
 import HimawariChat
 import HimawariCore
+import HimawariActions
 import HimawariDesign
+import HimawariManage
+import HimawariSenses
 import HimawariShare
 import Observation
 #if canImport(UIKit)
@@ -24,20 +27,30 @@ public enum AppPhase: Equatable {
 public final class AppModel {
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
+    public private(set) var actions: DeviceActionsModel?
     public private(set) var configuration: DeviceConfiguration?
+    public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
+    @ObservationIgnored public let home: HomeFeedModel
+    public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
     @ObservationIgnored private let keychain: KeychainValueStore
     @ObservationIgnored private let releaseChannel: ReleaseChannel
     @ObservationIgnored private let kind: DeviceKind
-    @ObservationIgnored private var store: FileLocalStore?
+    @ObservationIgnored private var store: FileLocalStore? {
+        didSet { if store !== oldValue { onDeviceStoreChange?(store) } }
+    }
     @ObservationIgnored private var waiting: Task<Void, Never>?
     @ObservationIgnored private let heartbeat = HeartbeatSetting()
     @ObservationIgnored private var lastScanned: String?
     @ObservationIgnored private var keysMadeFor: String?
     @ObservationIgnored private var configurationRetry: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private let watchRelay = PhoneWatchRelay()
+    #endif
+    public private(set) var watchOffer: String?
 
     private static let recordAccount = SharedVault.recordAccount
 
@@ -63,7 +76,9 @@ public final class AppModel {
         keychain = vault.keychain
         let channel = bundle.object(forInfoDictionaryKey: "HimawariReleaseChannel") as? String
         releaseChannel = channel.flatMap(ReleaseChannel.init(rawValue:)).flatMap { $0 == .unrecognized ? nil : $0 } ?? .direct
-        api = DeviceAPI(http: DeviceHTTPClient())
+        let api = DeviceAPI(http: DeviceHTTPClient())
+        self.api = api
+        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -117,6 +132,34 @@ public final class AppModel {
         }
     }
 
+    public func handlePairingLink(_ text: String) {
+        if phase == .active {
+            #if os(iOS)
+            if WatchPairingRelay.offerable(text, pairedOrigin: record?.origin), watchRelay.canOffer {
+                watchOffer = text
+            }
+            #endif
+            return
+        }
+        pair(scanned: text)
+    }
+
+    public var watchOfferHost: String? {
+        guard let watchOffer, let invitation = try? PairingInvitation.parse(watchOffer) else { return nil }
+        return Self.host(invitation.origin)
+    }
+
+    public func sendOfferToWatch() {
+        #if os(iOS)
+        if let watchOffer { watchRelay.send(watchOffer) }
+        #endif
+        watchOffer = nil
+    }
+
+    public func declineWatchOffer() {
+        watchOffer = nil
+    }
+
     public func connectToScannedServer() {
         guard case .confirmingServer = phase, let lastScanned else { return }
         submit(lastScanned)
@@ -130,6 +173,18 @@ public final class AppModel {
 
     @ObservationIgnored var demoHost: String?
 
+    @ObservationIgnored public var onDeviceNotification: (@MainActor (DeviceStreamEvent) -> Void)? {
+        didSet { chat?.onNotification = onDeviceNotification }
+    }
+
+    @ObservationIgnored public var onDeviceStoreChange: (@MainActor (FileLocalStore?) -> Void)?
+
+    public var deviceStore: FileLocalStore? { store }
+
+    public func ownerPresence(reason: String) -> OwnerPresenceSigner {
+        OwnerPresenceSigner(key: keys.signer(.confirm), reason: reason)
+    }
+
     public var serverHost: String? {
         if case let .confirmingServer(host) = phase { return host }
         return record.map { Self.host($0.origin) } ?? demoHost
@@ -141,6 +196,10 @@ public final class AppModel {
         model.phase = phase
         model.demoHost = host
         return model
+    }
+
+    public func useDemoDeviceStore(_ store: FileLocalStore?) {
+        self.store = store
     }
     #endif
 
@@ -222,6 +281,10 @@ public final class AppModel {
     private func emptyStore() -> Bool {
         chat?.stop()
         chat = nil
+        senses?.suspend()
+        senses = nil
+        actions = nil
+        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true
@@ -319,16 +382,41 @@ public final class AppModel {
             try store.claim(for: record.deviceId)
             self.store = store
             let heartbeat = heartbeat
+            let executor = DeviceActionExecutor(
+                transport: api,
+                journal: DeviceActionJournal(store: store),
+                handlers: AppleDeviceActions.handlers(),
+                now: { [http = api.http] in http.correctedNow }
+            )
+            let actions = DeviceActionsModel(api: api, executor: executor, confirm: keys.signer(.confirm), store: store)
+            self.actions = actions
             let chat = ChatStore(
                 api: api,
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
-                onSessionInvalid: { [weak self] in self?.checkRevoked() }
+                onSessionInvalid: { [weak self] in self?.checkRevoked() },
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
             )
+            chat.onNotification = onDeviceNotification
             self.chat = chat
+            let service = LiveSensesService(
+                api: api,
+                store: store,
+                deviceId: record.deviceId,
+                confirmation: EnclaveConfirmation(keys: keys),
+                operations: Self.phoneOperations([SenseOperation.deleteRecords]),
+                configuration: { [weak self] in self?.configuration },
+                refreshConfiguration: { [weak self] in await self?.refreshConfiguration() }
+            )
+            let senses = SensesModel(service: service, store: store)
+            self.senses = senses
             phase = .active
             chat.start()
-            Task { await refreshConfiguration() }
+            actions.deviceActionsChanged()
+            Task {
+                await refreshConfiguration()
+                await senses.refresh()
+            }
             deliverWaitingHandovers()
         } catch {
             phase = .unpaired(.storageUnavailable)
@@ -402,8 +490,24 @@ public final class AppModel {
         }
         guard phase == .active else { return }
         chat?.reconnect()
+        actions?.deviceActionsChanged()
         deliverWaitingHandovers()
-        Task { await refreshConfiguration() }
+        removeSettledNotifications()
+        Task {
+            await refreshConfiguration()
+            await senses?.refresh()
+        }
+    }
+
+    private func removeSettledNotifications() {
+        #if canImport(UserNotifications)
+        let settler = NotificationSettler(center: SystemDeliveredNotifications(), source: api)
+        Task { await settler.reconcile() }
+        #endif
+    }
+
+    public func removedThisDevice() {
+        forget(problem: nil)
     }
 
     private func forget(problem: PairingProblem?) {
@@ -429,6 +533,14 @@ public final class AppModel {
     }
 }
 
+struct EnclaveConfirmation: ConfirmationSigner {
+    let keys: SecureEnclaveKeyStore
+
+    func confirmKey() -> DeviceKeySigner {
+        keys.signer(.confirm)
+    }
+}
+
 final class HeartbeatSetting: @unchecked Sendable {
     private let lock = NSLock()
     private var value: TimeInterval = .infinity
@@ -436,5 +548,14 @@ final class HeartbeatSetting: @unchecked Sendable {
     var seconds: TimeInterval {
         get { lock.withLock { value } }
         set { lock.withLock { value = newValue } }
+    }
+}
+
+extension AppModel {
+    static func phoneOperations(_ types: [String]) -> Set<String> {
+        Set(types.filter { type in
+            guard let capability = ClientCapabilities.find(.v2, type) else { return false }
+            return capability.tier != .notOnPhone
+        })
     }
 }

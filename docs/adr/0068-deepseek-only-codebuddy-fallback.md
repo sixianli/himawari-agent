@@ -64,7 +64,7 @@ date: "2026-10-23"
 
 - 正面：模型强弱不再随限流变化；规则由白名单硬拦截，不靠记忆。
 - 负面：CodeBuddy 的 `deepseek-v4.1-flash` 免费期据一篇社区帖子到 2026-11-01，未经官方确认；到期或开始计费时要回来找用户决定。
-- 后续：ADR 0061 标为已取代；`.agents/instructions/delegated-coding-agents.md` 和 [代理工具 Runbook](../runbooks/agent-tooling-runbook.md) 改为指向本 ADR。
+- 后续：ADR 0061 标为已取代；`.agents/instructions/delegated-coding-agents.md` 和 [代理工具 Runbook](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/runbooks/agent-tooling-runbook.md) 改为指向本 ADR。
 
 [↑ 返回阅读导航](#contents)
 

@@ -2848,18 +2848,23 @@ describe("production memory capture", () => {
       key: string,
       seen = shownVersion(context, proposalId),
     ) =>
-      context.proposalControl.execute({
-        ...envelope,
-        idempotencyKey: key,
-        kind: "command",
-        type: "proposal.respond",
-        payload: {
-          proposalId,
-          action,
-          expectedVersion: seen.version,
-          fingerprint: seen.fingerprint,
-        },
-      } as never);
+      context.proposalControl.execute(
+        {} as never,
+        {
+          ...envelope,
+          idempotencyKey: key,
+          kind: "command",
+          type: "proposal.respond",
+          payload: {
+            proposalId,
+            action,
+            expectedVersion: seen.version,
+            fingerprint: seen.fingerprint,
+            recentAuthenticationRef: null,
+            fullReadToken: null,
+          },
+        } as never,
+      );
     const counts = (context: Awaited<ReturnType<typeof setup>>) => {
       const found = { rules: 0, memories: 0 };
       context.sql((database) => {
@@ -3603,7 +3608,7 @@ describe("production memory capture", () => {
           { target: proposalId, action: "reject" },
           "reject-through-rules",
         ),
-      ).rejects.toThrow("MEMORY_RULE_ACTION_UNKNOWN");
+      ).rejects.toThrow("MEMORY_RULE_ACTION_UNSUPPORTED");
       await expect(respond(context, proposalId, "postpone", "unknown-action")).rejects.toThrow(
         "PROPOSAL_ACTION_UNKNOWN",
       );

@@ -6,7 +6,9 @@ import {
   type DailyReviewMemoryText,
   type DataClassification,
   type DecisionLedgerPort,
+  GMAIL_SOURCE,
   type IdGeneratorPort,
+  limitedSourceReader,
   listDailyReviewSubjects,
   type MemoryCheckupService,
   OwnerRuleReplay,
@@ -14,19 +16,30 @@ import {
   type OwnerRuleStorePort,
   PORT_ERROR_CODES,
   type PrereviewRunResult,
+  PROACTIVE_SOURCES,
   type ProactiveConfiguration,
   type ProactiveDecision,
   type ProactiveMailCheckOptions,
   ProactiveMailCheckService,
+  type ProactiveMailReader,
   type ProactiveMemoryRecall,
   type ProactiveModelInvoker,
+  type ProactiveObservationPort,
   type ProactiveOverview,
+  type ProactiveProgramEntry,
+  type ProactiveProgramEntryOutcome,
   type ProactiveRating,
   type ProactiveRecentSummaries,
   type ProactiveScope,
   type ProactiveSealPort,
-  type ProactiveSourceReader,
+  type ProactiveSource,
+  type ProactiveSourceLimitHit,
+  type ProactiveSourceRegistry,
+  type ProactiveSourceRunner,
   type ProactiveStorePort,
+  PROACTIVE_SOURCE_LIMIT_ON_REACH,
+  proactiveSourceLimitsValid,
+  readProactiveSourceSettings,
   parseReviewKey,
   ReviewPrereviewService,
   type RuleReviewReport,
@@ -35,6 +48,9 @@ import {
   type RuleRecord,
   readDailyReview,
   readProactiveOverview,
+  recordProactiveProgramEntry,
+  startOfNextZonedDay,
+  startOfZonedDay,
   type WebPushFeedback,
 } from "@himawari-agent/application";
 import type {
@@ -64,6 +80,9 @@ export const PRODUCTION_PROACTIVE_OPERATIONS = Object.freeze([
   "proactive.review.checkup",
   "proactive.source.manage",
   "proactive.backoff.restore",
+  "proactive.sources.read",
+  "proactive.source.settings.set",
+  "proactive.source.switch_off",
 ] as const);
 
 export const PROACTIVE_GOOGLE_START_PATH = "/api/proactive/v1/google/start";
@@ -161,7 +180,11 @@ export interface ProductionProactiveOptions {
   readonly ownerRules?: Pick<OwnerRuleStorePort, "list">;
   readonly seal: ProactiveSealPort;
   readonly oauth: GoogleOAuth;
-  readonly reader: ProactiveSourceReader;
+  readonly reader: ProactiveMailReader;
+  readonly registry?: ProactiveSourceRegistry<ProactiveSource>;
+  readonly runners?: readonly ProactiveSourceRunner[];
+  readonly observations?: ProactiveObservationPort;
+  readonly onLimit?: (hit: ProactiveSourceLimitHit) => void;
   readonly readAccount: (accessToken: string) => Promise<string>;
   readonly model: ProactiveModelInvoker;
   readonly memory?: ProactiveMemoryRecall;
@@ -193,7 +216,8 @@ export type ProactiveAuthorizationOutcome = "connected" | "denied" | "failed";
 
 export class ProductionProactive {
   readonly #options: ProductionProactiveOptions;
-  readonly #service: ProactiveMailCheckService;
+  readonly #registry: ProactiveSourceRegistry<ProactiveSource>;
+  readonly #runners: readonly ProactiveSourceRunner[];
   readonly #prereview: ReviewPrereviewService | undefined;
   readonly #states = new Map<string, { readonly owner: string; readonly expiresAt: number }>();
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -201,11 +225,21 @@ export class ProductionProactive {
 
   constructor(options: ProductionProactiveOptions) {
     this.#options = options;
-    this.#service = new ProactiveMailCheckService({
+    this.#registry = options.registry ?? PROACTIVE_SOURCES;
+    const mail = new ProactiveMailCheckService({
       scope: options.scope,
       store: options.store,
       seal: options.seal,
-      reader: options.reader,
+      reader: limitedSourceReader({
+        reader: options.reader,
+        scope: options.scope,
+        store: options.store,
+        clock: options.clock,
+        timeZone: options.timeZone,
+        ...(options.onLimit ? { onLimit: options.onLimit } : {}),
+      }),
+      definition: GMAIL_SOURCE,
+      ...(options.observations ? { observations: options.observations } : {}),
       model: options.model,
       ...(options.memory ? { memory: options.memory } : {}),
       ...(options.ownerRules ? { ownerRuleStore: options.ownerRules } : {}),
@@ -234,6 +268,18 @@ export class ProductionProactive {
       },
       ...(options.onMasked ? { onMasked: options.onMasked } : {}),
     });
+    const bound = new Map<string, ProactiveSourceRunner>(
+      [{ source: GMAIL_SOURCE.name, run: () => mail.run() }, ...(options.runners ?? [])].map(
+        (runner) => [runner.source, runner],
+      ),
+    );
+    this.#runners = this.#registry.definitions
+      .filter(({ intake }) => intake === "reader")
+      .map(({ name }) => {
+        const runner = bound.get(name);
+        if (runner === undefined) throw new Error(`PROACTIVE_SOURCE_READER_MISSING ${name}`);
+        return runner;
+      });
     const prereview = options.prereview;
     this.#prereview = prereview
       ? new ReviewPrereviewService({
@@ -283,7 +329,7 @@ export class ProductionProactive {
     const { scope, store, seal, clock } = this.#options;
     const demoInbox = this.#options.configuration.demoInbox;
     if (!demoInbox) return;
-    const existing = await store.readConnection({ ...scope, source: "gmail" });
+    const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
     const settings = await store.readSettings(scope);
     if (existing) {
       const token = await seal.open({ ...scope, ref: existing.tokenRef });
@@ -308,7 +354,7 @@ export class ProductionProactive {
       released = await store.saveConnection({
         ...scope,
         connection: {
-          source: "gmail",
+          source: GMAIL_SOURCE.name,
           accountRef,
           tokenRef,
           cursor: null,
@@ -343,12 +389,9 @@ export class ProductionProactive {
   tick(): Promise<void> {
     this.#running ??= this.#checkable()
       .then(async (checkable) => {
-        if (!checkable) return undefined;
+        if (!checkable) return;
         await this.reviewRules();
-        return this.#service.run();
-      })
-      .then((decision) => {
-        if (decision) this.#options.onDecision?.(decision);
+        await this.#runSources();
       })
       .catch(this.#options.onFailure)
       .then(async () => {
@@ -358,6 +401,41 @@ export class ProductionProactive {
         this.#running = undefined;
       });
     return this.#running;
+  }
+
+  async #runSources(): Promise<void> {
+    const { scope, store } = this.#options;
+    const off = new Set(
+      (await store.listSourceSettings(scope))
+        .filter(({ enabled }) => !enabled)
+        .map(({ source }) => source),
+    );
+    for (const runner of this.#runners) {
+      if (off.has(runner.source)) continue;
+      try {
+        const decision = await runner.run();
+        if (decision) this.#options.onDecision?.(decision);
+      } catch (error) {
+        this.#options.onFailure(error);
+      }
+    }
+  }
+
+  recordEntry(entry: ProactiveProgramEntry): Promise<ProactiveProgramEntryOutcome> {
+    const { scope, store, seal, clock, ids, timeZone, onLimit } = this.#options;
+    return recordProactiveProgramEntry(
+      {
+        scope,
+        store,
+        seal,
+        clock,
+        ids,
+        timeZone,
+        registry: this.#registry,
+        ...(onLimit ? { onLimit } : {}),
+      },
+      entry,
+    );
   }
 
   async reviewRules(): Promise<readonly RuleReviewReport[]> {
@@ -388,7 +466,7 @@ export class ProductionProactive {
     if (!this.#options.configuration.demoInbox) return true;
     const { scope, store, seal } = this.#options;
     if (!(await store.readSettings(scope)).enabled) return false;
-    const connection = await store.readConnection({ ...scope, source: "gmail" });
+    const connection = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
     if (!connection) return true;
     const token = await seal.open({ ...scope, ref: connection.tokenRef });
     return token === undefined || isDemoMailboxToken(token);
@@ -454,14 +532,14 @@ export class ProductionProactive {
       const granted = await oauth.exchange(input.code);
       const account = await this.#options.readAccount(granted.accessToken);
       const now = this.#options.clock.now();
-      const existing = await store.readConnection({ ...scope, source: "gmail" });
+      const existing = await store.readConnection({ ...scope, source: GMAIL_SOURCE.name });
       const sameAccount =
         existing !== undefined &&
         (await seal.open({ ...scope, ref: existing.accountRef })) === account;
       const released = await store.saveConnection({
         ...scope,
         connection: {
-          source: "gmail",
+          source: GMAIL_SOURCE.name,
           accountRef: await seal.seal({ ...scope, text: account, at: now }),
           tokenRef: await seal.seal({ ...scope, text: granted.refreshToken, at: now }),
           cursor: sameAccount ? existing.cursor : null,
@@ -486,7 +564,7 @@ export class ProductionProactive {
   async overview(): Promise<ProactiveOverview> {
     return readProactiveOverview({
       scope: this.#options.scope,
-      source: "gmail",
+      source: GMAIL_SOURCE.name,
       store: this.#options.store,
       seal: this.#options.seal,
       timeZone: this.#options.timeZone,
@@ -553,6 +631,47 @@ export class ProductionProactive {
           memoryUnusedDays: this.#options.configuration.reviewMemoryUnusedDays,
           generatedAt: this.#options.clock.now(),
         },
+      };
+    }
+    if (query.type === "proactive.sources.read") {
+      const { scope, store, clock, timeZone } = this.#options;
+      const since = startOfZonedDay(clock.now(), timeZone);
+      const resetsAt = startOfNextZonedDay(clock.now(), timeZone);
+      const settings = new Map(
+        (await store.listSourceSettings(scope)).map((entry) => [entry.source, entry]),
+      );
+      const sources = [];
+      for (const definition of this.#registry.definitions) {
+        const entry = settings.get(definition.name);
+        if (entry === undefined) continue;
+        const usedToday = await store.processedSince({ ...scope, source: definition.name, since });
+        sources.push({
+          source: definition.name,
+          intake: definition.intake,
+          trust: definition.trust,
+          enabled: entry.enabled,
+          perDay: {
+            limit: entry.perDay,
+            ...definition.safetyLimits.perDay,
+            used: usedToday,
+            resetsAt,
+            onReach: PROACTIVE_SOURCE_LIMIT_ON_REACH.perDay,
+          },
+          perCheck: {
+            limit: entry.perCheck,
+            ...definition.safetyLimits.perCheck,
+            onReach: PROACTIVE_SOURCE_LIMIT_ON_REACH.perCheck,
+          },
+          dailyLimitReached: usedToday >= entry.perDay,
+          updatedAt: entry.updatedAt,
+        });
+      }
+      return {
+        ...query,
+        kind: "snapshot",
+        type: "proactive.sources.snapshot",
+        actor: { actorType: "system", actorId: "agent-service" },
+        payload: { sources, generatedAt: clock.now() },
       };
     }
     if (query.type !== "proactive.overview.read")
@@ -694,12 +813,25 @@ export class ProductionProactive {
       case "proactive.audit.respond": {
         const { action, messageIds, rating } = command.payload;
         if (action === "review") {
-          const reviewed = await store.markReviewed({ ...scope, source: "gmail", messageIds, now });
+          const reviewed = await store.markReviewed({
+            ...scope,
+            source: GMAIL_SOURCE.name,
+            messageIds,
+            now,
+          });
           return { resultRef: `proactive-reviewed:${reviewed}`, replayed: false };
         }
         let rated = 0;
         for (const messageId of messageIds)
-          if (await store.rateProcessed({ ...scope, source: "gmail", messageId, rating, now }))
+          if (
+            await store.rateProcessed({
+              ...scope,
+              source: GMAIL_SOURCE.name,
+              messageId,
+              rating,
+              now,
+            })
+          )
             rated += 1;
         if (rated === 0) throw missing();
         return { resultRef: `proactive-rated:${rated}`, replayed: false };
@@ -731,14 +863,19 @@ export class ProductionProactive {
         for (const { messageId, rating } of mailRatings) {
           const found = await store.rateProcessed({
             ...scope,
-            source: "gmail",
+            source: GMAIL_SOURCE.name,
             messageId,
             rating: rating === "useful" ? null : rating,
             now,
           });
           if (!found) throw missing();
           if (rating !== null)
-            await store.markReviewed({ ...scope, source: "gmail", messageIds: [messageId], now });
+            await store.markReviewed({
+              ...scope,
+              source: GMAIL_SOURCE.name,
+              messageIds: [messageId],
+              now,
+            });
         }
         return {
           resultRef: `proactive-review-rated:${ledgerRatings.length + mailRatings.length}`,
@@ -781,14 +918,63 @@ export class ProductionProactive {
         if (restored === 0) throw missing();
         return { resultRef: `proactive-backoff-restored:${restored}`, replayed: false };
       }
+      case "proactive.source.settings.set": {
+        const { source, enabled, perDay, perCheck } = command.payload;
+        const definition = this.#registry.get(source);
+        if (definition === undefined || !proactiveSourceLimitsValid(definition, command.payload))
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_SETTINGS_INVALID",
+          );
+        await store.writeSourceSettings({
+          ...scope,
+          source: definition.name,
+          enabled,
+          perDay,
+          perCheck,
+          changeId: this.#options.ids.next("limit-change"),
+          now,
+        });
+        return { resultRef: `proactive-source-settings:${definition.name}`, replayed: false };
+      }
+      case "proactive.source.switch_off": {
+        const definition = this.#registry.get(command.payload.source);
+        if (definition === undefined)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_NOT_REGISTERED",
+          );
+        const current = await readProactiveSourceSettings(store, scope, definition.name);
+        if (current === undefined)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_NOT_REGISTERED",
+          );
+        await store.writeSourceSettings({
+          ...scope,
+          source: definition.name,
+          enabled: false,
+          perDay: current.perDay,
+          perCheck: current.perCheck,
+          changeId: this.#options.ids.next("limit-change"),
+          now,
+        });
+        return { resultRef: `proactive-source-off:${definition.name}`, replayed: false };
+      }
       case "proactive.source.manage": {
+        const managed = this.#registry.get(command.payload.source);
+        if (managed === undefined)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "PROACTIVE_SOURCE_NOT_REGISTERED",
+          );
         if (command.payload.action === "clear_records") {
-          const released = await store.clearRecords(scope);
+          const released = await store.clearRecords({ ...scope, source: managed.name });
           if (released.length > 0) await seal.release({ ...scope, refs: released });
           return { resultRef: "proactive-cleared", replayed: false };
         }
-        const connection = await store.readConnection({ ...scope, source: "gmail" });
-        if (connection) {
+        const connection = await store.readConnection({ ...scope, source: managed.name });
+        if (connection && managed.name === GMAIL_SOURCE.name) {
           const token = await seal.open({ ...scope, ref: connection.tokenRef });
           if (token && this.#options.configuration.demoInbox && !isDemoMailboxToken(token))
             throw new ApplicationPortError(
@@ -797,7 +983,7 @@ export class ProductionProactive {
             );
           if (token) await this.#options.oauth.revoke(token).catch(() => false);
         }
-        const released = await store.removeSource({ ...scope, source: "gmail" });
+        const released = await store.removeSource({ ...scope, source: managed.name });
         if (released.length > 0) await seal.release({ ...scope, refs: released });
         return { resultRef: "proactive-disconnected", replayed: false };
       }

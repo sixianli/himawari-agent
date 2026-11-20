@@ -64,7 +64,8 @@ public enum DesignTokens {
         public static let emptyMinHeight: CGFloat = 300
         public static let fadeComposer: CGFloat = 130
         public static let fadeTabBar: CGFloat = 140
-        public static let fadeTop: CGFloat = 110
+        public static let fadeTop: CGFloat = 134
+        public static let fadeTopSolid: CGFloat = 102
         public static let glassButton: CGFloat = 48
         public static let minTapTarget: CGFloat = 44
         public static let navBarHeight: CGFloat = 64
@@ -77,6 +78,7 @@ public enum DesignTokens {
         public static let pairingMark: CGFloat = 148
         public static let pill: CGFloat = 46
         public static let pillBig: CGFloat = 56
+        public static let pillSmall: CGFloat = 36
         public static let rowGap: CGFloat = 14
         public static let rowMinHeight: CGFloat = 60
         public static let sheetPaddingTop: CGFloat = 16
@@ -102,6 +104,9 @@ public enum DesignTokens {
         public static let strokeChevron: CGFloat = 2.2
         public static let strokeLarge: CGFloat = 1.3
         public static let tab: CGFloat = 26
+        public static let todayRow: CGFloat = 22
+        public static let todayTop: CGFloat = 26
+        public static let whyChevron: CGFloat = 15
     }
 
     public enum ProcessRow {
@@ -112,6 +117,36 @@ public enum DesignTokens {
 
     public enum Opacity {
         public static let emptyMark: Double = 0.55
+        public static let watchHalo: Double = 0.3
+        public static let watchPressed: Double = 0.7
+    }
+
+    public enum Home {
+        public static let buttonGap: CGFloat = 10
+        public static let flowerWidth: CGFloat = 390
+        public static let flowerHeight: CGFloat = 180
+        public static let gap: CGFloat = 26
+        public static let glowWidth: CGFloat = 320
+        public static let glowHeight: CGFloat = 340
+        public static let glowCenterY: CGFloat = 20
+        public static let leadGap: CGFloat = 14
+        public static let leadIconBox: CGFloat = 36
+        public static let leadIndent: CGFloat = 38
+        public static let linkRowGap: CGFloat = 12
+        public static let linkRowPaddingY: CGFloat = 14
+        public static let linkRowTextGap: CGFloat = 2
+        public static let paddingBottom: CGFloat = 130
+        public static let paddingTop: CGFloat = 152
+        public static let paddingX: CGFloat = 16
+        public static let rowIconBox: CGFloat = 31
+        public static let rowsLeading: CGFloat = 16
+        public static let rowsTrailing: CGFloat = 14
+        public static let statusBar: CGFloat = 47
+        public static let upcomingGap: CGFloat = 10
+        public static let upcomingInsetX: CGFloat = 20
+        public static let upcomingTime: CGFloat = 84
+        public static let wordmarkHeight: CGFloat = 48
+        public static let wordmarkLeading: CGFloat = 104
     }
 
     public enum Pairing {
@@ -142,6 +177,20 @@ public enum DesignTokens {
         public static let stroke: CGFloat = 3
         public static let strokeOpacity: CGFloat = 0.9
         public static let window: CGFloat = 250
+    }
+
+    public enum Senses {
+        public static let actionGap: CGFloat = 6
+        public static let factGap: CGFloat = 18
+        public static let factLabelGap: CGFloat = 2
+        public static let factPadding: CGFloat = 20
+        public static let footnotePaddingX: CGFloat = 8
+        public static let introGap: CGFloat = 28
+        public static let introIcon: CGFloat = 72
+        public static let introTitleGap: CGFloat = 18
+        public static let introTop: CGFloat = 34
+        public static let listGap: CGFloat = 20
+        public static let timeColumn: CGFloat = 48
     }
 
     public enum Handover {
@@ -198,6 +247,8 @@ public enum DesignTokens {
         public static let inputMark: CGFloat = 28
         public static let inputRowHeight: CGFloat = 52
         public static let noticeButtonHeight: CGFloat = 30
+        public static let noticeListFade: CGFloat = 24
+        public static let noticeListMaxHeight: CGFloat = 260
         public static let noticeMark: CGFloat = 30
         public static let noticePadding: CGFloat = 14
         public static let noticeRadius: CGFloat = 22
@@ -221,6 +272,33 @@ public enum DesignTokens {
         public static let statusBadgeGap: CGFloat = 5
         public static let statusIcon: CGFloat = 17
         public static let talkRowHeight: CGFloat = 38
+    }
+
+    public enum Watch {
+        public static let answerLineHeight: CGFloat = 20
+        public static let answerSize: CGFloat = 16
+        public static let buttonGap: CGFloat = 6
+        public static let buttonHeight: CGFloat = 44
+        public static let cardButtonTop: CGFloat = 6
+        public static let cardGap: CGFloat = 6
+        public static let glanceCircle: CGFloat = 76
+        public static let glanceGap: CGFloat = 8
+        public static let glanceHeight: CGFloat = 68
+        public static let glanceMarkInset: CGFloat = 4
+        public static let glancePadding: CGFloat = 6
+        public static let glanceRadius: CGFloat = 20
+        public static let glanceWidth: CGFloat = 160
+        public static let markHalo: CGFloat = 96
+        public static let markMedium: CGFloat = 56
+        public static let markPairing: CGFloat = 64
+        public static let markQuiet: CGFloat = 80
+        public static let markSmall: CGFloat = 28
+        public static let markWidget: CGFloat = 30
+        public static let saidLines: CGFloat = 3
+        public static let screenPadding: CGFloat = 12
+        public static let talkInsetHeight: CGFloat = 24
+        public static let talkInsetWidth: CGFloat = 16
+        public static let talkPadding: CGFloat = 8
     }
 
     public enum TypeScale {
@@ -251,9 +329,22 @@ public enum DesignTokens {
         public static let navTitle = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let offlineBanner = TypeToken(size: 14, weight: 400, lineHeight: nil, face: .system, tracking: 0)
         public static let pairingNumber = TypeToken(size: 54, weight: 700, lineHeight: nil, face: .rounded, tracking: 2)
+        public static let rowAction = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let secondary = TypeToken(size: 15, weight: 400, lineHeight: 15 * 1.45, face: .system, tracking: 0)
+        public static let senseTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let senseTitle = TypeToken(size: 26, weight: 600, lineHeight: 26 * 1.4, face: .himawari, tracking: 0)
         public static let sheetTitle = TypeToken(size: 18, weight: 700, lineHeight: nil, face: .system, tracking: 0)
         public static let tabLabel = TypeToken(size: 11, weight: 600, lineHeight: nil, face: .system, tracking: 0)
         public static let title1 = TypeToken(size: 34, weight: 700, lineHeight: 44, face: .system, tracking: 0)
+        public static let todayTop = TypeToken(size: 24, weight: 600, lineHeight: 24 * 1.5, face: .himawari, tracking: 0)
+        public static let upcomingTime = TypeToken(size: 15, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchAnswer = TypeToken(size: 16, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchAnswerStrong = TypeToken(size: 16, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchButton = TypeToken(size: 16, weight: 500, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchCaption = TypeToken(size: 12, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchFootnote = TypeToken(size: 13, weight: 400, lineHeight: nil, face: .system, tracking: 0)
+        public static let watchNumber = TypeToken(size: 34, weight: 700, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchSentence = TypeToken(size: 17, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
+        public static let watchTime = TypeToken(size: 13, weight: 600, lineHeight: nil, face: .rounded, tracking: 0)
     }
 }

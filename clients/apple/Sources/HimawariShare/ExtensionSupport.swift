@@ -101,7 +101,7 @@ public enum HandoverExtension {
         guard let credentials = vault.activeCredentials(), let store = try? vault.handoverStore() else { return nil }
         let http = DeviceHTTPClient()
         http.use(credentials)
-        return HandoverDesk(store: store, courier: HandoverCourier(api: DeviceAPI(http: http), images: UIKitImageFitter()))
+        return HandoverDesk(store: store, courier: HandoverCourier(api: DeviceAPI(http: http), images: UIKitImageFitter()), queuesOffline: vault.sharesStorageWithApp)
     }
 
     public static func open(_ url: URL, from responder: UIResponder) {

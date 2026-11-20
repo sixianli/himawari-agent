@@ -23,6 +23,7 @@ usage: prod-read.sh <query>
   rows <table> <run-id>       rows of one table whose run_id or id column equals <run-id>
   rule-memories               metadata (no text) of the rule-category memories, all statuses, newest 500
   gmail-decisions             metadata (no text) of the newest 100 Gmail decision records: outcome, rating, rule and memory counts, paired Muse entries
+  capabilities                metadata (no declaration body) of the registered capabilities, first 200 by id, with the count of all handles (any status)
   system-instruction          the runPolicy.systemInstruction text of the production configuration
 TEXT
   exit 64
@@ -88,6 +89,15 @@ if (mode === "summary") {
   result = database
     .prepare(
       "SELECT id, status, tentative, classification, importance_permille, confidence_permille, inference, recorded_at, updated_at, valid_to, superseded_by, use_count FROM memory_records WHERE category = 'rule' ORDER BY recorded_at DESC, id LIMIT 500",
+    )
+    .all()
+    .map(shorten);
+} else if (mode === "capabilities") {
+  result = database
+    .prepare(
+      "SELECT c.id, c.status, c.revision, c.version, " +
+        "(SELECT count(*) FROM capability_handles h WHERE h.capability_id = c.id) AS handle_count " +
+        "FROM capability_declarations c ORDER BY c.id LIMIT 200",
     )
     .all()
     .map(shorten);
@@ -222,6 +232,10 @@ case "$query" in
   gmail-decisions)
     [ "$#" -eq 0 ] || usage
     database_query gmail-decisions
+    ;;
+  capabilities)
+    [ "$#" -eq 0 ] || usage
+    database_query capabilities
     ;;
   system-instruction)
     [ "$#" -eq 0 ] || usage

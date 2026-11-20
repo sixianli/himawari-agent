@@ -17,6 +17,7 @@ self.addEventListener("push", (event) => {
         body: typeof notification.body === "string" ? notification.body : "",
         lang: typeof notification.lang === "string" ? notification.lang : undefined,
         tag: typeof notification.tag === "string" ? notification.tag : undefined,
+        silent: notification.silent === true,
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
         data: { navigate: typeof notification.navigate === "string" ? notification.navigate : "/" },

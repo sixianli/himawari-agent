@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "maxFileBytes": 512000,
+  "maxChangeBytes": 5242880,
+  "generatedPaths": [
+    "clients/apple/ui-review/latest/",
+    "clients/apple/ui-review/mac-latest/",
+    "clients/apple/ui-review/safari-panel/",
+    "clients/apple/ui-review/DerivedData/",
+    "clients/apple/ui-review/DerivedData-mac/",
+    "clients/apple/ui-review/DerivedDataWatch/"
+  ],
+  "generatedExtensions": [".mp4", ".mov"],
+  "mustBeIgnored": [".claude/worktrees/", ".agents/local/", ".cb-delegate/"],
+  "allowedLarge": [
+    {
+      "path": "clients/apple/Tests/Snapshots/",
+      "reason": "ui-review.sh --check 逐像素比较用的快照基准，每张约 2MB，随界面场景增加"
+    },
+    {
+      "path": "package-lock.json",
+      "reason": "npm 锁文件，依赖变化时整体重写"
+    },
+    {
+      "path": "docs/engineering-casebook.md",
+      "reason": "面试用的工程案例库，main 上已有约 695KB；在拆分之前，改其中的链接也会被大小上限拦下"
+    }
+  ]
+}

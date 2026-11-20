@@ -65,6 +65,34 @@ with tempfile.TemporaryDirectory(prefix='hfs') as root:
     except FileExistsError:
         check('second call refuses to overwrite', True)
 
+with tempfile.TemporaryDirectory(prefix='hfv') as root:
+    root = Path(root)
+    scratch = root / 'scratch'
+    evidence = root / 'evidence'
+    scratch.mkdir(mode=0o700)
+    evidence.mkdir(mode=0o700)
+    (scratch / 'kept.log').write_text('kept\n')
+    vanishing = scratch / 'node-compile-cache.tmp.json'
+    vanishing.write_text('{}\n')
+    original_sha256 = scene.file_sha256
+
+    def sha256_then_vanish(filename):
+        if filename == vanishing:
+            vanishing.unlink()
+        return original_sha256(filename)
+
+    scene.file_sha256 = sha256_then_vanish
+    try:
+        scene.retain_failure_scene(scratch, evidence)
+        vanished_manifest = json.loads((evidence / 'scratch-failure-manifest.json').read_text())
+        vanished_entries = {entry['path']: entry for entry in vanished_manifest['entries']}
+        check('file vanishing mid-walk is marked vanished', vanished_entries.get('node-compile-cache.tmp.json') == {'path': 'node-compile-cache.tmp.json', 'type': 'vanished'})
+        check('other entries still recorded after a vanished file', vanished_entries.get('kept.log', {}).get('copied') is True)
+    except FileNotFoundError:
+        check('file vanishing mid-walk is marked vanished', False)
+    finally:
+        scene.file_sha256 = original_sha256
+
 passed = all(result['passed'] for result in results)
 print(json.dumps({'schema': 'himawari-__PKT_LABEL__-failure-scene-fixtures.v1', 'passed': passed, 'results': results}, indent=1))
 sys.exit(0 if passed else 1)

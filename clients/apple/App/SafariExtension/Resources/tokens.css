@@ -45,7 +45,8 @@
   --size-empty-min-height: 300px;
   --size-fade-composer: 130px;
   --size-fade-tab-bar: 140px;
-  --size-fade-top: 110px;
+  --size-fade-top: 134px;
+  --size-fade-top-solid: 102px;
   --size-glass-button: 48px;
   --size-min-tap-target: 44px;
   --size-nav-bar-height: 64px;
@@ -57,6 +58,7 @@
   --size-pairing-mark: 148px;
   --size-pill: 46px;
   --size-pill-big: 56px;
+  --size-pill-small: 36px;
   --size-row-gap: 14px;
   --size-row-min-height: 60px;
   --size-sheet-padding: 16px 16px 40px;
@@ -76,6 +78,9 @@
   --icon-stroke-chevron: 2.2px;
   --icon-stroke-large: 1.3px;
   --icon-tab: 26px;
+  --icon-today-row: 22px;
+  --icon-today-top: 26px;
+  --icon-why-chevron: 15px;
   --handover-button-font-size: 17px;
   --handover-card-padding: 14px 16px;
   --handover-close-icon: 18px;
@@ -175,9 +180,18 @@
   --type-pairing-number-size: 54px;
   --type-pairing-number-weight: 700;
   --type-pairing-number-line-height: normal;
+  --type-row-action-size: 15px;
+  --type-row-action-weight: 600;
+  --type-row-action-line-height: normal;
   --type-secondary-size: 15px;
   --type-secondary-weight: 400;
   --type-secondary-line-height: 1.45;
+  --type-sense-time-size: 15px;
+  --type-sense-time-weight: 600;
+  --type-sense-time-line-height: normal;
+  --type-sense-title-size: 26px;
+  --type-sense-title-weight: 600;
+  --type-sense-title-line-height: 1.4;
   --type-sheet-title-size: 18px;
   --type-sheet-title-weight: 700;
   --type-sheet-title-line-height: normal;
@@ -187,6 +201,36 @@
   --type-title-1-size: 34px;
   --type-title-1-weight: 700;
   --type-title-1-line-height: 44px;
+  --type-today-top-size: 24px;
+  --type-today-top-weight: 600;
+  --type-today-top-line-height: 1.5;
+  --type-upcoming-time-size: 15px;
+  --type-upcoming-time-weight: 600;
+  --type-upcoming-time-line-height: normal;
+  --type-watch-answer-size: 16px;
+  --type-watch-answer-weight: 400;
+  --type-watch-answer-line-height: normal;
+  --type-watch-answer-strong-size: 16px;
+  --type-watch-answer-strong-weight: 600;
+  --type-watch-answer-strong-line-height: normal;
+  --type-watch-button-size: 16px;
+  --type-watch-button-weight: 500;
+  --type-watch-button-line-height: normal;
+  --type-watch-caption-size: 12px;
+  --type-watch-caption-weight: 400;
+  --type-watch-caption-line-height: normal;
+  --type-watch-footnote-size: 13px;
+  --type-watch-footnote-weight: 400;
+  --type-watch-footnote-line-height: normal;
+  --type-watch-number-size: 34px;
+  --type-watch-number-weight: 700;
+  --type-watch-number-line-height: normal;
+  --type-watch-sentence-size: 17px;
+  --type-watch-sentence-weight: 600;
+  --type-watch-sentence-line-height: normal;
+  --type-watch-time-size: 13px;
+  --type-watch-time-weight: 600;
+  --type-watch-time-line-height: normal;
 }
 @media (prefers-color-scheme: dark) {
   :root {

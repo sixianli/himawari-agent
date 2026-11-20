@@ -61,6 +61,7 @@ const memory = {
   people: [],
   imports: [],
   externalProposals: { total: 0, items: [], batches: [] },
+  mcpSync: { entriesTotal: 0, entries: [], projects: [], attention: [] },
   capturePaused: false,
   generatedAt: NOW.toISOString(),
 } as unknown as MemoryOverview;
@@ -193,6 +194,7 @@ function unsetFixture(): ProactiveWeekly {
       gap: null,
       gapCases: [],
       implicit,
+      mcpConnections: null,
       prereview: {
         agreementPermille: 900,
         confidencePermille: 800,

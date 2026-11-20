@@ -198,7 +198,7 @@ function query(type: GatewayV2Query["type"], messageId: string, payload: unknown
   return parsed;
 }
 
-async function fixture() {
+async function fixture(options: { readonly bodyPreview?: string } = {}) {
   const clock = new ManualClock(NOW);
   const ids = createReferenceAdapterSet({ clock }).ids;
   const authorization = new InMemoryAuthorizationStore();
@@ -259,6 +259,16 @@ async function fixture() {
     finalRisk: "HIGH",
     recentAuthenticationRequired: true,
     recentAuthenticationRef: null,
+    ...(options.bodyPreview === undefined
+      ? {}
+      : {
+          display: {
+            displayTitle: null,
+            bodyPreview: options.bodyPreview,
+            askedBecause: { kind: "no_rule_allows" as const },
+            origin: null,
+          },
+        }),
   };
   await authorization.createApproval(approval);
   await lifecycle.discover(manifest());
@@ -442,6 +452,30 @@ describe("S4 Task 11 governance Control Center boundary", () => {
     expect(legacy).toMatchObject({ payload: { display: null } });
   });
 
+  it("labels a Grant with the body preview frozen on its source approval, capped at 301 characters", async () => {
+    const setup = await fixture({ bodyPreview: "x".repeat(400) });
+    await setup.control.execute({
+      authentication: AUTHENTICATION,
+      command: command("approval.respond", "command-approve-label", "idem-approve-label", {
+        approvalRequestId: setup.approval.id,
+        expectedRevision: 1,
+        decision: "approved",
+        semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+        editedPayloadRef: null,
+        recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+      }),
+    });
+    const resolved = await setup.authorization.getApproval(setup.approval.id);
+    if (!resolved?.grantId) throw new Error("expected Grant");
+    const grantSnapshot = await setup.reads.query(
+      query("grant.detail", "query-grant-label", { grantId: resolved.grantId }),
+    );
+    expect(grantSnapshot).toMatchObject({
+      type: "grant.snapshot",
+      payload: { label: `${"x".repeat(300)}…` },
+    });
+  });
+
   it("projects frozen Approval and Grant truth, then resolves and revokes with revision and idempotency", async () => {
     const setup = await fixture();
     const approvalBefore = await setup.reads.query(
@@ -501,6 +535,11 @@ describe("S4 Task 11 governance Control Center boundary", () => {
         capabilityRef: "governed-ui-tool",
         capabilityVersion: "1.0.0",
         affectedTaskRefs: ["task-grant-dependent"],
+        label: null,
+        detail: {
+          "zh-CN": expect.arrayContaining(["会影响 1 个任务"]),
+          en: expect.arrayContaining(["Affects 1 task"]),
+        },
       },
     });
 
@@ -580,6 +619,7 @@ describe("S4 Task 11 governance Control Center boundary", () => {
       capabilityRef,
       expectedRevision: 5,
       reasonCode: "owner_disabled",
+      recentAuthenticationRef: AUTHENTICATION.authenticationRef,
     });
     await setup.control.execute({ authentication: AUTHENTICATION, command: disable });
     expect(await setup.lifecycle.authorizedManifests()).toEqual([]);
@@ -590,9 +630,52 @@ describe("S4 Task 11 governance Control Center boundary", () => {
           capabilityRef,
           expectedRevision: 5,
           reasonCode: "stale_tab",
+          recentAuthenticationRef: AUTHENTICATION.authenticationRef,
         }),
       }),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+  });
+
+  it("rejects disabling a capability without matching recent authentication and leaves it active", async () => {
+    const setup = await fixture();
+    const capabilityRef = manifest().ref;
+    await setup.control.execute({
+      authentication: AUTHENTICATION,
+      command: command("capability.review", "command-review-fa", "idem-review-fa", {
+        capabilityRef,
+        expectedRevision: 2,
+      }),
+    });
+    await setup.control.execute({
+      authentication: AUTHENTICATION,
+      command: command("capability.install.approve", "command-install-fa", "idem-install-fa", {
+        capabilityRef,
+        expectedRevision: 3,
+        approvalRef: "approval-install-governance-ui",
+      }),
+    });
+    for (const recentAuthenticationRef of [null, "recent-auth-other-session"]) {
+      await expect(
+        setup.control.execute({
+          authentication: AUTHENTICATION,
+          command: command(
+            "capability.disable",
+            `command-disable-${recentAuthenticationRef}`,
+            `idem-disable-${recentAuthenticationRef}`,
+            {
+              capabilityRef,
+              expectedRevision: 5,
+              reasonCode: "owner_disabled",
+              recentAuthenticationRef,
+            },
+          ),
+        }),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+      expect(await setup.capabilities.get(capabilityRef)).toMatchObject({
+        lifecycle: "active",
+        revision: 5,
+      });
+    }
   });
 
   it("rejects changed idempotency semantics and mismatched recent authentication", async () => {
@@ -728,6 +811,7 @@ describe("governance recovery and read boundaries", () => {
         capabilityRef,
         expectedRevision: 5,
         reasonCode: "owner_disabled",
+        recentAuthenticationRef: AUTHENTICATION.authenticationRef,
       }),
     );
     expect(await setup.capabilities.get(capabilityRef)).toMatchObject({
@@ -815,12 +899,35 @@ describe("governance recovery and read boundaries", () => {
         lastVersionTransition: { outcome: decision === "approved" ? "activated" : "rejected" },
       });
       if (decision === "approved") {
+        for (const recentAuthenticationRef of [null, "recent-auth-other-session"]) {
+          await expect(
+            setup.control.execute({
+              authentication: AUTHENTICATION,
+              command: command(
+                "capability.rollback",
+                `rollback-auth-${recentAuthenticationRef}`,
+                `rollback-auth-${recentAuthenticationRef}`,
+                {
+                  capabilityRef: active.ref,
+                  expectedRevision: current.revision,
+                  reasonCode: "owner_rollback",
+                  recentAuthenticationRef,
+                },
+              ),
+            }),
+          ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
+          expect(await setup.capabilities.get(active.ref)).toMatchObject({
+            revision: current.revision,
+            declaration: { version: "2.0.0" },
+          });
+        }
         await interruptAfterMutation(
           setup,
           command("capability.rollback", "rollback-recover", "rollback-recover", {
             capabilityRef: active.ref,
             expectedRevision: current.revision,
             reasonCode: "owner_rollback",
+            recentAuthenticationRef: AUTHENTICATION.authenticationRef,
           }),
         );
         expect(await setup.capabilities.get(active.ref)).toMatchObject({

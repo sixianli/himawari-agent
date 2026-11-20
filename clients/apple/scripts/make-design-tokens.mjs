@@ -96,10 +96,13 @@ export function generate(tokens) {
   scalars("IconSize", tokens.icon);
   scalars("ProcessRow", tokens.processRow);
   scalars("Opacity", tokens.opacity, "Double");
+  scalars("Home", tokens.home ?? {});
   scalars("Pairing", tokens.pairing ?? {});
   scalars("Scanner", tokens.scanner ?? {});
+  scalars("Senses", tokens.senses ?? {});
   scalars("Handover", tokens.handover ?? {});
   scalars("Mac", tokens.mac ?? {});
+  scalars("Watch", tokens.watch ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

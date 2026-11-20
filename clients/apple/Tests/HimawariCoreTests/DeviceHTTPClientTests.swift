@@ -16,6 +16,10 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         self.streams = streams
     }
 
+    func enqueue(_ response: HTTPExchangeResponse) {
+        lock.withLock { responses.append(response) }
+    }
+
     func send(_ request: URLRequest) async throws -> HTTPExchangeResponse {
         lock.withLock {
             requests.append(request)
@@ -135,6 +139,7 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         let second = try #require(exchange.requests.last?.value(forHTTPHeaderField: "Signature-Input"))
         let expected = Int64(ISO8601DateFormatter().date(from: "2027-01-15T08:00:00Z")!.timeIntervalSince1970)
         #expect(second.contains("created=\(expected);"))
+        #expect(Int64(http.correctedNow.timeIntervalSince1970.rounded(.down)) == expected)
     }
 
     @Test func repeatedSkewIsNotRetriedForever() async throws {
@@ -155,6 +160,15 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
             Issue.record("expected error")
         } catch let error as DeviceAPIError {
             #expect(error.isRevoked)
+        }
+    }
+
+    @Test func serverReasonCodeIsKeptWithTheErrorCode() async throws {
+        let body = "{\"error\":{\"code\":\"PORT_CONFLICT\",\"reasonCode\":\"LOGIN_DEVICES_STILL_CHANGING\"}}"
+        let exchange = RecordingExchange([HTTPExchangeResponse(status: 409, body: Data(body.utf8))])
+        let (http, _) = try client(exchange)
+        await #expect(throws: DeviceAPIError.server(status: 409, code: "PORT_CONFLICT", reason: "LOGIN_DEVICES_STILL_CHANGING")) {
+            _ = try await http.send(DeviceRequest(method: "POST", path: "gateway"))
         }
     }
 
@@ -219,5 +233,121 @@ final class RecordingExchange: HTTPExchange, @unchecked Sendable {
         _ = try await http.send(DeviceRequest(method: "GET", path: "config"))
         let input = try #require(exchange.requests.first?.value(forHTTPHeaderField: "Signature-Input"))
         #expect(!input.contains("confirm="))
+    }
+}
+
+@Suite struct ConfirmChallengeTests {
+    let challenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    func approval(presence: Bool) throws -> PendingApproval {
+        let json = """
+        {"approvalRequestId":"apr_1","revision":1,"status":"pending","semanticSnapshotHash":"h","finalRisk":"high",
+         "recentAuthenticationRequired":\(presence),"requestedAt":"2026-11-13T06:38:00.000Z","expiresAt":"2026-11-13T06:48:00.000Z","decidedAt":null,
+         "display":{"displayTitle":"t","askedBecause":{"kind":"no_rule_allows"}},
+         "intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_1","runId":"run_1"}}
+        """
+        return try JSONDecoder().decode(PendingApproval.self, from: Data(json.utf8))
+    }
+
+    func api(_ exchange: RecordingExchange) throws -> DeviceAPI {
+        let http = DeviceHTTPClient(exchange: exchange)
+        http.use(DeviceCredentials(origin: try #require(URL(string: "https://himawari.example.test")), deviceId: "dev_AAAAAAAAAAAAAAAAAAAAAA", access: nil, deviceKey: try SoftwareKeySigner()))
+        return DeviceAPI(http: http)
+    }
+
+    func nonces(_ request: URLRequest) throws -> [String] {
+        let input = try #require(request.value(forHTTPHeaderField: "Signature-Input"))
+        return input.components(separatedBy: ", ").compactMap { member in
+            member.range(of: "nonce=\"[^\"]+\"", options: .regularExpression).map { String(member[$0].dropFirst(7).dropLast()) }
+        }
+    }
+
+    func body(_ request: URLRequest) throws -> [String: Any] {
+        let data = try #require(request.httpBody)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    @Test func respondingToAnApprovalGoesThroughTheGatewayWithTheServersChallengeAsTheNonce() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8)),
+        ])
+        let reply = try await api(exchange).respond(to: approval(presence: true), approved: true, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .recorded(status: "approved"))
+        #expect(exchange.requests.count == 2)
+        #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
+        #expect(exchange.requests[1].url?.path == "/api/device/v1/gateway")
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+        let sent = try body(exchange.requests[1])
+        #expect(sent["gateway"] as? String == "v2")
+        #expect(sent["type"] as? String == "approval.respond")
+        #expect(sent["risk"] as? String == "high")
+        #expect(sent["idempotencyKey"] is String)
+        let payload = try #require(sent["payload"] as? [String: Any])
+        #expect(payload["approvalRequestId"] as? String == "apr_1")
+        #expect(payload["decision"] as? String == "approved")
+        #expect(payload["recentAuthenticationRef"] as? String == "device")
+        #expect(payload["editedPayloadRef"] is NSNull)
+    }
+
+    @Test func decliningAnApprovalIsAlsoAConfirmedGatewayCommand() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{}}"#.utf8)),
+        ])
+        let reply = try await api(exchange).respond(to: approval(presence: false), approved: false, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .recorded(status: "denied"))
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
+        #expect(try body(exchange.requests[1])["type"] as? String == "approval.respond")
+    }
+
+    @Test func respondingWithoutAConfirmKeySendsNothing() async throws {
+        let exchange = RecordingExchange([])
+        await #expect(throws: DeviceAPIError.self) {
+            _ = try await api(exchange).respond(to: approval(presence: false), approved: true, confirm: nil, reason: "r")
+        }
+        #expect(exchange.requests.isEmpty)
+    }
+
+    @Test func aStaleApprovalReportsChanged() async throws {
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 409, body: Data(#"{"error":{"code":"PORT_CONFLICT"}}"#.utf8)),
+        ])
+        let reply = try await api(exchange).respond(to: approval(presence: true), approved: true, confirm: try SoftwareKeySigner(), reason: "r")
+        #expect(reply == .changed)
+    }
+
+    @Test func listingApprovalsReadsTheGatewayListThenEachDetail() async throws {
+        let detail = #"{"payload":{"approvalRequestId":"apr_1","revision":1,"status":"pending","semanticSnapshotHash":"h","finalRisk":"high","recentAuthenticationRequired":true,"requestedAt":"2026-11-13T06:38:00.000Z","expiresAt":"2026-11-13T06:48:00.000Z","decidedAt":null,"display":null,"intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_1","runId":"run_1","targetRefs":[]}}}"#
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 200, body: Data(#"{"payload":{"itemRefs":["apr_1"],"nextCursor":null}}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(detail.utf8)),
+        ])
+        let found = try await api(exchange).approvals(status: .pending)
+        #expect(found.map(\.id) == ["apr_1"])
+        #expect(exchange.requests.map { $0.url?.path } == ["/api/device/v1/gateway", "/api/device/v1/gateway"])
+        #expect(exchange.requests.allSatisfy { $0.httpMethod == "POST" })
+        let list = try body(exchange.requests[0])
+        #expect(list["type"] as? String == "approval.list")
+        #expect(list["idempotencyKey"] == nil)
+        let listPayload = try #require(list["payload"] as? [String: Any])
+        #expect(listPayload["status"] as? String == "pending")
+        #expect(listPayload["afterCursor"] is NSNull)
+        #expect(listPayload["limit"] as? Int == 100)
+        #expect(try body(exchange.requests[1])["type"] as? String == "approval.detail")
+    }
+
+    @Test func changingThePolicyUsesTheServersChallengeAsTheNonce() async throws {
+        let policy = #"{"revision":4,"actions":[]}"#
+        let exchange = RecordingExchange([
+            HTTPExchangeResponse(status: 201, body: Data(#"{"challenge":"\#(challenge)","expiresAt":"2026-11-13T06:40:00.000Z"}"#.utf8)),
+            HTTPExchangeResponse(status: 200, body: Data(policy.utf8)),
+        ])
+        let change = try await api(exchange).changeActionPolicy(expectedRevision: 3, blocked: ["calendar.delete"], confirm: try SoftwareKeySigner(), reason: "r")
+        guard case let .written(view) = change else { Issue.record("expected written"); return }
+        #expect(view.revision == 4)
+        #expect(exchange.requests[0].url?.path.hasSuffix("approvals/challenge") == true)
+        #expect(try nonces(exchange.requests[1]) == [challenge, challenge])
     }
 }

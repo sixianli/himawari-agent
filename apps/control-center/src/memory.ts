@@ -118,6 +118,20 @@ export interface MemoryModel {
   readonly externalReady: boolean;
   readonly externalRespond: (items: readonly ExternalDecision[]) => Promise<string | null>;
   readonly externalUndo: (batchId: string) => Promise<boolean>;
+  readonly mcpSyncReady: boolean;
+  readonly mcpSyncProject: (
+    connectionId: string,
+    projectId: string,
+    decision: "approve" | "decline",
+  ) => Promise<boolean>;
+  readonly mcpSyncNote: (
+    entryId: string,
+    decision: "confirm" | "refuse" | "restore",
+  ) => Promise<boolean>;
+  readonly mcpSyncAttention: (
+    attentionId: string,
+    decision: "release" | "keep",
+  ) => Promise<boolean>;
   readonly checkSource: (memoryId: string) => Promise<MemoryItem | null>;
 }
 
@@ -185,7 +199,7 @@ export function useMemory(input: {
         });
     if (proposalsAvailable)
       void client
-        .query(queryMessage(configuration, "proposals.read", {}))
+        .query(queryMessage(configuration, "proposals.read", { open: null }))
         .then((result) => {
           if (result.type !== "proposals.snapshot") throw new Error("PROPOSALS_INVALID");
           if (!disposed) setProposals(result.payload);
@@ -325,6 +339,8 @@ export function useMemory(input: {
         expectedVersion: version,
         fingerprint,
         action,
+        recentAuthenticationRef: null,
+        fullReadToken: null,
       })),
     review,
     respondReview: (target, action, expectedRevision) =>
@@ -445,5 +461,15 @@ export function useMemory(input: {
       return ok ? batchId : null;
     },
     externalUndo: (batchId) => send("memory.external.undo", () => ({ batchId })),
+    mcpSyncReady:
+      operations.includes("memory.mcpSync.projectDecide") &&
+      operations.includes("memory.mcpSync.noteDecide") &&
+      operations.includes("memory.mcpSync.attentionResolve"),
+    mcpSyncProject: (connectionId, projectId, decision) =>
+      send("memory.mcpSync.projectDecide", () => ({ connectionId, projectId, decision })),
+    mcpSyncNote: (entryId, decision) =>
+      send("memory.mcpSync.noteDecide", () => ({ entryId, decision })),
+    mcpSyncAttention: (attentionId, decision) =>
+      send("memory.mcpSync.attentionResolve", () => ({ attentionId, decision })),
   };
 }

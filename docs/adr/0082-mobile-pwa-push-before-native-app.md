@@ -76,7 +76,7 @@ date: "2026-10-26"
 - 好处：0 元补齐手机端的连接、锁屏提醒和语音；所有入口仍是同一个后端、同一份记忆；过渡期当天就能在锁屏收到记忆提醒。
 - 代价：生产多一个经 Cloudflare 的对外入口，安全依赖 Access 规则和内置登录两道门；前端体积要先腾地方；iOS 上网页推送只在加到主屏幕后可用。
 - 未验证：iPhone 上网页推送和声明式推送的实际到达率；Cloudflare Access 服务令牌在快捷指令里的用法；Pi 是否已有可用的语音能力。
-- 后续：四项工作分别记在 Backlog 项 [BL-20261026-004](../backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)（入口）、[BL-20261026-005](../backlog/BL-20261026-005-home-screen-web-app-and-web-push.md)（主屏网页应用和推送）、[BL-20261026-006](../backlog/BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md)（语音）、[BL-20261026-007](../backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md)（打开 Bark）；PRD v0.2 的提醒范围已在同一提交里更新；架构文档在实现入口和推送时再改。
+- 后续：四项工作分别记在 Backlog 项 [BL-20261026-004](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-004-production-cloudflare-entry-for-owner-phone.md)（入口）、[BL-20261026-005](../backlog/BL-20261026-005-home-screen-web-app-and-web-push.md)（主屏网页应用和推送）、[BL-20261026-006](../backlog/BL-20261026-006-voice-entry-hold-to-talk-and-siri-shortcut.md)（语音）、[BL-20261026-007](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261026-007-enable-bark-reminder-push-in-production.md)（打开 Bark）；PRD v0.2 的提醒范围已在同一提交里更新；架构文档在实现入口和推送时再改。
 
 [↑ 返回阅读导航](#contents)
 
