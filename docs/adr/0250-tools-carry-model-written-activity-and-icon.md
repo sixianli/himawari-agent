@@ -26,7 +26,7 @@ date: "2026-11-12"
 
 ## 背景
 
-对话里有一行“它正在做什么”，叫过程行（手机和网页上显示 Himawari 这一步在做的事）。现在这句话是网页按工具名套模板拼出来的（`apps/control-center/src/step-summary.ts`），图标也是网页按工具名查表。Andy 2026-11-12 批准了过程行用的 40 个图标，并同意“图标由 himawari 自己从这 40 个里面挑”。苹果客户端的详细设计还没合进 main，在 PR 405 的提交 f7cbbf01 上（[“过程行的那句话和图标由 Himawari 自己给”一段](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)，下文简称“详细设计”），它定了做法：每个工具加两个可选参数，执行前取走，随过程事件发给网页和设备。本 ADR 记下服务器端怎样实现。
+对话里有一行“它正在做什么”，叫过程行（手机和网页上显示 Himawari 这一步在做的事）。现在这句话是网页按工具名套模板拼出来的（`apps/control-center/src/step-summary.ts`），图标也是网页按工具名查表。Andy 2026-11-12 批准了过程行用的 40 个图标，并同意“图标由 himawari 自己从这 40 个里面挑”。苹果客户端的详细设计里讲这件事的那一段还没合进 main，在 PR 405 的提交 f7cbbf01 上（[“过程行的那句话和图标由 Himawari 自己给”一段](https://github.com/sixianli/himawari-agent/blob/f7cbbf01ce61df6c3927e99c0e8407bc0a59fbe0/docs/execution/specs/2026-11-11-apple-device-body-design.md#process-row-icons)，下文简称“详细设计”），它定了做法：每个工具加两个可选参数，执行前取走，随过程事件发给网页和设备。本 ADR 记下服务器端怎样实现。
 
 [返回阅读导航](#contents)
 
