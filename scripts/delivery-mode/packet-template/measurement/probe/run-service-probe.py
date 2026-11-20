@@ -27,7 +27,7 @@ if rehearsal:
     if socket.gethostname() != 'hermes-home':
         raise RuntimeError('HERMES_ONLY_REHEARSAL_REQUIRED')
 else:
-    if socket.gethostname() != '__PKT_HOSTNAME__' or os.getuid() != 999 or os.getgid() != 988 or str(runtime) != '/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent' or str(node) != '/opt/himawari/node/bin/node' or os.environ.get('HOME') != '/var/lib/himawari/state' or os.environ.get('PATH') != '/opt/himawari/node/bin:/usr/bin:/bin' or protection.get('NoNewPrivs') != '1' or any(int(protection.get(key, '-1'), 16) != 0 for key in ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb']):
+    if socket.gethostname() != '__PKT_HOSTNAME__' or os.getuid() != __PKT_SERVICE_UID__ or os.getgid() != __PKT_SERVICE_GID__ or str(runtime) != '/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__/lib/himawari-agent' or str(node) != '/opt/himawari/node/bin/node' or os.environ.get('HOME') != '/var/lib/himawari/state' or os.environ.get('PATH') != '/opt/himawari/node/bin:/usr/bin:/bin' or protection.get('NoNewPrivs') != '1' or any(int(protection.get(key, '-1'), 16) != 0 for key in ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb']):
         raise RuntimeError('PRODUCTION_SERVICE_IDENTITY_ENVIRONMENT_REQUIRED')
 helper = base.parents[1] / 'acceptance/helpers/check-p5-scratch-cleanup.py'
 if helper.resolve() != helper or helper.is_symlink() or not helper.is_file():

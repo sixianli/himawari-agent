@@ -339,7 +339,7 @@ const base = {
           "/usr/lib",
           "/usr/share",
           "/lib",
-          "/lib64",
+          __PKT_LIB64_ITEM__
           "/dev",
           "/proc",
           "/etc/ssl",

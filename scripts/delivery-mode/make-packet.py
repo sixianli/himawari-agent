@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 TEMPLATE = HERE / 'packet-template'
 INSTANCES = HERE / 'instances'
+PLATFORMS = HERE / 'platforms.json'
 BUILDER = HERE / 'hermes'
 PLACEHOLDER = re.compile(r'__PKT_[A-Z0-9_]+?__')
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
@@ -423,6 +424,29 @@ def deploy_failure_choice(instance):
     return choice
 
 
+def platform_parameters(instance):
+    name = instance.get('host', {}).get('platform')
+    platforms = json.loads(PLATFORMS.read_text())
+    if not isinstance(name, str) or name not in platforms:
+        refuse('PACKET_PLATFORM_UNKNOWN', str(name) + ' is not one of ' + ', '.join(sorted(platforms)))
+    platform = platforms[name]
+    unpinned = sorted(key for key, value in platform.items() if value is None)
+    if unpinned:
+        refuse('PACKET_PLATFORM_UNPINNED', name + ' has no pinned value for ' + ', '.join(unpinned))
+    fixed = instance['fixedByTemplate']
+    return {
+        'PLATFORM': name,
+        'NODE_ARCH': platform['nodeArch'],
+        'NODE_SHA256': platform['nodeBinarySha256'],
+        'FD_TRIPLE': platform['fdTriple'],
+        'FD_SHA256': platform['fdSha256'],
+        'FD_BINARY_SHA256': platform['fdBinarySha256'],
+        'LIB64_ITEM': '"/lib64",' if platform['lib64'] else '',
+        'SERVICE_UID': fixed['serviceUid'],
+        'SERVICE_GID': fixed['serviceGid'],
+    }
+
+
 def base_parameters(instance, commit, date, discovered):
     targets = instance['configTargets']
     label = discovered['LABEL']
@@ -430,6 +454,7 @@ def base_parameters(instance, commit, date, discovered):
         refuse('PACKET_HISTORY_COMPARISON_SWITCH_REMOVED', 'the instance file must not carry historyComparison: history is compared while the service is stopped and cannot be switched off')
     return {
         **discovered,
+        **platform_parameters(instance),
         'ON_DEPLOY_FAILURE': deploy_failure_choice(instance),
         'LABEL_TITLE': label.capitalize(),
         'LABEL_UPPER': label.upper(),
@@ -505,8 +530,8 @@ def render(target, parameters, only=None):
     return written
 
 
-def describe_materials(materials, commit):
-    artifacts = sorted(materials.glob('linux-x64-abi127-' + commit + '-*-1.tar.gz'))
+def describe_materials(materials, commit, platform):
+    artifacts = sorted(materials.glob(platform + '-abi127-' + commit + '-*-1.tar.gz'))
     if len(artifacts) != 1:
         refuse('PACKET_ARTIFACT_COUNT', len(artifacts))
     for name in MATERIAL_FILES + ('source-' + commit[:7] + '.bundle',):
@@ -546,10 +571,10 @@ def describe_materials(materials, commit):
     }
 
 
-def candidate_values(packet, commit, materials):
+def candidate_values(packet, commit, materials, platform):
     proof_path = materials / 'source-build-inputs.json'
     proof = json.loads(proof_path.read_text())
-    archive = next(materials.glob('linux-x64-abi127-' + commit + '-*-1.tar.gz'))
+    archive = next(materials.glob(platform + '-abi127-' + commit + '-*-1.tar.gz'))
     context = materials / 'context.json'
     bundle = materials / ('source-' + commit[:7] + '.bundle')
     not_run = 'not-run: Layer 3 and Layer 4 reruns at ' + commit[:8] + ' ' + FAST_MODE_NOTE + '; only a Hermes build was run'
@@ -942,7 +967,7 @@ def assemble(packet, parameters, materials):
     if drifted:
         refuse('PACKET_ADAPTER_SOURCE_CHANGED', drifted)
     refreshed = refresh_carried_copies(packet, parameters['COMMIT'])
-    fill_draft(packet, candidate_values(packet, parameters['COMMIT'], materials))
+    fill_draft(packet, candidate_values(packet, parameters['COMMIT'], materials, parameters['PLATFORM']))
     regenerate_hashes(packet)
     (packet / PARAMETERS).write_text(json.dumps(dict(sorted(parameters.items())), indent=2) + '\n')
     return refreshed
@@ -1069,7 +1094,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
         hermes.start_walkthrough()
         hermes.fetch_materials(materials)
         step('fetch-materials', started)
-    parameters.update(describe_materials(materials, commit))
+    parameters.update(describe_materials(materials, commit, parameters['PLATFORM']))
     packet.mkdir(parents=True)
     shutil.move(str(materials), str(packet / 'materials'))
     refreshed = assemble(packet, parameters, packet / 'materials')

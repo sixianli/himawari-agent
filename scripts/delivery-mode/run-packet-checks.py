@@ -163,7 +163,8 @@ def plan(packet, node, python, include_hermes_only, migrating):
 
 
 def candidate_archive(packet):
-    archives = sorted((packet / 'materials').glob('linux-x64-abi127-*-1.tar.gz'))
+    platform = json.loads((packet / 'packet-parameters.json').read_text())['PLATFORM']
+    archives = sorted((packet / 'materials').glob(platform + '-abi127-*-1.tar.gz'))
     if len(archives) != 1:
         raise SystemExit('PACKET_CHECKS_CANDIDATE_ARCHIVE_COUNT ' + str(len(archives)))
     return archives[0]

@@ -304,7 +304,7 @@ assert.equal(previousStrict.directoryGrants.length, 1);
 const grant = previousStrict.directoryGrants[0];
 assert.deepEqual([grant.routeKey, grant.grantId, grant.displayPath, grant.stateRevision, grant.readAllowed, grant.hostMatchesRoute, grant.rootMatchesSnapshot, grant.currentlyUsable], ["coding", plan.grantId, plan.canonicalPath, 2, true, true, true, true]);
 
-const frozenWorkspace = { path: plan.canonicalPath, device: "1", inode: "9", uid: 999, gid: 988, mode: "0700", subdirectories: [{ name: "files", device: "1", inode: "10", uid: 999, gid: 988, mode: "0700" }, { name: "repos", device: "1", inode: "11", uid: 999, gid: 988, mode: "0700" }] };
+const frozenWorkspace = { path: plan.canonicalPath, device: "1", inode: "9", uid: __PKT_SERVICE_UID__, gid: __PKT_SERVICE_GID__, mode: "0700", subdirectories: [{ name: "files", device: "1", inode: "10", uid: __PKT_SERVICE_UID__, gid: __PKT_SERVICE_GID__, mode: "0700" }, { name: "repos", device: "1", inode: "11", uid: __PKT_SERVICE_UID__, gid: __PKT_SERVICE_GID__, mode: "0700" }] };
 const frozen = { authorization: previousStrict, workspace: frozenWorkspace };
 
 assert.deepEqual(validateWorkspacePlan(structuredClone(plan)), plan);

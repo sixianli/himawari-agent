@@ -2,7 +2,8 @@
   "name": "andy-production",
   "host": {
     "address": "84.247.157.41",
-    "hostname": "vmi3618928"
+    "hostname": "vmi3618928",
+    "platform": "linux-x64"
   },
   "fixedByTemplate": {
     "serviceAccount": "himawari-prod",

@@ -3,7 +3,7 @@
   "purpose": "cloud-__PKT_LABEL__-install",
   "nonProduction": false,
   "nodeAlreadyInstalled": true,
-  "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+  "nodeSha256": "__PKT_NODE_SHA256__",
   "sourceHead": "__PKT_COMMIT__",
   "files": [
     {

@@ -480,7 +480,7 @@ class TemplateTest(RenderedPacket):
         (materials / 'context.json').write_text(json.dumps({'testedSha': TWELFTH_COMMIT}))
         (materials / TWELFTH['BUNDLE_NAME']).write_bytes(b'bundle')
         (materials / 'source-build-inputs.json').write_text(json.dumps({'passed': True, 'sourceHead': TWELFTH_COMMIT, 'sourceTreeDigestBefore': 'a' * 64, 'sourceTreeDigestAfter': 'a' * 64, 'sourceWritesPerformed': False, 'permissionChangesPerformed': False, 'records': [{'mode': 0o644}, {'mode': 0o755}]}))
-        packet_maker.fill_draft(packet, packet_maker.candidate_values(packet, TWELFTH_COMMIT, materials))
+        packet_maker.fill_draft(packet, packet_maker.candidate_values(packet, TWELFTH_COMMIT, materials, 'linux-x64'))
         draft = json.loads((packet / 'inputs' / 'bindings.draft.json').read_text())
         self.assertNotIn('PENDING:', json.dumps(draft))
         self.assertEqual(draft['candidate']['testedCommit'], TWELFTH_COMMIT)
@@ -489,6 +489,68 @@ class TemplateTest(RenderedPacket):
     def consistency_problems(self, packet):
         child = subprocess.run([sys.executable, '-I', str(packet / 'inputs' / 'check-packet-consistency.py'), str(packet)], capture_output=True, text=True, check=False)
         return json.loads(child.stdout)['problems']
+
+
+ARM64_INSTANCE = {'host': {'platform': 'linux-arm64'}, 'fixedByTemplate': {'serviceUid': 991, 'serviceGid': 987}}
+
+
+class PlatformTemplateTest(RenderedPacket):
+    def rendered_texts(self, packet):
+        return {path.relative_to(packet).as_posix(): path.read_text() for path in packet.rglob('*') if path.is_file()}
+
+    def test_the_x64_parameters_keep_the_packet_the_way_it_always_was(self):
+        packet = self.render()
+        texts = self.rendered_texts(packet)
+        self.assertEqual(packet_maker.platform_parameters(INSTANCE), {key: TWELFTH[key] for key in ('PLATFORM', 'NODE_ARCH', 'NODE_SHA256', 'FD_TRIPLE', 'FD_SHA256', 'FD_BINARY_SHA256', 'LIB64_ITEM', 'SERVICE_UID', 'SERVICE_GID')})
+        self.assertFalse([name for name, text in texts.items() if '__PKT_' in text])
+        self.assertIn('e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2', texts['systemd/S7-startup-readback.mjs'])
+        self.assertIn('          "/lib64",\n', texts['signing/cloud-seal.mjs'])
+        self.assertIn('process.arch === "x64"', texts['install/collect-installer-dependencies.mjs'])
+        self.assertIn('x86_64-unknown-linux-musl', texts['acceptance/cloud/download-question-12.py'])
+        self.assertRegex(texts['systemd/S2-stop-and-inspect.py'], r'SERVICE_UID = 999\nSERVICE_GID = 988\n')
+
+    def pinned_platforms(self):
+        platforms = json.loads(packet_maker.PLATFORMS.read_text())
+        platforms['linux-arm64']['fdBinarySha256'] = 'f' * 64
+        pinned = self.root / 'platforms.json'
+        pinned.write_text(json.dumps(platforms))
+        return pinned
+
+    def test_a_platform_with_an_unpinned_value_is_refused(self):
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PLATFORM_UNPINNED linux-arm64 has no pinned value for fdBinarySha256'):
+            packet_maker.platform_parameters(ARM64_INSTANCE)
+
+    def test_the_arm64_parameters_leave_no_trace_of_the_x64_machine_or_the_old_account(self):
+        with unittest.mock.patch.object(packet_maker, 'PLATFORMS', self.pinned_platforms()):
+            arm64 = packet_maker.platform_parameters(ARM64_INSTANCE)
+        self.assertEqual(arm64['LIB64_ITEM'], '')
+        texts = self.rendered_texts(self.render(**arm64))
+        for name, text in texts.items():
+            self.assertNotIn('e6ec2c188d83d813', text, name)
+            self.assertNotIn('761c72dc8e120d85', text, name)
+            self.assertNotIn('e79642a479d2816c', text, name)
+            self.assertNotIn('x86_64-unknown-linux-musl', text, name)
+            self.assertNotIn('process.arch === "x64"', text, name)
+            self.assertNotRegex(text, r'\b(999|988)\b', name)
+        self.assertIn('41c1ec75816937af3893453a82b1535c566c65b682c67fbc59a0546b27c027bd', texts['systemd/S7-startup-readback.mjs'])
+        self.assertIn('process.arch === "arm64"', texts['install/collect-installer-dependencies.mjs'])
+        self.assertIn('aarch64-unknown-linux-musl', texts['acceptance/cloud/download-question-12.py'])
+        self.assertIn('d76c4317f7d5dba69f8a2a15856c90c777e7f0dd4e85f0de8c76de6992c374d4', texts['acceptance/cloud/download-question-12.py'])
+        self.assertRegex(texts['systemd/S2-stop-and-inspect.py'], r'SERVICE_UID = 991\nSERVICE_GID = 987\n')
+        self.assertNotIn('"/lib64"', texts['signing/cloud-seal.mjs'])
+        self.assertIn('"/lib",', texts['signing/cloud-seal.mjs'])
+
+    def test_an_unknown_or_missing_platform_is_refused(self):
+        for host in ({**INSTANCE['host'], 'platform': 'linux-riscv'}, {key: value for key, value in INSTANCE['host'].items() if key != 'platform'}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PLATFORM_UNKNOWN'):
+                packet_maker.base_parameters({**INSTANCE, 'host': host}, TWELFTH_COMMIT, '2026-11-15', {'LABEL': 'thirtieth'})
+
+    def test_the_platform_decides_which_build_the_packet_describes(self):
+        materials = self.root / 'materials'
+        materials.mkdir()
+        (materials / ('linux-arm64-abi127-' + TWELFTH_COMMIT + '-1-1.tar.gz')).write_bytes(b'archive')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ARTIFACT_COUNT 0'):
+            packet_maker.describe_materials(materials, TWELFTH_COMMIT, 'linux-x64')
 
 
 class SandboxReadPathsTest(RenderedPacket):
@@ -797,6 +859,7 @@ class PacketChecksRunnerTest(unittest.TestCase):
         self.archive = self.packet / 'materials' / 'linux-x64-abi127-fixture-1.tar.gz'
         self.archive.write_bytes(b'artifact')
         (self.packet / 'materials' / 'context.json').write_text('{}')
+        (self.packet / 'packet-parameters.json').write_text(json.dumps({'PLATFORM': 'linux-x64'}))
         self.source = self.root / 'source'
         (self.source / 'scripts').mkdir(parents=True)
         self.logs = self.root / 'logs'

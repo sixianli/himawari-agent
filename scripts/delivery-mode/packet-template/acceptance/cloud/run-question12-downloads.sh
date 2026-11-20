@@ -60,7 +60,7 @@ for relative, expected in manifest['files'].items():
     info = filename.lstat()
     if pathlib.Path(relative).is_absolute() or '..' in pathlib.Path(relative).parts or filename.resolve() != filename or not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != gid or info.st_mode & 0o022 or info.st_nlink != 1 or hashlib.sha256(filename.read_bytes()).hexdigest() != expected:
         raise RuntimeError('P8D_BOUND_SOURCE_CHANGED:' + relative)
-if manifest['question12Downloads']['files'] != {'fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz': '761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7', 'fd': 'e79642a479d2816c887047476bbe6ad229465f30de031033574dee2a095e0037', 'is-number-7.0.0.tgz': '7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e'}:
+if manifest['question12Downloads']['files'] != {'fd-v10.5.0-__PKT_FD_TRIPLE__.tar.gz': '__PKT_FD_SHA256__', 'fd': '__PKT_FD_BINARY_SHA256__', 'is-number-7.0.0.tgz': '7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e'}:
     raise RuntimeError('P8D_FIXED_REFERENCE_IDENTITIES_REQUIRED')
 print(hashlib.sha256(data).hexdigest())
 PY

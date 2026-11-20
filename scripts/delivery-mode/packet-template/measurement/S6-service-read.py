@@ -19,7 +19,7 @@ evidence = stage / 'acceptance/service-read-01'
 protected = Path('/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence')
 unit = 'himawari-__PKT_LABEL__-read-20261026.service'
 account = pwd.getpwnam('himawari-prod')
-if sys.argv[1:] != ['--approved-s6-service-environment-read'] or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or sys.platform != 'linux' or os.getuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or (account.pw_uid, account.pw_gid) != (999, 988):
+if sys.argv[1:] != ['--approved-s6-service-environment-read'] or sys.executable != '/usr/bin/python3' or sys.flags.isolated != 1 or sys.platform != 'linux' or os.getuid() != 0 or socket.gethostname() != '__PKT_HOSTNAME__' or (account.pw_uid, account.pw_gid) != (__PKT_SERVICE_UID__, __PKT_SERVICE_GID__):
     raise RuntimeError('EXPLICIT___PKT_LABEL_UPPER___DEPLOYMENT_CLOUD_ROOT_READ_REQUIRED')
 
 def regular(filename, owner=0):
@@ -50,7 +50,7 @@ def write(filename, value):
         raise RuntimeError('PROTECTED_REPORT_READBACK_FAILED')
     return {'path': str(filename), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
 
-for directory, owner, mode in [(base, 0, None), (stage / 'acceptance', 999, 0o700), (protected, 999, 0o700), (runtime, 0, None)]:
+for directory, owner, mode in [(base, 0, None), (stage / 'acceptance', __PKT_SERVICE_UID__, 0o700), (protected, __PKT_SERVICE_UID__, 0o700), (runtime, 0, None)]:
     info = directory.lstat()
     if directory.resolve() != directory or not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or info.st_mode & 0o022 or mode is not None and stat.S_IMODE(info.st_mode) != mode:
         raise RuntimeError('BOUND_DIRECTORY_UNSAFE:' + str(directory))
@@ -60,13 +60,13 @@ for line in regular(base / 'OWNED-SHA256SUMS').decode().splitlines():
     if Path(relative).is_absolute() or '..' in Path(relative).parts or hashlib.sha256(regular(filename)).hexdigest() != expected:
         raise RuntimeError('PROBE_SCRIPT_SHA_CHANGED:' + relative)
 node = Path('/opt/himawari/node/bin/node')
-if hashlib.sha256(regular(node)).hexdigest() != 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2':
+if hashlib.sha256(regular(node)).hexdigest() != '__PKT_NODE_SHA256__':
     raise RuntimeError('LOCKED_NODE_CHANGED')
 old = show('himawari-prod.service')
 expected_properties = {'User': 'himawari-prod', 'Group': 'himawari-prod', 'UMask': '0022', 'NoNewPrivileges': 'yes', 'CapabilityBoundingSet': '', 'AmbientCapabilities': '', 'KillMode': 'mixed', 'TimeoutStopUSec': '35s'}
 if old.get('ActiveState') not in ['inactive', 'failed'] or old.get('MainPID') != '0' or any(old.get(key) != value for key, value in expected_properties.items()):
     raise RuntimeError('STOPPED_ORIGINAL_SERVICE_PROPERTIES_CHANGED')
-acceptance = json.loads(regular(stage / 'acceptance/run-01/run-report.json', 999))
+acceptance = json.loads(regular(stage / 'acceptance/run-01/run-report.json', __PKT_SERVICE_UID__))
 if acceptance['passed'] is not True or acceptance['profile'] != 'cloud-__PKT_LABEL__-change' or acceptance['scratchCleanupPending'] is not False:
     raise RuntimeError('S6_COMPLETE_NEW_HOST_ACCEPTANCE_REQUIRED')
 protection = Path('/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/runtime-protection.json')
@@ -80,7 +80,7 @@ if hashlib.sha256(regular(Path('/etc/systemd/system/himawari-prod.service'))).he
 if evidence.exists() or evidence.is_symlink() or show(unit).get('LoadState') != 'not-found':
     raise RuntimeError('UNIQUE_UNRUN_PROBE_TARGET_REQUIRED')
 evidence.mkdir(mode=0o700)
-os.chown(evidence, 999, 988)
+os.chown(evidence, __PKT_SERVICE_UID__, __PKT_SERVICE_GID__)
 report_path = protected / 's6-service-read-launch.json'
 if report_path.exists() or report_path.is_symlink():
     raise RuntimeError('PROBE_LAUNCH_REPORT_ALREADY_EXISTS')
@@ -110,11 +110,11 @@ try:
     record['systemdRunExitCode'] = code
     if code != 0:
         raise RuntimeError('SERVICE_ENVIRONMENT_REAL_READ_FAILED')
-    run = json.loads(regular(evidence / 'probe-run.json', 999))
-    read = json.loads(regular(evidence / 'read-report.json', 999))
+    run = json.loads(regular(evidence / 'probe-run.json', __PKT_SERVICE_UID__))
+    read = json.loads(regular(evidence / 'read-report.json', __PKT_SERVICE_UID__))
     if run['passed'] is not True or read['passed'] is not True or run['scratchCleanupPending'] is not False or read['requestCount'] != 1:
         raise RuntimeError('INDEPENDENT_SERVICE_READ_REPORT_FAILED')
-    record['readback'] = {'probeRunSha256': hashlib.sha256(regular(evidence / 'probe-run.json', 999)).hexdigest(), 'readReportSha256': hashlib.sha256(regular(evidence / 'read-report.json', 999)).hexdigest(), 'fixtureSha256': read['fixture']['sha256'], 'measurementReadback': run['measurementReadback'], 'scratchDeleted': run['scratchDeleted'], 'rootFreeBeforeBytes': run['rootFreeBeforeBytes'], 'rootLowestFreeBytes': run['rootLowestFreeBytes'], 'rootFreeAfterBytes': run['rootFreeAfterBytes'], 'scratchPeakBytes': run['scratchPeakBytes']}
+    record['readback'] = {'probeRunSha256': hashlib.sha256(regular(evidence / 'probe-run.json', __PKT_SERVICE_UID__)).hexdigest(), 'readReportSha256': hashlib.sha256(regular(evidence / 'read-report.json', __PKT_SERVICE_UID__)).hexdigest(), 'fixtureSha256': read['fixture']['sha256'], 'measurementReadback': run['measurementReadback'], 'scratchDeleted': run['scratchDeleted'], 'rootFreeBeforeBytes': run['rootFreeBeforeBytes'], 'rootLowestFreeBytes': run['rootLowestFreeBytes'], 'rootFreeAfterBytes': run['rootFreeAfterBytes'], 'scratchPeakBytes': run['scratchPeakBytes']}
     record['passed'] = True
 except Exception as error:
     record['errors'].append({'type': type(error).__name__, 'code': str(error) if isinstance(error, RuntimeError) else 'SYSTEMD_PROBE_FAILED'})

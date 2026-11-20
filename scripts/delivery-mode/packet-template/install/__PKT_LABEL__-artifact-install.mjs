@@ -11,7 +11,7 @@ const expected = { "__PKT_BUNDLE_NAME__": "__PKT_BUNDLE_SHA256__", "candidate.ta
 const fail = (condition, message) => { if (!condition) throw new Error(message); };
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const [input, work, prefix, evidence] = process.argv.slice(2);
-fail(process.argv.length === 6 && process.platform === "linux" && process.arch === "x64" && process.version === "v22.22.3", "P5_ENVIRONMENT_INVALID");
+fail(process.argv.length === 6 && process.platform === "linux" && process.arch === "__PKT_NODE_ARCH__" && process.version === "v22.22.3", "P5_ENVIRONMENT_INVALID");
 for (const value of [input, work, prefix, evidence]) fail(typeof value === "string" && path.isAbsolute(value) && path.normalize(value) === value, "P5_ARGUMENT_INVALID");
 fail(realpathSync(input) === input && realpathSync(evidence) === evidence && !existsSync(work) && !existsSync(prefix), "P5_TARGET_NOT_FRESH");
 fail(!evidence.startsWith(work + path.sep) && !input.startsWith(work + path.sep) && !work.startsWith(prefix + path.sep) && !prefix.startsWith(work + path.sep), "P5_PATH_OVERLAP");

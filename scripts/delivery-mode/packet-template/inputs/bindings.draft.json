@@ -55,11 +55,11 @@
     "address": "__PKT_ADDRESS__",
     "hostname": "__PKT_HOSTNAME__",
     "account": "himawari-prod",
-    "uid": 999,
-    "gid": 988,
+    "uid": __PKT_SERVICE_UID__,
+    "gid": __PKT_SERVICE_GID__,
     "node": "/opt/himawari/node/bin/node",
     "nodeVersion": "v22.22.3",
-    "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+    "nodeSha256": "__PKT_NODE_SHA256__",
     "systemBwrapIdentity": {
       "path": "/usr/bin/bwrap",
       "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"

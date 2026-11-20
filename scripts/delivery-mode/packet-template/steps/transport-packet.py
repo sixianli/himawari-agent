@@ -100,7 +100,7 @@ def production_main(expected_freeze, common):
     os.umask(0o077)
     require(sys.argv[1:] == ['--approved-r2l13-__PKT_LABEL__-transport', expected_freeze] and re.fullmatch('[a-f0-9]{64}', expected_freeze) and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.getuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__', '__PKT_LABEL_UPPER___TRANSPORT_EXPLICIT_APPROVAL_REQUIRED')
     account = pwd.getpwnam('himawari-prod')
-    require((account.pw_uid, account.pw_gid) == (999, 988), '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_ACCOUNT_CHANGED')
+    require((account.pw_uid, account.pw_gid) == (__PKT_SERVICE_UID__, __PKT_SERVICE_GID__), '__PKT_LABEL_UPPER___TRANSPORT_SERVICE_ACCOUNT_CHANGED')
     parent = common.UPLOAD.parent
     if not os.path.lexists(parent):
         parent.mkdir(mode=0o700)

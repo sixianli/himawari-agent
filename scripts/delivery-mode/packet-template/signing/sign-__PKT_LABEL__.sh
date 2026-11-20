@@ -2,7 +2,7 @@ set -euo pipefail
 umask 077
 [[ ${1:-} == --approved-s6-signing && $# == 1 ]]
 [[ $(id -u) == 0 && $(hostname) == __PKT_HOSTNAME__ ]]
-[[ $(id -u himawari-prod) == 999 && $(id -g himawari-prod) == 988 ]]
+[[ $(id -u himawari-prod) == __PKT_SERVICE_UID__ && $(id -g himawari-prod) == __PKT_SERVICE_GID__ ]]
 packet=/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet
 qualification=/var/lib/himawari/qualification/__PKT_LABEL__-__PKT_DATE_COMPACT__
 node=/opt/himawari/node/bin/node
@@ -12,8 +12,8 @@ packet_mode=$(stat -c %a "$packet")
 [[ $packet_mode =~ ^[0-7]{3,4}$ ]]
 (( (8#$packet_mode & 8#022) == 0 ))
 [[ -d $qualification && ! -L $qualification && $(realpath "$qualification") == "$qualification" ]]
-[[ $(stat -c %u "$qualification") == 0 && $(stat -c %g "$qualification") == 988 && $(stat -c %a "$qualification") == 750 ]]
-[[ $(sha256sum "$node" | cut -d ' ' -f 1) == e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2 ]]
+[[ $(stat -c %u "$qualification") == 0 && $(stat -c %g "$qualification") == __PKT_SERVICE_GID__ && $(stat -c %a "$qualification") == 750 ]]
+[[ $(sha256sum "$node" | cut -d ' ' -f 1) == __PKT_NODE_SHA256__ ]]
 /usr/bin/python3 -I - "$packet" <<'PYTHON'
 import hashlib
 import json
@@ -94,6 +94,6 @@ NODE
 for name in host-qualification-public-key.pem installation-receipt.json installation-receipt.sig pi-runner.sig search-runner.sig fetch-runner.sig seal-preflight.json seal-result.json seal-readback.json; do
   chown root:himawari-prod "$qualification/$name"
   chmod 0640 "$qualification/$name"
-  [[ $(stat -c %u "$qualification/$name") == 0 && $(stat -c %g "$qualification/$name") == 988 && $(stat -c %a "$qualification/$name") == 640 ]]
+  [[ $(stat -c %u "$qualification/$name") == 0 && $(stat -c %g "$qualification/$name") == __PKT_SERVICE_GID__ && $(stat -c %a "$qualification/$name") == 640 ]]
 done
 cat -- "$qualification/seal-readback.json"

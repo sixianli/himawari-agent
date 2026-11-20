@@ -1,0 +1,18 @@
+{
+  "linux-x64": {
+    "nodeArch": "x64",
+    "nodeBinarySha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+    "fdTriple": "x86_64-unknown-linux-musl",
+    "fdSha256": "761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7",
+    "lib64": true,
+    "fdBinarySha256": "e79642a479d2816c887047476bbe6ad229465f30de031033574dee2a095e0037"
+  },
+  "linux-arm64": {
+    "nodeArch": "arm64",
+    "nodeBinarySha256": "41c1ec75816937af3893453a82b1535c566c65b682c67fbc59a0546b27c027bd",
+    "fdTriple": "aarch64-unknown-linux-musl",
+    "fdSha256": "d76c4317f7d5dba69f8a2a15856c90c777e7f0dd4e85f0de8c76de6992c374d4",
+    "lib64": false,
+    "fdBinarySha256": null
+  }
+}

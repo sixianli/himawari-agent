@@ -28,7 +28,7 @@ bash <操作包目录>/steps/run-user-step.sh <动作>
 
 S1 之后的动作都由 [run-step.py](run-step.py) 在服务器上以 root 执行。它要求：
 
-- 参数是 `--approved-r2l13-__PKT_LABEL__-step <动作> <冻结 SHA>`，用 `/usr/bin/python3 -I` 运行，主机名 `__PKT_HOSTNAME__`，生产账号 `himawari-prod` 仍是 uid 999、gid 988。
+- 参数是 `--approved-r2l13-__PKT_LABEL__-step <动作> <冻结 SHA>`，用 `/usr/bin/python3 -I` 运行，主机名 `__PKT_HOSTNAME__`，生产账号 `himawari-prod` 仍是 uid __PKT_SERVICE_UID__、gid __PKT_SERVICE_GID__。
 - 运输目录 `/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/packet` 的冻结清单 SHA 与参数相同，清单内每个文件字节不变，批准引用是 `round2/R2-L13/__PKT_LABEL__-__PKT_DATE_COMPACT__/reviewed`。
 - 操作目录 `/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__` 里由 S1 发布的每个文件仍与冻结包一致。
 - S1 报告 `s1-result.json` 存在且 passed。

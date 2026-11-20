@@ -13,8 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-fd_url = 'https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz'
-fd_sha256 = '761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7'
+fd_url = 'https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-__PKT_FD_TRIPLE__.tar.gz'
+fd_sha256 = '__PKT_FD_SHA256__'
 package_url = 'https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz'
 package_integrity = '41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=='
 report = {'schema': 'himawari-__PKT_LABEL__-cloud-question12-downloads.v1', 'productionQualificationIssued': False, 'downloads': [], 'passed': False}
@@ -106,7 +106,7 @@ try:
             total += member.size
             if total > 8 * 1024**2:
                 raise RuntimeError('FD_ARCHIVE_SIZE_LIMIT')
-            if member.name == 'fd-v10.5.0-x86_64-unknown-linux-musl/fd':
+            if member.name == 'fd-v10.5.0-__PKT_FD_TRIPLE__/fd':
                 if fd_payload is not None or not member.isfile():
                     raise RuntimeError('FD_ARCHIVE_BINARY_AMBIGUOUS')
                 fd_payload = archive.extractfile(member).read()
@@ -118,7 +118,7 @@ try:
     if base64.b64encode(hashlib.sha512(reference).digest()).decode() != package_integrity:
         raise RuntimeError('IS_NUMBER_INTEGRITY_MISMATCH')
     download_root = evidence
-    (download_root / 'fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz').write_bytes(fd_archive)
+    (download_root / 'fd-v10.5.0-__PKT_FD_TRIPLE__.tar.gz').write_bytes(fd_archive)
     fd_file = download_root / 'fd'
     fd_file.write_bytes(fd_payload)
     fd_file.chmod(0o755)
