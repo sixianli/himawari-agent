@@ -39,7 +39,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 
 1. 安装脚本只认 x64：`scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs:14` 和 `install/collect-installer-dependencies.mjs:15`，原话 `process.arch === "x64"`。
 2. 候选包只在 Hermes 上构建、只取 x64 产物：`scripts/delivery-mode/hermes/build-candidate.sh:44-46` 只找 `linux-x64-abi127-…` 的产物；`scripts/delivery-mode/make-packet.py:509,552` 和 `run-packet-checks.py:166` 同样只认 x64。
-3. 出包要求目标机上服务已在运行：`make-packet.py:329`，原话 `refuse('PACKET_SERVICE_NOT_ACTIVE'`；`deploy-preflight.py:178` 也要求服务 active。项目里没有“新主机第一次安装”的路径。
+3. 出包要求目标机上服务已在运行：`make-packet.py:329`，原话 `refuse('PACKET_SERVICE_NOT_ACTIVE'`；`deploy-preflight.py:184` 也要求服务 active。项目里没有“新主机第一次安装”的路径。
 4. Node 运行时不在包里：`packet-template/install/p5-materials.json:5`，原话 `"nodeAlreadyInstalled": true`，`:6` 写死 x64 的 Node 摘要。
 5. 服务账号 uid 999、组 988 写死在多处：例如 `packet-template/install/S1-publish-and-install.py:61`，原话 `os.chown(evidence,999,988)`；目标机上 uid 999 已被 `ocarun`（Oracle Cloud Agent 的账号）占用，gid 988 已被 `gh-ci-share`（CI runner 的共享组）占用（目标机 `getent` 实测）。
 6. 封存脚本要求主机签名公钥等于第一把钥匙：`packet-template/signing/cloud-seal.mjs:441`，原话 `qualification/first-20261007/host-qualification-public-key.pem`，`:446` 不等就报 `FIRST_SIGNING_KEY_REQUIRED`；签名私钥在主机本地 `qualification/signing/host-qualification-signing-key.pem`（`:436`）。
@@ -47,7 +47,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 8. 封存脚本无条件把 `/lib64` 列进只读目录：`cloud-seal.mjs:342`，原话 `"/lib64"`；目标机没有 `/lib64`（实测）。
 9. 上线前检查按正则抽取只读目录清单的字面数组：`deploy-preflight.py:83`，原话 `re.compile(r'readOnlyToolchainPaths: \[(.*?)protectedPaths: \['`。所以这个数组必须保持字面写法，不能改成函数调用。
 10. `scripts/delivery-mode/probe-sources.json` 只登记 `job-host-main.js`、`sandbox-sdk.js`、`sandbox-sdk-worker.js` 三个构建文件的摘要，与只读目录清单无关。
-11. 目录授权按主机核对：`apps/agent-service/src/production-run-policy.ts:257`，原话 `grant.hostId !== route.hostId`。复制到新主机的授权在新主机上会被判无效。
+11. 目录授权按主机核对：`apps/agent-service/src/production-run-policy.ts:258`，原话 `grant.hostId !== route.hostId`。复制到新主机的授权在新主机上会被判无效。
 12. 感知提取不配置也会启动：`apps/agent-service/src/service-main.ts:2500`，原话 `configuration.runPolicy?.perception ?? PERCEPTION_CONFIGURATION_DEFAULTS`，`:3030` 是 `perceptionExtraction?.start();`。所以“配置里不写 `proactive`”关不掉全部后台任务。
 13. 目标机 CI runner 的防火墙规则只拦私有网段和本机 22、111 端口：目标机 `nft list ruleset` 第 105-107 行，原话 `meta skuid { 994, 995 } fib daddr type local tcp dport { 22, 111 } reject`。runner 账号（跑 CI 任务的系统账号）能连到本机 8400 端口。
 14. 目标机已装好下一个内核、等待重启：已装 `linux-image-7.0.0-1013-oracle` 和 `linux-image-7.0.0-1016-oracle`，`/var/run/reboot-required` 存在（实测）。上线前检查 `deploy-preflight.py:16-17` 读 GRUB 配置，会拦下“重启后进的内核不是当前内核”的上线。
