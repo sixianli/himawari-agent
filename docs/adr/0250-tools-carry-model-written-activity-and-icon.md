@@ -39,9 +39,9 @@ date: "2026-11-12"
 3. **Pi 的 `prepareArguments` 不是给这种用途的。** 来源：<https://unpkg.com/@earendil-works/pi-coding-agent@1.5.0/docs/extensions.md> 第 2302 行：“Use it to mimic an older accepted input shape when Pi resumes an older session …… Keep the public schema strict.”
 4. **Pi 校验参数时用的是副本，对话记录里保留模型的原样参数。** 来源：<https://unpkg.com/@earendil-works/pi-ai@1.5.0/dist/utils/validation.js> 第 53 行：“A copy, so tools that modify their arguments never modify the tool call in the transcript.”
 5. **每个工具的定义都经过同一个函数。** 来源：`packages/runtime-pi/src/pi-runtime-adapter.ts` 的 `toolDefinition()`：冻结的工具、带执行句柄的工具、系统提示里的工具说明都从它取（`frozenDefinitions`、`requestTools`、`productSystemPrompt`）。
-6. **参数结构变了，老对话会换新一次冻结的开头。** 来源：`packages/application/src/services/thread-prompt-bundle-service.ts` 的 `toolSchemaChanged`：“`current.has(name) && current.get(name) !== schema`”；规则 `.claude/rules/prompt-prefix.md` 第 6 条：“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次”。
+6. **参数结构变了，老对话会换新一次冻结的开头。** 来源：`packages/application/src/services/thread-prompt-bundle-service.ts` 的 `toolSchemaChanged`：“`current.has(name) && current.get(name) !== schema`”；规则 `.agents/instructions/prompt-prefix.md` 第 6 条：“工具集合变了（工具名，或者去掉说明文字后的参数结构）……才换新一次”。
 7. **开始执行时的过程事件里本来就带着模型给的参数。** 来源：`pi-runtime-adapter.ts` 的 `case "tool_execution_start"`：`arguments: event.args` 写进 `tool_intent` 记录。
-8. **网关的过程记录不接受多出来的字段。** 来源：`packages/gateway-contracts/src/validation.ts` 第 175 行：``if (!expectedKeySet.has(key)) fail(`${path}.${key}`, "unknown field");``。
+8. **网关的过程记录不接受多出来的字段。** 来源：`packages/gateway-contracts/src/validation.ts` 第 212 行：``if (!expectedKeySet.has(key)) fail(`${path}.${key}`, "unknown field");``。
 
 [返回阅读导航](#contents)
 
@@ -100,7 +100,7 @@ date: "2026-11-12"
 ## 关联文档
 
 - [Pi 二次开发规范：工具执行前拦截或改参数](../pi-development-guide.md#pattern-tool-call)
-- [发给模型的内容只追加](../../.claude/rules/prompt-prefix.md)
+- [发给模型的内容只追加](../../.agents/instructions/prompt-prefix.md)
 - [ADR 0165：按对话冻结请求开头](0165-freeze-the-request-head-per-conversation.md)
 - [ADR 0203：照 Pi 官方的扩展写法](0203-follow-pi-official-extension-patterns.md)
 
