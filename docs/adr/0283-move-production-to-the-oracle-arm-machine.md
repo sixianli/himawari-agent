@@ -39,7 +39,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 
 1. 安装脚本只认 x64：`scripts/delivery-mode/packet-template/install/__PKT_LABEL__-artifact-install.mjs:14` 和 `install/collect-installer-dependencies.mjs:15`，原话 `process.arch === "x64"`。
 2. 候选包只在 Hermes 上构建、只取 x64 产物：`scripts/delivery-mode/hermes/build-candidate.sh:44-46` 只找 `linux-x64-abi127-…` 的产物；`scripts/delivery-mode/make-packet.py:509,552` 和 `run-packet-checks.py:166` 同样只认 x64。
-3. 出包要求目标机上服务已在运行：`make-packet.py:329`，原话 `refuse('PACKET_SERVICE_NOT_ACTIVE'`；`deploy-preflight.py:184` 也要求服务 active。项目里没有“新主机第一次安装”的路径。
+3. 出包要求目标机上服务已在运行：`make-packet.py:330`，原话 `refuse('PACKET_SERVICE_NOT_ACTIVE'`；`deploy-preflight.py:189` 也要求服务 active。项目里没有“新主机第一次安装”的路径。
 4. Node 运行时不在包里：`packet-template/install/p5-materials.json:5`，原话 `"nodeAlreadyInstalled": true`，`:6` 写死 x64 的 Node 摘要。
 5. 服务账号 uid 999、组 988 写死在多处：例如 `packet-template/install/S1-publish-and-install.py:61`，原话 `os.chown(evidence,999,988)`；目标机上 uid 999 已被 `ocarun`（Oracle Cloud Agent 的账号）占用，gid 988 已被 `gh-ci-share`（CI runner 的共享组）占用（目标机 `getent` 实测）。
 6. 封存脚本要求主机签名公钥等于第一把钥匙：`packet-template/signing/cloud-seal.mjs:441`，原话 `qualification/first-20261007/host-qualification-public-key.pem`，`:446` 不等就报 `FIRST_SIGNING_KEY_REQUIRED`；签名私钥在主机本地 `qualification/signing/host-qualification-signing-key.pem`（`:436`）。
@@ -52,7 +52,7 @@ Andy 2026-11-20 要把生产从 Contabo 的 x86-64 云服务器迁到 Oracle 东
 13. 目标机 CI runner 的防火墙规则只拦私有网段和本机 22、111 端口：目标机 `nft list ruleset` 第 105-107 行，原话 `meta skuid { 994, 995 } fib daddr type local tcp dport { 22, 111 } reject`。runner 账号（跑 CI 任务的系统账号）能连到本机 8400 端口。
 14. 目标机已装好下一个内核、等待重启：已装 `linux-image-7.0.0-1013-oracle` 和 `linux-image-7.0.0-1016-oracle`，`/var/run/reboot-required` 存在（实测）。上线前检查 `deploy-preflight.py:16-17` 读 GRUB 配置，会拦下“重启后进的内核不是当前内核”的上线。
 15. 目标机没有持久化主机名的 cloud-init 配置：`/etc/cloud/cloud.cfg.d/` 下只有 `05_logging.cfg`、`90-cpc-grub.cfg`、`90_dpkg.cfg`、`99-oracle-compute-infra-datasource.cfg`、`99-oracle-compute-user-redirect.cfg`（实测）；CI 服务器的做法见 `docs/runbooks/ci-vps-runner-runbook.md`，原话 `/etc/cloud/cloud.cfg.d/99-ci-vps-hostname.cfg`（重启后保留主机名）。
-16. ADR 0253 决定 linux-arm64 只做测试：`docs/adr/0253-support-linux-arm64-for-test-and-qualification.md:62`，原话“ARM 不进 GitHub 必过检查，也不切线上。”ADR 0266 已修订其中“不进必过检查”一处。
+16. ADR 0253 决定 linux-arm64 只做测试：`docs/adr/0253-support-linux-arm64-for-test-and-qualification.md:62`，原话“ARM 不进 GitHub 必过检查，也不切线上。”ADR 0266 已修订这句话里“不进必过检查”的部分（只限 policy、static、security 三项检查），“不切线上”没有改。
 17. 主控权迁移流程：`docs/runbooks/authority-transfer-runbook.md:269-273`，目标的 epoch 和 fencing token（防止两台机器同时当主的递增编号）各等于源值加一；迁移包不带机器机密、可执行文件绑定或平台资格，目标机要先独立装好。
 18. 工具链锁已有 ARM 条目：`ci/toolchain-lock.json` 有 Node 22.22.3 和 Python 3.12.10 的 `linux-arm64`；better-sqlite3 是 `"decision": "build"`（在构建机上从源码编译）。
 19. Cloudflare 同一条隧道的多个连接器是副本，请求按就近分给副本，原话 “Replicas do not support traffic steering”（https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-availability/）。
