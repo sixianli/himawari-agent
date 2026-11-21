@@ -493,6 +493,9 @@ class TemplateTest(RenderedPacket):
 
 
 ARM64_INSTANCE = {'host': {'platform': 'linux-arm64'}, 'fixedByTemplate': {'serviceUid': 991, 'serviceGid': 987}}
+PLATFORM_KEYS = ('PLATFORM', 'NODE_ARCH', 'NODE_SHA256', 'FD_TRIPLE', 'FD_SHA256', 'FD_BINARY_SHA256', 'PYTHON_SHA256', 'PYTHON_BYTES', 'LIB64_ITEM', 'SERVICE_UID', 'SERVICE_GID')
+PROBE_COPIES_PINNED_UNTIL_FIRST_INSTALL = ('acceptance/cloud/adapters/', 'acceptance/cloud/basis-04/', 'acceptance/cloud/probe-source/')
+FICTITIOUS_X64_FIXTURES = {'acceptance/helpers/test-composition-source-copy.py'}
 
 
 class PlatformTemplateTest(RenderedPacket):
@@ -502,41 +505,64 @@ class PlatformTemplateTest(RenderedPacket):
     def test_the_x64_parameters_keep_the_packet_the_way_it_always_was(self):
         packet = self.render()
         texts = self.rendered_texts(packet)
-        self.assertEqual(packet_maker.platform_parameters(INSTANCE), {key: TWELFTH[key] for key in ('PLATFORM', 'NODE_ARCH', 'NODE_SHA256', 'FD_TRIPLE', 'FD_SHA256', 'FD_BINARY_SHA256', 'LIB64_ITEM', 'SERVICE_UID', 'SERVICE_GID')})
+        self.assertEqual(packet_maker.platform_parameters(INSTANCE), {key: TWELFTH[key] for key in PLATFORM_KEYS})
         self.assertFalse([name for name, text in texts.items() if '__PKT_' in text])
         self.assertIn('e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2', texts['systemd/S7-startup-readback.mjs'])
         self.assertIn('          "/lib64",\n', texts['signing/cloud-seal.mjs'])
         self.assertIn('process.arch === "x64"', texts['install/collect-installer-dependencies.mjs'])
         self.assertIn('x86_64-unknown-linux-musl', texts['acceptance/cloud/download-question-12.py'])
+        self.assertIn('"bytes": 34392187,\n      "sha256": "f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca"', texts['install/p5-materials.json'])
         self.assertRegex(texts['systemd/S2-stop-and-inspect.py'], r'SERVICE_UID = 999\nSERVICE_GID = 988\n')
 
-    def pinned_platforms(self):
+    def test_the_python_archive_digest_comes_from_the_toolchain_lock(self):
+        lock = json.loads(packet_maker.TOOLCHAIN_LOCK.read_text())['python']['artifacts']
+        self.assertEqual(packet_maker.platform_parameters(INSTANCE)['PYTHON_SHA256'], lock['linux-x64']['sha256'])
+        with unittest.mock.patch.object(packet_maker, 'PLATFORMS', self.pinned_platforms()):
+            self.assertEqual(packet_maker.platform_parameters(ARM64_INSTANCE)['PYTHON_SHA256'], lock['linux-arm64']['sha256'])
+
+    def pinned_platforms(self, **changes):
         platforms = json.loads(packet_maker.PLATFORMS.read_text())
-        platforms['linux-arm64']['fdBinarySha256'] = 'f' * 64
-        pinned = self.root / 'platforms.json'
+        platforms['linux-arm64'].update({'fdBinarySha256': 'f' * 64, 'pythonBytes': 33000000, **changes})
+        pinned = self.root / ('platforms-' + str(len(list(self.root.iterdir()))) + '.json')
         pinned.write_text(json.dumps(platforms))
         return pinned
 
     def test_a_platform_with_an_unpinned_value_is_refused(self):
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PLATFORM_UNPINNED linux-arm64 has no pinned value for fdBinarySha256'):
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PLATFORM_UNPINNED linux-arm64 has no pinned value for fdBinarySha256, pythonBytes'):
             packet_maker.platform_parameters(ARM64_INSTANCE)
 
-    def test_the_arm64_parameters_leave_no_trace_of_the_x64_machine_or_the_old_account(self):
+    def test_a_platform_value_of_the_wrong_shape_is_refused(self):
+        for changes, named in (({'fdSha256': 'D76C'}, 'fdSha256'), ({'nodeArch': 'arm64"; x'}, 'nodeArch'), ({'pythonBytes': '33000000'}, 'pythonBytes'), ({'lib64': 0}, 'lib64'), ({'extra': 1}, 'extra')):
+            with unittest.mock.patch.object(packet_maker, 'PLATFORMS', self.pinned_platforms(**changes)):
+                with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PLATFORM_INVALID linux-arm64: ' + named):
+                    packet_maker.platform_parameters(ARM64_INSTANCE)
+
+    def test_a_service_account_that_is_not_a_plain_id_is_refused(self):
+        for fixed in ({'serviceUid': '999); x', 'serviceGid': 988}, {'serviceGid': 988}, {'serviceUid': True, 'serviceGid': 988}, {'serviceUid': 0, 'serviceGid': 988}, {'serviceUid': 999, 'serviceGid': 65534}):
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_SERVICE_ACCOUNT_INVALID'):
+                packet_maker.platform_parameters({**INSTANCE, 'fixedByTemplate': fixed})
+
+    def test_the_arm64_parameters_leave_x64_traces_only_in_the_probe_copies_pinned_until_first_install(self):
         with unittest.mock.patch.object(packet_maker, 'PLATFORMS', self.pinned_platforms()):
             arm64 = packet_maker.platform_parameters(ARM64_INSTANCE)
         self.assertEqual(arm64['LIB64_ITEM'], '')
-        texts = self.rendered_texts(self.render(**arm64))
+        texts = self.rendered_texts(self.render(**arm64, ARTIFACT_NAME=TWELFTH['ARTIFACT_NAME'].replace('linux-x64', 'linux-arm64')))
         for name, text in texts.items():
             self.assertNotIn('e6ec2c188d83d813', text, name)
             self.assertNotIn('761c72dc8e120d85', text, name)
             self.assertNotIn('e79642a479d2816c', text, name)
+            self.assertNotIn('f50d08e0304b15d7', text, name)
             self.assertNotIn('x86_64-unknown-linux-musl', text, name)
             self.assertNotIn('process.arch === "x64"', text, name)
             self.assertNotRegex(text, r'\b(999|988)\b', name)
+        traces = sorted(name for name, text in texts.items() if re.search(r'linux-x64|/lib64\b|x86_64', text) and name not in FICTITIOUS_X64_FIXTURES)
+        self.assertTrue(traces)
+        self.assertEqual([name for name in traces if not name.startswith(PROBE_COPIES_PINNED_UNTIL_FIRST_INSTALL)], [])
         self.assertIn('41c1ec75816937af3893453a82b1535c566c65b682c67fbc59a0546b27c027bd', texts['systemd/S7-startup-readback.mjs'])
         self.assertIn('process.arch === "arm64"', texts['install/collect-installer-dependencies.mjs'])
         self.assertIn('aarch64-unknown-linux-musl', texts['acceptance/cloud/download-question-12.py'])
         self.assertIn('d76c4317f7d5dba69f8a2a15856c90c777e7f0dd4e85f0de8c76de6992c374d4', texts['acceptance/cloud/download-question-12.py'])
+        self.assertIn('"bytes": 33000000,\n      "sha256": "235d0666528a8e948896f68c08964dc8dd14a54c68e5cbd4924594d2e20f81b9"', texts['install/p5-materials.json'])
         self.assertRegex(texts['systemd/S2-stop-and-inspect.py'], r'SERVICE_UID = 991\nSERVICE_GID = 987\n')
         self.assertNotIn('"/lib64"', texts['signing/cloud-seal.mjs'])
         self.assertIn('"/lib",', texts['signing/cloud-seal.mjs'])
@@ -551,7 +577,27 @@ class PlatformTemplateTest(RenderedPacket):
         materials.mkdir()
         (materials / ('linux-arm64-abi127-' + TWELFTH_COMMIT + '-1-1.tar.gz')).write_bytes(b'archive')
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_ARTIFACT_COUNT 0'):
-            packet_maker.describe_materials(materials, TWELFTH_COMMIT, 'linux-x64')
+            packet_maker.describe_materials(materials, TWELFTH_COMMIT, 'linux-x64', TWELFTH['PYTHON_SHA256'])
+
+    def test_a_python_archive_of_another_platform_is_refused(self):
+        materials = self.root / 'materials'
+        materials.mkdir()
+        (materials / ('linux-x64-abi127-' + TWELFTH_COMMIT + '-1-1.tar.gz')).write_bytes(b'archive')
+        for name in packet_maker.MATERIAL_FILES + (TWELFTH['BUNDLE_NAME'],):
+            (materials / name).write_bytes(b'other platform')
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_MATERIAL_CHANGED'):
+            packet_maker.describe_materials(materials, TWELFTH_COMMIT, 'linux-x64', TWELFTH['PYTHON_SHA256'])
+
+    def test_the_packet_checks_refuse_a_packet_that_names_no_known_platform(self):
+        packet = self.root / 'checked'
+        (packet / 'materials').mkdir(parents=True)
+        (packet / 'materials' / ('linux-x64-abi127-' + TWELFTH_COMMIT + '-1-1.tar.gz')).write_bytes(b'archive')
+        for parameters in ({}, {'PLATFORM': '*'}):
+            (packet / 'packet-parameters.json').write_text(json.dumps(parameters))
+            with self.assertRaisesRegex(SystemExit, 'PACKET_CHECKS_PLATFORM_UNKNOWN'):
+                checks_runner.candidate_archive(packet)
+        (packet / 'packet-parameters.json').write_text(json.dumps({'PLATFORM': 'linux-x64'}))
+        self.assertEqual(checks_runner.candidate_archive(packet).name, 'linux-x64-abi127-' + TWELFTH_COMMIT + '-1-1.tar.gz')
 
 
 class SandboxReadPathsTest(RenderedPacket):

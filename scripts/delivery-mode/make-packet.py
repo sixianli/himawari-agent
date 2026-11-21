@@ -22,6 +22,9 @@ REPO = HERE.parent.parent
 TEMPLATE = HERE / 'packet-template'
 INSTANCES = HERE / 'instances'
 PLATFORMS = HERE / 'platforms.json'
+TOOLCHAIN_LOCK = REPO / 'ci' / 'toolchain-lock.json'
+DIGEST = re.compile(r'[0-9a-f]{64}')
+PLATFORM_WORD = re.compile(r'[a-z0-9_]+(-[a-z0-9_]+)*')
 BUILDER = HERE / 'hermes'
 PLACEHOLDER = re.compile(r'__PKT_[A-Z0-9_]+?__')
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
@@ -47,8 +50,8 @@ ADAPTATION_MANIFEST = 'acceptance/cloud/adaptation-manifest.json'
 SOURCE_CACHE_NAME = 'source-cache.git'
 PARAMETERS = 'packet-parameters.json'
 CHECKS_RECORD = 'packet-checks.json'
-PYTHON_MATERIAL = ('python-3.12.10.tar.gz', 'f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca')
-MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_MATERIAL[0])
+PYTHON_ARCHIVE = 'python-3.12.10.tar.gz'
+MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_ARCHIVE)
 EXECUTION_NOTE = 'G180'
 DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
@@ -433,7 +436,23 @@ def platform_parameters(instance):
     unpinned = sorted(key for key, value in platform.items() if value is None)
     if unpinned:
         refuse('PACKET_PLATFORM_UNPINNED', name + ' has no pinned value for ' + ', '.join(unpinned))
-    fixed = instance['fixedByTemplate']
+    python_sha256 = json.loads(TOOLCHAIN_LOCK.read_text())['python']['artifacts'].get(name, {}).get('sha256')
+    checks = {
+        'nodeArch': lambda value: isinstance(value, str) and PLATFORM_WORD.fullmatch(value),
+        'fdTriple': lambda value: isinstance(value, str) and PLATFORM_WORD.fullmatch(value),
+        'nodeBinarySha256': lambda value: isinstance(value, str) and DIGEST.fullmatch(value),
+        'fdSha256': lambda value: isinstance(value, str) and DIGEST.fullmatch(value),
+        'fdBinarySha256': lambda value: isinstance(value, str) and DIGEST.fullmatch(value),
+        'pythonBytes': lambda value: type(value) is int and value > 0,
+        'lib64': lambda value: type(value) is bool,
+    }
+    invalid = sorted(key for key, check in checks.items() if not check(platform.get(key))) + ([] if isinstance(python_sha256, str) and DIGEST.fullmatch(python_sha256) else ['ci/toolchain-lock.json python.artifacts.' + name + '.sha256'])
+    if invalid or set(platform) != set(checks):
+        refuse('PACKET_PLATFORM_INVALID', name + ': ' + ', '.join(invalid + sorted(set(platform) ^ set(checks))))
+    fixed = instance.get('fixedByTemplate', {})
+    account = {key: fixed.get(key) for key in ('serviceUid', 'serviceGid')}
+    if any(type(value) is not int or not 0 < value < 65534 for value in account.values()):
+        refuse('PACKET_SERVICE_ACCOUNT_INVALID', json.dumps(account, sort_keys=True))
     return {
         'PLATFORM': name,
         'NODE_ARCH': platform['nodeArch'],
@@ -441,9 +460,11 @@ def platform_parameters(instance):
         'FD_TRIPLE': platform['fdTriple'],
         'FD_SHA256': platform['fdSha256'],
         'FD_BINARY_SHA256': platform['fdBinarySha256'],
+        'PYTHON_SHA256': python_sha256,
+        'PYTHON_BYTES': platform['pythonBytes'],
         'LIB64_ITEM': '"/lib64",' if platform['lib64'] else '',
-        'SERVICE_UID': fixed['serviceUid'],
-        'SERVICE_GID': fixed['serviceGid'],
+        'SERVICE_UID': account['serviceUid'],
+        'SERVICE_GID': account['serviceGid'],
     }
 
 
@@ -540,14 +561,14 @@ def render(target, parameters, only=None):
     return written
 
 
-def describe_materials(materials, commit, platform):
+def describe_materials(materials, commit, platform, python_sha256):
     artifacts = sorted(materials.glob(platform + '-abi127-' + commit + '-*-1.tar.gz'))
     if len(artifacts) != 1:
         refuse('PACKET_ARTIFACT_COUNT', len(artifacts))
     for name in MATERIAL_FILES + ('source-' + commit[:7] + '.bundle',):
         if not (materials / name).is_file():
             refuse('PACKET_MATERIAL_MISSING', name)
-    if file_sha(materials / PYTHON_MATERIAL[0]) != PYTHON_MATERIAL[1]:
+    if file_sha(materials / PYTHON_ARCHIVE) != python_sha256:
         refuse('PACKET_PYTHON_MATERIAL_CHANGED')
     if json.loads((materials / 'context.json').read_text()).get('testedSha') != commit:
         refuse('PACKET_CONTEXT_OTHER_COMMIT')
@@ -835,7 +856,7 @@ class Hermes:
         for name, digest in expected.items():
             if '/' in name or name.startswith('.'):
                 refuse('PACKET_HERMES_MATERIAL_NAME', name)
-            if name == PYTHON_MATERIAL[0] and (materials / name).is_file() and file_sha(materials / name) == digest:
+            if name == PYTHON_ARCHIVE and (materials / name).is_file() and file_sha(materials / name) == digest:
                 continue
             self.fetch(self.work + '/materials/' + name, materials / name, digest)
 
@@ -1104,7 +1125,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
         hermes.start_walkthrough()
         hermes.fetch_materials(materials)
         step('fetch-materials', started)
-    parameters.update(describe_materials(materials, commit, parameters['PLATFORM']))
+    parameters.update(describe_materials(materials, commit, parameters['PLATFORM'], parameters['PYTHON_SHA256']))
     packet.mkdir(parents=True)
     shutil.move(str(materials), str(packet / 'materials'))
     refreshed = assemble(packet, parameters, packet / 'materials')
