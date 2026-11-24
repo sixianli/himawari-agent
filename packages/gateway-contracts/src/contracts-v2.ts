@@ -66,6 +66,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "delivery_timing.settings.read",
   "delivery_timing.settings.snapshot",
   "delivery_timing.settings.change",
+  "quiet_hours.read",
+  "quiet_hours.snapshot",
+  "quiet_hours.set",
   "proposals.read",
   "proposals.snapshot",
   "proposal.respond",
@@ -596,6 +599,32 @@ const deliveryTimingSettingsChangeCommandSchema = object({
     expectedRevision: integer(0),
     key: machineString,
     value: nullable(integer(0)),
+  }),
+});
+const quietClock = proactiveClockSchema;
+const quietHoursQuerySchema = object({
+  ...envelope("query", "quiet_hours.read"),
+  payload: object({}),
+});
+const quietHoursSnapshotSchema = object({
+  ...envelope("snapshot", "quiet_hours.snapshot"),
+  payload: object({
+    version: boundedString(64),
+    editable: booleanValue,
+    enabled: booleanValue,
+    start: nullable(quietClock),
+    end: nullable(quietClock),
+    classes: array(machineString),
+    rules: array(object({ ruleId: boundedString(64), summary: boundedString(2000) })),
+  }),
+});
+const quietHoursSetCommandSchema = object({
+  ...commandEnvelope("quiet_hours.set"),
+  payload: object({
+    expectedVersion: boundedString(64),
+    enabled: booleanValue,
+    start: quietClock,
+    end: quietClock,
   }),
 });
 export const DEVICE_KINDS = ["iphone", "watch", "mac"] as const;
@@ -3807,6 +3836,9 @@ const schemasByType = {
   "delivery_timing.settings.read": deliveryTimingSettingsQuerySchema,
   "delivery_timing.settings.snapshot": deliveryTimingSettingsSnapshotSchema,
   "delivery_timing.settings.change": deliveryTimingSettingsChangeCommandSchema,
+  "quiet_hours.read": quietHoursQuerySchema,
+  "quiet_hours.snapshot": quietHoursSnapshotSchema,
+  "quiet_hours.set": quietHoursSetCommandSchema,
   "proposals.read": proposalsQuerySchema,
   "proposals.snapshot": proposalsSnapshotSchema,
   "proposal.respond": proposalRespondCommandSchema,

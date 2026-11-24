@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DurableMemoryService,
+  enforceableOwnerRule,
   IMPORT_DUPLICATE_DEFAULTS,
   type ImportDuplicateAnswer,
   type MemoryExtractionAuditRecord,
@@ -13,6 +14,7 @@ import {
   OwnerProfileService,
   type ProactiveModelInvoker,
   type ProductMemoryRecord,
+  PushGate,
   RuleReviewService,
   type RunExecutionSourcePort,
   type RuntimeRequest,
@@ -59,6 +61,7 @@ import {
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionQuietHoursControl } from "../../apps/agent-service/src/production-quiet-hours-control.ts";
 import {
   ProductionReminderTools,
   ProductionReminderWriter,
@@ -2241,6 +2244,166 @@ describe("production memory capture", () => {
     await expect(set({ params: { periods: [] } }, "call-no-period")).rejects.toMatchObject({
       code: "RULE_PARAMETERS_INVALID",
     });
+  });
+
+  it("[SAID-5] reads and changes the owner's quiet hours from the notifications page as the same rule the conversation sets", async () => {
+    const sentence = "夜里别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const read = async () =>
+      (
+        await control.query({
+          kind: "query",
+          type: "quiet_hours.read",
+          payload: {},
+        } as never)
+      ).payload as {
+        version: string;
+        editable: boolean;
+        enabled: boolean;
+        start: string | null;
+        end: string | null;
+        classes: string[];
+        rules: { ruleId: string }[];
+      };
+    const set = (payload: Record<string, unknown>) =>
+      control.execute({
+        kind: "command",
+        type: "quiet_hours.set",
+        actor: { actorType: "owner", actorId: "owner" },
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        payload,
+      } as never);
+    const empty = await read();
+    expect(empty).toMatchObject({ editable: true, enabled: false, start: null, rules: [] });
+
+    await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-night",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "夜里 23 点到早上 7 点不推",
+        quote: sentence,
+        params: { periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }] },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never);
+    const fromChat = await read();
+    expect(fromChat).toMatchObject({
+      editable: true,
+      enabled: true,
+      start: "23:00",
+      end: "07:00",
+      classes: ["mail_reminder", "run_result", "her_words"],
+    });
+    await expect(
+      set({ expectedVersion: empty.version, enabled: true, start: "22:00", end: "06:30" }),
+    ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+
+    await set({ expectedVersion: fromChat.version, enabled: true, start: "22:00", end: "06:30" });
+    const changed = await read();
+    expect(changed).toMatchObject({
+      editable: true,
+      enabled: true,
+      start: "22:00",
+      end: "06:30",
+      classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+    });
+    expect(changed.rules).toHaveLength(1);
+    expect(changed.rules[0]?.ruleId).not.toBe(fromChat.rules[0]?.ruleId);
+    const enforced = (
+      await context.repository.ownerRules().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        includeRetired: false,
+      } as never)
+    ).flatMap((row) => {
+      const rule = enforceableOwnerRule(row);
+      return rule?.gate === "push_delivery" ? [rule] : [];
+    });
+    expect(enforced).toHaveLength(1);
+    const gate = new PushGate();
+    const decide = (pushClass: "her_words" | "approval", now: string) =>
+      gate.decide({ pushClass, now, timeZone: "Asia/Tokyo", rules: enforced }).action;
+    expect(decide("her_words", "2026-11-25T13:30:00.000Z")).toBe("defer");
+    expect(decide("her_words", "2026-11-25T12:30:00.000Z")).toBe("deliver");
+    expect(decide("approval", "2026-11-25T13:30:00.000Z")).toBe("deliver");
+
+    await set({ expectedVersion: changed.version, enabled: false, start: "22:00", end: "06:30" });
+    expect(await read()).toMatchObject({ enabled: false, rules: [] });
+    await expect(
+      set({ expectedVersion: (await read()).version, enabled: true, start: "07:00", end: "07:00" }),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  });
+
+  it("[SAID-5] REVERSE: shows quiet hours with more than one period as read-only and refuses to change them from the page", async () => {
+    const sentence = "工作日夜里和周末早上别提醒我";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-two",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "工作日夜里和周末早上不推",
+        quote: sentence,
+        params: {
+          periods: [
+            { days: [1, 2, 3, 4, 5], start: "23:00", end: "07:00" },
+            { days: [0, 6], start: "07:00", end: "10:00" },
+          ],
+        },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never);
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const state = (
+      await control.query({ kind: "query", type: "quiet_hours.read", payload: {} } as never)
+    ).payload as { version: string; editable: boolean; enabled: boolean; start: string | null };
+    expect(state).toMatchObject({ editable: false, enabled: true, start: null });
+    await expect(
+      control.execute({
+        kind: "command",
+        type: "quiet_hours.set",
+        actor: { actorType: "owner", actorId: "owner" },
+        scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+        payload: { expectedVersion: state.version, enabled: false, start: "23:00", end: "07:00" },
+      } as never),
+    ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+    expect(
+      await context.repository.ownerRules().list({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        includeRetired: false,
+      } as never),
+    ).toHaveLength(1);
   });
 
   it("[ADR-0257] marks a memory captured from a conversation that read outside content, and leaves it unmarked when only another conversation did", async () => {
