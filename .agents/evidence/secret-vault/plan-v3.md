@@ -34,7 +34,7 @@ Himawari 自带一个保险箱，你在 iPhone 上存密码、银行卡密码、
 ## 开源怎么用
 | 项目 | 许可证 | 状态 | 用法 |
 |---|---|---|---|
-| Playwright | Apache-2.0 | 成熟 | 直接用，驱动浏览器、拦请求（要新加运行时依赖，仓库现在只有测试用的） |
+| Playwright | Apache-2.0 | 成熟 | 直接用，驱动浏览器、拦请求（要新加运行时依赖：仓库只在测试和开发脚本里用到，package.json 只声明了测试用的 @playwright/test） |
 | Stagehand | MIT | v4.4.0 | 直接用，找输入框 |
 | 1Password for Claude | 商业产品 | 正式 | 照抄安全设计 |
 | Infisical Agent Vault | MIT | 官方已弃用 | 照抄“值只在出口出现”，用在 API 代发 |
@@ -56,7 +56,7 @@ Himawari 自带一个保险箱，你在 iPhone 上存密码、银行卡密码、
 ## 要你点头
 1. **批准方式**：每次办事 Face ID 批准一次，这次办事里用到的几项一起批（推荐，和 1Password 一样，没有长期授权）；还是每项每个网站第一次批准、以后不再问（点得更少，但没有大厂这么做）。
 2. **值放服务器**（推荐，后台办事时手机不用在线）；还是只放 iPhone、每次用时从手机送出（更安全，手机不在线就办不了）。
-3. **读过网页、邮件后的写操作**：现有规则（ADR 0278）要求每个写操作单独问。登录本身算写操作，按现规则一次办事可能要点好几次。建议改成：这次办事批准时已列明的项和网站，填登录框不再单独问；付款、转账、改密码等照旧每次问。
+3. **读过网页、邮件后的写操作**：现有规则（ADR 0278）要求每个写操作单独问。填登录框如果按写操作算（ADR 0278 没明写，我的判断），按现规则一次办事可能要点好几次。建议改成：这次办事批准时已列明的项和网站，填登录框不再单独问；付款、转账、改密码等照旧每次问。
 
 ## 前提和来源
 1. 原则顺序：用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率（AGENTS.md，“原则之间冲突时按这个顺序裁决”）。
@@ -70,11 +70,11 @@ Himawari 自带一个保险箱，你在 iPhone 上存密码、银行卡密码、
 9. 浏览器自动化必须在隔离环境：“浏览器自动化……默认必须在独立隔离执行环境执行”（docs/adr/0031-isolated-tool-execution.md:39）。
 10. 统一授权出口：“所有登记为‘有后果’的工具调用，执行前走同一个函数”（docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md:139）。
 11. 读过外部内容后写操作：“写操作由 askAfterExternalContent 接手，每一个都要主人批准”（docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md:48）。
-12. 仓库只有测试用的 Playwright：`"@playwright/test": "1.62.1"`（package.json:120）。
+12. 仓库只声明了测试用的 Playwright：`"@playwright/test": "1.62.1"`（package.json:120）；开发脚本 scripts/render-brand-assets.mjs:2 也 import 了它，生产代码没用到。
 13. Stagehand：npm `@browserbasehq/stagehand` 最新 4.4.0，license MIT（https://registry.npmjs.org/@browserbasehq/stagehand/latest）；observe 默认穿透 iframe 和 Shadow DOM（https://docs.stagehand.dev/v4/basics/observe）。
 14. 1Password for Claude：“A human approves every credential release”“There are no standing approvals”“an item is only ever filled into a page that matches the websites saved on that item”（https://support.1password.com/1password-claude-security/）。
 15. 苹果自动填充：“Password AutoFill recommends credentials only for your app’s associated domain”（https://developer.apple.com/documentation/security/password-autofill）。
-16. 记忆方案 v3 第 5 条：“密码、密钥一律不记……以后接一个类似苹果密码管理器的工具……（这一版不做）”，Andy 11-24 改为这一版就做。
+16. 记忆方案 v3 第 5 条（分支 claude/project-thread-lq8dnz 的 .agents/evidence/memory-redesign-plan-v3.md:9）：“密码、密钥一律不记……以后接一个类似苹果密码管理器的工具……（这一版不做）”，Andy 11-24 改为这一版就做。
 
 ## 附：讨论记录
 - DeepSeek 独立方案：.agents/reviews/topic-agent-secret-vault/round-1/deepseek-v4.1-flash.md
