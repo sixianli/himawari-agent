@@ -564,6 +564,49 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
+  it("[ADR-0286] moves past a long indexed turn to the turns after it when they fill the next read page", async () => {
+    const resource = await fixture();
+    try {
+      const LONG = createThreadId("thread-conversation-turns-long-then-more");
+      resource.sql((connection) =>
+        connection
+          .prepare(
+            `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+            VALUES (?, ?, ?, 1, 'open', ?, ?)`,
+          )
+          .run(LONG, OWNER_ID, AGENT_ID, "2026-11-20T00:00:00.000Z", "2026-11-20T00:00:00.000Z"),
+      );
+      const at = (sequence: number) =>
+        new Date(Date.parse("2026-11-23T00:00:00.000Z") + sequence * 1000).toISOString();
+      const first: Row[] = [[LONG, 1, "owner", "private", at(1), "开始长任务"]];
+      for (let sequence = 2; sequence <= 251; sequence += 1)
+        first.push([LONG, sequence, "agent", "private", at(sequence), `进度 ${sequence}`]);
+      resource.add(first);
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      const later: Row[] = [[LONG, 252, "owner", "private", at(252), "再查一下海豹账单"]];
+      for (let sequence = 253; sequence <= 420; sequence += 1)
+        later.push([LONG, sequence, "agent", "private", at(sequence), `核对 ${sequence}`]);
+      later.push([LONG, 421, "owner", "private", at(421), "最后问企鹅行程"]);
+      later.push([LONG, 422, "agent", "private", at(422), "企鹅行程已经订好"]);
+      resource.add(later);
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      expect(
+        resource
+          .turnRows()
+          .filter(({ threadId }) => threadId === LONG)
+          .map(({ firstSequence, lastSequence }) => [firstSequence, lastSequence]),
+      ).toEqual([
+        [1, 251],
+        [252, 420],
+        [421, 422],
+      ]);
+      expect(await resource.service.indexDue({ ...resource.scope, limit: 50 })).toBe(0);
+      expect((await resource.search("海豹账单"))[0]?.turn.firstSequence).toBe(252);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("[ADR-0286] does not record a turn whose words could not be read, reports it, and indexes it once they can be", async () => {
     const resource = await fixture();
     try {

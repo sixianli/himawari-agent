@@ -213,7 +213,7 @@ export class ConversationTurnService {
       messages.push(...page);
       const last = page.at(-1);
       if (!last || page.length < MESSAGES_PER_READ) return { messages, reachedEnd: true };
-      if (messages.slice(1).some((message) => message.role === "owner"))
+      if (messages.slice(1).filter((message) => message.role === "owner").length >= 2)
         return { messages, reachedEnd: false };
       cursor = last.sequence;
     }
