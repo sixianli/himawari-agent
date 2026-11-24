@@ -144,10 +144,31 @@ class SandboxCommandLinksPreflightTest(unittest.TestCase):
             (packet / 'signing' / 'cloud-seal.mjs').write_text('x = { readOnlyToolchainPaths: [ runtime, "/usr/bin", "/etc/alternatives", ["/etc/magic"] ], protectedPaths: [ "/etc/himawari" ] }')
             self.assertEqual(preflight.sandbox_read_roots(packet), ['/usr/bin', '/etc/alternatives', '/etc/magic'])
 
-    def test_real_seal_template_roots_let_every_command_link_resolve_on_this_host(self):
+    def test_real_seal_template_roots_let_ubuntu_alternative_links_resolve_and_refuse_links_out_of_them(self):
         roots = preflight.sandbox_read_roots(HERE / 'packet-template')
         self.assertIn('/etc/alternatives', roots)
-        self.assertEqual(sandbox_links.unreachable_commands(roots), [])
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            rebased = [str(base) + root for root in roots]
+            for folder in ('usr/bin', 'usr/lib/jvm/bin', 'usr/share/nodejs', 'etc/alternatives', 'opt/google/chrome', 'usr/local/bin'):
+                (base / folder).mkdir(parents=True)
+            for real in ('usr/bin/gawk', 'usr/bin/vim.basic', 'usr/bin/python3.12', 'usr/lib/jvm/bin/java', 'opt/google/chrome/chrome', 'usr/local/bin/go'):
+                (base / real).write_text('x')
+            links = {
+                'etc/alternatives/awk': 'usr/bin/gawk',
+                'etc/alternatives/vi': 'usr/bin/vim.basic',
+                'etc/alternatives/java': 'usr/lib/jvm/bin/java',
+                'etc/alternatives/x-www-browser': 'opt/google/chrome/chrome',
+                'usr/bin/awk': 'etc/alternatives/awk',
+                'usr/bin/vi': 'etc/alternatives/vi',
+                'usr/bin/java': 'etc/alternatives/java',
+                'usr/bin/x-www-browser': 'etc/alternatives/x-www-browser',
+                'usr/bin/go': 'usr/local/bin/go',
+            }
+            for link, target in links.items():
+                (base / link).symlink_to(base / target)
+            (base / 'usr/bin/python3').symlink_to('python3.12')
+            self.assertEqual(sandbox_links.unreachable_commands(rebased, str(base / 'usr/bin')), ['go', 'x-www-browser'])
 
     def test_link_to_a_directory_outside_the_roots_is_reported_and_inside_is_not(self):
         with tempfile.TemporaryDirectory() as directory:
