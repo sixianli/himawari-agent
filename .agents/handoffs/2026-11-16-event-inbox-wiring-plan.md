@@ -70,8 +70,8 @@
    | 新邮件推不推，由一段固定公式定（例如“要你做事、优先级高、截止时间近”就推） | 公式看不到你的记忆，例如不知道这个发件人是你正在等回信的人 | 她读邮件、带着记忆决定 |
    | 新事情进来，先由小模型看一句概括判断“值不值得叫醒她” | 只看一句话就把事情挡掉了 | 删掉，每件事都交给她 |
    | 你对手机说一句带她名字的话：手机先认是不是你的声音（声纹，或者 AirPods 戴在耳朵里）；再由一个小模型只看这一句话，判断你是不是在跟她说话，“是”就当成你发给她的消息去做 | 你跟朋友说“Himawari 昨天提醒我交房租了”，只看这一句容易被当成在叫她 | 认声音那一步保留（它防的是别人冒充你）；“是不是在跟她说话”交给她，她知道你们刚才在聊什么，判断更准，不是对她说的就不出声 |
-5. **子线程不设“最多跑几次”的上限，但连续跑了一定次数或花了一定费用还没做完时，先停下、叫醒主对话重新看一眼**，由主对话决定继续、改方向、叫停，或者来问你。次数和费用都是设置，能改。每个子线程跑了几次、花了多少模型费用，“后台在办”里看得到，你随时能叫停。这和定时任务一样，和愿景原则 8 的字面（“推进受成本、资源与时间预算约束，超限即停下等待”）不一致；愿景这句话怎么改由你定，编码用的 ADR 先写明是你定的例外。
-6. **什么时候清理旧的工具结果、什么时候压缩，用评测定，不拍数字。** 评测拿同一批长对话，在不同长度下清理和压缩，比回答质量和总费用。评测要花模型费用，开跑前按规矩先报价问你。评测出结果之前，压缩沿用现有设置，清理先用保守的起始值（见[主对话怎么一直不变长](#main-context)第 5 点）。
+5. **子线程照 Anthropic 的做法管：不设“跑几次”的上限，只给每个子线程一笔费用预算，花完就停下等主对话决定。**（Andy 2026-11-24 20:49 问大厂怎么做，查完后改成这样。）主对话开子线程时按事情大小给预算，像 Anthropic 研究系统把“按难度定投入”写进提示那样；不给就用设置里的默认值。花到预算，这个子线程停下，主对话看计划进展决定加预算接着做、改方向、叫停，或者来问你。所有子线程和主对话的花费合起来仍受产品里你看得见、能改的那个花费上限管，到了这个上限就停下等你。这正好就是愿景原则 8 说的“推进受成本、资源与时间预算约束，超限即停下等待”，所以不用改愿景，原稿说的“和愿景字面不一致”取消。依据见[长任务](#long-tasks)。
+6. **清理旧的工具结果、压缩，直接用 Anthropic 官方的默认值，不做评测。**（Andy 2026-11-24 20:50 定。）压缩：上下文到 15 万 token 时做（Anthropic 压缩的默认触发线，现在项目里是 20 万）。清理：到 10 万 token 时开始清，保留最近 3 次工具调用的结果；每次至少清 5000 token，清不到就不清（官方默认不设这一项，但项目规则要求成批清，5000 取自官方文档自己的例子）。细节和原话见[主对话怎么一直不变长](#main-context)。
 
 <a id="already-decided"></a>
 ## 已经定过的事
@@ -87,7 +87,7 @@
 | 提醒到点也叫醒她；运行失败就按原文按时推，不丢 | [定时](#timers) | 不变 |
 | 定时到点能不能动手看是谁要的 | [权限和审批](#permissions) | 要改：Andy 20:07 要求参考 Muse，改成看动作和外来内容、不看是谁想到的（点头第 3 条） |
 | 她主动发的话存成聊天消息，决策记录只记原因、推没推、评价，沉默也记 | [她主动说的话](#outbox) | 有一处变：原先没有出处的话发到一个固定的“她主动找你”对话，现在统一发到主对话 |
-| 分五步上线 | [分几步上线](#steps) | 变成六步：主对话要先有，子线程单独一步 |
+| 分五步上线 | [分几步上线](#steps) | 仍是五步，但内容变了：主对话要先有，子线程单独一步 |
 | 她每条话下面给可点的下一步，把你当成想少打字的人（11-24 20:47） | [可点的下一步](#next-step-options) | 新加 |
 
 <a id="premises"></a>
@@ -237,7 +237,17 @@
 
 **不重复做有后果的事。** 最怕的是：子线程刚发出一封邮件，还没来得及记下，运行就到点被截停，接着做时又发一次。所以发出去、花钱、删东西这类动作，做之前在计划表里记“正在做”，做完记“做完”，接着做时先看这一条；动作本身用现有命令的去重编号，同一个动作重放只生效一次。同样，“开子线程”用这次工具调用的编号去重，她重试时不会开出两个一样的子线程。
 
-不设“最多接着做几次”的上限（你定的）。连续跑满一定次数、或者自上次检查以来花的模型费用到了一个数（两个都是设置）还没交回，这个子线程先停下，往主对话发一件事“这个子线程已经连续跑了 N 次、花了多少”，主对话看计划进展决定继续、改方向、叫停或问你（点头第 5 条）。这是把判断交给看得到全局的主对话，不是程序替她叫停；子线程在等主对话的这段时间不花钱，也合愿景原则 8 说的“停下等待”。
+不设“最多接着做几次”的上限（你定的）。**管住费用靠预算，照 Anthropic 的做法（点头第 5 条）：**
+
+| 谁 | 怎么做（原话） |
+| --- | --- |
+| Anthropic Agent SDK <https://code.claude.com/docs/en/agent-sdk/agent-loop> | 跑几轮、花多少两个上限默认都是“No limit”；但“Setting a budget is a good default for production agents.”；“The budget cap covers subagents: their spend counts toward the total.”；到了上限这次运行就结束，由调用方决定是否接着跑（示例里写“Resume with a higher limit.”） |
+| Anthropic 研究系统 <https://www.anthropic.com/engineering/multi-agent-research-system> | 投入多少写在提示里由主代理判断：“Simple fact-finding requires just 1 agent with 3-10 tool calls”；“we embedded scaling rules in the prompts”；做完由主代理“decides whether more research is needed” |
+| Claude Code agent teams <https://code.claude.com/docs/en/agent-teams> | 没有给成员设时长和费用上限；提醒“Letting a team run unattended for too long increases the risk of wasted effort.”；由主代理“Check in on teammates' progress, redirect approaches that aren't working” |
+| ChatGPT 定时任务 <https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt> | 限制的是同时有几个任务（按套餐 3 到 15 个），这是套餐额度；盯着某件事的任务“stop when a defined end condition is met”；要发消息或改外部数据时“the task pauses until you review it” |
+| Google Gemini 任务 <https://support.google.com/gemini/answer/16596215> | “You can have up to 15 tasks running at a given time.”，用量按算力额度算，快用完时提醒你；跑的过程中你随时能“enter additional instructions in the text box”改方向 |
+
+几家都没有“跑满几次就停”这种规则；消费产品里的个数限制是按套餐卖的额度，不是为了效果。我们照 Anthropic：每个子线程一笔预算（主对话开的时候按事情大小定，不给就用默认值），花到了子线程停下，往主对话发一件事“这个子线程花了多少、计划做到哪”，主对话决定加预算接着做、改方向、叫停或问你。所有花费合起来受产品的花费上限管，到了就停下等你。子线程在等的时候不花钱。
 
 <a id="main-context"></a>
 ### 主对话怎么一直不变长、不变笨
@@ -246,13 +256,13 @@
 
 1. **重活放子线程。** 查资料、跑很多步工具这类会产生大量中间结果的事，都在子线程做，主对话只收一两千 token 的结论。
 2. **外来的事只放简要。** 见上一节。
-3. **定期压缩。** 压缩就是把较早的对话总结成一段，换掉原文。规则要求压缩集中做、少做（前提 14），所以不每轮做，到一定长度做一次。压缩时用最新的记忆重建开头的记忆快照（记忆线程的做法，前提 17），最近几轮原文保留；“后台在办”的状态仍只放每次最后一条消息，不放进压缩后的开头，因为它每轮都会变。多长时压缩用评测定（点头第 6 条），评测出来之前沿用现在的设置（前提 12：触发上限 20 万 token）。
+3. **定期压缩。** 压缩就是把较早的对话总结成一段，换掉原文。规则要求压缩集中做、少做（前提 14），所以不每轮做，上下文到 15 万 token 时做一次（Anthropic 压缩功能的默认值，<https://platform.claude.com/docs/en/build-with-claude/compaction-threshold>：“compaction starts at 150,000 input tokens by default”；现在项目里是 20 万，前提 12）。压缩时用最新的记忆重建开头的记忆快照（记忆线程的做法，前提 17），最近几轮原文保留；“后台在办”的状态仍只放每次最后一条消息，不放进压缩后的开头，因为它每轮都会变。
 4. **找得回来。** 被压缩掉的细节不会真的丢：用记忆线程的“搜旧对话、打开旧对话”工具能翻回原文；子线程的全过程也能打开。
 
 压缩摘要里写的子线程情况只是“压缩那一刻”的，之后会变；她要知道现在的进度，看每次最后一条消息里的状态板或用“查看子线程”，系统提示里写明这一点。状态板和事件里的时间一律写成具体时刻（固定时区和格式），不写“3 分钟前”；子线程按“属于哪件大事、开的先后”排，待办按计划里的顺序排，事件用收件箱行的编号。这样同一段内容每次发出去都是同样的字，并把状态板的生成放进 `npm run check:prompt-prefix` 的逐字测试。
 
 5. **两次压缩之间，成批清理旧的工具结果。** 压缩是把整段对话总结掉，代价大、会丢细节；在它之前先做轻一点的：把较早的工具结果（网页全文、搜索结果、文件内容这类大块）换成一行占位，例如“[这次网页读取的结果已清理，编号 xxx，需要时用‘取回工具结果’按编号取回]”，模型自己的工具调用和她写的话都保留。这是 Anthropic 官方的做法（上下文编辑文档 <https://platform.claude.com/docs/en/build-with-claude/context-editing>：“The API replaces each cleared result with placeholder text indicating to Claude that it was removed.”），Anthropic 的上下文工程文章也说它是“One of the safest lightest touch forms of compaction”。
-   - **成批、少做**（前提 14）：只有上下文超过一个触发线才清；一次要清掉至少一定数量的 token，清不到这么多就不清（官方文档的原话：“clear enough tokens to make the cache invalidation worthwhile”）；最近的几次工具调用保留原样。触发线、每次至少清多少、保留几次，都是设置，起始值参照官方文档的默认值，再由点头第 6 条的评测调。
+   - **成批、少做**（前提 14）：只有上下文超过一个触发线才清；一次要清掉至少一定数量的 token，清不到这么多就不清（官方文档的原话：“clear enough tokens to make the cache invalidation worthwhile”）；最近的几次工具调用保留原样。数字直接用 Anthropic 上下文编辑文档里的默认值（点头第 6 条）：`trigger` 默认“100,000 input tokens”，即到 10 万 token 开始清；`keep` 默认“3 tool uses”，即最近 3 次工具调用的结果保留原样；`clear_tool_inputs` 默认 `false`，即只清结果、保留她的工具调用。`clear_at_least` 官方默认“None”，但项目规则要求成批清，官方文档说这一项“helps determine whether context clearing is worth breaking your prompt cache”，并在自己的例子里写 5000，所以用 5000。这些都是设置，能改。先清理（10 万）后压缩（15 万），和 Anthropic 两个默认值的先后一致。
    - **能找回**：原始结果本来就完整存在聊天记录里，清理只改发给模型的那份。加一个只读工具“取回工具结果”，按占位里的编号取回原文。
    - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
    - **字节稳定**：清理是一次性的换新，和压缩一样记一条记录；清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
@@ -376,7 +386,7 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 | --- | --- | --- |
 | Anthropic, Building always-on agents（2026-11-13）<https://claude.com/resources/articles/building-always-on-agents> | “every source sends an event to an inbox, where a worker picks it up.”“An inbox should only have one active worker at a time.”“Events that continue earlier work, such as a reply from the user, resume an existing session”“For each ongoing task, the agent should keep a progress file”“If a session becomes too long, you can either compact the older messages or start a new session.” | 照做：一个收件箱、一个工人、接着之前的事回原对话、计划表当进度文件、主对话压缩。这篇文章没讲子代理 |
 | Anthropic, How we built our multi-agent research system <https://www.anthropic.com/engineering/multi-agent-research-system> | “Each subagent needs an objective, an output format, guidance on the tools and sources to use, and clear task boundaries.”“The LeadResearcher begins by thinking through the approach and saving its plan to Memory”“embedded scaling rules in the prompts”“Currently, our lead agents execute subagents synchronously”，异步“adds challenges in result coordination, state consistency, and error propagation” | 任务说明的几项、计划存起来、按难度定投入都照做。它是同步的，我们做成异步，因为你要中途改需求、要看进度；它说的三个难点我们这样处理：所有消息走同一个收件箱和一个工人（不会同时改），计划表是唯一的进度来源，失败通过“做不下去”状态报给主对话 |
-| Anthropic, Effective context engineering <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents> | 子代理“returns only a condensed, distilled summary of its work (often 1,000-2,000 tokens)”；“overly aggressive compaction can result in the loss of subtle but critical context” | 结果一两千 token；压缩时机用评测定，不拍数字 |
+| Anthropic, Effective context engineering <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents> | 子代理“returns only a condensed, distilled summary of its work (often 1,000-2,000 tokens)”；“overly aggressive compaction can result in the loss of subtle but critical context” | 结果一两千 token；压缩和清理的时机照 Anthropic 官方默认值 |
 | Anthropic, When to use multi-agent systems <https://claude.com/resources/articles/building-multi-agent-systems-when-and-how-to-use-them> | “Start with the simplest approach that works, and add complexity only when evidence supports it.”“multi-agent implementations typically use 3-10x more tokens” | 小事主对话自己办，不开子线程；费用你说过不用省，但开不开仍按“值不值得拆”判断，因为拆错了效果也会变差 |
 | Claude Code agent teams <https://code.claude.com/docs/en/agent-teams> | “Tasks have three states: pending, in progress, and completed.”“You can message any teammate directly to give additional instructions, ask follow-up questions, or redirect their approach.”“when a teammate finishes and stops, it automatically notifies the lead”“Task status can lag: teammates sometimes fail to mark tasks as completed” | 待办状态、主对话随时发话、做完自动通知、程序核对待办状态都照做。它允许成员之间直接说话，我们不做，都经过主对话，因为你要主对话掌握全部 |
 | Claude Code subagents <https://code.claude.com/docs/en/sub-agents> | “the subagent does that work in its own context and returns only the summary.” | 子线程干净上下文、只交回结论 |
@@ -386,7 +396,7 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 <a id="steps"></a>
 ## 分几步上线和验收
 
-每一步一个 PR，各有自动测试（本机回环模型桩，不用假替身）和 iPhone 真机验收；真模型评测开跑前先报费用。每一步动到模型调用或权限，按规矩等你说“合并”。
+每一步一个 PR，各有自动测试（本机回环模型桩，不用假替身）和 iPhone 真机验收。每一步动到模型调用或权限，按规矩等你说“合并”。
 
 **第 1 步：主对话、收件箱地基、邮件。** 有主对话；收件箱一写入就叫醒；新邮件进收件箱交给主对话；“告诉主人”工具和决策记录新种类；“给选项”工具和消息下的选项；删邮件公式、“值不值得想”、ADR 0273 延后判断、没用的六套服务。
 - 正向：进一封和你一条记忆有关、要你处理的邮件。主对话里出现她的一条消息，点开看得到是哪封邮件、用了哪条记忆；决策记录里有一行“说了”。
@@ -408,7 +418,7 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 - 反向：同一条消息因网络重发两次，只回一次；运行到一半重启服务，消息不丢、不回两次。
 - 数字：从发出到她开始回的时间，改前改后各量一组写进 PR，不比改前慢。
 
-**第 3 步：子线程。** 开子线程、写计划、告诉主对话、发给子线程、叫停、交回结果、状态板、“后台在办”、接着做、审批到主对话、权限按出处；同意的任务和后台只读运行改成子线程。
+**第 3 步：子线程。** 开子线程、写计划、告诉主对话、发给子线程、叫停、交回结果、状态板、“后台在办”、接着做、审批到主对话、权限按出处、每个子线程的费用预算；清理旧的工具结果和“取回工具结果”工具，压缩触发线改成 15 万；同意的任务和后台只读运行改成子线程。
 - 正向：说“帮我比较三家东京的牙科诊所，看评价、价格、离我公司多远”。她开子线程（一个或几个由她定），“后台在办”里看得到计划；做完主对话里出现一条汇总。
 - 正向：子线程在做时你说“只要周六开门的”。那个子线程的计划出现新版本，写着因为什么改；最终结果只含周六开门的。
 - 正向：子线程要替你发一封邮件。同意卡片出现在主对话里，内容是真实要发的邮件；点同意后发出，点拒绝后不发。
@@ -420,6 +430,11 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 - 反向：看了一封邮件后开的子线程要写日历，主对话里出现同意卡片，不直接写；你选“这件事里都行”后，同一子线程再写日历不再问，工具清单没有变。
 - 反向：你给过“以后都行”的发邮件，在读过一封外来邮件之后照样要问。
 - 反向：花钱的卡片上只有“只这一次”。
+- 反向：把子线程预算调得很小，花到后它停下，主对话里出现一件“花到预算了”的事；主对话不加预算时它不再花钱。
+- 正向：子线程读了十几个网页后触发清理，之后它需要某个网页的原文时，用占位里的编号取回，答案正确。
+- 反向：清掉的 token 不到 5000 时不清，请求开头不变；计划、子线程结果、同意卡片在清理后仍原样在上下文里。
+- 反向：清理那一次之后连续几轮，请求开头逐字相同（`npm run check:prompt-prefix` 加这一条）。
+- 反向：压缩前后，“后台在办”的状态、她最近主动说过的话、记忆快照都在压缩后的开头里，问她答得上来。
 
 **第 4 步：提醒、跟进、周期任务。**
 - 正向：定“明天 8 点提醒我交房租”。到点她提醒你，可能补一句有用的信息。
@@ -437,13 +452,6 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 - 反向：你对朋友说“Himawari 昨天提醒我交房租了”。她不把这句当成要她做事，不出声或最多问一句。
 - 反向：别人的声音喊她的名字（声纹不过线），照旧被手机挡下，进不了收件箱。
 - 反向：感知暂停时，收件箱里没有感知事件。
-
-**第 6 步：清理旧的工具结果，加上清理和压缩时机评测。** 清理功能和“取回工具结果”工具随第 3 步子线程一起上（起始值），这一步用评测把触发线定下来；评测费用先报价问你。
-- 正向：在选定的长度压缩后，同一批问题的回答质量不低于不压缩时。
-- 正向：子线程读了十几个网页后触发清理，之后它需要某个网页的原文时，用占位里的编号取回，答案正确。
-- 反向：清掉的 token 不够每次至少清的量时不清，请求开头不变；计划、子线程结果、同意卡片在清理后仍原样在上下文里。
-- 反向：清理那一次之后连续几轮，请求开头逐字相同（`npm run check:prompt-prefix` 加这一条）。
-- 反向：压缩前后，“后台在办”的状态、她最近主动说过的话、记忆快照都在压缩后的开头里，问她答得上来。
 
 <a id="compare"></a>
 ## 和 DeepSeek 独立方案的比较
@@ -481,7 +489,7 @@ DeepSeek 在没看到本方案的情况下，只拿到问题、你的要求、�
 | 提醒兜底和正常写会写两条 | 采纳 | 消息编号由“第几次到点”算出，写前先查 |
 | 状态板的顺序、编号没定，同样内容可能每次字不一样；压缩后开头放了会变的状态 | 采纳 | 固定排序和编号；状态板只放最后一条 |
 | 六套服务还有类型和测试引用 | 采纳 | 改了排查清单那一行 |
-| 连续跑 N 次只通知主对话、子线程不停，费用会一直涨 | 采纳 | 先停下等主对话决定；费用也能触发 |
+| 连续跑 N 次只通知主对话、子线程不停，费用会一直涨 | 采纳，后来又改 | 先停下等主对话决定；Andy 问大厂怎么做之后，去掉次数，只按费用预算停 |
 | 语音改成外部内容后，感知抽取仍把听到的话当你亲口说的去存记忆（`packages/application/src/services/perception-extraction.ts:363-366`） | 不成立，并因此改了语音那条 | 核对代码后发现手机已经先用声纹或 AirPods 确认是你本人（`packages/application/src/services/voice-command.ts:57-76`），所以不改成外部内容；只把“是不是在对她说”交给主对话 |
 | 先做你的消息、再做邮件 | 不采纳 | 邮件先上，让收件箱在不影响聊天的流量上先跑稳；你的消息那步动的是每条聊天都走的路，放第二步 |
 
@@ -515,4 +523,6 @@ DeepSeek 在没看到本方案的情况下，只拿到问题、你的要求、�
 - 核对代码说法（第 7 轮，73 条）：70 条一致；3 条模型找不到出处，线程自己核过：记忆线程方案在另一个分支上（模型读不到，线程已打开核对原话）；表冻结记在项目记忆里，不在仓库；“语音判断为是之后有你的全部权限”这句模型找不到代码，线程追到 `packages/platform-node/src/device-api-routes.ts:1255-1300` 确认它以你的身份提交消息，同时发现前面还有声纹和 AirPods 两道认人，因此改写了语音那条。
 - 外来的事只放简要、全文用工具打开时，打开的那次是否同样打上“外来内容”标记和数据分级，没有读。
 - 发邮件等对外动作现在有没有去重编号，没有读；“不重复做有后果的事”靠它。
+- 产品里现有的花费上限管到哪一层（每天、每次运行，还是每个对话），没有读；子线程预算要挂在它下面，编码前核对。
+- 压缩现在的触发线是 20 万（前提 12），改成 15 万前要核对 Pi 的压缩设置和模板里还有没有别处写着 20 万。
 - 插进运行的消息（`session.steer()`）在下一轮历史里会不会和数据库里那条重复出现，没有读。
