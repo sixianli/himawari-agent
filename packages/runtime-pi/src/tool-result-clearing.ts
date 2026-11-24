@@ -4,6 +4,7 @@ import {
   TOOL_RESULT_CLEARED_PLACEHOLDER,
   TOOL_RESULT_RECALL_NOT_FOUND,
 } from "@himawari-agent/prompt-catalog";
+import { namesRememberedValue } from "@himawari-agent/sensitive-capture";
 import { approximateTokens } from "./compaction-prefix.js";
 
 export const TOOL_RESULT_RECALL_TOOL_NAME = "tool_result_recall";
@@ -60,6 +61,13 @@ export function contentTokens(content: readonly (TextContent | ImageContent)[]):
   return content.reduce((total, block) => total + blockTokens(block), 0);
 }
 
+function namesMaskedSecret(message: ToolResultMessage): boolean {
+  return message.content.some((block) => {
+    const text = (block as { readonly text?: unknown } | null)?.text;
+    return typeof text === "string" && namesRememberedValue(text);
+  });
+}
+
 function messageTokens(message: ClearableMessage): number {
   if (isToolResult(message)) return contentTokens(message.content);
   return approximateTokens(JSON.stringify(message) ?? "");
@@ -70,16 +78,24 @@ export function clearedToolResultIds(
   settings: ToolResultClearingSettings,
 ): ReadonlySet<string> {
   const cleared = new Set<string>();
-  const seen: { readonly id: string; readonly name: string; readonly tokens: number }[] = [];
+  const seen: {
+    readonly id: string;
+    readonly name: string;
+    readonly tokens: number;
+    readonly message: ToolResultMessage;
+    namesSecret?: boolean;
+  }[] = [];
   let measured: number | undefined;
   let sinceMeasured = 0;
   let compactedAt: number | undefined;
   const evaluate = () => {
     if (measured === undefined || measured + sinceMeasured <= settings.triggerTokens) return;
     const older = seen.slice(0, Math.max(0, seen.length - settings.keepToolUses));
-    const candidates = older.filter(
-      (result) => !cleared.has(result.id) && !settings.keepToolNames.has(result.name),
-    );
+    const candidates = older.filter((result) => {
+      if (cleared.has(result.id) || settings.keepToolNames.has(result.name)) return false;
+      result.namesSecret ??= namesMaskedSecret(result.message);
+      return !result.namesSecret;
+    });
     const tokens = candidates.reduce((total, result) => total + result.tokens, 0);
     if (candidates.length === 0 || tokens < settings.clearAtLeastTokens) return;
     for (const result of candidates) cleared.add(result.id);
@@ -103,7 +119,7 @@ export function clearedToolResultIds(
     const tokens = messageTokens(message);
     sinceMeasured += tokens;
     if (isToolResult(message))
-      seen.push({ id: message.toolCallId, name: message.toolName, tokens });
+      seen.push({ id: message.toolCallId, name: message.toolName, tokens, message });
   }
   evaluate();
   return cleared;
