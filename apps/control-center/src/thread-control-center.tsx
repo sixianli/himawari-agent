@@ -1207,36 +1207,13 @@ export function useThreadControlCenter(
         origin && detail?.payload.thread.threadId === origin ? detail.payload.thread : undefined;
       if (!origin) {
         setMutationStatus("pending");
-        const existing = storage.readPendingThreadMutation("new-draft-create");
-        const identity = mutationIdentity(storage, {
-          operationKey: "new-draft-create",
-          commandType: "thread.create",
-          threadId: existing?.threadId ?? `thread:${crypto.randomUUID()}`,
-        });
-        const resultRef = await client.protectText(
-          "thread-action:create",
-          "private",
-          `payload-create:${identity.threadId.slice(-36)}`,
-        );
-        const result = await client.mutateThread(
-          threadCommandMessage(
-            configuration,
-            "thread.create",
-            { threadId: identity.threadId, answerLocale: "zh-CN", resultRef },
-            identity.idempotencyKey,
-          ),
-        );
-        if (result.kind !== "result") throw new Error("CONTROL_CENTER_REQUEST_REJECTED");
         const snapshot = await client.queryThread(
-          threadQueryMessage(configuration, "thread.detail", {
-            threadId: result.payload.threadId,
-            afterSequence: 0,
-            limit: 1,
-          }),
+          threadQueryMessage(configuration, "thread.main", {}),
         );
-        if (snapshot.type !== "thread.detail_snapshot")
+        if (snapshot.type !== "thread.main_snapshot")
           throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
         target = snapshot.payload.thread;
+        setMainThreadId(target.threadId);
       }
       if (!target) {
         settleOutgoing(null);

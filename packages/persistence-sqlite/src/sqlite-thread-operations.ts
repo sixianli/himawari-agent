@@ -1949,7 +1949,7 @@ export class SqliteThreadOperations {
       FROM thread_messages m JOIN threads t ON t.id=m.thread_id AND t.owner_id=m.owner_id AND t.agent_id=m.agent_id
         JOIN payloads p ON p.ref=m.content_ref AND p.owner_id=m.owner_id AND p.agent_id=m.agent_id
       WHERE m.owner_id=? AND m.agent_id=? AND t.status='open' AND t.origin='owner' AND m.message_status='committed'
-        AND p.lifecycle_state='active' AND p.content_type='text/plain'
+        AND m.internal=0 AND p.lifecycle_state='active' AND p.content_type='text/plain'
         AND NOT EXISTS (SELECT 1 FROM thread_search_projection s WHERE s.thread_id=m.thread_id AND s.message_id=m.id AND s.projection_version=?)
       LIMIT ?`)
       .all(

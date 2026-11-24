@@ -1702,6 +1702,7 @@ export class SqliteMemoryOperations {
         JOIN (SELECT thread_id, max(sequence) AS last_sequence,
             max(committed_at) AS last_committed_at
           FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
+            AND internal = 0
           GROUP BY thread_id) m ON m.thread_id = t.id
         WHERE t.owner_id = @ownerId AND t.agent_id = @agentId AND t.status = 'open'
           AND t.origin = 'owner'

@@ -319,6 +319,63 @@ describe.each(["worker", "direct"] as const)("main conversation through %s", (ex
     expect(context?.messages.some((message) => message.internal === true)).toBe(false);
   });
 
+  it("[PR631-4][PR631-5] leaves internal messages out of search and the memory index watermarks", async () => {
+    const { commands, repository, databasePath } = await fixture();
+    const main = await commands.create({
+      ownerId,
+      agentId,
+      idempotencyKey: "create-main",
+      resultRef: "payload-main",
+    });
+    const said = await commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: main.thread.id,
+      expectedThreadRevision: main.thread.revision,
+      sessionId,
+      idempotencyKey: "owner-said",
+      contentRef: "payload-said",
+      sourceProofRef: "proof:owner",
+      dataClassification: "private",
+      resultRef: "payload-said-result",
+    });
+    const note = await commands.admitOwnerMessage({
+      ownerId,
+      agentId,
+      threadId: main.thread.id,
+      expectedThreadRevision: said.thread.revision,
+      sessionId,
+      idempotencyKey: "internal-note",
+      contentRef: "payload-note",
+      sourceProofRef: "proof:inbox",
+      dataClassification: "private",
+      resultRef: "payload-note-result",
+      internal: true,
+    });
+    const database = openQualifiedDatabase(databasePath);
+    database
+      .prepare("UPDATE payloads SET content_type = 'text/plain' WHERE ref IN (?, ?)")
+      .run("payload-said", "payload-note");
+    database.close();
+    const pending = await repository
+      .threadSearchProjectionSource()
+      .pending({ ownerId, agentId, projectionVersion: "v-test", limit: 50 });
+    expect(
+      pending.filter((source) => source.kind === "message").map((source) => source.messageId),
+    ).toEqual([said.message.id]);
+    expect(note.message.sequence).toBeGreaterThan(said.message.sequence);
+    expect(
+      (await repository.conversationTurns().listBehind({ ownerId, agentId, limit: 10 })).map(
+        (watermark) => [watermark.threadId, watermark.lastSequence],
+      ),
+    ).toEqual([[main.thread.id, said.message.sequence]]);
+    expect(
+      (await repository.memoryEpisodes().listUnsummarized({ ownerId, agentId, limit: 10 })).map(
+        (watermark) => [watermark.threadId, watermark.lastSequence],
+      ),
+    ).toEqual([[main.thread.id, said.message.sequence]]);
+  });
+
   it("deletes conversations from before the main conversation and keeps the main one", async () => {
     const { threads, commands, clock, databasePath, deletion } = await fixture();
     const old = await commands.create({

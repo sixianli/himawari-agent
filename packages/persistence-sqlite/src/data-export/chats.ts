@@ -127,7 +127,7 @@ function readChatSnapshot(
       );
       const restrictedMessages = count(
         `SELECT COUNT(*) FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
-          AND classification = 'restricted'
+          AND classification = 'restricted' AND internal = 0
           AND thread_id IN (SELECT id FROM threads WHERE owner_id = @ownerId
             AND agent_id = @agentId AND status IN ('open', 'trashed') AND origin = 'owner')`,
       );
