@@ -121,7 +121,7 @@ date: "2026-11-24"
 9. 读过外来内容后做有后果的小事，由判断模型只凭你亲口说过的话判断你是否明说过。`packages/prompt-catalog/src/authorization.ts:4-6`：`id: "authorization.owner-intent-question",`，“只凭主人亲口说过的话，看主人是不是已经明说要做这件事”。
 10. 后台命令的结果已经以一条追加消息送回原对话。`packages/prompt-catalog/src/background.ts:14-20`：`id: "background.notice",`，“【系统通知，不是用户发的消息】你在这个对话里早些时候转入后台的命令有了结果。”
 11. Pi（Himawari 用的 Agent 运行库）官方有“运行中插一条消息”的写法。`docs/pi-development-guide.md:285`：“`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达……用户消息用 `session.steer()` / `session.followUp()`”。
-12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`。
+12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`（写方案时的值；按定的第 6 件事已改成 `150_000`）。
 13. 同意过的任务的写操作规则。`docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md:48`：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
 14. 发给模型的内容只追加；压缩要集中、少做、写进 ADR。`AGENTS.md:43`：“已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。”`.agents/instructions/prompt-prefix.md:61`：“必须缩短历史时，集中做、少做，并在 ADR 里写明。不得每轮都做。”同文件 `:64`：“清理旧的工具结果要成批、少做、能恢复。一次清理足够多，才值得付一次缓存失效的代价；被清理的内容要能找回”；同文件 `:36` 把“将来按 ADR 实施的第 14 条清理”列为“只追加”的例外之一。
 15. 理解你的意思交给模型，不写词表。`.claude/rules/owner-standing-rules.md` “理解用户的意思交给模型”一节：“判断用户一句话的意图……一律交给模型，程序只做校验”。
@@ -324,7 +324,7 @@ date: "2026-11-24"
    - **成批、少做**（前提 14）：只有上下文超过一个触发线才清；一次要清掉至少一定数量的 token，清不到这么多就不清（官方文档的原话：“clear enough tokens to make the cache invalidation worthwhile”）；最近的几次工具调用保留原样。数字直接用 Anthropic 上下文编辑文档里的默认值（定的第 6 件事）：`trigger` 默认“100,000 input tokens”，即到 10 万 token 开始清；`keep` 默认“3 tool uses”，即最近 3 次工具调用的结果保留原样；`clear_tool_inputs` 默认 `false`，即只清结果、保留她的工具调用。`clear_at_least` 官方默认“None”，但项目规则要求成批清，官方文档说这一项“helps determine whether context clearing is worth breaking your prompt cache”，并在自己的例子里写 5000，所以用 5000。这些都是设置，能改。先清理（10 万）后压缩（15 万），和 Anthropic 两个默认值的先后一致。
    - **能找回**：原始结果本来就完整存在聊天记录里，清理只改发给模型的那份。加一个只读工具“取回工具结果”，按占位里的编号取回原文。
    - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清。做法是这些工具的描述符写上 `contextRetention: "keep"`（`packages/application/src/ports/intelligence.ts` 的 `RuntimeCustomToolDescriptor`），清理时跳过声明了它的工具；做计划、子线程结果、同意卡片这几样工具的那一步，要给描述符加上这一项，并写一条“结果变老也不清”的测试。记忆快照放在开头，不是工具结果，本来就不会被清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
-   - **字节稳定**：清理是一次性的换新，不另存记录：清了哪些由历史本身逐条重放算出（只用每条回答记下的用量），同一段历史每次算出同样的字节（`packages/runtime-pi/src/tool-result-clearing.ts`）；压缩之后保留下来的那几轮按原文发（压缩本来就换掉了整个开头），等上下文再超过清理线时和别的结果一起成批清。清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
+   - **字节稳定**：清理是一次性的换新，不另存记录：清了哪些由历史本身逐条重放算出（用最近一条回答记下的用量，加上它之后新增消息的估算），同一段历史每次算出同样的字节（`packages/runtime-pi/src/tool-result-clearing.ts`）；压缩之后保留下来的那几轮按原文发（压缩本来就换掉了整个开头），等上下文再超过清理线时和别的结果一起成批清。清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
    - **对主对话和子线程都做**。主对话的重活本来交给子线程，大块工具结果不多，清理的好处主要在子线程：它们一次任务会读很多网页和文件。
 
 <a id="outbox"></a>
@@ -617,5 +617,5 @@ DeepSeek 在没看到本方案的情况下，只拿到问题、你的要求、�
 - 几件事合成的最后一条用户消息，存历史时要存合成后实际发出的那一条（`.agents/instructions/prompt-prefix.md` 第 5 条，I-66 那次事故就是存的和发的不一样），而这几条在数据库里各存一条；现在运行时存实际发出内容的做法能不能直接用在合成的消息上，没有读，编码第 2 步前核对。
 - 发邮件等对外动作现在有没有去重编号，没有读；“不重复做有后果的事”靠它。
 - 产品里现有的花费上限管到哪一层（每天、每次运行，还是每个对话），没有读；子线程预算要挂在它下面，编码前核对。
-- 压缩现在的触发线是 20 万（前提 12），改成 15 万前要核对 Pi 的压缩设置和模板里还有没有别处写着 20 万。
+- 写方案时压缩的触发线是 20 万（前提 12），改成 15 万前要核对 Pi 的压缩设置和模板里还有没有别处写着 20 万。
 - 插进运行的消息（`session.steer()`）在下一轮历史里会不会和数据库里那条重复出现，没有读。

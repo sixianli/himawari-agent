@@ -62,7 +62,7 @@ KV 缓存，也叫提示缓存（prompt cache），指模型服务方把“请�
 13. **压缩请求应当沿用原对话的系统提示和工具**，只在末尾追加“请总结”的指令，这样压缩请求本身也能命中缓存（[Claude Code](https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/)）。
     - 现状（[ADR 0207](../../docs/adr/0207-compaction-request-reuses-conversation-head.md)）：摘要请求用上一次普通请求的系统提示、工具和切点之前的历史，末尾追加总结指令。拆分轮、溢出压缩、对不上或放不进窗口时退回 Pi 默认请求，那时整段历史仍按全价计算。
 14. **清理旧的工具结果要成批、少做、能恢复。**一次清理足够多，才值得付一次缓存失效的代价；被清理的内容要能找回（例如保留网址或文件路径）。
-    - 现状（[ADR 0285](../../docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md) 第 8 条，`packages/runtime-pi/src/tool-result-clearing.ts`）：在 Pi 的 `context` 钩子里做，只改发给模型的那份，历史里存的仍是原文。上一次请求实际用掉的输入 token 加上之后新增的消息超过清理线时，把“最近 3 次以外、还没清过、工具没声明 `contextRetention: "keep"`”的工具结果一次全换成一行占位（写明编号），合计不到 5000 token 就不清。清理线是压缩线的三分之二（压缩线 15 万时是 10 万），窗口小的模型跟着变低。清了哪些由历史本身逐条重放算出（只用每条回答记下的用量），所以同一段历史每次算出同样的字节，不另存记录；清理之后照常只在末尾追加。压缩请求套用同一份清理结果，仍沿用上一次请求的开头。模型用 `tool_result_recall` 按编号取回原文，作为新的工具结果追加在末尾。
+    - 现状（[ADR 0285](../../docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md) 第 8 条，`packages/runtime-pi/src/tool-result-clearing.ts`）：在 Pi 的 `context` 钩子里做，只改发给模型的那份，历史里存的仍是原文。上一次请求实际用掉的输入 token 加上之后新增的消息超过清理线时，把“最近 3 次以外、还没清过、工具没声明 `contextRetention: "keep"`”的工具结果一次全换成一行占位（写明编号），合计不到 5000 token 就不清。清理线是压缩线的三分之二（压缩线 15 万时是 10 万），窗口小的模型跟着变低。清了哪些由历史本身逐条重放算出（用最近一条回答记下的用量，加上它之后新增消息的估算），所以同一段历史每次算出同样的字节，不另存记录；清理之后照常只在末尾追加。压缩请求套用同一份清理结果，仍沿用上一次请求的开头。模型用 `tool_result_recall` 按编号取回原文，作为新的工具结果追加在末尾。
     - 阻断检查里带 `[CLEAR-1]` 到 `[CLEAR-5]` 的用例：只在清理那一次请求开头变、之后只追加；取回拿到原文；不到 5000 不清；声明保留的工具不清；清理后压缩请求仍共用开头。
 
 <a id="side-calls"></a>

@@ -1311,9 +1311,9 @@
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
   "tools.result.tool-result-recall.not-found": {
-    "sha256": "20bad81f31a58ffa1f38b76920de158e41ec6325e9ac9f80634253a3b943e834",
+    "sha256": "b74cc518c46e5dc874742224bbcac13c5657de91256e916bf5273421570002fb",
     "changedIn": "ADR 0285",
-    "reason": "新增：tool_result_recall 找不到编号时的结果"
+    "reason": "新增：tool_result_recall 找不到编号时的结果；不让模型重做有后果的操作"
   },
   "tools.rule-list": {
     "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",
