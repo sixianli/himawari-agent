@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
 ---
