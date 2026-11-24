@@ -265,7 +265,8 @@ export type OwnerRuleErrorCode =
   | "RULE_UNAVAILABLE"
   | "RULE_PROPOSALS_FULL"
   | "RULE_PROPOSAL_REJECTED"
-  | "RULE_PROPOSAL_EXPIRED";
+  | "RULE_PROPOSAL_EXPIRED"
+  | "RULE_CONFLICT";
 
 export class OwnerRuleError extends Error {
   readonly code: OwnerRuleErrorCode;
@@ -632,6 +633,50 @@ function summaryOf(parameters: unknown): { readonly type: string; readonly summa
     type: typeof record["type"] === "string" ? record["type"] : "",
     summary: typeof record["summary"] === "string" ? record["summary"] : "",
   };
+}
+
+export const QUIET_HOURS_RULE_TYPE = "push_quiet_hours";
+const QUIET_HOURS_SOURCE = "settings:notifications";
+const QUIET_HOURS_DAYS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+const CLOCK = /^([01][0-9]|2[0-3]):[0-5][0-9]$/u;
+
+export interface QuietHoursState {
+  readonly version: string;
+  readonly editable: boolean;
+  readonly enabled: boolean;
+  readonly start: string | null;
+  readonly end: string | null;
+  readonly classes: readonly string[];
+  readonly rules: readonly { readonly ruleId: string; readonly summary: string }[];
+}
+
+interface QuietPeriodRecord {
+  readonly days?: unknown;
+  readonly start?: unknown;
+  readonly end?: unknown;
+}
+
+function quietParams(parameters: unknown): {
+  readonly periods: readonly QuietPeriodRecord[];
+  readonly classes: readonly string[];
+} {
+  const params = ((parameters ?? {}) as Record<string, unknown>)["params"];
+  const record = (params ?? {}) as Record<string, unknown>;
+  const periods = Array.isArray(record["periods"])
+    ? (record["periods"] as QuietPeriodRecord[])
+    : [];
+  const classes = Array.isArray(record["classes"])
+    ? record["classes"].filter((item): item is string => typeof item === "string")
+    : [];
+  return { periods, classes };
+}
+
+function everyDay(days: unknown): boolean {
+  return (
+    Array.isArray(days) &&
+    days.length === QUIET_HOURS_DAYS.length &&
+    QUIET_HOURS_DAYS.every((day) => days.includes(day))
+  );
 }
 
 export class ProductionOwnerRuleWriter {
@@ -1147,6 +1192,84 @@ export class ProductionOwnerRuleWriter {
         return;
       throw new OwnerRuleError("RULE_UNAVAILABLE", "规则记忆没能归档，请再撤销一次");
     }
+  }
+
+  async quietHours(): Promise<QuietHoursState> {
+    const rows = (await this.#options.rules.list({ ...this.#scope(), includeRetired: false }))
+      .filter((row) => summaryOf(row.parameters).type === QUIET_HOURS_RULE_TYPE)
+      .sort((left, right) => left.ruleId.localeCompare(right.ruleId, "en"));
+    const version = hash(
+      canonicalJson(rows.map(({ ruleId, revision, status }) => [ruleId, revision, status])),
+    ).slice(0, 32);
+    const rules = rows.map((row) => ({
+      ruleId: row.ruleId,
+      summary: summaryOf(row.parameters).summary,
+    }));
+    const [only] = rows;
+    if (!only)
+      return Object.freeze({
+        version,
+        editable: true,
+        enabled: false,
+        start: null,
+        end: null,
+        classes: [],
+        rules,
+      });
+    const { periods, classes } = quietParams(only.parameters);
+    const [period] = periods;
+    const single =
+      rows.length === 1 &&
+      periods.length === 1 &&
+      period !== undefined &&
+      everyDay(period.days) &&
+      typeof period.start === "string" &&
+      typeof period.end === "string";
+    return Object.freeze({
+      version,
+      editable: single,
+      enabled: true,
+      start: single ? (period.start as string) : null,
+      end: single ? (period.end as string) : null,
+      classes: rows.length === 1 ? classes : [],
+      rules,
+    });
+  }
+
+  async setQuietHours(input: {
+    readonly enabled: boolean;
+    readonly start: string;
+    readonly end: string;
+    readonly expectedVersion: string;
+  }): Promise<QuietHoursState> {
+    const current = await this.quietHours();
+    if (current.version !== input.expectedVersion)
+      throw new OwnerRuleError("RULE_CONFLICT", "安静时段已经在别处改过，请刷新再改");
+    if (!current.editable)
+      throw new OwnerRuleError("RULE_UNAVAILABLE", "现在有不止一段安静时段，只能在聊天里改");
+    if (input.enabled) {
+      if (!CLOCK.test(input.start) || !CLOCK.test(input.end) || input.start === input.end)
+        throw new OwnerRuleError("RULE_INPUT_INVALID", "start/end");
+      const summary = `每天 ${input.start} 到 ${input.end} 不推送，要你同意的事照常推送`;
+      const receipt = await this.#activate(
+        {
+          key: `${QUIET_HOURS_SOURCE}:${input.start}-${input.end}`,
+          type: QUIET_HOURS_RULE_TYPE,
+          params: {
+            periods: [{ days: [...QUIET_HOURS_DAYS], start: input.start, end: input.end }],
+            classes: [...PUSH_QUIET_CLASSES],
+          },
+          summary,
+          quote: `在通知设置里设定：${summary}`,
+          threadId: null,
+          source: QUIET_HOURS_SOURCE,
+        },
+        null,
+      );
+      for (const { ruleId } of current.rules)
+        if (ruleId !== receipt.ruleId) await this.undo(ruleId);
+    } else for (const { ruleId } of current.rules) await this.undo(ruleId);
+    return this.quietHours();
   }
 
   async undo(ruleId: string): Promise<ListedOwnerRule> {
