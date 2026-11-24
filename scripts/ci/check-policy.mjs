@@ -43,8 +43,9 @@ export const REQUIRED_AFTER_ENTRY = githubExpression(
 );
 export const SHARE_ROOT_COMMAND =
   'mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"';
-const runShareKey = "${{ github.run_id }}-${{ github.run_attempt }}";
-export const sharePath = (name) => `\${{ runner.temp }}/ci-share/${runShareKey}/${name}`;
+const runShareKey = `${githubExpression("github.run_id")}-${githubExpression("github.run_attempt")}`;
+export const sharePath = (name) =>
+  `${githubExpression("runner.temp")}/ci-share/${runShareKey}/${name}`;
 export const shareCacheKey = (name) => `ci-share-${runShareKey}-${name}`;
 export const SHARE_AFTER_PUT = githubExpression("always() && steps.share.outcome == 'success'");
 const actionRepository = (uses) => uses.split("@")[0].split("/").slice(0, 2).join("/");

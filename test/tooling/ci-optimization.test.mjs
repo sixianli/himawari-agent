@@ -83,12 +83,14 @@ it("完整 CI 只用 GitHub 缓存在本次运行的作业之间传报告和构�
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-dependencies.mjs")),
   ).toBe(false);
-  const runScoped = "${{ github.run_id }}-${{ github.run_attempt }}";
+  const runScoped = `${githubExpression("github.run_id")}-${githubExpression("github.run_attempt")}`;
   for (const job of Object.values(workflow.jobs))
     for (const step of job.steps.filter(usesGitHubCache)) {
       expect(step.uses).toMatch(/^actions\/cache\/(?:save|restore)@[0-9a-f]{40}$/u);
       expect(step.with.key.startsWith(`ci-share-${runScoped}-`)).toBe(true);
-      expect(step.with.path.startsWith(`\${{ runner.temp }}/ci-share/${runScoped}/`)).toBe(true);
+      expect(
+        step.with.path.startsWith(`${githubExpression("runner.temp")}/ci-share/${runScoped}/`),
+      ).toBe(true);
       expect(step.with["restore-keys"]).toBeUndefined();
     }
 });
