@@ -80,6 +80,15 @@ export function originsOf(
   return [...new Set((sources ?? []).map(({ origin }) => origin))];
 }
 
+export const EXTERNAL_EVENT_ORIGIN_PREFIX = "external_event:";
+
+export function externalEventOrigin(
+  source: Pick<RunExecutionSource, "sourceType" | "sourceId" | "ownerApprovedTask"> | undefined,
+): string | null {
+  if (source?.sourceType !== "external_event" || source.ownerApprovedTask) return null;
+  return `${EXTERNAL_EVENT_ORIGIN_PREFIX}${source.sourceId}`;
+}
+
 export function isExternalContentSourceRef(ref: string): boolean {
   return ref.startsWith(EXTERNAL_CONTENT_SOURCE_REF_PREFIX);
 }
@@ -189,6 +198,12 @@ export class ContextExternalContent {
       found.push(...sourcesOf(record?.value));
     }
     return found;
+  }
+
+  async markRunSource(runId: RunId): Promise<readonly string[]> {
+    const origin = externalEventOrigin(await this.#source.read(runId));
+    if (origin !== null) await this.mark(runId, origin);
+    return origin === null ? [] : [origin];
   }
 
   async mark(runId: RunId, origin: string): Promise<void> {

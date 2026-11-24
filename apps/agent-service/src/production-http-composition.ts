@@ -181,6 +181,10 @@ import {
 } from "./production-owner-preferences-control.js";
 import { ProductionOwnerRuleWriter } from "./production-owner-rules.js";
 import {
+  PRODUCTION_QUIET_HOURS_OPERATIONS,
+  ProductionQuietHoursControl,
+} from "./production-quiet-hours-control.js";
+import {
   PRODUCTION_PERCEPTION_OPERATIONS,
   ProductionPerceptionControl,
 } from "./production-perception-control.js";
@@ -845,6 +849,7 @@ function routeOptions(
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
         ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
+        ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
         ...PRODUCTION_SERVER_STATUS_OPERATIONS,
@@ -1318,6 +1323,24 @@ export async function createProductionHttpComposition(
         ...(options.think.onDiagnostic ? { onDiagnostic: options.think.onDiagnostic } : {}),
       })
     : undefined;
+  const ownerRuleWriter = options.memory
+    ? new ProductionOwnerRuleWriter({
+        configuration,
+        rules: repository.ownerRules(),
+        box: proposalBox,
+        reviews: repository.ruleReviews(),
+        memory: options.memory.service,
+        memories: repository.productMemoryState(),
+        book: repository.memoryBook(),
+        threads,
+        payloads: memoryPayloads,
+        protector: payloadProtector,
+        clock: { now: clock },
+        ...(options.proactive
+          ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
+          : {}),
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -1364,22 +1387,7 @@ export async function createProductionHttpComposition(
               : Promise.resolve(),
         },
         reminders: repository.memoryReminders(),
-        ownerRules: new ProductionOwnerRuleWriter({
-          configuration,
-          rules: repository.ownerRules(),
-          box: proposalBox,
-          reviews: repository.ruleReviews(),
-          memory: options.memory.service,
-          memories: repository.productMemoryState(),
-          book: repository.memoryBook(),
-          threads,
-          payloads: memoryPayloads,
-          protector: payloadProtector,
-          clock: { now: clock },
-          ...(options.proactive
-            ? { replay: (rule) => options.proactive?.replayRule(rule) ?? Promise.reject(rule) }
-            : {}),
-        }),
+        ...(ownerRuleWriter ? { ownerRules: ownerRuleWriter } : {}),
         reviews: { memories: repository.memoryReviews(), rules: repository.ruleReviews() },
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
@@ -1646,6 +1654,15 @@ export async function createProductionHttpComposition(
             store: repository.deliveryTimingSettings(),
             clock: { now: clock },
             changed: options.deliveryTimingSettings.apply,
+          }),
+        }
+      : {}),
+    ...(ownerRuleWriter
+      ? {
+          quietHoursControl: new ProductionQuietHoursControl({
+            configuration,
+            rules: ownerRuleWriter,
+            clock: { now: clock },
           }),
         }
       : {}),

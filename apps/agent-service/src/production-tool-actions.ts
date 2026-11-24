@@ -298,6 +298,7 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
   {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
+    himawariSideOnly: true,
     capabilityRef: REMINDER_SET_CAPABILITY_REF,
     operation: "set",
     targetType: "owner-reminder",

@@ -11,6 +11,7 @@ export const PUSH_CLASSES = [
   "mail_reminder",
   "proposal",
   "muse_outage",
+  "her_words",
   "unknown",
 ] as const;
 export type PushClass = (typeof PUSH_CLASSES)[number];
@@ -21,6 +22,36 @@ export const PUSH_RULE_PROTECTED_CLASSES: readonly PushClass[] = Object.freeze([
   "proposal",
   "unknown",
 ]);
+
+export const HER_WORDS_PUSH_PREFIX = "said:";
+const PUSH_SOURCE_KEY_LIMIT = 256;
+const HER_WORDS_DIGEST_HEX = 32;
+
+export interface HerWordsPushSource {
+  readonly kind: string;
+  readonly id: string;
+  readonly version: string;
+}
+
+export async function herWordsPushKey(input: {
+  readonly messageId: string;
+  readonly source?: HerWordsPushSource;
+}): Promise<string> {
+  const source = input.source ?? { kind: "message", id: input.messageId, version: "1" };
+  for (const part of [source.kind, source.id, source.version])
+    if (part.length === 0) throw new Error("HER_WORDS_PUSH_SOURCE_EMPTY");
+  const key = `${HER_WORDS_PUSH_PREFIX}${[source.kind, source.id, source.version]
+    .map((part) => `${part.length}:${part}`)
+    .join("")}`;
+  if (key.length <= PUSH_SOURCE_KEY_LIMIT) return key;
+  const digest = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key))),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  )
+    .join("")
+    .slice(0, HER_WORDS_DIGEST_HEX);
+  return `${key.slice(0, PUSH_SOURCE_KEY_LIMIT - HER_WORDS_DIGEST_HEX - 1)}~${digest}`;
+}
 
 export const PUSH_DEFER_CAP_MS = 24 * 3_600_000;
 const MINUTE_MS = 60_000;
@@ -36,6 +67,7 @@ export function pushClassOf(input: {
     if (input.sourceKey.startsWith("proactive:")) return "mail_reminder";
     if (input.sourceKey.startsWith("proposal:")) return "proposal";
     if (input.sourceKey.startsWith("reminder:")) return "scheduled_reminder";
+    if (input.sourceKey.startsWith(HER_WORDS_PUSH_PREFIX)) return "her_words";
   }
   return "unknown";
 }
