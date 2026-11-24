@@ -658,7 +658,6 @@ export class ProductionMemoryControl {
       (await this.options.reminders?.listCancelled({
         ownerId,
         agentId,
-        dueAfter: this.options.clock.now(),
         limit,
       })) ?? [];
     const memories = new Map(

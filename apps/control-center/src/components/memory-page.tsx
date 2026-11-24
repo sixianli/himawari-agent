@@ -1137,7 +1137,10 @@ export function RemindersPage({
               ))}
             </section>
           ) : null}
-          {!overview.reminders.length && !overview.upcoming.length && !mailCount ? (
+          {!overview.reminders.length &&
+          !overview.upcoming.length &&
+          !overview.cancelled.length &&
+          !mailCount ? (
             <EmptyState
               icon={<LineIcon name="bell" />}
               title={message("reminders.emptyTitle")}
@@ -1158,7 +1161,10 @@ export function RemindersPage({
             <ProactiveReviewSection proactive={proactive} message={message} locale={locale} />
           ) : null}
           {muse ? <MuseReference muse={muse} message={message} locale={locale} /> : null}
-          {overview.reminders.length || overview.upcoming.length || mailCount ? (
+          {overview.reminders.length ||
+          overview.upcoming.length ||
+          overview.cancelled.length ||
+          mailCount ? (
             <p className="settings-note reminders-notify">{notifyNote}</p>
           ) : null}
         </>

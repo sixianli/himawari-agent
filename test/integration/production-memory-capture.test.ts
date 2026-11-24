@@ -1917,7 +1917,9 @@ describe("production memory capture", () => {
       await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
     expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
     expect((await overview(context.control)).reminders).toEqual([]);
-    expect((await overview(context.control)).cancelled).toEqual([]);
+    expect((await overview(context.control)).cancelled).toMatchObject([
+      { reminderId, dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
     await answer("restore");
     expect(await reminders.read(reminderId)).toMatchObject({
       status: "scheduled",
@@ -1925,6 +1927,7 @@ describe("production memory capture", () => {
       remindAt: "2026-10-30T07:05:00.000Z",
     });
     expect((await overview(context.control)).reminders).toHaveLength(1);
+    expect((await overview(context.control)).cancelled).toEqual([]);
     await expect(answer("restore")).rejects.toThrow("MEMORY_REMINDER_NOT_CANCELLED");
     await expect(
       context.control.execute({

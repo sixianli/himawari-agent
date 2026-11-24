@@ -1515,6 +1515,30 @@ describe("memory approval and management", () => {
     expect(text("#settings .memory-drawer")).toContain("每年");
   });
 
+  it("[MP-8] shows the empty state on a reminders page with nothing cancelled or scheduled", async () => {
+    await render();
+    expect(text("#reminders-page")).toContain("还没有提醒");
+    expect(text("#reminders-page")).not.toContain("最近取消");
+  });
+
+  it("[MP-8] lists cancelled reminders without the empty state", async () => {
+    overview = {
+      ...overview,
+      cancelled: [
+        {
+          reminderId: "reminder:memory-call",
+          text: "给妈妈打电话",
+          dueAt: "2026-10-20T01:00:00.000Z",
+          repeat: "none",
+        },
+      ],
+    };
+    await render();
+    expect(text("#reminders-page")).toContain("最近取消");
+    expect(text("#reminders-page")).toContain("给妈妈打电话");
+    expect(text("#reminders-page")).not.toContain("还没有提醒");
+  });
+
   it("[REM-1] creates a reminder from the reminders page, refuses a past time and hides the button until a memory exists", async () => {
     await render();
     const add = "#reminders-page .memory-card[data-kind=add]";
