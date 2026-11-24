@@ -37,6 +37,7 @@ enum DemoScene: String, CaseIterable {
     case her = "next-3-her"
     case herPrivacy = "next-3-her-privacy"
     case herDevices = "next-3-her-devices"
+    case herNotifications = "next-3-her-notifications"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -248,7 +249,7 @@ struct DemoSceneView: View {
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .settings, .device, .deviceAbilities, .addDevice, .addDeviceAsking,
             .addDeviceExpired, .files, .exportPacking, .exportReady, .capabilities,
             .capabilitiesReactivated, .capabilitiesReactivateFailed, .loginBrowsers, .proposals,
-            .notifications, .notificationsEdit, .thinkSettings, .her, .herPrivacy, .herDevices:
+            .notifications, .notificationsEdit, .thinkSettings, .her, .herPrivacy, .herDevices, .herNotifications:
             EmptyView()
         }
     }

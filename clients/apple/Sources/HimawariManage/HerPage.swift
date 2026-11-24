@@ -13,6 +13,7 @@ public protocol HerListening: AnyObject {
 public struct HerPage: View {
     enum Page: Hashable {
         case memory
+        case notifications
         case privacy
         case devices
         case device(String)
@@ -21,6 +22,7 @@ public struct HerPage: View {
 
     @State private var settings: SettingsStore
     @State private var memory: MemoryStore
+    @State private var quietHours: QuietHoursStore
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     private let listening: (any HerListening)?
@@ -46,6 +48,7 @@ public struct HerPage: View {
         }
         _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
         _memory = State(initialValue: MemoryStore(gateway: gateway))
+        _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         self.listening = listening
         self.openListening = openListening
         self.senses = senses
@@ -54,9 +57,10 @@ public struct HerPage: View {
         self.removedThisDevice = removedThisDevice
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, listening: (any HerListening)? = nil, senses: AnyView? = nil, path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, senses: AnyView? = nil, path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
+        _quietHours = State(initialValue: quietHours)
         _path = State(initialValue: path)
         self.listening = listening
         openListening = {}
@@ -78,6 +82,12 @@ public struct HerPage: View {
                         .buttonStyle(.plain)
                     }
                     SettingsGroup(label: nil) {
+                        if let hours = quietHours.hours {
+                            Button { path.append(.notifications) } label: {
+                                HerRow(icon: .bell, title: M.notificationsTitle, subtitle: M.quietSummary(hours))
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Button { path.append(.privacy) } label: {
                             HerRow(icon: .eye, title: M.privacy)
                         }
@@ -112,6 +122,8 @@ public struct HerPage: View {
                         #if os(iOS)
                         .toolbar(.hidden, for: .navigationBar)
                         #endif
+                case .notifications:
+                    NotificationsPage(store: quietHours) { path.removeLast() }
                 case .privacy:
                     PrivacyPage(
                         memory: memory,
@@ -148,7 +160,8 @@ public struct HerPage: View {
     private func load() async {
         async let settingsLoaded: Void = settings.load()
         async let memoryLoaded: Void = memory.load()
-        _ = await (settingsLoaded, memoryLoaded)
+        async let quietLoaded: Void = quietHours.load()
+        _ = await (settingsLoaded, memoryLoaded, quietLoaded)
     }
 }
 
