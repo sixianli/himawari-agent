@@ -455,6 +455,37 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     ]);
   });
 
+  it("still lists the vault and its use when recording overdue requests fails", async () => {
+    let broken = false;
+    const context = await setup({
+      store: (real) =>
+        override<VaultStorePort>(real, {
+          async decideRequest(input: Parameters<VaultStorePort["decideRequest"]>[0]) {
+            if (broken) throw new Error("disk full");
+            return real.decideRequest(input);
+          },
+          async expireOverdue(input: Parameters<VaultStorePort["expireOverdue"]>[0]) {
+            if (broken) throw new Error("disk full");
+            return real.expireOverdue(input);
+          },
+        }),
+    });
+    const itemId = await withItem(context);
+    const { outcome } = await pending(context, [itemId]);
+    broken = true;
+    for (const fire of context.timers) fire();
+    expect((await outcome).kind).toBe("expired");
+    context.advance(121_000);
+    const snapshot = await context.service.snapshot(scope);
+    expect(snapshot.items.map((item) => item.id)).toEqual([itemId]);
+    expect(snapshot.pending).toEqual([]);
+    expect(await context.service.usage(scope, itemId)).toEqual([]);
+    broken = false;
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "expired",
+    ]);
+  });
+
   it("records the requests a key change closed", async () => {
     const context = await setup();
     const itemId = await withItem(context);

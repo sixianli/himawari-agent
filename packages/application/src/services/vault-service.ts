@@ -226,7 +226,7 @@ export class VaultService {
     readonly items: readonly VaultItemRecord[];
     readonly pending: readonly VaultReleaseRequestRecord[];
   }> {
-    await this.#expireOverdue(scope);
+    await this.#expireOverdue(scope).catch(() => undefined);
     const [manifest, items, pending] = await Promise.all([
       this.#options.store.readManifest(scope),
       this.#options.store.listItems(scope),
@@ -237,7 +237,7 @@ export class VaultService {
 
   async usage(scope: VaultScope, itemId: string | null): Promise<readonly VaultUsageListed[]> {
     if (itemId !== null && !VAULT_PATTERNS.itemId.test(itemId)) invalid();
-    await this.#expireOverdue(scope);
+    await this.#expireOverdue(scope).catch(() => undefined);
     return this.#options.store.listUsage({ ...scope, itemId, limit: VAULT_LIMITS.usageListed });
   }
 

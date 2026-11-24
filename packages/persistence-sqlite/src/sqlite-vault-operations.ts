@@ -301,16 +301,17 @@ export class SqliteVaultOperations {
   }
 
   private expireOverdue(input: VaultScope & { now: string }): readonly string[] {
+    const overdue = this.database
+      .prepare(
+        `SELECT id, nonce FROM vault_release_requests
+         WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND expires_at <= ?
+         ORDER BY id`,
+      )
+      .all(input.ownerId, input.agentId, input.now) as { id: string; nonce: string }[];
+    if (overdue.length === 0) return Object.freeze([]);
     this.assertDiskHeadroom();
-    return this.database.transaction(() => {
-      const overdue = this.database
-        .prepare(
-          `SELECT id, nonce FROM vault_release_requests
-           WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND expires_at <= ?
-           ORDER BY id`,
-        )
-        .all(input.ownerId, input.agentId, input.now) as { id: string; nonce: string }[];
-      return Object.freeze(
+    return this.database.transaction(() =>
+      Object.freeze(
         overdue
           .filter((row) =>
             this.close({
@@ -323,8 +324,8 @@ export class SqliteVaultOperations {
             }),
           )
           .map((row) => row.id),
-      );
-    })();
+      ),
+    )();
   }
 
   private close(input: DecideInput): VaultReleaseRequestRecord | null {
