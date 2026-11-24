@@ -352,7 +352,14 @@ export class ProductionApplePush implements PushCompanionChannel {
         await this.#record(entry, now, "suppressed", "PUSH_KIND_OFF");
         continue;
       }
-      const content = await input.content(item);
+      let content: Awaited<ReturnType<typeof input.content>>;
+      try {
+        content = await input.content(item);
+      } catch (error) {
+        this.#options.onFailure(error);
+        await this.#retryLater(entry, now, "PUSH_CONTENT_UNREADABLE");
+        continue;
+      }
       if (content.expired) {
         await this.#record(entry, now, "expired", null);
         continue;
@@ -503,16 +510,29 @@ export class ProductionApplePush implements PushCompanionChannel {
     else if (result.kind === "gone") await this.#record(entry, now, "gone", result.code, attempts);
     else if (result.kind === "rejected" || result.kind === "too_large")
       await this.#record(entry, now, "failed", result.code, attempts);
-    else if (attempts > RETRY_DELAYS_MS.length)
-      await this.#record(entry, now, "failed", result.code, attempts);
     else
-      await this.#record(entry, now, "pending", result.code, attempts, {
-        delayMs:
-          result.kind === "rate_limited"
-            ? RATE_LIMIT_DELAY_MS
-            : (RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0]),
-      });
+      await this.#retryLater(
+        entry,
+        now,
+        result.code,
+        attempts,
+        result.kind === "rate_limited" ? RATE_LIMIT_DELAY_MS : undefined,
+      );
     await this.#applyRegistrationOutcome(registration, result, now);
+  }
+
+  async #retryLater(
+    entry: ApplePushDue,
+    now: string,
+    code: string,
+    attempts = (entry.attempt?.attempts ?? 0) + 1,
+    delayMs?: number,
+  ): Promise<void> {
+    if (attempts > RETRY_DELAYS_MS.length) await this.#record(entry, now, "failed", code, attempts);
+    else
+      await this.#record(entry, now, "pending", code, attempts, {
+        delayMs: delayMs ?? RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
+      });
   }
 
   async #record(
