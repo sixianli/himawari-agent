@@ -67,7 +67,7 @@ Andy 2026-11-11 21:32（日本时间）同意开工：“那这样，我们先�
 
 表外还有两件和这份计划接着的事，各有自己的方案和编码线程，不在上面的批次里：
 
-- **一个主对话和收件箱**（ADR 0285，规格文件 `2026-11-24-main-thread-subthreads-inbox-design.md`，Andy 2026-11-24 定；写这份计划时在 PR 612 里，没有进 main）：它取代了首页条目接口（ADR 0255）和单独的提议，iPhone 不再做“今天”页和提议页。服务器分五步上线；iPhone 跟着第 1、3、4 步做，分段见 `/mnt/project-files/ios-scope/iphone-coding-brief-2026-11-25.md`。
+- **一个主对话和收件箱**（[ADR 0285](../../adr/0285-one-main-thread-subthreads-and-one-inbox.md)，规格 [2026-11-24-main-thread-subthreads-inbox-design.md](../specs/2026-11-24-main-thread-subthreads-inbox-design.md)，Andy 2026-11-24 定）：它取代了首页条目接口（ADR 0255）和单独的提议，iPhone 不再做“今天”页和提议页。服务器分五步上线；iPhone 跟着第 1、3、4 步做，分段见 `/mnt/project-files/ios-scope/iphone-coding-brief-2026-11-25.md`。
 - **有后果的工具调用走同一个授权出口**（方案 `/mnt/project-files/owner-scope-approval/integrated-plan.md`，Andy 2026-11-12 定稿）：它的第 1、2 步进 main 之后，第 9、10 批的设备动作才对主人可用。
 
 Andy 2026-11-12 定：要 11 批全做完的完整版再一起体验，不先装早期的半成品。
