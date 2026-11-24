@@ -3,6 +3,7 @@ import { assertRuleExamples } from "../src/rules/rule-book.js";
 import { RuleJudge } from "../src/rules/rule-judge.js";
 import {
   ownerRuleRecord,
+  parseOwnerRuleParameters,
   RuleTypeError,
   unreadablePushRule,
   writableRuleType,
@@ -96,6 +97,10 @@ describe("[rule-type:push_quiet_hours]", () => {
     expect(pushClassOf({ kind: "approval", sourceKey: "approval:a1" })).toBe("approval");
     expect(pushClassOf({ kind: "reminder", sourceKey: "muse-channel:2026" })).toBe("muse_outage");
     expect(pushClassOf({ kind: "reminder", sourceKey: "something:else" })).toBe("unknown");
+    expect(pushClassOf({ kind: "reminder", sourceKey: "said:7:message3:m-11:1" })).toBe(
+      "her_words",
+    );
+    expect(pushClassOf({ kind: "run", sourceKey: "said:7:message3:m-11:1" })).toBe("unknown");
   });
 
   it.each([
@@ -119,9 +124,50 @@ describe("[rule-type:push_quiet_hours]", () => {
     expect(() => record({ ...NIGHT, params: longDays })).toThrow(RuleTypeError);
     const longClasses = {
       ...NIGHT.params,
-      classes: ["run_result", "mail_reminder", "scheduled_reminder", "run_result"],
+      classes: ["run_result", "mail_reminder", "scheduled_reminder", "her_words", "run_result"],
     };
     expect(() => record({ ...NIGHT, params: longClasses })).toThrow(RuleTypeError);
+  });
+
+  it("[SAID-2] keeps her words quiet by default and stores a rule that names every class", () => {
+    const night = "2026-11-11T14:30:00.000Z";
+    expect(judge("her_words", night).hits).toHaveLength(1);
+    const every = record({
+      ...NIGHT,
+      params: {
+        ...NIGHT.params,
+        classes: ["her_words", "scheduled_reminder", "mail_reminder", "run_result"],
+      },
+    });
+    assertRuleExamples(every);
+    for (const pushClass of ["her_words", "scheduled_reminder", "mail_reminder", "run_result"])
+      expect(judge(pushClass, night, every).hits).toHaveLength(1);
+    const storedBefore = record({
+      ...NIGHT,
+      params: { ...NIGHT.params, classes: ["mail_reminder", "run_result"] },
+    });
+    expect(judge("her_words", night, storedBefore).hits).toHaveLength(1);
+    const remindersOnly = record({
+      ...NIGHT,
+      params: { ...NIGHT.params, classes: ["scheduled_reminder", "mail_reminder"] },
+    });
+    expect(judge("her_words", night, remindersOnly).hits).toHaveLength(0);
+  });
+
+  it("[SAID-2] stores a rule that names no classes without classes, so it keeps following the default list", () => {
+    const parsed = parseOwnerRuleParameters(NIGHT);
+    expect(JSON.parse(JSON.stringify(parsed.params))).toEqual(NIGHT.params);
+    const stored = record(
+      JSON.parse(
+        JSON.stringify({ type: parsed.type, params: parsed.params, summary: parsed.summary }),
+      ),
+    );
+    expect(judge("her_words", "2026-11-11T14:30:00.000Z", stored).hits).toHaveLength(1);
+    const named = parseOwnerRuleParameters({
+      ...NIGHT,
+      params: { ...NIGHT.params, classes: ["run_result", "mail_reminder"] },
+    });
+    expect(named.params).toMatchObject({ classes: ["run_result", "mail_reminder"] });
   });
 
   it("[HR-4] tells a stored push rule it cannot read from a healthy one, a retired one and a mail rule", () => {

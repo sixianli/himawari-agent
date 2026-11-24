@@ -18,6 +18,8 @@
     "proactive.source.settings.set": "每个来源的开关和安全上限的查询与命令：iOS 第 7 批已实现后端和测试（test/integration/proactive-production.test.ts），调用方是 iPhone 上的来源设置页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
     "proactive.source.switch_off": "每个来源的开关和安全上限的查询与命令：iOS 第 7 批已实现后端和测试（test/integration/proactive-production.test.ts），调用方是 iPhone 上的来源设置页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
     "proactive.sources.read": "每个来源的开关和安全上限的查询与命令：iOS 第 7 批已实现后端和测试（test/integration/proactive-production.test.ts），调用方是 iPhone 上的来源设置页（缺：调用方）。Andy 2026-11-12 定有 App 版就不做网页版，所以没有网页调用方；iPhone 页面接上后移出名单",
+    "quiet_hours.read": "iPhone 通知页的安静时段：后端和测试在 PR 617 里已齐，调用方在 iPhone 下一版的 PR 615 里（缺：调用方）。PR 615 合入时移出名单",
+    "quiet_hours.set": "iPhone 通知页的安静时段：后端和测试在 PR 617 里已齐，调用方在 iPhone 下一版的 PR 615 里（缺：调用方）。PR 615 合入时移出名单",
     "reflection.configure": "自主建议、反思、委派、改进这一组：实现 autonomy-gateway-adapter 已在 PR 621 删除，生产没有装配，前端没有页面（缺：后端、调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "reflection.detail": "自主建议、反思、委派、改进这一组：实现 autonomy-gateway-adapter 已在 PR 621 删除，生产没有装配，前端没有页面（缺：后端、调用方、测试）。是否整组删除由 Andy 另行决定（P1-4 方案一）",
     "search.ask.read": "iOS 搜索页问答（第 06 屏）：处理程序已实现并有测试（字面匹配，不调模型，答案取最匹配的记忆或对话摘要，附来源和时间；没提问时返回建议问题），经设备接口 POST /api/device/v1/gateway 调；调用方是 iOS 原生搜索页，由今天页线程做（缺：调用方）。check:operations 现在也扫 clients/apple 里的 Swift 调用方，iOS 搜索页接上后自动要求移出名单",
