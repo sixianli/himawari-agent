@@ -2400,6 +2400,14 @@ const memoryOverviewSnapshotSchema = object({
         sourceThreadId: nullable(machineString),
       }),
     ),
+    cancelled: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+      }),
+    ),
     people: array(
       object({
         personId: machineString,

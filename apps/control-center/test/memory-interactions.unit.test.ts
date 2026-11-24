@@ -259,6 +259,7 @@ beforeEach(() => {
     conversationReviews: [],
     reminders: [],
     upcoming: [],
+    cancelled: [],
     people: [],
     personSuggestions: [],
     imports: [],
@@ -1466,6 +1467,14 @@ describe("memory approval and management", () => {
           sourceThreadId: "thread-main",
         },
       ],
+      cancelled: [
+        {
+          reminderId: "reminder:memory-call",
+          text: "给妈妈打电话",
+          dueAt: "2027-01-02T01:00:00.000Z",
+          repeat: "none",
+        },
+      ],
     };
     await render();
     expect(text("#reminders")).toContain("主人周五下午三点要交季度报告");
@@ -1493,6 +1502,15 @@ describe("memory approval and management", () => {
       type: "memory.reminder.respond",
       payload: { reminderId: "reminder:memory-color", action: "restore" },
     });
+    expect(text("#reminders-page .memory-notice")).toContain("又会提醒“妈妈的生日是 3 月 14 日”了");
+    expect(text("#reminders-page")).toContain("最近取消");
+    mutate.mockRejectedValueOnce(new Error("MEMORY_REMINDER_NOT_CANCELLED"));
+    await click("#reminders-page .reminder-row[data-kind=cancelled]", "恢复");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-call", action: "restore" },
+    });
+    expect(text("#reminders-page .memory-notice")).toContain("没能恢复这条提醒");
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
     expect(text("#settings .memory-drawer")).toContain("每年");
   });

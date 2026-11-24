@@ -48,7 +48,7 @@ date: "2026-11-09"
 5. **待接入名单 `ci/operations-pending.json`**：缺项但暂时保留的操作逐项登记，理由必须写明缺什么、为什么留着。名单里的操作一旦补齐，检查要求移出；名单外新增的缺项直接报红；名单里写了约定里没有的操作、或没写理由，都报红。名单目前登记 23 项，按理由分四组：自主建议、反思、委派、改进（`autonomy-gateway-adapter` 已实现但生产没装配、前端没有页面）；主机文件和工作区（`host-workspace-gateway-adapter`，同样情况）；已安装但前端没有入口的几项（`workspace.copy.*`、`memory.basis.read`、`proactive.audit.respond`）；`github.monitor.set_state`（`integration-github` 已实现，生产没装配）。这些是否整组删除，由 Andy 以后单独决定。
 6. **已删除名单 `ci/operations-removed.json`**：记下这次删出约定的 26 个名字。检查要求它们不得回到约定里，也不得在后端、前端、脚本和测试里再以带引号的字面量出现（界面文案 id 的 `message("名字")` 和计时标签 `measure(…, "名字")` 除外）；删掉这份名单文件本身也会报红，防止留下指向已删操作的残余引用（第 1 轮复核就发现过一处测试仍在用 `session.revoke`）。
 7. **页面状态**：任务、收件箱摘要、追踪、设置四个页面现在没有可用的约定，在清单里标为 `contractStatus: "missing"`、`integrationPolicy: "blocked"`；任务页面仍然保留 `github.monitor.set_state` 在待接入名单里。会话与设备页面靠原生设备入口显示，不受已安装名单限制。`isSurfaceInstalled` 对线程页直接返回真，对健康与部署页只看依赖是否可用，其余页面要求至少有一个操作且全部已安装。
-8. **提醒的“取消”**：迁移 0085 给 `memory_reminders.status` 加入 `cancelled`；已取消的提醒只接受再次取消，忽略和稍后提醒会被拒绝（`MEMORY_REMINDER_CANCELLED`）。模型工具 `reminder_cancel` 和网关的取消一样，也能把已忽略的提醒改成已取消。
+8. **提醒的“取消”**：迁移 0085 给 `memory_reminders.status` 加入 `cancelled`；已取消的提醒只接受再次取消和恢复（`restore`，PR 625 加入：改回已排期、时间不变，提醒页“最近取消”和取消后的“撤销”都发它），忽略和稍后提醒会被拒绝（`MEMORY_REMINDER_CANCELLED`）。模型工具 `reminder_cancel` 和网关的取消一样，也能把已忽略的提醒改成已取消。
 
 <a id="deletions"></a>
 

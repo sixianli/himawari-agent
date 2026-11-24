@@ -1917,6 +1917,7 @@ describe("production memory capture", () => {
       await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
     expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
     expect((await overview(context.control)).reminders).toEqual([]);
+    expect((await overview(context.control)).cancelled).toEqual([]);
     await answer("restore");
     expect(await reminders.read(reminderId)).toMatchObject({
       status: "scheduled",
@@ -2098,6 +2099,25 @@ describe("production memory capture", () => {
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    expect((await overview(context.control)).cancelled).toEqual([
+      {
+        reminderId: target,
+        text: "给妈妈打电话",
+        dueAt: "2026-10-26T01:00:00.000Z",
+        repeat: "none",
+      },
+    ]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: target, action: "restore" },
+    } as never);
+    expect(await upcoming()).toEqual([
+      { text: "给妈妈打电话", dueAt: "2026-10-26T01:00:00.000Z" },
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    expect((await overview(context.control)).cancelled).toEqual([]);
     expect(await tool("cancel", { reminderId: target }, "call-again")).toMatchObject({
       cancelled: true,
     });

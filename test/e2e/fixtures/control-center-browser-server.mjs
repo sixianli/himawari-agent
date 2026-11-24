@@ -1036,6 +1036,14 @@ function memoryOverview() {
         sourceThreadId: "thread-main",
       },
     ],
+    cancelled: [
+      {
+        reminderId: "reminder-call",
+        text: "给妈妈打电话",
+        dueAt: "2026-11-02T01:00:00.000Z",
+        repeat: "none",
+      },
+    ],
     people: [
       {
         personId: "person-peikun",

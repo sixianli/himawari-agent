@@ -38,6 +38,12 @@ export interface MemoryReminderStorePort {
     readonly limit: number;
     readonly remindAfter?: string;
   }): Promise<readonly MemoryReminder[]>;
+  listCancelled(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly dueAfter: string;
+    readonly limit: number;
+  }): Promise<readonly MemoryReminder[]>;
   read(id: string): Promise<MemoryReminder | undefined>;
   update(input: {
     readonly id: string;

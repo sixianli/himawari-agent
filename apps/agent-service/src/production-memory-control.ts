@@ -123,6 +123,7 @@ const TIDY_UPS_SHOWN = 30;
 const REMINDERS_SHOWN = 10;
 const UPCOMING_SHOWN = 20;
 const UPCOMING_WINDOW_MS = 60 * 24 * 3_600_000;
+const CANCELLED_SHOWN = 20;
 const INACTIVE_SHOWN = 500;
 const HISTORY_BATCH = 1000;
 const IMPORTS_SHOWN = 20;
@@ -265,7 +266,7 @@ export class ProductionMemoryControl {
     };
     readonly reminders?: Pick<
       MemoryReminderStorePort,
-      "schedule" | "listDue" | "countDue" | "listUpcoming" | "read" | "update"
+      "schedule" | "listDue" | "countDue" | "listUpcoming" | "listCancelled" | "read" | "update"
     >;
     readonly ownerRules?: OwnerRuleControl;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
@@ -649,6 +650,39 @@ export class ProductionMemoryControl {
       });
     }
     return upcoming;
+  }
+
+  async cancelledViews(limit: number) {
+    const { ownerId, agentId } = this.options.configuration;
+    const cancelled =
+      (await this.options.reminders?.listCancelled({
+        ownerId,
+        agentId,
+        dueAfter: this.options.clock.now(),
+        limit,
+      })) ?? [];
+    const memories = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: cancelled.map(({ memoryId }) => memoryId),
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const views: OverviewSnapshot["payload"]["cancelled"][number][] = [];
+    for (const reminder of cancelled) {
+      const memory = memories.get(reminder.memoryId);
+      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
+      if (!text) continue;
+      views.push({
+        reminderId: reminder.id,
+        text,
+        dueAt: reminder.dueAt,
+        repeat: reminder.repeat,
+      });
+    }
+    return views;
   }
 
   async tidyUpViews(limit: number) {
@@ -1378,6 +1412,7 @@ export class ProductionMemoryControl {
         exclude: new Set(due.rowIds),
       })
     ).map(({ dataClassification: _dataClassification, ...entry }) => entry);
+    const cancelled = await this.cancelledViews(CANCELLED_SHOWN);
     const people = (await this.options.book.listPeople(scope)).map((person) => ({
       personId: person.id,
       name: person.name,
@@ -1422,6 +1457,7 @@ export class ProductionMemoryControl {
         conversationReviews,
         reminders,
         upcoming,
+        cancelled,
         people,
         personSuggestions,
         imports,

@@ -1222,6 +1222,14 @@ export const governanceMessages = [
         sourceThreadId: "thread-01",
       },
     ],
+    cancelled: [
+      {
+        reminderId: "reminder:memory-03",
+        text: "周五交周报",
+        dueAt: "2026-09-18T07:00:00.000Z",
+        repeat: "none",
+      },
+    ],
     people: [
       {
         personId: "person-01",
@@ -1262,7 +1270,7 @@ export const governanceMessages = [
   }),
   fixture("command", "memory.reminder.respond", {
     reminderId: "reminder:memory-01",
-    action: "dismiss",
+    action: "restore",
   }),
   fixture("command", "memory.reminder.create", {
     contentRef: "payload-03",
