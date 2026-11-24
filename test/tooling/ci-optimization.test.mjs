@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { DRAFT_SKIP_CONDITION, REQUIRED_AFTER_ENTRY } from "../../scripts/ci/check-policy.mjs";
+import { DRAFT_SKIP_CONDITION } from "../../scripts/ci/check-policy.mjs";
 import { githubExpression } from "../../scripts/ci/contracts.mjs";
 import { gateLock } from "../../scripts/ci/install-gate-dependencies.mjs";
 import { confirmMain, publishMainMetadata } from "../../scripts/ci/main-confirm.mjs";
@@ -72,7 +72,7 @@ describe("CI 最小依赖安装", () => {
     expect(() => gateLock(value)).toThrow("GATE_DEPENDENCY_MISSING");
   });
 });
-it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部检查", () => {
+it("完整 CI 只用 GitHub 缓存在本次运行的作业之间传报告和构建、只装最小汇总依赖，并保留全部检查", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   expect(workflow.on.push).toBeUndefined();
   expect(workflow.on.workflow_call).toBeDefined();
@@ -83,12 +83,17 @@ it("完整 CI 不用 GitHub 缓存、只装最小汇总依赖，并保留全部�
   expect(
     workflow.jobs.required.steps.some((s) => s.run?.includes("install-dependencies.mjs")),
   ).toBe(false);
-  for (const job of Object.values(workflow.jobs)) {
-    expect(job.steps.some(usesGitHubCache)).toBe(false);
-  }
+  const runScoped = "${{ github.run_id }}-${{ github.run_attempt }}";
+  for (const job of Object.values(workflow.jobs))
+    for (const step of job.steps.filter(usesGitHubCache)) {
+      expect(step.uses).toMatch(/^actions\/cache\/(?:save|restore)@[0-9a-f]{40}$/u);
+      expect(step.with.key.startsWith(`ci-share-${runScoped}-`)).toBe(true);
+      expect(step.with.path.startsWith(`\${{ runner.temp }}/ci-share/${runScoped}/`)).toBe(true);
+      expect(step.with["restore-keys"]).toBeUndefined();
+    }
 });
 
-it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物", () => {
+it("main 和质量工作流不用 GitHub 缓存，所有工作流都不上传或下载 GitHub 产物", () => {
   for (const uses of ["actions/cache@x", "actions/cache/restore@x", "actions/cache/save@x"])
     expect(usesGitHubCache({ uses })).toBe(true);
   for (const uses of ["actions/checkout@x", "actions/cachet@x", undefined])
@@ -96,7 +101,7 @@ it("所有工作流都不用 GitHub 缓存，也不上传或下载 GitHub 产物
   for (const name of ["ci.yml", "main.yml", "quality.yml"]) {
     const workflow = parse(readFileSync(`.github/workflows/${name}`, "utf8"));
     const steps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
-    expect(steps.filter(usesGitHubCache)).toEqual([]);
+    if (name !== "ci.yml") expect(steps.filter(usesGitHubCache)).toEqual([]);
     expect(steps.filter((s) => /artifact/u.test(s.uses ?? ""))).toEqual([]);
     expect(steps.filter((s) => s.run?.includes("ci-summary.mjs")).length).toBeGreaterThan(0);
   }
@@ -143,8 +148,8 @@ it("main 工作流不能隐藏检查失败或关闭完整 CI 回退", () => {
   expect(() =>
     validateMainWorkflow(
       text.replace(
-        "runs-on: ci-vps\n    timeout-minutes: 90",
-        "runs-on: ci-vps\n    timeout-minutes: 45",
+        "runs-on: ubuntu-24.04\n    timeout-minutes: 90",
+        "runs-on: ubuntu-24.04\n    timeout-minutes: 45",
       ),
       tools,
     ),
@@ -264,16 +269,16 @@ describe("[I-93] main 调用完整 CI 时授予的权限覆盖 ci.yml 每个 job
   });
 });
 
-it("job 之间的文件经 CI 服务器传递：汇总先收齐再判定、入口检查通过后不论成败删掉本次目录，任何 job 都没有写权限", () => {
+it("job 之间的文件经本次运行的缓存传递：汇总先取回再收齐再判定，任何 job 都没有写权限", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   const steps = workflow.jobs.required.steps;
+  const restores = steps.flatMap((step, index) => (usesGitHubCache(step) ? [index] : []));
   const collect = steps.findIndex((step) => step.run?.includes("run-share.mjs collect"));
   const gate = steps.findIndex((step) => step.run?.includes("required.mjs"));
-  const removal = steps.findIndex((step) => step.run?.includes("run-share.mjs remove"));
-  expect(collect).toBeGreaterThanOrEqual(0);
+  expect(restores.length).toBe(11);
+  expect(Math.max(...restores)).toBeLessThan(collect);
   expect(gate).toBeGreaterThan(collect);
-  expect(removal).toBeGreaterThan(gate);
-  expect(steps[removal].if).toBe(REQUIRED_AFTER_ENTRY);
+  expect(steps.some((step) => step.run?.includes("run-share.mjs remove"))).toBe(false);
   for (const job of Object.values(workflow.jobs)) {
     expect(JSON.stringify(job.permissions ?? {})).not.toContain("write");
     for (const step of job.steps ?? [])

@@ -61,7 +61,7 @@
                   "minLength": 1
                 },
                 "runner": {
-                  "enum": ["ci-vps", "ci-vps-gate", "ci-arm", "macos-15"]
+                  "enum": ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"]
                 },
                 "paused": {
                   "const": true

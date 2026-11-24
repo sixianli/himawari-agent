@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -21,6 +22,10 @@ import {
   planTestInventory,
   main as policyMain,
   REQUIRED_AFTER_ENTRY,
+  SHARE_AFTER_PUT,
+  SHARE_ROOT_COMMAND,
+  shareCacheKey,
+  sharePath,
   REQUIRED_CANCELLED,
   REQUIRED_DRAFT,
   REQUIRED_ENTRY_SCRIPT,
@@ -41,6 +46,8 @@ import {
   validateTestInventory,
   validateTestPlacement,
   validateVitestProjects,
+  upgradeSelfHostedRunners,
+  validateHostedRunners,
   validateWorkflow,
 } from "../../scripts/ci/check-policy.mjs";
 import {
@@ -48,7 +55,10 @@ import {
   armChecks,
   armRunnerLabel,
   expectedMembers,
+  gateRunnerLabel,
   githubExpression,
+  hostedRunnerLabels,
+  legacyRunnerLabels,
   linuxRunnerLabel,
   readJson,
   repositoryRoot,
@@ -59,15 +69,31 @@ import { testWorkerCount } from "../../scripts/ci/test-concurrency.mjs";
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const clone = () => structuredClone(policy);
+const legacyClone = () => {
+  const value = clone();
+  for (const check of value.checks)
+    for (const member of check.members)
+      if (member.runner === armRunnerLabel) member.runner = legacyRunnerLabels.arm;
+      else if (check.id === "required") member.runner = legacyRunnerLabels.gate;
+      else if (member.runner === linuxRunnerLabel) member.runner = legacyRunnerLabels.linux;
+  return value;
+};
+const legacyPolicy = legacyClone();
 const toCurrentTests = (value) => upgradeSplitTests(upgradeCoverageToTests(value));
 const coverageShaped = () => {
-  const value = clone();
+  const value = legacyClone();
   Object.assign(
     value.checks.find((check) => check.id === "tests"),
     {
       id: "coverage",
       members: [
-        { key: "default", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.22.3" },
+        {
+          key: "default",
+          runner: legacyRunnerLabels.linux,
+          os: "linux",
+          arch: "x64",
+          node: "22.22.3",
+        },
       ],
       projects: ["unit", "contracts", "tooling", "integration", "e2e", "pi-compat"],
       outputs: ["json", "lcov", "artifact"],
@@ -89,7 +115,7 @@ const armOnSharedRunner = (value) => {
   for (const check of value.checks)
     if (armChecks.includes(check.id)) {
       delete check.members[0].alternateArch;
-      check.members[0].runner = linuxRunnerLabel;
+      check.members[0].runner = legacyRunnerLabels.linux;
     }
   return value;
 };
@@ -99,9 +125,11 @@ const checkout = {
   sha: "a".repeat(40),
   license: "MIT",
 };
+const cacheAction = { repository: "actions/cache", sha: "c".repeat(40) };
 const lock = {
   actions: [
     checkout,
+    cacheAction,
     { repository: "actions/download-artifact", sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093" },
     { repository: "actions/upload-artifact", sha: "ea165f8d65b6e75b540449e92b4886f43607fa02" },
   ],
@@ -166,9 +194,28 @@ const buildFetch = () => ({
 });
 const shareCollect = () => ({
   env: { CI_NEEDS: githubExpression("toJSON(needs)") },
-  run: `${shareCommand} collect --to .ci-output/reports --remote-jobs ${armChecks.join(",")}`,
+  run: `${shareCommand} collect --to .ci-output/reports`,
 });
-const shareRemove = () => ({ if: REQUIRED_AFTER_ENTRY, run: `${shareCommand} remove` });
+const shareRoot = () => ({ run: SHARE_ROOT_COMMAND });
+const shareSave = (check) => ({
+  if: SHARE_AFTER_PUT,
+  uses: `actions/cache/save@${cacheAction.sha}`,
+  with: {
+    path: sharePath(`${check.id}-\${{ env.CI_MATRIX }}`),
+    key: shareCacheKey(`${check.id}-\${{ env.CI_MATRIX }}`),
+  },
+});
+const shareRestore = (name, extra = {}) => ({
+  uses: `actions/cache/restore@${cacheAction.sha}`,
+  with: { path: sharePath(name), key: shareCacheKey(name), ...extra },
+});
+const buildRestore = () => shareRestore("build-linux-x64", { "fail-on-cache-miss": true });
+const reportRestores = () =>
+  policy.checks
+    .filter((check) => check.id !== "required")
+    .flatMap((check) =>
+      activeMembers(check).map((member) => shareRestore(`${check.id}-${member.key}`)),
+    );
 const gateStep = () => ({
   env: { CI_NEEDS: githubExpression("toJSON(needs)") },
   run: REQUIRED_GATE_COMMAND,
@@ -233,6 +280,7 @@ function workflow() {
           steps: [
             ...(check.id === "required" ? [requiredEntry()] : []),
             { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
+            shareRoot(),
             ...(["static", "tests", "tooling"].includes(check.id)
               ? [{ run: chromiumInstall }]
               : []),
@@ -242,10 +290,10 @@ function workflow() {
                   ? '.ci-output/tools/bin/node scripts/ci/run.mjs --check tests --matrix "$CI_MATRIX" --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/check --baseline-candidate initial-only --input .ci-output/input/result.json'
                   : "node scripts/ci/run.mjs",
             },
-            ...(["browser", "tests"].includes(check.id) ? [buildFetch()] : []),
+            ...(["browser", "tests"].includes(check.id) ? [buildRestore(), buildFetch()] : []),
             ...(check.id === "required"
-              ? [shareCollect(), gateStep(), shareRemove()]
-              : [sharePut(check), diagnosticSummary(check)]),
+              ? [...reportRestores(), shareCollect(), gateStep()]
+              : [sharePut(check), shareSave(check), diagnosticSummary(check)]),
           ],
         },
       ]),
@@ -625,9 +673,9 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "required removing the run directory after a failed entry check",
+      "required collecting reports after a failed entry check",
       (value) => {
-        value.jobs.required.steps.find((step) => step.run?.endsWith(" remove")).if = "always()";
+        value.jobs.required.steps.find((step) => step.run?.includes(" collect ")).if = "always()";
       },
     ],
     [
@@ -1018,7 +1066,7 @@ describe("CI policy contract", () => {
     expect(() => resolvePolicySource({ root })).toThrow("retentionDays");
   });
   it("只升级完整的托管 runner 写法，混合写法照样被拒", () => {
-    const mixed = clone();
+    const mixed = legacyClone();
     mixed.checks.find((check) => check.id === "static").members[0].runner = "ubuntu-24.04";
     expect(upgradeHostedRunnerPolicy(mixed)).toBe(mixed);
     expect(upgradeHostedRunnerPolicy(policy)).toBe(policy);
@@ -1044,8 +1092,10 @@ describe("CI policy contract", () => {
     expect(upgradeHostedRunnerPolicy(legacy)).not.toBe(legacy);
     expect(() =>
       validatePolicy(
-        toCurrentTests(
-          upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+        upgradeSelfHostedRunners(
+          toCurrentTests(
+            upgradeArmRunnerPolicy(upgradeGateRunnerPolicy(upgradeHostedRunnerPolicy(legacy))),
+          ),
         ),
       ),
     ).not.toThrow();
@@ -1076,10 +1126,11 @@ describe("CI policy contract", () => {
     });
   });
   it("[HR-11] 只升级完整的 hermes-home 写法，混写、未暂停 macOS、时限不对的照样被拒", () => {
-    expect(linuxRunnerLabel).toBe("ci-vps");
+    expect(legacyRunnerLabels.linux).toBe("ci-vps");
     expect(upgradeRunnerLabel(policy)).toBe(policy);
     const mixed = hermesPolicy();
-    mixed.checks.find((check) => check.id === "static").members[0].runner = linuxRunnerLabel;
+    mixed.checks.find((check) => check.id === "static").members[0].runner =
+      legacyRunnerLabels.linux;
     expect(upgradeRunnerLabel(mixed)).toBe(mixed);
     expect(() => validatePolicy(upgradeRunnerLabel(mixed))).toThrow();
     const unpausedMac = hermesPolicy();
@@ -1096,7 +1147,8 @@ describe("CI policy contract", () => {
   });
   const retiredTestPolicy = () => {
     const value = coverageShaped();
-    value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
+    value.checks.find((check) => check.id === "required").members[0].runner =
+      legacyRunnerLabels.linux;
     const fiveProjects = ["unit", "contracts", "integration", "e2e", "pi-compat"];
     const coverageIndex = value.checks.findIndex((check) => check.id === "coverage");
     value.checks[coverageIndex].projects = ["unit", "contracts", "tooling", "integration"];
@@ -1242,20 +1294,19 @@ describe("CI policy contract", () => {
     expect(upgradeRetiredTestChecks(policy)).toBe(policy);
     const accepted = retiredTestPolicy();
     const upgraded = toCurrentTests(upgradeGateRunnerPolicy(upgradeRetiredTestChecks(accepted)));
-    expect(upgraded).toEqual(policy);
+    expect(upgraded).toEqual(legacyPolicy);
     expect(accepted.checks.map((check) => check.id)).toContain("node-floor");
   });
   const sharedRunnerPolicy = () => {
     const value = coverageShaped();
-    value.checks.find((check) => check.id === "required").members[0].runner = linuxRunnerLabel;
+    value.checks.find((check) => check.id === "required").members[0].runner =
+      legacyRunnerLabels.linux;
     return value;
   };
   it("[ADR-0256] 基准上汇总作业还在 ci-vps 的七作业策略升级成 ci-vps-gate，摘要仍按原始字节算", () => {
     const { root, git } = fixtureRepository();
     const accepted = sharedRunnerPolicy();
-    expect(() => validatePolicy(toCurrentTests(accepted))).toThrow(
-      "Incorrect platform: required/default",
-    );
+    expect(() => validatePolicy(toCurrentTests(accepted))).toThrow();
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
     writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
     git("add", "ci");
@@ -1281,14 +1332,16 @@ describe("CI policy contract", () => {
     const checkOnGate = clone();
     checkOnGate.checks.find((check) => check.id === "static").members[0].runner = "ci-vps-gate";
     expect(upgradeGateRunnerPolicy(checkOnGate)).toBe(checkOnGate);
-    expect(() => validatePolicy(checkOnGate)).toThrow("Incorrect platform: static/default");
+    expect(() => validatePolicy(checkOnGate)).toThrow(
+      "runner must be equal to one of the allowed values",
+    );
     expect(() => validatePolicy(toCurrentTests(sharedRunnerPolicy()))).toThrow(
-      "Incorrect platform: required/default",
+      "runner must be equal to one of the allowed values",
     );
   });
   it("[ADR-0256] 工作流的汇总作业写回 ci-vps、或检查作业写成 ci-vps-gate 时被拒", () => {
     const gateOnShared = workflow();
-    gateOnShared.jobs.required["runs-on"] = linuxRunnerLabel;
+    gateOnShared.jobs.required["runs-on"] = legacyRunnerLabels.linux;
     expect(() => validateWorkflow(policy, stringify(gateOnShared), lock)).toThrow();
     const checkOnGate = workflow();
     checkOnGate.jobs.static["runs-on"] = "ci-vps-gate";
@@ -1299,7 +1352,7 @@ describe("CI policy contract", () => {
     for (const projects of [["tooling"], []]) {
       const accepted = coverageShaped();
       accepted.checks.find((check) => check.id === "policy").projects = projects;
-      expect(toCurrentTests(accepted)).toEqual(policy);
+      expect(toCurrentTests(accepted)).toEqual(legacyPolicy);
     }
     expect(toCurrentTests(policy)).toBe(policy);
     expect(policy.checks.find((check) => check.id === "tooling")).toEqual({
@@ -1355,13 +1408,23 @@ describe("CI policy contract", () => {
     expect(() => validatePolicy(toCurrentTests(value))).toThrow();
   });
   it("[ADR-0275] tests 拆成两份集成测试和其余项目三台并行，基准上的单台写法升级一次", () => {
-    expect(policy.checks.find((check) => check.id === "tests").members).toEqual(testsMembers);
-    const single = clone();
+    expect(policy.checks.find((check) => check.id === "tests").members).toEqual(
+      testsMembers.map((member) => ({ ...member, runner: linuxRunnerLabel })),
+    );
+    const single = legacyClone();
     single.checks.find((check) => check.id === "tests").members = [
-      { key: "default", runner: linuxRunnerLabel, os: "linux", arch: "x64", node: "22.22.3" },
+      {
+        key: "default",
+        runner: legacyRunnerLabels.linux,
+        os: "linux",
+        arch: "x64",
+        node: "22.22.3",
+      },
     ];
-    expect(() => validatePolicy(single)).toThrow("Incomplete matrix: tests");
-    expect(upgradeSplitTests(single)).toEqual(policy);
+    expect(() => validatePolicy(upgradeSelfHostedRunners(single))).toThrow(
+      "Incomplete matrix: tests",
+    );
+    expect(upgradeSplitTests(single)).toEqual(legacyPolicy);
     expect(upgradeSplitTests(policy)).toBe(policy);
     const { root, git } = fixtureRepository();
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(single));
@@ -1507,22 +1570,22 @@ describe("CI policy contract", () => {
       if (armChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
     expect(upgradeArmRunnerPolicy(withAlternate)).toEqual(coverageShaped());
     const mixed = armOnSharedRunner(coverageShaped());
-    mixed.checks.find((check) => check.id === "security").members[0].runner = armRunnerLabel;
+    mixed.checks.find((check) => check.id === "security").members[0].runner =
+      legacyRunnerLabels.arm;
     expect(upgradeArmRunnerPolicy(mixed)).toBe(mixed);
-    expect(() => validatePolicy(toCurrentTests(mixed))).toThrow(
+    expect(() => validatePolicy(upgradeSelfHostedRunners(toCurrentTests(mixed)))).toThrow(
       "Incorrect platform: policy/default",
     );
   });
   it.each([
     ["build 允许 arm64", "build", { alternateArch: "arm64" }],
     ["tests 写成 arm64", "tests", { arch: "arm64" }],
-    ["tooling 放回 ci-vps", "tooling", { runner: "ci-vps" }],
+    ["tooling 放回 x64 机器", "tooling", { runner: linuxRunnerLabel }],
     ["browser 允许 arm64", "browser", { alternateArch: "arm64" }],
     ["static 没有 arm64 试跑", "static", { alternateArch: undefined }],
-    ["security 放到汇总 runner", "security", { runner: "ci-vps-gate" }],
-    ["security 放回 ci-vps", "security", { runner: "ci-vps" }],
-    ["static 放回 ci-vps", "static", { runner: "ci-vps" }],
-    ["tests 放到 ci-arm", "tests", { runner: "ci-arm" }],
+    ["security 放到汇总 runner", "security", { runner: gateRunnerLabel }],
+    ["static 放回 x64 机器", "static", { runner: linuxRunnerLabel }],
+    ["tests 放到 ARM 机器", "tests", { runner: armRunnerLabel }],
     ["policy 写成 arm64", "policy", { arch: "arm64" }],
   ])("[ADR-0266] 策略里%s就被拒", (_label, id, change) => {
     const value = clone();
@@ -1544,15 +1607,15 @@ describe("CI policy contract", () => {
     value.jobs[id]["runs-on"] = label;
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
   });
-  it("[ADR-0266] 汇总作业不带 --remote-jobs 或带的检查不对就被拒", () => {
-    const find = (value) =>
-      value.jobs.required.steps.find((step) => step.run?.includes("run-share.mjs collect"));
-    const without = workflow();
-    find(without).run = find(without).run.replace(/ --remote-jobs \S+/u, "");
-    expect(() => validateWorkflow(policy, stringify(without), lock)).toThrow();
-    const partial = workflow();
-    find(partial).run = find(partial).run.replace(/--remote-jobs \S+/u, "--remote-jobs policy");
-    expect(() => validateWorkflow(policy, stringify(partial), lock)).toThrow();
+  it("汇总作业还在用 ssh 从别的机器拉报告（--remote-jobs）就被拒", () => {
+    const value = workflow();
+    const collect = value.jobs.required.steps.find((step) =>
+      step.run?.includes("run-share.mjs collect"),
+    );
+    collect.run = `${collect.run} --remote-jobs ${armChecks.join(",")}`;
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      "Required must collect digest-checked reports from the run share",
+    );
   });
   it("[ADR-0266] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
     const read = (name) =>
@@ -1692,6 +1755,85 @@ describe("CI policy contract", () => {
       `${id} must take this attempt's Linux build from the runner share by digest`,
     );
   });
+  it.each(
+    ["browser", "tests"].flatMap((id) =>
+      ["missing", "after fetch", "conditional", "wrong key", "may miss"].map((fault) => [
+        id,
+        fault,
+      ]),
+    ),
+  )("拒绝 %s 不先从本次运行的缓存取回构建：%s", (id, fault) => {
+    const value = workflow();
+    const steps = value.jobs[id].steps;
+    const restore = steps.find((entry) => entry.uses?.startsWith("actions/cache/restore@"));
+    const fetch = steps.find((entry) => entry.run?.includes("run-share.mjs get"));
+    if (fault === "missing") steps.splice(steps.indexOf(restore), 1);
+    if (fault === "after fetch") {
+      steps.splice(steps.indexOf(restore), 1);
+      steps.splice(steps.indexOf(fetch) + 1, 0, restore);
+    }
+    if (fault === "conditional") restore.if = "success()";
+    if (fault === "wrong key") restore.with.key = "ci-share-build-linux-x64";
+    if (fault === "may miss") delete restore.with["fail-on-cache-miss"];
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      `${id} must restore this attempt's Linux build from the run cache before taking it`,
+    );
+  });
+  it.each(["missing", "duplicated", "before put", "always", "wrong path", "wrong key"])(
+    "拒绝检查作业不把报告存进本次运行的缓存：%s",
+    (fault) => {
+      const value = workflow();
+      const steps = value.jobs.static.steps;
+      const save = steps.find((entry) => entry.uses?.startsWith("actions/cache/save@"));
+      const put = steps.find((entry) => entry.id === "share");
+      if (fault === "missing") steps.splice(steps.indexOf(save), 1);
+      if (fault === "duplicated") steps.push(structuredClone(save));
+      if (fault === "before put") {
+        steps.splice(steps.indexOf(save), 1);
+        steps.splice(steps.indexOf(put), 0, save);
+      }
+      if (fault === "always") save.if = githubExpression("always()");
+      if (fault === "wrong path") save.with.path = "/tmp/share";
+      if (fault === "wrong key") save.with.key = "ci-share-static";
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        "Job must save its shared reports to this run's cache exactly once: static",
+      );
+    },
+  );
+  it.each(["missing", "conditional", "required to hit", "after collect"])(
+    "拒绝汇总作业没在收齐前从缓存取回每个成员的报告：%s",
+    (fault) => {
+      const value = workflow();
+      const steps = value.jobs.required.steps;
+      const restore = steps.find(
+        (entry) =>
+          entry.uses?.startsWith("actions/cache/restore@") &&
+          entry.with.key.endsWith("-tests-integration-2"),
+      );
+      const collect = steps.find((entry) => entry.run?.includes("run-share.mjs collect"));
+      if (fault === "missing") steps.splice(steps.indexOf(restore), 1);
+      if (fault === "conditional") restore.if = REQUIRED_AFTER_ENTRY;
+      if (fault === "required to hit") restore.with["fail-on-cache-miss"] = true;
+      if (fault === "after collect") {
+        steps.splice(steps.indexOf(restore), 1);
+        steps.splice(steps.indexOf(collect) + 1, 0, restore);
+      }
+      expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+        "Required must restore every member's reports from the run cache before collecting: tests-integration-2",
+      );
+    },
+  );
+  it.each(["policy", "required", "browser"])("拒绝作业没把共享目录指到本机临时目录：%s", (id) => {
+    const value = workflow();
+    const steps = value.jobs[id].steps;
+    steps.splice(
+      steps.findIndex((entry) => entry.run === SHARE_ROOT_COMMAND),
+      1,
+    );
+    expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
+      `Job must point the run share at this runner's temporary directory exactly once: ${id}`,
+    );
+  });
   it.each([
     "missing put",
     "second put",
@@ -1714,17 +1856,14 @@ describe("CI policy contract", () => {
       /runner share|report digest/u,
     );
   });
-  it.each(["missing collect", "conditional collect", "missing remove", "remove only on success"])(
-    "拒绝汇总不从 CI 服务器收齐或不总是删掉本次目录：%s",
+  it.each(["missing collect", "conditional collect"])(
+    "拒绝汇总不从共享目录收齐报告：%s",
     (fault) => {
       const value = workflow();
       const steps = value.jobs.required.steps;
       const collect = steps.find((entry) => entry.run?.includes("run-share.mjs collect"));
-      const remove = steps.find((entry) => entry.run?.includes("run-share.mjs remove"));
       if (fault === "missing collect") steps.splice(steps.indexOf(collect), 1);
       if (fault === "conditional collect") collect.if = "success()";
-      if (fault === "missing remove") steps.splice(steps.indexOf(remove), 1);
-      if (fault === "remove only on success") remove.if = "success()";
       expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
         "Required must collect digest-checked reports",
       );
@@ -1961,5 +2100,77 @@ describe("[R2-H1] 测试卫生门禁", () => {
     ["未知模式", { schemaVersion: 1, mode: "off", entries: [] }],
   ])("[R2-H1] 基线文件结构损坏时关闭放行：%s", (_name, value) => {
     expect(() => parseTestHygieneBaseline(value)).toThrow("TEST_HYGIENE_BASELINE_INVALID");
+  });
+});
+
+describe("GitHub 托管机器白名单", () => {
+  const job = (runsOn, extra = {}) => ({
+    jobs: { only: { "runs-on": runsOn, steps: [], ...extra } },
+  });
+  it("只用三种免费标准机器的工作流通过，仓库里的全部工作流都通过", () => {
+    expect(hostedRunnerLabels).toEqual(["ubuntu-24.04", "ubuntu-24.04-arm", "macos-26"]);
+    for (const label of hostedRunnerLabels)
+      expect(() => validateHostedRunners({ "a.yml": stringify(job(label)) })).not.toThrow();
+    expect(() =>
+      validateHostedRunners({
+        "a.yml": stringify(
+          job(githubExpression("matrix.runner"), {
+            strategy: { matrix: { include: [{ runner: "ubuntu-24.04" }, { runner: "macos-26" }] } },
+          }),
+        ),
+        "b.yml": stringify({ jobs: { call: { uses: "./.github/workflows/ci.yml" } } }),
+      }),
+    ).not.toThrow();
+    const directory = path.join(repositoryRoot, ".github/workflows");
+    expect(() =>
+      validateHostedRunners(
+        Object.fromEntries(
+          readdirSync(directory).map((name) => [
+            name,
+            readFileSync(path.join(directory, name), "utf8"),
+          ]),
+        ),
+      ),
+    ).not.toThrow();
+  });
+  it.each([
+    ["自托管标签", "ci-vps"],
+    ["self-hosted 数组", ["self-hosted", "linux"]],
+    ["larger runner", "ubuntu-24.04-16core"],
+    ["会收费的 xlarge", "macos-26-xlarge"],
+    ["浮动标签", "ubuntu-latest"],
+    ["表达式", githubExpression("inputs.runner")],
+    ["分组", { group: "paid" }],
+    ["没写", undefined],
+  ])("拒绝%s", (_name, label) => {
+    expect(() => validateHostedRunners({ "a.yml": stringify(job(label)) })).toThrow(
+      "HOSTED_RUNNER_REQUIRED a.yml/only",
+    );
+  });
+  it("矩阵里有一个成员不在白名单就被拒", () => {
+    expect(() =>
+      validateHostedRunners({
+        "a.yml": stringify(
+          job(githubExpression("matrix.runner"), {
+            strategy: { matrix: { include: [{ runner: "ubuntu-24.04" }, { runner: "ci-arm" }] } },
+          }),
+        ),
+      }),
+    ).toThrow("HOSTED_RUNNER_REQUIRED a.yml/only");
+  });
+  it("main 上还是自托管标签的策略在基准上整体换成托管机器，摘要仍按原始字节算", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = legacyClone();
+    expect(() => validatePolicy(accepted)).toThrow(
+      "runner must be equal to one of the allowed values",
+    );
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted self-hosted runners");
+    const selected = resolvePolicySource({ root });
+    expect(selected.policy).toEqual(policy);
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(upgradeSelfHostedRunners(policy)).toBe(policy);
   });
 });

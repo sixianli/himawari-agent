@@ -1,5 +1,2 @@
 self-hosted-runner:
-  labels:
-    - ci-vps
-    - ci-vps-gate
-    - ci-arm
+  labels: []

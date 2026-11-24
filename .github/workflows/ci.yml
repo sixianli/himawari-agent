@@ -30,7 +30,7 @@ jobs:
   policy:
     name: policy
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-arm
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     outputs:
       default: ${{ steps.share.outputs.default }}
@@ -47,6 +47,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -59,17 +61,23 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "policy-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/policy-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-policy-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "policy/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   static:
     name: static
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-arm
+    runs-on: ubuntu-24.04-arm
     needs:
       - policy
     timeout-minutes: 60
@@ -88,10 +96,14 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
       - name: 安装布局检查用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
@@ -102,10 +114,16 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "static-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/static-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-static-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "static/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
@@ -121,7 +139,7 @@ jobs:
       matrix:
         include:
           - key: linux-x64
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
@@ -138,6 +156,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -150,10 +170,16 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "build-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "build/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
@@ -175,19 +201,19 @@ jobs:
       matrix:
         include:
           - key: chromium
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
             browser: chromium
           - key: firefox
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
             browser: firefox
           - key: webkit
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
@@ -205,11 +231,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
-      - name: 从 CI 服务器取本次 Linux 构建并核对摘要
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
+      - name: 从本次运行的缓存取 Linux 构建
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-linux-x64
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-linux-x64
+          fail-on-cache-miss: true
+      - name: 从共享目录取本次 Linux 构建并核对摘要
         env:
           CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input
@@ -223,10 +259,16 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "browser-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "browser/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
@@ -247,7 +289,7 @@ jobs:
       matrix:
         include:
           - key: integration-1
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
@@ -256,7 +298,7 @@ jobs:
               index: 1
               count: 2
           - key: integration-2
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
@@ -265,7 +307,7 @@ jobs:
               index: 2
               count: 2
           - key: others
-            runner: ci-vps
+            runner: ubuntu-24.04
             os: linux
             arch: x64
             node: 22.22.3
@@ -283,13 +325,23 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node }}
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
       - name: 安装集成测试用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
-      - name: 从 CI 服务器取本次 Linux 构建并核对摘要
+      - name: 从本次运行的缓存取 Linux 构建
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-linux-x64
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-linux-x64
+          fail-on-cache-miss: true
+      - name: 从共享目录取本次 Linux 构建并核对摘要
         env:
           CI_BUILD_DIGEST: ${{ needs.build.outputs.linux-x64 }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs get --name build-linux-x64 --digest "$CI_BUILD_DIGEST" --to .ci-output/input
@@ -301,17 +353,23 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "tests-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tests-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tests-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "tests/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   tooling:
     name: tooling
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-arm
+    runs-on: ubuntu-24.04-arm
     needs:
       - policy
     timeout-minutes: 60
@@ -330,10 +388,14 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
         run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation --cache runner
+      - name: 准备 GitHub 托管机器上的沙箱和浏览器依赖
+        run: sudo bash scripts/ci/prepare-hosted.sh "$PWD/.ci-output/tools/bin/node"
       - name: 安装工具测试用的 Chromium
         run: .ci-output/tools/bin/node node_modules/playwright/cli.js install --only-shell chromium
       - name: 执行共享检查
@@ -344,17 +406,23 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "tooling-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tooling-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tooling-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "tooling/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   security:
     name: security
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
-    runs-on: ci-arm
+    runs-on: ubuntu-24.04-arm
     needs:
       - policy
     timeout-minutes: 60
@@ -373,6 +441,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE"
       - name: 隔离安装依赖及 SQLite 探针
@@ -387,17 +457,23 @@ jobs:
         run: .ci-output/tools/bin/node scripts/ci/publish.mjs --input .ci-output/check --output .ci-output/public --tools .ci-output/tools
         if: always()
         id: publish
-      - name: 把本次完整报告放进 CI 服务器上本次运行的目录
+      - name: 把本次完整报告放进本次运行的共享目录
         id: share
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/run-share.mjs put --name "security-$CI_MATRIX" --from .ci-output/public/reports --output-key "$CI_MATRIX"
+      - name: 把共享目录里本作业的报告存进本次运行的缓存
+        if: ${{ always() && steps.share.outcome == 'success' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/security-${{ env.CI_MATRIX }}
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-security-${{ env.CI_MATRIX }}
       - name: 把失败诊断写进作业摘要
         if: ${{ always() && steps.publish.outcome == 'success' }}
         run: .ci-output/tools/bin/node scripts/ci/ci-summary.mjs --title "security/$CI_MATRIX 失败诊断" --from .ci-output/public/diagnostics --failed-logs .ci-output/public/reports
   required:
     name: ci/required
     if: always()
-    runs-on: ci-vps-gate
+    runs-on: ubuntu-24.04
     needs:
       - policy
       - static
@@ -428,18 +504,72 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.22.3
+      - name: 把本次运行的共享目录指到本机临时目录
+        run: mkdir -p "$RUNNER_TEMP/ci-share" && echo "HIMAWARI_CI_SHARE=$RUNNER_TEMP/ci-share" >> "$GITHUB_ENV"
       - name: 安装并核验固定工具
         run: node scripts/ci/install-tools.mjs --directory .ci-output/tools --node "$CI_NODE" --without-scanners
       - name: 安装汇总器最小依赖
         run: .ci-output/tools/bin/node scripts/ci/install-gate-dependencies.mjs
-      - name: 从 CI 服务器取本次各任务的报告并核对摘要
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports --remote-jobs policy,static,tooling,security
+      - name: 从本次运行的缓存取 policy-default 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/policy-default
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-policy-default
+      - name: 从本次运行的缓存取 static-default 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/static-default
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-static-default
+      - name: 从本次运行的缓存取 build-linux-x64 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/build-linux-x64
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-build-linux-x64
+      - name: 从本次运行的缓存取 browser-chromium 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-chromium
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-chromium
+      - name: 从本次运行的缓存取 browser-firefox 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-firefox
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-firefox
+      - name: 从本次运行的缓存取 browser-webkit 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/browser-webkit
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-browser-webkit
+      - name: 从本次运行的缓存取 tests-integration-1 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tests-integration-1
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tests-integration-1
+      - name: 从本次运行的缓存取 tests-integration-2 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tests-integration-2
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tests-integration-2
+      - name: 从本次运行的缓存取 tests-others 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tests-others
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tests-others
+      - name: 从本次运行的缓存取 tooling-default 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/tooling-default
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-tooling-default
+      - name: 从本次运行的缓存取 security-default 的报告
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/ci-share/${{ github.run_id }}-${{ github.run_attempt }}/security-default
+          key: ci-share-${{ github.run_id }}-${{ github.run_attempt }}-security-default
+      - name: 从共享目录取本次各任务的报告并核对摘要
+        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs collect --to .ci-output/reports
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
       - name: 核对全部 job 与报告，把汇总结论写进本步骤日志和作业摘要
         run: .ci-output/tools/bin/node scripts/ci/required.mjs --reports .ci-output/reports --output .ci-output/gate --base "$CI_BASE"
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
-      - name: 删除 CI 服务器上本次运行的目录
-        if: ${{ always() && steps.entry.outcome == 'success' }}
-        run: .ci-output/tools/bin/node scripts/ci/run-share.mjs remove
