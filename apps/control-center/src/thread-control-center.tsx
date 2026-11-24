@@ -178,7 +178,7 @@ function ThreadWelcome({
   return (
     <div className="thread-welcome">
       <span className="welcome-mark">
-        <SunflowerMark detail="full" growing />
+        <SunflowerMark growing />
       </span>
       <h2>{name ? message("chat.greetNamed", { greeting, name }) : greeting}</h2>
       <p>{message(line)}</p>

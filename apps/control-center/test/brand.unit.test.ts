@@ -7,7 +7,7 @@ import {
   activeGrowers,
   HimawariBrand,
   restingGrowth,
-  SEED_COUNTS,
+  SEED_COUNT,
   SunflowerMark,
   seedsAt,
 } from "../src/components/brand.js";
@@ -43,19 +43,19 @@ async function mount(element: ReturnType<typeof createElement>) {
   return { host, unmount: () => act(async () => root.unmount()) };
 }
 
-it("[UI-2] draws the resting sunflower from seeds only: 233 in the large mark, 89 in the small one", () => {
+it("[UI-2] draws the resting sunflower from 55 seeds only, the same count at every size", () => {
   const markup = renderToStaticMarkup(createElement(HimawariBrand, { wordmark: true }));
   expect(markup).not.toContain("<img");
   expect(markup).toContain('class="himawari-mark"');
   expect(markup).toContain('<span class="himawari-wordmark-latin">Himawari</span>');
   expect(markup).toContain('<span class="himawari-wordmark-kana" lang="ja">ひまわり</span>');
-  expect(visible(seedsAt("full", restingGrowth("full")))).toHaveLength(SEED_COUNTS.full);
-  expect(visible(seedsAt("compact", restingGrowth("compact")))).toHaveLength(SEED_COUNTS.compact);
+  expect(SEED_COUNT).toBe(55);
+  expect(visible(seedsAt(restingGrowth()))).toHaveLength(SEED_COUNT);
 });
 
 it("[UI-2] places every seed on the golden-angle spiral and grows new seeds from the centre outward", () => {
-  const growth = restingGrowth("full") + 0.5;
-  const seeds = seedsAt("full", growth);
+  const growth = restingGrowth() + 0.5;
+  const seeds = seedsAt(growth);
   const newest = Math.floor(growth);
   seeds.forEach((seed, slot) => {
     if (seed.r === 0) return;
@@ -68,7 +68,7 @@ it("[UI-2] places every seed on the golden-angle spiral and grows new seeds from
       Math.abs(Math.atan2(Math.sin(angle - expected), Math.cos(angle - expected))),
     ).toBeLessThan(0.02);
   });
-  const later = seedsAt("full", growth + 1);
+  const later = seedsAt(growth + 1);
   const distance = (seed: { cx: number; cy: number }) => Math.hypot(seed.cx - 24, seed.cy - 24);
   expect(distance(later[11] as never)).toBeGreaterThan(distance(seeds[10] as never));
 });
@@ -102,9 +102,7 @@ it("[UI-2] keeps finished answers, the sidebar and reduced-motion marks complete
   await still.unmount();
 
   const reducedFrames = stubMotion(true);
-  const reduced = await mount(
-    createElement(SunflowerMark, { busy: true, detail: "full", growing: true }),
-  );
+  const reduced = await mount(createElement(SunflowerMark, { busy: true, growing: true }));
   expect(activeGrowers()).toBe(0);
   expect(reducedFrames).toHaveLength(0);
   await reduced.unmount();

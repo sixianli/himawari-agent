@@ -56,15 +56,15 @@ it(
   },
 );
 
-it("[UI-2] keeps the v3 brand asset at the same seed positions as the interface mark", async () => {
+it("[UI-2] keeps the v4 brand asset at the same seed positions as the interface mark", async () => {
   const asset = await readFile(
-    path.join(repositoryRoot, "assets/brand/himawari/v3/logo-sunflower-disc.svg"),
+    path.join(repositoryRoot, "assets/brand/himawari/v4/logo-sunflower-disc.svg"),
     "utf8",
   );
   const circles = [...asset.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)].map(
     ([, cx, cy, r]) => ({ cx: Number(cx), cy: Number(cy), r: Number(r) }),
   );
-  const seeds = seedsAt("full", restingGrowth("full"))
+  const seeds = seedsAt(restingGrowth())
     .filter((seed) => seed.r > 0)
     .map(({ cx, cy, r }) => ({ cx, cy, r }));
   expect(circles).toEqual(seeds);

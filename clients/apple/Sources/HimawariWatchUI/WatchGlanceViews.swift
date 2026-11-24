@@ -27,7 +27,7 @@ public struct WatchGlanceView: View {
                         .font(.system(.title2, design: .rounded, weight: .bold))
                         .widgetAccentable()
                 } else {
-                    SunflowerMark(detail: .compact).padding(DesignTokens.Watch.glanceMarkInset).widgetAccentable()
+                    SunflowerMark().padding(DesignTokens.Watch.glanceMarkInset).widgetAccentable()
                 }
             }
         case .accessoryInline:
@@ -38,7 +38,7 @@ public struct WatchGlanceView: View {
             if case let .waiting(count, _) = state.display {
                 Text("\(count)").widgetCurvesContent().widgetLabel { Text(waitingText(count)) }
             } else {
-                SunflowerMark(detail: .compact).widgetLabel { Text(L.text("reminder.title")) }
+                SunflowerMark().widgetLabel { Text(L.text("reminder.title")) }
             }
         default:
             rectangular
@@ -47,7 +47,7 @@ public struct WatchGlanceView: View {
 
     private var rectangular: some View {
         HStack(spacing: DesignTokens.Watch.glanceGap) {
-            SunflowerMark(detail: .compact)
+            SunflowerMark()
                 .frame(width: DesignTokens.Watch.markWidget, height: DesignTokens.Watch.markWidget)
                 .widgetAccentable()
             VStack(alignment: .leading, spacing: 1) {

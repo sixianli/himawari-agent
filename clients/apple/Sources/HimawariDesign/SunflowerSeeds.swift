@@ -1,13 +1,5 @@
 import Foundation
 
-public enum SunflowerDetail: Sendable {
-    case full
-    case compact
-
-    var seedCount: Int { self == .full ? 233 : 89 }
-    var sizeScale: Double { self == .full ? 1 : 1.25 }
-}
-
 public struct SunflowerSeed: Sendable, Equatable {
     public let x: Double
     public let y: Double
@@ -19,33 +11,29 @@ public struct SunflowerSeed: Sendable, Equatable {
 }
 
 public enum SunflowerSeeds {
+    public static let seedCount = 55
     static let goldenAngle = Double.pi * (3 - 5.0.squareRoot())
     static let center = 24.0
     static let discRadius = 19.7
     static let newestShare = 0.06
     static let birthSeconds = 1.2
-    static let fadeSeeds = 6.0
-    static let smallestSeed = 0.43
-    static let seedGrowth = 0.72
+    static let fadeSeeds = 1.5
+    static let smallestSeed = 0.8
+    static let seedGrowth = 1.33
     static let frameShare = 0.94
     static let newSeed = (255.0, 236.0, 170.0)
     static let brown = (92.0, 52.0, 16.0)
     static let amber = (214.0, 128.0, 20.0)
     static let gold = (245.0, 178.0, 48.0)
 
-    public static func reach(_ detail: SunflowerDetail) -> Double {
-        discRadius + (smallestSeed + seedGrowth) * detail.sizeScale
-    }
+    public static let reach = discRadius + smallestSeed + seedGrowth
+    public static let resting = Double(seedCount + 8)
 
-    public static func resting(_ detail: SunflowerDetail) -> Double {
-        Double(detail.seedCount + 8)
-    }
-
-    public static func at(_ detail: SunflowerDetail, growth: Double) -> [SunflowerSeed] {
-        let count = Double(detail.seedCount)
+    public static func at(growth: Double) -> [SunflowerSeed] {
+        let count = Double(seedCount)
         let spacing = discRadius / count.squareRoot()
         let newest = growth.rounded(.down)
-        return (0..<(detail.seedCount + 2)).compactMap { (slot: Int) -> SunflowerSeed? in
+        return (0..<(seedCount + 2)).compactMap { (slot: Int) -> SunflowerSeed? in
             let order = newest - Double(slot)
             let age = growth - order
             guard age >= 0, age <= count else { return nil }
@@ -64,7 +52,7 @@ public enum SunflowerSeeds {
             return SunflowerSeed(
                 x: center + distance * cos(angle),
                 y: center + distance * sin(angle),
-                radius: (smallestSeed + seedGrowth * share.squareRoot()) * detail.sizeScale * born,
+                radius: (smallestSeed + seedGrowth * share.squareRoot()) * born,
                 red: color.0 / 255,
                 green: color.1 / 255,
                 blue: color.2 / 255,
