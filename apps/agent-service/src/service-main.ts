@@ -1673,7 +1673,6 @@ export async function startTenantRuntime(
         scope: perceptionScope,
         store: repository.deviceActions(),
         perception: repository.perception(),
-        externalContent,
         devices: repository.pairedDevices().listDevices,
         ledger: repository.decisionLedger(),
         payloads,
@@ -3024,6 +3023,26 @@ export async function startTenantRuntime(
                 )
             )?.run.threadId ?? null,
           threadTitle,
+          readMessage: async (threadId, messageId) => {
+            const [message] = await pushRepository.threadRepository().readCommittedMessagesByIds({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              threadId: threadId as Parameters<
+                ReturnType<typeof pushRepository.threadRepository>["read"]
+              >[2],
+              messageIds: [
+                messageId as Parameters<
+                  ReturnType<typeof pushRepository.threadRepository>["readCommittedMessagesByIds"]
+                >[0]["messageIds"][number],
+              ],
+            });
+            return message?.role === "agent"
+              ? {
+                  dataClassification: message.dataClassification,
+                  readText: () => readPlain(message.contentRef),
+                }
+              : undefined;
+          },
           ...(applePush ? { companion: applePush } : {}),
           publicOrigin: configuration.publicOrigin,
           ...(configuration.runPolicy?.timeZone
