@@ -20,6 +20,7 @@ export interface ConversationLine {
   readonly sequence: number;
   readonly role: "owner" | "agent";
   readonly committedAt: string;
+  readonly dataClassification: DataClassification;
   readonly text: string;
 }
 
@@ -100,6 +101,7 @@ export class ConversationTurnService {
       sequence: message.sequence,
       role: message.role,
       committedAt: message.committedAt,
+      dataClassification: message.dataClassification as DataClassification,
       text: text.trim(),
     });
   }
