@@ -25,6 +25,7 @@ function isToolResult(message: ClearableMessage): message is ToolResultMessage {
   return (
     message.role === "toolResult" &&
     typeof (message as Partial<ToolResultMessage>).toolCallId === "string" &&
+    typeof (message as Partial<ToolResultMessage>).toolName === "string" &&
     Array.isArray((message as Partial<ToolResultMessage>).content)
   );
 }
@@ -48,12 +49,15 @@ function timestampOf(message: ClearableMessage): number | undefined {
     : undefined;
 }
 
+function blockTokens(block: unknown): number {
+  if (typeof block !== "object" || block === null) return approximateTokens(String(block));
+  const { type, text } = block as { readonly type?: unknown; readonly text?: unknown };
+  if (type === "image") return IMAGE_TOKENS;
+  return approximateTokens(typeof text === "string" ? text : (JSON.stringify(block) ?? ""));
+}
+
 export function contentTokens(content: readonly (TextContent | ImageContent)[]): number {
-  return content.reduce(
-    (total, block) =>
-      total + (block.type === "text" ? approximateTokens(block.text) : IMAGE_TOKENS),
-    0,
-  );
+  return content.reduce((total, block) => total + blockTokens(block), 0);
 }
 
 function messageTokens(message: ClearableMessage): number {
@@ -151,11 +155,10 @@ export function recallToolResult(
       ? undefined
       : messages.find(
           (message): message is ToolResultMessage =>
-            isToolResult(message) &&
-            message.toolCallId === id &&
-            message.toolName !== TOOL_RESULT_RECALL_TOOL_NAME,
+            isToolResult(message) && message.toolCallId === id,
         );
-  if (found) return { content: structuredClone(found.content), found: true };
+  if (found && !(found.toolName === TOOL_RESULT_RECALL_TOOL_NAME && found.isError))
+    return { content: structuredClone(found.content), found: true };
   return {
     content: [
       { type: "text", text: renderPrompt(TOOL_RESULT_RECALL_NOT_FOUND, { toolCallId: id }) },

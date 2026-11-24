@@ -296,7 +296,7 @@ export const TOOL_RESULT_CLEARED_PLACEHOLDER = templatePrompt({
 export const TOOL_RESULT_RECALL = fixedPrompt({
   id: "tools.tool-result-recall",
   purpose: "tool_result_recall 工具的描述：按占位里的编号取回已清理的工具结果原文",
-  usedBy: ["packages/runtime-pi/src/tool-result-clearing.ts"],
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
   layer: "tools",
   output: "free-text",
   text: "取回本对话里一次已从上下文清理的工具结果原文。上下文变长时，较早的工具结果会换成一行占位，占位里写着编号；之后需要那次结果的细节（网页原文、搜索结果、文件内容）时，把占位里的编号填进 toolCallId。只读，不会重新执行那次工具。",

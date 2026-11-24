@@ -95,6 +95,29 @@ describe("clearing old tool results", () => {
     ).toBe(0);
   });
 
+  it("REVERSE: does not throw on a tool result whose content is not well formed", () => {
+    const broken = [
+      {
+        role: "toolResult",
+        toolCallId: "odd-0",
+        toolName: "web_fetch",
+        content: [null, { type: "text" }],
+        isError: false,
+        timestamp: ++clock,
+      },
+      {
+        role: "toolResult",
+        toolCallId: "odd-1",
+        content: [{ type: "text", text: "x" }],
+        isError: false,
+        timestamp: ++clock,
+      },
+    ];
+    const messages = [...broken, ...reading(120_000, [4_000, 4_000, 4_000, 4_000, 4_000])];
+    expect(() => clearToolResults(messages, settings)).not.toThrow();
+    expect([...clearedToolResultIds(messages, settings)]).toEqual(["odd-0", "call-0", "call-1"]);
+  });
+
   it("returns nothing to change when nothing is cleared", () => {
     expect(clearToolResults(reading(10, [4_000]), settings)).toBeUndefined();
   });
@@ -106,6 +129,26 @@ describe("recalling a cleared result", () => {
     const recalled = recallToolResult(messages, "call-0");
     expect(recalled.found).toBe(true);
     expect(recalled.content).toEqual([{ type: "text", text: page(4_000) }]);
+  });
+
+  it("returns what an earlier recall returned when that recall's own result was cleared", () => {
+    const messages = [
+      ...reading(120_000, [4_000, 4_000, 4_000, 4_000, 4_000]),
+      assistant(1_000),
+      result("recall-1", 4_000, "tool_result_recall"),
+    ];
+    const recalled = recallToolResult(messages, "recall-1");
+    expect(recalled.found).toBe(true);
+    expect(recalled.content).toEqual([{ type: "text", text: page(4_000) }]);
+  });
+
+  it("REVERSE: an earlier recall that found nothing still counts as not found", () => {
+    const messages = [
+      ...reading(120_000, [4_000]),
+      assistant(1_000),
+      { ...result("recall-1", 10, "tool_result_recall"), isError: true },
+    ];
+    expect(recallToolResult(messages, "recall-1").found).toBe(false);
   });
 
   it("REVERSE: says so when the id is unknown or empty", () => {

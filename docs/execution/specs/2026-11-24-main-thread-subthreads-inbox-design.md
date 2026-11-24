@@ -323,8 +323,8 @@ date: "2026-11-24"
 5. **两次压缩之间，成批清理旧的工具结果。** 压缩是把整段对话总结掉，代价大、会丢细节；在它之前先做轻一点的：把较早的工具结果（网页全文、搜索结果、文件内容这类大块）换成一行占位，例如“[这次网页读取的结果已清理，编号 xxx，需要时用‘取回工具结果’按编号取回]”，模型自己的工具调用和她写的话都保留。这是 Anthropic 官方的做法（上下文编辑文档 <https://platform.claude.com/docs/en/build-with-claude/context-editing>：“The API replaces each cleared result with placeholder text indicating to Claude that it was removed.”），Anthropic 的上下文工程文章也说它是“One of the safest lightest touch forms of compaction”。
    - **成批、少做**（前提 14）：只有上下文超过一个触发线才清；一次要清掉至少一定数量的 token，清不到这么多就不清（官方文档的原话：“clear enough tokens to make the cache invalidation worthwhile”）；最近的几次工具调用保留原样。数字直接用 Anthropic 上下文编辑文档里的默认值（定的第 6 件事）：`trigger` 默认“100,000 input tokens”，即到 10 万 token 开始清；`keep` 默认“3 tool uses”，即最近 3 次工具调用的结果保留原样；`clear_tool_inputs` 默认 `false`，即只清结果、保留她的工具调用。`clear_at_least` 官方默认“None”，但项目规则要求成批清，官方文档说这一项“helps determine whether context clearing is worth breaking your prompt cache”，并在自己的例子里写 5000，所以用 5000。这些都是设置，能改。先清理（10 万）后压缩（15 万），和 Anthropic 两个默认值的先后一致。
    - **能找回**：原始结果本来就完整存在聊天记录里，清理只改发给模型的那份。加一个只读工具“取回工具结果”，按占位里的编号取回原文。
-   - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
-   - **字节稳定**：清理是一次性的换新，和压缩一样记一条记录；清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
+   - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清。做法是这些工具的描述符写上 `contextRetention: "keep"`（`packages/application/src/ports/intelligence.ts` 的 `RuntimeCustomToolDescriptor`），清理时跳过声明了它的工具；做计划、子线程结果、同意卡片这几样工具的那一步，要给描述符加上这一项，并写一条“结果变老也不清”的测试。记忆快照放在开头，不是工具结果，本来就不会被清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
+   - **字节稳定**：清理是一次性的换新，不另存记录：清了哪些由历史本身逐条重放算出（只用每条回答记下的用量），同一段历史每次算出同样的字节（`packages/runtime-pi/src/tool-result-clearing.ts`）；压缩之后保留下来的那几轮按原文发（压缩本来就换掉了整个开头），等上下文再超过清理线时和别的结果一起成批清。清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
    - **对主对话和子线程都做**。主对话的重活本来交给子线程，大块工具结果不多，清理的好处主要在子线程：它们一次任务会读很多网页和文件。
 
 <a id="outbox"></a>
