@@ -142,11 +142,16 @@ describe("[rule-type:push_quiet_hours]", () => {
     assertRuleExamples(every);
     for (const pushClass of ["her_words", "scheduled_reminder", "mail_reminder", "run_result"])
       expect(judge(pushClass, night, every).hits).toHaveLength(1);
-    const older = record({
+    const storedBefore = record({
       ...NIGHT,
-      params: { ...NIGHT.params, classes: ["scheduled_reminder", "run_result", "mail_reminder"] },
+      params: { ...NIGHT.params, classes: ["mail_reminder", "run_result"] },
     });
-    expect(judge("her_words", night, older).hits).toHaveLength(0);
+    expect(judge("her_words", night, storedBefore).hits).toHaveLength(1);
+    const remindersOnly = record({
+      ...NIGHT,
+      params: { ...NIGHT.params, classes: ["scheduled_reminder", "mail_reminder"] },
+    });
+    expect(judge("her_words", night, remindersOnly).hits).toHaveLength(0);
   });
 
   it("[SAID-2] stores a rule that names no classes without classes, so it keeps following the default list", () => {

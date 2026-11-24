@@ -64,7 +64,12 @@ export interface PushQuietParameters {
 }
 
 function pushQuietClassesOf(parameters: PushQuietParameters): readonly PushQuietClass[] {
-  return parameters.classes ?? PUSH_QUIET_DEFAULT_CLASSES;
+  const named = parameters.classes;
+  if (!named) return PUSH_QUIET_DEFAULT_CLASSES;
+  if (!named.includes("run_result") || named.includes("her_words")) return named;
+  return PUSH_QUIET_CLASSES.filter((pushClass) =>
+    pushClass === "her_words" ? true : named.includes(pushClass),
+  );
 }
 
 export type RuleParameters = MailMatchParameters | PushQuietParameters;

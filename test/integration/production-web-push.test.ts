@@ -889,7 +889,25 @@ describe("[WP-3] web push dispatch", () => {
     ]);
   });
 
-  it("[SAID-2] REVERSE: a quiet-hours rule that names only the older classes lets her words through", async () => {
+  it("[SAID-2] holds her reply under a quiet-hours rule stored before her words existed, because her reply replaced the task result push", async () => {
+    const context = await setup();
+    const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
+    context.setClock(BEFORE_NIGHT);
+    await context.subscribe("phone", "zh-CN");
+    context.rules.write("owner:night-stored", {
+      ...NIGHT_JST,
+      params: { ...NIGHT_JST.params, classes: ["mail_reminder", "run_result"] },
+    });
+    await push.tick();
+    context.setClock(NIGHT);
+    context.finishRun("run-night-stored", "completed", at(NIGHT, -5));
+    await context.say("run-night-stored", "明天的会改到下午了。");
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+    expect(context.rules.outbox("said:")).toMatchObject({ deferUntil: MORNING });
+  });
+
+  it("[SAID-2] REVERSE: a quiet-hours rule that leaves out task results lets her words through", async () => {
     const context = await setup();
     const push = context.create({ timeZone: "Asia/Tokyo", readPushRules: context.rules.read });
     context.setClock(BEFORE_NIGHT);
@@ -898,7 +916,7 @@ describe("[WP-3] web push dispatch", () => {
       ...NIGHT_JST,
       params: {
         ...NIGHT_JST.params,
-        classes: ["scheduled_reminder", "run_result", "mail_reminder"],
+        classes: ["scheduled_reminder", "mail_reminder"],
       },
     });
     await push.tick();
