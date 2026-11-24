@@ -43,7 +43,7 @@ export async function captureControlCenterV4(browser, baseUrl, out) {
     ["input", ".hw-composer textarea", ".composer textarea"],
     ["welcome", ".hw-empty", ".thread-welcome"],
     ["nav", ".hw-nav", ".thread-sidebar-actions"],
-    ["nav-button", ".hw-nav button:first-child", ".thread-sidebar-actions button:first-child"],
+    ["nav-button", ".hw-nav button:first-child", ".thread-sidebar-actions > :first-child"],
     ["thread-name", ".hw-name >> nth=0", ".thread-row > a > span:last-child >> nth=0"],
     ["welcome-title", ".hw-empty h2", ".thread-welcome h2"],
   ];

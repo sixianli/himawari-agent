@@ -135,6 +135,7 @@ export interface ProductThreadMessage {
   readonly dataClassification: ProductDataClassification;
   readonly status: "committed" | "partial" | "failed";
   readonly committedAt: string;
+  readonly internal?: true;
 }
 
 export function createProductThreadMessage(input: ProductThreadMessage): ProductThreadMessage {

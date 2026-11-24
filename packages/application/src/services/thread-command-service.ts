@@ -196,6 +196,7 @@ export class ThreadCommandService {
     readonly turnId?: TurnId;
     readonly runId?: RunId;
     readonly occurredAt?: string;
+    readonly internal?: true;
   }) {
     const occurredAt = input.occurredAt ?? this.dependencies.clock.now();
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
@@ -227,6 +228,7 @@ export class ThreadCommandService {
         ...(input.triggerSource && input.triggerSource !== "user_message"
           ? { triggerSource: input.triggerSource }
           : {}),
+        ...(input.internal === true ? { internal: true } : {}),
       }),
       occurredAt,
       authority: this.dependencies.authority(),

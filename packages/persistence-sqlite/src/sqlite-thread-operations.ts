@@ -1,5 +1,6 @@
 import type {
   AdmitOwnerMessageInput,
+  ClaimMainThreadInput,
   CommitAssistantMessageInput,
   ForkThreadInput,
   ProductContextRunState,
@@ -96,6 +97,7 @@ interface MessageRow {
   readonly dataClassification: ProductThreadMessage["dataClassification"];
   readonly status: ProductThreadMessage["status"];
   readonly committedAt: string;
+  readonly internal: number;
 }
 
 interface TaskBindingRow {
@@ -143,7 +145,7 @@ const THREAD_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revi
 const MESSAGE_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId,
   thread_id AS threadId, turn_id AS turnId, run_id AS runId, sequence, role,
   content_ref AS contentRef, classification AS dataClassification,
-  message_status AS status, committed_at AS committedAt FROM thread_messages`;
+  message_status AS status, committed_at AS committedAt, internal FROM thread_messages`;
 
 export function appendThreadGatewayEventInTransaction(
   database: Database.Database,
@@ -302,6 +304,12 @@ export class SqliteThreadOperations {
         return this.resolveDeletionTask((payload as { input: ResolveThreadTaskInput }).input);
       case "thread.requestDeletion":
         return this.requestDeletion((payload as { input: RequestThreadDeletionInput }).input);
+      case "thread.readMain": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId };
+        return this.readMain(input.ownerId, input.agentId);
+      }
+      case "thread.claimMain":
+        return this.claimMain((payload as { input: ClaimMainThreadInput }).input);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Thread operation ${operation}`);
     }
@@ -602,6 +610,7 @@ export class SqliteThreadOperations {
       this.assertPayload(input.ownerId, input.agentId, input.resultRef);
       if (input.thread.titleRef)
         this.assertPayload(input.ownerId, input.agentId, input.thread.titleRef);
+      if (input.thread.status !== "active") this.assertNotMain(input.thread.id);
       const result = this.database
         .prepare(
           `UPDATE threads SET revision = ?, status = ?, title_ref = ?, title_source = ?,
@@ -803,6 +812,51 @@ export class SqliteThreadOperations {
     return transaction.immediate();
   }
 
+  private readMain(ownerId: OwnerId, agentId: AgentId): ThreadId | undefined {
+    const row = this.database
+      .prepare("SELECT thread_id AS threadId FROM main_threads WHERE owner_id = ? AND agent_id = ?")
+      .get(ownerId, agentId) as { threadId: string } | undefined;
+    return row ? (row.threadId as ThreadId) : undefined;
+  }
+
+  private claimMain(input: ClaimMainThreadInput): ThreadId {
+    return this.database
+      .transaction(() => {
+        const existing = this.readMain(input.ownerId, input.agentId);
+        if (existing) return existing;
+        const thread = this.read(input.ownerId, input.agentId, input.threadId);
+        if (!thread || thread.status !== "active")
+          this.fail("PORT_CONFLICT", "The main conversation must be an active Thread", {
+            threadId: input.threadId,
+          });
+        const origin = this.database
+          .prepare("SELECT origin FROM threads WHERE id = ?")
+          .get(input.threadId) as { origin: string };
+        if (origin.origin !== "owner")
+          this.fail("PORT_CONFLICT", "The main conversation must be an owner Thread", {
+            threadId: input.threadId,
+          });
+        this.database
+          .prepare(
+            "INSERT INTO main_threads (owner_id, agent_id, thread_id, created_at) VALUES (?, ?, ?, ?)",
+          )
+          .run(input.ownerId, input.agentId, input.threadId, input.claimedAt);
+        return input.threadId;
+      })
+      .immediate();
+  }
+
+  private assertNotMain(threadId: ThreadId): void {
+    const main = this.database
+      .prepare("SELECT 1 FROM main_threads WHERE thread_id = ?")
+      .get(threadId);
+    if (main)
+      this.fail("PORT_CONFLICT", "The main conversation cannot be archived, trashed or deleted", {
+        threadId,
+        reasonCode: "THREAD_MAIN_PROTECTED",
+      });
+  }
+
   private requestDeletion(input: RequestThreadDeletionInput) {
     this.assertDiskHeadroom();
     const commandType = input.mode === "trash" ? "thread.trash" : "thread.delete_permanently";
@@ -839,6 +893,7 @@ export class SqliteThreadOperations {
       if (current.revision !== input.expectedThreadRevision) {
         this.fail("PORT_CONFLICT", "Thread revision conflict");
       }
+      this.assertNotMain(input.threadId);
       const impact = this.inspectDeletionImpact(input.ownerId, input.agentId, input.threadId);
       if (impact.activeTaskIds.length > 0) {
         this.fail("PORT_CONFLICT", "Active tasks must be resolved before deleting a Thread", {
@@ -906,9 +961,10 @@ export class SqliteThreadOperations {
     return transaction.immediate();
   }
 
-  private messageFromRow(row: MessageRow): ProductThreadMessage {
+  private messageFromRow({ internal, ...row }: MessageRow): ProductThreadMessage {
     return {
       ...row,
+      ...(internal === 1 ? { internal: true as const } : {}),
       id: row.id as MessageId,
       ownerId: row.ownerId as OwnerId,
       agentId: row.agentId as AgentId,
@@ -1146,8 +1202,8 @@ export class SqliteThreadOperations {
         .prepare(
           `INSERT INTO thread_messages (
             id, owner_id, agent_id, thread_id, revision, sequence, role,
-            content_ref, classification, committed_at, turn_id, run_id, message_status
-          ) VALUES (?, ?, ?, ?, 1, ?, 'owner', ?, ?, ?, ?, ?, 'committed')`,
+            content_ref, classification, committed_at, turn_id, run_id, message_status, internal
+          ) VALUES (?, ?, ?, ?, 1, ?, 'owner', ?, ?, ?, ?, ?, 'committed', ?)`,
         )
         .run(
           input.messageId,
@@ -1160,6 +1216,7 @@ export class SqliteThreadOperations {
           input.occurredAt,
           input.turnId,
           input.runId,
+          input.internal === true ? 1 : 0,
         );
       const nextRevision = current.revision + 1;
       this.database
@@ -1508,7 +1565,8 @@ export class SqliteThreadOperations {
       this.database
         .prepare(
           `${MESSAGE_SELECT} WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
-            AND sequence > ? AND message_status = 'committed' ORDER BY sequence LIMIT ?`,
+            AND sequence > ? AND message_status = 'committed' AND internal = 0
+            ORDER BY sequence LIMIT ?`,
         )
         .all(ownerId, agentId, threadId, afterSequence, limit) as MessageRow[]
     ).map((row) => this.messageFromRow(row));
