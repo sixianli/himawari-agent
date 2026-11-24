@@ -281,7 +281,6 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
   {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_cancel",
-    himawariSideOnly: true,
     capabilityRef: REMINDER_CANCEL_CAPABILITY_REF,
     operation: "cancel",
     targetType: "owner-reminder",

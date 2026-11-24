@@ -817,6 +817,25 @@ it("[ADR-0285] sets a reminder right away after outside content and hands it the
   }
 });
 
+it("[ADR-0285] REVERSE: cancelling a reminder cannot be undone, so after outside content it asks instead of going ahead", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const cancel = s.call("reminder.cancel", "call:cancel-after-output", {
+      reminderId: "reminder:a",
+    });
+    expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(
+      ((await s.approvals())[0]?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(
+        ({ code }) => code,
+      ),
+    ).toEqual(["context_external_content", "run_source_user_message"]);
+  } finally {
+    await s.close();
+  }
+});
+
 it("[ADR-0257] hands the conversation's external sources to a write it runs after the owner approves", async () => {
   const s = await setup({ registry: notHimawariSideRegistry() });
   try {
