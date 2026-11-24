@@ -1543,6 +1543,52 @@ describe("[I-66] [CLEAR] clearing old tool results once, then appending again", 
     expect(findConversationBreak(bodies.slice(5))).toBeNull();
   });
 
+  it("[CLEAR-6] records a recall as a lookup that ran, found or not, so it never reads as unconfirmed", async () => {
+    const found = await readingConversation(new PageTools(1_500));
+    const recalls = (
+      found.projection.saved as {
+        role: string;
+        toolName?: string;
+        details?: Record<string, unknown>;
+      }[]
+    )
+      .filter(
+        (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
+      )
+      .map((message) => message.details);
+    expect(recalls).toHaveLength(1);
+    expect(recalls[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+  });
+
+  it("[CLEAR-7] REVERSE: keeps a result that names a password, so the value stays masked in later turns", async () => {
+    const secret = "Qz7mWx42Lp";
+    class SecretPageTools extends PageTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        const result = await super.execute(invocation);
+        return result.modelContent.startsWith("网页正文0")
+          ? { ...result, modelContent: `${result.modelContent}\n密码：${secret}` }
+          : result;
+      }
+    }
+    const { bodies } = await conversation(
+      READING_TURNS,
+      (index) => {
+        PROMPT_TOKENS = index === 4 ? 60_000 : 20_000;
+        if (index < 5)
+          return { tool: "web_search", input: JSON.stringify({ query: `第${index}篇` }) };
+        if (index === 5) return { text: `读完了，第一篇给的是 ${secret}。` };
+        return { text: "就是那个。" };
+      },
+      () => undefined,
+      { tools: new SecretPageTools(1_500) },
+    );
+    expect(bodies.length).toBeGreaterThan(6);
+    for (const body of bodies) expect(body).not.toContain(secret);
+    const last = toolContents(bodies.at(-1) ?? "");
+    expect(last[0]).toContain("网页正文0");
+    expect(last[1]).toContain("编号 call-1");
+  });
+
   it("[CLEAR-5] the summary request after a clearing still reuses the last request's head, placeholders included", async () => {
     const shared: boolean[] = [];
     const { bodies } = await conversation(

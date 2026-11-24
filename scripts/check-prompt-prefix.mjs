@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const TAG = "[I-66]";
 const FILES = ["packages/runtime-pi/test/prompt-prefix.compat.test.ts"];
-const REQUIRED = 17;
+const REQUIRED = 18;
 const REQUIRED_NAMES = [
   "[COMPACT-1]",
   "[COMPACT-2]",
@@ -18,6 +18,7 @@ const REQUIRED_NAMES = [
   "[CLEAR-3]",
   "[CLEAR-4]",
   "[CLEAR-5]",
+  "[CLEAR-7]",
 ];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
