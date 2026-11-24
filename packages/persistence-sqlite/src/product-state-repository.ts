@@ -21,6 +21,7 @@ import type {
   CommandResultRecord,
   CommitStateAndEventsInput,
   CommitStateAndEventsResult,
+  ConversationTurnStorePort,
   DecisionLedgerPort,
   DeliveryTimingSettingsStorePort,
   DeploymentAuthorityStatePort,
@@ -593,6 +594,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryIndex(): MemoryIndexStorePort {
     return this.durable.memoryIndex();
+  }
+
+  conversationTurns(): ConversationTurnStorePort {
+    return this.durable.conversationTurns();
   }
 
   memoryEpisodes(): MemoryEpisodeStorePort {

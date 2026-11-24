@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -5,6 +6,15 @@ import shlex
 import subprocess
 import sys
 
+
+def load_target_paths():
+    spec = importlib.util.spec_from_file_location('deploy_target_paths', Path(__file__).resolve().parent / 'deploy-target-paths.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+target_paths = load_target_paths().target_paths
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
 MINIMUM_FREE_FACTOR = 2
 ACCEPTANCE_ROOT_FREE_BYTES = 10 * 1024 ** 3
@@ -94,11 +104,6 @@ def probe_units(packet, binding):
         units.update(PROBE_UNIT_LINE.findall(script.read_text()))
     units.discard(binding['service']['unit'])
     return sorted(units)
-
-
-def target_paths(binding):
-    paths = binding['paths']
-    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()) | {binding['service']['newQualificationEvidenceRoot']})
 
 
 def source_cache(binding):

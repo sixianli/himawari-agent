@@ -148,6 +148,13 @@ function fragmentsInOrder(fragments, haystack) {
 }
 
 export function quoteInText(quote, text) {
+  return (
+    quoteMatches(quote, text) ||
+    (quote.includes("｜") && quoteMatches(quote.replaceAll("｜", "|"), text))
+  );
+}
+
+function quoteMatches(quote, text) {
   const haystack = collapse(text);
   const elided = quoteFragments(quote, /…|\.\.\./);
   if (

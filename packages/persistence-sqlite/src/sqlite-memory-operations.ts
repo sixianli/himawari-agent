@@ -184,7 +184,7 @@ function normalizedEntity(name: string): string {
   return name.normalize("NFKC").trim().toLowerCase();
 }
 
-function ftsQuery(terms: readonly string[]): string | null {
+export function ftsQuery(terms: readonly string[]): string | null {
   const unique = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))];
   if (unique.length === 0) return null;
   return unique
@@ -193,7 +193,7 @@ function ftsQuery(terms: readonly string[]): string | null {
     .join(" OR ");
 }
 
-function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
+export function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
   return Buffer.from(
     embedding.vector.buffer,
     embedding.vector.byteOffset,
@@ -215,7 +215,7 @@ function cosineSimilarity(values: Float32Array, query: Float32Array): number {
   return norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / Math.sqrt(queryNorm);
 }
 
-function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
+export function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
   const copy = new Uint8Array(blob.byteLength);
   copy.set(blob);
   return new Float32Array(copy.buffer, 0, dimensions);

@@ -1,0 +1,5 @@
+# PR 587 第 2 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）成立，会出错，低：### 1. 中低：`flush()` 仍可重入，同一令牌会并发登记多次，上一轮第 4 条只修了一半。PushRegistration.swift flush() 无在途标记，属实；已加 inFlight：发送前同时挡 sent 和 inFlight，响应只在 generation 未变且 inFlight==request 时写 sent，deviceGone 清 inFlight；补 twoOverlappingReadySignalsSendTheSameTokenOnlyOnce 反向用例；触发：两个 deviceReady()/tokenArrived() 在第一个登记请求在途时先后进入 flush()，或旧令牌的响应晚于新令牌返回；后果：同一令牌多发一次，或旧响应把 sent 写成旧请求导致多重发一次；服务端按 (device, pushType, activityRef) upsert 幂等，不丢数据；判低理由：只造成重复 upsert 或多一次重发，无数据后果
+- 2（deepseek-v4.1-flash）成立，会出错，低：### 2. 低：环境值仍可能与签名权限、服务器白名单不一致，403 仍永久静默；文档只补了一半。环境来源仍是 #if DEBUG，运行时读 entitlements 超出本 PR 范围（第 1 轮第 2 条已判，沿用）；device-push.ts:158-162 environments 白名单属实，README 只写了 topic，已补 environments 清单一句；403 静默是为免费签名/未配置服务器不打扰，沿用第 1 轮第 7 条（日志为可以更好）；触发：服务器 environments 清单不含客户端实际登记的环境，或 Release 配开发签名；后果：服务器 403，客户端按设计静默重试，锁屏推送不登记；不丢数据不泄露
+- 3（deepseek-v4.1-flash）成立，可以更好：### 3. 低：新增测试没有守住本次修复的主路径，重入和 `activate()` 触发都没有反向用例。重入反向用例已补（PushRegistrationTests.swift twoOverlappingReadySignalsSendTheSameTokenOnlyOnce）；403/400 用例是第 1 轮为补覆盖加的，确实固定旧行为；activate() 触发在 AppModel，需注入协议才能在 Mac 单测，超出本 PR 范围，Swift 测试只能在 Mac 上跑，不是本 PR 引入的约束

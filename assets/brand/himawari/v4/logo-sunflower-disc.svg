@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="512" height="512">
+  <title>Himawari</title>
+  <g>
+  <circle cx="22.9" cy="21.58" r="0.82" fill="rgb(255,236,170)"/>
+  <circle cx="22.84" cy="27.57" r="1.05" fill="rgb(255,236,170)"/>
+  <circle cx="28" cy="21.73" r="1.11" fill="rgb(255,236,170)"/>
+  <circle cx="18.82" cy="22.81" r="1.16" fill="rgb(110,63,17)"/>
+  <circle cx="27.37" cy="28.89" r="1.2" fill="rgb(114,66,17)"/>
+  <circle cx="24.9" cy="17.56" r="1.24" fill="rgb(119,69,17)"/>
+  <circle cx="18.58" cy="28.48" r="1.27" fill="rgb(123,71,17)"/>
+  <circle cx="31.5" cy="24.38" r="1.31" fill="rgb(127,74,17)"/>
+  <circle cx="18.41" cy="18.32" r="1.34" fill="rgb(132,77,17)"/>
+  <circle cx="24.31" cy="32.39" r="1.37" fill="rgb(136,80,17)"/>
+  <circle cx="29.71" cy="17.29" r="1.39" fill="rgb(141,82,18)"/>
+  <circle cx="14.87" cy="25.14" r="1.42" fill="rgb(145,85,18)"/>
+  <circle cx="31.81" cy="29.55" r="1.45" fill="rgb(150,88,18)"/>
+  <circle cx="21.91" cy="14.28" r="1.47" fill="rgb(154,91,18)"/>
+  <circle cx="18.8" cy="32.88" r="1.49" fill="rgb(159,93,18)"/>
+  <circle cx="34.15" cy="20.87" r="1.52" fill="rgb(163,96,18)"/>
+  <circle cx="14.1" cy="19.31" r="1.54" fill="rgb(167,99,18)"/>
+  <circle cx="28.25" cy="34.44" r="1.56" fill="rgb(172,102,19)"/>
+  <circle cx="28.02" cy="13.14" r="1.58" fill="rgb(176,105,19)"/>
+  <circle cx="13.43" cy="29.42" r="1.6" fill="rgb(181,107,19)"/>
+  <circle cx="35.74" cy="27.22" r="1.62" fill="rgb(185,110,19)"/>
+  <circle cx="17.36" cy="13.45" r="1.64" fill="rgb(190,113,19)"/>
+  <circle cx="21.72" cy="36.53" r="1.66" fill="rgb(194,116,19)"/>
+  <circle cx="34.37" cy="16.13" r="1.68" fill="rgb(198,118,19)"/>
+  <circle cx="10.77" cy="22.77" r="1.7" fill="rgb(203,121,20)"/>
+  <circle cx="33.1" cy="34.03" r="1.71" fill="rgb(207,124,20)"/>
+  <circle cx="24.07" cy="10.2" r="1.73" fill="rgb(212,127,20)"/>
+  <circle cx="14.45" cy="34.32" r="1.75" fill="rgb(215,129,21)"/>
+  <circle cx="38.26" cy="22.82" r="1.77" fill="rgb(216,131,22)"/>
+  <circle cx="12.5" cy="15.09" r="1.78" fill="rgb(217,133,23)"/>
+  <circle cx="26.51" cy="38.58" r="1.8" fill="rgb(218,134,24)"/>
+  <circle cx="32.13" cy="11.36" r="1.81" fill="rgb(219,136,25)"/>
+  <circle cx="9.24" cy="27.89" r="1.83" fill="rgb(220,138,26)"/>
+  <circle cx="37.71" cy="31.21" r="1.85" fill="rgb(221,140,27)"/>
+  <circle cx="18.68" cy="9.21" r="1.86" fill="rgb(222,142,28)"/>
+  <circle cx="17.85" cy="38.7" r="1.88" fill="rgb(224,143,29)"/>
+  <circle cx="38.67" cy="17.22" r="1.89" fill="rgb(225,145,30)"/>
+  <circle cx="8.4" cy="19.02" r="1.91" fill="rgb(226,147,31)"/>
+  <circle cx="32.25" cy="38.39" r="1.92" fill="rgb(227,149,32)"/>
+  <circle cx="27.69" cy="7.61" r="1.93" fill="rgb(228,151,33)"/>
+  <circle cx="10.04" cy="33.71" r="1.95" fill="rgb(229,153,34)"/>
+  <circle cx="41.06" cy="26.3" r="1.96" fill="rgb(230,154,35)"/>
+  <circle cx="12.84" cy="10.63" r="1.98" fill="rgb(231,156,36)"/>
+  <circle cx="23.19" cy="41.6" r="1.99" fill="rgb(233,158,37)"/>
+  <circle cx="36.63" cy="11.43" r="2" fill="rgb(234,160,38)"/>
+  <circle cx="6" cy="24.74" r="2.02" fill="rgb(235,162,39)"/>
+  <circle cx="37.93" cy="35.74" r="2.03" fill="rgb(236,163,40)"/>
+  <circle cx="21.63" cy="5.75" r="2.04" fill="rgb(237,165,41)"/>
+  <circle cx="13.31" cy="39.21" r="2.06" fill="rgb(238,167,42)"/>
+  <circle cx="42.35" cy="19.97" r="2.07" fill="rgb(239,169,43)"/>
+  <circle cx="7.59" cy="14.49" r="2.08" fill="rgb(240,171,44)"/>
+  <circle cx="29.73" cy="42.28" r="2.09" fill="rgb(242,173,45)"/>
+  <circle cx="32.2" cy="6.48" r="2.11" fill="rgb(243,174,46)"/>
+  <circle cx="5.96" cy="31.45" r="2.12" fill="rgb(244,176,47)"/>
+  <circle cx="42.5" cy="30.76" r="2.13" fill="rgb(245,178,48)"/>
+  </g>
+</svg>
