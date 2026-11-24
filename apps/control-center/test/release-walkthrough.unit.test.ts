@@ -54,6 +54,7 @@ const memoryOverview = {
   conversationReviews: [],
   reminders: [],
   upcoming: [],
+  cancelled: [],
   people: [],
   personSuggestions: [],
   imports: [],

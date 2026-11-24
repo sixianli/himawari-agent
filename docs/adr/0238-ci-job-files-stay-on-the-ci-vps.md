@@ -6,7 +6,7 @@ supersedes: "docs/adr/0201-delete-run-reports-after-gate-passes.md"
 superseded_by: ""
 amends: "docs/adr/0176-ci-on-ovh-vps.md"
 date: "2026-11-11"
-amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md"
+amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md, docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0238：CI 作业之间的文件放在 CI VPS 上，不再用 GitHub 产物存储
@@ -103,6 +103,6 @@ CI（持续集成，每次推送后自动跑的检查）的七个作业之间要
 - [ADR 0174：CI 不用 GitHub 缓存，artifact 只保存 1 天](0174-no-github-cache-and-one-day-artifacts.md)
 - [ADR 0176：CI 迁到 OVH VPS](0176-ci-on-ovh-vps.md)
 - [ADR 0201：汇总通过后删除本次运行的报告产物](0201-delete-run-reports-after-gate-passes.md)（被本决定取代）
-- [CI VPS 上的自托管 runner Runbook](../runbooks/ci-vps-runner-runbook.md)
+- CI VPS 上的自托管 runner Runbook（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）
 
 [↑ 返回阅读导航](#references)

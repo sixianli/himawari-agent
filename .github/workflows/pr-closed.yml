@@ -11,6 +11,6 @@ jobs:
   cancel:
     name: cancel-closed-pr-ci
     if: github.event.action != 'closed'
-    runs-on: ci-vps-gate
+    runs-on: ubuntu-24.04
     steps:
       - run: "true"

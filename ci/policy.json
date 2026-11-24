@@ -10,7 +10,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-arm",
+          "runner": "ubuntu-24.04-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",
@@ -27,10 +27,9 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-arm",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
-          "alternateArch": "arm64",
           "node": "22.22.3"
         }
       ],
@@ -44,14 +43,14 @@
       "members": [
         {
           "key": "linux-x64",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"
         },
         {
           "key": "macos-arm64",
-          "runner": "macos-15",
+          "runner": "macos-26",
           "os": "darwin",
           "arch": "arm64",
           "node": "22.22.3",
@@ -68,7 +67,7 @@
       "members": [
         {
           "key": "chromium",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -76,7 +75,7 @@
         },
         {
           "key": "firefox",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -84,7 +83,7 @@
         },
         {
           "key": "webkit",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -101,25 +100,31 @@
       "members": [
         {
           "key": "integration-1",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
           "projects": ["integration"],
-          "shard": { "index": 1, "count": 2 }
+          "shard": {
+            "index": 1,
+            "count": 2
+          }
         },
         {
           "key": "integration-2",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
           "projects": ["integration"],
-          "shard": { "index": 2, "count": 2 }
+          "shard": {
+            "index": 2,
+            "count": 2
+          }
         },
         {
           "key": "others",
-          "runner": "ci-vps",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3",
@@ -136,7 +141,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-arm",
+          "runner": "ubuntu-24.04-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",
@@ -153,7 +158,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-arm",
+          "runner": "ubuntu-24.04-arm",
           "os": "linux",
           "arch": "x64",
           "alternateArch": "arm64",
@@ -170,7 +175,7 @@
       "members": [
         {
           "key": "default",
-          "runner": "ci-vps-gate",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
           "node": "22.22.3"

@@ -13,10 +13,18 @@ export {
   supportedPlatforms,
 } from "./platforms.mjs";
 
-export const linuxRunnerLabel = "ci-vps";
-export const gateRunnerLabel = "ci-vps-gate";
-export const armRunnerLabel = "ci-arm";
-export const armChecks = Object.freeze(["policy", "static", "tooling", "security"]);
+export const linuxRunnerLabel = "ubuntu-24.04";
+export const gateRunnerLabel = "ubuntu-24.04";
+export const armRunnerLabel = "ubuntu-24.04-arm";
+export const macRunnerLabel = "macos-26";
+export const hostedRunnerLabels = Object.freeze([linuxRunnerLabel, armRunnerLabel, macRunnerLabel]);
+export const legacyRunnerLabels = Object.freeze({
+  linux: "ci-vps",
+  gate: "ci-vps-gate",
+  arm: "ci-arm",
+});
+export const armChecks = Object.freeze(["policy", "tooling", "security"]);
+export const legacyArmChecks = Object.freeze(["policy", "static", "tooling", "security"]);
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const identityFields = [
   "repository",
@@ -70,7 +78,11 @@ export function expectedMembers(policy) {
   return policy.checks
     .filter((check) => check.id !== "required")
     .flatMap((check) =>
-      activeMembers(check).map((member) => ({ check, member, id: memberId(check.id, member.key) })),
+      activeMembers(check).map((member) => ({
+        check,
+        member,
+        id: memberId(check.id, member.key),
+      })),
     );
 }
 

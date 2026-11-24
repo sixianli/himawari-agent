@@ -718,6 +718,10 @@ export const messages = {
   "memory.page.noUpcoming": "Nothing to remind you about in the next 60 days.",
   "memory.page.yearly": "every year",
   "memory.page.cancelled": "No more reminders for “{text}”; the memory stays",
+  "memory.page.restored": "“{text}” will remind you again",
+  "memory.page.restoreFailed": "Couldn’t bring this reminder back; please try again later",
+  "memory.reminderRestore": "Restore",
+  "reminders.cancelledGroup": "Recently cancelled",
   "memory.page.notify":
     "Due reminders are pushed to every device where you turned on notifications.",
   "memory.page.lines": "{count}",
