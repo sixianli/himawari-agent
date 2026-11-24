@@ -41,9 +41,10 @@ export const INBOX_SETTING_TEXT: Readonly<
   stalledAfterMinutes: {
     label: { "zh-CN": "卡住判定时间", en: "Stalled after", ja: "停滞とみなす時間" },
     description: {
-      "zh-CN": "一件事交给运行后超过这么多分钟还没结束，就当它卡住，重新排队或记为失败。",
-      en: "An event still being handled after this many minutes counts as stalled and is queued again or marked failed.",
-      ja: "実行に渡してからこの時間を過ぎても終わらない件は停滞とみなし、並び直すか失敗として記録します。",
+      "zh-CN":
+        "一件事交给运行后超过这么多分钟还没结束，就当它卡住，重新排队或记为失败。实际等的时间不会短于“一次最长时间”再加 1 分钟。",
+      en: "An event still being handled after this many minutes counts as stalled and is queued again or marked failed. The actual wait is never shorter than the time limit per run plus 1 minute.",
+      ja: "実行に渡してからこの時間を過ぎても終わらない件は停滞とみなし、並び直すか失敗として記録します。実際に待つ時間は「1 回の最大時間」に 1 分を足した時間より短くなりません。",
     },
   },
   maxAttempts: {

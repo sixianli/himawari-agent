@@ -450,6 +450,45 @@ describe("inbox", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("keeps the delivered outcome when recording it fails once, and never delivers it again", async () => {
+    const { make, worker, rows, store } = await fixture();
+    const inbox = make();
+    await inbox.submit(mail("busy"));
+    const { calls, delivery } = recorder(() => ({
+      status: "handled",
+      outcome: "replied",
+      reasonCode: "answered",
+      runId: "run-busy",
+    }));
+    let locked = true;
+    const flaky: typeof store = {
+      ...store,
+      finish: async (input) => {
+        if (!locked) return store.finish(input);
+        locked = false;
+        throw new Error("database is locked");
+      },
+    };
+    const failures: unknown[] = [];
+    const work = worker(inbox, delivery, {
+      store: flaky,
+      onFailure: (_entryId, error) => failures.push(error),
+    });
+    expect(await work.handle((await work.claim()) as never)).toMatchObject({
+      status: "done",
+      result: "handled",
+    });
+    expect(rows()[0]).toMatchObject({
+      status: "done",
+      outcome: "replied",
+      reasonCode: "answered",
+      runId: "run-busy",
+    });
+    expect(failures).toHaveLength(1);
+    expect(await work.claim()).toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+
   it("wakes the worker as soon as something is written, without waiting for the idle check", async () => {
     const { store, payloads, protector, register, settings, clock } = await fixture();
     let resolveDelivered: (refs: readonly string[]) => void = () => undefined;

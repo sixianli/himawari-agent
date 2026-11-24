@@ -14,6 +14,16 @@ import {
 } from "./production-inbox.js";
 
 const RUN_SETTLE_MS = 60_000;
+const STORED_OUTCOME = /^[a-z][a-z0-9_]{0,31}$/u;
+
+const storableResult = (result: {
+  readonly outcome: string;
+  readonly reasonCode: string;
+  readonly runId: string | null;
+}): boolean =>
+  STORED_OUTCOME.test(result.outcome) &&
+  result.reasonCode.length > 0 &&
+  (result.runId === null || (result.runId.length > 0 && result.runId.length <= 256));
 
 export interface InboxDeliveryEvent {
   readonly entry: StoredInboxEvent;
@@ -172,16 +182,12 @@ export class ProductionInboxWorker {
               return false;
             },
           );
-        if (
-          !(await recorded([
-            deliveredIds,
-            "done",
-            result.outcome,
-            result.reasonCode,
-            result.runId,
-          ])) &&
-          !(await recorded([deliveredIds, "done", null, "result_invalid", null]))
-        )
+        const settled: Parameters<typeof settle> = storableResult(result)
+          ? [deliveredIds, "done", result.outcome, result.reasonCode, result.runId]
+          : [deliveredIds, "done", null, "result_invalid", null];
+        if (!storableResult(result))
+          this.#report(deliveredIds[0] ?? "", new Error("Inbox delivery result is invalid"));
+        if (!(await recorded(settled)) && !(await recorded(settled)))
           return { status: "unsettled", entryIds: ids };
         return { status: "done", entryIds: ids, result: "handled" };
       }
