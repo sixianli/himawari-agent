@@ -1018,9 +1018,9 @@
     "reason": "W-15：去掉“受限 Worker、输出披露”等行话；bash 改用 tools.builtin.bash，这条只接在 write、edit 后面"
   },
   "tools.conversation-open": {
-    "sha256": "04a5cf1873999e1d597cba7b2835ea4ec690708755d9bfbbc6d927f955fd52f0",
+    "sha256": "a5c0c723f059b74c82c0ae45594857950aba6e9ca0f98e852053ba32b8e23c52",
     "changedIn": "ADR 0286",
-    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话；写明往前、往后接着读时各填哪个方向"
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话；写明往前、往后接着读时各填哪个方向，不为 null 时也可能已读完"
   },
   "tools.conversation-search": {
     "sha256": "adf6134d879fdfbbcc30bd45cf4ab08e0e01fc2ab3388bc66290af44d14a2c88",

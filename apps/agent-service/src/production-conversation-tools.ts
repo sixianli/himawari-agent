@@ -118,6 +118,10 @@ function clipped(text: string, maximum: number): { text: string; truncated: bool
     : { text: `${characters.slice(0, Math.max(0, maximum - 1)).join("")}…`, truncated: true };
 }
 
+function jsonLength(value: unknown): number {
+  return [...JSON.stringify(value)].length;
+}
+
 interface ShownLine {
   readonly sequence: number;
   readonly speaker: string;
@@ -152,6 +156,16 @@ export class ProductionConversationTools {
     };
   }
 
+  #lineWithin(line: ConversationLine, lineLimit: number, room: number): ShownLine | undefined {
+    for (let maximum = Math.min(lineLimit, room); maximum > 0; ) {
+      const shown = this.#line(line, maximum);
+      const excess = jsonLength(shown) - room;
+      if (excess <= 0) return shown;
+      maximum -= excess;
+    }
+    return undefined;
+  }
+
   #fitted(
     lines: readonly ConversationLine[],
     lineLimit: number,
@@ -160,11 +174,10 @@ export class ProductionConversationTools {
     const shown: ShownLine[] = [];
     let size = 0;
     for (const line of lines) {
-      const left = room - size;
-      if (left <= 0) return { lines: shown, size, truncated: true };
-      const next = this.#line(line, Math.min(lineLimit, left));
+      const next = this.#lineWithin(line, lineLimit, room - size - 1);
+      if (!next) return { lines: shown, size, truncated: true };
       shown.push(next);
-      size += [...next.text].length;
+      size += jsonLength(next) + 1;
     }
     return { lines: shown, size, truncated: false };
   }
@@ -213,18 +226,34 @@ export class ProductionConversationTools {
     });
     const budget = this.#options.pageCharacters;
     const lineLimit = Math.min(MAXIMUM_SEARCH_LINE_CHARACTERS, budget);
-    const pages: { turn: (typeof hits)[number]; lines: ShownLine[]; truncated: boolean }[][] = [];
+    const window = scope.from || scope.to ? { from: scope.from, to: scope.to, timeZone } : null;
+    const room =
+      budget -
+      jsonLength({ query, window, page: MAXIMUM_PAGE, turns: [], nextPage: MAXIMUM_PAGE + 1 });
+    type Head = { conversationId: string; sequence: number; day: string };
+    const pages: {
+      head: Head;
+      turn: (typeof hits)[number];
+      lines: ShownLine[];
+      truncated: boolean;
+    }[][] = [];
     let current: (typeof pages)[number] = [];
     let used = 0;
     for (const hit of hits) {
-      const { lines, size, truncated } = this.#fitted(hit.lines, lineLimit, budget);
-      if (current.length > 0 && used + size > budget) {
+      const head = {
+        conversationId: hit.turn.threadId,
+        sequence: hit.turn.firstSequence,
+        day: localDay(hit.turn.startedAt, timeZone),
+      };
+      const overhead = jsonLength({ ...head, lines: [], truncated: true }) + 1;
+      const { lines, size, truncated } = this.#fitted(hit.lines, lineLimit, room - overhead);
+      if (current.length > 0 && used + overhead + size > room) {
         pages.push(current);
         current = [];
         used = 0;
       }
-      current.push({ turn: hit, lines, truncated });
-      used += size;
+      current.push({ head, turn: hit, lines, truncated });
+      used += overhead + size;
     }
     if (current.length > 0) pages.push(current);
     const shown = pages[page - 1] ?? [];
@@ -237,12 +266,10 @@ export class ProductionConversationTools {
     return {
       output: {
         query,
-        window: scope.from || scope.to ? { from: scope.from, to: scope.to, timeZone } : null,
+        window,
         page,
-        turns: shown.map(({ turn, lines, truncated }) => ({
-          conversationId: turn.turn.threadId,
-          sequence: turn.turn.firstSequence,
-          day: localDay(turn.turn.startedAt, timeZone),
+        turns: shown.map(({ head, lines, truncated }) => ({
+          ...head,
           lines,
           ...(truncated ? { truncated: true } : {}),
         })),
@@ -258,7 +285,7 @@ export class ProductionConversationTools {
     const args = invocation.arguments;
     onlyKeys(args, ["conversationId", "sequence", "direction"]);
     const conversationId = args["conversationId"];
-    const direction = args["direction"] ?? "later";
+    const direction = args["direction"] === undefined ? "later" : args["direction"];
     if (
       typeof conversationId !== "string" ||
       conversationId.trim().length === 0 ||
@@ -282,19 +309,38 @@ export class ProductionConversationTools {
         contentClassification: invocation.dataClassification,
         conversationIds: [],
       };
+    const later = direction === "later";
+    const fitted = this.#fitted(
+      later ? opened.lines : [...opened.lines].reverse(),
+      budget,
+      budget -
+        jsonLength({
+          conversationId,
+          found: true,
+          lines: [],
+          earlierFrom: Number.MAX_SAFE_INTEGER,
+          laterFrom: Number.MAX_SAFE_INTEGER,
+        }),
+    );
+    const lines = later ? fitted.lines : [...fitted.lines].reverse();
+    const first = lines[0];
+    const last = lines.at(-1);
     return {
       output: {
         conversationId,
         found: true,
-        lines: opened.lines.map((line) => this.#line(line, budget)),
-        earlierFrom: opened.earlierFrom,
-        laterFrom: opened.laterFrom,
+        lines,
+        earlierFrom: !later && fitted.truncated && first ? first.sequence - 1 : opened.earlierFrom,
+        laterFrom: later && fitted.truncated && last ? last.sequence + 1 : opened.laterFrom,
       },
       contentClassification: highestClassification(
         invocation.dataClassification,
-        opened.lines.map((line) => line.dataClassification),
+        (later
+          ? opened.lines.slice(0, lines.length)
+          : opened.lines.slice(opened.lines.length - lines.length)
+        ).map((line) => line.dataClassification),
       ),
-      conversationIds: opened.lines.length > 0 ? [conversationId] : [],
+      conversationIds: lines.length > 0 ? [conversationId] : [],
     };
   }
 }

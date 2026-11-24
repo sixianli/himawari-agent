@@ -776,7 +776,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
-  it("[ADR-0286] pages search results by the page budget, never letting a page run past it", async () => {
+  it("[ADR-0286] pages search and open results by the page budget, counting every field the model sees", async () => {
     const resource = await fixture();
     try {
       resource.add([
@@ -788,7 +788,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
         [TALK, 11, "agent", "private", "2026-11-23T02:00:07.000Z", `面试${"当天".repeat(20)}`],
       ]);
       await resource.service.indexDue({ ...resource.scope, limit: 50 });
-      const { call } = conversationTools(resource, 60);
+      const { call } = conversationTools(resource, 400);
       type Turn = {
         sequence: number;
         truncated?: boolean;
@@ -797,18 +797,13 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       const pages: Turn[][] = [];
       for (let page = 1; ; page += 1) {
         const result = await call("conversation.search", { query: "面试", page });
+        expect([...JSON.stringify(result.output)].length).toBeLessThanOrEqual(400);
         pages.push(result.output["turns"] as Turn[]);
         if (result.output["nextPage"] === undefined) break;
         expect(result.output["nextPage"]).toBe(page + 1);
       }
       expect(pages.length).toBeGreaterThan(1);
-      for (const turns of pages) {
-        expect(turns.length).toBeGreaterThan(0);
-        const size = turns
-          .flatMap(({ lines }) => lines)
-          .reduce((total, { text }) => total + [...text].length, 0);
-        expect(size).toBeLessThanOrEqual(60);
-      }
+      for (const turns of pages) expect(turns.length).toBeGreaterThan(0);
       const turns = pages.flat();
       expect(new Set(turns.map(({ sequence }) => sequence)).size).toBe(turns.length);
       const long = turns
@@ -823,6 +818,30 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(crowded?.lines.some(({ text }) => text.startsWith("面试当天"))).toBe(false);
       const beyond = await call("conversation.search", { query: "面试", page: 9 });
       expect(beyond.output["turns"]).toEqual([]);
+      const seen: number[] = [];
+      for (let sequence: number | null = 1; sequence !== null; ) {
+        const opened = await call("conversation.open", { conversationId: TALK, sequence });
+        expect([...JSON.stringify(opened.output)].length).toBeLessThanOrEqual(400);
+        const lines = opened.output["lines"] as { sequence: number }[];
+        if (lines.length === 0) break;
+        seen.push(...lines.map((line) => line.sequence));
+        sequence = opened.output["laterFrom"] as number | null;
+      }
+      expect(seen).toEqual([...new Set(seen)].sort((a, b) => a - b));
+      expect(seen.slice(-6)).toEqual([6, 7, 8, 9, 10, 11]);
+      const back: number[] = [];
+      for (let sequence: number | null = 11; sequence !== null; ) {
+        const opened = await call("conversation.open", {
+          conversationId: TALK,
+          sequence,
+          direction: "earlier",
+        });
+        expect([...JSON.stringify(opened.output)].length).toBeLessThanOrEqual(400);
+        const lines = opened.output["lines"] as { sequence: number }[];
+        back.unshift(...lines.map((line) => line.sequence));
+        sequence = opened.output["earlierFrom"] as number | null;
+      }
+      expect(back).toEqual(seen);
     } finally {
       await resource.repository.close();
     }
@@ -870,6 +889,7 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
         ["conversation.search", { query: "面试", limit: 3 }],
         ["conversation.open", { conversationId: TALK, sequence: 0 }],
         ["conversation.open", { conversationId: TALK, sequence: 1, direction: "up" }],
+        ["conversation.open", { conversationId: TALK, sequence: 1, direction: null }],
         ["conversation.open", { conversationId: "", sequence: 1 }],
       ] as const)
         await expect(call(capability, args)).rejects.toBeInstanceOf(ConversationToolInputError);
