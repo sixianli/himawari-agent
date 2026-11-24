@@ -14,5 +14,5 @@
 - 第 5 层，生产上线到 `84.247.157.41`：只有在用户对每一次上线明确授权后才进行；快速模式下，用户在 Mac 线程或项目聊天里说“上线”即为授权（见[交付模式](delivery-mode.md#fast-mode)）。
 - 只改文档的改动，只运行文档校验和 Runbook（操作手册）检查。
 - 只要代码、依赖、测试配置和相关环境没有变化，就复用已通过的结果。提交说明和交付报告必须说明实际运行了哪些层，以及完整测试覆盖的是哪个版本；中间提交没有经过完整测试时，绝不能说它经过了完整测试。
-- 这些规则只管开发测试。`ci/policy.json` 中要求的 GitHub CI（持续集成）检查不变，它们在 CI VPS（Andy 在 OVH 租的一台只跑 CI 的云服务器）上的自托管 runner 里运行（见 [ADR 0176](../../docs/adr/0176-ci-on-ovh-vps.md)）。
+- 这些规则只管开发测试。`ci/policy.json` 中要求的 GitHub CI（持续集成）检查不变，它们跑在 GitHub 的免费标准托管机器上（见 [ADR 0287](../../docs/adr/0287-ci-runs-on-github-hosted-runners.md)）。
 - 添加测试之前，先回答六个测试价值问题；让测试保持在速度和隔离预算之内；涉及存储、恢复和面向模型的改动，要带上 [ADR 0063](../../docs/adr/0063-test-value-gate-speed-budget-hygiene.md) 点名的测试；这些规则本身属于 `verification-discipline` 技能，整洁门槛是 Backlog 条目 BL-20261021-001。

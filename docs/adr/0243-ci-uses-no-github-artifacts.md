@@ -6,6 +6,7 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0174-no-github-cache-and-one-day-artifacts.md"
 date: "2026-11-12"
+amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0243：CI 完全不用 GitHub 产物

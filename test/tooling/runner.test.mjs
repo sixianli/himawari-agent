@@ -383,13 +383,13 @@ describe("required 失败证据和平台 artifact ID", () => {
 it("[ADR-0266] ARM 上的三项检查在 ARM 或应急退回的 x64 runner 上都能跑，别的检查只在 x64 上跑", () => {
   const policy = JSON.parse(readFileSync(path.join(repositoryRoot, "ci/policy.json"), "utf8"));
   const member = (id) => policy.checks.find((check) => check.id === id).members[0];
-  for (const id of ["policy", "static", "security"]) {
+  for (const id of ["policy", "tooling", "security"]) {
     expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(true);
     expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
     expect(memberRunsOnHost(member(id), "darwin", "arm64")).toBe(false);
     expect(memberRunsOnHost(member(id), "linux", "ia32")).toBe(false);
   }
-  for (const id of ["build", "tests", "required"]) {
+  for (const id of ["static", "build", "tests", "required"]) {
     expect(memberRunsOnHost(member(id), "linux", "x64")).toBe(true);
     expect(memberRunsOnHost(member(id), "linux", "arm64")).toBe(false);
   }

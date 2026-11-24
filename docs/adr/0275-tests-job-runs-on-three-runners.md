@@ -6,6 +6,7 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-15"
+amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0275：tests 作业拆成三台并行，tooling 测试超时放到 30 秒
@@ -35,7 +36,7 @@ date: "2026-11-15"
 
 1. 拆分前 tests 作业的用时：integration 2021 秒、unit 596 秒、contracts 110 秒、pi-compat 35 秒、e2e 6 秒，整个作业约 50 分钟。来源：`.agents/evidence/ci-tests-split-2026-11-15.md`，原话 `"durationMs":2021486`、“共约 50 分钟”。
 2. 拆分前 tests 只有一个矩阵成员。来源：`.agents/evidence/ci-tests-split-2026-11-15.md` 的“拆分前的写法”一节抄录的 main 上 `ci/policy.json`，原话 `"id": "tests"` 下只有 `"key": "default"` 一个成员。
-3. CI 服务器有三个检查 runner，共用 8 个 vCPU、22 GB 内存，三个合计内存上限 16 GB。来源：`docs/runbooks/ci-vps-runner-runbook.md` 第 17 行原话“8 个 vCPU，22 GB 内存”，第 67 行原话“合计内存最多 16 GB”。
+3. CI 服务器有三个检查 runner，共用 8 个 vCPU、22 GB 内存，三个合计内存上限 16 GB。来源：CI VPS runner 运行手册（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）第 17 行原话“8 个 vCPU，22 GB 内存”，第 67 行原话“合计内存最多 16 GB”。
 4. integration 每次最多开 3 个 worker（同时跑测试的子进程），其他项目只开 1 个。来源：`scripts/ci/test-concurrency.mjs` 第 4 行 `maximum: 3`，以及同一文件 `if (!project.fileParallelism || !project.workerLimits) return 1;`。
 5. vitest 官方的拆分做法是按测试文件分份、每份放一台机器，用 GitHub Actions 矩阵跑。来源：https://vitest.dev/guide/improving-performance ，原话 “Vitest splits your test files, not your test cases, into shards.”，示例矩阵 `shardIndex: [1, 2, 3, 4]`。
 6. 每次跑完，`scripts/ci/test.mjs` 都核对 vitest 实际跑的文件是不是正好等于该跑的文件，不等就失败。来源：`scripts/ci/test.mjs`，原话 ``throw new Error(`CI_TEST_FILE_SET_MISMATCH:${id}`);``。
