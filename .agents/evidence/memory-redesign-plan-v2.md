@@ -24,8 +24,9 @@
 7. 主模型被告知自己不能记：“主人告诉你的事，系统会在本轮回答后尝试整理进长期记忆，但整理可能失败，你看不到结果”（packages/prompt-catalog/src/chat.ts:17）。
 8. 发给模型的内容只追加；每轮会变的放最后一条消息；系统提示和工具按对话冻结（.agents/instructions/prompt-prefix.md:27-28,36,42）。
 9. 理解用户意思交给模型，程序只做校验（.claude/rules/owner-standing-rules.md:62）。
-10. 已有、要复用的：每日回看对话补记忆（docs/adr/0231）、纠正传播和规则待复核（docs/adr/0232）、外部内容之后写操作先问（docs/adr/0278）、记忆可携带导出格式（docs/adr/0200）、记忆跳回原话（docs/adr/0186）。
-11. 业界资料：
+10. 以前测过“主模型自己写”：ADR 0142 表（docs/adr/0142-keep-background-memory-capture.md:31-36），后台抽取该记的记下 90%、误记 0%、密钥 0；主模型调 memory_remember 记下 93%/92%、误记 6.7%/5%、密钥 2/1 条。第 3 步主模型写入前必须先接 scanMachineSecrets 再重测。
+11. 已有、要复用的：每日回看对话补记忆（docs/adr/0231）、纠正传播和规则待复核（docs/adr/0232）、外部内容之后写操作先问（docs/adr/0278）、记忆可携带导出格式（docs/adr/0200）、记忆跳回原话（docs/adr/0186）。
+12. 业界资料：
    - Anthropic 记忆工具 https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool
    - Anthropic 上下文工程（上下文越长召回越差，建议按需检索）https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
    - Claude App 记忆和搜旧聊天 https://support.claude.com/en/articles/11817273
