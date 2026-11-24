@@ -17,6 +17,10 @@ public struct ChatView: View {
     @Environment(\.chatVoice) private var voice
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
     @Environment(\.chatStopRun) private var stopRun
+    @Environment(\.chatTalk) private var talk
+    @Environment(\.chatOpensTalk) private var opensTalk
+    @State private var talking = false
+    @State private var talkStartedAfter: String?
     @State private var stopping = false
     @State private var attachments: [ChatAttachment] = []
     @State private var attachOpen = false
@@ -64,23 +68,32 @@ public struct ChatView: View {
                         .padding(.bottom, DesignTokens.Chat.listMarkerGap)
                 }
                 #endif
-                ChatInputBar(
-                    text: $draft,
-                    focused: $inputFocused,
-                    sending: creating,
-                    hasAttachments: !attachments.isEmpty,
-                    voice: voice != nil,
-                    hold: hold,
-                    dictating: dictating,
-                    openAttach: Self.attachAvailable ? { inputFocused = false; attachOpen = true } : nil,
-                    stop: stopAction,
-                    toggleDictation: toggleDictation,
-                    holdChanged: holdChanged,
-                    send: submit
-                )
-                    .padding(.horizontal, DesignTokens.Size.composerInsetX)
-                    .padding(.bottom, DesignTokens.Size.composerBottom)
-                    .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
+                if talking, let talk {
+                    ChatTalkBar(phase: talk.phase, muted: talk.muted, levels: talk.levels, toggleMute: { talk.setMuted(!talk.muted) }, end: endTalk)
+                        .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                        .padding(.bottom, DesignTokens.Size.composerBottom)
+                        .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
+                        .transition(.opacity)
+                } else {
+                    ChatInputBar(
+                        text: $draft,
+                        focused: $inputFocused,
+                        sending: creating,
+                        hasAttachments: !attachments.isEmpty,
+                        voice: voice != nil,
+                        hold: hold,
+                        dictating: dictating,
+                        openAttach: Self.attachAvailable ? { inputFocused = false; attachOpen = true } : nil,
+                        stop: stopAction,
+                        startTalk: talk == nil ? nil : startTalk,
+                        toggleDictation: toggleDictation,
+                        holdChanged: holdChanged,
+                        send: submit
+                    )
+                        .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                        .padding(.bottom, DesignTokens.Size.composerBottom)
+                        .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
+                }
             }
             .ignoresSafeArea(.container, edges: .bottom)
         }
@@ -115,9 +128,19 @@ public struct ChatView: View {
         #endif
         .onDisappear {
             Task { await voice?.cancel() }
+            if talking { endTalk() }
+        }
+        .onChange(of: threadId.flatMap(store.streamingText(in:))) { _, text in
+            guard talking, let text else { return }
+            talk?.herReply(text, finished: false)
+        }
+        .onChange(of: lastAgentReply) { _, reply in
+            guard talking, let reply, reply.id != talkStartedAfter else { return }
+            talk?.herReply(reply.text, finished: true)
         }
         .onAppear {
             if opensAttachSheet { attachOpen = true }
+            if opensTalk, talk != nil { talking = true }
         }
     }
 
@@ -139,7 +162,7 @@ public struct ChatView: View {
             .padding(.horizontal, 16)
             .frame(height: DesignTokens.Chat.avatar)
             Button { openHerPage?() } label: {
-                HimawariAvatar(busy: threadId.map(store.isBusy(in:)) ?? creating)
+                HimawariAvatar(busy: (threadId.map(store.isBusy(in:)) ?? creating) || (talking && talk?.phase == .herTurn))
             }
             .buttonStyle(.plain)
             .disabled(openHerPage == nil)
@@ -186,6 +209,10 @@ public struct ChatView: View {
                         }
                     }
                 }
+                if talking, let heard = talk?.heard, !heard.isEmpty {
+                    OwnerBubble(text: heard)
+                        .opacity(DesignTokens.Chat.talkHeardOpacity)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
@@ -213,6 +240,37 @@ public struct ChatView: View {
                 await store.load(threadId)
             }
         }
+    }
+
+    struct AgentReply: Equatable {
+        let id: String
+        let text: String
+    }
+
+    private var lastAgentReply: AgentReply? {
+        guard let threadId, let message = store.messages(in: threadId).last(where: { $0.role == .agent }) else { return nil }
+        return AgentReply(id: message.messageId, text: store.texts[message.contentRef] ?? "")
+    }
+
+    private func startTalk() {
+        guard let talk else { return }
+        if dictating { stopDictation() }
+        inputFocused = false
+        talkStartedAfter = lastAgentReply?.id
+        withAnimation(.easeInOut(duration: 0.15)) { talking = true }
+        Task {
+            do {
+                try await talk.begin { said in deliver(said, clearDraft: false) }
+            } catch {
+                withAnimation(.easeInOut(duration: 0.15)) { talking = false }
+                attachProblem = L.text("chat.talk.failed")
+            }
+        }
+    }
+
+    private func endTalk() {
+        withAnimation(.easeInOut(duration: 0.15)) { talking = false }
+        Task { await talk?.end() }
     }
 
     private func submit() {

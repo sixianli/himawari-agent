@@ -47,3 +47,11 @@
 "chat.hold.cancel" = "Release to cancel";
 "chat.stop" = "Stop";
 "chat.stop.failed" = "Couldn’t stop it. Try again";
+"chat.talk.mute" = "Mute";
+"chat.talk.unmute" = "Unmute";
+"chat.talk.end" = "End";
+"chat.talk.starting" = "Getting ready";
+"chat.talk.listening" = "Listening";
+"chat.talk.herTurn" = "She’s talking · just speak to cut in";
+"chat.talk.muted" = "Muted";
+"chat.talk.failed" = "Couldn’t start talking. Try again";

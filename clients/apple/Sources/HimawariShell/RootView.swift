@@ -91,6 +91,7 @@ struct MainTabsView: View {
     @State private var herListenOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
+    @State private var talkSession = ChatTalkSession()
     #endif
     @Environment(\.tabsCycleEvery) private var cycleEvery
     private let memoryOverride: AnyView?
@@ -127,6 +128,7 @@ struct MainTabsView: View {
                 .environment(\.chatStopRun, stopRun)
                 #if os(iOS)
                 .environment(\.chatVoice, dictation)
+                .environment(\.chatTalk, talkSession)
                 #endif
             } else {
                 content

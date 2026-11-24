@@ -12,6 +12,7 @@ struct ChatInputBar: View {
     var dictating = false
     var openAttach: (() -> Void)?
     var stop: (() -> Void)?
+    var startTalk: (() -> Void)?
     var toggleDictation: () -> Void = {}
     var holdChanged: (HoldEvent) -> Void = { _ in }
     let send: () -> Void
@@ -47,8 +48,8 @@ struct ChatInputBar: View {
                     circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmSpeak, foreground: Color.hmOnText, action: send)
                         .transition(.scale.combined(with: .opacity))
                 } else {
-                    circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmSpeak, foreground: Color.hmOnText) {}
-                        .allowsHitTesting(false)
+                    circle(.voiceWave, label: L.text("chat.talk"), fill: Color.hmSpeak, foreground: Color.hmOnText) { startTalk?() }
+                        .allowsHitTesting(startTalk != nil)
                 }
             }
         }

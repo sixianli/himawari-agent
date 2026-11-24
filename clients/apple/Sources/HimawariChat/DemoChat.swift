@@ -184,6 +184,8 @@ public enum DemoChatFixtures {
         )
     }
 
+    public static let talkHeard = "那天大阪会下雨吗"
+
     public static func formattedStreaming() -> DemoChatState {
         var state = answering()
         let chunk: ExecutionText = decode(["threadId": osakaThreadId, "runId": "run:0b", "itemId": "answer", "offset": 0, "text": answerFormattedStreaming] as [String: Any])

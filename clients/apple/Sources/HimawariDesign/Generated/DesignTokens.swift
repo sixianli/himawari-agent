@@ -323,6 +323,13 @@ public enum DesignTokens {
         public static let quoteGap: CGFloat = 10
         public static let tableCellPaddingVertical: CGFloat = 10
         public static let tableCellPaddingHorizontal: CGFloat = 14
+        public static let talkBarGap: CGFloat = 3
+        public static let talkBarMaxHeight: CGFloat = 24
+        public static let talkBarMinHeight: CGFloat = 4
+        public static let talkBarWidth: CGFloat = 3
+        public static let talkBars: CGFloat = 13
+        public static let talkHeardOpacity: CGFloat = 0.55
+        public static let talkLabelGap: CGFloat = 10
     }
 
     public enum Her {

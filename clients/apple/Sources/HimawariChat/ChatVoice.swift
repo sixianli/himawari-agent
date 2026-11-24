@@ -8,9 +8,30 @@ public protocol ChatVoiceInput: AnyObject, Sendable {
     func cancel() async
 }
 
+public enum TalkPhase: Equatable, Sendable {
+    case starting
+    case listening
+    case herTurn
+    case muted
+}
+
+@MainActor
+public protocol ChatTalk: AnyObject {
+    var phase: TalkPhase { get }
+    var muted: Bool { get }
+    var heard: String { get }
+    var levels: [Double] { get }
+    func begin(onSaid: @escaping @MainActor (String) -> Void) async throws
+    func herReply(_ markdown: String, finished: Bool)
+    func setMuted(_ muted: Bool)
+    func end() async
+}
+
 extension EnvironmentValues {
     @Entry public var chatVoice: (any ChatVoiceInput)? = nil
     @Entry public var chatOpensAttachSheet = false
+    @Entry public var chatTalk: (any ChatTalk)? = nil
+    @Entry public var chatOpensTalk = false
     @Entry public var chatStopRun: (@MainActor (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil
 }
 

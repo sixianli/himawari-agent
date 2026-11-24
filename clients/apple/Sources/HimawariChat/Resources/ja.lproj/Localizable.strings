@@ -47,3 +47,11 @@
 "chat.hold.cancel" = "離すと取り消し、送りません";
 "chat.stop" = "止める";
 "chat.stop.failed" = "止められませんでした。もう一度お試しください";
+"chat.talk.mute" = "ミュート";
+"chat.talk.unmute" = "マイクをオン";
+"chat.talk.end" = "終了";
+"chat.talk.starting" = "準備中";
+"chat.talk.listening" = "聞いています";
+"chat.talk.herTurn" = "話しています · 話しかければ止まります";
+"chat.talk.muted" = "ミュート中";
+"chat.talk.failed" = "音声で話せませんでした。もう一度お試しください";

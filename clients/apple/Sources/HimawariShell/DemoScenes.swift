@@ -54,6 +54,8 @@ enum DemoScene: String, CaseIterable {
     case chatFormat = "next-2-chat-format"
     case chatFormatStreaming = "next-2-chat-format-streaming"
     case chatAttach = "next-2-chat-attach"
+    case chatTalkListening = "next-2-chat-talk-listening"
+    case chatTalkHer = "next-2-chat-talk-her"
     case tabTodayOneDigit = "tab-today-1-digit"
     case sensesOverview = "19-senses-1-overview"
     case sensesIntro = "19-senses-2-intro"
@@ -193,6 +195,14 @@ struct DemoSceneView: View {
         case .chatAttach:
             chat(DemoChatFixtures.offline())
                 .environment(\.chatOpensAttachSheet, true)
+        case .chatTalkListening:
+            chat(DemoChatFixtures.formatted())
+                .environment(\.chatTalk, DemoTalk(phase: .listening, heard: DemoChatFixtures.talkHeard))
+                .environment(\.chatOpensTalk, true)
+        case .chatTalkHer:
+            chat(DemoChatFixtures.formattedStreaming())
+                .environment(\.chatTalk, DemoTalk(phase: .herTurn))
+                .environment(\.chatOpensTalk, true)
         case .chatSteps:
             chat(DemoChatFixtures.answered())
                 .environment(\.processStepsOpenAfter, 1)

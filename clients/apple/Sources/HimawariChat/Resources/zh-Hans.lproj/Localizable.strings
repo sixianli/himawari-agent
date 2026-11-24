@@ -47,3 +47,11 @@
 "chat.hold.cancel" = "松手取消，不发";
 "chat.stop" = "停下";
 "chat.stop.failed" = "没停下来，再试一次";
+"chat.talk.mute" = "静音";
+"chat.talk.unmute" = "打开麦克风";
+"chat.talk.end" = "结束";
+"chat.talk.starting" = "准备中";
+"chat.talk.listening" = "在听";
+"chat.talk.herTurn" = "她在说 · 开口就能打断";
+"chat.talk.muted" = "静音了";
+"chat.talk.failed" = "没能开始语音对话，再试一次";

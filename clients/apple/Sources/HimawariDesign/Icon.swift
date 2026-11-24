@@ -63,6 +63,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case message2 = "message-2"
     case messagePlus = "message-plus"
     case microphone
+    case microphoneOff = "microphone-off"
     case number1 = "number-1"
     case number2 = "number-2"
     case number3 = "number-3"
