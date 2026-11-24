@@ -66,6 +66,7 @@ export interface ConversationTurnStorePort {
   }): Promise<readonly ConversationTurn[]>;
   attachEmbedding(input: {
     readonly turnId: string;
+    readonly lastSequence: number;
     readonly embedding: MemoryIndexEmbedding;
   }): Promise<void>;
 }

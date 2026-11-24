@@ -111,7 +111,9 @@ export class SqliteConversationTurnOperations {
           },
         );
       case "conversationTurn.attachEmbedding":
-        return this.attachEmbedding(payload as { turnId: string; embedding: MemoryIndexEmbedding });
+        return this.attachEmbedding(
+          payload as { turnId: string; lastSequence: number; embedding: MemoryIndexEmbedding },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown operation ${operation}`);
     }
@@ -151,6 +153,13 @@ export class SqliteConversationTurnOperations {
           .prepare("SELECT 1 FROM threads WHERE id = ? AND owner_id = ? AND agent_id = ?")
           .get(document.threadId, document.ownerId, document.agentId);
         if (!thread) this.fail("PORT_NOT_FOUND", "Conversation turn Thread not found");
+        const newer = this.database
+          .prepare(
+            `SELECT 1 FROM conversation_turns
+            WHERE (id = ? OR (thread_id = ? AND first_sequence = ?)) AND last_sequence > ?`,
+          )
+          .get(document.id, document.threadId, document.firstSequence, document.lastSequence);
+        if (newer) return;
         this.database
           .prepare(
             "DELETE FROM conversation_turns WHERE id = ? OR (thread_id = ? AND first_sequence = ?)",
@@ -338,6 +347,8 @@ export class SqliteConversationTurnOperations {
           `SELECT ${turnColumns} FROM conversation_turns c
           WHERE c.owner_id = @ownerId AND c.agent_id = @agentId
             AND c.classification IN (SELECT value FROM json_each(@classifications))
+            AND EXISTS (SELECT 1 FROM threads t WHERE t.id = c.thread_id AND t.status = 'open'
+              AND t.origin = 'owner')
             AND (c.embedding_model IS NULL OR c.embedding_model != @model
               OR c.embedding_dimensions != @dimensions)
           ORDER BY c.indexed_at, c.id LIMIT @limit`,
@@ -353,20 +364,30 @@ export class SqliteConversationTurnOperations {
     ).map((row) => this.fromRow(row));
   }
 
-  private attachEmbedding(input: { turnId: string; embedding: MemoryIndexEmbedding }): void {
-    if (typeof input.turnId !== "string" || !input.embedding || !validEmbedding(input.embedding))
+  private attachEmbedding(input: {
+    turnId: string;
+    lastSequence: number;
+    embedding: MemoryIndexEmbedding;
+  }): void {
+    if (
+      typeof input.turnId !== "string" ||
+      !Number.isSafeInteger(input.lastSequence) ||
+      !input.embedding ||
+      !validEmbedding(input.embedding)
+    )
       this.fail("PORT_INVALID_OPERATION", "Conversation turn embedding is invalid");
     this.assertDiskHeadroom();
     this.database
       .prepare(
         `UPDATE conversation_turns SET embedding_model = ?, embedding_dimensions = ?, embedding = ?
-        WHERE id = ?`,
+        WHERE id = ? AND last_sequence = ?`,
       )
       .run(
         input.embedding.model,
         input.embedding.dimensions,
         vectorBlob(input.embedding),
         input.turnId,
+        input.lastSequence,
       );
   }
 }

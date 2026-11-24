@@ -1182,6 +1182,7 @@ describe("service request readiness and runtime callbacks", () => {
       "memory-capture.failed",
       "memory-episode.failed",
       "memory-consolidation.failed",
+      "conversation-turn.failed",
     ]) {
       const start = source.indexOf(`event: "${event}"`);
       expect(start).toBeGreaterThan(-1);

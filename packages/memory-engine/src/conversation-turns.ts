@@ -48,6 +48,7 @@ export interface ConversationTurnServiceOptions {
   readonly embeddableClassifications: readonly DataClassification[];
   readonly minimumSimilarity: number;
   readonly onEmbeddingFailure?: (error: unknown) => void;
+  readonly onIndexFailure?: (error: unknown) => void;
   readonly now: () => string;
   readonly timeZone?: string;
 }
@@ -88,12 +89,12 @@ export class ConversationTurnService {
     ownerId: OwnerId,
     agentId: AgentId,
     message: ProductThreadMessage,
+    strict = false,
   ): Promise<ConversationLine | undefined> {
     if (message.role === "system" || message.status !== "committed") return undefined;
     if (!isModelVisible(message.dataClassification)) return undefined;
-    const text = await this.#options
-      .readText({ ownerId, agentId, ref: message.contentRef })
-      .catch(() => undefined);
+    const reading = this.#options.readText({ ownerId, agentId, ref: message.contentRef });
+    const text = await (strict ? reading : reading.catch(() => undefined));
     if (!text?.trim()) return undefined;
     return Object.freeze({
       sequence: message.sequence,
@@ -107,10 +108,11 @@ export class ConversationTurnService {
     ownerId: OwnerId,
     agentId: AgentId,
     messages: readonly ProductThreadMessage[],
+    strict = false,
   ): Promise<ConversationLine[]> {
     const lines: ConversationLine[] = [];
     for (const message of messages) {
-      const line = await this.#line(ownerId, agentId, message);
+      const line = await this.#line(ownerId, agentId, message, strict);
       if (line) lines.push(line);
     }
     return lines;
@@ -161,34 +163,60 @@ export class ConversationTurnService {
     });
     for (const watermark of behind) {
       if (input.signal?.aborted || indexed >= input.limit) break;
-      const messages = await this.#options.threads.listMessages(
-        input.ownerId,
-        input.agentId,
-        watermark.threadId,
-        Math.max(0, watermark.indexedFrom - 1),
-        MESSAGES_PER_READ,
-      );
-      const turns = groupTurns(messages);
-      const complete = messages.length < MESSAGES_PER_READ ? turns : turns.slice(0, -1);
-      const usable = complete.length > 0 ? complete : turns;
-      for (const turn of usable) {
-        if (input.signal?.aborted || indexed >= input.limit) break;
-        const first = turn.messages[0];
-        const last = turn.messages.at(-1);
-        if (!first || !last) continue;
-        if (last.sequence <= watermark.indexedThrough && first.sequence !== watermark.indexedFrom)
-          continue;
-        await this.#index(
+      try {
+        const { messages, reachedEnd } = await this.#readTurns(
           input.ownerId,
           input.agentId,
           watermark.threadId,
-          turn,
-          input.within ?? direct,
+          Math.max(0, watermark.indexedFrom - 1),
         );
-        indexed += 1;
+        const turns = groupTurns(messages);
+        for (const turn of reachedEnd ? turns : turns.slice(0, -1)) {
+          if (input.signal?.aborted || indexed >= input.limit) break;
+          const first = turn.messages[0];
+          const last = turn.messages.at(-1);
+          if (!first || !last) continue;
+          if (last.sequence <= watermark.indexedThrough && first.sequence !== watermark.indexedFrom)
+            continue;
+          await this.#index(
+            input.ownerId,
+            input.agentId,
+            watermark.threadId,
+            turn,
+            input.within ?? direct,
+          );
+          indexed += 1;
+        }
+      } catch (error) {
+        this.#options.onIndexFailure?.(error);
       }
     }
     return indexed;
+  }
+
+  async #readTurns(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    threadId: ThreadId,
+    afterSequence: number,
+  ): Promise<{ readonly messages: ProductThreadMessage[]; readonly reachedEnd: boolean }> {
+    const messages: ProductThreadMessage[] = [];
+    let cursor = afterSequence;
+    for (;;) {
+      const page = await this.#options.threads.listMessages(
+        ownerId,
+        agentId,
+        threadId,
+        cursor,
+        MESSAGES_PER_READ,
+      );
+      messages.push(...page);
+      const last = page.at(-1);
+      if (!last || page.length < MESSAGES_PER_READ) return { messages, reachedEnd: true };
+      if (messages.slice(1).some((message) => message.role === "owner"))
+        return { messages, reachedEnd: false };
+      cursor = last.sequence;
+    }
   }
 
   async #index(
@@ -201,7 +229,7 @@ export class ConversationTurnService {
     const first = turn.messages[0];
     const last = turn.messages.at(-1);
     if (!first || !last) return;
-    const lines = await this.#lines(ownerId, agentId, turn.messages);
+    const lines = await this.#lines(ownerId, agentId, turn.messages, true);
     const text = joined(lines);
     const visible = lines.length > 0;
     const classifications = turn.messages
@@ -245,20 +273,32 @@ export class ConversationTurnService {
     });
     let embedded = 0;
     for (const turn of turns) {
-      const lines = await this.turnLines(turn);
-      const embedding = await this.#embed(
-        joined(lines),
-        turn.dataClassification,
-        input.within ?? direct,
-      );
-      if (!embedding) continue;
-      await this.#options.store.attachEmbedding({ turnId: turn.id, embedding });
-      embedded += 1;
+      try {
+        const lines = await this.#turnLines(turn, true);
+        const embedding = await this.#embed(
+          joined(lines),
+          turn.dataClassification,
+          input.within ?? direct,
+        );
+        if (!embedding) continue;
+        await this.#options.store.attachEmbedding({
+          turnId: turn.id,
+          lastSequence: turn.lastSequence,
+          embedding,
+        });
+        embedded += 1;
+      } catch (error) {
+        this.#options.onIndexFailure?.(error);
+      }
     }
     return embedded;
   }
 
-  async turnLines(turn: ConversationTurn): Promise<ConversationLine[]> {
+  turnLines(turn: ConversationTurn): Promise<ConversationLine[]> {
+    return this.#turnLines(turn, false);
+  }
+
+  async #turnLines(turn: ConversationTurn, strict: boolean): Promise<ConversationLine[]> {
     const messages = await this.#options.threads.listMessages(
       turn.ownerId,
       turn.agentId,
@@ -270,6 +310,7 @@ export class ConversationTurnService {
       turn.ownerId,
       turn.agentId,
       messages.filter((message) => message.sequence <= turn.lastSequence),
+      strict,
     );
   }
 
@@ -287,7 +328,7 @@ export class ConversationTurnService {
     if (input.limit <= 0 || input.query.trim().length === 0) return [];
     const embedder = this.#options.embedder;
     let embedding = null;
-    if (embedder) {
+    if (embedder && this.#options.embeddableClassifications.includes("private")) {
       try {
         embedding = {
           model: embedder.model,

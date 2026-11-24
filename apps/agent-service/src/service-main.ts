@@ -1843,6 +1843,13 @@ export async function startTenantRuntime(
               now: () => clock.now(),
             })
           : undefined;
+      const conversationTurnFailure = (error: unknown) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "conversation-turn.failed",
+          code: stableErrorCode(error),
+          ...siteField(error),
+        });
       const conversationTurns =
         memoryComposition && episodeProtector
           ? new ConversationTurnService({
@@ -1858,6 +1865,8 @@ export async function startTenantRuntime(
               embedder: memoryComposition.projection.embedder,
               embeddableClassifications: memoryComposition.projection.embeddableClassifications,
               minimumSimilarity: memoryComposition.projection.minimumSimilarity,
+              onEmbeddingFailure: conversationTurnFailure,
+              onIndexFailure: conversationTurnFailure,
               ...(configuration.runPolicy?.timeZone
                 ? { timeZone: configuration.runPolicy.timeZone }
                 : {}),

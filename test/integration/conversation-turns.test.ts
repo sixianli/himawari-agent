@@ -149,11 +149,17 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       now: () => "2026-11-24T00:00:00.000Z",
     });
     const embedder = new TermEmbedder();
+    const unreadable = new Set<string>();
+    const failures: unknown[] = [];
     const service = new ConversationTurnService({
       store: repository.conversationTurns(),
       threads: repository.threadRepository(),
-      readText: async ({ ref }) => texts.get(ref),
+      readText: async ({ ref }) => {
+        if (unreadable.has(ref)) throw new Error("fixture payload read failure");
+        return texts.get(ref);
+      },
       embedder,
+      onIndexFailure: (error) => failures.push(error),
       embeddableClassifications: ["public", "private", "sensitive"],
       minimumSimilarity: 0.5,
       timeZone: "Asia/Tokyo",
@@ -190,7 +196,19 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
             embedded: number;
           }[],
       );
-    return { repository, service, embedder, add, sql, search, scope, turnRows, texts };
+    return {
+      repository,
+      service,
+      embedder,
+      add,
+      sql,
+      search,
+      scope,
+      turnRows,
+      texts,
+      unreadable,
+      failures,
+    };
   }
 
   it("[ADR-0286] indexes one row per turn and finds the turn's original words", async () => {
@@ -489,7 +507,145 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
       expect(resource.turnRows().every(({ embedded }) => embedded === 0)).toBe(true);
       expect(await narrow.backfillEmbeddings({ ...resource.scope, limit: 50, within })).toBe(0);
       expect(sent).toEqual([]);
+      expect(
+        (
+          await narrow.search({
+            ...resource.scope,
+            query: "电商公司面试",
+            from: null,
+            to: null,
+            excludeThreadId: null,
+            allowedClassifications: [...ALL],
+            limit: 10,
+            within,
+          })
+        )[0]?.turn.threadId,
+      ).toBe(TALK);
+      expect(sent).toEqual([]);
       expect((await resource.search("电商公司面试"))[0]?.turn.threadId).toBe(TALK);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+  it("[ADR-0286] indexes a turn longer than one read page to its end and does not repeat it", async () => {
+    const resource = await fixture();
+    try {
+      const LONG = createThreadId("thread-conversation-turns-long");
+      resource.sql((connection) =>
+        connection
+          .prepare(
+            `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+            VALUES (?, ?, ?, 1, 'open', ?, ?)`,
+          )
+          .run(LONG, OWNER_ID, AGENT_ID, "2026-11-20T00:00:00.000Z", "2026-11-20T00:00:00.000Z"),
+      );
+      const rows: Row[] = [[LONG, 1, "owner", "private", "2026-11-23T00:00:00.000Z", "开始长任务"]];
+      for (let sequence = 2; sequence <= 251; sequence += 1)
+        rows.push([
+          LONG,
+          sequence,
+          "agent",
+          "private",
+          new Date(Date.parse("2026-11-23T00:00:00.000Z") + sequence * 1000).toISOString(),
+          sequence === 251 ? "长任务最后一步是检查驼鸟报告" : `进度 ${sequence}`,
+        ]);
+      resource.add(rows);
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      expect(
+        resource
+          .turnRows()
+          .filter(({ threadId }) => threadId === LONG)
+          .map(({ firstSequence, lastSequence }) => [firstSequence, lastSequence]),
+      ).toEqual([[1, 251]]);
+      expect(await resource.service.indexDue({ ...resource.scope, limit: 50 })).toBe(0);
+      expect((await resource.search("驼鸟报告"))[0]?.turn.threadId).toBe(LONG);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0286] does not record a turn whose words could not be read, reports it, and indexes it once they can be", async () => {
+    const resource = await fixture();
+    try {
+      resource.unreadable.add(`payload-${TALK}-1`);
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      expect(resource.failures).toHaveLength(1);
+      expect(resource.turnRows().map(({ threadId }) => threadId)).toEqual([OTHER]);
+      resource.unreadable.clear();
+      expect(await resource.service.indexDue({ ...resource.scope, limit: 50 })).toBe(2);
+      expect(
+        (await resource.search("电商公司面试"))[0]?.lines.map(({ sequence }) => sequence),
+      ).toEqual([1, 2]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0286] keeps the newer turn when an older index or vector arrives late", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      const store = resource.repository.conversationTurns();
+      const base = {
+        id: `turn:${TALK}:3`,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: TALK,
+        day: "2026-11-21",
+        firstSequence: 3,
+        dataClassification: "private" as const,
+        startedAt: "2026-11-21T01:00:00.000Z",
+        indexedAt: "2026-11-24T00:00:00.000Z",
+        terms: ["横滨"],
+        embedding: null,
+      };
+      await store.upsert({ ...base, lastSequence: 4, endedAt: "2026-11-21T01:00:04.000Z" });
+      expect(
+        resource
+          .turnRows()
+          .filter(({ threadId, firstSequence }) => threadId === TALK && firstSequence === 3)
+          .map(({ lastSequence, embedded }) => [lastSequence, embedded]),
+      ).toEqual([[5, 1]]);
+      await store.upsert({ ...base, lastSequence: 5, endedAt: "2026-11-21T01:00:05.000Z" });
+      await store.attachEmbedding({
+        turnId: base.id,
+        lastSequence: 4,
+        embedding: {
+          model: resource.embedder.model,
+          dimensions: DIMENSIONS,
+          vector: new Float32Array(DIMENSIONS).fill(1),
+        },
+      });
+      expect(
+        resource
+          .turnRows()
+          .filter(({ threadId, firstSequence }) => threadId === TALK && firstSequence === 3)
+          .map(({ lastSequence, embedded }) => [lastSequence, embedded]),
+      ).toEqual([[5, 0]]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0286] leaves turns of a trashed conversation out of the vector backfill so others still get vectors", async () => {
+    const resource = await fixture();
+    try {
+      resource.embedder.fail = true;
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      resource.embedder.fail = false;
+      resource.sql((connection) =>
+        connection
+          .prepare("UPDATE threads SET status = 'trashed', trashed_at = ? WHERE id = ?")
+          .run("2026-11-24T00:00:00.000Z", OTHER),
+      );
+      expect(await resource.service.backfillEmbeddings({ ...resource.scope, limit: 1 })).toBe(1);
+      expect(await resource.service.backfillEmbeddings({ ...resource.scope, limit: 1 })).toBe(1);
+      expect(await resource.service.backfillEmbeddings({ ...resource.scope, limit: 1 })).toBe(0);
+      expect(resource.turnRows().map(({ threadId, embedded }) => [threadId, embedded])).toEqual([
+        [OTHER, 0],
+        [TALK, 1],
+        [TALK, 1],
+      ]);
     } finally {
       await resource.repository.close();
     }
