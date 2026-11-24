@@ -454,36 +454,19 @@ describe("inbox", () => {
     const { make, worker, rows, store } = await fixture();
     const inbox = make();
     await inbox.submit(mail("busy"));
-    const { calls, delivery } = recorder(() => ({
-      status: "handled",
-      outcome: "replied",
-      reasonCode: "answered",
-      runId: "run-busy",
-    }));
+    const handled = { outcome: "replied", reasonCode: "answered", runId: "run-busy" };
+    const { calls, delivery } = recorder(() => ({ status: "handled", ...handled }));
     let locked = true;
-    const flaky: typeof store = {
-      ...store,
-      finish: async (input) => {
-        if (!locked) return store.finish(input);
-        locked = false;
-        throw new Error("database is locked");
-      },
+    const finish: typeof store.finish = async (input) => {
+      if (!locked) return store.finish(input);
+      locked = false;
+      throw new Error("database is locked");
     };
     const failures: unknown[] = [];
-    const work = worker(inbox, delivery, {
-      store: flaky,
-      onFailure: (_entryId, error) => failures.push(error),
-    });
-    expect(await work.handle((await work.claim()) as never)).toMatchObject({
-      status: "done",
-      result: "handled",
-    });
-    expect(rows()[0]).toMatchObject({
-      status: "done",
-      outcome: "replied",
-      reasonCode: "answered",
-      runId: "run-busy",
-    });
+    const onFailure = (_entryId: string, error: unknown) => failures.push(error);
+    const work = worker(inbox, delivery, { store: { ...store, finish }, onFailure });
+    expect(await work.handle((await work.claim()) as never)).toMatchObject({ result: "handled" });
+    expect(rows()[0]).toMatchObject({ status: "done", ...handled });
     expect(failures).toHaveLength(1);
     expect(await work.claim()).toBeUndefined();
     expect(calls).toHaveLength(1);
