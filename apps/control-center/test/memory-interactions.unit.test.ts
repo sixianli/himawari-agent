@@ -259,6 +259,7 @@ beforeEach(() => {
     conversationReviews: [],
     reminders: [],
     upcoming: [],
+    cancelled: [],
     people: [],
     personSuggestions: [],
     imports: [],
@@ -1444,7 +1445,7 @@ describe("memory approval and management", () => {
     });
   });
 
-  it("[MP-8] answers due reminders and cancels an upcoming one", async () => {
+  it("[MP-8] answers due reminders, cancels an upcoming one and undoes the cancel", async () => {
     overview = {
       ...overview,
       reminders: [
@@ -1464,6 +1465,14 @@ describe("memory approval and management", () => {
           dueAt: "2027-03-14T01:00:00.000Z",
           repeat: "yearly",
           sourceThreadId: "thread-main",
+        },
+      ],
+      cancelled: [
+        {
+          reminderId: "reminder:memory-call",
+          text: "给妈妈打电话",
+          dueAt: "2027-01-02T01:00:00.000Z",
+          repeat: "none",
         },
       ],
     };
@@ -1488,8 +1497,46 @@ describe("memory approval and management", () => {
       payload: { reminderId: "reminder:memory-color", action: "cancel" },
     });
     expect(text("#reminders-page .memory-notice")).toContain("记忆本身保留");
+    await click("#reminders-page .memory-notice", "撤销");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-color", action: "restore" },
+    });
+    expect(text("#reminders-page .memory-notice")).toContain("又会提醒“妈妈的生日是 3 月 14 日”了");
+    expect(text("#reminders-page")).toContain("最近取消");
+    mutate.mockRejectedValueOnce(new Error("MEMORY_REMINDER_NOT_CANCELLED"));
+    await click("#reminders-page .reminder-row[data-kind=cancelled]", "恢复");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-call", action: "restore" },
+    });
+    expect(text("#reminders-page .memory-notice")).toContain("没能恢复这条提醒");
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
     expect(text("#settings .memory-drawer")).toContain("每年");
+  });
+
+  it("[MP-8] shows the empty state on a reminders page with nothing cancelled or scheduled", async () => {
+    await render();
+    expect(text("#reminders-page")).toContain("还没有提醒");
+    expect(text("#reminders-page")).not.toContain("最近取消");
+  });
+
+  it("[MP-8] lists cancelled reminders without the empty state", async () => {
+    overview = {
+      ...overview,
+      cancelled: [
+        {
+          reminderId: "reminder:memory-call",
+          text: "给妈妈打电话",
+          dueAt: "2026-10-20T01:00:00.000Z",
+          repeat: "none",
+        },
+      ],
+    };
+    await render();
+    expect(text("#reminders-page")).toContain("最近取消");
+    expect(text("#reminders-page")).toContain("给妈妈打电话");
+    expect(text("#reminders-page")).not.toContain("还没有提醒");
   });
 
   it("[REM-1] creates a reminder from the reminders page, refuses a past time and hides the button until a memory exists", async () => {

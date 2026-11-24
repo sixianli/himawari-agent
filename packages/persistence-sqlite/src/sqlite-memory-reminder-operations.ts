@@ -52,6 +52,8 @@ export class SqliteMemoryReminderOperations {
             remindAfter?: string;
           },
         );
+      case "memoryReminder.listCancelled":
+        return this.listCancelled(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
       case "memoryReminder.read":
         return this.read((payload as { id: string }).id);
       case "memoryReminder.update":
@@ -167,6 +169,21 @@ export class SqliteMemoryReminderOperations {
         remindAfter,
         input.limit,
       ) as MemoryReminder[];
+  }
+
+  private listCancelled(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    limit: number;
+  }): readonly MemoryReminder[] {
+    this.limit(input.limit);
+    return this.database
+      .prepare(
+        `${reminderSelect} ${liveMemory}
+        WHERE r.owner_id = ? AND r.agent_id = ? AND r.status = 'cancelled'
+        ORDER BY r.updated_at DESC, r.id LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.limit) as MemoryReminder[];
   }
 
   private read(id: string): MemoryReminder | undefined {

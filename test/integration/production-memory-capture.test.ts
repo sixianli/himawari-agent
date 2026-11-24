@@ -1888,7 +1888,7 @@ describe("production memory capture", () => {
         sourceThreadId: THREAD_ID,
       },
     ]);
-    const answer = (action: "dismiss" | "snooze") =>
+    const answer = (action: "dismiss" | "snooze" | "restore") =>
       context.control.execute({
         ...envelope,
         kind: "command",
@@ -1919,6 +1919,19 @@ describe("production memory capture", () => {
     for (const action of ["dismiss", "snooze"] as const)
       await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
     expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
+    expect((await overview(context.control)).reminders).toEqual([]);
+    expect((await overview(context.control)).cancelled).toMatchObject([
+      { reminderId, dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    await answer("restore");
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "scheduled",
+      dismissedAt: null,
+      remindAt: "2026-10-30T07:05:00.000Z",
+    });
+    expect((await overview(context.control)).reminders).toHaveLength(1);
+    expect((await overview(context.control)).cancelled).toEqual([]);
+    await expect(answer("restore")).rejects.toThrow("MEMORY_REMINDER_NOT_CANCELLED");
     await expect(
       context.control.execute({
         ...envelope,
@@ -2092,6 +2105,25 @@ describe("production memory capture", () => {
     expect(await upcoming()).toEqual([
       { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
     ]);
+    expect((await overview(context.control)).cancelled).toEqual([
+      {
+        reminderId: target,
+        text: "给妈妈打电话",
+        dueAt: "2026-10-26T01:00:00.000Z",
+        repeat: "none",
+      },
+    ]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId: target, action: "restore" },
+    } as never);
+    expect(await upcoming()).toEqual([
+      { text: "给妈妈打电话", dueAt: "2026-10-26T01:00:00.000Z" },
+      { text: "周五下午三点交周报", dueAt: "2026-10-30T07:00:00.000Z" },
+    ]);
+    expect((await overview(context.control)).cancelled).toEqual([]);
     expect(await tool("cancel", { reminderId: target }, "call-again")).toMatchObject({
       cancelled: true,
     });

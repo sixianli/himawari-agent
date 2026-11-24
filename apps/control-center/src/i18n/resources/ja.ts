@@ -728,6 +728,11 @@ export const messages = {
   "memory.page.noUpcoming": "今後 60 日間の予定はありません。",
   "memory.page.yearly": "毎年",
   "memory.page.cancelled": "「{text}」の通知を止めました。記憶は残ります",
+  "memory.page.restored": "「{text}」をまた通知します",
+  "memory.page.restoreFailed":
+    "このリマインダーを戻せませんでした。しばらくしてからもう一度お試しください",
+  "memory.reminderRestore": "元に戻す",
+  "reminders.cancelledGroup": "最近取り消したもの",
   "memory.page.notify": "時間になったリマインダーは、通知をオンにしたデバイスに届きます。",
   "memory.page.lines": "{count} 件",
   "memory.page.less": "閉じる",
