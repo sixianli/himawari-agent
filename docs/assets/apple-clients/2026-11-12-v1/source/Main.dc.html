@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>Himawari iPhone 主界面</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+input{font-family:inherit}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921}
+.hm.dark{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+@media (prefers-reduced-motion: no-preference){.breathe{animation:breathe 3.2s ease-in-out infinite}}
+.scroll{scrollbar-width:none}.scroll::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<div class="{{ rootClass }}" style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: var(--bg); color: var(--text)">
+
+<sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+<div class="scroll" onScroll="{{ onTodayScroll }}" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; overflow-y: auto; padding: 150px 16px 130px; display: flex; flex-direction: column; gap: 30px; background: radial-gradient(300px 260px at 330px 60px, var(--glow), transparent)">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="position: absolute; right: -84px; top: -76px; width: 290px; height: 290px; opacity: 0.6">
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 0 4px">
+<h1 class="serif" style="margin: 0; font-size: 40px; font-weight: 600; line-height: 1.2">下午好</h1>
+<div class="serif" style="font-size: 23px; font-weight: 500; line-height: 1.5; text-wrap: pretty">{{ statusLine }}</div>
+</div>
+
+<sc-if value="{{ hasPending }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<sc-if value="{{ approvalOpen }}" hint-placeholder-val="{{ true }}">
+<div class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 13px; font-weight: 600; color: var(--danger)">等你点头</div>
+<div style="font-size: 20px; font-weight: 600; line-height: 1.35">给田中发邮件</div>
+<div style="font-size: 15px; line-height: 1.45; color: var(--muted)">确认周五 14:00 在新大阪站见面</div>
+</div>
+<div style="display: flex; gap: 8px">
+<button onClick="{{ openThread }}" style="flex: 1; height: 46px; border: 0; border-radius: 23px; background: var(--fill); color: var(--text); font-size: 16px">看内容</button>
+<button onClick="{{ rejectMail }}" style="flex: 1; height: 46px; border: 0; border-radius: 23px; background: var(--fill); color: var(--text); font-size: 16px">不发</button>
+<button onClick="{{ approveMail }}" style="flex: 1; height: 46px; border: 0; border-radius: 23px; background: var(--text); color: var(--ontext); font-size: 16px; font-weight: 600">同意</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ inferOpen }}" hint-placeholder-val="{{ true }}">
+<div class="card" style="padding: 12px 12px 12px 18px; display: flex; align-items: center; gap: 10px">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 17px; font-weight: 600; line-height: 1.35">田中下周三回东京</div>
+<div style="font-size: 13px; color: var(--muted)">开会时听到的，要记吗</div>
+</div>
+<button onClick="{{ inferNo }}" style="height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: var(--fill); color: var(--text); font-size: 15px">不记</button>
+<button onClick="{{ inferYes }}" style="height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: var(--text); color: var(--ontext); font-size: 15px; font-weight: 600">记下</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 4px">接下来</div>
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<sc-for list="{{ upcoming }}" as="up" hint-placeholder-count="2">
+<div style="min-height: 60px; display: flex; align-items: center; gap: 14px; border-bottom: {{ up.line }}">
+<div class="round" style="width: 84px; font-size: 15px; font-weight: 600; color: var(--sun)">{{ up.time }}</div>
+<div style="flex: 1; font-size: 17px; line-height: 1.35">{{ up.what }}</div>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 0 4px">
+<div style="font-size: 15px; color: var(--muted)">今天到现在</div>
+<button onClick="{{ togglePause }}" style="min-height: 44px; margin: -12px 0; padding: 0 2px; border: 0; background: transparent; color: var(--sun); font-size: 15px">{{ pauseLabel }}</button>
+</div>
+<div style="display: flex; flex-direction: column; padding: 0 4px">
+<sc-for list="{{ day }}" as="e" hint-placeholder-count="5">
+<div style="display: flex; gap: 12px">
+<div class="round" style="width: 48px; text-align: right; font-size: 15px; font-weight: 600; line-height: 23px; color: var(--muted)">{{ e.time }}</div>
+<div style="width: 14px; display: flex; flex-direction: column; align-items: center">
+<span style="display: block; width: 10px; height: 10px; border-radius: 5px; background: {{ e.dotBg }}; margin-top: 7px; flex-shrink: 0"></span>
+<span style="display: block; flex: 1; width: 2px; border-radius: 1px; background: {{ e.rail }}; margin-top: 5px"></span>
+</div>
+<div style="flex: 1; padding-bottom: 20px; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 17px; line-height: 23px">{{ e.what }}</div>
+<div style="font-size: 13px; color: {{ e.fromColor }}">{{ e.from }}</div>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+<sc-if value="{{ todayScrolled }}" hint-placeholder-val="{{ false }}"><div style="position: absolute; left: 0; top: 0; width: 390px; height: 120px; background: linear-gradient(to bottom, var(--bg) 40%, transparent); pointer-events: none"></div></sc-if>
+<button aria-label="搜索" onClick="{{ goSearch }}" class="glass" style="position: absolute; top: 54px; right: 74px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5" fill="currentColor" fill-opacity="0.2"/><path d="M15.5 15.5L20 20"/></svg>
+</button>
+<button aria-label="我和设置" onClick="{{ openMe }}" class="glass" style="position: absolute; top: 54px; right: 16px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.6" r="3.6" fill="currentColor" fill-opacity="0.24" stroke="currentColor" stroke-width="1.7"/><path d="M5 20a7 7 0 0 1 14 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+</button>
+</sc-if>
+
+<sc-if value="{{ isChatList }}" hint-placeholder-val="{{ false }}">
+<div class="scroll" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; overflow-y: auto; padding: 58px 20px 130px; display: flex; flex-direction: column; gap: 12px">
+<h1 class="round" style="margin: 0; font-size: 34px; font-weight: 700; line-height: 44px">对话</h1>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{ threads }}" as="t" hint-placeholder-count="4">
+<button onClick="{{ t.open }}" style="text-align: left; border: 0; background: transparent; color: var(--text); padding: 14px 0; display: flex; align-items: flex-start; gap: 10px; border-bottom: {{ t.line }}">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px">
+<div style="font-size: 17px; font-weight: 600; line-height: 1.35">{{ t.title }}</div>
+<div style="font-size: 13px; color: var(--muted); flex-shrink: 0">{{ t.time }}</div>
+</div>
+<div style="font-size: 15px; line-height: 1.4; color: {{ t.snippetColor }}">{{ t.snippet }}</div>
+</div>
+</button>
+</sc-for>
+</div>
+</div>
+<button aria-label="新对话" onClick="{{ openThread }}" class="glass" style="position: absolute; top: 54px; right: 16px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5H6.5A2.5 2.5 0 0 0 4 7.5v10A2.5 2.5 0 0 0 6.5 20h10a2.5 2.5 0 0 0 2.5-2.5V12"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12.5 14.3 9 15l0.7-3.5z" fill="currentColor" fill-opacity="0.24"/></svg>
+</button>
+<button aria-label="搜索" onClick="{{ goSearch }}" class="glass" style="position: absolute; top: 54px; right: 74px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5" fill="currentColor" fill-opacity="0.2"/><path d="M15.5 15.5L20 20"/></svg>
+</button>
+</sc-if>
+
+<sc-if value="{{ isThread }}" hint-placeholder-val="{{ false }}">
+<div class="scroll" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; overflow-y: auto; padding: 118px 20px 120px; display: flex; flex-direction: column; gap: 18px">
+<div style="align-self: flex-end; max-width: 290px; background: var(--fill); border-radius: 26px; padding: 14px 18px; font-size: 17px; line-height: 1.45">周五去大阪见田中，帮我看下几点出门合适</div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<button style="align-self: flex-start; min-height: 44px; margin: -8px 0; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 17px; display: flex; align-items: center; gap: 10px">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3.5" fill="currentColor" fill-opacity="0.22"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+看了日历、路线、天气
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+</button>
+<div class="serif" style="font-size: 18px; font-weight: 500; line-height: 1.75">会面定在 14:00，新大阪站附近。坐 9:30 的新干线，12:03 到，留出吃午饭的时间。你平时从家走到车站约 18 分钟，建议 8:50 出门。</div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" style="color: var(--success); flex-shrink: 0"><circle cx="12" cy="12" r="9.5" fill="currentColor" fill-opacity="0.2"/><path d="M7.8 12.4l2.9 2.9 5.6-6.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<div style="flex: 1; font-size: 15px; line-height: 1.4">提醒设好了：周五 8:40 该出门了</div>
+<button onClick="{{ undoReminder }}" style="min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--sun); font-size: 15px">撤销</button>
+</div>
+<sc-if value="{{ approvalOpen }}" hint-placeholder-val="{{ true }}">
+<div class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; font-weight: 600; color: var(--danger)">等你点头</div>
+<div style="font-size: 17px; font-weight: 600; line-height: 1.35">给田中发邮件</div>
+<div style="font-size: 15px; line-height: 1.55; color: var(--muted)">田中先生：周五 14:00 在新大阪站中央口见，可以吗？报价单我当面带给您。</div>
+</div>
+<div style="display: flex; gap: 8px">
+<button onClick="{{ rejectMail }}" style="flex: 1; height: 44px; border: 0; border-radius: 22px; background: var(--fill); color: var(--text); font-size: 15px">不发</button>
+<button onClick="{{ approveMail }}" style="flex: 1; height: 44px; border: 0; border-radius: 22px; background: var(--text); color: var(--ontext); font-size: 15px; font-weight: 600">同意</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ approvalOk }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 12px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" style="color: var(--success); flex-shrink: 0"><circle cx="12" cy="12" r="9.5" fill="currentColor" fill-opacity="0.2"/><path d="M7.8 12.4l2.9 2.9 5.6-6.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<div style="flex: 1; font-size: 15px; line-height: 1.4">邮件发给田中了</div>
+</div>
+</sc-if>
+<sc-if value="{{ approvalNo }}" hint-placeholder-val="{{ false }}">
+<div style="font-size: 15px; color: var(--muted)">没有发邮件</div>
+</sc-if>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted)">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" style="color: var(--sunbright)"><circle cx="6" cy="7" r="2.8" fill="currentColor"/><circle cx="18" cy="8.5" r="2.8" fill="currentColor"/><circle cx="11.5" cy="18" r="2.8" fill="currentColor"/><path d="M6 7l12 1.5L11.5 18z" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity="0.2"/></svg>
+记下了 1 条新记忆
+<button onClick="{{ goMemory }}" style="min-height: 44px; margin: -12px 0; padding: 0 4px; border: 0; background: transparent; color: var(--sun); font-size: 13px">查看</button>
+</div>
+</div>
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 110px; background: linear-gradient(to bottom, var(--bg) 45%, transparent); pointer-events: none"></div>
+<button aria-label="返回" onClick="{{ closeThread }}" class="glass" style="position: absolute; top: 54px; left: 16px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+</button>
+<div style="position: absolute; top: 54px; left: 76px; width: 238px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; pointer-events: none">周五去大阪</div>
+<div style="position: absolute; left: 0; bottom: 0; width: 390px; height: 130px; background: linear-gradient(to top, var(--bg) 40%, transparent); pointer-events: none"></div>
+<div class="glass" style="position: absolute; left: 12px; bottom: 30px; width: 366px; height: 62px; box-sizing: border-box; border-radius: 31px; padding: 0 8px; display: flex; align-items: center; gap: 6px">
+<button aria-label="添加照片或文件" style="width: 46px; height: 46px; border: 0; border-radius: 23px; background: var(--fill); color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+</button>
+<label style="flex: 1; display: flex; min-width: 0"><input aria-label="输入消息" placeholder="打字，或按住说话" style="flex: 1; min-width: 0; height: 46px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 17px; padding: 0 6px"></label>
+<button aria-label="听写" style="width: 46px; height: 46px; border: 0; border-radius: 23px; background: var(--fill); color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
+</button>
+<button aria-label="跟 Himawari 说话" onClick="{{ openVoice }}" style="width: 46px; height: 46px; border: 0; border-radius: 23px; background: var(--speak); padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 34px; height: 34px">
+</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMemory }}" hint-placeholder-val="{{ false }}">
+<div class="scroll" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; overflow-y: auto; padding: 58px 16px 130px; display: flex; flex-direction: column; gap: 20px">
+<h1 class="round" style="margin: 0; padding: 0 4px; font-size: 34px; font-weight: 700; line-height: 44px">记忆</h1>
+<div style="display: flex; background: var(--fill); border-radius: 22px; padding: 3px; gap: 3px">
+<button onClick="{{ segMem }}" style="flex: 1; height: 38px; border: 0; border-radius: 19px; font-size: 15px; color: var(--text); background: {{ segMemBg }}; box-shadow: {{ segMemShadow }}; font-weight: {{ segMemWeight }}">记住的事</button>
+<button onClick="{{ segRule }}" style="flex: 1; height: 38px; border: 0; border-radius: 19px; font-size: 15px; color: var(--text); background: {{ segRuleBg }}; box-shadow: {{ segRuleShadow }}; font-weight: {{ segRuleWeight }}">规则</button>
+</div>
+<sc-if value="{{ showMemList }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 20px">
+<sc-for list="{{ memGroups }}" as="g" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 4px">{{ g.name }}</div>
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<sc-for list="{{ g.items }}" as="mem" hint-placeholder-count="2">
+<button onClick="{{ mem.open }}" style="text-align: left; border: 0; background: transparent; color: var(--text); min-height: 62px; padding: 11px 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; border-bottom: {{ mem.line }}">
+<div style="font-size: 17px; line-height: 1.35">{{ mem.text }}</div>
+<div style="font-size: 13px; color: var(--muted)">{{ mem.source }}</div>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ showRules }}" hint-placeholder-val="{{ false }}">
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="3">
+<div style="min-height: 62px; padding: 11px 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; border-bottom: {{ r.line }}">
+<div style="font-size: 17px; line-height: 1.35">{{ r.text }}</div>
+<div style="font-size: 13px; color: var(--muted)">{{ r.from }}</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+<button aria-label="搜索" onClick="{{ goSearch }}" class="glass" style="position: absolute; top: 54px; right: 16px; width: 48px; height: 48px; border: 0; border-radius: 24px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5" fill="currentColor" fill-opacity="0.2"/><path d="M15.5 15.5L20 20"/></svg>
+</button>
+</sc-if>
+
+<sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+<div class="scroll" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; overflow-y: auto; padding: 58px 16px 130px; display: flex; flex-direction: column; gap: 20px">
+<h1 class="round" style="margin: 0; padding: 0 4px; font-size: 34px; font-weight: 700; line-height: 44px">搜索</h1>
+<sc-if value="{{ noAnswer }}" hint-placeholder-val="{{ true }}">
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<sc-for list="{{ asks }}" as="q" hint-placeholder-count="3">
+<button onClick="{{ q.ask }}" style="text-align: left; border: 0; background: transparent; color: var(--text); min-height: 56px; font-size: 17px; line-height: 1.35; border-bottom: {{ q.line }}">{{ q.text }}</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ hasAnswer }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="align-self: flex-end; max-width: 286px; background: var(--fill); border-radius: 22px; padding: 11px 16px; font-size: 17px; line-height: 1.45">{{ answer.q }}</div>
+<div class="serif" style="font-size: 24px; font-weight: 600; line-height: 1.5; padding: 0 6px">{{ answer.a }}</div>
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<div style="min-height: 62px; padding: 11px 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px">
+<div style="font-size: 13px; color: var(--muted)">依据</div>
+<div style="font-size: 15px; line-height: 1.45">{{ answer.basis }}</div>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+<div style="position: absolute; left: 0; bottom: 0; width: 390px; height: 130px; background: linear-gradient(to top, var(--bg) 40%, transparent); pointer-events: none"></div>
+<button aria-label="回到今天" onClick="{{ goToday }}" class="glass" style="position: absolute; left: 16px; bottom: 30px; width: 56px; height: 56px; border: 0; border-radius: 28px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity="0.24"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M5.6 18.4l1.6-1.6M16.8 7.2l1.6-1.6"/></svg>
+</button>
+<div class="glass" style="position: absolute; left: 82px; bottom: 30px; width: 292px; height: 56px; box-sizing: border-box; border-radius: 28px; padding: 0 18px; display: flex; align-items: center; gap: 10px">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color: var(--muted); flex-shrink: 0"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>
+<label style="flex: 1; display: flex; min-width: 0"><input aria-label="搜索" placeholder="对话、记忆、感知到的" style="flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 17px"></label>
+</div>
+</sc-if>
+
+<sc-if value="{{ showBars }}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; left: 0; bottom: 0; width: 390px; height: 140px; background: linear-gradient(to top, var(--bg) 30%, transparent); pointer-events: none"></div>
+<div class="glass" style="position: absolute; left: 16px; bottom: 26px; width: 282px; height: 64px; box-sizing: border-box; border-radius: 32px; padding: 4px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px">
+<button onClick="{{ goToday }}" style="position: relative; border: 0; border-radius: 28px; background: {{ todayBg }}; color: {{ todayColor }}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px; font-weight: 600">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity="0.28"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M5.6 18.4l1.6-1.6M16.8 7.2l1.6-1.6"/></svg>
+今天
+<sc-if value="{{ hasPending }}" hint-placeholder-val="{{ true }}"><span class="round" style="position: absolute; top: 4px; left: 52px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px; background: #c0392b; color: #ffffff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center">{{ pendingCount }}</span></sc-if>
+</button>
+<button onClick="{{ goChat }}" style="border: 0; border-radius: 28px; background: {{ chatBg }}; color: {{ chatColor }}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px; font-weight: 600">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-5.5L7 20.5V17a3 3 0 0 1-3-3z" fill="currentColor" fill-opacity="0.28"/></svg>
+对话</button>
+<button onClick="{{ goMemory }}" style="border: 0; border-radius: 28px; background: {{ memoryBg }}; color: {{ memoryColor }}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px; font-weight: 600">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M6 7l12 1.5L11.5 18z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="currentColor" fill-opacity="0.28"/><circle cx="6" cy="7" r="2.6" fill="currentColor"/><circle cx="18" cy="8.5" r="2.6" fill="currentColor"/><circle cx="11.5" cy="18" r="2.6" fill="currentColor"/></svg>
+记忆</button>
+</div>
+<button aria-label="跟 Himawari 说" onClick="{{ openVoice }}" class="glass" style="position: absolute; right: 16px; bottom: 26px; width: 64px; height: 64px; border: 0; border-radius: 32px; padding: 0; display: flex; align-items: center; justify-content: center">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 46px; height: 46px">
+</button>
+</sc-if>
+
+<sc-if value="{{ memSheetOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim); display: flex; flex-direction: column; justify-content: flex-end">
+<div style="background: var(--bg); border-radius: 36px 36px 0 0; padding: 8px 20px 40px; display: flex; flex-direction: column; gap: 22px">
+<div style="align-self: center; width: 36px; height: 5px; border-radius: 3px; background: var(--fill2)"></div>
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<div class="serif" style="flex: 1; font-size: 26px; font-weight: 600; line-height: 1.4; padding-top: 4px">{{ openMem.text }}</div>
+<button aria-label="关闭" onClick="{{ closeMem }}" style="width: 48px; height: 48px; border: 0; border-radius: 24px; background: var(--fill); color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</button>
+</div>
+<div class="card" style="padding: 0 20px; display: flex; flex-direction: column">
+<div style="padding: 13px 0; display: flex; flex-direction: column; gap: 3px; border-bottom: 1px solid var(--sep)">
+<div style="font-size: 13px; color: var(--muted)">怎么知道的</div>
+<div style="font-size: 17px; line-height: 1.45">{{ openMem.basis }}</div>
+</div>
+<div style="padding: 13px 0; display: flex; flex-direction: column; gap: 3px">
+<div style="font-size: 13px; color: var(--muted)">上次用它</div>
+<div style="font-size: 17px; line-height: 1.45">{{ openMem.used }}</div>
+</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between">
+<button onClick="{{ deleteMem }}" style="height: 48px; padding: 0 6px; border: 0; background: transparent; color: var(--danger); font-size: 17px">删除</button>
+<button onClick="{{ editMem }}" style="height: 48px; padding: 0 28px; border: 0; border-radius: 24px; background: var(--fill); color: var(--text); font-size: 17px">改一改</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ meOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)">
+<div class="scroll" style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; overflow-y: auto; padding: 16px 16px 48px; display: flex; flex-direction: column; gap: 26px">
+<div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0">
+<button aria-label="关闭" onClick="{{ closeMe }}" style="width: 48px; height: 48px; border: 0; border-radius: 24px; background: var(--fill); color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</button>
+<div style="font-size: 18px; font-weight: 700">设置</div>
+<div style="width: 48px; height: 48px"></div>
+</div>
+
+<div class="card" style="padding: 18px 20px; display: flex; align-items: center; gap: 16px">
+<img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 46px; height: 46px">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 3px">
+<div style="font-size: 19px; font-weight: 500">Himawari</div>
+<div style="font-size: 15px; color: var(--muted)">跑在你自己的服务器上 · 连着</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 20px">我的设备</div>
+<div class="card" style="display: flex; flex-direction: column; overflow: hidden">
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><rect x="7" y="2.5" width="10" height="19" rx="2.8" fill="currentColor" fill-opacity="0.22"/><path d="M11 18.5h2"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">这台 iPhone</div><div style="font-size: 17px; color: var(--success)">连着</div></div>
+</div>
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><rect x="7" y="7" width="10" height="10" rx="3" fill="currentColor" fill-opacity="0.22"/><path d="M9 7l.6-3.5h4.8L15 7M9 17l.6 3.5h4.8L15 17"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">Apple Watch</div><div style="font-size: 17px; color: var(--muted)">2 分钟前</div></div>
+</div>
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><rect x="4.5" y="5" width="15" height="10.5" rx="2" fill="currentColor" fill-opacity="0.22"/><path d="M2.5 19h19"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">MacBook Pro</div><div style="font-size: 17px; color: var(--success)">连着</div></div>
+</div>
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" fill-opacity="0.22"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 0"><div style="flex: 1; font-size: 17px">随身麦克风</div><div style="font-size: 17px; color: var(--muted)">电量 64%</div></div>
+</div>
+</div>
+<a href="Pairing.dc.html" style="align-self: flex-start; min-height: 44px; padding: 0 20px; display: flex; align-items: center; font-size: 17px; text-decoration: none; color: var(--sun)">配对新设备</a>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 20px">让 Himawari 感知</div>
+<div class="card" style="padding: 0 18px 0 20px; display: flex; flex-direction: column">
+<sc-for list="{{ senses }}" as="s" hint-placeholder-count="4">
+<div style="min-height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: {{ s.line }}">
+<div style="flex: 1; font-size: 17px">{{ s.label }}</div>
+<button aria-label="{{ s.label }}" aria-pressed="{{ s.on }}" onClick="{{ s.toggle }}" style="width: 52px; height: 44px; border: 0; background: transparent; padding: 0; display: flex; align-items: center">
+<span style="display: block; width: 52px; height: 32px; border-radius: 16px; background: {{ s.bg }}; position: relative; transition: background 0.2s"><span style="display: block; position: absolute; top: 2px; left: {{ s.x }}; width: 28px; height: 28px; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: left 0.2s"></span></span>
+</button>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 20px">通用</div>
+<div class="card" style="display: flex; flex-direction: column; overflow: hidden">
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M4 10v4M8 6.5v11M12 3.5v17M16 6.5v11M20 10v4"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">叫名字下指令</div><div style="font-size: 17px; color: var(--muted)">14 / 20 句</div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted); flex-shrink: 0"><path d="M9 5l7 7-7 7"/></svg></div>
+</div>
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" fill="currentColor" fill-opacity="0.22"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">通知</div><div style="font-size: 17px; color: var(--muted)"></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted); flex-shrink: 0"><path d="M9 5l7 7-7 7"/></svg></div>
+</div>
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M12 3l7 2.5V11c0 4.5-3 8-7 10-4-2-7-5.5-7-10V5.5z" fill="currentColor" fill-opacity="0.22"/><rect x="9.5" y="10.5" width="5" height="4.5" rx="1"/><path d="M10.5 10.5V9.5a1.5 1.5 0 0 1 3 0v1"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 1px solid var(--sep)"><div style="flex: 1; font-size: 17px">隐私</div><div style="font-size: 17px; color: var(--muted)"></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted); flex-shrink: 0"><path d="M9 5l7 7-7 7"/></svg></div>
+</div>
+<button onClick="{{ exportData }}" style="text-align: left; border: 0; background: transparent; color: var(--text); padding: 0; font-family: inherit">
+<div style="min-height: 60px; display: flex; align-items: center; gap: 16px; padding-left: 20px">
+<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M12 15V4M8 7.5L12 3.5l4 4M5 13v4.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V13"/></svg>
+<div style="flex: 1; align-self: stretch; display: flex; align-items: center; gap: 10px; padding-right: 18px; border-bottom: 0"><div style="flex: 1; font-size: 17px">导出全部数据</div><div style="font-size: 17px; color: var(--muted)"></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted); flex-shrink: 0"><path d="M9 5l7 7-7 7"/></svg></div>
+</div>
+</button>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 15px; color: var(--muted); padding: 0 20px">用量和上限</div>
+<div class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 18px">
+<sc-for list="{{ limits }}" as="lim" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 9px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><div style="font-size: 17px">{{ lim.label }}</div><div class="round" style="font-size: 15px; color: var(--muted)">{{ lim.value }}</div></div>
+<div style="height: 6px; border-radius: 3px; background: var(--fill)"><div style="width: {{ lim.pct }}; height: 6px; border-radius: 3px; background: var(--muted)"></div></div>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ voiceOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; box-sizing: border-box; background: radial-gradient(300px 300px at 195px 300px, var(--glow), transparent), var(--bg); padding: 120px 28px 56px; display: flex; flex-direction: column; align-items: center; justify-content: space-between">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 44px">
+<img alt="Himawari 在听" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" class="breathe" style="width: 200px; height: 200px">
+<div class="serif" style="font-size: 28px; font-weight: 600; line-height: 1.45; text-align: center">提醒我今晚九点给妈妈打电话</div>
+</div>
+<div style="display: flex; align-items: center; gap: 28px">
+<button aria-label="取消" onClick="{{ closeVoice }}" class="glass" style="width: 60px; height: 60px; border: 0; border-radius: 30px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</button>
+<button aria-label="说完了" onClick="{{ finishVoice }}" style="width: 76px; height: 76px; border: 0; border-radius: 38px; background: var(--text); color: var(--ontext); display: flex; align-items: center; justify-content: center; box-shadow: var(--liftbig)">
+<svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 12.5l4.3 4.3L18.5 7.5"/></svg>
+</button>
+<button aria-label="改用打字" onClick="{{ typeInstead }}" class="glass" style="width: 60px; height: 60px; border: 0; border-radius: 30px; color: var(--text); display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="3" fill="currentColor" fill-opacity="0.2"/><path d="M7 10h0.01M11 10h0.01M15 10h0.01M8 14h8"/></svg>
+</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ confirmOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim); display: flex; align-items: center; justify-content: center">
+<div class="glass" style="width: 200px; box-sizing: border-box; border-radius: 36px; padding: 28px 18px 22px; display: flex; flex-direction: column; align-items: center; gap: 14px">
+<sc-if value="{{ confirmScanning }}" hint-placeholder-val="{{ true }}">
+<svg aria-hidden="true" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text)"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16"/><path d="M9 9.5v1.2M15 9.5v1.2M12 9.5V13h-1M9 15.3a4.5 4.5 0 0 0 6 0"/></svg>
+</sc-if>
+<sc-if value="{{ confirmDone }}" hint-placeholder-val="{{ false }}">
+<svg aria-hidden="true" width="64" height="64" viewBox="0 0 24 24" fill="none" style="color: var(--success)"><circle cx="12" cy="12" r="9.5" fill="currentColor" fill-opacity="0.2"/><path d="M7.8 12.4l2.9 2.9 5.6-6.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</sc-if>
+<div style="font-size: 15px; font-weight: 600; text-align: center; line-height: 1.4">{{ confirmTitle }}</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ toastOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; top: 58px; width: 390px; display: flex; justify-content: center; pointer-events: none">
+<div class="glass" style="max-width: 320px; border-radius: 22px; padding: 11px 18px; font-size: 15px; line-height: 1.4; text-align: center">{{ toast }}</div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+state = {
+tab: 'today',
+thread: false,
+me: false,
+voice: false,
+confirm: null,
+confirmDone: false,
+toast: '',
+approval: 'open',
+infer: 'open',
+paused: false,
+seg: 'mem',
+memOpen: null,
+deleted: {},
+asked: null,
+extraReminder: false,
+scrolled: false,
+senses: { loc: true, health: true, mic: true, screen: false }
+};
+say(text) {
+this.setState({ toast: text });
+clearTimeout(this.toastTimer);
+this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 2400);
+}
+ask(title, apply) {
+this.setState({ confirm: title, confirmDone: false });
+clearTimeout(this.faceTimer);
+this.faceTimer = setTimeout(() => {
+this.setState({ confirmDone: true });
+this.faceTimer = setTimeout(() => {
+this.setState({ confirm: null, confirmDone: false });
+apply();
+}, 650);
+}, 850);
+}
+lined(list) {
+return list.map((item, i) => ({ ...item, line: i < list.length - 1 ? '1px solid var(--sep)' : '0' }));
+}
+renderVals() {
+const s = this.state;
+const dark = this.props.dark ?? false;
+const tint = 'var(--sun)';
+const plain = 'var(--text)';
+const pendingCount = (s.approval === 'open' ? 1 : 0) + (s.infer === 'open' ? 1 : 0);
+const allMemories = [
+{ id: 'm1', group: '出行', text: '从家走到车站约 18 分钟', source: '从位置记录看出来的', basis: '最近 14 天里 9 次从家走到车站。', used: '今天 10:20，算周五几点出门。' },
+{ id: 'm5', group: '出行', text: '坐新干线喜欢靠窗', source: '你说的 · 10 月 30 日', basis: '10 月 30 日你说“以后都帮我订靠窗的”。', used: '还没用过。' },
+{ id: 'm2', group: '工作', text: '每周五下午和田中有例会', source: '你说的 · 11 月 3 日', basis: '11 月 3 日你说“以后每周五下午都和田中开会”。', used: '11 月 7 日，排那周的日程。' },
+{ id: 'm4', group: '工作', text: '写代码时不想被打扰', source: 'Claude Code 存进来的', basis: '11 月 8 日 Claude Code 存入，你当天确认。', used: '还没用过。' },
+{ id: 'm3', group: '身体', text: '对花生过敏', source: '你说的 · 10 月 21 日', basis: '10 月 21 日你说“我花生过敏”。', used: '11 月 5 日，挑餐厅。' }
+];
+const live = allMemories.filter((m) => !s.deleted[m.id]);
+const memGroups = ['出行', '工作', '身体'].map((name) => ({
+name,
+items: this.lined(live.filter((m) => m.group === name).map((m) => ({ ...m, open: () => this.setState({ memOpen: m.id }) })))
+})).filter((g) => g.items.length > 0);
+const openMem = allMemories.find((m) => m.id === s.memOpen) || allMemories[0];
+const senseDefs = [
+{ id: 'loc', label: '位置' },
+{ id: 'health', label: '健康和运动' },
+{ id: 'mic', label: '随身麦克风' },
+{ id: 'screen', label: 'Mac 上在用什么' }
+];
+const senses = this.lined(senseDefs.map((d) => {
+const isOn = s.senses[d.id];
+return {
+...d,
+on: isOn,
+bg: isOn ? 'var(--success)' : 'var(--track)',
+x: isOn ? '22px' : '2px',
+toggle: () => {
+if (isOn) {
+this.setState({ senses: { ...s.senses, [d.id]: false } });
+} else {
+this.ask('打开“' + d.label + '”', () => this.setState({ senses: { ...this.state.senses, [d.id]: true } }));
+}
+}
+};
+}));
+const listening = s.senses.mic && !s.paused;
+let statusLine = pendingCount > 0 ? '有 ' + pendingCount + ' 件事等你点头。' : '现在没有要你决定的事。';
+statusLine += '今晚九点记得给妈妈打电话。';
+const dayItems = [
+{ time: '8:12', what: '到公司', from: 'iPhone 的位置' },
+{ time: '10:30', what: '和田中开会 45 分钟', from: '随身麦克风' },
+{ time: '11:18', what: '会议要点整理好了', from: '替你做好的', did: true },
+{ time: '12:40', what: '午饭后走了 2.1 公里', from: 'Apple Watch' },
+{ time: '13:05', what: '在 Xcode 里写代码', from: 'Mac' },
+{ time: '14:50', what: '周五出门的提醒设好了', from: '替你做好的', did: true }
+];
+const day = dayItems.map((e, i) => ({
+...e,
+dotBg: e.did ? 'var(--success)' : 'var(--track)',
+fromColor: e.did ? 'var(--success)' : 'var(--muted)',
+rail: i < dayItems.length - 1 ? 'var(--sep)' : 'transparent'
+}));
+const upcoming = [];
+upcoming.push({ time: '今晚 21:00', what: s.extraReminder ? '给妈妈打电话' : '给妈妈打电话' });
+upcoming.push({ time: '周五 8:40', what: '该出门了，去大阪' });
+const asks = [
+{ text: '田中说过什么时候回东京', a: '下周三。', basis: '今天上午的会里田中自己说的。这条还没经你确认。' },
+{ text: '上周三我在哪吃的午饭', a: '公司楼下的荞麦面店，12:10 到 12:45。', basis: '11 月 5 日的位置记录。' },
+{ text: '我对什么过敏', a: '花生。', basis: '10 月 21 日你在对话里说的。' }
+];
+const answer = s.asked === null ? asks[0] : asks[s.asked];
+const inChat = s.tab === 'chat';
+return {
+rootClass: dark ? 'hm dark' : 'hm',
+isToday: s.tab === 'today',
+isChatList: inChat && !s.thread,
+isThread: inChat && s.thread,
+isMemory: s.tab === 'memory',
+isSearch: s.tab === 'search',
+showBars: s.tab !== 'search' && !(inChat && s.thread),
+todayColor: s.tab === 'today' ? tint : plain,
+chatColor: inChat ? tint : plain,
+memoryColor: s.tab === 'memory' ? tint : plain,
+todayBg: s.tab === 'today' ? 'var(--fill)' : 'transparent',
+chatBg: inChat ? 'var(--fill)' : 'transparent',
+memoryBg: s.tab === 'memory' ? 'var(--fill)' : 'transparent',
+goToday: () => this.setState({ tab: 'today', asked: null }),
+goChat: () => this.setState({ tab: 'chat', thread: false }),
+goMemory: () => this.setState({ tab: 'memory', seg: 'mem', memOpen: null, thread: false }),
+goSearch: () => this.setState({ tab: 'search', asked: null }),
+openThread: () => this.setState({ tab: 'chat', thread: true }),
+closeThread: () => this.setState({ thread: false }),
+statusLine,
+day,
+todayScrolled: s.scrolled,
+onTodayScroll: (ev) => { const on = ev.currentTarget.scrollTop > 60; if (on !== this.state.scrolled) this.setState({ scrolled: on }); },
+typeInstead: () => this.setState({ voice: false, tab: 'chat', thread: true }),
+hasPending: pendingCount > 0,
+pendingCount,
+approvalOpen: s.approval === 'open',
+approvalOk: s.approval === 'ok',
+approvalNo: s.approval === 'no',
+approveMail: () => this.ask('同意发邮件', () => this.setState({ approval: 'ok' })),
+rejectMail: () => this.setState({ approval: 'no' }),
+undoReminder: () => this.ask('撤销提醒', () => this.say('提醒撤销了')),
+inferOpen: s.infer === 'open',
+inferYes: () => this.ask('记下这件事', () => this.setState({ infer: 'yes' })),
+inferNo: () => this.setState({ infer: 'no' }),
+pauseLabel: s.paused ? '恢复' : '暂停 1 小时',
+togglePause: () => {
+if (s.paused) {
+this.ask('恢复感知', () => this.setState({ paused: false }));
+} else {
+this.setState({ paused: true });
+}
+},
+upcoming: this.lined(upcoming),
+done: this.lined([
+{ what: '周五出门的提醒设好了', when: '10:20' },
+{ what: '上午会议的要点整理好了', when: '11:18' }
+]),
+records: this.lined([
+{ time: '8:12', what: '到公司', from: 'iPhone 的位置' },
+{ time: '10:30', what: '和田中开会 45 分钟', from: '随身麦克风' },
+{ time: '12:40', what: '午饭后走了 2.1 公里', from: 'Apple Watch' },
+{ time: '13:05', what: '在 Xcode 里写代码', from: 'Mac' }
+]),
+threads: this.lined([
+{ title: '周五去大阪', snippet: s.approval === 'open' ? '等你点头：给田中发邮件' : '建议 8:50 出门', snippetColor: s.approval === 'open' ? 'var(--danger)' : 'var(--muted)', time: '14:50' },
+{ title: '报价单 11 月', snippet: '整理好了，放在文件里', snippetColor: 'var(--muted)', time: '昨天' },
+{ title: '妈妈的生日礼物', snippet: '挑了三样，你看看', snippetColor: 'var(--muted)', time: '周二' },
+{ title: '每周跑步计划', snippet: '这周跑了 2 次，还差 1 次', snippetColor: 'var(--muted)', time: '周一' }
+]).map((t) => ({ ...t, open: () => this.setState({ thread: true }) })),
+segMem: () => this.setState({ seg: 'mem' }),
+segRule: () => this.setState({ seg: 'rule' }),
+segMemBg: s.seg === 'mem' ? 'var(--surface)' : 'transparent',
+segRuleBg: s.seg === 'rule' ? 'var(--surface)' : 'transparent',
+segMemShadow: s.seg === 'mem' ? 'var(--lift)' : 'none',
+segRuleShadow: s.seg === 'rule' ? 'var(--lift)' : 'none',
+segMemWeight: s.seg === 'mem' ? '600' : '400',
+segRuleWeight: s.seg === 'rule' ? '600' : '400',
+showMemList: s.seg === 'mem',
+showRules: s.seg === 'rule',
+memGroups,
+rules: this.lined([
+{ text: '晚上 10 点以后不发提醒', from: '你在 11 月 2 日定的' },
+{ text: '花钱超过 5000 日元先问我', from: '你在 10 月 28 日定的' },
+{ text: '别人说的话不能让我动手做事', from: '内置，关不掉' }
+]),
+memSheetOpen: !!s.memOpen,
+openMem,
+closeMem: () => this.setState({ memOpen: null }),
+editMem: () => this.ask('改这条记忆', () => this.say('这里会打开编辑页')),
+deleteMem: () => this.ask('删除这条记忆', () => this.setState({ deleted: { ...this.state.deleted, [openMem.id]: true }, memOpen: null })),
+meOpen: s.me,
+openMe: () => this.setState({ me: true }),
+closeMe: () => this.setState({ me: false }),
+devices: this.lined([
+{ name: '这台 iPhone', status: '连着', color: 'var(--success)' },
+{ name: 'Apple Watch', status: '2 分钟前', color: 'var(--muted)' },
+{ name: 'MacBook Pro', status: '连着', color: 'var(--success)' },
+{ name: '随身麦克风', status: '电量 64%', color: 'var(--muted)' }
+]),
+senses,
+limits: [
+{ label: '今天的感知记录', value: '1,240 / 5,000', pct: '25%' },
+{ label: '没网也能看的内容', value: '12 / 20', pct: '60%' },
+{ label: '这个月的模型花费', value: '$3.2 / $20', pct: '16%' }
+],
+exportData: () => this.ask('导出全部数据', () => this.say('开始导出，做好了通知你')),
+asks: this.lined(asks.map((q, i) => ({ ...q, ask: () => this.setState({ asked: i }) }))),
+noAnswer: s.asked === null,
+hasAnswer: s.asked !== null,
+answer: { q: answer.text, a: answer.a, basis: answer.basis },
+voiceOpen: s.voice,
+openVoice: () => this.setState({ voice: true }),
+closeVoice: () => this.setState({ voice: false }),
+finishVoice: () => {
+this.setState({ voice: false, tab: 'today', thread: false, extraReminder: true });
+this.say('今晚 21:00 提醒你给妈妈打电话');
+},
+confirmOpen: !!s.confirm,
+confirmScanning: !!s.confirm && !s.confirmDone,
+confirmDone: !!s.confirm && s.confirmDone,
+confirmTitle: s.confirm || '',
+toastOpen: !!s.toast,
+toast: s.toast
+};
+}
+}
+</script>
+</body>
+</html>

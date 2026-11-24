@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>她记得的</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+<style>
+.opt{min-height:44px;box-sizing:border-box;padding:10px 16px;border-radius:22px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--sep);font-size:16px;line-height:1.35;display:flex;align-items:center;gap:8px;align-self:flex-start;max-width:330px}
+.opt.act{background:var(--tile);box-shadow:none;color:var(--text)}
+.opt.off{opacity:0.42}
+.opt.no{color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;background:var(--fill);font-size:13px;color:var(--muted)}
+.chip.amber{background:var(--tile);color:var(--glyph)}
+.todo{display:flex;align-items:flex-start;gap:10px;font-size:15px;line-height:1.45}
+.todo .m{width:18px;flex-shrink:0;display:flex;justify-content:center;padding-top:2px}
+.her{font-size:18px;line-height:1.7}
+.tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--tile);color:var(--glyph);flex-shrink:0}
+.cite{font-size:11px;color:var(--sun);vertical-align:super;font-weight:600}
+</style><style>@keyframes seedgrow{0.000%{transform:translateX(0.00px) scale(0.000);background:rgb(255,236,170);opacity:1.00}0.545%{transform:translateX(1.15px) scale(0.178);background:rgb(255,236,170);opacity:1.00}1.091%{transform:translateX(1.63px) scale(0.372);background:rgb(255,236,170);opacity:1.00}2.182%{transform:translateX(2.30px) scale(0.789);background:rgb(255,236,170);opacity:1.00}3.636%{transform:translateX(2.97px) scale(0.834);background:rgb(255,236,170);opacity:1.00}5.455%{transform:translateX(3.64px) scale(0.879);background:rgb(255,236,170);opacity:1.00}5.982%{transform:translateX(3.81px) scale(0.891);background:rgb(255,236,170);opacity:1.00}6.091%{transform:translateX(3.85px) scale(0.893);background:rgb(107,61,16);opacity:1.00}9.091%{transform:translateX(4.70px) scale(0.951);background:rgb(114,66,17);opacity:1.00}14.545%{transform:translateX(5.95px) scale(1.035);background:rgb(127,74,17);opacity:1.00}21.818%{transform:translateX(7.28px) scale(1.125);background:rgb(145,85,18);opacity:1.00}30.909%{transform:translateX(8.67px) scale(1.219);background:rgb(167,99,18);opacity:1.00}40.000%{transform:translateX(9.86px) scale(1.299);background:rgb(190,113,19);opacity:1.00}49.818%{transform:translateX(11.01px) scale(1.377);background:rgb(214,128,20);opacity:1.00}58.182%{transform:translateX(11.90px) scale(1.436);background:rgb(219,136,25);opacity:1.00}69.091%{transform:translateX(12.96px) scale(1.509);background:rgb(226,147,31);opacity:1.00}80.000%{transform:translateX(13.95px) scale(1.575);background:rgb(233,158,37);opacity:1.00}90.909%{transform:translateX(14.87px) scale(1.637);background:rgb(239,169,43);opacity:1.00}97.273%{transform:translateX(15.38px) scale(1.672);background:rgb(243,175,46);opacity:1.00}98.727%{transform:translateX(15.50px) scale(1.680);background:rgb(244,177,47);opacity:0.47}100.000%{transform:translateX(15.60px) scale(1.686);background:rgb(245,178,48);opacity:0.00}}.gm{position:relative;width:38px;height:38px}.gm b{position:absolute;inset:0}.gm i{position:absolute;left:50%;top:50%;width:2.0px;height:2.0px;margin:-1.0px 0 0 -1.0px;border-radius:50%;animation:seedgrow 16.176s linear infinite}@media (prefers-reduced-motion: reduce){.gm i{animation-play-state:paused}}</style><style>@keyframes seedgrowl{0.000%{transform:translateX(0.00px) scale(0.000);background:rgb(184,116,26);opacity:1.00}0.545%{transform:translateX(1.15px) scale(0.178);background:rgb(184,116,26);opacity:1.00}1.091%{transform:translateX(1.63px) scale(0.372);background:rgb(184,116,26);opacity:1.00}2.182%{transform:translateX(2.30px) scale(0.789);background:rgb(184,116,26);opacity:1.00}3.636%{transform:translateX(2.97px) scale(0.834);background:rgb(184,116,26);opacity:1.00}5.455%{transform:translateX(3.64px) scale(0.879);background:rgb(184,116,26);opacity:1.00}5.982%{transform:translateX(3.81px) scale(0.891);background:rgb(184,116,26);opacity:1.00}6.091%{transform:translateX(3.85px) scale(0.893);background:rgb(107,61,16);opacity:1.00}9.091%{transform:translateX(4.70px) scale(0.951);background:rgb(114,66,17);opacity:1.00}14.545%{transform:translateX(5.95px) scale(1.035);background:rgb(127,74,17);opacity:1.00}21.818%{transform:translateX(7.28px) scale(1.125);background:rgb(145,85,18);opacity:1.00}30.909%{transform:translateX(8.67px) scale(1.219);background:rgb(167,99,18);opacity:1.00}40.000%{transform:translateX(9.86px) scale(1.299);background:rgb(190,113,19);opacity:1.00}49.818%{transform:translateX(11.01px) scale(1.377);background:rgb(214,128,20);opacity:1.00}58.182%{transform:translateX(11.90px) scale(1.436);background:rgb(219,136,25);opacity:1.00}69.091%{transform:translateX(12.96px) scale(1.509);background:rgb(226,147,31);opacity:1.00}80.000%{transform:translateX(13.95px) scale(1.575);background:rgb(233,158,37);opacity:1.00}90.909%{transform:translateX(14.87px) scale(1.637);background:rgb(239,169,43);opacity:1.00}97.273%{transform:translateX(15.38px) scale(1.672);background:rgb(243,175,46);opacity:1.00}98.727%{transform:translateX(15.50px) scale(1.680);background:rgb(244,177,47);opacity:0.47}100.000%{transform:translateX(15.60px) scale(1.686);background:rgb(245,178,48);opacity:0.00}}.gm.lt i{animation-name:seedgrowl}@keyframes spin{to{transform:rotate(360deg)}}@keyframes glow{0%,100%{opacity:.45;transform:scale(.92)}50%{opacity:.95;transform:scale(1.14)}}@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,135,10,.45)}60%{box-shadow:0 0 0 9px rgba(201,135,10,0)}}</style>
+</helmet>
+<div class="board" style="width: 3862px; height: 958px">
+<div class="col"><div class="cap"><div><b>她记得的</b><span style="font-weight: 400; color: #4d5247">　从她的页面第一行进；三段：记住的事、主题、规则；右上角是昨晚整理了什么</span></div></div><div class="hm ph"><div class="page" style="padding: 122px 16px 40px; gap: 18px"><div class="seg"><div class="on">记住的事</div><div>主题</div><div>规则</div></div><div class="grp"><div class="lbl">生活</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">喝咖啡不加糖；11 月下旬起喜欢加果汁</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">从家走到车站约 18 分钟</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">周四健身房 19:00 关门</div><div class="t13">从一个网页看来的</div></div><span class="tag">待确认</span><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div><div class="grp"><div class="lbl">工作</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">田中是大阪客户的窗口</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">12 月 3 日去大阪出差</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div><div class="link" style="justify-content: center; font-size: 15px; color: var(--muted)">回收站 · 2 条</div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">她记得的</div><div role="img" aria-label="昨晚整理了什么" class="glass gbtn" style="right: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" /></svg></div></div></div><div class="col"><div class="cap"><div><b>一条记忆</b><span style="font-weight: 400; color: #4d5247">　原话和以前的版本；上线前的旧对话已删，那些记忆写“原话已删”</span></div></div><div class="hm ph"><div class="page" style="padding: 122px 16px 40px; gap: 20px"><div class="serif" style="font-size: 24px; font-weight: 600; line-height: 1.5; padding: 0 4px">喝咖啡不加糖；11 月下旬起喜欢加果汁</div><div class="grp"><div class="lbl">你当时的原话</div><div class="card" style="padding: 14px 18px; display: flex; flex-direction: column; gap: 6px"><div class="t15">“最近咖啡里加点橙汁挺好喝的”</div><div style="display: flex; justify-content: space-between"><span class="t13">11 月 22 日 · 主对话</span><span class="sun" style="font-size: 15px; font-weight: 600">看上下文</span></div></div></div><div class="grp"><div class="lbl">以前的版本</div><div class="card rows"><div class="r last"><div class="r2"><div class="t17">喝咖啡不加糖</div><div class="t13">10 月 3 日 · 11 月 22 日改成现在这样</div></div></div></div></div><div style="margin-top: auto; display: flex; gap: 8px"><div class="pill big" style="flex: 1; color: var(--danger)">不要这条</div><div class="pill big" style="flex: 1">改一改</div></div><div class="t13" style="text-align: center">不要的进回收站，30 天内能恢复</div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">记忆</div></div></div><div class="col"><div class="cap"><div><b>主题页</b><span style="font-weight: 400; color: #4d5247">　同一件事散落的记忆，她整理成一页</span></div></div><div class="hm ph"><div class="page" style="padding: 122px 20px 40px; gap: 16px"><div class="t13">她 11 月 23 日夜里整理 · 每句后面的小字点了跳回你的原话</div><div class="serif" style="font-size: 18px; line-height: 1.85">每年 3 月到 4 月花粉季加重<span class="cite">10/3</span>，早上起床最难受<span class="cite">11/2</span>。<br>在用鼻喷剂，医生说一天最多两次<span class="cite">11/2</span>。<br>不喜欢吃让人犯困的药，开会前更不能吃<span class="cite">11/15</span>。<br>下次复诊是 12 月 9 日 10:30，新宿那家<span class="cite">11/20</span>。</div><div class="grp"><div class="lbl">这页用到的记忆</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">鼻喷剂一天最多两次</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">12 月 9 日复诊</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">鼻炎</div></div></div><div class="col"><div class="cap"><div><b>昨晚整理了什么</b><span style="font-weight: 400; color: #4d5247">　记忆页右上角进；改了什么一目了然，一键全部撤销</span></div></div><div class="hm ph"><div class="page" style="padding: 122px 16px 40px; gap: 20px"><div class="t13" style="padding: 0 6px">她每晚整理一次，新对话多的时候白天也会整理。整理完不打扰你。</div><div class="grp"><div class="lbl">昨晚 3:12</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">合并了 3 条</div><div class="t13">“喝咖啡不加糖”有三条说的是同一件事</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">改成最新的 1 条</div><div class="t13">健身房周四关门时间：21:00 → 19:00</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">补上了 2 条</div><div class="t13">聊天时没存下的</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">新的主题页 1 个</div><div class="t13">鼻炎</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div><div style="display: flex; justify-content: center"><div class="pill" style="padding: 0 28px">全部撤销</div></div><div class="grp"><div class="lbl">前天</div><div class="card rows"><div class="r last"><div class="r2"><div class="t17">合并了 1 条</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">昨晚整理了什么</div></div></div><div class="col"><div class="cap"><div><b>回收站</b><span style="font-weight: 400; color: #4d5247">　记忆页最底下进</span></div></div><div class="hm ph"><div class="page" style="padding: 122px 16px 40px; gap: 20px"><div class="card rows"><div class="r"><div class="r2"><div class="t17">住在中野</div><div class="t13">你 11 月 20 日不要的 · 还剩 26 天</div></div><span class="sun" style="font-size: 15px; font-weight: 600">恢复</span></div><div class="r last"><div class="r2"><div class="t17">午饭常去那家拉面店</div><div class="t13">她改的：店关门了 · 还剩 29 天</div></div><span class="sun" style="font-size: 15px; font-weight: 600">恢复</span></div></div><div class="t13" style="padding: 0 6px">30 天后自动删掉。</div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">回收站</div></div></div><div class="col">
+<div class="cap"><div><b>改一条记忆</b><span style="font-weight: 400; color: #4d5247">　存的时候出面容</span></div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 16px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">改一改</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"><span class="sun" style="font-size: 17px; font-weight: 600">存</span></div></div><div class="card" style="padding: 18px 20px; min-height: 150px; box-sizing: border-box"><div class="serif" style="font-size: 22px; font-weight: 600; line-height: 1.55">从家走到车站约 18 分钟<span style="display: inline-block; width: 2px; height: 24px; background: var(--sunbright); margin-left: 3px; vertical-align: -4px"></span></div></div><div class="t13" style="padding: 0 6px">改完后，“怎么知道的”会记成你亲手改的</div></div>
+</div>
+</div><div class="col">
+<div class="cap"><div><b>出处是一封邮件时</b><span style="font-weight: 400; color: #4d5247">　看到原文，用到的那句标出来</span></div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 20px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div style="font-size: 18px; font-weight: 700">从哪知道的</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"></div></div><div style="display: flex; flex-direction: column; gap: 4px; padding: 0 4px"><div class="t13">田中 11:20 的邮件</div><div class="serif" style="font-size: 22px; font-weight: 600; line-height: 1.45">Re: 周五的会</div></div><div class="card" style="padding: 18px 20px; font-size: 17px; line-height: 1.6">周五能不能晚一点？<span style="background: var(--tile); border-radius: 4px; padding: 1px 2px">我 14 点前到不了，15:00 在新大阪站见可以吗。</span>报价单当面看就行。</div><div class="t13" style="padding: 0 8px; line-height: 1.5">标出来的是它用到的那一句。邮件里的话它只当资料，不会照着去做事。</div><div class="link" style="padding: 0 8px">在“邮件”里打开</div></div>
+</div>
+</div><div class="col">
+<div class="cap"><div><b>一条规则</b><span style="font-weight: 400; color: #4d5247">　规则写进程序，她必定照做</span></div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 24px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">规则</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"></div></div><div class="serif" style="font-size: 26px; font-weight: 600; line-height: 1.4; padding: 0 4px">给没发过邮件的人发信，先问我</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">你的原话</div><div class="t13">“第一次给谁发邮件都先让我看一眼”· 9 月 12 日</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">上次用上</div><div class="t13">今天 10:02，给田中的邮件</div></div></div><div class="r last"><div class="r2"><div class="t17">改过 1 次</div><div class="t13">10 月 20 日</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div><div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto"><div class="link bad" style="color: var(--danger); padding: 0 6px">停用</div><div class="pill" style="height: 48px; border-radius: 24px; padding: 0 28px; font-size: 17px">改一改</div></div></div>
+</div>
+</div><div class="col">
+<div class="cap"><div><b>改规则</b><span style="font-weight: 400; color: #4d5247">　用说的，她写好给你看，同意时出面容</span></div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 20px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">改规则</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"></div></div><div class="bubble">改成只有带附件的才问</div><div style="display: flex; flex-direction: column; gap: 10px"><div class="serif" style="font-size: 18px; font-weight: 500; line-height: 1.7; padding: 0 4px">改成这样，对吗？</div><div class="card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px"><div style="display: flex; flex-direction: column; gap: 3px"><div class="t13">现在</div><div class="t17 mu" style="text-decoration: line-through">给没发过邮件的人发信，先问我</div></div><div style="display: flex; flex-direction: column; gap: 3px"><div class="t13">改成</div><div class="t17" style="font-weight: 600">给没发过邮件的人发带附件的信，先问我</div></div></div></div><div style="margin-top: auto"><div style="display: flex; gap: 8px"><div class="pill big" style="flex: 1">再改改</div><div class="pill big pri" style="flex: 1">就这样</div></div></div></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":3862,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
