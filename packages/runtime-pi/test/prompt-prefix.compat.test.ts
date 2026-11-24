@@ -1544,24 +1544,26 @@ describe("[I-66] [CLEAR] clearing old tool results once, then appending again", 
   });
 
   it("[CLEAR-6] records a recall as a lookup that ran, found or not, so it never reads as unconfirmed", async () => {
-    const recalls = async (recallId: string) =>
-      (
-        (await readingConversation(new PageTools(1_500), recallId)).projection.saved as {
-          role: string;
-          toolName?: string;
-          details?: Record<string, unknown>;
-        }[]
+    const found = await readingConversation(new PageTools(1_500));
+    const recalls = (
+      found.projection.saved as {
+        role: string;
+        toolName?: string;
+        details?: Record<string, unknown>;
+      }[]
+    )
+      .filter(
+        (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
       )
-        .filter(
-          (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
-        )
-        .map((message) => message.details);
-    const found = await recalls("call-0");
-    expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
-    const missing = await recalls("call-missing");
-    expect(missing).toHaveLength(1);
-    expect(missing[0]).toMatchObject({
+      .map((message) => message.details);
+    expect(recalls).toHaveLength(1);
+    expect(recalls[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+    const missing = await readingConversation(new PageTools(1_500), "call-missing");
+    const notFound = (
+      missing.projection.saved as { toolName?: string; details?: Record<string, unknown> }[]
+    ).filter((message) => message.toolName === "tool_result_recall");
+    expect(notFound).toHaveLength(1);
+    expect(notFound[0]?.details).toMatchObject({
       productOutcome: "failed",
       dispatchState: "accepted",
       errorCode: "TOOL_RESULT_RECALL_NOT_FOUND",
