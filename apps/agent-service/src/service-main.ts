@@ -33,6 +33,7 @@ import {
   RemoteExecutionBackend,
   RuleReviewService,
   type RuntimeRequest,
+  type RuntimeToolInvocation,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   reviewCapacity,
@@ -123,6 +124,11 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
+import {
+  DEFAULT_TOOL_RESULT_SHARE,
+  ProductionConversationTools,
+  toolResultCharacters,
+} from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
 import {
   createDeliveryTimingSource,
@@ -1532,6 +1538,82 @@ export async function startTenantRuntime(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
+      const conversationTurnFailure = (error: unknown) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "conversation-turn.failed",
+          code: stableErrorCode(error),
+          ...siteField(error),
+        });
+      const turnProtector = protector;
+      const conversationTurns = turnProtector
+        ? new ConversationTurnService({
+            store: repository.conversationTurns(),
+            threads: repository.threadRepository(),
+            readText: async ({ ownerId, agentId, ref }) => {
+              const payload = await payloads.get(ref);
+              if (!payload || payload.contentType !== "text/plain") return undefined;
+              return new TextDecoder("utf-8", { fatal: true }).decode(
+                await turnProtector.unprotect({ ownerId, agentId, payload }),
+              );
+            },
+            embedder: memoryComposition.projection.embedder,
+            embeddableClassifications: memoryComposition.projection.embeddableClassifications,
+            minimumSimilarity: memoryComposition.projection.minimumSimilarity,
+            onEmbeddingFailure: conversationTurnFailure,
+            onIndexFailure: conversationTurnFailure,
+            ...(configuration.runPolicy?.timeZone
+              ? { timeZone: configuration.runPolicy.timeZone }
+              : {}),
+            now: () => clock.now(),
+          })
+        : undefined;
+      const recallEmbedWithin = <T>(
+        invocation: RuntimeToolInvocation,
+        slot: string,
+        operation: () => Promise<T>,
+      ): Promise<T> => {
+        const memory = governedMemory;
+        const executionLease = invocation.context?.executionLease;
+        if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
+        return memory.embedWithin(
+          {
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            runId: invocation.runId,
+            executionLease,
+            deadlineAt:
+              invocation.executionDeadlineAt ??
+              new Date(
+                Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+              ).toISOString(),
+            dataClassification: invocation.dataClassification,
+            slot: `${slot}:${invocation.toolCallId}`,
+          },
+          operation,
+        );
+      };
+      const primaryModel = configuration.modelDescriptors.find(
+        (descriptor) => descriptor.role === "primary",
+      );
+      const conversationTools = conversationTurns
+        ? new ProductionConversationTools({
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            turns: conversationTurns,
+            pageCharacters: toolResultCharacters(
+              primaryModel && "contextWindow" in primaryModel
+                ? primaryModel.contextWindow
+                : undefined,
+              configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
+            ),
+            embedWithin: (invocation, slot, operation) =>
+              recallEmbedWithin(invocation, slot, operation),
+            ...(configuration.runPolicy?.timeZone
+              ? { timeZone: configuration.runPolicy.timeZone }
+              : {}),
+          })
+        : undefined;
       const recallProjection = memoryComposition.projection;
       const recallProtector = protector;
       const memoryRecall = new ProductionMemoryRecall({
@@ -1555,27 +1637,7 @@ export async function startTenantRuntime(
             }),
           );
         },
-        embedWithin: (invocation, slot, operation) => {
-          const memory = governedMemory;
-          const executionLease = invocation.context?.executionLease;
-          if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
-          return memory.embedWithin(
-            {
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              runId: invocation.runId,
-              executionLease,
-              deadlineAt:
-                invocation.executionDeadlineAt ??
-                new Date(
-                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
-                ).toISOString(),
-              dataClassification: invocation.dataClassification,
-              slot: `${slot}:${invocation.toolCallId}`,
-            },
-            operation,
-          );
-        },
+        embedWithin: recallEmbedWithin,
         now: () => clock.now(),
         ...(configuration.runPolicy?.timeZone
           ? { timeZone: configuration.runPolicy.timeZone }
@@ -1713,6 +1775,7 @@ export async function startTenantRuntime(
       );
       const tools = new ProductionRuntimeTools({
         memoryRecall,
+        ...(conversationTools ? { conversations: conversationTools } : {}),
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
         toolActions,
@@ -1837,36 +1900,6 @@ export async function startTenantRuntime(
                 );
               },
               embedder: memoryComposition.projection.embedder,
-              ...(configuration.runPolicy?.timeZone
-                ? { timeZone: configuration.runPolicy.timeZone }
-                : {}),
-              now: () => clock.now(),
-            })
-          : undefined;
-      const conversationTurnFailure = (error: unknown) =>
-        writeServiceDiagnostic(errorOutput, {
-          component: "agent-service",
-          event: "conversation-turn.failed",
-          code: stableErrorCode(error),
-          ...siteField(error),
-        });
-      const conversationTurns =
-        memoryComposition && episodeProtector
-          ? new ConversationTurnService({
-              store: repository.conversationTurns(),
-              threads: repository.threadRepository(),
-              readText: async ({ ownerId, agentId, ref }) => {
-                const payload = await episodePayloads.get(ref);
-                if (!payload || payload.contentType !== "text/plain") return undefined;
-                return new TextDecoder("utf-8", { fatal: true }).decode(
-                  await episodeProtector.unprotect({ ownerId, agentId, payload }),
-                );
-              },
-              embedder: memoryComposition.projection.embedder,
-              embeddableClassifications: memoryComposition.projection.embeddableClassifications,
-              minimumSimilarity: memoryComposition.projection.minimumSimilarity,
-              onEmbeddingFailure: conversationTurnFailure,
-              onIndexFailure: conversationTurnFailure,
               ...(configuration.runPolicy?.timeZone
                 ? { timeZone: configuration.runPolicy.timeZone }
                 : {}),

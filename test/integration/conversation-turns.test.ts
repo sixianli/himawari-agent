@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { RuntimeRequest } from "@himawari-agent/application";
+import type { RuntimeRequest, RuntimeToolInvocation } from "@himawari-agent/application";
 import {
   createAgentId,
   createOwnerId,
@@ -22,6 +22,11 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { DeterministicPayloadProtector } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  ConversationToolInputError,
+  ProductionConversationTools,
+  toolResultCharacters,
+} from "../../apps/agent-service/src/production-conversation-tools.ts";
 import { ProductionMemoryEpisodes } from "../../apps/agent-service/src/production-memory-episodes.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -692,5 +697,176 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     } finally {
       await resource.repository.close();
     }
+  });
+
+  function conversationTools(
+    resource: Awaited<ReturnType<typeof fixture>>,
+    pageCharacters = 20_000,
+  ) {
+    const slots: string[] = [];
+    const tools = new ProductionConversationTools({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      turns: resource.service,
+      pageCharacters,
+      embedWithin: (_invocation, slot, operation) => {
+        slots.push(slot);
+        return operation();
+      },
+      timeZone: "Asia/Tokyo",
+    });
+    const call = (
+      capabilityRef: "conversation.search" | "conversation.open",
+      args: Record<string, unknown>,
+      threadId: ThreadId = createThreadId("thread-conversation-turns-current"),
+    ) =>
+      tools.run({
+        runId: "run-conversation-tools",
+        toolCallId: "call-conversation-tools",
+        capabilityRef,
+        capabilityHandleRef: null,
+        arguments: args,
+        dataClassification: "private",
+        context: { threadId },
+      } as unknown as RuntimeToolInvocation);
+    return { call, slots };
+  }
+
+  it("[ADR-0286] lets the model search past talk by meaning and date and returns who said what on which day", async () => {
+    const resource = await fixture();
+    try {
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      const { call, slots } = conversationTools(resource);
+      const found = await call("conversation.search", { query: "电商公司面试" });
+      const turns = found.output["turns"] as {
+        conversationId: string;
+        sequence: number;
+        day: string;
+        lines: { speaker: string; text: string; sequence: number }[];
+      }[];
+      expect(turns[0]).toMatchObject({ conversationId: TALK, sequence: 1, day: "2026-11-20" });
+      expect(turns[0]?.lines.map(({ speaker, text }) => [speaker, text])).toEqual([
+        ["主人", "下周三下午两点有一场电商公司的面试"],
+        ["你", "记下了，祝面试顺利。"],
+      ]);
+      expect(found.output["nextPage"]).toBeUndefined();
+      expect(found.output["note"]).toBeUndefined();
+      expect(found.contentClassification).toBe("private");
+      expect(slots).toEqual(["conversation-search"]);
+      const dated = await call("conversation.search", {
+        query: "面试",
+        from: "2026-11-21",
+        to: "2026-11-22",
+      });
+      expect(
+        (dated.output["turns"] as { day: string }[]).every(
+          ({ day }) => day >= "2026-11-21" && day <= "2026-11-22",
+        ),
+      ).toBe(true);
+      expect(
+        (dated.output["turns"] as { lines: { text: string }[] }[]).some(({ lines }) =>
+          lines.some(({ text }) => text.includes("电商公司")),
+        ),
+      ).toBe(false);
+      const none = await call("conversation.search", { query: "量子计算机的散热方案" });
+      expect(none.output["turns"]).toEqual([]);
+      expect(String(none.output["note"])).toContain("不要编造");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0286] pages search results by the page budget and cuts one overlong line", async () => {
+    const resource = await fixture();
+    try {
+      resource.add([
+        [TALK, 6, "owner", "private", "2026-11-23T01:00:00.000Z", "面试那天穿什么"],
+        [TALK, 7, "agent", "private", "2026-11-23T01:00:05.000Z", `面试${"正装".repeat(400)}`],
+      ]);
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      const { call } = conversationTools(resource, 60);
+      const first = await call("conversation.search", { query: "面试" });
+      const firstTurns = first.output["turns"] as {
+        sequence: number;
+        lines: { text: string; truncated?: boolean }[];
+      }[];
+      expect(firstTurns).toHaveLength(1);
+      expect(first.output["nextPage"]).toBe(2);
+      const second = await call("conversation.search", { query: "面试", page: 2 });
+      const secondTurns = second.output["turns"] as { sequence: number }[];
+      expect(secondTurns).toHaveLength(1);
+      expect(secondTurns[0]?.sequence).not.toBe(firstTurns[0]?.sequence);
+      const long = [first, second]
+        .flatMap(
+          ({ output }) => output["turns"] as { lines: { text: string; truncated?: boolean }[] }[],
+        )
+        .flatMap(({ lines }) => lines)
+        .find(({ text }) => text.startsWith("面试正装"));
+      expect(long?.truncated).toBe(true);
+      expect([...(long?.text ?? "")].length).toBe(61);
+      const beyond = await call("conversation.search", { query: "面试", page: 9 });
+      expect(beyond.output["turns"]).toEqual([]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("[ADR-0286] opens a past conversation around a position, refuses a trashed or think one, and rejects bad input", async () => {
+    const resource = await fixture();
+    try {
+      resource.add([
+        [TALK, 6, "owner", "sensitive", "2026-11-23T01:00:00.000Z", "我的体检报告说血压偏高"],
+        [TALK, 7, "agent", "sensitive", "2026-11-23T01:00:05.000Z", "记得少吃盐。"],
+      ]);
+      const { call } = conversationTools(resource);
+      const later = await call("conversation.open", { conversationId: TALK, sequence: 3 });
+      expect(later.output["found"]).toBe(true);
+      expect(
+        (later.output["lines"] as { sequence: number }[]).map(({ sequence }) => sequence),
+      ).toEqual([3, 4, 6, 7]);
+      expect(later.contentClassification).toBe("sensitive");
+      const earlier = await call("conversation.open", {
+        conversationId: TALK,
+        sequence: 2,
+        direction: "earlier",
+      });
+      expect(
+        (earlier.output["lines"] as { sequence: number }[]).map(({ sequence }) => sequence),
+      ).toEqual([1, 2]);
+      expect(earlier.contentClassification).toBe("private");
+      const think = await call("conversation.open", { conversationId: THINK, sequence: 1 });
+      expect(think.output).toMatchObject({ found: false });
+      expect(think.output["lines"]).toBeUndefined();
+      resource.sql((connection) =>
+        connection
+          .prepare("UPDATE threads SET status = 'trashed', trashed_at = ? WHERE id = ?")
+          .run("2026-11-24T00:00:00.000Z", TALK),
+      );
+      const trashed = await call("conversation.open", { conversationId: TALK, sequence: 1 });
+      expect(trashed.output).toMatchObject({ found: false });
+      expect(String(trashed.output["note"])).toContain("不要猜");
+      for (const [capability, args] of [
+        ["conversation.search", { query: "  " }],
+        ["conversation.search", { query: "面试", from: "2026-11-31" }],
+        ["conversation.search", { query: "面试", from: "2026-11-22", to: "2026-11-20" }],
+        ["conversation.search", { query: "面试", page: 0 }],
+        ["conversation.search", { query: "面试", limit: 3 }],
+        ["conversation.open", { conversationId: TALK, sequence: 0 }],
+        ["conversation.open", { conversationId: TALK, sequence: 1, direction: "up" }],
+        ["conversation.open", { conversationId: "", sequence: 1 }],
+      ] as const)
+        await expect(call(capability, args)).rejects.toBeInstanceOf(ConversationToolInputError);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+});
+
+describe("conversation tool page budget", () => {
+  it("[ADR-0286] gives each tool result two percent of the model window and never less than a small page", () => {
+    expect(toolResultCharacters(1_000_000, 0.02)).toBe(20_000);
+    expect(toolResultCharacters(128_000, 0.02)).toBe(2_560);
+    expect(toolResultCharacters(undefined, 0.02)).toBe(2_000);
+    expect(toolResultCharacters(10_000, 0.02)).toBe(2_000);
   });
 });

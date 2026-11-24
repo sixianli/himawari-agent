@@ -17,8 +17,8 @@ import {
   type IdGeneratorPort,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  PORT_ERROR_CODES,
   type PermissionDecision,
+  PORT_ERROR_CODES,
   type ProductConfiguration,
   RECOVERY_SETTLE_WAIT_MS,
   type RunPayloadArtifactPort,
@@ -50,13 +50,15 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_CONVERSATION_INPUT_INVALID,
+  TOOL_RESULT_CONVERSATION_UNAVAILABLE,
+  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
   TOOL_RESULT_REMINDER_REJECTED,
-  TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
-  TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
+  TOOL_RESULT_RULE_REJECTED,
   TOOL_SAVE_COPY,
   TOOL_SAVE_COPY_EXPECTED_HASH,
   TOOL_SAVE_COPY_OPERATION_ID,
@@ -66,6 +68,13 @@ import {
   TOOL_WEB_SEARCH,
 } from "@himawari-agent/prompt-catalog";
 import {
+  type ContextExternalContent,
+  ExternalContentMarkNotWrittenError,
+  originsOf,
+  RECALLED_EXTERNAL_RECORD_ORIGIN,
+} from "./context-external-content.js";
+import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
+import {
   type BackgroundCommandLimits,
   ProductionBackgroundCommands,
 } from "./production-background-commands.js";
@@ -73,6 +82,11 @@ import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
 } from "./production-coding-workflow.js";
+import {
+  ConversationToolInputError,
+  conversationToolDescriptors,
+  type ProductionConversationTools,
+} from "./production-conversation-tools.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type CodingBinding,
@@ -87,22 +101,22 @@ import {
 } from "./production-managed-tasks.js";
 import { memoryRecallDescriptor, type ProductionMemoryRecall } from "./production-memory-recall.js";
 import {
-  type ProductionReminderTools,
-  ReminderInputError,
-  reminderToolDescriptors,
-} from "./production-reminder-writer.js";
-import {
-  PerceptionToolError,
-  type ProductionPerceptionTools,
-  perceptionReadUnavailable,
-  perceptionToolDescriptors,
-  PERCEPTION_READ_CAPABILITY_REF,
-} from "./production-perception-tools.js";
-import {
   OwnerRuleError,
   ownerRuleToolDescriptors,
   type ProductionOwnerRuleTools,
 } from "./production-owner-rules.js";
+import {
+  PERCEPTION_READ_CAPABILITY_REF,
+  PerceptionToolError,
+  type ProductionPerceptionTools,
+  perceptionReadUnavailable,
+  perceptionToolDescriptors,
+} from "./production-perception-tools.js";
+import {
+  type ProductionReminderTools,
+  ReminderInputError,
+  reminderToolDescriptors,
+} from "./production-reminder-writer.js";
 import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
@@ -120,13 +134,6 @@ import {
   sandboxCeilingExceededMessage,
 } from "./production-sandbox-tool-result.js";
 import { type StageTiming, stageTiming } from "./production-stage-timing.js";
-import {
-  type ContextExternalContent,
-  ExternalContentMarkNotWrittenError,
-  originsOf,
-  RECALLED_EXTERNAL_RECORD_ORIGIN,
-} from "./context-external-content.js";
-import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
@@ -142,6 +149,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   Record<string, { readonly prefix: string; readonly reasonCode: string }>
 > = Object.freeze({
   "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
+  "owner-conversation": { prefix: "conversation", reasonCode: "CONVERSATION_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
@@ -346,6 +354,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly managedTasks?: ProductionManagedTasks;
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
+  readonly conversations?: Pick<ProductionConversationTools, "run">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
@@ -601,6 +610,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
+    if (this.#options.conversations) descriptors.push(...conversationToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     return this.#registry.offer(descriptors, { readOnly });
@@ -673,6 +683,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row.executor !== "owner_scoped") return undefined;
     if (row.targetType === "owner-memory" && this.#options.memoryRecall)
       return (invocation, gate) => this.#recall(invocation, gate);
+    if (row.targetType === "owner-conversation" && this.#options.conversations)
+      return (invocation, gate) => this.#conversation(invocation, gate);
     if (row.targetType === "owner-reminder" && this.#options.reminders)
       return (invocation, gate) => this.#reminder(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
@@ -817,6 +829,33 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
+  async #conversation(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const conversations = this.#options.conversations;
+    return this.#ownerScoped(
+      invocation,
+      "conversation",
+      gate,
+      conversations
+        ? async (call) => {
+            const { output, contentClassification } = await conversations.run(call);
+            return { value: output, contentClassification };
+          }
+        : undefined,
+      (error) =>
+        error instanceof ConversationToolInputError
+          ? {
+              errorCode: "CONVERSATION_INPUT_INVALID",
+              note: TOOL_RESULT_CONVERSATION_INPUT_INVALID.text,
+            }
+          : {
+              errorCode: "CONVERSATION_UNAVAILABLE",
+              note: TOOL_RESULT_CONVERSATION_UNAVAILABLE.text,
+            },
+    );
+  }
   async #reminder(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -845,7 +884,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker: "recall" | "conversation" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -872,7 +911,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker: "recall" | "conversation" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;

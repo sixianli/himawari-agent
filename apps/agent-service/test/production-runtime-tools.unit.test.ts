@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
   type PayloadRef,
@@ -8,19 +9,19 @@ import {
   piFileRecoveryOperationKey,
   SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
 } from "@himawari-agent/execution-contracts";
-import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { ConversationToolInputError } from "../src/production-conversation-tools.js";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
 import { ReminderInputError } from "../src/production-reminder-writer.js";
-import { PRODUCTION_TOOL_ACTION_ROWS } from "../src/production-tool-actions.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
+import { PRODUCTION_TOOL_ACTION_ROWS } from "../src/production-tool-actions.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -1523,6 +1524,67 @@ it("answers recall from owner memory, replays the saved result and reports failu
   expect(invalid.modelContent).not.toContain("查不了记忆");
 });
 
+it("[ADR-0286] answers conversation search and open from the owner's past talk, replays the saved result and reports failures", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({
+    output: {
+      turns: [{ conversationId: "thread:old", sequence: 3, lines: [{ text: "下周三面试" }] }],
+    },
+    contentClassification: "private" as const,
+  }));
+  const tools = new ProductionRuntimeTools({ ...f.options, conversations: { run } });
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.slice(-2)).toEqual(["conversation_search", "conversation_open"]);
+  const call = {
+    ...invocation,
+    capabilityRef: "conversation.search",
+    capabilityHandleRef: null,
+    arguments: { query: "面试" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first.outcome).toBe("succeeded");
+  expect(first.modelContent).toContain("下周三面试");
+  expect(await tools.execute(call)).toEqual(first);
+  expect(run).toHaveBeenCalledTimes(1);
+  const opened = await tools.execute({
+    ...call,
+    capabilityRef: "conversation.open",
+    toolCallId: "conversation-open",
+    arguments: { conversationId: "thread:old", sequence: 3 },
+  });
+  expect(opened.outcome).toBe("succeeded");
+  expect(run).toHaveBeenLastCalledWith(
+    expect.objectContaining({ capabilityRef: "conversation.open" }),
+  );
+  run.mockRejectedValueOnce(new Error("EMBEDDING_DEADLINE_EXCEEDED"));
+  const failed = await tools.execute({ ...call, toolCallId: "conversation-failed" });
+  expect(failed).toMatchObject({ outcome: "failed", errorCode: "CONVERSATION_UNAVAILABLE" });
+  expect(failed.modelContent).toContain("不要编造");
+  run.mockRejectedValueOnce(new ConversationToolInputError());
+  const invalid = await tools.execute({ ...call, toolCallId: "conversation-invalid" });
+  expect(invalid).toMatchObject({ outcome: "failed", errorCode: "CONVERSATION_INPUT_INVALID" });
+  expect(invalid.modelContent).toContain("改正后再查一次");
+});
+
+it("[ADR-0286] does not offer conversation tools when the conversation index is not configured", async () => {
+  const f = fixture();
+  const tools = new ProductionRuntimeTools(f.options);
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names).not.toContain("conversation_search");
+  const call = {
+    ...invocation,
+    capabilityRef: "conversation.search",
+    capabilityHandleRef: null,
+    arguments: { query: "面试" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(false);
+});
+
 it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {
   const f = fixture();
   const run = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
@@ -1983,6 +2045,9 @@ function everyToolOptions(f: ReturnType<typeof fixture>) {
     },
     reminders: { run: vi.fn(async () => ({})) },
     ownerRules: { run: vi.fn(async () => ({})) },
+    conversations: {
+      run: async () => ({ output: {}, contentClassification: "private" as const }),
+    },
   } satisfies ProductionRuntimeToolsOptions;
 }
 
@@ -1996,6 +2061,11 @@ it("[ADR-0257] offers every tool through the action registry with unchanged defi
   expect(createHash("sha256").update(JSON.stringify(descriptors)).digest("hex")).toBe(
     EVERY_TOOL_DEFINITIONS_SHA256,
   );
+  expect(
+    createHash("sha256")
+      .update(JSON.stringify(descriptors.slice(0, -2)))
+      .digest("hex"),
+  ).toBe(TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256);
   const withoutRegistry = new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.filter(({ tool }) => tool !== "reminder_set"),
   );
@@ -2118,18 +2188,25 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall and perception read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation and perception read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read"]);
+  ).toEqual([
+    "recall",
+    "conversation_search",
+    "conversation_open",
+    "reminder_list",
+    "rule_list",
+    "perception_read",
+  ]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(9);
+  expect(builtin).toHaveLength(11);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2205,6 +2282,10 @@ const EVERY_TOOL_NAMES = [
   "rule_set",
   "rule_list",
   "rule_undo",
+  "conversation_search",
+  "conversation_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
+  "51775dc84527a60fa8dc90ee7b2d299fda392e790e2e27c04ca8e6434912db97";
+const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
   "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";
