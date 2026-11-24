@@ -1159,6 +1159,7 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("memoryReminder.listDue", input),
       countDue: (input) => this.context.read("memoryReminder.countDue", input),
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
+      listCancelled: (input) => this.context.read("memoryReminder.listCancelled", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
     });

@@ -305,6 +305,7 @@ function memoryFixture(): MemoryOverview {
         sourceThreadId: null,
       },
     ],
+    cancelled: [],
     people: [],
     imports: [],
     externalProposals: { total: 0, items: [], batches: [] },
