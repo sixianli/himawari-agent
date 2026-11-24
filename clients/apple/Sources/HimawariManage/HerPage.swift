@@ -95,7 +95,7 @@ public struct HerPage: View {
                         }
                         .buttonStyle(.plain)
                         Button { path.append(.devices) } label: {
-                            HerRow(icon: .deviceMobile, title: M.devicesTitle, subtitle: devicesSummary, last: true)
+                            HerRow(icon: .deviceMobilePlain, title: M.devicesTitle, subtitle: devicesSummary, last: true)
                         }
                         .buttonStyle(.plain)
                     }

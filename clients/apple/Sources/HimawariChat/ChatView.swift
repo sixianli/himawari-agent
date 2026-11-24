@@ -25,6 +25,7 @@ public struct ChatView: View {
     @State private var stopping = false
     @State private var attachments: [ChatAttachment] = []
     @State private var attachOpen = false
+    @State private var attachSheetHeight: CGFloat = 0
     @State private var attachProblem: String?
     @State private var sendRequestId = OutgoingMessage.newId()
     @State private var hold: HoldPhase?
@@ -186,7 +187,9 @@ public struct ChatView: View {
         } close: {
             attachOpen = false
         }
-        .presentationDetents([.medium])
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attachSheetHeight = $0 }
+        .presentationDetents([attachSheetHeight > 0 ? .height(attachSheetHeight) : .medium])
         .presentationCornerRadius(DesignTokens.Radius.sheetTop)
     }
     #endif

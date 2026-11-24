@@ -37,6 +37,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case currentLocation = "current-location"
     case deviceLaptop = "device-laptop"
     case deviceMobile = "device-mobile"
+    case deviceMobilePlain = "device-mobile-plain"
     case deviceWatch = "device-watch"
     case download
     case ear

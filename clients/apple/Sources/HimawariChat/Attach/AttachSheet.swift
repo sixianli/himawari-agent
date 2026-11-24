@@ -47,8 +47,9 @@ struct AttachSheet: View {
             Button(action: locate) {
                 HStack(spacing: DesignTokens.Size.rowGap) {
                     Icon(.mapPin, size: DesignTokens.Chat.attachRowIcon)
+                        .foregroundStyle(Color.hmGlyph)
                         .frame(width: DesignTokens.Chat.attachRowTile, height: DesignTokens.Chat.attachRowTile)
-                        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
+                        .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
                     Text(L.text("attach.location"))
                         .hmType(DesignTokens.TypeScale.body)
                     Spacer()
@@ -61,7 +62,6 @@ struct AttachSheet: View {
             .buttonStyle(.plain)
             .disabled(locating)
             .himawariCard(padding: EdgeInsets(top: 0, leading: DesignTokens.Size.cardPaddingX, bottom: 0, trailing: DesignTokens.Size.cardPaddingX))
-            Spacer(minLength: 0)
         }
         .padding(.top, DesignTokens.Size.sheetPaddingTop)
         .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)

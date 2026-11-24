@@ -39,6 +39,7 @@
   "device-mobile": {
     "custom": "device-mobile.svg"
   },
+  "device-mobile@plain": 1.6,
   "device-watch": 1.6,
   "download": 1.6,
   "ear": 1.6,
