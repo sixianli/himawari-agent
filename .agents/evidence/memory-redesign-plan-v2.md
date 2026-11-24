@@ -20,11 +20,12 @@
 3. 主人资料块 `OWNER_PROFILE_CHARACTER_BUDGET = 2000`、`PROFILE_MINIMUM_IMPORTANCE = 600`（packages/application/src/services/owner-profile-service.ts:20,24）；规则从记忆里取：同文件 216-219 行 `category === "rule"`。
 4. 主模型唯一的记忆工具是读工具 memory.recall，`maximum: 10`，对话摘要最多 5 段（apps/agent-service/src/production-memory-recall.ts:24,41,289）；工具说明“查主人的长期记忆和以前的对话摘要”（packages/prompt-catalog/src/tools.ts:36）。
 5. 写记忆靠每轮之后另一次模型调用：`MAXIMUM_SOURCE_CHARACTERS = 6000`、`MAXIMUM_RECENT_MEMORIES = 20`、`MAXIMUM_RELEVANT_MEMORIES = 10`、`MAXIMUM_CANDIDATES = 8`（apps/agent-service/src/production-memory-capture.ts:64-77），另有确认裁判 `MEMORY_CONFIRMATION_JUDGE`（第 40 行）。
-6. 召回给的旧对话只有摘要：production-memory-recall.ts:301-305 返回 `episode.summary`。
-7. 发给模型的内容只追加；每轮会变的放最后一条消息；系统提示和工具按对话冻结（.agents/instructions/prompt-prefix.md:27-28,36,42）。
-8. 理解用户意思交给模型，程序只做校验（.claude/rules/owner-standing-rules.md:62）。
-9. 已有、要复用的：每日回看对话补记忆（docs/adr/0231）、纠正传播和规则待复核（docs/adr/0232）、外部内容之后写操作先问（docs/adr/0278）、记忆可携带导出格式（docs/adr/0200）、记忆跳回原话（docs/adr/0186）。
-10. 业界资料：
+6. 召回给的旧对话只有摘要：production-memory-recall.ts:301-305 返回 `{ day, source, summary: text }`，text 是每日摘要正文。
+7. 主模型被告知自己不能记：“主人告诉你的事，系统会在本轮回答后尝试整理进长期记忆，但整理可能失败，你看不到结果”（packages/prompt-catalog/src/chat.ts:17）。
+8. 发给模型的内容只追加；每轮会变的放最后一条消息；系统提示和工具按对话冻结（.agents/instructions/prompt-prefix.md:27-28,36,42）。
+9. 理解用户意思交给模型，程序只做校验（.claude/rules/owner-standing-rules.md:62）。
+10. 已有、要复用的：每日回看对话补记忆（docs/adr/0231）、纠正传播和规则待复核（docs/adr/0232）、外部内容之后写操作先问（docs/adr/0278）、记忆可携带导出格式（docs/adr/0200）、记忆跳回原话（docs/adr/0186）。
+11. 业界资料：
    - Anthropic 记忆工具 https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool
    - Anthropic 上下文工程（上下文越长召回越差，建议按需检索）https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
    - Claude App 记忆和搜旧聊天 https://support.claude.com/en/articles/11817273
@@ -39,7 +40,7 @@
    - Letta：只给文件工具的 agent 在 LoCoMo 74%（厂商自测）https://www.letta.com/blog/benchmarking-ai-agent-memory
 
 ## 根因
-1. **读**：主模型每轮只看到检索器挑的 5 条和 2000 字资料，不知道自己还记着什么，也没法“再看更多”“打开出处”。
+1. **读**：主模型每轮自动拿到的只有检索器挑的 5 条和 2000 字资料；想多看只能自己调 recall，一次最多 10 条加 5 段摘要，看不到自己记着什么的全貌（没有目录），也打不开出处原话。
 2. **写**：主模型不能写记忆。记不记、记成什么，由每轮之后一个只看 6000 字、30 条旧记忆的单独调用决定，没抽中的就再也找不回。
 3. **原话**：旧对话只能搜到每日摘要，摘要漏的细节找不回。
 4. **规则混在记忆里**：规则会不会带上，取决于模型有没有把它归成规则类、有没有被 2000 字挤掉，是碰运气的（愿景采纳记录 ADR 0153/0134 已列为已知缺口）。
