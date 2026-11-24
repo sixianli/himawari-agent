@@ -1,7 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+export const FAILED_OUTPUT_BUDGET = 100;
+export const STEP_TAIL_LINES = FAILED_OUTPUT_BUDGET;
 
 export function stepNames(stepsCommand) {
   return stepsCommand.split(" && ").map((step) => {
@@ -11,12 +14,16 @@ export function stepNames(stepsCommand) {
   });
 }
 
-const FAILED_OUTPUT_LINES = 80;
+export function lastLines(text, count) {
+  if (count <= 0) return [];
+  const trimmed = text.replace(/\n+$/u, "");
+  return trimmed === "" ? [] : trimmed.split("\n").slice(-count);
+}
 
-export function runAllChecks(names, run, log = console.log) {
+export async function runAllChecks(names, run, log = console.log) {
   const failures = [];
   for (const name of names) {
-    const result = run(name);
+    const result = await run(name);
     const { status, output = "" } = typeof result === "number" ? { status: result } : result;
     if (status !== 0) failures.push({ name, status, output });
   }
@@ -26,35 +33,45 @@ export function runAllChecks(names, run, log = console.log) {
   }
   for (const { name, status } of failures) log(`CHECK_FAILED ${name} exit=${status}`);
   log(`CHECK_SUMMARY ${failures.length} of ${names.length} steps failed`);
+  const share = Math.max(5, Math.floor(FAILED_OUTPUT_BUDGET / failures.length));
   for (const { name, output } of failures) {
-    const tail = output.replace(/\n+$/u, "").split("\n").slice(-FAILED_OUTPUT_LINES);
-    if (tail.length === 1 && tail[0] === "") continue;
-    log(`CHECK_FAILED_OUTPUT ${name} last ${FAILED_OUTPUT_LINES} lines`);
+    const tail = lastLines(output, share);
+    if (tail.length === 0) continue;
+    log(`CHECK_FAILED_OUTPUT ${name} last ${tail.length} lines`);
     for (const line of tail) log(line);
   }
   return 1;
 }
 
-function runStep(npm, name, root) {
-  const child = spawnSync(npm, ["run", name], {
-    cwd: root,
-    stdio: ["inherit", "pipe", "pipe"],
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
+export function runStep(
+  command,
+  args,
+  { cwd, write = (chunk) => process.stdout.write(chunk) } = {},
+) {
+  return new Promise((resolve) => {
+    let tail = "";
+    const keep = (chunk) => {
+      const text = chunk.toString("utf8");
+      write(text);
+      tail =
+        lastLines(tail + text, STEP_TAIL_LINES + 1).join("\n") + (text.endsWith("\n") ? "\n" : "");
+    };
+    const child = spawn(command, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    child.on("error", (error) => resolve({ status: 1, output: `${tail}${error.message}\n` }));
+    child.on("close", (code) => resolve({ status: code ?? 1, output: tail }));
   });
-  const output = `${child.stdout ?? ""}${child.stderr ?? ""}`;
-  process.stdout.write(output);
-  return { status: child.status ?? 1, output };
 }
 
-function main() {
+async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   const names = stepNames(manifest.scripts["check:steps"]);
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  return runAllChecks(names, (name) => runStep(npm, name, root));
+  return runAllChecks(names, (name) => runStep(npm, ["run", name], { cwd: root }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exit(main());
+  process.exit(await main());
 }

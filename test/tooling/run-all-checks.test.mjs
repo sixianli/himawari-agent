@@ -1,14 +1,23 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { runAllChecks, stepNames } from "../../scripts/run-all-checks.mjs";
+import {
+  FAILED_OUTPUT_BUDGET,
+  runAllChecks,
+  runStep,
+  stepNames,
+} from "../../scripts/run-all-checks.mjs";
+
+const numbered = (count) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
 
 const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
 
 describe("npm run check", () => {
-  it("runs every step even after one fails and reports each failure", () => {
+  it("runs every step even after one fails and reports each failure", async () => {
     const ran = [];
     const lines = [];
-    const status = runAllChecks(
+    const status = await runAllChecks(
       ["format:check", "lint", "check:boundaries"],
       (name) => {
         ran.push(name);
@@ -24,9 +33,9 @@ describe("npm run check", () => {
     ]);
   });
 
-  it("reports a later failure that an earlier failure used to hide", () => {
+  it("reports a later failure that an earlier failure used to hide", async () => {
     const lines = [];
-    const status = runAllChecks(
+    const status = await runAllChecks(
       ["format:check", "check:boundaries"],
       () => 1,
       (line) => lines.push(line),
@@ -35,28 +44,86 @@ describe("npm run check", () => {
     expect(lines).toContain("CHECK_FAILED check:boundaries exit=1");
   });
 
-  it("repeats the end of each failed step's output after the summary so a truncated log still shows why", () => {
+  it("repeats the end of a failed step's output after the summary so a truncated log still shows why", async () => {
     const lines = [];
-    const output = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`).join("\n");
-    const status = runAllChecks(
+    const output = numbered(150).join("\n");
+    const status = await runAllChecks(
       ["check:delivery-deploy", "lint"],
       (name) =>
         name === "lint" ? { status: 0, output: "fine" } : { status: 1, output: `${output}\n` },
       (line) => lines.push(line),
     );
     expect(status).toBe(1);
-    const start = lines.indexOf("CHECK_FAILED_OUTPUT check:delivery-deploy last 80 lines");
-    expect(start).toBeGreaterThan(lines.indexOf("CHECK_SUMMARY 1 of 2 steps failed"));
-    expect(lines.slice(start + 1)).toEqual(
-      Array.from({ length: 80 }, (_, index) => `line ${index + 21}`),
+    const start = lines.indexOf(
+      `CHECK_FAILED_OUTPUT check:delivery-deploy last ${FAILED_OUTPUT_BUDGET} lines`,
     );
+    expect(start).toBeGreaterThan(lines.indexOf("CHECK_SUMMARY 1 of 2 steps failed"));
+    expect(lines.slice(start + 1)).toEqual(numbered(150).slice(-FAILED_OUTPUT_BUDGET));
     expect(lines.join("\n")).not.toContain("fine");
   });
 
-  it("succeeds only when every step passes", () => {
+  it("splits the repeated lines between failed steps so every failure fits in the log's last lines", async () => {
+    const lines = [];
+    await runAllChecks(
+      ["a", "b", "c", "d"],
+      (name) => ({
+        status: 1,
+        output: numbered(100)
+          .map((line) => `${name} ${line}`)
+          .join("\n"),
+      }),
+      (line) => lines.push(line),
+    );
+    const repeated = lines.slice(lines.indexOf("CHECK_SUMMARY 4 of 4 steps failed") + 1);
+    expect(repeated.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET + 4);
+    for (const name of ["a", "b", "c", "d"]) {
+      expect(repeated).toContain(`CHECK_FAILED_OUTPUT ${name} last 25 lines`);
+      expect(repeated).toContain(`${name} line 100`);
+      expect(repeated).not.toContain(`${name} line 75`);
+    }
+  });
+
+  it("prints no repeated block for a failed step that wrote nothing", async () => {
+    const lines = [];
+    await runAllChecks(
+      ["a"],
+      () => ({ status: 2, output: "\n" }),
+      (line) => lines.push(line),
+    );
+    expect(lines).toEqual(["CHECK_FAILED a exit=2", "CHECK_SUMMARY 1 of 1 steps failed"]);
+  });
+
+  it("streams a real step's stdout and stderr as they arrive and keeps only the last lines", async () => {
+    const written = [];
+    const result = await runStep(
+      process.execPath,
+      [
+        "-e",
+        "for (let i = 1; i <= 300; i++) console.log('out ' + i); console.error('err last'); process.exit(3);",
+      ],
+      { write: (chunk) => written.push(chunk) },
+    );
+    expect(result.status).toBe(3);
+    expect(written.join("")).toContain("out 1\n");
+    expect(written.join("")).toContain("err last");
+    const kept = result.output.trimEnd().split("\n");
+    expect(kept.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET + 1);
+    expect(kept).toContain("err last");
+    expect(kept).not.toContain("out 1");
+  });
+
+  it("reports a step that cannot start as a failure with the reason", async () => {
+    const result = await runStep(path.join(tmpdir(), "no-such-command-for-check"), [], {
+      write: () => {},
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("ENOENT");
+  });
+
+  it("succeeds only when every step passes", async () => {
     const lines = [];
     expect(
-      runAllChecks(
+      await runAllChecks(
         ["a", "b"],
         () => 0,
         (line) => lines.push(line),
