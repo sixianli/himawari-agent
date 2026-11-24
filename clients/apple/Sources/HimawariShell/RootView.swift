@@ -222,7 +222,7 @@ struct MainTabsView: View {
         }
     }
 
-    private var stopRun: @MainActor (String, ThreadRunSummary) async throws -> Void {
+    private var stopRun: @MainActor @Sendable (String, ThreadRunSummary) async throws -> Void {
         let stopper = ThreadRunStopper(api: model.api, confirmKey: model.confirmKey)
         return { threadId, run in try await stopper.stop(threadId: threadId, run: run) }
     }

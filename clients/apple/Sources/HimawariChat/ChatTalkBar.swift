@@ -3,11 +3,16 @@ import HimawariDesign
 import SwiftUI
 
 struct ChatTalkBar: View {
-    let phase: TalkPhase
-    let muted: Bool
-    let levels: [Double]
-    let toggleMute: () -> Void
+    let talk: any ChatTalk
     let end: () -> Void
+
+    private var phase: TalkPhase { talk.phase }
+    private var muted: Bool { talk.muted }
+    private var levels: [Double] { talk.levels }
+
+    private func toggleMute() {
+        talk.setMuted(!muted)
+    }
 
     private static let inset = (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2
 

@@ -3,7 +3,7 @@ import HimawariDesign
 import SwiftUI
 
 @MainActor
-public protocol HerListening: AnyObject {
+public protocol HerListening: AnyObject, Sendable {
     var isListening: Bool { get }
     var hasVoiceprint: Bool { get }
     func stop()

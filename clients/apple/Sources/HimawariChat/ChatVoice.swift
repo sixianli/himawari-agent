@@ -16,7 +16,7 @@ public enum TalkPhase: Equatable, Sendable {
 }
 
 @MainActor
-public protocol ChatTalk: AnyObject {
+public protocol ChatTalk: AnyObject, Sendable {
     var phase: TalkPhase { get }
     var muted: Bool { get }
     var heard: String { get }
@@ -33,7 +33,7 @@ extension EnvironmentValues {
     @Entry public var chatCanAttach = false
     @Entry public var chatTalk: (any ChatTalk)? = nil
     @Entry public var chatOpensTalk = false
-    @Entry public var chatStopRun: (@MainActor (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil
+    @Entry public var chatStopRun: (@MainActor @Sendable (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil
 }
 
 enum HoldPhase: Equatable {

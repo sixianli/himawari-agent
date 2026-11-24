@@ -88,8 +88,8 @@ public struct ChatView: View {
 
     @ViewBuilder
     private var composer: some View {
-        if talking, let talk {
-            ChatTalkBar(phase: talk.phase, muted: talk.muted, levels: talk.levels, toggleMute: { talk.setMuted(!talk.muted) }, end: endTalk)
+        if let activeTalk {
+            ChatTalkBar(talk: activeTalk, end: endTalk)
                 .transition(.opacity)
         } else {
             ChatInputBar(
@@ -102,12 +102,32 @@ public struct ChatView: View {
                 dictating: dictating,
                 openAttach: attachAction,
                 stop: stopAction,
-                startTalk: talk == nil ? nil : startTalk,
+                startTalk: talkStarter,
                 toggleDictation: toggleDictation,
                 holdChanged: holdChanged,
                 send: submit
             )
         }
+    }
+
+    private var activeTalk: (any ChatTalk)? {
+        talking ? talk : nil
+    }
+
+    private var talkStarter: (() -> Void)? {
+        guard talk != nil else { return nil }
+        return startTalk
+    }
+
+    private var talkHeard: String {
+        guard let activeTalk else { return "" }
+        return activeTalk.heard
+    }
+
+    private var avatarBusy: Bool {
+        if let activeTalk, activeTalk.phase == .herTurn { return true }
+        guard let threadId else { return creating }
+        return store.isBusy(in: threadId)
     }
 
     private var attachAction: (() -> Void)? {
@@ -213,7 +233,7 @@ public struct ChatView: View {
             .padding(.horizontal, 16)
             .frame(height: DesignTokens.Chat.avatar)
             Button { openHerPage?() } label: {
-                HimawariAvatar(busy: (threadId.map(store.isBusy(in:)) ?? creating) || (talking && talk?.phase == .herTurn))
+                HimawariAvatar(busy: avatarBusy)
             }
             .buttonStyle(.plain)
             .disabled(openHerPage == nil)
@@ -260,8 +280,8 @@ public struct ChatView: View {
                         }
                     }
                 }
-                if talking, let heard = talk?.heard, !heard.isEmpty {
-                    OwnerBubble(text: heard)
+                if !talkHeard.isEmpty {
+                    OwnerBubble(text: talkHeard)
                         .opacity(DesignTokens.Chat.talkHeardOpacity)
                 }
             }
