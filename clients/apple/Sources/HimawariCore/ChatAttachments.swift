@@ -9,11 +9,13 @@ public struct ChatAttachment: Sendable, Equatable, Identifiable {
     public let id: String
     public let name: String
     public let content: ChatAttachmentContent
+    public let originalBytes: Int?
 
-    public init(id: String = OutgoingMessage.newId(), name: String, content: ChatAttachmentContent) {
+    public init(id: String = OutgoingMessage.newId(), name: String, content: ChatAttachmentContent, originalBytes: Int? = nil) {
         self.id = id
         self.name = MessageAttachments.cleanName(name)
         self.content = content
+        self.originalBytes = originalBytes
     }
 
     public var isImage: Bool {
@@ -80,6 +82,7 @@ extension MessageAttachments {
 public enum ChatAttachmentPlanner {
     static let dataURLPrefix = "data:image/jpeg;base64,".utf16.count
     public static let maxFileBytes = 20 * 1024 * 1024
+    public static let maxImagePixels = 4096
 
     public static func fileFits(bytes: Int?) -> Bool {
         guard let bytes else { return false }
@@ -122,14 +125,14 @@ extension DeviceAPI {
                 guard content.utf16.count <= limits.imageCharacters else { throw ChatAttachmentProblem.tooLarge }
                 upload = .image
                 kind = .image
-                bytes = payload.data.count
+                bytes = attachment.originalBytes ?? data.count
             case let .text(body, textKind):
                 let clipped = MessageAttachments.clip(body, characters: limits.textCharacters)
                 content = clipped.text
                 truncated = clipped.truncated
                 upload = .text
                 kind = textKind
-                bytes = Data(body.utf8).count
+                bytes = attachment.originalBytes ?? Data(body.utf8).count
             }
             let ref: String
             do {

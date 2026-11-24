@@ -22,8 +22,8 @@ enum AttachReader {
     }
 
     static func image(data: Data, name: String) -> ChatAttachment? {
-        guard let decoded = UIImage(data: data) else { return nil }
-        return image(decoded, name: name)
+        guard let jpeg = ImageDownsampling.jpeg(data, quality: jpegQuality) else { return nil }
+        return ChatAttachment(name: name, content: .image(data: jpeg, mimeType: "image/jpeg"), originalBytes: data.count)
     }
 
     static func file(at url: URL) throws -> ChatAttachment {
@@ -39,12 +39,12 @@ enum AttachReader {
         }
         if type.conforms(to: .pdf) {
             guard let document = PDFDocument(url: url), let text = document.string, !text.isEmpty else { throw AttachFailure.unreadable }
-            return ChatAttachment(name: name, content: .text(text, kind: .pdf))
+            return ChatAttachment(name: name, content: .text(text, kind: .pdf), originalBytes: size)
         }
         guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8), !text.isEmpty else {
             throw AttachFailure.unreadable
         }
-        return ChatAttachment(name: name, content: .text(text, kind: .text))
+        return ChatAttachment(name: name, content: .text(text, kind: .text), originalBytes: size)
     }
 }
 

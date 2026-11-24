@@ -87,6 +87,31 @@ import Testing
         #expect(composed == "<file name=\"笔记\" ref=\"payload:t\" bytes=\"16\" kind=\"text\" truncated=\"1\"/>")
     }
 
+    @Test func theTagCarriesTheSizeOfTheOriginalFileNotTheReencodedOrShrunkOne() async throws {
+        let exchange = RecordingExchange([ok(config(image: 40)), ok(#"{"ref":"payload:img"}"#, status: 201), ok(#"{"ref":"payload:pdf"}"#, status: 201)])
+        let composed = try await api(exchange).compose(
+            text: "",
+            attachments: [
+                ChatAttachment(name: "照片", content: .image(data: Data(repeating: 1, count: 200), mimeType: "image/jpeg"), originalBytes: 4_800_000),
+                ChatAttachment(name: "合同.pdf", content: .text("第一页", kind: .pdf), originalBytes: 912_000),
+            ],
+            requestId: "R",
+            images: Shrinker()
+        )
+        #expect(composed == "<file name=\"照片\" ref=\"payload:img\" bytes=\"4800000\" kind=\"image\"/>\n\n<file name=\"合同.pdf\" ref=\"payload:pdf\" bytes=\"912000\" kind=\"pdf\"/>")
+    }
+
+    @Test func aPhotoWithoutAKnownOriginalSizeReportsTheBytesItWasPickedWith() async throws {
+        let exchange = RecordingExchange([ok(config(image: 40)), ok(#"{"ref":"payload:img"}"#, status: 201)])
+        let composed = try await api(exchange).compose(
+            text: "",
+            attachments: [ChatAttachment(name: "照片", content: .image(data: Data(repeating: 1, count: 200), mimeType: "image/jpeg"))],
+            requestId: "R",
+            images: Shrinker()
+        )
+        #expect(composed == "<file name=\"照片\" ref=\"payload:img\" bytes=\"200\" kind=\"image\"/>")
+    }
+
     @Test func aServerWhoseConfigHasNoAttachmentLimitsDoesNotOfferThePlusButton() throws {
         let decoder = JSONDecoder()
         #expect(try decoder.decode(DeviceConfiguration.self, from: Data(config(attachments: false).utf8)).acceptsChatAttachments == false)
