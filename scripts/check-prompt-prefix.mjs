@@ -18,6 +18,7 @@ const REQUIRED_NAMES = [
   "[CLEAR-3]",
   "[CLEAR-4]",
   "[CLEAR-5]",
+  "[CLEAR-6]",
   "[CLEAR-7]",
 ];
 

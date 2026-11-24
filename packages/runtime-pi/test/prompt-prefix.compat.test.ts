@@ -1490,7 +1490,7 @@ const READING_TURNS: readonly Turn[] = [
   { prompt: "第一篇里说了什么？", occurredAt: "2026-11-02T00:44:00.000Z" },
 ];
 
-async function readingConversation(tools: PageTools) {
+async function readingConversation(tools: PageTools, recallId = "call-0") {
   return conversation(
     READING_TURNS,
     (index, body) => {
@@ -1501,7 +1501,7 @@ async function readingConversation(tools: PageTools) {
       const last = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
       return last === "tool"
         ? { text: "第一篇讲的是 lorem ipsum。" }
-        : { tool: "tool_result_recall", input: JSON.stringify({ toolCallId: "call-0" }) };
+        : { tool: "tool_result_recall", input: JSON.stringify({ toolCallId: recallId }) };
     },
     () => undefined,
     { tools },
@@ -1544,20 +1544,28 @@ describe("[I-66] [CLEAR] clearing old tool results once, then appending again", 
   });
 
   it("[CLEAR-6] records a recall as a lookup that ran, found or not, so it never reads as unconfirmed", async () => {
-    const found = await readingConversation(new PageTools(1_500));
-    const recalls = (
-      found.projection.saved as {
-        role: string;
-        toolName?: string;
-        details?: Record<string, unknown>;
-      }[]
-    )
-      .filter(
-        (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
+    const recalls = async (recallId: string) =>
+      (
+        (await readingConversation(new PageTools(1_500), recallId)).projection.saved as {
+          role: string;
+          toolName?: string;
+          details?: Record<string, unknown>;
+        }[]
       )
-      .map((message) => message.details);
-    expect(recalls).toHaveLength(1);
-    expect(recalls[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+        .filter(
+          (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
+        )
+        .map((message) => message.details);
+    const found = await recalls("call-0");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+    const missing = await recalls("call-missing");
+    expect(missing).toHaveLength(1);
+    expect(missing[0]).toMatchObject({
+      productOutcome: "failed",
+      dispatchState: "accepted",
+      errorCode: "TOOL_RESULT_RECALL_NOT_FOUND",
+    });
   });
 
   it("[CLEAR-7] REVERSE: keeps a result that names a password, so the value stays masked in later turns", async () => {
