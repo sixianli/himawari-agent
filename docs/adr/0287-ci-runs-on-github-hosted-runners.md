@@ -36,13 +36,13 @@ CI（持续集成，每次提交自动跑的检查和测试）原先跑在自托
 3. Actions 缓存每个仓库 10 GB，不调高上限就不收费：同一页原话 “The repository owner will only be charged if the repository cache storage limit has been configured higher than the included usage.”；<https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching> 原话 “If you exceed the limit, GitHub will save the new cache but will begin evicting caches until the total size is less than the repository limit.”
 4. 公开仓库的 artifact（作业产物）存储是否免费，上面那页没有明说：它只写 “For private repositories, usage is measured against two parts of your plan”。所以本决定不用 artifact，[ADR 0243](0243-ci-uses-no-github-artifacts.md) 的禁令保留。
 5. 公开仓库不该用自托管 runner：<https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners> 原话 “self-hosted runners should almost never be used for public repositories on GitHub”。
-6. 托管机器每个作业是一台新虚拟机，作业之间没有共用目录：原先 `scripts/ci/run-share.mjs` 的 `shareRoot` 要求 `HIMAWARI_CI_SHARE` 指向本机一个已有目录，否则以 `CI_SHARE_ROOT_REQUIRED` 失败。
+6. 托管机器每个作业是一台新虚拟机，作业之间没有共用目录：原先 `scripts/ci/run-share.mjs` 的 `shareRoot` 要求 `HIMAWARI_CI_SHARE` 指向本机一个已有目录，没设或不是绝对路径以 `CI_SHARE_ROOT_REQUIRED` 失败，目录不存在以 `CI_SHARE_ROOT_INVALID` 失败。
 
 <a id="decision"></a>
 
 ## 决定
 
-1. 机器：`policy`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`；`static`、`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`；新增 `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App。`static` 原来在 Oracle ARM 机器上跑，这次改回 x64：`npm run check` 里的上线包测试（`check:delivery-deploy`、`check:delivery-dependencies`）会真的运行只认 linux-x64 的上线脚本，在 ARM 机器上以 `P5_ENVIRONMENT_INVALID` 失败（PR 623 第一次试跑就是这样失败的）；两种机器都免费，所以不在测试里跳过，而是换机器。
+1. 机器：`policy`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`；`static`、`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`；新增 `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App。`static` 原来在 Oracle ARM 机器上跑，这次改回 x64：`npm run check` 里的 `check:delivery-dependencies` 会真的运行只认 linux-x64 的依赖收集脚本（`scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs`），在 ARM 机器上以 `P5_ENVIRONMENT_INVALID` 失败，`check:delivery-deploy` 也在同一次 ARM 试跑里失败（PR 623 第一次试跑，同一组测试在 x64 上通过）；两种机器都免费，所以不在测试里跳过，而是换机器。
 2. 只准用这三种标签：`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流，`runs-on` 不是这三种之一（包括 larger runner、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败。
 3. 作业之间传文件：`run-share.mjs` 的摘要核对不变，只是共享目录改成每台机器自己的 `$RUNNER_TEMP/ci-share`；每个检查作业把自己那份报告用 `actions/cache/save` 存进本次运行的缓存，键带 `run_id` 和 `run_attempt`；`browser`、`tests` 先用 `actions/cache/restore`（取不到就失败）取回本次的 Linux 构建，汇总作业在收齐前逐个取回各成员的报告。取回后仍按作业输出里的摘要逐字节核对。这是对 [ADR 0174](0174-no-github-cache-and-one-day-artifacts.md)“不用 GitHub 缓存”的修订：只放开本次运行内部的传递，依赖和工具仍不缓存。
 4. 删除自托管 runner 的安装脚本、ssh 拉报告的 `scripts/ci/remote-share.mjs` 和 CI VPS 的运行手册。
