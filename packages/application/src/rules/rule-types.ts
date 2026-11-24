@@ -63,7 +63,7 @@ export interface PushQuietParameters {
   readonly classes?: readonly PushQuietClass[];
 }
 
-function pushQuietClassesOf(parameters: PushQuietParameters): readonly PushQuietClass[] {
+export function pushQuietClassesOf(parameters: PushQuietParameters): readonly PushQuietClass[] {
   const named = parameters.classes;
   if (!named) return PUSH_QUIET_DEFAULT_CLASSES;
   if (!named.includes("run_result") || named.includes("her_words")) return named;

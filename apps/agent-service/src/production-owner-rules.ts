@@ -19,7 +19,9 @@ import {
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
   PUSH_QUIET_CLASSES,
+  type PushQuietParameters,
   parseOwnerRuleParameters,
+  pushQuietClassesOf,
   RULE_TYPES,
   type RuleRecord,
   RuleTypeError,
@@ -650,25 +652,16 @@ export interface QuietHoursState {
   readonly rules: readonly { readonly ruleId: string; readonly summary: string }[];
 }
 
-interface QuietPeriodRecord {
-  readonly days?: unknown;
-  readonly start?: unknown;
-  readonly end?: unknown;
-}
-
-function quietParams(parameters: unknown): {
-  readonly periods: readonly QuietPeriodRecord[];
-  readonly classes: readonly string[];
-} {
-  const params = ((parameters ?? {}) as Record<string, unknown>)["params"];
-  const record = (params ?? {}) as Record<string, unknown>;
-  const periods = Array.isArray(record["periods"])
-    ? (record["periods"] as QuietPeriodRecord[])
-    : [];
-  const classes = Array.isArray(record["classes"])
-    ? record["classes"].filter((item): item is string => typeof item === "string")
-    : [];
-  return { periods, classes };
+function quietParams(parameters: unknown): PushQuietParameters | undefined {
+  try {
+    const parsed = parseOwnerRuleParameters(parameters);
+    return parsed.type === QUIET_HOURS_RULE_TYPE
+      ? (parsed.params as PushQuietParameters)
+      : undefined;
+  } catch (error) {
+    if (error instanceof RuleTypeError) return undefined;
+    throw error;
+  }
 }
 
 function everyDay(days: unknown): boolean {
@@ -1216,22 +1209,19 @@ export class ProductionOwnerRuleWriter {
         classes: [],
         rules,
       });
-    const { periods, classes } = quietParams(only.parameters);
+    const params = quietParams(only.parameters);
+    const periods = params?.periods ?? [];
     const [period] = periods;
     const single =
-      rows.length === 1 &&
-      periods.length === 1 &&
-      period !== undefined &&
-      everyDay(period.days) &&
-      typeof period.start === "string" &&
-      typeof period.end === "string";
+      rows.length === 1 && periods.length === 1 && period !== undefined && everyDay(period.days);
+    const classes = rows.length === 1 && params ? pushQuietClassesOf(params) : [];
     return Object.freeze({
       version,
       editable: single,
       enabled: true,
-      start: single ? (period.start as string) : null,
-      end: single ? (period.end as string) : null,
-      classes: rows.length === 1 ? classes : [],
+      start: single ? period.start : null,
+      end: single ? period.end : null,
+      classes,
       rules,
     });
   }

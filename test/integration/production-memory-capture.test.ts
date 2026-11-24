@@ -2267,7 +2267,7 @@ describe("production memory capture", () => {
           type: "quiet_hours.read",
           payload: {},
         } as never)
-      ).payload as {
+      ).payload as unknown as {
         version: string;
         editable: boolean;
         enabled: boolean;
@@ -2386,7 +2386,12 @@ describe("production memory capture", () => {
     });
     const state = (
       await control.query({ kind: "query", type: "quiet_hours.read", payload: {} } as never)
-    ).payload as { version: string; editable: boolean; enabled: boolean; start: string | null };
+    ).payload as unknown as {
+      version: string;
+      editable: boolean;
+      enabled: boolean;
+      start: string | null;
+    };
     expect(state).toMatchObject({ editable: false, enabled: true, start: null });
     await expect(
       control.execute({
