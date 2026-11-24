@@ -4,7 +4,7 @@ CAT_EN = {"身份":"identity","偏好":"preference","健康":"health","人物":"
 
 def load():
     rows = []
-    with open(os.path.join(HERE, "memories.tsv"), encoding="utf-8") as f:
+    with open(os.path.join(HERE, os.environ.get("MEMORIES", "memories.tsv")), encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
             if not line:

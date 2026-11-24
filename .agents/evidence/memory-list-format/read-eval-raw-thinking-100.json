@@ -1,0 +1,10675 @@
+[
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 70,
+   "total_tokens": 2573,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 62
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00041745,
+    "allowance": 0.00025047,
+    "tokens": {
+     "input": 2503,
+     "output": 70,
+     "reasoning": 62,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\": [78]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 59,
+   "total_tokens": 2563,
+   "prompt_tokens_details": {
+    "cached_tokens": 2048
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00010994,
+    "allowance": 6.597e-05,
+    "tokens": {
+     "input": 456,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 2048,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\": [57]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 43,
+   "total_tokens": 2547,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004014,
+    "allowance": 0.00024084,
+    "tokens": {
+     "input": 2504,
+     "output": 43,
+     "reasoning": 35,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\":[8]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 40,
+   "total_tokens": 2543,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00039945,
+    "allowance": 0.00023967,
+    "tokens": {
+     "input": 2503,
+     "output": 40,
+     "reasoning": 33,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\": [49]}",
+  "usage": {
+   "prompt_tokens": 2507,
+   "completion_tokens": 38,
+   "total_tokens": 2545,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00039885,
+    "allowance": 0.00023931,
+    "tokens": {
+     "input": 2507,
+     "output": 38,
+     "reasoning": 30,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\": [157]}",
+  "usage": {
+   "prompt_tokens": 2506,
+   "completion_tokens": 42,
+   "total_tokens": 2548,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004011,
+    "allowance": 0.00024066,
+    "tokens": {
+     "input": 2506,
+     "output": 42,
+     "reasoning": 34,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 63,
+   "total_tokens": 2567,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004134,
+    "allowance": 0.00024804,
+    "tokens": {
+     "input": 2504,
+     "output": 63,
+     "reasoning": 55,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\": [17]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 134,
+   "total_tokens": 2638,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 126
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000456,
+    "allowance": 0.0002736,
+    "tokens": {
+     "input": 2504,
+     "output": 134,
+     "reasoning": 126,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\": [70]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 46,
+   "total_tokens": 2550,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004032,
+    "allowance": 0.00024192,
+    "tokens": {
+     "input": 2504,
+     "output": 46,
+     "reasoning": 38,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\": [76]}",
+  "usage": {
+   "prompt_tokens": 2502,
+   "completion_tokens": 53,
+   "total_tokens": 2555,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.96e-05,
+    "allowance": 2.976e-05,
+    "tokens": {
+     "input": 70,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\": [65]}",
+  "usage": {
+   "prompt_tokens": 2507,
+   "completion_tokens": 56,
+   "total_tokens": 2563,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00040965,
+    "allowance": 0.00024579,
+    "tokens": {
+     "input": 2507,
+     "output": 56,
+     "reasoning": 48,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 79,
+   "total_tokens": 2584,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 71
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.565e-05,
+    "allowance": 3.939e-05,
+    "tokens": {
+     "input": 73,
+     "output": 79,
+     "reasoning": 71,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\": [130]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 37,
+   "total_tokens": 2540,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 29
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.015e-05,
+    "allowance": 2.409e-05,
+    "tokens": {
+     "input": 71,
+     "output": 37,
+     "reasoning": 29,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\":[136]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 54,
+   "total_tokens": 2559,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 47
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00040815,
+    "allowance": 0.00024489,
+    "tokens": {
+     "input": 2505,
+     "output": 54,
+     "reasoning": 47,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\": [173]}",
+  "usage": {
+   "prompt_tokens": 2502,
+   "completion_tokens": 59,
+   "total_tokens": 2561,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004107,
+    "allowance": 0.00024642,
+    "tokens": {
+     "input": 2502,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\": [106]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 52,
+   "total_tokens": 2557,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 44
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.945e-05,
+    "allowance": 2.967e-05,
+    "tokens": {
+     "input": 73,
+     "output": 52,
+     "reasoning": 44,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\":[31]}",
+  "usage": {
+   "prompt_tokens": 2502,
+   "completion_tokens": 66,
+   "total_tokens": 2568,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 59
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.74e-05,
+    "allowance": 3.444e-05,
+    "tokens": {
+     "input": 70,
+     "output": 66,
+     "reasoning": 59,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 15,
+   "total_tokens": 2518,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 8
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.695e-05,
+    "allowance": 1.617e-05,
+    "tokens": {
+     "input": 71,
+     "output": 15,
+     "reasoning": 8,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 2502,
+   "completion_tokens": 46,
+   "total_tokens": 2548,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004029,
+    "allowance": 0.00024174,
+    "tokens": {
+     "input": 2502,
+     "output": 46,
+     "reasoning": 39,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 17,
+   "total_tokens": 2520,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 10
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.815e-05,
+    "allowance": 1.689e-05,
+    "tokens": {
+     "input": 71,
+     "output": 17,
+     "reasoning": 10,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\": [59]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 45,
+   "total_tokens": 2549,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004026,
+    "allowance": 0.00024156,
+    "tokens": {
+     "input": 2504,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\": [113]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 49,
+   "total_tokens": 2552,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.735e-05,
+    "allowance": 2.841e-05,
+    "tokens": {
+     "input": 71,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\": [117]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 42,
+   "total_tokens": 2545,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00040065,
+    "allowance": 0.00024039,
+    "tokens": {
+     "input": 2503,
+     "output": 42,
+     "reasoning": 34,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\": [201, 203, 205, 207]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 67,
+   "total_tokens": 2572,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.845e-05,
+    "allowance": 3.507e-05,
+    "tokens": {
+     "input": 73,
+     "output": 67,
+     "reasoning": 50,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 174,
+   "total_tokens": 2679,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 157
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00012265,
+    "allowance": 7.359e-05,
+    "tokens": {
+     "input": 73,
+     "output": 174,
+     "reasoning": 157,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\":[63]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 37,
+   "total_tokens": 2540,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.015e-05,
+    "allowance": 2.409e-05,
+    "tokens": {
+     "input": 71,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 50,
+   "total_tokens": 2554,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0004056,
+    "allowance": 0.00024336,
+    "tokens": {
+     "input": 2504,
+     "output": 50,
+     "reasoning": 42,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\":[37]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 43,
+   "total_tokens": 2547,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.39e-05,
+    "allowance": 2.634e-05,
+    "tokens": {
+     "input": 72,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\": [149]}",
+  "usage": {
+   "prompt_tokens": 2507,
+   "completion_tokens": 35,
+   "total_tokens": 2542,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 27
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.955e-05,
+    "allowance": 2.373e-05,
+    "tokens": {
+     "input": 75,
+     "output": 35,
+     "reasoning": 27,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\": [160]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 49,
+   "total_tokens": 2554,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.765e-05,
+    "allowance": 2.859e-05,
+    "tokens": {
+     "input": 73,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\":[164]}",
+  "usage": {
+   "prompt_tokens": 2502,
+   "completion_tokens": 44,
+   "total_tokens": 2546,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.42e-05,
+    "allowance": 2.652e-05,
+    "tokens": {
+     "input": 70,
+     "output": 44,
+     "reasoning": 37,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 57,
+   "total_tokens": 2562,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.245e-05,
+    "allowance": 3.147e-05,
+    "tokens": {
+     "input": 73,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\": [88]}",
+  "usage": {
+   "prompt_tokens": 2506,
+   "completion_tokens": 64,
+   "total_tokens": 2570,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 56
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.68e-05,
+    "allowance": 3.408e-05,
+    "tokens": {
+     "input": 74,
+     "output": 64,
+     "reasoning": 56,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\": [74]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 47,
+   "total_tokens": 2550,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.615e-05,
+    "allowance": 2.769e-05,
+    "tokens": {
+     "input": 71,
+     "output": 47,
+     "reasoning": 39,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 2506,
+   "completion_tokens": 44,
+   "total_tokens": 2550,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.48e-05,
+    "allowance": 2.688e-05,
+    "tokens": {
+     "input": 74,
+     "output": 44,
+     "reasoning": 37,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 2506,
+   "completion_tokens": 43,
+   "total_tokens": 2549,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.42e-05,
+    "allowance": 2.652e-05,
+    "tokens": {
+     "input": 74,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\": [67]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 32,
+   "total_tokens": 2536,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 24
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.73e-05,
+    "allowance": 2.238e-05,
+    "tokens": {
+     "input": 72,
+     "output": 32,
+     "reasoning": 24,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\": [186]}",
+  "usage": {
+   "prompt_tokens": 2504,
+   "completion_tokens": 49,
+   "total_tokens": 2553,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.75e-05,
+    "allowance": 2.85e-05,
+    "tokens": {
+     "input": 72,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\": [142]}",
+  "usage": {
+   "prompt_tokens": 2505,
+   "completion_tokens": 33,
+   "total_tokens": 2538,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 25
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.805e-05,
+    "allowance": 2.283e-05,
+    "tokens": {
+     "input": 73,
+     "output": 33,
+     "reasoning": 25,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "json",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\":[175]}",
+  "usage": {
+   "prompt_tokens": 2503,
+   "completion_tokens": 35,
+   "total_tokens": 2538,
+   "prompt_tokens_details": {
+    "cached_tokens": 2432
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.895e-05,
+    "allowance": 2.337e-05,
+    "tokens": {
+     "input": 71,
+     "output": 35,
+     "reasoning": 28,
+     "cache_read": 2432,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 72,
+   "total_tokens": 1428,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 64
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002466,
+    "allowance": 0.00014796,
+    "tokens": {
+     "input": 1356,
+     "output": 72,
+     "reasoning": 64,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\": [78]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 27,
+   "total_tokens": 1384,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 19
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00021975,
+    "allowance": 0.00013185,
+    "tokens": {
+     "input": 1357,
+     "output": 27,
+     "reasoning": 19,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\": [57]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 51,
+   "total_tokens": 1408,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023415,
+    "allowance": 0.00014049,
+    "tokens": {
+     "input": 1357,
+     "output": 51,
+     "reasoning": 43,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\":[8]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 45,
+   "total_tokens": 1401,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002304,
+    "allowance": 0.00013824,
+    "tokens": {
+     "input": 1356,
+     "output": 45,
+     "reasoning": 38,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\":[49]}",
+  "usage": {
+   "prompt_tokens": 1360,
+   "completion_tokens": 62,
+   "total_tokens": 1422,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002412,
+    "allowance": 0.00014472,
+    "tokens": {
+     "input": 1360,
+     "output": 62,
+     "reasoning": 55,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\":[157]}",
+  "usage": {
+   "prompt_tokens": 1359,
+   "completion_tokens": 56,
+   "total_tokens": 1415,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023745,
+    "allowance": 0.00014247,
+    "tokens": {
+     "input": 1359,
+     "output": 56,
+     "reasoning": 49,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 79,
+   "total_tokens": 1436,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 71
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.279e-05,
+    "allowance": 3.767e-05,
+    "tokens": {
+     "input": 77,
+     "output": 79,
+     "reasoning": 71,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\": [17]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 105,
+   "total_tokens": 1462,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 97
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.839e-05,
+    "allowance": 4.703e-05,
+    "tokens": {
+     "input": 77,
+     "output": 105,
+     "reasoning": 97,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\": [70]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 32,
+   "total_tokens": 1389,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 24
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.459e-05,
+    "allowance": 2.075e-05,
+    "tokens": {
+     "input": 77,
+     "output": 32,
+     "reasoning": 24,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\": [76]}",
+  "usage": {
+   "prompt_tokens": 1355,
+   "completion_tokens": 36,
+   "total_tokens": 1391,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.669e-05,
+    "allowance": 2.201e-05,
+    "tokens": {
+     "input": 75,
+     "output": 36,
+     "reasoning": 28,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\": [65]}",
+  "usage": {
+   "prompt_tokens": 1360,
+   "completion_tokens": 45,
+   "total_tokens": 1405,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.284e-05,
+    "allowance": 2.57e-05,
+    "tokens": {
+     "input": 80,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 91,
+   "total_tokens": 1449,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 83
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.014e-05,
+    "allowance": 4.208e-05,
+    "tokens": {
+     "input": 78,
+     "output": 91,
+     "reasoning": 83,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\":[130]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 42,
+   "total_tokens": 1398,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.044e-05,
+    "allowance": 2.426e-05,
+    "tokens": {
+     "input": 76,
+     "output": 42,
+     "reasoning": 35,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\": [136]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 38,
+   "total_tokens": 1396,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.834e-05,
+    "allowance": 2.3e-05,
+    "tokens": {
+     "input": 78,
+     "output": 38,
+     "reasoning": 30,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\":[173]}",
+  "usage": {
+   "prompt_tokens": 1355,
+   "completion_tokens": 36,
+   "total_tokens": 1391,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 29
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.669e-05,
+    "allowance": 2.201e-05,
+    "tokens": {
+     "input": 75,
+     "output": 36,
+     "reasoning": 29,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\": [106]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 61,
+   "total_tokens": 1419,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.214e-05,
+    "allowance": 3.128e-05,
+    "tokens": {
+     "input": 78,
+     "output": 61,
+     "reasoning": 53,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\":[31]}",
+  "usage": {
+   "prompt_tokens": 1355,
+   "completion_tokens": 46,
+   "total_tokens": 1401,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.269e-05,
+    "allowance": 2.561e-05,
+    "tokens": {
+     "input": 75,
+     "output": 46,
+     "reasoning": 39,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 103,
+   "total_tokens": 1459,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 96
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.704e-05,
+    "allowance": 4.622e-05,
+    "tokens": {
+     "input": 76,
+     "output": 103,
+     "reasoning": 96,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1355,
+   "completion_tokens": 55,
+   "total_tokens": 1410,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.809e-05,
+    "allowance": 2.885e-05,
+    "tokens": {
+     "input": 75,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 53,
+   "total_tokens": 1409,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.704e-05,
+    "allowance": 2.822e-05,
+    "tokens": {
+     "input": 76,
+     "output": 53,
+     "reasoning": 46,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\": [59]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 39,
+   "total_tokens": 1396,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.879e-05,
+    "allowance": 2.327e-05,
+    "tokens": {
+     "input": 77,
+     "output": 39,
+     "reasoning": 31,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\": [113]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 45,
+   "total_tokens": 1401,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.224e-05,
+    "allowance": 2.534e-05,
+    "tokens": {
+     "input": 76,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\":[117]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 40,
+   "total_tokens": 1396,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.924e-05,
+    "allowance": 2.354e-05,
+    "tokens": {
+     "input": 76,
+     "output": 40,
+     "reasoning": 33,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\":[201,203,205,207]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 70,
+   "total_tokens": 1428,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 57
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.754e-05,
+    "allowance": 3.452e-05,
+    "tokens": {
+     "input": 78,
+     "output": 70,
+     "reasoning": 57,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 195,
+   "total_tokens": 1553,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 178
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00013254,
+    "allowance": 7.952e-05,
+    "tokens": {
+     "input": 78,
+     "output": 195,
+     "reasoning": 178,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\": [63]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 50,
+   "total_tokens": 1406,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.524e-05,
+    "allowance": 2.714e-05,
+    "tokens": {
+     "input": 76,
+     "output": 50,
+     "reasoning": 42,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 52,
+   "total_tokens": 1409,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 44
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.659e-05,
+    "allowance": 2.795e-05,
+    "tokens": {
+     "input": 77,
+     "output": 52,
+     "reasoning": 44,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\": [37]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 48,
+   "total_tokens": 1405,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.419e-05,
+    "allowance": 2.651e-05,
+    "tokens": {
+     "input": 77,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\": [149]}",
+  "usage": {
+   "prompt_tokens": 1360,
+   "completion_tokens": 32,
+   "total_tokens": 1392,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 24
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.504e-05,
+    "allowance": 2.102e-05,
+    "tokens": {
+     "input": 80,
+     "output": 32,
+     "reasoning": 24,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\": [160]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 58,
+   "total_tokens": 1416,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.034e-05,
+    "allowance": 3.02e-05,
+    "tokens": {
+     "input": 78,
+     "output": 58,
+     "reasoning": 50,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 47,
+   "total_tokens": 1405,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.374e-05,
+    "allowance": 2.624e-05,
+    "tokens": {
+     "input": 78,
+     "output": 47,
+     "reasoning": 39,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\": [88]}",
+  "usage": {
+   "prompt_tokens": 1359,
+   "completion_tokens": 56,
+   "total_tokens": 1415,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.929e-05,
+    "allowance": 2.957e-05,
+    "tokens": {
+     "input": 79,
+     "output": 56,
+     "reasoning": 48,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\": [74]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 41,
+   "total_tokens": 1397,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.984e-05,
+    "allowance": 2.39e-05,
+    "tokens": {
+     "input": 76,
+     "output": 41,
+     "reasoning": 33,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 1359,
+   "completion_tokens": 62,
+   "total_tokens": 1421,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.289e-05,
+    "allowance": 3.173e-05,
+    "tokens": {
+     "input": 79,
+     "output": 62,
+     "reasoning": 55,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1359,
+   "completion_tokens": 47,
+   "total_tokens": 1406,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.389e-05,
+    "allowance": 2.633e-05,
+    "tokens": {
+     "input": 79,
+     "output": 47,
+     "reasoning": 40,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\": [67]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 48,
+   "total_tokens": 1405,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.419e-05,
+    "allowance": 2.651e-05,
+    "tokens": {
+     "input": 77,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\":[186]}",
+  "usage": {
+   "prompt_tokens": 1357,
+   "completion_tokens": 65,
+   "total_tokens": 1422,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 58
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.439e-05,
+    "allowance": 3.263e-05,
+    "tokens": {
+     "input": 77,
+     "output": 65,
+     "reasoning": 58,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\": [142]}",
+  "usage": {
+   "prompt_tokens": 1358,
+   "completion_tokens": 39,
+   "total_tokens": 1397,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.894e-05,
+    "allowance": 2.336e-05,
+    "tokens": {
+     "input": 78,
+     "output": 39,
+     "reasoning": 31,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\":[175]}",
+  "usage": {
+   "prompt_tokens": 1356,
+   "completion_tokens": 55,
+   "total_tokens": 1411,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.824e-05,
+    "allowance": 2.894e-05,
+    "tokens": {
+     "input": 76,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 69,
+   "total_tokens": 1390,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 61
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023955,
+    "allowance": 0.00014373,
+    "tokens": {
+     "input": 1321,
+     "output": 69,
+     "reasoning": 61,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\":[78]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 36,
+   "total_tokens": 1358,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 29
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002199,
+    "allowance": 0.00013194,
+    "tokens": {
+     "input": 1322,
+     "output": 36,
+     "reasoning": 29,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\":[57]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 54,
+   "total_tokens": 1376,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 47
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002307,
+    "allowance": 0.00013842,
+    "tokens": {
+     "input": 1322,
+     "output": 54,
+     "reasoning": 47,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\":[49]}",
+  "usage": {
+   "prompt_tokens": 1325,
+   "completion_tokens": 53,
+   "total_tokens": 1378,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023055,
+    "allowance": 0.00013833,
+    "tokens": {
+     "input": 1325,
+     "output": 53,
+     "reasoning": 46,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\":[157]}",
+  "usage": {
+   "prompt_tokens": 1324,
+   "completion_tokens": 39,
+   "total_tokens": 1363,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000222,
+    "allowance": 0.0001332,
+    "tokens": {
+     "input": 1324,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 61,
+   "total_tokens": 1383,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002349,
+    "allowance": 0.00014094,
+    "tokens": {
+     "input": 1322,
+     "output": 61,
+     "reasoning": 53,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17,
+   196
+  ],
+  "raw": "{\"ids\":[17,196]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 119,
+   "total_tokens": 1441,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 110
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002697,
+    "allowance": 0.00016182,
+    "tokens": {
+     "input": 1322,
+     "output": 119,
+     "reasoning": 110,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\": [70]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 56,
+   "total_tokens": 1378,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.374e-05,
+    "allowance": 2.624e-05,
+    "tokens": {
+     "input": 42,
+     "output": 56,
+     "reasoning": 48,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\":[76]}",
+  "usage": {
+   "prompt_tokens": 1320,
+   "completion_tokens": 37,
+   "total_tokens": 1357,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.204e-05,
+    "allowance": 1.922e-05,
+    "tokens": {
+     "input": 40,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\": [65]}",
+  "usage": {
+   "prompt_tokens": 1325,
+   "completion_tokens": 58,
+   "total_tokens": 1383,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.539e-05,
+    "allowance": 2.723e-05,
+    "tokens": {
+     "input": 45,
+     "output": 58,
+     "reasoning": 50,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 67,
+   "total_tokens": 1390,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 59
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023865,
+    "allowance": 0.00014319,
+    "tokens": {
+     "input": 1323,
+     "output": 67,
+     "reasoning": 59,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\": [130]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 14,
+   "total_tokens": 1335,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 6
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00020655,
+    "allowance": 0.00012393,
+    "tokens": {
+     "input": 1321,
+     "output": 14,
+     "reasoning": 6,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\":[136]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 48,
+   "total_tokens": 1371,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.909e-05,
+    "allowance": 2.345e-05,
+    "tokens": {
+     "input": 43,
+     "output": 48,
+     "reasoning": 41,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\":[173]}",
+  "usage": {
+   "prompt_tokens": 1320,
+   "completion_tokens": 67,
+   "total_tokens": 1387,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 60
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002382,
+    "allowance": 0.00014292,
+    "tokens": {
+     "input": 1320,
+     "output": 67,
+     "reasoning": 60,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\": [106]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 48,
+   "total_tokens": 1371,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.909e-05,
+    "allowance": 2.345e-05,
+    "tokens": {
+     "input": 43,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\": [31]}",
+  "usage": {
+   "prompt_tokens": 1320,
+   "completion_tokens": 64,
+   "total_tokens": 1384,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 56
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.824e-05,
+    "allowance": 2.894e-05,
+    "tokens": {
+     "input": 40,
+     "output": 64,
+     "reasoning": 56,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 27,
+   "total_tokens": 1348,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 20
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.619e-05,
+    "allowance": 1.571e-05,
+    "tokens": {
+     "input": 41,
+     "output": 27,
+     "reasoning": 20,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1320,
+   "completion_tokens": 49,
+   "total_tokens": 1369,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.924e-05,
+    "allowance": 2.354e-05,
+    "tokens": {
+     "input": 40,
+     "output": 49,
+     "reasoning": 42,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 50,
+   "total_tokens": 1371,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.999e-05,
+    "allowance": 2.399e-05,
+    "tokens": {
+     "input": 41,
+     "output": 50,
+     "reasoning": 43,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\": [59]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 36,
+   "total_tokens": 1358,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.174e-05,
+    "allowance": 1.904e-05,
+    "tokens": {
+     "input": 42,
+     "output": 36,
+     "reasoning": 28,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\":[113]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 53,
+   "total_tokens": 1374,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.179e-05,
+    "allowance": 2.507e-05,
+    "tokens": {
+     "input": 41,
+     "output": 53,
+     "reasoning": 46,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\": [117]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 53,
+   "total_tokens": 1374,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.179e-05,
+    "allowance": 2.507e-05,
+    "tokens": {
+     "input": 41,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\": [201, 203, 205, 207]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 61,
+   "total_tokens": 1384,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 44
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.689e-05,
+    "allowance": 2.813e-05,
+    "tokens": {
+     "input": 43,
+     "output": 61,
+     "reasoning": 44,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 192,
+   "total_tokens": 1515,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 175
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00012549,
+    "allowance": 7.529e-05,
+    "tokens": {
+     "input": 43,
+     "output": 192,
+     "reasoning": 175,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\": [63]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 43,
+   "total_tokens": 1364,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.579e-05,
+    "allowance": 2.147e-05,
+    "tokens": {
+     "input": 41,
+     "output": 43,
+     "reasoning": 35,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 35,
+   "total_tokens": 1357,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 27
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.114e-05,
+    "allowance": 1.868e-05,
+    "tokens": {
+     "input": 42,
+     "output": 35,
+     "reasoning": 27,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\": [37]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 44,
+   "total_tokens": 1366,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.654e-05,
+    "allowance": 2.192e-05,
+    "tokens": {
+     "input": 42,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\": [149]}",
+  "usage": {
+   "prompt_tokens": 1325,
+   "completion_tokens": 44,
+   "total_tokens": 1369,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.699e-05,
+    "allowance": 2.219e-05,
+    "tokens": {
+     "input": 45,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\":[160]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 64,
+   "total_tokens": 1387,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 57
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.869e-05,
+    "allowance": 2.921e-05,
+    "tokens": {
+     "input": 43,
+     "output": 64,
+     "reasoning": 57,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\":[164]}",
+  "usage": {
+   "prompt_tokens": 1320,
+   "completion_tokens": 39,
+   "total_tokens": 1359,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.324e-05,
+    "allowance": 1.994e-05,
+    "tokens": {
+     "input": 40,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 41,
+   "total_tokens": 1364,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.489e-05,
+    "allowance": 2.093e-05,
+    "tokens": {
+     "input": 43,
+     "output": 41,
+     "reasoning": 33,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\": [88]}",
+  "usage": {
+   "prompt_tokens": 1324,
+   "completion_tokens": 40,
+   "total_tokens": 1364,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.444e-05,
+    "allowance": 2.066e-05,
+    "tokens": {
+     "input": 44,
+     "output": 40,
+     "reasoning": 32,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\": [74]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 45,
+   "total_tokens": 1366,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.699e-05,
+    "allowance": 2.219e-05,
+    "tokens": {
+     "input": 41,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\": [111]}",
+  "usage": {
+   "prompt_tokens": 1324,
+   "completion_tokens": 32,
+   "total_tokens": 1356,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 24
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.964e-05,
+    "allowance": 1.778e-05,
+    "tokens": {
+     "input": 44,
+     "output": 32,
+     "reasoning": 24,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1324,
+   "completion_tokens": 49,
+   "total_tokens": 1373,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.984e-05,
+    "allowance": 2.39e-05,
+    "tokens": {
+     "input": 44,
+     "output": 49,
+     "reasoning": 42,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\":[67]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 41,
+   "total_tokens": 1363,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.474e-05,
+    "allowance": 2.084e-05,
+    "tokens": {
+     "input": 42,
+     "output": 41,
+     "reasoning": 34,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\": [186]}",
+  "usage": {
+   "prompt_tokens": 1322,
+   "completion_tokens": 44,
+   "total_tokens": 1366,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.654e-05,
+    "allowance": 2.192e-05,
+    "tokens": {
+     "input": 42,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\": [142]}",
+  "usage": {
+   "prompt_tokens": 1323,
+   "completion_tokens": 39,
+   "total_tokens": 1362,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.369e-05,
+    "allowance": 2.021e-05,
+    "tokens": {
+     "input": 43,
+     "output": 39,
+     "reasoning": 31,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\": [175]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 46,
+   "total_tokens": 1367,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.759e-05,
+    "allowance": 2.255e-05,
+    "tokens": {
+     "input": 41,
+     "output": 46,
+     "reasoning": 38,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 70,
+   "total_tokens": 1206,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 62
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002124,
+    "allowance": 0.00012744,
+    "tokens": {
+     "input": 1136,
+     "output": 70,
+     "reasoning": 62,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\": [78]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 50,
+   "total_tokens": 1187,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.002e-05,
+    "allowance": 3.001e-05,
+    "tokens": {
+     "input": 113,
+     "output": 50,
+     "reasoning": 42,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\": [57]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 40,
+   "total_tokens": 1177,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00019455,
+    "allowance": 0.00011673,
+    "tokens": {
+     "input": 1137,
+     "output": 40,
+     "reasoning": 32,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\":[8]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 37,
+   "total_tokens": 1173,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001926,
+    "allowance": 0.00011556,
+    "tokens": {
+     "input": 1136,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\":[49]}",
+  "usage": {
+   "prompt_tokens": 1140,
+   "completion_tokens": 61,
+   "total_tokens": 1201,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 54
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.707e-05,
+    "allowance": 3.424e-05,
+    "tokens": {
+     "input": 116,
+     "output": 61,
+     "reasoning": 54,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\": [157]}",
+  "usage": {
+   "prompt_tokens": 1139,
+   "completion_tokens": 32,
+   "total_tokens": 1171,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 24
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00019005,
+    "allowance": 0.00011403,
+    "tokens": {
+     "input": 1139,
+     "output": 32,
+     "reasoning": 24,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 59,
+   "total_tokens": 1196,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.542e-05,
+    "allowance": 3.325e-05,
+    "tokens": {
+     "input": 113,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\": [17]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 93,
+   "total_tokens": 1230,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 85
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.582e-05,
+    "allowance": 4.549e-05,
+    "tokens": {
+     "input": 113,
+     "output": 93,
+     "reasoning": 85,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\":[70]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 38,
+   "total_tokens": 1175,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.282e-05,
+    "allowance": 2.569e-05,
+    "tokens": {
+     "input": 113,
+     "output": 38,
+     "reasoning": 31,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\":[76]}",
+  "usage": {
+   "prompt_tokens": 1135,
+   "completion_tokens": 72,
+   "total_tokens": 1207,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 65
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.292e-05,
+    "allowance": 3.775e-05,
+    "tokens": {
+     "input": 111,
+     "output": 72,
+     "reasoning": 65,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\": [65]}",
+  "usage": {
+   "prompt_tokens": 1140,
+   "completion_tokens": 29,
+   "total_tokens": 1169,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 21
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.787e-05,
+    "allowance": 2.272e-05,
+    "tokens": {
+     "input": 116,
+     "output": 29,
+     "reasoning": 21,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 86,
+   "total_tokens": 1224,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 78
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.177e-05,
+    "allowance": 4.306e-05,
+    "tokens": {
+     "input": 114,
+     "output": 86,
+     "reasoning": 78,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\": [130]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 29,
+   "total_tokens": 1165,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 21
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.727e-05,
+    "allowance": 2.236e-05,
+    "tokens": {
+     "input": 112,
+     "output": 29,
+     "reasoning": 21,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\":[136]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 37,
+   "total_tokens": 1175,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.237e-05,
+    "allowance": 2.542e-05,
+    "tokens": {
+     "input": 114,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\":[173]}",
+  "usage": {
+   "prompt_tokens": 1135,
+   "completion_tokens": 43,
+   "total_tokens": 1178,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.552e-05,
+    "allowance": 2.731e-05,
+    "tokens": {
+     "input": 111,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\":[106]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 65,
+   "total_tokens": 1203,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 58
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.917e-05,
+    "allowance": 3.55e-05,
+    "tokens": {
+     "input": 114,
+     "output": 65,
+     "reasoning": 58,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\": [31]}",
+  "usage": {
+   "prompt_tokens": 1135,
+   "completion_tokens": 85,
+   "total_tokens": 1220,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 77
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 7.072e-05,
+    "allowance": 4.243e-05,
+    "tokens": {
+     "input": 111,
+     "output": 85,
+     "reasoning": 77,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 52,
+   "total_tokens": 1188,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.107e-05,
+    "allowance": 3.064e-05,
+    "tokens": {
+     "input": 112,
+     "output": 52,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1135,
+   "completion_tokens": 42,
+   "total_tokens": 1177,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.492e-05,
+    "allowance": 2.695e-05,
+    "tokens": {
+     "input": 111,
+     "output": 42,
+     "reasoning": 35,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 29,
+   "total_tokens": 1165,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 22
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.727e-05,
+    "allowance": 2.236e-05,
+    "tokens": {
+     "input": 112,
+     "output": 29,
+     "reasoning": 22,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\": [59]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 54,
+   "total_tokens": 1191,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.242e-05,
+    "allowance": 3.145e-05,
+    "tokens": {
+     "input": 113,
+     "output": 54,
+     "reasoning": 46,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\": [113]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 59,
+   "total_tokens": 1195,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.527e-05,
+    "allowance": 3.316e-05,
+    "tokens": {
+     "input": 112,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\":[117]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 39,
+   "total_tokens": 1175,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.327e-05,
+    "allowance": 2.596e-05,
+    "tokens": {
+     "input": 112,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\":[201,203,205,207]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 50,
+   "total_tokens": 1188,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.017e-05,
+    "allowance": 3.01e-05,
+    "tokens": {
+     "input": 114,
+     "output": 50,
+     "reasoning": 37,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153,
+   205
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153, 205]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 172,
+   "total_tokens": 1310,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 152
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00012337,
+    "allowance": 7.402e-05,
+    "tokens": {
+     "input": 114,
+     "output": 172,
+     "reasoning": 152,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\": [63]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 14,
+   "total_tokens": 1150,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 6
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.827e-05,
+    "allowance": 1.696e-05,
+    "tokens": {
+     "input": 112,
+     "output": 14,
+     "reasoning": 6,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\":[140]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 43,
+   "total_tokens": 1180,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.582e-05,
+    "allowance": 2.749e-05,
+    "tokens": {
+     "input": 113,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\": [37]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 49,
+   "total_tokens": 1186,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.942e-05,
+    "allowance": 2.965e-05,
+    "tokens": {
+     "input": 113,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\":[149]}",
+  "usage": {
+   "prompt_tokens": 1140,
+   "completion_tokens": 43,
+   "total_tokens": 1183,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.627e-05,
+    "allowance": 2.776e-05,
+    "tokens": {
+     "input": 116,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\": [160]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 75,
+   "total_tokens": 1213,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 67
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.517e-05,
+    "allowance": 3.91e-05,
+    "tokens": {
+     "input": 114,
+     "output": 75,
+     "reasoning": 67,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\":[164]}",
+  "usage": {
+   "prompt_tokens": 1135,
+   "completion_tokens": 39,
+   "total_tokens": 1174,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.312e-05,
+    "allowance": 2.587e-05,
+    "tokens": {
+     "input": 111,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 59,
+   "total_tokens": 1197,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.557e-05,
+    "allowance": 3.334e-05,
+    "tokens": {
+     "input": 114,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\":[88]}",
+  "usage": {
+   "prompt_tokens": 1139,
+   "completion_tokens": 47,
+   "total_tokens": 1186,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.852e-05,
+    "allowance": 2.911e-05,
+    "tokens": {
+     "input": 115,
+     "output": 47,
+     "reasoning": 40,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\": [74]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 29,
+   "total_tokens": 1165,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 21
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.727e-05,
+    "allowance": 2.236e-05,
+    "tokens": {
+     "input": 112,
+     "output": 29,
+     "reasoning": 21,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 1139,
+   "completion_tokens": 45,
+   "total_tokens": 1184,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.732e-05,
+    "allowance": 2.839e-05,
+    "tokens": {
+     "input": 115,
+     "output": 45,
+     "reasoning": 38,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1139,
+   "completion_tokens": 39,
+   "total_tokens": 1178,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.372e-05,
+    "allowance": 2.623e-05,
+    "tokens": {
+     "input": 115,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\": [67]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 34,
+   "total_tokens": 1171,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 26
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.042e-05,
+    "allowance": 2.425e-05,
+    "tokens": {
+     "input": 113,
+     "output": 34,
+     "reasoning": 26,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\":[186]}",
+  "usage": {
+   "prompt_tokens": 1137,
+   "completion_tokens": 65,
+   "total_tokens": 1202,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 58
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.902e-05,
+    "allowance": 3.541e-05,
+    "tokens": {
+     "input": 113,
+     "output": 65,
+     "reasoning": 58,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\": [142]}",
+  "usage": {
+   "prompt_tokens": 1138,
+   "completion_tokens": 56,
+   "total_tokens": 1194,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.377e-05,
+    "allowance": 3.226e-05,
+    "tokens": {
+     "input": 114,
+     "output": 56,
+     "reasoning": 48,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "space",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\":[175]}",
+  "usage": {
+   "prompt_tokens": 1136,
+   "completion_tokens": 50,
+   "total_tokens": 1186,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.987e-05,
+    "allowance": 2.992e-05,
+    "tokens": {
+     "input": 112,
+     "output": 50,
+     "reasoning": 43,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 46,
+   "total_tokens": 1157,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.372e-05,
+    "allowance": 2.623e-05,
+    "tokens": {
+     "input": 87,
+     "output": 46,
+     "reasoning": 38,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\":[78]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 35,
+   "total_tokens": 1147,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001878,
+    "allowance": 0.00011268,
+    "tokens": {
+     "input": 1112,
+     "output": 35,
+     "reasoning": 28,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\": [57]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 57,
+   "total_tokens": 1169,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.047e-05,
+    "allowance": 3.028e-05,
+    "tokens": {
+     "input": 88,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\": [8]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 49,
+   "total_tokens": 1160,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00019605,
+    "allowance": 0.00011763,
+    "tokens": {
+     "input": 1111,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\": [49]}",
+  "usage": {
+   "prompt_tokens": 1115,
+   "completion_tokens": 53,
+   "total_tokens": 1168,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.852e-05,
+    "allowance": 2.911e-05,
+    "tokens": {
+     "input": 91,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\": [157]}",
+  "usage": {
+   "prompt_tokens": 1114,
+   "completion_tokens": 48,
+   "total_tokens": 1162,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001959,
+    "allowance": 0.00011754,
+    "tokens": {
+     "input": 1114,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 57,
+   "total_tokens": 1169,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.047e-05,
+    "allowance": 3.028e-05,
+    "tokens": {
+     "input": 88,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\": [17]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 108,
+   "total_tokens": 1220,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 100
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002316,
+    "allowance": 0.00013896,
+    "tokens": {
+     "input": 1112,
+     "output": 108,
+     "reasoning": 100,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\":[70]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 40,
+   "total_tokens": 1152,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.027e-05,
+    "allowance": 2.416e-05,
+    "tokens": {
+     "input": 88,
+     "output": 40,
+     "reasoning": 33,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\":[76]}",
+  "usage": {
+   "prompt_tokens": 1110,
+   "completion_tokens": 60,
+   "total_tokens": 1170,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002025,
+    "allowance": 0.0001215,
+    "tokens": {
+     "input": 1110,
+     "output": 60,
+     "reasoning": 53,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\":[65]}",
+  "usage": {
+   "prompt_tokens": 1115,
+   "completion_tokens": 56,
+   "total_tokens": 1171,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.032e-05,
+    "allowance": 3.019e-05,
+    "tokens": {
+     "input": 91,
+     "output": 56,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 108,
+   "total_tokens": 1221,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 100
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 8.122e-05,
+    "allowance": 4.873e-05,
+    "tokens": {
+     "input": 89,
+     "output": 108,
+     "reasoning": 100,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\":[130]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 41,
+   "total_tokens": 1152,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.072e-05,
+    "allowance": 2.443e-05,
+    "tokens": {
+     "input": 87,
+     "output": 41,
+     "reasoning": 34,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\": [136]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 59,
+   "total_tokens": 1172,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.182e-05,
+    "allowance": 3.109e-05,
+    "tokens": {
+     "input": 89,
+     "output": 59,
+     "reasoning": 51,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\":[173]}",
+  "usage": {
+   "prompt_tokens": 1110,
+   "completion_tokens": 67,
+   "total_tokens": 1177,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 60
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.617e-05,
+    "allowance": 3.37e-05,
+    "tokens": {
+     "input": 86,
+     "output": 67,
+     "reasoning": 60,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\":[106]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 48,
+   "total_tokens": 1161,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.522e-05,
+    "allowance": 2.713e-05,
+    "tokens": {
+     "input": 89,
+     "output": 48,
+     "reasoning": 41,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\": [31]}",
+  "usage": {
+   "prompt_tokens": 1110,
+   "completion_tokens": 73,
+   "total_tokens": 1183,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 65
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.977e-05,
+    "allowance": 3.586e-05,
+    "tokens": {
+     "input": 86,
+     "output": 73,
+     "reasoning": 65,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 52,
+   "total_tokens": 1163,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.732e-05,
+    "allowance": 2.839e-05,
+    "tokens": {
+     "input": 87,
+     "output": 52,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1110,
+   "completion_tokens": 90,
+   "total_tokens": 1200,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 83
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.997e-05,
+    "allowance": 4.198e-05,
+    "tokens": {
+     "input": 86,
+     "output": 90,
+     "reasoning": 83,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\": [59]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 42,
+   "total_tokens": 1154,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.147e-05,
+    "allowance": 2.488e-05,
+    "tokens": {
+     "input": 88,
+     "output": 42,
+     "reasoning": 34,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\": [113]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 57,
+   "total_tokens": 1168,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.032e-05,
+    "allowance": 3.019e-05,
+    "tokens": {
+     "input": 87,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\":[117]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 57,
+   "total_tokens": 1168,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.032e-05,
+    "allowance": 3.019e-05,
+    "tokens": {
+     "input": 87,
+     "output": 57,
+     "reasoning": 50,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\":[201,203,205,207]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 200,
+   "total_tokens": 1313,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 187
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00013642,
+    "allowance": 8.185e-05,
+    "tokens": {
+     "input": 89,
+     "output": 200,
+     "reasoning": 187,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153,
+   205
+  ],
+  "raw": "{\"ids\":[76,78,80,153,205]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 223,
+   "total_tokens": 1336,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 208
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00015022,
+    "allowance": 9.013e-05,
+    "tokens": {
+     "input": 89,
+     "output": 223,
+     "reasoning": 208,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\":[63]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 35,
+   "total_tokens": 1146,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.712e-05,
+    "allowance": 2.227e-05,
+    "tokens": {
+     "input": 87,
+     "output": 35,
+     "reasoning": 28,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 48,
+   "total_tokens": 1160,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.507e-05,
+    "allowance": 2.704e-05,
+    "tokens": {
+     "input": 88,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\": [37]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 55,
+   "total_tokens": 1167,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 47
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.927e-05,
+    "allowance": 2.956e-05,
+    "tokens": {
+     "input": 88,
+     "output": 55,
+     "reasoning": 47,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\": [149]}",
+  "usage": {
+   "prompt_tokens": 1115,
+   "completion_tokens": 44,
+   "total_tokens": 1159,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.312e-05,
+    "allowance": 2.587e-05,
+    "tokens": {
+     "input": 91,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\": [160]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 42,
+   "total_tokens": 1155,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.162e-05,
+    "allowance": 2.497e-05,
+    "tokens": {
+     "input": 89,
+     "output": 42,
+     "reasoning": 34,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\":[164]}",
+  "usage": {
+   "prompt_tokens": 1110,
+   "completion_tokens": 41,
+   "total_tokens": 1151,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 34
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.057e-05,
+    "allowance": 2.434e-05,
+    "tokens": {
+     "input": 86,
+     "output": 41,
+     "reasoning": 34,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\":[147]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 56,
+   "total_tokens": 1169,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.002e-05,
+    "allowance": 3.001e-05,
+    "tokens": {
+     "input": 89,
+     "output": 56,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\": [88]}",
+  "usage": {
+   "prompt_tokens": 1114,
+   "completion_tokens": 51,
+   "total_tokens": 1165,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.717e-05,
+    "allowance": 2.83e-05,
+    "tokens": {
+     "input": 90,
+     "output": 51,
+     "reasoning": 43,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\":[74]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 55,
+   "total_tokens": 1166,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.912e-05,
+    "allowance": 2.947e-05,
+    "tokens": {
+     "input": 87,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 1114,
+   "completion_tokens": 44,
+   "total_tokens": 1158,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.297e-05,
+    "allowance": 2.578e-05,
+    "tokens": {
+     "input": 90,
+     "output": 44,
+     "reasoning": 37,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1114,
+   "completion_tokens": 54,
+   "total_tokens": 1168,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 47
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.897e-05,
+    "allowance": 2.938e-05,
+    "tokens": {
+     "input": 90,
+     "output": 54,
+     "reasoning": 47,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\":[67]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 43,
+   "total_tokens": 1155,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.207e-05,
+    "allowance": 2.524e-05,
+    "tokens": {
+     "input": 88,
+     "output": 43,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\": [186]}",
+  "usage": {
+   "prompt_tokens": 1112,
+   "completion_tokens": 36,
+   "total_tokens": 1148,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 28
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.787e-05,
+    "allowance": 2.272e-05,
+    "tokens": {
+     "input": 88,
+     "output": 36,
+     "reasoning": 28,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\":[142]}",
+  "usage": {
+   "prompt_tokens": 1113,
+   "completion_tokens": 52,
+   "total_tokens": 1165,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.762e-05,
+    "allowance": 2.857e-05,
+    "tokens": {
+     "input": 89,
+     "output": 52,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\": [175]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 48,
+   "total_tokens": 1159,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.492e-05,
+    "allowance": 2.695e-05,
+    "tokens": {
+     "input": 87,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 62,
+   "total_tokens": 1114,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 54
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000195,
+    "allowance": 0.000117,
+    "tokens": {
+     "input": 1052,
+     "output": 62,
+     "reasoning": 54,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\": [78]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 53,
+   "total_tokens": 1106,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018975,
+    "allowance": 0.00011385,
+    "tokens": {
+     "input": 1053,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\":[57]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 52,
+   "total_tokens": 1105,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.862e-05,
+    "allowance": 2.317e-05,
+    "tokens": {
+     "input": 29,
+     "output": 52,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\": [8]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 49,
+   "total_tokens": 1101,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.667e-05,
+    "allowance": 2.2e-05,
+    "tokens": {
+     "input": 28,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\": [49]}",
+  "usage": {
+   "prompt_tokens": 1056,
+   "completion_tokens": 58,
+   "total_tokens": 1114,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001932,
+    "allowance": 0.00011592,
+    "tokens": {
+     "input": 1056,
+     "output": 58,
+     "reasoning": 50,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\": [157]}",
+  "usage": {
+   "prompt_tokens": 1055,
+   "completion_tokens": 51,
+   "total_tokens": 1106,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018885,
+    "allowance": 0.00011331,
+    "tokens": {
+     "input": 1055,
+     "output": 51,
+     "reasoning": 43,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\": [53]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 57,
+   "total_tokens": 1110,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.162e-05,
+    "allowance": 2.497e-05,
+    "tokens": {
+     "input": 29,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\":[17]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 136,
+   "total_tokens": 1189,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 129
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00023955,
+    "allowance": 0.00014373,
+    "tokens": {
+     "input": 1053,
+     "output": 136,
+     "reasoning": 129,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\": [70]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 31,
+   "total_tokens": 1084,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 23
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00017655,
+    "allowance": 0.00010593,
+    "tokens": {
+     "input": 1053,
+     "output": 31,
+     "reasoning": 23,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\":[76]}",
+  "usage": {
+   "prompt_tokens": 1051,
+   "completion_tokens": 37,
+   "total_tokens": 1088,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00017985,
+    "allowance": 0.00010791,
+    "tokens": {
+     "input": 1051,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\":[65]}",
+  "usage": {
+   "prompt_tokens": 1056,
+   "completion_tokens": 66,
+   "total_tokens": 1122,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 59
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000198,
+    "allowance": 0.0001188,
+    "tokens": {
+     "input": 1056,
+     "output": 66,
+     "reasoning": 59,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\":[123]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 132,
+   "total_tokens": 1186,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 125
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 8.677e-05,
+    "allowance": 5.206e-05,
+    "tokens": {
+     "input": 30,
+     "output": 132,
+     "reasoning": 125,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\":[130]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 38,
+   "total_tokens": 1090,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001806,
+    "allowance": 0.00010836,
+    "tokens": {
+     "input": 1052,
+     "output": 38,
+     "reasoning": 31,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\":[136]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 57,
+   "total_tokens": 1111,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.177e-05,
+    "allowance": 2.506e-05,
+    "tokens": {
+     "input": 30,
+     "output": 57,
+     "reasoning": 50,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\": [173]}",
+  "usage": {
+   "prompt_tokens": 1051,
+   "completion_tokens": 49,
+   "total_tokens": 1100,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018705,
+    "allowance": 0.00011223,
+    "tokens": {
+     "input": 1051,
+     "output": 49,
+     "reasoning": 41,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\": [106]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 53,
+   "total_tokens": 1107,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.937e-05,
+    "allowance": 2.362e-05,
+    "tokens": {
+     "input": 30,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\": [31]}",
+  "usage": {
+   "prompt_tokens": 1051,
+   "completion_tokens": 58,
+   "total_tokens": 1109,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 50
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.192e-05,
+    "allowance": 2.515e-05,
+    "tokens": {
+     "input": 27,
+     "output": 58,
+     "reasoning": 50,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 27,
+   "total_tokens": 1079,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 20
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000174,
+    "allowance": 0.0001044,
+    "tokens": {
+     "input": 1052,
+     "output": 27,
+     "reasoning": 20,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1051,
+   "completion_tokens": 49,
+   "total_tokens": 1100,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018705,
+    "allowance": 0.00011223,
+    "tokens": {
+     "input": 1051,
+     "output": 49,
+     "reasoning": 42,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 50,
+   "total_tokens": 1102,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.727e-05,
+    "allowance": 2.236e-05,
+    "tokens": {
+     "input": 28,
+     "output": 50,
+     "reasoning": 43,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\":[59]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 64,
+   "total_tokens": 1117,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 57
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.582e-05,
+    "allowance": 2.749e-05,
+    "tokens": {
+     "input": 29,
+     "output": 64,
+     "reasoning": 57,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\":[113]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 55,
+   "total_tokens": 1107,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.027e-05,
+    "allowance": 2.416e-05,
+    "tokens": {
+     "input": 28,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\":[117]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 60,
+   "total_tokens": 1112,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.327e-05,
+    "allowance": 2.596e-05,
+    "tokens": {
+     "input": 28,
+     "output": 60,
+     "reasoning": 53,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\": [201, 203, 205, 207]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 96,
+   "total_tokens": 1150,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 79
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.517e-05,
+    "allowance": 3.91e-05,
+    "tokens": {
+     "input": 30,
+     "output": 96,
+     "reasoning": 79,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153,
+   205
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153, 205]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 163,
+   "total_tokens": 1217,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 143
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0002559,
+    "allowance": 0.00015354,
+    "tokens": {
+     "input": 1054,
+     "output": 163,
+     "reasoning": 143,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\":[63]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 53,
+   "total_tokens": 1105,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001896,
+    "allowance": 0.00011376,
+    "tokens": {
+     "input": 1052,
+     "output": 53,
+     "reasoning": 46,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 61,
+   "total_tokens": 1114,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.402e-05,
+    "allowance": 2.641e-05,
+    "tokens": {
+     "input": 29,
+     "output": 61,
+     "reasoning": 53,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\":[37]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 55,
+   "total_tokens": 1108,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00019095,
+    "allowance": 0.00011457,
+    "tokens": {
+     "input": 1053,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\": [149]}",
+  "usage": {
+   "prompt_tokens": 1056,
+   "completion_tokens": 43,
+   "total_tokens": 1099,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.367e-05,
+    "allowance": 2.02e-05,
+    "tokens": {
+     "input": 32,
+     "output": 43,
+     "reasoning": 35,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\": [160]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 41,
+   "total_tokens": 1095,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 33
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.217e-05,
+    "allowance": 1.93e-05,
+    "tokens": {
+     "input": 30,
+     "output": 41,
+     "reasoning": 33,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\": [164]}",
+  "usage": {
+   "prompt_tokens": 1051,
+   "completion_tokens": 57,
+   "total_tokens": 1108,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 49
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00019185,
+    "allowance": 0.00011511,
+    "tokens": {
+     "input": 1051,
+     "output": 57,
+     "reasoning": 49,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 54,
+   "total_tokens": 1108,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.997e-05,
+    "allowance": 2.398e-05,
+    "tokens": {
+     "input": 30,
+     "output": 54,
+     "reasoning": 46,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\":[88]}",
+  "usage": {
+   "prompt_tokens": 1055,
+   "completion_tokens": 64,
+   "total_tokens": 1119,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 57
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.612e-05,
+    "allowance": 2.767e-05,
+    "tokens": {
+     "input": 31,
+     "output": 64,
+     "reasoning": 57,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\": [74]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 47,
+   "total_tokens": 1099,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.547e-05,
+    "allowance": 2.128e-05,
+    "tokens": {
+     "input": 28,
+     "output": 47,
+     "reasoning": 39,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 1055,
+   "completion_tokens": 62,
+   "total_tokens": 1117,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.492e-05,
+    "allowance": 2.695e-05,
+    "tokens": {
+     "input": 31,
+     "output": 62,
+     "reasoning": 55,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1055,
+   "completion_tokens": 58,
+   "total_tokens": 1113,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.252e-05,
+    "allowance": 2.551e-05,
+    "tokens": {
+     "input": 31,
+     "output": 58,
+     "reasoning": 51,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\": [67]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 45,
+   "total_tokens": 1098,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.442e-05,
+    "allowance": 2.065e-05,
+    "tokens": {
+     "input": 29,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\": [186]}",
+  "usage": {
+   "prompt_tokens": 1053,
+   "completion_tokens": 34,
+   "total_tokens": 1087,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 26
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.782e-05,
+    "allowance": 1.669e-05,
+    "tokens": {
+     "input": 29,
+     "output": 34,
+     "reasoning": 26,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\":[142]}",
+  "usage": {
+   "prompt_tokens": 1054,
+   "completion_tokens": 45,
+   "total_tokens": 1099,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 38
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.457e-05,
+    "allowance": 2.074e-05,
+    "tokens": {
+     "input": 30,
+     "output": 45,
+     "reasoning": 38,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_guarded",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\": [175]}",
+  "usage": {
+   "prompt_tokens": 1052,
+   "completion_tokens": 54,
+   "total_tokens": 1106,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.967e-05,
+    "allowance": 2.38e-05,
+    "tokens": {
+     "input": 28,
+     "output": 54,
+     "reasoning": 46,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人自己对什么过敏？",
+  "expected": [
+   55
+  ],
+  "got": [
+   55
+  ],
+  "raw": "{\"ids\": [55]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 47,
+   "total_tokens": 1093,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001851,
+    "allowance": 0.00011106,
+    "tokens": {
+     "input": 1046,
+     "output": 47,
+     "reasoning": 39,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "Mika对什么过敏？",
+  "expected": [
+   78
+  ],
+  "got": [
+   78
+  ],
+  "raw": "{\"ids\": [78]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 67,
+   "total_tokens": 1114,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 59
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.672e-05,
+    "allowance": 2.803e-05,
+    "tokens": {
+     "input": 23,
+     "output": 67,
+     "reasoning": 59,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人每天几点前睡觉？",
+  "expected": [
+   57
+  ],
+  "got": [
+   57
+  ],
+  "raw": "{\"ids\":[57]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 38,
+   "total_tokens": 1085,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00017985,
+    "allowance": 0.00010791,
+    "tokens": {
+     "input": 1047,
+     "output": 38,
+     "reasoning": 31,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\": [8]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 45,
+   "total_tokens": 1091,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001839,
+    "allowance": 0.00011034,
+    "tokens": {
+     "input": 1046,
+     "output": 45,
+     "reasoning": 37,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "几个人以上的饭局要提前一周约？",
+  "expected": [
+   49
+  ],
+  "got": [
+   49
+  ],
+  "raw": "{\"ids\": [49]}",
+  "usage": {
+   "prompt_tokens": 1050,
+   "completion_tokens": 53,
+   "total_tokens": 1103,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001893,
+    "allowance": 0.00011358,
+    "tokens": {
+     "input": 1050,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人计划几月去北海道滑雪？",
+  "expected": [
+   157
+  ],
+  "got": [
+   157
+  ],
+  "raw": "{\"ids\":[157]}",
+  "usage": {
+   "prompt_tokens": 1049,
+   "completion_tokens": 54,
+   "total_tokens": 1103,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 47
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018975,
+    "allowance": 0.00011385,
+    "tokens": {
+     "input": 1049,
+     "output": 54,
+     "reasoning": 47,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的鼻炎什么时候会加重？",
+  "expected": [
+   53
+  ],
+  "got": [
+   53
+  ],
+  "raw": "{\"ids\":[53]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 76,
+   "total_tokens": 1123,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 69
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 5.212e-05,
+    "allowance": 3.127e-05,
+    "tokens": {
+     "input": 23,
+     "output": 76,
+     "reasoning": 69,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人喝咖啡有什么习惯？",
+  "expected": [
+   17
+  ],
+  "got": [
+   17
+  ],
+  "raw": "{\"ids\":[17]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 103,
+   "total_tokens": 1150,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 96
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00021885,
+    "allowance": 0.00013131,
+    "tokens": {
+     "input": 1047,
+     "output": 103,
+     "reasoning": 96,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   196
+  ]
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人妈妈的生日是哪天？",
+  "expected": [
+   70
+  ],
+  "got": [
+   70
+  ],
+  "raw": "{\"ids\": [70]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 44,
+   "total_tokens": 1091,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018345,
+    "allowance": 0.00011007,
+    "tokens": {
+     "input": 1047,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的女朋友叫什么？",
+  "expected": [
+   76
+  ],
+  "got": [
+   76
+  ],
+  "raw": "{\"ids\":[76]}",
+  "usage": {
+   "prompt_tokens": 1045,
+   "completion_tokens": 49,
+   "total_tokens": 1094,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018615,
+    "allowance": 0.00011169,
+    "tokens": {
+     "input": 1045,
+     "output": 49,
+     "reasoning": 42,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人下次牙医复诊是哪天？",
+  "expected": [
+   65
+  ],
+  "got": [
+   65
+  ],
+  "raw": "{\"ids\":[65]}",
+  "usage": {
+   "prompt_tokens": 1050,
+   "completion_tokens": 39,
+   "total_tokens": 1089,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 32
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001809,
+    "allowance": 0.00010854,
+    "tokens": {
+     "input": 1050,
+     "output": 39,
+     "reasoning": 32,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人最近一场面试是什么时候？",
+  "expected": [
+   123
+  ],
+  "got": [
+   123
+  ],
+  "raw": "{\"ids\": [123]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 70,
+   "total_tokens": 1118,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 62
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.867e-05,
+    "allowance": 2.92e-05,
+    "tokens": {
+     "input": 24,
+     "output": 70,
+     "reasoning": 62,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人每月房租多少？",
+  "expected": [
+   130
+  ],
+  "got": [
+   130
+  ],
+  "raw": "{\"ids\":[130]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 55,
+   "total_tokens": 1101,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 48
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.937e-05,
+    "allowance": 2.362e-05,
+    "tokens": {
+     "input": 22,
+     "output": 55,
+     "reasoning": 48,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人每月给妈妈转多少钱？",
+  "expected": [
+   136
+  ],
+  "got": [
+   136
+  ],
+  "raw": "{\"ids\":[136]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 37,
+   "total_tokens": 1085,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 30
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.887e-05,
+    "allowance": 1.732e-05,
+    "tokens": {
+     "input": 24,
+     "output": 37,
+     "reasoning": 30,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人用什么手机？",
+  "expected": [
+   173
+  ],
+  "got": [
+   173
+  ],
+  "raw": "{\"ids\": [173]}",
+  "usage": {
+   "prompt_tokens": 1045,
+   "completion_tokens": 50,
+   "total_tokens": 1095,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 42
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.622e-05,
+    "allowance": 2.173e-05,
+    "tokens": {
+     "input": 21,
+     "output": 50,
+     "reasoning": 42,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的JLPT考试是什么时候？",
+  "expected": [
+   106
+  ],
+  "got": [
+   106
+  ],
+  "raw": "{\"ids\": [106]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 53,
+   "total_tokens": 1101,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.000189,
+    "allowance": 0.0001134,
+    "tokens": {
+     "input": 1048,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人不吃什么？",
+  "expected": [
+   31
+  ],
+  "got": [
+   31
+  ],
+  "raw": "{\"ids\":[31]}",
+  "usage": {
+   "prompt_tokens": 1045,
+   "completion_tokens": 82,
+   "total_tokens": 1127,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 75
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00020595,
+    "allowance": 0.00012357,
+    "tokens": {
+     "input": 1045,
+     "output": 82,
+     "reasoning": 75,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的血型是什么？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 44,
+   "total_tokens": 1090,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.277e-05,
+    "allowance": 1.966e-05,
+    "tokens": {
+     "input": 22,
+     "output": 44,
+     "reasoning": 37,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人有几个孩子？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1045,
+   "completion_tokens": 65,
+   "total_tokens": 1110,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 58
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.522e-05,
+    "allowance": 2.713e-05,
+    "tokens": {
+     "input": 21,
+     "output": 65,
+     "reasoning": 58,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "got": [],
+  "raw": "{\"ids\": []}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 58,
+   "total_tokens": 1104,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 51
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001917,
+    "allowance": 0.00011502,
+    "tokens": {
+     "input": 1046,
+     "output": 58,
+     "reasoning": 51,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人每周跑几次步？",
+  "expected": [
+   59
+  ],
+  "got": [
+   59
+  ],
+  "raw": "{\"ids\":[59]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 50,
+   "total_tokens": 1097,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.652e-05,
+    "allowance": 2.191e-05,
+    "tokens": {
+     "input": 23,
+     "output": 50,
+     "reasoning": 43,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人投了几家公司？",
+  "expected": [
+   113
+  ],
+  "got": [
+   113
+  ],
+  "raw": "{\"ids\":[113]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 61,
+   "total_tokens": 1107,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 54
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.297e-05,
+    "allowance": 2.578e-05,
+    "tokens": {
+     "input": 22,
+     "output": 61,
+     "reasoning": 54,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的期望年薪是多少？",
+  "expected": [
+   117
+  ],
+  "got": [
+   117
+  ],
+  "raw": "{\"ids\":[117]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 47,
+   "total_tokens": 1093,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001851,
+    "allowance": 0.00011106,
+    "tokens": {
+     "input": 1046,
+     "output": 47,
+     "reasoning": 40,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "哪些记忆还没有经过主人确认？",
+  "expected": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "got": [
+   201,
+   203,
+   205,
+   207
+  ],
+  "raw": "{\"ids\":[201,203,205,207]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 102,
+   "total_tokens": 1150,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 89
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 6.787e-05,
+    "allowance": 4.072e-05,
+    "tokens": {
+     "input": 24,
+     "output": 102,
+     "reasoning": 89,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "列出所有关于Mika的记忆。",
+  "expected": [
+   76,
+   78,
+   80,
+   153
+  ],
+  "got": [
+   76,
+   78,
+   80,
+   153,
+   205
+  ],
+  "raw": "{\"ids\": [76, 78, 80, 153, 205]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 175,
+   "total_tokens": 1223,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 155
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00011167,
+    "allowance": 6.7e-05,
+    "tokens": {
+     "input": 24,
+     "output": 175,
+     "reasoning": 155,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": [
+   205
+  ]
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人近视多少度？",
+  "expected": [
+   63
+  ],
+  "got": [
+   63
+  ],
+  "raw": "{\"ids\": [63]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 39,
+   "total_tokens": 1085,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 2.977e-05,
+    "allowance": 1.786e-05,
+    "tokens": {
+     "input": 22,
+     "output": 39,
+     "reasoning": 31,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的手机套餐每月多少钱？",
+  "expected": [
+   140
+  ],
+  "got": [
+   140
+  ],
+  "raw": "{\"ids\": [140]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 48,
+   "total_tokens": 1095,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018585,
+    "allowance": 0.00011151,
+    "tokens": {
+     "input": 1047,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人喜欢听谁的歌？",
+  "expected": [
+   37
+  ],
+  "got": [
+   37
+  ],
+  "raw": "{\"ids\": [37]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 51,
+   "total_tokens": 1098,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 43
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.712e-05,
+    "allowance": 2.227e-05,
+    "tokens": {
+     "input": 23,
+     "output": 51,
+     "reasoning": 43,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人专注写代码是几点到几点？",
+  "expected": [
+   149
+  ],
+  "got": [
+   149
+  ],
+  "raw": "{\"ids\":[149]}",
+  "usage": {
+   "prompt_tokens": 1050,
+   "completion_tokens": 46,
+   "total_tokens": 1096,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 39
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.457e-05,
+    "allowance": 2.074e-05,
+    "tokens": {
+     "input": 26,
+     "output": 46,
+     "reasoning": 39,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人家在东京哪个区？",
+  "expected": [
+   160
+  ],
+  "got": [
+   160
+  ],
+  "raw": "{\"ids\":[160]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 62,
+   "total_tokens": 1110,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.387e-05,
+    "allowance": 2.632e-05,
+    "tokens": {
+     "input": 24,
+     "output": 62,
+     "reasoning": 55,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\":[164]}",
+  "usage": {
+   "prompt_tokens": 1045,
+   "completion_tokens": 44,
+   "total_tokens": 1089,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 37
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018315,
+    "allowance": 0.00010989,
+    "tokens": {
+     "input": 1045,
+     "output": 44,
+     "reasoning": 37,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人一天里什么时候最困？",
+  "expected": [
+   147
+  ],
+  "got": [
+   147
+  ],
+  "raw": "{\"ids\": [147]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 52,
+   "total_tokens": 1100,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 44
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001884,
+    "allowance": 0.00011304,
+    "tokens": {
+     "input": 1048,
+     "output": 52,
+     "reasoning": 44,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "谁可以给主人当推荐人？",
+  "expected": [
+   88
+  ],
+  "got": [
+   88
+  ],
+  "raw": "{\"ids\": [88]}",
+  "usage": {
+   "prompt_tokens": 1049,
+   "completion_tokens": 53,
+   "total_tokens": 1102,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 45
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.862e-05,
+    "allowance": 2.317e-05,
+    "tokens": {
+     "input": 25,
+     "output": 53,
+     "reasoning": 45,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的妹妹在哪里读书？",
+  "expected": [
+   74
+  ],
+  "got": [
+   74
+  ],
+  "raw": "{\"ids\":[74]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 48,
+   "total_tokens": 1094,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 41
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.517e-05,
+    "allowance": 2.11e-05,
+    "tokens": {
+     "input": 22,
+     "output": 48,
+     "reasoning": 41,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的简历最近一次是什么时候更新的？",
+  "expected": [
+   111
+  ],
+  "got": [
+   111
+  ],
+  "raw": "{\"ids\":[111]}",
+  "usage": {
+   "prompt_tokens": 1049,
+   "completion_tokens": 53,
+   "total_tokens": 1102,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 46
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.862e-05,
+    "allowance": 2.317e-05,
+    "tokens": {
+     "input": 25,
+     "output": 53,
+     "reasoning": 46,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "早上几点前不要给主人推送？",
+  "expected": [
+   19
+  ],
+  "got": [
+   19
+  ],
+  "raw": "{\"ids\":[19]}",
+  "usage": {
+   "prompt_tokens": 1049,
+   "completion_tokens": 60,
+   "total_tokens": 1109,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 53
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.282e-05,
+    "allowance": 2.569e-05,
+    "tokens": {
+     "input": 25,
+     "output": 60,
+     "reasoning": 53,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人每天喝多少水？",
+  "expected": [
+   67
+  ],
+  "got": [
+   67
+  ],
+  "raw": "{\"ids\":[67]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 47,
+   "total_tokens": 1094,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.00018525,
+    "allowance": 0.00011115,
+    "tokens": {
+     "input": 1047,
+     "output": 47,
+     "reasoning": 40,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人最近在读什么书？",
+  "expected": [
+   186
+  ],
+  "got": [
+   186
+  ],
+  "raw": "{\"ids\": [186]}",
+  "usage": {
+   "prompt_tokens": 1047,
+   "completion_tokens": 44,
+   "total_tokens": 1091,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 36
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.292e-05,
+    "allowance": 1.975e-05,
+    "tokens": {
+     "input": 23,
+     "output": 44,
+     "reasoning": 36,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人今年存款的底线是多少？",
+  "expected": [
+   142
+  ],
+  "got": [
+   142
+  ],
+  "raw": "{\"ids\":[142]}",
+  "usage": {
+   "prompt_tokens": 1048,
+   "completion_tokens": 65,
+   "total_tokens": 1113,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 58
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 0.0001962,
+    "allowance": 0.00011772,
+    "tokens": {
+     "input": 1048,
+     "output": 65,
+     "reasoning": 58,
+     "cache_read": 0,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "tight_raw",
+  "rep": 0,
+  "q": "主人的电脑是多少内存？",
+  "expected": [
+   175
+  ],
+  "got": [
+   175
+  ],
+  "raw": "{\"ids\":[175]}",
+  "usage": {
+   "prompt_tokens": 1046,
+   "completion_tokens": 62,
+   "total_tokens": 1108,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 55
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.357e-05,
+    "allowance": 2.614e-05,
+    "tokens": {
+     "input": 22,
+     "output": 62,
+     "reasoning": 55,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  },
+  "optional": []
+ },
+ {
+  "format": "markdown",
+  "rep": 0,
+  "q": "主人的健身房在哪里？",
+  "expected": [
+   164
+  ],
+  "optional": [],
+  "got": [
+   164
+  ],
+  "raw": "{\"ids\": [164]}",
+  "usage": {
+   "prompt_tokens": 1355,
+   "completion_tokens": 48,
+   "total_tokens": 1403,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 40
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.389e-05,
+    "allowance": 2.633e-05,
+    "tokens": {
+     "input": 75,
+     "output": 48,
+     "reasoning": 40,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  }
+ },
+ {
+  "format": "tsv",
+  "rep": 0,
+  "q": "主人是哪一年出生的？",
+  "expected": [
+   8
+  ],
+  "optional": [],
+  "got": [
+   8
+  ],
+  "raw": "{\"ids\": [8]}",
+  "usage": {
+   "prompt_tokens": 1321,
+   "completion_tokens": 39,
+   "total_tokens": 1360,
+   "prompt_tokens_details": {
+    "cached_tokens": 1280
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 31
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 3.339e-05,
+    "allowance": 2.003e-05,
+    "tokens": {
+     "input": 41,
+     "output": 39,
+     "reasoning": 31,
+     "cache_read": 1280,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  }
+ },
+ {
+  "format": "flat_space",
+  "rep": 0,
+  "q": "主人的护照号码是多少？",
+  "expected": [],
+  "optional": [],
+  "got": [],
+  "raw": "{\"ids\":[]}",
+  "usage": {
+   "prompt_tokens": 1111,
+   "completion_tokens": 42,
+   "total_tokens": 1153,
+   "prompt_tokens_details": {
+    "cached_tokens": 1024
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 35
+   },
+   "cost": 0,
+   "opencode": {
+    "billing_source": "go",
+    "list_cost": 4.132e-05,
+    "allowance": 2.479e-05,
+    "tokens": {
+     "input": 87,
+     "output": 42,
+     "reasoning": 35,
+     "cache_read": 1024,
+     "cache_write_5m": 0,
+     "cache_write_1h": 0
+    }
+   }
+  }
+ }
+]

@@ -1,0 +1,13 @@
+{
+  "tsv": {
+    "label": "TSV：编号⇥类别⇥内容",
+    "runs": 40,
+    "exact": 40,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 43,
+    "list_cost_usd": 0.0132
+  }
+}
