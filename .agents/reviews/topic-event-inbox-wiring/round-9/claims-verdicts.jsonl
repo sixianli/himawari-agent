@@ -1,0 +1,1 @@
+{"id": "29", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|29|找不到|-|记忆线程“翻原话”查不到上线前的内容|-", "outcome": "model-wrong", "evidenceFile": "packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql", "evidence": "thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,"}
