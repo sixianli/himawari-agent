@@ -519,7 +519,6 @@ export async function harness(
     scope: { ownerId, agentId },
     store: repository.deviceActions(),
     perception: repository.perception(),
-    externalContent,
     devices: (scope) => repository.pairedDevices().listDevices(scope),
     ledger: repository.decisionLedger(),
     payloads: repository.payloadStore(ownerId, agentId),

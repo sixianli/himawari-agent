@@ -1688,7 +1688,6 @@ export async function startTenantRuntime(
         scope: perceptionScope,
         store: repository.deviceActions(),
         perception: repository.perception(),
-        externalContent,
         devices: repository.pairedDevices().listDevices,
         ledger: repository.decisionLedger(),
         payloads,

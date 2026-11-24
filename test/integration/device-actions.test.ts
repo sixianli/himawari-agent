@@ -365,7 +365,6 @@ describe("[iOS-9A] device_action describe is computed from the registry, the dev
           readBack: "none",
           snapshotBefore: false,
           reversible: true,
-          untrustedOriginAllowed: true,
           title: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           confirmLabel: { "zh-CN": "回声", en: "Echo", ja: "エコー" },
           declineLabel: { "zh-CN": "不用", en: "No", ja: "いいえ" },
@@ -939,7 +938,6 @@ describe("[iOS-9A] review round 2: replays, failed reports and reopening stay bo
       scope: perceptionScope,
       store: full.deviceActions(),
       perception: h.repository.perception(),
-      externalContent: h.externalContent,
       devices: (scope) => h.repository.pairedDevices().listDevices(scope),
       ledger: h.repository.decisionLedger(),
       payloads: h.repository.payloadStore(ownerId, agentId),
@@ -1071,27 +1069,6 @@ describe("[iOS-9A] review round 3: actions nobody can verify do not block the qu
 });
 
 describe("[iOS-9A] actions that need the owner in person", () => {
-  it("tells the owner's authorization when the run already read content from outside, and not before", async () => {
-    const h = await harness();
-    const client = await pairAndConfirm(h);
-    await supports(h, client, ["calendar.delete"]);
-    await mirror(h, client, "calendar_event", [DENTIST]);
-    const { act } = setup(h);
-    await addRun(h, "run-1");
-    await addRun(h, "run-2");
-    const request = {
-      action: "calendar.delete",
-      arguments: { eventId: "evt-1" },
-    };
-    const seen: DeviceActionIntent[] = [];
-    h.actions.authorization.current = ownerIsAsked(seen);
-    await act("run-1", request);
-    await h.externalContent.mark(createRunId("run-2"), "perception_read");
-    await act("run-2", request);
-    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([false, true]);
-    await h.repository.close();
-  });
-
   it("[undo] offers an undo only when the device reported what it changed, and queues the reverse action", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
@@ -1222,7 +1199,6 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     expect(seen).toMatchObject([
       {
         action: "calendar.update",
-        readUntrustedContent: false,
         arguments: { title: "新标题" },
       },
     ]);
@@ -1264,11 +1240,11 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     h.actions.authorization.current = ownerIsAsked(seen);
     await confirmablePost(h, client, "actions/undo", { id: targets[0] as string }, false);
     await confirmablePost(h, client, "actions/undo", { id: targets[1] as string }, true);
-    expect(seen.map(({ readUntrustedContent }) => readUntrustedContent)).toEqual([true, false]);
+    expect(seen.map(({ toolCallId }) => toolCallId.endsWith(":owner"))).toEqual([false, true]);
     await h.repository.close();
   });
 
-  it("[undo] an unconfirmed undo refused for untrusted content does not block the same action's confirmed undo", async () => {
+  it("[undo] an unconfirmed undo that was refused does not block the same action's confirmed undo", async () => {
     const h = await harness();
     const client = await pairAndConfirm(h);
     await supports(h, client, ["calendar.update"]);
@@ -1293,7 +1269,7 @@ describe("[iOS-9A] actions that need the owner in person", () => {
     await h.externalContent.mark(createRunId("run-1"), "perception_read");
     h.actions.authorization.current = {
       authorize: async (intent) =>
-        intent.readUntrustedContent
+        !intent.toolCallId.endsWith(":owner")
           ? { decision: "deny", reasonCode: "authorization_denied" }
           : { decision: "approval", approvalId: "approval-owner" },
     };
@@ -1542,8 +1518,6 @@ describe("[iOS-9A] actions that need the owner in person", () => {
       risk: "HIGH",
       ownerPresence: true,
       target: { type: "calendar_event", ref: "evt-1" },
-      untrustedOriginAllowed: false,
-      readUntrustedContent: false,
     });
     const waiting = (await rows(h)).find(({ state }) => state === "waiting_owner");
     if (!waiting) throw new Error("waiting action missing");

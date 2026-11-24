@@ -29,7 +29,6 @@ export interface ProductionDeviceActionsOptions {
   readonly scope: PairedDeviceScope;
   readonly store: DeviceActionStorePort;
   readonly perception: Pick<PerceptionStorePort, "listMirror">;
-  readonly externalContent: { read(runId: string): Promise<readonly unknown[]> };
   readonly devices: (scope: PairedDeviceScope) => Promise<readonly PairedDevice[]>;
   readonly ledger: Pick<DecisionLedgerPort, "append">;
   readonly payloads: PayloadStorePort;
@@ -89,7 +88,6 @@ export function createProductionDeviceActions(options: ProductionDeviceActionsOp
     store: options.store,
     devices: options.devices,
     mirror: (input) => options.perception.listMirror(input),
-    readUntrustedContent: async (runId) => (await options.externalContent.read(runId)).length > 0,
     authorization: options.authorization ?? new ReadOnlyDeviceActionAuthorization(),
     delivery: options.delivery,
     ...(options.openRequests ? { openRequests: options.openRequests } : {}),

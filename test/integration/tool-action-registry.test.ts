@@ -310,6 +310,7 @@ it("[ADR-0257] sets a reminder and a rule through the permission engine, preauth
       threadId: "thread-capability-invocation",
     });
     expect(snapshot.deterministicFacts).toEqual([
+      { code: "himawari_side_only", minimumRisk: "LOW", source: "runtime" },
       { code: "run_source_user_message", minimumRisk: "LOW", source: "runtime" },
     ]);
     expect((await s.store.listGrants(OWNER_ID, AGENT_ID)).map(({ kind }) => kind)).toEqual([
@@ -526,8 +527,8 @@ it("[ADR-0257] refuses a built-in tool whose capability is missing from the buil
   }
 });
 
-it("[ADR-0257] asks the owner before setting a reminder once a task's output is in the conversation, and keeps asking after a restart", async () => {
-  const s = await setup();
+it("[ADR-0257] asks the owner before a write that is not Himawari's own once a task's output is in the conversation, and keeps asking after a restart", async () => {
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     const output = s.call("execution.task.output", "call:output", { taskId: "task:a" });
     expect(await s.tools.execute(output)).toMatchObject({ outcome: "succeeded" });
@@ -584,8 +585,8 @@ it("[ADR-0257] keeps reading the owner's own data without marking the conversati
   }
 });
 
-it("[ADR-0257] refuses a scheduled run's reminder once external content is in context, records what it wanted, and creates no approval", async () => {
-  const s = await setup({ sourceType: "schedule" });
+it("[ADR-0257] when a refusing action rule hits a scheduled run's reminder, records what it wanted and creates no approval", async () => {
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const args = { due: "2026-11-13T15:00", text: "付款" };
@@ -630,17 +631,41 @@ it("[ADR-0257] lets a scheduled run set a reminder when nothing external is in c
   }
 });
 
-it("[ADR-0257] treats an external-event run as external content even before any tool reads anything", async () => {
+it("[ADR-0285] treats an external-event run as external content before any tool reads anything: its reminder goes ahead with the event as source, a rule change asks", async () => {
   const s = await setup({ sourceType: "external_event" });
   try {
     const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
-    expect(await s.tools.execute(set)).toMatchObject({
-      outcome: "failed",
-      errorCode: "action_rule_refused",
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    const origins = (await s.externalContent.read(RUN_ID)).map(({ origin }) => origin);
+    expect(origins).toEqual([expect.stringMatching(/^external_event:/u)]);
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:event" }),
+      {
+        externalOrigins: origins,
+      },
+    );
+    const [reminderApproval] = await s.approvals();
+    expect(reminderApproval).toMatchObject({
+      status: "approved",
+      policyAuthorization: {
+        key: `action-rule:${ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent}`,
+      },
     });
-    expect(await s.externalContent.read(RUN_ID)).toEqual([
-      expect.objectContaining({ origin: "external_event" }),
-    ]);
+    const rule = s.call("rule.set", "call:event-rule", { text: "以后付款邮件都直接转给会计" });
+    expect(await s.tools.execute(rule)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.rules).not.toHaveBeenCalled();
+    expect(await s.approvals()).toHaveLength(2);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: the same external-event reminder asks when the reminder is not marked as Himawari's own", async () => {
+  const s = await setup({ sourceType: "external_event", registry: notHimawariSideRegistry() });
+  try {
+    const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
   } finally {
     await s.close();
   }
@@ -662,7 +687,11 @@ it("[ADR-0278] lets a task the owner agreed to set a reminder when nothing exter
 });
 
 it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
-  const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
+  const s = await setup({
+    sourceType: "external_event",
+    ownerApprovedTask: true,
+    registry: notHimawariSideRegistry(),
+  });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:approved-after", {
@@ -680,19 +709,47 @@ it("[ADR-0278] asks the owner, instead of refusing, when a task the owner agreed
   }
 });
 
-it("[ADR-0278] REVERSE: without the owner-approved mark the same external-event write is still refused", async () => {
-  const s = await setup({ sourceType: "external_event" });
+it("[ADR-0285] an external-event run that read outside content asks the owner too, instead of being refused", async () => {
+  const s = await setup({ sourceType: "external_event", registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:plain-event", {
       text: "付款",
       due: "2026-11-13T15:00",
     });
-    expect(await s.tools.execute(set)).toMatchObject({
-      outcome: "failed",
-      errorCode: "action_rule_refused",
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(await s.approvals()).toEqual([
+      expect.objectContaining({
+        status: "pending",
+        display: expect.objectContaining({
+          askedBecause: expect.objectContaining({
+            ruleId: ACTION_RULE_IDS.askAfterExternalContent,
+          }),
+        }),
+      }),
+    ]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] a scheduled run that read outside content sets its reminder right away and asks before changing a rule", async () => {
+  const s = await setup({ sourceType: "schedule" });
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:background", {
+      due: "2026-11-13T15:00",
+      text: "付款",
     });
-    expect(await s.approvals()).toEqual([]);
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    const rule = s.call("rule.set", "call:background-rule", { text: "以后付款提醒都提前一天" });
+    expect(await s.tools.execute(rule)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.rules).not.toHaveBeenCalled();
+    const audits = (await s.repository.auditLedger().listByAgent(AGENT_ID, null)).filter(
+      ({ action }) => action === "authorization.action_rule.refused",
+    );
+    expect(audits).toEqual([]);
   } finally {
     await s.close();
   }
@@ -732,8 +789,55 @@ it("[ADR-0257] asks the owner before stopping a task when no built-in rule preau
   }
 });
 
-it("[ADR-0257] hands the conversation's external sources to the reminder it sets after the owner approves", async () => {
+it("[ADR-0285] sets a reminder right away after outside content and hands it the conversation's sources", async () => {
   const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const set = s.call("reminder.set", "call:after-output", {
+      text: "改会议",
+      due: "2026-11-13T15:00",
+    });
+    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
+    expect(s.reminders).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: "call:after-output" }),
+      { externalOrigins: ["execution_task_output"] },
+    );
+    const [approval] = await s.approvals();
+    expect(approval).toMatchObject({
+      status: "approved",
+      policyAuthorization: {
+        key: `action-rule:${ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent}`,
+      },
+    });
+    expect(
+      (approval?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(({ code }) => code),
+    ).toEqual(["context_external_content", "himawari_side_only", "run_source_user_message"]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] REVERSE: cancelling a reminder cannot be undone, so after outside content it asks instead of going ahead", async () => {
+  const s = await setup();
+  try {
+    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
+    const cancel = s.call("reminder.cancel", "call:cancel-after-output", {
+      reminderId: "reminder:a",
+    });
+    expect(await s.tools.execute(cancel)).toMatchObject({ outcome: "awaiting_approval" });
+    expect(s.reminders).not.toHaveBeenCalled();
+    expect(
+      ((await s.approvals())[0]?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(
+        ({ code }) => code,
+      ),
+    ).toEqual(["context_external_content", "run_source_user_message"]);
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0257] hands the conversation's external sources to a write it runs after the owner approves", async () => {
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:approved", {
@@ -769,8 +873,8 @@ it("[ADR-0257] gives the owner's own reminders no external sources when nothing 
   }
 });
 
-it("[ADR-0257] counts a recalled memory written from external content as external, so the next reminder asks", async () => {
-  const s = await setup({ recalledExternal: true });
+it("[ADR-0257] counts a recalled memory written from external content as external, so the next outside write asks", async () => {
+  const s = await setup({ recalledExternal: true, registry: notHimawariSideRegistry() });
   try {
     const recalled = s.call("memory.recall", "call:recall", { query: "会议", limit: 3 });
     expect(await s.tools.execute(recalled)).toMatchObject({ outcome: "succeeded" });
@@ -832,9 +936,9 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
         askFirst: false,
       },
       {
-        ruleId: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-        outcome: "refuse",
-        askFirst: null,
+        ruleId: ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent,
+        outcome: "allow_preauthorized",
+        askFirst: false,
       },
       {
         ruleId: ACTION_RULE_IDS.preauthorizeOwnTaskCancel,
@@ -873,7 +977,7 @@ it("[ADR-0257] lets the owner switch a just-do-it built-in rule to ask every tim
 });
 
 it("[ADR-0257] runs an approved call on the facts frozen when it asked, even if the conversation's marks change before the owner answers", async () => {
-  const s = await setup();
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:frozen", { text: "改会议", due: "2026-11-13T15:00" });
@@ -952,20 +1056,15 @@ it("[ADR-0257] keeps a conversation's marks for every later run in it, so a new 
   }
 });
 
-it("[ADR-0257] REVERSE: without the background refusal rule the same scheduled call would wait for the owner, so the refusal test depends on that rule", async () => {
-  const s = await setup({
-    sourceType: "schedule",
-    rules: BUILT_IN_ACTION_RULES.filter(
-      ({ id }) => id !== ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-    ),
-  });
+it("[ADR-0285] REVERSE: with the retired refusal rule switched back on, the same scheduled rule change would be refused, so the asking test depends on it staying retired", async () => {
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
-    const set = s.call("reminder.set", "call:background", {
-      due: "2026-11-13T15:00",
-      text: "付款",
+    const rule = s.call("rule.set", "call:background-rule", { text: "以后付款提醒都提前一天" });
+    expect(await s.tools.execute(rule)).toMatchObject({
+      outcome: "failed",
+      errorCode: "action_rule_refused",
     });
-    expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
   } finally {
     await s.close();
   }
@@ -986,6 +1085,22 @@ it("[ADR-0257] REVERSE: without the mark a task's output leaves the next reminde
   }
 });
 
+function notHimawariSideRegistry() {
+  return new ToolActionRegistry(
+    PRODUCTION_TOOL_ACTION_ROWS.map((row) => {
+      if (!row.himawariSideOnly) return row;
+      const { himawariSideOnly: _ownSide, ...outside } = row;
+      return outside;
+    }),
+  );
+}
+
+const REFUSING_RULES = BUILT_IN_ACTION_RULES.map((rule) =>
+  rule.id === ACTION_RULE_IDS.refuseBackgroundAfterExternalContent
+    ? { ...rule, status: "active" as const }
+    : rule,
+);
+
 function unmarkedTaskOutputRegistry() {
   return new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.map((row) =>
@@ -995,7 +1110,7 @@ function unmarkedTaskOutputRegistry() {
 }
 
 it("[ADR-0257] refuses the same background call again on replay without turning it into an authorization error", async () => {
-  const s = await setup({ sourceType: "schedule" });
+  const s = await setup({ sourceType: "schedule", rules: REFUSING_RULES });
   try {
     await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
     const set = s.call("reminder.set", "call:replayed", { due: "2026-11-13T15:00", text: "付款" });
@@ -1072,6 +1187,7 @@ it("[ADR-0257] keeps a background refusal when another writer recorded it first,
     let commits = 0;
     const s = await setup({
       sourceType: "schedule",
+      rules: REFUSING_RULES,
       ownerScopeState: (repository) => ({
         readScopedState: (...args) => repository.readScopedState(...args),
         commitStateAndEvents: async (input) => {
@@ -1156,7 +1272,7 @@ it("[ADR-0257] retries the owner's rule switch after a concurrent change and giv
 });
 
 it("[ADR-0257] keeps the card's reason short when many outside sources were read", async () => {
-  const s = await setup();
+  const s = await setup({ registry: notHimawariSideRegistry() });
   try {
     for (let index = 0; index < 7; index += 1)
       await s.externalContent.mark(RUN_ID, `source_${index}_${"x".repeat(200)}`);
@@ -1187,7 +1303,7 @@ async function readOutputThenSetReminder(s: Awaited<ReturnType<typeof setup>>, i
 
 it("[ADR-0257] sets the reminder without a card after outside content when the owner's own words clearly asked for it, and records what was checked", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     expect(await readOutputThenSetReminder(s, "yes")).toMatchObject({ outcome: "succeeded" });
     expect(s.reminders).toHaveBeenCalledTimes(1);
@@ -1223,7 +1339,7 @@ it("[ADR-0257] sets the reminder without a card after outside content when the o
 
 it("[ADR-0257] follows the record that won a race for the same intent, so the action and the record never disagree", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     const original = s.repository.commitStateAndEvents.bind(s.repository);
     let raced = false;
@@ -1276,6 +1392,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
   ];
   for (const [name, check, timeoutMs] of cases) {
     const s = await setup({
+      registry: notHimawariSideRegistry(),
       ownerIntent: { check, ...(timeoutMs === undefined ? {} : { timeoutMs }) },
     });
     try {
@@ -1305,7 +1422,7 @@ it("[ADR-0257] still asks the owner when the check says no, is unsure, is not co
 
 it("[ADR-0257] does not ask the check at all without outside content, for a standing rule, or for a scheduled run, and asks with no owner words as unconfirmed", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     expect(
       await s.tools.execute(
@@ -1322,7 +1439,11 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
   } finally {
     await s.close();
   }
-  const scheduled = await setup({ sourceType: "schedule", ownerIntent: { check } });
+  const scheduled = await setup({
+    registry: notHimawariSideRegistry(),
+    sourceType: "schedule",
+    ownerIntent: { check },
+  });
   try {
     await scheduled.tools.execute(
       scheduled.call("execution.task.output", "call:output:sch", { taskId: "task:a" }),
@@ -1331,13 +1452,16 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
       await scheduled.tools.execute(
         scheduled.call("reminder.set", "call:sch", { text: "改会议", due: "2026-11-13T15:00" }),
       ),
-    ).toMatchObject({ outcome: "failed" });
+    ).toMatchObject({ outcome: "awaiting_approval" });
     expect(scheduled.reminders).not.toHaveBeenCalled();
     expect(check).not.toHaveBeenCalled();
   } finally {
     await scheduled.close();
   }
-  const silent = await setup({ ownerIntent: { check, words: [] } });
+  const silent = await setup({
+    registry: notHimawariSideRegistry(),
+    ownerIntent: { check, words: [] },
+  });
   try {
     expect(await readOutputThenSetReminder(silent, "silent")).toMatchObject({
       outcome: "awaiting_approval",
@@ -1350,7 +1474,7 @@ it("[ADR-0257] does not ask the check at all without outside content, for a stan
 
 it("[ADR-0257] keeps asking when the owner switched the confirmed-intent rule to ask first", async () => {
   const check = vi.fn(async (_request: OwnerIntentCheckRequest) => EXPLICIT);
-  const s = await setup({ ownerIntent: { check } });
+  const s = await setup({ registry: notHimawariSideRegistry(), ownerIntent: { check } });
   try {
     const switches = new BuiltInActionRuleSwitches({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
