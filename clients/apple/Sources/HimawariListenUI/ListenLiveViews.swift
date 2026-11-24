@@ -103,7 +103,7 @@ public struct ListenIslandCompact: View {
     public var body: some View {
         HStack {
             HStack(spacing: 6) {
-                SunflowerMark(detail: .compact)
+                SunflowerMark()
                     .frame(width: 18, height: 18)
                 Text(L.text(state.phase == .paused ? "live.paused" : "live.listening"))
                     .font(.system(size: 13, weight: .semibold))
@@ -133,7 +133,7 @@ public struct ListenLockBanner: View {
 
     public var body: some View {
         HStack(spacing: 12) {
-            SunflowerMark(detail: .compact)
+            SunflowerMark()
                 .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L.text(state.phase == .paused ? "live.paused" : "live.listening"))
@@ -186,7 +186,7 @@ public struct ListenCallPanel: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                SunflowerMark(detail: .compact)
+                SunflowerMark()
                     .frame(width: 30, height: 30)
                 Text(L.text("live.calling"))
                     .font(.system(size: 17, weight: .semibold))
@@ -219,7 +219,7 @@ public struct ListenAskPanel<NotMe: View, ItsMe: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                SunflowerMark(detail: .compact)
+                SunflowerMark()
                     .frame(width: 30, height: 30)
                 Text(L.text("live.ask"))
                     .font(.system(size: 17, weight: .semibold))
@@ -324,7 +324,7 @@ public struct LockNotificationCard: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 10) {
-                    SunflowerMark(detail: .compact)
+                    SunflowerMark()
                         .frame(width: 24, height: 24)
                         .background(Color(.sRGB, red: 252 / 255, green: 252 / 255, blue: 251 / 255, opacity: 1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     Text(title)

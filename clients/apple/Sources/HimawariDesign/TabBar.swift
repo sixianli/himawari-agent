@@ -77,7 +77,7 @@ public struct SunflowerButton: View {
 
     public var body: some View {
         Button(action: action) {
-            SunflowerMark(detail: .compact)
+            SunflowerMark()
                 .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
                 .frame(width: DesignTokens.Size.speakButton, height: DesignTokens.Size.speakButton)
                 .contentShape(Circle())
