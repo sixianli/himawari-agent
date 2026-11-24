@@ -46,6 +46,7 @@ export interface ToolActionRow {
   readonly disclosure: DisclosureMode;
   readonly ownerPresenceRequired: boolean;
   readonly standingRuleChange: boolean;
+  readonly himawariSideOnly?: true;
   readonly resultOrigin: ToolContentOrigin;
   readonly mayFollowExternalContent: boolean;
   readonly authorization: ToolAuthorizationPath;
@@ -79,6 +80,16 @@ function assertRow(row: ToolActionRow): void {
   if (row.authorization === "owner_scope" && row.capabilityRef === null)
     fail("走统一出口的工具必须写明能力名");
   if (row.reversible !== (row.sideEffect !== "irreversible")) fail("能否撤销和后果对不上");
+  if (
+    row.himawariSideOnly &&
+    (row.authorization !== "owner_scope" ||
+      !row.reversible ||
+      row.disclosure !== "none" ||
+      row.ownerPresenceRequired ||
+      row.standingRuleChange ||
+      row.family === "device_action")
+  )
+    fail("标成只改 Himawari 自己这边，却会往外发、改规则、碰设备、要本人在场或撤不回");
   if (row.family === "device_action" && !row.device) fail("设备动作缺设备那几列");
   if (row.family !== "device_action" && row.device) fail("不是设备动作却带了设备那几列");
 }

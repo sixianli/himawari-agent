@@ -614,16 +614,22 @@ function saysWholeClauses(text: string, quote: readonly string[]): boolean {
   return false;
 }
 
+const RULE_SOURCE_LIMIT = 256;
+const RULE_SOURCE_DIGEST = 16;
+
 function ruleSource(proposal: Proposal): string {
   const base = proposal.source ?? `chat:${proposal.threadId ?? "none"}`;
-  const origins = [...new Set(proposal.externalOrigins ?? [])].sort((left, right) =>
-    left.localeCompare(right, "en"),
-  );
-  return (
-    origins.length === 0
-      ? base
-      : `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${origins.join(",")}|${base}`
-  ).slice(0, 256);
+  const origins = [...new Set(proposal.externalOrigins ?? [])]
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .join(",");
+  if (origins.length === 0) return base.slice(0, RULE_SOURCE_LIMIT);
+  const tail = `|${base}`;
+  const room = RULE_SOURCE_LIMIT - EXTERNAL_CONTENT_SOURCE_REF_PREFIX.length - tail.length;
+  const kept =
+    origins.length <= room || room <= RULE_SOURCE_DIGEST + 1
+      ? origins
+      : `${origins.slice(0, room - RULE_SOURCE_DIGEST - 1)}~${hash(origins).slice(0, RULE_SOURCE_DIGEST)}`;
+  return `${EXTERNAL_CONTENT_SOURCE_REF_PREFIX}${kept}${tail}`.slice(0, RULE_SOURCE_LIMIT);
 }
 
 function sameRule(parameters: unknown, type: string, params: unknown): boolean {

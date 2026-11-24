@@ -81,6 +81,7 @@ import {
   TOOL_POLICY_BLOCKED_OTHER,
   TOOL_POLICY_BLOCKED_REMINDER,
   TOOL_POLICY_BLOCKED_TASK_MANAGEMENT,
+  TOOL_RESULT_RECALL,
 } from "@himawari-agent/prompt-catalog";
 import {
   isSensitiveFieldName,
@@ -89,17 +90,14 @@ import {
 } from "@himawari-agent/sensitive-capture";
 import { observeCacheFields } from "./cache-usage-observation.js";
 import {
+  compactionModelOverrides,
   compactionPrefixMessages,
   sharedSummaryContext,
   sharedSummaryOptions,
-  compactionModelOverrides,
+  toolResultClearingTriggerTokens,
 } from "./compaction-prefix.js";
 import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
-import {
-  observeProviderRejections,
-  type ProviderRejection,
-} from "./provider-rejection-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
@@ -116,10 +114,21 @@ import {
   type PiToolRefusalLimits,
 } from "./pi-tool-progress-guard.js";
 import {
+  observeProviderRejections,
+  type ProviderRejection,
+} from "./provider-rejection-observation.js";
+import {
   contextBlockMarker,
   runtimeEnvironmentAfterCompaction,
   splitRuntimeEnvironment,
 } from "./runtime-environment-block.js";
+import {
+  clearToolResults,
+  DEFAULT_CLEAR_AT_LEAST_TOKENS,
+  DEFAULT_KEEP_TOOL_USES,
+  recallToolResult,
+  TOOL_RESULT_RECALL_TOOL_NAME,
+} from "./tool-result-clearing.js";
 
 function previousFileConflict(
   messages: AgentSession["agent"]["state"]["messages"],
@@ -1493,6 +1502,23 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (descriptorsByName.size !== descriptors.length) {
         throw new TypeError("RUNTIME_DUPLICATE_TOOL_NAME");
       }
+      const clearingTrigger = toolResultClearingTriggerTokens(binding.model.contextWindow);
+      const clearing =
+        clearingTrigger === undefined
+          ? undefined
+          : {
+              triggerTokens: clearingTrigger,
+              keepToolUses: DEFAULT_KEEP_TOOL_USES,
+              clearAtLeastTokens: DEFAULT_CLEAR_AT_LEAST_TOKENS,
+              keepToolNames: new Set(
+                descriptors
+                  .filter(
+                    (descriptor) =>
+                      "contextRetention" in descriptor && descriptor.contextRetention === "keep",
+                  )
+                  .map((descriptor) => descriptor.name),
+              ),
+            };
       const settingsManager = SettingsManager.inMemory(
         {
           compaction: { enabled: true, modelOverrides: compactionModelOverrides(binding.model) },
@@ -1528,11 +1554,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             factory: (pi: ExtensionAPI) => {
               pi.on("session_before_compact", (event) => {
                 try {
-                  compactionPrefix = compactionPrefixMessages(event);
+                  compactionPrefix = compactionPrefixMessages(event, clearing);
                 } catch {
                   compactionPrefix = undefined;
                 }
                 return undefined;
+              });
+            },
+          },
+          {
+            name: "himawari-tool-result-clearing",
+            hidden: true,
+            factory: (pi: ExtensionAPI) => {
+              pi.on("context", (event) => {
+                if (!clearing) return undefined;
+                const messages = clearToolResults(event.messages, clearing);
+                return messages ? { messages } : undefined;
               });
             },
           },
@@ -2092,6 +2129,18 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           : { constrainedSampling: builtin.constrainedSampling }),
       };
     }
+    if (descriptor.definition === "tool-result-recall")
+      return {
+        name: TOOL_RESULT_RECALL_TOOL_NAME,
+        label: TOOL_RESULT_RECALL_TOOL_NAME,
+        description: TOOL_RESULT_RECALL.text,
+        parameters: {
+          type: "object",
+          properties: { toolCallId: { type: "string", minLength: 1, maxLength: 256 } },
+          required: ["toolCallId"],
+          additionalProperties: false,
+        } as unknown as ToolDefinition["parameters"],
+      };
     return {
       name: descriptor.name,
       label: descriptor.name,
@@ -2198,6 +2247,24 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               refused: true,
             },
             isError: true,
+          };
+        }
+        if (descriptor.definition === "tool-result-recall") {
+          const recalled = recallToolResult(
+            this.#activeSessions.get(request.runId)?.messages ?? [],
+            (parameters as Record<string, unknown>)["toolCallId"],
+          );
+          return {
+            content: recalled.content,
+            details: {
+              productOutcome: recalled.found ? "succeeded" : "failed",
+              dispatchState: "not_sent",
+              productRunId: request.runId,
+              resultRef: null,
+              errorCode: recalled.found ? null : "TOOL_RESULT_RECALL_NOT_FOUND",
+              externalActionId: null,
+            },
+            isError: !recalled.found,
           };
         }
         reconciliation.assertKnown(toolCallId);

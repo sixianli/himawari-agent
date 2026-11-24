@@ -6,6 +6,10 @@ import {
   ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import {
+  RUNTIME_CONTEXT_EXECUTOR,
+  TOOL_RESULT_RECALL_CAPABILITY_REF,
+} from "./production-context-recall.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
@@ -258,6 +262,7 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
   {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
+    himawariSideOnly: true,
     capabilityRef: REMINDER_SET_CAPABILITY_REF,
     operation: "set",
     targetType: "owner-reminder",
@@ -319,6 +324,26 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     targetType: "owner-rule",
     standingRuleChange: true,
     detail: detail({ zh: "撤销规则", en: "Undo rule", ja: "ルールを取り消す" }, "ruleId"),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "tool_result_recall",
+    family: "builtin",
+    capabilityRef: TOOL_RESULT_RECALL_CAPABILITY_REF,
+    operation: "read",
+    targetType: "conversation-context",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: RUNTIME_CONTEXT_EXECUTOR,
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      {
+        zh: "取回已清理的工具结果",
+        en: "Recall a cleared tool result",
+        ja: "整理済みのツール結果を取り戻す",
+      },
+      "toolCallId",
+    ),
   },
   {
     ...READ_DEFAULTS,

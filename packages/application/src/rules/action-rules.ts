@@ -10,10 +10,15 @@ export const ACTION_RULE_IDS = Object.freeze({
   askAfterExternalContent: "action_ask_after_external_content",
   refuseBackgroundAfterExternalContent: "action_refuse_background_after_external_content",
   preauthorizeOwnerIntentConfirmed: "action_preauthorize_owner_intent_confirmed",
+  preauthorizeHimawariSideAfterExternalContent:
+    "action_preauthorize_himawari_side_after_external_content",
 } as const);
 
 const OWNER_INTENT_CONFIRMED_EXPRESSION =
   'action_kind == "CREATE_OR_UPDATE" && risk == "MEDIUM" && reversible == 1 && disclosure == "none" && recipient_count == 0 && run_source == "user_message" && "context_external_content" in facts && "owner_intent_confirmed" in facts && !("owner_presence_required" in facts) && !("standing_rule_change" in facts)';
+
+const HIMAWARI_SIDE_EXPRESSION =
+  '"himawari_side_only" in facts && action_kind == "CREATE_OR_UPDATE" && risk == "MEDIUM" && reversible == 1 && disclosure == "none" && recipient_count == 0 && !("owner_presence_required" in facts) && !("standing_rule_change" in facts)';
 
 export const ACTION_RULE_OUTCOMES = Object.freeze([
   "allow_preauthorized",
@@ -117,14 +122,63 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
   }),
   Object.freeze({
     id: ACTION_RULE_IDS.askAfterExternalContent,
-    revision: 2,
+    revision: 3,
     gate: "action",
-    expression: `action_kind != "READ" && target_type != "managed-task" && "context_external_content" in facts && !(${OWNER_INTENT_CONFIRMED_EXPRESSION})`,
+    expression: `action_kind != "READ" && target_type != "managed-task" && "context_external_content" in facts && !(${OWNER_INTENT_CONFIRMED_EXPRESSION}) && !(${HIMAWARI_SIDE_EXPRESSION})`,
     outcome: "ask_owner",
     origin: "built_in",
-    source: "ADR 0257 决定 3、4；苹果端设计“指令和数据的界线”",
+    source:
+      "ADR 0257 决定 3、4；ADR 0285 决定 7：读过外来内容后，碰主人外面的账号设备、改规则、发出去、删、花钱先问，所有运行都一样",
     status: "active",
     examples: Object.freeze([
+      example(
+        true,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_external_event" },
+          ],
+        },
+        "external_event",
+      ),
+      example(
+        true,
+        {
+          targets: [{ type: "owner-perception" }],
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "run_source_schedule" },
+          ],
+        },
+        "schedule",
+      ),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(
+        false,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "himawari_side_only" },
+            { code: "run_source_external_event" },
+          ],
+        },
+        "external_event",
+      ),
+      example(true, {
+        actionKind: "DELETE",
+        finalRisk: "HIGH",
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+        ],
+      }),
       example(true, {
         deterministicFacts: [
           { code: "context_external_content" },
@@ -243,15 +297,15 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
   }),
   Object.freeze({
     id: ACTION_RULE_IDS.refuseBackgroundAfterExternalContent,
-    revision: 2,
+    revision: 3,
     gate: "action",
     expression:
       'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts && !("run_source_owner_approved_task" in facts)',
     outcome: "refuse",
     origin: "built_in",
     source:
-      "ADR 0257 决定 3；苹果端设计“指令和数据的界线”：后台一律不做；ADR 0278：主人同意过的任务改为问主人",
-    status: "active",
+      "ADR 0257 决定 3；ADR 0285 决定 7 停用：读过外来内容后不再直接拒绝，改由 action_ask_after_external_content 问主人",
+    status: "retired",
     examples: Object.freeze([
       example(
         true,
@@ -302,6 +356,72 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
         },
         "schedule",
       ),
+    ]),
+  }),
+  Object.freeze({
+    id: ACTION_RULE_IDS.preauthorizeHimawariSideAfterExternalContent,
+    revision: 1,
+    gate: "action",
+    expression: `"context_external_content" in facts && ${HIMAWARI_SIDE_EXPRESSION}`,
+    outcome: "allow_preauthorized",
+    origin: "built_in",
+    source:
+      "ADR 0285 决定 7：读过外来内容后，只改 Himawari 自己这边、能撤回的动作直接做，记下是哪件外来的事引起的",
+    status: "active",
+    examples: Object.freeze([
+      example(true, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(
+        true,
+        {
+          deterministicFacts: [
+            { code: "context_external_content" },
+            { code: "himawari_side_only" },
+            { code: "run_source_external_event" },
+          ],
+        },
+        "external_event",
+      ),
+      example(false, {
+        deterministicFacts: [{ code: "himawari_side_only" }, { code: "run_source_user_message" }],
+      }),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+          { code: "standing_rule_change" },
+        ],
+      }),
+      example(false, {
+        actionKind: "DELETE",
+        finalRisk: "HIGH",
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+        ],
+      }),
+      example(false, {
+        disclosure: "named_recipients",
+        recipients: ["someone@example.com"],
+        deterministicFacts: [
+          { code: "context_external_content" },
+          { code: "himawari_side_only" },
+          { code: "run_source_user_message" },
+        ],
+      }),
     ]),
   }),
   Object.freeze({

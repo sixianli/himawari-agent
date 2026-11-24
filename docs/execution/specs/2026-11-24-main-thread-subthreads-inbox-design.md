@@ -121,7 +121,7 @@ date: "2026-11-24"
 9. 读过外来内容后做有后果的小事，由判断模型只凭你亲口说过的话判断你是否明说过。`packages/prompt-catalog/src/authorization.ts:4-6`：`id: "authorization.owner-intent-question",`，“只凭主人亲口说过的话，看主人是不是已经明说要做这件事”。
 10. 后台命令的结果已经以一条追加消息送回原对话。`packages/prompt-catalog/src/background.ts:14-20`：`id: "background.notice",`，“【系统通知，不是用户发的消息】你在这个对话里早些时候转入后台的命令有了结果。”
 11. Pi（Himawari 用的 Agent 运行库）官方有“运行中插一条消息”的写法。`docs/pi-development-guide.md:285`：“`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达……用户消息用 `session.steer()` / `session.followUp()`”。
-12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`。
+12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`（写方案时的值；按定的第 6 件事已改成 `150_000`）。
 13. 同意过的任务的写操作规则。`docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md:48`：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
 14. 发给模型的内容只追加；压缩要集中、少做、写进 ADR。`AGENTS.md:43`：“已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。”`.agents/instructions/prompt-prefix.md:61`：“必须缩短历史时，集中做、少做，并在 ADR 里写明。不得每轮都做。”同文件 `:64`：“清理旧的工具结果要成批、少做、能恢复。一次清理足够多，才值得付一次缓存失效的代价；被清理的内容要能找回”；同文件 `:36` 把“将来按 ADR 实施的第 14 条清理”列为“只追加”的例外之一。
 15. 理解你的意思交给模型，不写词表。`.claude/rules/owner-standing-rules.md` “理解用户的意思交给模型”一节：“判断用户一句话的意图……一律交给模型，程序只做校验”。
@@ -323,8 +323,8 @@ date: "2026-11-24"
 5. **两次压缩之间，成批清理旧的工具结果。** 压缩是把整段对话总结掉，代价大、会丢细节；在它之前先做轻一点的：把较早的工具结果（网页全文、搜索结果、文件内容这类大块）换成一行占位，例如“[这次网页读取的结果已清理，编号 xxx，需要时用‘取回工具结果’按编号取回]”，模型自己的工具调用和她写的话都保留。这是 Anthropic 官方的做法（上下文编辑文档 <https://platform.claude.com/docs/en/build-with-claude/context-editing>：“The API replaces each cleared result with placeholder text indicating to Claude that it was removed.”），Anthropic 的上下文工程文章也说它是“One of the safest lightest touch forms of compaction”。
    - **成批、少做**（前提 14）：只有上下文超过一个触发线才清；一次要清掉至少一定数量的 token，清不到这么多就不清（官方文档的原话：“clear enough tokens to make the cache invalidation worthwhile”）；最近的几次工具调用保留原样。数字直接用 Anthropic 上下文编辑文档里的默认值（定的第 6 件事）：`trigger` 默认“100,000 input tokens”，即到 10 万 token 开始清；`keep` 默认“3 tool uses”，即最近 3 次工具调用的结果保留原样；`clear_tool_inputs` 默认 `false`，即只清结果、保留她的工具调用。`clear_at_least` 官方默认“None”，但项目规则要求成批清，官方文档说这一项“helps determine whether context clearing is worth breaking your prompt cache”，并在自己的例子里写 5000，所以用 5000。这些都是设置，能改。先清理（10 万）后压缩（15 万），和 Anthropic 两个默认值的先后一致。
    - **能找回**：原始结果本来就完整存在聊天记录里，清理只改发给模型的那份。加一个只读工具“取回工具结果”，按占位里的编号取回原文。
-   - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
-   - **字节稳定**：清理是一次性的换新，和压缩一样记一条记录；清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
+   - **不清的**：计划、子线程交回的结果、同意卡片和你的回答、记忆快照，这些是判断的依据，永远不清。做法是这些工具的描述符写上 `contextRetention: "keep"`（`packages/application/src/ports/intelligence.ts` 的 `RuntimeCustomToolDescriptor`），清理时跳过声明了它的工具；做计划、子线程结果、同意卡片这几样工具的那一步，要给描述符加上这一项，并写一条“结果变老也不清”的测试。记忆快照放在开头，不是工具结果，本来就不会被清（官方文档也有一个“exclude_tools”设置，指定哪些工具的结果永不清理；这一项是读网页的工具转述的，没有逐字核对）。
+   - **字节稳定**：清理是一次性的换新，不另存记录：清了哪些由历史本身逐条重放算出（用最近一条回答记下的用量，加上它之后新增消息的估算），同一段历史每次算出同样的字节（`packages/runtime-pi/src/tool-result-clearing.ts`）；压缩之后保留下来的那几轮按原文发（压缩本来就换掉了整个开头），等上下文再超过清理线时和别的结果一起成批清。清完之后的这份就是新的开头，之后照样只在末尾追加，下一次请求开头和这一次一样。Himawari 用的不是 Anthropic 的模型，没有服务方替我们做，所以在 Pi 的 `context` 钩子里自己做（`docs/pi-development-guide.md` “每次请求前改上下文”一节），这是项目规则第 4 条事先留出的例外，要写进 ADR。
    - **对主对话和子线程都做**。主对话的重活本来交给子线程，大块工具结果不多，清理的好处主要在子线程：它们一次任务会读很多网页和文件。
 
 <a id="outbox"></a>
@@ -412,7 +412,7 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 | 发出去、删东西 | 先问你，除非你给过范围内的“以后都行” | 先问你，“以后都行”不算数 |
 | 花钱 | 每次都问 | 每次都问 |
 
-表里第二行是 Andy 2026-11-24 23:43 JST 定的（原话：“同意”，回的是“不看对话干不干净，改成看这件事影响多大”的建议）。起因：主对话只有一个、一直不换，收过一封邮件后就永远算“读过外来内容”；如果第二行也要问，她记东西、给自己定跟进、改计划每次都要弹卡片，记忆和主动跟进就做不成，也违背“注意力用在刀刃上”。依据是 Meta 的 Agents Rule of Two（<https://ai.meta.com/blog/practical-ai-agent-security/>）：同一次会话里同时满足“process untrustworthy inputs”“access to sensitive systems or private data”“change state or communicate externally”三样时，“at a minimum requires supervision — via human-in-the-loop approval”。第二行的动作只改 Himawari 自己的记录，能撤回、查得到出处，坏邮件借它往外发、删、花钱都做不到；Muse 自己怎样划这一行，公开资料没有写。代价：一封骗人的邮件可能让她记下一条错的记忆或多定一个跟进；靠记下出处（显示在记忆和跟进上，你能撤回）和下面第 5 条她自己识别兜住。分类按动作登记表里的目标类别（`targetType`）定：`owner-memory`、`owner-reminder`、计划和子线程的工具算第二行，`owner-rule` 算第三行；设备动作里本来就不允许外来内容引出的那些（日历、联系人、家居）在设备动作授权层照旧拒绝（ADR 0278 决定 3 写的现状），不因这张表放宽。
+表里第二行是 Andy 2026-11-24 23:43 JST 定的（原话：“同意”，回的是“不看对话干不干净，改成看这件事影响多大”的建议）。起因：主对话只有一个、一直不换，收过一封邮件后就永远算“读过外来内容”；如果第二行也要问，她记东西、给自己定跟进、改计划每次都要弹卡片，记忆和主动跟进就做不成，也违背“注意力用在刀刃上”。依据是 Meta 的 Agents Rule of Two（<https://ai.meta.com/blog/practical-ai-agent-security/>）：同一次会话里同时满足“process untrustworthy inputs”“access to sensitive systems or private data”“change state or communicate externally”三样时，“at a minimum requires supervision — via human-in-the-loop approval”。第二行的动作只改 Himawari 自己的记录，能撤回、查得到出处，坏邮件借它往外发、删、花钱都做不到；Muse 自己怎样划这一行，公开资料没有写。代价：一封骗人的邮件可能让她记下一条错的记忆或多定一个跟进；靠记下出处（显示在记忆和跟进上，你能撤回）和下面第 5 条她自己识别兜住。分类按动作登记表里的目标类别（`targetType`）定：`owner-memory`、`owner-reminder`、计划和子线程的工具算第二行，`owner-rule` 算第三行；设备动作里原来不允许外来内容引出的那些（日历、联系人、家居）在设备动作授权层直接拒绝（ADR 0278 决定 3 写的现状），改成和这张表第三行一样先问你（Andy 2026-11-25 00:31 JST 在权限编码线程回“同意，按照你的这个建议来”：一直拒绝的话，邮件里约的会永远没法让她记上）。
 
 1. **不再按“谁想到的”分。** 原稿“她自己想到的只能查”删掉。她自己想到的事如果由一封邮件引起，这个子线程一开始就带着“读过外来内容”的标记，按表里右边一列走，效果和原来一样安全，但不再一律拒绝，而是弹卡片问你。
 2. **读过外来内容后改成问，不再直接拒绝。** 现在后台运行读过外来内容后写操作直接拒绝（`action-rules.ts:249`），只有你同意过的任务例外改成问（ADR 0278 决定 3）。改成所有运行都一样：问你。这改的是 ADR 0257 决定 3 表里“后台发起的一轮，上下文里有外来内容，想做有后果的事：不做”那一行。那条内置规则的编号 `action_refuse_background_after_external_content` 在冻结清单里（`test/tooling/rule-ids.frozen.json`，`test/tooling/rule-ids-frozen.test.ts` 不许删改编号，因为你的开关和历史决定按编号存），所以编号留着，规则改成不再命中，由 `action_ask_after_external_content` 接手；这条规则现有的“该命中”例子（`packages/application/src/rules/action-rules.ts:255` 起）跟着改，`npm run check:rule-registry` 要过；规则状态有现成的 `retired`（`packages/application/src/rules/rule-book.ts:16`），能不能用它代替改表达式、设置页上这条规则显示成什么，编码时读完规则手册怎么处理 `retired` 再定；加一条反向测试：后台读过外来内容后的写操作弹同意卡片，不再被拒；控制台三种语言里这条规则的说明（`apps/control-center/src/i18n/resources/zh-CN.ts:882`、`:884` 和英文、日文对应的两行）写的是“不做”，跟着改。
@@ -481,7 +481,7 @@ OpenAI 的 ChatGPT agent 也是“在有后果的动作之前请求你同意”�
 <a id="steps"></a>
 ## 分几步上线和验收（Delivery Order）
 
-每一步一个 PR，各有自动测试（本机回环模型桩，不用假替身）和 iPhone 真机验收。每一步动到模型调用或权限，按规矩等你说“合并”。
+每一步一个 PR，各有自动测试（本机回环模型桩，不用假替身）和 iPhone 真机验收。复核没有中、高意见并过了合并条件，线程就自己合并，不等你说“合并”（[授权、上线和合并](../../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)）；上线生产仍先问你。
 
 **第 1 步：主对话、收件箱地基、邮件。** 有主对话；收件箱表和代码改名成 `inbox_events`，删掉每天计数那一列和表；收件箱一写入就叫醒；新邮件进收件箱交给主对话；“告诉主人”工具和决策记录新种类；“给选项”工具和消息下的选项；删邮件公式、“值不值得想”、ADR 0273 延后判断、没用的六套服务。
 - 正向：进一封和你一条记忆有关、要你处理的邮件。主对话里出现她的一条消息，点开看得到是哪封邮件、用了哪条记忆；决策记录里有一行“说了”。
@@ -617,5 +617,5 @@ DeepSeek 在没看到本方案的情况下，只拿到问题、你的要求、�
 - 几件事合成的最后一条用户消息，存历史时要存合成后实际发出的那一条（`.agents/instructions/prompt-prefix.md` 第 5 条，I-66 那次事故就是存的和发的不一样），而这几条在数据库里各存一条；现在运行时存实际发出内容的做法能不能直接用在合成的消息上，没有读，编码第 2 步前核对。
 - 发邮件等对外动作现在有没有去重编号，没有读；“不重复做有后果的事”靠它。
 - 产品里现有的花费上限管到哪一层（每天、每次运行，还是每个对话），没有读；子线程预算要挂在它下面，编码前核对。
-- 压缩现在的触发线是 20 万（前提 12），改成 15 万前要核对 Pi 的压缩设置和模板里还有没有别处写着 20 万。
+- 写方案时压缩的触发线是 20 万（前提 12），改成 15 万前要核对 Pi 的压缩设置和模板里还有没有别处写着 20 万。
 - 插进运行的消息（`session.steer()`）在下一轮历史里会不会和数据库里那条重复出现，没有读。
