@@ -1644,6 +1644,7 @@ it("[ADR-0285] REVERSE: a yes that covered something else, or came from a rule r
 it("[ADR-0285] spending money, credential changes and actions that need the owner present only ever get a one-time yes", async () => {
   const base = {
     contractVersion: "authorization.v2",
+    id: "owner-scope:x",
     threadId: "thread-a",
     estimatedCostMicros: 0,
     actionKind: "CREATE_OR_UPDATE",
@@ -1665,6 +1666,7 @@ it("[ADR-0285] spending money, credential changes and actions that need the owne
       { deterministicFacts: [{ code: "owner_presence_required" }] },
       "ALLOWANCE_OWNER_PRESENCE_ONCE_ONLY",
     ],
+    [{ id: "coding:x" }, "ALLOWANCE_ACTION_ASKS_EVERY_TIME"],
   ] as const) {
     const allowances = new OwnerAllowances({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },

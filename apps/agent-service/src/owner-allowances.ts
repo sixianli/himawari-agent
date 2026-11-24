@@ -12,7 +12,10 @@ import {
   PORT_ERROR_CODES,
   type ProductConfiguration,
 } from "@himawari-agent/application";
-import type { GatewayV2Command } from "@himawari-agent/gateway-contracts";
+import {
+  APPROVAL_ALLOWANCE_INTENT_PREFIX,
+  type GatewayV2Command,
+} from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { isConflict } from "./context-external-content.js";
 
@@ -84,6 +87,8 @@ export function allowanceNotOffered(intent: GovernedActionIntent): string | null
   if (intent.credentialOrAccessChange) return "ALLOWANCE_CREDENTIAL_ONCE_ONLY";
   if (factCodes(intent).includes(POLICY_FACT_CODES.ownerPresenceRequired))
     return "ALLOWANCE_OWNER_PRESENCE_ONCE_ONLY";
+  if (!intent.id?.startsWith(APPROVAL_ALLOWANCE_INTENT_PREFIX))
+    return "ALLOWANCE_ACTION_ASKS_EVERY_TIME";
   return null;
 }
 

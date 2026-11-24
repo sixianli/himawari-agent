@@ -1,7 +1,10 @@
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import { queryMessage } from "./messages.js";
 import { commandMessage } from "./messages.js";
-import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  APPROVAL_ALLOWANCE_INTENT_PREFIX,
+  type GatewayV2Snapshot,
+} from "@himawari-agent/gateway-contracts";
 import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 
 export type RunApproval = Extract<GatewayV2Snapshot, { type: "approval.snapshot" }>;
@@ -146,7 +149,8 @@ export function approvalAllowanceChoices(snapshot: RunApproval): readonly Approv
     intent.estimatedCostMicros > 0 ||
     intent.actionKind === "PURCHASE_OR_FUNDS" ||
     intent.credentialOrAccessChange ||
-    intent.deterministicFactCodes.includes("owner_presence_required")
+    intent.deterministicFactCodes.includes("owner_presence_required") ||
+    !intent.intentId.startsWith(APPROVAL_ALLOWANCE_INTENT_PREFIX)
   )
     return ["once"];
   return ["once", "this_task", "days", "always"];

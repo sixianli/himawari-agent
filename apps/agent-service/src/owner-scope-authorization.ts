@@ -33,6 +33,7 @@ import {
   type ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import { APPROVAL_ALLOWANCE_INTENT_PREFIX } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   type ContextExternalContent,
@@ -174,7 +175,7 @@ export class OwnerScopeAuthorization {
         : Date.parse(now) + this.#options.intentLifetimeMs,
     ).toISOString();
     const inputDigest = digest(invocation.arguments);
-    const id = `owner-scope:${digest([
+    const id = `${APPROVAL_ALLOWANCE_INTENT_PREFIX}${digest([
       invocation.runId,
       invocation.toolCallId,
       invocation.capabilityRef,

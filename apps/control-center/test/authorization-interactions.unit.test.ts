@@ -253,7 +253,17 @@ describe("inline run approval", () => {
       expect(container.querySelector("button")).toBeNull();
     },
   );
+  const ownerScoped = () => {
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: { ...approvalSnapshot.payload.intent, intentId: "owner-scope:target" },
+      },
+    };
+  };
   it("[ADR-0285] approves and then records the chosen scope, so the same action is not asked again", async () => {
+    ownerScoped();
     await render(RunApprovalCard, approvalProps());
     const scopes = [
       ...container.querySelectorAll<HTMLInputElement>(".approval-scope input[type=radio]"),
@@ -271,7 +281,21 @@ describe("inline run approval", () => {
     });
     expect(settled).toHaveBeenCalledOnce();
   });
+  it("[ADR-0285] REVERSE: a coding or file approval, whose yes is never looked up again, offers only this once", async () => {
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: { ...approvalSnapshot.payload.intent, intentId: "coding:bash-target" },
+      },
+    };
+    await render(RunApprovalCard, approvalProps());
+    expect(container.querySelector(".approval-scope")).toBeNull();
+    await click("chat.allowOnce");
+    expect(mutate.mock.calls.map(([request]) => request.type)).toEqual(["approval.respond"]);
+  });
   it("[ADR-0285] REVERSE: spending money offers only this once and never records a scope", async () => {
+    ownerScoped();
     approvalSnapshot = {
       ...approvalSnapshot,
       payload: {
@@ -293,6 +317,7 @@ describe("inline run approval", () => {
       };
       return { status: "accepted" };
     });
+    ownerScoped();
     await render(RunApprovalCard, approvalProps());
     const always = container.querySelector<HTMLInputElement>(".approval-scope input[value=always]");
     await act(async () => always?.click());

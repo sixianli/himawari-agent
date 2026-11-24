@@ -263,6 +263,8 @@ export const respondApprovalV2CommandSchema = object({
 
 export const APPROVAL_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
 
+export const APPROVAL_ALLOWANCE_INTENT_PREFIX = "owner-scope:";
+
 export const approvalAllowanceSetCommandSchema = object({
   ...commandEnvelope("approval.allowance.set"),
   payload: object({
