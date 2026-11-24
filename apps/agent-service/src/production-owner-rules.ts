@@ -10,7 +10,6 @@ import {
   OWNER_RULE_SUMMARY_LIMIT,
   type OwnerRuleReplayResult,
   type OwnerRuleStorePort,
-  type RuleReviewOwnerStorePort,
   ownerRuleRecord,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -18,15 +17,18 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
   type ProductMemoryStatePort,
+  PUSH_QUIET_CLASS_LABELS,
   PUSH_QUIET_CLASSES,
   type PushQuietParameters,
   parseOwnerRuleParameters,
   pushQuietClassesOf,
   RULE_TYPES,
   type RuleRecord,
+  type RuleReviewOwnerStorePort,
   RuleTypeError,
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
+  ruleIsEnforced,
   type StoredOwnerRule,
   type ThreadRepositoryPort,
   validRuleSummary,
@@ -35,13 +37,13 @@ import {
 import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
 import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
+import { externalContentSourceRefs } from "./context-external-content.js";
 import {
   canonicalJson,
   type ProductionProposalBox,
   ProposalError,
   type ProposalEvidence,
 } from "./production-proposals.js";
-import { externalContentSourceRefs } from "./context-external-content.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -674,6 +676,7 @@ function everyDay(days: unknown): boolean {
 
 export class ProductionOwnerRuleWriter {
   readonly #options: ProductionOwnerRuleWriterOptions;
+  #quietHoursWrites: Promise<void> = Promise.resolve();
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
     this.#options = options;
@@ -1188,6 +1191,13 @@ export class ProductionOwnerRuleWriter {
   }
 
   async quietHours(): Promise<QuietHoursState> {
+    return (await this.#quietHoursState()).state;
+  }
+
+  async #quietHoursState(): Promise<{
+    readonly state: QuietHoursState;
+    readonly params: PushQuietParameters | undefined;
+  }> {
     const rows = (await this.#options.rules.list({ ...this.#scope(), includeRetired: false }))
       .filter((row) => summaryOf(row.parameters).type === QUIET_HOURS_RULE_TYPE)
       .sort((left, right) => left.ruleId.localeCompare(right.ruleId, "en"));
@@ -1198,41 +1208,65 @@ export class ProductionOwnerRuleWriter {
       ruleId: row.ruleId,
       summary: summaryOf(row.parameters).summary,
     }));
-    const [only] = rows;
+    const enforced = rows.filter((row) => ruleIsEnforced(row.status));
+    const [only] = enforced;
     if (!only)
-      return Object.freeze({
-        version,
-        editable: true,
-        enabled: false,
-        start: null,
-        end: null,
-        classes: [],
-        rules,
-      });
+      return {
+        state: Object.freeze({
+          version,
+          editable: true,
+          enabled: false,
+          start: null,
+          end: null,
+          classes: [],
+          rules,
+        }),
+        params: undefined,
+      };
     const params = quietParams(only.parameters);
     const periods = params?.periods ?? [];
     const [period] = periods;
     const single =
-      rows.length === 1 && periods.length === 1 && period !== undefined && everyDay(period.days);
-    const classes = rows.length === 1 && params ? pushQuietClassesOf(params) : [];
-    return Object.freeze({
-      version,
-      editable: single,
-      enabled: true,
-      start: single ? period.start : null,
-      end: single ? period.end : null,
-      classes,
-      rules,
-    });
+      enforced.length === 1 &&
+      periods.length === 1 &&
+      period !== undefined &&
+      everyDay(period.days);
+    const classes = enforced.length === 1 && params ? pushQuietClassesOf(params) : [];
+    return {
+      state: Object.freeze({
+        version,
+        editable: single,
+        enabled: true,
+        start: single ? period.start : null,
+        end: single ? period.end : null,
+        classes,
+        rules,
+      }),
+      params,
+    };
   }
 
-  async setQuietHours(input: {
+  setQuietHours(input: {
     readonly enabled: boolean;
     readonly start: string;
     readonly end: string;
     readonly expectedVersion: string;
   }): Promise<QuietHoursState> {
-    const current = await this.quietHours();
+    const run = this.#quietHoursWrites.then(() => this.#writeQuietHours(input));
+    this.#quietHoursWrites = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async #writeQuietHours(input: {
+    readonly enabled: boolean;
+    readonly start: string;
+    readonly end: string;
+    readonly expectedVersion: string;
+  }): Promise<QuietHoursState> {
+    const { state: current, params } = await this.#quietHoursState();
     if (current.version !== input.expectedVersion)
       throw new OwnerRuleError("RULE_CONFLICT", "安静时段已经在别处改过，请刷新再改");
     if (!current.editable)
@@ -1240,14 +1274,19 @@ export class ProductionOwnerRuleWriter {
     if (input.enabled) {
       if (!CLOCK.test(input.start) || !CLOCK.test(input.end) || input.start === input.end)
         throw new OwnerRuleError("RULE_INPUT_INVALID", "start/end");
-      const summary = `每天 ${input.start} 到 ${input.end} 不推送，要你同意的事照常推送`;
+      const named = params ? params.classes : PUSH_QUIET_CLASSES;
+      const covered = pushQuietClassesOf({ periods: [], ...(named ? { classes: named } : {}) });
+      const summary =
+        covered.length === PUSH_QUIET_CLASSES.length
+          ? `每天 ${input.start} 到 ${input.end} 不推送，要你同意的事照常推送`
+          : `每天 ${input.start} 到 ${input.end} 不推送${covered.map((name) => PUSH_QUIET_CLASS_LABELS[name]).join("、")}`;
       const receipt = await this.#activate(
         {
-          key: `${QUIET_HOURS_SOURCE}:${input.start}-${input.end}`,
+          key: `${QUIET_HOURS_SOURCE}:${input.start}-${input.end}:${named?.join(",") ?? "default"}`,
           type: QUIET_HOURS_RULE_TYPE,
           params: {
             periods: [{ days: [...QUIET_HOURS_DAYS], start: input.start, end: input.end }],
-            classes: [...PUSH_QUIET_CLASSES],
+            ...(named ? { classes: [...named] } : {}),
           },
           summary,
           quote: `在通知设置里设定：${summary}`,

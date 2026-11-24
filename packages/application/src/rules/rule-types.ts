@@ -56,6 +56,12 @@ export const PUSH_QUIET_DEFAULT_CLASSES: readonly PushQuietClass[] = Object.free
   "run_result",
   "her_words",
 ]);
+export const PUSH_QUIET_CLASS_LABELS: Readonly<Record<PushQuietClass, string>> = Object.freeze({
+  scheduled_reminder: "你定的到点提醒",
+  run_result: "任务完成",
+  mail_reminder: "邮件提醒",
+  her_words: "她的话",
+});
 const PUSH_QUIET_PERIOD_LIMIT = 8;
 
 export interface PushQuietParameters {

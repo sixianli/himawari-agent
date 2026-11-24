@@ -613,7 +613,14 @@ export class ProductionWebPush {
         await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
         continue;
       }
-      const content = await contentOf(item);
+      let content: Content;
+      try {
+        content = await contentOf(item);
+      } catch (error) {
+        this.#options.onFailure(error);
+        await this.#record(entry, now, "failed", "WEB_PUSH_CONTENT_UNREADABLE");
+        continue;
+      }
       if (content.expired) {
         await this.#record(entry, now, "expired", null);
         continue;

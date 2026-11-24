@@ -1,5 +1,3 @@
-import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
-import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,13 +52,15 @@ import {
   parseMemoryCandidates,
 } from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryClassifier } from "../../apps/agent-service/src/production-memory-classification.ts";
-import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
+import { ProductionImportDuplicateChecker } from "../../apps/agent-service/src/production-memory-import-duplicates.ts";
 import {
   isStandingQuote,
   ProductionOwnerRuleTools,
   ProductionOwnerRuleWriter,
 } from "../../apps/agent-service/src/production-owner-rules.ts";
+import { ProductionProposalControl } from "../../apps/agent-service/src/production-proposal-control.ts";
+import { ProductionProposalBox } from "../../apps/agent-service/src/production-proposals.ts";
 import { ProductionQuietHoursControl } from "../../apps/agent-service/src/production-quiet-hours-control.ts";
 import {
   ProductionReminderTools,
@@ -2314,14 +2314,19 @@ describe("production memory capture", () => {
       set({ expectedVersion: empty.version, enabled: true, start: "22:00", end: "06:30" }),
     ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
 
-    await set({ expectedVersion: fromChat.version, enabled: true, start: "22:00", end: "06:30" });
+    const racing = await Promise.allSettled([
+      set({ expectedVersion: fromChat.version, enabled: true, start: "22:00", end: "06:30" }),
+      set({ expectedVersion: fromChat.version, enabled: true, start: "21:00", end: "06:00" }),
+    ]);
+    expect(racing.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
+    expect(racing[1]).toMatchObject({ reason: { code: "PORT_CONFLICT" } });
     const changed = await read();
     expect(changed).toMatchObject({
       editable: true,
       enabled: true,
       start: "22:00",
       end: "06:30",
-      classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+      classes: ["mail_reminder", "run_result", "her_words"],
     });
     expect(changed.rules).toHaveLength(1);
     expect(changed.rules[0]?.ruleId).not.toBe(fromChat.rules[0]?.ruleId);
@@ -2344,10 +2349,89 @@ describe("production memory capture", () => {
     expect(decide("approval", "2026-11-25T13:30:00.000Z")).toBe("deliver");
 
     await set({ expectedVersion: changed.version, enabled: false, start: "22:00", end: "06:30" });
-    expect(await read()).toMatchObject({ enabled: false, rules: [] });
+    const off = await read();
+    expect(off).toMatchObject({ enabled: false, rules: [] });
+    await set({ expectedVersion: off.version, enabled: true, start: "23:30", end: "07:00" });
+    expect(await read()).toMatchObject({
+      enabled: true,
+      start: "23:30",
+      classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+    });
     await expect(
       set({ expectedVersion: (await read()).version, enabled: true, start: "07:00", end: "07:00" }),
     ).rejects.toMatchObject({ code: "PORT_INVALID_OPERATION" });
+  });
+
+  it("[SAID-5] REVERSE: keeps the kinds a chat rule names when the page only moves its hours, and does not show a suspended rule as on", async () => {
+    const sentence = "以后夜里别推邮件提醒";
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.turn("owner", sentence, null);
+    const created = (await context.ruleTools.run({
+      runId: createRunId("run-rule-tool"),
+      toolCallId: "call-mail",
+      capabilityRef: "rule.set",
+      capabilityHandleRef: null,
+      arguments: {
+        inferred: false,
+        type: "push_quiet_hours",
+        summary: "夜里 23 点到早上 7 点不推邮件提醒",
+        quote: sentence,
+        params: {
+          periods: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "23:00", end: "07:00" }],
+          classes: ["mail_reminder"],
+        },
+      },
+      dataClassification: "private",
+      context: { threadId: THREAD_ID },
+    } as never)) as Record<string, unknown>;
+    const control = new ProductionQuietHoursControl({
+      configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      rules: context.ruleWriter,
+      clock: { now: () => "2026-11-25T00:00:00.000Z" },
+    });
+    const read = async () =>
+      (await control.query({ kind: "query", type: "quiet_hours.read", payload: {} } as never))
+        .payload as unknown as {
+        version: string;
+        editable: boolean;
+        enabled: boolean;
+        start: string | null;
+        classes: string[];
+        rules: { ruleId: string; summary: string }[];
+      };
+    expect(created).toMatchObject({ status: "active" });
+    const before = await read();
+    expect(before).toMatchObject({ enabled: true, classes: ["mail_reminder"] });
+    await control.execute({
+      kind: "command",
+      type: "quiet_hours.set",
+      actor: { actorType: "owner", actorId: "owner" },
+      scope: { ownerId: OWNER_ID, agentId: AGENT_ID },
+      payload: { expectedVersion: before.version, enabled: true, start: "22:00", end: "07:00" },
+    } as never);
+    const moved = await read();
+    expect(moved).toMatchObject({ enabled: true, start: "22:00", classes: ["mail_reminder"] });
+    expect(moved.rules[0]?.summary).toBe("每天 22:00 到 07:00 不推送邮件提醒");
+    expect(moved.rules[0]?.ruleId).not.toBe(created["ruleId"]);
+
+    context.sql((database) =>
+      database
+        .prepare(
+          "UPDATE rule_book_rules SET status = 'suspended', suspend_reason = 'source_removed' WHERE rule_id = ?",
+        )
+        .run(moved.rules[0]?.ruleId),
+    );
+    expect(await read()).toMatchObject({
+      enabled: false,
+      editable: true,
+      start: null,
+      rules: [{ ruleId: moved.rules[0]?.ruleId }],
+    });
   });
 
   it("[SAID-5] REVERSE: shows quiet hours with more than one period as read-only and refuses to change them from the page", async () => {

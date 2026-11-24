@@ -386,6 +386,7 @@ describe("[WP-3] web push dispatch", () => {
       finishRun,
       say,
       unsay,
+      readMessage,
       setClock: (value: string) => {
         clock = value;
       },
@@ -864,6 +865,38 @@ describe("[WP-3] web push dispatch", () => {
     expect(bodies).toEqual(["你有一条私密消息", "你有一条私密消息"]);
     expect(bodies.join("\n")).not.toContain("TK1234567");
     expect(context.failures).toEqual([]);
+  });
+
+  it("[SAID-1] REVERSE: a reply whose words cannot be read is given up once and does not hold back the pushes behind it", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const unreadable = new Error("payload cannot be decrypted");
+    const push = context.create({
+      readMessage: async (threadId, messageId) => {
+        if (messageId === "assistant:run-broken:agent")
+          return {
+            dataClassification: "private",
+            readText: async () => {
+              throw unreadable;
+            },
+          };
+        return context.readMessage(threadId, messageId);
+      },
+    });
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-broken", "completed", at(T0, -6));
+    await context.say("run-broken", "这一条读不出来。");
+    context.finishRun("run-fine", "completed", at(T0, -5));
+    await context.say("run-fine", "这一条照常推。");
+    await push.tick();
+    await push.tick();
+    context.setClock(at(T0, 30));
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
+      "这一条照常推。",
+    ]);
+    expect(context.failures).toEqual([unreadable]);
   });
 
   it("[SAID-2] holds her words through the owner's quiet hours by default and sends them once when the hours end", async () => {
