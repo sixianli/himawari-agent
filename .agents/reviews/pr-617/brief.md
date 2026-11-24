@@ -23,3 +23,8 @@ Himawari 的手机推送内容是程序拼的“对话标题 已完成”，每�
 2. 同一段文字会不会在不同请求里变成不同字节？
 3. 改动有没有对应的自动检查，反向用例是否真的会失败？
 4. 改动产生或修改的每个值（said: 编号、her_words 类别、startedBy/replyMessageId），每个使用它的地方都能接受吗？
+
+## 第 2 轮新增
+- 第 1 轮两条中高已修（没点名类别不存默认清单；敏感回话不上锁屏）。
+- 管着 run_result 的安静时段规则同时管 her_words（她的回话接替了任务完成推送），见 rule-types.ts 的 pushQuietClassesOf。
+- 新增通知页接口 quiet_hours.read / quiet_hours.set（apps/agent-service/src/production-quiet-hours-control.ts、production-owner-rules.ts 的 quietHours/setQuietHours），写的是同一份 push_quiet_hours 主人规则，带版本号防并发；立规则写入器在 production-http-composition.ts 里提成一个实例共用。
