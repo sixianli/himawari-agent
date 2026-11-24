@@ -6,10 +6,12 @@ from formats import FORMATS, load
 URL = "https://opencode.ai/inference/go/v1/chat/completions"
 CTX = ssl.create_default_context(cafile=os.environ.get("SSL_CERT_FILE", "/root/.ccr/ca-bundle.crt"))
 SYSTEM = "你是主人的私人助理。下面是你记着的关于主人的全部记忆，每条有编号。回答问题时，只输出一行 JSON：{\"ids\": [能直接回答这个问题的记忆编号]}；没有能回答的记忆就输出 {\"ids\": []}。不要输出别的内容。"
+TAG = "thinking" if os.environ.get("THINKING") == "1" else "nothinking"
 REPEATS = int(os.environ.get("REPEATS", "2"))
 
 def call(fmt_key, text, q, rep):
-    body = json.dumps({"model": "deepseek-v4.1-flash", "temperature": 0, "max_tokens": 2000,
+    extra = {} if os.environ.get("THINKING") == "1" else {"thinking": {"type": "disabled"}}
+    body = json.dumps({"model": "deepseek-v4.1-flash", "temperature": 0, "max_tokens": 2000, **extra,
         "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "记忆：\n" + text + "\n\n问题：" + q}]}).encode()
     session = f"memfmt-{fmt_key}-{rep}"
     for attempt in range(4):
@@ -37,7 +39,7 @@ def parse(content):
         return None
 
 rows = load()
-questions = json.load(open(os.path.join(HERE, "questions.json"), encoding="utf-8"))
+questions = json.load(open(os.path.join(HERE, "questions.json"), encoding="utf-8"))[:int(os.environ.get("LIMIT", "1000"))]
 only = os.environ.get("FORMATS")
 keys = [k for k in FORMATS if not only or k in only.split(",")]
 jobs = [(k, q, r) for k in keys for r in range(REPEATS) for q in questions]
@@ -49,7 +51,7 @@ def run(job):
     return {"format": k, "rep": r, "q": q["q"], "expected": sorted(q["ids"]), "got": got, "raw": content, "usage": usage}
 with ThreadPoolExecutor(max_workers=int(os.environ.get("WORKERS", "8"))) as ex:
     results = list(ex.map(run, jobs))
-json.dump(results, open(os.path.join(HERE, "read-eval-raw.json"), "w"), ensure_ascii=False, indent=1)
+json.dump(results, open(os.path.join(HERE, f"read-eval-raw-{TAG}.json"), "w"), ensure_ascii=False, indent=1)
 summary = {}
 for k in keys:
     rs = [x for x in results if x["format"] == k]
@@ -61,4 +63,4 @@ for k in keys:
     cost = sum((x["usage"].get("opencode", {}) or {}).get("list_cost", 0) or 0 for x in rs)
     summary[k] = {"label": FORMATS[k][0], "runs": len(rs), "exact": exact, "exact_rate": round(exact / len(rs), 3), "unparsed": bad, "wrong_ids": fp, "missed_ids": fn, "found_ids": tp, "list_cost_usd": round(cost, 4)}
     print(f"{k:14s} 全对 {exact}/{len(rs)}  多选 {fp}  漏选 {fn}  解析失败 {bad}  标价 ${cost:.4f}", flush=True)
-json.dump(summary, open(os.path.join(HERE, "read-eval-summary.json"), "w"), ensure_ascii=False, indent=2)
+json.dump(summary, open(os.path.join(HERE, f"read-eval-summary-{TAG}.json"), "w"), ensure_ascii=False, indent=2)
