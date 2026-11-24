@@ -1,0 +1,1 @@
+{"id": "28", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|28|找不到|-|第一次批准的一版存在 `docs/assets/apple-clients/2026-11-12-v1/`|-", "outcome": "model-wrong", "evidenceFile": "docs/assets/apple-clients/2026-11-12-v1/source/Main.dc.html", "evidence": "<title>Himawari iPhone 主界面</title>"}

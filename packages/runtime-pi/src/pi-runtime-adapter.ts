@@ -2277,7 +2277,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             content: recalled.content,
             details: {
               productOutcome: recalled.found ? "succeeded" : "failed",
-              dispatchState: "not_sent",
+              dispatchState: "accepted",
               productRunId: request.runId,
               resultRef: null,
               errorCode: recalled.found ? null : "TOOL_RESULT_RECALL_NOT_FOUND",

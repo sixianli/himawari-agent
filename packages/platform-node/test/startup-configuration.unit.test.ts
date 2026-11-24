@@ -5,12 +5,12 @@ import path from "node:path";
 import {
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
+  DELIVERY_TIMING_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
-  DELIVERY_TIMING_DEFAULTS,
   VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
@@ -171,6 +171,27 @@ describe("strict product configuration", () => {
     for (const invalid of [0, 1, 1.2, -0.1, "0.6"])
       expect(() =>
         parseProductConfiguration(withThreshold(invalid), "2026-10-29T00:00:00.000Z"),
+      ).toThrow();
+  });
+
+  it("[ADR-0286] accepts a tool result share of the model window only above 0 and up to one half", () => {
+    const withShare = (toolResultShare: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-tool-share"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), toolResultShare };
+      return input;
+    };
+    expect(
+      parseProductConfiguration(withShare(0.02), "2026-11-24T00:00:00.000Z").memory.toolResultShare,
+    ).toBe(0.02);
+    expect(
+      parseProductConfiguration(
+        config(path.join(tmpdir(), "himawari-memory-tool-share")),
+        "2026-11-24T00:00:00.000Z",
+      ).memory.toolResultShare,
+    ).toBeUndefined();
+    for (const invalid of [0, 0.6, 1, -0.1, "0.02"])
+      expect(() =>
+        parseProductConfiguration(withShare(invalid), "2026-11-24T00:00:00.000Z"),
       ).toThrow();
   });
 
@@ -1980,13 +2001,11 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
       parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,
     ).toEqual(ownerProposals);
   }
-  for (const thinkInbox of [
+  for (const inbox of [
     {},
-    { queueLimit: 1 },
+    { eventsPerRun: 1 },
     {
-      queueLimit: 1000,
-      dailyLimit: 10000,
-      expiresAfterHours: 8760,
+      eventsPerRun: 200,
       stalledAfterMinutes: 1440,
       maxAttempts: 20,
       summaryCharacters: 4000,
@@ -1995,69 +2014,30 @@ it("[P5-3] accepts the MCP entry only behind Cloudflare Access, with its own aud
     },
     { idleSeconds: 5, runTimeoutMinutes: 1 },
   ]) {
-    raw["runPolicy"] = { ...policy, thinkInbox };
-    expect(
-      parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox,
-    ).toEqual(thinkInbox);
-  }
-  const worthSecret = (raw["secretReferences"] as Record<string, unknown>[]).find(
-    ({ purpose }) => purpose === "model-auth",
-  );
-  if (!worthSecret) throw new Error("fixture secret missing");
-  const worth = { model: "typesafe-ai/jev", secretRef: worthSecret["ref"] as string };
-  const model = "must reference exactly one model-auth secret";
-  for (const secretRef of ["missing-secret", "payload-kek"]) {
-    raw["runPolicy"] = { ...policy, thinkInbox: { worth: { ...worth, secretRef } } };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow(
-      expect.objectContaining({
-        details: { field: "configuration.runPolicy.thinkInbox.worth.secretRef", reason: model },
-      }),
+    raw["runPolicy"] = { ...policy, inbox };
+    expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.inbox).toEqual(
+      inbox,
     );
   }
-  for (const thinkInbox of [
-    { worth },
-    { worth: { ...worth, yesAtLeastPermille: 800, noAtMostPermille: 200, requestTimeoutMs: 500 } },
-  ]) {
-    raw["runPolicy"] = { ...policy, thinkInbox };
-    const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox;
-    expect(parsed?.worth).toMatchObject(thinkInbox.worth);
-  }
-  expect(
-    (() => {
-      raw["runPolicy"] = { ...policy, thinkInbox: { worth } };
-      return parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.thinkInbox
-        ?.worth;
-    })(),
-  ).toEqual({
-    ...worth,
-    yesAtLeastPermille: 700,
-    noAtMostPermille: 300,
-    requestTimeoutMs: 15_000,
-  });
   for (const invalid of [
-    { worth: { model: "typesafe-ai/jev" } },
-    { worth: { ...worth, yesAtLeastPermille: 300, noAtMostPermille: 300 } },
-    { worth: { ...worth, noAtMostPermille: 500 } },
-    { worth: { ...worth, yesAtLeastPermille: 500 } },
-    { worth: { ...worth, requestTimeoutMs: 100 } },
-    { worth: { ...worth, extra: 1 } },
-  ]) {
-    raw["runPolicy"] = { ...policy, thinkInbox: invalid };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
-  for (const invalid of [
-    { queueLimit: 0 },
-    { dailyLimit: 10001 },
+    { eventsPerRun: 0 },
+    { eventsPerRun: 201 },
     { maxAttempts: 21 },
     { summaryCharacters: 99 },
     { idleSeconds: 4 },
     { runTimeoutMinutes: 121 },
-    { queueLimit: 1.5 },
+    { eventsPerRun: 1.5 },
+    { queueLimit: 20 },
+    { dailyLimit: 50 },
+    { expiresAfterHours: 48 },
+    { worth: { model: "typesafe-ai/jev" } },
     { unknownKey: 1 },
   ]) {
-    raw["runPolicy"] = { ...policy, thinkInbox: invalid };
+    raw["runPolicy"] = { ...policy, inbox: invalid };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
+  raw["runPolicy"] = { ...policy, thinkInbox: {} };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   raw["runPolicy"] = { ...policy };
   expect(
     parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.ownerProposals,

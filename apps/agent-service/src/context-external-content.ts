@@ -22,6 +22,7 @@ const WRITE_ATTEMPTS = 5;
 const SOURCE_REF_LIMIT = 512;
 const ORIGIN_IN_REF_LIMIT = 256;
 export const RECALLED_EXTERNAL_RECORD_ORIGIN = "recalled_external_record";
+export const RECALLED_EXTERNAL_CONVERSATION_ORIGIN = "recalled_external_conversation";
 
 export class ExternalContentMarkNotWrittenError extends Error {
   constructor(cause: unknown) {
@@ -77,6 +78,15 @@ export function originsOf(
   sources: readonly ExternalContentSource[] | undefined,
 ): readonly string[] {
   return [...new Set((sources ?? []).map(({ origin }) => origin))];
+}
+
+export const EXTERNAL_EVENT_ORIGIN_PREFIX = "external_event:";
+
+export function externalEventOrigin(
+  source: Pick<RunExecutionSource, "sourceType" | "sourceId" | "ownerApprovedTask"> | undefined,
+): string | null {
+  if (source?.sourceType !== "external_event" || source.ownerApprovedTask) return null;
+  return `${EXTERNAL_EVENT_ORIGIN_PREFIX}${source.sourceId}`;
 }
 
 export function isExternalContentSourceRef(ref: string): boolean {
@@ -188,6 +198,12 @@ export class ContextExternalContent {
       found.push(...sourcesOf(record?.value));
     }
     return found;
+  }
+
+  async markRunSource(runId: RunId): Promise<readonly string[]> {
+    const origin = externalEventOrigin(await this.#source.read(runId));
+    if (origin !== null) await this.mark(runId, origin);
+    return origin === null ? [] : [origin];
   }
 
   async mark(runId: RunId, origin: string): Promise<void> {

@@ -68,6 +68,16 @@ describe("clearing old tool results", () => {
     expect(clearedToolResultIds(messages, settings).size).toBe(0);
   });
 
+  it("REVERSE: never clears a result that names a password, since later copies of the value are masked only because of it", () => {
+    const messages = reading(120_000, [4_000, 6_000, 4_000, 4_000, 4_000]);
+    const first = messages[2] as ReturnType<typeof result>;
+    messages[2] = {
+      ...first,
+      content: [{ type: "text", text: `${page(4_000)}\n密码：Qz7mWx42Lp` }],
+    };
+    expect([...clearedToolResultIds(messages, settings)]).toEqual(["call-1"]);
+  });
+
   it("gives the same answer for an earlier request after more messages are appended", () => {
     const first = reading(120_000, [4_000, 4_000, 4_000, 4_000, 4_000]);
     const cleared = clearToolResults(first, settings);

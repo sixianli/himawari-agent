@@ -38,7 +38,6 @@ const NOTE_ACTION: DeviceActionRegistration = {
   readBack: "read_item",
   snapshotBefore: true,
   reversible: true,
-  untrustedOriginAllowed: true,
   confirmLabel: { "zh-CN": "记下", en: "Note it", ja: "メモする" },
   declineLabel: { "zh-CN": "不记", en: "Don't note it", ja: "メモしない" },
   title: { "zh-CN": "记一笔", en: "Take a note", ja: "メモを取る" },

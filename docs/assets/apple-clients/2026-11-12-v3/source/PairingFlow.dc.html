@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>iPhone：配对的后几步和出错时</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+</helmet>
+<div class="board" style="width: 2158px; height: 958px">
+<div class="col">
+<div class="cap"><div><b>扫码</b>　点首屏的“扫码”后</div></div>
+<div class="hm ph">
+<div class="page" style="background: #16170f; color: #fcfcfb; align-items: center; justify-content: center; gap: 28px"><div style="width: 250px; height: 250px; border-radius: 36px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.45), inset 0 0 0 3px rgba(255,255,255,0.9)"></div><div style="position: relative; font-size: 17px">对准电脑上的码</div></div><div class="gbtn" role="img" aria-label="关闭" style="left: 16px; background: rgba(255,255,255,0.18); color: #fcfcfb"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>等你在电脑上确认</b>　服务器收下后才出数字</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 140px 28px 44px; justify-content: space-between; align-items: stretch; background: radial-gradient(320px 300px at 195px 210px, var(--glow), transparent), var(--bg)"><div style="display: flex; flex-direction: column; align-items: center; gap: 30px"><img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 120px; height: 120px"><div style="display: flex; flex-direction: column; align-items: center; gap: 12px"><div class="round" style="font-size: 54px; font-weight: 700; letter-spacing: 2px">482 913</div><div class="serif" style="font-size: 22px; font-weight: 600; line-height: 1.5; text-align: center">电脑上的数字一样，<br>就在那边点确认</div></div><div class="t15 mu">Andy 的 iPhone · 正在等</div></div><div class="link" style="align-self: center">取消</div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>码不能用</b>　另两种：“这个码用过了”“认不出这个码”</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 150px 28px 44px; justify-content: space-between; align-items: stretch; background: radial-gradient(320px 300px at 195px 210px, var(--glow), transparent), var(--bg)"><div style="display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 60px"><svg aria-hidden="true" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--danger)"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /> <path d="M12 8v4" /> <path d="M12 16h.01" /></svg><div class="serif" style="font-size: 26px; font-weight: 600">这个码过期了</div><div class="t17 mu" style="text-align: center; line-height: 1.5">一个码只管 10 分钟。在电脑上再点一次“添加设备”</div></div><div class="pill pri big"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M5 12h14" /> <path d="M3 7v-2a2 2 0 0 1 2 -2h2" /> <path d="M3 17v2a2 2 0 0 0 2 2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M17 21h2a2 2 0 0 0 2 -2v-2" /></svg><span style="margin-left: 10px">重新扫码</span></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>连不上服务器</b></div></div>
+<div class="hm ph">
+<div class="page" style="padding: 150px 28px 44px; justify-content: space-between; align-items: stretch; background: radial-gradient(320px 300px at 195px 210px, var(--glow), transparent), var(--bg)"><div style="display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 60px"><svg aria-hidden="true" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-2" /> <path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3l0 -2" /> <path d="M7 8l0 .01" /> <path d="M7 16l0 .01" /></svg><div class="serif" style="font-size: 26px; font-weight: 600">连不上你的服务器</div><div class="t17 mu" style="text-align: center; line-height: 1.5">看一下网络。码还没用掉，连上后接着配对</div></div><div style="display: flex; flex-direction: column; gap: 6px"><div class="pill pri big">再试一次</div><div class="link" style="align-self: center">取消</div></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>被移除后</b>　本机数据清掉，回到首屏</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 130px 28px 44px; justify-content: space-between; align-items: stretch; background: radial-gradient(320px 300px at 195px 210px, var(--glow), transparent), var(--bg)"><div style="display: flex; flex-direction: column; align-items: center; gap: 30px"><div class="glass" style="align-self: stretch; margin-top: -70px; border-radius: 22px; padding: 12px 18px; font-size: 15px; line-height: 1.45; text-align: center">这台 iPhone 已被移除，上面的数据清掉了</div><img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 148px; height: 148px"><div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><div class="round" style="font-size: 31px; font-weight: 700; white-space: nowrap; text-align: center">你好，我是 Himawari</div><div class="t17 mu">把这台 iPhone 交给我，只要扫一次码</div></div></div><div class="pill pri big"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M5 12h14" /> <path d="M3 7v-2a2 2 0 0 1 2 -2h2" /> <path d="M3 17v2a2 2 0 0 0 2 2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M17 21h2a2 2 0 0 0 2 -2v-2" /></svg><span style="margin-left: 10px">扫码</span></div></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2158,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

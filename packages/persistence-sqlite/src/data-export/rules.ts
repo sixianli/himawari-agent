@@ -4,6 +4,10 @@ import {
   currencyExponent,
   describeRuleVersion,
   OWNER_RULE_ID_PREFIX,
+  PUSH_QUIET_CLASS_LABELS,
+  PUSH_QUIET_CLASSES,
+  type PushQuietClass,
+  pushQuietClassesOf,
   type RuleBookVersion,
   type RuleKind,
 } from "@himawari-agent/application";
@@ -134,6 +138,10 @@ function strings(value: JsonValue | undefined): readonly string[] {
     : [];
 }
 
+function isPushQuietClass(name: string): name is PushQuietClass {
+  return (PUSH_QUIET_CLASSES as readonly string[]).includes(name);
+}
+
 function quietWording(value: JsonValue | undefined): string {
   if (!Array.isArray(value) || value.length === 0) return "没有静默时段";
   return value
@@ -159,12 +167,6 @@ function amountWording(parameters: Parameters): string {
   return `低于 ${(minor / 10 ** exponent).toFixed(exponent)} ${currency}`;
 }
 
-const PUSH_CLASS_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  scheduled_reminder: "你定的到点提醒",
-  run_result: "任务完成",
-  mail_reminder: "邮件提醒",
-});
-
 function pushQuietWording(parameters: Parameters): string {
   const params =
     parameters["params"] !== null &&
@@ -172,8 +174,12 @@ function pushQuietWording(parameters: Parameters): string {
     !Array.isArray(parameters["params"])
       ? (parameters["params"] as { readonly [key: string]: JsonValue })
       : {};
-  const classes = strings(params["classes"])
-    .map((name) => PUSH_CLASS_LABELS[name] ?? name)
+  const classes = pushQuietClassesOf(
+    params["classes"] === undefined
+      ? { periods: [] }
+      : { periods: [], classes: strings(params["classes"]).filter(isPushQuietClass) },
+  )
+    .map((name) => PUSH_QUIET_CLASS_LABELS[name])
     .join("、");
   return `${String(parameters["summary"] ?? "")}（时段 ${quietWording(params["periods"])}；推送类别 ${classes}）`;
 }

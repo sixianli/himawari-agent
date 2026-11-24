@@ -7,6 +7,10 @@ import {
   type ToolActionRow,
 } from "@himawari-agent/application";
 import {
+  CONVERSATION_OPEN_CAPABILITY_REF,
+  CONVERSATION_SEARCH_CAPABILITY_REF,
+} from "./production-conversation-tools.js";
+import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
 } from "./production-context-recall.js";
@@ -260,8 +264,41 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     detail: detail({ zh: "查记忆", en: "Search memories", ja: "記憶を検索" }, "query"),
   },
   {
+    ...READ_DEFAULTS,
+    tool: "conversation_search",
+    family: "builtin",
+    capabilityRef: CONVERSATION_SEARCH_CAPABILITY_REF,
+    operation: "search",
+    targetType: "owner-conversation",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "搜以前的对话", en: "Search past conversations", ja: "過去の会話を検索" },
+      "query",
+    ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "conversation_open",
+    family: "builtin",
+    capabilityRef: CONVERSATION_OPEN_CAPABILITY_REF,
+    operation: "open",
+    targetType: "owner-conversation",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail(
+      { zh: "打开以前的对话", en: "Open a past conversation", ja: "過去の会話を開く" },
+      "conversationId",
+    ),
+  },
+  {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
+    himawariSideOnly: true,
     capabilityRef: REMINDER_SET_CAPABILITY_REF,
     operation: "set",
     targetType: "owner-reminder",

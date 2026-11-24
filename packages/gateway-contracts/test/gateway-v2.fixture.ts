@@ -468,6 +468,22 @@ export const governanceMessages = [
     key: "recheckSeconds",
     value: null,
   }),
+  fixture("query", "quiet_hours.read", {}),
+  fixture("snapshot", "quiet_hours.snapshot", {
+    version: "0123456789abcdef0123456789abcdef",
+    editable: true,
+    enabled: true,
+    start: "23:00",
+    end: "07:00",
+    classes: ["scheduled_reminder", "run_result", "mail_reminder", "her_words"],
+    rules: [{ ruleId: "owner:0123456789abcdef01234567", summary: "每天 23:00 到 07:00 不推送" }],
+  }),
+  fixture("command", "quiet_hours.set", {
+    expectedVersion: "0123456789abcdef0123456789abcdef",
+    enabled: true,
+    start: "23:00",
+    end: "07:00",
+  }),
   fixture("query", "device.list.read", {}),
   fixture("snapshot", "device.list.snapshot", {
     devices: [
