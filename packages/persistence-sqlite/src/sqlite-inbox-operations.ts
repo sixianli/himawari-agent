@@ -223,6 +223,20 @@ export class SqliteInboxOperations {
   private claimBatch(input: Input<"claimBatch">): readonly StoredInboxEvent[] {
     if (!valid(input.now)) this.invalid("Inbox time is invalid");
     const limit = this.limit(input.limit, MAX_BATCH);
+    const skip = input.skip ?? [];
+    if (
+      !Array.isArray(skip) ||
+      skip.length > MAX_BATCH ||
+      !skip.every(
+        (conversation) =>
+          (conversation.threadId === null || typeof conversation.threadId === "string") &&
+          typeof conversation.fromOwner === "boolean",
+      )
+    )
+      this.invalid("Inbox conversations to skip are invalid");
+    const skipped = skip
+      .map(() => " AND NOT (queued.thread_id IS ? AND queued.from_owner = ?)")
+      .join("");
     return this.database.transaction(() => {
       const head = this.database
         .prepare(
@@ -232,12 +246,17 @@ export class SqliteInboxOperations {
                SELECT 1 FROM inbox_events AS busy
                WHERE busy.owner_id = queued.owner_id AND busy.agent_id = queued.agent_id
                  AND busy.status = 'running' AND busy.thread_id IS queued.thread_id
-             )
+             )${skipped}
            ORDER BY queued.priority, queued.created_at, queued.rowid LIMIT 1`,
         )
-        .get(input.ownerId, input.agentId) as
-        | { threadId: string | null; fromOwner: number }
-        | undefined;
+        .get(
+          input.ownerId,
+          input.agentId,
+          ...skip.flatMap((conversation) => [
+            conversation.threadId,
+            conversation.fromOwner ? 1 : 0,
+          ]),
+        ) as { threadId: string | null; fromOwner: number } | undefined;
       if (!head) return Object.freeze([]);
       const picked = (
         this.database

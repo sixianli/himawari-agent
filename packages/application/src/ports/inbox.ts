@@ -21,6 +21,11 @@ export interface StoredInboxEvent {
   readonly updatedAt: string;
 }
 
+export interface InboxConversation {
+  readonly threadId: string | null;
+  readonly fromOwner: boolean;
+}
+
 export type InboxEnqueueOutcome =
   | { readonly outcome: "queued"; readonly entry: StoredInboxEvent }
   | { readonly outcome: "duplicate"; readonly entry: StoredInboxEvent };
@@ -53,7 +58,11 @@ export interface InboxStorePort {
     },
   ): Promise<InboxEnqueueOutcome>;
   claimBatch(
-    input: OwnerRuleScope & { readonly now: string; readonly limit: number },
+    input: OwnerRuleScope & {
+      readonly now: string;
+      readonly limit: number;
+      readonly skip?: readonly InboxConversation[];
+    },
   ): Promise<readonly StoredInboxEvent[]>;
   finish(
     input: OwnerRuleScope & {

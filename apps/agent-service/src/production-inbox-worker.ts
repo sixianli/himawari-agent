@@ -1,6 +1,7 @@
 import {
   type ClockPort,
   INBOX_LOOP_DEFAULTS,
+  type InboxConversation,
   type InboxStorePort,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -102,7 +103,7 @@ export class ProductionInboxWorker {
     } catch {}
   }
 
-  async claim(): Promise<InboxClaim | undefined> {
+  async claim(skip: readonly InboxConversation[] = []): Promise<InboxClaim | undefined> {
     const { store, scope, clock } = this.#options;
     const overrides = await this.#overrides();
     await this.#options.inbox
@@ -110,7 +111,7 @@ export class ProductionInboxWorker {
       .catch((error: unknown) => this.#report("", error));
     const limit =
       overrides["eventsPerRun"] ?? this.#options.eventsPerRun ?? INBOX_LOOP_DEFAULTS.eventsPerRun;
-    const entries = await store.claimBatch({ ...scope, now: clock.now(), limit });
+    const entries = await store.claimBatch({ ...scope, now: clock.now(), limit, skip });
     const first = entries[0];
     if (!first) return undefined;
     return Object.freeze({ threadId: first.threadId, fromOwner: first.fromOwner, entries });
@@ -277,12 +278,12 @@ export class InboxLoop {
   }
 
   async #tick(signal: AbortSignal): Promise<void> {
-    const started = new Set<string>();
+    const started: InboxConversation[] = [];
     for (;;) {
       if (signal.aborted) return;
       let claim: InboxClaim | undefined;
       try {
-        claim = await this.#worker.claim();
+        claim = await this.#worker.claim(started);
       } catch (error) {
         this.#fail(error);
         break;
@@ -302,9 +303,7 @@ export class InboxLoop {
           if (!yielded) this.wake();
         });
       this.#inflight.add(handling);
-      const conversation = `${claim.fromOwner}:${claim.threadId ?? ""}`;
-      if (started.has(conversation)) break;
-      started.add(conversation);
+      started.push({ threadId: claim.threadId, fromOwner: claim.fromOwner });
     }
     if (signal.aborted) return;
     const delay = await this.#intervalMs().catch(() => INBOX_LOOP_DEFAULTS.idleSeconds * 1000);

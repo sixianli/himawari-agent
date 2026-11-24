@@ -506,22 +506,24 @@ describe("inbox", () => {
     }
   });
 
-  it("waits for the next check instead of taking a yielded batch straight back", async () => {
-    let held = false;
-    let claims = 0;
-    let handles = 0;
-    const batch = { threadId: null, fromOwner: false, entries: [] };
+  it("hands each conversation over once per check and still reaches the one behind a yielded batch", async () => {
+    const handled: (string | null)[] = [];
+    const queue = [
+      { threadId: "busy", fromOwner: false, entries: [] },
+      { threadId: "behind", fromOwner: false, entries: [] },
+    ];
     const loop = new InboxLoop({
       worker: {
-        claim: async () => {
-          claims += 1;
-          if (held) return undefined;
-          held = true;
-          return batch;
-        },
-        handle: async () => {
-          handles += 1;
-          held = handles >= 5;
+        claim: async (skip = []) =>
+          queue.find(
+            (batch) =>
+              handled.length < 10 &&
+              !skip.some(
+                (seen) => seen.threadId === batch.threadId && seen.fromOwner === batch.fromOwner,
+              ),
+          ),
+        handle: async (claim) => {
+          handled.push(claim.threadId);
           return { status: "done", entryIds: [], result: "yield" };
         },
       },
@@ -531,8 +533,19 @@ describe("inbox", () => {
     loop.start();
     await new Promise((resolve) => setTimeout(resolve, 50));
     await loop.stop();
-    expect(handles).toBeLessThanOrEqual(2);
-    expect(claims).toBeLessThanOrEqual(2);
+    expect(handled).toEqual(["busy", "behind"]);
+  });
+
+  it("skips the conversations it is told to when taking the next batch", async () => {
+    const { make, worker } = await fixture();
+    const inbox = make();
+    await inbox.submit(mail("first", { threadId: "thread-a" }));
+    await inbox.submit(mail("second", { threadId: "thread-b" }));
+    const work = worker(inbox, recorder().delivery);
+    const claim = await work.claim([{ threadId: "thread-a", fromOwner: false }]);
+    expect(claim?.entries.map((entry) => entry.sourceRef)).toEqual(["second"]);
+    expect(await work.claim([{ threadId: "thread-a", fromOwner: false }])).toBeUndefined();
+    expect((await work.claim())?.entries.map((entry) => entry.sourceRef)).toEqual(["first"]);
   });
 
   it("keeps the loop alive when a claim throws and reports it", async () => {
