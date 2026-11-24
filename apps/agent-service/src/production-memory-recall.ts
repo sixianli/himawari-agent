@@ -50,7 +50,7 @@ export interface ProductionMemoryRecallOptions {
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly provider: Pick<MemoryProviderProjectionPort, "search">;
-  readonly state: Pick<ProductMemoryStatePort, "readMany">;
+  readonly state: Pick<ProductMemoryStatePort, "readMany" | "numbers">;
   readonly episodes?: Pick<MemoryEpisodeService, "search">;
   readonly readText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
   readonly embedWithin: <T>(
@@ -258,6 +258,15 @@ export class ProductionMemoryRecall {
       confirmedKept.push(shownHit);
     }
     if (replaced) await fillTentative();
+    const numbers = new Map(
+      (
+        await this.#options.state.numbers({
+          ownerId: this.#options.ownerId,
+          agentId: this.#options.agentId,
+          memoryIds: [...confirmedKept, ...tentativeKept].map(({ memory }) => memory.id),
+        })
+      ).map(({ memoryId, number }) => [memoryId as string, number]),
+    );
     const present = ({ memory, text, wanted }: Shown): Record<string, unknown> => {
       shown.push(memory.dataClassification);
       shownIds.push(memory.id);
@@ -265,6 +274,7 @@ export class ProductionMemoryRecall {
       const attributes = memory.attributes;
       const validTo = attributes?.validTo ?? null;
       return {
+        number: numbers.get(memory.id) ?? null,
         text,
         ...(wanted === "tentative" ? { tentative: true } : {}),
         current: validTo === null || validTo > now,

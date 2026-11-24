@@ -16,6 +16,7 @@ import {
   TOOL_CONVERSATION_OPEN,
   TOOL_CONVERSATION_SEARCH,
   TOOL_RESULT_CONVERSATION_EMPTY,
+  TOOL_RESULT_CONVERSATION_NO_MORE,
   TOOL_RESULT_CONVERSATION_NOT_FOUND,
 } from "@himawari-agent/prompt-catalog";
 
@@ -274,7 +275,14 @@ export class ProductionConversationTools {
           ...(truncated ? { truncated: true } : {}),
         })),
         ...(page < pages.length ? { nextPage: page + 1 } : {}),
-        ...(shown.length === 0 ? { note: TOOL_RESULT_CONVERSATION_EMPTY.text } : {}),
+        ...(shown.length === 0
+          ? {
+              note:
+                pages.length === 0
+                  ? TOOL_RESULT_CONVERSATION_EMPTY.text
+                  : TOOL_RESULT_CONVERSATION_NO_MORE.text,
+            }
+          : {}),
       },
       contentClassification,
       conversationIds: [...new Set(shown.map(({ turn }) => turn.turn.threadId))],

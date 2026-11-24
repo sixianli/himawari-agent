@@ -189,6 +189,21 @@ export interface ProductMemoryStatePort {
     readonly agentId: AgentId;
     readonly id: number;
   }): Promise<MemoryHistoryEvent | undefined>;
+  numbers(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly memoryIds: readonly MemoryId[];
+  }): Promise<readonly MemoryNumber[]>;
+  byNumber(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly number: number;
+  }): Promise<MemoryId | undefined>;
+}
+
+export interface MemoryNumber {
+  readonly memoryId: MemoryId;
+  readonly number: number;
 }
 
 export interface MemoryProjectionJobStatePort {
