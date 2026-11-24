@@ -473,6 +473,7 @@ DeepSeek 在没看到本方案的情况下，只拿到问题、你的要求、�
 - 合成一条用户消息的做法，对老对话里本来就有的“连续两条你的消息、中间没有回复”（例如上一轮失败）会不会改变已发出的内容，编码前核对：只对上线后的新消息合并。
 - 数据库表冻结：项目记录里写着设计线程（ADR 0282 那件）的迁移合并前，不新增改 `decision_ledger`、`decision_signals`、`web_push_feedback` 的迁移。本方案改用已有的“主动”种类，预计不用改这几张表；推送加“她的话”一种要改 `web_push_outbox`，不在冻结名单里，编码前再确认。
 - 编码时要逐个核对的新值（数据库约束和所有读它的地方都要接受，加一个自动检查，用真实数据库把每个新值插一遍，I-73 那类事故就是新值被数据库拒收）：收件箱结束时的结局（`packages/persistence-sqlite/src/sqlite-think-inbox-operations.ts:261` 只收 `proposed`、`skipped`、`failed`；状态这一列在数据库里只限长度）；`triggers.source_type` 只允许三种（`packages/persistence-sqlite/src/migrations/0001_initial_product_schema.sql:133`）；决策记录“主动”种类要求场景和结果都有值、具体结局为空；推送种类 `web_push_outbox.kind`；配置解析器会拒绝未知键，去掉 `worth` 要同时改解析器和模板（`packages/platform-node/src/strict-configuration.ts:1399`）；`threads.origin` 加“子线程”后所有读它的地方（起标题、到期删除、对话列表、导出）。
+- 同意卡片现在能不能带“这件事里都行”“几天内都行”这类范围、点了之后怎么存成规则手册里的预先放行，没有读；Muse 的引文来自 Meta 的两篇公开文章，Meta 帮助中心的几页没有读。
 - 核对代码说法（第 7 轮，73 条）：70 条一致；3 条模型找不到出处，线程自己核过：记忆线程方案在另一个分支上（模型读不到，线程已打开核对原话）；表冻结记在项目记忆里，不在仓库；“语音判断为是之后有你的全部权限”这句模型找不到代码，线程追到 `packages/platform-node/src/device-api-routes.ts:1255-1300` 确认它以你的身份提交消息，同时发现前面还有声纹和 AirPods 两道认人，因此改写了语音那条。
 - 外来的事只放简要、全文用工具打开时，打开的那次是否同样打上“外来内容”标记和数据分级，没有读。
 - 发邮件等对外动作现在有没有去重编号，没有读；“不重复做有后果的事”靠它。
