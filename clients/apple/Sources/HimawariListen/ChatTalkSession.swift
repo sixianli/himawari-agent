@@ -96,7 +96,7 @@ public final class ChatTalkSession: ChatTalk {
         sentencesRendering = 0
         buffersPlaying = 0
         reply = HerReply()
-        heard = """"
+        heard = ""
         levels = []
         phase = .starting
         await pipeline?.cancel()
