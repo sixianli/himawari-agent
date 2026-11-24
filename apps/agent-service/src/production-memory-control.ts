@@ -1993,35 +1993,47 @@ export class ProductionMemoryControl {
       const reminder = await this.options.reminders.read(reminderId);
       if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
         throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_REMINDER_NOT_FOUND");
-      if (reminder.status === "cancelled" && action !== "cancel")
+      if (reminder.status !== "cancelled" && action === "restore")
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_REMINDER_NOT_CANCELLED",
+        );
+      if (reminder.status === "cancelled" && action !== "cancel" && action !== "restore")
         throw new ApplicationPortError(
           PORT_ERROR_CODES.INVALID_OPERATION,
           "MEMORY_REMINDER_CANCELLED",
         );
       const now = this.options.clock.now();
       const next =
-        action === "snooze"
+        action === "restore"
           ? {
               status: "scheduled" as const,
               dueAt: reminder.dueAt,
-              remindAt: new Date(Date.parse(now) + SNOOZE_MS).toISOString(),
+              remindAt: reminder.remindAt,
               dismissedAt: null,
             }
-          : action === "dismiss" && reminder.repeat === "yearly"
+          : action === "snooze"
             ? {
                 status: "scheduled" as const,
-                dueAt: nextYear(reminder.dueAt),
-                remindAt: nextYear(reminder.remindAt),
+                dueAt: reminder.dueAt,
+                remindAt: new Date(Date.parse(now) + SNOOZE_MS).toISOString(),
                 dismissedAt: null,
               }
-            : {
-                status: (action === "cancel" ? "cancelled" : "dismissed") as
-                  | "cancelled"
-                  | "dismissed",
-                dueAt: reminder.dueAt,
-                remindAt: reminder.remindAt,
-                dismissedAt: now,
-              };
+            : action === "dismiss" && reminder.repeat === "yearly"
+              ? {
+                  status: "scheduled" as const,
+                  dueAt: nextYear(reminder.dueAt),
+                  remindAt: nextYear(reminder.remindAt),
+                  dismissedAt: null,
+                }
+              : {
+                  status: (action === "cancel" ? "cancelled" : "dismissed") as
+                    | "cancelled"
+                    | "dismissed",
+                  dueAt: reminder.dueAt,
+                  remindAt: reminder.remindAt,
+                  dismissedAt: now,
+                };
       const updated = await this.options.reminders.update({
         id: reminder.id,
         expectedUpdatedAt: reminder.updatedAt,

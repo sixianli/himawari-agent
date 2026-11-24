@@ -964,13 +964,14 @@ export function RemindersPage({
                 variant="quiet"
                 disabled={memory?.busy}
                 onClick={() =>
-                  void memory
-                    ?.respondReminder(item, "cancel")
-                    .then(
-                      (ok) =>
-                        ok &&
-                        setNotice({ text: message("memory.page.cancelled", { text: item.text }) }),
-                    )
+                  void memory?.respondReminder(item, "cancel").then(
+                    (ok) =>
+                      ok &&
+                      setNotice({
+                        text: message("memory.page.cancelled", { text: item.text }),
+                        undo: () => void memory.respondReminder(item, "restore"),
+                      }),
+                  )
                 }
               >
                 {message("memory.reminderDismiss")}

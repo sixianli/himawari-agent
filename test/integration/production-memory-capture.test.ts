@@ -1885,7 +1885,7 @@ describe("production memory capture", () => {
         sourceThreadId: THREAD_ID,
       },
     ]);
-    const answer = (action: "dismiss" | "snooze") =>
+    const answer = (action: "dismiss" | "snooze" | "restore") =>
       context.control.execute({
         ...envelope,
         kind: "command",
@@ -1916,6 +1916,15 @@ describe("production memory capture", () => {
     for (const action of ["dismiss", "snooze"] as const)
       await expect(answer(action)).rejects.toThrow("MEMORY_REMINDER_CANCELLED");
     expect(await reminders.read(reminderId)).toMatchObject({ status: "cancelled" });
+    expect((await overview(context.control)).reminders).toEqual([]);
+    await answer("restore");
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "scheduled",
+      dismissedAt: null,
+      remindAt: "2026-10-30T07:05:00.000Z",
+    });
+    expect((await overview(context.control)).reminders).toHaveLength(1);
+    await expect(answer("restore")).rejects.toThrow("MEMORY_REMINDER_NOT_CANCELLED");
     await expect(
       context.control.execute({
         ...envelope,

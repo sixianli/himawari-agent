@@ -2534,7 +2534,7 @@ const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
   payload: object({
     reminderId: machineString,
-    action: enumeration(["dismiss", "snooze", "cancel"]),
+    action: enumeration(["dismiss", "snooze", "cancel", "restore"]),
   }),
 });
 const memoryReminderCreateCommandSchema = object({

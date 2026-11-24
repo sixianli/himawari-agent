@@ -1444,7 +1444,7 @@ describe("memory approval and management", () => {
     });
   });
 
-  it("[MP-8] answers due reminders and cancels an upcoming one", async () => {
+  it("[MP-8] answers due reminders, cancels an upcoming one and undoes the cancel", async () => {
     overview = {
       ...overview,
       reminders: [
@@ -1488,6 +1488,11 @@ describe("memory approval and management", () => {
       payload: { reminderId: "reminder:memory-color", action: "cancel" },
     });
     expect(text("#reminders-page .memory-notice")).toContain("记忆本身保留");
+    await click("#reminders-page .memory-notice", "撤销");
+    expect(lastCommand()).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-color", action: "restore" },
+    });
     await click("#settings .memory-list", "主人最喜欢的颜色是蓝色");
     expect(text("#settings .memory-drawer")).toContain("每年");
   });
