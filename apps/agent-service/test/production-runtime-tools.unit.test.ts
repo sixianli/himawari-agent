@@ -2192,6 +2192,11 @@ it("[ADR-0257] offers every tool through the action registry with unchanged defi
       .update(JSON.stringify(descriptors.slice(0, -3)))
       .digest("hex"),
   ).toBe(TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256);
+  expect(
+    createHash("sha256")
+      .update(JSON.stringify(descriptors.slice(0, -1)))
+      .digest("hex"),
+  ).toBe(TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256);
   const withoutRegistry = new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.filter(({ tool }) => tool !== "reminder_set"),
   );
@@ -2417,5 +2422,7 @@ const EVERY_TOOL_NAMES = [
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
   "4141035a01840f7dedd21038f64d395e01e8ebbb3e9a99f42f3fa7661b7696a4";
+const TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256 =
+  "fd3345339856bda316c02421d4a3168f2a82fcb69af0374752be478a09d619e3";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
   "a41c59795408bf1a95dc613c7ed5b761542a72e2798a3fe72c7a1c0197d7af91";
