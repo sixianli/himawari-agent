@@ -4,9 +4,9 @@ import { EXECUTION_UDS_ERROR_CODES, ExecutionUdsError } from "@himawari-agent/pl
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   runAgentService,
+  type StartTenantRuntimeInput,
   startTenantRuntime,
   TENANT_RUNTIME_ERROR_CODES,
-  type StartTenantRuntimeInput,
 } from "../src/service-main.js";
 
 const boundary = vi.hoisted(() => ({
@@ -206,6 +206,12 @@ function config() {
     identity: undefined as unknown,
     runPolicy: undefined as unknown,
     modelDescriptors,
+    memory: {
+      adapter: "himawari-sqlite",
+      version: "fixture",
+      storagePath: "/fixture-state/memory",
+      dimensions: 16,
+    },
     secretReferences: [{ ref: "payload-kek", version: "v1", purpose: "payload-encryption" }],
     deadlines: { runMs: 1000, workerRequestMs: 150, providerRequestMs: 1000 },
     concurrency: { totalRuns: 2, foregroundReserved: 1, perCategory: {} },
