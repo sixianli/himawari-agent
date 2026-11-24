@@ -98,6 +98,7 @@ import {
   SqliteApplePushOperations,
 } from "./sqlite-apple-push-operations.ts";
 import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
+import { SqliteConversationTurnOperations } from "./sqlite-conversation-turn-operations.ts";
 import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
 import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
@@ -383,6 +384,7 @@ export class SqliteDurableOperations {
   private readonly checkpoint: SqliteCheckpointOperations;
   private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
+  private readonly conversationTurns: SqliteConversationTurnOperations;
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
@@ -476,6 +478,12 @@ export class SqliteDurableOperations {
       this.modelBudget,
     );
     this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom, vectorEngine);
+    this.conversationTurns = new SqliteConversationTurnOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+      vectorEngine,
+    );
     this.memoryConsolidation = new SqliteMemoryConsolidationOperations(
       database,
       fail,
@@ -693,6 +701,8 @@ export class SqliteDurableOperations {
     ) {
       return this.memory.execute(operation, payload);
     }
+    if (operation.startsWith("conversationTurn."))
+      return this.conversationTurns.execute(operation, payload);
     if (operation.startsWith("memoryConsolidation."))
       return this.memoryConsolidation.execute(operation, payload);
     if (operation.startsWith("memoryReminder."))
