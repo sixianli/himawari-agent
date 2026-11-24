@@ -6,6 +6,7 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0253-support-linux-arm64-for-test-and-qualification.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md"
 date: "2026-11-13"
+amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0266：policy、static、security 三项检查改在 Oracle 的 ARM 机器上跑
@@ -95,4 +96,4 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的检查作业原来�
 - [ADR 0238：CI 作业的文件留在 CI 服务器上](0238-ci-job-files-stay-on-the-ci-vps.md)
 - [ADR 0253：让 Himawari 能在 linux-arm64 上跑检查](0253-support-linux-arm64-for-test-and-qualification.md)
 - [ADR 0256：汇总作业用专用 runner](0256-gate-job-gets-its-own-runner.md)
-- [CI 服务器 runner 运行手册](../runbooks/ci-vps-runner-runbook.md)
+- CI 服务器 runner 运行手册（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）

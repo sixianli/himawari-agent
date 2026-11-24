@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: "docs/adr/0160-self-hosted-runner-on-hermes.md, docs/adr/0171-two-runners-on-hermes.md, docs/adr/0173-hermes-runs-only-ci.md"
-superseded_by: ""
+superseded_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 amends: "docs/adr/0168-longer-ci-job-limits-on-hermes.md, docs/adr/0169-pause-runners-by-removing-the-label.md"
 date: "2026-11-07"
 amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0256-gate-job-gets-its-own-runner.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md"
@@ -125,7 +125,7 @@ ADR 0168 放宽任务时限时（2026-11-05）：
 
 ## 关联文档
 
-- [CI VPS 上的自托管 runner Runbook](../runbooks/ci-vps-runner-runbook.md)
+- CI VPS 上的自托管 runner Runbook（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）
 - [ADR 0160：CI 改在 Hermes 上的自托管 runner 运行](0160-self-hosted-runner-on-hermes.md)
 - [ADR 0168：放宽 CI 任务的整体时限](0168-longer-ci-job-limits-on-hermes.md)
 - [ADR 0169：暂停 runner 时先去掉标签](0169-pause-runners-by-removing-the-label.md)
