@@ -7,6 +7,7 @@ import { parseDocument } from "yaml";
 import {
   activeMembers,
   armChecks,
+  legacyArmChecks,
   armRunnerLabel,
   fileSha256,
   gateRunnerLabel,
@@ -14,6 +15,7 @@ import {
   hostedRunnerLabels,
   legacyRunnerLabels,
   linuxRunnerLabel,
+  macRunnerLabel,
   parseArguments,
   readJson,
   repositoryRoot,
@@ -179,8 +181,16 @@ const ciVpsDefaultMember = {
 };
 
 export const testsMembers = [
-  { key: "integration-1", projects: ["integration"], shard: { index: 1, count: 2 } },
-  { key: "integration-2", projects: ["integration"], shard: { index: 2, count: 2 } },
+  {
+    key: "integration-1",
+    projects: ["integration"],
+    shard: { index: 1, count: 2 },
+  },
+  {
+    key: "integration-2",
+    projects: ["integration"],
+    shard: { index: 2, count: 2 },
+  },
   { key: "others", projects: ["unit", "contracts", "e2e", "pi-compat"] },
 ].map((member) => ({ ...ciVpsDefaultMember, ...member }));
 
@@ -288,7 +298,11 @@ export function upgradeCoverageToTests(policy) {
         needs: ["policy"],
         timeoutMinutes: timeoutMinutesFor("tooling"),
         members: [
-          { ...ciVpsDefaultMember, runner: legacyRunnerLabels.arm, alternateArch: "arm64" },
+          {
+            ...ciVpsDefaultMember,
+            runner: legacyRunnerLabels.arm,
+            alternateArch: "arm64",
+          },
         ],
         projects: ["tooling"],
         outputs: ["json"],
@@ -328,7 +342,10 @@ export function upgradeArmRunnerPolicy(policy) {
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
     if (coverageArmChecks.includes(check.id))
-      Object.assign(check.members[0], { runner: legacyRunnerLabels.arm, alternateArch: "arm64" });
+      Object.assign(check.members[0], {
+        runner: legacyRunnerLabels.arm,
+        alternateArch: "arm64",
+      });
   return upgraded;
 }
 
@@ -356,11 +373,29 @@ export function upgradeSelfHostedRunners(policy) {
     [legacyRunnerLabels.arm]: armRunnerLabel,
   };
   const members = (policy?.checks ?? []).flatMap((check) => check.members ?? []);
-  if (!members.some((member) => Object.hasOwn(hosted, member.runner))) return policy;
+  const legacyMac = (member) =>
+    member.key === "macos-arm64" && member.runner === "macos-15" && member.paused === true;
+  const selfHosted =
+    members.length > 0 &&
+    members.every((member) => legacyMac(member) || Object.hasOwn(hosted, member.runner));
+  if (!selfHosted) return policy;
   const upgraded = structuredClone(policy);
   for (const check of upgraded.checks)
-    for (const member of check.members)
-      if (Object.hasOwn(hosted, member.runner)) member.runner = hosted[member.runner];
+    for (const member of check.members) {
+      if (legacyMac(member)) {
+        member.runner = macRunnerLabel;
+        continue;
+      }
+      member.runner = hosted[member.runner];
+      const leftArm =
+        member.runner === armRunnerLabel &&
+        legacyArmChecks.includes(check.id) &&
+        !armChecks.includes(check.id);
+      if (leftArm) {
+        member.runner = linuxRunnerLabel;
+        delete member.alternateArch;
+      }
+    }
   return upgraded;
 }
 
@@ -491,7 +526,7 @@ export function validatePolicy(policy, { allowLegacyIntegration = false } = {}) 
         member.os === (mac ? "darwin" : "linux") &&
           member.arch === (mac ? "arm64" : "x64") &&
           member.alternateArch === (arm ? "arm64" : undefined) &&
-          member.runner === (mac ? "macos-15" : runnerLabelFor(check.id)),
+          member.runner === (mac ? macRunnerLabel : runnerLabelFor(check.id)),
         `Incorrect platform: ${check.id}/${member.key}`,
       );
       assert(mac || member.paused === undefined, `Only macOS members may pause: ${check.id}`);
@@ -554,7 +589,10 @@ function requireReadPermissions(permissions, label, root = false) {
 
 export function validateWorkflow(policy, source, toolchain) {
   validatePolicy(policy);
-  const document = parseDocument(source, { uniqueKeys: true, maxAliasCount: 0 });
+  const document = parseDocument(source, {
+    uniqueKeys: true,
+    maxAliasCount: 0,
+  });
   assert(
     document.errors.length === 0,
     `Invalid workflow YAML: ${document.errors.map((error) => error.message).join("; ")}`,
@@ -911,7 +949,10 @@ export function inspectTestSource(source, filename) {
     if (bindings && ts.isNamedImports(bindings))
       for (const item of bindings.elements) {
         const imported = item.propertyName?.text ?? item.name.text;
-        importedNames.set(checker.getSymbolAtLocation(item.name), { module, name: imported });
+        importedNames.set(checker.getSymbolAtLocation(item.name), {
+          module,
+          name: imported,
+        });
         if (module === "vitest" && ["describe", "suite", "it", "test"].includes(imported)) {
           roots.set(checker.getSymbolAtLocation(item.name), [imported]);
           rootNames.add(item.name.text);
@@ -1308,7 +1349,11 @@ export function resolveTestHygieneBaseline({
   assert(/^(?:[a-f0-9]{40}|HEAD)$/u.test(base), "Hygiene base must be HEAD or a full commit SHA");
   assert(safeRelativePath(baselinePath), "Hygiene baseline path must be relative");
   const git = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
   const present = git(["ls-tree", "-r", "--name-only", baseSha, "--", baselinePath])
     .split("\n")
@@ -1442,7 +1487,11 @@ export function resolvePolicySource({
     "Policy source paths must be relative",
   );
   const git = (args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
   const paths = git(["ls-tree", "-r", "--name-only", baseSha, "--", policyPath, coveragePath])
     .trim()
@@ -1500,7 +1549,13 @@ export function resolvePolicySource({
     validateRecord("CoveragePolicy", coverage);
     assert(coverage.baseline !== null, "Accepted coverage policy has no measured baseline");
   }
-  return { policy, policySha256: sha256(bytes), coverage, baseSha, initialization: !hasPolicy };
+  return {
+    policy,
+    policySha256: sha256(bytes),
+    coverage,
+    baseSha,
+    initialization: !hasPolicy,
+  };
 }
 
 export function validateToolchain(policy, lock, packageManifest) {

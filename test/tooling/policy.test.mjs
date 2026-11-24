@@ -58,6 +58,7 @@ import {
   gateRunnerLabel,
   githubExpression,
   hostedRunnerLabels,
+  legacyArmChecks,
   legacyRunnerLabels,
   linuxRunnerLabel,
   readJson,
@@ -73,7 +74,12 @@ const legacyClone = () => {
   const value = clone();
   for (const check of value.checks)
     for (const member of check.members)
-      if (member.runner === armRunnerLabel) member.runner = legacyRunnerLabels.arm;
+      if (member.key === "macos-arm64") member.runner = "macos-15";
+      else if (legacyArmChecks.includes(check.id))
+        Object.assign(member, {
+          runner: legacyRunnerLabels.arm,
+          alternateArch: "arm64",
+        });
       else if (check.id === "required") member.runner = legacyRunnerLabels.gate;
       else if (member.runner === linuxRunnerLabel) member.runner = legacyRunnerLabels.linux;
   return value;
@@ -113,7 +119,7 @@ const coverageShaped = () => {
 };
 const armOnSharedRunner = (value) => {
   for (const check of value.checks)
-    if (armChecks.includes(check.id)) {
+    if (legacyArmChecks.includes(check.id)) {
       delete check.members[0].alternateArch;
       check.members[0].runner = legacyRunnerLabels.linux;
     }
@@ -130,8 +136,14 @@ const lock = {
   actions: [
     checkout,
     cacheAction,
-    { repository: "actions/download-artifact", sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093" },
-    { repository: "actions/upload-artifact", sha: "ea165f8d65b6e75b540449e92b4886f43607fa02" },
+    {
+      repository: "actions/download-artifact",
+      sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    },
+    {
+      repository: "actions/upload-artifact",
+      sha: "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    },
   ],
 };
 const fixtures = [];
@@ -238,8 +250,12 @@ function workflow() {
   return {
     name: "CI",
     on: {
-      pull_request: { types: ["opened", "synchronize", "reopened", "ready_for_review"] },
-      workflow_call: { inputs: { base_sha: { required: false, type: "string" } } },
+      pull_request: {
+        types: ["opened", "synchronize", "reopened", "ready_for_review"],
+      },
+      workflow_call: {
+        inputs: { base_sha: { required: false, type: "string" } },
+      },
       workflow_dispatch: {},
     },
     permissions: { contents: "read" },
@@ -264,7 +280,12 @@ function workflow() {
             check.members.length > 1 ? githubExpression("matrix.runner") : check.members[0].runner,
           "timeout-minutes": check.timeoutMinutes,
           ...(check.members.length > 1
-            ? { strategy: { "fail-fast": false, matrix: { include: activeMembers(check) } } }
+            ? {
+                strategy: {
+                  "fail-fast": false,
+                  matrix: { include: activeMembers(check) },
+                },
+              }
             : {}),
           ...(check.id === "required"
             ? { name: "ci/required", if: githubExpression("always()") }
@@ -279,7 +300,10 @@ function workflow() {
           ...(check.id === "required" ? {} : { if: githubExpression(DRAFT_SKIP_CONDITION) }),
           steps: [
             ...(check.id === "required" ? [requiredEntry()] : []),
-            { uses: `actions/checkout@${checkout.sha}`, with: { "persist-credentials": false } },
+            {
+              uses: `actions/checkout@${checkout.sha}`,
+              with: { "persist-credentials": false },
+            },
             shareRoot(),
             ...(["static", "tests", "tooling"].includes(check.id)
               ? [{ run: chromiumInstall }]
@@ -478,7 +502,10 @@ describe("CI policy contract", () => {
 
   it("accepts the exact eight-job policy and literal execution graph", () => {
     expect(validatePolicy(policy)).toBe(policy);
-    expect(validateWorkflow(policy, stringify(workflow()), lock)).toEqual({ jobs: 8, members: 13 });
+    expect(validateWorkflow(policy, stringify(workflow()), lock)).toEqual({
+      jobs: 8,
+      members: 13,
+    });
   });
   it.each([
     [
@@ -538,9 +565,12 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "hosted Linux runner",
+      "static on the arm runner",
       (value) => {
-        value.checks.find((check) => check.id === "static").members[0].runner = "ubuntu-24.04";
+        Object.assign(value.checks.find((check) => check.id === "static").members[0], {
+          runner: armRunnerLabel,
+          alternateArch: "arm64",
+        });
       },
     ],
   ])("rejects %s", (_name, mutate) => {
@@ -711,7 +741,10 @@ describe("CI policy contract", () => {
     [
       "artifact write on the gate job",
       (value) => {
-        value.jobs.required.permissions = { contents: "read", actions: "write" };
+        value.jobs.required.permissions = {
+          contents: "read",
+          actions: "write",
+        };
       },
     ],
     [
@@ -747,7 +780,9 @@ describe("CI policy contract", () => {
     [
       "production secret",
       (value) => {
-        value.jobs.policy.env = { TOKEN: githubExpression("secrets.PRODUCTION") };
+        value.jobs.policy.env = {
+          TOKEN: githubExpression("secrets.PRODUCTION"),
+        };
       },
     ],
   ])("rejects workflow %s", (_name, mutate) => {
@@ -765,7 +800,10 @@ describe("CI policy contract", () => {
     ),
   )("[I-95] rejects a GitHub artifact step in %s: %s", (id, uses) => {
     const value = workflow();
-    value.jobs[id].steps.push({ uses, with: { name: "x", path: ".ci-output/gate/" } });
+    value.jobs[id].steps.push({
+      uses,
+      with: { name: "x", path: ".ci-output/gate/" },
+    });
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow(
       `GitHub artifacts are not used; reports stay on the runner share and diagnostics go to the job summary: ${id}`,
     );
@@ -1161,7 +1199,13 @@ describe("CI policy contract", () => {
         needs: ["policy", "build"],
         timeoutMinutes: 90,
         members: [
-          { key: "linux-x64", runner: "ci-vps", os: "linux", arch: "x64", node: "22.22.3" },
+          {
+            key: "linux-x64",
+            runner: "ci-vps",
+            os: "linux",
+            arch: "x64",
+            node: "22.22.3",
+          },
           {
             key: "macos-arm64",
             runner: "macos-15",
@@ -1178,7 +1222,15 @@ describe("CI policy contract", () => {
         id: "node-floor",
         needs: ["policy"],
         timeoutMinutes: 90,
-        members: [{ key: "default", runner: "ci-vps", os: "linux", arch: "x64", node: "22.19.0" }],
+        members: [
+          {
+            key: "default",
+            runner: "ci-vps",
+            os: "linux",
+            arch: "x64",
+            node: "22.19.0",
+          },
+        ],
         projects: fiveProjects,
         outputs: ["json", "junit"],
       },
@@ -1359,13 +1411,16 @@ describe("CI policy contract", () => {
       id: "tooling",
       needs: ["policy"],
       timeoutMinutes: 60,
-      members: policy.checks.find((check) => check.id === "static").members,
+      members: policy.checks.find((check) => check.id === "policy").members,
       projects: ["tooling"],
       outputs: ["json"],
     });
-    expect(policy.checks.find((check) => check.id === "static").members[0]).toMatchObject({
-      runner: armRunnerLabel,
-      alternateArch: "arm64",
+    expect(policy.checks.find((check) => check.id === "static").members[0]).toEqual({
+      key: "default",
+      runner: linuxRunnerLabel,
+      os: "linux",
+      arch: "x64",
+      node: "22.22.3",
     });
   });
   it.each([
@@ -1535,7 +1590,8 @@ describe("CI policy contract", () => {
     expect(() => validatePolicy(toolingOnVps)).toThrow("Incorrect platform: tooling/default");
   });
   it("[ADR-0266] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
-    expect(armChecks).toEqual(["policy", "static", "tooling", "security"]);
+    expect(legacyArmChecks).toEqual(["policy", "static", "tooling", "security"]);
+    expect(armChecks).toEqual(["policy", "tooling", "security"]);
     const { root, git } = fixtureRepository();
     const accepted = armOnSharedRunner(coverageShaped());
     expect(() => validatePolicy(accepted)).toThrow();
@@ -1567,7 +1623,7 @@ describe("CI policy contract", () => {
     expect(upgradeArmRunnerPolicy(armOnSharedRunner(coverageShaped()))).toEqual(coverageShaped());
     const withAlternate = armOnSharedRunner(coverageShaped());
     for (const check of withAlternate.checks)
-      if (armChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
+      if (legacyArmChecks.includes(check.id)) check.members[0].alternateArch = "arm64";
     expect(upgradeArmRunnerPolicy(withAlternate)).toEqual(coverageShaped());
     const mixed = armOnSharedRunner(coverageShaped());
     mixed.checks.find((check) => check.id === "security").members[0].runner =
@@ -1582,9 +1638,9 @@ describe("CI policy contract", () => {
     ["tests 写成 arm64", "tests", { arch: "arm64" }],
     ["tooling 放回 x64 机器", "tooling", { runner: linuxRunnerLabel }],
     ["browser 允许 arm64", "browser", { alternateArch: "arm64" }],
-    ["static 没有 arm64 试跑", "static", { alternateArch: undefined }],
+    ["static 允许 arm64", "static", { alternateArch: "arm64" }],
     ["security 放到汇总 runner", "security", { runner: gateRunnerLabel }],
-    ["static 放回 x64 机器", "static", { runner: linuxRunnerLabel }],
+    ["static 放到 ARM 机器", "static", { runner: armRunnerLabel }],
     ["tests 放到 ARM 机器", "tests", { runner: armRunnerLabel }],
     ["policy 写成 arm64", "policy", { arch: "arm64" }],
   ])("[ADR-0266] 策略里%s就被拒", (_label, id, change) => {
@@ -1684,7 +1740,11 @@ describe("CI policy contract", () => {
       expected.testProjects.find((entry) => entry.id === "integration"),
       {
         fileParallelism: true,
-        workerLimits: { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 },
+        workerLimits: {
+          maximum: 3,
+          cpusPerWorker: 1,
+          memoryMiBPerWorker: 2048,
+        },
       },
     );
     expect(selected.policy).toEqual(expected);
@@ -2115,10 +2175,16 @@ describe("GitHub 托管机器白名单", () => {
       validateHostedRunners({
         "a.yml": stringify(
           job(githubExpression("matrix.runner"), {
-            strategy: { matrix: { include: [{ runner: "ubuntu-24.04" }, { runner: "macos-26" }] } },
+            strategy: {
+              matrix: {
+                include: [{ runner: "ubuntu-24.04" }, { runner: "macos-26" }],
+              },
+            },
           }),
         ),
-        "b.yml": stringify({ jobs: { call: { uses: "./.github/workflows/ci.yml" } } }),
+        "b.yml": stringify({
+          jobs: { call: { uses: "./.github/workflows/ci.yml" } },
+        }),
       }),
     ).not.toThrow();
     const directory = path.join(repositoryRoot, ".github/workflows");
@@ -2152,7 +2218,11 @@ describe("GitHub 托管机器白名单", () => {
       validateHostedRunners({
         "a.yml": stringify(
           job(githubExpression("matrix.runner"), {
-            strategy: { matrix: { include: [{ runner: "ubuntu-24.04" }, { runner: "ci-arm" }] } },
+            strategy: {
+              matrix: {
+                include: [{ runner: "ubuntu-24.04" }, { runner: "ci-arm" }],
+              },
+            },
           }),
         ),
       }),
@@ -2172,5 +2242,16 @@ describe("GitHub 托管机器白名单", () => {
     expect(selected.policy).toEqual(policy);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
     expect(upgradeSelfHostedRunners(policy)).toBe(policy);
+  });
+  it("旧标签和托管标签混写、或 macOS 成员没暂停的基准策略不升级，照样被拒", () => {
+    const mixed = legacyClone();
+    mixed.checks.find((check) => check.id === "static").members[0].runner = armRunnerLabel;
+    expect(upgradeSelfHostedRunners(mixed)).toBe(mixed);
+    expect(() => validatePolicy(upgradeSelfHostedRunners(mixed))).toThrow();
+    const unpausedMac = legacyClone();
+    for (const check of unpausedMac.checks)
+      for (const member of check.members) if (member.key === "macos-arm64") delete member.paused;
+    expect(upgradeSelfHostedRunners(unpausedMac)).toBe(unpausedMac);
+    expect(() => validatePolicy(upgradeSelfHostedRunners(unpausedMac))).toThrow();
   });
 });

@@ -23,7 +23,8 @@ export const legacyRunnerLabels = Object.freeze({
   gate: "ci-vps-gate",
   arm: "ci-arm",
 });
-export const armChecks = Object.freeze(["policy", "static", "tooling", "security"]);
+export const armChecks = Object.freeze(["policy", "tooling", "security"]);
+export const legacyArmChecks = Object.freeze(["policy", "static", "tooling", "security"]);
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const identityFields = [
   "repository",
@@ -77,7 +78,11 @@ export function expectedMembers(policy) {
   return policy.checks
     .filter((check) => check.id !== "required")
     .flatMap((check) =>
-      activeMembers(check).map((member) => ({ check, member, id: memberId(check.id, member.key) })),
+      activeMembers(check).map((member) => ({
+        check,
+        member,
+        id: memberId(check.id, member.key),
+      })),
     );
 }
 

@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: "docs/adr/0191-draft-pull-requests-run-fast-checks-only.md"
 superseded_by: ""
 amends: "docs/adr/0176-ci-on-ovh-vps.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md, docs/adr/0133-docs-check-removed-from-npm-run-check.md"
-amended_by: "docs/adr/0256-gate-job-gets-its-own-runner.md"
+amended_by: "docs/adr/0256-gate-job-gets-its-own-runner.md, docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 date: "2026-11-11"
 ---
 

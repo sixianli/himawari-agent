@@ -106,7 +106,7 @@
     "scripts/delivery-mode/packet-template/install/collect-installer-dependencies.mjs": 1,
     "test/tooling/artifact-host.mjs": 1,
     "test/tooling/gate-lifecycle.test.mjs": 1,
-    "test/tooling/policy.test.mjs": 5
+    "test/tooling/policy.test.mjs": 6
   },
   "x86_64": {
     "apps/agent-service/test/sandbox-command-inventory.unit.test.ts": 1,

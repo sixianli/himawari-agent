@@ -27,10 +27,9 @@
       "members": [
         {
           "key": "default",
-          "runner": "ubuntu-24.04-arm",
+          "runner": "ubuntu-24.04",
           "os": "linux",
           "arch": "x64",
-          "alternateArch": "arm64",
           "node": "22.22.3"
         }
       ],
@@ -51,7 +50,7 @@
         },
         {
           "key": "macos-arm64",
-          "runner": "macos-15",
+          "runner": "macos-26",
           "os": "darwin",
           "arch": "arm64",
           "node": "22.22.3",
@@ -106,7 +105,10 @@
           "arch": "x64",
           "node": "22.22.3",
           "projects": ["integration"],
-          "shard": { "index": 1, "count": 2 }
+          "shard": {
+            "index": 1,
+            "count": 2
+          }
         },
         {
           "key": "integration-2",
@@ -115,7 +117,10 @@
           "arch": "x64",
           "node": "22.22.3",
           "projects": ["integration"],
-          "shard": { "index": 2, "count": 2 }
+          "shard": {
+            "index": 2,
+            "count": 2
+          }
         },
         {
           "key": "others",

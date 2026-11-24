@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0176-ci-on-ovh-vps.md"
 superseded_by: ""
-amends: "docs/adr/0174-no-github-cache-and-one-day-artifacts.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md, docs/adr/0256-gate-job-gets-its-own-runner.md, docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md, docs/adr/0275-tests-job-runs-on-three-runners.md"
+amends: "docs/adr/0174-no-github-cache-and-one-day-artifacts.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, docs/adr/0243-ci-uses-no-github-artifacts.md, docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md, docs/adr/0256-gate-job-gets-its-own-runner.md, docs/adr/0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md, docs/adr/0275-tests-job-runs-on-three-runners.md"
 date: "2026-11-25"
 ---
 
@@ -42,7 +42,7 @@ CI（持续集成，每次提交自动跑的检查和测试）原先跑在自托
 
 ## 决定
 
-1. 机器：`policy`、`static`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`；`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`；新增 `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App。
+1. 机器：`policy`、`tooling`、`security` 跑在 `ubuntu-24.04-arm`；`static`、`build`、`browser`、`tests`、`ci/required`、main 确认、合并队列和“关闭 PR 时取消 CI”跑在 `ubuntu-24.04`；新增 `Apple` 工作流在 `macos-26` 上跑 `HimawariCore` 单元测试，并不签名编译 iPhone App。`static` 原来在 Oracle ARM 机器上跑，这次改回 x64：`npm run check` 里的上线包测试（`check:delivery-deploy`、`check:delivery-dependencies`）会真的运行只认 linux-x64 的上线脚本，在 ARM 机器上以 `P5_ENVIRONMENT_INVALID` 失败（PR 623 第一次试跑就是这样失败的）；两种机器都免费，所以不在测试里跳过，而是换机器。
 2. 只准用这三种标签：`npm run check:ci-policy` 读 `.github/workflows/` 下全部工作流，`runs-on` 不是这三种之一（包括 larger runner、`self-hosted`、浮动标签和算出来的表达式）就以 `HOSTED_RUNNER_REQUIRED` 失败。
 3. 作业之间传文件：`run-share.mjs` 的摘要核对不变，只是共享目录改成每台机器自己的 `$RUNNER_TEMP/ci-share`；每个检查作业把自己那份报告用 `actions/cache/save` 存进本次运行的缓存，键带 `run_id` 和 `run_attempt`；`browser`、`tests` 先用 `actions/cache/restore`（取不到就失败）取回本次的 Linux 构建，汇总作业在收齐前逐个取回各成员的报告。取回后仍按作业输出里的摘要逐字节核对。这是对 [ADR 0174](0174-no-github-cache-and-one-day-artifacts.md)“不用 GitHub 缓存”的修订：只放开本次运行内部的传递，依赖和工具仍不缓存。
 4. 删除自托管 runner 的安装脚本、ssh 拉报告的 `scripts/ci/remote-share.mjs` 和 CI VPS 的运行手册。
@@ -68,6 +68,6 @@ GitHub 官方的缓存说明把 `actions/cache` 用于同一工作流里作业�
 ## 后果
 
 - CI 不再花钱：标准托管机器免费，缓存在 10 GB 内不收费，Andy 账号上 Actions 的 0 美元预算并勾选了超额拦截，兜底防误开。
-- 缓存超过 10 GB 时 GitHub 先删最旧的缓存；本次运行刚存的那份最新，不会被先删。万一取不到，`browser`、`tests` 会在取回那一步失败，重跑整次运行即可。
+- 汇总作业不再在结束时删共享目录：每台机器的临时目录随虚拟机一起消失；存进缓存的那几份不主动删（删要给作业写权限，`ci.yml` 规定所有作业只读），由 GitHub 在七天没人用后删掉，或在仓库缓存超过 10 GB 时按“最久没用的先删”淘汰（前提 3）。同时跑的运行很多时，正在跑的那次的构建也可能被淘汰，这时 `browser`、`tests` 会在取回那一步明确失败，重跑整次运行即可；不会因此收费，因为上限没有调高。这修订了 [ADR 0241](0241-draft-prs-skip-ci-and-merge-waits-for-green.md) 里“结束时删除共享目录”和 [ADR 0243](0243-ci-uses-no-github-artifacts.md) 里“完整报告在 CI 服务器的共享目录里”的说法。
 - macOS 机器只有 3 核、7 GB 内存，免费账号同时最多 5 台；iPhone 编译变慢时先看排队，不换收费机器。
 - 自托管时代的 ADR（[0176](0176-ci-on-ovh-vps.md)、[0238](0238-ci-job-files-stay-on-the-ci-vps.md)、[0256](0256-gate-job-gets-its-own-runner.md)、[0266](0266-ci-policy-static-security-run-on-the-oracle-arm-machine.md)、[0275](0275-tests-job-runs-on-three-runners.md)）里提到的 CI VPS 运行手册已删除，最后一版在提交 `88e17c24`。
