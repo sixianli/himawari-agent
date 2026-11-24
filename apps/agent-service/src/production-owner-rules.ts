@@ -332,7 +332,7 @@ export function ownerRuleToolDescriptors(
                 type: "array",
                 items: { type: "string", enum: [...PUSH_QUIET_CLASSES] },
                 minItems: 1,
-                maxItems: 3,
+                maxItems: PUSH_QUIET_CLASSES.length,
               },
             },
             additionalProperties: false,

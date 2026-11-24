@@ -44,11 +44,17 @@ export interface MailMatchParameters {
   readonly excludePhrases: readonly string[];
 }
 
-export const PUSH_QUIET_CLASSES = ["scheduled_reminder", "run_result", "mail_reminder"] as const;
+export const PUSH_QUIET_CLASSES = [
+  "scheduled_reminder",
+  "run_result",
+  "mail_reminder",
+  "her_words",
+] as const;
 export type PushQuietClass = (typeof PUSH_QUIET_CLASSES)[number];
 export const PUSH_QUIET_DEFAULT_CLASSES: readonly PushQuietClass[] = Object.freeze([
   "mail_reminder",
   "run_result",
+  "her_words",
 ]);
 const PUSH_QUIET_PERIOD_LIMIT = 8;
 

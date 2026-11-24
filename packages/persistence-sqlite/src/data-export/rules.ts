@@ -163,6 +163,7 @@ const PUSH_CLASS_LABELS: Readonly<Record<string, string>> = Object.freeze({
   scheduled_reminder: "你定的到点提醒",
   run_result: "任务完成",
   mail_reminder: "邮件提醒",
+  her_words: "她的话",
 });
 
 function pushQuietWording(parameters: Parameters): string {

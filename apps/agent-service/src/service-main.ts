@@ -3024,6 +3024,21 @@ export async function startTenantRuntime(
                 )
             )?.run.threadId ?? null,
           threadTitle,
+          readMessageText: async (threadId, messageId) => {
+            const [message] = await pushRepository.threadRepository().readCommittedMessagesByIds({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              threadId: threadId as Parameters<
+                ReturnType<typeof pushRepository.threadRepository>["read"]
+              >[2],
+              messageIds: [
+                messageId as Parameters<
+                  ReturnType<typeof pushRepository.threadRepository>["readCommittedMessagesByIds"]
+                >[0]["messageIds"][number],
+              ],
+            });
+            return message?.role === "agent" ? readPlain(message.contentRef) : undefined;
+          },
           ...(applePush ? { companion: applePush } : {}),
           publicOrigin: configuration.publicOrigin,
           ...(configuration.runPolicy?.timeZone

@@ -11,6 +11,7 @@ import {
   DELIVERY_TIMING_DEFAULTS,
   type DeliveryTimingJudgement,
   type DeviceActionRecord,
+  herWordsPushKey,
   type MemoryReminder,
   type ProductMemoryRecord,
   type PushGate,
@@ -331,6 +332,10 @@ describe("[IOS-4] push channels", () => {
       listApprovals: async () => approvals,
       runThread: async () => "thread-1",
       threadTitle: async () => ({ title: "查下周东京天气" }),
+      readMessageText: async (threadId, messageId) =>
+        threadId === "thread-1" && messageId === "assistant:said"
+          ? "明早 9 点那班改好了。"
+          : undefined,
       publicOrigin: ORIGIN,
       timeZone: "Asia/Shanghai",
       now: () => clock,
@@ -501,6 +506,50 @@ describe("[IOS-4] push channels", () => {
         feedbackChannel: "apns",
       },
     ]);
+    expect(context.failures).toEqual([]);
+  });
+
+  it("[SAID-1] puts her own words on the iPhone lock screen and records the push as sent in both push tables", async () => {
+    const context = await setup();
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    const sourceKey = await herWordsPushKey({ messageId: "assistant:said" });
+    await context.store.enqueue({
+      ...scope,
+      items: [
+        {
+          ...scope,
+          sourceKey,
+          kind: "reminder",
+          sourceRef: "assistant:said",
+          threadId: "thread-1",
+          createdAt: T0,
+          expiresAt: at(T0, 3_600),
+        },
+      ],
+      cursor: null,
+      now: T0,
+    });
+    await context.push.tick();
+    await context.push.tick();
+    const alerts = context.apns.ofType("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.json).toMatchObject({
+      aps: { alert: { title: "Himawari", body: "明早 9 点那班改好了。" } },
+      himawari: { kind: "reminder", navigate: "/threads/thread-1" },
+    });
+    expect(
+      context.sql((database) =>
+        database
+          .prepare(
+            `SELECT a.status, f.kind FROM web_push_attempts a
+             JOIN web_push_feedback f ON f.source_key = a.source_key
+             WHERE a.source_key = ?`,
+          )
+          .all(sourceKey),
+      ),
+    ).toEqual([{ status: "sent", kind: "reminder" }]);
     expect(context.failures).toEqual([]);
   });
 

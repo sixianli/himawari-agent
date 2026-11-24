@@ -574,6 +574,7 @@ describe.each(["worker", "direct"] as const)("home feed through %s", (execution)
       awaitingCount: () => home.awaitingCount(),
       runThread,
       threadTitle: titled,
+      readMessageText: async () => undefined,
       publicOrigin: "https://himawari.example",
       timeZone: "Asia/Tokyo",
       now: clock.now,
