@@ -5,7 +5,6 @@ import {
   type RuntimeToolDescriptor,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
-import type { AgentId, OwnerId, ThreadId } from "@himawari-agent/domain";
 import {
   type ConversationLine,
   type ConversationTurnService,
@@ -19,6 +18,9 @@ import {
   TOOL_RESULT_CONVERSATION_EMPTY,
   TOOL_RESULT_CONVERSATION_NOT_FOUND,
 } from "@himawari-agent/prompt-catalog";
+
+type SearchInput = Parameters<ConversationTurnService["search"]>[0];
+type WindowInput = Parameters<ConversationTurnService["window"]>[0];
 
 export const CONVERSATION_SEARCH_CAPABILITY_REF = "conversation.search";
 export const CONVERSATION_OPEN_CAPABILITY_REF = "conversation.open";
@@ -80,8 +82,8 @@ export function toolResultCharacters(contextWindow: number | undefined, share: n
 }
 
 export interface ProductionConversationToolsOptions {
-  readonly ownerId: OwnerId;
-  readonly agentId: AgentId;
+  readonly ownerId: SearchInput["ownerId"];
+  readonly agentId: SearchInput["agentId"];
   readonly turns: Pick<ConversationTurnService, "search" | "window">;
   readonly pageCharacters: number;
   readonly embedWithin: <T>(
@@ -248,7 +250,7 @@ export class ProductionConversationTools {
     const opened = await this.#options.turns.window({
       ownerId: this.#options.ownerId,
       agentId: this.#options.agentId,
-      threadId: conversationId as ThreadId,
+      threadId: conversationId as WindowInput["threadId"],
       fromSequence: sequence,
       direction,
       maximumCharacters: budget,
