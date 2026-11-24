@@ -1,0 +1,79 @@
+{
+  "json": {
+    "label": "一条一行 JSON",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0081
+  },
+  "markdown": {
+    "label": "Markdown：## 类别 + “- #编号 内容”",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0156
+  },
+  "tsv": {
+    "label": "TSV：编号⇥类别⇥内容",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0058
+  },
+  "space": {
+    "label": "类别一行 + “编号 内容”",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0433
+  },
+  "flat_space": {
+    "label": "不分类别，“编号 内容”",
+    "runs": 80,
+    "exact": 77,
+    "exact_rate": 0.963,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 9,
+    "found_ids": 77,
+    "list_cost_usd": 0.0497
+  },
+  "tight_guarded": {
+    "label": "类别一行 + 编号紧贴内容（内容以数字开头才空格）",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0389
+  },
+  "tight_raw": {
+    "label": "类别一行 + 编号紧贴内容（一律不空格）",
+    "runs": 80,
+    "exact": 80,
+    "exact_rate": 1.0,
+    "unparsed": 0,
+    "wrong_ids": 0,
+    "missed_ids": 0,
+    "found_ids": 86,
+    "list_cost_usd": 0.0245
+  }
+}
