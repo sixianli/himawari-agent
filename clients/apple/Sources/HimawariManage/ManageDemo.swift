@@ -129,9 +129,7 @@ public struct ManageDemoView: View {
 
 @MainActor
 final class DemoListening: HerListening {
-    let isListening = true
     let hasVoiceprint = true
-    func stop() {}
     func deleteVoiceprint() {}
 }
 

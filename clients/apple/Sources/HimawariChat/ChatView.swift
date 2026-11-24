@@ -232,13 +232,17 @@ public struct ChatView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: DesignTokens.Chat.avatar)
-            Button { openHerPage?() } label: {
+            if let openHerPage {
+                Button(action: openHerPage) {
+                    HimawariAvatar(busy: avatarBusy)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(L.text("chat.herPage")))
+                .accessibilityAddTraits(.isHeader)
+            } else {
                 HimawariAvatar(busy: avatarBusy)
+                    .accessibilityAddTraits(.isHeader)
             }
-            .buttonStyle(.plain)
-            .disabled(openHerPage == nil)
-            .accessibilityLabel(Text(L.text("chat.herPage")))
-            .accessibilityAddTraits(.isHeader)
         }
         .frame(maxWidth: .infinity)
     }
@@ -289,7 +293,7 @@ public struct ChatView: View {
             .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
             .padding(.bottom, 110)
         }
-        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)

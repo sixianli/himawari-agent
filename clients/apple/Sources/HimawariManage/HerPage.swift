@@ -4,9 +4,7 @@ import SwiftUI
 
 @MainActor
 public protocol HerListening: AnyObject, Sendable {
-    var isListening: Bool { get }
     var hasVoiceprint: Bool { get }
-    func stop()
     func deleteVoiceprint()
 }
 
@@ -28,6 +26,7 @@ public struct HerPage: View {
     private let listening: (any HerListening)?
     private let openListening: () -> Void
     private let senses: AnyView?
+    private let sensesOn: () -> Int?
     private let talk: (String) -> Void
     private let close: () -> Void
     private let removedThisDevice: () -> Void
@@ -38,6 +37,7 @@ public struct HerPage: View {
         listening: (any HerListening)? = nil,
         openListening: @escaping () -> Void = {},
         senses: AnyView? = nil,
+        sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         close: @escaping () -> Void,
         removedThisDevice: @escaping () -> Void
@@ -52,6 +52,7 @@ public struct HerPage: View {
         self.listening = listening
         self.openListening = openListening
         self.senses = senses
+        self.sensesOn = sensesOn
         self.talk = talk
         self.close = close
         self.removedThisDevice = removedThisDevice
@@ -65,6 +66,7 @@ public struct HerPage: View {
         self.listening = listening
         openListening = {}
         self.senses = senses
+        sensesOn = { 4 }
         talk = { _ in }
         close = {}
         removedThisDevice = {}
@@ -129,13 +131,11 @@ public struct HerPage: View {
                         memory: memory,
                         listening: listening,
                         openListening: openListening,
-                        openSenses: senses == nil ? nil : { sensesOpen = true }
+                        openSenses: senses == nil ? nil : { sensesOpen = true },
+                        sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .devices:
-                    SettingsPage(gap: SL.pageGap) {
-                        SheetHeader(title: M.devicesTitle, leading: .back) { path.removeLast() }
-                        DevicesGroup(store: settings, open: { path.append(.device($0.id)) }, add: { path.append(.addDevice) })
-                    }
+                    HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):
                     DevicePage(store: settings, deviceId: id, actions: nil, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .addDevice:
@@ -150,11 +150,8 @@ public struct HerPage: View {
     }
 
     private var devicesSummary: String? {
-        guard settings.phase == .loaded, !settings.devices.isEmpty else { return nil }
-        if settings.devices.count == 1, let only = settings.devices.first, settings.isThisDevice(only), only.kind == "iphone" {
-            return M.thisIPhone
-        }
-        return M.deviceCount(settings.devices.count)
+        guard settings.phase == .loaded, settings.devices.contains(where: settings.isThisDevice) else { return nil }
+        return M.thisIPhone
     }
 
     private func load() async {
@@ -195,9 +192,9 @@ struct HerRow: View {
         VStack(spacing: 0) {
             HStack(spacing: SL.rowGap) {
                 Icon(icon, size: DesignTokens.Her.rowIcon)
-                    .foregroundStyle(Color.hmText)
+                    .foregroundStyle(Color.hmGlyph)
                     .frame(width: DesignTokens.Her.rowTile, height: DesignTokens.Her.rowTile)
-                    .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
+                    .background(Color.hmTile, in: RoundedRectangle(cornerRadius: DesignTokens.Her.rowTileRadius, style: .continuous))
                 VStack(alignment: .leading, spacing: DesignTokens.Her.rowSubtitleGap) {
                     Text(title).hmType(SL.rowValue).foregroundStyle(Color.hmText)
                     if let subtitle {
@@ -225,6 +222,7 @@ struct PrivacyPage: View {
     let listening: (any HerListening)?
     let openListening: () -> Void
     let openSenses: (() -> Void)?
+    var sensesSummary: String? = nil
     let back: () -> Void
     @State private var failed = false
     @State private var forgetVoiceprint = false
@@ -232,27 +230,12 @@ struct PrivacyPage: View {
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
             SheetHeader(title: M.privacy, leading: .back, action: back)
-            if openSenses != nil || listening != nil {
+            if let openSenses {
                 SettingsGroup(label: nil) {
-                    if let openSenses {
-                        Button(action: openSenses) {
-                            HerRow(icon: .eye, title: M.senses, last: listening == nil)
-                        }
-                        .buttonStyle(.plain)
+                    Button(action: openSenses) {
+                        HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: true)
                     }
-                    if let listening {
-                        SettingsRow(
-                            icon: .ear,
-                            title: M.listen,
-                            switchState: Binding(
-                                get: { listening.isListening },
-                                set: { on in
-                                    if on { openListening() } else { listening.stop() }
-                                }
-                            ),
-                            last: true
-                        )
-                    }
+                    .buttonStyle(.plain)
                 }
             }
             if let overview = memory.overview {
@@ -272,7 +255,7 @@ struct PrivacyPage: View {
                         if listening.hasVoiceprint { forgetVoiceprint = true } else { openListening() }
                     } label: {
                         SettingsRow(
-                            icon: .fingerprint,
+                            icon: nil,
                             title: M.voiceprint,
                             detail: M.voiceprintDetail,
                             value: listening.hasVoiceprint ? M.voiceprintKept : M.voiceprintNone,

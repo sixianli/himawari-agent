@@ -112,6 +112,7 @@ struct DemoSceneView: View {
         content
             .environment(\.listClock, DemoChatFixtures.now)
             .environment(\.stillFrames, !scene.rawValue.hasPrefix("motion-"))
+            .environment(\.chatVoice, DemoVoice())
             .onAppear { SerifFace.shared.prepare() }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }

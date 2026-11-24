@@ -9,7 +9,9 @@ public enum DesignTokens {
         public static let glass = PaletteToken(light: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.74), dark: RGBA(red: 56 / 255, green: 56 / 255, blue: 56 / 255, alpha: 0.74))
         public static let glassLine = PaletteToken(light: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.8), dark: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 0.1))
         public static let glow = PaletteToken(light: RGBA(red: 232 / 255, green: 176 / 255, blue: 74 / 255, alpha: 0.34), dark: RGBA(red: 239 / 255, green: 178 / 255, blue: 60 / 255, alpha: 0.18))
+        public static let glyph = PaletteToken(light: RGBA(red: 138 / 255, green: 90 / 255, blue: 0 / 255, alpha: 1), dark: RGBA(red: 242 / 255, green: 187 / 255, blue: 79 / 255, alpha: 1))
         public static let muted = PaletteToken(light: RGBA(red: 107 / 255, green: 113 / 255, blue: 100 / 255, alpha: 1), dark: RGBA(red: 160 / 255, green: 160 / 255, blue: 154 / 255, alpha: 1))
+        public static let onSpeak = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
         public static let onText = PaletteToken(light: RGBA(red: 252 / 255, green: 252 / 255, blue: 251 / 255, alpha: 1), dark: RGBA(red: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1))
         public static let scrim = PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.28), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5))
         public static let separator = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 0.09), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 0.1))
@@ -20,6 +22,7 @@ public enum DesignTokens {
         public static let surface = PaletteToken(light: RGBA(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 1), dark: RGBA(red: 42 / 255, green: 42 / 255, blue: 42 / 255, alpha: 1))
         public static let switchOff = PaletteToken(light: RGBA(red: 201 / 255, green: 203 / 255, blue: 194 / 255, alpha: 1), dark: RGBA(red: 85 / 255, green: 85 / 255, blue: 79 / 255, alpha: 1))
         public static let text = PaletteToken(light: RGBA(red: 37 / 255, green: 41 / 255, blue: 33 / 255, alpha: 1), dark: RGBA(red: 228 / 255, green: 228 / 255, blue: 225 / 255, alpha: 1))
+        public static let tile = PaletteToken(light: RGBA(red: 248 / 255, green: 235 / 255, blue: 203 / 255, alpha: 1), dark: RGBA(red: 75 / 255, green: 63 / 255, blue: 37 / 255, alpha: 1))
         public static let badge = danger
         public static let streamingDot = sunBright
     }
@@ -318,6 +321,7 @@ public enum DesignTokens {
         public static let codePadding: CGFloat = 12
         public static let headerFade: CGFloat = 140
         public static let listGap: CGFloat = 4
+        public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
         public static let quoteBar: CGFloat = 3
         public static let quoteGap: CGFloat = 10
@@ -342,6 +346,7 @@ public enum DesignTokens {
         public static let heroWordmarkHeight: CGFloat = 39
         public static let pageGap: CGFloat = 18
         public static let pagePaddingTop: CGFloat = 58
+        public static let pillPaddingX: CGFloat = 24
         public static let rowIcon: CGFloat = 19
         public static let rowSubtitleGap: CGFloat = 2
         public static let rowTile: CGFloat = 34

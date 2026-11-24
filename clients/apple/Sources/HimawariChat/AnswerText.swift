@@ -84,7 +84,7 @@ struct AnswerText: View {
     }
 
     private func list(_ items: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Chat.listGap) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Chat.listMarkerGap) {
                     Text(verbatim: item.0)
@@ -95,6 +95,7 @@ struct AnswerText: View {
                 }
             }
         }
+        .padding(.leading, DesignTokens.Chat.listIndent)
     }
 }
 
@@ -114,10 +115,11 @@ struct AnswerTable: View {
         Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
                 ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                    cellView(cell).fontWeight(.semibold)
+                    cellView(cell)
+                        .fontWeight(.semibold)
+                        .background { Rectangle().fill(Color.hmFill) }
                 }
             }
-            .background(Color.hmFill)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 Divider().overlay(Color.hmSeparator).gridCellUnsizedAxes(.horizontal)
                 GridRow {

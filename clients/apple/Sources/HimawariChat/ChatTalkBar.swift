@@ -35,7 +35,7 @@ struct ChatTalkBar: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
-            circle(.x, label: L.text("chat.talk.end"), fill: Color.hmSpeak, foreground: Color.hmOnText, action: end)
+            circle(.x, label: L.text("chat.talk.end"), fill: Color.hmSpeak, foreground: Color.hmOnSpeak, action: end)
         }
         .padding(.horizontal, Self.inset)
         .frame(height: DesignTokens.Size.composerHeight)
@@ -107,5 +107,13 @@ public final class DemoTalk: ChatTalk {
     public func herReply(_ markdown: String, finished: Bool) {}
     public func setMuted(_ muted: Bool) {}
     public func end() async {}
+}
+
+@MainActor
+public final class DemoVoice: ChatVoiceInput {
+    public init() {}
+    public func start(onText: @escaping @MainActor (String) -> Void) async throws {}
+    public func finish() async -> String { "" }
+    public func cancel() async {}
 }
 #endif

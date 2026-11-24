@@ -236,6 +236,7 @@ struct MainTabsView: View {
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
+            sensesOn: { model.senses?.status?.senses.count },
             talk: { draft in
                 herOpen = false
                 withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }

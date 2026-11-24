@@ -48,7 +48,11 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
-    static func deviceCount(_ count: Int) -> String { text("\(count) 台设备", ja: "\(count) 台", en: "\(count) devices") }
+    static func phoneLine(_ name: String, _ presence: String) -> String { "\(name) · \(presence)" }
+    static func pairedSince(_ date: Date) -> String {
+        text("\(pairedDay(date))配对", ja: "\(pairedDay(date))にペアリング", en: "Paired \(pairedDay(date))")
+    }
+    static var disconnectThisIPhone: String { text("断开这台 iPhone", ja: "この iPhone の接続を解除", en: "Disconnect this iPhone") }
     static var quietWhen: String { text("什么时候不响", ja: "鳴らさない時間", en: "When to stay quiet") }
     static var quietAtNight: String { text("晚上不响", ja: "夜は鳴らさない", en: "Quiet at night") }
     static var quietOff: String { text("不设不响的时段", ja: "鳴らさない時間を設けない", en: "No quiet hours") }
@@ -86,7 +90,8 @@ enum M {
             en: "Quiet \(start.shortText)–\(end.shortText)"
         )
     }
-    static var listen: String { text("收听", ja: "聞き取り", en: "Listening") }
+    static var letHerSense: String { text("让她感知", ja: "彼女に感じ取らせる", en: "Let Her Sense") }
+    static func sensesOn(_ count: Int) -> String { text("\(count) 项开着", ja: "\(count) 項目オン", en: "\(count) on") }
     static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }
     static var resumeMemory: String { text("恢复记忆", ja: "記憶を再開", en: "Resume memory") }
     static var pauseMemoryDetail: String {

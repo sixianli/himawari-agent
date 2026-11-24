@@ -168,6 +168,9 @@ extension Color {
     public static var hmGlow: Color { DesignTokens.Colors.glow.color }
     public static var hmOnText: Color { DesignTokens.Colors.onText.color }
     public static var hmSpeak: Color { DesignTokens.Colors.speak.color }
+    public static var hmOnSpeak: Color { DesignTokens.Colors.onSpeak.color }
+    public static var hmTile: Color { DesignTokens.Colors.tile.color }
+    public static var hmGlyph: Color { DesignTokens.Colors.glyph.color }
     public static var hmScrim: Color { DesignTokens.Colors.scrim.color }
     public static var hmSwitchOff: Color { DesignTokens.Colors.switchOff.color }
     public static var hmGlass: Color { DesignTokens.Colors.glass.color }
