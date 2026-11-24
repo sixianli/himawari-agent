@@ -84,6 +84,8 @@ export interface WebPushFinishedRun {
   readonly threadId: string;
   readonly status: "completed" | "failed";
   readonly resultUnconfirmed: boolean;
+  readonly startedBy: "user_message" | "schedule" | "external_event";
+  readonly replyMessageId: string | null;
   readonly finishedAt: string;
   readonly cursor: string;
 }
