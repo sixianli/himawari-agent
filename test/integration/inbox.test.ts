@@ -153,7 +153,8 @@ describe("inbox", () => {
       try {
         return handle
           .prepare(
-            `SELECT source_ref AS ref, status, outcome, attempts, run_id AS runId
+            `SELECT source_ref AS ref, status, outcome, attempts, run_id AS runId,
+               reason_code AS reasonCode
              FROM inbox_events ORDER BY created_at, rowid`,
           )
           .all() as {
@@ -162,6 +163,7 @@ describe("inbox", () => {
           outcome: string | null;
           attempts: number;
           runId: string | null;
+          reasonCode: string | null;
         }[];
       } finally {
         handle.close();
@@ -397,6 +399,55 @@ describe("inbox", () => {
     });
     expect(calls).toHaveLength(0);
     expect(rows()[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("does not take back a run that is still inside its time limit, even with a shorter stalled setting", async () => {
+    const { register, store, payloads, protector, worker, settings, clock, rows } = await fixture();
+    const inbox = register(
+      new ProductionInbox({
+        scope,
+        store,
+        payloads,
+        protector,
+        clock: { now: () => clock.value },
+        overrides: () => settings.overrides(),
+      }),
+    );
+    await settings.change(0, "stalledAfterMinutes", 1);
+    await inbox.submit(mail("slow", { threadId: "thread-a" }));
+    const work = worker(inbox, recorder().delivery, { runTimeoutMs: 10 * 60_000 });
+    expect((await work.claim())?.entries.map((entry) => entry.sourceRef)).toEqual(["slow"]);
+    clock.value = "2026-11-24T00:05:00.000Z";
+    expect(await work.claim()).toBeUndefined();
+    expect(rows()[0]).toMatchObject({ status: "running", attempts: 1 });
+    clock.value = "2026-11-24T00:11:00.000Z";
+    expect((await work.claim())?.entries.map((entry) => entry.sourceRef)).toEqual(["slow"]);
+    expect(rows()[0]).toMatchObject({ status: "running", attempts: 2 });
+  });
+
+  it("records a handled run whose result the store refuses as done, and never delivers it again", async () => {
+    const { make, worker, rows } = await fixture();
+    const inbox = make();
+    await inbox.submit(mail("odd"));
+    const { calls, delivery } = recorder(() => ({
+      status: "handled",
+      outcome: "Not A Code",
+      reasonCode: "",
+      runId: "",
+    }));
+    const work = worker(inbox, delivery);
+    expect(await work.handle((await work.claim()) as never)).toMatchObject({
+      status: "done",
+      result: "handled",
+    });
+    expect(rows()[0]).toMatchObject({
+      status: "done",
+      outcome: null,
+      reasonCode: "result_invalid",
+      runId: null,
+    });
+    expect(await work.claim()).toBeUndefined();
+    expect(calls).toHaveLength(1);
   });
 
   it("wakes the worker as soon as something is written, without waiting for the idle check", async () => {

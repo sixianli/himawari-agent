@@ -13,6 +13,8 @@ import {
   type ProductionInbox,
 } from "./production-inbox.js";
 
+const RUN_SETTLE_MS = 60_000;
+
 export interface InboxDeliveryEvent {
   readonly entry: StoredInboxEvent;
   readonly source: InboxSource;
@@ -79,6 +81,11 @@ export class ProductionInboxWorker {
     return (await this.#options.overrides?.().catch(() => undefined)) ?? {};
   }
 
+  #runTimeoutMs(overrides: Readonly<Record<string, number>>): number {
+    const minutes = overrides["runTimeoutMinutes"];
+    return minutes === undefined ? this.#options.runTimeoutMs : minutes * 60_000;
+  }
+
   #report(entryId: string, error: unknown): void {
     try {
       this.#options.onFailure?.(entryId, error);
@@ -87,8 +94,10 @@ export class ProductionInboxWorker {
 
   async claim(): Promise<InboxClaim | undefined> {
     const { store, scope, clock } = this.#options;
-    await this.#options.inbox.maintain().catch((error: unknown) => this.#report("", error));
     const overrides = await this.#overrides();
+    await this.#options.inbox
+      .maintain({ runsLastUpToMs: this.#runTimeoutMs(overrides) + RUN_SETTLE_MS })
+      .catch((error: unknown) => this.#report("", error));
     const limit =
       overrides["eventsPerRun"] ?? this.#options.eventsPerRun ?? INBOX_LOOP_DEFAULTS.eventsPerRun;
     const entries = await store.claimBatch({ ...scope, now: clock.now(), limit });
@@ -102,10 +111,7 @@ export class ProductionInboxWorker {
     const ids = claim.entries.map((entry) => entry.id);
     const overrides = await this.#overrides();
     const maxAttempts = overrides["maxAttempts"] ?? this.#options.maxAttempts ?? INBOX_MAX_ATTEMPTS;
-    const runTimeoutMs =
-      overrides["runTimeoutMinutes"] === undefined
-        ? this.#options.runTimeoutMs
-        : overrides["runTimeoutMinutes"] * 60_000;
+    const runTimeoutMs = this.#runTimeoutMs(overrides);
     const settle = async (
       entryIds: readonly string[],
       to: "done" | "failed",
@@ -158,7 +164,25 @@ export class ProductionInboxWorker {
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
       if (result.status === "handled") {
-        await settle(deliveredIds, "done", result.outcome, result.reasonCode, result.runId);
+        const recorded = (to: Parameters<typeof settle>): Promise<boolean> =>
+          settle(...to).then(
+            () => true,
+            (error: unknown) => {
+              this.#report(deliveredIds[0] ?? "", error);
+              return false;
+            },
+          );
+        if (
+          !(await recorded([
+            deliveredIds,
+            "done",
+            result.outcome,
+            result.reasonCode,
+            result.runId,
+          ])) &&
+          !(await recorded([deliveredIds, "done", null, "result_invalid", null]))
+        )
+          return { status: "unsettled", entryIds: ids };
         return { status: "done", entryIds: ids, result: "handled" };
       }
       if (result.status === "yield") {

@@ -252,13 +252,16 @@ export class ProductionInbox {
     if (!referenced) await this.#options.payloads.delete(summaryRef as never).catch(() => false);
   }
 
-  async maintain(): Promise<{ readonly recovered: number }> {
+  async maintain(
+    input: { readonly runsLastUpToMs?: number } = {},
+  ): Promise<{ readonly recovered: number }> {
     const now = this.#options.clock.now();
     const limits = await this.currentLimits();
     const at = Date.parse(now);
+    const stalledAfterMs = Math.max(limits.stalledAfterMinutes * 60_000, input.runsLastUpToMs ?? 0);
     const recovered = await this.#options.store.recoverStalled({
       ...this.#options.scope,
-      stalledBefore: new Date(at - limits.stalledAfterMinutes * 60_000).toISOString(),
+      stalledBefore: new Date(at - stalledAfterMs).toISOString(),
       maxAttempts: limits.maxAttempts,
       now,
     });
