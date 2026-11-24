@@ -48,7 +48,11 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
-import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
+import {
+  ConversationTurnService,
+  MemoryConsolidationService,
+  MemoryEpisodeService,
+} from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
   type SqliteExtraReadThreadBudget,
@@ -1839,6 +1843,27 @@ export async function startTenantRuntime(
               now: () => clock.now(),
             })
           : undefined;
+      const conversationTurns =
+        memoryComposition && episodeProtector
+          ? new ConversationTurnService({
+              store: repository.conversationTurns(),
+              threads: repository.threadRepository(),
+              readText: async ({ ownerId, agentId, ref }) => {
+                const payload = await episodePayloads.get(ref);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({ ownerId, agentId, payload }),
+                );
+              },
+              embedder: memoryComposition.projection.embedder,
+              embeddableClassifications: memoryComposition.projection.embeddableClassifications,
+              minimumSimilarity: memoryComposition.projection.minimumSimilarity,
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+              now: () => clock.now(),
+            })
+          : undefined;
       const embedWithin = <T>(
         request: RuntimeRequest,
         slot: string,
@@ -1932,6 +1957,30 @@ export async function startTenantRuntime(
       if (localEmbedding) {
         const catchUpLocalVectors = async () => {
           await requeueStaleMemoryVectors();
+          const maintenanceWithin = <T>(
+            dataClassification: RuntimeRequest["dataClassification"],
+            operation: () => Promise<T>,
+          ) =>
+            memory.embedForMaintenance(
+              {
+                deadlineAt: new Date(
+                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+                ).toISOString(),
+                dataClassification,
+              },
+              operation,
+            );
+          if (conversationTurns) {
+            for (;;) {
+              const embedded = await conversationTurns.backfillEmbeddings({
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                limit: 100,
+                within: maintenanceWithin,
+              });
+              if (embedded === 0) break;
+            }
+          }
           if (!memoryEpisodes) return;
           for (;;) {
             const embedded = await memoryEpisodes.backfillEmbeddings({
@@ -3190,6 +3239,7 @@ export async function startTenantRuntime(
                   ? {
                       episodes: {
                         service: memoryEpisodes,
+                        ...(conversationTurns ? { turns: conversationTurns } : {}),
                         embedWithin: (request, slot, operation) =>
                           embedWithin(request, slot, operation, request.dataClassification),
                         onFailure: (error) =>

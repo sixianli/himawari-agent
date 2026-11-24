@@ -287,6 +287,7 @@ beforeEach(() => {
     "capabilityInvocationResultPort",
     "memoryIndex",
     "memoryEpisodes",
+    "conversationTurns",
     "externalMemoryProposals",
     "mcpMemorySync",
     "memoryConsolidation",

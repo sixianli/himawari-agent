@@ -4,12 +4,14 @@ import type {
   RuntimeRequest,
   ThreadRepositoryPort,
 } from "@himawari-agent/application";
-import type { MemoryEpisodeService } from "@himawari-agent/memory-engine";
+import type { ConversationTurnService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 
 const MAXIMUM_EPISODES_PER_RUN = 1;
+const MAXIMUM_TURNS_PER_RUN = 20;
 
 export interface ProductionMemoryEpisodesOptions {
   readonly service: Pick<MemoryEpisodeService, "dueSegments" | "summarize" | "backfillEmbeddings">;
+  readonly turns?: Pick<ConversationTurnService, "indexDue" | "backfillEmbeddings">;
   readonly threads: Pick<ThreadRepositoryPort, "read">;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
@@ -73,7 +75,42 @@ export class ProductionMemoryEpisodes {
       : operation();
   }
 
+  async #indexTurns(request: RuntimeRequest): Promise<void> {
+    const turns = this.#options.turns;
+    if (!turns) return;
+    let slot = 0;
+    const within = <T>(
+      dataClassification: RuntimeRequest["dataClassification"],
+      operation: () => Promise<T>,
+    ) => {
+      slot += 1;
+      return this.#within(
+        { ...request, dataClassification },
+        `conversation-turn-${slot}`,
+        operation,
+      );
+    };
+    await turns
+      .backfillEmbeddings({
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        limit: MAXIMUM_TURNS_PER_RUN,
+        within,
+      })
+      .catch(this.#options.onFailure);
+    if (this.#stopping) return;
+    await turns
+      .indexDue({
+        ownerId: request.ownerId,
+        agentId: request.agentId,
+        limit: MAXIMUM_TURNS_PER_RUN,
+        within,
+      })
+      .catch(this.#options.onFailure);
+  }
+
   async #summarize(request: RuntimeRequest, onAdmitted: () => void): Promise<void> {
+    await this.#indexTurns(request);
     await this.#options.service
       .backfillEmbeddings({
         ownerId: request.ownerId,
