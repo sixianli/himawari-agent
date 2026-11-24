@@ -5,12 +5,12 @@ import path from "node:path";
 import {
   DEFAULT_HOME_FEED,
   DEFAULT_SEARCH_ASK,
+  DELIVERY_TIMING_DEFAULTS,
   DEVICE_HARD_LIMIT_KEYS,
   IMPORT_DUPLICATE_DEFAULTS,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   PERCEPTION_CONFIGURATION_RANGES,
   type PerceptionConfiguration,
-  DELIVERY_TIMING_DEFAULTS,
   VOICE_ADDRESSEE_DEFAULTS,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
@@ -171,6 +171,27 @@ describe("strict product configuration", () => {
     for (const invalid of [0, 1, 1.2, -0.1, "0.6"])
       expect(() =>
         parseProductConfiguration(withThreshold(invalid), "2026-10-29T00:00:00.000Z"),
+      ).toThrow();
+  });
+
+  it("[ADR-0286] accepts a tool result share of the model window only above 0 and up to one half", () => {
+    const withShare = (toolResultShare: unknown) => {
+      const input = config(path.join(tmpdir(), "himawari-memory-tool-share"));
+      input["memory"] = { ...(input["memory"] as Record<string, unknown>), toolResultShare };
+      return input;
+    };
+    expect(
+      parseProductConfiguration(withShare(0.02), "2026-11-24T00:00:00.000Z").memory.toolResultShare,
+    ).toBe(0.02);
+    expect(
+      parseProductConfiguration(
+        config(path.join(tmpdir(), "himawari-memory-tool-share")),
+        "2026-11-24T00:00:00.000Z",
+      ).memory.toolResultShare,
+    ).toBeUndefined();
+    for (const invalid of [0, 0.6, 1, -0.1, "0.02"])
+      expect(() =>
+        parseProductConfiguration(withShare(invalid), "2026-11-24T00:00:00.000Z"),
       ).toThrow();
   });
 
