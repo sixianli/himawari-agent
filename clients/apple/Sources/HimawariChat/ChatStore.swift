@@ -166,6 +166,10 @@ public final class ChatStore {
         queued.filter { $0.message.threadId == threadId }
     }
 
+    public func isBusy(in threadId: String) -> Bool {
+        streaming[threadId] != nil || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
+    }
+
     public func streamingText(in threadId: String) -> String? {
         guard let reply = streaming[threadId] else { return nil }
         let text = reply.text

@@ -26,3 +26,4 @@
 "chat.offline" = "没连上，写的话连上后发";
 "chat.queued.offline" = "没发出去，连上后自动重发";
 "chat.queued.retryNow" = "现在重发";
+"chat.herPage" = "她的页面";

@@ -301,6 +301,30 @@ public enum DesignTokens {
         public static let talkPadding: CGFloat = 8
     }
 
+    public enum Chat {
+        public static let attachRowIcon: CGFloat = 19
+        public static let attachRowTile: CGFloat = 34
+        public static let attachSheetGap: CGFloat = 16
+        public static let attachTileGap: CGFloat = 10
+        public static let attachTileHeight: CGFloat = 92
+        public static let attachTileIcon: CGFloat = 26
+        public static let avatar: CGFloat = 48
+        public static let avatarGap: CGFloat = 3
+        public static let avatarGlow: CGFloat = 88
+        public static let avatarLabelHeight: CGFloat = 27
+        public static let avatarMark: CGFloat = 38
+        public static let avatarPulseSeconds: CGFloat = 2.4
+        public static let blockGap: CGFloat = 10
+        public static let codePadding: CGFloat = 12
+        public static let headerFade: CGFloat = 140
+        public static let listGap: CGFloat = 4
+        public static let listMarkerGap: CGFloat = 6
+        public static let quoteBar: CGFloat = 3
+        public static let quoteGap: CGFloat = 10
+        public static let tableCellPaddingVertical: CGFloat = 10
+        public static let tableCellPaddingHorizontal: CGFloat = 14
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 500, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)

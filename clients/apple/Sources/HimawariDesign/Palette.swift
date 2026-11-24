@@ -71,13 +71,61 @@ public struct TypeToken: Sendable {
         }
     }
 
+    public init(size: CGFloat, weight: CGFloat, lineHeight: CGFloat?, face: TypeFace, tracking: CGFloat) {
+        self.size = size
+        self.weight = weight
+        self.lineHeight = lineHeight
+        self.face = face
+        self.tracking = tracking
+    }
+
+    public func with(face: TypeFace) -> TypeToken {
+        TypeToken(size: size, weight: weight, lineHeight: lineHeight, face: face, tracking: tracking)
+    }
+
     @MainActor
     public var font: Font {
+        font(scale: 1)
+    }
+
+    @MainActor
+    public func font(scale: CGFloat) -> Font {
+        let scaled = size * scale
         switch face {
-        case .system: .system(size: size, weight: fontWeight)
-        case .rounded: .system(size: size, weight: fontWeight, design: .rounded)
-        case .himawari: .himawari(size, weight: weight >= 550 ? .semibold : (weight >= 450 ? .medium : .regular))
+        case .system: return .system(size: scaled, weight: fontWeight)
+        case .rounded: return .system(size: scaled, weight: fontWeight, design: .rounded)
+        case .himawari: return .himawari(scaled, weight: voiceWeight, fixed: true)
         }
+    }
+
+    var voiceWeight: HimawariVoiceWeight {
+        weight >= 550 ? .semibold : (weight >= 450 ? .medium : .regular)
+    }
+}
+
+public enum TextScale {
+    @MainActor
+    public static func ratio(for size: DynamicTypeSize) -> CGFloat {
+        #if os(iOS)
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
+        return UIFontMetrics(forTextStyle: .body).scaledValue(for: 100, compatibleWith: traits) / 100
+        #else
+        return 1
+        #endif
+    }
+}
+
+struct ScaledType: ViewModifier {
+    let token: TypeToken
+    let design: Font.Design?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    func body(content: Content) -> some View {
+        let ratio = TextScale.ratio(for: dynamicTypeSize)
+        content
+            .font(design.map { Font.system(size: token.size * ratio, weight: token.fontWeight, design: $0) } ?? token.font(scale: ratio))
+            .tracking(token.tracking)
+            .hmLineHeight(token.lineHeight.map { $0 * ratio })
     }
 }
 
@@ -88,11 +136,11 @@ extension View {
 
     @MainActor
     public func hmType(_ token: TypeToken) -> some View {
-        font(token.font).tracking(token.tracking).hmLineHeight(token.lineHeight)
+        modifier(ScaledType(token: token, design: nil))
     }
 
     public func hmType(_ token: TypeToken, design: Font.Design) -> some View {
-        font(.system(size: token.size, weight: token.fontWeight, design: design)).tracking(token.tracking).hmLineHeight(token.lineHeight)
+        modifier(ScaledType(token: token, design: design))
     }
 
     @ViewBuilder

@@ -26,3 +26,4 @@
 "chat.offline" = "つながっていません。書いた内容はつながったら送ります";
 "chat.queued.offline" = "送れませんでした。つながったら自動で送り直します";
 "chat.queued.retryNow" = "今すぐ送り直す";
+"chat.herPage" = "Himawari のページ";

@@ -84,6 +84,19 @@ public enum DemoChatFixtures {
     static let answer = "会面定在 14:00，新大阪站附近。坐 9:30 的新干线，12:03 到，留出吃午饭的时间。你平时从家走到车站约 18 分钟，建议 8:50 出门。"
     static let answerOffline = "会面定在 14:00，新大阪站附近。坐 9:30 的新干线，12:03 到，留出吃午饭的时间。"
     static let answerStreaming = "会面定在 14:00，新大阪站附近。坐 9:30 的新干线"
+    static let answerFormatted = """
+    三班里 **9:30 那班最合适**：
+
+    - 7:00：太早，到了要等 4 个小时
+    - **9:30**：12:03 到，能吃午饭
+    - 11:00：13:33 到，太赶
+
+    | 出发 | 到达 | 指定席 |
+    | --- | --- | --- |
+    | 9:30 | 12:03 | 还有 |
+    | 11:00 | 13:33 | 只剩靠过道 |
+    """
+    static let answerFormattedStreaming = "三班里 **9:30 那班最合适**：\n\n- 7:00：太早，到了要等 4 个小时\n- **9:30**：12:0"
 
     private static func todayAt(_ hour: Int, _ minute: Int, daysAgo: Int = 0) -> Date {
         let calendar = Calendar.current
@@ -156,6 +169,27 @@ public enum DemoChatFixtures {
             texts: ["text:m1": question, "text:m2": answer]
         )
         state.executions["run:0a"] = steps(runId: "run:0a", start: start)
+        return state
+    }
+
+    public static func formatted() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(13)),
+            ],
+            runs: [],
+            texts: ["text:m1": question, "text:m2": answerFormatted]
+        )
+    }
+
+    public static func formattedStreaming() -> DemoChatState {
+        var state = answering()
+        let chunk: ExecutionText = decode(["threadId": osakaThreadId, "runId": "run:0b", "itemId": "answer", "offset": 0, "text": answerFormattedStreaming] as [String: Any])
+        var reply = StreamingReply(runId: "run:0b")
+        reply.apply(chunk)
+        state.streaming[osakaThreadId] = reply
         return state
     }
 

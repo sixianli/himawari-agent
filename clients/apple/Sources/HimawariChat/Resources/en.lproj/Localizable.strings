@@ -26,3 +26,4 @@
 "chat.offline" = "Not connected. What you write will be sent once connected";
 "chat.queued.offline" = "Not sent. Will resend once connected";
 "chat.queued.retryNow" = "Resend now";
+"chat.herPage" = "Her page";

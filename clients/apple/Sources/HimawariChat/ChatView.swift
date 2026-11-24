@@ -5,6 +5,7 @@ import SwiftUI
 public struct ChatView: View {
     private let store: ChatStore
     private let close: () -> Void
+    private let openHerPage: (() -> Void)?
     @State private var threadId: String?
     @State private var draft = ""
     @State private var creating = false
@@ -14,22 +15,17 @@ public struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
 
-    public init(store: ChatStore, threadId: String?, draft: String = "", close: @escaping () -> Void) {
+    public init(store: ChatStore, threadId: String?, draft: String = "", openHerPage: (() -> Void)? = nil, close: @escaping () -> Void) {
         self.store = store
         self.close = close
+        self.openHerPage = openHerPage
         _threadId = State(initialValue: threadId)
         _draft = State(initialValue: draft)
     }
 
-    private static let navBottom = DesignTokens.Size.navTop + DesignTokens.Size.glassButton
+    private static let headerHeight = DesignTokens.Chat.avatar + DesignTokens.Chat.avatarGap + DesignTokens.Chat.avatarLabelHeight
+    private static let navBottom = DesignTokens.Size.navTop + headerHeight
     private static let fadeBelowNav: CGFloat = 32
-
-    private var title: String {
-        guard let threadId, let thread = store.threads.first(where: { $0.threadId == threadId }) else {
-            return L.text("chat.untitled")
-        }
-        return store.title(for: thread) ?? L.text("chat.untitled")
-    }
 
     public var body: some View {
         ZStack {
@@ -72,7 +68,7 @@ public struct ChatView: View {
     }
 
     private var header: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             HStack {
                 GlassCircleButton(Text(L.text("chat.back")), action: close) {
                     Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
@@ -80,14 +76,16 @@ public struct ChatView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            Text(threadId == nil ? "" : title)
-                .hmType(DesignTokens.TypeScale.navTitle)
-                .foregroundStyle(Color.hmText)
-                .lineLimit(1)
-                .padding(.horizontal, 76)
-                .accessibilityAddTraits(.isHeader)
+            .frame(height: DesignTokens.Chat.avatar)
+            Button { openHerPage?() } label: {
+                HimawariAvatar(busy: threadId.map(store.isBusy(in:)) ?? creating)
+            }
+            .buttonStyle(.plain)
+            .disabled(openHerPage == nil)
+            .accessibilityLabel(Text(L.text("chat.herPage")))
+            .accessibilityAddTraits(.isHeader)
         }
-        .frame(height: DesignTokens.Size.navBarHeight)
+        .frame(maxWidth: .infinity)
     }
 
     private var transcript: some View {
@@ -129,7 +127,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, store.connection != .online ? 94 + bannerHeight : 73)
+            .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.top, for: .alignment)
@@ -173,12 +171,7 @@ struct MessageRow: View {
         case .owner:
             OwnerBubble(text: text ?? "")
         case .agent:
-            Text(text ?? "")
-                .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
-                .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
-                .foregroundStyle(failed ? Color.hmMuted : Color.hmText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            AnswerText(text: text ?? "", muted: failed)
         case .system:
             Text(text ?? "")
                 .hmType(DesignTokens.TypeScale.caption)
@@ -210,21 +203,7 @@ struct StreamingAnswer: View {
     let text: String
 
     var body: some View {
-        Text("\(answer) \(dot)")
-            .hmLineHeight(DesignTokens.TypeScale.answer.lineHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var answer: Text {
-        Text(text)
-            .font(.himawari(DesignTokens.TypeScale.answer.size, weight: .medium))
-            .foregroundStyle(Color.hmText)
-    }
-
-    private var dot: Text {
-        Text(Image(size: CGSize(width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)) { context in
-            context.fill(Path(ellipseIn: CGRect(x: 0, y: 0, width: DesignTokens.Size.streamingDot, height: DesignTokens.Size.streamingDot)), with: .color(DesignTokens.Colors.streamingDot.color))
-        })
+        AnswerText(text: text, streaming: true)
     }
 }
 
@@ -347,5 +326,6 @@ struct ChatInputBar: View {
         }
         .animation(.easeInOut(duration: 0.15), value: canSend)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.composer, style: .continuous))
+        .keepsKeyboardOnTap()
     }
 }

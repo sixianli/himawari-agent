@@ -15,15 +15,19 @@ public struct HimawariRootView: View {
     public init() {}
 
     public var body: some View {
-        #if DEBUG
-        if let scene = DemoScene.requested {
-            DemoSceneView(scene: scene)
-        } else {
+        Group {
+            #if DEBUG
+            if let scene = DemoScene.requested {
+                DemoSceneView(scene: scene)
+            } else {
+                app
+            }
+            #else
             app
+            #endif
         }
-        #else
-        app
-        #endif
+        .dismissesKeyboardOnOutsideTap()
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     @State private var handoverEntry: HandoverEntryLink?
@@ -110,7 +114,7 @@ struct MainTabsView: View {
     var body: some View {
         ZStack {
             if let openThread {
-                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft) {
+                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft, openHerPage: { settingsOpen = true }) {
                     withAnimation(.snappy) { self.openThread = nil }
                 }
                 .id(openThread.nonce)
