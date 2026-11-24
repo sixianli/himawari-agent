@@ -27,13 +27,20 @@ describe("托管机器的准备脚本", () => {
     const workflow = parse(
       readFileSync(path.join(repositoryRoot, ".github/workflows", file), "utf8"),
     );
-    for (const id of jobs)
-      expect(
-        workflow.jobs[id].steps.some((step) =>
-          String(step.run ?? "").startsWith("sudo bash scripts/ci/prepare-hosted.sh "),
-        ),
-        `${file}/${id}`,
-      ).toBe(true);
+    for (const id of jobs) {
+      const runs = workflow.jobs[id].steps.map((step) => String(step.run ?? ""));
+      const prepare = runs.findIndex((run) =>
+        run.startsWith("sudo bash scripts/ci/prepare-hosted.sh "),
+      );
+      const firstUse = runs.findIndex(
+        (run) =>
+          run.includes("scripts/ci/run.mjs") ||
+          run.includes("scripts/ci/main-confirm.mjs") ||
+          run.includes("playwright/cli.js install"),
+      );
+      expect(prepare, `${file}/${id}`).toBeGreaterThanOrEqual(0);
+      expect(firstUse, `${file}/${id}`).toBeGreaterThan(prepare);
+    }
   });
   it("node 不可执行时以 64 退出并说明原因", () => {
     const result = run(["/nonexistent/node"]);
