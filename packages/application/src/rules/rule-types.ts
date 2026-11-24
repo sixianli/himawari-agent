@@ -44,17 +44,38 @@ export interface MailMatchParameters {
   readonly excludePhrases: readonly string[];
 }
 
-export const PUSH_QUIET_CLASSES = ["scheduled_reminder", "run_result", "mail_reminder"] as const;
+export const PUSH_QUIET_CLASSES = [
+  "scheduled_reminder",
+  "run_result",
+  "mail_reminder",
+  "her_words",
+] as const;
 export type PushQuietClass = (typeof PUSH_QUIET_CLASSES)[number];
 export const PUSH_QUIET_DEFAULT_CLASSES: readonly PushQuietClass[] = Object.freeze([
   "mail_reminder",
   "run_result",
+  "her_words",
 ]);
+export const PUSH_QUIET_CLASS_LABELS: Readonly<Record<PushQuietClass, string>> = Object.freeze({
+  scheduled_reminder: "你定的到点提醒",
+  run_result: "任务完成",
+  mail_reminder: "邮件提醒",
+  her_words: "她的话",
+});
 const PUSH_QUIET_PERIOD_LIMIT = 8;
 
 export interface PushQuietParameters {
   readonly periods: readonly QuietPeriod[];
-  readonly classes: readonly PushQuietClass[];
+  readonly classes?: readonly PushQuietClass[];
+}
+
+export function pushQuietClassesOf(parameters: PushQuietParameters): readonly PushQuietClass[] {
+  const named = parameters.classes;
+  if (!named) return PUSH_QUIET_DEFAULT_CLASSES;
+  if (!named.includes("run_result") || named.includes("her_words")) return named;
+  return PUSH_QUIET_CLASSES.filter((pushClass) =>
+    pushClass === "her_words" ? true : named.includes(pushClass),
+  );
 }
 
 export type RuleParameters = MailMatchParameters | PushQuietParameters;
@@ -267,34 +288,32 @@ function parsePushQuiet(value: unknown): PushQuietParameters {
       }),
     );
   }
+  const sortedPeriods = Object.freeze(
+    [...periods].sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1)),
+  );
   const rawClasses = record["classes"];
-  let classes: readonly PushQuietClass[] = PUSH_QUIET_DEFAULT_CLASSES;
-  if (rawClasses !== undefined) {
-    if (
-      !Array.isArray(rawClasses) ||
-      rawClasses.length === 0 ||
-      rawClasses.length > PUSH_QUIET_CLASSES.length ||
-      !rawClasses.every((item) => (PUSH_QUIET_CLASSES as readonly unknown[]).includes(item))
-    )
-      invalid(`classes 只能从 ${PUSH_QUIET_CLASSES.join("、")} 里选`);
-    classes = Object.freeze(
-      PUSH_QUIET_CLASSES.filter((candidate) => (rawClasses as unknown[]).includes(candidate)),
-    );
-  }
+  if (rawClasses === undefined) return Object.freeze({ periods: sortedPeriods });
+  if (
+    !Array.isArray(rawClasses) ||
+    rawClasses.length === 0 ||
+    rawClasses.length > PUSH_QUIET_CLASSES.length ||
+    !rawClasses.every((item) => (PUSH_QUIET_CLASSES as readonly unknown[]).includes(item))
+  )
+    invalid(`classes 只能从 ${PUSH_QUIET_CLASSES.join("、")} 里选`);
   return Object.freeze({
-    periods: Object.freeze(
-      [...periods].sort((left, right) => (JSON.stringify(left) < JSON.stringify(right) ? -1 : 1)),
+    periods: sortedPeriods,
+    classes: Object.freeze(
+      PUSH_QUIET_CLASSES.filter((candidate) => (rawClasses as unknown[]).includes(candidate)),
     ),
-    classes,
   });
 }
 
 function pushQuietExpression(parameters: PushQuietParameters): string {
-  return `push_class in ${celStringList(parameters.classes)} && (${quietHoursExpression(parameters.periods)})`;
+  return `push_class in ${celStringList(pushQuietClassesOf(parameters))} && (${quietHoursExpression(parameters.periods)})`;
 }
 
 function pushQuietExamples(parameters: PushQuietParameters): readonly RuleExample[] {
-  const covered = new Set<string>(parameters.classes);
+  const covered = new Set<string>(pushQuietClassesOf(parameters));
   const examples: RuleExample[] = [];
   for (const pushClass of [...PUSH_QUIET_CLASSES, "approval", "muse_outage"] as const)
     examples.push(

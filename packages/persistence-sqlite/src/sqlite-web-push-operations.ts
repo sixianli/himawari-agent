@@ -717,6 +717,12 @@ export class SqliteWebPushOperations {
       this.database
         .prepare(
           `SELECT id AS runId, thread_id AS threadId, status, updated_at AS finishedAt,
+             (SELECT trigger.source_type FROM triggers trigger
+               WHERE trigger.id = runs.trigger_id) AS startedBy,
+             (SELECT reply.id FROM thread_messages reply
+               WHERE reply.run_id = runs.id AND reply.thread_id = runs.thread_id
+                 AND reply.role = 'agent' AND reply.message_status = 'committed'
+               ORDER BY reply.sequence DESC LIMIT 1) AS replyMessageId,
              EXISTS (SELECT 1 FROM run_coordination_checkpoints checkpoint
                WHERE checkpoint.owner_id = runs.owner_id AND checkpoint.agent_id = runs.agent_id
                  AND checkpoint.run_id = runs.id

@@ -396,7 +396,7 @@ describe("product runtime event and tool contracts", () => {
       details: { reasonCode: "revoked", productOutcome: "failed", dispatchState: "not_sent" },
     });
   });
-  it("[COMPACT-4] gives the Pi session a compaction trigger of 200K for a 1M window, using the bound model's provider/id key", async () => {
+  it("[COMPACT-4] gives the Pi session a compaction trigger of 150K for a 1M window, using the bound model's provider/id key", async () => {
     const original = model.contextWindow;
     const originalId = model.id;
     const originalProvider = model.provider;
@@ -415,7 +415,7 @@ describe("product runtime event and tool contracts", () => {
       model.provider = originalProvider;
       model.id = originalId;
     }
-    expect(reserve).toBe(800_000);
+    expect(reserve).toBe(850_000);
   });
 
   it("[COMPACT-3] refuses a tool execution between compaction_start and compaction_end, and allows it again afterwards", async () => {

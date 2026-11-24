@@ -89,7 +89,7 @@ export const RULE_FIELD_CATALOG: Readonly<Record<RuleGate, readonly RuleFieldDef
         name: "push_class",
         type: "string",
         description:
-          "这条推送属于哪一类：scheduled_reminder 是主人自己定的到点提醒，run_result 是任务完成或失败，mail_reminder 是邮件主动提醒；审批和 Muse 告警由程序直接放行，不会交给规则",
+          "这条推送属于哪一类：scheduled_reminder 是主人自己定的到点提醒，run_result 是任务完成或失败，mail_reminder 是邮件主动提醒，her_words 是她写给主人、推到手机上的原话；审批和 Muse 告警由程序直接放行，不会交给规则",
       }),
       Object.freeze({
         name: "local_minutes",
