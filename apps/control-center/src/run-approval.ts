@@ -135,3 +135,47 @@ export async function listPendingRunApprovals(
   } while (afterCursor);
   return approvals;
 }
+
+export type ApprovalAllowFor = "once" | "this_task" | "days" | "always";
+
+export const APPROVAL_ALLOWANCE_DAYS = 7;
+
+export function approvalAllowanceChoices(snapshot: RunApproval): readonly ApprovalAllowFor[] {
+  const intent = snapshot.payload.intent;
+  if (
+    intent.estimatedCostMicros > 0 ||
+    intent.actionKind === "PURCHASE_OR_FUNDS" ||
+    intent.credentialOrAccessChange ||
+    intent.deterministicFactCodes.includes("owner_presence_required")
+  )
+    return ["once"];
+  return ["once", "this_task", "days", "always"];
+}
+
+export async function setApprovalAllowance(input: {
+  client: Pick<GatewayClient, "mutate">;
+  configuration: ControlCenterRuntimeConfiguration;
+  snapshot: RunApproval;
+  allowFor: Exclude<ApprovalAllowFor, "once">;
+}) {
+  const { client, configuration, snapshot, allowFor } = input;
+  if (!configuration.authorizationRef) throw new Error("CONTROL_CENTER_AUTHORIZATION_REQUIRED");
+  if (!approvalAllowanceChoices(snapshot).includes(allowFor))
+    throw new Error("APPROVAL_ALLOWANCE_NOT_OFFERED");
+  return client.mutate(
+    commandMessage(
+      configuration,
+      "approval.allowance.set",
+      {
+        approvalRequestId: snapshot.payload.approvalRequestId,
+        allowFor,
+        days: allowFor === "days" ? APPROVAL_ALLOWANCE_DAYS : null,
+      },
+      {
+        risk: "medium",
+        authorizationRef: configuration.authorizationRef,
+        idempotencyKey: `governance:${crypto.randomUUID()}`,
+      },
+    ),
+  );
+}

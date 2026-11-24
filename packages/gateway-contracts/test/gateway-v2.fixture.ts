@@ -1332,7 +1332,24 @@ export const governanceMessages = [
         askFirst: null,
       },
     ],
+    allowances: [
+      {
+        allowanceId: "allowance:0123456789abcdef",
+        allowFor: "days",
+        title: "回复 张三：周四下午 3 点可以",
+        operation: "send",
+        recipients: ["zhangsan@example.com"],
+        threadId: null,
+        expiresAt: "2026-11-18T00:00:00.000Z",
+        createdAt: "2026-11-11T00:00:00.000Z",
+      },
+    ],
     generatedAt: "2026-11-11T00:00:00.000Z",
+  }),
+  fixture("command", "approval.allowance.set", {
+    approvalRequestId: "approval-01",
+    allowFor: "this_task",
+    days: null,
   }),
   fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {

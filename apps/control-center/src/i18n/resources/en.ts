@@ -182,6 +182,12 @@ export const messages = {
   "chat.search.enable": "Allow web search",
   "chat.search.revoke": "Revoke web search permission",
   "chat.allowOnce": "Allow once",
+  "chat.allowance.legend": "How long this yes lasts",
+  "chat.allowance.option":
+    "{scope, select, once {Just this once} this_task {For this task} days {For {days} days} other {From now on}}",
+  "chat.allowance.allow": "Allow",
+  "chat.allowance.failed":
+    "Allowed this time, but the longer permission wasn’t saved, so you’ll be asked again next time",
   "chat.allowAll": "Allow all {count}",
   "chat.approval.batch": "This step has {count} identical actions. One approval covers them all.",
   "chat.approval.searchBatch": "This step searches {count} times. One approval covers them all.",
@@ -932,6 +938,12 @@ export const messages = {
   "rules.reconfirm": "Confirm again",
   "rules.undo": "Undo",
   "rules.builtIn.title": "Built-in rules · {count}",
+  "rules.allowances.title": "Permissions you gave · {count}",
+  "rules.allowances.note":
+    "The same action isn’t asked again while a permission lasts. After an email, web page or other outside content was read, “for some days” and “from now on” don’t count and you are asked.",
+  "rules.allowances.scope":
+    "{scope, select, this_task {Only in that task} days {Until {until}} other {From now on}}",
+  "rules.allowances.revoke": "Take back",
   "rules.builtIn.note":
     "These rules are written into the program and decide whether Himawari asks you before acting. Each one carries examples it must and must not match, and every build runs them. The “just do it” rules can be switched to ask you every time; the “ask you” and “don’t do it” rules are safety floors and cannot be loosened.",
   "rules.builtIn.name":

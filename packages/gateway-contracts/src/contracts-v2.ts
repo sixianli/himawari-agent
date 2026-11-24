@@ -24,6 +24,7 @@ export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
 export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
   "approval.respond",
+  "approval.allowance.set",
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
@@ -257,6 +258,17 @@ export const respondApprovalV2CommandSchema = object({
     semanticSnapshotHash: machineString,
     editedPayloadRef: nullable(machineString),
     recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+export const APPROVAL_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
+
+export const approvalAllowanceSetCommandSchema = object({
+  ...commandEnvelope("approval.allowance.set"),
+  payload: object({
+    approvalRequestId: machineString,
+    allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+    days: nullable(integer(1, 90)),
   }),
 });
 
@@ -2588,6 +2600,7 @@ export const OWNER_RULE_ACTIONS = [
   "reconfirm",
   "ask_first",
   "allow_directly",
+  "revoke",
 ] as const;
 export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "allow_preauthorized",
@@ -2633,6 +2646,18 @@ const memoryRulesSnapshotSchema = object({
         examplesHit: integer(0),
         examplesMiss: integer(0),
         askFirst: nullable(booleanValue),
+      }),
+    ),
+    allowances: array(
+      object({
+        allowanceId: machineString,
+        allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+        title: boundedString(120),
+        operation: machineString,
+        recipients: array(boundedString(512)),
+        threadId: nullable(machineString),
+        expiresAt: nullable(timestamp),
+        createdAt: timestamp,
       }),
     ),
     generatedAt: timestamp,
@@ -3802,6 +3827,7 @@ export const streamEventV2Schema = object({
 const schemasByType = {
   "thread.message.submit": submitThreadMessageCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
+  "approval.allowance.set": approvalAllowanceSetCommandSchema,
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,

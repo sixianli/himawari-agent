@@ -39,6 +39,7 @@ import {
   type ExternalContentSource,
   externalEventOrigin,
 } from "./context-external-content.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import type { OwnerIntentGate } from "./owner-intent-gate.js";
 import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
 import { BUILT_IN_CAPABILITY_VERSION, builtInCapabilityFacts } from "./production-tool-actions.js";
@@ -98,6 +99,7 @@ export interface OwnerScopeAuthorizationOptions {
   readonly rules?: readonly RuleRecord[];
   readonly externalContent?: Pick<ContextExternalContent, "read" | "mark">;
   readonly ownerIntent?: Pick<OwnerIntentGate, "confirm">;
+  readonly allowances?: Pick<OwnerAllowances, "match">;
 }
 
 export interface OwnerScopeFreeze {
@@ -350,6 +352,20 @@ export class OwnerScopeAuthorization {
         revision: standing.revision,
         auditId: `owner-scope-preauthorized:${digest([id, rule.hit.id, rule.hit.revision])}`,
         auditAction: "authorization.action_rule.preauthorized",
+        appendAudit: (record) => appendAuditRecord(this.#options.audit, record),
+      });
+    const allowance =
+      standing === undefined ? await this.#options.allowances?.match(intent) : undefined;
+    if (allowance)
+      await applyOwnerPolicyAuthorization({
+        store: this.#options.store,
+        clock,
+        ids: this.#options.ids,
+        intent,
+        key: allowance.key,
+        revision: allowance.revision,
+        auditId: `owner-scope-allowance:${digest([id, allowance.key, allowance.revision])}`,
+        auditAction: "authorization.owner_allowance.used",
         appendAudit: (record) => appendAuditRecord(this.#options.audit, record),
       });
     return this.#policy.evaluate(intent, {

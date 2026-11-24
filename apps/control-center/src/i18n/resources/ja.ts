@@ -185,6 +185,11 @@ export const messages = {
   "chat.search.enable": "ウェブ検索を許可",
   "chat.search.revoke": "ウェブ検索の許可を取り消す",
   "chat.allowOnce": "今回のみ許可",
+  "chat.allowance.legend": "この許可の有効範囲",
+  "chat.allowance.option":
+    "{scope, select, once {今回のみ} this_task {この件の中なら} days {{days} 日間} other {今後ずっと}}",
+  "chat.allowance.allow": "許可",
+  "chat.allowance.failed": "今回は許可しましたが、範囲を保存できませんでした。次回も確認します",
   "chat.allowAll": "{count} 件すべて許可",
   "chat.approval.batch":
     "このステップには同じ操作が {count} 件あります。一度の許可ですべて実行します。",
@@ -939,6 +944,12 @@ export const messages = {
   "rules.reconfirm": "再確認",
   "rules.undo": "取り消す",
   "rules.builtIn.title": "組み込みルール · {count} 件",
+  "rules.allowances.title": "これまでの許可 · {count} 件",
+  "rules.allowances.note":
+    "範囲内の同じ操作は確認しません。メールやウェブページなど外部の内容を読んだ後は、「日数」と「今後ずっと」は使われず、毎回確認します。",
+  "rules.allowances.scope":
+    "{scope, select, this_task {その件の中だけ} days {{until} まで} other {今後ずっと}}",
+  "rules.allowances.revoke": "取り消す",
   "rules.builtIn.note":
     "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
   "rules.builtIn.name":
