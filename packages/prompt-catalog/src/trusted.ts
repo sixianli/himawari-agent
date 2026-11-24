@@ -7,11 +7,10 @@ import * as memory from "./memory.js";
 import * as perception from "./perception.js";
 import * as review from "./review.js";
 import * as runtime from "./runtime.js";
-import * as think from "./think.js";
 import * as tools from "./tools.js";
 
 export const TRUSTED_PROMPT_TEXTS: readonly string[] = trustedPromptTexts(
-  [background, chat, evaluation, mail, memory, perception, review, runtime, think, tools].flatMap(
+  [background, chat, evaluation, mail, memory, perception, review, runtime, tools].flatMap(
     (module) => Object.values(module),
   ),
 );

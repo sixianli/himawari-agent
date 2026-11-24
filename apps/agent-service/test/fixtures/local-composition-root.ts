@@ -1,6 +1,5 @@
 import {
   AgentGatewayService,
-  AttentionPolicyService,
   CapabilityRegistryService,
   ContextFormationService,
   type GatewayAccessPolicyPort,
@@ -198,17 +197,6 @@ export function createLocalAgentServiceComposition(options: LocalAgentServiceCom
       store: adapters.capabilityRegistry,
       clock: adapters.clock,
       ids: adapters.ids,
-    }),
-    attention: new AttentionPolicyService({
-      state: adapters.attentionState,
-      delivery: adapters.delivery,
-      clock: adapters.clock,
-      policy: {
-        duplicateWindowMs: 60_000,
-        rateLimitWindowMs: 60_000,
-        maxImmediateDeliveries: 1,
-        authorizedInterruptRefs: [],
-      },
     }),
     coordinator: new RunCoordinator({
       runs: runState,
