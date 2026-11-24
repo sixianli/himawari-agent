@@ -46,6 +46,6 @@ date: "2026-11-25"
 - 新增颜色 `glyph` 和用途名 `iconTile`（对 `highlight`）：列表行前面的浅金图标方块，见[设计规范第 54 条](../../../ui-ux-design-guide.md#apple-clients)。
 - `avatar`、`options`、`chat`、`her` 这几段 `make-design-tokens.mjs` 现在还不读，不会生成 Swift 常量；做到这些页面时再把它们接进生成器。
 - `avatar.wordmarkGap` 是 3（2026-11-25 按原型源文件改正，原先误写成 4）。
-- 颜色一个没动。
+- 原有颜色的值一个没动，新增的只有上面的 `onSpeak`、`glyph`。
 
 代码现在读的是第 2 版（`clients/apple/scripts/check-design.mjs` 的 `TOKENS_SOURCE`）。和第 2 版相比，这一版除了上面去掉的“今天”页和页签栏的值，还去掉了暂停的 Mac 和手表用的值：`mac`、`watch` 两段，`type` 里 `mac`、`watch` 开头的字号，`opacity.watchPressed`、`opacity.watchHalo`，以及没有页面再用的 `type.upcomingTime`、`icon.whyChevron`。
