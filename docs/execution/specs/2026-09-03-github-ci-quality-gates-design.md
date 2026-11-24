@@ -93,7 +93,7 @@ date: "2026-09-03"
 
 ### 1. 政策、执行与结果各有一个责任方
 
-仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离，以及经 CI 服务器共享目录传递作业之间的文件。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
+仓库内 CI 政策描述检查身份、矩阵、测试分组、阈值和证据要求。Node 工具负责执行命令及校验报告。GitHub workflow 只负责调度、权限、隔离，以及经 `actions/cache` 在作业之间传递本次运行的文件（每台托管机器先放进自己的 `$RUNNER_TEMP/ci-share`，[ADR 0287](../../adr/0287-ci-runs-on-github-hosted-runners.md)）。GitHub Ruleset 只消费最终检查，不复制阈值或测试选择逻辑。
 
 不增加产品 package、数据库表、常驻服务或 CI 专用 Agent。执行工具沿用仓库的 `.mjs` 约定，在 JSON 边界做 schema 校验，内部使用已经验证的数据。小型纯函数处理集合、状态与摘要，外部命令和文件系统调用保留在边界。
 
@@ -317,7 +317,7 @@ npm 下载和固定工具的 downloads/wheels 归档不再通过 cache Action �
 
 scale 使用固定数据形状、seed 和受控临时目录，输出本次 run 的报告，不写入 `test/integration/qualification/evidence`。比较性能时记录硬件、runner image、样本数和 p50/p95/p99/max；跨硬件变化只报告不可比，不能伪造退化结论。产品绝对目标沿用 S9，不重新定义。
 
-记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的共享目录里，汇总作业结束时删除；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`ci.yml` 的检查失败时另加失败的用例和每个命令日志的最后 120 行；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要在 CI 服务器上重跑，或在本地按同样的命令运行。
+记录工程指标，包括排队与执行时长、各检查耗时、峰值磁盘和失败重跑率。初始 job 超时分别为 policy/static/security/coverage 15 分钟、build/test/node-floor/browser 30 分钟（2026-11-08 起没有 test 和 node-floor 作业）、scale 60 分钟、汇总 5 分钟；现行时限以 `ci/policy.json` 为准：build 和 browser 90 分钟，汇总 15 分钟，其余 60 分钟。超时是资源上限，不是实测性能承诺。2026-11-12 起完整报告和诊断 screenshot/trace 都不再上传到 GitHub（[ADR 0243](../../adr/0243-ci-uses-no-github-artifacts.md)，取代 [ADR 0174](../../adr/0174-no-github-cache-and-one-day-artifacts.md) 的“保留 1 天”）：`ci.yml` 的完整报告只在本次运行的 GitHub 缓存里（2026-11-25 起，[ADR 0287](../../adr/0287-ci-runs-on-github-hosted-runners.md)），不主动删除，由 GitHub 在 7 天没用后自动删掉；`quality.yml` 的完整报告随作业结束丢弃；GitHub 上只留作业日志和作业摘要（每个文本文件最后 40 行，每段摘要不超过 64 KiB；`ci.yml` 的检查失败时另加失败的用例和每个命令日志的最后 120 行；`quality.yml` 每个作业写“检测结果”和“失败诊断”两段），仓库设置的保留期为 3 天。要看完整材料，需要重跑 CI，或在本地按同样的命令运行。
 
 公开仓库使用标准 GitHub 托管 runner 的 Actions 运行免费；仍需遵守并发、执行时间、存储和保留限制，不据此移除超时或扩大资源。更大规格 runner、付费服务或外部 provider 不因仓库公开而获得授权。
 
@@ -354,7 +354,7 @@ Mac/Hermes 平台 conformance、六类正式浏览器、人工 WCAG、运行与�
 | --- | --- |
 | 安装、工具校验、原生加载失败 | 停止该 job，记录实际版本及稳定错误码，不换版本重试到成功 |
 | 测试、覆盖率、policy 或安全规则失败 | 保留失败报告，修复原因；不得降低规则、加大范围排除或改成功出口 |
-| 下载、runner 或 CI 服务器共享目录不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
+| 下载、runner 或本次运行的缓存不可用 | `infrastructure_failed`；有界重试保留 attempt，耗尽后仍阻断 |
 | UDS/listen、权限或沙箱前提不满足 | 报运行环境失败，不用 fixture 冒充真实验证，不跳过相关合同 |
 | evidence 混合 SHA、错误矩阵或篡改 | 拒绝汇总，重新生成当前组合的完整证据 |
 | GitHub 规则不可用或规则漂移 | 标明服务端门禁未生效；保留可执行检测，等待授权条件满足 |

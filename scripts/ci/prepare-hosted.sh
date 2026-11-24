@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-node_bin=${1:?usage: prepare-hosted.sh <node>}
+[ "$#" = 1 ] || { echo "usage: prepare-hosted.sh <node>" >&2; exit 64; }
+node_bin=$1
 [ -x "$node_bin" ] || { echo "CI_HOSTED_PREPARE_NODE_MISSING $node_bin" >&2; exit 64; }
 [ "$(id -u)" = 0 ] || { echo "CI_HOSTED_PREPARE_NEEDS_ROOT" >&2; exit 65; }
 

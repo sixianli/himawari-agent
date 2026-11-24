@@ -16,8 +16,24 @@ const run = (args, env = {}) =>
 describe("托管机器的准备脚本", () => {
   it("不给 node 路径时以 64 退出，什么都不装", () => {
     const result = run([]);
-    expect(result.status).not.toBe(0);
+    expect(result.status).toBe(64);
     expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("usage: prepare-hosted.sh <node>");
+  });
+  it.each([
+    ["ci.yml", ["static", "browser", "tests", "tooling"]],
+    ["main.yml", ["confirm"]],
+  ])("%s 里要沙箱或浏览器的作业都先跑准备脚本", (file, jobs) => {
+    const workflow = parse(
+      readFileSync(path.join(repositoryRoot, ".github/workflows", file), "utf8"),
+    );
+    for (const id of jobs)
+      expect(
+        workflow.jobs[id].steps.some((step) =>
+          String(step.run ?? "").startsWith("sudo bash scripts/ci/prepare-hosted.sh "),
+        ),
+        `${file}/${id}`,
+      ).toBe(true);
   });
   it("node 不可执行时以 64 退出并说明原因", () => {
     const result = run(["/nonexistent/node"]);
