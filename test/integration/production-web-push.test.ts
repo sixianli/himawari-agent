@@ -867,10 +867,11 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.failures).toEqual([]);
   });
 
-  it("[SAID-1] REVERSE: a reply whose words cannot be read is given up once and does not hold back the pushes behind it", async () => {
+  it("[SAID-1] REVERSE: a reply whose words fail to read is retried, does not hold back the pushes behind it, and is given up only after the last retry", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");
     const unreadable = new Error("payload cannot be decrypted");
+    let flakyReads = 0;
     const push = context.create({
       readMessage: async (threadId, messageId) => {
         if (messageId === "assistant:run-broken:agent")
@@ -880,23 +881,44 @@ describe("[WP-3] web push dispatch", () => {
               throw unreadable;
             },
           };
+        if (messageId === "assistant:run-flaky:agent")
+          return {
+            dataClassification: "private",
+            readText: async () => {
+              flakyReads += 1;
+              if (flakyReads === 1) throw unreadable;
+              return "这一条第二次才读出来。";
+            },
+          };
         return context.readMessage(threadId, messageId);
       },
     });
     await push.tick();
     context.setClock(T0);
-    context.finishRun("run-broken", "completed", at(T0, -6));
-    await context.say("run-broken", "这一条读不出来。");
+    context.finishRun("run-broken", "completed", at(T0, -7));
+    await context.say("run-broken", "这一条一直读不出来。");
+    context.finishRun("run-flaky", "completed", at(T0, -6));
+    await context.say("run-flaky", "这一条第二次才读出来。");
     context.finishRun("run-fine", "completed", at(T0, -5));
     await context.say("run-fine", "这一条照常推。");
     await push.tick();
     await push.tick();
-    context.setClock(at(T0, 30));
+    const bodies = () =>
+      context.sender.notifications().map(({ notification }) => notification["body"]);
+    expect(bodies()).toEqual(["这一条照常推。"]);
+    const brokenId = webPushTopic(
+      await herWordsPushKey({ messageId: "assistant:run-broken:agent" }),
+    );
+    expect(await push.settled([brokenId])).toEqual([]);
+    context.setClock(at(T0, 61));
     await push.tick();
-    expect(context.sender.notifications().map(({ notification }) => notification["body"])).toEqual([
-      "这一条照常推。",
-    ]);
-    expect(context.failures).toEqual([unreadable]);
+    expect(bodies()).toEqual(["这一条照常推。", "这一条第二次才读出来。"]);
+    for (const seconds of [61 + 301, 61 + 301 + 901, 61 + 301 + 901 + 3_600]) {
+      context.setClock(at(T0, seconds));
+      await push.tick();
+    }
+    expect(bodies()).toEqual(["这一条照常推。", "这一条第二次才读出来。"]);
+    expect(context.failures).toEqual(Array.from({ length: 6 }, () => unreadable));
   });
 
   it("[SAID-2] holds her words through the owner's quiet hours by default and sends them once when the hours end", async () => {
