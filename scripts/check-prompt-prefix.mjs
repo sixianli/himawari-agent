@@ -7,8 +7,18 @@ import { fileURLToPath } from "node:url";
 
 const TAG = "[I-66]";
 const FILES = ["packages/runtime-pi/test/prompt-prefix.compat.test.ts"];
-const REQUIRED = 12;
-const REQUIRED_NAMES = ["[COMPACT-1]", "[COMPACT-2]", "[COMPACT-3]", "[COMPACT-4]"];
+const REQUIRED = 17;
+const REQUIRED_NAMES = [
+  "[COMPACT-1]",
+  "[COMPACT-2]",
+  "[COMPACT-3]",
+  "[COMPACT-4]",
+  "[CLEAR-1]",
+  "[CLEAR-2]",
+  "[CLEAR-3]",
+  "[CLEAR-4]",
+  "[CLEAR-5]",
+];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(path.join(tmpdir(), "himawari-prompt-prefix-"));

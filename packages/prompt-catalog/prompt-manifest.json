@@ -847,6 +847,11 @@
     "changedIn": "ADR 0207",
     "reason": "压缩第 2 步：压缩摘要请求沿用原对话的工具、系统提示和历史，末尾追加这条指令，要求只写结构化摘要、不调用工具"
   },
+  "runtime.tool-result-cleared.placeholder": {
+    "sha256": "76332435dfd3446e023885793ec2a0bdff6155cd48c6c9041ec6dc099aba6a14",
+    "changedIn": "ADR 0285",
+    "reason": "新增：上下文变长后较早的工具结果换成这一行占位，写明编号和取回方法"
+  },
   "think.action.reminder-create": {
     "sha256": "615f8815db0ed146584f5c76def76c712743185a78a3ea1ca74b4553dd066cab",
     "changedIn": "ADR 0274",
@@ -1335,6 +1340,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.tool-result-recall.not-found": {
+    "sha256": "b74cc518c46e5dc874742224bbcac13c5657de91256e916bf5273421570002fb",
+    "changedIn": "ADR 0285",
+    "reason": "新增：tool_result_recall 找不到编号时的结果；不让模型重做有后果的操作"
+  },
   "tools.rule-list": {
     "sha256": "48d1f94df986c4b6321a1979dfb9907b32a17c0e0602bb56ef319c62011883e9",
     "changedIn": "ADR 0213",
@@ -1369,6 +1379,11 @@
     "sha256": "101f34dda3cc16f8f8e96e1977ddbd83927e8b2a602e0e91aa336c3f3653651e",
     "changedIn": "ADR 0166",
     "reason": "W-15a：新增参数说明"
+  },
+  "tools.tool-result-recall": {
+    "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",
+    "changedIn": "ADR 0285",
+    "reason": "新增：tool_result_recall 工具的描述，按占位编号取回已清理的工具结果"
   },
   "tools.web-fetch": {
     "sha256": "3af5f1ce44de795a72860f18b3e1ec3d5fbdb114a9fa6acd5db7a33c6019fcb8",

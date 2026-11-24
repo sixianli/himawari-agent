@@ -37,6 +37,7 @@ describe("think run pieces", () => {
       "recall",
       "reminder_list",
       "rule_list",
+      "tool_result_recall",
       "web_fetch",
       "web_search",
     ]);

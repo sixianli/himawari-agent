@@ -88,6 +88,10 @@ import {
   conversationToolDescriptors,
   type ProductionConversationTools,
 } from "./production-conversation-tools.js";
+import {
+  RUNTIME_CONTEXT_EXECUTOR,
+  toolResultRecallDescriptor,
+} from "./production-context-recall.js";
 import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
 import {
   type CodingBinding,
@@ -154,6 +158,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
+  "conversation-context": { prefix: "context-recall", reasonCode: "CONTEXT_RECALL_RUNTIME" },
 });
 const PERCEPTION_EXTERNAL_ORIGIN = "perception_read";
 class OwnerScopeStop extends Error {
@@ -611,10 +616,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
-    if (this.#options.conversations) descriptors.push(...conversationToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
-    return this.#registry.offer(descriptors, { readOnly });
+    const offered = this.#registry.offer(descriptors, { readOnly });
+    const conversations = this.#options.conversations ? conversationToolDescriptors() : [];
+    return offered.length === 0 && conversations.length === 0
+      ? offered
+      : this.#registry.offer([...offered, toolResultRecallDescriptor(), ...conversations], {
+          readOnly,
+        });
   }
 
   async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {
@@ -1026,7 +1036,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return {
         allowed:
           this.#exposed.has(invocation.runId) &&
-          this.#builtinExecutor(row) !== undefined &&
+          (row.executor === RUNTIME_CONTEXT_EXECUTOR || this.#builtinExecutor(row) !== undefined) &&
           (row.authorization !== "owner_scope" || this.#options.ownerScope !== undefined),
         permissionDecisionRef: `${legacy.prefix}:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: legacy.reasonCode,

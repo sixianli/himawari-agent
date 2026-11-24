@@ -361,7 +361,7 @@ describe("ProductionRuntimeTools", () => {
     const f = fixture();
     const tool = f.tool();
     const descriptors = await tool.listAuthorized(invocation.runId, []);
-    expect(descriptors).toHaveLength(1);
+    expect(descriptors.map(({ name }) => name)).toEqual(["read", "tool_result_recall"]);
     expect(descriptors[0]).toMatchObject({
       name: "read",
       definition: "builtin-read",
@@ -405,7 +405,7 @@ describe("ProductionRuntimeTools", () => {
     expect(await tool.listAuthorized(invocation.runId, [])).toEqual([]);
     expect(asked).toEqual([invocation.runId]);
     const other = await f.tool().listAuthorized(invocation.runId, []);
-    expect(other.map((item) => item.name)).toEqual(["read"]);
+    expect(other.map((item) => item.name)).toEqual(["read", "tool_result_recall"]);
   });
 
   it("does not mistake model-provided approval fields for execution authority", async () => {
@@ -1646,7 +1646,13 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   const names = (
     await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
   ).map((definition) => definition.name);
-  expect(names.slice(-4)).toEqual(["recall", "reminder_set", "reminder_list", "reminder_cancel"]);
+  expect(names.slice(-5)).toEqual([
+    "recall",
+    "reminder_set",
+    "reminder_list",
+    "reminder_cancel",
+    "tool_result_recall",
+  ]);
   const again = await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
   expect(JSON.stringify(again.slice(-3))).toBe(
     JSON.stringify(
@@ -1712,9 +1718,10 @@ it("[iOS-5] offers the two perception tools last, marks outside content on read 
   const definitions = await tools.listAuthorized(invocation.runId, [
     invocation.capabilityHandleRef,
   ]);
-  expect(definitions.map(({ name }) => name).slice(-2)).toEqual([
+  expect(definitions.map(({ name }) => name).slice(-3)).toEqual([
     "device_action",
     "perception_read",
+    "tool_result_recall",
   ]);
   const base = { ...invocation, capabilityHandleRef: null };
   const read = { ...base, toolCallId: "p-read", capabilityRef: "perception.read", arguments: {} };
@@ -1846,6 +1853,7 @@ it("[NL-1] marks only service-process read-only tools for parallel execution", a
     ["bash", undefined],
     ["web_search", "parallel"],
     ["web_fetch", "parallel"],
+    ["tool_result_recall", undefined],
   ]);
   expect(await modes(false)).toEqual([
     ["read", "parallel"],
@@ -1854,6 +1862,7 @@ it("[NL-1] marks only service-process read-only tools for parallel execution", a
     ["bash", undefined],
     ["web_search", undefined],
     ["web_fetch", undefined],
+    ["tool_result_recall", undefined],
   ]);
 });
 
@@ -2245,6 +2254,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
     "conversation_open",
     "reminder_list",
     "rule_list",
+    "tool_result_recall",
     "perception_read",
   ]);
   expect(
@@ -2253,7 +2263,7 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(11);
+  expect(builtin).toHaveLength(12);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2329,10 +2339,11 @@ const EVERY_TOOL_NAMES = [
   "rule_set",
   "rule_list",
   "rule_undo",
+  "tool_result_recall",
   "conversation_search",
   "conversation_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "9cf30997960a627fb4de82d404182531b1feebc7bf56466b680256073a9f2e88";
+  "8f82e3e987521148393eec2c3a0967fdd48d8f4fd521ecc1019f858e5c3d9263";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
-  "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";
+  "ca741f1e8250efbbdc65111cc9219978a46279a9272bbe87bba45f9b77a94a3a";
