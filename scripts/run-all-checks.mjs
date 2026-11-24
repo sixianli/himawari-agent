@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const FAILED_OUTPUT_BUDGET = 100;
-export const STEP_TAIL_LINES = FAILED_OUTPUT_BUDGET;
+export const STEP_TAIL_BYTES = 64 * 1024;
 
 export function stepNames(stepsCommand) {
   return stepsCommand.split(" && ").map((step) => {
@@ -33,7 +33,8 @@ export async function runAllChecks(names, run, log = console.log) {
   }
   for (const { name, status } of failures) log(`CHECK_FAILED ${name} exit=${status}`);
   log(`CHECK_SUMMARY ${failures.length} of ${names.length} steps failed`);
-  const share = Math.max(5, Math.floor(FAILED_OUTPUT_BUDGET / failures.length));
+  const share = Math.floor((FAILED_OUTPUT_BUDGET - failures.length) / failures.length);
+  if (share < 1) return 1;
   for (const { name, output } of failures) {
     const tail = lastLines(output, share);
     if (tail.length === 0) continue;
@@ -53,8 +54,7 @@ export function runStep(
     const keep = (chunk) => {
       const text = chunk.toString("utf8");
       write(text);
-      tail =
-        lastLines(tail + text, STEP_TAIL_LINES + 1).join("\n") + (text.endsWith("\n") ? "\n" : "");
+      tail = (tail + text).slice(-STEP_TAIL_BYTES);
     };
     const child = spawn(command, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     child.stdout.on("data", keep);
@@ -73,5 +73,5 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exit(await main());
+  process.exitCode = await main();
 }

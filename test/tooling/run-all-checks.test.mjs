@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FAILED_OUTPUT_BUDGET,
   runAllChecks,
   runStep,
+  STEP_TAIL_BYTES,
   stepNames,
 } from "../../scripts/run-all-checks.mjs";
 
@@ -55,10 +56,10 @@ describe("npm run check", () => {
     );
     expect(status).toBe(1);
     const start = lines.indexOf(
-      `CHECK_FAILED_OUTPUT check:delivery-deploy last ${FAILED_OUTPUT_BUDGET} lines`,
+      `CHECK_FAILED_OUTPUT check:delivery-deploy last ${FAILED_OUTPUT_BUDGET - 1} lines`,
     );
     expect(start).toBeGreaterThan(lines.indexOf("CHECK_SUMMARY 1 of 2 steps failed"));
-    expect(lines.slice(start + 1)).toEqual(numbered(150).slice(-FAILED_OUTPUT_BUDGET));
+    expect(lines.slice(start + 1)).toEqual(numbered(150).slice(-(FAILED_OUTPUT_BUDGET - 1)));
     expect(lines.join("\n")).not.toContain("fine");
   });
 
@@ -75,13 +76,37 @@ describe("npm run check", () => {
       (line) => lines.push(line),
     );
     const repeated = lines.slice(lines.indexOf("CHECK_SUMMARY 4 of 4 steps failed") + 1);
-    expect(repeated.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET + 4);
+    expect(repeated.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET);
     for (const name of ["a", "b", "c", "d"]) {
-      expect(repeated).toContain(`CHECK_FAILED_OUTPUT ${name} last 25 lines`);
+      expect(repeated).toContain(`CHECK_FAILED_OUTPUT ${name} last 24 lines`);
       expect(repeated).toContain(`${name} line 100`);
-      expect(repeated).not.toContain(`${name} line 75`);
+      expect(repeated).not.toContain(`${name} line 76`);
     }
   });
+
+  it.each([25, 49, 60])(
+    "keeps the repeated block, titles included, within the budget when %i steps fail",
+    async (count) => {
+      const lines = [];
+      const names = Array.from({ length: count }, (_, index) => `step-${index}`);
+      await runAllChecks(
+        names,
+        (name) => ({
+          status: 1,
+          output: numbered(10)
+            .map((line) => `${name} ${line}`)
+            .join("\n"),
+        }),
+        (line) => lines.push(line),
+      );
+      const repeated = lines.slice(
+        lines.indexOf(`CHECK_SUMMARY ${count} of ${count} steps failed`) + 1,
+      );
+      expect(repeated.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET);
+      if (count <= FAILED_OUTPUT_BUDGET / 2) expect(repeated).toContain(`step-0 line 10`);
+      else expect(repeated).toEqual([]);
+    },
+  );
 
   it("prints no repeated block for a failed step that wrote nothing", async () => {
     const lines = [];
@@ -93,23 +118,38 @@ describe("npm run check", () => {
     expect(lines).toEqual(["CHECK_FAILED a exit=2", "CHECK_SUMMARY 1 of 1 steps failed"]);
   });
 
-  it("streams a real step's stdout and stderr as they arrive and keeps only the last lines", async () => {
+  it("writes a real step's output before the step ends and keeps stdout and stderr", async () => {
     const written = [];
-    const result = await runStep(
+    let finished = false;
+    const pending = runStep(
       process.execPath,
       [
         "-e",
-        "for (let i = 1; i <= 300; i++) console.log('out ' + i); console.error('err last'); process.exit(3);",
+        "console.log('out first'); setTimeout(() => { console.error('err last'); process.exit(3); }, 1500);",
       ],
       { write: (chunk) => written.push(chunk) },
-    );
+    ).then((result) => {
+      finished = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(written.join("")).toContain("out first"), { timeout: 1200 });
+    expect(finished).toBe(false);
+    const result = await pending;
     expect(result.status).toBe(3);
-    expect(written.join("")).toContain("out 1\n");
     expect(written.join("")).toContain("err last");
-    const kept = result.output.trimEnd().split("\n");
-    expect(kept.length).toBeLessThanOrEqual(FAILED_OUTPUT_BUDGET + 1);
-    expect(kept).toContain("err last");
-    expect(kept).not.toContain("out 1");
+    expect(result.output).toContain("out first\n");
+    expect(result.output).toContain("err last");
+  });
+
+  it("keeps a bounded tail even when a step writes one very long line", async () => {
+    const result = await runStep(
+      process.execPath,
+      ["-e", "process.stdout.write('x'.repeat(1024 * 1024) + 'END'); process.exitCode = 1;"],
+      { write: () => {} },
+    );
+    expect(result.status).toBe(1);
+    expect(result.output.length).toBe(STEP_TAIL_BYTES);
+    expect(result.output.endsWith("END")).toBe(true);
   });
 
   it("reports a step that cannot start as a failure with the reason", async () => {
