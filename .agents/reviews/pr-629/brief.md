@@ -25,7 +25,7 @@ ADR 0286（docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md）第 
 2. byNumber 和 numbers 只在同一个 owner、agent 范围内查，查不到别的 agent 的记忆。
 3. memory_open 的每页 JSON 总长不超过 pageCharacters；记忆正文太长时按页切开分在前几页，各页 text 拼起来等于全文，正文给完以后的页不再有 text；版本正文和原话超长时截断并以“…”结尾；分页布局和所请求的页码无关，页数不设上限，nextPage 只在还有下一页时出现。
 4. 输入不合法（缺 number、非正整数、page 越界、多余参数）一律 MEMORY_OPEN_INPUT_INVALID；其他失败 MEMORY_OPEN_UNAVAILABLE，不外露内部错误。
-5. 内容密级取请求密级和这条记忆密级里高的一个。
+5. 模型不可见密级（restricted）的版本正文或原话给 null；结果密级取请求密级、这条记忆的密级和这一页实际给出的正文、版本正文、原话的密级里最高的一个，别的页上的内容不算进来。
 
 ## 请重点看
 

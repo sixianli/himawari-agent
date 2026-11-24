@@ -171,3 +171,23 @@ it("REVERSE: versions stored at the memory's own classification are all shown an
   ]);
   expect(opened.contentClassification).toBe("private");
 });
+
+it("labels each page only with what that page shows, so a sensitive version on a later page does not raise the first page", async () => {
+  const tool = memoryTool({
+    text: "长".repeat(1900),
+    versions: 2,
+    versionText: "旧的说法",
+    pageCharacters: 2000,
+    classifications: { "version-1": "sensitive" },
+  });
+  const first = await tool.open(call({ number: 1 }));
+  expect(first.output["versions"]).toEqual([]);
+  expect(first.output["nextPage"]).toBe(2);
+  expect(first.contentClassification).toBe("private");
+  const second = await tool.open(call({ number: 1, page: 2 }));
+  expect(second.output["versions"]).toEqual([
+    expect.objectContaining({ text: "旧的说法" }),
+    expect.objectContaining({ text: "旧的说法" }),
+  ]);
+  expect(second.contentClassification).toBe("sensitive");
+});

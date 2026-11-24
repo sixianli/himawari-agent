@@ -66,6 +66,11 @@ interface ShownPage {
   readonly versions: ShownVersion[];
 }
 
+interface ShownText {
+  readonly text: string | null;
+  readonly classifications: DataClassification[];
+}
+
 interface ShownVersion {
   readonly kind: MemoryHistoryEvent["kind"];
   readonly time: string;
@@ -159,31 +164,42 @@ export class ProductionMemoryOpen {
       !modelVisibleClassifications().includes(memory.dataClassification)
     )
       return missing();
-    const shownClassifications: DataClassification[] = [memory.dataClassification];
-    const visibleText = async (ref: PayloadRef): Promise<string | null> => {
+    const visible = async (ref: PayloadRef): Promise<ShownText> => {
       const read = await this.#options.readText(ref, scope);
-      if (!read || !modelVisibleClassifications().includes(read.dataClassification)) return null;
-      shownClassifications.push(read.dataClassification);
-      return read.text;
+      if (!read || !modelVisibleClassifications().includes(read.dataClassification))
+        return { text: null, classifications: [] };
+      return { text: read.text, classifications: [read.dataClassification] };
     };
-    const text = await visibleText(memory.contentRef);
+    const current = await visible(memory.contentRef);
+    const text = current.text;
     const supersededBy = memory.attributes?.supersededBy ?? null;
     const correctedBy = supersededBy
       ? ((await this.#options.state.numbers({ ...scope, memoryIds: [supersededBy] }))[0]?.number ??
         null)
       : null;
     const events = await this.#options.state.listHistory({ ...scope, memoryIds: [memory.id] });
-    const versions: ShownVersion[] = [];
+    const versions: {
+      readonly shown: ShownVersion;
+      readonly classifications: DataClassification[];
+    }[] = [];
     for (const event of [...events].sort(
       (left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.id - right.id,
-    ))
+    )) {
+      const body = await visible(event.contentRef);
+      const quote = event.quoteRef
+        ? await visible(event.quoteRef)
+        : { text: null, classifications: [] };
       versions.push({
-        kind: event.kind,
-        time: event.occurredAt,
-        text: await visibleText(event.contentRef),
-        quote: event.quoteRef ? await visibleText(event.quoteRef) : null,
-        conversationId: event.sourceDeleted ? null : event.sourceThreadId,
+        shown: {
+          kind: event.kind,
+          time: event.occurredAt,
+          text: body.text,
+          quote: quote.text,
+          conversationId: event.sourceDeleted ? null : event.sourceThreadId,
+        },
+        classifications: [...body.classifications, ...quote.classifications],
       });
+    }
     const attributes = memory.attributes;
     const meta = {
       number,
@@ -218,16 +234,21 @@ export class ProductionMemoryOpen {
     const bareWithText = serializedLength(pageOutput({ text: "", versions: [] }, widest, widest));
     const bareWithoutText = serializedLength(pageOutput({ versions: [] }, widest, widest));
     const pages: ShownPage[] = [];
+    const pageClassifications: DataClassification[][] = [];
     let used: number;
     if (text === null) {
       pages.push({ text: null, versions: [] });
+      pageClassifications.push([]);
       used = serializedLength(pageOutput({ text: null, versions: [] }, widest, widest));
     } else {
       const pieces = textPieces(text, budget - bareWithText + 2);
-      for (const piece of pieces) pages.push({ text: piece, versions: [] });
+      for (const piece of pieces) {
+        pages.push({ text: piece, versions: [] });
+        pageClassifications.push([...current.classifications]);
+      }
       used = bareWithText - 2 + serializedLength(pieces.at(-1) ?? "");
     }
-    for (const whole of versions) {
+    for (const { shown: whole, classifications } of versions) {
       const bare = serializedLength({ ...whole, text: "", quote: "" }) + 1;
       const room = Math.floor((budget - bareWithoutText - bare) / 2) + 2;
       const version = {
@@ -236,12 +257,14 @@ export class ProductionMemoryOpen {
         quote: fitted(whole.quote, room),
       };
       const size = serializedLength(version) + 1;
-      const current = pages.at(-1) as ShownPage;
-      if (used + size > budget && (current.versions.length > 0 || "text" in current)) {
+      const last = pages.at(-1) as ShownPage;
+      if (used + size > budget && (last.versions.length > 0 || "text" in last)) {
         pages.push({ versions: [version] });
+        pageClassifications.push([...classifications]);
         used = bareWithoutText + size;
       } else {
-        current.versions.push(version);
+        last.versions.push(version);
+        pageClassifications.at(-1)?.push(...classifications);
         used += size;
       }
     }
@@ -249,10 +272,10 @@ export class ProductionMemoryOpen {
     if (!shown) throw new MemoryOpenInputError();
     return {
       output: pageOutput(shown, page, page < pages.length ? page + 1 : undefined),
-      contentClassification: highestClassification(
-        invocation.dataClassification,
-        shownClassifications,
-      ),
+      contentClassification: highestClassification(invocation.dataClassification, [
+        memory.dataClassification,
+        ...(pageClassifications[page - 1] ?? []),
+      ]),
       memoryIds: [memory.id],
       externalContent: carriesExternalContent(memory.sourceRefs),
     };
