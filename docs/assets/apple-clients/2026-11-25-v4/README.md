@@ -42,6 +42,9 @@ date: "2026-11-25"
 - 新增 `her` 一段：她的页面的大头像、himawari 字样和带图标方块的行。
 - 第 3 版漏掉、第 2 版有、这一版还用得上的值补回来，数值照抄第 2 版：`senses`、`handover`（分享过来的）两段（`handover` 里只有分享面板那几项在第 4 版原型里画了，其余沿用第 2 版，见它的 `note`），`type.rowAction`、`type.senseTitle`、`type.senseTime`，`size.pillSmall`，`icon.todayRow`（设备动作的行也在用，名字留到改外壳时再改）。
 - `colorUse` 只放“用途名对颜色名”：原先误放在里面的 `successRing`、`highlight` 两句说明挪到 `colorNotes`，否则生成 Swift 常量的 `clients/apple/scripts/make-design-tokens.mjs` 报 `DESIGN_TOKEN_COLOR_USE_UNKNOWN`。
+- 新增颜色 `onSpeak`（speak 深色圆底上的图标，深色模式 #e4e4e1）：原型源文件在这里用 `onText`，深色模式下声波按钮看不见，以 `tokens.json` 为准。
+- 新增颜色 `glyph` 和用途名 `iconTile`（对 `highlight`）：列表行前面的浅金图标方块，见[设计规范第 54 条](../../../ui-ux-design-guide.md#apple-clients)。
+- `avatar`、`options`、`chat`、`her` 这几段 `make-design-tokens.mjs` 现在还不读，不会生成 Swift 常量；做到这些页面时再把它们接进生成器。
 - `avatar.wordmarkGap` 是 3（2026-11-25 按原型源文件改正，原先误写成 4）。
 - 颜色一个没动。
 
