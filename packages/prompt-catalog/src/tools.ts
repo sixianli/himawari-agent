@@ -36,6 +36,24 @@ export const TOOL_RECALL = fixedPrompt({
   text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
 });
 
+export const TOOL_CONVERSATION_SEARCH = fixedPrompt({
+  id: "tools.conversation-search",
+  purpose: "conversation_search 工具的描述：什么时候搜以前对话的原话",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "搜主人和你以前对话里的原话。主人提到以前聊过的事、要找当时的原话或细节，或者记忆里查不到、要核对记忆出处时使用。query 写要找的内容，按意思和按字词都能找到；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回按相关程度排好的几轮对话，每轮给出 conversationId、它在对话里的位置 sequence、日期和原话（太长的会截短）；一页放不下时给出 nextPage，需要时把它填进 page 再查。要看前后文或完整的原话，用 conversation_open。只查主人自己的对话，不会联网。",
+});
+
+export const TOOL_CONVERSATION_OPEN = fixedPrompt({
+  id: "tools.conversation-open",
+  purpose: "conversation_open 工具的描述：怎样打开以前的对话读前后原话",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "打开以前的一段对话，读某个位置前后的原话。conversationId 和 sequence 取自 conversation_search 的结果；direction 填 later 从 sequence 往后读，填 earlier 从 sequence 往前读，不填就往后读。结果里的 earlierFrom、laterFrom 是往前、往后接着读的位置：往前接着读，把 earlierFrom 填进 sequence 并填 direction earlier；往后接着读，把 laterFrom 填进 sequence 并填 direction later。值为 null 说明那一头已经读完；不为 null 时那一头也可能刚好没有更多原话，接着读拿到空的 lines 就说明读完了。",
+});
+
 export const TOOL_TASK_STATUS = fixedPrompt({
   id: "tools.execution-task-status",
   purpose: "execution_task_status 工具的描述",
@@ -196,6 +214,42 @@ export const TOOL_RESULT_RECALL_INPUT_INVALID = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；只能用工具定义里列出的参数。改正后再查一次。",
+});
+
+export const TOOL_RESULT_CONVERSATION_EMPTY = fixedPrompt({
+  id: "tool-result.conversation-empty",
+  purpose: "搜以前的对话没有找到时工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有找到相关的旧对话。不要编造；可以换个说法或放宽日期再找一次，仍然找不到就如实告诉主人。",
+});
+
+export const TOOL_RESULT_CONVERSATION_NOT_FOUND = fixedPrompt({
+  id: "tool-result.conversation-not-found",
+  purpose: "打开以前的对话时对话不存在或已删除的说明",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这段对话打不开：它可能已经删除，或者 conversationId 写错了。不要猜它的内容。",
+});
+
+export const TOOL_RESULT_CONVERSATION_UNAVAILABLE = fixedPrompt({
+  id: "tool-result.conversation-unavailable",
+  purpose: "搜或打开以前的对话失败时工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "以前的对话暂时查不到。不要编造，告诉主人现在查不了以前的对话。",
+});
+
+export const TOOL_RESULT_CONVERSATION_INPUT_INVALID = fixedPrompt({
+  id: "tool-result.conversation-input-invalid",
+  purpose: "搜或打开以前的对话参数不对时工具结果里的说明：告诉模型怎么改正",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；page 和 sequence 要写从 1 开始的整数；只能用工具定义里列出的参数。改正后再查一次。",
 });
 
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({

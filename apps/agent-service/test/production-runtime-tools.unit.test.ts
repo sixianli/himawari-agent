@@ -10,6 +10,7 @@ import {
   SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
+import { ConversationToolInputError } from "../src/production-conversation-tools.js";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
@@ -1523,6 +1524,110 @@ it("answers recall from owner memory, replays the saved result and reports failu
   expect(invalid.modelContent).not.toContain("查不了记忆");
 });
 
+it("[ADR-0286] answers conversation search and open from the owner's past talk, replays the saved result and reports failures", async () => {
+  const f = fixture();
+  const run = vi.fn(async () => ({
+    output: {
+      turns: [{ conversationId: "thread:old", sequence: 3, lines: [{ text: "下周三面试" }] }],
+    },
+    contentClassification: "private" as const,
+    conversationIds: ["thread:old"],
+  }));
+  const tools = new ProductionRuntimeTools({ ...f.options, conversations: { run } });
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names.slice(-2)).toEqual(["conversation_search", "conversation_open"]);
+  const call = {
+    ...invocation,
+    capabilityRef: "conversation.search",
+    capabilityHandleRef: null,
+    arguments: { query: "面试" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first.outcome).toBe("succeeded");
+  expect(first.modelContent).toContain("下周三面试");
+  expect(await tools.execute(call)).toEqual(first);
+  expect(run).toHaveBeenCalledTimes(1);
+  const opened = await tools.execute({
+    ...call,
+    capabilityRef: "conversation.open",
+    toolCallId: "conversation-open",
+    arguments: { conversationId: "thread:old", sequence: 3 },
+  });
+  expect(opened.outcome).toBe("succeeded");
+  expect(run).toHaveBeenLastCalledWith(
+    expect.objectContaining({ capabilityRef: "conversation.open" }),
+  );
+  run.mockRejectedValueOnce(new Error("EMBEDDING_DEADLINE_EXCEEDED"));
+  const failed = await tools.execute({ ...call, toolCallId: "conversation-failed" });
+  expect(failed).toMatchObject({ outcome: "failed", errorCode: "CONVERSATION_UNAVAILABLE" });
+  expect(failed.modelContent).toContain("不要编造");
+  run.mockRejectedValueOnce(new ConversationToolInputError());
+  const invalid = await tools.execute({ ...call, toolCallId: "conversation-invalid" });
+  expect(invalid).toMatchObject({ outcome: "failed", errorCode: "CONVERSATION_INPUT_INVALID" });
+  expect(invalid.modelContent).toContain("改正后再查一次");
+});
+
+it("[ADR-0286] marks the run as having read outside content when a past conversation it shows had read some", async () => {
+  const f = fixture();
+  const shown: Record<string, string[]> = {
+    "conversation-plain": ["thread:plain"],
+    "conversation-outside": ["thread:plain", "thread:web"],
+    "conversation-empty": [],
+  };
+  const run = vi.fn(async (call: RuntimeToolInvocation) => ({
+    output: { turns: [] },
+    contentClassification: "private" as const,
+    conversationIds: shown[call.toolCallId] ?? [],
+  }));
+  const mark = vi.fn(async () => undefined);
+  const readThread = vi.fn(async (threadId: string) =>
+    threadId === "thread:web"
+      ? [{ origin: "web_fetch", firstRunId: "run:old", firstSeenAt: "2026-11-20T00:00:00.000Z" }]
+      : [],
+  );
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    conversations: { run },
+    externalContent: { mark, read: async () => [], readThread } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["externalContent"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const call = (toolCallId: string) =>
+    tools.execute({
+      ...invocation,
+      toolCallId,
+      capabilityRef: "conversation.search",
+      capabilityHandleRef: null,
+      arguments: { query: "面试" },
+    });
+  expect(await call("conversation-plain")).toMatchObject({ outcome: "succeeded" });
+  expect(await call("conversation-empty")).toMatchObject({ outcome: "succeeded" });
+  expect(mark).not.toHaveBeenCalled();
+  expect(await call("conversation-outside")).toMatchObject({ outcome: "succeeded" });
+  expect(mark).toHaveBeenCalledTimes(1);
+  expect(mark).toHaveBeenCalledWith(invocation.runId, "recalled_external_conversation");
+});
+
+it("[ADR-0286] does not offer conversation tools when the conversation index is not configured", async () => {
+  const f = fixture();
+  const tools = new ProductionRuntimeTools(f.options);
+  const names = (
+    await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
+  ).map((definition) => definition.name);
+  expect(names).not.toContain("conversation_search");
+  const call = {
+    ...invocation,
+    capabilityRef: "conversation.search",
+    capabilityHandleRef: null,
+    arguments: { query: "面试" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(false);
+});
+
 it("offers reminder tools last, runs them once per call and tells the model why a reminder failed", async () => {
   const f = fixture();
   const run = vi.fn(async () => ({ created: true, reminderId: "reminder:a" }));
@@ -1992,6 +2097,13 @@ function everyToolOptions(f: ReturnType<typeof fixture>) {
     },
     reminders: { run: vi.fn(async () => ({})) },
     ownerRules: { run: vi.fn(async () => ({})) },
+    conversations: {
+      run: async () => ({
+        output: {},
+        contentClassification: "private" as const,
+        conversationIds: [],
+      }),
+    },
   } satisfies ProductionRuntimeToolsOptions;
 }
 
@@ -2005,6 +2117,11 @@ it("[ADR-0257] offers every tool through the action registry with unchanged defi
   expect(createHash("sha256").update(JSON.stringify(descriptors)).digest("hex")).toBe(
     EVERY_TOOL_DEFINITIONS_SHA256,
   );
+  expect(
+    createHash("sha256")
+      .update(JSON.stringify(descriptors.slice(0, -2)))
+      .digest("hex"),
+  ).toBe(TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256);
   const withoutRegistry = new ToolActionRegistry(
     PRODUCTION_TOOL_ACTION_ROWS.filter(({ tool }) => tool !== "reminder_set"),
   );
@@ -2127,18 +2244,26 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall and perception read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation and perception read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list", "tool_result_recall", "perception_read"]);
+  ).toEqual([
+    "recall",
+    "conversation_search",
+    "conversation_open",
+    "reminder_list",
+    "rule_list",
+    "tool_result_recall",
+    "perception_read",
+  ]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(10);
+  expect(builtin).toHaveLength(12);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2215,6 +2340,10 @@ const EVERY_TOOL_NAMES = [
   "rule_list",
   "rule_undo",
   "tool_result_recall",
+  "conversation_search",
+  "conversation_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "ca741f1e8250efbbdc65111cc9219978a46279a9272bbe87bba45f9b77a94a3a";
+  "dd3f25c219b0fed43fc4dbc160011f7a789496a41d947ce688ab7b2b240431b1";
+const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
+  "234052ab611271e072924607af18b493123a699ea64aa711a4dac54bb4533326";
