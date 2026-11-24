@@ -35,3 +35,4 @@ ADR 0286（docs/adr/0286-the-main-model-reads-and-writes-memory-itself.md）第 
 - apps/agent-service/src/production-runtime-tools.ts 的 #memoryOpen 和描述符拼接
 - packages/prompt-catalog/src/tools.ts 的 TOOL_MEMORY_OPEN 文字是否清楚
 - apps/agent-service/src/production-conversation-tools.ts：搜旧对话页码超过最后一页时，说明改成“没有更多了”（TOOL_RESULT_CONVERSATION_NO_MORE），只有一页都没有时才说“没有找到”。
+- test/integration/production-http-composition-process.test.ts：修 main 上 6 条红测试。按轮建对话索引多 1 次嵌入、记忆整理同轮重试多 1 次模型调用，测试先等它们落账再核对计费；检索嵌入只比较带 Query: 的；测试模型上下文窗口由 8192 改成 32768（8192 减去 Pi 预留 4096 后放不下提示和工具定义）。请看等待和过滤会不会把真正的多余调用漏掉。
