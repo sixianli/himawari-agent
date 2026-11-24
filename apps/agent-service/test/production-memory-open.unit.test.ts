@@ -70,27 +70,28 @@ function call(args: Record<string, unknown>): RuntimeToolInvocation {
   } as unknown as RuntimeToolInvocation;
 }
 
-it("keeps every page within the page budget when the memory and its versions are long and full of escapes", async () => {
-  const tool = memoryTool({
-    text: awkward.repeat(400),
-    versions: 6,
-    versionText: awkward.repeat(200),
-    pageCharacters: 2000,
-  });
-  let page = 1;
-  const seen: string[] = [];
-  for (;;) {
+async function everyPage(tool: ProductionMemoryOpen) {
+  const pages: Record<string, unknown>[] = [];
+  for (let page = 1; ; ) {
     const opened = await tool.open(call({ number: 1, page }));
-    expect(JSON.stringify(opened.output).length).toBeLessThanOrEqual(2000);
-    expect(String(opened.output["text"]).endsWith("…")).toBe(true);
-    for (const version of opened.output["versions"] as { text: string; time: string }[]) {
-      expect(version.text.endsWith("…")).toBe(true);
-      seen.push(version.time);
-    }
-    if (opened.output["nextPage"] === undefined) break;
+    pages.push(opened.output);
+    if (opened.output["nextPage"] === undefined) return pages;
+    expect(opened.output["nextPage"]).toBe(page + 1);
     page = opened.output["nextPage"] as number;
   }
-  expect(seen).toHaveLength(6);
+}
+
+it("keeps every page within the page budget and returns the whole long memory across pages", async () => {
+  const text = awkward.repeat(400);
+  const pages = await everyPage(
+    memoryTool({ text, versions: 6, versionText: awkward.repeat(200), pageCharacters: 2000 }),
+  );
+  expect(pages.length).toBeGreaterThan(10);
+  for (const output of pages) expect(JSON.stringify(output).length).toBeLessThanOrEqual(2000);
+  expect(pages.map((output) => output["text"] ?? "").join("")).toBe(text);
+  const versions = pages.flatMap((output) => output["versions"] as { text: string }[]);
+  expect(versions).toHaveLength(6);
+  for (const version of versions) expect(version.text.endsWith("…")).toBe(true);
 });
 
 it("REVERSE: a short memory is returned whole, without clipping", async () => {
@@ -107,21 +108,29 @@ it("REVERSE: a short memory is returned whole, without clipping", async () => {
   expect(opened.output).not.toHaveProperty("nextPage");
 });
 
-it("rejects a page past the last one and never points nextPage past the page limit", async () => {
+it("reaches every version past page 100, each exactly once, and rejects a page past the last one", async () => {
   const tool = memoryTool({
     text: "短",
     versions: 150,
-    versionText: "长".repeat(2000),
+    versionText: "长".repeat(900),
     pageCharacters: 2000,
   });
-  const last = await tool.open(call({ number: 1, page: 100 }));
-  expect(last.output).not.toHaveProperty("nextPage");
-  expect((await tool.open(call({ number: 1, page: 99 }))).output).toMatchObject({
-    nextPage: 100,
-  });
+  const pages = await everyPage(tool);
+  expect(pages.length).toBeGreaterThan(100);
+  expect(pages[0]?.["text"]).toBe("短");
+  expect(pages.slice(1).every((output) => !("text" in output))).toBe(true);
+  for (const output of pages) expect(JSON.stringify(output).length).toBeLessThanOrEqual(2000);
+  const times = pages.flatMap((output) =>
+    (output["versions"] as { time: string }[]).map((version) => version.time),
+  );
+  expect(times).toHaveLength(150);
+  expect(new Set(times).size).toBe(150);
+  await expect(tool.open(call({ number: 1, page: pages.length + 1 }))).rejects.toBeInstanceOf(
+    MemoryOpenInputError,
+  );
   const single = memoryTool({ text: "短", versions: 1, versionText: "短", pageCharacters: 2000 });
   await expect(single.open(call({ number: 1, page: 2 }))).rejects.toBeInstanceOf(
     MemoryOpenInputError,
   );
   expect((await single.open(call({ number: 1, page: 1 }))).output["versions"]).toHaveLength(1);
-});
+}, 30_000);

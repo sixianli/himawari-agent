@@ -13,7 +13,6 @@ import { TOOL_MEMORY_OPEN, TOOL_RESULT_MEMORY_NOT_FOUND } from "@himawari-agent/
 import { carriesExternalContent } from "./context-external-content.js";
 
 export const MEMORY_OPEN_CAPABILITY_REF = "memory.open";
-const MAXIMUM_PAGE = 100;
 
 export class MemoryOpenInputError extends Error {
   constructor() {
@@ -31,7 +30,7 @@ export function memoryOpenDescriptor(): RuntimeToolDescriptor {
       type: "object",
       properties: {
         number: { type: "integer", minimum: 1 },
-        page: { type: "integer", minimum: 1, maximum: MAXIMUM_PAGE },
+        page: { type: "integer", minimum: 1 },
       },
       required: ["number"],
       additionalProperties: false,
@@ -57,6 +56,11 @@ export interface MemoryOpenResult {
   readonly externalContent: boolean;
 }
 
+interface ShownPage {
+  readonly text?: string | null;
+  readonly versions: ShownVersion[];
+}
+
 interface ShownVersion {
   readonly kind: MemoryHistoryEvent["kind"];
   readonly time: string;
@@ -65,8 +69,8 @@ interface ShownVersion {
   readonly conversationId: string | null;
 }
 
-function wholeNumber(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > maximum)
+function wholeNumber(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     throw new MemoryOpenInputError();
   return value;
 }
@@ -80,13 +84,32 @@ function fitted(text: string | null, limit: number): string | null {
   const characters = [...text];
   const shortened = (keep: number) => `${characters.slice(0, keep).join("")}…`;
   let low = 0;
-  let high = characters.length - 1;
+  let high = Math.max(0, Math.min(characters.length - 1, limit - 3));
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
     if (serializedLength(shortened(middle)) <= limit) low = middle;
     else high = middle - 1;
   }
   return shortened(low);
+}
+
+function textPieces(text: string, limit: number): string[] {
+  const characters = [...text];
+  const pieces: string[] = [];
+  let start = 0;
+  do {
+    let low = 1;
+    let high = Math.max(1, Math.min(characters.length - start, limit - 2));
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (serializedLength(characters.slice(start, start + middle).join("")) <= limit) low = middle;
+      else high = middle - 1;
+    }
+    const end = Math.min(characters.length, start + low);
+    pieces.push(characters.slice(start, end).join(""));
+    start = end;
+  } while (start < characters.length);
+  return pieces;
 }
 
 function status(memory: ProductMemoryRecord, now: string): string {
@@ -111,7 +134,7 @@ export class ProductionMemoryOpen {
     if (Object.keys(args).some((name) => name !== "number" && name !== "page"))
       throw new MemoryOpenInputError();
     const number = wholeNumber(args["number"]);
-    const page = args["page"] === undefined ? 1 : wholeNumber(args["page"], MAXIMUM_PAGE);
+    const page = args["page"] === undefined ? 1 : wholeNumber(args["page"]);
     const scope = { ownerId: this.#options.ownerId, agentId: this.#options.agentId };
     const missing = (): MemoryOpenResult => ({
       output: { number, found: false, note: TOOL_RESULT_MEMORY_NOT_FOUND.text },
@@ -152,54 +175,70 @@ export class ProductionMemoryOpen {
         conversationId: event.sourceDeleted ? null : event.sourceThreadId,
       });
     const attributes = memory.attributes;
-    const headWithoutText = {
+    const meta = {
       number,
       found: true,
-      text: "",
       category: attributes?.category ?? null,
       status: status(memory, this.#options.now()),
       recordedAt: memory.recordedAt ?? memory.updatedAt,
       validFrom: attributes?.validFrom ?? null,
       validTo: attributes?.validTo ?? null,
       correctedBy,
-      page,
     };
+    const pageOutput = (
+      shown: ShownPage,
+      pageNumber: number,
+      nextPage: number | undefined,
+    ): Record<string, unknown> => ({
+      number: meta.number,
+      found: meta.found,
+      ...("text" in shown ? { text: shown.text } : {}),
+      category: meta.category,
+      status: meta.status,
+      recordedAt: meta.recordedAt,
+      validFrom: meta.validFrom,
+      validTo: meta.validTo,
+      correctedBy: meta.correctedBy,
+      page: pageNumber,
+      versions: shown.versions,
+      ...(nextPage === undefined ? {} : { nextPage }),
+    });
     const budget = this.#options.pageCharacters;
-    const headBare = serializedLength({ ...headWithoutText, versions: [], nextPage: MAXIMUM_PAGE });
-    const head = {
-      ...headWithoutText,
-      text: fitted(text, Math.floor((budget - headBare) / 2) + 2),
-    };
-    const pages: ShownVersion[][] = [];
-    let current: ShownVersion[] = [];
-    let used = serializedLength({ ...head, versions: [], nextPage: MAXIMUM_PAGE });
-    const fixed = used;
+    const widest = Number.MAX_SAFE_INTEGER;
+    const bareWithText = serializedLength(pageOutput({ text: "", versions: [] }, widest, widest));
+    const bareWithoutText = serializedLength(pageOutput({ versions: [] }, widest, widest));
+    const pages: ShownPage[] = [];
+    let used: number;
+    if (text === null) {
+      pages.push({ text: null, versions: [] });
+      used = bareWithText;
+    } else {
+      const pieces = textPieces(text, budget - bareWithText + 2);
+      for (const piece of pieces) pages.push({ text: piece, versions: [] });
+      used = bareWithText - 2 + serializedLength(pieces.at(-1) ?? "");
+    }
     for (const whole of versions) {
       const bare = serializedLength({ ...whole, text: "", quote: "" }) + 1;
-      const room = Math.floor((budget - fixed - bare) / 2) + 2;
+      const room = Math.floor((budget - bareWithoutText - bare) / 2) + 2;
       const version = {
         ...whole,
         text: fitted(whole.text, room),
         quote: fitted(whole.quote, room),
       };
       const size = serializedLength(version) + 1;
-      if (current.length > 0 && used + size > budget) {
-        pages.push(current);
-        current = [];
-        used = fixed;
+      const current = pages.at(-1) as ShownPage;
+      if (used + size > budget && (current.versions.length > 0 || "text" in current)) {
+        pages.push({ versions: [version] });
+        used = bareWithoutText + size;
+      } else {
+        current.versions.push(version);
+        used += size;
       }
-      current.push(version);
-      used += size;
     }
-    if (current.length > 0 || pages.length === 0) pages.push(current);
     const shown = pages[page - 1];
     if (!shown) throw new MemoryOpenInputError();
     return {
-      output: {
-        ...head,
-        versions: shown,
-        ...(page < pages.length && page < MAXIMUM_PAGE ? { nextPage: page + 1 } : {}),
-      },
+      output: pageOutput(shown, page, page < pages.length ? page + 1 : undefined),
       contentClassification: highestClassification(invocation.dataClassification, [
         memory.dataClassification,
       ]),

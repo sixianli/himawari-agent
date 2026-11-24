@@ -288,18 +288,21 @@ describe("[ADR-0286] memory numbers", () => {
         found: false,
       });
     const narrow = tool(330);
-    const first = await narrow.open(call({ number: 2 }));
-    const second = await narrow.open(call({ number: 2, page: 2 }));
-    for (const page of [first, second])
-      expect(JSON.stringify(page.output).length).toBeLessThanOrEqual(330);
-    expect(first.output).toMatchObject({ nextPage: 2 });
-    expect(second.output).not.toHaveProperty("nextPage");
+    const pages: Record<string, unknown>[] = [];
+    for (let page = 1; page !== undefined; ) {
+      const output = (await narrow.open(call({ number: 2, page }))).output;
+      expect(JSON.stringify(output).length).toBeLessThanOrEqual(330);
+      pages.push(output);
+      page = output["nextPage"] as number;
+    }
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.map((output) => output["text"] ?? "").join("")).toBe("喝咖啡不加糖");
     expect(
-      [
-        ...(first.output["versions"] as { kind: string }[]),
-        ...(second.output["versions"] as { kind: string }[]),
-      ].map(({ kind }) => kind),
+      pages.flatMap((output) => output["versions"] as { kind: string }[]).map(({ kind }) => kind),
     ).toEqual(["created", "edited"]);
+    await expect(narrow.open(call({ number: 2, page: pages.length + 1 }))).rejects.toBeInstanceOf(
+      MemoryOpenInputError,
+    );
     for (const invalid of [
       {},
       { number: 0 },

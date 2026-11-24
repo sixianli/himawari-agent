@@ -60,7 +60,7 @@ export const TOOL_MEMORY_OPEN = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-memory-open.ts"],
   layer: "tools",
   output: "free-text",
-  text: "按编号打开一条记忆，看它的全文、日期、现在还算不算数，以及它的每个版本和当时主人的原话。number 是记忆的编号，取自 recall 结果里的 number。答案取决于这条记忆的细节（什么时候说的、原话怎么说、以前是什么样）时，先打开它再答。结果里 correctedBy 是后来取代它的那条记忆的编号；versions 从早到晚排列，每项的 quote 是那一次主人的原话（没有原话时为 null），conversationId 是那次对话的编号（对话已删除时为 null），想读前后原话，用 conversation_search 搜这句原话找到位置再打开。结果里有 nextPage 时，版本没列完，把它填进 page 接着看。",
+  text: "按编号打开一条记忆，看它的全文、日期、现在还算不算数，以及它的每个版本和当时主人的原话。number 是记忆的编号，取自 recall 结果里的 number。答案取决于这条记忆的细节（什么时候说的、原话怎么说、以前是什么样）时，先打开它再答。结果里 correctedBy 是后来取代它的那条记忆的编号；versions 从早到晚排列，每项的 quote 是那一次主人的原话（没有原话时为 null），conversationId 是那次对话的编号（对话已删除时为 null），想读前后原话，用 conversation_search 搜这句原话找到位置再打开。正文太长时分在几页里：每页的 text 接着上一页往下，正文给完以后的页不再有 text；版本的正文和原话太长时截断，以“…”结尾。结果里有 nextPage 时，还没看完，把它填进 page 接着看。",
 });
 
 export const TOOL_TASK_STATUS = fixedPrompt({
