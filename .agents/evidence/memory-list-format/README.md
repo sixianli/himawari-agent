@@ -52,4 +52,4 @@
 
 - `formats.py` 七种写法；`count_tokens.py`、`count_tokens_lib.py` 量 token；`id_tokens.py` 量编号写法。
 - `read_eval.py` 读懂率评测，`questions.json` 题目和标准答案。
-- `token-counts*.json`、`id-token-counts-1000.json`、`read-eval-summary-*.json` 汇总；`read-eval-raw-*.json`、`read-eval-progress-*.jsonl` 每次调用的原始回答。
+- `token-counts*.json`、`id-token-counts-1000.json`、`read-eval-summary-*.json` 汇总。每次调用的原始回答（`read-eval-raw-*.json`）超过仓库单文件 512 KB 的上限，按 ADR 0276 不进仓库，放在项目文件 `memory-redesign/format-eval-raw/` 里；重跑 `read_eval.py` 会在本目录重新生成。
