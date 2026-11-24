@@ -1490,7 +1490,7 @@ const READING_TURNS: readonly Turn[] = [
   { prompt: "第一篇里说了什么？", occurredAt: "2026-11-02T00:44:00.000Z" },
 ];
 
-async function readingConversation(tools: PageTools) {
+async function readingConversation(tools: PageTools, recallId = "call-0") {
   return conversation(
     READING_TURNS,
     (index, body) => {
@@ -1501,7 +1501,7 @@ async function readingConversation(tools: PageTools) {
       const last = (JSON.parse(body).messages as { role: string }[]).at(-1)?.role;
       return last === "tool"
         ? { text: "第一篇讲的是 lorem ipsum。" }
-        : { tool: "tool_result_recall", input: JSON.stringify({ toolCallId: "call-0" }) };
+        : { tool: "tool_result_recall", input: JSON.stringify({ toolCallId: recallId }) };
     },
     () => undefined,
     { tools },
@@ -1541,6 +1541,62 @@ describe("[I-66] [CLEAR] clearing old tool results once, then appending again", 
     expect(contents[0]).toContain("编号 call-0");
     expect(contents.at(-1)).toContain("网页正文0");
     expect(findConversationBreak(bodies.slice(5))).toBeNull();
+  });
+
+  it("[CLEAR-6] records a recall as a lookup that ran, found or not, so it never reads as unconfirmed", async () => {
+    const found = await readingConversation(new PageTools(1_500));
+    const recalls = (
+      found.projection.saved as {
+        role: string;
+        toolName?: string;
+        details?: Record<string, unknown>;
+      }[]
+    )
+      .filter(
+        (message) => message.role === "toolResult" && message.toolName === "tool_result_recall",
+      )
+      .map((message) => message.details);
+    expect(recalls).toHaveLength(1);
+    expect(recalls[0]).toMatchObject({ productOutcome: "succeeded", dispatchState: "accepted" });
+    const missing = await readingConversation(new PageTools(1_500), "call-missing");
+    const notFound = (
+      missing.projection.saved as { toolName?: string; details?: Record<string, unknown> }[]
+    ).filter((message) => message.toolName === "tool_result_recall");
+    expect(notFound).toHaveLength(1);
+    expect(notFound[0]?.details).toMatchObject({
+      productOutcome: "failed",
+      dispatchState: "accepted",
+      errorCode: "TOOL_RESULT_RECALL_NOT_FOUND",
+    });
+  });
+
+  it("[CLEAR-7] REVERSE: keeps a result that names a password, so the value stays masked in later turns", async () => {
+    const secret = "Qz7mWx42Lp";
+    class SecretPageTools extends PageTools {
+      override async execute(invocation: { readonly capabilityRef: string }) {
+        const result = await super.execute(invocation);
+        return result.modelContent.startsWith("网页正文0")
+          ? { ...result, modelContent: `${result.modelContent}\n密码：${secret}` }
+          : result;
+      }
+    }
+    const { bodies } = await conversation(
+      READING_TURNS,
+      (index) => {
+        PROMPT_TOKENS = index === 4 ? 60_000 : 20_000;
+        if (index < 5)
+          return { tool: "web_search", input: JSON.stringify({ query: `第${index}篇` }) };
+        if (index === 5) return { text: `读完了，第一篇给的是 ${secret}。` };
+        return { text: "就是那个。" };
+      },
+      () => undefined,
+      { tools: new SecretPageTools(1_500) },
+    );
+    expect(bodies.length).toBeGreaterThan(6);
+    for (const body of bodies) expect(body).not.toContain(secret);
+    const last = toolContents(bodies.at(-1) ?? "");
+    expect(last[0]).toContain("网页正文0");
+    expect(last[1]).toContain("编号 call-1");
   });
 
   it("[CLEAR-5] the summary request after a clearing still reuses the last request's head, placeholders included", async () => {
