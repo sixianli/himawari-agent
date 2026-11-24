@@ -337,7 +337,7 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     expect(decrypted[0]?.every((byte) => byte === 0)).toBe(true);
   });
 
-  it("wipes the released values and settles the request when recording the use fails", async () => {
+  it("wipes the released values and records a failed use when writing the approval fails", async () => {
     const decrypted: Uint8Array[] = [];
     const context = await setup({
       crypto: (real) =>
@@ -350,10 +350,9 @@ describe("[vault-approval] one approval releases exactly the requested items onc
         }),
       store: (real) =>
         override<VaultStorePort>(real, {
-          async recordUsage(input: Parameters<VaultStorePort["recordUsage"]>[0]) {
-            if (input.entries.some((entry) => entry.outcome === "approved"))
-              throw new Error("usage table unavailable");
-            return real.recordUsage(input);
+          async decideRequest(input: Parameters<VaultStorePort["decideRequest"]>[0]) {
+            if (input.status === "approved") throw new Error("request table unavailable");
+            return real.decideRequest(input);
           },
         }),
     });
@@ -362,7 +361,7 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     const body = await context.phone.approval({ request, deviceId: DEVICE });
     await expect(
       context.service.approve(scope, { deviceId: DEVICE, confirmed: true }, body),
-    ).rejects.toMatchObject({ code: "VAULT_RELEASE_UNREADABLE" });
+    ).rejects.toThrow("request table unavailable");
     expect((await outcome).kind).toBe("denied");
     expect(decrypted).toHaveLength(2);
     expect(decrypted.every((plain) => plain.every((byte) => byte === 0))).toBe(true);
@@ -370,17 +369,46 @@ describe("[vault-approval] one approval releases exactly the requested items onc
       "failed",
     ]);
   });
-  it("keeps an approval that is still being recorded when the request timer fires", async () => {
+
+  it("tells the phone when even the failed use cannot be written, and records it once the store is back", async () => {
+    let broken = true;
+    const context = await setup({
+      store: (real) =>
+        override<VaultStorePort>(real, {
+          async decideRequest(input: Parameters<VaultStorePort["decideRequest"]>[0]) {
+            if (broken) throw new Error("disk full");
+            return real.decideRequest(input);
+          },
+        }),
+    });
+    const itemId = await withItem(context);
+    const { outcome, request } = await pending(context, [itemId]);
+    await expect(
+      context.service.approve(
+        scope,
+        { deviceId: DEVICE, confirmed: true },
+        await context.phone.approval({ request, deviceId: DEVICE }),
+      ),
+    ).rejects.toThrow("disk full");
+    expect((await outcome).kind).toBe("denied");
+    broken = false;
+    context.advance(121_000);
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "expired",
+    ]);
+  });
+
+  it("keeps an approval whose decision is being written when the request timer fires", async () => {
     const fire: { timers: (() => void)[] } = { timers: [] };
     const context = await setup({
       store: (real) =>
         override<VaultStorePort>(real, {
-          async recordUsage(input: Parameters<VaultStorePort["recordUsage"]>[0]) {
-            if (input.entries.some((entry) => entry.outcome === "approved")) {
+          async decideRequest(input: Parameters<VaultStorePort["decideRequest"]>[0]) {
+            if (input.status === "approved") {
               for (const timer of fire.timers) timer();
               await new Promise((resolve) => setTimeout(resolve, 50));
             }
-            return real.recordUsage(input);
+            return real.decideRequest(input);
           },
         }),
     });
@@ -397,6 +425,44 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     if (result.kind === "approved") result.secrets.wipe();
     expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
       "approved",
+    ]);
+  });
+
+  it("closes the request when the expiry cannot be written, and records it once the store is back", async () => {
+    let broken = false;
+    const context = await setup({
+      store: (real) =>
+        override<VaultStorePort>(real, {
+          async decideRequest(input: Parameters<VaultStorePort["decideRequest"]>[0]) {
+            if (broken) throw new Error("database locked");
+            return real.decideRequest(input);
+          },
+        }),
+    });
+    const itemId = await withItem(context);
+    const { outcome, request } = await pending(context, [itemId]);
+    const body = await context.phone.approval({ request, deviceId: DEVICE });
+    broken = true;
+    for (const fire of context.timers) fire();
+    expect((await outcome).kind).toBe("expired");
+    broken = false;
+    await expect(
+      context.service.approve(scope, { deviceId: DEVICE, confirmed: true }, body),
+    ).rejects.toMatchObject({ code: "VAULT_REQUEST_CLOSED" });
+    context.advance(121_000);
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "expired",
+    ]);
+  });
+
+  it("records the requests a key change closed", async () => {
+    const context = await setup();
+    const itemId = await withItem(context);
+    const { outcome } = await pending(context, [itemId]);
+    await context.service.applyDeviceChange(scope, context.phone.remove(itemId));
+    expect((await outcome).kind).toBe("denied");
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "denied",
     ]);
   });
 });

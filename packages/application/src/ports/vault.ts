@@ -130,8 +130,10 @@ export interface VaultStorePort {
       readonly status: "approved" | "denied" | "expired";
       readonly deviceId: string | null;
       readonly now: string;
+      readonly usage: VaultUsageRecord["outcome"];
     },
   ): Promise<VaultReleaseRequestRecord | null>;
+  expireOverdue(input: VaultScope & { readonly now: string }): Promise<readonly string[]>;
   recordUsage(input: VaultScope & { readonly entries: readonly VaultUsageRecord[] }): Promise<void>;
   listUsage(
     input: VaultScope & { readonly itemId: string | null; readonly limit: number },

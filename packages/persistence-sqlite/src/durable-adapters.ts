@@ -1048,6 +1048,7 @@ export class SqliteDurableAdapters {
       readRequest: (input) => this.context.read("vault.readRequest", input),
       listPendingRequests: (input) => this.context.read("vault.listPendingRequests", input),
       decideRequest: (input) => this.context.write("vault.decideRequest", input),
+      expireOverdue: (input) => this.context.write("vault.expireOverdue", input),
       recordUsage: (input) => this.context.write("vault.recordUsage", input),
       listUsage: (input) => this.context.read("vault.listUsage", input),
     });

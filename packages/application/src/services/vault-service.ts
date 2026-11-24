@@ -226,6 +226,7 @@ export class VaultService {
     readonly items: readonly VaultItemRecord[];
     readonly pending: readonly VaultReleaseRequestRecord[];
   }> {
+    await this.#expireOverdue(scope);
     const [manifest, items, pending] = await Promise.all([
       this.#options.store.readManifest(scope),
       this.#options.store.listItems(scope),
@@ -236,6 +237,7 @@ export class VaultService {
 
   async usage(scope: VaultScope, itemId: string | null): Promise<readonly VaultUsageListed[]> {
     if (itemId !== null && !VAULT_PATTERNS.itemId.test(itemId)) invalid();
+    await this.#expireOverdue(scope);
     return this.#options.store.listUsage({ ...scope, itemId, limit: VAULT_LIMITS.usageListed });
   }
 
@@ -348,27 +350,30 @@ export class VaultService {
   }
 
   async #expire(scope: VaultScope, id: string, nonce: string): Promise<void> {
-    const waiter = this.#waiters.get(id);
-    if (!waiter) return;
-    const now = this.#now().toISOString();
+    if (!this.#waiters.has(id)) return;
     const closed = await this.#options.store
-      .decideRequest({ ...scope, id, nonce, status: "expired", deviceId: null, now })
-      .catch(() => undefined);
-    if (closed === null) return;
-    this.#settle(id, { kind: "expired" });
-    if (closed)
-      await this.#options.store
-        .recordUsage({
-          ...scope,
-          entries: closed.itemIds.map((itemId) => ({
-            requestId: id,
-            itemId,
-            origin: closed.origin,
-            outcome: "expired" as const,
-            at: now,
-          })),
-        })
-        .catch(() => undefined);
+      .decideRequest({
+        ...scope,
+        id,
+        nonce,
+        status: "expired",
+        deviceId: null,
+        now: this.#now().toISOString(),
+        usage: "expired",
+      })
+      .then(
+        (record) => record !== null,
+        () => true,
+      );
+    if (closed) this.#settle(id, { kind: "expired" });
+  }
+
+  async #expireOverdue(scope: VaultScope): Promise<void> {
+    const expired = await this.#options.store.expireOverdue({
+      ...scope,
+      now: this.#now().toISOString(),
+    });
+    for (const id of expired) this.#settle(id, { kind: "expired" });
   }
 
   #settle(id: string, outcome: VaultReleaseOutcome): void {
@@ -405,19 +410,10 @@ export class VaultService {
       status: "denied",
       deviceId: null,
       now,
+      usage: "denied",
     });
     if (!closed) throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
     this.#settle(id, { kind: "denied" });
-    await this.#options.store.recordUsage({
-      ...scope,
-      entries: closed.itemIds.map((itemId) => ({
-        requestId: id,
-        itemId,
-        origin: closed.origin,
-        outcome: "denied" as const,
-        at: now,
-      })),
-    });
   }
 
   async approve(
@@ -475,19 +471,9 @@ export class VaultService {
     });
     const waiter = this.#waiters.get(id);
     if (!waiter) throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
-    const now = this.#now().toISOString();
-    const decided = await this.#options.store.decideRequest({
-      ...scope,
-      id,
-      nonce: stored.nonce,
-      status: "approved",
-      deviceId: device.deviceId,
-      now,
-    });
-    if (!decided || this.#waiters.get(id) !== waiter)
-      throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
     this.#waiters.delete(id);
     waiter.timer.cancel();
+    const now = this.#now().toISOString();
     const deliver = (outcome: VaultReleaseOutcome) => {
       waiter.ephemeral.dispose();
       waiter.resolve(outcome);
@@ -496,6 +482,18 @@ export class VaultService {
     const wipeAll = () => {
       for (const item of released) for (const value of item.fields.values()) value.fill(0);
     };
+    const decide = (status: "approved" | "denied", usage: "approved" | "failed") =>
+      this.#options.store.decideRequest({
+        ...scope,
+        id,
+        nonce: stored.nonce,
+        status,
+        deviceId: device.deviceId,
+        now,
+        usage,
+      });
+    let decrypted = false;
+    let decided: VaultReleaseRequestRecord | null;
     try {
       const items = new Map(
         (await this.#options.store.listItems(scope)).map((item) => [item.id, item]),
@@ -543,33 +541,29 @@ export class VaultService {
         }
         released.push(Object.freeze({ itemId: item.id, fields, totp: Object.freeze(totp) }));
       }
-      await this.#options.store.recordUsage({
-        ...scope,
-        entries: stored.itemIds.map((itemId) => ({
-          requestId: id,
-          itemId,
-          origin: stored.origin,
-          outcome: "approved" as const,
-          at: now,
-        })),
-      });
+      decrypted = true;
+      decided = await decide("approved", "approved");
     } catch (error) {
       wipeAll();
-      deliver({ kind: "denied" });
-      await this.#options.store
-        .recordUsage({
-          ...scope,
-          entries: stored.itemIds.map((itemId) => ({
-            requestId: id,
-            itemId,
-            origin: stored.origin,
-            outcome: "failed" as const,
-            at: now,
-          })),
-        })
-        .catch(() => undefined);
-      if (error instanceof VaultError) throw error;
+      try {
+        await decide("denied", "failed");
+      } finally {
+        deliver({ kind: "denied" });
+      }
+      if (error instanceof VaultError || decrypted) throw error;
       throw new VaultError(VAULT_ERROR_CODES.RELEASE_UNREADABLE, 422);
+    }
+    if (!decided) {
+      wipeAll();
+      let outcome: VaultReleaseOutcome = { kind: "expired" };
+      try {
+        await this.#expireOverdue(scope);
+        const closed = await this.#options.store.readRequest({ ...scope, id });
+        if (closed?.status === "denied") outcome = { kind: "denied" };
+      } finally {
+        deliver(outcome);
+      }
+      throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
     }
     deliver({
       kind: "approved",

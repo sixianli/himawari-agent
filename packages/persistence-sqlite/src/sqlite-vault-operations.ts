@@ -117,6 +117,8 @@ export class SqliteVaultOperations {
         return this.listPendingRequests(payload as VaultScope & { now: string });
       case "vault.decideRequest":
         return this.decideRequest(payload as DecideInput);
+      case "vault.expireOverdue":
+        return this.expireOverdue(payload as VaultScope & { now: string });
       case "vault.recordUsage":
         return this.recordUsage(payload as UsageInput);
       case "vault.listUsage":
@@ -208,13 +210,25 @@ export class SqliteVaultOperations {
         if (changed.changes !== 1)
           return this.fail("PORT_CONFLICT", "Vault item belongs to another scope");
       }
-      if (input.rotation || input.deletes.length > 0)
-        this.database
+      if (input.rotation || input.deletes.length > 0) {
+        const open = this.database
           .prepare(
-            `UPDATE vault_release_requests SET status = 'denied', decided_at = ?
-             WHERE owner_id = ? AND agent_id = ? AND status = 'pending'`,
+            `SELECT id, nonce FROM vault_release_requests
+             WHERE owner_id = ? AND agent_id = ? AND status = 'pending' ORDER BY id`,
           )
-          .run(input.now, input.ownerId, input.agentId);
+          .all(input.ownerId, input.agentId) as { id: string; nonce: string }[];
+        for (const request of open)
+          this.close({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            id: request.id,
+            nonce: request.nonce,
+            status: "denied",
+            deviceId: null,
+            now: input.now,
+            usage: "denied",
+          });
+      }
       this.database
         .prepare(
           `INSERT INTO vault_manifests (owner_id, agent_id, version, signature, updated_at)
@@ -283,46 +297,91 @@ export class SqliteVaultOperations {
 
   private decideRequest(input: DecideInput): VaultReleaseRequestRecord | null {
     this.assertDiskHeadroom();
+    return this.database.transaction(() => this.close(input))();
+  }
+
+  private expireOverdue(input: VaultScope & { now: string }): readonly string[] {
+    this.assertDiskHeadroom();
     return this.database.transaction(() => {
-      const changed = this.database
+      const overdue = this.database
         .prepare(
-          `UPDATE vault_release_requests SET status = ?, decided_at = ?, device_id = ?
-           WHERE id = ? AND owner_id = ? AND agent_id = ? AND nonce = ? AND status = 'pending'
-             AND (? = 'expired' OR expires_at > ?)`,
+          `SELECT id, nonce FROM vault_release_requests
+           WHERE owner_id = ? AND agent_id = ? AND status = 'pending' AND expires_at <= ?
+           ORDER BY id`,
         )
-        .run(
-          input.status,
-          input.now,
-          input.deviceId,
-          input.id,
-          input.ownerId,
-          input.agentId,
-          input.nonce,
-          input.status,
-          input.now,
-        );
-      return changed.changes === 1 ? this.readRequest(input) : null;
+        .all(input.ownerId, input.agentId, input.now) as { id: string; nonce: string }[];
+      return Object.freeze(
+        overdue
+          .filter((row) =>
+            this.close({
+              ...input,
+              id: row.id,
+              nonce: row.nonce,
+              status: "expired",
+              deviceId: null,
+              usage: "expired",
+            }),
+          )
+          .map((row) => row.id),
+      );
     })();
+  }
+
+  private close(input: DecideInput): VaultReleaseRequestRecord | null {
+    const changed = this.database
+      .prepare(
+        `UPDATE vault_release_requests SET status = ?, decided_at = ?, device_id = ?
+         WHERE id = ? AND owner_id = ? AND agent_id = ? AND nonce = ? AND status = 'pending'
+           AND (? = 'expired' OR expires_at > ?)`,
+      )
+      .run(
+        input.status,
+        input.now,
+        input.deviceId,
+        input.id,
+        input.ownerId,
+        input.agentId,
+        input.nonce,
+        input.status,
+        input.now,
+      );
+    if (changed.changes !== 1) return null;
+    const closed = this.readRequest(input);
+    if (!closed) return null;
+    this.insertUsage({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      entries: closed.itemIds.map((itemId) => ({
+        requestId: closed.id,
+        itemId,
+        origin: closed.origin,
+        outcome: input.usage,
+        at: input.now,
+      })),
+    });
+    return closed;
   }
 
   private recordUsage(input: UsageInput): void {
     this.assertDiskHeadroom();
+    this.database.transaction(() => this.insertUsage(input))();
+  }
+
+  private insertUsage(input: UsageInput): void {
     const insert = this.database.prepare(
       `INSERT INTO vault_usage (owner_id, agent_id, request_id, item_id, origin, outcome, at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    this.database.transaction(() => {
-      for (const entry of input.entries)
-        insert.run(
-          input.ownerId,
-          input.agentId,
-          entry.requestId,
-          entry.itemId,
-          entry.origin,
-          entry.outcome,
-          entry.at,
-        );
-    })();
+    for (const entry of input.entries)
+      insert.run(
+        input.ownerId,
+        input.agentId,
+        entry.requestId,
+        entry.itemId,
+        entry.origin,
+        entry.outcome,
+        entry.at,
+      );
   }
 
   private listUsage(
