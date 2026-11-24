@@ -2337,6 +2337,35 @@ describe("production memory capture", () => {
       .productMemoryState()
       .read((plain["reminderId"] as string).replace(/^reminder:/u, "") as never);
     expect(plainMemory?.sourceRefs).toEqual([expect.stringMatching(/^memory-content:reminder:/u)]);
+
+    const longOrigins = [
+      `external_event:${"a".repeat(128)}`,
+      `external_event:${"b".repeat(128)}`,
+      "web_fetch",
+    ];
+    const longRule = (await context.ruleTools.run(
+      invocation("rule.set", "call-long-origins", {
+        quote: sentence,
+        inferred: false,
+        type: "mail_must_notify",
+        summary: "退款邮件一律提醒",
+        params: { phrases: ["退款"] },
+      }),
+      { externalOrigins: longOrigins },
+    )) as Record<string, unknown>;
+    expect(longRule).toMatchObject({ status: "active" });
+    const longSource = (
+      await context.repository.ownerRules().read({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ruleId: longRule["ruleId"] as string,
+      } as never)
+    )?.source;
+    expect(longSource?.length).toBeLessThanOrEqual(256);
+    expect(longSource).toMatch(
+      /^external-content:external_event:a+,external_event:b+~[0-9a-f]{16}\|/u,
+    );
+    expect(longSource?.endsWith(`|chat:${THREAD_ID}`)).toBe(true);
   });
 
   it("[ADR-0257] shows the built-in action rules on the rule list and switches one through the rule command", async () => {

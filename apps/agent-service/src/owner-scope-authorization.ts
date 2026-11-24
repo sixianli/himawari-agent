@@ -34,7 +34,11 @@ import {
   type ToolActionRow,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import type { ContextExternalContent, ExternalContentSource } from "./context-external-content.js";
+import {
+  type ContextExternalContent,
+  type ExternalContentSource,
+  externalEventOrigin,
+} from "./context-external-content.js";
 import type { OwnerIntentGate } from "./owner-intent-gate.js";
 import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
 import { BUILT_IN_CAPABILITY_VERSION, builtInCapabilityFacts } from "./production-tool-actions.js";
@@ -180,6 +184,7 @@ export class OwnerScopeAuthorization {
     if (externalSources.length > 0) factCodes.push(POLICY_FACT_CODES.contextExternalContent);
     if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);
     if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);
+    if (row.himawariSideOnly) factCodes.push(POLICY_FACT_CODES.himawariSideOnly);
     const threadId = invocation.context?.threadId ?? source.threadId ?? `run:${invocation.runId}`;
     const build = (codes: readonly PolicyFactCode[]): GovernedActionIntent => {
       const unrated: Omit<GovernedActionIntent, "finalRisk"> = {
@@ -257,9 +262,9 @@ export class OwnerScopeAuthorization {
     source: RunExecutionSource,
   ): Promise<readonly string[]> {
     const marks = this.#options.externalContent;
-    const eventIsExternal = source.sourceType === "external_event" && !source.ownerApprovedTask;
-    if (!marks) return eventIsExternal ? ["external_event"] : [];
-    if (eventIsExternal) await marks.mark(invocation.runId, "external_event");
+    const eventOrigin = externalEventOrigin(source);
+    if (!marks) return eventOrigin === null ? [] : [eventOrigin];
+    if (eventOrigin !== null) await marks.mark(invocation.runId, eventOrigin);
     const found: ExternalContentSource[] = [...(await marks.read(invocation.runId))];
     return [...new Set(found.map(({ origin }) => origin))].sort();
   }

@@ -85,7 +85,6 @@ export interface DeviceActionRegistration {
   readonly snapshotBefore: boolean;
   readonly reversible: boolean;
   readonly undo?: DeviceActionUndo;
-  readonly untrustedOriginAllowed: boolean;
   readonly usage?: string;
   readonly title: DeviceActionDetail;
   readonly confirmLabel: DeviceActionDetail;
@@ -464,7 +463,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: false,
     reversible: true,
-    untrustedOriginAllowed: true,
     title: label("设闹钟", "Set alarms", "アラームを設定"),
     confirmLabel: label("设闹钟", "Set alarm", "アラームを設定"),
     declineLabel: label("不设", "Don't set", "設定しない"),
@@ -500,7 +498,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: false,
     reversible: true,
     undo: undoCreatedItem("calendar.delete", "eventId"),
-    untrustedOriginAllowed: false,
     title: label("新建日程", "Create events", "予定を作成"),
     confirmLabel: label("加进日历", "Add", "追加"),
     declineLabel: label("不加", "Don't add", "追加しない"),
@@ -527,7 +524,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     undo: undoDeletedEvent,
-    untrustedOriginAllowed: false,
     title: label("删除日程", "Delete events", "予定を削除"),
     confirmLabel: label("删掉", "Delete", "削除"),
     declineLabel: label("不删", "Don't delete", "削除しない"),
@@ -563,7 +559,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     undo: undoRestoring("calendar.update", "eventId", CALENDAR_CHANGEABLE, true),
-    untrustedOriginAllowed: false,
     title: label("修改日程", "Change events", "予定を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
     declineLabel: label("不改", "Don't change", "変更しない"),
@@ -601,7 +596,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     snapshotBefore: true,
     reversible: true,
     undo: undoRestoring("contact.update", "contactId", CONTACT_FIELDS, false),
-    untrustedOriginAllowed: false,
     title: label("修改联系人", "Change contacts", "連絡先を変更"),
     confirmLabel: label("改掉", "Change", "変更"),
     declineLabel: label("不改", "Don't change", "変更しない"),
@@ -628,7 +622,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: false,
     reversible: true,
-    untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
     title: label(
       "在“提醒事项”里标成完成",
@@ -664,7 +657,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_item",
     snapshotBefore: false,
     reversible: true,
-    untrustedOriginAllowed: true,
     usage: TOOL_RESULT_DEVICE_ACTION_USAGE_DEVICE_REMINDER.text,
     title: label("在“提醒事项”里新建", "Create in Reminders", "「リマインダー」に作成"),
     confirmLabel: label("新建", "Create", "作成"),
@@ -698,7 +690,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "read_state",
     snapshotBefore: false,
     reversible: false,
-    untrustedOriginAllowed: false,
     title: label("控制家居", "Control home accessories", "家の機器を操作"),
     confirmLabel: label("照做", "Do it", "実行"),
     declineLabel: label("不做", "Don't", "しない"),
@@ -725,7 +716,6 @@ export const DEVICE_ACTION_REGISTRATIONS: readonly DeviceActionRegistration[] = 
     readBack: "none",
     snapshotBefore: false,
     reversible: true,
-    untrustedOriginAllowed: true,
     title: label("读取家居状态", "Read home state", "家の状態を読む"),
     confirmLabel: label("读取", "Read", "読み取る"),
     declineLabel: label("不读", "Don't read", "読まない"),
