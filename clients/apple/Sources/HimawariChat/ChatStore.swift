@@ -173,6 +173,10 @@ public final class ChatStore {
         streaming[threadId] != nil || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
     }
 
+    public func workingRun(in threadId: String) -> ThreadRunSummary? {
+        details[threadId]?.runs.last(where: \.isWorking)
+    }
+
     public func streamingText(in threadId: String) -> String? {
         guard let reply = streaming[threadId] else { return nil }
         let text = reply.text

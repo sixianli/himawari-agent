@@ -45,3 +45,5 @@
 "chat.talk" = "和她说话";
 "chat.hold.hint" = "松手发出 · 往上滑取消";
 "chat.hold.cancel" = "松手取消，不发";
+"chat.stop" = "停下";
+"chat.stop.failed" = "没停下来，再试一次";

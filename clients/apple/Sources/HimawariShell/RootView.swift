@@ -124,6 +124,7 @@ struct MainTabsView: View {
                 }
                 .id(openThread.nonce)
                 .transition(.move(edge: .trailing))
+                .environment(\.chatStopRun, stopRun)
                 #if os(iOS)
                 .environment(\.chatVoice, dictation)
                 #endif
@@ -216,6 +217,11 @@ struct MainTabsView: View {
                 memoryView
             }
         }
+    }
+
+    private var stopRun: @MainActor (String, ThreadRunSummary) async throws -> Void {
+        let stopper = ThreadRunStopper(api: model.api, confirmKey: model.confirmKey)
+        return { threadId, run in try await stopper.stop(threadId: threadId, run: run) }
     }
 
     private var herPage: some View {

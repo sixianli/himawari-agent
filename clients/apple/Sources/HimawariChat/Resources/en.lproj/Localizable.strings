@@ -45,3 +45,5 @@
 "chat.talk" = "Talk to her";
 "chat.hold.hint" = "Release to send · slide up to cancel";
 "chat.hold.cancel" = "Release to cancel";
+"chat.stop" = "Stop";
+"chat.stop.failed" = "Couldn’t stop it. Try again";

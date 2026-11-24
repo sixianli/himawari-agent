@@ -11,6 +11,7 @@ struct ChatInputBar: View {
     var hold: HoldPhase?
     var dictating = false
     var openAttach: (() -> Void)?
+    var stop: (() -> Void)?
     var toggleDictation: () -> Void = {}
     var holdChanged: (HoldEvent) -> Void = { _ in }
     let send: () -> Void
@@ -39,7 +40,10 @@ struct ChatInputBar: View {
                 circle(.microphone, label: L.text("chat.dictate"), fill: dictating ? Color.hmSpeak : Color.hmFill, foreground: dictating ? Color.hmOnText : Color.hmText, action: toggleDictation)
             }
             if hold == nil {
-                if canSend {
+                if let stop, !canSend {
+                    circle(.playerStop, label: L.text("chat.stop"), fill: Color.hmSpeak, foreground: Color.hmOnText, action: stop)
+                        .transition(.scale.combined(with: .opacity))
+                } else if canSend {
                     circle(.arrowUp, label: L.text("chat.send"), fill: Color.hmSpeak, foreground: Color.hmOnText, action: send)
                         .transition(.scale.combined(with: .opacity))
                 } else {
@@ -52,6 +56,7 @@ struct ChatInputBar: View {
         .padding(.vertical, Self.inset)
         .frame(minHeight: DesignTokens.Size.composerHeight)
         .animation(.easeInOut(duration: 0.15), value: canSend)
+        .animation(.easeInOut(duration: 0.15), value: stop == nil)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.composer, style: .continuous))
         .keepsKeyboardOnTap()
     }

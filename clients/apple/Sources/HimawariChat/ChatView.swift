@@ -16,6 +16,8 @@ public struct ChatView: View {
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
     @Environment(\.chatVoice) private var voice
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
+    @Environment(\.chatStopRun) private var stopRun
+    @State private var stopping = false
     @State private var attachments: [ChatAttachment] = []
     @State private var attachOpen = false
     @State private var attachProblem: String?
@@ -71,6 +73,7 @@ public struct ChatView: View {
                     hold: hold,
                     dictating: dictating,
                     openAttach: Self.attachAvailable ? { inputFocused = false; attachOpen = true } : nil,
+                    stop: stopAction,
                     toggleDictation: toggleDictation,
                     holdChanged: holdChanged,
                     send: submit
@@ -193,6 +196,23 @@ public struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollIndicators(.hidden)
+    }
+
+    private var stopAction: (() -> Void)? {
+        guard let stopRun, let threadId, !stopping, let run = store.workingRun(in: threadId) else { return nil }
+        return {
+            Haptics.shared.report(.stopPressed)
+            stopping = true
+            Task {
+                defer { stopping = false }
+                do {
+                    try await stopRun(threadId, run)
+                } catch {
+                    attachProblem = L.text("chat.stop.failed")
+                }
+                await store.load(threadId)
+            }
+        }
     }
 
     private func submit() {

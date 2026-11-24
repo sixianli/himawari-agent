@@ -45,3 +45,5 @@
 "chat.talk" = "話しかける";
 "chat.hold.hint" = "離すと送信 · 上にスライドで取り消し";
 "chat.hold.cancel" = "離すと取り消し、送りません";
+"chat.stop" = "止める";
+"chat.stop.failed" = "止められませんでした。もう一度お試しください";

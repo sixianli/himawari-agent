@@ -36,6 +36,7 @@ enum M {
     static var ruleNeedsReview: String { text("等你看", ja: "確認待ち", en: "Needs your look") }
 
     static var back: String { text("返回", ja: "戻る", en: "Back") }
+    static var stopRun: String { text("停下这次回答", ja: "この返事を止める", en: "Stop this answer") }
     static var collapse: String { text("收起", ja: "閉じる", en: "Close") }
     static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
     static func memorySummary(_ summary: MemorySummary) -> String {
