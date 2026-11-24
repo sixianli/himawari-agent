@@ -776,34 +776,51 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
-  it("[ADR-0286] pages search results by the page budget and cuts one overlong line", async () => {
+  it("[ADR-0286] pages search results by the page budget, never letting a page run past it", async () => {
     const resource = await fixture();
     try {
       resource.add([
         [TALK, 6, "owner", "private", "2026-11-23T01:00:00.000Z", "面试那天穿什么"],
         [TALK, 7, "agent", "private", "2026-11-23T01:00:05.000Z", `面试${"正装".repeat(400)}`],
+        [TALK, 8, "owner", "private", "2026-11-23T02:00:00.000Z", "面试后要写感谢信吗"],
+        [TALK, 9, "agent", "private", "2026-11-23T02:00:05.000Z", `面试${"感谢".repeat(20)}`],
+        [TALK, 10, "agent", "private", "2026-11-23T02:00:06.000Z", `面试${"邮件".repeat(20)}`],
+        [TALK, 11, "agent", "private", "2026-11-23T02:00:07.000Z", `面试${"当天".repeat(20)}`],
       ]);
       await resource.service.indexDue({ ...resource.scope, limit: 50 });
       const { call } = conversationTools(resource, 60);
-      const first = await call("conversation.search", { query: "面试" });
-      const firstTurns = first.output["turns"] as {
+      type Turn = {
         sequence: number;
+        truncated?: boolean;
         lines: { text: string; truncated?: boolean }[];
-      }[];
-      expect(firstTurns).toHaveLength(1);
-      expect(first.output["nextPage"]).toBe(2);
-      const second = await call("conversation.search", { query: "面试", page: 2 });
-      const secondTurns = second.output["turns"] as { sequence: number }[];
-      expect(secondTurns).toHaveLength(1);
-      expect(secondTurns[0]?.sequence).not.toBe(firstTurns[0]?.sequence);
-      const long = [first, second]
-        .flatMap(
-          ({ output }) => output["turns"] as { lines: { text: string; truncated?: boolean }[] }[],
-        )
+      };
+      const pages: Turn[][] = [];
+      for (let page = 1; ; page += 1) {
+        const result = await call("conversation.search", { query: "面试", page });
+        pages.push(result.output["turns"] as Turn[]);
+        if (result.output["nextPage"] === undefined) break;
+        expect(result.output["nextPage"]).toBe(page + 1);
+      }
+      expect(pages.length).toBeGreaterThan(1);
+      for (const turns of pages) {
+        expect(turns.length).toBeGreaterThan(0);
+        const size = turns
+          .flatMap(({ lines }) => lines)
+          .reduce((total, { text }) => total + [...text].length, 0);
+        expect(size).toBeLessThanOrEqual(60);
+      }
+      const turns = pages.flat();
+      expect(new Set(turns.map(({ sequence }) => sequence)).size).toBe(turns.length);
+      const long = turns
         .flatMap(({ lines }) => lines)
         .find(({ text }) => text.startsWith("面试正装"));
       expect(long?.truncated).toBe(true);
-      expect([...(long?.text ?? "")].length).toBe(61);
+      expect(long?.text.endsWith("…")).toBe(true);
+      const crowded = turns.find(({ lines }) =>
+        lines.some(({ text }) => text.startsWith("面试后要写感谢信吗")),
+      );
+      expect(crowded?.truncated).toBe(true);
+      expect(crowded?.lines.some(({ text }) => text.startsWith("面试当天"))).toBe(false);
       const beyond = await call("conversation.search", { query: "面试", page: 9 });
       expect(beyond.output["turns"]).toEqual([]);
     } finally {

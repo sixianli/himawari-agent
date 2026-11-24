@@ -97,6 +97,7 @@ export interface ProductionConversationToolsOptions {
 export interface ConversationToolResult {
   readonly output: Record<string, unknown>;
   readonly contentClassification: DataClassification;
+  readonly conversationIds: readonly string[];
 }
 
 function onlyKeys(args: RuntimeToolInvocation["arguments"], allowed: readonly string[]) {
@@ -114,7 +115,7 @@ function clipped(text: string, maximum: number): { text: string; truncated: bool
   const characters = [...text];
   return characters.length <= maximum
     ? { text, truncated: false }
-    : { text: `${characters.slice(0, maximum).join("")}…`, truncated: true };
+    : { text: `${characters.slice(0, Math.max(0, maximum - 1)).join("")}…`, truncated: true };
 }
 
 interface ShownLine {
@@ -149,6 +150,23 @@ export class ProductionConversationTools {
       text: shown.text,
       ...(shown.truncated ? { truncated: true } : {}),
     };
+  }
+
+  #fitted(
+    lines: readonly ConversationLine[],
+    lineLimit: number,
+    room: number,
+  ): { lines: ShownLine[]; size: number; truncated: boolean } {
+    const shown: ShownLine[] = [];
+    let size = 0;
+    for (const line of lines) {
+      const left = room - size;
+      if (left <= 0) return { lines: shown, size, truncated: true };
+      const next = this.#line(line, Math.min(lineLimit, left));
+      shown.push(next);
+      size += [...next.text].length;
+    }
+    return { lines: shown, size, truncated: false };
   }
 
   async #search(invocation: RuntimeToolInvocation): Promise<ConversationToolResult> {
@@ -195,41 +213,44 @@ export class ProductionConversationTools {
     });
     const budget = this.#options.pageCharacters;
     const lineLimit = Math.min(MAXIMUM_SEARCH_LINE_CHARACTERS, budget);
-    const pages: { turn: (typeof hits)[number]; lines: ShownLine[] }[][] = [];
+    const pages: { turn: (typeof hits)[number]; lines: ShownLine[]; truncated: boolean }[][] = [];
     let current: (typeof pages)[number] = [];
     let used = 0;
     for (const hit of hits) {
-      const lines = hit.lines.map((line) => this.#line(line, lineLimit));
-      const size = lines.reduce((total, line) => total + line.text.length, 0);
+      const { lines, size, truncated } = this.#fitted(hit.lines, lineLimit, budget);
       if (current.length > 0 && used + size > budget) {
         pages.push(current);
         current = [];
         used = 0;
       }
-      current.push({ turn: hit, lines });
+      current.push({ turn: hit, lines, truncated });
       used += size;
     }
     if (current.length > 0) pages.push(current);
     const shown = pages[page - 1] ?? [];
     const contentClassification = highestClassification(
       invocation.dataClassification,
-      shown.flatMap(({ turn }) => turn.lines.map((line) => line.dataClassification)),
+      shown.flatMap(({ turn, lines }) =>
+        turn.lines.slice(0, lines.length).map((line) => line.dataClassification),
+      ),
     );
     return {
       output: {
         query,
         window: scope.from || scope.to ? { from: scope.from, to: scope.to, timeZone } : null,
         page,
-        turns: shown.map(({ turn, lines }) => ({
+        turns: shown.map(({ turn, lines, truncated }) => ({
           conversationId: turn.turn.threadId,
           sequence: turn.turn.firstSequence,
           day: localDay(turn.turn.startedAt, timeZone),
           lines,
+          ...(truncated ? { truncated: true } : {}),
         })),
         ...(page < pages.length ? { nextPage: page + 1 } : {}),
         ...(shown.length === 0 ? { note: TOOL_RESULT_CONVERSATION_EMPTY.text } : {}),
       },
       contentClassification,
+      conversationIds: [...new Set(shown.map(({ turn }) => turn.turn.threadId))],
     };
   }
 
@@ -259,6 +280,7 @@ export class ProductionConversationTools {
       return {
         output: { conversationId, found: false, note: TOOL_RESULT_CONVERSATION_NOT_FOUND.text },
         contentClassification: invocation.dataClassification,
+        conversationIds: [],
       };
     return {
       output: {
@@ -272,6 +294,7 @@ export class ProductionConversationTools {
         invocation.dataClassification,
         opened.lines.map((line) => line.dataClassification),
       ),
+      conversationIds: opened.lines.length > 0 ? [conversationId] : [],
     };
   }
 }

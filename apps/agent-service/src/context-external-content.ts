@@ -22,6 +22,7 @@ const WRITE_ATTEMPTS = 5;
 const SOURCE_REF_LIMIT = 512;
 const ORIGIN_IN_REF_LIMIT = 256;
 export const RECALLED_EXTERNAL_RECORD_ORIGIN = "recalled_external_record";
+export const RECALLED_EXTERNAL_CONVERSATION_ORIGIN = "recalled_external_conversation";
 
 export class ExternalContentMarkNotWrittenError extends Error {
   constructor(cause: unknown) {

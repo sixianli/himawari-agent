@@ -51,7 +51,7 @@ export const TOOL_CONVERSATION_OPEN = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
   layer: "tools",
   output: "free-text",
-  text: "打开以前的一段对话，读某个位置前后的原话。conversationId 和 sequence 取自 conversation_search 的结果；direction 填 later 从 sequence 往后读，填 earlier 从 sequence 往前读，不填就往后读。一次读不完时结果里给出 earlierFrom 或 laterFrom，把它填进 sequence 接着读。",
+  text: "打开以前的一段对话，读某个位置前后的原话。conversationId 和 sequence 取自 conversation_search 的结果；direction 填 later 从 sequence 往后读，填 earlier 从 sequence 往前读，不填就往后读。结果里的 earlierFrom、laterFrom 是前面、后面还有原话时接着读的位置：往前接着读，把 earlierFrom 填进 sequence 并填 direction earlier；往后接着读，把 laterFrom 填进 sequence 并填 direction later。值为 null 说明那一头已经读完。",
 });
 
 export const TOOL_TASK_STATUS = fixedPrompt({

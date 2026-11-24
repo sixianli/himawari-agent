@@ -1531,6 +1531,7 @@ it("[ADR-0286] answers conversation search and open from the owner's past talk, 
       turns: [{ conversationId: "thread:old", sequence: 3, lines: [{ text: "下周三面试" }] }],
     },
     contentClassification: "private" as const,
+    conversationIds: ["thread:old"],
   }));
   const tools = new ProductionRuntimeTools({ ...f.options, conversations: { run } });
   const names = (
@@ -1567,6 +1568,48 @@ it("[ADR-0286] answers conversation search and open from the owner's past talk, 
   const invalid = await tools.execute({ ...call, toolCallId: "conversation-invalid" });
   expect(invalid).toMatchObject({ outcome: "failed", errorCode: "CONVERSATION_INPUT_INVALID" });
   expect(invalid.modelContent).toContain("改正后再查一次");
+});
+
+it("[ADR-0286] marks the run as having read outside content when a past conversation it shows had read some", async () => {
+  const f = fixture();
+  const shown: Record<string, string[]> = {
+    "conversation-plain": ["thread:plain"],
+    "conversation-outside": ["thread:plain", "thread:web"],
+    "conversation-empty": [],
+  };
+  const run = vi.fn(async (call: RuntimeToolInvocation) => ({
+    output: { turns: [] },
+    contentClassification: "private" as const,
+    conversationIds: shown[call.toolCallId] ?? [],
+  }));
+  const mark = vi.fn(async () => undefined);
+  const readThread = vi.fn(async (threadId: string) =>
+    threadId === "thread:web"
+      ? [{ origin: "web_fetch", firstRunId: "run:old", firstSeenAt: "2026-11-20T00:00:00.000Z" }]
+      : [],
+  );
+  const tools = new ProductionRuntimeTools({
+    ...f.options,
+    conversations: { run },
+    externalContent: { mark, read: async () => [], readThread } as unknown as NonNullable<
+      ProductionRuntimeToolsOptions["externalContent"]
+    >,
+  });
+  await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  const call = (toolCallId: string) =>
+    tools.execute({
+      ...invocation,
+      toolCallId,
+      capabilityRef: "conversation.search",
+      capabilityHandleRef: null,
+      arguments: { query: "面试" },
+    });
+  expect(await call("conversation-plain")).toMatchObject({ outcome: "succeeded" });
+  expect(await call("conversation-empty")).toMatchObject({ outcome: "succeeded" });
+  expect(mark).not.toHaveBeenCalled();
+  expect(await call("conversation-outside")).toMatchObject({ outcome: "succeeded" });
+  expect(mark).toHaveBeenCalledTimes(1);
+  expect(mark).toHaveBeenCalledWith(invocation.runId, "recalled_external_conversation");
 });
 
 it("[ADR-0286] does not offer conversation tools when the conversation index is not configured", async () => {
@@ -2046,7 +2089,11 @@ function everyToolOptions(f: ReturnType<typeof fixture>) {
     reminders: { run: vi.fn(async () => ({})) },
     ownerRules: { run: vi.fn(async () => ({})) },
     conversations: {
-      run: async () => ({ output: {}, contentClassification: "private" as const }),
+      run: async () => ({
+        output: {},
+        contentClassification: "private" as const,
+        conversationIds: [],
+      }),
     },
   } satisfies ProductionRuntimeToolsOptions;
 }
@@ -2286,6 +2333,6 @@ const EVERY_TOOL_NAMES = [
   "conversation_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "51775dc84527a60fa8dc90ee7b2d299fda392e790e2e27c04ca8e6434912db97";
+  "9cf30997960a627fb4de82d404182531b1feebc7bf56466b680256073a9f2e88";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
   "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";

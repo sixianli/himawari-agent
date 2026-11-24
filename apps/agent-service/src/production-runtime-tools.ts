@@ -71,6 +71,7 @@ import {
   type ContextExternalContent,
   ExternalContentMarkNotWrittenError,
   originsOf,
+  RECALLED_EXTERNAL_CONVERSATION_ORIGIN,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
@@ -361,7 +362,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
-  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -840,7 +841,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       gate,
       conversations
         ? async (call) => {
-            const { output, contentClassification } = await conversations.run(call);
+            const { output, contentClassification, conversationIds } =
+              await conversations.run(call);
+            const marker = this.#options.externalContent;
+            if (marker)
+              for (const conversationId of conversationIds)
+                if ((await marker.readThread(conversationId)).length > 0) {
+                  await marker.mark(call.runId, RECALLED_EXTERNAL_CONVERSATION_ORIGIN);
+                  break;
+                }
             return { value: output, contentClassification };
           }
         : undefined,
