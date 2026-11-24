@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0184-back-off-ignored-proactive-pushes.md, docs/adr/0255-model-scores-urgency-of-home-items.md, docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md, docs/adr/0273-a-decision-model-holds-push-notifications-while-the-owner-is-busy.md, docs/adr/0274-new-things-go-through-one-think-entrance.md, docs/adr/0277-the-system-deletes-expired-think-threads.md, docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md"
 superseded_by: ""
-amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0244-hard-rules-step4-unified-push-gate.md"
+amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0244-hard-rules-step4-unified-push-gate.md, docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md"
 date: "2026-11-24"
 ---
 
@@ -58,7 +58,7 @@ Andy 2026-11-24（JST）在设计线程里定了方向，原话包括：“我�
 
 - 好处：Andy 只看一个地方；判断都由看得到全部上下文的主模型做；几件事并行，回复不被后台挤住；每次开口或不开口都有记录。
 - 代价：主对话上下文更长，靠子线程分走重活、外来事件只放简要、压缩和清理控制；子线程同时跑得越多，运行位越不够，要在生产机实测后调大；删旧对话后，上线前的记忆没有出处，记忆线程“翻原话”查不到上线前的内容。
-- 被取代：ADR 0184、0255、0264、0273、0274、0277、0278。ADR 0230 的感知分来源检查和条数上限、ADR 0244 的推送种类清单按本决定修改，其余不变。
+- 被取代：ADR 0184、0255、0264、0273、0274、0277、0278。ADR 0230 的感知分来源检查和条数上限、ADR 0244 的推送种类清单、ADR 0257 决定 3 里“后台发起的一轮读过外来内容后不做”那一行（改成问）按本决定修改，其余不变。
 - 后续：分五步上线，每步一个 PR，顺序和验收见[规格的分步上线](../execution/specs/2026-11-24-main-thread-subthreads-inbox-design.md#steps)；编码由单独的线程做；App 界面交苹果端设计线程。
 
 <a id="links"></a>
