@@ -94,6 +94,9 @@
   "upload": 1.6,
   "user": 1.6,
   "users": 1.6,
+  "voice-wave": {
+    "custom": "voice-wave.svg"
+  },
   "walk": 1.6,
   "world": 1.6,
   "world-search": 1.6,

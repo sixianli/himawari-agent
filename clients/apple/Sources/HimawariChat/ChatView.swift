@@ -14,6 +14,16 @@ public struct ChatView: View {
     @State private var bannerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
+    @Environment(\.chatVoice) private var voice
+    @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
+    @State private var attachments: [ChatAttachment] = []
+    @State private var attachOpen = false
+    @State private var attachProblem: String?
+    @State private var sendRequestId = OutgoingMessage.newId()
+    @State private var hold: HoldPhase?
+    @State private var heard = ""
+    @State private var dictating = false
+    @State private var dictationPrefix = ""
 
     public init(store: ChatStore, threadId: String?, draft: String = "", openHerPage: (() -> Void)? = nil, close: @escaping () -> Void) {
         self.store = store
@@ -46,7 +56,25 @@ public struct ChatView: View {
                         .transition(.opacity)
                 }
                 Spacer(minLength: 0)
-                ChatInputBar(text: $draft, focused: $inputFocused, sending: creating, send: submit)
+                #if os(iOS)
+                if !attachments.isEmpty {
+                    AttachmentChips(attachments: attachments) { id in attachments.removeAll { $0.id == id } }
+                        .padding(.bottom, DesignTokens.Chat.listMarkerGap)
+                }
+                #endif
+                ChatInputBar(
+                    text: $draft,
+                    focused: $inputFocused,
+                    sending: creating,
+                    hasAttachments: !attachments.isEmpty,
+                    voice: voice != nil,
+                    hold: hold,
+                    dictating: dictating,
+                    openAttach: Self.attachAvailable ? { inputFocused = false; attachOpen = true } : nil,
+                    toggleDictation: toggleDictation,
+                    holdChanged: holdChanged,
+                    send: submit
+                )
                     .padding(.horizontal, DesignTokens.Size.composerInsetX)
                     .padding(.bottom, DesignTokens.Size.composerBottom)
                     .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
@@ -65,7 +93,37 @@ public struct ChatView: View {
         .alert(L.text("chat.createFailed"), isPresented: $createFailed) {
             Button(L.text("common.ok"), role: .cancel) {}
         }
+        .alert(attachProblem ?? "", isPresented: Binding(get: { attachProblem != nil }, set: { if !$0 { attachProblem = nil } })) {
+            Button(L.text("common.ok"), role: .cancel) {}
+        }
+        #if os(iOS)
+        .sheet(isPresented: $attachOpen) {
+            AttachSheet(room: max(0, Self.attachRoom - attachments.count)) { picked in
+                attachments += picked
+                attachOpen = false
+            } failed: { failure in
+                attachProblem = failure == .noLocation ? L.text("attach.problem.location") : L.text("attach.problem.unreadable")
+            } close: {
+                attachOpen = false
+            }
+            .presentationDetents([.medium])
+            .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+        }
+        #endif
+        .onDisappear {
+            Task { await voice?.cancel() }
+        }
+        .onAppear {
+            if opensAttachSheet { attachOpen = true }
+        }
     }
+
+    #if os(iOS)
+    private static let attachAvailable = true
+    #else
+    private static let attachAvailable = false
+    #endif
+    private static let attachRoom = 10
 
     private var header: some View {
         ZStack(alignment: .top) {
@@ -138,25 +196,119 @@ public struct ChatView: View {
     }
 
     private func submit() {
-        let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !creating else { return }
+        if dictating { stopDictation() }
+        deliver(draft, clearDraft: true)
+    }
+
+    private func deliver(_ text: String, clearDraft: Bool) {
+        let carried = attachments
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty, !creating else { return }
         Haptics.shared.report(.messageSent)
-        if let threadId {
-            draft = ""
+        if let threadId, carried.isEmpty {
+            if clearDraft { draft = "" }
             Task { await store.send(text, in: threadId) }
             return
         }
         creating = true
         Task {
             defer { creating = false }
-            do {
-                let created = try await store.newThread(requestId: createRequestId)
-                threadId = created
-                draft = ""
-                await store.send(text, in: created)
-            } catch {
-                createFailed = true
+            let target: String
+            if let threadId {
+                target = threadId
+            } else {
+                do {
+                    target = try await store.newThread(requestId: createRequestId)
+                    threadId = target
+                } catch {
+                    createFailed = true
+                    return
+                }
             }
+            do {
+                try await store.send(text, attachments: carried, requestId: sendRequestId, in: target)
+                attachments.removeAll { item in carried.contains { $0.id == item.id } }
+                sendRequestId = OutgoingMessage.newId()
+                if clearDraft { draft = "" }
+            } catch let problem as ChatAttachmentProblem {
+                attachProblem = Self.describe(problem)
+            } catch {
+                attachProblem = L.text("attach.problem.upload")
+            }
+        }
+    }
+
+    static func describe(_ problem: ChatAttachmentProblem) -> String {
+        switch problem {
+        case .serverOutdated: L.text("attach.problem.outdated")
+        case let .tooMany(limit): L.format("attach.problem.tooMany", limit)
+        case .tooLarge: L.text("attach.problem.tooLarge")
+        case .uploadFailed: L.text("attach.problem.upload")
+        }
+    }
+
+    private func holdChanged(_ event: HoldEvent) {
+        guard let voice else { return }
+        switch event {
+        case .began:
+            guard hold == nil else { return }
+            Haptics.shared.report(.holdToTalkStarted)
+            heard = ""
+            hold = .listening("")
+            Task {
+                do {
+                    try await voice.start { text in
+                        heard = text
+                        if case .listening = hold { hold = .listening(text) }
+                    }
+                } catch {
+                    hold = nil
+                }
+            }
+        case let .moved(outside):
+            guard hold != nil else { return }
+            hold = outside ? .cancelling : .listening(heard)
+        case .ended:
+            guard let phase = hold else { return }
+            hold = nil
+            Haptics.shared.report(.holdToTalkReleased)
+            Task {
+                if phase == .cancelling {
+                    await voice.cancel()
+                    return
+                }
+                let said = await voice.finish().trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !said.isEmpty else { return }
+                deliver(said, clearDraft: false)
+            }
+        }
+    }
+
+    private func toggleDictation() {
+        guard let voice else { return }
+        if dictating {
+            stopDictation()
+            return
+        }
+        dictating = true
+        dictationPrefix = draft.isEmpty ? "" : draft + " "
+        Task {
+            do {
+                try await voice.start { text in
+                    if dictating { draft = dictationPrefix + text }
+                }
+            } catch {
+                dictating = false
+            }
+        }
+    }
+
+    private func stopDictation() {
+        guard let voice, dictating else { return }
+        dictating = false
+        let prefix = dictationPrefix
+        Task {
+            let said = await voice.finish()
+            if !said.isEmpty { draft = prefix + said }
         }
     }
 }
@@ -185,16 +337,29 @@ struct OwnerBubble: View {
     let text: String
 
     var body: some View {
+        let shown = MessageAttachments.shown(text)
         HStack {
             Spacer(minLength: 0)
-            Text(text)
-                .hmType(DesignTokens.TypeScale.bubble)
-                .foregroundStyle(Color.hmText)
-                .padding(.vertical, 14)
-                .padding(.horizontal, 18)
-                .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous))
-                .frame(maxWidth: DesignTokens.Size.bubbleMaxWidth, alignment: .trailing)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: DesignTokens.Chat.listGap) {
+                if !shown.text.isEmpty {
+                    Text(shown.text)
+                        .hmType(DesignTokens.TypeScale.bubble)
+                        .textSelection(.enabled)
+                }
+                ForEach(Array(shown.attachments.enumerated()), id: \.offset) { _, attachment in
+                    Label {
+                        Text(attachment.name).hmType(DesignTokens.TypeScale.secondary)
+                    } icon: {
+                        Icon(attachment.kind == .image ? .photo : .fileText, size: DesignTokens.Chat.attachRowIcon)
+                    }
+                    .foregroundStyle(Color.hmMuted)
+                }
+            }
+            .foregroundStyle(Color.hmText)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.bubble, style: .continuous))
+            .frame(maxWidth: DesignTokens.Size.bubbleMaxWidth, alignment: .trailing)
         }
     }
 }
@@ -285,47 +450,5 @@ struct QueuedMessageRow: View {
             .padding(.trailing, 6)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-}
-
-struct ChatInputBar: View {
-    @Binding var text: String
-    var focused: FocusState<Bool>.Binding
-    let sending: Bool
-    let send: () -> Void
-
-    private var canSend: Bool {
-        !sending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: DesignTokens.Size.composerGap) {
-            TextField(L.text("chat.input.placeholder"), text: $text, axis: .vertical)
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .lineLimit(1...6)
-                .focused(focused)
-                .submitLabel(.send)
-                .onSubmit(send)
-                .padding(.horizontal, 6 + DesignTokens.Size.composerPadding)
-                .padding(.vertical, (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2 + 12)
-                .frame(minHeight: DesignTokens.Size.composerHeight)
-            if canSend {
-                Button(action: send) {
-                    Icon(.arrowUp, size: DesignTokens.IconSize.glassButton)
-                        .foregroundStyle(Color.hmOnText)
-                        .frame(width: DesignTokens.Size.composerButton, height: DesignTokens.Size.composerButton)
-                        .background(Color.hmSpeak, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding((DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2)
-                .padding(.trailing, DesignTokens.Size.composerPadding - (DesignTokens.Size.composerHeight - DesignTokens.Size.composerButton) / 2)
-                .accessibilityLabel(Text(L.text("chat.send")))
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: canSend)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.composer, style: .continuous))
-        .keepsKeyboardOnTap()
     }
 }

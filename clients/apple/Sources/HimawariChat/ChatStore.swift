@@ -50,6 +50,7 @@ public final class ChatStore {
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
+    @ObservationIgnored private let images: ImageFitting?
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
     @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
@@ -60,9 +61,11 @@ public final class ChatStore {
         heartbeatSeconds: @escaping @Sendable () -> TimeInterval,
         answerLocale: AnswerLocale = .matching(preferredLanguages: Locale.preferredLanguages),
         onSessionInvalid: @escaping @MainActor () -> Void,
-        onDeviceActions: @escaping @MainActor () -> Void = {}
+        onDeviceActions: @escaping @MainActor () -> Void = {},
+        images: ImageFitting? = nil
     ) {
         self.api = api
+        self.images = images
         self.heartbeatSeconds = heartbeatSeconds
         self.answerLocale = answerLocale
         outbox = Outbox(store: store)
@@ -285,6 +288,20 @@ public final class ChatStore {
         let revision = details[threadId]?.thread.revision ?? threads.first(where: { $0.threadId == threadId })?.revision ?? createdRevisions[threadId] ?? 1
         await outbox.enqueue(OutgoingMessage(threadId: threadId, expectedRevision: revision, text: trimmed, createdAt: Date()))
         await flush()
+    }
+
+    public func send(_ text: String, attachments: [ChatAttachment], requestId: String, in threadId: String) async throws {
+        guard !attachments.isEmpty else {
+            await send(text, in: threadId)
+            return
+        }
+        let composed = try await api.compose(
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            attachments: attachments,
+            requestId: requestId,
+            images: images
+        )
+        await send(composed, in: threadId)
     }
 
     public func retry(_ messageId: String) async {

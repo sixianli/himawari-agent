@@ -87,6 +87,9 @@ struct MainTabsView: View {
     @State private var settingsOpen: Bool
     @State private var listening: ListeningController?
     @State private var listenOpen = false
+    #if os(iOS)
+    @State private var dictation = ChatDictation()
+    #endif
     @Environment(\.tabsCycleEvery) private var cycleEvery
     private let memoryOverride: AnyView?
     private let settingsOverride: AnyView?
@@ -119,6 +122,9 @@ struct MainTabsView: View {
                 }
                 .id(openThread.nonce)
                 .transition(.move(edge: .trailing))
+                #if os(iOS)
+                .environment(\.chatVoice, dictation)
+                #endif
             } else {
                 content
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }

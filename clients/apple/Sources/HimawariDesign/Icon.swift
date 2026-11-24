@@ -92,6 +92,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case trash
     case user
     case users
+    case voiceWave = "voice-wave"
     case walk
     case world
     case worldSearch = "world-search"
