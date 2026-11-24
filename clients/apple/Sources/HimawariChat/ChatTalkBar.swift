@@ -80,7 +80,7 @@ struct TalkLevels: View {
                     )
             }
         }
-        .frame(height: DesignTokens.Chat.talkBarMaxHeight)
+        .frame(height: DesignTokens.Chat.talkBarBox)
         .accessibilityHidden(true)
         .animation(.easeOut(duration: 0.1), value: levels)
     }

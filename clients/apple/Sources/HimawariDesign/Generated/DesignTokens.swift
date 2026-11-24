@@ -309,7 +309,7 @@ public enum DesignTokens {
         public static let attachTileHeight: CGFloat = 92
         public static let attachTileIcon: CGFloat = 26
         public static let avatar: CGFloat = 48
-        public static let avatarGap: CGFloat = 4
+        public static let avatarGap: CGFloat = 3
         public static let avatarGlow: CGFloat = 88
         public static let avatarLabelHeight: CGFloat = 23
         public static let avatarMark: CGFloat = 38
@@ -323,9 +323,10 @@ public enum DesignTokens {
         public static let quoteGap: CGFloat = 10
         public static let tableCellPaddingVertical: CGFloat = 10
         public static let tableCellPaddingHorizontal: CGFloat = 14
+        public static let talkBarBox: CGFloat = 24
         public static let talkBarGap: CGFloat = 3
-        public static let talkBarMaxHeight: CGFloat = 24
-        public static let talkBarMinHeight: CGFloat = 4
+        public static let talkBarMaxHeight: CGFloat = 22
+        public static let talkBarMinHeight: CGFloat = 5
         public static let talkBarWidth: CGFloat = 3
         public static let talkBars: CGFloat = 13
         public static let talkHeardOpacity: CGFloat = 0.55
