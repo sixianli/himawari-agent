@@ -25,7 +25,7 @@
   },
   "overrides": [
     {
-      "includes": ["docs/assets/control-center/**/*.html"],
+      "includes": ["docs/assets/control-center/**/*.html", "docs/assets/apple-clients/**/*.html"],
       "linter": {
         "enabled": false
       }

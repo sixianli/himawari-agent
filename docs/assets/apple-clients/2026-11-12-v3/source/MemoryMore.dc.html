@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>iPhone：记忆和规则往里走</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&amp;family=Cormorant+Garamond:ital,wght@1,600&amp;display=swap" rel="stylesheet">
+<style>
+@keyframes sway{0%,100%{transform:rotate(-2.2deg)}50%{transform:rotate(2.2deg)}}
+.sway{animation:sway 9s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.sway{animation:none}}
+body{margin:0;font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans GB",system-ui,sans-serif}
+a{color:#9a6200}a:hover{color:#6f4700}
+.hm{--bg:#fcfcfb;--surface:#ffffff;--text:#252921;--muted:#6b7164;--fill:rgba(37,41,33,0.06);--fill2:rgba(37,41,33,0.11);--sun:#9a6200;--sunbright:#c9870a;--danger:#a73c30;--success:#42682a;--glass:rgba(255,255,255,0.74);--glassline:rgba(255,255,255,0.8);--lift:0 2px 10px rgba(0,0,0,0.07);--liftbig:0 8px 28px rgba(0,0,0,0.13);--sep:rgba(37,41,33,0.09);--glow:rgba(232,176,74,0.34);--ontext:#fcfcfb;--scrim:rgba(0,0,0,0.28);--track:#c9cbc2;--speak:#252921;--tile:#f8ebcb;--glyph:#8a5a00;--successring:rgba(66,104,42,0.16)}
+.hm.dk{--bg:#1e1e1e;--surface:#2a2a2a;--text:#e4e4e1;--muted:#a0a09a;--fill:rgba(228,228,225,0.08);--fill2:rgba(228,228,225,0.15);--sun:#f2bb4f;--sunbright:#efb23c;--danger:#efa095;--success:#accd88;--glass:rgba(56,56,56,0.74);--glassline:rgba(255,255,255,0.1);--lift:0 2px 10px rgba(0,0,0,0.35);--liftbig:0 8px 28px rgba(0,0,0,0.5);--sep:rgba(228,228,225,0.1);--glow:rgba(239,178,60,0.18);--ontext:#1e1e1e;--scrim:rgba(0,0,0,0.5);--track:#55554f;--speak:#0c0c0c;--tile:#4b3f25;--glyph:#f2bb4f;--successring:rgba(172,205,136,0.2)}
+.tile{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--tile);color:var(--glyph)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);box-shadow:var(--liftbig),inset 0 0 0 1px var(--glassline)}
+.card{background:var(--surface);border-radius:28px;box-shadow:var(--lift)}
+.serif{font-family:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC",serif}
+.round{font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC",system-ui,sans-serif}
+.board{box-sizing:border-box;padding:28px 32px 32px;background:#eeeee8;display:flex;gap:36px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:390px}
+.cap{height:40px;display:flex;flex-direction:column;justify-content:flex-end;font-size:15px;line-height:1.3;color:#4d5247}
+.cap b{font-weight:600;color:#252921}
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;border-radius:44px;background:var(--bg);color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,0.12)}
+.page{position:absolute;left:0;top:0;width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column}
+.gbtn{position:absolute;top:54px;width:48px;height:48px;border-radius:24px;color:var(--text);display:flex;align-items:center;justify-content:center}
+.ttl{position:absolute;top:54px;left:76px;width:238px;height:48px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.h1{margin:0;padding:0 4px;font-size:34px;font-weight:700;line-height:44px}
+.lbl{font-size:15px;color:var(--muted);padding:0 4px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.rows{padding:0 20px;display:flex;flex-direction:column}
+.r{min-height:60px;box-sizing:border-box;padding:11px 0;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--sep)}
+.r.last{border-bottom:0}
+.r2{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t17{font-size:17px;line-height:1.35}
+.t15{font-size:15px;line-height:1.45}
+.t13{font-size:13px;line-height:1.4;color:var(--muted)}
+.mu{color:var(--muted)}
+.ok{color:var(--success)}
+.bad{color:var(--danger)}
+.sun{color:var(--sun)}
+.pill{height:46px;padding:0 20px;border-radius:23px;background:var(--fill);color:var(--text);font-size:16px;display:flex;align-items:center;justify-content:center}
+.pill.pri{background:var(--text);color:var(--ontext);font-weight:600}
+.pill.big{height:56px;border-radius:28px;font-size:17px}
+.link{font-size:17px;color:var(--sun);min-height:44px;display:flex;align-items:center}
+.bubble{align-self:flex-end;max-width:290px;background:var(--fill);border-radius:26px;padding:14px 18px;font-size:17px;line-height:1.45}
+.sw{display:block;width:52px;height:32px;border-radius:16px;position:relative;flex-shrink:0}
+.sw i{display:block;position:absolute;top:2px;width:28px;height:28px;border-radius:14px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+.seg{display:flex;background:var(--fill);border-radius:22px;padding:3px;gap:3px}
+.seg div{flex:1;height:38px;border-radius:19px;font-size:15px;display:flex;align-items:center;justify-content:center}
+.seg .on{background:var(--surface);box-shadow:var(--lift);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--fill)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--muted)}
+@keyframes shim{from{background-position:130% 0}to{background-position:-110% 0}}
+.shim{background:linear-gradient(90deg,var(--muted) 0%,var(--muted) 38%,var(--text) 50%,var(--muted) 62%,var(--muted) 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite}
+.dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--muted)}
+</style>
+</helmet>
+<div class="board" style="width: 2158px; height: 958px">
+<div class="col">
+<div class="cap"><div><b>改一条记忆</b>　存的时候出面容</div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 16px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">改一改</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"><span class="sun" style="font-size: 17px; font-weight: 600">存</span></div></div><div class="card" style="padding: 18px 20px; min-height: 150px; box-sizing: border-box"><div class="serif" style="font-size: 22px; font-weight: 600; line-height: 1.55">从家走到车站约 18 分钟<span style="display: inline-block; width: 2px; height: 24px; background: var(--sunbright); margin-left: 3px; vertical-align: -4px"></span></div></div><div class="t13" style="padding: 0 6px">改完后，“怎么知道的”会记成你亲手改的</div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>点“怎么知道的”</b>　跳到那句话，标出来</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 176px 20px 40px; gap: 18px"><div class="bubble" style="box-shadow: 0 0 0 3px var(--sunbright)">我从家走到车站大概 18 分钟</div><div class="serif" style="font-size: 18px; font-weight: 400; line-height: 1.75">记下了。以后算出门时间按 18 分钟算。</div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">上班路线</div><div style="position: absolute; left: 0; top: 112px; width: 390px; display: flex; justify-content: center"><div class="glass" style="border-radius: 20px; padding: 9px 16px; font-size: 14px">这条记忆是从这里来的 · 10 月 3 日</div></div><div style="position: absolute; left: 0; bottom: 0; width: 390px; height: 130px; background: linear-gradient(to top, var(--bg) 40%, transparent); pointer-events: none"></div><div class="glass" style="position: absolute; left: 12px; bottom: 30px; width: 366px; height: 62px; box-sizing: border-box; border-radius: 31px; padding: 0 8px; display: flex; align-items: center; gap: 6px"><div style="width: 46px; height: 46px; border-radius: 23px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex-shrink: 0"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M12 5l0 14" /> <path d="M5 12l14 0" /></svg></div><div class="mu" style="flex: 1; font-size: 17px; padding: 0 6px">打字，或按住说话</div><div style="width: 46px; height: 46px; border-radius: 23px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex-shrink: 0"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M9 5a3 3 0 0 1 3 -3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3a3 3 0 0 1 -3 -3l0 -5" /> <path d="M5 10a7 7 0 0 0 14 0" /> <path d="M8 21l8 0" /> <path d="M12 17l0 4" /></svg></div><div style="width: 46px; height: 46px; border-radius: 23px; background: var(--speak); display: flex; align-items: center; justify-content: center; flex-shrink: 0"><img alt="" src="/_blob/f5bf5edf0931bb1e5bc74d786052b3db" style="width: 34px; height: 34px"></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>一条规则</b></div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 24px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">规则</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"></div></div><div class="serif" style="font-size: 26px; font-weight: 600; line-height: 1.4; padding: 0 4px">给没发过邮件的人发信，先问我</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">你的原话</div><div class="t13">“第一次给谁发邮件都先让我看一眼”· 9 月 12 日</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">上次用上</div><div class="t13">今天 10:02，给田中的邮件</div></div></div><div class="r last"><div class="r2"><div class="t17">改过 1 次</div><div class="t13">10 月 20 日</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div><div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto"><div class="link bad" style="color: var(--danger); padding: 0 6px">停用</div><div class="pill" style="height: 48px; border-radius: 24px; padding: 0 28px; font-size: 17px">改一改</div></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>改规则</b>　用说的，它写好给你看，同意时出面容</div></div>
+<div class="hm ph">
+<div style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: var(--scrim)"></div><div style="position: absolute; left: 0; top: 58px; width: 390px; height: 786px; box-sizing: border-box; background: var(--bg); border-radius: 38px 38px 0 0; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 20px"><div style="display: flex; align-items: center; justify-content: space-between; flex-shrink: 0"><div style="width: 48px; height: 48px; border-radius: 24px; background: var(--fill); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M18 6l-12 12" /> <path d="M6 6l12 12" /></svg></div><div style="font-size: 18px; font-weight: 700">改规则</div><div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: flex-end"></div></div><div class="bubble">改成只有带附件的才问</div><div style="display: flex; flex-direction: column; gap: 10px"><div class="serif" style="font-size: 18px; font-weight: 500; line-height: 1.7; padding: 0 4px">改成这样，对吗？</div><div class="card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px"><div style="display: flex; flex-direction: column; gap: 3px"><div class="t13">现在</div><div class="t17 mu" style="text-decoration: line-through">给没发过邮件的人发信，先问我</div></div><div style="display: flex; flex-direction: column; gap: 3px"><div class="t13">改成</div><div class="t17" style="font-weight: 600">给没发过邮件的人发带附件的信，先问我</div></div></div></div><div style="margin-top: auto"><div style="display: flex; gap: 8px"><div class="pill big" style="flex: 1">再改改</div><div class="pill big pri" style="flex: 1">就这样</div></div></div></div>
+</div>
+</div>
+<div class="col">
+<div class="cap"><div><b>整理记忆</b>　从记忆页右上角进</div></div>
+<div class="hm ph">
+<div class="page" style="padding: 122px 16px 40px; gap: 22px"><div class="card rows"><div class="r"><div class="r2"><div class="t17">每天整理</div></div><span class="sw" style="background: var(--success)"><i style="left: 22px"></i></span></div><div class="r last"><div class="r2"><div class="t17">几点</div></div><div class="t17 mu" style="flex-shrink: 0">3:00</div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div><div class="grp"><div class="lbl">昨晚</div><div class="card rows"><div class="r"><div class="r2"><div class="t17">合并了 3 条</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r"><div class="r2"><div class="t17">归档了 2 条</div><div class="t13">半年没用上</div></div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div><div class="r last"><div class="r2"><div class="t17">发现 1 处说法不一样</div></div><div class="t17 bad" style="flex-shrink: 0">等你看</div><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--muted)"><path d="M9 6l6 6l-6 6" /></svg></div></div></div></div><div style="position: absolute; left: 0; top: 0; width: 390px; height: 134px; background: linear-gradient(to bottom, var(--bg) 102px, transparent); pointer-events: none"></div><div role="img" aria-label="返回" class="glass gbtn" style="left: 16px"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0"><path d="M15 6l-6 6l6 6" /></svg></div><div class="ttl">整理记忆</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2158,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

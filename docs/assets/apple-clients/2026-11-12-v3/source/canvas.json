@@ -1,0 +1,273 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-12T01:30:00Z"
+  },
+  "title": "Himawari 苹果设备端原型",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone：可以点着用",
+      "is_interactive": true,
+      "radius": 44
+    },
+    "Pairing.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone：第一次配对",
+      "radius": 44
+    },
+    "LockScreen.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "iPhone 锁屏：和首页同一批事，每条通知自带按钮",
+      "radius": 44
+    },
+    "Watch.dc.html": {
+      "x": 0,
+      "y": 964,
+      "w": 860,
+      "h": 420,
+      "title": "Apple Watch：一次只给最要紧的一件"
+    },
+    "Mac.dc.html": {
+      "x": 940,
+      "y": 964,
+      "w": 960,
+      "h": 600,
+      "title": "（旧版，已被最上面“每一端做什么”取代）Mac 菜单栏"
+    },
+    "PairingFlow.dc.html": {
+      "x": 0,
+      "y": 1700,
+      "w": 2158,
+      "h": 958,
+      "title": "iPhone：配对的后几步和出错时"
+    },
+    "ChatStates.dc.html": {
+      "x": 0,
+      "y": 2778,
+      "w": 3010,
+      "h": 958,
+      "title": "iPhone：对话的各种状态"
+    },
+    "TodayMore.dc.html": {
+      "x": 0,
+      "y": 3856,
+      "w": 1732,
+      "h": 958,
+      "title": "iPhone：审批的全部和详情、提醒记录（“它的提议”列表在上面那块同名画板里）"
+    },
+    "MemoryMore.dc.html": {
+      "x": 0,
+      "y": 4934,
+      "w": 2158,
+      "h": 958,
+      "title": "iPhone：记忆和规则往里走"
+    },
+    "SettingsMore.dc.html": {
+      "x": 0,
+      "y": 6012,
+      "w": 3862,
+      "h": 958,
+      "title": "iPhone：设置里的各页"
+    },
+    "HimawariSelf.dc.html": {
+      "x": 0,
+      "y": 7090,
+      "w": 2158,
+      "h": 958,
+      "title": "iPhone：设置里新增的一组“Himawari 自己”"
+    },
+    "IconChoices.dc.html": {
+      "x": 2000,
+      "y": 0,
+      "w": 1732,
+      "h": 958,
+      "title": "列表图标：四套线条画法，选一套"
+    },
+    "LoopSteps.dc.html": {
+      "x": 3852,
+      "y": 0,
+      "w": 3436,
+      "h": 958,
+      "title": "iPhone：Himawari 正在做什么（过程这一行）"
+    },
+    "TodayHero.dc.html": {
+      "x": 0,
+      "y": -1078,
+      "w": 2158,
+      "h": 958,
+      "title": "已选定丁（要紧的两三行）。这里是当时的四个方向"
+    },
+    "TabIcons.dc.html": {
+      "x": 2278,
+      "y": -1078,
+      "w": 2754,
+      "h": 958,
+      "title": "已选定：“今天”用 A（日历带今天几号），“新对话”用 2（对话气泡加号）。这里是当时的五个候选"
+    },
+    "StepIcons.dc.html": {
+      "x": 0,
+      "y": -2156,
+      "w": 1604,
+      "h": 958,
+      "title": "过程行七个图标：已选待办 4、别的工具 2、身体数据 2，没成/停了/做完保留现在的"
+    },
+    "TodayBrand.dc.html": {
+      "x": 0,
+      "y": -3234,
+      "w": 1772,
+      "h": 958,
+      "title": "“今天”页顶上：himawari 字样已选 2（衬线斜体）；向日葵改看上面一排"
+    },
+    "TodaySun.dc.html": {
+      "x": 0,
+      "y": -4312,
+      "w": 2584,
+      "h": 958,
+      "title": "首页重想：首屏只放 Himawari 主动找你的事，按要紧程度排"
+    },
+    "FuseIcon.dc.html": {
+      "x": 2704,
+      "y": -4312,
+      "w": 1704,
+      "h": 958,
+      "title": "“在设备上做”的图标：选定 2（四根手指都看得见），已做进过程行"
+    },
+    "Senses.dc.html": {
+      "x": 0,
+      "y": 8168,
+      "w": 2584,
+      "h": 958,
+      "title": "iPhone：让 Himawari 感知（位置、日程、健康、通讯录、相册、剪贴板、分享、Safari）"
+    },
+    "Roles.dc.html": {
+      "x": 0,
+      "y": -6888,
+      "w": 2416,
+      "h": 2456,
+      "title": "每一端做什么：iPhone、手表、Mac、麦克风各自最擅长的事，和它们怎么接力"
+    },
+    "Proposals.dc.html": {
+      "x": 2536,
+      "y": -6888,
+      "w": 3892,
+      "h": 958,
+      "title": "它的提议：它主动提的下一步，在今天页、对话、通知、手表、Mac 上是同一样东西（方案 11 月 12 日已定）"
+    },
+    "Gaps.dc.html": {
+      "x": 0,
+      "y": 9246,
+      "w": 3862,
+      "h": 958,
+      "title": "补画的几处：Safari 里交给它、本事的停用和重新启用、随身麦克风、让它看屏幕"
+    },
+    "Listen.dc.html": {
+      "x": 0,
+      "y": 10324,
+      "w": 2584,
+      "h": 958,
+      "title": "收听和随口叫它（第 8 批），通知的安静时段（第 4 批）"
+    },
+    "Small.dc.html": {
+      "x": 0,
+      "y": 11402,
+      "w": 3436,
+      "h": 958,
+      "title": "补画的小处：隐私两行、设备改名、码失效、连服务器前确认、规则提议、用量的总量、来源原文、停了"
+    },
+    "Tell.dc.html": {
+      "x": 0,
+      "y": 12480,
+      "w": 2614,
+      "h": 958,
+      "title": "告诉你一声：它想过以后只说一句话，不用你点头；带时刻的在“之后要告诉你的”里能看到、能取消"
+    },
+    "Dark.dc.html": {
+      "x": 0,
+      "y": 13558,
+      "w": 2614,
+      "h": 958,
+      "title": "深色版：今天页、点了以后、感知到的、对话、一张设置页；只换颜色，不换版式"
+    }
+  },
+  "order": [
+    "TodaySun.dc.html",
+    "FuseIcon.dc.html",
+    "TodayBrand.dc.html",
+    "StepIcons.dc.html",
+    "TodayHero.dc.html",
+    "TabIcons.dc.html",
+    "Main.dc.html",
+    "Pairing.dc.html",
+    "LockScreen.dc.html",
+    "Watch.dc.html",
+    "Mac.dc.html",
+    "PairingFlow.dc.html",
+    "ChatStates.dc.html",
+    "TodayMore.dc.html",
+    "MemoryMore.dc.html",
+    "SettingsMore.dc.html",
+    "HimawariSelf.dc.html",
+    "IconChoices.dc.html",
+    "LoopSteps.dc.html"
+  ],
+  "notes": {
+    "howto": {
+      "x": -420,
+      "y": 0,
+      "w": 340,
+      "text": "第一块画板能点：点它上面的播放键。底部三个页签，右下角的麦克风圆钮是“跟 Himawari 说”；右上角是搜索和设置。画板的 Tweaks 里能切深色。内容都是示例数据。",
+      "fill": "orange"
+    },
+    "more": {
+      "x": -420,
+      "y": 1700,
+      "w": 340,
+      "text": "下面六排是 11 月 12 日补画的：编码线程做到时发现第一版没画到的页面。都是静态图，不能点。",
+      "fill": "orange"
+    },
+    "new": {
+      "x": -420,
+      "y": -1078,
+      "w": 340,
+      "text": "11 月 12 日下午画的。左边：“今天”页顶上那一块的四个方向，已选定丁。右边：两个图标的候选，已选定 A 和 2。",
+      "fill": "orange"
+    },
+    "new2": {
+      "x": -420,
+      "y": -2156,
+      "w": 340,
+      "text": "11 月 12 日 16:30 画的：已选待办 4、别的工具 2、身体数据 2；没成、停了、做完保留现在的；“在设备上做”改看最上面一排右边。",
+      "fill": "orange"
+    },
+    "new3": {
+      "x": -420,
+      "y": -3234,
+      "w": 340,
+      "text": "11 月 12 日 16:45 画的：字样已选 2（衬线斜体）。向日葵不照这一排做，改看上面一排。",
+      "fill": "orange"
+    },
+    "new4": {
+      "x": -420,
+      "y": -4312,
+      "w": 340,
+      "text": "11 月 12 日 17:50。这一排是首页整页重想后的方案，六屏从左到右：首屏、点那行小字就地展开、定完一件、往下滑、没有要你管的事、完整的感知记录。再往右是“在设备上做”的合体图标，选定 2。",
+      "fill": "orange"
+    }
+  },
+  "designSystems": []
+}
