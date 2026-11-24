@@ -1,0 +1,50 @@
+{
+  "model": "deepseek-v4.1-flash (OpenCode Go)",
+  "memories": 98,
+  "baseline_prompt_tokens": 31,
+  "formats": {
+    "json": {
+      "label": "一条一行 JSON",
+      "tokens": 2406,
+      "per_memory": 24.55,
+      "chars": 4795
+    },
+    "markdown": {
+      "label": "Markdown：## 类别 + “- #编号 内容”",
+      "tokens": 1259,
+      "per_memory": 12.85,
+      "chars": 2022
+    },
+    "tsv": {
+      "label": "TSV：编号⇥类别⇥内容",
+      "tokens": 1224,
+      "per_memory": 12.49,
+      "chars": 1953
+    },
+    "space": {
+      "label": "类别一行 + “编号 内容”",
+      "tokens": 1039,
+      "per_memory": 10.6,
+      "chars": 1692
+    },
+    "flat_space": {
+      "label": "不分类别，“编号 内容”",
+      "tokens": 1014,
+      "per_memory": 10.35,
+      "chars": 1655
+    },
+    "tight_guarded": {
+      "label": "类别一行 + 编号紧贴内容（内容以数字开头才空格）",
+      "tokens": 955,
+      "per_memory": 9.74,
+      "chars": 1598
+    },
+    "tight_raw": {
+      "label": "类别一行 + 编号紧贴内容（一律不空格）",
+      "tokens": 949,
+      "per_memory": 9.68,
+      "chars": 1594
+    }
+  },
+  "content_only_tokens": 828
+}
