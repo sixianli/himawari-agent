@@ -3,12 +3,12 @@ const CENTER = 24;
 const DISC_RADIUS = 19.7;
 const NEWEST_SHARE = 0.06;
 const BIRTH_SECONDS = 1.2;
-const FADE_SEEDS = 6;
+const FADE_SEEDS = 1.5;
+const SMALLEST_SEED = 0.8;
+const SEED_GROWTH = 1.33;
 
-export const SEED_COUNTS = { full: 233, compact: 89 } as const;
-export const GROWTH_RATES = { idle: 0.35, busy: 7 } as const;
-
-export type SunflowerDetail = keyof typeof SEED_COUNTS;
+export const SEED_COUNT = 55;
+export const GROWTH_RATES = { idle: 0.35, busy: 3.4 } as const;
 
 type Rgb = readonly [number, number, number];
 const NEW_SEED: Rgb = [255, 236, 170];
@@ -31,13 +31,12 @@ export interface Seed {
   readonly fresh: boolean;
 }
 
-export function restingGrowth(detail: SunflowerDetail) {
-  return SEED_COUNTS[detail] + 8;
+export function restingGrowth() {
+  return SEED_COUNT + 8;
 }
 
-export function seedsAt(detail: SunflowerDetail, growth: number): Seed[] {
-  const count = SEED_COUNTS[detail];
-  const sizeScale = detail === "compact" ? 1.25 : 1;
+export function seedsAt(growth: number): Seed[] {
+  const count = SEED_COUNT;
   const spacing = DISC_RADIUS / Math.sqrt(count);
   const newest = Math.floor(growth);
   return Array.from({ length: count + 2 }, (_, slot) => {
@@ -53,7 +52,7 @@ export function seedsAt(detail: SunflowerDetail, growth: number): Seed[] {
       slot,
       cx: round(CENTER + distance * Math.cos(angle)),
       cy: round(CENTER + distance * Math.sin(angle)),
-      r: round((0.43 + 0.72 * Math.sqrt(share)) * sizeScale * born),
+      r: round((SMALLEST_SEED + SEED_GROWTH * Math.sqrt(share)) * born),
       fill:
         share < NEWEST_SHARE
           ? blend(NEW_SEED, NEW_SEED, 0)

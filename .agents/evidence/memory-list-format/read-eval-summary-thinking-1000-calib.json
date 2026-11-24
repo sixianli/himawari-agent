@@ -1,0 +1,13 @@
+{
+  "json": {
+    "label": "一条一行 JSON",
+    "runs": 40,
+    "exact": 39,
+    "exact_rate": 0.975,
+    "unparsed": 1,
+    "wrong_ids": 0,
+    "missed_ids": 1,
+    "found_ids": 42,
+    "list_cost_usd": 0.0409
+  }
+}

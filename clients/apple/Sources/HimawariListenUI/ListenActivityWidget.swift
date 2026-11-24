@@ -22,7 +22,7 @@ public struct ListenActivityWidget: Widget {
                 }
             } compactLeading: {
                 HStack(spacing: 6) {
-                    SunflowerMark(detail: .compact)
+                    SunflowerMark()
                         .frame(width: 18, height: 18)
                     Text(ListenActivityLockView.title(context.state))
                         .font(.system(size: 13, weight: .semibold))
@@ -34,7 +34,7 @@ public struct ListenActivityWidget: Widget {
                     .monospacedDigit()
                     .frame(maxWidth: 52)
             } minimal: {
-                SunflowerMark(detail: .compact)
+                SunflowerMark()
                     .frame(width: 18, height: 18)
             }
         }

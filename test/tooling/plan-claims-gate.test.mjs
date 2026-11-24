@@ -211,6 +211,14 @@ describe("plan claims check: reading the model's answer", () => {
     expect(quoteInText("  ", text)).toBe(false);
   });
 
+  it("[claims] reads a table row quoted with full-width bars as the half-width row it copies", () => {
+    const text = "| 项目 | 后台 | 主模型 |\n| 不该记的却记了 | 0% | 6.7%、5% |\n";
+    expect(quoteInText("｜ 不该记的却记了 ｜ 0% ｜ 6.7%、5% ｜", text)).toBe(true);
+    expect(quoteInText("｜ 不该记的却记了 ｜ 9% ｜ 6.7%、5% ｜", text)).toBe(false);
+    expect(quoteInText("该记｜不该记", "该记|不该记以外")).toBe(true);
+    expect(quoteInText("该记｜不该记", "该记｜不该记")).toBe(true);
+  });
+
   it("[claims] reads several evidence places from one location field and refuses a broken one", () => {
     expect(locationsOf("ci/policy.json:110,127")).toEqual([
       { path: "ci/policy.json", line: 110, commit: null },

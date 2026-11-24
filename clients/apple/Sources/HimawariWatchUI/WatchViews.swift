@@ -46,7 +46,7 @@ struct UnpairedView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            SunflowerMark(detail: .compact)
+            SunflowerMark()
                 .frame(width: DesignTokens.Watch.markMedium, height: DesignTokens.Watch.markMedium)
             if let problem {
                 Text(Self.message(problem))
@@ -83,7 +83,7 @@ struct UnpairedView: View {
 struct ConnectingView: View {
     var body: some View {
         VStack(spacing: 10) {
-            SunflowerMark(detail: .compact, growing: true)
+            SunflowerMark(growing: true)
                 .frame(width: DesignTokens.Watch.markPairing, height: DesignTokens.Watch.markPairing)
             Text(L.text("submitting"))
                 .hmType(DesignTokens.TypeScale.watchFootnote)
@@ -129,7 +129,7 @@ struct HomeView: View {
             .toolbar {
                 ToolbarItem(placement: .bottomBar) {
                     Button { talking = true } label: {
-                        SunflowerMark(detail: .compact).frame(width: DesignTokens.Watch.markSmall, height: DesignTokens.Watch.markSmall)
+                        SunflowerMark().frame(width: DesignTokens.Watch.markSmall, height: DesignTokens.Watch.markSmall)
                     }
                     .accessibilityLabel(L.text("talk"))
                 }
@@ -148,7 +148,7 @@ struct QuietView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            SunflowerMark(detail: .full)
+            SunflowerMark()
                 .frame(width: DesignTokens.Watch.markQuiet, height: DesignTokens.Watch.markQuiet)
             Text(L.text(failed ? "offline" : waiting ? "onIPhone.hint" : "quiet"))
                 .hmType(DesignTokens.TypeScale.watchFootnote)
@@ -297,7 +297,7 @@ struct HaloMark: View {
                     endRadius: DesignTokens.Watch.markHalo / 2
                 ))
                 .frame(width: DesignTokens.Watch.markHalo, height: DesignTokens.Watch.markHalo)
-            SunflowerMark(detail: .compact, growing: growing)
+            SunflowerMark(growing: growing)
                 .frame(width: DesignTokens.Watch.markPairing, height: DesignTokens.Watch.markPairing)
         }
         .frame(height: DesignTokens.Watch.markPairing)

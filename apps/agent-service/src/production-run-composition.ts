@@ -104,7 +104,7 @@ export interface ProductionRunCompositionOptions {
     ) => Promise<string>;
     readonly episodes?: Pick<
       ProductionMemoryEpisodesOptions,
-      "service" | "embedWithin" | "onFailure"
+      "service" | "turns" | "embedWithin" | "onFailure"
     >;
     readonly consolidation?: Pick<
       ProductionMemoryConsolidationOptions,
@@ -582,6 +582,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const memoryEpisodes = memoryEpisodeOptions
     ? new ProductionMemoryEpisodes({
         service: memoryEpisodeOptions.service,
+        ...(memoryEpisodeOptions.turns ? { turns: memoryEpisodeOptions.turns } : {}),
         threads: repository.threadRepository(),
         payloads,
         protector,

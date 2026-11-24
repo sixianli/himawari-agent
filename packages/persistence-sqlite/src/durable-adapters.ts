@@ -11,6 +11,7 @@ import type {
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
+  ConversationTurnStorePort,
   DecisionLedgerPort,
   DeliveryTimingSettingsStorePort,
   DeviceActionStorePort,
@@ -1427,6 +1428,16 @@ export class SqliteDurableAdapters {
       versions: (input) => this.context.read("threadArtifact.versions", input),
       list: (input) => this.context.read("threadArtifact.list", input),
       markDeleted: (input) => this.context.write("threadArtifact.markDeleted", input),
+    });
+  }
+
+  conversationTurns(): ConversationTurnStorePort {
+    return Object.freeze<ConversationTurnStorePort>({
+      upsert: (document) => this.context.write("conversationTurn.upsert", { document }),
+      search: (input) => this.context.read("conversationTurn.search", input),
+      listBehind: (input) => this.context.read("conversationTurn.listBehind", input),
+      listUnembedded: (input) => this.context.read("conversationTurn.listUnembedded", input),
+      attachEmbedding: (input) => this.context.write("conversationTurn.attachEmbedding", input),
     });
   }
 
