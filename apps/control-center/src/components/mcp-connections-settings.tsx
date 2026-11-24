@@ -20,6 +20,7 @@ type Message = (id: MessageId, values?: Record<string, string>) => string;
 
 const CAPABILITIES = ["mcp", "command_hooks", "scheduled_tasks"] as const;
 const CEILINGS = ["public", "private", "sensitive"] as const;
+const PUSH_POLICIES = ["direct", "ask"] as const;
 
 export function McpUsageLines({
   usage,
@@ -129,15 +130,26 @@ function ConnectionRow({
           </small>
         </span>
         {revoked ? null : (
-          <Dropdown
-            label={message("agents.ceiling")}
-            value={item.readCeiling}
-            options={CEILINGS.map((value) => ({
-              value,
-              label: message(`agents.ceiling.${value}`),
-            }))}
-            onChange={(readCeiling) => onChange({ readCeiling })}
-          />
+          <>
+            <Dropdown
+              label={message("agents.ceiling")}
+              value={item.readCeiling}
+              options={CEILINGS.map((value) => ({
+                value,
+                label: message(`agents.ceiling.${value}`),
+              }))}
+              onChange={(readCeiling) => onChange({ readCeiling })}
+            />
+            <Dropdown
+              label={message("agents.push")}
+              value={item.pushPolicy}
+              options={PUSH_POLICIES.map((value) => ({
+                value,
+                label: message(`agents.push.${value}`),
+              }))}
+              onChange={(pushPolicy) => onChange({ pushPolicy })}
+            />
+          </>
         )}
       </div>
       <McpUsageLines usage={item.usage} message={message} />
@@ -225,6 +237,7 @@ export function McpConnectionsSettings({
     name: "",
     capabilities: ["mcp"],
     readCeiling: "private",
+    pushPolicy: "direct",
   });
   useEffect(() => {
     let disposed = false;
@@ -332,6 +345,18 @@ export function McpConnectionsSettings({
               label: message(`agents.ceiling.${value}`),
             }))}
             onChange={(readCeiling) => setDraft({ ...draft, readCeiling })}
+          />
+        </div>
+        <div className="setting-row">
+          <span>{message("agents.push")}</span>
+          <Dropdown
+            label={message("agents.push")}
+            value={draft.pushPolicy}
+            options={PUSH_POLICIES.map((value) => ({
+              value,
+              label: message(`agents.push.${value}`),
+            }))}
+            onChange={(pushPolicy) => setDraft({ ...draft, pushPolicy })}
           />
         </div>
         <ActionButton
