@@ -208,8 +208,6 @@ export interface DeviceActionIntent extends PairedDeviceScope {
   readonly target: { readonly type: string; readonly ref: string } | null;
   readonly reversible: boolean;
   readonly ownerPresence: boolean;
-  readonly untrustedOriginAllowed: boolean;
-  readonly readUntrustedContent: boolean;
   readonly title: Readonly<Record<string, string>>;
   readonly detail: Readonly<Record<string, string>>;
   readonly dataClassification: DataClassification;

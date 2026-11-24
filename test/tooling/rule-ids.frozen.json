@@ -1,5 +1,6 @@
 [
   "action_ask_after_external_content",
+  "action_preauthorize_himawari_side_after_external_content",
   "action_preauthorize_own_task_cancel",
   "action_preauthorize_owner_data",
   "action_preauthorize_owner_intent_confirmed",

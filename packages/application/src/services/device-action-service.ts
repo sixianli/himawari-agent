@@ -96,7 +96,6 @@ export interface DeviceActionServiceOptions {
       readonly includeDeleted: boolean;
     },
   ) => Promise<readonly DeviceMirrorItem[]>;
-  readonly readUntrustedContent: (runId: string) => Promise<boolean>;
   readonly authorization: DeviceActionAuthorizationPort;
   readonly delivery: DeviceActionDeliveryPort;
   readonly openRequests?: DeviceActionOpenRequestPort;
@@ -355,7 +354,6 @@ export class DeviceActionService {
     readonly device: PairedDevice;
     readonly action: string;
     readonly arguments: Readonly<Record<string, unknown>>;
-    readonly ownerInitiated?: boolean;
   }): Promise<DeviceActionRequestOutcome> {
     const { scope, store, registry } = this.#options;
     await this.settle();
@@ -421,11 +419,6 @@ export class DeviceActionService {
       target,
       reversible: registration.reversible,
       ownerPresence,
-      untrustedOriginAllowed: registration.untrustedOriginAllowed,
-      readUntrustedContent:
-        input.ownerInitiated === true
-          ? false
-          : await this.#options.readUntrustedContent(input.runId),
       title: registration.title,
       detail,
       dataClassification: input.dataClassification,
@@ -890,7 +883,6 @@ export class DeviceActionService {
       device: input.device,
       action: plan.action,
       arguments: plan.arguments,
-      ownerInitiated: input.ownerPresent,
     });
   }
 
