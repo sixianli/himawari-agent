@@ -1,16 +1,12 @@
 import {
   AgentGatewayService,
-  AttentionPolicyService,
   CapabilityRegistryService,
   ContextFormationService,
   ModelRouterService,
   PermissionService,
-  SchedulerService,
   SessionTraceRecorder,
-  UnifiedTriggerIngestionService,
   type GatewayAuthenticationContext,
   type PermissionAllowDecision,
-  type TriggerAdmissionPort,
 } from "@himawari-agent/application";
 import {
   createAgentAuthorityLease,
@@ -18,11 +14,9 @@ import {
   createAuthorityLeaseId,
 } from "@himawari-agent/domain";
 import type { ExecuteWorkRequest, ReconcileWorkRequest } from "@himawari-agent/execution-contracts";
-import type { AdmitTriggerCommand, EventSubscription } from "@himawari-agent/gateway-contracts";
+import type { EventSubscription } from "@himawari-agent/gateway-contracts";
 import {
-  DeterministicDeliveryPort,
   DeterministicRestaurantCapabilityPort,
-  InMemoryAttentionStatePort,
   InMemoryGatewayAccessPolicy,
   InMemoryGatewayControlPlane,
   InMemoryGatewayReadModel,
@@ -34,15 +28,6 @@ import {
 } from "@himawari-agent/testing";
 import { createLocalExecutionWorkerProcess } from "@himawari-agent/execution-worker";
 import { beforeAll, describe, expect, it } from "vitest";
-
-class JourneyTriggerAdmission implements TriggerAdmissionPort {
-  readonly commands: AdmitTriggerCommand[] = [];
-
-  async admit(command: AdmitTriggerCommand) {
-    this.commands.push(command);
-    return { resultRef: `run:${command.payload.triggerId}`, replayed: false };
-  }
-}
 
 async function collect<T>(events: AsyncIterable<T>): Promise<readonly T[]> {
   const result: T[] = [];
@@ -261,23 +246,11 @@ async function runJourney() {
     agent: fixture.agent,
     holderId: createAuthorityHolderId("holder-beef-restaurant"),
   });
-  const authorityRecord = await adapters.authority.claim(lease, 60_000);
+  await adapters.authority.claim(lease, 60_000);
   await adapters.scheduler.upsert(
     { ...fixture.scheduledJob, authorizationRef: monitoringApproval.grantId },
     null,
   );
-  const admission = new JourneyTriggerAdmission();
-  const scheduler = new SchedulerService({
-    scheduler: adapters.scheduler,
-    triggers: new UnifiedTriggerIngestionService(admission),
-    authority: adapters.authority,
-    authorization: adapters.authorization,
-    clock,
-  });
-  const scheduled = await scheduler.dispatchDue({
-    authority: { leaseId: lease.id, fencingToken: authorityRecord.fencingToken },
-    limit: 10,
-  });
   const timer = await record(fixture.runs.monitoring.id, "scheduler.triggered", {
     jobId: fixture.scheduledJob.id,
     triggerId: fixture.runs.monitoring.triggerId,
@@ -391,48 +364,6 @@ async function runJourney() {
     workerRunId: "worker-beef-search",
     resultRef: fixture.payloads.restaurantSearchResult,
     outcome: searchEvents.at(-1)?.type,
-  });
-
-  const delivery = new DeterministicDeliveryPort({
-    "client-primary": {
-      outcome: "delivered",
-      acknowledgementRef: "ack-beef-search",
-      errorCode: null,
-    },
-  });
-  const attention = new AttentionPolicyService({
-    state: new InMemoryAttentionStatePort(),
-    delivery,
-    clock,
-    policy: {
-      duplicateWindowMs: 60_000,
-      rateLimitWindowMs: 60_000,
-      maxImmediateDeliveries: 1,
-      authorizedInterruptRefs: [],
-    },
-  });
-  const attentionResult = await attention.evaluate({
-    id: "candidate-beef-search",
-    ownerId: fixture.owner.id,
-    agentId: fixture.agent.id,
-    runId: fixture.runs.monitoring.id,
-    sessionId: fixture.session.id,
-    threadId: fixture.thread.id,
-    resultRef: fixture.payloads.restaurantSearchResult,
-    dataClassification: "private",
-    urgency: 30,
-    confidence: 90,
-    duplicateKey: "beef-search-tokyo-20260825",
-    generatedAt: fixture.times.start,
-    deviceState: "available",
-    interruptAuthorizationRef: null,
-  });
-  if (!attentionResult.delivery) throw new Error("attention delivery missing");
-  await record(fixture.runs.monitoring.id, "attention.decided", attentionResult.record.decision);
-  const delivered = await attention.deliver(attentionResult.delivery.id, "client-primary");
-  await record(fixture.runs.monitoring.id, "delivery.acknowledged", {
-    requestId: delivered.request.id,
-    acknowledgementRef: delivered.request.acknowledgementRef,
   });
 
   const reservationAsk = await permissions.evaluate(fixture.reservationIntent, {
@@ -585,12 +516,8 @@ async function runJourney() {
     formed,
     routed,
     monitoringApproval,
-    scheduled,
-    admission,
     searchDecision,
     searchEvents,
-    attentionResult,
-    delivered,
     reservationApproval,
     reservationDecision: reservationDecision as PermissionAllowDecision,
     reservationEvents,
@@ -631,23 +558,11 @@ describe("beef-restaurant architecture baseline", () => {
       status: "approved",
       grantId: expect.stringMatching(/^grant-/),
     });
-    expect(journey.scheduled.records).toMatchObject([
-      { outcome: "dispatched", triggerResultRef: expect.stringMatching(/^run:/) },
-    ]);
-    expect(journey.admission.commands).toHaveLength(1);
   });
 
-  it("runs timer research, applies Attention Policy, and semantically approves reservation", () => {
+  it("runs timer research and semantically approves reservation", () => {
     expect(journey.searchDecision).toMatchObject({ decision: "ALLOW" });
     expect(journey.searchEvents.map(({ type }) => type)).toEqual(["work.progress", "work.result"]);
-    expect(journey.attentionResult.record.decision).toMatchObject({
-      level: "INBOX",
-      reasonCode: "passive_result",
-    });
-    expect(journey.delivered).toMatchObject({
-      outcome: "delivered",
-      request: { acknowledgementRef: "ack-beef-search" },
-    });
     expect(journey.reservationApproval).toMatchObject({ status: "approved" });
     expect(journey.reservationDecision).toMatchObject({ decision: "ALLOW" });
     expect(journey.reservationEvents.map(({ type }) => type)).toEqual([
@@ -717,8 +632,6 @@ describe("beef-restaurant architecture baseline", () => {
       "tool.authorized",
       "worker.progress",
       "tool.result",
-      "attention.decided",
-      "delivery.acknowledged",
       "reservation.intent",
       "approval.requested",
       "approval.responded",

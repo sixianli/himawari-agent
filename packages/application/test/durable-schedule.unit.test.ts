@@ -1,5 +1,4 @@
-import { evaluateDurableSchedule, stableOccurrenceIdentity } from "@himawari-agent/application";
-import { createJobId } from "@himawari-agent/domain";
+import { evaluateDurableSchedule } from "@himawari-agent/application";
 import { describe, expect, it } from "vitest";
 
 describe("durable background schedule evaluation", () => {
@@ -86,11 +85,5 @@ describe("durable background schedule evaluation", () => {
       outcome: "future",
       nextAt: "2026-11-02T06:30:00.000Z",
     });
-  });
-
-  it("derives stable occurrence identities from the job and provider identity", () => {
-    expect(stableOccurrenceIdentity(createJobId("job-monitor"), "delivery-42")).toBe(
-      "job-monitor:delivery-42",
-    );
   });
 });

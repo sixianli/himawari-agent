@@ -51,7 +51,6 @@ export * from "./startup-coordinator.js";
 export * from "./state-root-layout.js";
 export * from "./strict-configuration.js";
 export * from "./text-admission.js";
-export * from "./think-worth-decision.js";
 export * from "./thread-search-projector.js";
 export * from "./trusted-model-provider.js";
 export * from "./typesafe-jev-transport.js";

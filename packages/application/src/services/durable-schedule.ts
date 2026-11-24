@@ -1,24 +1,4 @@
-import type {
-  AgentId,
-  BackgroundOccurrence,
-  JobId,
-  OccurrenceId,
-  OwnerId,
-  ProductAuthorityFence,
-  RunId,
-  ThreadId,
-} from "@himawari-agent/domain";
-import {
-  PORT_ERROR_CODES,
-  ApplicationPortError,
-  type BackgroundAdmissionLimits,
-  type BackgroundAdmissionResult,
-  type BackgroundOccurrenceSettlement,
-  type BackgroundWorkStatePort,
-  type DataClassification,
-  type PayloadRef,
-} from "../ports/index.js";
-import type { UnifiedTriggerPort } from "./unified-trigger-ingestion-service.js";
+import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/index.js";
 
 export type DurableSchedule =
   | {
@@ -46,39 +26,6 @@ export interface ScheduleEvaluation {
   readonly nextAt: string | null;
   readonly localDate: string | null;
   readonly skippedCount: number;
-}
-
-export interface DurableBackgroundDispatch {
-  readonly occurrence: BackgroundOccurrence;
-  readonly runId: RunId;
-  readonly limits: BackgroundAdmissionLimits;
-  readonly trigger: {
-    readonly messageId: string;
-    readonly correlationId: string;
-    readonly causationId: string | null;
-    readonly ownerId: OwnerId;
-    readonly agentId: AgentId;
-    readonly actorType: "owner" | "client" | "scheduler" | "external_adapter" | "system";
-    readonly actorId: string;
-    readonly dataClassification: DataClassification;
-    readonly triggerId: string;
-    readonly sourceType: "user_message" | "schedule" | "external_event";
-    readonly sourceId: string;
-    readonly occurredAt: string;
-    readonly threadId: ThreadId | null;
-    readonly payloadRef: PayloadRef;
-    readonly sourceProofRef: string;
-  };
-}
-
-export interface DurableBackgroundDispatchResult extends BackgroundAdmissionResult {
-  readonly triggerResultRef: string | null;
-  readonly replayed: boolean;
-}
-
-export interface DurableBackgroundWorkServiceDependencies {
-  readonly state: BackgroundWorkStatePort;
-  readonly triggers: UnifiedTriggerPort;
 }
 
 function canonicalTimestamp(value: string, field: string): number {
@@ -291,75 +238,4 @@ export function evaluateDurableSchedule(
     localDate: due ? latest.localDate : null,
     skippedCount: elapsed.length - (due ? 1 : 0),
   };
-}
-
-function sameOccurrence(left: BackgroundOccurrence, right: BackgroundOccurrence): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export class DurableBackgroundWorkService {
-  private readonly dependencies: DurableBackgroundWorkServiceDependencies;
-
-  constructor(dependencies: DurableBackgroundWorkServiceDependencies) {
-    this.dependencies = dependencies;
-  }
-
-  async dispatch(input: DurableBackgroundDispatch): Promise<DurableBackgroundDispatchResult> {
-    let occurrence: BackgroundOccurrence;
-    try {
-      occurrence = await this.dependencies.state.createOccurrence(input.occurrence);
-    } catch (error) {
-      const existing = await this.dependencies.state.readOccurrence(input.occurrence.id);
-      if (!existing || !sameOccurrence(existing, input.occurrence)) throw error;
-      occurrence = existing;
-    }
-    const admitted = await this.dependencies.triggers.ingest({
-      ...input.trigger,
-      idempotencyKey: `background:${occurrence.stableKey}`,
-    });
-    const reservation = await this.dependencies.state.reserveAdmission({
-      occurrenceId: occurrence.id,
-      expectedRevision: occurrence.revision,
-      runId: input.runId,
-      authority: occurrence.authority,
-      limits: input.limits,
-      admittedAt: input.trigger.occurredAt,
-    });
-    return {
-      ...reservation,
-      triggerResultRef: admitted.resultRef,
-      replayed: admitted.replayed || reservation.outcome === "duplicate",
-    };
-  }
-
-  claim(input: {
-    readonly occurrenceId: OccurrenceId;
-    readonly expectedRevision: number;
-    readonly authority: ProductAuthorityFence;
-    readonly leaseId: string;
-    readonly holderId: string;
-    readonly claimedAt: string;
-    readonly expiresAt: string;
-  }): Promise<BackgroundOccurrence> {
-    return this.dependencies.state.claimOccurrence(input);
-  }
-
-  settle(input: BackgroundOccurrenceSettlement): Promise<BackgroundOccurrence> {
-    return this.dependencies.state.settleOccurrence(input);
-  }
-
-  recover(ownerId: OwnerId, agentId: AgentId, now: string, limit = 100) {
-    canonicalTimestamp(now, "now");
-    return this.dependencies.state.listRecoverable(ownerId, agentId, now, limit);
-  }
-}
-
-export function stableOccurrenceIdentity(jobId: JobId, providerIdentity: string): string {
-  if (providerIdentity.length === 0 || providerIdentity.length > 256) {
-    throw new ApplicationPortError(
-      PORT_ERROR_CODES.INVALID_OPERATION,
-      "Provider occurrence identity must contain between 1 and 256 characters",
-    );
-  }
-  return `${jobId}:${providerIdentity}`;
 }

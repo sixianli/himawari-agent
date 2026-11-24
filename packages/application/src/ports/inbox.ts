@@ -1,50 +1,43 @@
 import type { OwnerRuleScope } from "./owner-rules.js";
 
-export type ThinkInboxStatus =
-  | "queued"
-  | "thinking"
-  | "proposed"
-  | "skipped"
-  | "failed"
-  | "expired";
+export type InboxStatus = "queued" | "running" | "done" | "failed";
 
-export interface StoredThinkEntry {
+export interface StoredInboxEvent {
   readonly id: string;
   readonly sourceKind: string;
   readonly sourceRef: string;
   readonly sourceVersion: string;
   readonly externalContent: boolean;
+  readonly fromOwner: boolean;
+  readonly priority: number;
+  readonly threadId: string | null;
   readonly summaryRef: string | null;
-  readonly status: ThinkInboxStatus;
+  readonly status: InboxStatus;
+  readonly outcome: string | null;
   readonly reasonCode: string | null;
+  readonly runId: string | null;
   readonly attempts: number;
-  readonly day: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 
-export type ThinkEnqueueOutcome =
-  | { readonly outcome: "queued"; readonly entry: StoredThinkEntry }
-  | { readonly outcome: "duplicate"; readonly entry: StoredThinkEntry }
-  | { readonly outcome: "queue_full" }
-  | { readonly outcome: "daily_limit" };
+export type InboxEnqueueOutcome =
+  | { readonly outcome: "queued"; readonly entry: StoredInboxEvent }
+  | { readonly outcome: "duplicate"; readonly entry: StoredInboxEvent };
 
-export interface ThinkInboxUsage {
-  readonly day: string;
+export interface InboxUsage {
   readonly queued: number;
-  readonly thinking: number;
-  readonly acceptedToday: number;
+  readonly running: number;
   readonly byStatus: Readonly<Record<string, number>>;
-  readonly declinedToday: Readonly<Record<string, number>>;
 }
 
-export interface ThinkSettingsRecord {
+export interface InboxSettingsRecord {
   readonly revision: number;
   readonly overrides: Readonly<Record<string, number>>;
   readonly updatedAt: string | null;
 }
 
-export interface ThinkInboxStorePort {
+export interface InboxStorePort {
   enqueue(
     input: OwnerRuleScope & {
       readonly id: string;
@@ -52,24 +45,33 @@ export interface ThinkInboxStorePort {
       readonly sourceRef: string;
       readonly sourceVersion: string;
       readonly externalContent: boolean;
+      readonly fromOwner: boolean;
+      readonly priority: number;
+      readonly threadId: string | null;
       readonly summaryRef: string;
-      readonly day: string;
       readonly now: string;
-      readonly queueLimit: number;
-      readonly dailyLimit: number;
     },
-  ): Promise<ThinkEnqueueOutcome>;
-  claimNext(
-    input: OwnerRuleScope & { readonly now: string },
-  ): Promise<StoredThinkEntry | undefined>;
+  ): Promise<InboxEnqueueOutcome>;
+  claimBatch(
+    input: OwnerRuleScope & { readonly now: string; readonly limit: number },
+  ): Promise<readonly StoredInboxEvent[]>;
   finish(
     input: OwnerRuleScope & {
-      readonly id: string;
-      readonly to: "proposed" | "skipped" | "failed";
+      readonly ids: readonly string[];
+      readonly to: "done" | "failed";
+      readonly outcome: string | null;
       readonly reasonCode: string;
+      readonly runId: string | null;
       readonly now: string;
     },
-  ): Promise<StoredThinkEntry | undefined>;
+  ): Promise<number>;
+  release(
+    input: OwnerRuleScope & {
+      readonly ids: readonly string[];
+      readonly countAttempt: boolean;
+      readonly now: string;
+    },
+  ): Promise<number>;
   recoverStalled(
     input: OwnerRuleScope & {
       readonly stalledBefore: string;
@@ -77,10 +79,7 @@ export interface ThinkInboxStorePort {
       readonly now: string;
     },
   ): Promise<number>;
-  expireQueued(
-    input: OwnerRuleScope & { readonly createdBefore: string; readonly now: string },
-  ): Promise<number>;
-  usage(input: OwnerRuleScope & { readonly day: string }): Promise<ThinkInboxUsage>;
+  usage(input: OwnerRuleScope): Promise<InboxUsage>;
   settledSummaries(
     input: OwnerRuleScope & { readonly limit: number },
   ): Promise<readonly { readonly id: string; readonly summaryRef: string }[]>;
@@ -88,12 +87,12 @@ export interface ThinkInboxStorePort {
   clearSummary(
     input: OwnerRuleScope & { readonly id: string; readonly summaryRef: string },
   ): Promise<boolean>;
-  readSettings(input: OwnerRuleScope): Promise<ThinkSettingsRecord>;
+  readSettings(input: OwnerRuleScope): Promise<InboxSettingsRecord>;
   changeSettings(
     input: OwnerRuleScope & {
       readonly expectedRevision: number;
       readonly overrides: Readonly<Record<string, number>>;
       readonly now: string;
     },
-  ): Promise<ThinkSettingsRecord>;
+  ): Promise<InboxSettingsRecord>;
 }

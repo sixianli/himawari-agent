@@ -1,47 +1,40 @@
 import { createHash } from "node:crypto";
 import {
   type ClockPort,
+  type InboxEnqueueOutcome,
+  type InboxStorePort,
+  type InboxUsage,
+  inboxSettingDefinition,
   type PayloadProtectorPort,
   type PayloadStorePort,
-  type ThinkEnqueueOutcome,
-  type ThinkInboxStorePort,
-  type ThinkInboxUsage,
-  thinkSettingDefinition,
 } from "@himawari-agent/application";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 
-type Scope = Parameters<ThinkInboxStorePort["usage"]>[0] extends infer Input
-  ? Omit<Input & object, "day">
-  : never;
+export type InboxScope = Parameters<InboxStorePort["usage"]>[0];
 
-export const THINK_QUEUE_LIMIT = thinkSettingDefinition("queueLimit").defaultValue;
-export const THINK_DAILY_LIMIT = thinkSettingDefinition("dailyLimit").defaultValue;
-export const THINK_EXPIRES_AFTER_HOURS = thinkSettingDefinition("expiresAfterHours").defaultValue;
-export const THINK_STALLED_AFTER_MINUTES =
-  thinkSettingDefinition("stalledAfterMinutes").defaultValue;
-export const THINK_MAX_ATTEMPTS = thinkSettingDefinition("maxAttempts").defaultValue;
-export const THINK_SUMMARY_CHARACTERS = thinkSettingDefinition("summaryCharacters").defaultValue;
+export const INBOX_STALLED_AFTER_MINUTES =
+  inboxSettingDefinition("stalledAfterMinutes").defaultValue;
+export const INBOX_MAX_ATTEMPTS = inboxSettingDefinition("maxAttempts").defaultValue;
+export const INBOX_SUMMARY_CHARACTERS = inboxSettingDefinition("summaryCharacters").defaultValue;
 
 const KIND = /^[a-z][a-z0-9_]{0,63}$/u;
 const SWEEP_BATCH = 50;
 
-export interface ThinkSource {
+export interface InboxSource {
   readonly kind: string;
   readonly describe: string;
   readonly externalContent: boolean;
+  readonly fromOwner: boolean;
+  readonly priority: number;
 }
 
-export interface ThinkInboxOptions {
-  readonly scope: Scope;
-  readonly store: ThinkInboxStorePort;
+export interface InboxOptions {
+  readonly scope: InboxScope;
+  readonly store: InboxStorePort;
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
-  readonly timeZone: string;
   readonly limits?: {
-    readonly queueLimit?: number;
-    readonly dailyLimit?: number;
-    readonly expiresAfterHours?: number;
     readonly stalledAfterMinutes?: number;
     readonly maxAttempts?: number;
     readonly summaryCharacters?: number;
@@ -49,7 +42,7 @@ export interface ThinkInboxOptions {
   readonly overrides?: () => Promise<Readonly<Record<string, number>>>;
 }
 
-export type ThinkSubmitResult =
+export type InboxSubmitResult =
   | {
       readonly accepted: true;
       readonly entryId: string;
@@ -57,57 +50,64 @@ export type ThinkSubmitResult =
     }
   | { readonly accepted: false; readonly reason: string };
 
-export function localDay(instant: string, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(instant));
-  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${pick("year")}-${pick("month")}-${pick("day")}`;
-}
-
 function clip(text: string, maximum: number): string {
   const characters = [...text.replace(/\s+/gu, " ").trim()];
   return characters.length <= maximum ? characters.join("") : characters.slice(0, maximum).join("");
 }
 
-function entryKey(scope: Scope, kind: string, ref: string, version: string): string {
+function entryKey(scope: InboxScope, kind: string, ref: string, version: string): string {
   return createHash("sha256")
     .update(JSON.stringify([scope.ownerId, scope.agentId, kind, ref, version]))
     .digest("hex")
     .slice(0, 32);
 }
 
-export class ThinkSourceRegistry {
-  readonly #sources = new Map<string, ThinkSource>();
+export class InboxSourceRegistry {
+  readonly #sources = new Map<string, InboxSource>();
 
-  register(source: ThinkSource): void {
-    if (!KIND.test(source.kind)) throw new RangeError("Think source kind is invalid");
+  register(source: InboxSource): void {
+    if (!KIND.test(source.kind)) throw new RangeError("Inbox source kind is invalid");
     if (source.describe.trim().length === 0)
-      throw new RangeError("Think source needs a description");
-    if (this.#sources.has(source.kind)) throw new RangeError("Think source is already registered");
+      throw new RangeError("Inbox source needs a description");
+    if (!Number.isInteger(source.priority) || source.priority < 1 || source.priority > 9)
+      throw new RangeError("Inbox source priority is invalid");
+    if (source.fromOwner && source.externalContent)
+      throw new RangeError("Inbox source cannot be both the owner and outside content");
+    if (this.#sources.has(source.kind)) throw new RangeError("Inbox source is already registered");
     this.#sources.set(source.kind, Object.freeze({ ...source }));
   }
 
-  get(kind: string): ThinkSource | undefined {
+  get(kind: string): InboxSource | undefined {
     return this.#sources.get(kind);
   }
 
-  list(): readonly ThinkSource[] {
+  list(): readonly InboxSource[] {
     return Object.freeze([...this.#sources.values()].sort((a, b) => (a.kind < b.kind ? -1 : 1)));
   }
 }
 
-export class ProductionThinkInbox {
-  readonly #options: ThinkInboxOptions;
-  readonly sources: ThinkSourceRegistry;
+export class ProductionInbox {
+  readonly #options: InboxOptions;
+  readonly sources: InboxSourceRegistry;
   readonly #locks = new Map<string, Promise<void>>();
+  readonly #listeners = new Set<() => void>();
 
-  constructor(options: ThinkInboxOptions, sources = new ThinkSourceRegistry()) {
+  constructor(options: InboxOptions, sources = new InboxSourceRegistry()) {
     this.#options = options;
     this.sources = sources;
+  }
+
+  onQueued(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  #announce(): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener();
+      } catch {}
+    }
   }
 
   get limits() {
@@ -122,12 +122,9 @@ export class ProductionThinkInbox {
   #merge(overrides: Readonly<Record<string, number>>) {
     const limits = { ...this.#options.limits, ...overrides };
     return {
-      queueLimit: limits.queueLimit ?? THINK_QUEUE_LIMIT,
-      dailyLimit: limits.dailyLimit ?? THINK_DAILY_LIMIT,
-      expiresAfterHours: limits.expiresAfterHours ?? THINK_EXPIRES_AFTER_HOURS,
-      stalledAfterMinutes: limits.stalledAfterMinutes ?? THINK_STALLED_AFTER_MINUTES,
-      maxAttempts: limits.maxAttempts ?? THINK_MAX_ATTEMPTS,
-      summaryCharacters: limits.summaryCharacters ?? THINK_SUMMARY_CHARACTERS,
+      stalledAfterMinutes: limits.stalledAfterMinutes ?? INBOX_STALLED_AFTER_MINUTES,
+      maxAttempts: limits.maxAttempts ?? INBOX_MAX_ATTEMPTS,
+      summaryCharacters: limits.summaryCharacters ?? INBOX_SUMMARY_CHARACTERS,
     };
   }
 
@@ -137,24 +134,35 @@ export class ProductionThinkInbox {
     readonly sourceVersion: string;
     readonly summary: string;
     readonly externalContent?: boolean;
-  }): Promise<ThinkSubmitResult> {
+    readonly threadId?: string | null;
+  }): Promise<InboxSubmitResult> {
     if (
       typeof input.sourceKind !== "string" ||
       typeof input.sourceRef !== "string" ||
       typeof input.sourceVersion !== "string" ||
       typeof input.summary !== "string" ||
-      (input.externalContent !== undefined && typeof input.externalContent !== "boolean")
+      (input.externalContent !== undefined && typeof input.externalContent !== "boolean") ||
+      (input.threadId !== undefined &&
+        input.threadId !== null &&
+        typeof input.threadId !== "string")
     )
-      return { accepted: false, reason: "THINK_INPUT_INVALID" };
+      return { accepted: false, reason: "INBOX_INPUT_INVALID" };
     const source = this.sources.get(input.sourceKind);
-    if (!source) return { accepted: false, reason: "THINK_SOURCE_UNREGISTERED" };
+    if (!source) return { accepted: false, reason: "INBOX_SOURCE_UNREGISTERED" };
     if (input.sourceRef.length < 1 || input.sourceRef.length > 256)
-      return { accepted: false, reason: "THINK_SOURCE_REF_INVALID" };
+      return { accepted: false, reason: "INBOX_SOURCE_REF_INVALID" };
     if (input.sourceVersion.length > 256)
-      return { accepted: false, reason: "THINK_SOURCE_VERSION_INVALID" };
+      return { accepted: false, reason: "INBOX_SOURCE_VERSION_INVALID" };
+    if (
+      typeof input.threadId === "string" &&
+      (input.threadId.length < 1 || input.threadId.length > 256)
+    )
+      return { accepted: false, reason: "INBOX_THREAD_INVALID" };
+    if (source.fromOwner && input.externalContent === true)
+      return { accepted: false, reason: "INBOX_OWNER_SOURCE_CANNOT_BE_OUTSIDE" };
     const limits = await this.currentLimits();
     const summary = clip(input.summary, limits.summaryCharacters);
-    if (summary.length === 0) return { accepted: false, reason: "THINK_SUMMARY_EMPTY" };
+    if (summary.length === 0) return { accepted: false, reason: "INBOX_SUMMARY_EMPTY" };
     const now = this.#options.clock.now();
     const key = entryKey(
       this.#options.scope,
@@ -162,12 +170,10 @@ export class ProductionThinkInbox {
       input.sourceRef,
       input.sourceVersion,
     );
-    const id = `think:${key}`;
-    const summaryRef = `think-summary:${key}`;
+    const id = `inbox:${key}`;
+    const summaryRef = `inbox-summary:${key}`;
     const previous = this.#locks.get(key) ?? Promise.resolve();
-    const turn = previous.then(() =>
-      this.#accept({ input, source, summary, now, id, summaryRef, limits }),
-    );
+    const turn = previous.then(() => this.#accept({ input, source, summary, now, id, summaryRef }));
     const settled = turn.then(
       () => undefined,
       () => undefined,
@@ -185,15 +191,15 @@ export class ProductionThinkInbox {
       readonly sourceRef: string;
       readonly sourceVersion: string;
       readonly externalContent?: boolean;
+      readonly threadId?: string | null;
     };
-    readonly source: ThinkSource;
+    readonly source: InboxSource;
     readonly summary: string;
     readonly now: string;
     readonly id: string;
     readonly summaryRef: string;
-    readonly limits: { readonly queueLimit: number; readonly dailyLimit: number };
-  }): Promise<ThinkSubmitResult> {
-    const { input, source, summary, now, id, summaryRef, limits } = args;
+  }): Promise<InboxSubmitResult> {
+    const { input, source, summary, now, id, summaryRef } = args;
     let wrote = false;
     if (!(await this.#options.payloads.get(summaryRef as never))) {
       try {
@@ -212,7 +218,7 @@ export class ProductionThinkInbox {
         if (!(await this.#options.payloads.get(summaryRef as never))) throw error;
       }
     }
-    let outcome: ThinkEnqueueOutcome;
+    let outcome: InboxEnqueueOutcome;
     try {
       outcome = await this.#options.store.enqueue({
         ...this.#options.scope,
@@ -221,23 +227,22 @@ export class ProductionThinkInbox {
         sourceRef: input.sourceRef,
         sourceVersion: input.sourceVersion,
         externalContent: input.externalContent === true || source.externalContent,
+        fromOwner: source.fromOwner,
+        priority: source.priority,
+        threadId: input.threadId ?? null,
         summaryRef,
-        day: localDay(now, this.#options.timeZone),
         now,
-        queueLimit: limits.queueLimit,
-        dailyLimit: limits.dailyLimit,
       });
     } catch (error) {
       if (wrote) await this.#discardUnreferenced(summaryRef);
       throw error;
     }
-    if (outcome.outcome === "queued") return { accepted: true, entryId: id, duplicate: false };
+    if (outcome.outcome === "queued") {
+      this.#announce();
+      return { accepted: true, entryId: id, duplicate: false };
+    }
     if (wrote) await this.#discardUnreferenced(summaryRef);
-    if (outcome.outcome === "duplicate") return { accepted: true, entryId: id, duplicate: true };
-    return {
-      accepted: false,
-      reason: outcome.outcome === "queue_full" ? "THINK_QUEUE_FULL" : "THINK_DAILY_LIMIT",
-    };
+    return { accepted: true, entryId: outcome.entry.id, duplicate: true };
   }
 
   async #discardUnreferenced(summaryRef: string): Promise<void> {
@@ -247,10 +252,7 @@ export class ProductionThinkInbox {
     if (!referenced) await this.#options.payloads.delete(summaryRef as never).catch(() => false);
   }
 
-  async maintain(): Promise<{
-    readonly recovered: number;
-    readonly expired: number;
-  }> {
+  async maintain(): Promise<{ readonly recovered: number }> {
     const now = this.#options.clock.now();
     const limits = await this.currentLimits();
     const at = Date.parse(now);
@@ -258,11 +260,6 @@ export class ProductionThinkInbox {
       ...this.#options.scope,
       stalledBefore: new Date(at - limits.stalledAfterMinutes * 60_000).toISOString(),
       maxAttempts: limits.maxAttempts,
-      now,
-    });
-    const expired = await this.#options.store.expireQueued({
-      ...this.#options.scope,
-      createdBefore: new Date(at - limits.expiresAfterHours * 3_600_000).toISOString(),
       now,
     });
     const settled = await this.#options.store.settledSummaries({
@@ -279,13 +276,11 @@ export class ProductionThinkInbox {
           .clearSummary({ ...this.#options.scope, id, summaryRef })
           .catch(() => false);
     }
-    return { recovered, expired };
+    if (recovered > 0) this.#announce();
+    return { recovered };
   }
 
-  usage(): Promise<ThinkInboxUsage> {
-    return this.#options.store.usage({
-      ...this.#options.scope,
-      day: localDay(this.#options.clock.now(), this.#options.timeZone),
-    });
+  usage(): Promise<InboxUsage> {
+    return this.#options.store.usage(this.#options.scope);
   }
 }

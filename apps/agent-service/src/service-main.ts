@@ -219,8 +219,6 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
-import { productionThinkWorth, type ThinkWorthRoute } from "./production-think-composition.js";
-import { isThinkRunSource } from "./production-think-runner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
@@ -761,7 +759,6 @@ export async function startTenantRuntime(
   let proactive: ProductionProactive | undefined;
   let memoryClassifier: ProductionMemoryClassifier | undefined;
   let memoryImportDuplicates: ReturnType<typeof productionImportDuplicateChecker>;
-  let thinkWorth: ThinkWorthRoute | undefined;
   let museIntake: ProductionMuseIntake | undefined;
   let gapExport: ProductionGapExport | undefined;
   let mcpRead: ProductionMcpRead | undefined;
@@ -1722,7 +1719,7 @@ export async function startTenantRuntime(
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         readOnlyRun: async (runId) => {
           const source = await runSources.read(runId);
-          return source === undefined || isThinkRunSource(source);
+          return source === undefined;
         },
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -2070,7 +2067,6 @@ export async function startTenantRuntime(
               ids,
             })
           : undefined;
-      thinkWorth = productionThinkWorth(configuration, hostModelSources(configuration).provider);
       memoryImportDuplicates = productionImportDuplicateChecker(
         configuration,
         hostModelSources(configuration).provider,
@@ -3454,17 +3450,12 @@ export async function startTenantRuntime(
           settled: async (ids) => (await webPush?.settled(ids)) ?? [],
         },
         ...(proactive ? { proactive } : {}),
-        thinkRetentionDiagnostic: (event: Record<string, string>) =>
+        threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
-        ...(thinkWorth
-          ? {
-              think: {
-                worth: thinkWorth,
-                onDiagnostic: (event: Record<string, string>) =>
-                  writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
-              },
-            }
-          : {}),
+        inbox: {
+          onDiagnostic: (event: Record<string, string>) =>
+            writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        },
         ...(memoryComposition?.queryPrefetch
           ? {
               queryPrefetch: outsideRunQueryPrefetch(

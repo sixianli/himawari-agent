@@ -1,7 +1,7 @@
 import {
-  PRODUCTION_THINK_OPERATIONS,
-  type ProductionThinkControl,
-} from "./production-think-settings.js";
+  PRODUCTION_INBOX_OPERATIONS,
+  type ProductionInboxControl,
+} from "./production-inbox-settings.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import {
@@ -143,7 +143,7 @@ export function createProductionApprovalGateway(options: {
   readonly loginDevicesControl?: ProductionLoginDevicesControl;
   readonly mcpConnectionsControl?: ProductionMcpConnectionsControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
-  readonly thinkControl?: Pick<ProductionThinkControl, "query" | "execute">;
+  readonly inboxControl?: Pick<ProductionInboxControl, "query" | "execute">;
   readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
 }) {
   const { ownerId, agentId } = options.configuration;
@@ -216,8 +216,8 @@ export function createProductionApprovalGateway(options: {
                                               options.perceptionControl
                                             ? options.perceptionControl.query(query)
                                             : query.type.startsWith("think.") &&
-                                                options.thinkControl
-                                              ? options.thinkControl.query(query)
+                                                options.inboxControl
+                                              ? options.inboxControl.query(query)
                                               : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
@@ -353,8 +353,8 @@ export function createProductionApprovalGateway(options: {
           return options.deviceControl.execute(authentication, command);
         if (command.type.startsWith("perception.") && options.perceptionControl)
           return options.perceptionControl.execute(command);
-        if (command.type.startsWith("think.") && options.thinkControl)
-          return options.thinkControl.execute(command);
+        if (command.type.startsWith("think.") && options.inboxControl)
+          return options.inboxControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -403,7 +403,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.loginDevicesControl ? PRODUCTION_LOGIN_DEVICE_OPERATIONS : []),
       ...(options.mcpConnectionsControl ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
       ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
-      ...(options.thinkControl ? PRODUCTION_THINK_OPERATIONS : []),
+      ...(options.inboxControl ? PRODUCTION_INBOX_OPERATIONS : []),
     ],
     reads,
     controlPlane,
