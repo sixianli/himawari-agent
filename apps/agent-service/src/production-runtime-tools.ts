@@ -57,6 +57,7 @@ import {
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_RULE_REJECTED,
   TOOL_RESULT_REMINDER_UNAVAILABLE,
+  TOOL_RESULT_VAULT_UNAVAILABLE,
   TOOL_SAVE_COPY,
   TOOL_SAVE_COPY_EXPECTED_HASH,
   TOOL_SAVE_COPY_OPERATION_ID,
@@ -91,6 +92,11 @@ import {
   ReminderInputError,
   reminderToolDescriptors,
 } from "./production-reminder-writer.js";
+import {
+  type ProductionVaultTools,
+  VaultToolInputError,
+  vaultToolDescriptors,
+} from "./production-vault-tools.js";
 import {
   PerceptionToolError,
   type ProductionPerceptionTools,
@@ -145,6 +151,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
+  "owner-vault": { prefix: "vault", reasonCode: "VAULT_OWNER_SCOPE" },
 });
 const PERCEPTION_EXTERNAL_ORIGIN = "perception_read";
 class OwnerScopeStop extends Error {
@@ -349,6 +356,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
+  readonly vault?: Pick<ProductionVaultTools, "run">;
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
@@ -601,6 +609,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (this.#options.reminders) descriptors.push(...reminderToolDescriptors());
     if (this.#options.ownerRules) descriptors.push(...ownerRuleToolDescriptors());
     if (this.#options.perception) descriptors.push(...perceptionToolDescriptors());
+    if (this.#options.vault) descriptors.push(...vaultToolDescriptors());
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     return this.#registry.offer(descriptors, { readOnly });
@@ -679,6 +688,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#ownerRule(invocation, gate);
     if (row.targetType === "owner-perception" && this.#options.perception)
       return (invocation, gate) => this.#perception(invocation, gate);
+    if (row.targetType === "owner-vault" && this.#options.vault)
+      return (invocation, gate) => this.#vault(invocation, gate);
     return undefined;
   }
   #ownerScopeGate(
@@ -817,6 +828,22 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           : { errorCode: "MEMORY_RECALL_UNAVAILABLE", note: TOOL_RESULT_RECALL_UNAVAILABLE.text },
     );
   }
+  async #vault(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const vault = this.#options.vault;
+    return this.#ownerScoped(
+      invocation,
+      "vault",
+      gate,
+      vault ? async (call) => ({ value: await vault.run(call) }) : undefined,
+      (error) => ({
+        errorCode: error instanceof VaultToolInputError ? error.code : "VAULT_UNAVAILABLE",
+        note: TOOL_RESULT_VAULT_UNAVAILABLE.text,
+      }),
+    );
+  }
   async #reminder(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -845,7 +872,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker: "recall" | "reminder" | "rule" | "perception" | "vault",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -872,7 +899,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception",
+    marker: "recall" | "reminder" | "rule" | "perception" | "vault",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;

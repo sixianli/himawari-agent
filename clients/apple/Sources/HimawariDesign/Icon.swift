@@ -7,6 +7,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case affiliate
     case alertCircle = "alert-circle"
     case alertCircleLarge = "alert-circle-large"
+    case alertTriangle = "alert-triangle"
     case appWindow = "app-window"
     case arrowBackUp = "arrow-back-up"
     case arrowUp = "arrow-up"
@@ -54,7 +55,9 @@ public enum IconName: String, CaseIterable, Sendable {
     case history
     case infoCircle = "info-circle"
     case homeBolt = "home-bolt"
+    case key
     case listCheck = "list-check"
+    case lock
     case mail
     case mapPin = "map-pin"
     case mapPinLarge = "map-pin-large"
@@ -76,6 +79,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case plus
     case point
     case qrcodeOff = "qrcode-off"
+    case refresh
     case scan
     case search
     case server

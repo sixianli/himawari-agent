@@ -122,6 +122,17 @@ date: "2026-11-25"
 4. 出口守门程序，替换现有真值注入。
 每一步都先跑上面对应的自动检查。
 
+### 第一步和第二步做到了哪里
+
+手机核心和服务器放在同一次改动里交付，因为批准流程两头都要有才能测。
+
+- 已做：服务器存储四张表（项、清单、请求、使用记录）、设备接口五条（读清单、读使用记录、改清单、批准、拒绝）、列出工具 `vault_list`（只给名字、类型、网站）、批准推送；手机端加密格式、总钥匙（iCloud 钥匙串同步项）、清单签名和防退回、批准时用临时公钥封装项钥匙、换总钥匙（先存“下一把”，服务器收下再换正，中途断了下次打开会接着换完）；页面有列表、加一项、手动加、一项的详情、换一个、批准页、丢手机和换钥匙。
+- 两头互相解开对方加密的样例：服务器的样例在手机代码里能解开并验签，手机代码生成的批准封装和字段密文在服务器代码里能解开（`clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract.json` 的 `vector` 和 `phoneVector`）。
+- 第一步定下的读法：
+  - “保险箱工具一次加齐”读作：工具列表不随保险箱里有没有东西变化，没开保险箱时工具照样在，只是如实回答“没开”。这一步只加 `vault_list`；填表工具在第三步做好能用时再加，不先放一个用不了的工具。
+  - 总钥匙不加刷脸。刷脸由安全芯片里的签名钥匙在批准时强制（Andy 定的第 3 项），总钥匙再加刷脸会让每次打开保险箱都多刷一次。真机上只验证批准页刷脸流程和凭据导入列表两件事。
+- 还没做、等对应那一步再显示（不放空行）：从苹果“密码”导入（要真机验证凭据导入列表）、“用到才问”和“网站对不上”两屏（跟第三步的填表一起做）、详情页“后台也能用”开关（服务器还没有后台取用；开关在之前不显示）。
+
 ## 前提和来源
 1. 读过外来内容后，改外面的账号先问、发出去和删东西先问、“长期同意”不算数：ADR 0285 决定 7，“改 Andy 外面的账号和设备、改他定的规则，没读过外来内容时直接做，读过就问……发出去、删东西先问，Andy 给过的长期同意在读过外来内容后不算数”（分支 claude/project-thread-1uwmti，docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md:41，未合入 main）。
 2. iCloud 钥匙串：新设备“either by pairing with and being sponsored by an existing iCloud Keychain device, or by using iCloud Keychain recovery”（https://support.apple.com/guide/security/sec0a319b35f/web）；恢复时“the device passcode is used to recover an escrowed keychain”，并要回复短信（https://support.apple.com/guide/security/secure-icloud-keychain-recovery-secdeb202947/web）。同步项：“may not also specify a kSecAttrAccessible value that is incompatible with syncing (namely, those whose names end with ThisDeviceOnly)”，文档没提 kSecAttrAccessControl（https://developer.apple.com/documentation/security/ksecattrsynchronizable）。

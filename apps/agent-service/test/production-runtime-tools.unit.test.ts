@@ -2122,14 +2122,14 @@ it("[ADR-0257] only the listing, recall and perception read tools skip the autho
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read"]);
+  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read", "vault_list"]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(9);
+  expect(builtin).toHaveLength(10);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {

@@ -87,6 +87,7 @@ import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operati
 import { SqliteDeliveryTimingSettingsOperations } from "./sqlite-delivery-timing-settings-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
+import { SqliteVaultOperations } from "./sqlite-vault-operations.ts";
 import { SqliteMcpMemorySyncOperations } from "./sqlite-mcp-memory-sync-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
@@ -398,6 +399,7 @@ export class SqliteDurableOperations {
   private readonly homeUrgency: SqliteHomeUrgencyOperations;
   private readonly externalMemoryProposals: SqliteExternalMemoryProposalOperations;
   private readonly mcpConnections: SqliteMcpConnectionOperations;
+  private readonly vault: SqliteVaultOperations;
   private readonly mcpMemorySync: SqliteMcpMemorySyncOperations;
   private readonly proactive: SqliteProactiveOperations;
   private readonly decisionLedger: SqliteDecisionLedgerOperations;
@@ -517,6 +519,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.mcpConnections = new SqliteMcpConnectionOperations(database, fail, assertDiskHeadroom);
+    this.vault = new SqliteVaultOperations(database, fail, assertDiskHeadroom);
     this.mcpMemorySync = new SqliteMcpMemorySyncOperations(database, fail, assertDiskHeadroom);
     this.proactive = new SqliteProactiveOperations(
       database,
@@ -720,6 +723,7 @@ export class SqliteDurableOperations {
       return this.externalMemoryProposals.execute(operation, payload);
     if (operation.startsWith("mcpConnection."))
       return this.mcpConnections.execute(operation, payload);
+    if (operation.startsWith("vault.")) return this.vault.execute(operation, payload);
     if (operation.startsWith("mcpMemorySync."))
       return this.mcpMemorySync.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);

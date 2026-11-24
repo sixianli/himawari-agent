@@ -27,6 +27,7 @@ import {
   ThreadExecutionProjection,
   ThreadForkService,
   ThreadQueryService,
+  VaultService,
   VOICE_ADDRESSEE_DEFAULTS,
   type VoiceAddresseeConfiguration,
   type VoiceGates,
@@ -62,6 +63,7 @@ import {
   DevicePresence,
   DevicePushService,
   EnvelopePayloadProtector,
+  NodeVaultCrypto,
   PairedDeviceService,
   type PairedDeviceWarning,
   type PerceptionLimitWarning,
@@ -221,6 +223,8 @@ export interface Harness {
     readonly authorization: { current: DeviceActionAuthorizationPort | undefined };
     readonly openRequests: DeviceActionRecord[];
   };
+  readonly vault: VaultService;
+  readonly vaultNotified: string[];
 }
 
 export async function harness(
@@ -289,6 +293,17 @@ export async function harness(
     databasePath,
     minimumFreeBytes: 0,
     now: () => clock.now(),
+  });
+  const vaultNotified: string[] = [];
+  const vault = new VaultService({
+    store: repository.vault(),
+    crypto: new NodeVaultCrypto(),
+    notifier: {
+      approvalNeeded: async (input) => {
+        vaultNotified.push(input.requestId);
+      },
+    },
+    now,
   });
   const sessions = repository.sessionDeviceState();
   const identityState = repository.ownerIdentityState();
@@ -624,6 +639,8 @@ export async function harness(
       }),
       ...(options.pairingAccess ? { pairingAccess: options.pairingAccess } : {}),
       perception,
+      vault: (scope) =>
+        scope.ownerId === ownerId && scope.agentId === agentId ? vault : undefined,
       actions: {
         service: (scope) =>
           scope.ownerId === ownerId && scope.agentId === agentId ? actions.service : undefined,
@@ -684,6 +701,8 @@ export async function harness(
     protector,
     externalContent,
     actions: { ...actions, hub, authorization, openRequests },
+    vault,
+    vaultNotified,
     notifications,
     readText: async (contentRef) => {
       const payload = await repository.payloadStore(ownerId, agentId).get(contentRef);

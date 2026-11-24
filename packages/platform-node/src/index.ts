@@ -61,3 +61,4 @@ export * from "./web-provider-chain.js";
 export * from "./web-provider-failure.js";
 export * from "./web-push-sender.js";
 export * from "./workspaces/index.js";
+export * from "./vault-crypto.js";

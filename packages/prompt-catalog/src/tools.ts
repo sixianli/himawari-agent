@@ -27,6 +27,15 @@ export const TOOL_REMINDER_CANCEL = fixedPrompt({
   text: "取消一个还没到点的提醒。reminderId 取自 reminder_set 或 reminder_list 的返回；不确定是哪一个时先用 reminder_list，不要猜。",
 });
 
+export const TOOL_VAULT_LIST = fixedPrompt({
+  id: "tools.vault-list",
+  purpose: "vault_list 工具的描述：保险箱里有哪些项，模型看不到值",
+  usedBy: ["apps/agent-service/src/production-vault-tools.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "列出主人保险箱里存的密码和 API key：每一项的编号、名字、类别（login 是网站登录，api_key 是程序用的 key）和允许使用的网站。你看不到也拿不到值，也不要在对话里向主人要密码或 key 的原文；值只会在主人每次刷脸批准后由保险箱程序直接填进允许的网站。主人问保险箱里存了什么，或你要判断某个网站有没有可用的登录项时使用。只读。",
+});
+
 export const TOOL_RECALL = fixedPrompt({
   id: "tools.recall",
   purpose: "recall 工具的描述：什么时候查长期记忆和对话摘要",
@@ -214,6 +223,15 @@ export const TOOL_RESULT_REMINDER_UNAVAILABLE = fixedPrompt({
   layer: "tool-result",
   output: "free-text",
   text: "提醒暂时设不了。不要说已设好，告诉主人现在设不了，可以稍后再试或到提醒页手动新建。",
+});
+
+export const TOOL_RESULT_VAULT_UNAVAILABLE = fixedPrompt({
+  id: "tool-result.vault-unavailable",
+  purpose: "查保险箱失败：保险箱暂时不可用或参数不对",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这次没有查到保险箱，原因见 error。不要猜保险箱里有什么，也不要向主人要密码原文；如实告诉主人现在查不了。",
 });
 
 export const TOOL_RESULT_REMINDER_REJECTED = fixedPrompt({
