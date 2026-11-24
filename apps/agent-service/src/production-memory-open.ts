@@ -71,10 +71,22 @@ function wholeNumber(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number 
   return value;
 }
 
-function clipped(text: string | null, maximum: number): string | null {
-  if (text === null) return null;
+function serializedLength(value: unknown): number {
+  return JSON.stringify(value).length;
+}
+
+function fitted(text: string | null, limit: number): string | null {
+  if (text === null || serializedLength(text) <= limit) return text;
   const characters = [...text];
-  return characters.length <= maximum ? text : `${characters.slice(0, maximum - 1).join("")}…`;
+  const shortened = (keep: number) => `${characters.slice(0, keep).join("")}…`;
+  let low = 0;
+  let high = characters.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (serializedLength(shortened(middle)) <= limit) low = middle;
+    else high = middle - 1;
+  }
+  return shortened(low);
 }
 
 function status(memory: ProductMemoryRecord, now: string): string {
@@ -140,10 +152,10 @@ export class ProductionMemoryOpen {
         conversationId: event.sourceDeleted ? null : event.sourceThreadId,
       });
     const attributes = memory.attributes;
-    const head = {
+    const headWithoutText = {
       number,
       found: true,
-      text,
+      text: "",
       category: attributes?.category ?? null,
       status: status(memory, this.#options.now()),
       recordedAt: memory.recordedAt ?? memory.updatedAt,
@@ -153,19 +165,24 @@ export class ProductionMemoryOpen {
       page,
     };
     const budget = this.#options.pageCharacters;
+    const headBare = serializedLength({ ...headWithoutText, versions: [], nextPage: MAXIMUM_PAGE });
+    const head = {
+      ...headWithoutText,
+      text: fitted(text, Math.floor((budget - headBare) / 2) + 2),
+    };
     const pages: ShownVersion[][] = [];
     let current: ShownVersion[] = [];
-    let used = JSON.stringify({ ...head, versions: [], nextPage: MAXIMUM_PAGE }).length;
+    let used = serializedLength({ ...head, versions: [], nextPage: MAXIMUM_PAGE });
     const fixed = used;
     for (const whole of versions) {
-      const bare = JSON.stringify({ ...whole, text: "", quote: "" }).length + 1;
-      const room = Math.max(1, Math.floor((budget - fixed - bare) / 2));
+      const bare = serializedLength({ ...whole, text: "", quote: "" }) + 1;
+      const room = Math.floor((budget - fixed - bare) / 2) + 2;
       const version = {
         ...whole,
-        text: clipped(whole.text, room),
-        quote: clipped(whole.quote, room),
+        text: fitted(whole.text, room),
+        quote: fitted(whole.quote, room),
       };
-      const size = JSON.stringify(version).length + 1;
+      const size = serializedLength(version) + 1;
       if (current.length > 0 && used + size > budget) {
         pages.push(current);
         current = [];
@@ -175,12 +192,13 @@ export class ProductionMemoryOpen {
       used += size;
     }
     if (current.length > 0 || pages.length === 0) pages.push(current);
-    const shown = pages[page - 1] ?? [];
+    const shown = pages[page - 1];
+    if (!shown) throw new MemoryOpenInputError();
     return {
       output: {
         ...head,
         versions: shown,
-        ...(page < pages.length ? { nextPage: page + 1 } : {}),
+        ...(page < pages.length && page < MAXIMUM_PAGE ? { nextPage: page + 1 } : {}),
       },
       contentClassification: highestClassification(invocation.dataClassification, [
         memory.dataClassification,

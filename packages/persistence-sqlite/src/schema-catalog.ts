@@ -587,6 +587,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its Memory; the quote Payload stays when its source Thread is deleted and goes with its Memory",
   ),
   entry(
+    "memory_numbers",
+    "ProductMemoryStatePort",
+    "one fixed short number per Memory, counted from 1 per Owner and Agent and assigned on insert",
+    "none",
+    "cascade with its Memory; the number is never reassigned",
+  ),
+  entry(
+    "memory_number_counters",
+    "ProductMemoryStatePort",
+    "the last Memory number handed out per Owner and Agent; it only grows",
+    "none",
+    "cascade with its Owner or Agent",
+  ),
+  entry(
     "memory_episodes",
     "MemoryEpisodeStorePort",
     "one encrypted summary per closed conversation day or Pi compaction",
