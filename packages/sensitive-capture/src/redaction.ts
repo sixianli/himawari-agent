@@ -437,6 +437,12 @@ export function findSensitiveValues(input: string): readonly EgressRedactionSigh
   return Object.freeze(found);
 }
 
+export function namesRememberedValue(input: string): boolean {
+  const known = new Map<string, string>();
+  redactForEgress(input, { tag: () => "aaaaaaaa", known });
+  return known.size > 0;
+}
+
 export interface MaskedValueSpan {
   readonly start: number;
   readonly end: number;
