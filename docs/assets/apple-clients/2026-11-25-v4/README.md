@@ -38,9 +38,9 @@ date: "2026-11-25"
 - `icon.speak` 由 `microphone` 改成自己画的声波（全套里唯一自己画的图标），`speakSize` 22、`strokeSpeak` 2.2；新增 `icon.dictate`（`microphone`）和 `icon.attach`（`plus`）。
 - 新增 `avatar` 一段：头像的位置和大小、忙时的生长（ADR 0283）和柔光、平时和“减弱动态效果”时的样子、下面“后台在办”那一条。
 - 新增 `options` 一段：她那条话下面的选项。
-- 新增 `chat` 一段：主对话顶上的渐隐、回答里的格式（段落间距、列表、表格；引用和代码块原型没画，由设计线程定）、点“+”的面板、语音的声波条、说话途中那条气泡的透明度。
+- 新增 `chat` 一段：主对话顶上的渐隐（头像下面有没有“后台在办”那一条，高度不同，两种都给了）、回答里的格式（段落间距、列表、表格；引用和代码块原型没画，不给数值，由设计线程定）、点“+”的面板、语音的声波条、说话途中那条气泡的透明度。
 - 新增 `her` 一段：她的页面的大头像、himawari 字样和带图标方块的行。
-- 第 3 版漏掉、第 2 版有、这一版还用得上的值补回来：`senses`、`handover`（分享过来的）两段，`type.rowAction`、`type.senseTitle`、`type.senseTime`，`size.pillSmall`，`icon.todayRow`（设备动作的行也在用，名字留到改外壳时再改）。
+- 第 3 版漏掉、第 2 版有、这一版还用得上的值补回来，数值照抄第 2 版：`senses`、`handover`（分享过来的）两段（`handover` 里只有分享面板那几项在第 4 版原型里画了，其余沿用第 2 版，见它的 `note`），`type.rowAction`、`type.senseTitle`、`type.senseTime`，`size.pillSmall`，`icon.todayRow`（设备动作的行也在用，名字留到改外壳时再改）。
 - `colorUse` 只放“用途名对颜色名”：原先误放在里面的 `successRing`、`highlight` 两句说明挪到 `colorNotes`，否则生成 Swift 常量的 `clients/apple/scripts/make-design-tokens.mjs` 报 `DESIGN_TOKEN_COLOR_USE_UNKNOWN`。
 - `avatar.wordmarkGap` 是 3（2026-11-25 按原型源文件改正，原先误写成 4）。
 - 颜色一个没动。
