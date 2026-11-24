@@ -50,6 +50,8 @@ import {
   renderPrompt,
   TOOL_AUTHORIZED,
   TOOL_MOVE_DIRECTORY,
+  TOOL_RESULT_CONVERSATION_INPUT_INVALID,
+  TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
   TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
@@ -70,6 +72,7 @@ import {
   type ContextExternalContent,
   ExternalContentMarkNotWrittenError,
   originsOf,
+  RECALLED_EXTERNAL_CONVERSATION_ORIGIN,
   RECALLED_EXTERNAL_RECORD_ORIGIN,
 } from "./context-external-content.js";
 import type { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
@@ -81,6 +84,11 @@ import {
   executeProductionCodingRequest,
   fileVersionConflictResult,
 } from "./production-coding-workflow.js";
+import {
+  ConversationToolInputError,
+  conversationToolDescriptors,
+  type ProductionConversationTools,
+} from "./production-conversation-tools.js";
 import {
   RUNTIME_CONTEXT_EXECUTOR,
   toolResultRecallDescriptor,
@@ -152,6 +160,7 @@ const BUILTIN_PREFLIGHT: Readonly<
   Record<string, { readonly prefix: string; readonly reasonCode: string }>
 > = Object.freeze({
   "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
+  "owner-conversation": { prefix: "conversation", reasonCode: "CONVERSATION_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
@@ -358,6 +367,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly managedTasks?: ProductionManagedTasks;
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
+  readonly conversations?: Pick<ProductionConversationTools, "run">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
@@ -365,7 +375,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly toolActions?: ToolActionRegistry;
   readonly readOnlyRun?: (runId: RuntimeRequest["runId"]) => Promise<boolean>;
   readonly ownerScope?: Pick<OwnerScopeAuthorization, "authorize">;
-  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read">;
+  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -618,9 +628,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     const offered = this.#registry.offer(descriptors, { readOnly });
-    return offered.length === 0
+    const conversations = this.#options.conversations ? conversationToolDescriptors() : [];
+    return offered.length === 0 && conversations.length === 0
       ? offered
-      : this.#registry.offer([...offered, toolResultRecallDescriptor()], { readOnly });
+      : this.#registry.offer([...offered, toolResultRecallDescriptor(), ...conversations], {
+          readOnly,
+        });
   }
 
   async #taskStart(invocation: RuntimeToolInvocation): Promise<RuntimeToolInvocation> {
@@ -690,6 +703,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     if (row.executor !== "owner_scoped") return undefined;
     if (row.targetType === "owner-memory" && this.#options.memoryRecall)
       return (invocation, gate) => this.#recall(invocation, gate);
+    if (row.targetType === "owner-conversation" && this.#options.conversations)
+      return (invocation, gate) => this.#conversation(invocation, gate);
     if (row.targetType === "owner-reminder" && this.#options.reminders)
       return (invocation, gate) => this.#reminder(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
@@ -852,6 +867,41 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }),
     );
   }
+  async #conversation(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const conversations = this.#options.conversations;
+    return this.#ownerScoped(
+      invocation,
+      "conversation",
+      gate,
+      conversations
+        ? async (call) => {
+            const { output, contentClassification, conversationIds } =
+              await conversations.run(call);
+            const marker = this.#options.externalContent;
+            if (marker)
+              for (const conversationId of conversationIds)
+                if ((await marker.readThread(conversationId)).length > 0) {
+                  await marker.mark(call.runId, RECALLED_EXTERNAL_CONVERSATION_ORIGIN);
+                  break;
+                }
+            return { value: output, contentClassification };
+          }
+        : undefined,
+      (error) =>
+        error instanceof ConversationToolInputError
+          ? {
+              errorCode: "CONVERSATION_INPUT_INVALID",
+              note: TOOL_RESULT_CONVERSATION_INPUT_INVALID.text,
+            }
+          : {
+              errorCode: "CONVERSATION_UNAVAILABLE",
+              note: TOOL_RESULT_CONVERSATION_UNAVAILABLE.text,
+            },
+    );
+  }
   async #reminder(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -880,7 +930,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception" | "vault",
+    marker: "recall" | "conversation" | "reminder" | "rule" | "perception" | "vault",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -907,7 +957,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "reminder" | "rule" | "perception" | "vault",
+    marker: "recall" | "conversation" | "reminder" | "rule" | "perception" | "vault",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;

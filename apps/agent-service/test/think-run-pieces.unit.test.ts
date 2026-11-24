@@ -30,9 +30,18 @@ describe("think run pieces", () => {
     }
     for (const name of all.filter((item) => !readOnly.includes(item)))
       expect(readOnlyRow(registry.forTool(name) as never)).toBe(false);
-    expect(readOnly).toEqual(
-      expect.arrayContaining(["web_search", "web_fetch", "recall", "reminder_list"]),
-    );
+    expect([...readOnly].sort()).toEqual([
+      "conversation_open",
+      "conversation_search",
+      "perception_read",
+      "recall",
+      "reminder_list",
+      "rule_list",
+      "tool_result_recall",
+      "vault_list",
+      "web_fetch",
+      "web_search",
+    ]);
     for (const name of ["reminder_set", "rule_set", "bash", "write", "device_action"])
       expect(readOnly).not.toContain(name);
   });

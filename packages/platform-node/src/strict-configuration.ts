@@ -40,10 +40,6 @@ import {
   IMPORT_DUPLICATE_RANGES,
   type ImportDuplicateConfiguration,
   type ImportDuplicateTuning,
-  THINK_SETTING_DEFINITIONS,
-  THINK_WORTH_DEFAULTS,
-  thinkSettingDefinition,
-  type ThinkWorthConfiguration,
   isWebProviderId,
   LOCAL_ONNX_EMBEDDING_PROVIDER,
   type ModelCostDescriptor,
@@ -61,7 +57,11 @@ import {
   type RunPolicyConfiguration,
   type TaskEnvironmentConfiguration,
   type TaskEnvironmentImageConfiguration,
+  THINK_SETTING_DEFINITIONS,
+  THINK_WORTH_DEFAULTS,
+  type ThinkWorthConfiguration,
   type ToolRefusalConfiguration,
+  thinkSettingDefinition,
   VOICE_ADDRESSEE_DEFAULTS,
   VOICE_ADDRESSEE_RANGES,
   type VoiceAddresseeConfiguration,
@@ -2081,6 +2081,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "storagePath",
       "dimensions",
       "minimumSimilarity",
+      "toolResultShare",
       "retrieval",
       "conversationReview",
     ],
@@ -2094,6 +2095,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       : unitInterval(memory["minimumSimilarity"], "configuration.memory.minimumSimilarity");
   if (minimumSimilarity !== undefined && (minimumSimilarity <= 0 || minimumSimilarity >= 1))
     throw invalid("configuration.memory.minimumSimilarity", "must be greater than 0 and below 1");
+  const toolResultShare =
+    memory["toolResultShare"] === undefined
+      ? undefined
+      : unitInterval(memory["toolResultShare"], "configuration.memory.toolResultShare");
+  if (toolResultShare !== undefined && (toolResultShare <= 0 || toolResultShare > 0.5))
+    throw invalid("configuration.memory.toolResultShare", "must be greater than 0 and at most 0.5");
   if (memory["adapter"] !== "himawari-sqlite" && memory["adapter"] !== "mem0-oss")
     throw invalid("configuration.memory.adapter", "is unsupported");
   const memoryPath = absolutePath(memory["storagePath"], "configuration.memory.storagePath");
@@ -2366,6 +2373,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       storagePath: memoryPath,
       dimensions: memoryDimensions,
       ...(minimumSimilarity === undefined ? {} : { minimumSimilarity }),
+      ...(toolResultShare === undefined ? {} : { toolResultShare }),
       ...(retrieval === undefined ? {} : { retrieval }),
       ...(conversationReviewSettings === undefined
         ? {}
