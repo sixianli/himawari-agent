@@ -1,4 +1,5 @@
 import type {
+  DataClassification,
   MemoryHistoryEvent,
   ProductMemoryRecord,
   RuntimeRequest,
@@ -16,6 +17,7 @@ function memoryTool(options: {
   readonly versions: number;
   readonly versionText: string;
   readonly pageCharacters: number;
+  readonly classifications?: Readonly<Record<string, DataClassification>>;
 }) {
   const memory = {
     id: "memory-open",
@@ -53,7 +55,10 @@ function memoryTool(options: {
       numbers: async () => [],
       listHistory: async () => events,
     },
-    readText: async (ref) => (ref === "text-memory" ? options.text : options.versionText),
+    readText: async (ref) => ({
+      text: ref === "text-memory" ? options.text : options.versionText,
+      dataClassification: options.classifications?.[ref] ?? "private",
+    }),
     pageCharacters: options.pageCharacters,
     now: () => "2026-11-25T00:00:00.000Z",
   });
@@ -134,3 +139,35 @@ it("reaches every version past page 100, each exactly once, and rejects a page p
   );
   expect((await single.open(call({ number: 1, page: 1 }))).output["versions"]).toHaveLength(1);
 }, 30_000);
+
+it("withholds an earlier version or quote the model may not see and labels the result with the highest shown classification", async () => {
+  const opened = await memoryTool({
+    text: "现在的说法",
+    versions: 3,
+    versionText: "旧的说法",
+    pageCharacters: 2000,
+    classifications: { "version-0": "restricted", "quote-1": "restricted", "quote-2": "sensitive" },
+  }).open(call({ number: 1 }));
+  expect(opened.output["text"]).toBe("现在的说法");
+  expect(opened.output["versions"]).toEqual([
+    expect.objectContaining({ text: null, quote: "旧的说法" }),
+    expect.objectContaining({ text: "旧的说法", quote: null }),
+    expect.objectContaining({ text: "旧的说法", quote: "旧的说法" }),
+  ]);
+  expect(JSON.stringify(opened.output)).not.toContain("restricted");
+  expect(opened.contentClassification).toBe("sensitive");
+});
+
+it("REVERSE: versions stored at the memory's own classification are all shown and keep its classification", async () => {
+  const opened = await memoryTool({
+    text: "现在的说法",
+    versions: 2,
+    versionText: "旧的说法",
+    pageCharacters: 2000,
+  }).open(call({ number: 1 }));
+  expect(opened.output["versions"]).toEqual([
+    expect.objectContaining({ text: "旧的说法", quote: "旧的说法" }),
+    expect.objectContaining({ text: "旧的说法", quote: "旧的说法" }),
+  ]);
+  expect(opened.contentClassification).toBe("private");
+});

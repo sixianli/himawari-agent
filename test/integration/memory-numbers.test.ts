@@ -227,7 +227,10 @@ describe("[ADR-0286] memory numbers", () => {
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         state,
-        readText: async (ref) => texts[ref],
+        readText: async (ref) => {
+          const text = texts[ref];
+          return text === undefined ? undefined : { text, dataClassification: "private" as const };
+        },
         pageCharacters,
         now: () => NOW,
       });

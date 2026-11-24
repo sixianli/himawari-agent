@@ -1614,22 +1614,26 @@ export async function startTenantRuntime(
         : undefined;
       const recallProjection = memoryComposition.projection;
       const recallProtector = protector;
-      const readMemoryText = async (ref: PayloadRef) => {
+      const readMemoryPayloadText = async (ref: PayloadRef) => {
         const payload = await payloads.get(ref);
         if (!payload || payload.contentType !== "text/plain") return undefined;
-        return new TextDecoder("utf-8", { fatal: true }).decode(
-          await recallProtector.unprotect({
-            ownerId: configuration.ownerId,
-            agentId: configuration.agentId,
-            payload,
-          }),
-        );
+        return {
+          text: new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          ),
+          dataClassification: payload.dataClassification,
+        };
       };
+      const readMemoryText = async (ref: PayloadRef) => (await readMemoryPayloadText(ref))?.text;
       const memoryOpen = new ProductionMemoryOpen({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
         state: repository.productMemoryState(),
-        readText: (ref) => readMemoryText(ref),
+        readText: (ref) => readMemoryPayloadText(ref),
         pageCharacters: toolPageCharacters,
         now: () => clock.now(),
       });

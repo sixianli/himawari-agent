@@ -40,11 +40,16 @@ export function memoryOpenDescriptor(): RuntimeToolDescriptor {
 
 type MemoryScope = Pick<ProductMemoryRecord, "ownerId" | "agentId">;
 
+export interface MemoryOpenText {
+  readonly text: string;
+  readonly dataClassification: DataClassification;
+}
+
 export interface ProductionMemoryOpenOptions {
   readonly ownerId: ProductMemoryRecord["ownerId"];
   readonly agentId: ProductMemoryRecord["agentId"];
   readonly state: Pick<ProductMemoryStatePort, "byNumber" | "read" | "numbers" | "listHistory">;
-  readonly readText: (ref: PayloadRef, scope: MemoryScope) => Promise<string | undefined>;
+  readonly readText: (ref: PayloadRef, scope: MemoryScope) => Promise<MemoryOpenText | undefined>;
   readonly pageCharacters: number;
   readonly now: () => string;
 }
@@ -154,7 +159,14 @@ export class ProductionMemoryOpen {
       !modelVisibleClassifications().includes(memory.dataClassification)
     )
       return missing();
-    const text = (await this.#options.readText(memory.contentRef, scope)) ?? null;
+    const shownClassifications: DataClassification[] = [memory.dataClassification];
+    const visibleText = async (ref: PayloadRef): Promise<string | null> => {
+      const read = await this.#options.readText(ref, scope);
+      if (!read || !modelVisibleClassifications().includes(read.dataClassification)) return null;
+      shownClassifications.push(read.dataClassification);
+      return read.text;
+    };
+    const text = await visibleText(memory.contentRef);
     const supersededBy = memory.attributes?.supersededBy ?? null;
     const correctedBy = supersededBy
       ? ((await this.#options.state.numbers({ ...scope, memoryIds: [supersededBy] }))[0]?.number ??
@@ -168,10 +180,8 @@ export class ProductionMemoryOpen {
       versions.push({
         kind: event.kind,
         time: event.occurredAt,
-        text: (await this.#options.readText(event.contentRef, scope)) ?? null,
-        quote: event.quoteRef
-          ? ((await this.#options.readText(event.quoteRef, scope)) ?? null)
-          : null,
+        text: await visibleText(event.contentRef),
+        quote: event.quoteRef ? await visibleText(event.quoteRef) : null,
         conversationId: event.sourceDeleted ? null : event.sourceThreadId,
       });
     const attributes = memory.attributes;
@@ -211,7 +221,7 @@ export class ProductionMemoryOpen {
     let used: number;
     if (text === null) {
       pages.push({ text: null, versions: [] });
-      used = bareWithText;
+      used = serializedLength(pageOutput({ text: null, versions: [] }, widest, widest));
     } else {
       const pieces = textPieces(text, budget - bareWithText + 2);
       for (const piece of pieces) pages.push({ text: piece, versions: [] });
@@ -239,9 +249,10 @@ export class ProductionMemoryOpen {
     if (!shown) throw new MemoryOpenInputError();
     return {
       output: pageOutput(shown, page, page < pages.length ? page + 1 : undefined),
-      contentClassification: highestClassification(invocation.dataClassification, [
-        memory.dataClassification,
-      ]),
+      contentClassification: highestClassification(
+        invocation.dataClassification,
+        shownClassifications,
+      ),
       memoryIds: [memory.id],
       externalContent: carriesExternalContent(memory.sourceRefs),
     };
