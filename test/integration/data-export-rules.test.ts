@@ -193,6 +193,7 @@ describe("data export: the rule book travels with the memories", () => {
     const line = markdown.split("\n").find((text) => text.includes("〔r:owner:night-push〕"));
     expect(line).toContain("静默延后");
     expect(line).toContain("夜里别推任务结果");
+    expect(line).toContain("推送类别 任务完成、她的话）");
     const target = await side("push-rule-target");
     const report = await importInto(target, files, PASSPHRASE);
     expect(report.imported.rules).toBe(6);

@@ -1321,9 +1321,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
-    "changedIn": "ADR 0244",
-    "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
+    "sha256": "18c795f2af4e272923fcf5060751115754fc0e319de5f917824f7a36c6367a10",
+    "changedIn": "ADR 0285",
+    "reason": "安静时段多管一类推送 her_words（她写给主人、推到手机上的原话），默认受管",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
