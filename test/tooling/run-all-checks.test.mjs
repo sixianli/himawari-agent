@@ -35,6 +35,24 @@ describe("npm run check", () => {
     expect(lines).toContain("CHECK_FAILED check:boundaries exit=1");
   });
 
+  it("repeats the end of each failed step's output after the summary so a truncated log still shows why", () => {
+    const lines = [];
+    const output = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`).join("\n");
+    const status = runAllChecks(
+      ["check:delivery-deploy", "lint"],
+      (name) =>
+        name === "lint" ? { status: 0, output: "fine" } : { status: 1, output: `${output}\n` },
+      (line) => lines.push(line),
+    );
+    expect(status).toBe(1);
+    const start = lines.indexOf("CHECK_FAILED_OUTPUT check:delivery-deploy last 80 lines");
+    expect(start).toBeGreaterThan(lines.indexOf("CHECK_SUMMARY 1 of 2 steps failed"));
+    expect(lines.slice(start + 1)).toEqual(
+      Array.from({ length: 80 }, (_, index) => `line ${index + 21}`),
+    );
+    expect(lines.join("\n")).not.toContain("fine");
+  });
+
   it("succeeds only when every step passes", () => {
     const lines = [];
     expect(
