@@ -11,4 +11,4 @@
 "NSLocationWhenInUseUsageDescription" = "到了一个地方、停了多久会记下来，存在你自己的服务器上；你点“我现在的位置”时，把现在的位置发给 Himawari。";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "不打开 Himawari 也记下你到了哪、停了多久，存在你自己的服务器上。";
 "NSHealthShareUsageDescription" = "读步数、睡眠、心率和锻炼，存在你自己的服务器上。";
-"NSPhotoLibraryUsageDescription" = "记下新拍的照片和截屏的时间、地点，不传照片本身。";
+"NSPhotoLibraryUsageDescription" = "记下新拍的照片和截屏的时间、地点，不传这些照片本身；你在“+”里选的照片会发给 Himawari。";

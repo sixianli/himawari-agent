@@ -182,6 +182,7 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.answered())
         case .chatNew:
             ChatView(store: .demo(DemoChatState()), threadId: nil) {}
+                .environment(\.chatCanAttach, true)
         case .chatSending:
             chat(DemoChatFixtures.sending())
         case .chatOffline:
@@ -275,6 +276,7 @@ struct DemoSceneView: View {
 
     private func chat(_ state: DemoChatState) -> some View {
         ChatView(store: .demo(state), threadId: DemoChatFixtures.osakaThreadId) {}
+            .environment(\.chatCanAttach, true)
     }
 }
 

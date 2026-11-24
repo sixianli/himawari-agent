@@ -39,7 +39,7 @@ import Testing
             requestId: "REQ",
             images: nil
         )
-        #expect(composed == "这是哪\n\n<file name=\"照片\" ref=\"payload:img\" bytes=\"26\" kind=\"image\"/>\n\n<file name=\"我现在的位置\" ref=\"payload:loc\" bytes=\"30\" kind=\"text\"/>")
+        #expect(composed == "这是哪\n\n<file name=\"照片\" ref=\"payload:img\" bytes=\"3\" kind=\"image\"/>\n\n<file name=\"我现在的位置\" ref=\"payload:loc\" bytes=\"30\" kind=\"text\"/>")
         let first = try JSONSerialization.jsonObject(with: try #require(exchange.requests[1].httpBody)) as? [String: Any]
         #expect(first?["as"] as? String == "image")
         #expect(first?["content"] as? String == "data:image/png;base64,AQID")
@@ -74,6 +74,37 @@ import Testing
         await #expect(throws: ChatAttachmentProblem.serverOutdated) {
             try await api(old).compose(text: "", attachments: [piece], requestId: "R", images: nil)
         }
+    }
+
+    @Test func theTagCarriesTheSizeOfTheOriginalTextNotTheClippedOne() async throws {
+        let exchange = RecordingExchange([ok(config()), ok(#"{"ref":"payload:t"}"#, status: 201)])
+        let composed = try await api(exchange).compose(
+            text: "",
+            attachments: [ChatAttachment(name: "笔记", content: .text("0123456789abcdef", kind: .text))],
+            requestId: "R",
+            images: nil
+        )
+        #expect(composed == "<file name=\"笔记\" ref=\"payload:t\" bytes=\"16\" kind=\"text\" truncated=\"1\"/>")
+    }
+
+    @Test func aServerWhoseConfigHasNoAttachmentLimitsDoesNotOfferThePlusButton() throws {
+        let decoder = JSONDecoder()
+        #expect(try decoder.decode(DeviceConfiguration.self, from: Data(config(attachments: false).utf8)).acceptsChatAttachments == false)
+        #expect(try decoder.decode(DeviceConfiguration.self, from: Data(config().utf8)).acceptsChatAttachments == true)
+    }
+
+    @Test func filesOverTheSizeCapOrOfUnknownSizeAreNotRead() {
+        #expect(ChatAttachmentPlanner.fileFits(bytes: 1024))
+        #expect(ChatAttachmentPlanner.fileFits(bytes: ChatAttachmentPlanner.maxFileBytes))
+        #expect(!ChatAttachmentPlanner.fileFits(bytes: ChatAttachmentPlanner.maxFileBytes + 1))
+        #expect(!ChatAttachmentPlanner.fileFits(bytes: 4 * 1024 * 1024 * 1024))
+        #expect(!ChatAttachmentPlanner.fileFits(bytes: nil))
+    }
+
+    @Test func theChatListPreviewHidesTheTags() {
+        #expect(MessageAttachments.preview("<file name=\"照片\" ref=\"payload:img\" bytes=\"3\" kind=\"image\"/>") == "照片")
+        #expect(MessageAttachments.preview("这是哪\n\n<file name=\"照片\" ref=\"payload:img\" bytes=\"3\" kind=\"image\"/>") == "这是哪")
+        #expect(MessageAttachments.preview("写 <file 标签 /> 的教程") == "写 <file 标签 /> 的教程")
     }
 
     @Test func withoutAttachmentsNothingIsAskedOfTheServer() async throws {

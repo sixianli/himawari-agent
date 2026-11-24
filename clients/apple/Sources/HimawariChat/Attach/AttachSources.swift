@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 enum AttachFailure: Error, Equatable {
     case unreadable
     case noLocation
+    case tooLarge
 }
 
 enum AttachReader {
@@ -29,6 +30,8 @@ enum AttachReader {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let name = url.lastPathComponent
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        guard ChatAttachmentPlanner.fileFits(bytes: size) else { throw size == nil ? AttachFailure.unreadable : AttachFailure.tooLarge }
         let type = UTType(filenameExtension: url.pathExtension) ?? .data
         if type.conforms(to: .image) {
             guard let data = try? Data(contentsOf: url), let attachment = image(data: data, name: name) else { throw AttachFailure.unreadable }

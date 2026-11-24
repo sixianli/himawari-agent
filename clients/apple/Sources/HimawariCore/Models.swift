@@ -97,6 +97,8 @@ public struct DeviceConfiguration: Codable, Sendable, Equatable {
     public let attachments: AttachmentLimits?
     public let perception: PerceptionSummary?
 
+    public var acceptsChatAttachments: Bool { attachments != nil }
+
     public func limit(_ key: String) -> Int64? {
         limits.first { $0.key == key }?.value
     }

@@ -19,9 +19,7 @@ public final class ChatTalkSession: ChatTalk {
     @ObservationIgnored private var feeding: Task<Void, Never>?
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private var turn = TalkTurn()
-    @ObservationIgnored private var reader = SentenceReader()
-    @ObservationIgnored private var replySource = ""
-    @ObservationIgnored private var interrupted = false
+    @ObservationIgnored private var reply = HerReply()
     @ObservationIgnored private var sentencesRendering = 0
     @ObservationIgnored private var buffersPlaying = 0
     @ObservationIgnored private var generation = 0
@@ -69,15 +67,7 @@ public final class ChatTalkSession: ChatTalk {
 
     public func herReply(_ markdown: String, finished: Bool) {
         guard audio != nil else { return }
-        let text = SpokenText.from(markdown: markdown)
-        if replySource.isEmpty || !text.hasPrefix(replySource) {
-            reader = SentenceReader()
-            interrupted = false
-        }
-        replySource = text
-        guard !interrupted else { return }
-        let sentences = finished ? reader.finish(fullText: text) : reader.next(fullText: text)
-        for sentence in sentences { say(sentence) }
+        for sentence in reply.receive(markdown, finished: finished) { say(sentence) }
     }
 
     public func setMuted(_ muted: Bool) {
@@ -105,8 +95,8 @@ public final class ChatTalkSession: ChatTalk {
         self.pipeline = nil
         sentencesRendering = 0
         buffersPlaying = 0
-        replySource = ""
-        heard = ""
+        reply = HerReply()
+        heard = """"
         levels = []
         phase = .starting
         await pipeline?.cancel()
@@ -129,14 +119,13 @@ public final class ChatTalkSession: ChatTalk {
     private func receive(_ piece: TranscriptPiece, generation started: Int) {
         guard started == generation, !muted else { return }
         let spoken = !piece.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if spoken, phase == .herTurn { interrupt() }
+        if spoken, reply.ownerSpoke(whileSpeaking: phase == .herTurn) { interrupt() }
         turn.heard(piece.text, isFinal: piece.isFinal, at: .now)
         heard = turn.text
     }
 
     private func interrupt() {
         speech += 1
-        interrupted = true
         synthesizer.stopSpeaking(at: .immediate)
         audio?.silence()
         sentencesRendering = 0

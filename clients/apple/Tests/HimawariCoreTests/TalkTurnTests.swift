@@ -43,4 +43,27 @@ final class TalkTurnTests: XCTestCase {
         let partial = String(full.prefix(5))
         XCTAssertTrue(SpokenText.from(markdown: full).hasPrefix(SpokenText.from(markdown: partial)))
     }
+
+    func testSpeakingInTheGapBetweenSentencesStopsTheRestOfThatReply() {
+        var reply = HerReply()
+        XCTAssertEqual(reply.receive("大阪周五晴。", finished: false), ["大阪周五晴。"])
+        XCTAssertTrue(reply.ownerSpoke(whileSpeaking: false))
+        XCTAssertEqual(reply.receive("大阪周五晴。不用带伞。", finished: false), [])
+        XCTAssertEqual(reply.receive("大阪周五晴。不用带伞。记得早点出门", finished: true), [])
+    }
+
+    func testSpeakingAfterAFinishedReplyHasBeenReadInterruptsNothing() {
+        var reply = HerReply()
+        XCTAssertEqual(reply.receive("好的。", finished: true), ["好的。"])
+        XCTAssertFalse(reply.ownerSpoke(whileSpeaking: false))
+        XCTAssertTrue(reply.ownerSpoke(whileSpeaking: true))
+    }
+
+    func testANewReplyIsReadAgainAfterAnInterruption() {
+        var reply = HerReply()
+        _ = reply.receive("第一句。", finished: false)
+        XCTAssertTrue(reply.ownerSpoke(whileSpeaking: true))
+        XCTAssertEqual(reply.receive("换个说法。", finished: false), ["换个说法。"])
+        XCTAssertFalse(reply.interrupted)
+    }
 }

@@ -160,9 +160,9 @@ public final class ChatStore {
     }
 
     public func lastMessageText(in threadId: String) -> String? {
-        if let queued = queued.last(where: { $0.message.threadId == threadId }) { return queued.message.text }
+        if let queued = queued.last(where: { $0.message.threadId == threadId }) { return MessageAttachments.preview(queued.message.text) }
         guard let last = details[threadId]?.messages.last(where: { $0.role != .system }) else { return nil }
-        return texts[last.contentRef]
+        return texts[last.contentRef].map(MessageAttachments.preview)
     }
 
     public func queuedMessages(in threadId: String) -> [OutboxItem] {

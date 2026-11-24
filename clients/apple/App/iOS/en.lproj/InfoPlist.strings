@@ -11,4 +11,4 @@
 "NSLocationWhenInUseUsageDescription" = "Records where you arrive and how long you stay, stored on your own server. When you tap Where I am, your current location is sent to Himawari.";
 "NSLocationAlwaysAndWhenInUseUsageDescription" = "Records where you arrive and how long you stay even when Himawari is closed, stored on your own server.";
 "NSHealthShareUsageDescription" = "Reads steps, sleep, heart rate and workouts, stored on your own server.";
-"NSPhotoLibraryUsageDescription" = "Records when and where new photos and screenshots were taken. The photos themselves are not uploaded.";
+"NSPhotoLibraryUsageDescription" = "Records when and where new photos and screenshots were taken; those photos themselves are not uploaded. Photos you pick under + are sent to Himawari.";

@@ -48,8 +48,30 @@ public final class QuietHoursStore {
         case unavailable
     }
 
+    public struct Choice: Equatable, Sendable {
+        public var enabled: Bool
+        public var start: ClockTime
+        public var end: ClockTime
+
+        public init(enabled: Bool, start: ClockTime, end: ClockTime) {
+            self.enabled = enabled
+            self.start = start
+            self.end = end
+        }
+    }
+
+    public static let suggestedStart = ClockTime(hour: 23, minute: 0)
+    public static let suggestedEnd = ClockTime(hour: 7, minute: 0)
+
     public private(set) var phase: Phase = .loading
     public private(set) var hours: QuietHours?
+    public private(set) var draft: Choice?
+
+    public var shown: Choice? {
+        draft ?? hours.map {
+            Choice(enabled: $0.enabled, start: ClockTime($0.start) ?? Self.suggestedStart, end: ClockTime($0.end) ?? Self.suggestedEnd)
+        }
+    }
 
     @ObservationIgnored private let gateway: ManageGateway
 
@@ -65,6 +87,18 @@ public final class QuietHoursStore {
         } catch {
             if hours == nil { phase = .unavailable }
         }
+    }
+
+    public func edit(_ change: (inout Choice) -> Void) {
+        guard var next = shown else { return }
+        change(&next)
+        draft = next
+    }
+
+    public func saveDraft(reason: (Choice) -> String) async throws {
+        guard let wanted = draft else { return }
+        defer { if draft == wanted { draft = nil } }
+        try await set(enabled: wanted.enabled, start: wanted.start, end: wanted.end, reason: reason(wanted))
     }
 
     public func set(enabled: Bool, start: ClockTime, end: ClockTime, reason: String) async throws {

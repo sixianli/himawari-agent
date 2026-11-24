@@ -6,30 +6,28 @@ struct NotificationsPage: View {
     let back: () -> Void
     @State private var failed = false
     @State private var saving: Task<Void, Never>?
-
-    static let suggestedStart = ClockTime(hour: 23, minute: 0)
-    static let suggestedEnd = ClockTime(hour: 7, minute: 0)
+    @State private var edits = 0
 
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
             SheetHeader(title: M.notificationsTitle, leading: .back, action: back)
-            if let hours = store.hours {
-                let start = ClockTime(hours.start) ?? Self.suggestedStart
-                let end = ClockTime(hours.end) ?? Self.suggestedEnd
+            if let hours = store.hours, let shown = store.shown {
+                let start = shown.start
+                let end = shown.end
                 if hours.editable {
                     SettingsGroup(label: M.quietWhen) {
                         SettingsRow(
                             icon: nil,
                             title: M.quietAtNight,
-                            switchState: Binding(get: { hours.enabled }, set: { save(enabled: $0, start: start, end: end) }),
-                            last: !hours.enabled
+                            switchState: Binding(get: { shown.enabled }, set: { value in change { $0.enabled = value } }),
+                            last: !shown.enabled
                         )
-                        if hours.enabled {
-                            ClockRow(title: M.quietFrom, time: start) { save(enabled: true, start: $0, end: end) }
-                            ClockRow(title: M.quietTo, time: end, last: true) { save(enabled: true, start: start, end: $0) }
+                        if shown.enabled {
+                            ClockRow(title: M.quietFrom, time: start) { value in change { $0.start = value } }
+                            ClockRow(title: M.quietTo, time: end, last: true) { value in change { $0.end = value } }
                         }
                     }
-                    if hours.enabled {
+                    if shown.enabled {
                         note(M.quietNote(end: end.shortText))
                     }
                 } else {
@@ -59,13 +57,18 @@ struct NotificationsPage: View {
             .padding(.horizontal, SL.groupLabelPadding)
     }
 
-    private func save(enabled: Bool, start: ClockTime, end: ClockTime) {
-        saving?.cancel()
+    private func change(_ edit: (inout QuietHoursStore.Choice) -> Void) {
+        store.edit(edit)
+        edits += 1
+        let mine = edits
+        let previous = saving
         saving = Task {
             try? await Task.sleep(for: .milliseconds(600))
-            guard !Task.isCancelled else { return }
+            guard mine == edits else { return }
+            await previous?.value
+            guard mine == edits else { return }
             do {
-                try await store.set(enabled: enabled, start: start, end: end, reason: enabled ? M.quietAtNight : M.quietOff)
+                try await store.saveDraft { $0.enabled ? M.quietAtNight : M.quietOff }
             } catch {
                 failed = true
             }

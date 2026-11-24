@@ -58,6 +58,24 @@ final class QuietHoursStoreTests: XCTestCase {
         XCTAssertEqual(quiet.hours?.version, "v2")
     }
 
+    func testTwoQuickEditsBothReachTheServer() async throws {
+        let server = QuietServer()
+        let quiet = store(server)
+        await quiet.load()
+        quiet.edit { $0.start = ClockTime(hour: 22, minute: 0) }
+        quiet.edit { $0.end = ClockTime(hour: 6, minute: 30) }
+        XCTAssertEqual(quiet.shown, QuietHoursStore.Choice(enabled: true, start: ClockTime(hour: 22, minute: 0), end: ClockTime(hour: 6, minute: 30)))
+        try await quiet.saveDraft { _ in "晚上不响" }
+        let command = await server.sent.first { $0["type"] == .string("quiet_hours.set") }
+        XCTAssertEqual(command?["payload"], .object([
+            "expectedVersion": .string("v1"),
+            "enabled": .bool(true),
+            "start": .string("22:00"),
+            "end": .string("06:30"),
+        ]))
+        XCTAssertNil(quiet.draft)
+    }
+
     func testRulesThatAreNotOneDailyWindowStayReadOnly() async {
         let quiet = store(QuietServer(editable: false))
         await quiet.load()

@@ -34,6 +34,13 @@ public struct ShownAttachment: Sendable, Equatable {
 }
 
 extension MessageAttachments {
+    public static func preview(_ text: String) -> String {
+        let shown = shown(text)
+        guard !shown.attachments.isEmpty else { return text }
+        let body = shown.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return body.isEmpty ? shown.attachments[0].name : body
+    }
+
     public static func shown(_ text: String) -> (text: String, attachments: [ShownAttachment]) {
         var attachments: [ShownAttachment] = []
         var kept: [String] = []
@@ -72,6 +79,12 @@ extension MessageAttachments {
 
 public enum ChatAttachmentPlanner {
     static let dataURLPrefix = "data:image/jpeg;base64,".utf16.count
+    public static let maxFileBytes = 20 * 1024 * 1024
+
+    public static func fileFits(bytes: Int?) -> Bool {
+        guard let bytes else { return false }
+        return bytes <= maxFileBytes
+    }
 
     public static func imageBudget(_ limits: AttachmentLimits) -> Int {
         max(0, (limits.imageCharacters - dataURLPrefix) / 4 * 3)
@@ -95,6 +108,7 @@ extension DeviceAPI {
             let content: String
             let upload: AttachmentUpload
             let kind: AttachmentKind
+            let bytes: Int
             var truncated = false
             switch attachment.content {
             case let .image(data, mimeType):
@@ -108,12 +122,14 @@ extension DeviceAPI {
                 guard content.utf16.count <= limits.imageCharacters else { throw ChatAttachmentProblem.tooLarge }
                 upload = .image
                 kind = .image
+                bytes = payload.data.count
             case let .text(body, textKind):
                 let clipped = MessageAttachments.clip(body, characters: limits.textCharacters)
                 content = clipped.text
                 truncated = clipped.truncated
                 upload = .text
                 kind = textKind
+                bytes = Data(body.utf8).count
             }
             let ref: String
             do {
@@ -121,7 +137,7 @@ extension DeviceAPI {
             } catch {
                 throw ChatAttachmentProblem.uploadFailed
             }
-            tags.append(MessageAttachment(name: attachment.name, ref: ref, bytes: Data(content.utf8).count, kind: kind, truncated: truncated))
+            tags.append(MessageAttachment(name: attachment.name, ref: ref, bytes: bytes, kind: kind, truncated: truncated))
         }
         guard MessageAttachments.fits(text: text, attachments: tags, limits: limits) else { throw ChatAttachmentProblem.tooLarge }
         return MessageAttachments.compose(text: text, attachments: tags)

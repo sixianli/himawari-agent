@@ -80,9 +80,11 @@ struct AttachSheet: View {
             guard case let .success(urls) = result else { return }
             var picked: [ChatAttachment] = []
             for url in urls.prefix(max(1, room)) {
-                if let attachment = try? AttachReader.file(at: url) {
-                    picked.append(attachment)
-                } else {
+                do {
+                    picked.append(try AttachReader.file(at: url))
+                } catch let failure as AttachFailure {
+                    failed(failure)
+                } catch {
                     failed(.unreadable)
                 }
             }

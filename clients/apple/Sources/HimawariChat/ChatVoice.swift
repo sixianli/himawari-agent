@@ -30,6 +30,7 @@ public protocol ChatTalk: AnyObject {
 extension EnvironmentValues {
     @Entry public var chatVoice: (any ChatVoiceInput)? = nil
     @Entry public var chatOpensAttachSheet = false
+    @Entry public var chatCanAttach = false
     @Entry public var chatTalk: (any ChatTalk)? = nil
     @Entry public var chatOpensTalk = false
     @Entry public var chatStopRun: (@MainActor (_ threadId: String, _ run: ThreadRunSummary) async throws -> Void)? = nil

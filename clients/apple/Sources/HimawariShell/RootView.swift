@@ -126,6 +126,7 @@ struct MainTabsView: View {
                 .id(openThread.nonce)
                 .transition(.move(edge: .trailing))
                 .environment(\.chatStopRun, stopRun)
+                .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
                 #if os(iOS)
                 .environment(\.chatVoice, dictation)
                 .environment(\.chatTalk, talkSession)

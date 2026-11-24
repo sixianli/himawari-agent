@@ -16,6 +16,7 @@ public struct ChatView: View {
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
     @Environment(\.chatVoice) private var voice
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
+    @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatTalk) private var talk
     @Environment(\.chatOpensTalk) private var opensTalk
@@ -44,6 +45,10 @@ public struct ChatView: View {
     private static let fadeBelowNav: CGFloat = 32
 
     public var body: some View {
+        withTalkFeed
+    }
+
+    private var layers: some View {
         ZStack {
             if threadId == nil {
                 NewChatPrompt()
@@ -53,95 +58,141 @@ public struct ChatView: View {
             EdgeFade(.top, height: Self.navBottom + Self.fadeBelowNav, solid: Self.navBottom / (Self.navBottom + Self.fadeBelowNav))
                 .frame(maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                if store.connection != .online, threadId != nil {
-                    OfflineBanner()
-                        .padding(.top, 2)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
-                        .transition(.opacity)
-                }
-                Spacer(minLength: 0)
-                #if os(iOS)
-                if !attachments.isEmpty {
-                    AttachmentChips(attachments: attachments) { id in attachments.removeAll { $0.id == id } }
-                        .padding(.bottom, DesignTokens.Chat.listMarkerGap)
-                }
-                #endif
-                if talking, let talk {
-                    ChatTalkBar(phase: talk.phase, muted: talk.muted, levels: talk.levels, toggleMute: { talk.setMuted(!talk.muted) }, end: endTalk)
-                        .padding(.horizontal, DesignTokens.Size.composerInsetX)
-                        .padding(.bottom, DesignTokens.Size.composerBottom)
-                        .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
-                        .transition(.opacity)
-                } else {
-                    ChatInputBar(
-                        text: $draft,
-                        focused: $inputFocused,
-                        sending: creating,
-                        hasAttachments: !attachments.isEmpty,
-                        voice: voice != nil,
-                        hold: hold,
-                        dictating: dictating,
-                        openAttach: Self.attachAvailable ? { inputFocused = false; attachOpen = true } : nil,
-                        stop: stopAction,
-                        startTalk: talk == nil ? nil : startTalk,
-                        toggleDictation: toggleDictation,
-                        holdChanged: holdChanged,
-                        send: submit
-                    )
-                        .padding(.horizontal, DesignTokens.Size.composerInsetX)
-                        .padding(.bottom, DesignTokens.Size.composerBottom)
-                        .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
+            chrome
+                .ignoresSafeArea(.container, edges: .bottom)
+        }
+    }
+
+    private var chrome: some View {
+        VStack(spacing: 0) {
+            header
+            if store.connection != .online, threadId != nil {
+                OfflineBanner()
+                    .padding(.top, 2)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
+                    .transition(.opacity)
+            }
+            Spacer(minLength: 0)
+            #if os(iOS)
+            if !attachments.isEmpty {
+                AttachmentChips(attachments: attachments) { id in attachments.removeAll { $0.id == id } }
+                    .padding(.bottom, DesignTokens.Chat.listMarkerGap)
+            }
+            #endif
+            composer
+                .padding(.horizontal, DesignTokens.Size.composerInsetX)
+                .padding(.bottom, DesignTokens.Size.composerBottom)
+                .background(alignment: .bottom) { EdgeFade(.bottom, height: DesignTokens.Size.fadeComposer, solid: 0.4).ignoresSafeArea() }
+        }
+    }
+
+    @ViewBuilder
+    private var composer: some View {
+        if talking, let talk {
+            ChatTalkBar(phase: talk.phase, muted: talk.muted, levels: talk.levels, toggleMute: { talk.setMuted(!talk.muted) }, end: endTalk)
+                .transition(.opacity)
+        } else {
+            ChatInputBar(
+                text: $draft,
+                focused: $inputFocused,
+                sending: creating,
+                hasAttachments: !attachments.isEmpty,
+                voice: voice != nil,
+                hold: hold,
+                dictating: dictating,
+                openAttach: attachAction,
+                stop: stopAction,
+                startTalk: talk == nil ? nil : startTalk,
+                toggleDictation: toggleDictation,
+                holdChanged: holdChanged,
+                send: submit
+            )
+        }
+    }
+
+    private var attachAction: (() -> Void)? {
+        guard Self.attachAvailable, canAttach else { return nil }
+        return {
+            inputFocused = false
+            attachOpen = true
+        }
+    }
+
+    private var withLifecycle: some View {
+        layers
+            .animation(.easeInOut(duration: 0.2), value: store.connection)
+            .himawariScreenBackground()
+            .task(id: threadId) {
+                if let threadId {
+                    store.watch(threadId)
+                    await store.load(threadId)
                 }
             }
-            .ignoresSafeArea(.container, edges: .bottom)
-        }
-        .animation(.easeInOut(duration: 0.2), value: store.connection)
-        .himawariScreenBackground()
-        .task(id: threadId) {
-            if let threadId {
-                store.watch(threadId)
-                await store.load(threadId)
+            .onDisappear {
+                store.unwatch()
+                Task { await voice?.cancel() }
+                if talking { endTalk() }
             }
-        }
-        .onDisappear { store.unwatch() }
-        .alert(L.text("chat.createFailed"), isPresented: $createFailed) {
-            Button(L.text("common.ok"), role: .cancel) {}
-        }
-        .alert(attachProblem ?? "", isPresented: Binding(get: { attachProblem != nil }, set: { if !$0 { attachProblem = nil } })) {
-            Button(L.text("common.ok"), role: .cancel) {}
-        }
-        #if os(iOS)
-        .sheet(isPresented: $attachOpen) {
-            AttachSheet(room: max(0, Self.attachRoom - attachments.count)) { picked in
-                attachments += picked
-                attachOpen = false
-            } failed: { failure in
-                attachProblem = failure == .noLocation ? L.text("attach.problem.location") : L.text("attach.problem.unreadable")
-            } close: {
-                attachOpen = false
+            .onAppear {
+                if opensAttachSheet, canAttach { attachOpen = true }
+                if opensTalk, talk != nil { talking = true }
             }
-            .presentationDetents([.medium])
-            .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+    }
+
+    private var problemShown: Binding<Bool> {
+        Binding(get: { attachProblem != nil }, set: { if !$0 { attachProblem = nil } })
+    }
+
+    private var withAlerts: some View {
+        withLifecycle
+            .alert(L.text("chat.createFailed"), isPresented: $createFailed) {
+                Button(L.text("common.ok"), role: .cancel) {}
+            }
+            .alert(attachProblem ?? "", isPresented: problemShown) {
+                Button(L.text("common.ok"), role: .cancel) {}
+            }
+            #if os(iOS)
+            .sheet(isPresented: $attachOpen) { attachSheet }
+            #endif
+    }
+
+    #if os(iOS)
+    private var attachSheet: some View {
+        AttachSheet(room: max(0, Self.attachRoom - attachments.count)) { picked in
+            attachments += picked
+            attachOpen = false
+        } failed: { failure in
+            attachProblem = Self.describe(failure)
+        } close: {
+            attachOpen = false
         }
-        #endif
-        .onDisappear {
-            Task { await voice?.cancel() }
-            if talking { endTalk() }
-        }
-        .onChange(of: threadId.flatMap(store.streamingText(in:))) { _, text in
-            guard talking, let text else { return }
-            talk?.herReply(text, finished: false)
-        }
-        .onChange(of: lastAgentReply) { _, reply in
-            guard talking, let reply, reply.id != talkStartedAfter else { return }
-            talk?.herReply(reply.text, finished: true)
-        }
-        .onAppear {
-            if opensAttachSheet { attachOpen = true }
-            if opensTalk, talk != nil { talking = true }
-        }
+        .presentationDetents([.medium])
+        .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+    }
+    #endif
+
+    private var streamingNow: String? {
+        guard let threadId else { return nil }
+        return store.streamingText(in: threadId)
+    }
+
+    private var attachmentIds: [String] {
+        attachments.map(\.id)
+    }
+
+    private var withTalkFeed: some View {
+        withAlerts
+            .onChange(of: streamingNow) { _, text in
+                guard talking, let text else { return }
+                talk?.herReply(text, finished: false)
+            }
+            .onChange(of: lastAgentReply) { _, reply in
+                guard talking, let reply, reply.id != talkStartedAfter else { return }
+                talk?.herReply(reply.text, finished: true)
+            }
+            .onChange(of: attachmentIds) { _, _ in
+                sendRequestId = OutgoingMessage.newId()
+            }
     }
 
     #if os(iOS)
@@ -323,6 +374,16 @@ public struct ChatView: View {
         case .uploadFailed: L.text("attach.problem.upload")
         }
     }
+
+    #if os(iOS)
+    static func describe(_ failure: AttachFailure) -> String {
+        switch failure {
+        case .noLocation: L.text("attach.problem.location")
+        case .tooLarge: L.text("attach.problem.tooLarge")
+        case .unreadable: L.text("attach.problem.unreadable")
+        }
+    }
+    #endif
 
     private func holdChanged(_ event: HoldEvent) {
         guard let voice else { return }
