@@ -115,10 +115,20 @@ async function setup() {
     handle.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, RUN_ID);
     handle.close();
   };
+  const startedByOutsideEvent = () => {
+    const handle = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+    handle
+      .prepare(
+        "UPDATE triggers SET source_type = 'external_event' WHERE id = (SELECT trigger_id FROM runs WHERE id = ?)",
+      )
+      .run(RUN_ID);
+    handle.close();
+  };
   return {
     authorization,
     externalContent,
     setRunStatus,
+    startedByOutsideEvent,
     approvals,
     respond,
     close: async () => {
@@ -145,8 +155,6 @@ function intent(overrides: Partial<DeviceActionIntent> = {}): DeviceActionIntent
     target: { type: "calendar", ref: "calendar:default" },
     reversible: true,
     ownerPresence: false,
-    untrustedOriginAllowed: false,
-    readUntrustedContent: false,
     title: { "zh-CN": "添加日程", en: "Add event", ja: "予定を追加" },
     detail: { "zh-CN": "交周报", en: "Weekly report", ja: "週報" },
     dataClassification: "private",
@@ -156,7 +164,7 @@ function intent(overrides: Partial<DeviceActionIntent> = {}): DeviceActionIntent
   } as DeviceActionIntent;
 }
 
-const ASKED = { untrustedOriginAllowed: true, readUntrustedContent: true } as const;
+const ASKED = {} as const;
 
 it("[ADR-0257] lets an ordinary device action run on the built-in preauthorization and records it", async () => {
   const s = await setup();
@@ -236,22 +244,21 @@ it("[ADR-0257] needs a recent owner authentication for an owner-presence action 
   }
 });
 
-it("[ADR-0257] refuses a device action that reads untrusted content without asking, and asks again once outside content is in the run", async () => {
+it("[ADR-0285] asks the owner before a calendar write that an outside email led to, instead of refusing it", async () => {
   const s = await setup();
   try {
-    expect(
-      await s.authorization.authorize(
-        intent({ readUntrustedContent: true, toolCallId: "call:device-3" }),
-      ),
-    ).toEqual({ decision: "deny", reasonCode: "authorization_denied" });
-    expect(await s.approvals()).toHaveLength(0);
-    await s.externalContent.mark(RUN_ID, "perception_read");
-    expect(
-      await s.authorization.authorize(intent({ ...ASKED, toolCallId: "call:device-4" })),
-    ).toMatchObject({
+    s.startedByOutsideEvent();
+    expect(await s.authorization.authorize(intent({ toolCallId: "call:device-3" }))).toMatchObject({
       decision: "approval",
     });
-    expect(await s.approvals()).toHaveLength(1);
+    const [pending] = await s.approvals();
+    expect(pending).toMatchObject({ status: "pending", display: { displayTitle: "添加日程" } });
+    expect(
+      (pending?.intentSnapshot as GovernedActionIntent).deterministicFacts.map(({ code }) => code),
+    ).toEqual(["context_external_content", "run_source_external_event"]);
+    expect((await s.externalContent.read(RUN_ID)).map(({ origin }) => origin)).toEqual([
+      expect.stringMatching(/^external_event:/u),
+    ]);
   } finally {
     await s.close();
   }

@@ -188,3 +188,43 @@ it("[ADR-0257] writes many different sources read at the same moment without run
   );
   expect(commits).toBe(12);
 });
+
+it("[ADR-0285] marks the conversation as soon as an outside event starts a run, so the next run in it knows even if nothing was called", async () => {
+  const stored = new Map<string, { revision: number; value: unknown }>();
+  const sources: Record<string, object> = {
+    "run-mail": { threadId: "thread-main", sourceType: "external_event", sourceId: "mail:42" },
+    "run-owner": { threadId: "thread-main", sourceType: "user_message", sourceId: "msg:1" },
+    "run-task": {
+      threadId: "thread-task",
+      sourceType: "external_event",
+      sourceId: "task:1",
+      ownerApprovedTask: true,
+    },
+    "run-own": { threadId: "thread-own", sourceType: "user_message", sourceId: "msg:2" },
+  };
+  const store = new ContextExternalContent({
+    configuration: { ownerId: "owner" as never, agentId: "agent" as never },
+    state: {
+      readScopedState: async (_owner: unknown, _agent: unknown, key: string) =>
+        stored.get(key) as never,
+      commitStateAndEvents: async (input: { state: { key: string; value: unknown } }) => {
+        stored.set(input.state.key, {
+          revision: (stored.get(input.state.key)?.revision ?? 0) + 1,
+          value: input.state.value,
+        });
+      },
+    } as never,
+    source: { read: async (runId: string) => ({ runId, ...sources[runId] }) as never },
+    authority: () => ({}) as never,
+    clock: { now: () => "2026-11-24T00:00:00.000Z" },
+  });
+  expect(await store.markRunSource("run-mail" as never)).toEqual(["external_event:mail:42"]);
+  expect((await store.read("run-owner" as never)).map(({ origin }) => origin)).toEqual([
+    "external_event:mail:42",
+  ]);
+  expect(await store.markRunSource("run-owner" as never)).toEqual([]);
+  expect(await store.markRunSource("run-task" as never)).toEqual([]);
+  expect(await store.markRunSource("run-own" as never)).toEqual([]);
+  expect(await store.readThread("thread-task")).toEqual([]);
+  expect(await store.readThread("thread-own")).toEqual([]);
+});

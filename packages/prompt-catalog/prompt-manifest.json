@@ -175,9 +175,9 @@
     }
   },
   "chat.identity": {
-    "sha256": "35e600b78cdeb3525ddd9047946f457c9bcd9983cd4bc833303757126fa0d61b",
-    "changedIn": "主动提议第 0 步",
-    "reason": "Andy 2026-11-12 同意的“主动提议下一步”方案第 0 步：对话里提下一步之前先查清楚，再提一个可以直接点头的具体做法并说出依据"
+    "sha256": "6a8e6585448e8ff3122d514ba5bc8b5433af903902c69ea6e0f03896a0d56c0c",
+    "changedIn": "ADR 0285",
+    "reason": "Andy 2026-11-24 定的权限照 Meta Muse（ADR 0285 决定 7、规格“权限和审批”第 5 条）：外来资料里的指令不照做，看到像在指使她做事的内容要告诉主人；识别出来也不代替系统按规则问主人"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",

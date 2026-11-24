@@ -18,6 +18,7 @@ export const POLICY_FACT_CODES = Object.freeze({
   ownerPresenceRequired: "owner_presence_required",
   standingRuleChange: "standing_rule_change",
   ownerIntentConfirmed: "owner_intent_confirmed",
+  himawariSideOnly: "himawari_side_only",
 } as const);
 
 export type PolicyFactCode = (typeof POLICY_FACT_CODES)[keyof typeof POLICY_FACT_CODES];
@@ -110,6 +111,14 @@ export const POLICY_FACT_REGISTRY: readonly PolicyFactDefinition[] = Object.free
         zh: "你自己明说过要做这件事",
         en: "You said you wanted this done",
         ja: "あなた自身がこの操作を明確に求めました",
+      },
+    },
+    {
+      code: POLICY_FACT_CODES.himawariSideOnly,
+      label: {
+        zh: "只改 Himawari 自己这边的记录，能撤回",
+        en: "Only changes Himawari's own records and can be undone",
+        ja: "Himawari 自身の記録だけを変更し、取り消せます",
       },
     },
   ].map((definition) => Object.freeze({ ...definition, label: Object.freeze(definition.label) })),
