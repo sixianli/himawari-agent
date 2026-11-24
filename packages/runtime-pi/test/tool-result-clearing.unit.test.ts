@@ -159,4 +159,10 @@ describe("recalling a cleared result", () => {
       expect(JSON.stringify(recalled.content)).toContain("没有编号为");
     }
   });
+
+  it("REVERSE: a missing id does not tell the model to redo an operation that has consequences", () => {
+    const text = JSON.stringify(recallToolResult(reading(120_000, [4_000]), "call-9").content);
+    expect(text).not.toContain("重新执行那次工具");
+    expect(text).toContain("有后果的操作不要为了看结果重做");
+  });
 });
