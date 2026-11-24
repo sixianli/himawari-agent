@@ -375,6 +375,7 @@ describe("[PG-12] proactive Gmail checks in the running service", () => {
       awaitingCount: async () => 0,
       runThread: async () => null,
       threadTitle: async () => null,
+      readMessage: async () => undefined,
       proactive: createProactivePushSource({ scope, store, seal }),
       publicOrigin: ORIGIN,
       timeZone: "Asia/Tokyo",

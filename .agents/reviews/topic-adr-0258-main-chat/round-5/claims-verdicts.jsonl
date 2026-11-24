@@ -1,0 +1,1 @@
+{"id": "49", "model": "opencode-go/deepseek-v4.1-flash", "quote": "CLAIM|49|找不到|-|“派出去的帮手”线上现在没有内容。|-", "outcome": "model-wrong", "evidenceFile": "docs/execution/specs/2026-11-11-apple-device-body-design.md", "evidence": "线上现在没有派子任务这回事（Andy 2026-11-12 定不做）"}

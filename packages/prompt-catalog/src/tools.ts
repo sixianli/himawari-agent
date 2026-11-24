@@ -36,6 +36,24 @@ export const TOOL_RECALL = fixedPrompt({
   text: "查主人的长期记忆和以前的对话摘要。主人问到以前说过的事、某天或某段时间发生过什么、以前的情况（换手机前、搬家前）时使用。query 写要找的内容；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）；问以前的情况（已经变了的旧情况）时 includeHistory 填 true，问现在的情况时不填。返回的记忆带有效期，已失效的标为历史；对话摘要按日期给出。只查主人自己的记忆，不会联网。",
 });
 
+export const TOOL_CONVERSATION_SEARCH = fixedPrompt({
+  id: "tools.conversation-search",
+  purpose: "conversation_search 工具的描述：什么时候搜以前对话的原话",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "搜主人和你以前对话里的原话。主人提到以前聊过的事、要找当时的原话或细节，或者记忆里查不到、要核对记忆出处时使用。query 写要找的内容，按意思和按字词都能找到；问到具体时间时填 from、to（YYYY-MM-DD，按主人所在时区）。返回按相关程度排好的几轮对话，每轮给出 conversationId、它在对话里的位置 sequence、日期和原话（太长的会截短）；一页放不下时给出 nextPage，需要时把它填进 page 再查。要看前后文或完整的原话，用 conversation_open。只查主人自己的对话，不会联网。",
+});
+
+export const TOOL_CONVERSATION_OPEN = fixedPrompt({
+  id: "tools.conversation-open",
+  purpose: "conversation_open 工具的描述：怎样打开以前的对话读前后原话",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "打开以前的一段对话，读某个位置前后的原话。conversationId 和 sequence 取自 conversation_search 的结果；direction 填 later 从 sequence 往后读，填 earlier 从 sequence 往前读，不填就往后读。结果里的 earlierFrom、laterFrom 是往前、往后接着读的位置：往前接着读，把 earlierFrom 填进 sequence 并填 direction earlier；往后接着读，把 laterFrom 填进 sequence 并填 direction later。值为 null 说明那一头已经读完；不为 null 时那一头也可能刚好没有更多原话，接着读拿到空的 lines 就说明读完了。",
+});
+
 export const TOOL_TASK_STATUS = fixedPrompt({
   id: "tools.execution-task-status",
   purpose: "execution_task_status 工具的描述",
@@ -198,6 +216,42 @@ export const TOOL_RESULT_RECALL_INPUT_INVALID = fixedPrompt({
   text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；只能用工具定义里列出的参数。改正后再查一次。",
 });
 
+export const TOOL_RESULT_CONVERSATION_EMPTY = fixedPrompt({
+  id: "tool-result.conversation-empty",
+  purpose: "搜以前的对话没有找到时工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "没有找到相关的旧对话。不要编造；可以换个说法或放宽日期再找一次，仍然找不到就如实告诉主人。",
+});
+
+export const TOOL_RESULT_CONVERSATION_NOT_FOUND = fixedPrompt({
+  id: "tool-result.conversation-not-found",
+  purpose: "打开以前的对话时对话不存在或已删除的说明",
+  usedBy: ["apps/agent-service/src/production-conversation-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "这段对话打不开：它可能已经删除，或者 conversationId 写错了。不要猜它的内容。",
+});
+
+export const TOOL_RESULT_CONVERSATION_UNAVAILABLE = fixedPrompt({
+  id: "tool-result.conversation-unavailable",
+  purpose: "搜或打开以前的对话失败时工具结果里的说明",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "以前的对话暂时查不到。不要编造，告诉主人现在查不了以前的对话。",
+});
+
+export const TOOL_RESULT_CONVERSATION_INPUT_INVALID = fixedPrompt({
+  id: "tool-result.conversation-input-invalid",
+  purpose: "搜或打开以前的对话参数不对时工具结果里的说明：告诉模型怎么改正",
+  usedBy: ["apps/agent-service/src/production-runtime-tools.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  text: "参数不对，没有查。query 不能为空；from、to 要写日历上真实存在的日期（YYYY-MM-DD），from 不能晚于 to；page 和 sequence 要写从 1 开始的整数；只能用工具定义里列出的参数。改正后再查一次。",
+});
+
 export const TOOL_RESULT_REMINDER_MEMORY_NOT_READY = fixedPrompt({
   id: "tool-result.reminder-memory-not-ready",
   purpose: "设提醒失败：主人还没有任何记忆",
@@ -240,7 +294,7 @@ export const TOOL_RULE_SET = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-owner-rules.ts"],
   layer: "tools",
   output: "free-text",
-  text: "把主人立下的常设规矩记成长期规则。只在主人说的是以后一直有效的要求时使用（例如“以后……一律……”“……必须提醒我”“……都要……”）；只针对这一次的话（例如“这封先不用管”“今天别提醒我”）不要使用。quote 照抄主人原话里表达这条规矩的那一句，不改字，要包含表示一直有效的字样（例如“以后”“一律”“必须”），或者这句话本身就是没有期限的要求（例如“夜里别提醒我”）；inferred 填 true 表示这是你从对话里推断出的、主人没有明说的规矩，只会生成提议，要主人点头才生效；type 填 soft 时只记主人的原话，inferred 填 false。type 选规则类型：mail_must_notify 是某类邮件一定提醒主人并推送到手机；mail_read_whole_thread 是某类邮件判断前一定读完同一邮件串里的全部往来，读不全就交给主人自己看；push_quiet_hours 是静默时段里指定类别的推送先不发、等时段结束再发（例如“夜里别提醒我”）；都不合适或者是语气、格式、回答长短这类偏好时填 soft，只记成给你参考的偏好，不由程序强制执行。params 写匹配条件：senderDomains 是发件域名（含子域名，例如 isa.go.jp），senderAddresses 是完整发件地址，phrases 是邮件主题或正文里出现的词（不分大小写和全半角，中日英各写常见说法），words 是英文整词（只算完整单词）；英文词写进 words 而不是 phrases，否则 subscribe 会误中 unsubscribe；同一个机构或事情要列出正式名称、简称和常见变体（例如出入国在留管理庁、出入国在留管理局、入管）；mail_must_notify 和 mail_read_whole_thread 至少写一项，不要写正则。push_quiet_hours 不写上面的匹配条件，只写 periods 和 classes：periods 是静默时段列表，每项有 days（0 是星期日、6 是星期六，整数列表）、start 和 end（24 小时制 HH:MM，跨午夜就写 start 23:00、end 07:00，开始含、结束不含）；主人只说“夜里”没给钟点时先问清楚钟点，再写；classes 可选 run_result（任务完成或失败）、mail_reminder（邮件提醒）、scheduled_reminder（主人自己定的到点提醒），主人没点名就不写 classes（默认只管任务完成和邮件提醒），主人明说连到点提醒也别响才加上 scheduled_reminder；审批和系统告警永远照常推送，规则管不到，不要向主人承诺能拦住它们。excludePhrases 是出现了就不算的词，用来去掉明显不相干的一类邮件（例如付费订阅规则排除“newsletter”“メルマガ”这类资讯邮件）。summary 用一句话写这条规则做什么，给主人看。返回里有试算例子，邮件类规则还有在历史邮件上的回放结果（push_quiet_hours 没有回放，replay 为空），照实告诉主人；status 是 proposed 时说明还要主人确认。主人随时可以撤销。",
+  text: "把主人立下的常设规矩记成长期规则。只在主人说的是以后一直有效的要求时使用（例如“以后……一律……”“……必须提醒我”“……都要……”）；只针对这一次的话（例如“这封先不用管”“今天别提醒我”）不要使用。quote 照抄主人原话里表达这条规矩的那一句，不改字，要包含表示一直有效的字样（例如“以后”“一律”“必须”），或者这句话本身就是没有期限的要求（例如“夜里别提醒我”）；inferred 填 true 表示这是你从对话里推断出的、主人没有明说的规矩，只会生成提议，要主人点头才生效；type 填 soft 时只记主人的原话，inferred 填 false。type 选规则类型：mail_must_notify 是某类邮件一定提醒主人并推送到手机；mail_read_whole_thread 是某类邮件判断前一定读完同一邮件串里的全部往来，读不全就交给主人自己看；push_quiet_hours 是静默时段里指定类别的推送先不发、等时段结束再发（例如“夜里别提醒我”）；都不合适或者是语气、格式、回答长短这类偏好时填 soft，只记成给你参考的偏好，不由程序强制执行。params 写匹配条件：senderDomains 是发件域名（含子域名，例如 isa.go.jp），senderAddresses 是完整发件地址，phrases 是邮件主题或正文里出现的词（不分大小写和全半角，中日英各写常见说法），words 是英文整词（只算完整单词）；英文词写进 words 而不是 phrases，否则 subscribe 会误中 unsubscribe；同一个机构或事情要列出正式名称、简称和常见变体（例如出入国在留管理庁、出入国在留管理局、入管）；mail_must_notify 和 mail_read_whole_thread 至少写一项，不要写正则。push_quiet_hours 不写上面的匹配条件，只写 periods 和 classes：periods 是静默时段列表，每项有 days（0 是星期日、6 是星期六，整数列表）、start 和 end（24 小时制 HH:MM，跨午夜就写 start 23:00、end 07:00，开始含、结束不含）；主人只说“夜里”没给钟点时先问清楚钟点，再写；classes 可选 run_result（任务完成或失败）、mail_reminder（邮件提醒）、her_words（你写给主人、推到手机上的话）、scheduled_reminder（主人自己定的到点提醒），主人没点名就不写 classes（默认管任务完成、邮件提醒和你的话），主人明说连到点提醒也别响才加上 scheduled_reminder，这时把要管的类别都写上；审批和系统告警永远照常推送，规则管不到，不要向主人承诺能拦住它们。excludePhrases 是出现了就不算的词，用来去掉明显不相干的一类邮件（例如付费订阅规则排除“newsletter”“メルマガ”这类资讯邮件）。summary 用一句话写这条规则做什么，给主人看。返回里有试算例子，邮件类规则还有在历史邮件上的回放结果（push_quiet_hours 没有回放，replay 为空），照实告诉主人；status 是 proposed 时说明还要主人确认。主人随时可以撤销。",
 });
 
 export const TOOL_RULE_LIST = fixedPrompt({

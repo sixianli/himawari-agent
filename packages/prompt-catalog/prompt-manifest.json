@@ -912,6 +912,26 @@
     "changedIn": "ADR 0161",
     "reason": "初次登记：从源码原样搬入目录，文字不变"
   },
+  "tool-result.conversation-empty": {
+    "sha256": "07b0913354cf5042d67501d11bd017f9cc1e35fdcf549107bbf9804f8484a2a1",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
+  },
+  "tool-result.conversation-input-invalid": {
+    "sha256": "092b1948c49aa626f9560997701b4072098805be1296e41cabc6596c0d480bd8",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
+  },
+  "tool-result.conversation-not-found": {
+    "sha256": "765d685120ef5c71f11a9bfc8205e1c28b7340267f2479a26cc0b72faa496fea",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
+  },
+  "tool-result.conversation-unavailable": {
+    "sha256": "a6c46eaa599dceedcd9d4e2a8d12d59d3509db1ac8b3fb6d4c4d079e7aa7626c",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
+  },
   "tool-result.recall-empty": {
     "sha256": "090780a7a4f47147438eca475d03271fc4684b3197681040cc36078e3c9e8cf0",
     "changedIn": "ADR 0161",
@@ -996,6 +1016,16 @@
     "sha256": "e32d747a0ab7c0906c0b623823a615eb22fe3fa89717e39034f9585e1a0b7282",
     "changedIn": "ADR 0166",
     "reason": "W-15：去掉“受限 Worker、输出披露”等行话；bash 改用 tools.builtin.bash，这条只接在 write、edit 后面"
+  },
+  "tools.conversation-open": {
+    "sha256": "a5c0c723f059b74c82c0ae45594857950aba6e9ca0f98e852053ba32b8e23c52",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话；写明往前、往后接着读时各填哪个方向，不为 null 时也可能已读完"
+  },
+  "tools.conversation-search": {
+    "sha256": "adf6134d879fdfbbcc30bd45cf4ab08e0e01fc2ab3388bc66290af44d14a2c88",
+    "changedIn": "ADR 0286",
+    "reason": "第 1 步：主模型自己搜旧对话原话、打开旧对话读前后原话"
   },
   "tools.device-action": {
     "sha256": "502103b2555dc8d9d9cebecaeba345fb612f968ea5a02e63940c40cfa38e29fb",
@@ -1321,9 +1351,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "1aae04d93f2d0d6124af412b1226339eb3522cfe68f22c81a11a4165009e945b",
-    "changedIn": "ADR 0244",
-    "reason": "硬规则第 4 步：rule_set 增加 push_quiet_hours 规则类型（夜里指定类别的推送等到静默结束再发）",
+    "sha256": "18c795f2af4e272923fcf5060751115754fc0e319de5f917824f7a36c6367a10",
+    "changedIn": "ADR 0285",
+    "reason": "安静时段多管一类推送 her_words（她写给主人、推到手机上的原话），默认受管",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],

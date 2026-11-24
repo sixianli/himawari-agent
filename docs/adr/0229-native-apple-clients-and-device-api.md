@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: "docs/adr/0089-web-push-only-owner-entry.md"
 superseded_by: ""
 date: "2026-11-11"
+amended_by: "docs/adr/0247-apple-clients-are-fully-native-with-a-capability-table.md"
 ---
 
 # ADR 0229：做 iPhone、Apple Watch、Mac 的原生客户端，设备走专用接口、设备密钥和苹果推送
