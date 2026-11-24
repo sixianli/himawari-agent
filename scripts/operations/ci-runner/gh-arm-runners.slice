@@ -1,9 +1,0 @@
-[Unit]
-Description=Shared limits for the two CI runners on the ARM machine
-Before=slices.target
-
-[Slice]
-MemoryHigh=17G
-MemoryMax=18G
-MemorySwapMax=0
-TasksMax=4096

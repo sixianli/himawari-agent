@@ -169,7 +169,12 @@ export function validateToolchainLock(lock) {
     `${lock.python.version}+${lock.python.release}`,
   );
   assert(Array.isArray(lock.actions), "Actions 清单缺失");
-  const expectedActions = ["actions/checkout", "actions/setup-node", "actions/setup-python"].sort();
+  const expectedActions = [
+    "actions/cache",
+    "actions/checkout",
+    "actions/setup-node",
+    "actions/setup-python",
+  ].sort();
   assert(
     JSON.stringify(lock.actions.map((action) => action.repository).sort()) ===
       JSON.stringify(expectedActions),
