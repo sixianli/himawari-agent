@@ -506,6 +506,35 @@ describe("inbox", () => {
     }
   });
 
+  it("waits for the next check instead of taking a yielded batch straight back", async () => {
+    let held = false;
+    let claims = 0;
+    let handles = 0;
+    const batch = { threadId: null, fromOwner: false, entries: [] };
+    const loop = new InboxLoop({
+      worker: {
+        claim: async () => {
+          claims += 1;
+          if (held) return undefined;
+          held = true;
+          return batch;
+        },
+        handle: async () => {
+          handles += 1;
+          held = handles >= 5;
+          return { status: "done", entryIds: [], result: "yield" };
+        },
+      },
+      intervalMs: 86_400_000,
+      onFailure: () => undefined,
+    });
+    loop.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await loop.stop();
+    expect(handles).toBeLessThanOrEqual(2);
+    expect(claims).toBeLessThanOrEqual(2);
+  });
+
   it("keeps the loop alive when a claim throws and reports it", async () => {
     const failures: unknown[] = [];
     let calls = 0;

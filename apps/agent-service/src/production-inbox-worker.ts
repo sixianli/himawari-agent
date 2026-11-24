@@ -277,6 +277,7 @@ export class InboxLoop {
   }
 
   async #tick(signal: AbortSignal): Promise<void> {
+    const started = new Set<string>();
     for (;;) {
       if (signal.aborted) return;
       let claim: InboxClaim | undefined;
@@ -287,17 +288,23 @@ export class InboxLoop {
         break;
       }
       if (!claim) break;
-      const handling = this.#worker
+      const handling: Promise<void> = this.#worker
         .handle(claim, signal)
         .then(
-          () => undefined,
-          (error: unknown) => this.#fail(error),
+          (step) => step.status === "done" && step.result === "yield",
+          (error: unknown) => {
+            this.#fail(error);
+            return false;
+          },
         )
-        .finally(() => {
+        .then((yielded) => {
           this.#inflight.delete(handling);
-          this.wake();
+          if (!yielded) this.wake();
         });
       this.#inflight.add(handling);
+      const conversation = `${claim.fromOwner}:${claim.threadId ?? ""}`;
+      if (started.has(conversation)) break;
+      started.add(conversation);
     }
     if (signal.aborted) return;
     const delay = await this.#intervalMs().catch(() => INBOX_LOOP_DEFAULTS.idleSeconds * 1000);
