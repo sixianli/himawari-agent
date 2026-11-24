@@ -276,3 +276,43 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`,
 });
+
+export const TOOL_RESULT_CLEARED_PLACEHOLDER = templatePrompt({
+  id: "runtime.tool-result-cleared.placeholder",
+  purpose:
+    "上下文变长后，较早的工具结果在发给模型的那份里换成这一行占位；原文仍在对话历史里，按编号用 tool_result_recall 取回",
+  usedBy: ["packages/runtime-pi/src/tool-result-clearing.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("[这次 "),
+    slot("toolName"),
+    text(" 的结果已从上下文清理，编号 "),
+    slot("toolCallId"),
+    text("。需要原文时用 tool_result_recall 按这个编号取回]"),
+  ],
+});
+
+export const TOOL_RESULT_RECALL = fixedPrompt({
+  id: "tools.tool-result-recall",
+  purpose: "tool_result_recall 工具的描述：按占位里的编号取回已清理的工具结果原文",
+  usedBy: ["packages/runtime-pi/src/pi-runtime-adapter.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "取回本对话里一次已从上下文清理的工具结果原文。上下文变长时，较早的工具结果会换成一行占位，占位里写着编号；之后需要那次结果的细节（网页原文、搜索结果、文件内容）时，把占位里的编号填进 toolCallId。只读，不会重新执行那次工具。",
+});
+
+export const TOOL_RESULT_RECALL_NOT_FOUND = templatePrompt({
+  id: "tools.result.tool-result-recall.not-found",
+  purpose: "tool_result_recall 在当前对话上下文里找不到这个编号时的结果",
+  usedBy: ["packages/runtime-pi/src/tool-result-clearing.ts"],
+  layer: "tool-result",
+  output: "free-text",
+  segments: [
+    text("当前对话里没有编号为 "),
+    slot("toolCallId"),
+    text(
+      " 的工具结果。它可能已在更早的压缩里被总结掉。只读的查询可以重新执行；发送、删除、修改这类有后果的操作不要为了看结果重做，先查看现在的状态。",
+    ),
+  ],
+});

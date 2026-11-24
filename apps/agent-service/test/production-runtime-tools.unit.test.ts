@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
   type PayloadRef,
@@ -8,19 +9,18 @@ import {
   piFileRecoveryOperationKey,
   SANDBOX_TOOL_MEMORY_LIMIT_BYTES,
 } from "@himawari-agent/execution-contracts";
-import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
 import { ReminderInputError } from "../src/production-reminder-writer.js";
-import { PRODUCTION_TOOL_ACTION_ROWS } from "../src/production-tool-actions.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
   type ProductionRuntimeToolsOptions,
 } from "../src/production-runtime-tools.js";
+import { PRODUCTION_TOOL_ACTION_ROWS } from "../src/production-tool-actions.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -360,7 +360,7 @@ describe("ProductionRuntimeTools", () => {
     const f = fixture();
     const tool = f.tool();
     const descriptors = await tool.listAuthorized(invocation.runId, []);
-    expect(descriptors).toHaveLength(1);
+    expect(descriptors.map(({ name }) => name)).toEqual(["read", "tool_result_recall"]);
     expect(descriptors[0]).toMatchObject({
       name: "read",
       definition: "builtin-read",
@@ -404,7 +404,7 @@ describe("ProductionRuntimeTools", () => {
     expect(await tool.listAuthorized(invocation.runId, [])).toEqual([]);
     expect(asked).toEqual([invocation.runId]);
     const other = await f.tool().listAuthorized(invocation.runId, []);
-    expect(other.map((item) => item.name)).toEqual(["read"]);
+    expect(other.map((item) => item.name)).toEqual(["read", "tool_result_recall"]);
   });
 
   it("does not mistake model-provided approval fields for execution authority", async () => {
@@ -1541,7 +1541,13 @@ it("offers reminder tools last, runs them once per call and tells the model why 
   const names = (
     await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef])
   ).map((definition) => definition.name);
-  expect(names.slice(-4)).toEqual(["recall", "reminder_set", "reminder_list", "reminder_cancel"]);
+  expect(names.slice(-5)).toEqual([
+    "recall",
+    "reminder_set",
+    "reminder_list",
+    "reminder_cancel",
+    "tool_result_recall",
+  ]);
   const again = await tools.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
   expect(JSON.stringify(again.slice(-3))).toBe(
     JSON.stringify(
@@ -1607,9 +1613,10 @@ it("[iOS-5] offers the two perception tools last, marks outside content on read 
   const definitions = await tools.listAuthorized(invocation.runId, [
     invocation.capabilityHandleRef,
   ]);
-  expect(definitions.map(({ name }) => name).slice(-2)).toEqual([
+  expect(definitions.map(({ name }) => name).slice(-3)).toEqual([
     "device_action",
     "perception_read",
+    "tool_result_recall",
   ]);
   const base = { ...invocation, capabilityHandleRef: null };
   const read = { ...base, toolCallId: "p-read", capabilityRef: "perception.read", arguments: {} };
@@ -1741,6 +1748,7 @@ it("[NL-1] marks only service-process read-only tools for parallel execution", a
     ["bash", undefined],
     ["web_search", "parallel"],
     ["web_fetch", "parallel"],
+    ["tool_result_recall", undefined],
   ]);
   expect(await modes(false)).toEqual([
     ["read", "parallel"],
@@ -1749,6 +1757,7 @@ it("[NL-1] marks only service-process read-only tools for parallel execution", a
     ["bash", undefined],
     ["web_search", undefined],
     ["web_fetch", undefined],
+    ["tool_result_recall", undefined],
   ]);
 });
 
@@ -2122,14 +2131,14 @@ it("[ADR-0257] only the listing, recall and perception read tools skip the autho
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
-  ).toEqual(["recall", "reminder_list", "rule_list", "perception_read"]);
+  ).toEqual(["recall", "reminder_list", "rule_list", "tool_result_recall", "perception_read"]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
   ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(9);
+  expect(builtin).toHaveLength(10);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2205,6 +2214,7 @@ const EVERY_TOOL_NAMES = [
   "rule_set",
   "rule_list",
   "rule_undo",
+  "tool_result_recall",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "dcd8b2fa91a7a49f343bbbe54143739053a1329d1fb5754e6114220336109770";
+  "ca741f1e8250efbbdc65111cc9219978a46279a9272bbe87bba45f9b77a94a3a";
