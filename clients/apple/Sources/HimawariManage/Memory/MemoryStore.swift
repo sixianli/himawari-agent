@@ -86,6 +86,22 @@ public final class MemoryStore {
         await load()
     }
 
+    public func summary(categoryLabel: (String) -> String) -> MemorySummary? {
+        guard phase == .loaded else { return nil }
+        let shown = groups(categoryLabel: categoryLabel)
+        return MemorySummary(memories: shown.reduce(0) { $0 + $1.items.count }, topics: shown.count, rules: rules.count)
+    }
+
+    public func setCapturePaused(_ paused: Bool, reason: String) async throws {
+        _ = try await gateway.command(
+            .v2,
+            "memory.settings.set",
+            payload: ["capturePaused": .bool(paused)],
+            options: ManageCommandOptions(confirmReason: reason)
+        )
+        await load()
+    }
+
     public func basis(_ item: MemoryItem) -> MemoryBasis {
         MemoryOrganizer.basis(item, imports: overview?.imports ?? [])
     }

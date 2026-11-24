@@ -25,6 +25,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case clipboard
     case clipboardLarge = "clipboard-large"
     case clipboardList = "clipboard-list"
+    case chevronDown = "chevron-down"
     case chevronLeft = "chevron-left"
     case chevronRight = "chevron-right"
     case circleCheck = "circle-check"

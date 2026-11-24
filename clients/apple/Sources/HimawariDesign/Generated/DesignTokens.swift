@@ -325,6 +325,21 @@ public enum DesignTokens {
         public static let tableCellPaddingHorizontal: CGFloat = 14
     }
 
+    public enum Her {
+        public static let heroAvatar: CGFloat = 76
+        public static let heroGap: CGFloat = 6
+        public static let heroMark: CGFloat = 58
+        public static let heroPaddingBottom: CGFloat = 4
+        public static let heroPaddingTop: CGFloat = 18
+        public static let heroWordmarkHeight: CGFloat = 27
+        public static let pageGap: CGFloat = 18
+        public static let pagePaddingTop: CGFloat = 58
+        public static let rowIcon: CGFloat = 19
+        public static let rowSubtitleGap: CGFloat = 2
+        public static let rowTile: CGFloat = 34
+        public static let rowTileRadius: CGFloat = 10
+    }
+
     public enum TypeScale {
         public static let answer = TypeToken(size: 18, weight: 500, lineHeight: 18 * 1.75, face: .system, tracking: 0)
         public static let badge = TypeToken(size: 12, weight: 700, lineHeight: nil, face: .system, tracking: 0)

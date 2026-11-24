@@ -87,6 +87,8 @@ struct MainTabsView: View {
     @State private var settingsOpen: Bool
     @State private var listening: ListeningController?
     @State private var listenOpen = false
+    @State private var herOpen = false
+    @State private var herListenOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
     #endif
@@ -117,7 +119,7 @@ struct MainTabsView: View {
     var body: some View {
         ZStack {
             if let openThread {
-                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft, openHerPage: { settingsOpen = true }) {
+                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft, openHerPage: { herOpen = true }) {
                     withAnimation(.snappy) { self.openThread = nil }
                 }
                 .id(openThread.nonce)
@@ -170,6 +172,9 @@ struct MainTabsView: View {
                 }
             }
         }
+        .hmCover(isPresented: $herOpen) {
+            herPage
+        }
         .sheet(isPresented: $listenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { listenOpen = false }
@@ -213,6 +218,33 @@ struct MainTabsView: View {
         }
     }
 
+    private var herPage: some View {
+        HerPage(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            listening: listening,
+            openListening: { herListenOpen = true },
+            senses: model.senses.map { senses in
+                AnyView(SensesView(model: senses) { HandoverEntryRows() })
+            },
+            talk: { draft in
+                herOpen = false
+                withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
+            },
+            close: { herOpen = false },
+            removedThisDevice: {
+                herOpen = false
+                model.removedThisDevice()
+            }
+        )
+        .sheet(isPresented: $herListenOpen) {
+            if let listening {
+                ListenEntrySheet(controller: listening) { herListenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+    }
+
     private var memoryView: some View {
         MemoryRootView(api: model.api, confirmKey: model.confirmKey) { draft in
             withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
@@ -245,6 +277,8 @@ struct MainTabsView: View {
         .ignoresSafeArea(.container, edges: .bottom)
     }
 }
+
+extension ListeningController: HerListening {}
 
 extension EnvironmentValues {
     @Entry var tabsCycleEvery: Double? = nil

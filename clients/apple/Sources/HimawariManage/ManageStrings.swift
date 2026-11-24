@@ -36,6 +36,39 @@ enum M {
     static var ruleNeedsReview: String { text("等你看", ja: "確認待ち", en: "Needs your look") }
 
     static var back: String { text("返回", ja: "戻る", en: "Back") }
+    static var collapse: String { text("收起", ja: "閉じる", en: "Close") }
+    static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
+    static func memorySummary(_ summary: MemorySummary) -> String {
+        text(
+            "\(summary.memories) 条记忆 · \(summary.topics) 个主题 · \(summary.rules) 条规则",
+            ja: "記憶 \(summary.memories) 件 · テーマ \(summary.topics) 個 · ルール \(summary.rules) 件",
+            en: "\(summary.memories) memories · \(summary.topics) topics · \(summary.rules) rules"
+        )
+    }
+    static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
+    static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static func deviceCount(_ count: Int) -> String { text("\(count) 台设备", ja: "\(count) 台", en: "\(count) devices") }
+    static var listen: String { text("收听", ja: "聞き取り", en: "Listening") }
+    static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }
+    static var resumeMemory: String { text("恢复记忆", ja: "記憶を再開", en: "Resume memory") }
+    static var pauseMemoryDetail: String {
+        text("她照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "She still answers, but won't remember anything new")
+    }
+    static var voiceprint: String { text("我的声纹", ja: "自分の声紋", en: "My voiceprint") }
+    static var voiceprintDetail: String {
+        text("只用来认出是你在说话", ja: "あなたの声だと聞き分けるためだけに使います", en: "Only used to tell that it's you speaking")
+    }
+    static var voiceprintKept: String { text("已录", ja: "登録済み", en: "Recorded") }
+    static var voiceprintNone: String { text("没录", ja: "未登録", en: "Not recorded") }
+    static var forgetVoiceprint: String { text("删掉我的声纹？", ja: "声紋を削除しますか？", en: "Delete your voiceprint?") }
+    static var forgetVoiceprintConfirm: String { text("删掉", ja: "削除", en: "Delete") }
+    static var forgetVoiceprintDetail: String {
+        text(
+            "删掉后她认不出哪句是你说的，要用时再录一次",
+            ja: "削除すると、どれがあなたの声か分からなくなります。必要なときにまた登録してください",
+            en: "She won't be able to tell which words are yours until you record it again"
+        )
+    }
     static var settings: String { text("设置", ja: "設定", en: "Settings") }
     static var runsOnYourServer: String {
         text("跑在你自己的服务器上", ja: "あなた自身のサーバーで動いています", en: "Running on your own server")

@@ -27,6 +27,9 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case notifications = "19-settings-more-4-notifications"
     case notificationsEdit = "19-settings-more-4-notifications-edit"
     case thinkSettings = "20-himawari-self-4-think"
+    case her = "next-3-her"
+    case herPrivacy = "next-3-her-privacy"
+    case herDevices = "next-3-her-devices"
 }
 
 public struct ManageDemoView: View {
@@ -79,6 +82,12 @@ public struct ManageDemoView: View {
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.delivery), .tuningEdit(.delivery, "busyAtLeastPermille")]) {}
         case .thinkSettings:
             SettingsRootView(store: ManageDemo.settingsStore(), path: [.tuningList(.think)]) {}
+        case .her:
+            her([])
+        case .herPrivacy:
+            her([.privacy])
+        case .herDevices:
+            her([.devices])
         case .addDevice:
             pairing(.showing(link: ManageDemo.link, expiresAt: ManageDemo.frozenNow.addingTimeInterval(581)))
         case .addDeviceAsking:
@@ -86,6 +95,16 @@ public struct ManageDemoView: View {
         case .addDeviceExpired:
             pairing(.expired(minutes: 10))
         }
+    }
+
+    private func her(_ path: [HerPage.Page]) -> some View {
+        HerPage(
+            settings: ManageDemo.settingsStore(),
+            memory: ManageDemo.memoryStore(),
+            listening: DemoListening(),
+            senses: AnyView(EmptyView()),
+            path: path
+        )
     }
 
     private func exporting(_ stage: DataExportStage) -> some View {
@@ -102,6 +121,14 @@ public struct ManageDemoView: View {
                 .environment(\.pairingClock, ManageDemo.frozenNow)
         }
     }
+}
+
+@MainActor
+final class DemoListening: HerListening {
+    let isListening = true
+    let hasVoiceprint = true
+    func stop() {}
+    func deleteVoiceprint() {}
 }
 
 enum ManageDemo {
