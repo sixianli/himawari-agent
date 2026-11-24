@@ -133,13 +133,14 @@ describe("[WP-3] web push dispatch", () => {
       text: string,
       role: "agent" | "owner" = "agent",
       messageId = `assistant:${runId}:${role}`,
+      classification: "private" | "sensitive" | "restricted" = "private",
     ) => {
       sequence += 1;
       await repository.payloadStore(OWNER_ID, AGENT_ID).put(
         await protector.protect({
           ...scope,
           ref: `said-${messageId}`,
-          dataClassification: "private",
+          dataClassification: classification,
           contentType: "text/plain",
           plaintext: new TextEncoder().encode(text),
           createdAt: START,
@@ -159,7 +160,7 @@ describe("[WP-3] web push dispatch", () => {
             `INSERT INTO thread_messages (
               id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
               classification, committed_at, turn_id, run_id, message_status
-            ) VALUES (?, ?, ?, 'thread-1', 1, ?, ?, ?, 'private', ?, ?, ?, 'committed')`,
+            ) VALUES (?, ?, ?, 'thread-1', 1, ?, ?, ?, ?, ?, ?, ?, 'committed')`,
           )
           .run(
             messageId,
@@ -168,6 +169,7 @@ describe("[WP-3] web push dispatch", () => {
             sequence,
             role,
             `said-${messageId}`,
+            classification,
             START,
             `turn-${runId}`,
             runId,
@@ -185,17 +187,22 @@ describe("[WP-3] web push dispatch", () => {
         seed.close();
       }
     };
-    const readMessageText = async (threadId: string, messageId: string) => {
+    const readMessage = async (threadId: string, messageId: string) => {
       const [message] = await repository.threadRepository().readCommittedMessagesByIds({
         ...scope,
         threadId: threadId as never,
         messageIds: [messageId as never],
       });
       if (message?.role !== "agent") return undefined;
-      const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(message.contentRef);
-      return payload
-        ? new TextDecoder().decode(await protector.unprotect({ ...scope, payload }))
-        : undefined;
+      return {
+        dataClassification: message.dataClassification,
+        readText: async () => {
+          const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(message.contentRef);
+          return payload
+            ? new TextDecoder().decode(await protector.unprotect({ ...scope, payload }))
+            : undefined;
+        },
+      };
     };
     const reminders: MemoryReminder[] = [];
     const memories: ProductMemoryRecord[] = [];
@@ -226,7 +233,7 @@ describe("[WP-3] web push dispatch", () => {
         runThread: async () => "thread-1",
         threadTitle: async (threadId) =>
           titles.has(threadId) ? { title: titles.get(threadId) ?? null } : null,
-        readMessageText,
+        readMessage,
         publicOrigin: ORIGIN,
         timeZone: "Asia/Shanghai",
         now: () => clock,
@@ -825,6 +832,38 @@ describe("[WP-3] web push dispatch", () => {
       ["已完成"],
     );
     expect(context.rules.outbox("said:7:message")).toBeDefined();
+  });
+
+  it("[SAID-1] REVERSE: a sensitive or restricted reply never puts its words on the lock screen", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.finishRun("run-secret", "completed", at(T0, -6));
+    await context.say(
+      "run-secret",
+      "你的护照号是 TK1234567。",
+      "agent",
+      "assistant:run-secret:agent",
+      "sensitive",
+    );
+    context.finishRun("run-locked", "completed", at(T0, -5));
+    await context.say(
+      "run-locked",
+      "银行卡密码已经改好。",
+      "agent",
+      "assistant:run-locked:agent",
+      "restricted",
+    );
+    await push.tick();
+    await push.tick();
+    const bodies = context.sender
+      .notifications()
+      .map(({ notification }) => String(notification["body"]));
+    expect(bodies).toEqual(["你有一条私密消息", "你有一条私密消息"]);
+    expect(bodies.join("\n")).not.toContain("TK1234567");
+    expect(context.failures).toEqual([]);
   });
 
   it("[SAID-2] holds her words through the owner's quiet hours by default and sends them once when the hours end", async () => {

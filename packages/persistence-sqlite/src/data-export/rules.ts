@@ -4,6 +4,7 @@ import {
   currencyExponent,
   describeRuleVersion,
   OWNER_RULE_ID_PREFIX,
+  PUSH_QUIET_DEFAULT_CLASSES,
   type RuleBookVersion,
   type RuleKind,
 } from "@himawari-agent/application";
@@ -173,7 +174,9 @@ function pushQuietWording(parameters: Parameters): string {
     !Array.isArray(parameters["params"])
       ? (parameters["params"] as { readonly [key: string]: JsonValue })
       : {};
-  const classes = strings(params["classes"])
+  const classes = (
+    params["classes"] === undefined ? PUSH_QUIET_DEFAULT_CLASSES : strings(params["classes"])
+  )
     .map((name) => PUSH_CLASS_LABELS[name] ?? name)
     .join("、");
   return `${String(parameters["summary"] ?? "")}（时段 ${quietWording(params["periods"])}；推送类别 ${classes}）`;

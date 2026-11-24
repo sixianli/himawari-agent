@@ -2234,6 +2234,7 @@ describe("production memory capture", () => {
       ruleId: created["ruleId"] as string,
     } as never);
     expect(stored).toMatchObject({ status: "active" });
+    expect((stored?.parameters as { params: unknown }).params).toEqual(night);
     await expect(
       set({ params: { periods: [{ days: [0], start: "25:00", end: "07:00" }] } }, "call-bad-time"),
     ).rejects.toMatchObject({ code: "RULE_PARAMETERS_INVALID" });

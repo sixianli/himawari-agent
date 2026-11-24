@@ -332,9 +332,9 @@ describe("[IOS-4] push channels", () => {
       listApprovals: async () => approvals,
       runThread: async () => "thread-1",
       threadTitle: async () => ({ title: "查下周东京天气" }),
-      readMessageText: async (threadId, messageId) =>
+      readMessage: async (threadId, messageId) =>
         threadId === "thread-1" && messageId === "assistant:said"
-          ? "明早 9 点那班改好了。"
+          ? { dataClassification: "private", readText: async () => "明早 9 点那班改好了。" }
           : undefined,
       publicOrigin: ORIGIN,
       timeZone: "Asia/Shanghai",

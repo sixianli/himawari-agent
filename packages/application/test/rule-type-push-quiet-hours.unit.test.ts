@@ -3,6 +3,7 @@ import { assertRuleExamples } from "../src/rules/rule-book.js";
 import { RuleJudge } from "../src/rules/rule-judge.js";
 import {
   ownerRuleRecord,
+  parseOwnerRuleParameters,
   RuleTypeError,
   unreadablePushRule,
   writableRuleType,
@@ -146,6 +147,22 @@ describe("[rule-type:push_quiet_hours]", () => {
       params: { ...NIGHT.params, classes: ["scheduled_reminder", "run_result", "mail_reminder"] },
     });
     expect(judge("her_words", night, older).hits).toHaveLength(0);
+  });
+
+  it("[SAID-2] stores a rule that names no classes without classes, so it keeps following the default list", () => {
+    const parsed = parseOwnerRuleParameters(NIGHT);
+    expect(JSON.parse(JSON.stringify(parsed.params))).toEqual(NIGHT.params);
+    const stored = record(
+      JSON.parse(
+        JSON.stringify({ type: parsed.type, params: parsed.params, summary: parsed.summary }),
+      ),
+    );
+    expect(judge("her_words", "2026-11-11T14:30:00.000Z", stored).hits).toHaveLength(1);
+    const named = parseOwnerRuleParameters({
+      ...NIGHT,
+      params: { ...NIGHT.params, classes: ["run_result", "mail_reminder"] },
+    });
+    expect(named.params).toMatchObject({ classes: ["run_result", "mail_reminder"] });
   });
 
   it("[HR-4] tells a stored push rule it cannot read from a healthy one, a retired one and a mail rule", () => {

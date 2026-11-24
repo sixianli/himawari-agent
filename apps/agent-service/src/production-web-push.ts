@@ -55,6 +55,7 @@ export const WEB_PUSH_TEXT = {
     approval: "等你审批",
     risk: { low: "低风险", medium: "中风险", high: "高风险", critical: "极高风险" },
     herWords: "Himawari",
+    privateMessage: "你有一条私密消息",
     completed: "已完成",
     failed: "没有完成",
     unconfirmed: "命令结果没确认，本轮已结束",
@@ -76,6 +77,7 @@ export const WEB_PUSH_TEXT = {
     approval: "Waiting for your approval",
     risk: { low: "Low risk", medium: "Medium risk", high: "High risk", critical: "Critical risk" },
     herWords: "Himawari",
+    privateMessage: "You have a private message",
     completed: "Done",
     failed: "Didn't finish",
     unconfirmed: "A command's result is unconfirmed; the Run ended",
@@ -97,6 +99,7 @@ export const WEB_PUSH_TEXT = {
     approval: "承認待ち",
     risk: { low: "低リスク", medium: "中リスク", high: "高リスク", critical: "最高リスク" },
     herWords: "Himawari",
+    privateMessage: "非公開のメッセージがあります",
     completed: "完了しました",
     failed: "完了できませんでした",
     unconfirmed: "コマンドの結果を確認できず、ターンを終了しました",
@@ -229,7 +232,16 @@ export interface ProductionWebPushOptions {
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
-  readonly readMessageText: (threadId: string, messageId: string) => Promise<string | undefined>;
+  readonly readMessage: (
+    threadId: string,
+    messageId: string,
+  ) => Promise<
+    | {
+        readonly dataClassification: string;
+        readonly readText: () => Promise<string | undefined>;
+      }
+    | undefined
+  >;
   readonly publicOrigin: string;
   readonly timeZone?: string;
   readonly readPushRules?: () => Promise<readonly RuleRecord[]>;
@@ -854,15 +866,19 @@ export class ProductionWebPush {
       };
     }
     if (pushClassOf(item) === "her_words") {
-      const text = item.threadId
-        ? (await this.#options.readMessageText(item.threadId, item.sourceRef))?.trim()
+      const message = item.threadId
+        ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
-      if (!text) return { expired: true };
+      if (!message) return { expired: true };
+      const hidden =
+        message.dataClassification === "sensitive" || message.dataClassification === "restricted";
+      const text = hidden ? undefined : (await message.readText())?.trim();
+      if (!hidden && !text) return { expired: true };
       return {
         expired: false,
         build: (locale) => ({
           title: WEB_PUSH_TEXT[locale].herWords,
-          body: text,
+          body: hidden ? WEB_PUSH_TEXT[locale].privateMessage : (text as string),
           navigate: threadUrl(item.threadId),
           lang: locale,
         }),

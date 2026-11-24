@@ -73,7 +73,7 @@ describe("Muse channel outage push", () => {
       awaitingCount: async () => 0,
       runThread: async () => null,
       threadTitle: async () => null,
-      readMessageText: async () => undefined,
+      readMessage: async () => undefined,
       ...(options.feature === false
         ? {}
         : { museChannel: createMuseChannelPushSource({ scope, store }) }),
