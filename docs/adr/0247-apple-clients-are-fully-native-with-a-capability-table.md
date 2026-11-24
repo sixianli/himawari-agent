@@ -45,9 +45,9 @@ date: "2026-11-12"
 
 ## 前提
 
-1. 网关合约把消息类型列成三个数组（最早的一份、现在网页主要用的一份、对话用的一份），里面有查询和命令，也有服务器发的事件和快照。来源 `packages/gateway-contracts/src/contracts.ts:18` 原话：`export const GATEWAY_MESSAGE_TYPES = [`； `packages/gateway-contracts/src/contracts-v2.ts:22` 原话：`export const GATEWAY_V2_MESSAGE_TYPES = [`；`packages/gateway-contracts/src/thread-contracts-v3.ts:19` 原话：`export const THREAD_GATEWAY_MESSAGE_TYPES = [`。
-2. 网页有一份页面清单，16 个页面，每个页面有 `queries` 和 `mutations` 两栏，有的是空的，列了的也不全。来源 `apps/control-center/src/app/control-center-inventory.ts:23` 起的 `id` 联合类型（`"threads"` 到 `"health-deployment"`）；`memory` 一项只列了 `queries: ["memory.overview.read"]`、`mutations: ["memory.mutate"]`（同文件第 198、199 行），没有 `memory.settings.set`。
-3. 同一个开关命令管两个方向。来源 `packages/gateway-contracts/src/contracts-v2.ts:1494` 起，`memory.settings.set` 的正文是 `payload: object({ capturePaused: booleanValue })`。
+1. 网关合约把消息类型列成三个数组（最早的一份、现在网页主要用的一份、对话用的一份），里面有查询和命令，也有服务器发的事件和快照。来源 `packages/gateway-contracts/src/contracts.ts:18` 原话：`export const GATEWAY_MESSAGE_TYPES = [`； `packages/gateway-contracts/src/contracts-v2.ts:24` 原话：`export const GATEWAY_V2_MESSAGE_TYPES = [`；`packages/gateway-contracts/src/thread-contracts-v3.ts:19` 原话：`export const THREAD_GATEWAY_MESSAGE_TYPES = [`。
+2. 网页有一份页面清单，16 个页面，每个页面有 `queries` 和 `mutations` 两栏，有的是空的，列了的也不全。来源 `apps/control-center/src/app/control-center-inventory.ts:23` 起的 `id` 联合类型（`"threads"` 到 `"health-deployment"`）；`memory` 一项只列了 `queries: ["memory.overview.read"]`、`mutations: ["memory.mutate"]`（同文件第 184、185 行），没有 `memory.settings.set`。
+3. 同一个开关命令管两个方向。来源 `packages/gateway-contracts/src/contracts-v2.ts:2780` 起，`memory.settings.set` 的正文是 `payload: object({ capturePaused: booleanValue })`。
 4. 每台设备有两把密钥，确认密钥每次使用都要面容或解锁。来源 ADR 0229 决定第 4 条原话：“设备密钥（平时签请求）和确认密钥（每次用都要面容或解锁……）”。
 5. 设备密钥本来就能发消息。来源 ADR 0229 决定第 4 条原话：“设备能调用的命令是一张白名单（发消息、回答审批、提交感知记录、回报动作结果等）”。
 
@@ -66,7 +66,7 @@ date: "2026-11-12"
    - 手机上不做：写明原因，设备接口拒绝。
 3. **两边不能悄悄不一致。** 第 11 批新增 `npm run check:client-parity`：网关合约那几个数组（前提 1）里属于查询和命令的每一种、页面清单（前提 2）里的每个页面，都要在能力表里登记，否则检查失败；Swift 那边的消息类型清单由能力表生成。这道检查落地之前，不得声称两边已有自动检查保护。
 4. **确认密钥不再用来换网页会话。** ADR 0229 决定第 4 条里“给高风险审批和换网页会话用”改为“给高风险审批和‘改’这一档的命令用”；“App 里嵌的网页要另换一个短期网页会话”一句不再执行。只拿到设备密钥、主人不在场时，仍然做不了改规则、删记忆、导出这些事。
-5. **客户端界面先出原型，Andy 批准后才动工。** 第一次批准的一版存在 `docs/assets/apple-clients/2026-11-12-v1/`，换成选定图标并补齐页面后的现行基线在 `docs/assets/apple-clients/2026-11-12-v2/`；原型没画到的页面由设计线程补原型给 Andy 看过再做。
+5. **客户端界面先出原型，Andy 批准后才动工。** 第一次批准的一版存在 `docs/assets/apple-clients/2026-11-12-v1/`，换成选定图标并补齐页面的一版存在 `docs/assets/apple-clients/2026-11-12-v2/`，现行的界面基线见 [ADR 0258](0258-each-apple-device-plays-to-its-strength.md)；原型没画到的页面由设计线程补原型给 Andy 看过再做。
 
 原则取舍：第 2 条“收紧”不用面容，依据的是用户主权（想让它少看少听时不该被拦）；往回打开要面容，依据的是边界与可逆性。
 
