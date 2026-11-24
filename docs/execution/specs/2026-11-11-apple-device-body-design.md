@@ -81,8 +81,8 @@ date: "2026-11-11"
 | S9  | 一个主对话、收件箱、她什么时候开口、消息下的选项和同意卡片由另一份方案定，这份文档只定它们在苹果端的样子 | `docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md` 决定第 1 条：“**一个主对话。** App 和网页只有一个主对话，没有新建对话的入口。”决定第 5 条：“开口时可以在消息下给可点的下一步选项”。设计规格是 `docs/execution/specs/2026-11-24-main-thread-subthreads-inbox-design.md` |
 | S10 | 有后果的工具调用怎样授权是另一份方案定的                                                                                           | `/mnt/project-files/owner-scope-approval/integrated-plan.md` 第 3 行：“状态：定稿。Andy 2026-11-12 22:11 JST 在卡片上选了 A（加主人意图核对，评测过了才打开）”。它的 ADR 是 0257，写这份文档时还在草稿 PR 里，没有进 main                                                                                           |
 | S11 | 首页要紧度打分和“想一想”都删了，没有“今天”页要排的条目 | 同一份 ADR 决定第 4 条：“删掉 7 处替她做决定的小判断和公式：……首页要紧度打分（ADR 0255）……“值不值得想”（ADR 0274）” |
-| S12 | 界面基线第 4 版是 Andy 2026-11-24 到 25 日看过、定过入口和头像的那一版 | Andy 2026-11-24 22:29（JST）在设计线程：“按推荐”（今天页去掉等三项）；2026-11-25 00:06 选头像样式：“我选这一个”；对应在线原型第 63 版（第 62 版在第 2 排补了按住说话、听写和“和她说话”六屏，第 63 版照保险箱方案 v5 重画了第 5 排，都由设计线程补画） |
-| S13 | 锁屏推送显示全文，不再遮盖“敏感”内容 | ADR 0286 文件 `0286-the-main-model-reads-and-writes-memory-itself.md`（已进 main，这个分支还没合进来）决定第 4 条：“取消敏感内容审批，不再给记忆标“敏感”：健康、财务、人际关系、银行卡号、证件号都直接记、原样给模型，锁屏推送显示全文”；后果：“所有记忆原样发给生产用的模型服务商，锁屏推送显示全文。” |
+| S12 | 界面基线第 4 版是 Andy 2026-11-24 到 25 日看过、定过入口和头像的那一版 | Andy 2026-11-24 22:29（JST）在设计线程：“按推荐”（今天页去掉等三项）；2026-11-25 00:06 选头像样式：“我选这一个”；对应在线原型第 64 版（第 62 版在第 2 排补了按住说话、听写和“和她说话”六屏，第 63、64 版照保险箱方案 v5 重画了第 5 排，都由设计线程补画） |
+| S13 | 锁屏推送显示全文，不再遮盖“敏感”内容 | ADR 0286 文件 `0286-the-main-model-reads-and-writes-memory-itself.md`决定第 4 条：“取消敏感内容审批，不再给记忆标“敏感”：健康、财务、人际关系、银行卡号、证件号都直接记、原样给模型，锁屏推送显示全文”；后果：“所有记忆原样发给生产用的模型服务商，锁屏推送显示全文。” |
 | S14 | 保险箱的存放和批准流程由保险箱方案 v5 定 | 分支 `claude/project-thread-o920tx` 的 `.agents/evidence/secret-vault/plan-v5.md` 第 25 行：“锁屏通知只写“Himawari 请你批准一次使用”，不写是哪一项；批准页上项的名字和网站来自签过名的清单，服务器改不了；“她要做什么”一栏标明是她说的，只当参考。”第 38 行：“你可以在某一项上打开“后台也能用””。写这份文档时没有进 main |
 
 [返回阅读导航](#contents)
@@ -817,7 +817,7 @@ Mac 的动作只在 `device_policies` 允许的范围内（见[设备身份和�
 5. 由它产生的“建议”删掉；已经建好的提醒和日历事件保留，并在删除确认里列出来让主人决定。
 6. 设备上的缓存副本在下次同步时删。
 
-现有删除只按编号匹配（ADR 0230 前提 10），读出处的接口也只返回编号、丢了类型（`packages/persistence-sqlite/src/sqlite-memory-operations.ts` 的 `sources()`）。都改成类型和编号一起，才不会误伤别的来源。只按编号更新 `memory_provenance` 的地方现在有四处，要全部改：`packages/persistence-sqlite/src/sqlite-governed-deletion.ts:943`、`:986`、`:1021` 和 `packages/persistence-sqlite/src/sqlite-durable-operations.ts:3935`。
+现有删除只按编号匹配（ADR 0230 前提 10），读出处的接口也只返回编号、丢了类型（`packages/persistence-sqlite/src/sqlite-memory-operations.ts` 的 `sources()`）。都改成类型和编号一起，才不会误伤别的来源。只按编号更新 `memory_provenance` 的地方现在有四处，要全部改：`packages/persistence-sqlite/src/sqlite-governed-deletion.ts:943`、`:986`、`:1021` 和 `packages/persistence-sqlite/src/sqlite-durable-operations.ts:3945`。
 
 **删不掉的要说清**（删除确认里写明）：已经被 `perception_read` 读进某个对话的摘要留在那个对话里，要删就删那个对话；已经导出的文件、备份、模型服务方那边的日志收不回。
 
