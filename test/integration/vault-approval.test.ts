@@ -370,4 +370,33 @@ describe("[vault-approval] one approval releases exactly the requested items onc
       "failed",
     ]);
   });
+  it("keeps an approval that is still being recorded when the request timer fires", async () => {
+    const fire: { timers: (() => void)[] } = { timers: [] };
+    const context = await setup({
+      store: (real) =>
+        override<VaultStorePort>(real, {
+          async recordUsage(input: Parameters<VaultStorePort["recordUsage"]>[0]) {
+            if (input.entries.some((entry) => entry.outcome === "approved")) {
+              for (const timer of fire.timers) timer();
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return real.recordUsage(input);
+          },
+        }),
+    });
+    fire.timers = context.timers;
+    const itemId = await withItem(context);
+    const { outcome, request } = await pending(context, [itemId]);
+    await context.service.approve(
+      scope,
+      { deviceId: DEVICE, confirmed: true },
+      await context.phone.approval({ request, deviceId: DEVICE }),
+    );
+    const result = await outcome;
+    expect(result.kind).toBe("approved");
+    if (result.kind === "approved") result.secrets.wipe();
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "approved",
+    ]);
+  });
 });

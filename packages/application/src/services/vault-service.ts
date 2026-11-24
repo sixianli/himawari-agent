@@ -353,7 +353,8 @@ export class VaultService {
     const now = this.#now().toISOString();
     const closed = await this.#options.store
       .decideRequest({ ...scope, id, nonce, status: "expired", deviceId: null, now })
-      .catch(() => null);
+      .catch(() => undefined);
+    if (closed === null) return;
     this.#settle(id, { kind: "expired" });
     if (closed)
       await this.#options.store
@@ -483,7 +484,14 @@ export class VaultService {
       deviceId: device.deviceId,
       now,
     });
-    if (!decided) throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
+    if (!decided || this.#waiters.get(id) !== waiter)
+      throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
+    this.#waiters.delete(id);
+    waiter.timer.cancel();
+    const deliver = (outcome: VaultReleaseOutcome) => {
+      waiter.ephemeral.dispose();
+      waiter.resolve(outcome);
+    };
     const released: ReleasedVaultItem[] = [];
     const wipeAll = () => {
       for (const item of released) for (const value of item.fields.values()) value.fill(0);
@@ -508,8 +516,8 @@ export class VaultService {
           const parsed = record(JSON.parse(opened.toString("utf8")));
           exactKeys(parsed, ["itemKey"], ["totp"]);
           const key = vaultBase64(parsed["itemKey"], 32, 32) ?? invalid();
-          itemKey = Buffer.from(key, "base64");
           if (parsed["totp"] !== undefined) totp = parseTotp(parsed["totp"]);
+          itemKey = Buffer.from(key, "base64");
         } finally {
           opened.fill(0);
         }
@@ -547,7 +555,7 @@ export class VaultService {
       });
     } catch (error) {
       wipeAll();
-      this.#settle(id, { kind: "denied" });
+      deliver({ kind: "denied" });
       await this.#options.store
         .recordUsage({
           ...scope,
@@ -563,7 +571,7 @@ export class VaultService {
       if (error instanceof VaultError) throw error;
       throw new VaultError(VAULT_ERROR_CODES.RELEASE_UNREADABLE, 422);
     }
-    this.#settle(id, {
+    deliver({
       kind: "approved",
       secrets: Object.freeze({
         requestId: id,
