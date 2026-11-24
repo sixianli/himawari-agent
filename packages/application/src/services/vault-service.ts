@@ -484,14 +484,14 @@ export class VaultService {
       now,
     });
     if (!decided) throw new VaultError(VAULT_ERROR_CODES.REQUEST_CLOSED, 410);
-    const items = new Map(
-      (await this.#options.store.listItems(scope)).map((item) => [item.id, item]),
-    );
     const released: ReleasedVaultItem[] = [];
     const wipeAll = () => {
       for (const item of released) for (const value of item.fields.values()) value.fill(0);
     };
     try {
+      const items = new Map(
+        (await this.#options.store.listItems(scope)).map((item) => [item.id, item]),
+      );
       for (const entry of sealed) {
         const item = items.get(entry.itemId);
         if (!item || item.version !== entry.version)
@@ -520,22 +520,31 @@ export class VaultService {
             const ciphertext = item.ciphertexts[field];
             if (ciphertext === undefined)
               throw new VaultError(VAULT_ERROR_CODES.RELEASE_UNREADABLE, 422);
-            fields.set(
-              field,
-              Buffer.from(
-                this.#options.crypto.decryptField(
-                  itemKey,
-                  ciphertext,
-                  vaultFieldAad(item.id, field, item.version),
-                ),
-              ),
+            const plain = this.#options.crypto.decryptField(
+              itemKey,
+              ciphertext,
+              vaultFieldAad(item.id, field, item.version),
             );
+            fields.set(field, Buffer.from(plain.buffer, plain.byteOffset, plain.byteLength));
           }
+        } catch (error) {
+          for (const value of fields.values()) value.fill(0);
+          throw error;
         } finally {
           itemKey.fill(0);
         }
         released.push(Object.freeze({ itemId: item.id, fields, totp: Object.freeze(totp) }));
       }
+      await this.#options.store.recordUsage({
+        ...scope,
+        entries: stored.itemIds.map((itemId) => ({
+          requestId: id,
+          itemId,
+          origin: stored.origin,
+          outcome: "approved" as const,
+          at: now,
+        })),
+      });
     } catch (error) {
       wipeAll();
       this.#settle(id, { kind: "denied" });
@@ -554,16 +563,6 @@ export class VaultService {
       if (error instanceof VaultError) throw error;
       throw new VaultError(VAULT_ERROR_CODES.RELEASE_UNREADABLE, 422);
     }
-    await this.#options.store.recordUsage({
-      ...scope,
-      entries: stored.itemIds.map((itemId) => ({
-        requestId: id,
-        itemId,
-        origin: stored.origin,
-        outcome: "approved" as const,
-        at: now,
-      })),
-    });
     this.#settle(id, {
       kind: "approved",
       secrets: Object.freeze({

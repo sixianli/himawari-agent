@@ -100,6 +100,7 @@ public struct VaultKeyring: Sendable {
         guard VaultContract.isItemId(id), VaultContract.name(item.name) != nil else { throw VaultCryptoError.invalidField("item") }
         let fields = item.values.keys.sorted()
         guard VaultContract.fieldsValid(kind: item.kind, fields: fields) else { throw VaultCryptoError.invalidField(fields.joined(separator: ",")) }
+        if let empty = fields.first(where: { item.values[$0]?.isEmpty ?? true }) { throw VaultCryptoError.invalidField(empty) }
         let origins = try item.origins.map { origin -> String in
             guard let normalized = VaultContract.origin(origin) else { throw VaultCryptoError.invalidField("origin") }
             return normalized

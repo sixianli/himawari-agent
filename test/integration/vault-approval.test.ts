@@ -3,9 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  type VaultCryptoPort,
   type VaultNotifierPort,
   type VaultReleaseOutcome,
   VaultService,
+  type VaultStorePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import {
@@ -25,6 +27,16 @@ const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
 const BANK = "https://bank.example.com";
 const DEVICE = "device-vault-phone-0001";
 
+function override<T extends object>(real: T, replacements: Partial<T>): T {
+  return new Proxy({} as T, {
+    get(_target, property) {
+      if (Object.hasOwn(replacements, property)) return replacements[property as keyof T];
+      const value = Reflect.get(real, property, real);
+      return typeof value === "function" ? value.bind(real) : value;
+    },
+  });
+}
+
 function flipCharacter(value: string): string {
   const index = 10;
   const replacement = value[index] === "A" ? "B" : "A";
@@ -40,7 +52,12 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
   });
 
-  async function setup() {
+  async function setup(
+    wrap: {
+      crypto?: (real: VaultCryptoPort) => VaultCryptoPort;
+      store?: (real: VaultStorePort) => VaultStorePort;
+    } = {},
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-vault-"));
     directories.push(stateRoot);
     const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
@@ -65,8 +82,8 @@ describe("[vault-approval] one approval releases exactly the requested items onc
       },
     };
     const service = new VaultService({
-      store: repository.vault(),
-      crypto: new NodeVaultCrypto(),
+      store: wrap.store ? wrap.store(repository.vault()) : repository.vault(),
+      crypto: wrap.crypto ? wrap.crypto(new NodeVaultCrypto()) : new NodeVaultCrypto(),
       notifier,
       now: () => new Date(clock),
       setTimer: (callback) => {
@@ -294,5 +311,63 @@ describe("[vault-approval] one approval releases exactly the requested items onc
     expect(result.secrets.items[0]?.fields.has("totp")).toBe(false);
     expect(result.secrets.items[0]?.totp).toHaveLength(3);
     result.secrets.wipe();
+  });
+
+  it("wipes the fields it already decrypted when a later field fails to decrypt", async () => {
+    const decrypted: Uint8Array[] = [];
+    const context = await setup({
+      crypto: (real) =>
+        override<VaultCryptoPort>(real, {
+          decryptField(itemKey: Uint8Array, ciphertext: string, aad: Uint8Array) {
+            if (decrypted.length === 1) throw new Error("second field unreadable");
+            const plain = real.decryptField(itemKey, ciphertext, aad);
+            decrypted.push(plain);
+            return plain;
+          },
+        }),
+    });
+    const itemId = await withItem(context);
+    const { outcome, request } = await pending(context, [itemId]);
+    const body = await context.phone.approval({ request, deviceId: DEVICE });
+    await expect(
+      context.service.approve(scope, { deviceId: DEVICE, confirmed: true }, body),
+    ).rejects.toMatchObject({ code: "VAULT_RELEASE_UNREADABLE" });
+    expect((await outcome).kind).toBe("denied");
+    expect(decrypted).toHaveLength(1);
+    expect(decrypted[0]?.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("wipes the released values and settles the request when recording the use fails", async () => {
+    const decrypted: Uint8Array[] = [];
+    const context = await setup({
+      crypto: (real) =>
+        override<VaultCryptoPort>(real, {
+          decryptField(itemKey: Uint8Array, ciphertext: string, aad: Uint8Array) {
+            const plain = real.decryptField(itemKey, ciphertext, aad);
+            decrypted.push(plain);
+            return plain;
+          },
+        }),
+      store: (real) =>
+        override<VaultStorePort>(real, {
+          async recordUsage(input: Parameters<VaultStorePort["recordUsage"]>[0]) {
+            if (input.entries.some((entry) => entry.outcome === "approved"))
+              throw new Error("usage table unavailable");
+            return real.recordUsage(input);
+          },
+        }),
+    });
+    const itemId = await withItem(context);
+    const { outcome, request } = await pending(context, [itemId]);
+    const body = await context.phone.approval({ request, deviceId: DEVICE });
+    await expect(
+      context.service.approve(scope, { deviceId: DEVICE, confirmed: true }, body),
+    ).rejects.toMatchObject({ code: "VAULT_RELEASE_UNREADABLE" });
+    expect((await outcome).kind).toBe("denied");
+    expect(decrypted).toHaveLength(2);
+    expect(decrypted.every((plain) => plain.every((byte) => byte === 0))).toBe(true);
+    expect((await context.service.usage(scope, itemId)).map((entry) => entry.outcome)).toEqual([
+      "failed",
+    ]);
   });
 });

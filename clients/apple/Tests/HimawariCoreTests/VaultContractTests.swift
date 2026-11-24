@@ -174,6 +174,12 @@ struct VaultFixture: Decodable {
         var badOrigin = values
         badOrigin.origins = ["http://github.com"]
         #expect(throws: VaultCryptoError.self) { _ = try keyring.seal(id: id, item: badOrigin, version: 1) }
+        var emptyPassword = values
+        emptyPassword.values = ["password": "", "username": "u"]
+        #expect(throws: VaultCryptoError.invalidField("password")) { _ = try keyring.seal(id: id, item: emptyPassword, version: 1) }
+        var emptyUsername = values
+        emptyUsername.values = ["password": "p", "username": ""]
+        #expect(throws: VaultCryptoError.invalidField("username")) { _ = try keyring.seal(id: id, item: emptyUsername, version: 1) }
     }
 
     @Test func releasesTheItemKeyOnlyToTheRequestEphemeralKey() throws {
