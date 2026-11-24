@@ -83,7 +83,10 @@ import { ProductionUploadedFiles } from "./production-uploaded-files.js";
 
 export interface ProductionRunCompositionOptions {
   readonly egress: ModelEgress;
-  readonly externalContent?: Pick<ContextExternalContent, "mark" | "read" | "readThread">;
+  readonly externalContent?: Pick<
+    ContextExternalContent,
+    "mark" | "markRunSource" | "read" | "readThread"
+  >;
   readonly toolRefusalLimits?: ToolRefusalConfiguration;
   readonly generateTitle?: (
     request: RuntimeRequest,
@@ -358,6 +361,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const projection: typeof resolvedProjection = externalContent
     ? Object.assign(Object.create(resolvedProjection) as typeof resolvedProjection, {
         resolveProjection: async (request: RuntimeProjectionRequest) => {
+          await externalContent.markRunSource(request.runId);
           const resolved = await resolvedProjection.resolveProjection(request);
           if (resolved.ownerAttachments)
             await externalContent.mark(request.runId, "owner_attachment");
