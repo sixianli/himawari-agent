@@ -81,6 +81,7 @@ export interface ConfiguredMemoryDescriptor {
   readonly storagePath: string;
   readonly dimensions: number;
   readonly minimumSimilarity?: number;
+  readonly toolResultShare?: number;
   readonly retrieval?: ConfiguredMemoryRetrieval;
   readonly conversationReview?: ConfiguredConversationReview;
 }
