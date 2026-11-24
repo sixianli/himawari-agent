@@ -2,7 +2,19 @@
 import HimawariCore
 import UIKit
 
+@MainActor
+public enum PushBridge {
+    public static var sync: PushTokenSync?
+}
+
 public final class HimawariAppDelegate: NSObject, UIApplicationDelegate {
+    public func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        guard let sync = PushBridge.sync else { return }
+        Task { await sync.tokenArrived(deviceToken) }
+    }
+
+    public func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {}
+
     public func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
