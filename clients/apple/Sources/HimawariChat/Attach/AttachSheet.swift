@@ -35,13 +35,13 @@ struct AttachSheet: View {
                 }
             }
             HStack(spacing: DesignTokens.Chat.attachTileGap) {
-                Button { cameraOpen = true } label: { tile(.camera, L.text("attach.camera")) }
+                Button { cameraOpen = true } label: { AttachTile(icon: .camera, title: L.text("attach.camera")) }
                     .buttonStyle(.plain)
                 PhotosPicker(selection: $photos, maxSelectionCount: max(1, room), matching: .images) {
-                    tile(.photo, L.text("attach.photos"))
+                    AttachTile(icon: .photo, title: L.text("attach.photos"))
                 }
                 .buttonStyle(.plain)
-                Button { filesOpen = true } label: { tile(.fileText, L.text("attach.files")) }
+                Button { filesOpen = true } label: { AttachTile(icon: .fileText, title: L.text("attach.files")) }
                     .buttonStyle(.plain)
             }
             Button(action: locate) {
@@ -116,8 +116,13 @@ struct AttachSheet: View {
             }
         }
     }
+}
 
-    private func tile(_ icon: IconName, _ title: String) -> some View {
+private struct AttachTile: View {
+    let icon: IconName
+    let title: String
+
+    var body: some View {
         VStack(spacing: DesignTokens.Size.rowGap) {
             Icon(icon, size: DesignTokens.Chat.attachTileIcon)
             Text(title).hmType(DesignTokens.TypeScale.secondary)
