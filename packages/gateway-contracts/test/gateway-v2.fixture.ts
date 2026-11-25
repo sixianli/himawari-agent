@@ -1315,7 +1315,19 @@ export const governanceMessages = [
         operation: "send",
         recipients: ["zhangsan@example.com"],
         threadId: null,
+        threadTitle: null,
         expiresAt: "2026-11-18T00:00:00.000Z",
+        createdAt: "2026-11-11T00:00:00.000Z",
+      },
+      {
+        allowanceId: "allowance:fedcba9876543210",
+        allowFor: "this_task",
+        title: "订大阪的酒店",
+        operation: "book",
+        recipients: [],
+        threadId: "thread-01",
+        threadTitle: "订酒店",
+        expiresAt: null,
         createdAt: "2026-11-11T00:00:00.000Z",
       },
     ],
@@ -1328,6 +1340,7 @@ export const governanceMessages = [
     days: null,
   }),
   fixture("command", "approval.allowance.days.set", { days: 14 }),
+  fixture("command", "approval.allowance.revoke", { allowanceId: "allowance:0123456789abcdef" }),
   fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {
     proposals: [

@@ -272,7 +272,7 @@ export class ProductionMemoryControl {
     >;
     readonly ownerRules?: OwnerRuleControl;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
-    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke" | "days">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "days">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -1936,16 +1936,6 @@ export class ProductionMemoryControl {
           throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, error.code);
         throw error;
       }
-    }
-    if (command.type === "memory.rule.respond" && command.payload.action === "revoke") {
-      const allowances = this.options.allowances;
-      if (!allowances)
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "MEMORY_OPERATION_NOT_INSTALLED",
-        );
-      await allowances.revoke(command.payload.target);
-      return { resultRef: command.payload.target, replayed: false };
     }
     if (
       command.type === "memory.rule.respond" &&

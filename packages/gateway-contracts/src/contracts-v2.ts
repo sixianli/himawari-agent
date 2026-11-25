@@ -26,6 +26,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "approval.respond",
   "approval.allowance.set",
   "approval.allowance.days.set",
+  "approval.allowance.revoke",
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
@@ -279,6 +280,13 @@ export const approvalAllowanceDaysSetCommandSchema = object({
   ...commandEnvelope("approval.allowance.days.set"),
   payload: object({
     days: integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
+  }),
+});
+
+export const approvalAllowanceRevokeCommandSchema = object({
+  ...commandEnvelope("approval.allowance.revoke"),
+  payload: object({
+    allowanceId: machineString,
   }),
 });
 
@@ -2576,7 +2584,6 @@ export const OWNER_RULE_ACTIONS = [
   "reconfirm",
   "ask_first",
   "allow_directly",
-  "revoke",
 ] as const;
 export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "allow_preauthorized",
@@ -2632,6 +2639,7 @@ const memoryRulesSnapshotSchema = object({
         operation: machineString,
         recipients: array(boundedString(512)),
         threadId: nullable(machineString),
+        threadTitle: nullable(boundedString(120)),
         expiresAt: nullable(timestamp),
         createdAt: timestamp,
       }),
@@ -3806,6 +3814,7 @@ const schemasByType = {
   "approval.respond": respondApprovalV2CommandSchema,
   "approval.allowance.set": approvalAllowanceSetCommandSchema,
   "approval.allowance.days.set": approvalAllowanceDaysSetCommandSchema,
+  "approval.allowance.revoke": approvalAllowanceRevokeCommandSchema,
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,

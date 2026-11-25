@@ -888,6 +888,7 @@ export const messages = {
     "同样的事在范围内不再问你。读过邮件、网页这类外来内容后，“几天内”和“以后都行”不算数，照样问你。",
   "rules.allowances.scope":
     "{scope, select, this_task {只在那件事里} days {到 {until}} other {以后都行}}",
+  "rules.allowances.task": "只在“{task}”这件事里",
   "rules.allowances.revoke": "收回",
   "rules.allowances.days": "选“N 天内都行”时管几天",
   "rules.allowances.daysSave": "保存",

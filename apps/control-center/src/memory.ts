@@ -40,13 +40,7 @@ export type OwnerAllowance = Extract<
   GatewayV2Snapshot,
   { type: "memory.rules.snapshot" }
 >["payload"]["allowances"][number];
-export type OwnerRuleAction =
-  | "undo"
-  | "confirm"
-  | "reconfirm"
-  | "ask_first"
-  | "allow_directly"
-  | "revoke";
+export type OwnerRuleAction = "undo" | "confirm" | "reconfirm" | "ask_first" | "allow_directly";
 export type MemoryReview = Extract<
   GatewayV2Snapshot,
   { type: "memory.review.snapshot" }
@@ -79,6 +73,7 @@ export interface MemoryModel {
   readonly allowanceDays: number | null;
   readonly setAllowanceDays: (days: number) => Promise<boolean>;
   readonly respondRule: (target: string, action: OwnerRuleAction) => Promise<boolean>;
+  readonly revokeAllowance: (allowanceId: string) => Promise<boolean>;
   readonly review: MemoryReview | null;
   readonly respondReview: (
     target: string,
@@ -355,6 +350,17 @@ export function useMemory(input: {
     setAllowanceDays: (days) =>
       run(async () => setApprovalAllowanceDays({ client, configuration, days })),
     respondRule: (target, action) => send("memory.rule.respond", () => ({ target, action })),
+    revokeAllowance: (allowanceId) =>
+      run(async () =>
+        client.mutate(
+          commandMessage(
+            configuration,
+            "approval.allowance.revoke",
+            { allowanceId },
+            { risk: "low" },
+          ),
+        ),
+      ),
     respondProposal: ({ proposalId, version, fingerprint }, action) =>
       send("proposal.respond", () => ({
         proposalId,

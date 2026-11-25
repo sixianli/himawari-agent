@@ -946,6 +946,7 @@ export const messages = {
     "範囲内の同じ操作は確認しません。メールやウェブページなど外部の内容を読んだ後は、「日数」と「今後ずっと」は使われず、毎回確認します。",
   "rules.allowances.scope":
     "{scope, select, this_task {その件の中だけ} days {{until} まで} other {今後ずっと}}",
+  "rules.allowances.task": "「{task}」の件の中だけ",
   "rules.allowances.revoke": "取り消す",
   "rules.allowances.days": "「N 日間」の日数",
   "rules.allowances.daysSave": "保存",

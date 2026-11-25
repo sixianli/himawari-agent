@@ -131,6 +131,8 @@ async function setup(
     store,
     authority: () => SERVICE_AUTHORITY.lease,
     clock,
+    threadTitle: async (threadId) =>
+      threadId === "thread-capability-invocation" ? "订酒店\n给大阪那家" : null,
   });
   const markFaults = { read: false, write: false };
   const markState: StateStore = {
@@ -1533,11 +1535,24 @@ it("[ADR-0285] after outside content, a yes for this task stops asking for the s
         allowanceId,
         allowFor: "this_task",
         threadId: "thread-capability-invocation",
+        threadTitle: "订酒店 给大阪那家",
         expiresAt: null,
       }),
     ]);
 
-    await s.allowances.revoke(allowanceId);
+    await expect(
+      s.allowances.execute({
+        type: "approval.allowance.revoke",
+        payload: { allowanceId: "allowance:missing" },
+      } as Parameters<typeof s.allowances.execute>[0]),
+    ).rejects.toThrow("ALLOWANCE_NOT_FOUND");
+    expect(await s.allowances.list()).toHaveLength(1);
+    expect(
+      await s.allowances.execute({
+        type: "approval.allowance.revoke",
+        payload: { allowanceId },
+      } as Parameters<typeof s.allowances.execute>[0]),
+    ).toEqual({ resultRef: allowanceId, replayed: false });
     expect(await s.allowances.list()).toEqual([]);
     const third = s.call("rule.set", "call:rule-3", { text: "以后会议邮件都提醒我" });
     expect(await s.tools.execute(third)).toMatchObject({ outcome: "awaiting_approval" });
@@ -1559,6 +1574,9 @@ it("[ADR-0285] a yes from now on stops asking for the same action, but no longer
       allowFor: "always",
       days: null,
     });
+    expect(await s.allowances.list()).toEqual([
+      expect.objectContaining({ allowFor: "always", threadId: null, threadTitle: null }),
+    ]);
     const second = s.call("reminder.set", "call:b", { text: "交月报", due: "2026-11-14T15:00" });
     expect(await s.tools.execute(second)).toMatchObject({ outcome: "succeeded" });
 

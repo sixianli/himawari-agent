@@ -309,7 +309,7 @@ export function OwnerAllowancesSection({
 }: {
   memory: Pick<
     MemoryModel,
-    "allowances" | "respondRule" | "busy" | "allowanceDays" | "setAllowanceDays"
+    "allowances" | "revokeAllowance" | "busy" | "allowanceDays" | "setAllowanceDays"
   >;
   message: Message;
 }) {
@@ -372,16 +372,18 @@ export function OwnerAllowancesSection({
         >
           <p className="memory-text">{allowance.title}</p>
           <small>
-            {message("rules.allowances.scope", {
-              scope: allowance.allowFor,
-              until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
-            })}
+            {allowance.allowFor === "this_task" && allowance.threadTitle
+              ? message("rules.allowances.task", { task: allowance.threadTitle })
+              : message("rules.allowances.scope", {
+                  scope: allowance.allowFor,
+                  until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
+                })}
           </small>
           <div className="actions">
             <ActionButton
               variant="quiet"
               disabled={memory.busy}
-              onClick={() => void memory.respondRule(allowance.allowanceId, "revoke")}
+              onClick={() => void memory.revokeAllowance(allowance.allowanceId)}
             >
               {message("rules.allowances.revoke")}
             </ActionButton>

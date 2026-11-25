@@ -123,6 +123,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   change("v2", "approval.respond"),
   change("v2", "approval.allowance.set"),
   change("v2", "approval.allowance.days.set"),
+  tighten("v2", "approval.allowance.revoke"),
   change("v2", "search.authorization.set"),
   query("v2", "search.authorization.read"),
   notOnPhone("v2", "push.subscription.set", "command", WEB_PUSH_ONLY),

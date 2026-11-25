@@ -89,6 +89,12 @@ describe("[第11批] 客户端能力表", () => {
     expect(memory?.tightenOpenKeys).toBeUndefined();
     const rule = findClientCapability("v2", "memory.rule.respond");
     expect(rule && requiredClientTier(rule, {})).toBe("change");
+    const takeBack = findClientCapability("v2", "approval.allowance.revoke");
+    expect(takeBack && requiredClientTier(takeBack, { allowanceId: "allowance:a" })).toBe(
+      "tighten",
+    );
+    const give = findClientCapability("v2", "approval.allowance.set");
+    expect(give && requiredClientTier(give, {})).toBe("change");
   });
 
   it("外部记忆整批全是拒绝且不带改写文字才算收紧，有一条留下或改写就算改", () => {
