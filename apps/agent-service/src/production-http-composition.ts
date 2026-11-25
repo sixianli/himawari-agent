@@ -1643,6 +1643,7 @@ export async function createProductionHttpComposition(
     now,
   });
   await perception.prepareDirectories();
+  await perception.resumeDeletions({ ownerId, agentId }).catch(() => undefined);
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     ...(options.capabilityReactivation

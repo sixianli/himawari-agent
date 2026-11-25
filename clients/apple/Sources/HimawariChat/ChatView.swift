@@ -263,15 +263,20 @@ public struct ChatView: View {
                 ForEach(store.transcript(in: threadId)) { item in
                     switch item {
                     case let .message(message):
-                        if message.role == .agent, let options = message.options {
-                            VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                        Group {
+                            if message.role == .agent, let options = message.options {
+                                VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                                    MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                                    MessageOptionsView(options: options, choose: choose(for: message))
+                                }
+                            } else if message.role == .owner, message.chosenFrom != nil {
+                                ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
+                            } else {
                                 MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
-                                MessageOptionsView(options: options, choose: choose(for: message))
                             }
-                        } else if message.role == .owner, message.chosenFrom != nil {
-                            ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
-                        } else {
-                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        }
+                        .task(id: message.messageId) {
+                            if message.role == .agent, let runId = message.runId { await store.loadExecution(runId, in: threadId) }
                         }
                     case let .process(runId):
                         if let line = store.processLine(for: runId, in: threadId) {
