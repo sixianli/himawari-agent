@@ -35,7 +35,7 @@ public struct HimawariRootView: View {
     private var app: some View {
         Group {
             if model.phase == .active, let chat = model.chat {
-                MainTabsView(model: model, chat: chat, feed: model.home)
+                MainShell(model: model, chat: chat)
             } else {
                 PairingView(model: model)
             }
@@ -71,119 +71,64 @@ struct HandoverEntryLink: Identifiable {
     var id: String { entry.rawValue }
 }
 
-enum MainTab: Hashable {
-    case today
-    case chats
-    case memory
-}
-
-struct MainTabsView: View {
+struct MainShell: View {
     let model: AppModel
     let chat: ChatStore
     private let actionsOverride: DeviceActionsModel?
-    let feed: HomeFeedModel
-    @State private var tab: MainTab
-    @State private var openThread: OpenThread?
-    @State private var settingsOpen: Bool
+    private let fixedThreadId: String?
+    @State private var mainThreadId: String?
+    @State private var lookupFailed = false
+    @State private var draft = Draft()
     @State private var listening: ListeningController?
-    @State private var listenOpen = false
-    @State private var herOpen = false
+    @State private var herOpen: Bool
     @State private var herListenOpen = false
     #if os(iOS)
     @State private var dictation = ChatDictation()
     @State private var talkSession = ChatTalkSession()
     #endif
-    @Environment(\.tabsCycleEvery) private var cycleEvery
-    private let memoryOverride: AnyView?
-    private let settingsOverride: AnyView?
-    @Environment(\.listClock) private var listClock
 
-    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, feed: HomeFeedModel? = nil, tab: MainTab = .chats, memory: AnyView? = nil, settings: AnyView? = nil) {
+    init(model: AppModel, chat: ChatStore, actions: DeviceActionsModel? = nil, threadId: String? = nil, herOpen: Bool = false) {
         self.model = model
         self.chat = chat
         actionsOverride = actions
-        self.feed = feed ?? model.home
-        _tab = State(initialValue: tab)
-        _settingsOpen = State(initialValue: settings != nil)
-        memoryOverride = memory
-        settingsOverride = settings
+        fixedThreadId = threadId
+        _herOpen = State(initialValue: herOpen)
     }
 
     private var actions: DeviceActionsModel? { actionsOverride ?? model.actions }
 
-    struct OpenThread: Equatable {
-        let threadId: String?
-        var draft = ""
-        let nonce = UUID()
+    struct Draft: Equatable {
+        var text = ""
+        var nonce = UUID()
     }
 
     var body: some View {
-        ZStack {
-            if let openThread {
-                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft, openHerPage: { herOpen = true }) {
-                    withAnimation(.snappy) { self.openThread = nil }
-                }
-                .id(openThread.nonce)
-                .transition(.move(edge: .trailing))
-                .environment(\.chatStopRun, stopRun)
-                .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
-                #if os(iOS)
-                .environment(\.chatVoice, dictation)
-                .environment(\.chatTalk, talkSession)
-                #endif
+        Group {
+            if let threadId = fixedThreadId ?? mainThreadId {
+                ChatView(store: chat, threadId: threadId, draft: draft.text, openHerPage: { herOpen = true })
+                    .id(draft.nonce)
+                    .environment(\.chatStopRun, stopRun)
+                    .environment(\.chatOwnerAwaited, (actions?.waitingCount ?? 0) > 0)
+                    .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                    #if os(iOS)
+                    .environment(\.chatVoice, dictation)
+                    .environment(\.chatTalk, talkSession)
+                    #endif
             } else {
-                content
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }
-                    .overlay(alignment: .bottom) { bars }
-                    .transition(.opacity)
+                MainThreadWaiting(failed: lookupFailed) { Task { await findMainThread() } }
             }
         }
         .task {
-            guard let cycleEvery else { return }
-            let order: [MainTab] = [.chats, .today, .memory, .chats]
-            for next in order.dropFirst() {
-                try? await Task.sleep(for: .seconds(cycleEvery))
-                withAnimation(.snappy) { tab = next }
-            }
+            guard fixedThreadId == nil, mainThreadId == nil else { return }
+            await findMainThread()
         }
         .overlay(alignment: .bottom) {
             if let listening {
                 ListenOverlay(controller: listening)
             }
         }
-        .hmCover(isPresented: $settingsOpen) {
-            Group {
-                if let settingsOverride {
-                    settingsOverride
-                } else {
-                    SettingsRootView(
-                        api: model.api,
-                        confirmKey: model.confirmKey,
-                        actions: actions,
-                        openThread: { threadId in
-                            settingsOpen = false
-                            withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
-                        },
-                        senses: model.senses.map { senses in
-                            AnyView(SensesView(model: senses) { HandoverEntryRows() })
-                        },
-                        close: { settingsOpen = false },
-                        removedThisDevice: {
-                            settingsOpen = false
-                            model.removedThisDevice()
-                        }
-                    )
-                }
-            }
-        }
         .hmCover(isPresented: $herOpen) {
             herPage
-        }
-        .sheet(isPresented: $listenOpen) {
-            if let listening {
-                ListenEntrySheet(controller: listening) { listenOpen = false }
-                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
-            }
         }
         #if os(iOS)
         .hmCover(isPresented: Binding(get: { listening?.recordingKitOpen ?? false }, set: { listening?.recordingKitOpen = $0 })) {
@@ -197,28 +142,12 @@ struct MainTabsView: View {
         }
     }
 
-    private var todayBadge: Int? {
-        guard feed.available else { return actions?.waitingCount }
-        return feed.approvalsIncomplete ? actions?.waitingCount : feed.layout?.badge
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch tab {
-        case .today:
-            TodayPage(feed: feed, actions: actions, listening: listening, openListening: { listenOpen = true }, openSettings: { settingsOpen = true }, openSearch: nil) { threadId in
-                withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
-            }
-        case .chats:
-            ChatListView(store: chat) { threadId in
-                withAnimation(.snappy) { openThread = OpenThread(threadId: threadId) }
-            }
-        case .memory:
-            if let memoryOverride {
-                memoryOverride
-            } else {
-                memoryView
-            }
+    private func findMainThread() async {
+        lookupFailed = false
+        do {
+            mainThreadId = try await MainThreadLocator(api: model.api, confirmKey: model.confirmKey).mainThreadId()
+        } catch {
+            lookupFailed = true
         }
     }
 
@@ -232,14 +161,15 @@ struct MainTabsView: View {
             api: model.api,
             confirmKey: model.confirmKey,
             listening: listening,
+            actions: actions,
             openListening: { herListenOpen = true },
             senses: model.senses.map { senses in
                 AnyView(SensesView(model: senses) { HandoverEntryRows() })
             },
             sensesOn: { model.senses?.status?.senses.count },
-            talk: { draft in
+            talk: { text in
                 herOpen = false
-                withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
+                draft = Draft(text: text)
             },
             close: { herOpen = false },
             removedThisDevice: {
@@ -254,42 +184,28 @@ struct MainTabsView: View {
             }
         }
     }
+}
 
-    private var memoryView: some View {
-        MemoryRootView(api: model.api, confirmKey: model.confirmKey) { draft in
-            withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
-        }
-    }
+struct MainThreadWaiting: View {
+    let failed: Bool
+    let retry: () -> Void
 
-    private var bars: some View {
-        ZStack(alignment: .bottom) {
-            EdgeFade(.bottom, height: DesignTokens.Size.fadeTabBar, solid: 0.3)
-            HStack(spacing: 0) {
-                FloatingTabBar(selection: $tab, tabs: [
-                    FloatingTab(id: MainTab.today, title: Text(L.text("tab.today")), badge: todayBadge) {
-                        TimelineView(.everyMinute) { context in
-                            TodayTabIcon(day: TodayNumber.day(at: listClock ?? context.date))
-                        }
-                    },
-                    FloatingTab(id: MainTab.chats, title: Text(L.text("tab.chats"))) { Icon(.message) },
-                    FloatingTab(id: MainTab.memory, title: Text(L.text("tab.memory"))) { Icon(.affiliate) },
-                ])
-                .frame(maxWidth: DesignTokens.Size.tabBarWidth)
-                .layoutPriority(1)
-                Spacer(minLength: 12)
-                SunflowerButton(Text(L.text("talk"))) {
-                    withAnimation(.snappy) { openThread = OpenThread(threadId: nil) }
+    var body: some View {
+        VStack(spacing: DesignTokens.Chat.avatarGap) {
+            HimawariAvatar(busy: !failed)
+            if failed {
+                Button(action: retry) {
+                    Text(L.text("main.retry"))
+                        .hmType(DesignTokens.TypeScale.body)
+                        .foregroundStyle(Color.hmSun)
+                        .frame(minHeight: DesignTokens.Size.rowMinHeight)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 26)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .himawariScreenBackground()
     }
 }
 
 extension ListeningController: HerListening {}
-
-extension EnvironmentValues {
-    @Entry var tabsCycleEvery: Double? = nil
-}

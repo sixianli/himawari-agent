@@ -47,12 +47,6 @@
 "ask.reason.airpods_route_mismatch" = "声音不是从 AirPods 传来的";
 "ask.reason.addressed_unsure" = "不太确定你是不是在叫我";
 "ask.reason.addressed_budget" = "今天用来判断的费用已经到上限了";
-"sensing.title" = "正在感知";
-"sensing.pausedTitle" = "感知已暂停";
-"sensing.pauseHour" = "暂停 1 小时";
-"sensing.resume" = "继续";
-"sensing.today" = "今天记了 %d 件";
-"sensing.separator" = "、";
 "notice.app" = "Himawari";
 "notice.now" = "现在";
 "notice.paused.title" = "收听已暂停，点一下继续";

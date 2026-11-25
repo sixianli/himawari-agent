@@ -4,7 +4,7 @@ import SwiftUI
 
 public struct ChatView: View {
     private let store: ChatStore
-    private let close: () -> Void
+    private let close: (() -> Void)?
     private let openHerPage: (() -> Void)?
     @State private var threadId: String?
     @State private var draft = ""
@@ -19,6 +19,7 @@ public struct ChatView: View {
     @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
     @Environment(\.chatTalk) private var talk
+    @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
     @State private var talking = false
     @State private var talkStartedAfter: String?
@@ -33,7 +34,7 @@ public struct ChatView: View {
     @State private var dictating = false
     @State private var dictationPrefix = ""
 
-    public init(store: ChatStore, threadId: String?, draft: String = "", openHerPage: (() -> Void)? = nil, close: @escaping () -> Void) {
+    public init(store: ChatStore, threadId: String?, draft: String = "", openHerPage: (() -> Void)? = nil, close: (() -> Void)? = nil) {
         self.store = store
         self.close = close
         self.openHerPage = openHerPage
@@ -126,6 +127,7 @@ public struct ChatView: View {
     }
 
     private var avatarBusy: Bool {
+        if ownerAwaited { return true }
         if let activeTalk, activeTalk.phase == .herTurn { return true }
         guard let threadId else { return creating }
         return store.isBusy(in: threadId)
@@ -227,14 +229,16 @@ public struct ChatView: View {
 
     private var header: some View {
         ZStack(alignment: .top) {
-            HStack {
-                GlassCircleButton(Text(L.text("chat.back")), action: close) {
-                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+            if let close {
+                HStack {
+                    GlassCircleButton(Text(L.text("chat.back")), action: close) {
+                        Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, 16)
+                .frame(height: DesignTokens.Chat.avatar)
             }
-            .padding(.horizontal, 16)
-            .frame(height: DesignTokens.Chat.avatar)
             if let openHerPage {
                 Button(action: openHerPage) {
                     HimawariAvatar(busy: avatarBusy)

@@ -119,36 +119,6 @@ public enum DemoChatFixtures {
         return records
     }
 
-    private static func listThreads() -> (threads: [ThreadSummary], texts: [String: String], details: [String: ThreadDetail]) {
-        let rows: [(String, String, Date, String)] = [
-            (osakaThreadId, "周五去大阪", todayAt(14, 50), answer),
-            ("thread-device-0000000000000000000000000000000b", "报价单 11 月", todayAt(18, 20, daysAgo: 1), "整理好了，放在文件里"),
-            ("thread-device-0000000000000000000000000000000c", "妈妈的生日礼物", todayAt(20, 5, daysAgo: 2), "挑了三样，你看看"),
-            ("thread-device-0000000000000000000000000000000d", "每周跑步计划", todayAt(7, 30, daysAgo: 3), "这周跑了 2 次，还差 1 次"),
-        ]
-        var threads: [ThreadSummary] = []
-        var texts: [String: String] = [:]
-        var details: [String: ThreadDetail] = [:]
-        for row in rows {
-            let thread = thread(row.0, title: row.1, updated: row.2)
-            threads.append(decode(thread))
-            texts["title:\(row.0)"] = row.1
-            let reply = message("\(row.0)-2", 2, role: "agent", at: row.2)
-            details[row.0] = detail(thread, messages: [reply], runs: [])
-            texts["text:\(row.0)-2"] = row.3
-        }
-        return (threads, texts, details)
-    }
-
-    public static func chatList() -> DemoChatState {
-        var state = DemoChatState()
-        let list = listThreads()
-        state.threads = list.threads
-        state.texts = list.texts
-        state.details = list.details
-        return state
-    }
-
     private static func osaka(messages: [[String: Any]], runs: [(String, String)], texts: [String: String]) -> DemoChatState {
         var state = DemoChatState()
         let base = thread(osakaThreadId, title: "周五去大阪", updated: todayAt(14, 50))

@@ -15,7 +15,7 @@ public struct HerPage: View {
         case privacy
         case devices
         case device(String)
-        case addDevice
+        case approvals
     }
 
     @State private var settings: SettingsStore
@@ -24,6 +24,7 @@ public struct HerPage: View {
     @State private var path: [Page] = []
     @State private var sensesOpen = false
     private let listening: (any HerListening)?
+    private let actions: DeviceActionsModel?
     private let openListening: () -> Void
     private let senses: AnyView?
     private let sensesOn: () -> Int?
@@ -35,6 +36,7 @@ public struct HerPage: View {
         api: DeviceAPI,
         confirmKey: DeviceKeySigner,
         listening: (any HerListening)? = nil,
+        actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
         senses: AnyView? = nil,
         sensesOn: @escaping () -> Int? = { nil },
@@ -50,6 +52,7 @@ public struct HerPage: View {
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
         self.listening = listening
+        self.actions = actions
         self.openListening = openListening
         self.senses = senses
         self.sensesOn = sensesOn
@@ -58,12 +61,13 @@ public struct HerPage: View {
         self.removedThisDevice = removedThisDevice
     }
 
-    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, senses: AnyView? = nil, path: [Page] = []) {
+    init(settings: SettingsStore, memory: MemoryStore, quietHours: QuietHoursStore, listening: (any HerListening)? = nil, actions: DeviceActionsModel? = nil, senses: AnyView? = nil, path: [Page] = []) {
         _settings = State(initialValue: settings)
         _memory = State(initialValue: memory)
         _quietHours = State(initialValue: quietHours)
         _path = State(initialValue: path)
         self.listening = listening
+        self.actions = actions
         openListening = {}
         self.senses = senses
         sensesOn = { 4 }
@@ -77,6 +81,14 @@ public struct HerPage: View {
             ScrollView {
                 VStack(spacing: DesignTokens.Her.pageGap) {
                     HerHero()
+                    if let actions, actions.waitingCount > 0 {
+                        SettingsGroup(label: nil) {
+                            Button { path.append(.approvals) } label: {
+                                HerRow(icon: .handStop, title: M.approvalsWaiting(actions.waitingCount), last: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     SettingsGroup(label: nil) {
                         Button { path.append(.memory) } label: {
                             HerRow(icon: .affiliate, title: M.herMemory, subtitle: memory.summary(categoryLabel: M.category).map(M.memorySummary), last: true)
@@ -137,9 +149,14 @@ public struct HerPage: View {
                 case .devices:
                     HerDevicesPage(store: settings, open: { path.append(.device($0.id)) }, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .device(let id):
-                    DevicePage(store: settings, deviceId: id, actions: nil, removedThisDevice: removedThisDevice) { path.removeLast() }
-                case .addDevice:
-                    AddDevicePage(store: settings) { path.removeLast() }
+                    DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
+                case .approvals:
+                    if let actions {
+                        ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }
+                            #if os(iOS)
+                            .toolbar(.hidden, for: .navigationBar)
+                            #endif
+                    }
                 }
             }
         }

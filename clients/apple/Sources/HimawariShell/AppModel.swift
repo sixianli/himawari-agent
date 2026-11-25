@@ -41,7 +41,6 @@ public final class AppModel {
     public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
-    @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
@@ -104,7 +103,6 @@ public final class AppModel {
         #if os(iOS)
         PushBridge.sync = pushSync
         #endif
-        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -310,7 +308,6 @@ public final class AppModel {
         senses?.suspend()
         senses = nil
         actions = nil
-        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true

@@ -77,22 +77,6 @@ public actor ManageGateway {
         }
     }
 
-    public static let archivePath = "data-export/archive"
-    public static let fileContentPath = "files/content/"
-
-    public func downloadArchive(exportId: String) async throws -> Data {
-        try await fetch(path: Self.archivePath, query: [URLQueryItem(name: "exportId", value: exportId)])
-    }
-
-    public func downloadFile(fileId: String) async throws -> Data {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: ":/")
-        guard let encoded = fileId.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw ManageGatewayError.malformedResponse
-        }
-        return try await fetch(path: Self.fileContentPath + encoded, query: [])
-    }
-
     public func uploadText(_ content: String, dataClassification: String = "private") async throws -> String {
         let data = try await send(
             path: Self.textPath,
@@ -163,26 +147,6 @@ public actor ManageGateway {
             nonce: nonce,
             confirm: confirm
         )
-        guard (200..<300).contains(response.status) else {
-            struct Failure: Decodable {
-                struct Detail: Decodable {
-                    let code: String
-                    let reasonCode: String?
-                }
-                let error: Detail
-            }
-            let detail = (try? JSONDecoder().decode(Failure.self, from: response.body))?.error
-            throw ManageGatewayError.rejected(
-                status: response.status,
-                code: detail?.code.nonEmpty,
-                reason: detail?.reasonCode?.nonEmpty
-            )
-        }
-        return response.body
-    }
-
-    private func fetch(path: String, query: [URLQueryItem]) async throws -> Data {
-        let response = try await transport.download(path: path, query: query)
         guard (200..<300).contains(response.status) else {
             struct Failure: Decodable {
                 struct Detail: Decodable {
