@@ -14,7 +14,6 @@ import {
   createProactiveSeal,
   type DataClassification,
   DEFAULT_HOME_URGENCY,
-  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -147,6 +146,7 @@ import {
 } from "./production-http-composition.js";
 import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
@@ -199,8 +199,6 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
-import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
 import { PENDING_PROPOSAL_CEILING, ProductionProposalBox } from "./production-proposals.js";
 import {
   createProductionRealEval,
@@ -1797,6 +1795,7 @@ export async function startTenantRuntime(
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         tellOwner,
+        mailRead: new ProductionMailRead(() => proactive),
         ...(conversationTools ? { conversations: conversationTools } : {}),
         memoryOpen,
         reminders: reminderTools,
@@ -2199,11 +2198,6 @@ export async function startTenantRuntime(
             }),
           );
         };
-        const mailEgress = createProductionModelEgress(
-          configuration,
-          sources,
-          productionSensitiveInterceptionRecorder(repository),
-        );
         const proactiveTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
         const checkupScope = {
           ownerId: configuration.ownerId,
@@ -2257,18 +2251,6 @@ export async function startTenantRuntime(
               event: "proactive.source_limit_reached",
               ...hit,
             }),
-          onMasked: (sightings) =>
-            void mailEgress.reportMasked(
-              {
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-                threadId: null,
-                source: "mail",
-                purpose: "mail-judgment",
-              },
-              "mail",
-              sightings,
-            ),
           scope: proactiveScope,
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
@@ -2298,52 +2280,6 @@ export async function startTenantRuntime(
               ? undefined
               : { text, hidden: false, dataClassification: record.dataClassification };
           },
-          ...(memory && durableMemory && protector && repository
-            ? ((recallProtector, recallPayloads) => ({
-                memory: createProactiveMemoryRecall({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  memory: durableMemory,
-                  content: {
-                    readText: async (ref) => {
-                      const payload = await recallPayloads.get(ref);
-                      if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
-                      return new TextDecoder("utf-8", { fatal: true }).decode(
-                        await recallProtector.unprotect({
-                          ownerId: configuration.ownerId,
-                          agentId: configuration.agentId,
-                          payload,
-                        }),
-                      );
-                    },
-                  },
-                  embedForMailCheck: memory.embedForMailCheck,
-                  minimumSimilarity:
-                    proactiveConfiguration.memoryMinimumSimilarity ??
-                    memoryComposition.profile.proactiveMinimumSimilarity,
-                  hitsPerMail: DEFAULT_PROACTIVE_MEMORY_LIMITS.perMail,
-                  concurrency: 4,
-                }),
-              }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
-            : {}),
-          ...(memory && memoryEpisodes && repository
-            ? ((book) => ({
-                recentSummaries: createProactiveRecentSummaries({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  episodes: memoryEpisodes,
-                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
-                  capturePaused: () =>
-                    book
-                      .readSettings({
-                        ownerId: configuration.ownerId,
-                        agentId: configuration.agentId,
-                      })
-                      .then(({ capturePaused }) => capturePaused),
-                  embedForMailCheck: memory.embedForMailCheck,
-                }),
-              }))(repository.memoryBook())
-            : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
             requestTimeoutMs: proactiveConfiguration.perCheckMs,

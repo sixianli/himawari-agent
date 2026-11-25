@@ -4,7 +4,6 @@ export * from "./chat.js";
 export * from "./entry.js";
 export * from "./eval.js";
 export * from "./inbox.js";
-export * from "./mail.js";
 export * from "./memory.js";
 export * from "./perception.js";
 export * from "./review.js";

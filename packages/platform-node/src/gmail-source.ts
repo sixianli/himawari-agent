@@ -7,7 +7,6 @@ import {
 } from "@himawari-agent/application";
 import { isDemoMailboxToken } from "./demo-mailbox-token.js";
 import { extractGmailBody, type GmailPart } from "./gmail-body.js";
-import { findRelatedMail } from "./gmail-related.js";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 export const CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
@@ -252,49 +251,22 @@ export function createGmailReader(options: {
   const send = options.fetch ?? ((url, init) => fetch(url, init));
   return mailReader({
     source: GMAIL_SOURCE.name,
-    async related({ token, items, limits, wholeThread, references, signal }) {
+    async thread({ token, threadId, signal }) {
       const access = await options.oauth.accessToken(token, signal);
-      const get = async <T>(url: string): Promise<T | undefined> => {
-        const response = await send(url, {
+      const response = await send(
+        `${GMAIL_API}/threads/${encodeURIComponent(threadId)}?format=full`,
+        {
           method: "GET",
           headers: { authorization: `Bearer ${access}`, accept: "application/json" },
           signal: withTimeout(signal),
-        });
-        if (response.status === 404) return undefined;
-        if (!response.ok) throw new GoogleRequestError("related", response.status);
-        return (await response.json()) as T;
-      };
-      return findRelatedMail({
-        items,
-        limits,
-        ...(wholeThread ? { wholeThread } : {}),
-        ...(references ? { references } : {}),
-        signal,
-        transport: {
-          async thread(threadId) {
-            const thread = await get<{ messages?: GmailMessage[] }>(
-              `${GMAIL_API}/threads/${encodeURIComponent(threadId)}?format=full`,
-            );
-            if (!thread) return undefined;
-            return (thread.messages ?? []).flatMap((message) => {
-              const item = gmailItem(message, { history: true });
-              return item ? [item] : [];
-            });
-          },
-          async search(query, maxResults) {
-            const listed = await get<{ messages?: { id?: string }[] }>(
-              `${GMAIL_API}/messages?${new URLSearchParams({ q: query, maxResults: String(maxResults) })}`,
-            );
-            if (!listed) return undefined;
-            return (listed.messages ?? []).flatMap((message) => (message.id ? [message.id] : []));
-          },
-          async message(id) {
-            const message = await get<GmailMessage>(
-              `${GMAIL_API}/messages/${encodeURIComponent(id)}?format=full`,
-            );
-            return message ? gmailItem(message, { history: true }) : undefined;
-          },
         },
+      );
+      if (response.status === 404) return undefined;
+      if (!response.ok) throw new GoogleRequestError("thread", response.status);
+      const thread = (await response.json()) as { messages?: GmailMessage[] };
+      return (thread.messages ?? []).flatMap((message) => {
+        const item = gmailItem(message, { history: true });
+        return item ? [item] : [];
       });
     },
     async fetch({ token, cursor, since, signal, unseen }): Promise<FlatMailFetchResult> {
