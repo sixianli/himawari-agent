@@ -44,28 +44,33 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: 检查 App Store Connect 密钥是否已填
+      - name: 检查签名密钥是否已填
         id: keys
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          if [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ]; then
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 BUILD_CERTIFICATE_BASE64 P12_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::testflight 环境还没填 ASC_KEY_ID、ASC_ISSUER_ID、ASC_KEY_P8，这次不上传"
+            echo "::warning::testflight 环境还缺：$missing，这次不上传"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 打 Release 归档并核对权限仍在签名里
-        if: ${{ steps.keys.outputs.ready == 'true' }}
-        run: clients/apple/scripts/testflight.sh archive
-      - name: 云端签名并上传 TestFlight
+      - name: 签名归档并上传 TestFlight
         if: ${{ steps.keys.outputs.ready == 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: clients/apple/scripts/testflight.sh upload
       - name: 写运行摘要
         if: ${{ steps.keys.outputs.ready == 'true' }}
