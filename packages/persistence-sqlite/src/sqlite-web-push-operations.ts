@@ -644,6 +644,7 @@ export class SqliteWebPushOperations {
              (SELECT reply.id FROM thread_messages reply
                WHERE reply.run_id = runs.id AND reply.thread_id = runs.thread_id
                  AND reply.role = 'agent' AND reply.message_status = 'committed'
+                 AND reply.internal = 0
                ORDER BY reply.sequence DESC LIMIT 1) AS replyMessageId,
              EXISTS (SELECT 1 FROM run_coordination_checkpoints checkpoint
                WHERE checkpoint.owner_id = runs.owner_id AND checkpoint.agent_id = runs.agent_id

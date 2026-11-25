@@ -233,6 +233,7 @@ export interface ProductionWebPushOptions {
   ) => Promise<
     | {
         readonly dataClassification: string;
+        readonly internal?: true;
         readonly readText: () => Promise<string | undefined>;
       }
     | undefined
@@ -792,7 +793,7 @@ export class ProductionWebPush {
       const message = item.threadId
         ? await this.#options.readMessage(item.threadId, item.sourceRef)
         : undefined;
-      if (!message) return { expired: true };
+      if (!message || message.internal === true) return { expired: true };
       const hidden =
         message.dataClassification === "sensitive" || message.dataClassification === "restricted";
       const text = hidden ? undefined : (await message.readText())?.trim();

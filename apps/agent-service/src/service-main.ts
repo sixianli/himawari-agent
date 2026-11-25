@@ -3063,6 +3063,7 @@ export async function startTenantRuntime(
             return message?.role === "agent"
               ? {
                   dataClassification: message.dataClassification,
+                  ...(message.internal === true ? { internal: true as const } : {}),
                   readText: () => readPlain(message.contentRef),
                 }
               : undefined;
