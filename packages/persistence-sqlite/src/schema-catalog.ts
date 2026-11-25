@@ -909,6 +909,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner, Agent or the hidden conversation",
   ),
   entry(
+    "subthread_timers",
+    "SubthreadStorePort",
+    "one row per follow-up or recurring task: the hidden conversation it wakes, its schedule (once, daily or every few minutes, with the time zone), who set it up (the owner, an agreed proposal or Himawari herself), whether it is active, paused, cancelled or finished, the next and last due times, how many times it ran and the spending allowed per run; the task text stays in a protected payload the row points to",
+    "payload_reference",
+    "cascade with Owner, Agent or the hidden conversation",
+  ),
+  entry(
     "result_board_entries",
     "SubthreadStorePort",
     "append-only result board of a matter: one row per version of a named result a hidden conversation wrote for its sibling conversations, with protected payload links to its one-line summary and full text, their data classification and whether the writer had read outside content",

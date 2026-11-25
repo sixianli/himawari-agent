@@ -1360,6 +1360,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
     });
+    subthreads.startTimers();
   }
   if (options.proactive) {
     inbox.inbox.sources.register({

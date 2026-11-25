@@ -767,6 +767,7 @@ export async function startTenantRuntime(
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
   let reminderInbox: ProductionReminderInbox | undefined;
+  let timerSubthreads: ProductionSubthreads | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -831,6 +832,11 @@ export async function startTenantRuntime(
   lifecycle.register({
     name: "reminder-inbox",
     stopAccepting: () => reminderInbox?.stop(),
+    close: () => undefined,
+  });
+  lifecycle.register({
+    name: "subthread-timers",
+    stopAccepting: () => timerSubthreads?.stopTimers(),
     close: () => undefined,
   });
   lifecycle.register({
@@ -1938,7 +1944,15 @@ export async function startTenantRuntime(
         payloads,
         protector,
         clock: { now: () => clock.now() },
+        ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
+        onTimerFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "subthread_timers.failed",
+            code: stableErrorCode(error),
+          }),
       });
+      timerSubthreads = subthreads;
       const steering = new ProductionOwnerSteering({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
