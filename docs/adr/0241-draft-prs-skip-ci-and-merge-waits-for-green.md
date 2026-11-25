@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0133-docs-check-removed-from-npm-run-check.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0133-docs-check-removed-from-npm-run-check.md"
 amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 date: "2026-11-11"
 covers: ".agents/instructions/delivery-mode.md, scripts/ci/check-policy.mjs, scripts/ci/main-evidence.mjs, scripts/delivery-mode/github-ruleset.sh, test/tooling/ci-optimization.test.mjs, test/tooling/policy.test.mjs"
@@ -56,7 +56,7 @@ CI（持续集成，每次推送后自动跑的检查）慢，主要慢在排队
 1. **草稿 PR 不跑任何检查。**`ci.yml` 里除汇总作业以外的 6 个作业（`policy`、`static`、`build`、`browser`、`coverage`、`security`）都带同一个条件 `github.event_name != 'pull_request' || github.event.pull_request.draft != true`，草稿 PR 上全部跳过；main 调用、手动运行、非草稿 PR 照常运行。
 2. **汇总作业第一步就判草稿和被取消的运行失败。**`ci/required` 仍带 `always()`，但第一步（在检出代码、装工具之前）是一段不依赖任何安装的 bash：草稿 PR 打印 `CI_DRAFT_UNVERIFIED` 并失败；任何上游作业的结果是 `cancelled` 时打印 `CI_UPSTREAM_CANCELLED` 并失败；两个值缺失或不是 `false` 时同样失败。这一步失败后，上传汇总结论和删除共享目录的步骤也不运行（条件是 `always() && steps.entry.outcome == 'success'`）；这修改了 [ADR 0238](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0238-ci-job-files-stay-on-the-ci-vps.md) 决定第 1 条里 `remove` 的“`if: always()`，不论成败都删”：现在是入口检查通过后不论成败都删，入口检查失败时不删；共享目录现在是每台托管机器自己的临时目录，作业结束随机器一起回收（[ADR 0287](0287-ci-runs-on-github-hosted-runners.md)）。整轮被取消时，GitHub 也可能直接把汇总作业标成取消、入口检查根本不运行；两种结果都不是成功，合并和 main 的证据都不会把它当通过。草稿保持失败而不是跳过，是因为跳过会显示成功，还可能被 main 的轻量确认当成证据（`scripts/ci/main-evidence.mjs` 只认结论为成功的 PR 运行）。
 3. **只改 PR 标题或正文不再触发 CI。**`pull_request` 事件只保留 `opened`、`synchronize`、`reopened`、`ready_for_review`，去掉 `edited`，并发组也去掉 `edited` 那一段。没有用“`edited` 时只在改了目标分支时才跑”的写法：那样只改标题的那一轮会把 `ci/required` 跳过，GitHub 会在同一个提交上记一个“成功”，盖掉之前真实的结果。改了 PR 的目标分支后，要推一个新提交（或关闭再重开 PR）才会重跑。
-4. **合并前等 CI 变绿。**这修改了 [ADR 0176](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md) 和[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)里“合并进 `main` 不等待 `ci/required`”（ADR 0073 定、经 ADR 0080 由现行的 [ADR 0133](0133-docs-check-removed-from-npm-run-check.md) 继承的快速模式暂停规则里，“合并前等 CI”不再暂停）：快速模式下，合并前 PR 最新提交上的 `ci/required` 必须是成功；本地的基本检查照样必过。线程开始代码复核时就把 PR 标成“准备合并”，CI 和复核同时跑。CI 本身坏了（GitHub 故障或额度拦截、失败已确认与本 PR 无关）时，只有 Andy 明确说这次不等 CI，才能在 CI 没变绿时合并；线程把他的原话和 CI 失败的原因写进 PR 描述。规则集是否强制要求 `ci/required`，仍由 Andy 用 `scripts/delivery-mode/github-ruleset.sh` 决定，本决定只改代理的规矩。
+4. **合并前等 CI 变绿。**这修改了 [ADR 0176](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md) 和[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)里“合并进 `main` 不等待 `ci/required`”（ADR 0073 定、经 ADR 0080 由现行的 [ADR 0133](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0133-docs-check-removed-from-npm-run-check.md) 继承的快速模式暂停规则里，“合并前等 CI”不再暂停）：快速模式下，合并前 PR 最新提交上的 `ci/required` 必须是成功；本地的基本检查照样必过。线程开始代码复核时就把 PR 标成“准备合并”，CI 和复核同时跑。CI 本身坏了（GitHub 故障或额度拦截、失败已确认与本 PR 无关）时，只有 Andy 明确说这次不等 CI，才能在 CI 没变绿时合并；线程把他的原话和 CI 失败的原因写进 PR 描述。规则集是否强制要求 `ci/required`，仍由 Andy 用 `scripts/delivery-mode/github-ruleset.sh` 决定，本决定只改代理的规矩。
 5. **runner 上保留 npm 依赖缓存。**npm 下载缓存从每次检出都清掉的 `.ci-output/npm-cache` 挪到 runner 账号目录；只缓存下载的包，不缓存 `node_modules`，better-sqlite3 照旧每次现编译并跑探针。这一条在后续 PR 里实现。
 6. `scripts/ci/check-policy.mjs` 把第 1 到 3 条写成硬规则：6 个检查作业必须正好带草稿条件；汇总作业的第一步必须正好是那段入口检查；上传汇总结论和删除共享目录只能在入口检查通过后运行；事件类型和并发组必须正好是上面的写法。`test/tooling/policy.test.mjs` 有对应的反向用例，`test/tooling/ci-optimization.test.mjs` 实际执行入口检查那段 bash。
 
@@ -91,7 +91,7 @@ CI（持续集成，每次推送后自动跑的检查）慢，主要慢在排队
 
 ## 关联文档
 
-- [ADR 0133：快速模式的现行规则](0133-docs-check-removed-from-npm-run-check.md)
+- [ADR 0133：快速模式的现行规则](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0133-docs-check-removed-from-npm-run-check.md)
 - [ADR 0176：CI 迁到 OVH VPS](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0176-ci-on-ovh-vps.md)
 - [ADR 0181：runner 上的持久下载缓存](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0181-persistent-verified-download-cache-on-runners.md)
 - [ADR 0191：草稿 PR 只跑快检查](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0191-draft-pull-requests-run-fast-checks-only.md)（被本决定取代）

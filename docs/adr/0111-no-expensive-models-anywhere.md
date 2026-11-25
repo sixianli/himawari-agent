@@ -141,7 +141,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0103 Jarvis Test 两层裁判](0103-jarvis-test-live-evaluation-and-two-tier-judge.md)
-- [ADR 0107 每个事故落一道自动检查](0107-every-incident-gets-an-automatic-gate.md)
+- [ADR 0107 每个事故落一道自动检查](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)
 - [事故与门槛清单 I-19](../incidents-and-gates.md#incidents)
 - [案例 53](../engineering-casebook.md#case-no-expensive-models)
 - Vercel 文档 [Custom Reporting](https://vercel.com/docs/ai-gateway/observability-and-spend/custom-reporting)、[Model Allowlist](https://vercel.com/docs/ai-gateway/security-and-compliance/model-allowlist)

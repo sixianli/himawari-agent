@@ -5,7 +5,7 @@
 
 这一页是合并前代码复核的常用路径。完整规则在[和 OpenCode 协作](model-review.md)（约 8 万字节），平时不通读，遇到下面没写到的情况或报错时，按链接只读对应那一节。事故清单 `docs/incidents-and-gates.md` 和教训记录 `docs/lessons.md` 也一样：按编号或标题用 `grep` 查那一段，不整份读。
 
-为什么这样做：复核的花费大头在 Claude 线程这边。线程上下文常有 15 万到 30 万 token，每调一次工具都要把整段上下文再读一遍；一轮复核要调二三十次。每一轮的判断、修改和收尾交给一个新开的子代理（Claude Code 的 Agent 工具新开的一段对话，上下文从零开始，一轮做完就结束，不在子代理里攒出长上下文），主线程只拿回结论（[ADR 0263](../../docs/adr/0263-cheaper-claude-side-of-code-review.md)）。DeepSeek 复核由主线程在后台跑，答案出来后再起子代理：子代理的缓存只保留 5 分钟，让它等复核（实测一次等了 10.8 分钟），回来就要按 1.25 倍价把整段上下文重写一遍。
+为什么这样做：复核的花费大头在 Claude 线程这边。线程上下文常有 15 万到 30 万 token，每调一次工具都要把整段上下文再读一遍；一轮复核要调二三十次。每一轮的判断、修改和收尾交给一个新开的子代理（Claude Code 的 Agent 工具新开的一段对话，上下文从零开始，一轮做完就结束，不在子代理里攒出长上下文），主线程只拿回结论（[ADR 0263](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0263-cheaper-claude-side-of-code-review.md)）。DeepSeek 复核由主线程在后台跑，答案出来后再起子代理：子代理的缓存只保留 5 分钟，让它等复核（实测一次等了 10.8 分钟），回来就要按 1.25 倍价把整段上下文重写一遍。
 
 - [主线程怎么做](#main-thread)
 - [子代理每一轮怎么做](#each-round)
@@ -17,7 +17,7 @@
 
 PR 开好、测试过了以后，每一轮分两步：
 
-1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<材料文件>` 换成材料文件的路径，`--previous` 已经填好；带 `--previous` 的轮次，脚本自动把上一轮已提交的 `verdicts.jsonl` 里成立的“会出错”意见带进提示，并让模型只查上一轮意见是否改好、增量改的行、增量产生或修改的值的直接使用端，所以上一轮的 `verdicts.jsonl` 要先提交（[ADR 0270](../../docs/adr/0270-faster-review-rounds.md)）。等待时不调工具，后台命令结束会叫醒主线程。
+1. 主线程自己在后台跑这一轮的复核命令（Bash 工具的后台运行，时限至少 40 分钟），跑之前看一眼已花的钱（上一次复核输出的 `REVIEW_SPENT_TOTAL`）：已花的加上这一轮的预留（脚本按每个模型 0.2 美元算）会超过 1 美元时先问 Andy，他同意后在命令里加 `--approved-usd <他同意的总额>` 再跑。第 1 轮是 `node scripts/model-review/opencode-review.mjs --mode code-review --base <base> --head <提交> --pr <编号> --brief <材料> --gateway magpie`；之后的轮次照抄上一个子代理交回的 `NEXT` 命令，把 `<修改后的提交>` 换成它交回的新提交、`<材料文件>` 换成材料文件的路径，`--previous` 已经填好；带 `--previous` 的轮次，脚本自动把上一轮已提交的 `verdicts.jsonl` 里成立的“会出错”意见带进提示，并让模型只查上一轮意见是否改好、增量改的行、增量产生或修改的值的直接使用端，所以上一轮的 `verdicts.jsonl` 要先提交（[ADR 0270](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0270-faster-review-rounds.md)）。等待时不调工具，后台命令结束会叫醒主线程。
 2. 命令退出码是 0、输出里有 `outcome=ok` 的 `REVIEW_RESULT` 行，并且这一轮该跑的每个模型都有 `outcome=ok` 的结果（用 `--round` 只补跑了一部分的不算）以后，用 Agent 工具起一个新的子代理 `code-review-round`（定义在 `.claude/agents/code-review-round.md`，在后台跑），提示照下面写，把尖括号换成实际值。退出码不是 0（模型的 `outcome` 不是 `ok`、报错、要先问花钱）时不起子代理，按[常见报错查哪里](#errors)处理。
 
 ```

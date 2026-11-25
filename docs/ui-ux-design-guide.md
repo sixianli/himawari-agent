@@ -275,7 +275,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 
 ## 自动检查
 
-规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，每次 `npm run check` 都会跑；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)）。
+规范里能自动检查的部分，已经变成程序检查：“命令”一列是 `npm run check:…` 的，每次 `npm run check` 都会跑；其余各项在同一列写明是哪个测试、哪项上线走查，或要单独运行的脚本。规则写进本文不算完成，能检查的要落成检查（[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)）。
 
 | 检查 | 命令 | 拦什么 |
 | --- | --- | --- |

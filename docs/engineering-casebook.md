@@ -767,7 +767,7 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **相关 ADR/PR**
 
-[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)；[PR #27](https://github.com/sixianli/himawari-agent/pull/27)、[PR #29](https://github.com/sixianli/himawari-agent/pull/29)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)、[lessons：操作包里写死的摘要和文件清单没跟着内容更新](lessons.md#stale-packet-pins)。
+[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)；[PR #27](https://github.com/sixianli/himawari-agent/pull/27)、[PR #29](https://github.com/sixianli/himawari-agent/pull/29)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)、[lessons：操作包里写死的摘要和文件清单没跟着内容更新](lessons.md#stale-packet-pins)。
 
 **面试 30 秒版**
 
@@ -864,7 +864,7 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **相关 ADR/PR**
 
-[ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；[快速模式规则](../.agents/instructions/delivery-mode.md)。
+[ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；[快速模式规则](../.agents/instructions/delivery-mode.md)。
 
 **面试 30 秒版**
 
@@ -1328,7 +1328,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
+[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
 
 **面试 30 秒版**
 
@@ -1688,7 +1688,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **相关 ADR/PR**
 
-[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
 
 **面试 30 秒版**
 
@@ -2363,7 +2363,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0099](adr/0099-production-host-firewall-ssh-only.md)、[生产云服务器访问 Runbook 的防火墙一节](runbooks/production-server-access-runbook.md#firewall)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；PR 见分支 `claude/prod-firewall`。
+[ADR 0099](adr/0099-production-host-firewall-ssh-only.md)、[生产云服务器访问 Runbook 的防火墙一节](runbooks/production-server-access-runbook.md#firewall)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；PR 见分支 `claude/prod-firewall`。
 
 **面试 30 秒版**
 
@@ -3079,7 +3079,7 @@ PR #82（2026-10-28 合并）。只改了返回格式、没改模型和数据，
 
 **跟进（2026-11-07，判断前先读同一件事以前的邮件，PA-1）**
 
-- 症状：同一订单上周申请过退款、三天前对方要求补充照片，今天又来一封“关于您的订单”，摘要只有“感谢您的耐心等待”。模型只看这封，会判“不用管”。读全文（[ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md)）解决不了，因为关键信息在以前的邮件里。
+- 症状：同一订单上周申请过退款、三天前对方要求补充照片，今天又来一封“关于您的订单”，摘要只有“感谢您的耐心等待”。模型只看这封，会判“不用管”。读全文（[ADR 0159](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md)）解决不了，因为关键信息在以前的邮件里。
 - 根因（读代码确认）：判断的输入只有“这次新到的邮件”，`threadId` 只拿来去重，从没拿来取前情。这是输入范围的问题，不是提示词写得不够好。
 - 做法：每封待判邮件按三种方式找同一件事的旧邮件（同一邮件串、去掉 Re:/Fwd: 后标题相同且有共同对方、正文里同一个订单号/预约号/案件号），取回后在本地再核对一次，按时间排成时间线放进这封邮件自己的数据里；每次读了哪几封、读取成本、失败步骤记进决策记录；读不全时这封退回只看自己，并告诉模型“前情可能不全”。上限放配置。决定见 [ADR 0180](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0180-gmail-check-reads-earlier-mail-about-the-same-matter.md)。
 - 放弃的做法：只取同一串（订单号跨串就漏）；把旧邮件存成记忆（多一份邮件副本）。
@@ -3160,7 +3160,7 @@ agent 和 worker 同时启动，worker 先写出自己的启动记录，再等 a
 
 **我们的方案**
 
-Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)：每个事故落成一道自动检查才算关闭，只写文档不算；同一错误第三次出现时必须已有硬门槛挡住第四次。
+Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)：每个事故落成一道自动检查才算关闭，只写文档不算；同一错误第三次出现时必须已有硬门槛挡住第四次。
 
 1. **一张能被脚本核对的清单。** [docs/incidents-and-gates.md](incidents-and-gates.md) 每条写日期、现象、根因、次数、门槛文件和状态，回填了 10 条历史事故。`scripts/check-incident-gates.mjs` 进了 `npm run check`：标“已落门槛”的必须写出仓库里真实存在的门槛文件，次数到 3 的不能是“缺门槛”。
 2. **启动时间门槛。** 切换后的启动读回 `S7-startup-readback.mjs` 从 systemd 日志算出“worker 启动到两边都报就绪”的时间，超过 30 秒就判失败、按已有流程回退；出包时 `make-packet.py` 读出该提交里 worker 的等待时间，要求“30 秒上限 + 15 秒余量”不超过它，否则拒绝出包。这样碰巧起来的慢启动也会被拦住，等待时间和启动时间不会再悄悄错开。
@@ -3190,11 +3190,11 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 **相关 ADR/PR**
 
-[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)（取代 [ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)）；[事故与门槛清单](incidents-and-gates.md)；[管住 AI 编码代理](#case-agent-governance)；启动慢的根因修复见[案例 46](#case-startup-permission-audit)（PR #89）；本案例的 PR 在分支 `claude/project-thread-9rgrtl`。
+[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)（取代 [ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)）；[事故与门槛清单](incidents-and-gates.md)；[管住 AI 编码代理](#case-agent-governance)；启动慢的根因修复见[案例 46](#case-startup-permission-audit)（PR #89）；本案例的 PR 在分支 `claude/project-thread-9rgrtl`。
 
 **后续（2026-10-29）**
 
-清单里 I-05（第 0 层漏跑相关测试）已经出现 6 次，检查脚本却只在 Andy 的 Mac 上、快速模式下还直接放行。Andy 先问“恢复检查会让一个版本发布多花多少时间”：检查只在提交时跑，不在上线时跑；对快速模式下漏跑的提交 `bfa6162` 实测约 1.2 秒，并且点名了当时漏掉的测试。他同意后，脚本原样放进仓库，钩子由 `npm run check` 装上，快速模式下也检查（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)）。这说明“门槛存在”还不够：门槛还要在真正干活的地方（这里是云端线程）跑起来，并且不能被快速模式这类开关悄悄关掉。
+清单里 I-05（第 0 层漏跑相关测试）已经出现 6 次，检查脚本却只在 Andy 的 Mac 上、快速模式下还直接放行。Andy 先问“恢复检查会让一个版本发布多花多少时间”：检查只在提交时跑，不在上线时跑；对快速模式下漏跑的提交 `bfa6162` 实测约 1.2 秒，并且点名了当时漏掉的测试。他同意后，脚本原样放进仓库，钩子由 `npm run check` 装上，快速模式下也检查（[ADR 0108](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0108-layer0-check-in-repository-and-fast-mode.md)）。这说明“门槛存在”还不够：门槛还要在真正干活的地方（这里是云端线程）跑起来，并且不能被快速模式这类开关悄悄关掉。
 
 **面试 30 秒版**
 
@@ -3249,7 +3249,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 **相关 ADR/PR**
 
-[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)、PR #95、[事故清单 I-11](incidents-and-gates.md#incidents)。
+[ADR 0109](adr/0109-paid-eval-runs-need-cost-cap-and-preflight.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、PR #95、[事故清单 I-11](incidents-and-gates.md#incidents)。
 
 **面试 30 秒版**
 
@@ -3516,7 +3516,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 - **裁判保留 Sonnet，少跑几次**：违反 Andy 的规则，每轮裁判仍要 0.2 美元以上。不选。
 - **裁判也用 DeepSeek**：最便宜，但裁判和被测是同一个模型。LLM-as-a-judge（用大模型给回答打分）的研究指出模型裁判有“self-enhancement bias”（偏向自己生成的回答），ADR 0103 正是为此要求异厂。不选。
 - **在 Vercel 账户上开 Model Allowlist（模型白名单）**：网关直接 403，代码绕不过去，是最硬的一道。但只有 Pro 套餐能用，Andy 已定不升级。记为以后的第二道防线。
-- **只写进文档和项目指令**：按 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)，文档不算关闭事故。
+- **只写进文档和项目指令**：按 [ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)，文档不算关闭事故。
 - **按价格设白名单，代码里每个模型都要查价**：最严，但要在仓库里维护一份价格表，网关调价就过时，现在是过度设计。先按厂商和型号名拦，再要求新增模型在 PR 里写价格。
 
 **我们的方案**
@@ -3543,7 +3543,7 @@ Andy 2026-10-29 00:56 定了规则，记在 [ADR 0107](adr/0107-every-incident-g
 
 **相关 ADR/PR**
 
-[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
+[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0103](adr/0103-jarvis-test-live-evaluation-and-two-tier-judge.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)、[事故清单 I-19](incidents-and-gates.md#incidents)、[案例 39 真模型跑 Jarvis Test](#case-jarvis-test-evals)。
 
 **后续（2026-10-29）**
 
@@ -3708,7 +3708,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 **我们的方案**
 
 1. 测试改为核对新格式：最后一条消息只有一段文本，以 `<himawari-context>` 开头，以 `<owner-message>` 包着的原话结尾；同时断言之前的历史消息里没有 `<himawari-context>`，也就是原生历史只存原话、不带过期资料，这是案例 43 方案的关键性质，旧测试没覆盖到。
-2. 漏选测试这一步，2026-10-29 已进仓库的第 0 层检查（[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)，事故 I-05）已经能拦：对 `bd04dd1` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝并点名这个测试文件。
+2. 漏选测试这一步，2026-10-29 已进仓库的第 0 层检查（[ADR 0108](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0108-layer0-check-in-repository-and-fast-mode.md)，事故 I-05）已经能拦：对 `bd04dd1` 运行 `check-commit`，以 `L0_RELATED_TESTS_UNDECLARED` 拒绝并点名这个测试文件。
 3. “声明了但其实是红的仍能推送”记入事故 I-22。推送前跑测试的方案 Andy 决定不做，所以这一层仍靠规则，没有自动检查。
 
 **业界主流做法**
@@ -3728,7 +3728,7 @@ Claude 让用户按主题看、改、删记忆，但没有告诉用户每轮实�
 
 **相关 ADR/PR**
 
-[事故清单 I-22、I-05](incidents-and-gates.md#incidents)；[ADR 0108](adr/0108-layer0-check-in-repository-and-fast-mode.md)；[ADR 0092](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0092-pause-github-actions.md)；[案例 43](#case-owner-material-position)；本案例的 PR 在分支 `claude/project-thread-bns7ep`。
+[事故清单 I-22、I-05](incidents-and-gates.md#incidents)；[ADR 0108](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0108-layer0-check-in-repository-and-fast-mode.md)；[ADR 0092](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0092-pause-github-actions.md)；[案例 43](#case-owner-material-position)；本案例的 PR 在分支 `claude/project-thread-bns7ep`。
 
 **面试 30 秒版**
 
@@ -3994,11 +3994,11 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 **后续（2026-11-07）**
 
-开发用的模型复核也改为经 Magpie（[ADR 0178](adr/0178-review-model-calls-through-a-local-magpie.md)）。起因是 OpenCode Go 套餐快用完，主人想改用 CodeBuddy 国际版免费账号，又要求复核脚本和 OpenCode 只关心“哪个模型、什么推理强度”。做法是每次复核在云端容器里自起一个全新的 Magpie，跑完关掉；CodeBuddy 的登录凭证存成云端环境的网络密钥，容器里只放假凭证 `proxy-injected`，由出口代理在请求离开容器后换成真的。实测数字（云端容器，2026-11-07，记录在 `.agents/reviews/topic-review-gateway-magpie/`）：PR 273 第 1 轮的 DeepSeek 复核经 Magpie 跑完 38 步、12.9 分钟，单步最多 5,922 个 token；途中 CodeBuddy 断开一次，Magpie 把 5 次请求转给 Go 后复核照常完成。同一天 OpenCode Go 上的 DeepSeek 超时两次、报服务错误三次。踩过的坑：Go 的网络密钥只对 `/inference/go/` 路径代填，Magpie 默认地址 `/zen/go/v1` 会 401；Magpie 会为多家都有的模型名自动建同名路由组，复核自己的组要加 `review-` 前缀；OpenCode 对自定义服务方不提供网页搜索，要设 `OPENCODE_ENABLE_EXA=1`；Node 默认不走出口代理，代理就补不上凭证。
+开发用的模型复核也改为经 Magpie（[ADR 0178](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0178-review-model-calls-through-a-local-magpie.md)）。起因是 OpenCode Go 套餐快用完，主人想改用 CodeBuddy 国际版免费账号，又要求复核脚本和 OpenCode 只关心“哪个模型、什么推理强度”。做法是每次复核在云端容器里自起一个全新的 Magpie，跑完关掉；CodeBuddy 的登录凭证存成云端环境的网络密钥，容器里只放假凭证 `proxy-injected`，由出口代理在请求离开容器后换成真的。实测数字（云端容器，2026-11-07，记录在 `.agents/reviews/topic-review-gateway-magpie/`）：PR 273 第 1 轮的 DeepSeek 复核经 Magpie 跑完 38 步、12.9 分钟，单步最多 5,922 个 token；途中 CodeBuddy 断开一次，Magpie 把 5 次请求转给 Go 后复核照常完成。同一天 OpenCode Go 上的 DeepSeek 超时两次、报服务错误三次。踩过的坑：Go 的网络密钥只对 `/inference/go/` 路径代填，Magpie 默认地址 `/zen/go/v1` 会 401；Magpie 会为多家都有的模型名自动建同名路由组，复核自己的组要加 `review-` 前缀；OpenCode 对自定义服务方不提供网页搜索，要设 `OPENCODE_ENABLE_EXA=1`；Node 默认不走出口代理，代理就补不上凭证。
 
 **相关 ADR/PR**
 
-[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)、[ADR 0178](adr/0178-review-model-calls-through-a-local-magpie.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`，复核改经 Magpie 的 PR 在分支 `claude/laughing-dirac-dfkf3j`。
+[ADR 0117](adr/0117-magpie-routes-models-through-owned-subscriptions.md)、[ADR 0111](adr/0111-no-expensive-models-anywhere.md)、[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)、[ADR 0178](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0178-review-model-calls-through-a-local-magpie.md)；本案例的 PR 在分支 `claude/project-thread-0k10sh`，复核改经 Magpie 的 PR 在分支 `claude/laughing-dirac-dfkf3j`。
 
 **面试 30 秒版**
 
@@ -4275,7 +4275,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[事故 I-32](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-s6-cgroup-readback`。没有新 ADR，沿用 [ADR 0107](adr/0107-every-incident-gets-an-automatic-gate.md) 的“每个事故落一道自动检查”。
+[事故 I-32](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-s6-cgroup-readback`。没有新 ADR，沿用 [ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md) 的“每个事故落一道自动检查”。
 
 **面试 30 秒版**
 
@@ -4801,9 +4801,9 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **我们的方案**
 
-- 删除 [.claude/skills/](https://github.com/sixianli/himawari-agent/tree/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills)（[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)）：云端线程要用的技能由 Andy 上传到 claude.ai 账号，`document-governance` 也不留副本。
+- 删除 [.claude/skills/](https://github.com/sixianli/himawari-agent/tree/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills)（[ADR 0132](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0132-owner-skills-from-the-claude-ai-account.md)）：云端线程要用的技能由 Andy 上传到 claude.ai 账号，`document-governance` 也不留副本。
 - 上传时发现 `readable-output` 原件按插件打包，claude.ai 技能包拒收插件清单文件，只能去掉钩子后上传，所以“回复必须是中文”的自动检查在云端不生效。
-- Andy 同时决定删除仓库里的文档自动校验（[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)），事故 I-06 改回“缺门槛”。
+- Andy 同时决定删除仓库里的文档自动校验（[ADR 0133](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0133-docs-check-removed-from-npm-run-check.md)），事故 I-06 改回“缺门槛”。
 
 **方案讨论与备选**
 
@@ -4830,7 +4830,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0132](adr/0132-owner-skills-from-the-claude-ai-account.md)、[ADR 0133](adr/0133-docs-check-removed-from-npm-run-check.md)、[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)（被取代）、事故清单 I-06。
+[ADR 0132](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0132-owner-skills-from-the-claude-ai-account.md)、[ADR 0133](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0133-docs-check-removed-from-npm-run-check.md)、[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)（被取代）、事故清单 I-06。
 
 **面试 30 秒版**
 
@@ -5360,7 +5360,7 @@ Anthropic 的插件按置信度过滤意见；我们不过滤，而是按严重�
 
 **相关 ADR/PR**
 
-[ADR 0175](adr/0175-cheaper-code-review-rounds.md)（部分修正 [ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md)）、PR #263、方案文件 [2026-11-06-review-cost-plan-v2.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/handoffs/2026-11-06-review-cost-plan-v2.md)。
+[ADR 0175](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0175-cheaper-code-review-rounds.md)（部分修正 [ADR 0068](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0068-deepseek-only-codebuddy-fallback.md)）、PR #263、方案文件 [2026-11-06-review-cost-plan-v2.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/handoffs/2026-11-06-review-cost-plan-v2.md)。
 
 **面试 30 秒版**
 

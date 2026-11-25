@@ -103,7 +103,7 @@ CI 跑在 GitHub 的标准托管机器上（[ADR 0287](docs/adr/0287-ci-runs-on-
 <a id="deploy"></a>
 ## 上线
 
-生产是一台 Linux 服务器。`scripts/delivery-mode/make-packet.py` 按参数生成上线包，`deploy.sh` 先做预检再上线，失败自动回滚（[ADR 0074](docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0086](docs/adr/0086-generate-release-packets-from-parameters.md)）。
+生产是一台 Linux 服务器。`scripts/delivery-mode/make-packet.py` 按参数生成上线包，`deploy.sh` 先做预检再上线，失败时按上线包的设置保留现场或回滚（[交付模式](.agents/instructions/delivery-mode.md#fast-mode)、[ADR 0086](docs/adr/0086-generate-release-packets-from-parameters.md)）。
 
 <a id="docs"></a>
 ## 文档在哪

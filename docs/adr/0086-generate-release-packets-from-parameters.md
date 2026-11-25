@@ -25,7 +25,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-操作包是一次生产上线要用的整套固定脚本、输入和材料（约 146 个文件），由 `scripts/delivery-mode/deploy.sh` 执行，失败时由 `rollback.sh` 回退（[ADR 0074](0074-claude-runs-production-deployments.md)）。到 2026-10-26 为止，每一次的操作包都是复制上一次的，再逐处手改“第几次”、版本目录、数据库版本号、配置预期和材料摘要。生成和检查它的工具放在 Mac 和 Hermes（测试机）上被 git 忽略的 `.ci-output/` 里，不在仓库中。
+操作包是一次生产上线要用的整套固定脚本、输入和材料（约 146 个文件），由 `scripts/delivery-mode/deploy.sh` 执行，失败时由 `rollback.sh` 回退（[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)）。到 2026-10-26 为止，每一次的操作包都是复制上一次的，再逐处手改“第几次”、版本目录、数据库版本号、配置预期和材料摘要。生成和检查它的工具放在 Mac 和 Hermes（测试机）上被 git 忽略的 `.ci-output/` 里，不在仓库中。
 
 这样做已经让生产停服出事三次以上，都记在 [lessons：复制上一次操作包时留下旧文件和旧文件名](../lessons.md#copied-packet-stale-names)：
 
@@ -114,7 +114,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [交付模式规则：快速模式](../../.agents/instructions/delivery-mode.md#fast-mode)
 - [ADR 0060：同一错误第三次就加硬约束](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)
 - [ADR 0073：快速交付模式](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)
-- [ADR 0074：Claude 自己执行生产上线](0074-claude-runs-production-deployments.md)
+- [ADR 0074：Claude 自己执行生产上线](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)
 - [ADR 0083：每人一个独立实例，主人也走 Cloudflare 入口](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)
 
 [↑ 返回阅读导航](#contents)

@@ -55,7 +55,7 @@ Vercel 文档原文（[Budgets 页 User budgets 一节](https://vercel.com/docs/
 ### 只写规则“花钱前先问”
 
 - 好处：不用写代码。
-- 代价：[ADR 0107](0107-every-incident-gets-an-automatic-gate.md) 规定只写文档不算关闭事故；这次本来就有“先报费用”的习惯，照样没做到。
+- 代价：[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md) 规定只写文档不算关闭事故；这次本来就有“先报费用”的习惯，照样没做到。
 
 ### 开跑前读 Vercel 预算余量
 
@@ -81,7 +81,7 @@ Vercel 文档原文（[Budgets 页 User budgets 一节](https://vercel.com/docs/
 ## 关联文档
 
 - [ADR 0103：Jarvis Test 的真模型层](0103-jarvis-test-live-evaluation-and-two-tier-judge.md)
-- [ADR 0107：每个事故落一道自动检查](0107-every-incident-gets-an-automatic-gate.md)
+- [ADR 0107：每个事故落一道自动检查](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)
 - [事故与门槛清单 I-11](../incidents-and-gates.md#incidents)
 - [工程案例库案例 48](../engineering-casebook.md#case-eval-budget-outage)
 

@@ -114,7 +114,7 @@ Andy 在 2026-10-30 09:49（日本时间）的选择卡上选了方案 A。
 - 事故：[I-16](../incidents-and-gates.md)
 - 面试案例：[案例 66](../engineering-casebook.md#case-settings-everywhere)
 - 设计规范：[docs/ui-ux-design-guide.md](../ui-ux-design-guide.md)
-- [ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)
+- [ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0110](0110-ui-batch-2026-10-29-check-it-before-the-owner-does.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)
 - 业界做法：[MDN If-Match](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/If-Match)、[Chrome storage API](https://developer.chrome.com/docs/extensions/reference/api/storage)、[MDN Page Visibility API](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)
 
 [↑ 返回阅读导航](#contents)

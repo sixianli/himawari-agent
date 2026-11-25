@@ -71,7 +71,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [ADR 0074：Claude 自己执行生产上线](0074-claude-runs-production-deployments.md)
+- [ADR 0074：Claude 自己执行生产上线](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)
 - [ADR 0086：按参数生成上线包](0086-generate-release-packets-from-parameters.md)
 - 一手来源：Git 文档 [git-bundle](https://git-scm.com/docs/git-bundle)（增量包带前置提交，`git bundle verify` 检查接收方是否具备它们）
 - 阶段耗时和估算：项目文件 upload-slimming/plan.md、upload-slimming/timing-breakdown.md

@@ -53,7 +53,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 一共盘出 57 条：程序硬规则 19 条、提示词软规则 25 条、记忆规则机制 5 条、配置和设置 8 条（逐条在后面的表里）。
 - 盘点时真正“必定执行”的主人规矩只有 Gmail 系统主动提醒那一块；2026-11-25 起这一块的程序判断已删除，新邮件交给她判断（见 [A](#hard)）。聊天里的规矩几乎都是软的。
-- Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条程序规则：她看到新邮件后自己决定要不要用 `mail_read` 读整个邮件串。这个想法最早出现在 [ADR 0159](adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
+- Andy 举的例子“涉及退款的邮件必须看整个邮件串再决定”，现在不是一条程序规则：她看到新邮件后自己决定要不要用 `mail_read` 读整个邮件串。这个想法最早出现在 [ADR 0159](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0159-gmail-check-reads-full-body-and-the-owners-own-mail.md) 的已知限制里：“退款、预订是否办结需要整个邮件串，留给第二阶段”。
 - 自 [ADR 0213](adr/0213-owner-sentence-becomes-a-standing-rule.md) 起，主人可以在对话里把这类要求立成长期规则；2026-11-25 起这类邮件规则不再由程序执行，命中的规则写在新邮件旁边交给她判断。
 - 生产库里的 `rule` 类记忆只有 3 条，全都已删除或在回收站；生产配置的 `systemInstruction` 只有一行（见 [C](#memory-rules) 和 C-1）。
 - 没有任何一条规则带“出处”字段。出处只能从 ADR、事故号和规格里倒推；57 条里有 19 条的出处仓库内查不到或只能查到一半（见 [G](#owner-confirm)）。

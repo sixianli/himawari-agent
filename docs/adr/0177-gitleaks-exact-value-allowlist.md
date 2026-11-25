@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0157-gitleaks-allowlist-for-evidence-digests.md"
-amended_by: "docs/adr/0190-mask-registered-test-values-in-review-records.md"
+amended_by: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0190-mask-registered-test-values-in-review-records.md"
 date: "2026-11-07"
 covers: "apps/agent-service/test/production-http-composition.unit.test.ts, ci/rules/gitleaks.toml, ci/security-exceptions.json, ci/toolchain-lock.json, scripts/ci/check-security.mjs, scripts/ci/security-exceptions.mjs, test/tooling/gitleaks-allowlist.test.mjs, test/tooling/gitleaks-config.test.mjs"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -102,7 +102,7 @@ ADR 0157 第 1 条写“个别具体的值（合成 token、示例密码等）�
 ## 后果
 
 - 精确值白名单没有到期日，不会被定期重审；值所在的文件改名或删掉后，白名单块不会自动失效，要在改动那个文件时一起清理。
-- 以后复核模型在新的记录里再引用已登记的测试令牌，由复核脚本写记录时遮掉（见 [ADR 0190](0190-mask-registered-test-values-in-review-records.md)），不再需要为引用再加白名单块；没登记过的新假值第一次被引用时，security 检查仍会报，要按本 ADR 加一块。
+- 以后复核模型在新的记录里再引用已登记的测试令牌，由复核脚本写记录时遮掉（见 [ADR 0190](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0190-mask-registered-test-values-in-review-records.md)），不再需要为引用再加白名单块；没登记过的新假值第一次被引用时，security 检查仍会报，要按本 ADR 加一块。
 - 白名单写进 `gitleaks.toml`，改它要改 `ci/toolchain-lock.json` 的摘要，所以每次改动都会经过代码复核。
 
 [↑ 返回阅读导航](#contents)

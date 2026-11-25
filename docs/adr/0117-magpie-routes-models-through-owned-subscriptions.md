@@ -177,7 +177,7 @@ OpenCode Go 的 DeepSeek 要在设置里打开“Global”地区才能用，数�
 
 - [ADR 0111：任何场景都不调用 Claude、OpenAI 等贵模型](0111-no-expensive-models-anywhere.md)：Andy 10-29 补充，已付费套餐里的额度不算在内。
 - [ADR 0048：Vercel AI Gateway 替代 OpenRouter](0048-vercel-ai-gateway-replaces-openrouter.md)
-- [ADR 0074：Claude 直接在生产机上线、回滚和诊断](0074-claude-runs-production-deployments.md)
+- [ADR 0074：Claude 直接在生产机上线、回滚和诊断](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)
 - [产品愿景](../product-vision.md)：这里取舍的是“主动性与效率”里的成本，换来了一部分隐私风险。按原则顺序，Andy 作为主人亲自做了这个选择（用户主权）。
 - [ADR 0119：对话提速](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md)：10-30 顺序变更的理由和测量。
 - [工程案例库 案例 60：本机 Magpie 网关替 Agent 在多个套餐之间切换](../engineering-casebook.md#case-magpie-subscriptions)

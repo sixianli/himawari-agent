@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0074-claude-runs-production-deployments.md"
+amends: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md"
 date: "2026-10-30"
 covers: "apps/admin-cli/src/index.ts, scripts/delivery-mode/deploy-preflight.py, scripts/delivery-mode/deploy.sh, scripts/delivery-mode/release-cleanup-remote.py, scripts/delivery-mode/release-cleanup.py, scripts/delivery-mode/test_deploy.py, scripts/delivery-mode/test_release_cleanup.py, scripts/disk-hygiene/install-schedule.sh"
 verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
@@ -66,7 +66,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 与 ADR 0074 的关系
 
-[ADR 0074](0074-claude-runs-production-deployments.md#decision) 的“预检不过就停，生产机一点不碰”改为：预检之前先清理已经不用的上线临时产物；预检不过时，正在服务的版本、配置、数据库都没被改动。根分区的空间要求改为[决定](#decision)第 4 条的算法；`/opt` 和状态盘“至少两倍包大小”的检查不变。
+[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md#decision) 的“预检不过就停，生产机一点不碰”改为：预检之前先清理已经不用的上线临时产物；预检不过时，正在服务的版本、配置、数据库都没被改动。根分区的空间要求改为[决定](#decision)第 4 条的算法；`/opt` 和状态盘“至少两倍包大小”的检查不变。
 
 <a id="options"></a>
 
@@ -143,9 +143,9 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0074-claude-runs-production-deployments.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md]
 - 代码：`scripts/delivery-mode/deploy.sh`、`scripts/delivery-mode/release-cleanup.py`、`scripts/delivery-mode/release-cleanup-remote.py`、`scripts/delivery-mode/deploy-preflight.py`
-- [ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断](0074-claude-runs-production-deployments.md)
+- [ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)
 - [ADR 0086](0086-generate-release-packets-from-parameters.md)
 - [BL-20261027-001](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261027-002-prune-production-release-leftovers.md)
 - [工程案例库：案例 65](../engineering-casebook.md#case-release-cleanup)

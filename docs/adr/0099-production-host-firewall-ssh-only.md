@@ -89,7 +89,7 @@ Andy 2026-10-28 批准修复（“以上你说的安全动作都做”），并�
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0074-claude-runs-production-deployments.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md]
 - [SOURCE: docs/runbooks/production-server-access-runbook.md#firewall]
 - [SOURCE: docs/engineering-casebook.md#case-prod-firewall]
 

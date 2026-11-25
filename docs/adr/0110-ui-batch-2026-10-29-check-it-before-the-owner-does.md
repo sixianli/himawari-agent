@@ -101,7 +101,7 @@ Claude 做了可切换的原型（<https://claude.ai/artifact/95YzWPGTgew76Yg7NM
 - 事故：[I-15、I-16、I-17、I-18](../incidents-and-gates.md)
 - 面试案例：[案例 52](../engineering-casebook.md#case-ui-batch-1029)
 - PR #99
-- [ADR 0100](0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0107](0107-every-incident-gets-an-automatic-gate.md)
+- [ADR 0100](0100-conversation-more-panel-files-and-background-commands.md)、[ADR 0105](0105-ui-batch-2026-10-28-show-what-the-owner-needs.md)、[ADR 0107](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0107-every-incident-gets-an-automatic-gate.md)
 
 [↑ 返回阅读导航](#contents)
 
