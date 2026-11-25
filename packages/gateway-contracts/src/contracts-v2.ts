@@ -25,6 +25,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
   "approval.respond",
   "approval.allowance.set",
+  "approval.allowance.days.set",
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
@@ -261,13 +262,23 @@ export const respondApprovalV2CommandSchema = object({
 export const APPROVAL_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
 
 export const APPROVAL_ALLOWANCE_INTENT_PREFIX = "owner-scope:";
+export const APPROVAL_ALLOWANCE_DAYS_MINIMUM = 1;
+export const APPROVAL_ALLOWANCE_DAYS_MAXIMUM = 90;
+export const APPROVAL_ALLOWANCE_DAYS_DEFAULT = 7;
 
 export const approvalAllowanceSetCommandSchema = object({
   ...commandEnvelope("approval.allowance.set"),
   payload: object({
     approvalRequestId: machineString,
     allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
-    days: nullable(integer(1, 90)),
+    days: nullable(integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM)),
+  }),
+});
+
+export const approvalAllowanceDaysSetCommandSchema = object({
+  ...commandEnvelope("approval.allowance.days.set"),
+  payload: object({
+    days: integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
   }),
 });
 
@@ -2625,6 +2636,7 @@ const memoryRulesSnapshotSchema = object({
         createdAt: timestamp,
       }),
     ),
+    allowanceDays: integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
     generatedAt: timestamp,
   }),
 });
@@ -3793,6 +3805,7 @@ const schemasByType = {
   "thread.message.submit": submitThreadMessageCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
   "approval.allowance.set": approvalAllowanceSetCommandSchema,
+  "approval.allowance.days.set": approvalAllowanceDaysSetCommandSchema,
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,

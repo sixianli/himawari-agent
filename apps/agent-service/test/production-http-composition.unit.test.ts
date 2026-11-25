@@ -366,6 +366,7 @@ describe("production HTTP composition", () => {
           "approval.detail",
           "approval.respond",
           "approval.allowance.set",
+          "approval.allowance.days.set",
           "search.authorization.read",
           "search.authorization.set",
           "push.status.read",

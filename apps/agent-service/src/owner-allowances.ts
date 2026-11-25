@@ -13,6 +13,9 @@ import {
   type ProductConfiguration,
 } from "@himawari-agent/application";
 import {
+  APPROVAL_ALLOWANCE_DAYS_DEFAULT,
+  APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
+  APPROVAL_ALLOWANCE_DAYS_MINIMUM,
   APPROVAL_ALLOWANCE_INTENT_PREFIX,
   type GatewayV2Command,
 } from "@himawari-agent/gateway-contracts";
@@ -22,11 +25,14 @@ import { isConflict } from "./context-external-content.js";
 export const OWNER_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
 export type OwnerAllowanceScope = (typeof OWNER_ALLOWANCE_SCOPES)[number];
 
-export const OWNER_ALLOWANCE_DEFAULT_DAYS = 7;
-export const OWNER_ALLOWANCE_MAXIMUM_DAYS = 90;
+type AllowanceCommand = Extract<
+  GatewayV2Command,
+  { readonly type: "approval.allowance.set" | "approval.allowance.days.set" }
+>;
 
 const KEY_PREFIX = "owner-allowance:";
 const INDEX_KEY = "owner-allowances:index";
+const SETTINGS_KEY = "owner-allowances:settings";
 const ID_PREFIX = "allowance:";
 const DAY_MS = 86_400_000;
 const TITLE_LIMIT = 120;
@@ -90,6 +96,15 @@ export function allowanceNotOffered(intent: GovernedActionIntent): string | null
   if (!intent.id?.startsWith(APPROVAL_ALLOWANCE_INTENT_PREFIX))
     return "ALLOWANCE_ACTION_ASKS_EVERY_TIME";
   return null;
+}
+
+function validDays(days: unknown): days is number {
+  return (
+    typeof days === "number" &&
+    Number.isSafeInteger(days) &&
+    days >= APPROVAL_ALLOWANCE_DAYS_MINIMUM &&
+    days <= APPROVAL_ALLOWANCE_DAYS_MAXIMUM
+  );
 }
 
 export class OwnerAllowances {
@@ -197,11 +212,8 @@ export class OwnerAllowances {
     const intent = approval.intentSnapshot;
     const refused = allowanceNotOffered(intent);
     if (refused) throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, refused);
-    const days = input.allowFor === "days" ? (input.days ?? OWNER_ALLOWANCE_DEFAULT_DAYS) : null;
-    if (
-      days !== null &&
-      (!Number.isSafeInteger(days) || days < 1 || days > OWNER_ALLOWANCE_MAXIMUM_DAYS)
-    )
+    const days = input.allowFor === "days" ? (input.days ?? (await this.days())) : null;
+    if (days !== null && !validDays(days))
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
     if (input.allowFor !== "days" && input.days !== null)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
@@ -246,15 +258,39 @@ export class OwnerAllowances {
     return id;
   }
 
-  handles(
-    command: GatewayV2Command,
-  ): command is Extract<GatewayV2Command, { readonly type: "approval.allowance.set" }> {
-    return command.type === "approval.allowance.set";
+  async days(): Promise<number> {
+    const days = (await this.#read(SETTINGS_KEY))?.value["days"];
+    return validDays(days) ? days : APPROVAL_ALLOWANCE_DAYS_DEFAULT;
+  }
+
+  async setDays(days: number): Promise<void> {
+    if (!validDays(days))
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "ALLOWANCE_DAYS_INVALID");
+    await this.#retry(async () => {
+      const record = await this.#read(SETTINGS_KEY);
+      if (record?.value["days"] === days) return;
+      await this.#commit(
+        SETTINGS_KEY,
+        record?.revision ?? null,
+        { ...record?.value, days },
+        "authorization.owner_allowance.days",
+      );
+    });
+  }
+
+  handles(command: GatewayV2Command): command is AllowanceCommand {
+    return (
+      command.type === "approval.allowance.set" || command.type === "approval.allowance.days.set"
+    );
   }
 
   async execute(
-    command: Extract<GatewayV2Command, { readonly type: "approval.allowance.set" }>,
+    command: AllowanceCommand,
   ): Promise<{ readonly resultRef: string; readonly replayed: false }> {
+    if (command.type === "approval.allowance.days.set") {
+      await this.setDays(command.payload.days);
+      return { resultRef: SETTINGS_KEY, replayed: false };
+    }
     return { resultRef: await this.set(command.payload), replayed: false };
   }
 

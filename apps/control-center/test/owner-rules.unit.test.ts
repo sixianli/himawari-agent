@@ -464,6 +464,8 @@ describe("[P2-3] standing rules on the web page", () => {
           ],
           respondRule,
           busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
         },
         message,
       }),
@@ -482,13 +484,57 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(respondRule).toHaveBeenCalledWith("allowance:fedcba9876543210", "revoke");
   });
 
-  it("[ADR-0285] REVERSE: nothing renders when no permission was given", async () => {
+  it("[ADR-0285] REVERSE: nothing renders when no permission was given and the day count is unknown", async () => {
     await show(
       h(OwnerAllowancesSection, {
-        memory: { allowances: [], respondRule: vi.fn(async () => true), busy: false },
+        memory: {
+          allowances: [],
+          respondRule: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
+        },
         message,
       }),
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("[ADR-0285] the owner changes how many days “N 天内都行” lasts, within 1 to 90", async () => {
+    const setAllowanceDays = vi.fn(async () => true);
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [],
+          respondRule: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: 7,
+          setAllowanceDays,
+        },
+        message,
+      }),
+    );
+    const input = container.querySelector<HTMLInputElement>(".allowance-days input");
+    const save = container.querySelector<HTMLButtonElement>(".allowance-days button");
+    expect(input?.value).toBe("7");
+    expect(save?.disabled).toBe(true);
+    const type = async (value: string) =>
+      act(async () => {
+        if (!input) return;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await type("91");
+    expect(save?.disabled).toBe(true);
+    await type("0");
+    expect(save?.disabled).toBe(true);
+    await type("14");
+    expect(save?.disabled).toBe(false);
+    await act(async () => save?.click());
+    expect(setAllowanceDays).toHaveBeenCalledWith(14);
+    expect(setAllowanceDays).toHaveBeenCalledTimes(1);
   });
 });

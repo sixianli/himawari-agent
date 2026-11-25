@@ -947,6 +947,10 @@ export const messages = {
   "rules.allowances.scope":
     "{scope, select, this_task {その件の中だけ} days {{until} まで} other {今後ずっと}}",
   "rules.allowances.revoke": "取り消す",
+  "rules.allowances.days": "「N 日間」の日数",
+  "rules.allowances.daysSave": "保存",
+  "rules.allowances.daysNote":
+    "承認カードで「N 日間」を選んだときにこの日数を使います。{minimum}〜{maximum} 日で入力してください。すでに出した承認には影響しません。",
   "rules.builtIn.note":
     "これらはプログラムに書き込まれたルールで、Himawari が自分で動く前にあなたに確認するかを決めます。それぞれに当てはまる例と当てはまらない例があり、ビルドのたびに全部確認します。「そのまま実行」のルールは毎回確認に切り替えられます。「確認する」「実行しない」のルールは安全の下限なので緩められません。",
   "rules.builtIn.name":

@@ -1319,6 +1319,7 @@ export const governanceMessages = [
         createdAt: "2026-11-11T00:00:00.000Z",
       },
     ],
+    allowanceDays: 7,
     generatedAt: "2026-11-11T00:00:00.000Z",
   }),
   fixture("command", "approval.allowance.set", {
@@ -1326,6 +1327,7 @@ export const governanceMessages = [
     allowFor: "this_task",
     days: null,
   }),
+  fixture("command", "approval.allowance.days.set", { days: 14 }),
   fixture("query", "proposals.read", { open: null }),
   fixture("snapshot", "proposals.snapshot", {
     proposals: [
