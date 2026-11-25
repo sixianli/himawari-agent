@@ -68,7 +68,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 与 ADR 0119 的关系
 
-本 ADR 修改 [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。
+本 ADR 修改 [ADR 0119 第 2 条](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#decision)中“超时就把这次记为‘结果不确定’”和“用新的调用序号（`ordinal` 2）重新登记”：改为按上限结清，并用新的调用位置。3 秒的时限、只重发一次、后台记忆整理不重发，这几点不变。2026-11-26 起，每轮回答前自动找记忆这条路径超时后不再重发，直接改用关键词和实体（见 [ADR 0119 后续](0119-conversation-speed-prewarm-on-tool-call-and-embedding-retry.md#follow-up)）；本条的按上限结清对它照样适用，新调用位置只用于回忆工具等仍会重发的路径。
 
 [↑ 返回阅读导航](#contents)
 
@@ -89,7 +89,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 - 每次重发多记的费用最多是一次向量请求的上限，即预留时的估算（16384 × 输入单价）；按测试配置的单价（每 token 0.01 微美元）约 164 微美元，也就是 0.000164 美元。生产上实际是多少，取决于配置里的单价。
 - 主对话、标题、记忆整理等真正可能有副作用或输出已经开始的调用，仍然按原规则记“结果不确定”。
-- 测试：`test/integration/sqlite-model-budget-operations.test.ts` 用真实 SQLite 准入复现“第一次超时 → 重发 → 主对话申请调用”，改前重发失败、主对话被拒，改后都通过；`packages/runtime-pi/test/model-accounting.unit.test.ts` 验证准入失败的错误码会交给服务。
+- 测试：`test/integration/sqlite-model-budget-operations.test.ts` 用真实 SQLite 准入复现“回忆工具的第一次超时 → 重发 → 主对话申请调用”，改前重发失败、主对话被拒，改后都通过；`packages/runtime-pi/test/model-accounting.unit.test.ts` 验证准入失败的错误码会交给服务。
 
 [↑ 返回阅读导航](#contents)
 
