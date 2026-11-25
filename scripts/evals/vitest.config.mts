@@ -10,7 +10,6 @@ export default defineConfig({
       "scripts/evals/owner-intent-live.eval.ts",
       "scripts/evals/memory-time-scope-live.eval.ts",
       "scripts/evals/listening-addressee-live.eval.ts",
-      "scripts/evals/delivery-timing-live.eval.ts",
     ],
     testTimeout: 3_600_000,
     fileParallelism: false,

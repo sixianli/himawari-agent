@@ -3,8 +3,8 @@ import { type ReactNode, useCallback, useRef, useState } from "react";
 import { type ControlCenterRouteState, controlCenterHref } from "../app/router.js";
 import { useControlCenterIntl } from "../i18n/runtime.js";
 import { LineIcon } from "./answer-footer.js";
-import { ActionButton, ActionMenu, AppLink } from "./index.js";
 import { Glyph } from "./glyphs.js";
+import { ActionButton, ActionMenu, AppLink } from "./index.js";
 import { SidebarIcon } from "./sidebar-icon.js";
 import { ThreadLoadingSkeleton } from "./thread-load-feedback.js";
 
@@ -51,7 +51,7 @@ export interface ThreadSidebarProps {
   readonly onSearchTextChange: (text: string) => void;
   readonly onSearch: () => void;
   readonly onLoadMore?: (() => void) | undefined;
-  readonly onCreate: () => void;
+  readonly mainThreadId?: string | null;
   readonly onRefresh: () => void;
   readonly onNavigate: (route: ControlCenterRouteState) => void;
   readonly onRename?: (thread: Thread) => void;
@@ -88,7 +88,7 @@ export function ThreadSidebar({
   selectedThreadId,
   onSearchTextChange,
   onSearch,
-  onCreate,
+  mainThreadId,
   onLoadMore,
   onNavigate,
   onRename,
@@ -128,10 +128,13 @@ export function ThreadSidebar({
   }, []);
   const filesOpen = openPage !== null;
   const title = (thread: Thread) =>
-    (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
+    thread.threadId === mainThreadId
+      ? message("chat.main")
+      : (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled");
   const list = threads.filter(
     (thread) =>
       thread.status === "active" &&
+      thread.threadId !== mainThreadId &&
       (thread.messageWatermark > 0 ||
         thread.sourceThreadId !== null ||
         thread.threadId === selectedThreadId),
@@ -298,10 +301,46 @@ export function ThreadSidebar({
   return (
     <div className="thread-list-controls">
       <nav className="thread-sidebar-actions" aria-label={message("nav.threads")}>
-        <ActionButton onClick={onCreate} variant="quiet">
-          <SidebarIcon name="compose" />
-          {message("threads.new")}
-        </ActionButton>
+        {mainThreadId ? (
+          <AppLink
+            className="thread-sidebar-main"
+            current={!filesOpen && selectedThreadId === mainThreadId}
+            href={controlCenterHref({
+              ...route,
+              objectId: mainThreadId,
+              status: null,
+              view: "content",
+            })}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              onNavigate({ ...route, objectId: mainThreadId, status: null, view: "content" });
+            }}
+          >
+            <SidebarIcon name="compose" />
+            {message("chat.main")}
+            {pendingThreadIds.includes(mainThreadId) ? (
+              <span
+                className="thread-attention"
+                role="img"
+                aria-label={message("review.needsAttention")}
+              />
+            ) : runningThreadIds.includes(mainThreadId) ? (
+              <span
+                className="thread-running"
+                role="img"
+                aria-label={message("chat.environment.threadRunning")}
+              />
+            ) : null}
+          </AppLink>
+        ) : null}
         <search className="thread-search-landmark">
           <form
             className="thread-search"

@@ -3,8 +3,8 @@ import {
   type GatewayV2Query,
   gatewayV2MessageSchema,
   type ThreadGatewayCommand,
-  type ThreadGatewayQuery,
   type ThreadGatewayMessage,
+  type ThreadGatewayQuery,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration } from "./gateway-client.js";
@@ -102,6 +102,7 @@ export function threadQueryMessage(
     | "thread.execution_environment"
     | "thread.list"
     | "thread.detail"
+    | "thread.main"
     | "thread.search"
     | "thread.lineage"
     | "thread.checkpoint"

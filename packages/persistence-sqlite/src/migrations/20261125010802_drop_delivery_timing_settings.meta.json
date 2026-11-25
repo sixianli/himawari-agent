@@ -1,0 +1,4 @@
+{
+  "alters": ["delivery_timing_settings"],
+  "removes": ["{}"]
+}

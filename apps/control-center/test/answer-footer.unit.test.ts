@@ -132,12 +132,11 @@ const render = (records = turnRecords(), message: Message = ids, run = completed
       execution: { [completedRun.runId]: records },
       connection: "connected",
       message,
-      onFork: () => {},
       renderApproval: () => null,
     }),
   );
 
-it("[UI-9] keeps only actions under the answer: copy, start a new conversation from here, and the time", () => {
+it("[UI-9] keeps only actions under the answer: copy and the time", () => {
   const html = render();
   const answer = html.indexOf("今日要闻");
   const actions = html.indexOf('class="answer-actions"');
@@ -147,7 +146,7 @@ it("[UI-9] keeps only actions under the answer: copy, start a new conversation f
   expect(sources).toBeGreaterThan(actions);
   const line = html.slice(actions, sources);
   expect(line).toContain('data-tip="answer.copyHint" aria-label="answer.copy"');
-  expect(line).toContain('data-tip="answer.forkHint" aria-label="answer.fork"');
+  expect(line).not.toContain("fork");
   expect(line).toContain(
     '<time class="answer-time" dateTime="2026-10-26T12:24:24.777Z">answer.at(at=2026-10-26T12:24:24.777Z)</time>',
   );
@@ -221,7 +220,6 @@ const bgHistory = (finished: boolean) => {
       execution: { [completedRun.runId]: turnRecords() },
       connection: "connected",
       message: ids,
-      onFork: () => {},
       backgroundCommands: backgroundCommands(runs, contentByRef),
       onOpenCommand: () => {},
       renderApproval: () => null,
@@ -293,7 +291,6 @@ it("[UI-16] shows the files sent with your message as cards with their size", ()
       execution: { [completedRun.runId]: turnRecords() },
       connection: "connected",
       message: ids,
-      onFork: () => {},
       renderApproval: () => null,
     }),
   );
@@ -316,7 +313,6 @@ it("[UI-17] shows the images sent with your message as thumbnails above the text
       execution: { [completedRun.runId]: turnRecords() },
       connection: "connected",
       message: ids,
-      onFork: () => {},
       renderApproval: () => null,
       readImage: async () => "data:image/jpeg;base64,/9j/",
     }),

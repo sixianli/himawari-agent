@@ -55,12 +55,10 @@ export function useCopied(): [boolean, (text: string) => void] {
 export function AnswerActions({
   text,
   committedAt,
-  onFork,
   message,
 }: {
   readonly text: string;
   readonly committedAt: string | undefined;
-  readonly onFork: (() => void) | undefined;
   readonly message: Message;
 }) {
   const [copied, copy] = useCopied();
@@ -75,17 +73,6 @@ export function AnswerActions({
       >
         <LineIcon name={copied ? "check" : "copy"} />
       </button>
-      {onFork ? (
-        <button
-          type="button"
-          className="answer-action icon-only"
-          data-tip={message("answer.forkHint")}
-          aria-label={message("answer.fork")}
-          onClick={onFork}
-        >
-          <LineIcon name="fork" />
-        </button>
-      ) : null}
       {committedAt ? (
         <time className="answer-time" dateTime={committedAt}>
           {message("answer.at", { at: new Date(committedAt) })}

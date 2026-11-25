@@ -131,11 +131,6 @@ import {
   ProductionDataExportControl,
   registerDataExportRoute,
 } from "./production-data-export.js";
-import type { DeliveryTimingHolder } from "./production-delivery-timing.js";
-import {
-  PRODUCTION_DELIVERY_TIMING_OPERATIONS,
-  ProductionDeliveryTimingControl,
-} from "./production-delivery-timing-control.js";
 import {
   PRODUCTION_DEVICE_OPERATIONS,
   ProductionDeviceControl,
@@ -218,6 +213,7 @@ import { registerTaskProposalHandler } from "./production-task-proposals.js";
 import { productionInbox } from "./production-inbox-composition.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
+import { ProductionMainThread } from "./production-main-thread.js";
 import {
   PRODUCTION_INBOX_OPERATIONS,
   ProductionInboxControl,
@@ -334,7 +330,6 @@ export interface ProductionHttpCompositionOptions {
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
-  readonly deliveryTimingSettings?: Pick<DeliveryTimingHolder, "base" | "apply">;
   readonly webPush?: {
     readonly presence: WebPushPresence;
     readonly push: ProductionWebPush | undefined;
@@ -813,7 +808,6 @@ function routeOptions(
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
-  deliveryTimingAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -849,7 +843,6 @@ function routeOptions(
         ...(museAvailable ? PRODUCTION_MUSE_OPERATIONS : []),
         ...(observationAvailable ? PRODUCTION_OBSERVATION_OPERATIONS : []),
         ...PRODUCTION_OWNER_PREFERENCE_OPERATIONS,
-        ...(deliveryTimingAvailable ? PRODUCTION_DELIVERY_TIMING_OPERATIONS : []),
         ...(memoryAvailable ? PRODUCTION_QUIET_HOURS_OPERATIONS : []),
         ...PRODUCTION_PROPOSAL_OPERATIONS,
         ...PRODUCTION_SENSITIVE_INTERCEPTION_OPERATIONS,
@@ -1071,6 +1064,15 @@ export async function createProductionHttpComposition(
     authority: () => authorityForConfiguration(configuration, options.authority()),
     recentAuthentication,
   });
+  const mainThread = new ProductionMainThread({
+    ownerId,
+    agentId,
+    threads,
+    commands: threadCommands,
+    payloads: repository.payloadStore(ownerId, agentId),
+    protector: payloadProtector,
+    clock: { now: clock },
+  });
   const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
     validateModelSelection: (selection, classification) => {
@@ -1140,6 +1142,7 @@ export async function createProductionHttpComposition(
       authority: () => authorityForConfiguration(configuration, options.authority()),
     }),
     deletion: threadDeletion,
+    mainThread,
     clock: { now: clock },
   });
   const threadAccess = new ProductionThreadGatewayAccessPolicy({
@@ -1298,10 +1301,20 @@ export async function createProductionHttpComposition(
       agentId,
       now: clock,
     });
+  const ensureMainThread = () =>
+    mainThread.ensure().then(
+      () => undefined,
+      (error: unknown) =>
+        options.threadDeletionDiagnostic?.({
+          code: "thread.main_ensure_failed",
+          error: error instanceof Error ? error.name : "unknown",
+        }),
+    );
   const threadDeletionRetry = new ThreadDeletionRetry({
     deletion: {
       retryIncompleteThreadDeletions: (input) =>
         retentionDeletion().retryIncompleteThreadDeletions(input),
+      deleteLegacyThreads: (input) => retentionDeletion().deleteLegacyThreads(input),
     },
     ...(options.threadDeletionDiagnostic ? { onDiagnostic: options.threadDeletionDiagnostic } : {}),
   });
@@ -1638,17 +1651,6 @@ export async function createProductionHttpComposition(
       recentAuthentication,
       clock: { now: clock },
     }),
-    ...(options.deliveryTimingSettings
-      ? {
-          deliveryTimingControl: new ProductionDeliveryTimingControl({
-            configuration,
-            defaults: options.deliveryTimingSettings.base,
-            store: repository.deliveryTimingSettings(),
-            clock: { now: clock },
-            changed: options.deliveryTimingSettings.apply,
-          }),
-        }
-      : {}),
     ...(ownerRuleWriter
       ? {
           quietHoursControl: new ProductionQuietHoursControl({
@@ -1762,7 +1764,6 @@ export async function createProductionHttpComposition(
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
-      options.deliveryTimingSettings !== undefined,
     ),
     gatewayV2,
     threadSearch,
@@ -1887,6 +1888,7 @@ export async function createProductionHttpComposition(
         });
         searchIndexer.start();
         home.startScoring();
+        await ensureMainThread();
         inbox.loop?.start();
         threadDeletionRetry.start();
         return address;
@@ -1902,6 +1904,7 @@ export async function createProductionHttpComposition(
       }
       searchIndexer.start();
       home.startScoring();
+      await ensureMainThread();
       inbox.loop?.start();
       threadDeletionRetry.start();
       return unixSocketPath;

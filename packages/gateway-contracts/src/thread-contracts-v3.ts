@@ -36,6 +36,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.execution_events",
   "thread.list",
   "thread.detail",
+  "thread.main",
   "thread.execution",
   "thread.execution_snapshot",
   "thread.execution_state",
@@ -47,6 +48,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.checkpoint",
   "thread.snapshot",
   "thread.collection_snapshot",
+  "thread.main_snapshot",
   "thread.detail_snapshot",
   "thread.search_snapshot",
   "thread.lineage_snapshot",
@@ -308,6 +310,10 @@ export const threadDetailV3QuerySchema = object({
   ...envelope("query", "thread.detail"),
   payload: object({ threadId: machineString, afterSequence: integer(0), limit: integer(1, 1000) }),
 });
+export const mainThreadV3QuerySchema = object({
+  ...envelope("query", "thread.main"),
+  payload: object({}),
+});
 export const searchThreadsV3QuerySchema = object({
   ...envelope("query", "thread.search"),
   payload: object({
@@ -422,6 +428,15 @@ export const threadCollectionSnapshotV3Schema = object({
   payload: object({
     threads: array(threadSummaryV3Schema),
     nextCursor: nullable(machineString),
+    snapshotRef: machineString,
+    generatedAt: timestamp,
+  }),
+});
+
+export const mainThreadSnapshotV3Schema = object({
+  ...envelope("snapshot", "thread.main_snapshot"),
+  payload: object({
+    thread: threadSummaryV3Schema,
     snapshotRef: machineString,
     generatedAt: timestamp,
   }),
@@ -739,11 +754,13 @@ const schemasByType = {
   "thread.execution_events": threadExecutionEventsSubscriptionSchema,
   "thread.list": listThreadsV3QuerySchema,
   "thread.detail": threadDetailV3QuerySchema,
+  "thread.main": mainThreadV3QuerySchema,
   "thread.search": searchThreadsV3QuerySchema,
   "thread.lineage": threadLineageV3QuerySchema,
   "thread.checkpoint": threadCheckpointV3QuerySchema,
   "thread.snapshot": threadSnapshotV3Schema,
   "thread.collection_snapshot": threadCollectionSnapshotV3Schema,
+  "thread.main_snapshot": mainThreadSnapshotV3Schema,
   "thread.detail_snapshot": threadDetailSnapshotV3Schema,
   "thread.search_snapshot": threadSearchSnapshotV3Schema,
   "thread.lineage_snapshot": threadLineageSnapshotV3Schema,

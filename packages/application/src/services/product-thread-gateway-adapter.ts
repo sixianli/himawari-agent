@@ -89,6 +89,7 @@ export interface ProductThreadGatewayAdapterDependencies {
   readonly queries: ThreadQueryService;
   readonly forks: ThreadForkService;
   readonly deletion: ThreadDeletionCoordinationService;
+  readonly mainThread?: { ensure(): Promise<string> };
   readonly clock: ClockPort;
   readonly waitForEvents?: (milliseconds: number) => Promise<void>;
   readonly eventPollMilliseconds?: number;
@@ -302,6 +303,19 @@ export class ProductThreadGatewayAdapter
             snapshotRef,
             generatedAt,
           },
+        });
+      }
+      case "thread.main": {
+        if (!this.#dependencies.mainThread)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_MAIN_UNAVAILABLE",
+          );
+        const threadId = createThreadId(await this.#dependencies.mainThread.ensure());
+        const detail = await this.#dependencies.queries.detail(ownerId, agentId, threadId, 0, 1);
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.main_snapshot"),
+          payload: { thread: threadSummary(detail.thread), snapshotRef, generatedAt },
         });
       }
       case "thread.execution_state": {

@@ -229,6 +229,12 @@ beforeEach(() => {
             total: 2,
           },
         };
+      case "thread.main":
+        return {
+          ...shared,
+          type: "thread.main_snapshot",
+          payload: { thread: { ...thread, threadId: "thread-main" } },
+        };
       case "thread.search":
         return {
           ...shared,
@@ -307,19 +313,25 @@ afterEach(async () => {
 });
 
 describe("thread control center interactions", () => {
-  it("opens a local new-chat draft before configuration or realtime is ready", async () => {
-    options = { ...options, client: undefined, configuration: undefined, connection: "connecting" };
-    await render();
-    await click("新建对话");
-    expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ objectId: null, view: "content" }),
-    );
-    expect(mutate).not.toHaveBeenCalled();
+  it("opens the main conversation when no conversation is chosen and offers no way to start another", async () => {
     options = { ...options, route: { ...options.route, objectId: null } };
     await render();
-    expect(container.querySelector("textarea")).not.toBeNull();
-    await input(container.querySelector("textarea"), "初始化期间的草稿");
-    expect(options.storage.readDraft("new")).toBe("初始化期间的草稿");
+    await refresh();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: "thread-main", view: "content" }),
+    );
+    expect(container.textContent).not.toContain(messages["chat.untitled"]);
+    expect(
+      [...document.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("新建对话"),
+      ),
+    ).toBe(false);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+  it("stays on the chosen conversation instead of jumping to the main one", async () => {
+    await render();
+    await refresh();
+    expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: "thread-main" }));
   });
   it.each(["zh-CN", "en", "ja"] as const)(
     "does not expose or mutate the legacy %s answer locale in thread details",
@@ -332,38 +344,27 @@ describe("thread control center interactions", () => {
       expect(mutate).not.toHaveBeenCalled();
     },
   );
-  it.each(["zh-CN", "en", "ja"] as const)(
-    "forks a committed turn without propagating the legacy %s answer locale",
-    async (answerLocale) => {
-      thread = { ...thread, answerLocale, messageWatermark: 1 };
-      threadMessages = [
-        {
-          messageId: "message-fork",
-          sequence: 1,
-          role: "agent",
-          contentRef: "content-fork",
-          dataClassification: "private",
-          status: "committed",
-          turnId: "turn-fork",
-          runId: null,
-          committedAt: NOW,
-        },
-      ];
-      await render();
-      await refresh();
-      await click("answer.fork");
-      expect(mutate).toHaveBeenCalledTimes(1);
-      expect(mutate.mock.calls[0]?.[0]).toMatchObject({
-        type: "thread.fork",
-        payload: {
-          sourceThreadId: thread.threadId,
-          sourceTurnId: "turn-fork",
-          sourceWatermark: 1,
-          policyRefs: [],
-        },
-      });
-    },
-  );
+  it("offers no way to branch an answer into a separate conversation", async () => {
+    thread = { ...thread, messageWatermark: 1 };
+    threadMessages = [
+      {
+        messageId: "message-answer",
+        sequence: 1,
+        role: "agent",
+        contentRef: "content-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-answer",
+        runId: null,
+        committedAt: NOW,
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.querySelector(".answer-actions")).not.toBeNull();
+    expect(container.querySelectorAll(".answer-actions button")).toHaveLength(1);
+    expect(mutate).not.toHaveBeenCalled();
+  });
   it("[I-17] shows a branched chat's inherited turns, where it came from, and a way back", async () => {
     const original = query.getMockImplementation();
     const row = (
@@ -1962,17 +1963,107 @@ describe("thread control center interactions", () => {
       }
     },
   );
-  it("keeps the welcome page available when creating a conversation fails", async () => {
+  it("[PR631-3] keeps the draft and creates no other conversation when the main conversation cannot be found", async () => {
     options = { ...options, route: routeForSurface("threads") };
-    mutate.mockRejectedValueOnce(new Error("controlled creation failure"));
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.main") throw new Error("controlled main failure");
+      return original?.(request, signal);
+    });
     await render();
     await refresh();
     await input(container.querySelector("textarea"), "开始新对话");
     await click("threads.send");
-    expect(container.textContent).toContain("controlled creation failure");
+    expect(container.textContent).toContain("controlled main failure");
+    expect(mutate).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
     expect(container.querySelector("textarea")?.value).toBe("开始新对话");
     expect(options.storage.readDraft("new")).toBe("开始新对话");
+  });
+  it("[PR634-R3-1] brings the composer back when the main conversation lookup never answers", async () => {
+    options = { ...options, route: routeForSurface("threads") };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal: AbortSignal | undefined) => {
+      if (request.type === "thread.main")
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector("textarea")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(container.querySelector("textarea")).not.toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("[PR634-R3-3] waits for the settings dialog to close before opening the main conversation", async () => {
+    options = { ...options, route: { ...routeForSurface("threads"), page: "settings" } };
+    await render();
+    await refresh();
+    expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: "thread-main" }));
+    options = { ...options, route: routeForSurface("threads") };
+    await render();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: "thread-main", view: "content" }),
+    );
+  });
+  it("[PR634-R4-1] gives up a send whose main conversation lookup never answers and keeps the draft", async () => {
+    options = { ...options, route: routeForSurface("threads") };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal: AbortSignal | undefined) => {
+      if (request.type === "thread.main")
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    await input(container.querySelector("textarea"), "超时后再发");
+    await click("threads.send");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(container.textContent).toContain("THREAD_READ_DEADLINE_EXCEEDED");
+    expect(mutate).not.toHaveBeenCalled();
+    expect(container.querySelector("textarea")?.value).toBe("超时后再发");
+    expect(options.storage.readDraft("new")).toBe("超时后再发");
+    query.mockImplementation(async (request, signal) => original?.(request, signal));
+    await click("threads.send");
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+  it("[PR634-R4-2] hides the composer again while a repeated main conversation lookup is pending", async () => {
+    options = { ...options, route: routeForSurface("threads") };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.main") throw new Error("controlled main failure");
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector("textarea")).not.toBeNull();
+    let answer: (() => void) | undefined;
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.main") {
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+      }
+      return original?.(request, signal);
+    });
+    options = { ...options, configuration: { ...configuration } };
+    await render();
+    expect(container.querySelector("textarea")).toBeNull();
+    await act(async () => answer?.());
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: "thread-main", view: "content" }),
+    );
   });
   it.each(["archive", "restore", "pin"])(
     "preserves a refused %s operation without falsely reporting acceptance",
@@ -2453,18 +2544,24 @@ describe("thread control center interactions", () => {
     expect(container.querySelector(".thread-welcome")).not.toBeNull();
     expect(container.textContent).not.toContain("threads.messagesEmpty");
   });
-  it("creates a conversation from the empty welcome page and navigates to the accepted ID", async () => {
+  it("[PR631-3] sends from the welcome page into the main conversation instead of creating another", async () => {
     options = { ...options, route: routeForSurface("threads") };
+    const original = query.getMockImplementation();
+    let mainQueries = 0;
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.main" && mainQueries++ === 0)
+        throw new Error("main not ready yet");
+      return original?.(request, signal);
+    });
     await render();
     await refresh();
+    expect(navigate).not.toHaveBeenCalled();
     await input(container.querySelector("textarea"), "开始新对话");
     await click("threads.send");
-    expect(mutate.mock.calls[0]?.[0].type).toBe("thread.create");
+    expect(mutate.mock.calls.map(([request]) => request.type)).not.toContain("thread.create");
+    expect(mutate.mock.calls[0]?.[0].payload.threadId).toBe("thread-main");
     expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        objectId: mutate.mock.calls[0]?.[0].payload.threadId,
-        view: "content",
-      }),
+      expect.objectContaining({ objectId: "thread-main", view: "content" }),
     );
   });
   it.each(["running", "cancelled", "failed"] as const)(
@@ -2558,7 +2655,15 @@ describe("thread control center interactions", () => {
   });
   it("shows a retry after a list failure and reports expired authorization", async () => {
     options = { ...options, route: routeForSurface("threads") };
-    query.mockRejectedValueOnce({ status: 401 });
+    const original = query.getMockImplementation();
+    let failed = false;
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.list" && !failed) {
+        failed = true;
+        throw { status: 401 };
+      }
+      return original?.(request, signal);
+    });
     await render();
     await refresh();
     expect(unauthorized).toHaveBeenCalledOnce();

@@ -33,6 +33,12 @@ public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
     public var id: String { memoryId }
 }
 
+public struct MemorySummary: Equatable, Sendable {
+    public let memories: Int
+    public let topics: Int
+    public let rules: Int
+}
+
 public struct MemoryImport: Decodable, Sendable, Hashable {
     public let batchId: String
     public let source: String

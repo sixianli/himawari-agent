@@ -73,20 +73,12 @@ public struct SettingsRootView: View {
                 }
                 if store.phase == .loaded {
                     DevicesGroup(store: store, open: { path.append(.device($0.id)) }, add: { path.append(.addDevice) })
-                    if Self.exportDownloadAvailable || store.tuning[.delivery] != nil {
+                    if Self.exportDownloadAvailable {
                         SettingsGroup(label: M.general) {
-                            if Self.exportDownloadAvailable {
-                                Button { path.append(.export) } label: {
-                                    SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: store.tuning[.delivery] == nil)
-                                }
-                                .buttonStyle(.plain)
+                            Button { path.append(.export) } label: {
+                                SettingsRow(icon: .upload, title: M.exportTitle, chevron: true, last: true)
                             }
-                            if store.tuning[.delivery] != nil {
-                                Button { path.append(.tuningList(.delivery)) } label: {
-                                    SettingsRow(icon: .bell, title: M.notificationsTitle, chevron: true, last: true)
-                                }
-                                .buttonStyle(.plain)
-                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     if senses != nil {

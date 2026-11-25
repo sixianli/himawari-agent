@@ -146,6 +146,10 @@
   border-radius: 50%;
   animation: thread-running-spin 1s linear infinite;
 }
+.thread-sidebar-main > .thread-attention,
+.thread-sidebar-main > .thread-running {
+  margin-left: auto;
+}
 @keyframes thread-running-spin {
   to {
     transform: rotate(360deg);
@@ -3907,6 +3911,7 @@ code.more-row-name {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   padding: 10px 6px;
 }
+.thread-sidebar-actions > .app-link[aria-current="page"],
 .thread-sidebar-actions .action-button[aria-pressed="true"] {
   background: var(--surface-muted);
 }

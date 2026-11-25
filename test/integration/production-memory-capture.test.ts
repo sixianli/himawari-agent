@@ -550,6 +550,12 @@ describe("production memory capture", () => {
       request: requestFor("run-memory-capture"),
       requestFor,
       turn,
+      markInternal: (runId: string) => {
+        const index = messages.findIndex((item) => item.runId === runId);
+        const found = messages[index];
+        if (!found) throw new Error("no message for that run");
+        messages[index] = { ...found, internal: true };
+      },
       outputs,
       relevant,
       audits,
@@ -1716,6 +1722,20 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(1);
+  });
+
+  it("[PR631-1] does not turn a message hidden from the Owner into a memory", async () => {
+    const context = await setup(
+      "我改主意了，现在最喜欢绿色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是绿色","classification":"private","confidence":900,"quote":"我改主意了，现在最喜欢绿色"}]}',
+    );
+    context.markInternal("run-memory-capture");
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.prompts).toHaveLength(0);
+    expect(
+      await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
+    ).toHaveLength(0);
   });
 
   it("drops a memory whose quote is not in the Owner's message", async () => {

@@ -15,7 +15,6 @@ import {
   type DataClassification,
   DEFAULT_HOME_URGENCY,
   DEFAULT_PROACTIVE_MEMORY_LIMITS,
-  DELIVERY_TIMING_DEFAULTS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -27,6 +26,7 @@ import {
   modelUsagePurpose,
   modelVisibleClassifications,
   OwnerProfileService,
+  type PayloadRef,
   PERCEPTION_CONFIGURATION_DEFAULTS,
   type ProductConfiguration,
   prereviewPromptId,
@@ -117,7 +117,7 @@ import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
-import { MacPlacement } from "./mac-placement.js";
+import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -130,11 +130,6 @@ import {
   toolResultCharacters,
 } from "./production-conversation-tools.js";
 import { retrievalDegradeRecorder } from "./production-decision-ledger.js";
-import {
-  createDeliveryTimingSource,
-  DeliveryTimingHolder,
-  productionDeliveryTiming,
-} from "./production-delivery-timing.js";
 import { productionDeviceActionAuthorization } from "./production-device-action-authorization.js";
 import { createProductionDeviceActions } from "./production-device-actions.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
@@ -172,6 +167,7 @@ import {
   importDuplicateFailureCode,
   productionImportDuplicateChecker,
 } from "./production-memory-import-duplicates.js";
+import { ProductionMemoryOpen } from "./production-memory-open.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
@@ -742,8 +738,7 @@ export async function startTenantRuntime(
   const macPlacement = new MacPlacement({
     hub: deviceNotificationHub,
     presence: devicePresence,
-    windowMilliseconds: () =>
-      (deliveryTimingHolder?.current() ?? DELIVERY_TIMING_DEFAULTS).macPresenceSeconds * 1000,
+    windowMilliseconds: () => MAC_PRESENCE_WINDOW_SECONDS * 1000,
     nowMilliseconds: () => Date.parse(productionClock().now()),
   });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
@@ -759,7 +754,6 @@ export async function startTenantRuntime(
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let requeueStaleMemoryVectors: () => Promise<void> = async () => {};
   let webPush: ProductionWebPush | undefined;
-  let deliveryTimingHolder: DeliveryTimingHolder | undefined;
   let applePush: ProductionApplePush | undefined;
   let applePushSender: ReturnType<typeof createApplePushSender> | undefined;
   let proactive: ProductionProactive | undefined;
@@ -1593,17 +1587,16 @@ export async function startTenantRuntime(
       const primaryModel = configuration.modelDescriptors.find(
         (descriptor) => descriptor.role === "primary",
       );
+      const toolPageCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
+      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
             agentId: configuration.agentId,
             turns: conversationTurns,
-            pageCharacters: toolResultCharacters(
-              primaryModel && "contextWindow" in primaryModel
-                ? primaryModel.contextWindow
-                : undefined,
-              configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
-            ),
+            pageCharacters: toolPageCharacters,
             embedWithin: (invocation, slot, operation) =>
               recallEmbedWithin(invocation, slot, operation),
             ...(configuration.runPolicy?.timeZone
@@ -1613,6 +1606,29 @@ export async function startTenantRuntime(
         : undefined;
       const recallProjection = memoryComposition.projection;
       const recallProtector = protector;
+      const readMemoryPayloadText = async (ref: PayloadRef) => {
+        const payload = await payloads.get(ref);
+        if (!payload || payload.contentType !== "text/plain") return undefined;
+        return {
+          text: new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          ),
+          dataClassification: payload.dataClassification,
+        };
+      };
+      const readMemoryText = async (ref: PayloadRef) => (await readMemoryPayloadText(ref))?.text;
+      const memoryOpen = new ProductionMemoryOpen({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        state: repository.productMemoryState(),
+        readText: (ref) => readMemoryPayloadText(ref),
+        pageCharacters: toolPageCharacters,
+        now: () => clock.now(),
+      });
       const memoryRecall = new ProductionMemoryRecall({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1623,17 +1639,7 @@ export async function startTenantRuntime(
           search: (input) =>
             runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
         },
-        readText: async (record) => {
-          const payload = await payloads.get(record.contentRef);
-          if (!payload || payload.contentType !== "text/plain") return undefined;
-          return new TextDecoder("utf-8", { fatal: true }).decode(
-            await recallProtector.unprotect({
-              ownerId: configuration.ownerId,
-              agentId: configuration.agentId,
-              payload,
-            }),
-          );
-        },
+        readText: (record) => readMemoryText(record.contentRef),
         embedWithin: recallEmbedWithin,
         now: () => clock.now(),
         ...(configuration.runPolicy?.timeZone
@@ -1772,6 +1778,7 @@ export async function startTenantRuntime(
       const tools = new ProductionRuntimeTools({
         memoryRecall,
         ...(conversationTools ? { conversations: conversationTools } : {}),
+        memoryOpen,
         reminders: reminderTools,
         ownerRules: ownerRuleTools,
         toolActions,
@@ -2976,18 +2983,6 @@ export async function startTenantRuntime(
               }),
           });
         }
-        const timingConfiguration = configuration.runPolicy?.deliveryTiming;
-        const timingModel = productionDeliveryTiming(configuration, sources.provider);
-        if (timingModel && timingConfiguration)
-          deliveryTimingHolder = new DeliveryTimingHolder(
-            timingConfiguration,
-            (
-              await pushRepository.deliveryTimingSettings().read({
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-              })
-            ).overrides,
-          );
         webPush = new ProductionWebPush({
           placement: macPlacement,
           ownerId: configuration.ownerId,
@@ -3068,6 +3063,7 @@ export async function startTenantRuntime(
             return message?.role === "agent"
               ? {
                   dataClassification: message.dataClassification,
+                  ...(message.internal === true ? { internal: true as const } : {}),
                   readText: () => readPlain(message.contentRef),
                 }
               : undefined;
@@ -3089,25 +3085,6 @@ export async function startTenantRuntime(
               const rule = enforceableOwnerRule(row);
               return rule?.gate === "push_delivery" ? [rule] : [];
             }),
-          ...(timingModel && deliveryTimingHolder
-            ? {
-                timing: createDeliveryTimingSource({
-                  model: timingModel,
-                  configuration: deliveryTimingHolder.current,
-                  store: pushRepository.perception(),
-                  scope: {
-                    ownerId: configuration.ownerId,
-                    agentId: configuration.agentId,
-                  },
-                  reserve: async (micros) =>
-                    (await http?.perception.reserveModelCost(
-                      { ownerId: configuration.ownerId, agentId: configuration.agentId },
-                      micros,
-                    )) ?? false,
-                  now: () => Date.parse(clock.now()),
-                }),
-              }
-            : {}),
           onGateFailure: ({ sourceKey }) =>
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
@@ -3487,7 +3464,6 @@ export async function startTenantRuntime(
         ...(capabilityReactivation ? { capabilityReactivation } : {}),
         ...(input.listen?.kind === "unix" ? { listenUnixSocketPath: input.listen.path } : {}),
         live,
-        ...(deliveryTimingHolder ? { deliveryTimingSettings: deliveryTimingHolder } : {}),
         webPush: {
           presence: webPushPresence,
           push: webPush,

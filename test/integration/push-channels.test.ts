@@ -8,8 +8,6 @@ import {
   APPLE_PUSH_CONFIGURATION_DEFAULTS,
   type ApplePushConfiguration,
   type ApprovalRequest,
-  DELIVERY_TIMING_DEFAULTS,
-  type DeliveryTimingJudgement,
   type DeviceActionRecord,
   herWordsPushKey,
   type MemoryReminder,
@@ -45,7 +43,6 @@ import {
 } from "../../apps/agent-service/src/production-apple-push.ts";
 import {
   clip,
-  type DeliveryTimingSource,
   ProductionWebPush,
   WebPushPresence,
   webPushPayload,
@@ -72,43 +69,6 @@ const hex = (seed: string) => createHash("sha256").update(seed).digest("hex");
 const must = <T>(value: T | undefined): T => {
   if (value === undefined) throw new Error("MISSING_ALERT");
   return value;
-};
-
-function timingSource(answers: (DeliveryTimingJudgement | Error)[]) {
-  const calls: { pushClass: string; nowMs: number }[] = [];
-  const source: DeliveryTimingSource = {
-    configuration: () => DELIVERY_TIMING_DEFAULTS,
-    judge: async (pushClass, nowMs) => {
-      calls.push({ pushClass, nowMs });
-      const next = answers.length > 1 ? answers.shift() : answers[0];
-      if (next instanceof Error) throw next;
-      if (!next) throw new Error("no answer");
-      return next;
-    },
-  };
-  return { source, calls };
-}
-
-const BUSY: DeliveryTimingJudgement = {
-  action: "defer",
-  reasonCode: "timing_busy",
-  confidencePermille: 920,
-  signals: ["motion"],
-  judged: true,
-};
-const CLEAR: DeliveryTimingJudgement = {
-  action: "deliver",
-  reasonCode: "timing_clear",
-  confidencePermille: 80,
-  signals: ["motion"],
-  judged: true,
-};
-const UNKNOWN: DeliveryTimingJudgement = {
-  action: "deliver",
-  reasonCode: "timing_unknown",
-  confidencePermille: null,
-  signals: [],
-  judged: false,
 };
 
 describe("[IOS-4] push channels", () => {
@@ -1420,177 +1380,6 @@ describe("[IOS-4] push channels", () => {
       expect(context.failures).toHaveLength(failureCount);
     },
   );
-  const timingRows = (context: Awaited<ReturnType<typeof setup>>) =>
-    context.sql(
-      (seed) =>
-        seed
-          .prepare(
-            `SELECT outcome, reason_code AS reasonCode, subject_ref AS subject FROM decision_ledger WHERE kind = 'delivery_timing'
-             ORDER BY checked_at, outcome`,
-          )
-          .all() as {
-          outcome: string;
-          reasonCode: string;
-          subject: string;
-        }[],
-    );
-
-  it("[IOS-4] holds a reminder while the owner is busy, writes a decision record, and sends it when the owner is free", async () => {
-    const { source, calls } = timingSource([BUSY, CLEAR]);
-    const context = await setup({}, { timing: source });
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("busy");
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toEqual([]);
-    expect(timingRows(context)).toEqual([
-      {
-        outcome: "deferred",
-        reasonCode: "timing_busy_motion",
-        subject: "reminder:busy:" + T0,
-      },
-    ]);
-
-    context.setClock(at(T0, 301));
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
-    expect(timingRows(context).map(({ outcome }) => outcome)).toEqual(["deferred", "delivered"]);
-    expect(calls).toHaveLength(2);
-  });
-
-  it("[IOS-4] delivers at the latest delivery time without asking again, and records that it was reached", async () => {
-    const { source, calls } = timingSource([BUSY]);
-    const context = await setup({}, { timing: source });
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("late");
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toEqual([]);
-
-    context.setClock(at(T0, DELIVERY_TIMING_DEFAULTS.reminderMaximumDeferSeconds + 400));
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
-    expect(calls).toHaveLength(1);
-    expect(timingRows(context).map(({ outcome }) => outcome)).toEqual([
-      "deferred",
-      "deadline_reached",
-    ]);
-  });
-
-  it("[IOS-4] REVERSE: a send that fails after a clear answer is not later recorded as the latest delivery time being reached", async () => {
-    const { source } = timingSource([BUSY, CLEAR]);
-    const context = await setup({}, { timing: source });
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("flaky");
-    context.setClock(T0);
-    await context.push.tick();
-    context.setClock(at(T0, 301));
-    context.apns.respond = () => ({ status: 503, reason: "ServiceUnavailable" });
-    await context.push.tick();
-    context.apns.respond = () => ({ status: 200 });
-    context.setClock(at(T0, DELIVERY_TIMING_DEFAULTS.reminderMaximumDeferSeconds + 400));
-    await context.push.tick();
-    await context.push.tick();
-    expect(timingRows(context).map(({ outcome }) => outcome)).not.toContain("deadline_reached");
-  });
-
-  it("[IOS-4] REVERSE: an approval and a proposal notice are never held or judged", async () => {
-    const { source, calls } = timingSource([BUSY]);
-    const context = await setup(
-      {},
-      {
-        timing: source,
-        proposals: { listReady: async () => [{ id: "rule-1", proposedAt: at(T0, -60) }] },
-      },
-    );
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.approval("approve-now", false);
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(2);
-    expect(calls).toEqual([]);
-    expect(timingRows(context)).toEqual([]);
-  });
-
-  it("[IOS-4] REVERSE: sends at once, with no decision record, when no report about the owner is fresh", async () => {
-    const { source, calls } = timingSource([UNKNOWN]);
-    const context = await setup({}, { timing: source });
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("calm");
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
-    expect(calls).toHaveLength(1);
-    expect(timingRows(context)).toEqual([]);
-  });
-
-  it("[IOS-4] REVERSE: sends when the timing judgement fails and reports the failure once per notification", async () => {
-    const { source } = timingSource([new Error("TIMING_DOWN")]);
-    const gateFailures: string[] = [];
-    const context = await setup(
-      {},
-      { timing: source, onGateFailure: ({ sourceKey }) => gateFailures.push(sourceKey) },
-    );
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("broken");
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
-    expect(gateFailures).toEqual([`reminder:broken:${T0}`]);
-    expect(timingRows(context)).toEqual([]);
-  });
-
-  it("[IOS-4] REVERSE: sends and reports a diagnostic when the per-minute limit stops the judgement", async () => {
-    const limited: DeliveryTimingJudgement = {
-      action: "deliver",
-      reasonCode: "timing_rate",
-      confidencePermille: null,
-      signals: ["motion"],
-      judged: false,
-    };
-    const { source } = timingSource([limited]);
-    const gateFailures: string[] = [];
-    const context = await setup(
-      {},
-      { timing: source, onGateFailure: ({ sourceKey }) => gateFailures.push(sourceKey) },
-    );
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.reminder("limited");
-    context.setClock(T0);
-    await context.push.tick();
-    await context.push.tick();
-    expect(context.apns.ofType("alert")).toHaveLength(1);
-    expect(gateFailures).toEqual([`reminder:limited:${T0}`]);
-    expect(timingRows(context)).toEqual([]);
-  });
-
-  it("[IOS-4] REVERSE: does not judge a notification while Himawari is on screen", async () => {
-    const { source, calls } = timingSource([BUSY]);
-    const context = await setup({}, { timing: source });
-    context.device(IPHONE, "iphone");
-    await context.register(IPHONE, "alert");
-    context.setClock(T0);
-    context.presence.beat(`device:${IPHONE}`, true, T0);
-    context.reminder("seen");
-    await context.push.tick();
-    expect(calls).toEqual([]);
-    expect(context.apns.requests).toEqual([]);
-  });
-
   function macSetup(nowMs: () => number = () => Date.parse(T0)) {
     const hub = new DeviceNotificationHub();
     const presence = new DevicePresence();

@@ -13,7 +13,6 @@ import type {
   CapabilityRegistryStorePort,
   ConversationTurnStorePort,
   DecisionLedgerPort,
-  DeliveryTimingSettingsStorePort,
   DeviceActionStorePort,
   ExecutionEnvironmentStorePort,
   ExternalMemoryProposalStorePort,
@@ -934,6 +933,8 @@ export class SqliteDurableAdapters {
       appendHistory: (input) => this.context.write("memory.appendHistory", input),
       listHistory: (input) => this.context.read("memory.listHistory", input),
       readHistory: (input) => this.context.read("memory.readHistory", input),
+      numbers: (input) => this.context.read("memory.numbers", input),
+      byNumber: (input) => this.context.read("memory.byNumber", input),
     });
   }
 
@@ -1198,13 +1199,6 @@ export class SqliteDurableAdapters {
       processedSince: (input) => this.context.read("proactive.processedSince", input),
     });
   }
-  deliveryTimingSettings(): DeliveryTimingSettingsStorePort {
-    return Object.freeze<DeliveryTimingSettingsStorePort>({
-      read: (input) => this.context.read("deliveryTimingSettings.read", input),
-      write: (input) => this.context.write("deliveryTimingSettings.write", input),
-    });
-  }
-
   ownerPreferences(): OwnerPreferencesStorePort {
     return Object.freeze<OwnerPreferencesStorePort>({
       read: (input) => this.context.read("ownerPreferences.read", input),
@@ -1393,7 +1387,6 @@ export class SqliteDurableAdapters {
       listDue: (input) => this.context.read("webPush.listDue", input),
       listRecent: (input) => this.context.read("webPush.listRecent", input),
       deferItem: (input) => this.context.write("webPush.deferItem", input),
-      recordDeliveryTiming: (input) => this.context.write("webPush.recordDeliveryTiming", input),
       recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
       recordReactions: (input) => this.context.write("webPush.recordReactions", input),
       listFeedback: (input) => this.context.read("webPush.listFeedback", input),
@@ -1544,6 +1537,8 @@ export class SqliteDurableAdapters {
         this.context.read("thread.inspectDeletionImpact", { ownerId, agentId, threadId }),
       resolveDeletionTask: (input) => this.context.write("thread.resolveDeletionTask", { input }),
       requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
+      readMain: (ownerId, agentId) => this.context.read("thread.readMain", { ownerId, agentId }),
+      claimMain: (input) => this.context.write("thread.claimMain", { input }),
     });
   }
 
