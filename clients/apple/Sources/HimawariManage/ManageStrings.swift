@@ -151,6 +151,7 @@ enum M {
             en: "Quiet \(start.shortText)–\(end.shortText)"
         )
     }
+    static var deletePerception: String { text("删掉感知记录", ja: "感知の記録を削除", en: "Delete perception records") }
     static var letHerSense: String { text("让她感知", ja: "彼女に感じ取らせる", en: "Let Her Sense") }
     static func sensesOn(_ count: Int) -> String { text("\(count) 项开着", ja: "\(count) 項目オン", en: "\(count) on") }
     static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }

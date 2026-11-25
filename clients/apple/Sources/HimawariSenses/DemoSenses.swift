@@ -123,8 +123,9 @@ public final class DemoSensesService: SensesService {
         return ["kind": "record", "at": ISO8601DateFormatter().string(from: arrived), "record": record]
     }
 
-    private func time(_ clock: (Int, Int)) -> Date {
-        Calendar.current.date(bySettingHour: clock.0, minute: clock.1, second: 0, of: now) ?? now
+    private func time(_ clock: (Int, Int), daysAgo: Int = 0) -> Date {
+        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+        return Calendar.current.date(bySettingHour: clock.0, minute: clock.1, second: 0, of: day) ?? day
     }
 
     public func setSense(_ sense: String, enabled: Bool, revision: Int, reason: String) async throws {}
@@ -133,8 +134,70 @@ public final class DemoSensesService: SensesService {
 
     public func setRetention(key: String, days: Int?, revision: Int, reason: String) async throws {}
 
-    public func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeleteResult {
-        try Self.decode(["deleted": ["records": 3, "trackPoints": 0, "media": 0], "decisionId": "demo"])
+    public func deleteRecords(_ item: SenseItem, reason: String) async throws -> PerceptionDeletionSnapshot {
+        try Self.deletion(records: 3)
+    }
+
+    public func dayPage(_ day: String?, cursor: String?) async throws -> PerceptionDaySnapshot {
+        let today = Self.dayString(now)
+        let yesterday = PerceptionTime.shift(day: today, by: -1)
+        let asked = day ?? today
+        var rows: [[String: Any?]] = []
+        var total = 0
+        if asked == today {
+            rows = [
+                episode("episode:00000000000000000000000000000003", from: (14, 5), to: (14, 40), senses: ["location", "body"], count: 4, preview: L.text("demo.lunch")),
+                episode("episode:00000000000000000000000000000002", from: (10, 0), to: (10, 45), senses: ["hearing"], count: 1, summary: L.text("demo.meeting")),
+                clipboard("perception:demo-clipboard-000001", at: (9, 12), text: L.text("demo.clipboard")),
+            ]
+            total = 6
+        } else if asked == yesterday {
+            rows = [episode("episode:00000000000000000000000000000001", from: (19, 30), to: (20, 10), senses: ["hearing", "location"], count: 3, summary: L.text("demo.dinner"), daysAgo: 1)]
+            total = 3
+        } else if asked == PerceptionTime.shift(day: today, by: -3) {
+            total = 2
+        }
+        return try Self.decode(["day": day ?? today, "total": total, "rows": rows, "nextCursor": nil])
+    }
+
+    public func episode(_ episodeId: String, cursor: String?) async throws -> PerceptionEpisodeSnapshot {
+        let view = episode(episodeId, from: (10, 0), to: (10, 45), senses: ["hearing", "location"], count: 2, summary: L.text("demo.meeting"))["episode"] ?? nil
+        let records: [[String: Any?]] = [
+            record("perception:demo-heard-0000000001", type: "hearing.utterance", sense: "hearing", at: (10, 3), text: L.text("demo.heard")),
+            record("perception:demo-place-0000000001", type: "location.visit", sense: "location", at: (10, 0), text: nil, place: L.text("demo.office")),
+        ]
+        return try Self.decode(["episode": view, "records": records, "nextCursor": nil])
+    }
+
+    public func delete(_ target: PerceptionDeletionTarget, reason: String) async throws -> PerceptionDeletionSnapshot {
+        try Self.deletion(records: 1)
+    }
+
+    static func deletion(records: Int) throws -> PerceptionDeletionSnapshot {
+        let counts: [String: Any] = ["records": records, "trackPoints": 0, "media": 0]
+        return try decode(["planId": "demo", "status": "verified", "plan": counts, "deleted": counts, "pendingPayloads": 0, "deletionRevision": 1])
+    }
+
+    private func episode(_ id: String, from start: (Int, Int), to end: (Int, Int), senses: [String], count: Int, summary: String? = nil, preview: String? = nil, daysAgo: Int = 0) -> [String: Any?] {
+        let started = time(start, daysAgo: daysAgo)
+        let view: [String: Any?] = [
+            "id": id, "startedAt": ISO8601DateFormatter().string(from: started), "endedAt": ISO8601DateFormatter().string(from: time(end, daysAgo: daysAgo)),
+            "recordCount": count, "senses": senses, "types": [String](), "preview": preview, "summary": summary,
+        ]
+        return ["kind": "episode", "at": ISO8601DateFormatter().string(from: started), "episode": view.mapValues { $0 ?? NSNull() }, "record": nil]
+    }
+
+    private func clipboard(_ id: String, at clock: (Int, Int), text: String) -> [String: Any?] {
+        let row = record(id, type: "clipboard.item", sense: "reading", at: clock, text: text)
+        return ["kind": "record", "at": row["occurredAt"] ?? nil, "episode": nil, "record": row.mapValues { $0 ?? NSNull() }]
+    }
+
+    private func record(_ id: String, type: String, sense: String, at clock: (Int, Int), text: String?, place: String? = nil) -> [String: Any?] {
+        [
+            "id": id, "type": type, "sense": sense, "occurredAt": ISO8601DateFormatter().string(from: time(clock)),
+            "deviceId": "demo-iphone", "text": text, "textTruncated": false,
+            "evidence": place.map { [["name": "placeName", "value": $0]] } ?? [[String: String]](),
+        ]
     }
 
     public func mirrorCount(_ item: SenseItem) async -> Int? {

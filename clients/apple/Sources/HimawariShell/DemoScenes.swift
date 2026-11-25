@@ -36,6 +36,9 @@ enum DemoScene: String, CaseIterable {
     case backgroundSubthread = "next-8-background-subthread"
     case backgroundExchanges = "next-8-background-exchanges"
     case backgroundQuiet = "next-8-background-quiet"
+    case deletePerception = "next-7-delete-perception"
+    case deletePerceptionDays = "next-7-delete-perception-days"
+    case deletePerceptionEpisode = "next-7-delete-perception-episode"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -261,6 +264,12 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .detail)
         case .sensesDenied:
             DemoSensesHost(scene: .denied)
+        case .deletePerception:
+            DemoPerceptionDeletionHost(segment: .episodes, episode: nil)
+        case .deletePerceptionDays:
+            DemoPerceptionDeletionHost(segment: .days, episode: nil)
+        case .deletePerceptionEpisode:
+            DemoPerceptionDeletionHost(segment: .episodes, episode: "episode:00000000000000000000000000000002")
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
         case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout:
@@ -297,6 +306,22 @@ struct DemoSensesHost: View {
             HandoverEntryRows()
         }
         .environment(\.senseOpensAutomatically, demo.opensAutomatically)
+    }
+}
+
+struct DemoPerceptionDeletionHost: View {
+    @State private var model: PerceptionDeletionModel
+    private let episode: String?
+
+    init(segment: PerceptionDeletionSegment, episode: String?) {
+        let model = PerceptionDeletionModel(senses: DemoSensesService.scene(.overview, now: DemoChatFixtures.now).model)
+        model.segment = segment
+        _model = State(initialValue: model)
+        self.episode = episode
+    }
+
+    var body: some View {
+        PerceptionDeletionView(model: model, opening: episode, close: {})
     }
 }
 

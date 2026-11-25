@@ -33,10 +33,12 @@ public struct HerPage: View {
     @State private var sensesOpen = false
     @State private var vaultCount: HerVaultCount = .unknown
     @State private var vaultOpen = false
+    @State private var deletionOpen = false
     private let listening: (any HerListening)?
     private let actions: DeviceActionsModel?
     private let openListening: () -> Void
     private let senses: AnyView?
+    private let perceptionDeletion: ((@escaping () -> Void) -> AnyView)?
     private let sensesOn: () -> Int?
     private let talk: (String) -> Void
     private let close: () -> Void
@@ -52,6 +54,7 @@ public struct HerPage: View {
         actions: DeviceActionsModel? = nil,
         openListening: @escaping () -> Void = {},
         senses: AnyView? = nil,
+        perceptionDeletion: ((@escaping () -> Void) -> AnyView)? = nil,
         sensesOn: @escaping () -> Int? = { nil },
         talk: @escaping (String) -> Void,
         close: @escaping () -> Void,
@@ -69,6 +72,7 @@ public struct HerPage: View {
         self.actions = actions
         self.openListening = openListening
         self.senses = senses
+        self.perceptionDeletion = perceptionDeletion
         self.sensesOn = sensesOn
         self.talk = talk
         self.close = close
@@ -98,6 +102,7 @@ public struct HerPage: View {
         self.actions = actions
         openListening = {}
         self.senses = senses
+        perceptionDeletion = senses.map { shown in { _ in shown } }
         sensesOn = { 4 }
         talk = { _ in }
         close = {}
@@ -194,6 +199,7 @@ public struct HerPage: View {
                         listening: listening,
                         openListening: openListening,
                         openSenses: senses == nil ? nil : { sensesOpen = true },
+                        openDeletion: perceptionDeletion == nil ? nil : { deletionOpen = true },
                         sensesSummary: sensesOn().map(M.sensesOn)
                     ) { path.removeLast() }
                 case .devices:
@@ -217,6 +223,9 @@ public struct HerPage: View {
         .task { await load() }
         .sheet(isPresented: $sensesOpen) {
             senses
+        }
+        .sheet(isPresented: $deletionOpen) {
+            perceptionDeletion?({ deletionOpen = false })
         }
         .sheet(isPresented: $vaultOpen, onDismiss: { Task { vaultCount = await countVault() } }) {
             vault?({ vaultOpen = false })
@@ -297,6 +306,7 @@ struct PrivacyPage: View {
     let listening: (any HerListening)?
     let openListening: () -> Void
     let openSenses: (() -> Void)?
+    var openDeletion: (() -> Void)? = nil
     var sensesSummary: String? = nil
     let back: () -> Void
     @State private var failed = false
@@ -305,12 +315,20 @@ struct PrivacyPage: View {
     var body: some View {
         SettingsPage(gap: SL.pageGap) {
             SheetHeader(title: M.privacy, leading: .back, action: back)
-            if let openSenses {
+            if openSenses != nil || openDeletion != nil {
                 SettingsGroup(label: nil) {
-                    Button(action: openSenses) {
-                        HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: true)
+                    if let openSenses {
+                        Button(action: openSenses) {
+                            HerRow(icon: .eye, title: M.letHerSense, subtitle: sensesSummary, last: openDeletion == nil)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    if let openDeletion {
+                        Button(action: openDeletion) {
+                            HerRow(icon: .trash, title: M.deletePerception, last: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             if let overview = memory.overview {
