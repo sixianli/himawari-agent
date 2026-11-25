@@ -1,9 +1,0 @@
-[Unit]
-Description=Shared limits for the three CI VPS check runners
-Before=slices.target
-
-[Slice]
-MemoryHigh=15G
-MemoryMax=16G
-MemorySwapMax=0
-TasksMax=6144

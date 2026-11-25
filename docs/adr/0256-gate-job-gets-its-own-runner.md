@@ -6,6 +6,7 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0172-resume-runners-labels-first.md, docs/adr/0176-ci-on-ovh-vps.md, docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 date: "2026-11-12"
+amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0256：汇总作业用专用 runner，main 的确认只留最新一次
@@ -85,7 +86,7 @@ PR A（安装脚本和运行手册，不动工作流）：
 - `register-runner.sh`、`uninstall-runner.sh` 认 3 号；`mac-runners.sh`、`pause-runners.sh`、`resume-runners.sh`、`runner-pause.sh` 按 runner 名字对应各自的标签（前提 15）。
 - 新增一个应急脚本：3 号坏了时，在 Mac 上跑一条命令，把 `ci-vps-gate` 标签临时加到 1 号上，汇总作业就改由 1 号接，不用改代码、不用回滚 PR；3 号修好后再跑一次去掉。
 - `test/tooling/ci-runner-scripts.test.mjs`：断言 `runners.sh` 里 3 号的标签是 `ci-vps-gate`、1 和 2 号是 `ci-vps`、3 号不带 `ci-vps`，3 号的服务文件在 `ghgate.slice` 里、限额是 2 GB。和 `contracts.mjs`、`ci/policy.json`、`ci.yml`、`.github/actionlint.yaml`、`ci/policy.schema.json` 的跨文件对照用例放在 PR B，因为这些文件到 PR B 才有 `ci-vps-gate`。反向用例：3 号标签写成 `ci-vps`、恢复时给 3 号加回 `ci-vps`、1 号看得到 3 号目录、暂停后 `ci-vps-gate` 标签还在、卸载漏掉 3 号，都必须失败。
-- 运行手册 `docs/runbooks/ci-vps-runner-runbook.md` 逐处改成三个 runner，补 3 号的预检、验证、应急和卸载，并重新封存。
+- CI VPS runner 运行手册（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）逐处改成三个 runner，补 3 号的预检、验证、应急和卸载，并重新封存。
 
 Andy 在 Mac 上：按运行手册暂停、上传脚本、安装（会重新生成 1、2 号的服务文件，所以要先暂停）、注册 3 号、恢复，确认三个 runner 在线、3 号的标签只有 `ci-vps-gate`。
 
@@ -167,4 +168,4 @@ PR B（工作流和硬规则，要等 3 号 runner 在线才能合并）：
 - [ADR 0176：CI 在自己的服务器上跑](0176-ci-on-ovh-vps.md)
 - [ADR 0241：草稿 PR 不跑 CI，合并前等 CI 变绿](0241-draft-prs-skip-ci-and-merge-waits-for-green.md)
 - [ADR 0243：CI 完全不用 GitHub 产物](0243-ci-uses-no-github-artifacts.md)
-- [CI 服务器 runner 运行手册](../runbooks/ci-vps-runner-runbook.md)
+- CI 服务器 runner 运行手册（运行手册已随 [ADR 0287](0287-ci-runs-on-github-hosted-runners.md) 删除，最后一版在提交 `88e17c24`）

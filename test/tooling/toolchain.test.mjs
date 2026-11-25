@@ -82,6 +82,7 @@ describe("固定工具身份", () => {
     const lock = loadToolchainLock(root);
     expect(validateToolchainLock(lock)).toBe(lock);
     expect(lock.actions.map((action) => action.repository).sort()).toEqual([
+      "actions/cache",
       "actions/checkout",
       "actions/setup-node",
       "actions/setup-python",

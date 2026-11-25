@@ -1,0 +1,42 @@
+name: Apple
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: apple-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  iphone:
+    name: apple/iphone
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 显示 Xcode 版本
+        run: xcodebuild -version && swift --version
+      - name: 跑 HimawariCore 单元测试
+        working-directory: clients/apple
+        run: swift test
+      - name: 不签名编译 iPhone App
+        run: >-
+          xcodebuild build
+          -project clients/apple/App/Himawari.xcodeproj
+          -scheme Himawari
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
