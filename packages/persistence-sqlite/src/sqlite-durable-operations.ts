@@ -109,7 +109,6 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
-import { SqliteOwnerProposalOperations } from "./sqlite-owner-proposal-operations.ts";
 import { SqliteInboxOperations } from "./sqlite-inbox-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
 import {
@@ -388,7 +387,6 @@ export class SqliteDurableOperations {
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
-  private readonly ownerProposals: SqliteOwnerProposalOperations;
   private readonly inbox: SqliteInboxOperations;
   private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
@@ -491,7 +489,6 @@ export class SqliteDurableOperations {
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
-    this.ownerProposals = new SqliteOwnerProposalOperations(database, fail, assertDiskHeadroom);
     this.inbox = new SqliteInboxOperations(database, fail, assertDiskHeadroom);
     this.correctionReview = new SqliteCorrectionReviewOperations(
       database,
@@ -721,8 +718,6 @@ export class SqliteDurableOperations {
       return this.mcpMemorySync.execute(operation, payload);
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
-    if (operation.startsWith("ownerProposal."))
-      return this.ownerProposals.execute(operation, payload);
     if (operation.startsWith("inbox.")) return this.inbox.execute(operation, payload);
     if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
       return this.correctionReview.execute(operation, payload);

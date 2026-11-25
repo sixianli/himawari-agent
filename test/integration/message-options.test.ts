@@ -294,7 +294,21 @@ async function fixture() {
       rule,
       async (_key, value) => value,
     );
+  const chose = (runId: string, args: Record<string, unknown>, tool = "rule_set") =>
+    options.ownerChose(
+      {
+        runId: createRunId(runId),
+        toolCallId: "call-chose",
+        capabilityRef: rule.capabilityRef as string,
+        capabilityHandleRef: null,
+        arguments: args as never,
+        dataClassification: "private",
+        context: { threadId: main } as never,
+      },
+      tool,
+    );
   return {
+    chose,
     externalContent,
     main,
     ownerSays,
@@ -428,5 +442,24 @@ describe("options under her messages", () => {
     await expect(f.choose(message.messageId, "set:missing", "o1")).rejects.toMatchObject({
       code: PORT_ERROR_CODES.NOT_FOUND,
     });
+  });
+
+  it("[OPTIONS-8] counts a rule as the owner's own only in the run the tap started and only with the arguments shown", async () => {
+    const f = await fixture();
+    const run = await f.ownerSays("入管局的邮件别漏了");
+    const shown = { quote: "入管局的邮件别漏了", inferred: true, type: "mail_must_notify" };
+    const offered = await f.offer(run, [
+      { label: "立规则", action: { tool: "rule_set", arguments: shown } },
+    ]);
+    await f.answer(run, "要我以后一律提醒你入管局的邮件吗？");
+    expect(await f.chose(run, shown)).toBe(false);
+    const message = await f.agentMessage(run);
+    await f.choose(message.messageId, offered.setId, "o1");
+    const chosenRun = f.query<{ id: string }>("SELECT id FROM runs WHERE id LIKE 'run:option:%'")[0]
+      ?.id as string;
+    expect(await f.chose(chosenRun, shown)).toBe(true);
+    expect(await f.chose(chosenRun, { ...shown, type: "soft" })).toBe(false);
+    expect(await f.chose(chosenRun, shown, "reminder_set")).toBe(false);
+    expect(await f.chose(run, shown)).toBe(false);
   });
 });

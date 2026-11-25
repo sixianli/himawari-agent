@@ -73,7 +73,6 @@ async function setup(
     readonly rules?: readonly RuleRecord[];
     readonly registry?: ToolActionRegistry;
     readonly sourceType?: RunExecutionSource["sourceType"];
-    readonly ownerApprovedTask?: true;
     readonly recalledExternal?: boolean;
     readonly ownerScopeState?: (repository: StateStore) => StateStore;
     readonly ownerIntent?: {
@@ -94,7 +93,6 @@ async function setup(
             ? {
                 ...found,
                 sourceType: options.sourceType ?? found.sourceType,
-                ...(options.ownerApprovedTask ? { ownerApprovedTask: true } : {}),
               }
             : found;
         },
@@ -678,44 +676,6 @@ it("[ADR-0285] REVERSE: the same external-event reminder asks when the reminder 
     const set = s.call("reminder.set", "call:event", { text: "付款", due: "2026-11-13T15:00" });
     expect(await s.tools.execute(set)).toMatchObject({ outcome: "awaiting_approval" });
     expect(s.reminders).not.toHaveBeenCalled();
-  } finally {
-    await s.close();
-  }
-});
-
-it("[ADR-0285] lets a task the owner agreed to set a reminder when nothing external was read, without marking the run", async () => {
-  const s = await setup({ sourceType: "external_event", ownerApprovedTask: true });
-  try {
-    const set = s.call("reminder.set", "call:approved", {
-      text: "交周报",
-      due: "2026-11-13T15:00",
-    });
-    expect(await s.tools.execute(set)).toMatchObject({ outcome: "succeeded" });
-    expect(s.reminders).toHaveBeenCalledTimes(1);
-    expect(await s.externalContent.read(RUN_ID)).toEqual([]);
-  } finally {
-    await s.close();
-  }
-});
-
-it("[ADR-0285] asks the owner, instead of refusing, when a task the owner agreed to writes after reading external content", async () => {
-  const s = await setup({
-    sourceType: "external_event",
-    ownerApprovedTask: true,
-    registry: notHimawariSideRegistry(),
-  });
-  try {
-    await s.tools.execute(s.call("execution.task.output", "call:output", { taskId: "task:a" }));
-    const set = s.call("reminder.set", "call:approved-after", {
-      text: "付款",
-      due: "2026-11-13T15:00",
-    });
-    const result = await s.tools.execute(set);
-    expect(result).not.toMatchObject({ errorCode: "action_rule_refused" });
-    expect(s.reminders).not.toHaveBeenCalled();
-    const approvals = await s.approvals();
-    expect(approvals).toHaveLength(1);
-    expect(JSON.stringify(approvals[0])).toContain("run_source_owner_approved_task");
   } finally {
     await s.close();
   }

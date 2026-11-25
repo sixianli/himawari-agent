@@ -940,7 +940,6 @@ export const messages = {
     "回放用当时存下的内容重算。判为“不用管”的邮件只存了发件人和标题，所以结果是估计，可能偏多也可能偏少。",
   "rules.receipt.replayNone": "这次没能做历史回放，规则已照常生效。",
   "rules.receipt.confirm": "生效",
-  "proposals.reject": "不要",
   "memory.page.carry.title": "每次对话都会带上的记忆",
   "memory.page.carry.summary": "{count} 条 · 已用 {used} / {limit} 字",
   "memory.page.carry.queued": "还有 {count} 条放不下",

@@ -36,7 +36,6 @@ export interface PortableSnapshot {
   readonly restrictedMemories: number;
   readonly restrictedMemoryTexts: readonly Row[];
   readonly externalProposals: readonly Row[];
-  readonly ownerProposals: readonly Row[];
   readonly externalProposalKeys: readonly Row[];
   readonly externalProposalUnkeyed: readonly Row[];
   readonly openMemoryReviews: number;
@@ -101,15 +100,6 @@ export function readSnapshot(
         FROM external_memory_proposals
         WHERE owner_id = @ownerId AND agent_id = @agentId
         ORDER BY received_at, id`,
-      );
-      const ownerProposals = all(
-        `SELECT id, type, summary, effect, origin, source_ref, source_version, version, fingerprint,
-          status, exec_status, proposed_at, expires_at, decided_at, proposed_count, reject_count,
-          last_rejected_at, attempts, executed_at, requires_full_read, requires_presence,
-          evidence_ref, execution_ref
-        FROM owner_proposals
-        WHERE owner_id = @ownerId AND agent_id = @agentId
-        ORDER BY proposed_at, id`,
       );
       const externalProposalKeys = all(
         `SELECT proposal_id, client, source_key FROM external_memory_proposal_keys
@@ -319,7 +309,6 @@ export function readSnapshot(
         ...processedMessages,
         ...museEntries,
         ...externalProposals,
-        ...ownerProposals,
         ...restrictedMemoryTexts,
         ...perception.perceptionRecords,
         ...perception.deviceActions,
@@ -420,7 +409,6 @@ export function readSnapshot(
         restrictedMemories,
         restrictedMemoryTexts,
         externalProposals,
-        ownerProposals,
         externalProposalKeys,
         externalProposalUnkeyed,
         openMemoryReviews,

@@ -13,7 +13,6 @@ export const POLICY_FACT_CODES = Object.freeze({
   runSourceUserMessage: "run_source_user_message",
   runSourceSchedule: "run_source_schedule",
   runSourceExternalEvent: "run_source_external_event",
-  runSourceOwnerApprovedTask: "run_source_owner_approved_task",
   contextExternalContent: "context_external_content",
   ownerPresenceRequired: "owner_presence_required",
   standingRuleChange: "standing_rule_change",
@@ -71,14 +70,6 @@ export const POLICY_FACT_REGISTRY: readonly PolicyFactDefinition[] = Object.free
         zh: "这一轮由外部事件发起",
         en: "This run was started by an external event",
         ja: "この実行は外部のイベントで始まりました",
-      },
-    },
-    {
-      code: POLICY_FACT_CODES.runSourceOwnerApprovedTask,
-      label: {
-        zh: "这一轮是你同意过的一件任务",
-        en: "This run is a task you agreed to",
-        ja: "この実行はあなたが同意したタスクです",
       },
     },
     {

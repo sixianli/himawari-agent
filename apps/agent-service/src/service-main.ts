@@ -205,7 +205,6 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
-import { PENDING_PROPOSAL_CEILING, ProductionProposalBox } from "./production-proposals.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
@@ -1677,13 +1676,6 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
-        box: new ProductionProposalBox({
-          configuration,
-          store: repository.ownerProposals(),
-          payloads,
-          protector: recallProtector,
-          clock: { now: () => clock.now() },
-        }),
         reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -1695,7 +1687,9 @@ export async function startTenantRuntime(
         replay: (rule) =>
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
-      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter, (invocation) =>
+        messageOptions.ownerChose(invocation, "rule_set"),
+      );
       const perceptionScope = {
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -3025,17 +3019,6 @@ export async function startTenantRuntime(
                 }),
               }
             : {}),
-          proposals: {
-            listReady: async (now) =>
-              (
-                await pushRepository.ownerProposals().listPending({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  now,
-                  limit: PENDING_PROPOSAL_CEILING,
-                })
-              ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
-          },
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({

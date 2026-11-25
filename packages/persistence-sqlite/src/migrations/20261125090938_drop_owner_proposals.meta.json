@@ -1,0 +1,4 @@
+{
+  "alters": ["owner_proposals", "owner_proposals_pending_index", "owner_proposals_thread_index"],
+  "removes": ["????-??-??T??:??:??.???Z", "not_started", "pending"]
+}

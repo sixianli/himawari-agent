@@ -168,7 +168,6 @@ export function buildDemoPack(options: DemoPackOptions): {
   put(DATA_FILES.rules, "data", "", 0);
   put(DATA_FILES.conversationReviews, "data", "", 0);
   put(DATA_FILES.externalProposals, "data", "", 0);
-  put(DATA_FILES.ownerProposals, "data", "", 0);
   for (const { path, schema } of SCHEMA_FILES)
     put(path, "schema", `${JSON.stringify(schema, null, 2)}\n`, 0);
   const markdown = renderMemoryMarkdown(memoryLines as unknown as readonly MarkdownMemory[]);
@@ -195,7 +194,6 @@ export function buildDemoPack(options: DemoPackOptions): {
     rules: 0,
     enforcedRules: 0,
     externalProposals: 0,
-    ownerProposals: 0,
     ruleHistoryVersions: 0,
   };
   const manifest: PortableManifest = {

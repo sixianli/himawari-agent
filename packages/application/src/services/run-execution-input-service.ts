@@ -15,7 +15,6 @@ import type {
 import {
   ApplicationPortError,
   claimFromRunExecutionLease,
-  frozenRunSourceIdentity,
   PORT_ERROR_CODES,
 } from "../ports/index.js";
 import type { ExecuteCoordinatedRunInput, RunCoordinatorCommands } from "./run-coordinator.js";
@@ -233,8 +232,7 @@ export class RunExecutionInputService {
         !Number.isFinite(Date.parse(frozen.deadlineAt)) ||
         Date.parse(frozen.deadlineAt) <= Date.parse(frozen.startedAt) ||
         Date.parse(frozen.deadlineAt) - Date.parse(frozen.startedAt) > 86_400_000 ||
-        threadCommandFingerprint(frozenRunSourceIdentity(frozen.source)) !==
-          threadCommandFingerprint(frozenRunSourceIdentity(source))
+        threadCommandFingerprint(frozen.source) !== threadCommandFingerprint(source)
       ) {
         invalid("Run execution snapshot source changed");
       }
