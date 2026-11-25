@@ -264,4 +264,50 @@ describe("perception gateway operations", () => {
       1,
     );
   });
+
+  it("plans a deletion, deletes it through the command and reads the receipt back, refusing a non-owner", async () => {
+    const h = await harness();
+    const client = await pairAndConfirm(h);
+    const drop = utterance(h, "要删的话", { seconds: -9 });
+    await ingest(h, client, [drop, power(h, -8)]);
+    const target = {
+      kind: "records",
+      ids: [drop.id],
+      episodeId: null,
+      day: null,
+      deviceId: null,
+      types: [],
+    };
+    const plan = await read(h, "perception.deletion.plan", "perception.deletion.snapshot", target);
+    expect(plan).toMatchObject({
+      status: "planned",
+      plan: { records: 1, trackPoints: 0, media: 0 },
+      deleted: null,
+      deletionRevision: 0,
+    });
+    expect(plan.keptElsewhere).toContain("backups");
+    const command = (payload: unknown, actorType = "owner") =>
+      control(h).execute(
+        message("command", "perception.records.delete", payload, actorType) as GatewayV2Command,
+      );
+    await expect(command({ planId: plan.planId }, "system")).rejects.toThrow(/OWNER_REQUIRED/u);
+    const result = await command({ planId: plan.planId });
+    expect(result.resultRef).toBe(`perception-deletion:${plan.planId}`);
+    const receipt = await read(h, "perception.deletion.read", "perception.deletion.snapshot", {
+      planId: plan.planId,
+    });
+    expect(receipt).toMatchObject({
+      status: "verified",
+      deleted: { records: 1, trackPoints: 0, media: 0 },
+      pendingPayloads: 0,
+      deletionRevision: 1,
+    });
+    const unknown = await read(h, "perception.deletion.read", "perception.deletion.snapshot", {
+      planId: "f".repeat(32),
+    });
+    expect(unknown).toMatchObject({ planId: null, status: null, deleted: null });
+    expect((await read(h, "perception.status.read", "perception.status.snapshot")).todayCount).toBe(
+      1,
+    );
+  });
 });

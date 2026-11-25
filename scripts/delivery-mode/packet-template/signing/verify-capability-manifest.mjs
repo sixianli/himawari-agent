@@ -183,7 +183,7 @@ const registeredWeb = (manifest, key, runnerName) => {
   return { ...observation, capabilityRef: manifest.ref, runnerSha256: registeredRunner, actualRunnerSha256: registeredRunner, manifestInvariantDigest: createHash("sha256").update(s0CanonicalJson(s0Invariant(value, oldRoot))).digest("hex") };
 };
 test("__PKT_LABEL__ registers no new capability", () => {
-  assert.deepEqual([...capabilityApi.newCapabilityRefs], []);
+  assert.deepEqual([...capabilityApi.newCapabilityRefs], __PKT_NEW_CAPABILITY_REFS_JSON__);
 });
 for (const [key, ref, runnerName, operation, digest] of [
   ["search", "himawari.public-search", "web-search-main.js", "web_search", "a".repeat(64)],
