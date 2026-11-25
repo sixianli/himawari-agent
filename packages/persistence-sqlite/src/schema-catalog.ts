@@ -1231,6 +1231,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "disabled when Apple reports the token invalid or the device is revoked; removed with the device, Owner or Agent",
   ),
   entry(
+    "background_work_activities",
+    "ApplePushStorePort",
+    "one row per Live Activity of her background work on a paired device: the device's push-to-start token (no subthread), or the update token of one subthread's activity, with the digest and time of the last state pushed; never exported",
+    "metadata_only",
+    "removed when the activity ends or Apple reports the token invalid; removed with the device, Owner or Agent",
+  ),
+  entry(
     "notification_action_tokens",
     "ApplePushStorePort",
     "one row per button on a delivered notification: only the SHA-256 of the one-time token, the action, the device it was issued to, and for approval buttons the approval revision and content fingerprint at issue time; never exported",

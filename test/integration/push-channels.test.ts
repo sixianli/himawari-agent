@@ -34,6 +34,7 @@ import {
   DevicePresence,
   notificationActionHash,
 } from "@himawari-agent/platform-node";
+import type { ThreadBackgroundWork } from "@himawari-agent/gateway-contracts";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAC_PLACEMENT_LIMIT, MacPlacement } from "../../apps/agent-service/src/mac-placement.ts";
@@ -841,6 +842,29 @@ describe("[IOS-4] push channels", () => {
     expect(activity()).toHaveLength(4);
   });
 
+  it("[IOS-4] leaves the runs of her background work to the background work Live Activity", async () => {
+    const context = await setup({ liveActivityStartAfterSeconds: 30 });
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "liveactivity");
+    context.setClock(T0);
+    context.run("run-background", "running", T0);
+    context.sql((seed) =>
+      seed
+        .prepare(
+          `INSERT INTO subthreads (
+            thread_id, owner_id, agent_id, parent_thread_id, matter, open_key, opened_by_run_id,
+            brief_ref, classification, status, created_at, updated_at
+          ) VALUES ('thread-1', ?, ?, 'thread-1', 'matter', 'open-key', 'run-main', 'brief',
+            'private', 'open', ?, ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, T0, T0),
+    );
+    context.setClock(at(T0, 31));
+    await context.push.tick();
+    await context.push.tick();
+    expect(context.apns.ofType("liveactivity")).toEqual([]);
+  });
+
   it("[IOS-4] does not start a Live Activity while Himawari is on screen", async () => {
     const context = await setup({ liveActivityStartAfterSeconds: 30 });
     context.device(IPHONE, "iphone");
@@ -1450,5 +1474,226 @@ describe("[IOS-4] push channels", () => {
     await context.push.tick();
     const [alert] = context.apns.ofType("alert");
     expect(alert?.json["notificationId"]).toBe(webPushTopic(`reminder:id:${T0}`));
+  });
+  describe("[IOS-4] background work Live Activity", () => {
+    type Work = ThreadBackgroundWork;
+    type Row = Work["matters"][number]["subthreads"][number];
+    const subthread = (overrides: Partial<Row> = {}): Row => ({
+      subthreadId: "sub-1",
+      status: "open",
+      activity: "running",
+      openedAt: START,
+      updatedAt: START,
+      progress: null,
+      progressAt: null,
+      runCount: 1,
+      spentMicros: 0,
+      budgetMicros: 1_000,
+      title: "订东京酒店",
+      runs: [],
+      exchanges: [],
+      tasks: [
+        { number: 1, status: "completed", subject: "查价格", activeForm: "正在查价格" },
+        { number: 2, status: "in_progress", subject: "比较房型", activeForm: "正在比较房型" },
+        { number: 3, status: "pending", subject: "下单", activeForm: "正在下单" },
+      ],
+      ...overrides,
+    });
+    const work = (...rows: Row[]): Work => ({
+      matters: [{ matter: "订东京酒店", subthreads: rows }],
+    });
+    const prepare = async (rows: { current: Work }) => {
+      const context = await setup(
+        { liveActivityStartAfterSeconds: 30, liveActivityUpdateMinimumSeconds: 15 },
+        {},
+        { backgroundWork: async () => rows.current },
+      );
+      context.device(IPHONE, "iphone");
+      const starter = await context.appleStore.saveBackgroundActivity({
+        ...scope,
+        id: `bwa_${hex("starter").slice(0, 22)}`,
+        deviceId: IPHONE,
+        subthreadId: "",
+        token: hex("starter"),
+        environment: "development",
+        topic: TOPIC,
+        locale: "zh-CN",
+        startedAt: null,
+        activityLimit: context.configuration.liveActivityRegistrationsPerDevice,
+        now: START,
+      });
+      const report = (subthreadId: string) =>
+        context.appleStore.saveBackgroundActivity({
+          ...scope,
+          id: `bwa_${hex(`update:${subthreadId}`).slice(0, 22)}`,
+          deviceId: IPHONE,
+          subthreadId,
+          token: hex(`update:${subthreadId}`),
+          environment: "development",
+          topic: TOPIC,
+          locale: "zh-CN",
+          startedAt: null,
+          activityLimit: context.configuration.liveActivityRegistrationsPerDevice,
+          now: START,
+        });
+      return { context, starter, report, activity: () => context.apns.ofType("liveactivity") };
+    };
+
+    it("starts once after the work has gone on long enough, follows each step, and ends when it is finished", async () => {
+      const rows = { current: work(subthread()) };
+      const { context, starter, report, activity } = await prepare(rows);
+      context.setClock(T0);
+      await context.push.tick();
+      context.setClock(at(T0, 20));
+      await context.push.tick();
+      expect(activity()).toEqual([]);
+
+      context.setClock(at(T0, 31));
+      await context.push.tick();
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+      expect(activity()[0]?.token).toBe(starter.token);
+      expect(activity()[0]?.headers["apns-priority"]).toBe("10");
+      expect(activity()[0]?.json["aps"]).toMatchObject({
+        event: "start",
+        "attributes-type": "BackgroundWorkAttributes",
+        attributes: { subthreadId: "sub-1", matter: "订东京酒店", title: "订东京酒店" },
+        "content-state": {
+          phase: "working",
+          step: 2,
+          stepCount: 3,
+          completedCount: 1,
+          activity: "正在比较房型",
+        },
+      });
+
+      context.setClock(at(T0, 60));
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+
+      const update = await report("sub-1");
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+
+      rows.current = work(
+        subthread({
+          tasks: [
+            { number: 1, status: "completed", subject: "查价格", activeForm: "正在查价格" },
+            { number: 2, status: "completed", subject: "比较房型", activeForm: "正在比较房型" },
+            { number: 3, status: "in_progress", subject: "下单", activeForm: "正在下单" },
+          ],
+        }),
+      );
+      context.setClock(at(T0, 70));
+      await context.push.tick();
+      expect(activity()).toHaveLength(2);
+      expect(activity()[1]?.token).toBe(update.token);
+      expect(activity()[1]?.headers["apns-priority"]).toBe("5");
+      expect(activity()[1]?.json["aps"]).toMatchObject({
+        event: "update",
+        "content-state": { phase: "working", step: 3, stepCount: 3, completedCount: 2 },
+      });
+      await context.push.tick();
+      expect(activity()).toHaveLength(2);
+
+      rows.current = work(
+        subthread({
+          activity: "waiting_answer",
+          tasks: rows.current.matters[0]?.subthreads[0]?.tasks ?? [],
+        }),
+      );
+      context.setClock(at(T0, 75));
+      await context.push.tick();
+      expect(activity()).toHaveLength(2);
+      context.setClock(at(T0, 90));
+      await context.push.tick();
+      expect(activity()).toHaveLength(3);
+      expect(activity()[2]?.headers["apns-priority"]).toBe("10");
+      expect(activity()[2]?.json["aps"]).toMatchObject({
+        event: "update",
+        "content-state": { phase: "waiting_for_owner" },
+      });
+
+      rows.current = work(
+        subthread({
+          status: "returned",
+          activity: "finished",
+          tasks: (rows.current.matters[0]?.subthreads[0]?.tasks ?? []).map((task) => ({
+            ...task,
+            status: "completed" as const,
+          })),
+        }),
+      );
+      context.setClock(at(T0, 95));
+      await context.push.tick();
+      expect(activity()).toHaveLength(4);
+      expect(activity()[3]?.json["aps"]).toMatchObject({
+        event: "end",
+        "dismissal-date": Math.floor(Date.parse(at(T0, 95)) / 1_000) + 30,
+        "content-state": { phase: "finished", step: 3, stepCount: 3, completedCount: 3 },
+      });
+      expect(await context.appleStore.listBackgroundActivities(scope)).toEqual([
+        expect.objectContaining({ subthreadId: "" }),
+      ]);
+      context.setClock(at(T0, 200));
+      await context.push.tick();
+      expect(activity()).toHaveLength(4);
+    });
+
+    it("does not start while Himawari is on screen, for work that is not running, or without a push-to-start token", async () => {
+      const rows = { current: work(subthread()) };
+      const { context, activity } = await prepare(rows);
+      context.setClock(T0);
+      await context.push.tick();
+      context.setClock(at(T0, 31));
+      context.presence.beat(`device:${IPHONE}`, true, at(T0, 31));
+      await context.push.tick();
+      expect(activity()).toEqual([]);
+
+      const idle = { current: work(subthread({ activity: "idle" })) };
+      const second = await prepare(idle);
+      second.context.setClock(T0);
+      await second.context.push.tick();
+      second.context.setClock(at(T0, 120));
+      await second.context.push.tick();
+      expect(second.activity()).toEqual([]);
+
+      const bare = { current: work(subthread()) };
+      const third = await setup(
+        { liveActivityStartAfterSeconds: 30 },
+        {},
+        {
+          backgroundWork: async () => bare.current,
+        },
+      );
+      third.device(IPHONE, "iphone");
+      third.setClock(T0);
+      await third.push.tick();
+      third.setClock(at(T0, 120));
+      await third.push.tick();
+      expect(third.apns.ofType("liveactivity")).toEqual([]);
+    });
+
+    it("does not start the same work twice when the phone never reports an update token, and forgets it when the work is over", async () => {
+      const rows = { current: work(subthread()) };
+      const { context, activity } = await prepare(rows);
+      context.setClock(T0);
+      await context.push.tick();
+      context.setClock(at(T0, 31));
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+      expect(await context.appleStore.listBackgroundActivities(scope)).toHaveLength(2);
+      context.setClock(at(T0, 31 + context.configuration.liveActivityStaleAfterSeconds * 3));
+      await context.push.tick();
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+      expect(await context.appleStore.listBackgroundActivities(scope)).toHaveLength(2);
+
+      rows.current = work(subthread({ status: "stopped", activity: "finished" }));
+      context.setClock(at(T0, 31 + context.configuration.liveActivityStaleAfterSeconds * 3 + 5));
+      await context.push.tick();
+      expect(activity()).toHaveLength(1);
+      expect(await context.appleStore.listBackgroundActivities(scope)).toHaveLength(1);
+    });
   });
 });

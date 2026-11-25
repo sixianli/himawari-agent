@@ -99,6 +99,30 @@ export interface ApplePushActivityRun {
   readonly updatedAt: string;
 }
 
+export const BACKGROUND_WORK_ACTIVITY_ATTRIBUTES_TYPE = "BackgroundWorkAttributes";
+
+export const BACKGROUND_WORK_ACTIVITY_PHASES = [
+  "working",
+  "waiting_for_owner",
+  "finished",
+] as const;
+export type BackgroundWorkActivityPhase = (typeof BACKGROUND_WORK_ACTIVITY_PHASES)[number];
+
+export interface BackgroundWorkActivityRegistration extends PairedDeviceScope {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly subthreadId: string;
+  readonly token: string | null;
+  readonly environment: ApplePushEnvironment;
+  readonly topic: string;
+  readonly locale: WebPushLocale;
+  readonly startedAt: string | null;
+  readonly stateDigest: string | null;
+  readonly pushedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface NotificationActionTokenInput {
   readonly tokenHash: string;
   readonly action: NotificationAction;
@@ -222,6 +246,33 @@ export interface ApplePushStorePort {
   readActivityRuns(
     input: PairedDeviceScope & { readonly runIds: readonly string[] },
   ): Promise<readonly ApplePushActivityRun[]>;
+  saveBackgroundActivity(
+    input: PairedDeviceScope & {
+      readonly id: string;
+      readonly deviceId: string;
+      readonly subthreadId: string;
+      readonly token: string | null;
+      readonly environment: ApplePushEnvironment;
+      readonly topic: string;
+      readonly locale: WebPushLocale;
+      readonly startedAt: string | null;
+      readonly activityLimit: number;
+      readonly now: string;
+    },
+  ): Promise<BackgroundWorkActivityRegistration>;
+  removeBackgroundActivity(
+    input: PairedDeviceScope & { readonly deviceId: string; readonly subthreadId: string },
+  ): Promise<boolean>;
+  listBackgroundActivities(
+    input: PairedDeviceScope,
+  ): Promise<readonly BackgroundWorkActivityRegistration[]>;
+  markBackgroundActivity(
+    input: PairedDeviceScope & {
+      readonly registrationId: string;
+      readonly stateDigest: string | null;
+      readonly pushedAt: string;
+    },
+  ): Promise<void>;
   prune(
     input: PairedDeviceScope & { readonly expiredBefore: string; readonly limit: number },
   ): Promise<number>;

@@ -1363,6 +1363,14 @@ export class SqliteDurableAdapters {
       setCompanion: (input) => this.context.write("applePush.setCompanion", input),
       listActivityRuns: (input) => this.context.read("applePush.listActivityRuns", input),
       readActivityRuns: (input) => this.context.read("applePush.readActivityRuns", input),
+      saveBackgroundActivity: (input) =>
+        this.context.write("applePush.saveBackgroundActivity", input),
+      removeBackgroundActivity: (input) =>
+        this.context.write("applePush.removeBackgroundActivity", input),
+      listBackgroundActivities: (input) =>
+        this.context.read("applePush.listBackgroundActivities", input),
+      markBackgroundActivity: (input) =>
+        this.context.write("applePush.markBackgroundActivity", input),
       prune: (input) => this.context.write("applePush.prune", input),
     });
   }

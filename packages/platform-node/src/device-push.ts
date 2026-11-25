@@ -50,9 +50,13 @@ export const DEVICE_FEEDBACK_MAXIMUM_REACTIONS = 50;
 const FEEDBACK_TAG_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
 const DEVICE_ID_PATTERN = /^dev_[A-Za-z0-9_-]{22}$/u;
 
+export const DEVICE_PUSH_ACTIVITY_KINDS = ["run", "background_work"] as const;
+export type DevicePushActivityKind = (typeof DEVICE_PUSH_ACTIVITY_KINDS)[number];
+
 export interface DevicePushRegistrationView {
   readonly id: string;
   readonly pushType: ApplePushType;
+  readonly activityKind: DevicePushActivityKind;
   readonly activityRef: string;
   readonly environment: ApplePushEnvironment;
   readonly topic: string;
@@ -118,8 +122,23 @@ export class DevicePushService implements DevicePushPort {
     input: Parameters<DevicePushPort["register"]>[0],
   ): Promise<{ readonly registration: DevicePushRegistrationView | null }> {
     const { body, scope, device } = input;
-    onlyKeys(body, ["pushType", "activityRef", "token", "environment", "topic", "locale"]);
+    onlyKeys(body, [
+      "pushType",
+      "activityKind",
+      "activityRef",
+      "token",
+      "environment",
+      "topic",
+      "locale",
+    ]);
     const pushType = body["pushType"];
+    const activityKind = body["activityKind"] ?? "run";
+    if (
+      typeof activityKind !== "string" ||
+      !(DEVICE_PUSH_ACTIVITY_KINDS as readonly string[]).includes(activityKind) ||
+      (activityKind !== "run" && pushType !== "liveactivity")
+    )
+      invalid();
     if (typeof pushType !== "string" || !(APPLE_PUSH_TYPES as readonly string[]).includes(pushType))
       invalid();
     const activityRef = body["activityRef"] ?? "";
@@ -136,9 +155,17 @@ export class DevicePushService implements DevicePushPort {
       pushType: pushType as ApplePushType,
       activityRef: activityRef as string,
     };
+    const background = activityKind === "background_work";
     if (body["token"] === null) {
-      onlyKeys(body, ["pushType", "activityRef", "token"]);
-      await this.#options.store.removeRegistration(key);
+      onlyKeys(body, ["pushType", "activityKind", "activityRef", "token"]);
+      if (background)
+        await this.#options.store.removeBackgroundActivity({
+          ownerId: key.ownerId,
+          agentId: key.agentId,
+          deviceId: key.deviceId,
+          subthreadId: key.activityRef,
+        });
+      else await this.#options.store.removeRegistration(key);
       return { registration: null };
     }
     const configuration = this.#options.configuration();
@@ -160,6 +187,34 @@ export class DevicePushService implements DevicePushPort {
       !configuration.environments.includes(environment as ApplePushEnvironment)
     )
       throw new DevicePushError(DEVICE_PUSH_ERROR_CODES.TOPIC_NOT_ALLOWED, 403);
+    if (background) {
+      const savedActivity = await this.#options.store.saveBackgroundActivity({
+        ownerId: key.ownerId,
+        agentId: key.agentId,
+        deviceId: key.deviceId,
+        subthreadId: key.activityRef,
+        id: `bwa_${(this.#options.randomBytes ?? randomBytes)(16).toString("base64url")}`,
+        token: token as string,
+        environment: environment as ApplePushEnvironment,
+        topic: topic as string,
+        locale: locale as WebPushLocale,
+        startedAt: null,
+        activityLimit: configuration.liveActivityRegistrationsPerDevice,
+        now: this.#options.now().toISOString(),
+      });
+      this.#options.onRegistered?.(device.id, "liveactivity");
+      return {
+        registration: {
+          id: savedActivity.id,
+          pushType: "liveactivity",
+          activityKind: "background_work",
+          activityRef: savedActivity.subthreadId,
+          environment: savedActivity.environment,
+          topic: savedActivity.topic,
+          status: "active",
+        },
+      };
+    }
     const saved = await this.#options.store.saveRegistration({
       ...key,
       id: `apn_${(this.#options.randomBytes ?? randomBytes)(16).toString("base64url")}`,
@@ -175,6 +230,7 @@ export class DevicePushService implements DevicePushPort {
       registration: {
         id: saved.id,
         pushType: saved.pushType,
+        activityKind: "run",
         activityRef: saved.activityRef,
         environment: saved.environment,
         topic: saved.topic,
