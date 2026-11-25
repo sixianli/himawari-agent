@@ -6,8 +6,12 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { historyDigests, historyRow, readS0State, unresolvedQuery, readRouteAuthorization, readExistingWorkspace, historyTables, catalogRegistrationPrefix } from "../s0-db/read-s0-db.mjs";
-import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities, upgradeResultExpectation, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
+import { oldPrefix, newPrefix, spaceSamplingWarnings, cli as maintenanceCli, strictCapabilityKeys, verifyHistoryUnchanged, configurationStage, staticRootConfiguration, staticRootConfigurationBytes, approvedEmbeddingDescriptor, oldStaticRoot, newStaticRoot, verifyStartupAuthority, verifyAuthorizationUsable, readCatalogRecords, verifyCatalogRecordsAtS0, catalogStrictView, verifyUpgradedCatalog as verifyUpgradedCatalogWith, verifyUpgradePlan, verifyPreparedCapabilities, verifyPendingCapabilities as verifyPendingCapabilitiesWith, upgradeResultExpectation as upgradeResultExpectationWith, isFirstTools, routeIdentity, readGrantsWithoutSnapshot, definitionsForLedger, historyIgnoredColumns, historyIgnoredColumnsFor, migrationExpectedLedger } from "./maintenance-common.mjs";
 import { validateWorkspacePlan, verifyExistingGrant, verifyWorkspaceIdentity } from "./workspace-grant.mjs";
+
+const verifyUpgradedCatalog = (current, previousAudit, newRefs = []) => verifyUpgradedCatalogWith(current, previousAudit, newRefs);
+const verifyPendingCapabilities = (pending, frozen, refs = []) => verifyPendingCapabilitiesWith(pending, frozen, refs);
+const upgradeResultExpectation = (value, refs = []) => upgradeResultExpectationWith(value, refs);
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
 const BetterSqlite3 = require("better-sqlite3");
@@ -598,6 +602,111 @@ verifyCatalogRecordsAtS0(readCatalogRecords(full, binding, frozen), frozen);
 assert.deepEqual(readRouteAuthorization(full, original, previousSnapshot, runnerDigest, registeredRuntime), previousStrict, "RESTORED_CATALOG_NOT_PREVIOUS_STRICT");
 count("restoredCatalogAtS0");
 full.close();
+
+const firstRefs = [refOf.pi, refOf.search, refOf.fetch];
+const firstTime = "2026-10-18T01:00:00.000Z";
+const firstDb = new BetterSqlite3(":memory:");
+firstDb.exec(`CREATE TABLE product_state_records(key TEXT,owner_id TEXT,agent_id TEXT,revision INTEGER,value_json TEXT);
+CREATE TABLE capability_declarations(id TEXT,owner_id TEXT,agent_id TEXT,version TEXT,status TEXT,revision INTEGER,integrity TEXT,record_json TEXT);
+CREATE TABLE capability_handles(capability_id TEXT,status TEXT,revoked_at TEXT);
+CREATE TABLE audit_records(owner_id TEXT,agent_id TEXT,action TEXT,target_ref TEXT,outcome TEXT);`);
+firstDb.prepare("INSERT INTO product_state_records VALUES(?,?,?,?,?)").run(grantKey, "owner:one", "agent:one", 2, JSON.stringify(grantValue));
+const firstFrozen = { authorization: { directoryGrants: structuredClone(previousStrict.directoryGrants), capabilities: [] }, workspace: frozenWorkspace };
+const firstWorkspace = { path: plan.canonicalPath, device: "1", inode: "9" };
+const firstGrants = readGrantsWithoutSnapshot(firstDb, original, plan, firstWorkspace);
+assert.deepEqual(firstGrants, previousStrict.directoryGrants, "FIRST_TOOLS_GRANT_READ_DIFFERS_FROM_THE_SNAPSHOT_READ");
+assert.deepEqual(verifyExistingGrant(structuredClone(firstGrants), structuredClone(firstFrozen.authorization.directoryGrants), plan), firstGrants[0]);
+assert.equal(isFirstTools(firstFrozen, firstRefs), true);
+assert.equal(isFirstTools(frozen, firstRefs), false);
+assert.equal(isFirstTools(frozen, []), false);
+assert.deepEqual(routeIdentity(original, plan), { hostId: "host:one", workerInstanceId: "worker:one" });
+count("firstToolsAccepted");
+throwsCode(() => isFirstTools(firstFrozen, []), "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_REFS_MISSING", "first tools without new capability references");
+throwsCode(() => isFirstTools({ authorization: { directoryGrants: [], capabilities: [] } }, firstRefs), "__PKT_LABEL_UPPER___MAINTENANCE_FIRST_TOOLS_GRANT_MISSING", "first tools without the workspace grant");
+count("firstToolsRejections");
+for (const [name, code, change] of [
+  ["workspace inode changed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.inode = "10"; }],
+  ["workspace device changed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.device = "2"; }],
+  ["workspace elsewhere", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace.path = "/var/lib/himawari/other"; }],
+  ["workspace identity missing", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROOT_NOT_BOUND", (value) => { value.workspace = undefined; }],
+  ["second grant route", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED", (value) => { value.configuration.runPolicy.other = { ...structuredClone(value.configuration.runPolicy.coding), grantId: "directory:other" }; }],
+  ["grant route removed", "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ROUTE_SET_CHANGED", (value) => { delete value.configuration.runPolicy.coding; }],
+  ["grant row for another owner", "__PKT_LABEL_UPPER___DB_EXPECTED_ONE_ROW", (value) => { value.configuration.ownerId = "owner:other"; }],
+]) {
+  const value = { configuration: structuredClone(original), workspace: structuredClone(firstWorkspace) };
+  change(value);
+  throwsCode(() => readGrantsWithoutSnapshot(firstDb, value.configuration, plan, value.workspace), code, "first tools grant: " + name);
+  count("firstToolsGrantRejections");
+}
+firstDb.prepare("UPDATE product_state_records SET value_json=? WHERE key=?").run(JSON.stringify({ ...grantValue, id: "directory:other" }), grantKey);
+throwsCode(() => readGrantsWithoutSnapshot(firstDb, original, plan, firstWorkspace), "__PKT_LABEL_UPPER___MAINTENANCE_GRANT_ID_MISMATCH", "first tools grant row of another id");
+firstDb.prepare("UPDATE product_state_records SET value_json=? WHERE key=?").run(JSON.stringify(grantValue), grantKey);
+for (const [name, change] of [["host", (value) => { value.runPolicy.coding.hostId = undefined; }], ["worker", (value) => { delete value.runPolicy.coding.workerInstanceId; }], ["grant", (value) => { value.runPolicy.coding.grantId = "directory:other"; }], ["route", (value) => { delete value.runPolicy.coding; }]]) {
+  const value = structuredClone(original);
+  change(value);
+  throwsCode(() => routeIdentity(value, plan), "__PKT_LABEL_UPPER___MAINTENANCE_ROUTE_IDENTITY_INVALID", "first tools route identity without " + name);
+}
+count("firstToolsRejections");
+
+const firstPending = firstRefs.map((ref) => ({ capabilityRef: ref, version: "1.0.0", registered: false, hostId: "host:one", workerInstanceId: "worker:one", runtimeRoot: newRuntime, runnerSha256: "a".repeat(64), actualRunnerSha256: "a".repeat(64), runnerMatchesRecorded: true, snapshotIntegrityMatchesRunner: true, operations: operationsOf[keyOf(ref)], network: networkOf(keyOf(ref)).length ? [...webNetwork] : [...webNetwork], runtimeNetwork: [...webNetwork], secrets: ["deepseek-web"] }));
+verifyPendingCapabilities(structuredClone(firstPending), firstFrozen, firstRefs);
+count("firstToolsPendingAccepted");
+rejectAll("firstToolsPendingRejections", firstPending, [
+  ["capability missing", "__PKT_LABEL_UPPER___MAINTENANCE_PENDING_CAPABILITY_SET_CHANGED", (value) => { value.pop(); }],
+  ["capability already registered", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_ALREADY_REGISTERED", (value) => { value[1].registered = true; }],
+  ["version changed", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_VERSION_CHANGED", (value) => { value[0].version = "1.0.1"; }],
+  ["host differs from the grant", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_IDENTITY_CHANGED", (value) => { for (const entry of value) entry.hostId = "host:other"; }],
+  ["one capability on another worker", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_IDENTITY_CHANGED", (value) => { value[2].workerInstanceId = "worker:other"; }],
+  ["runtime still previous", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_IDENTITY_CHANGED", (value) => { value[0].runtimeRoot = previousRuntime; }],
+  ["runner changed", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_RUNNER_CHANGED", (value) => { value[1].runnerMatchesRecorded = false; }],
+  ["scope widened", "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_SCOPE_CHANGED", (value) => { value[2].network = [...webNetwork, "example.com:443"]; }],
+], (value) => verifyPendingCapabilities(value, firstFrozen, firstRefs));
+throwsCode(() => verifyPendingCapabilities([], firstFrozen, firstRefs), "__PKT_LABEL_UPPER___MAINTENANCE_PENDING_CAPABILITY_SET_CHANGED", "first tools without pending capabilities");
+throwsCode(() => verifyPendingCapabilities(structuredClone(firstPending), { authorization: { directoryGrants: [], capabilities: [] } }, firstRefs), "__PKT_LABEL_UPPER___MAINTENANCE_NEW_CAPABILITY_IDENTITY_CHANGED", "first tools pending without a grant to take the host from");
+assert.deepEqual(upgradeResultExpectation({ snapshotDigest: "sha256:" + "1".repeat(64), planDigest: "sha256:" + "2".repeat(64), frozen: firstFrozen }, firstRefs), { snapshotDigest: "sha256:" + "1".repeat(64), planDigest: "sha256:" + "2".repeat(64), upgraded: [], current: [], registered: firstRefs, keys: ["current", "planDigest", "registered", "snapshotDigest", "upgraded"] });
+count("firstToolsResultExpectation");
+
+const firstSnapshot = snapshotFor(newRuntime, ["pi", "search", "fetch"], firstTime);
+const firstRecord = (key) => ({ ...registered[key], revision: 1, declaration: manifestFor(key, newRuntime, firstTime), runtimeQualification: qualificationFor(key, newRuntime, firstTime), rollbackDeclaration: null, rollbackQualification: null, lastVersionTransition: null, updatedAt: firstTime });
+for (const key of keys) {
+  const record = firstRecord(key);
+  firstDb.prepare("INSERT INTO capability_declarations VALUES(?,?,?,?,?,?,?,?)").run(record.ref, "owner:one", "agent:one", "1.0.0", "active", record.revision, record.declaration.integrity, JSON.stringify(record));
+  firstDb.prepare("INSERT INTO audit_records VALUES(?,?,?,?,?)").run("owner:one", "agent:one", "owner.capability.register", record.ref, "completed");
+}
+const firstCurrent = () => {
+  const authorization = readRouteAuthorization(firstDb, preparedConfiguration, firstSnapshot, runnerDigest);
+  const records = readCatalogRecords(firstDb, binding, firstFrozen, firstRefs);
+  return { frozen: firstFrozen, authorization, records: { ...records, capabilities: records.capabilities.map(({ record, ...rest }) => rest) }, strict: catalogStrictView(records.capabilities, firstSnapshot), routeIdentity: { hostId: "host:one", workerInstanceId: "worker:one" } };
+};
+const firstAfter = firstCurrent();
+assert.deepEqual(firstAfter.authorization.directoryGrants, firstFrozen.authorization.directoryGrants, "FIRST_TOOLS_GRANT_CHANGED_BY_REGISTRATION");
+verifyAuthorizationUsable(firstAfter.authorization);
+const firstSummary = verifyUpgradedCatalog(structuredClone(firstAfter), [], firstRefs);
+assert.deepEqual(firstSummary.map((entry) => [entry.capabilityRef, entry.revision, entry.storedIntegrity]), [[refOf.pi, 1, artifactOf(newRuntime, "pi")], [refOf.search, 1, artifactOf(newRuntime, "search")], [refOf.fetch, 1, artifactOf(newRuntime, "fetch")]]);
+assert.deepEqual(firstAfter.records.upgradeAudit.map((entry) => entry.action), ["owner.capability.register", "owner.capability.register", "owner.capability.register"]);
+count("firstToolsRegisteredAccepted");
+const firstIn = (value, ref) => byRef(value.authorization.capabilities, ref);
+rejectAll("firstToolsRegisteredRejections", firstAfter, [
+  ["capability missing", "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADED_CAPABILITY_SET_CHANGED", (value) => { value.authorization.capabilities = value.authorization.capabilities.filter((capability) => capability.capabilityRef !== refOf.fetch); }],
+  ["extra capability", "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADED_CAPABILITY_SET_CHANGED", (value) => { value.authorization.capabilities.push({ ...structuredClone(value.authorization.capabilities[0]), capabilityRef: "capability:other" }); }],
+  ["runtime still previous", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { firstIn(value, refOf.pi).runtimeRoot = previousRuntime; }],
+  ["host differs from the route", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { firstIn(value, refOf.search).hostId = "host:other"; }],
+  ["worker differs from the route", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { firstIn(value, refOf.fetch).workerInstanceId = "worker:other"; }],
+  ["no route identity to compare with", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { delete value.routeIdentity; }],
+  ["not active", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { firstIn(value, refOf.search).status = "suspended"; }],
+  ["version changed", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_IDENTITY_CHANGED", (value) => { firstIn(value, refOf.pi).version = "1.0.1"; }],
+  ["integrity not the runner", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_INTEGRITY_CHANGED", (value) => { firstIn(value, refOf.fetch).storedIntegrity = artifactOf(previousRuntime, "fetch"); }],
+  ["record row differs", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_RECORD_CHANGED", (value) => { value.records.capabilities[0].revision += 1; }],
+  ["registered twice", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_DECLARATION_NOT_STRICT", (value) => { firstIn(value, refOf.pi).revision = 2; value.records.capabilities[0].revision = 2; }],
+  ["declaration pending", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_DECLARATION_NOT_STRICT", (value) => { value.strict[1].pendingDeclaration = {}; }],
+  ["rollback target present", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_DECLARATION_NOT_STRICT", (value) => { value.strict[2].rollbackIntegrity = artifactOf(previousRuntime, "fetch"); }],
+  ["handle left open", "__PKT_LABEL_UPPER___MAINTENANCE_REGISTERED_DECLARATION_NOT_STRICT", (value) => { value.strict[0].unrevokedHandles = 1; }],
+  ["registered as upgrade", "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_MISSING", (value) => { value.records.upgradeAudit[1].action = "owner.capability.upgrade"; }],
+  ["registration audit missing", "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_MISSING", (value) => { value.records.upgradeAudit.pop(); }],
+  ["registration audit failed", "__PKT_LABEL_UPPER___MAINTENANCE_UPGRADE_AUDIT_MISSING", (value) => { value.records.upgradeAudit[2].outcome = "failed"; }],
+], (value) => verifyUpgradedCatalog(value, [], firstRefs));
+firstDb.close();
+count("firstToolsRegisteredRejections");
 
 const samplerRoot = mkdtempSync(path.join(process.env.HIMAWARI_TEST_TEMP_ROOT, "maintenance-fixture-"));
 let samplerReadback;

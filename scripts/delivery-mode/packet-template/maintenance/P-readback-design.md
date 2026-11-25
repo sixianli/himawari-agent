@@ -65,6 +65,17 @@ S6 的服务环境 read 是独立的启动前探针，不进入生产 Run，不�
 
 [返回导航](#s3s8停服后的数据库独立读回)
 
+## 新机首次装工具
+
+出包时到目标机上读配置：配置里没有 `capabilityDeployment`（记录工具清单快照的位置和摘要），就是首次装工具，出包参数 `FIRST_TOOLS` 为 `1`，`NEW_CAPABILITY_REFS_JSON` 列出三个要新登记的工具；有，就是升级，两个参数分别是 `0` 和 `[]`。维护程序不读这两个参数，只看停服读回里的能力登记是否为空（`isFirstTools`，`frozen.authorization.capabilities` 为空，并且新工具清单不为空、恰有一条工作区授权）。升级时的读回和比较不变。
+
+首次时前提是：旧库里没有能力快照，也没有能力登记；工作区授权已由 `authorize-workspace.sh` 建好；签名密钥已由 `prepare-host-tools.sh` 在目标机上生成。差别只在这些地方：
+
+- 配置还没写入快照位置时，不读快照；授权读回只读工作区授权那一条，授权目录的设备号和 inode（文件在磁盘上的编号）取自当前工作区目录，并要求授权记录里的 `canonicalRootId` 等于 `设备号:inode`（`readGrantsWithoutSnapshot`）。这样停服读回里的授权和装好工具后用快照读到的授权逐字段相同。
+- 准备步骤之后快照出现，待登记的三个工具的主机和工作实例必须和配置里 `runPolicy.coding` 一致（`routeIdentity`），三个工具之间也必须一致。
+- 登记之后，三个工具都要是第 1 版、没有回退目标、没有未撤销的句柄，登记记录的动作是 `owner.capability.register`，不是升级。
+- 回退时（`S9_RAW_RESTORE51`）恢复出来的库里不得有任何能力登记；控制文件还原时，删掉新装留下的快照和启动证明，不还原它们（升级时则是放回旧文件）。
+
 ## 没有做的验证
 
 按用户决定 G180 的快速模式，第十二次不在 Hermes（用户的另一台 Linux 服务器）上跑 L2–L4 测试、不做整包演练。包内只有固定样例检查（例如 [verify-fixtures.mjs](verify-fixtures.mjs)、[verify-raw-copy-fixtures.mjs](verify-raw-copy-fixtures.mjs)、[verify-sidecar-tidy-fixtures.mjs](verify-sidecar-tidy-fixtures.mjs)），它们用做出来的数据检查读回逻辑，不能证明这些步骤在真实生产数据库上通过。第十二次的 `S7_CONFIG_APPLY` 和能力升级，第一次完整运行就在生产上。
