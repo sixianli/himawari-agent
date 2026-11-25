@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-25"
+covers: ".agents/instructions/delivery-mode.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0074：快速模式下由 Claude 直接执行生产上线、回滚和诊断
@@ -23,7 +25,7 @@ date: "2026-10-25"
 
 ## 背景
 
-[ADR 0073](0073-fast-delivery-mode.md) 把上线压成一条命令，但仍由 Andy 在 MacBook 上执行，Claude 不登录生产机、不读生产配置和状态目录。第八次上线时，Andy 要亲自跑命令、把输出贴回对话。2026-10-25 他问为什么上线一定要经过他的 MacBook。我们给了三条路：Hermes 当发布机、生产机自己拉取、放开 Claude 直接登录生产机。14:41Z Andy 选了第三条（“选这个”），15:46Z 又说“你自己访问我的云服务吧，我授权了”。
+[ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md) 把上线压成一条命令，但仍由 Andy 在 MacBook 上执行，Claude 不登录生产机、不读生产配置和状态目录。第八次上线时，Andy 要亲自跑命令、把输出贴回对话。2026-10-25 他问为什么上线一定要经过他的 MacBook。我们给了三条路：Hermes 当发布机、生产机自己拉取、放开 Claude 直接登录生产机。14:41Z Andy 选了第三条（“选这个”），15:46Z 又说“你自己访问我的云服务吧，我授权了”。
 
 实测：云端会话连不上生产机 `84.247.157.41` 的 22 端口。直连会超时，出网只走 HTTPS 代理，用代理转发 SSH 也被会话的权限检查拦下。生产机的 root 密钥和操作包都在 Andy 的 MacBook 上。
 
@@ -64,7 +66,7 @@ date: "2026-10-25"
 
 ## 关联文档
 
-- [ADR 0073：用 `DELIVERY_MODE` 开关切换快速交付和完整流程](0073-fast-delivery-mode.md)
+- [ADR 0073：用 `DELIVERY_MODE` 开关切换快速交付和完整流程](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)
 - [Delivery Mode 规则](../../.agents/instructions/delivery-mode.md#fast-mode)
 
 [↑ 返回阅读导航](#contents)

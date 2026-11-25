@@ -35,15 +35,14 @@ import {
   writableRuleType,
 } from "@himawari-agent/application";
 import { EXTERNAL_CONTENT_SOURCE_REF_PREFIX } from "@himawari-agent/gateway-contracts";
-import { TOOL_RULE_LIST, TOOL_RULE_SET, TOOL_RULE_UNDO } from "@himawari-agent/prompt-catalog";
+import {
+  TOOL_RESULT_RULE_ASK_OWNER,
+  TOOL_RULE_LIST,
+  TOOL_RULE_SET,
+  TOOL_RULE_UNDO,
+} from "@himawari-agent/prompt-catalog";
 import { classificationWithIdentifiers } from "@himawari-agent/sensitive-capture";
 import { externalContentSourceRefs } from "./context-external-content.js";
-import {
-  canonicalJson,
-  type ProductionProposalBox,
-  ProposalError,
-  type ProposalEvidence,
-} from "./production-proposals.js";
 
 export const RULE_SET_CAPABILITY_REF = "rule.set";
 export const RULE_LIST_CAPABILITY_REF = "rule.list";
@@ -64,7 +63,6 @@ const OWNER_MESSAGES_CHECKED = 6;
 const MESSAGES_SCANNED = 200;
 const SET_ARGUMENTS = ["quote", "inferred", "type", "params", "summary"];
 const ACTIVE_RULE_LIMIT = 32;
-export const RULE_PROPOSAL_TYPE = "owner_rule";
 const PROPOSAL_ID_PATTERN = /^rule-proposal:[0-9a-f]{32}$/u;
 const STANDING_MARKERS = [
   "以后",
@@ -267,9 +265,6 @@ export type OwnerRuleErrorCode =
   | "RULE_LIMIT_REACHED"
   | "RULE_NOT_EXPLICIT"
   | "RULE_UNAVAILABLE"
-  | "RULE_PROPOSALS_FULL"
-  | "RULE_PROPOSAL_REJECTED"
-  | "RULE_PROPOSAL_EXPIRED"
   | "RULE_CONFLICT";
 
 export class OwnerRuleError extends Error {
@@ -379,7 +374,7 @@ export interface RuleTrial {
 export type RuleReplay = OwnerRuleReplayResult;
 
 export interface RuleReceipt {
-  readonly status: "active" | "proposed" | "soft";
+  readonly status: "active" | "proposed" | "ask_owner" | "soft";
   readonly ruleId: string | null;
   readonly proposalId: string | null;
   readonly memoryId: string | null;
@@ -435,7 +430,19 @@ export interface ProductionOwnerRuleWriterOptions {
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
   readonly replay?: (rule: RuleRecord) => Promise<RuleReplay>;
-  readonly box: ProductionProposalBox;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+      .map(
+        (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      )
+      .join(",")}}`;
+  return JSON.stringify(value) ?? "null";
 }
 
 function hash(value: string): string {
@@ -481,67 +488,6 @@ function evidenceOf(value: unknown): Proposal | undefined {
       : [],
     replay: replayed ? (replay as RuleReplay) : null,
   };
-}
-
-function ruleEvidence(
-  quote: string,
-  threadId: string | null,
-  trials: readonly RuleTrial[],
-  replay: RuleReplay | null,
-): readonly ProposalEvidence[] {
-  const flag = (value: boolean) => (value ? 1 : 0);
-  return [
-    {
-      kind: "owner_words",
-      text: quote,
-      sources: threadId === null ? [] : [{ kind: "thread", ref: threadId }],
-      figures: [],
-    },
-    ...trials.map((trial) => ({
-      kind: "mail_trial",
-      text: `${trial.from}: ${trial.subject}`,
-      sources: [],
-      figures: [
-        {
-          name: "hit",
-          value: flag(trial.hit),
-          definition: "这封示例邮件按这条规则会不会提醒：1 会，0 不会",
-        },
-      ],
-    })),
-    ...(replay
-      ? [
-          {
-            kind: "mail_replay",
-            text: null,
-            sources: [],
-            figures: [
-              { name: "days", value: replay.days, definition: "回看了最近多少天收到的邮件" },
-              {
-                name: "mailsChecked",
-                value: replay.mailsChecked,
-                definition: "回看时检查了多少封邮件",
-              },
-              {
-                name: "mailsHit",
-                value: replay.mailsHit,
-                definition: "其中多少封按这条规则会提醒",
-              },
-              {
-                name: "changed",
-                value: replay.changed,
-                definition: "其中多少封的结果会和现在不一样",
-              },
-              {
-                name: "truncated",
-                value: flag(replay.truncated),
-                definition: "邮件太多没有看完时为 1，这时上面的数字是至少",
-              },
-            ],
-          },
-        ]
-      : []),
-  ];
 }
 
 const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] as const;
@@ -686,19 +632,6 @@ export class ProductionOwnerRuleWriter {
 
   constructor(options: ProductionOwnerRuleWriterOptions) {
     this.#options = options;
-    options.box.register(RULE_PROPOSAL_TYPE, {
-      repeatable: true,
-      adopt: async ({ threadId, data }) => {
-        const stored = evidenceOf(data);
-        if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
-        const receipt = await this.#activate({ ...stored, threadId }, stored.replay ?? null);
-        return { resultRef: receipt.ruleId ?? "owner-rule", detail: receipt };
-      },
-      settled: async () => {
-        const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
-        return (data) => this.#covers(live.map((rule) => rule.parameters))(data);
-      },
-    });
   }
 
   #scope() {
@@ -845,23 +778,6 @@ export class ProductionOwnerRuleWriter {
     }
   }
 
-  #covers(enforced: readonly unknown[]): (data: unknown) => boolean {
-    return (data) => {
-      const stored = evidenceOf(data);
-      if (!stored) return false;
-      const parsed = parseOwnerRuleParameters({
-        type: stored.type,
-        params: stored.params,
-        summary: stored.summary,
-      });
-      return enforced.some((parameters) => sameRule(parameters, parsed.type, parsed.params));
-    };
-  }
-
-  #settle(type: string, params: unknown): Promise<void> {
-    return this.#options.box.settle(RULE_PROPOSAL_TYPE, this.#covers([{ type, params }]));
-  }
-
   async #activate(proposal: Proposal, replayed: RuleReplay | null): Promise<RuleReceipt> {
     const draft = this.#draft(proposal.type, proposal.params, proposal.summary);
     const parsed = parseOwnerRuleParameters({
@@ -876,7 +792,6 @@ export class ProductionOwnerRuleWriter {
     );
     if (same) {
       await this.reconfirm(same.ruleId);
-      await this.#settle(parsed.type, parsed.params);
       return Object.freeze({
         status: "active",
         ruleId: same.ruleId,
@@ -932,7 +847,6 @@ export class ProductionOwnerRuleWriter {
         throw new OwnerRuleError("RULE_UNAVAILABLE");
       }
     }
-    await this.#settle(parsed.type, parsed.params);
     return Object.freeze({
       status: "active",
       ruleId,
@@ -977,6 +891,7 @@ export class ProductionOwnerRuleWriter {
     readonly threadId: string | null;
     readonly source?: string;
     readonly listed?: boolean;
+    readonly ownerChose?: boolean;
     readonly externalOrigins?: readonly string[];
   }): Promise<RuleReceipt> {
     const quote = input.quote.trim();
@@ -985,7 +900,10 @@ export class ProductionOwnerRuleWriter {
       throw new OwnerRuleError("RULE_INPUT_INVALID", "quote");
     if (input.type === SOFT_TYPE) {
       if (!validRuleSummary(summary)) throw new OwnerRuleError("RULE_INPUT_INVALID", "summary");
-      if (input.inferred || !(await this.#ownerSaid(input.threadId, quote)))
+      if (
+        input.ownerChose !== true &&
+        (input.inferred || !(await this.#ownerSaid(input.threadId, quote)))
+      )
         throw new OwnerRuleError("RULE_NOT_EXPLICIT", "偏好只记主人的原话");
       const memoryId = await this.#writeMemory({
         key: input.key,
@@ -1019,6 +937,7 @@ export class ProductionOwnerRuleWriter {
       ...(input.source === undefined ? {} : { source: input.source }),
       ...(input.externalOrigins?.length ? { externalOrigins: input.externalOrigins } : {}),
     };
+    if (input.ownerChose === true) return this.#activate(proposal, replayed);
     const ownerSaid = !input.inferred && (await this.#ownerSaid(input.threadId, quote));
     if (ownerSaid && isStandingQuote(quote)) return this.#activate(proposal, replayed);
     const normalized = parseOwnerRuleParameters({
@@ -1026,42 +945,29 @@ export class ProductionOwnerRuleWriter {
       params: input.params,
       summary,
     });
-    const proposalId = `rule-proposal:${hash(
-      canonicalJson([
-        this.#scope().ownerId,
-        this.#scope().agentId,
-        normalized.type,
-        normalized.params,
-        normalized.summary,
-        quote,
-      ]),
-    ).slice(0, 32)}`;
     const trials = trialsOf(draft);
-    const stored = { ...proposal, trials, replay: replayed };
-    if (input.listed === false) await this.#writeText(proposalId, JSON.stringify(stored));
-    else {
+    const listed = input.listed !== false;
+    if (listed) {
       const live = await this.#options.rules.list({ ...this.#scope(), includeRetired: false });
       if (live.some((row) => sameRule(row.parameters, normalized.type, normalized.params)))
         return this.#activate(proposal, replayed);
-      await this.#options.box
-        .propose({
-          proposalId,
-          type: RULE_PROPOSAL_TYPE,
-          summary: normalized.summary,
-          effect: normalized.summary,
-          origin: ownerSaid ? "owner_said" : "inferred",
-          threadId: input.threadId,
-          evidence: ruleEvidence(quote, input.threadId, trials, replayed),
-          data: stored,
-        })
-        .catch((error: unknown) => {
-          throw error instanceof ProposalError && error.code === "PROPOSALS_FULL"
-            ? new OwnerRuleError("RULE_PROPOSALS_FULL", error.detail)
-            : error;
-        });
     }
+    const proposalId = listed
+      ? null
+      : `rule-proposal:${hash(
+          canonicalJson([
+            this.#scope().ownerId,
+            this.#scope().agentId,
+            normalized.type,
+            normalized.params,
+            normalized.summary,
+            quote,
+          ]),
+        ).slice(0, 32)}`;
+    if (proposalId)
+      await this.#writeText(proposalId, JSON.stringify({ ...proposal, trials, replay: replayed }));
     return Object.freeze({
-      status: "proposed",
+      status: listed ? "ask_owner" : "proposed",
       ruleId: null,
       proposalId,
       memoryId: null,
@@ -1086,19 +992,6 @@ export class ProductionOwnerRuleWriter {
 
   async confirm(proposalId: string): Promise<RuleReceipt> {
     if (!PROPOSAL_ID_PATTERN.test(proposalId)) throw new OwnerRuleError("RULE_NOT_FOUND");
-    if (await this.#options.box.read(proposalId)) {
-      const adopted = await this.#options.box.adopt(proposalId).catch((error: unknown) => {
-        if (!(error instanceof ProposalError)) throw error;
-        throw new OwnerRuleError(
-          error.code === "PROPOSAL_REJECTED"
-            ? "RULE_PROPOSAL_REJECTED"
-            : error.code === "PROPOSAL_EXPIRED"
-              ? "RULE_PROPOSAL_EXPIRED"
-              : "RULE_NOT_FOUND",
-        );
-      });
-      return adopted.detail as RuleReceipt;
-    }
     const stored = await this.#readProposal(proposalId);
     if (!stored) throw new OwnerRuleError("RULE_NOT_FOUND");
     return this.#activate(stored, stored.replay ?? null);
@@ -1348,9 +1241,14 @@ const modelVisibleRule = ({
 
 export class ProductionOwnerRuleTools {
   readonly #writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">;
+  readonly #ownerChose: ((invocation: RuntimeToolInvocation) => Promise<boolean>) | undefined;
 
-  constructor(writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">) {
+  constructor(
+    writer: Pick<ProductionOwnerRuleWriter, "create" | "list" | "undo">,
+    ownerChose?: (invocation: RuntimeToolInvocation) => Promise<boolean>,
+  ) {
     this.#writer = writer;
+    this.#ownerChose = ownerChose;
   }
 
   async run(
@@ -1380,7 +1278,7 @@ export class ProductionOwnerRuleTools {
       names.some((name) => !SET_ARGUMENTS.includes(name))
     )
       throw new OwnerRuleError("RULE_INPUT_INVALID");
-    return this.#writer.create({
+    const receipt = await this.#writer.create({
       key: hash(`${invocation.runId}\n${invocation.toolCallId}`).slice(0, 32),
       quote,
       inferred,
@@ -1388,9 +1286,13 @@ export class ProductionOwnerRuleTools {
       params,
       summary,
       threadId: invocation.context?.threadId ?? null,
+      ...((await this.#ownerChose?.(invocation)) ? { ownerChose: true } : {}),
       ...(provenance.externalOrigins?.length
         ? { externalOrigins: provenance.externalOrigins }
         : {}),
     });
+    return receipt.status === "ask_owner"
+      ? { ...receipt, note: TOOL_RESULT_RULE_ASK_OWNER.text }
+      : receipt;
   }
 }

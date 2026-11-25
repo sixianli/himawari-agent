@@ -4,6 +4,7 @@ import {
   ContextFormationService,
   ContextProjectionService,
   type ExecutionLiveFeed,
+  INBOX_LOOP_DEFAULTS,
   type IdGeneratorPort,
   type MemoryPort,
   type ModelEgress,
@@ -186,6 +187,7 @@ export interface ProductionRunCompositionOptions {
   readonly cwd: string;
   readonly agentDir: string;
   readonly timeZone?: string;
+  readonly memorySnapshotCharacters?: number;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
@@ -320,6 +322,10 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
     digest: (text) => createHash("sha256").update(text).digest("hex"),
     reminders: repository.memoryReminders(),
+    conversations: repository.conversationTurns(),
+    ...(options.memorySnapshotCharacters
+      ? { snapshotCharacterBudget: options.memorySnapshotCharacters }
+      : {}),
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   });
   const context = timings.methods(
@@ -765,6 +771,15 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
     dispatch,
     policy: options.policy,
+    folds: repository.threadRepository(),
+    foldLimit: async () => {
+      const settings = await repository
+        .inbox()
+        .readSettings({ ownerId, agentId })
+        .catch(() => undefined);
+      const perRun = settings?.overrides["eventsPerRun"] ?? INBOX_LOOP_DEFAULTS.eventsPerRun;
+      return Math.max(0, perRun - 1);
+    },
   });
   const describeSettledRun = (result: {
     readonly checkpoint: {

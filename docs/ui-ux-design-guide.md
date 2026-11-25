@@ -3,6 +3,8 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "AGENTS.md, apps/control-center/test/app-interactions.unit.test.ts, apps/control-center/test/brand.unit.test.ts, assets/brand/himawari/v3/logo-sunflower-disc.svg, scripts/check-brand-assets.mjs, scripts/check-layout-audit.mjs, scripts/delivery-mode/browser-acceptance-gate.py, scripts/test-file-preview-browser.mjs, test/integration/owner-settings-sync.test.ts, test/integration/product-path-browser.test.ts, test/integration/public-search-authorization.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # Himawari 网页设计规范
@@ -104,7 +106,7 @@ date: "2026-10-29"
 
 49. **每一行、每一列的名字自己说清它是关于什么的。** 表头不能用一套通用的词套在意思不同的行上；每一行用这一行自己的说法，只列这一行可能出现的情况。例如校准周报不用三个按评价按钮起名的通用比例列（[词表](glossary.md)第 16 条的旧叫法），而是“系统没存下的记忆：不存是对的 / 该存没存”“已存的记忆：存对了 / 不该存”。行名还要让人一眼知道单位和对象：原来的 Gmail 行名（词表第 18 条的旧叫法）看不出检查的是什么，改成“读完邮件没提醒”（单位是一次读邮件）。改名时连同用到同一个名字的其他页面和[词表](glossary.md)一起改（2026-11-03，Andy 看校准周报原型的两条意见；词表第 16、18 条）。
 
-35. **动画只在表达状态时才动，位置在变的动画只开一个共用计时器，并尊重系统“减少动态效果”。** 标志只有首页大图（慢慢长新种子）和正在回答的那一个（快速长）会动；已完成的回答、侧栏、登录页的标志一律静止。逐帧改位置的动画全页只用一个 `requestAnimationFrame` 计时器，没有东西在动时一帧都不跑；系统开启 `prefers-reduced-motion: reduce` 时，所有位置变化的动画都不启动（[ADR 0126](adr/0126-sunflower-mark-grows-233-seeds.md)、[ADR 0283](adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)，MDN 与 WCAG 2.3.3）。
+35. **动画只在表达状态时才动，位置在变的动画只开一个共用计时器，并尊重系统“减少动态效果”。** 标志只有首页大图（慢慢长新种子）和正在回答的那一个（快速长）会动；已完成的回答、侧栏、登录页的标志一律静止。逐帧改位置的动画全页只用一个 `requestAnimationFrame` 计时器，没有东西在动时一帧都不跑；系统开启 `prefers-reduced-motion: reduce` 时，所有位置变化的动画都不启动（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)、[ADR 0283](adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)，MDN 与 WCAG 2.3.3）。
 
 ### 手机
 
@@ -178,7 +180,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 2026-10-29 | 记忆变化画成“两条线图”：每次变化一个点，下面列最近 3 次，更早的折叠 | 记忆变化历史原型方案 A，<https://claude.ai/artifact/UbqvHY2siFf4jxnc4juAmK> | 来回改主意多少次都一眼看清，页面不会越来越长 |
 | 2026-10-29 | 变化记录页每次变化一行：“现在是：……·第 N 次变化” | 记忆变化历史原型方案 C | 不出现一长串箭头，每行只说结果 |
 | 2026-10-29 | 记忆页方案 A：只留“记忆”和“变化记录”两个标签；顶部卡片“每次对话都会带上的记忆”，每条记忆一个开关；按主题浏览，电脑上左侧目录、手机上下拉；点一条从右侧或底部滑出详情 | Andy 批注“选方案A”，原型 <https://claude.ai/artifact/EY7f1dkgB7zypskUoQ1dzo>，[ADR 0112](adr/0112-memory-page-carried-memories-and-topic-browsing.md)，基线 `2026-10-29-v12` | 主人看得到每轮带给模型的是哪些记忆，自己决定带不带；1 万条记忆也不用改结构 |
-| 2026-10-30 | 标志是 233 颗圆点按黄金角从花心长出来的向日葵：新种子最亮，老种子被推向外圈；首页大图慢慢长，回答时快速长，其余静止 | 标志重设计线程，Andy 批注“选 A　加密到 233 点”（自由设计第一批方案 2「生长」），原型 `docs/assets/control-center/2026-10-30-v13/logo-growth-prototype.html`，[ADR 0126](adr/0126-sunflower-mark-grows-233-seeds.md) | 只用圆点，位置动效就是“生长”本身；点够密，真实向日葵的 13 条和 21 条螺旋自然浮现 |
+| 2026-10-30 | 标志是 233 颗圆点按黄金角从花心长出来的向日葵：新种子最亮，老种子被推向外圈；首页大图慢慢长，回答时快速长，其余静止 | 标志重设计线程，Andy 批注“选 A　加密到 233 点”（自由设计第一批方案 2「生长」），原型 `docs/assets/control-center/2026-10-30-v13/logo-growth-prototype.html`，[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md) | 只用圆点，位置动效就是“生长”本身；点够密，真实向日葵的 13 条和 21 条螺旋自然浮现 |
 | 2026-11-15 | 标志减到 55 颗种子，所有尺寸同一个点数，种子按比例放大；iPhone、Mac、手表的桌面图标也是这个花盘 | Andy 在五档点数对比里选“55 粒”，[ADR 0283](adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md) | 16px 下也能看出一粒粒种子，螺旋仍在 |
 | 2026-10-31 | 圆润造型：双色填充图标（浅色底形加实心细节），侧栏和卡片浮起带阴影，胶囊按钮，iOS 式开关，一行高的胶囊输入框，手机弹窗从底部弹出 | 第 45 条方案 1，Andy 看过全站效果图后改选：“我很喜欢这一套设计方案……任何地方都要保持设计风格一致”，原型 `docs/assets/control-center/2026-10-31-v15/rounded-prototype.html`，[ADR 0137](adr/0137-rounded-icons-and-components.md)（取代柔线） | 图标一眼能认，层次靠底色和阴影，不靠细线；整站一种造型 |
 | 2026-11-05 | 设置“数据”栏的“敏感信息拦截记录”：数据栏一行显示条数，点进去按天列出类别、出处和次数，顶部按结果筛选，底部写“记录不会自动删除”并可清除；手机上“打开对话”换到下一行；原型带“电脑 / 手机”切换 | Andy：“可以”；原型 `docs/assets/control-center/2026-11-05-v18/sensitive-interceptions-prototype.html`，基线 `2026-11-05-v18` | 只说拦下了什么、在哪里，不显示原文；每个数字都是可数的记录条数 |
@@ -221,7 +223,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 2026-10-29 | “保存”按钮没改动也亮着 | 按钮状态没跟着内容变 | 没改动时禁用 | 15 |
 | 2026-10-29 | 回答下方 28px 的图标按钮，悬停时出现 28×44 的竖条底色 | 全站按钮默认 44px 最小高度，图标按钮没取消 | 图标按钮设 `min-height: 0` | 18 |
 | 2026-10-29 | 侧栏一排“新对话”，看不出哪个是哪个 | 没发过消息的空对话也进了列表 | 空对话不进列表 | 5 |
-| 2026-10-29 | 资料放在系统提示里，模型答非所问 | 本轮资料离问题太远（[ADR 0104](adr/0104-turn-material-in-last-user-message.md)） | 资料放进最后一条用户消息 | 1 |
+| 2026-10-29 | 资料放在系统提示里，模型答非所问 | 本轮资料离问题太远（[ADR 0104](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)） | 资料放进最后一条用户消息 | 1 |
 | 2026-10-29 | 来回改了很多次主意的记忆，历史只显示 2 版；来源对话删除后来源写成“整理记忆” | 页面只看直接上一版，“补充细节”覆盖了原文；没有来源时退回了默认名（I-20） | 记下每次变化，画两条线图加折叠；来源写“来源对话已删除” | 25、26 |
 | 2026-10-29 | 记忆页的“档案”页签能单独编辑，Andy 问“档案和记忆是什么关系” | 后台没有档案这份资料，它是每轮从记忆里现挑的；界面却把它做成另一页 | 改成记忆上的“每次对话都带上”开关和顶部卡片 | 28、29 |
 | 2026-10-29 | 每行记忆后面的“新”标签没有意义 | “新”的意思是 7 天内更新过，和主人看没看过无关 | 去掉，改成“自你上次打开后新记住 N 条” | 2 |
@@ -231,7 +233,7 @@ Andy 批准并明确表示喜欢的设计。每行的原型链接是当时批注
 | 2026-10-29 | Word 里的项目符号在没有 Symbol 字体的设备上显示成方框 | Word 用 Symbol 字体的私用区字符（例如 U+F0B7）画圆点 | 渲染前换成普通圆点、方块字符；浏览器测试检查不出现私用区字符 | 27 |
 | 2026-10-29 | 问天气时“搜索网页”连弹两次审批；第二次批准后页面一直“正在加载…”，退出再进才看到早已写完的回答 | 模型同一步并行发起两次搜索，每次各建一个审批，卡片一次只显示一个；网页的刷新单线排队、读请求没有时限，一个请求服务器没回答整页就停住（I-29） | 同一步的同类审批合成一张卡片一次放行；批准后显示“已收到，正在继续…”；读请求 15 秒没回答就放弃重试 | 31 |
 | 2026-10-30 | 主人一直开着“允许联网搜索”，换了模型后它在所有设备上悄悄变成关，问天气又弹卡 | 开关和每个模型配置的摘要绑在一起，模型一变就失效，页面不说原因（I-34） | 开关默认开、只跟搜索服务地址绑定；地址变了才关，并在设置里写明原因 | 32 |
-| 2026-10-30 | 旧标志只有 96 颗大小差很大的点，Andy 说“还不够好看”，螺旋看不出来 | 点太稀，眼睛连不出黄金角螺旋；点大小差太大 | 加密到 233 点、缩小大小差，螺旋自然浮现（[ADR 0126](adr/0126-sunflower-mark-grows-233-seeds.md)） | 35 |
+| 2026-10-30 | 旧标志只有 96 颗大小差很大的点，Andy 说“还不够好看”，螺旋看不出来 | 点太稀，眼睛连不出黄金角螺旋；点大小差太大 | 加密到 233 点、缩小大小差，螺旋自然浮现（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)） | 35 |
 | 2026-11-15 | 233 颗种子的标志缩到 24px 以下只剩一团点，看不出是向日葵；苹果端 App 在桌面上没有图标 | 点数是按大图选的，没在小尺寸下看过；苹果工程里没有 App 图标资源集和图标名设置 | 减到 55 颗、每颗放大；新建 `Brand.xcassets` 并由测试检查三端都设了图标（[ADR 0283](adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)） | 35 |
 | 2026-10-30 | 新标志在浅色主题下，花心最新的几颗种子像一个白洞 | 最新种子是亮白金色，在白底上几乎看不见 | 给最新种子一个类名，由 CSS 按主题取色，深色亮白金、浅色褐金 | 21 |
 | 2026-10-30 | 设置→通知里三个开关和“开启通知”点了没反应，也没提示 | 页面等 `serviceWorker.ready`，这台电脑没注册过后台程序，它永远不返回，控件一直灰着（I-39） | 改查 `getRegistration`，没有就立刻可点 | 33 |

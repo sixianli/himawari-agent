@@ -47,6 +47,23 @@ export interface ThreadUpdateInput {
   readonly authority: ProductAuthorityFence;
 }
 
+export interface FoldQueuedOwnerRunsInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly runId: RunId;
+  readonly limit: number;
+  readonly now: string;
+  readonly whileRunning?: true;
+}
+
+export interface FoldedOwnerMessage {
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly contentRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly position: number;
+}
+
 export interface AdmitOwnerMessageInput {
   readonly triggerSource?: "user_message" | "external_event";
   readonly modelSelection?: import("./run-execution-source.js").RunModelSelection;
@@ -285,6 +302,21 @@ export interface ClaimMainThreadInput {
   readonly claimedAt: string;
 }
 
+export interface PostAgentMessageInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly semanticFingerprint: string;
+  readonly contentRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly committedAt: string;
+  readonly resultRef: PayloadRef;
+  readonly authority: ProductAuthorityFence;
+}
+
 export interface ThreadRepositoryPort {
   /** Read metadata, paged messages and run states from one database snapshot. */
   readDetailSnapshot(query: ThreadDetailSnapshotQuery): Promise<ThreadDetailSnapshot | undefined>;
@@ -305,6 +337,18 @@ export interface ThreadRepositoryPort {
     message: ProductThreadMessage;
     receipt: ThreadMutationReceipt;
   }>;
+  foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): Promise<readonly FoldedOwnerMessage[]>;
+  unfoldOwnerRun(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+    readonly foldedRunId: RunId;
+  }): Promise<boolean>;
+  readFoldedOwnerMessages(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+  }): Promise<readonly FoldedOwnerMessage[]>;
   commitAssistantMessage(input: CommitAssistantMessageInput): Promise<{
     thread: ProductThread;
     message: ProductThreadMessage;
@@ -358,6 +402,17 @@ export interface ThreadRepositoryPort {
   }>;
   readMain(ownerId: OwnerId, agentId: AgentId): Promise<ThreadId | undefined>;
   claimMain(input: ClaimMainThreadInput): Promise<ThreadId>;
+  readRunThought(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+  }): Promise<{ readonly contentRef: PayloadRef } | undefined>;
+  postAgentMessage(input: PostAgentMessageInput): Promise<{
+    thread: ProductThread;
+    message: ProductThreadMessage;
+    receipt: ThreadMutationReceipt;
+  }>;
   requestDeletion(input: RequestThreadDeletionInput): Promise<{
     thread: ProductThread;
     impact: ThreadDeletionImpact;

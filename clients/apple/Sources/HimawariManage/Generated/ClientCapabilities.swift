@@ -63,11 +63,7 @@ public enum NativePage: String, Sendable, CaseIterable {
     case memory = "memory"
     case memoryReflection = "memory.reflection"
     case settingsAuthorizations = "settings.authorizations"
-    case settingsCapabilities = "settings.capabilities"
     case settingsDevices = "settings.devices"
-    case settingsImprovements = "settings.improvements"
-    case todayApprovals = "today.approvals"
-    case todaySuggestions = "today.suggestions"
 }
 
 public enum ClientCapabilities {
@@ -82,6 +78,9 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v1, type: "trace.query", kind: .query, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "thread.message.submit", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "approval.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "approval.allowance.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "approval.allowance.days.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .v2, type: "approval.allowance.revoke", kind: .command, tier: .tighten, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "search.authorization.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "push.subscription.set", kind: .command, tier: .notOnPhone, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -136,8 +135,6 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .v2, type: "memory.reminder.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.reminder.create", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.rules.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "proposals.read", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
-        ClientCapability(gateway: .v2, type: "proposal.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.rule.respond", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.create", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .v2, type: "memory.category.set", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -226,6 +223,7 @@ public enum ClientCapabilities {
         ClientCapability(gateway: .threadV3, type: "thread.trash", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.delete_permanently", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.task.resolve", kind: .command, tier: .routine, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
+        ClientCapability(gateway: .threadV3, type: "thread.option.choose", kind: .command, tier: .change, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.deletion_impact", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.list", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
         ClientCapability(gateway: .threadV3, type: "thread.detail", kind: .query, tier: .read, tightenPayload: nil, tightenOpenKeys: [], tightenEveryItem: nil),
@@ -240,6 +238,7 @@ public enum ClientCapabilities {
 
     public static let referencePlaceholder = "device"
     public static let serverFilledReferences = ["authorizationRef", "recentAuthenticationRef"]
+    public static let allowanceDays: ClosedRange<Int> = 1...90
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

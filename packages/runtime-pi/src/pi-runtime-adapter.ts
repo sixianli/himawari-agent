@@ -100,6 +100,7 @@ import { restoreModelStream, withPlaceholderLegend } from "./egress-context.js";
 import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+import { memorySnapshotAfterCompaction, splitMemorySnapshot } from "./memory-snapshot-block.js";
 import { himawariBuiltinToolText } from "./pi-builtin-tool-text.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
 import {
@@ -113,6 +114,12 @@ import {
   type PiToolProgressState,
   type PiToolRefusalLimits,
 } from "./pi-tool-progress-guard.js";
+import {
+  carriesToolActivity,
+  processIconsSection,
+  removeToolActivity,
+  withToolActivityParameters,
+} from "./tool-activity.js";
 import {
   observeProviderRejections,
   type ProviderRejection,
@@ -418,6 +425,7 @@ const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
 const PI_REQUEST_HEAD_DIVERGED = "PI_REQUEST_HEAD_DIVERGED";
 const MIN_CONTEXT_ANSWER_TOKENS = 512;
 const BACKGROUND_COMMAND_MESSAGE_TYPE = "himawari.background.command";
+const OWNER_FOLLOW_UP_MESSAGE_TYPE = "himawari.owner.follow_up";
 
 const POLICY_BLOCKED_TEXT: Readonly<Record<string, string>> = {
   TASK_RESOURCE_AUTHORITY_REQUIRED: TOOL_POLICY_BLOCKED_TASK_MANAGEMENT.text,
@@ -628,6 +636,7 @@ function productSystemPrompt(
           ].join("\n"),
         ]
       : []),
+    ...processIconsSection(tools),
   ].join("\n\n");
 }
 
@@ -651,7 +660,11 @@ function localWeekday(occurredAt: string, timeZone: string): string {
 }
 
 function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
-  const { blocks, environment } = splitRuntimeEnvironment(projection);
+  const { blocks: withoutEnvironment, environment } = splitRuntimeEnvironment(projection);
+  const { blocks, snapshot, changes } = splitMemorySnapshot({
+    ...projection,
+    contextBlocks: withoutEnvironment,
+  });
   return [
     "<himawari-context>",
     CHAT_TURN_CONTEXT_PREFACE.text,
@@ -661,13 +674,15 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
       localTime: localTime(projection.prompt.occurredAt, timeZone),
       weekday: localWeekday(projection.prompt.occurredAt, timeZone),
     }),
+    ...(snapshot ? [contextBlockContent(snapshot, timeZone)] : []),
     ...blocks.map((block) => contextBlockContent(block, timeZone)),
+    ...(changes ? [contextBlockContent(changes, timeZone)] : []),
     ...(environment ? [contextBlockContent(environment, timeZone)] : []),
     "</himawari-context>",
     "",
-    "<owner-message>",
-    projection.prompt.content,
-    "</owner-message>",
+    ...(projection.prompt.from === "outside"
+      ? ["<outside-events>", projection.prompt.content, "</outside-events>"]
+      : ["<owner-message>", projection.prompt.content, "</owner-message>"]),
   ].join("\n");
 }
 
@@ -1330,7 +1345,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     session: AgentSession,
     canContinue: () => boolean,
   ): Promise<void> {
-    if (!this.#dependencies.tools.subscribeBackground) return;
+    if (!this.#dependencies.tools.subscribeBackground && !this.#dependencies.tools.subscribeSteer)
+      return;
     while (canContinue() && session.agent.hasQueuedMessages()) {
       await session.agent.continue();
       await session.waitForIdle();
@@ -1413,16 +1429,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
         hasHistory: projection.nativeHistory !== undefined || projection.history.length > 0,
       });
+      const handleToolsCarryActivity =
+        !bundle ||
+        (JSON.parse(bundle.tools) as { readonly parameters: unknown }[]).some(({ parameters }) =>
+          carriesToolActivity(parameters),
+        );
+      const runToolDefinition = (descriptor: RuntimeToolDescriptor) =>
+        this.toolDefinition(descriptor, handleToolsCarryActivity || !isHandleTool(descriptor));
       const systemPrompt =
         bundle?.systemPrompt ??
-        productSystemPrompt(
-          projection.systemInstruction,
-          descriptors.map((descriptor) => this.toolDefinition(descriptor)),
-        );
+        productSystemPrompt(projection.systemInstruction, descriptors.map(runToolDefinition));
       const requestTools = bundle
         ? [
             ...(JSON.parse(bundle.tools) as Tool[]).map(providerTool),
-            ...handleDescriptors.map((descriptor) => providerTool(this.toolDefinition(descriptor))),
+            ...handleDescriptors.map((descriptor) => providerTool(runToolDefinition(descriptor))),
           ]
         : undefined;
       if (handleDescriptors.length > 0)
@@ -1502,6 +1522,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       if (descriptorsByName.size !== descriptors.length) {
         throw new TypeError("RUNTIME_DUPLICATE_TOOL_NAME");
       }
+      const activityTools = new Set(
+        descriptors
+          .filter((descriptor) => carriesToolActivity(runToolDefinition(descriptor).parameters))
+          .map(({ name }) => name),
+      );
       const clearingTrigger = toolResultClearingTriggerTokens(binding.model.contextWindow);
       const clearing =
         clearingTrigger === undefined
@@ -1587,7 +1612,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             name: "himawari-tool-outcomes",
             hidden: true,
             factory: (pi: ExtensionAPI) => {
-              pi.on("tool_call", () => {
+              pi.on("tool_call", (event) => {
+                if (activityTools.has(event.toolName)) removeToolActivity(event.input);
                 if (toolProgress.blocked)
                   return { block: true, reason: CHAT_TOOL_LOOP_REJECTED.text };
               });
@@ -1765,7 +1791,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noTools: "all",
         tools: descriptors.map(({ name }) => name),
         customTools: descriptors.map((descriptor) =>
-          this.createTool(request, descriptor, {
+          this.createTool(request, descriptor, runToolDefinition(descriptor), {
             completedResult: (toolCallId) => {
               const result = restored?.completedResult(toolCallId, descriptor.name);
               if (result) replayedResults.add(toolCallId);
@@ -1836,6 +1862,22 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       );
 
+      const unsubscribeSteer = this.#dependencies.tools.subscribeSteer?.(request.runId, (note) => {
+        if (!session.isStreaming) return false;
+        void session
+          .sendCustomMessage(
+            {
+              customType: OWNER_FOLLOW_UP_MESSAGE_TYPE,
+              content: note.modelContent,
+              display: false,
+              details: { ref: note.ref },
+            },
+            { deliverAs: "steer" },
+          )
+          .catch(() => session.abort());
+        return true;
+      });
+
       const unsubscribe = session.subscribe((event) => {
         if (event.type === "compaction_start") compacting = true;
         if (event.type === "compaction_end") {
@@ -1873,6 +1915,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           !event.aborted &&
           event.result !== undefined
         ) {
+          const snapshot = memorySnapshotAfterCompaction(session.messages, projection);
+          if (snapshot)
+            void session
+              .sendCustomMessage(snapshot, { deliverAs: "steer" })
+              .catch(() => session.abort());
           const environment = runtimeEnvironmentAfterCompaction(session.messages, projection);
           if (environment)
             void session
@@ -1990,6 +2037,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         await eventChain;
         await this.#historyWrites.get(request.runId);
       } finally {
+        unsubscribeSteer?.();
         unsubscribeBackground?.();
         unsubscribe();
         session.dispose();
@@ -2092,7 +2140,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     }
   }
 
-  private toolDefinition(descriptor: RuntimeToolDescriptor): PiToolDefinitionText {
+  private toolDefinition(descriptor: RuntimeToolDescriptor, activity = true): PiToolDefinitionText {
+    const withActivity = <Parameters>(parameters: Parameters): Parameters =>
+      activity ? withToolActivityParameters(parameters) : parameters;
     const unavailable = async (): Promise<never> => {
       throw new Error("PI_AGENT_SERVICE_FILE_IO_FORBIDDEN");
     };
@@ -2119,7 +2169,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         name: builtin.name,
         label: builtin.label,
         description: text.description,
-        parameters: text.parameters,
+        parameters: withActivity(text.parameters),
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(text.promptGuidelines === undefined
           ? {}
@@ -2145,13 +2195,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       name: descriptor.name,
       label: descriptor.name,
       description: "description" in descriptor ? descriptor.description : "",
-      parameters: descriptor.parameters as ToolDefinition["parameters"],
+      parameters: withActivity(descriptor.parameters as ToolDefinition["parameters"]),
     };
   }
 
   private createTool(
     request: RuntimeRequest,
     descriptor: RuntimeToolDescriptor,
+    definition: PiToolDefinitionText,
     reconciliation: {
       completedResult(
         toolCallId: string,
@@ -2167,7 +2218,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       ): void;
     },
   ): ToolDefinition {
-    const definition = this.toolDefinition(descriptor);
     const parallel = "executionMode" in descriptor && descriptor.executionMode === "parallel";
     if (
       parallel &&

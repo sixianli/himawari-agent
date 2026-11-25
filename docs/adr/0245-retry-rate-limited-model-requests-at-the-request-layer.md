@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0198-upgrade-pi-to-1-5-0.md"
 date: "2026-11-12"
+covers: ".agents/instructions/prompt-prefix.md, packages/application/test/model-egress.unit.test.ts, packages/runtime-pi/src/pi-model-transport.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0245：模型请求被限流或暂时不可用时，在请求层重试最多 2 次

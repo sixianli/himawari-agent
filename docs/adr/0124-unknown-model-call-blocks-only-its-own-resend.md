@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0076-no-model-cost-budget-limits.md"
 date: "2026-10-30"
+covers: "packages/persistence-sqlite/src/sqlite-model-budget-operations.ts, scripts/delivery-mode/browser-acceptance-gate.py, test/integration/durable-memory-projection.test.ts, test/integration/product-path-browser.test.ts, test/integration/sqlite-model-budget-operations.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0124：结果不确定的模型调用只挡它自己的重发，不再挡同一轮的其他调用

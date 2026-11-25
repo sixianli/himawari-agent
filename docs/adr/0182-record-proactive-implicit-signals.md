@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-08"
+covers: "packages/application/test/daily-review.unit.test.ts, packages/persistence-sqlite/test/migration-engine.contract.test.ts, packages/platform-node/test/startup-configuration.unit.test.ts, test/integration/decision-signals.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0182：主动提醒的点开、撤销、回复信号单独记录，抽样含沉默决策

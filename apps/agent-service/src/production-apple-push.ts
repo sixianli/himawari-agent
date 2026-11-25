@@ -48,6 +48,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "新对话",
     openTitle: "Himawari 想请你点开一下",
     openBody: "这台设备上有一件事在等着做",
+    vaultTitle: "Himawari 请你批准一次使用",
+    vaultBody: "点开后刷脸批准或拒绝",
   },
   en: {
     approve: "Approve",
@@ -57,6 +59,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "New chat",
     openTitle: "Himawari needs you to open the app",
     openBody: "Something is waiting to be done on this device",
+    vaultTitle: "Himawari needs your approval",
+    vaultBody: "Open to approve or decline with Face ID",
   },
   ja: {
     approve: "承認",
@@ -66,6 +70,8 @@ export const APPLE_PUSH_TEXT = {
     untitled: "新しいチャット",
     openTitle: "Himawari を開いてください",
     openBody: "このデバイスで行う操作が待っています",
+    vaultTitle: "Himawari が使用の承認を求めています",
+    vaultBody: "開いて Face ID で承認または拒否",
   },
 } as const satisfies Record<WebPushLocale, unknown>;
 
@@ -95,22 +101,17 @@ export function applePushAlertPayload(input: {
   readonly tag: string;
   readonly kind: WebPushOutboxItem["kind"];
   readonly badge?: number | undefined;
-  readonly quiet?: boolean;
   readonly actions: readonly ApplePushAction[];
 }): string {
   const build = (title: string, body: string) =>
     JSON.stringify({
       aps: {
         alert: { title, body },
-        ...(input.quiet ? {} : { sound: "default" }),
-        ...(input.badge === undefined || input.quiet ? {} : { badge: input.badge }),
+        sound: "default",
+        ...(input.badge === undefined ? {} : { badge: input.badge }),
         "thread-id": input.kind,
         "mutable-content": 1,
-        "interruption-level": input.quiet
-          ? "passive"
-          : input.kind === "approval"
-            ? "time-sensitive"
-            : "active",
+        "interruption-level": input.kind === "approval" ? "time-sensitive" : "active",
         category: input.actions.length > 0 ? "himawari.actions" : "himawari.plain",
       },
       notificationId: input.tag,
@@ -155,6 +156,32 @@ export function applePushOpenRequestPayload(input: {
       kind: "device_action",
       navigate: "/",
       actionId: input.actionId,
+      actions: [],
+    },
+  });
+}
+
+export const VAULT_APPROVAL_PUSH_KIND = "vault_approval" as const;
+
+export function applePushVaultApprovalPayload(input: {
+  readonly title: string;
+  readonly body: string;
+  readonly requestId: string;
+}): string {
+  return JSON.stringify({
+    aps: {
+      alert: { title: input.title, body: input.body },
+      sound: "default",
+      "thread-id": VAULT_APPROVAL_PUSH_KIND,
+      "interruption-level": "time-sensitive",
+      category: "himawari.plain",
+    },
+    himawari: {
+      v: 1,
+      tag: `vault-${input.requestId}`,
+      kind: VAULT_APPROVAL_PUSH_KIND,
+      navigate: "/",
+      vaultRequestId: input.requestId,
       actions: [],
     },
   });
@@ -292,6 +319,40 @@ export class ProductionApplePush implements PushCompanionChannel {
     }
   }
 
+  async requestVaultApproval(input: {
+    readonly requestId: string;
+    readonly expiresAt: string;
+  }): Promise<void> {
+    try {
+      const registrations = (
+        await this.#options.store.listRegistrations({ ...this.#scope(), pushType: "alert" })
+      ).filter(
+        (registration) => registration.status === "active" && this.#configured(registration),
+      );
+      const now = this.#options.now();
+      for (const registration of registrations) {
+        const text = APPLE_PUSH_TEXT[registration.locale];
+        const result = await this.#transmit("alert", VAULT_APPROVAL_PUSH_KIND, {
+          token: registration.token,
+          environment: registration.environment,
+          topic: registration.topic,
+          pushType: "alert",
+          priority: 10,
+          expiresAtSeconds: Math.floor(Date.parse(input.expiresAt) / 1_000),
+          collapseId: `vault-${input.requestId}`,
+          payload: applePushVaultApprovalPayload({
+            title: text.vaultTitle,
+            body: text.vaultBody,
+            requestId: input.requestId,
+          }),
+        });
+        await this.#applyRegistrationOutcome(registration, result, now);
+      }
+    } catch (error) {
+      this.#options.onFailure(error);
+    }
+  }
+
   async #transmit(
     pushType: string,
     kind: string,
@@ -374,14 +435,7 @@ export class ProductionApplePush implements PushCompanionChannel {
         continue;
       }
       const locale = input.accountLocale ?? entry.registration.locale;
-      await this.#sendAlert(
-        entry,
-        now,
-        content,
-        content.build(locale).quiet === true ? undefined : await input.badge(),
-        locale,
-        input.approvals,
-      );
+      await this.#sendAlert(entry, now, content, await input.badge(), locale, input.approvals);
     }
     await store.routeOutbox({ ...this.#scope(), now });
     await store.prune({
@@ -489,7 +543,7 @@ export class ProductionApplePush implements PushCompanionChannel {
       environment: registration.environment,
       topic: registration.topic,
       pushType: "alert",
-      priority: item.kind === "run" || built.quiet === true ? 5 : 10,
+      priority: item.kind === "run" ? 5 : 10,
       expiresAtSeconds: Math.floor(Date.parse(item.expiresAt) / 1_000),
       collapseId: tag,
       payload: applePushAlertPayload({
@@ -501,7 +555,6 @@ export class ProductionApplePush implements PushCompanionChannel {
         tag,
         kind: item.kind,
         badge,
-        quiet: built.quiet === true,
         actions: await this.#actions(entry, now, locale, approval, affirmLabel),
       }),
     });

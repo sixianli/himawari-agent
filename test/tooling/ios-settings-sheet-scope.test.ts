@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(
-  new URL("../../clients/apple/Sources/HimawariManage/SettingsRootView.swift", import.meta.url),
-  "utf8",
-);
+const manage = new URL("../../clients/apple/Sources/HimawariManage/", import.meta.url);
+const herPage = readFileSync(new URL("HerPage.swift", manage), "utf8");
+const settingsParts = readFileSync(new URL("Settings/SettingsParts.swift", manage), "utf8");
 
-function structBody(name: string): string {
+function structBody(source: string, name: string): string {
   const start = source.indexOf(`struct ${name}`);
   expect(start).toBeGreaterThan(-1);
   const open = source.indexOf("{", start);
@@ -20,15 +19,15 @@ function structBody(name: string): string {
 }
 
 describe("the senses sheet is attached to the view that owns its state", () => {
-  it("declares sensesOpen and senses in SettingsRootView and presents the sheet there", () => {
-    const root = structBody("SettingsRootView");
+  it("declares sensesOpen and senses in HerPage and presents the sheet there", () => {
+    const root = structBody(herPage, "HerPage");
     expect(root).toContain("@State private var sensesOpen");
     expect(root).toContain("private let senses");
     expect(root).toContain(".sheet(isPresented: $sensesOpen)");
   });
 
   it("does not use them inside the generic SettingsPage container", () => {
-    const page = structBody("SettingsPage<Content: View>");
+    const page = structBody(settingsParts, "SettingsPage<Content: View>");
     expect(page).not.toContain("sensesOpen");
     expect(page).not.toContain("senses");
   });

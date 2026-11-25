@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0075：自研记忆引擎，去掉 Mem0
@@ -39,7 +41,7 @@ date: "2026-10-25"
 
 ## 决定
 
-1. 长期记忆由 Himawari 自研的记忆引擎实现，数据全部放在现有 SQLite 主库，去掉 `mem0ai` 依赖和 `packages/memory-mem0`。本决定取代 ADR 0005 中“不自建完整记忆引擎”的判断；ADR 0005 的其余决定（产品自有端口、所有触发源经同一上下文形成流程、注入内容进入 Session Trace）继续有效。
+1. 长期记忆由 Himawari 自研的记忆引擎实现，数据全部放在现有 SQLite 主库，去掉 `mem0ai` 依赖和 packages/memory-mem0。本决定取代 ADR 0005 中“不自建完整记忆引擎”的判断；ADR 0005 的其余决定（产品自有端口、所有触发源经同一上下文形成流程、注入内容进入 Session Trace）继续有效。
 2. 引擎实现在 `packages/memory-engine`，通过 ADR 0005 的 `MemoryProviderProjectionPort` 接入，`DurableMemoryService`、投影任务、重试和审批流程不变。索引的存储由 `packages/persistence-sqlite` 提供，作为主库里的派生数据，可随时从加密正文重建。
 3. 检索为向量、FTS5 全文、实体三路，用倒数排名融合（RRF）合并，再加重要度、把握分和新近度。中文用 Node 内置 `Intl.Segmenter` 预分词。向量存普通表的 BLOB 列，用 sqlite-vec 0.1.9 的标量函数在 SQLite 内暴力计算；扩展加载失败时退回 JavaScript 计算，嵌入服务不可用时退回全文加实体两路。
 4. 嵌入模型继续用云端 Qwen3-Embedding-8B（经 Vercel AI Gateway），由产品自己的 OpenAI 兼容嵌入客户端调用，每次调用照旧经过模型准入和预算登记。维度默认保持 4096；只有评测集上 1024 维没有损失、且实测网关支持时才降维，配置改动单独进行。

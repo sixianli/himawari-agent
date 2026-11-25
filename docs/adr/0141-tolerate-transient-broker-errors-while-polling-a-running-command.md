@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "apps/execution-worker/src/broker-poll-tolerance.ts, apps/execution-worker/src/production-sandbox-execution-v2.ts, apps/execution-worker/test/broker-poll-tolerance.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0141：轮询正在运行的命令时，瞬时的通信错误先重试，不再立刻取消命令

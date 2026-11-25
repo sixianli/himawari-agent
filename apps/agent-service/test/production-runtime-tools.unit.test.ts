@@ -11,11 +11,11 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationToolInputError } from "../src/production-conversation-tools.js";
-import { MemoryOpenInputError } from "../src/production-memory-open.js";
 import type {
   ProductionHostReadOnlyInput,
   ProductionHostReadOnlyResult,
 } from "../src/production-host-read.js";
+import { MemoryOpenInputError } from "../src/production-memory-open.js";
 import { ReminderInputError } from "../src/production-reminder-writer.js";
 import {
   type ProductionRuntimeSandbox,
@@ -2319,7 +2319,7 @@ it("[ADR-0257] throws instead of reporting a failed check when the run has stopp
   ).toEqual([]);
 });
 
-it("[ADR-0257] only the listing, recall, conversation and perception read tools skip the authorization exit among the built-in tools", () => {
+it("[ADR-0257] only the listing, recall, conversation, mail, perception and vault read tools skip the authorization exit among the built-in tools", () => {
   const builtin = PRODUCTION_TOOL_ACTION_ROWS.filter(({ family }) => family === "builtin");
   expect(
     builtin.filter(({ authorization }) => authorization === "read").map(({ tool }) => tool),
@@ -2328,18 +2328,28 @@ it("[ADR-0257] only the listing, recall, conversation and perception read tools 
     "conversation_search",
     "conversation_open",
     "memory_open",
+    "mail_read",
     "reminder_list",
     "rule_list",
     "tool_result_recall",
     "perception_read",
+    "vault_list",
   ]);
   expect(
     builtin
       .filter(({ authorization }) => authorization === "owner_scope")
       .map(({ tool }) => tool)
       .sort(),
-  ).toEqual(["device_action", "reminder_cancel", "reminder_set", "rule_set", "rule_undo"]);
-  expect(builtin).toHaveLength(13);
+  ).toEqual([
+    "device_action",
+    "offer_options",
+    "reminder_cancel",
+    "reminder_set",
+    "rule_set",
+    "rule_undo",
+    "tell_owner",
+  ]);
+  expect(builtin).toHaveLength(17);
 });
 
 it("[ADR-0257] runs a tool with consequences only after the exit allows it, and never asks the exit for a read", async () => {
@@ -2421,8 +2431,8 @@ const EVERY_TOOL_NAMES = [
   "memory_open",
 ];
 const EVERY_TOOL_DEFINITIONS_SHA256 =
-  "4141035a01840f7dedd21038f64d395e01e8ebbb3e9a99f42f3fa7661b7696a4";
+  "0e98e3a4bfcee0328e0c490801cff8ea9b5927a29d13aceb3f481b40c760e797";
 const TOOL_DEFINITIONS_BEFORE_MEMORY_OPEN_SHA256 =
-  "fd3345339856bda316c02421d4a3168f2a82fcb69af0374752be478a09d619e3";
+  "c8a5e48be59506e72db461e16bf5d7f7e1fea2910fa00ec04db6874dcbecc90e";
 const TOOL_DEFINITIONS_BEFORE_CONVERSATIONS_SHA256 =
-  "a41c59795408bf1a95dc613c7ed5b761542a72e2798a3fe72c7a1c0197d7af91";
+  "c1dbee20be4212f4fed7352edf6a6a71edd4785fd560953b488d47992b39998f";

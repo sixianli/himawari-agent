@@ -6,6 +6,8 @@ supersedes: ""
 amends: "docs/adr/0211-hard-rule-points-back-to-its-rule-memory.md, docs/adr/0219-read-only-mcp-entry-with-static-token.md"
 superseded_by: ""
 date: "2026-11-12"
+covers: "packages/persistence-sqlite/src/sqlite-correction-review-operations.ts, packages/persistence-sqlite/src/sqlite-memory-consolidation-operations.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0232：改了记忆，沿依据链标出推出来的记忆和规则；规则由模型重读来源后自动核对，对不上就暂停

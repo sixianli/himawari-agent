@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0245-retry-rate-limited-model-requests-at-the-request-layer.md"
 date: "2026-11-09"
+covers: ".agents/instructions/model-review.md, .agents/instructions/prompt-prefix.md, ci/security-exceptions.json, packages/runtime-pi/src/pi-runtime-adapter.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0198：Pi 从 0.84.2 升到 1.5.0，历史恢复改走 Pi 官方的 SessionManager
@@ -34,12 +36,12 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 
 ## 前提
 
-1. Pi 1.5.0 的模型调用接口只收 `TranscriptContext`，系统提示和工具放在 `role: "system"` 的消息里：`packages/ai/src/types.ts`（v1.5.0）“The prompt and tool declarations are carried by the transcript's system messages. Only `normalizeContext()` produces this type”。
-2. 生成它的唯一入口是 `normalizeContext`：`packages/ai/src/utils/transcript.ts`（v1.5.0）“Fold `Context.systemPrompt` and `Context.tools` into a leading system message. This is the only entry point that produces a TranscriptContext”。
-3. 恢复外部历史的官方做法：`packages/coding-agent/docs/sdk.md`（v1.5.0）“Restore external history by constructing the session with a manager containing those entries. Assigning `session.agent.state.messages` does not replace persisted context.”；对应接口 `SessionManager.inMemory(cwd, options, entries)`（`packages/coding-agent/src/core/session-manager.ts`，“Create an in-memory session (no file persistence), optionally from entries held outside the filesystem.”）。
-4. 1.5.0 里 `systemPrompt` 只能读：`packages/agent/src/agent.ts` 的 `get systemPrompt()`，返回 `getCurrentSystemPrompt(messages)`。
-5. Pi 只在两处追加 `context_edit`（把失败的那次回答从模型上下文里拿掉）：自动重试（`agent-session.ts` 里 `_omitRecoveryAttempt(message)`，注释“Keep the failed attempt in raw history while durably omitting it from model projection.”），以及上下文溢出或截断恢复，后者紧接着压缩（同一文件，“Persistently omit the selected final attempt before post-run recovery compaction.”）。Himawari 一直关着 Pi 的自动重试：`packages/runtime-pi/src/pi-runtime-adapter.ts` 设置 `retry: { enabled: false, maxRetries: 0 }`。
-6. pi-durable 是实验性的：`packages/durable/README.md`（v1.5.0）“**Experimental.** The API changes without notice between releases.”
+1. Pi 1.5.0 的模型调用接口只收 `TranscriptContext`，系统提示和工具放在 `role: "system"` 的消息里：packages/ai/src/types.ts（v1.5.0）“The prompt and tool declarations are carried by the transcript's system messages. Only `normalizeContext()` produces this type”。
+2. 生成它的唯一入口是 `normalizeContext`：packages/ai/src/utils/transcript.ts（v1.5.0）“Fold `Context.systemPrompt` and `Context.tools` into a leading system message. This is the only entry point that produces a TranscriptContext”。
+3. 恢复外部历史的官方做法：packages/coding-agent/docs/sdk.md（v1.5.0）“Restore external history by constructing the session with a manager containing those entries. Assigning `session.agent.state.messages` does not replace persisted context.”；对应接口 `SessionManager.inMemory(cwd, options, entries)`（packages/coding-agent/src/core/session-manager.ts，“Create an in-memory session (no file persistence), optionally from entries held outside the filesystem.”）。
+4. 1.5.0 里 `systemPrompt` 只能读：packages/agent/src/agent.ts 的 `get systemPrompt()`，返回 `getCurrentSystemPrompt(messages)`。
+5. Pi 只在两处追加 `context_edit`（把失败的那次回答从模型上下文里拿掉）：自动重试（agent-session.ts 里 _omitRecoveryAttempt(message)，注释“Keep the failed attempt in raw history while durably omitting it from model projection.”），以及上下文溢出或截断恢复，后者紧接着压缩（同一文件，“Persistently omit the selected final attempt before post-run recovery compaction.”）。Himawari 一直关着 Pi 的自动重试：`packages/runtime-pi/src/pi-runtime-adapter.ts` 设置 `retry: { enabled: false, maxRetries: 0 }`。
+6. pi-durable 是实验性的：packages/durable/README.md（v1.5.0）“**Experimental.** The API changes without notice between releases.”
 7. 同类开源项目 OpenClaw 在 2026.5.22 把 Pi 的 Agent 运行时收回自己维护，并关掉 Pi 内置重试：`CHANGELOG/2026.5.22.md` 第 29 行“internalize the former Pi agent runtime into OpenClaw”、第 255 行“disable the embedded pi-coding-agent runtime auto-retry so OpenClaw's own retry and failover loop does not replay failed tool calls through a nested SDK retry”。
 8. 发给模型的内容只能往后追加，系统提示和工具按对话冻结：[.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md) 第 4、6 条。
 
@@ -69,7 +71,7 @@ Himawari 的模型调用、Agent 循环（模型一步步调用工具的那套�
 ## 放弃的做法
 
 - **让 Pi 自己组装请求开头**（`before_agent_start` 返回系统提示，由 Pi 的 `forceSystemPrompt` 投影）。Pi 每轮会按自己的规则重算提示的分节，工具变化也由 Pi 记录；开头是否和上一轮逐字节相同不再由 Himawari 控制，违反前提 8。
-- **快照只存消息、续跑时逐条 `appendMessage`。**压缩摘要等消息不能用 `appendMessage` 写回（`session-manager.ts`：“Does not allow writing CompactionSummaryMessage and BranchSummaryMessage directly”），恢复出来的会话会和挂起时不同。
+- **快照只存消息、续跑时逐条 `appendMessage`。**压缩摘要等消息不能用 `appendMessage` 写回（session-manager.ts：“Does not allow writing CompactionSummaryMessage and BranchSummaryMessage directly”），恢复出来的会话会和挂起时不同。
 - **换成 pi-durable 做持久运行和审批。**它是实验性的（前提 6），换了等于重写运行核心；Andy 同意另开评估。
 - **把 Pi 版本写进冻结 bundle 的身份，让老对话换新一次。**这要加一种换新原因，需要改表结构；而实测同一份内容在 0.84.2 和 1.5.0 下发出的请求逐字节相同（见[后果](#consequences)），工具参数结构变了时已有的换新条件会处理，所以不需要。
 

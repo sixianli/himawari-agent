@@ -13,7 +13,7 @@ import {
   openQualifiedDatabase,
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
-import { MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
+import { CHAT_MEMORY_SNAPSHOT_MARKER, MEMORY_CAPTURE } from "@himawari-agent/prompt-catalog";
 import { buildDeviceTestRequest, generateDeviceTestKeyPair } from "@himawari-agent/testing";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -1667,7 +1667,9 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         () => {
           const database = openQualifiedDatabase(databasePath);
           try {
-            return readRunBilling(database, "run:installed-main").identities.length;
+            return readRunBilling(database, "run:installed-main").identities.filter(
+              ({ status }) => status === "settled",
+            ).length;
           } finally {
             database.close();
           }
@@ -2552,7 +2554,16 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
     expect(warm.whilePreparing).toEqual(["帮我把明天的会改到下午"]);
     expect(warm.afterFinal).toEqual([]);
 
-    const lastCold = lastMessage(cold.request);
+    const outsideSnapshot = (message: string) => {
+      const start = message.indexOf(CHAT_MEMORY_SNAPSHOT_MARKER.text);
+      if (start < 0) return message;
+      const end = message.indexOf("\\n[", start + CHAT_MEMORY_SNAPSHOT_MARKER.text.length);
+      return message.slice(0, start) + (end < 0 ? "" : message.slice(end));
+    };
+    const fullCold = lastMessage(cold.request);
+    expect(fullCold).toContain(CHAT_MEMORY_SNAPSHOT_MARKER.text);
+    for (const text of remembered) expect(fullCold).toContain(text);
+    const lastCold = outsideSnapshot(fullCold);
     const order = (message: string) =>
       remembered
         .map((text) => [text, message.indexOf(text)] as const)
@@ -2561,7 +2572,7 @@ it("[PR-A] [iOS-8] a half sentence prepared while the owner speaks sends the mod
         .map(([text]) => text);
     expect(order(lastCold).length).toBeGreaterThanOrEqual(2);
     expect(order(lastCold)).not.toContain("主人的牙医是樱井医生");
-    expect(order(lastMessage(warm.request))).toEqual(order(lastCold));
+    expect(order(outsideSnapshot(lastMessage(warm.request)))).toEqual(order(lastCold));
     expect(lastCold).toContain(finalWords);
     expect(withoutTurnTime(warm.request.raw)).toBe(withoutTurnTime(cold.request.raw));
     expect(warm.request.raw.match(turnTime)).toHaveLength(1);

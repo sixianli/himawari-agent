@@ -583,23 +583,13 @@ describe("local shared-runner boundary", () => {
       await withHost(os, cpu, () => expect(runLocal()).rejects.toThrow("PLATFORM_UNSUPPORTED"));
     expect(state.calls).toEqual([]);
   });
-  it("on linux-arm64 runs the three checks that need no build artifact and labels them linux-arm64", async () => {
+  it("on linux-arm64 runs the local graph under the linux-arm64 label", async () => {
     await withHost("linux", "arm64", async () => {
-      for (const check of ["policy", "static", "security"]) {
-        state.calls.length = 0;
-        const summary = await runLocal({ check, output: `.ci-output/local-${check}` });
-        expect(summary.platform).toBe("linux-arm64");
-        expect(
-          state.calls.filter((entry) => entry.name === "check").map((entry) => entry.checkId),
-        ).toEqual([check]);
-      }
-      state.calls.length = 0;
-      for (const check of [undefined, "build", "tests"])
-        await expect(
-          runLocal({ check, output: `.ci-output/local-refused-${check}` }),
-        ).rejects.toThrow("CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64");
-      expect(state.calls).toEqual([]);
-      expect(existsSync(path.join(state.root, ".ci-output/local-refused-build"))).toBe(false);
+      const summary = await runLocal({ check: "build", output: ".ci-output/local-arm64-build" });
+      expect(summary.platform).toBe("linux-arm64");
+      expect(
+        state.calls.filter((entry) => entry.name === "check").map((entry) => entry.checkId),
+      ).toEqual(["build"]);
     });
   });
   it("runs the full local graph with one build artifact and explicit hosted/production limitations", async () => {

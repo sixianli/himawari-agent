@@ -1,0 +1,4 @@
+# PR 637 第 3 轮判断（deepseek-v4.1-flash）
+
+- 1（deepseek-v4.1-flash）不成立：### 1. 低：只有内部回话的运行会退回通用“已完成”推送，新分支没有用例。这段代码不是本 PR 改的：git diff origin/main...HEAD 不碰 production-web-push.ts 和 sqlite-web-push-operations.ts，是合并 main 带进来的 PR 635；而且没有可达输入：sqlite-thread-operations.ts:1304-1309 commitAssistantMessage 插入 agent 消息不写 internal 列（默认 0），只有 admitOwnerMessage（:1205-1219）写 internal，所以 role=agent 且 internal=1 的消息生产里造不出来，模型自己也这样核过
+- 2（deepseek-v4.1-flash）成立，可以更好：### 2. 低：源码缓存夹具的修复没有可稳定复现的自动检查，根因是推断。说的是测试夹具修复的验证缺口，不是产品错误结果：verify-source-cache-fixtures.mjs:8 的 GIT_CONFIG_* 经 :9 的 run 传给夹具和 source-cache.mjs 的所有 git 调用，配置确实生效；根因是推断属实，提交说明已写明，以 CI static 通过为验证；若再出 ENOTEMPTY，可给 rmSync 加 maxRetries 或给 fetch 加 --no-auto-maintenance

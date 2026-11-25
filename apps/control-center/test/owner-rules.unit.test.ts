@@ -5,6 +5,7 @@ import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BuiltInActionRulesSection,
+  OwnerAllowancesSection,
   OwnerRulesSection,
   RuleReceiptCard,
 } from "../src/components/rule-receipt.tsx";
@@ -13,9 +14,8 @@ import type { MessageId } from "../src/i18n/message-ids.ts";
 import { messages } from "../src/i18n/resources/zh-CN.ts";
 import {
   type BuiltInActionRule,
+  type OwnerAllowance,
   type OwnerRule,
-  type PendingProposal,
-  type PendingProposals,
   useMemory,
 } from "../src/memory.ts";
 
@@ -75,42 +75,6 @@ const active = {
   replayed: false,
 };
 
-const respondProposal = vi.fn(async () => true);
-const FINGERPRINT = "ab".repeat(32);
-const proposal = (over: Partial<PendingProposal> = {}): PendingProposal => ({
-  proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-  version: 3,
-  fingerprint: FINGERPRINT,
-  type: "owner_rule",
-  summary: "入管局的邮件一律提醒",
-  effect: "入管局的邮件一律提醒",
-  origin: "inferred",
-  adoptable: true,
-  requiresFullRead: false,
-  requiresPresence: false,
-  evidence: [
-    { kind: "owner_words", text: "入管局的邮件别漏了", sources: [], figures: [] },
-    {
-      kind: "mail_replay",
-      text: null,
-      sources: [{ kind: "web_page", ref: "https://example.test/a" }],
-      figures: [{ name: "mailsHit", value: 3, definition: "规则命中的邮件数" }],
-    },
-  ],
-  proposedAt: "2026-11-11T00:00:00.000Z",
-  expiresAt: "2026-12-11T00:00:00.000Z",
-  refusedBefore: 0,
-  ...over,
-});
-const waiting: PendingProposals = {
-  proposals: [proposal()],
-  pendingCount: 1,
-  limit: 20,
-  expiresAfterDays: 30,
-  opened: null,
-  generatedAt: "2026-11-11T00:00:00.000Z",
-};
-
 const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   ruleId: "owner:0123456789abcdef01234567",
   type: "mail_read_whole_thread",
@@ -126,6 +90,18 @@ const rule = (change: Partial<OwnerRule> = {}): OwnerRule => ({
   ...change,
 });
 
+const allowance = (change: Partial<OwnerAllowance> = {}): OwnerAllowance => ({
+  allowanceId: "allowance:0123456789abcdef",
+  allowFor: "days",
+  title: "回复 张三：周四下午 3 点可以",
+  operation: "send",
+  recipients: ["zhangsan@example.com"],
+  threadId: null,
+  threadTitle: null,
+  expiresAt: "2026-11-18T00:00:00.000Z",
+  createdAt: "2026-11-11T00:00:00.000Z",
+  ...change,
+});
 const builtIn = (change: Partial<BuiltInActionRule> = {}): BuiltInActionRule => ({
   ruleId: "action_preauthorize_owner_data",
   revision: 1,
@@ -156,7 +132,6 @@ async function press(label: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
-  respondProposal.mockImplementation(async () => true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -173,7 +148,7 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify(active),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -194,7 +169,7 @@ describe("[P2-3] standing rules on the web page", () => {
     expect(buttons()).toEqual([]);
   });
 
-  it("offers Apply only on a proposal, and nothing to press for a soft preference or a failed call", async () => {
+  it("offers Apply only on a proposal, and shows nothing for a rule she still has to ask about or a failed call", async () => {
     const respondRule = vi.fn(async () => true);
     await show(
       h(RuleReceiptCard, {
@@ -205,13 +180,13 @@ describe("[P2-3] standing rules on the web page", () => {
           proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
           replay: null,
         }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
     expect(container.textContent).toContain("点“生效”才执行");
     expect(container.textContent).toContain("这次没能做历史回放");
-    expect(buttons()).toEqual(["生效", "不要"]);
+    expect(buttons()).toEqual(["生效"]);
     await press("生效");
     expect(respondRule).toHaveBeenCalledWith(
       "rule-proposal:0123456789abcdef0123456789abcdef",
@@ -219,39 +194,18 @@ describe("[P2-3] standing rules on the web page", () => {
     );
     await show(
       h(RuleReceiptCard, {
-        key: "refuse",
-        output: JSON.stringify({
-          ...active,
-          status: "proposed",
-          ruleId: null,
-          proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-        }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        key: "ask",
+        output: JSON.stringify({ ...active, status: "ask_owner", ruleId: null, proposalId: null }),
+        memory: { respondRule, busy: false },
         message,
       }),
     );
-    await press("不要");
-    expect(respondProposal).toHaveBeenCalledWith(waiting.proposals[0], "reject");
-    expect(buttons()).toEqual([]);
-    await show(
-      h(RuleReceiptCard, {
-        key: "gone",
-        output: JSON.stringify({
-          ...active,
-          status: "proposed",
-          ruleId: null,
-          proposalId: "rule-proposal:ffffffffffffffffffffffffffffffff",
-        }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
-        message,
-      }),
-    );
-    expect(buttons()).toEqual(["生效"]);
+    expect(container.textContent).toBe("");
     await show(
       h(RuleReceiptCard, {
         key: "soft",
         output: JSON.stringify({ ...active, status: "soft", ruleId: null, trials: [] }),
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -262,7 +216,7 @@ describe("[P2-3] standing rules on the web page", () => {
       h(RuleReceiptCard, {
         key: "failed",
         output: "这次没有记成规则",
-        memory: { proposals: waiting, respondRule, respondProposal, busy: false },
+        memory: { respondRule, busy: false },
         message,
       }),
     );
@@ -273,12 +227,7 @@ describe("[P2-3] standing rules on the web page", () => {
     await show(
       h(RuleReceiptCard, {
         output: JSON.stringify({ ...active, type: "mail_read_whole_thread" }),
-        memory: {
-          proposals: null,
-          respondRule: vi.fn(async () => true),
-          respondProposal: vi.fn(),
-          busy: false,
-        },
+        memory: { respondRule: vi.fn(async () => true), busy: false },
         message,
       }),
     );
@@ -332,6 +281,7 @@ describe("[P2-3] standing rules on the web page", () => {
             payload: {
               rules: [rule()],
               builtIn: [builtIn()],
+              allowances: [allowance()],
               generatedAt: "2026-11-11T00:00:00.000Z",
             },
           }
@@ -348,6 +298,7 @@ describe("[P2-3] standing rules on the web page", () => {
       "owner:0123456789abcdef01234567",
     ]);
     expect(seen.model?.builtInRules).toEqual([builtIn()]);
+    expect(seen.model?.allowances).toEqual([allowance()]);
     await act(async () => {
       await seen.model?.respondRule("owner:0123456789abcdef01234567", "undo");
     });
@@ -356,16 +307,12 @@ describe("[P2-3] standing rules on the web page", () => {
       payload: { target: "owner:0123456789abcdef01234567", action: "undo" },
     });
     await act(async () => {
-      await seen.model?.respondProposal(proposal(), "adopt");
+      await seen.model?.revokeAllowance("allowance:0123456789abcdef");
     });
     expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
-      type: "proposal.respond",
-      payload: {
-        proposalId: "rule-proposal:0123456789abcdef0123456789abcdef",
-        expectedVersion: 3,
-        fingerprint: FINGERPRINT,
-        action: "adopt",
-      },
+      type: "approval.allowance.revoke",
+      risk: "low",
+      payload: { allowanceId: "allowance:0123456789abcdef" },
     });
   });
 
@@ -430,5 +377,105 @@ describe("[P2-3] standing rules on the web page", () => {
       }),
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("[ADR-0285] lists the permissions the owner gave with their scope and task name, and takes one back", async () => {
+    const revokeAllowance = vi.fn(async () => true);
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [
+            allowance(),
+            allowance({
+              allowanceId: "allowance:fedcba9876543210",
+              allowFor: "this_task",
+              title: "改日历",
+              threadId: "thread-1",
+              expiresAt: null,
+            }),
+            allowance({
+              allowanceId: "allowance:aaaaaaaaaaaaaaaa",
+              allowFor: "this_task",
+              title: "订大阪的酒店",
+              threadId: "thread-2",
+              threadTitle: "订酒店",
+              expiresAt: null,
+            }),
+          ],
+          revokeAllowance,
+          busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
+        },
+        message,
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("你给过的同意 · 3 条");
+    expect(text).toContain("只在“订酒店”这件事里");
+    expect(text).toContain("回复 张三：周四下午 3 点可以");
+    expect(text).toContain("到 ");
+    expect(text).toContain("只在那件事里");
+    const revoke = [...container.querySelectorAll("button")].find(
+      (button) =>
+        button.closest("[data-allowance]")?.getAttribute("data-allowance") ===
+        "allowance:fedcba9876543210",
+    );
+    await act(async () => revoke?.click());
+    expect(revokeAllowance).toHaveBeenCalledWith("allowance:fedcba9876543210");
+  });
+
+  it("[ADR-0285] REVERSE: nothing renders when no permission was given and the day count is unknown", async () => {
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [],
+          revokeAllowance: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: null,
+          setAllowanceDays: vi.fn(async () => true),
+        },
+        message,
+      }),
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  it("[ADR-0285] the owner changes how many days “N 天内都行” lasts, within 1 to 90", async () => {
+    const setAllowanceDays = vi.fn(async () => true);
+    await show(
+      h(OwnerAllowancesSection, {
+        memory: {
+          allowances: [],
+          revokeAllowance: vi.fn(async () => true),
+          busy: false,
+          allowanceDays: 7,
+          setAllowanceDays,
+        },
+        message,
+      }),
+    );
+    const input = container.querySelector<HTMLInputElement>(".allowance-days input");
+    const save = container.querySelector<HTMLButtonElement>(".allowance-days button");
+    expect(input?.value).toBe("7");
+    expect(save?.disabled).toBe(true);
+    const type = async (value: string) =>
+      act(async () => {
+        if (!input) return;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await type("91");
+    expect(save?.disabled).toBe(true);
+    await type("0");
+    expect(save?.disabled).toBe(true);
+    await type("14");
+    expect(save?.disabled).toBe(false);
+    await act(async () => save?.click());
+    expect(setAllowanceDays).toHaveBeenCalledWith(14);
+    expect(setAllowanceDays).toHaveBeenCalledTimes(1);
   });
 });

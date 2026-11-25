@@ -2,10 +2,12 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0080-document-governance-in-fast-mode.md
+supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
 amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
+covers: ".agents/instructions/delivery-mode.md, AGENTS.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0133：删除仓库里的文档自动校验，改为用技能手动运行
@@ -24,9 +26,9 @@ amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 
 ## 背景
 
-[ADR 0080](0080-document-governance-in-fast-mode.md)（2026-10-26）定下：快速模式（`DELIVERY_MODE` 为 `fast`，只跑相关测试、`npm run check` 和 `npm run build`）也保留文档严格校验，`npm run check` 每次都跑 `npm run check:docs`（`scripts/check-docs-governance.mjs`，现已不在仓库里；约 1 秒），只放过操作手册（Runbook）封存过期两类问题。它也是事故 I-06（提交 `51fe7f6` 改代码没重新封存操作手册，之后严格校验一直失败）的自动门槛。
+[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)（2026-10-26）定下：快速模式（`DELIVERY_MODE` 为 `fast`，只跑相关测试、`npm run check` 和 `npm run build`）也保留文档严格校验，`npm run check` 每次都跑 npm run check:docs（[scripts/check-docs-governance.mjs](https://github.com/sixianli/himawari-agent/blob/f06f1460b45a2b5f5506dc90579e440f4ff7a833/scripts/check-docs-governance.mjs)，现已不在仓库里；约 1 秒），只放过操作手册（Runbook）封存过期两类问题。它也是事故 I-06（提交 `51fe7f6` 改代码没重新封存操作手册，之后严格校验一直失败）的自动门槛。
 
-2026-10-31 00:42（日本时间），在删除 `.claude/skills/`（[ADR 0132](0132-owner-skills-from-the-claude-ai-account.md)）的同一线程里，Andy 要求删掉 `npm run check` 里的这一步。线程用选择卡说明了代价：按 [ADR 0107](0107-every-incident-gets-an-automatic-gate.md)，拆掉门槛后 I-06 要改回“缺门槛”。Andy 选了“删掉，I-06 改回缺门槛”。
+2026-10-31 00:42（日本时间），在删除 [.claude/skills/](https://github.com/sixianli/himawari-agent/tree/a56903d808de68423561a52d5e4db4b0b622191b/.claude/skills)（[ADR 0132](0132-owner-skills-from-the-claude-ai-account.md)）的同一线程里，Andy 要求删掉 `npm run check` 里的这一步。线程用选择卡说明了代价：按 [ADR 0107](0107-every-incident-gets-an-automatic-gate.md)，拆掉门槛后 I-06 要改回“缺门槛”。Andy 选了“删掉，I-06 改回缺门槛”。
 
 [↑ 返回阅读导航](#contents)
 
@@ -44,8 +46,8 @@ amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 
 ## 决定
 
-1. `npm run check` 不再运行 `npm run check:docs`。
-2. 随后 Andy 要求连仓库里的 `document-governance` 副本也删掉（[ADR 0132](0132-owner-skills-from-the-claude-ai-account.md)），所以 `npm run check:docs`、`scripts/check-docs-governance.mjs` 和 `test/tooling/docs-governance-check.test.mjs` 一起删除。需要时通过技能工具加载 `document-governance`，手动跑它的 `validate_docs.py . --strict`。
+1. `npm run check` 不再运行 npm run check:docs。
+2. 随后 Andy 要求连仓库里的 `document-governance` 副本也删掉（[ADR 0132](0132-owner-skills-from-the-claude-ai-account.md)），所以 npm run check:docs、[scripts/check-docs-governance.mjs](https://github.com/sixianli/himawari-agent/blob/f06f1460b45a2b5f5506dc90579e440f4ff7a833/scripts/check-docs-governance.mjs) 和 test/tooling/docs-governance-check.test.mjs 一起删除。需要时通过技能工具加载 `document-governance`，手动跑它的 `validate_docs.py . --strict`。
 3. 事故 I-06 在 [docs/incidents-and-gates.md](../incidents-and-gates.md) 里改回“缺门槛”。
 4. ADR 0080 其余内容（快速模式下延后操作手册重新封存、`Docs: deferred (fast mode)` 提交说明）照旧，由本 ADR 继承。
 
@@ -57,7 +59,7 @@ amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 
 - 每次提交少跑约 1 秒；文档校验出错不再挡提交。
 - 文档和代码重新可能悄悄脱节，就像 I-06 那次；只有手动跑技能的校验或切回完整模式时才会发现。
-- 规则文件（`.claude/rules/document-governance.md`，现已不在仓库里）、[.agents/instructions/delivery-mode.md](../../.agents/instructions/delivery-mode.md) 和 [AGENTS.md](../../AGENTS.md) 已改成“手动运行”。
+- 规则文件（.claude/rules/document-governance.md，现已不在仓库里）、[.agents/instructions/delivery-mode.md](../../.agents/instructions/delivery-mode.md) 和 [AGENTS.md](../../AGENTS.md) 已改成“手动运行”。
 
 [↑ 返回阅读导航](#contents)
 
@@ -65,7 +67,7 @@ amended_by: "docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md"
 
 ## 关联文档
 
-- [ADR 0080：快速模式下保留文档严格校验](0080-document-governance-in-fast-mode.md)（被本 ADR 取代）
+- [ADR 0080：快速模式下保留文档严格校验](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)（被本 ADR 取代）
 - [ADR 0107：每个事故都要有自动门槛](0107-every-incident-gets-an-automatic-gate.md)
 - [ADR 0132：仓库不再保存 Andy 的技能副本](0132-owner-skills-from-the-claude-ai-account.md)
 - [案例 74：仓库里的规则和技能，云端线程到底读到了哪些](../engineering-casebook.md#case-cloud-thread-loading)

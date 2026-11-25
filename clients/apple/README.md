@@ -1,7 +1,7 @@
 <a id="apple-clients"></a>
 # Himawari 苹果客户端
 
-这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 Andy 2026-11-12 批准的原型第 2 版 `docs/assets/apple-clients/2026-11-12-v2/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成）。现在做到第 2 批（配对、对话列表、聊天）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
+这里是 Himawari 的 iPhone App 和 Mac 菜单栏 App（以后还有 Apple Watch）。设计和分批见[详细设计](../../docs/execution/specs/2026-11-11-apple-device-body-design.md)和[实施计划](../../docs/execution/plans/2026-11-11-apple-device-body-plan.md)；界面照 2026-11-25 定下的原型第 4 版 `docs/assets/apple-clients/2026-11-25-v4/` 做（颜色、尺寸、字号由其中的 `tokens.json` 生成；Mac 和手表暂停，它们的数值在这份文件里照抄第 2 版）。现在做到第 2 批（配对、主对话）、第 6 批（分享面板、Safari 扩展）和第 10B 批（Mac 菜单栏 App）。
 
 - [代码怎么分](#layout)
 - [在 Mac 上构建、测试、装到 iPhone](#on-the-mac)
@@ -23,11 +23,11 @@
 | --- | --- | --- |
 | `HimawariCore` | 设备签名（按 RFC 9421，一种给 HTTP 请求签名的标准）、密钥（存在手机的安全芯片里）、配对、和服务器通信、事件流、待发消息队列、本地缓存。只用 Foundation，能在 Linux 上编译和测试 | 第 2 批 |
 | `HimawariDesign` | 颜色（浅色深色两套）、Himawari 说的话用的衬线字、卡片、胶囊按钮、玻璃圆钮、页签栏、葵盘标志、图标 | 第 2 批；别的批要加共用组件先找第 2 批线程 |
-| `HimawariChat` | 对话列表和聊天 | 第 2 批 |
+| `HimawariChat` | 主对话的聊天界面 | 第 2 批 |
 | `HimawariManage` | 记忆、设置等管理页面；现在只有两个入口占位，设置页里多了一行“让 Himawari 感知” | 第 11 批 |
 | `HimawariSenses` | 让 Himawari 感知：位置、日程、健康和运动、通讯录、相册、剪贴板六项的采集（只在 iPhone 上编译），以及总览、介绍、系统没允许、开着的一项这几屏。示例场景 `19-senses-1-overview` 到 `19-senses-5-denied`；场景名带 `system-prompt` 的会弹出真的系统询问框，`scripts/ui-review.sh` 拍之前清掉 App 的权限、拍完重启模拟器，免得询问框留在系统上盖住后面的场景；脚本也把模拟器的系统语言设成简体中文并强制 12 小时制，系统询问框才和原型一样是中文，状态栏时间才是原型里的“9:41”而不是“09:41” | 第 6 批 |
 | `HimawariShare` | 把东西“交给 Himawari”：分享面板、Safari 扩展的原生部分、两个入口的设置页 | 第 6 批 |
-| `HimawariShell` | 三页签外壳、“今天”页（`Today/`，按服务器 `home.read` 给的首页条目照原顺序画）、配对页、整个 App 的状态 | 第 2 批；“今天”页由“做 iPhone 今天页”线程做 |
+| `HimawariShell` | App 外壳：配对页、主对话（用 `thread.main` 查到服务器上唯一的主对话，没有底栏和对话列表）、从头像进入的“她的页面”、整个 App 的状态 | 第 2 批 |
 | `HimawariWatchUI` | Apple Watch App 的界面和逻辑（App 目标叫 `HimawariWatch`）：配对、等你定的一件事、抬腕说一句、到点轻敲。只在 watchOS 上编译 | 第 10A 批 |
 | `HimawariMacUI` | Mac 菜单栏 App 的界面和逻辑（App 目标叫 `HimawariMac`）：菜单栏的向日葵和面板、⌥ 空格输入条、拖文件、动文件前的清单、唯一的设置页、配对窗口。只在 macOS 上编译 | 第 10B 批 |
 
@@ -41,7 +41,7 @@
 需要 Xcode 26 或更新的版本，手机系统 iOS 26 或更新。现在用免费的 Apple ID 就能装到自己手机上（免费账号装的 App 7 天后要重新装一次）。
 
 1. 在 Xcode 里打开 `clients/apple/App/Himawari.xcodeproj`。第一次打开会自动下载依赖的 `swift-crypto` 包，等左边栏不再转圈。
-2. 左边栏点最上面的 Himawari 工程 → 中间 TARGETS 下的 Himawari、HimawariShareExtension、HimawariSafariExtension 三个目标（要装手表 App 时还有 HimawariWatch、HimawariWatchWidgets 两个目标），各自在 Signing & Capabilities 里把 Team 选成你的 Apple ID。如果提示 Bundle Identifier 被占用，把 `win.siyi.himawari` 改成别的（例如末尾加你的名字），两个扩展的 `win.siyi.himawari.share`、`win.siyi.himawari.safari` 前面要跟着改成一样的。这几个目标共用一个 App Group（`HIMAWARI_APP_GROUP`，让 App 和扩展共用一块存储）和一个钥匙串分组（`HIMAWARI_KEYCHAIN_GROUP`，让扩展能用 App 配对时存的设备密钥），这两个值在工程级的构建设置里，改了 Bundle Identifier 时最好一起改。
+2. 左边栏点最上面的 Himawari 工程 → 中间 TARGETS 下的 Himawari、HimawariShareExtension、HimawariSafariExtension 三个目标（用灵动岛时还有 HimawariListenActivity；要装手表 App 时还有 HimawariWatch、HimawariWatchWidgets 两个目标），各自在 Signing & Capabilities 里把 Team 选成你的 Apple ID。iPhone 这组目标的 Bundle Identifier（App 在苹果系统里的唯一编号）现在是 `win.siyi.himawari.app`，分享扩展、Safari 扩展、灵动岛和手表的编号都由工程级的 `HIMAWARI_BUNDLE_PREFIX` 拼出来。Personal Team 登记过的 ID 付费团队用不了，改工程级的 HIMAWARI_BUNDLE_PREFIX 这一处即可；如果提示被占用，把它改成别的（例如末尾加你的名字）。Mac 目标 `win.siyi.himawari.mac` 不跟着这个前缀变。这几个目标共用一个 App Group（`HIMAWARI_APP_GROUP`，让 App 和扩展共用一块存储）和一个钥匙串分组（`HIMAWARI_KEYCHAIN_GROUP`，让扩展能用 App 配对时存的设备密钥），这两个值在工程级的构建设置里，改了 Bundle Identifier 时最好一起改。
    免费的 Apple ID 不支持 App Group，带 App Group 的目标都签不过（iPhone 的三个目标，以及要装手表时的手表和手表小组件两个目标）。这时在 Xcode 里把工程级构建设置 `HIMAWARI_APP_GROUP` 清空，并把 `HIMAWARI_ENTITLEMENTS_SUFFIX` 设成 `.keychain-only`（命令行是 `xcodebuild HIMAWARI_APP_GROUP= HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only`），iPhone 的三个目标就只用钥匙串分组，手表和手表小组件两个目标改用空权限文件（不含任何分组）。代价是扩展和 App 不再共用存储：分享面板和 Safari 扩展传不上去时不会排队，会显示“没能确认传上，稍后再分享一次”（可能已经传上，只是没收到回复），要重新分享一次，同一内容可能因此收到两份；App 里“开或关”的开关只写进 App 自己的存储，扩展看不到；Safari 的“已用过”记录由扩展写进扩展自己的存储，App 看不到。所以扩展一直按默认开着，App 里关掉分享或 Safari 并不会让扩展停下，Safari 引导页也不会因为扩展用过而前进。付费账号用默认设置，不用改。苹果推送（锁屏上的通知、从通知打开 App）要付费账号：权限 `aps-environment` 只写在 `Himawari.entitlements` 里，免费签名用的 `Himawari.keychain-only.entitlements` 没有它，所以免费签名照样能装，只是 iPhone 拿不到推送令牌，没有锁屏推送，其余功能不受影响；换成付费账号并用默认设置重装后，App 回到前台时会自己申请通知权限、拿令牌并向服务器登记，不用改任何代码。开发构建（Xcode 直接运行）登记成 `development` 环境，发布构建登记成 `production`（发布签名时 Xcode 会把权限里的 `aps-environment` 换成 `production`）；登记的环境按构建配置决定，所以不要用 Release 配置配开发签名装到真机上，否则登记的环境和令牌的环境相反，服务器发不出推送。登记时带的 topic 就是 Bundle Identifier，服务器配置里的推送 topic 清单必须包含它，改过 Bundle Identifier 时要同步改服务器配置；服务器的推送环境清单也要包含 `development`（开发构建）和 `production`（发布构建）里实际用到的那个。两者缺一，服务器都会一直拒绝登记（403），App 按设计静默重试，不会提示。
 3. 用数据线连上 iPhone，窗口顶部的设备选你的 iPhone，按 ⌘R。第一次装完，在手机“设置 → 通用 → VPN 与设备管理”里信任你的开发者证书，再点开 App。
 4. 跑单元测试：在 Xcode 里另外打开 `clients/apple/Package.swift`，顶部设备选 “My Mac”，按 ⌘U。全部通过是绿色对勾。
@@ -94,14 +94,12 @@ node clients/apple/scripts/make-icons.mjs /tmp/tabler/package clients/apple/Sour
 <a id="wordmark"></a>
 ## himawari 字样
 
-“今天”页左上角的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
+“她的页面”顶上的 himawari 字样是一张矢量图（`Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg`），字形取自 Cormorant Garamond（一款开源衬线字体，SIL OFL 许可证）600 斜体 32 点，App 里不带字体文件。要重新生成（需要 Python 的 `fonttools` 和 `uharfbuzz` 两个包）：
 
 ```bash
 mkdir -p /tmp/cormorant && cd /tmp/cormorant && npm pack @fontsource/cormorant-garamond@5.2.6 && tar xzf fontsource-cormorant-garamond-5.2.6.tgz && cd -
 python3 clients/apple/scripts/make-wordmark.py /tmp/cormorant/package/files/cormorant-garamond-latin-600-italic.woff clients/apple/Sources/HimawariDesign/Resources/Brand.xcassets/wordmark.imageset/wordmark.svg
 ```
-
-旁边的向日葵不是图片，是照原型的画法（`flower.js`）用代码画的：花瓣、花盘和种子的位置在 `Sources/HimawariCore/CornerFlower.swift`，`Tests/HimawariCoreTests/CornerFlowerTests.swift` 核对每片花瓣的尖和原型算出来的一样。
 
 [返回目录](#apple-clients)
 
@@ -146,7 +144,7 @@ clients/apple/scripts/ui-review.sh --approve
 面板的颜色、尺寸都来自 `tokens.json`：`tokens.css` 由生成脚本产出，`npm run check:apple-design` 检查它是不是最新，并拦下面板代码里直接写的颜色和尺寸。改了 `tokens.json` 后：
 
 ```bash
-node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026-11-12-v2/tokens.json clients/apple/Sources/HimawariDesign/Generated/DesignTokens.swift clients/apple/App/SafariExtension/Resources/tokens.css
+node clients/apple/scripts/make-design-tokens.mjs docs/assets/apple-clients/2026-11-25-v4/tokens.json clients/apple/Sources/HimawariDesign/Generated/DesignTokens.swift clients/apple/App/SafariExtension/Resources/tokens.css
 ```
 
 面板左上角的葵盘和扩展图标从 App 里画葵盘的同一套算法生成（`Sources/HimawariDesign/SunflowerSeeds.swift`）：
@@ -185,7 +183,7 @@ clients/apple/scripts/mac-ui-review.sh
 <a id="watch-app"></a>
 ## Apple Watch App
 
-手表装到真机：手表 App 是 iPhone 的 Himawari 的配套 App，工程里已经有 `HimawariWatch`（手表 App）和 `HimawariWatchWidgets`（表盘小组件）两个目标，`Himawari` 目标依赖并嵌入它们（`Embed Watch Content` 阶段），所以用 Xcode 选“Himawari”方案装到 iPhone，系统会随之把手表 App 装到配对的 Apple Watch 上，不用单独装。手表 App 的 Bundle Identifier 是 `win.siyi.himawari.watchkitapp`，`Watch/Info.plist` 里的 `WKCompanionAppBundleIdentifier` 必须等于 iPhone App 的 Bundle Identifier；用免费 Apple ID 改了 iPhone App 的 Bundle Identifier 时，这几处要一起改，而且要精确对应：手表的 Bundle Identifier 是 iPhone 的加 `.watchkitapp`，小组件的是手表的加 `.widgets`，`WKCompanionAppBundleIdentifier` 等于 iPhone 的；各目标的 Debug、Release 配置各有一份，都要改。HimawariWatch、HimawariWatchWidgets 两个目标也要在 Signing & Capabilities 里选 Team。免费 Apple ID 不支持 App Group：照上面把 `HIMAWARI_APP_GROUP` 清空并设 `HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only` 时，手表和小组件也用空的权限文件（`Watch/Himawari.keychain-only.entitlements`、`WatchWidgets/WatchWidgets.keychain-only.entitlements`）；代价是表盘小组件读不到手表 App 存的状态，只显示向日葵，不显示件数。
+手表装到真机：手表 App 是 iPhone 的 Himawari 的配套 App，工程里已经有 `HimawariWatch`（手表 App）和 `HimawariWatchWidgets`（表盘小组件）两个目标，`Himawari` 目标依赖并嵌入它们（`Embed Watch Content` 阶段），所以用 Xcode 选“Himawari”方案装到 iPhone，系统会随之把手表 App 装到配对的 Apple Watch 上，不用单独装。手表 App 的 Bundle Identifier 是 `win.siyi.himawari.app.watchkitapp`（即 `$(HIMAWARI_BUNDLE_PREFIX).watchkitapp`），`Watch/Info.plist` 里的 `WKCompanionAppBundleIdentifier` 必须等于 iPhone App 的 Bundle Identifier；这几处都由 `HIMAWARI_BUNDLE_PREFIX` 自动跟着变，规则是：手表的 Bundle Identifier 是 iPhone 的加 `.watchkitapp`，小组件的是手表的加 `.widgets`，`WKCompanionAppBundleIdentifier` 等于 iPhone 的。HimawariWatch、HimawariWatchWidgets 两个目标也要在 Signing & Capabilities 里选 Team。免费 Apple ID 不支持 App Group：照上面把 `HIMAWARI_APP_GROUP` 清空并设 `HIMAWARI_ENTITLEMENTS_SUFFIX=.keychain-only` 时，手表和小组件也用空的权限文件（`Watch/Himawari.keychain-only.entitlements`、`WatchWidgets/WatchWidgets.keychain-only.entitlements`）；代价是表盘小组件读不到手表 App 存的状态，只显示向日葵，不显示件数。
 
 手表只做“一眼和一句”，照原型 Version 46 画板“每一端做什么”里的手表画面。工程里有两个目标：`HimawariWatch`（手表 App，入口 `App/Watch/HimawariWatchApp.swift`，其余代码在 `Sources/HimawariWatchUI/`）和 `HimawariWatchWidgets`（表盘小组件，`App/WatchWidgets/`）。`HimawariWatch` 嵌在 iPhone 的 Himawari 里一起安装。
 

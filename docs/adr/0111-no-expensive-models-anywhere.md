@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "scripts/check-expensive-models.mjs, test/fixtures/jarvis-test/models.json, test/integration/fixtures/openrouter-live-configuration.ts, test/tooling/expensive-models.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0111：任何场景都不调用 Claude、OpenAI 等贵模型；评测裁判换成 Qwen3.8 Flash，并由检查脚本拦住贵模型名

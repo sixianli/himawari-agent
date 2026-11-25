@@ -1,0 +1,447 @@
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { type PayloadProtectorPort, ThreadCommandService } from "@himawari-agent/application";
+import {
+  createAgentId,
+  createAuthorityLeaseId,
+  createDeploymentId,
+  createOwnerId,
+  createRunId,
+  createSessionId,
+  type ProductAuthorityFence,
+} from "@himawari-agent/domain";
+import {
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  ContextExternalContent,
+  externalEventOrigin,
+} from "../../apps/agent-service/src/context-external-content.ts";
+import { ProductionInbox } from "../../apps/agent-service/src/production-inbox.ts";
+import {
+  InboxRunRegistry,
+  ProductionInboxDelivery,
+} from "../../apps/agent-service/src/production-inbox-delivery.ts";
+import { ProductionInboxWorker } from "../../apps/agent-service/src/production-inbox-worker.ts";
+import { ProductionMainThread } from "../../apps/agent-service/src/production-main-thread.ts";
+import {
+  ProductionTellOwner,
+  TellOwnerInputError,
+} from "../../apps/agent-service/src/production-tell-owner.ts";
+import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+const OWNER_ID = createOwnerId("owner-inbox-main");
+const AGENT_ID = createAgentId("agent-inbox-main");
+const DEPLOYMENT_ID = createDeploymentId("deployment-inbox-main");
+const LEASE_ID = createAuthorityLeaseId("lease-inbox-main");
+const START = "2026-11-25T00:00:00.000Z";
+const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+const authority: ProductAuthorityFence = {
+  deploymentId: DEPLOYMENT_ID,
+  authorityEpoch: 1,
+  fencingToken: 1,
+};
+
+describe("outside events in the main conversation", () => {
+  useSqliteContractExecution("direct");
+  const directories: string[] = [];
+  const closers: (() => Promise<void>)[] = [];
+  afterEach(async () => {
+    await Promise.all(closers.splice(0).map((close) => close()));
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  async function fixture() {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-inbox-main-"));
+    directories.push(stateRoot);
+    await mkdir(path.join(stateRoot, "data"));
+    const file = path.join(stateRoot, "data", "product.sqlite");
+    await copyMigratedDatabase(file);
+    const database = openQualifiedDatabase(file);
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database
+      .prepare(
+        `INSERT INTO deployments
+        (id, owner_id, agent_id, revision, status, authority_epoch, fencing_token)
+        VALUES (?, ?, ?, 0, 'active', 1, 1)`,
+      )
+      .run(DEPLOYMENT_ID, OWNER_ID, AGENT_ID);
+    database
+      .prepare(
+        `INSERT INTO authority_leases
+        (id, owner_id, agent_id, deployment_id, holder_id, authority_epoch, fencing_token,
+          acquired_at, expires_at)
+        VALUES (?, ?, ?, ?, 'holder-inbox-main', 1, 1, ?, '2026-11-26T00:00:00.000Z')`,
+      )
+      .run(LEASE_ID, OWNER_ID, AGENT_ID, DEPLOYMENT_ID, START);
+    database.close();
+    const clock = { value: START };
+    const now = () => clock.value;
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      databasePath: file,
+      minimumFreeBytes: 0,
+      now,
+    });
+    closers.push(() => repository.close());
+    const adapters = createReferenceAdapterSet();
+    const protector: PayloadProtectorPort = adapters.payloadProtector;
+    const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+    const threads = repository.threadRepository();
+    const commands = new ThreadCommandService({
+      repository: threads,
+      clock: { now },
+      authority: () => authority,
+    });
+    const mainThread = new ProductionMainThread({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threads,
+      commands,
+      payloads,
+      protector,
+      clock: { now },
+    });
+    const externalContent = new ContextExternalContent({
+      configuration: scope,
+      state: repository,
+      source: repository.runExecutionSource(OWNER_ID, AGENT_ID),
+      authority: () => ({ leaseId: LEASE_ID, fencingToken: 1 }),
+      clock: { now },
+    });
+    const registry = new InboxRunRegistry();
+    const ledger = repository.decisionLedger();
+    const delivery = new ProductionInboxDelivery({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      mainThread,
+      threads,
+      commands,
+      runs: repository.runLifecycle(OWNER_ID, AGENT_ID, authority),
+      ledger,
+      externalContent,
+      registry,
+      payloads,
+      protector,
+      clock: { now },
+      pollMs: 5,
+      cancelRun: async ({ runId }) => {
+        const handle = openQualifiedDatabase(file);
+        try {
+          handle.prepare("UPDATE runs SET status = 'cancelled' WHERE id = ?").run(runId);
+        } finally {
+          handle.close();
+        }
+      },
+    });
+    const tellOwner = new ProductionTellOwner({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      registry,
+      commands,
+      ledger,
+      push: repository.webPush(),
+      payloads,
+      protector,
+      clock: { now },
+    });
+    const store = repository.inbox();
+    const inbox = new ProductionInbox({ scope, store, payloads, protector, clock: { now } });
+    inbox.sources.register({
+      kind: "mail",
+      describe: "新邮件",
+      externalContent: true,
+      fromOwner: false,
+      priority: 5,
+    });
+    const worker = new ProductionInboxWorker({
+      scope,
+      inbox,
+      store,
+      payloads,
+      protector,
+      clock: { now },
+      delivery,
+      runTimeoutMs: 60_000,
+    });
+    const text = async (ref: string) => {
+      const payload = await payloads.get(ref as never);
+      if (!payload) return undefined;
+      return new TextDecoder().decode(
+        await protector.unprotect({ ownerId: OWNER_ID, agentId: AGENT_ID, payload }),
+      );
+    };
+    const write = async (ref: string, content: string) => {
+      await payloads.put(
+        await protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          contentType: "text/plain",
+          dataClassification: "private",
+          plaintext: new TextEncoder().encode(content),
+          createdAt: now(),
+        }),
+      );
+    };
+    const query = <T>(sql: string, ...parameters: unknown[]) => {
+      const handle = openQualifiedDatabase(file);
+      try {
+        return handle.prepare(sql).all(...parameters) as T[];
+      } finally {
+        handle.close();
+      }
+    };
+    const admitted = async () => {
+      for (;;) {
+        const runs = query<{ id: string; status: string }>(
+          "SELECT id, status FROM runs WHERE id LIKE 'run:inbox:%' AND status = 'accepted'",
+        );
+        if (runs[0]) return createRunId(runs[0].id);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+    const finish = async (runId: ReturnType<typeof createRunId>, thought: string) => {
+      const main = await mainThread.ensure();
+      const thread = await threads.read(OWNER_ID, AGENT_ID, main);
+      const turn = query<{ id: string }>("SELECT id FROM turns WHERE run_id = ?", runId)[0];
+      if (!thread || !turn) throw new Error("run state missing");
+      await write(`thought:${runId}`, thought);
+      await commands.commitAssistantMessage({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: main,
+        expectedThreadRevision: thread.revision,
+        turnId: turn.id as never,
+        runId,
+        idempotencyKey: `final:${runId}`,
+        contentRef: `thought:${runId}` as never,
+        dataClassification: "private",
+        resultRef: `thought:${runId}` as never,
+      });
+    };
+    const mail = (ref: string, summary: string) =>
+      inbox.submit({
+        sourceKind: "mail",
+        sourceRef: ref,
+        sourceVersion: "1",
+        summary,
+        externalContent: true,
+      });
+    return {
+      repository,
+      threads,
+      commands,
+      mainThread,
+      externalContent,
+      tellOwner,
+      worker,
+      ledger,
+      text,
+      write,
+      query,
+      admitted,
+      finish,
+      mail,
+      clock,
+    };
+  }
+
+  it("writes the event as a hidden system message, speaks with tell_owner and records the decision", async () => {
+    const f = await fixture();
+    expect((await f.mail("gmail:1", "发件人 school@example.com：周四家长会")).accepted).toBe(true);
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const main = await f.mainThread.ensure();
+    const eventMessage = f.query<{ role: string; internal: number; content_ref: string }>(
+      "SELECT role, internal, content_ref FROM thread_messages WHERE run_id = ? AND role <> 'agent'",
+      runId,
+    )[0];
+    expect(eventMessage).toMatchObject({ role: "system", internal: 1 });
+    const eventText = (await f.text(eventMessage?.content_ref ?? "")) ?? "";
+    expect(eventText).toContain("不是主人说的话");
+    expect(eventText).toContain("周四家长会");
+    let origins: readonly string[] = [];
+    for (let attempt = 0; attempt < 200 && origins.length === 0; attempt += 1) {
+      origins = (await f.externalContent.readThread(main)).map(({ origin }) => origin);
+      if (origins.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(origins).toEqual(["external_event:mail"]);
+    expect(await f.threads.listRuns(OWNER_ID, AGENT_ID, main)).toEqual([]);
+    const said = (await f.tellOwner.run({
+      runId,
+      toolCallId: "call-1",
+      capabilityRef: "owner.tell",
+      capabilityHandleRef: null,
+      arguments: { text: "学校周四开家长会，要我记进日历吗？", push: true, reason: "要你拿主意" },
+    } as never)) as { messageId: string; pushed: boolean };
+    expect(said.pushed).toBe(true);
+    await f.finish(runId, "这封要告诉主人");
+    expect(await handled).toEqual({
+      status: "done",
+      entryIds: claim.entries.map((e) => e.id),
+      result: "handled",
+    });
+    const visible = await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20);
+    expect(visible.map(({ role, id }) => [role, id])).toEqual([["agent", said.messageId]]);
+    const rows = f.query<{
+      verdict: string;
+      reason_code: string;
+      inputs: string;
+      push_source_key: string;
+    }>(
+      "SELECT verdict, reason_code, inputs, push_source_key FROM decision_ledger WHERE kind = 'proactive'",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ verdict: "pushed", reason_code: "told_pushed" });
+    expect(JSON.parse(rows[0]?.inputs ?? "{}")).toMatchObject({
+      messageId: said.messageId,
+      sourceIds: ["gmail:1"],
+    });
+    const pushes = f.query<{ source_key: string; kind: string; source_ref: string }>(
+      "SELECT source_key, kind, source_ref FROM web_push_outbox",
+    );
+    expect(pushes).toEqual([
+      { source_key: rows[0]?.push_source_key, kind: "reminder", source_ref: said.messageId },
+    ]);
+    expect(pushes[0]?.source_key.startsWith("said:")).toBe(true);
+    expect(f.query<{ outcome: string }>("SELECT outcome FROM inbox_events")[0]?.outcome).toBe(
+      "told",
+    );
+  });
+
+  it("records silence with her thought when she does not speak, and nothing shows or pushes", async () => {
+    const f = await fixture();
+    await f.mail("gmail:ad", "发件人 shop@example.com：限时打折");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    await f.finish(runId, "广告，不打扰主人");
+    await handled;
+    const main = await f.mainThread.ensure();
+    expect(await f.threads.listMessages(OWNER_ID, AGENT_ID, main, 0, 20)).toEqual([]);
+    const finalAnswer = f.query<{ internal: number }>(
+      "SELECT internal FROM thread_messages WHERE run_id = ? AND role = 'agent'",
+      runId,
+    );
+    expect(finalAnswer).toEqual([{ internal: 1 }]);
+    const rows = f.query<{ verdict: string; reason_code: string; reason_ref: string }>(
+      "SELECT verdict, reason_code, reason_ref FROM decision_ledger WHERE kind = 'proactive'",
+    );
+    expect(rows).toMatchObject([{ verdict: "silent", reason_code: "kept_silent" }]);
+    expect(await f.text(rows[0]?.reason_ref ?? "")).toBe("广告，不打扰主人");
+    expect(f.query("SELECT 1 FROM web_push_outbox")).toEqual([]);
+    expect(f.query<{ outcome: string }>("SELECT outcome FROM inbox_events")[0]?.outcome).toBe(
+      "silent",
+    );
+  });
+
+  it("keeps one inbox row and one decision when the same mail arrives twice", async () => {
+    const f = await fixture();
+    await f.mail("gmail:2", "同一封");
+    expect(await f.mail("gmail:2", "同一封")).toMatchObject({ accepted: true, duplicate: true });
+    expect(f.query("SELECT 1 FROM inbox_events")).toHaveLength(1);
+  });
+
+  it("refuses tell_owner outside a run that an outside event started", async () => {
+    const f = await fixture();
+    await expect(
+      f.tellOwner.run({
+        runId: createRunId("run:owner"),
+        toolCallId: "call-1",
+        capabilityRef: "owner.tell",
+        capabilityHandleRef: null,
+        arguments: { text: "你好", push: false, reason: "测试" },
+      } as never),
+    ).rejects.toBeInstanceOf(TellOwnerInputError);
+  });
+
+  it("waits while the owner's own reply is still running", async () => {
+    const f = await fixture();
+    const main = await f.mainThread.ensure();
+    const thread = await f.threads.read(OWNER_ID, AGENT_ID, main);
+    await f.write("owner-says", "你好");
+    await f.commands.admitOwnerMessage({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: main,
+      expectedThreadRevision: thread?.revision ?? 0,
+      sessionId: createSessionId("session-owner"),
+      idempotencyKey: "owner-1",
+      contentRef: "owner-says" as never,
+      sourceProofRef: "owner-proof",
+      dataClassification: "private",
+      resultRef: "owner-says" as never,
+    });
+    await f.mail("gmail:3", "一封邮件");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    expect(await f.worker.handle(claim)).toMatchObject({ status: "done", result: "yield" });
+    expect(f.query("SELECT 1 FROM runs WHERE id LIKE 'run:inbox:%'")).toEqual([]);
+  });
+
+  it("stops an outside event's run when the owner speaks and puts the event back in the inbox", async () => {
+    const f = await fixture();
+    await f.mail("gmail:4", "一封要慢慢看的邮件");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    const main = await f.mainThread.ensure();
+    const thread = await f.threads.read(OWNER_ID, AGENT_ID, main);
+    await f.write("owner-speaks", "帮我设个明早 7 点的闹钟");
+    await f.commands.admitOwnerMessage({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: main,
+      expectedThreadRevision: thread?.revision ?? 0,
+      sessionId: createSessionId("session-owner-speaks"),
+      idempotencyKey: "owner-speaks",
+      contentRef: "owner-speaks" as never,
+      sourceProofRef: "owner-proof",
+      dataClassification: "private",
+      resultRef: "owner-speaks" as never,
+    });
+    expect(await handled).toMatchObject({ status: "done", result: "yield" });
+    expect(f.query<{ status: string }>("SELECT status FROM runs WHERE id = ?", runId)).toEqual([
+      { status: "cancelled" },
+    ]);
+    expect(f.query<{ status: string }>("SELECT status FROM inbox_events")).toEqual([
+      { status: "queued" },
+    ]);
+    expect(f.query("SELECT 1 FROM decision_ledger")).toEqual([]);
+  });
+
+  it("lets an outside event's run finish when the owner has not spoken", async () => {
+    const f = await fixture();
+    await f.mail("gmail:5", "不急的邮件");
+    const claim = await f.worker.claim();
+    if (!claim) throw new Error("no claim");
+    const handled = f.worker.handle(claim);
+    const runId = await f.admitted();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(f.query<{ status: string }>("SELECT status FROM runs WHERE id = ?", runId)).toEqual([
+      { status: "accepted" },
+    ]);
+    await f.finish(runId, "不用管");
+    expect(await handled).toMatchObject({ status: "done", result: "handled" });
+  });
+
+  it("names outside events by their kind, so the origin list does not grow with every event", () => {
+    const origin = (sourceId: string) =>
+      externalEventOrigin({ sourceType: "external_event", sourceId } as never);
+    expect(origin("message:inbox:mail:aaa")).toBe("external_event:mail");
+    expect(origin("message:inbox:mail:bbb")).toBe("external_event:mail");
+  });
+});

@@ -6,6 +6,8 @@ supersedes: ""
 amends: "docs/adr/0246-external-proposals-join-the-data-export-and-web.md"
 superseded_by: ""
 date: "2026-11-12"
+covers: "packages/persistence-sqlite/src/data-export/export.ts, packages/persistence-sqlite/src/data-export/snapshot.ts, packages/persistence-sqlite/src/migrations/0093_external_memory_proposals.sql, packages/persistence-sqlite/src/sqlite-external-memory-proposal-operations.ts, packages/persistence-sqlite/src/sqlite-governed-deletion.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0261：删除受限记忆时一并删掉同文的提议，导出比较也算原话，过期的拒绝条目移出批次

@@ -28,7 +28,6 @@ const PUSH_DEFER_EXTENSION_MS = 3_600_000;
 const PUSH_TOTAL_LIFE_MS = 48 * 3_600_000;
 const DEFAULT_GATE = new PushGate();
 const DELIVER_UNGATED: PushGateDecision = Object.freeze({ action: "deliver", failed: false });
-const PROPOSAL_WINDOW_MS = 24 * 3_600_000;
 const PROACTIVE_WINDOW_MS = 24 * 3_600_000;
 const MUSE_CHANNEL_WINDOW_MS = 12 * 3_600_000;
 const RUN_WINDOW_MS = 24 * 3_600_000;
@@ -61,8 +60,6 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "有封邮件可能重要，请看原信",
     mailMore: (count: number) => `还有 ${count} 件`,
     museDown: "Muse 通道中断",
-    proposal: "有一条建议等你看",
-    proposalBody: "不急，有空时看看。",
     museDownBody:
       "Muse 通道 3 小时没有数据，可能是定时任务的预授权失效或令牌过期，去 Muse 的 Upcoming 看一眼",
   },
@@ -83,8 +80,6 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "An email may be important. Please read it",
     mailMore: (count: number) => `${count} more`,
     museDown: "Muse channel is down",
-    proposal: "A suggestion is waiting for you",
-    proposalBody: "No rush. Take a look when you can.",
     museDownBody:
       "No data from Muse for 3 hours. The scheduled task's pre-approval may have expired or the token may be out of date. Check Upcoming in Muse",
   },
@@ -105,8 +100,6 @@ export const WEB_PUSH_TEXT = {
     mailCheck: "重要かもしれないメールがあります。原文をご確認ください",
     mailMore: (count: number) => `ほか ${count} 件`,
     museDown: "Muse の連携が止まっています",
-    proposal: "提案が届いています",
-    proposalBody: "急ぎではありません。時間のあるときにどうぞ。",
     museDownBody:
       "Muse から 3 時間データが届いていません。定期タスクの事前承認が切れたか、トークンの期限切れの可能性があります。Muse の Upcoming を確認してください",
   },
@@ -139,7 +132,6 @@ export interface WebPushNotification {
   readonly lang: WebPushLocale;
   readonly tag: string;
   readonly badge: number;
-  readonly quiet?: boolean;
 }
 
 export function webPushTopic(sourceKey: string): string {
@@ -167,7 +159,6 @@ export function webPushPayload(notification: WebPushNotification): string {
         lang: notification.lang,
         tag: notification.tag,
         ...(notification.badge > 0 ? { app_badge: String(notification.badge) } : {}),
-        ...(notification.quiet === true ? { silent: true } : {}),
       },
     });
   const full = build(notification.body);
@@ -223,7 +214,6 @@ export interface ProductionWebPushOptions {
   readonly awaitingCount: () => Promise<number | undefined>;
   readonly proactive?: ProactivePushSource;
   readonly museChannel?: MuseChannelPushSource;
-  readonly proposals?: ProposalPushSource;
   readonly readLocale?: () => Promise<WebPushLocale | null>;
   readonly runThread: (runId: string) => Promise<string | null>;
   readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
@@ -252,15 +242,6 @@ export interface ProductionWebPushOptions {
 
 export interface MuseChannelPushSource {
   listActive(now: string): Promise<readonly { readonly outageStartedAt: string }[]>;
-}
-
-type ProposalRead = {
-  readonly ok: boolean;
-  readonly rows: readonly { readonly id: string; readonly proposedAt: string }[];
-};
-
-export interface ProposalPushSource {
-  listReady(now: string): Promise<readonly { readonly id: string; readonly proposedAt: string }[]>;
 }
 
 export interface ProactivePushSource {
@@ -369,7 +350,6 @@ export class ProductionWebPush {
 
   async #run(): Promise<void> {
     const now = this.#options.now();
-    this.#proposalRead = undefined;
     if (!this.#resumed) {
       await this.#resumePaused(now);
       this.#resumed = true;
@@ -471,21 +451,6 @@ export class ProductionWebPush {
         createdAt: now,
         expiresAt: new Date(Date.parse(push.readyAt) + PROACTIVE_WINDOW_MS).toISOString(),
       });
-    const { rows: proposalRows } = await this.#readyProposals(now);
-    const newest = proposalRows.reduce<(typeof proposalRows)[number] | undefined>(
-      (latest, row) => (latest === undefined || row.proposedAt > latest.proposedAt ? row : latest),
-      undefined,
-    );
-    for (const proposal of newest ? [newest] : [])
-      items.push({
-        ...scope,
-        sourceKey: `proposal:${proposal.id}:${proposal.proposedAt}`,
-        kind: "reminder",
-        sourceRef: proposal.id,
-        threadId: null,
-        createdAt: now,
-        expiresAt: new Date(Date.parse(proposal.proposedAt) + PROPOSAL_WINDOW_MS).toISOString(),
-      });
     const museOutages = (await this.#options.museChannel?.listActive(now)) ?? [];
     for (const outage of museOutages)
       items.push({
@@ -506,30 +471,6 @@ export class ProductionWebPush {
       now,
     });
     for (const push of proactive) await this.#options.proactive?.markEnqueued(push.id, now);
-  }
-
-  #proposalRead: Promise<ProposalRead> | undefined;
-
-  #readyProposals(now: string): Promise<ProposalRead> {
-    this.#proposalRead ??= this.#loadProposals(now);
-    return this.#proposalRead;
-  }
-
-  async #loadProposals(now: string): Promise<ProposalRead> {
-    const source = this.#options.proposals;
-    if (!source) return { ok: true, rows: [] };
-    try {
-      const rows = await source.listReady(now);
-      return {
-        ok: true,
-        rows: rows.filter(
-          ({ proposedAt }) => Date.parse(now) - Date.parse(proposedAt) < PROPOSAL_WINDOW_MS,
-        ),
-      };
-    } catch (error) {
-      this.#options.onFailure(error);
-      return { ok: false, rows: [] };
-    }
   }
 
   async #runThread(runId: string): Promise<string | null> {
@@ -624,7 +565,7 @@ export class ProductionWebPush {
         entry,
         now,
         content,
-        content.build("en").quiet === true ? 0 : ((await awaiting()) ?? 0),
+        (await awaiting()) ?? 0,
         accountLocale ?? entry.subscription.locale,
       );
     }
@@ -765,27 +706,6 @@ export class ProductionWebPush {
           body: WEB_PUSH_TEXT[locale].museDownBody,
           navigate: `${origin}/`,
           lang: locale,
-        }),
-      };
-    }
-    if (item.kind === "reminder" && item.sourceKey.startsWith("proposal:")) {
-      const pending = await this.#readyProposals(now);
-      if (
-        pending.ok &&
-        !pending.rows.some(
-          ({ id, proposedAt }) =>
-            id === item.sourceRef && item.sourceKey === `proposal:${id}:${proposedAt}`,
-        )
-      )
-        return { expired: true };
-      return {
-        expired: false,
-        build: (locale) => ({
-          title: WEB_PUSH_TEXT[locale].proposal,
-          body: WEB_PUSH_TEXT[locale].proposalBody,
-          navigate: `${origin}/`,
-          lang: locale,
-          quiet: true,
         }),
       };
     }
@@ -933,7 +853,7 @@ export class ProductionWebPush {
         auth: subscription.auth,
         payload: webPushPayload({ ...content.build(locale), tag: topic, badge }),
         ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
-        urgency: item.kind === "run" || content.build(locale).quiet === true ? "normal" : "high",
+        urgency: item.kind === "run" ? "normal" : "high",
         topic,
       });
     } catch (error) {

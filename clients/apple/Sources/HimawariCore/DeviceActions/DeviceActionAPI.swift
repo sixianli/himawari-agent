@@ -165,8 +165,33 @@ extension DeviceAPI: DeviceActionTransport {
         return found
     }
 
-    public func respond(to approval: PendingApproval, approved: Bool, confirm: DeviceKeySigner?, reason: String?) async throws -> ApprovalResponse {
+    private struct AllowancePayload: Encodable {
+        let approvalRequestId: String
+        let allowFor: String
+        let days: Int?
+
+        enum CodingKeys: String, CodingKey { case approvalRequestId, allowFor, days }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(approvalRequestId, forKey: .approvalRequestId)
+            try container.encode(allowFor, forKey: .allowFor)
+            if let days { try container.encode(days, forKey: .days) } else { try container.encodeNil(forKey: .days) }
+        }
+    }
+
+    public func allowanceDays() async throws -> Int {
+        struct Snapshot: Decodable {
+            struct Payload: Decodable { let allowanceDays: Int }
+            let payload: Payload
+        }
+        return try decode(Snapshot.self, try await gatewayCall("memory.rules.read", [String: String]())).payload.allowanceDays
+    }
+
+    public func respond(to approval: PendingApproval, approved: Bool, allowFor: ApprovalAllowFor = .once, days: Int? = nil, confirm: DeviceKeySigner?, reason: String?) async throws -> ApprovalResponse {
         guard let confirm else { throw DeviceAPIError.server(status: 403, code: "CONFIRM_REQUIRED") }
+        let allowance = approved && allowFor != .once && approval.allowanceChoices(days: days).contains(allowFor) ? allowFor : nil
+        let signer = allowance == nil ? confirm : confirm.held()
         let payload = RespondPayload(
             approvalRequestId: approval.id,
             expectedRevision: approval.revision,
@@ -175,10 +200,25 @@ extension DeviceAPI: DeviceActionTransport {
         )
         do {
             let challenge = try await issueConfirmChallenge()
-            _ = try await gatewayCall("approval.respond", risk: approval.finalRisk, command: true, payload, nonce: challenge, confirm: confirm, reason: reason)
-            return .recorded(status: payload.decision)
+            _ = try await gatewayCall("approval.respond", risk: approval.finalRisk, command: true, payload, nonce: challenge, confirm: signer, reason: reason)
         } catch let DeviceAPIError.server(status, _, _, _) where status == 409 {
             return .changed
+        }
+        guard let allowance else { return .recorded(status: payload.decision) }
+        do {
+            let challenge = try await issueConfirmChallenge()
+            _ = try await gatewayCall(
+                "approval.allowance.set",
+                risk: "medium",
+                command: true,
+                AllowancePayload(approvalRequestId: approval.id, allowFor: allowance.rawValue, days: allowance == .days ? days : nil),
+                nonce: challenge,
+                confirm: signer,
+                reason: reason
+            )
+            return .recorded(status: payload.decision)
+        } catch {
+            return .allowanceNotSaved
         }
     }
 }

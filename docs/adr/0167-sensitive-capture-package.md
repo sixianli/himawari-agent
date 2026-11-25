@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-05"
+covers: "apps/agent-service/src/production-memory-capture.ts, apps/control-center/src/memory-import.ts, ci/security-exceptions.json, packages/application/src/services/egress-legend.ts, packages/application/src/services/trace-redaction.ts, packages/application/test/egress-himawari-text.unit.test.ts, packages/application/test/machine-secret-exclusion.unit.test.ts, packages/integration-web/src/untrusted-content.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, scripts/ci/redact-text.mjs, scripts/ci/security-source.mjs, scripts/scan-machine-secrets.mjs, test/tooling/egress-redaction-check.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0167：敏感信息识别独立成 sensitive-capture 包
@@ -26,8 +28,8 @@ date: "2026-11-05"
 
 识别敏感信息的规则原先分散在几处。
 
-- 发给模型前的遮盖（`redactForEgress`）在 `packages/application/src/services/egress-redaction.ts`，管密码、验证码、银行卡、证件号。
-- 机器密钥规则在同一目录的 `machine-secret-exclusion.ts`，包括私钥、Bearer、JWT、OpenAI、GitHub、AWS 和通用赋值。
+- 发给模型前的遮盖（`redactForEgress`）在 [packages/application/src/services/egress-redaction.ts](https://github.com/sixianli/himawari-agent/blob/90109e79aa6ba9313191d96d50d6815e16425ea1/packages/application/src/services/egress-redaction.ts)，管密码、验证码、银行卡、证件号。
+- 机器密钥规则在同一目录的 [machine-secret-exclusion.ts](https://github.com/sixianli/himawari-agent/blob/9ac0769e5d56162e4574b46e66600515c461d3ef/test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/input-freeze.json)，包括私钥、Bearer、JWT、OpenAI、GitHub、AWS 和通用赋值。
 - 自动整理记忆时判断“受限信息”的正则写在 `apps/agent-service/src/production-memory-capture.ts`。
 - 网页导入记忆时提示“可能敏感”的正则写在 `apps/control-center/src/memory-import.ts`。
 - 网页抓取内容里遮密钥的正则写在 `packages/integration-web/src/untrusted-content.ts`。

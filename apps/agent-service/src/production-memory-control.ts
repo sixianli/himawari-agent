@@ -36,6 +36,7 @@ import {
   type UnitOfWorkPort,
 } from "@himawari-agent/application";
 import {
+  APPROVAL_ALLOWANCE_DAYS_DEFAULT,
   type GatewayV2Command,
   type GatewayV2Query,
   type GatewayV2Snapshot,
@@ -45,6 +46,7 @@ import {
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import { type DecisionChainMemoryView, readDecisionChain } from "./production-decision-chain.js";
 import {
   externalProposalBatchId,
@@ -270,6 +272,7 @@ export class ProductionMemoryControl {
     >;
     readonly ownerRules?: OwnerRuleControl;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "days">;
     readonly reviews?: {
       readonly memories: MemoryReviewStorePort;
       readonly rules: RuleReviewOwnerStorePort;
@@ -1079,6 +1082,8 @@ export class ProductionMemoryControl {
       payload: {
         rules,
         builtIn: [...((await this.options.actionRules?.list()) ?? [])],
+        allowances: [...((await this.options.allowances?.list()) ?? [])],
+        allowanceDays: (await this.options.allowances?.days()) ?? APPROVAL_ALLOWANCE_DAYS_DEFAULT,
         generatedAt: this.options.clock.now(),
       },
     };

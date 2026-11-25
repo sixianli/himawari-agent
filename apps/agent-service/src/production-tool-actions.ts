@@ -7,14 +7,16 @@ import {
   type ToolActionRow,
 } from "@himawari-agent/application";
 import {
-  CONVERSATION_OPEN_CAPABILITY_REF,
-  CONVERSATION_SEARCH_CAPABILITY_REF,
-} from "./production-conversation-tools.js";
-import {
   RUNTIME_CONTEXT_EXECUTOR,
   TOOL_RESULT_RECALL_CAPABILITY_REF,
 } from "./production-context-recall.js";
+import {
+  CONVERSATION_OPEN_CAPABILITY_REF,
+  CONVERSATION_SEARCH_CAPABILITY_REF,
+} from "./production-conversation-tools.js";
+import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
+import { OFFER_OPTIONS_CAPABILITY_REF } from "./production-message-options.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
 import {
@@ -31,6 +33,8 @@ import {
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
+import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
+import { VAULT_LIST_CAPABILITY_REF } from "./production-vault-tools.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
 
@@ -310,6 +314,39 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     detail: detail({ zh: "打开一条记忆", en: "Open a memory", ja: "記憶を開く" }, "number"),
   },
   {
+    ...READ_DEFAULTS,
+    tool: "mail_read",
+    family: "builtin",
+    capabilityRef: MAIL_READ_CAPABILITY_REF,
+    operation: "read",
+    targetType: "owner-mail",
+    resultOrigin: "external",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "读整串邮件", en: "Read mail thread", ja: "メールのスレッドを読む" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "tell_owner",
+    himawariSideOnly: true,
+    capabilityRef: TELL_OWNER_CAPABILITY_REF,
+    operation: "tell",
+    targetType: "owner-message",
+    standingRuleChange: false,
+    detail: detail({ zh: "告诉你", en: "Tell you", ja: "あなたに伝える" }, "text"),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "offer_options",
+    himawariSideOnly: true,
+    capabilityRef: OFFER_OPTIONS_CAPABILITY_REF,
+    operation: "offer",
+    targetType: "owner-options",
+    standingRuleChange: false,
+    detail: detail({ zh: "给你选项", en: "Offer you choices", ja: "選択肢を出す" }),
+  },
+  {
     ...OWNER_WRITE_DEFAULTS,
     tool: "reminder_set",
     himawariSideOnly: true,
@@ -422,6 +459,19 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
       { zh: "让设备做一件事", en: "Ask a device to act", ja: "デバイスに操作を依頼" },
       "action",
     ),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "vault_list",
+    family: "builtin",
+    capabilityRef: VAULT_LIST_CAPABILITY_REF,
+    operation: "list",
+    targetType: "owner-vault",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "看保险箱里有哪些项", en: "List vault items", ja: "保管庫の項目を一覧" }),
   },
 ] satisfies ToolActionRow[]);
 

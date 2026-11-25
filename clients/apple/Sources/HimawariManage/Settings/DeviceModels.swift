@@ -23,16 +23,6 @@ struct DeviceListPayload: Decodable {
     let pairing: Pairing?
 }
 
-struct ServerStatusPayload: Decodable {
-    let ready: Bool
-}
-
-public enum ServerReach: Equatable, Sendable {
-    case connected
-    case notReady
-    case unreachable
-}
-
 public enum DevicePresence: Equatable, Sendable {
     case connected
     case justNow
@@ -50,14 +40,6 @@ public enum DevicePresence: Equatable, Sendable {
         guard let lastSeenAt else { return .neverSeen }
         return now.timeIntervalSince(lastSeenAt) < 60 ? .justNow : .seen(lastSeenAt)
     }
-}
-
-public enum PairingStage: Equatable, Sendable {
-    case starting
-    case showing(link: String, expiresAt: Date)
-    case expired(minutes: Int?)
-    case asking(PairedDevice)
-    case failed
 }
 
 public struct DeviceIdentity: Sendable, Equatable {

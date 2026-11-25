@@ -109,7 +109,7 @@ def retain(name, data, uid=0, mode=0o600):
     filename = EVIDENCE / name
     with filename.open('xb') as output:
         os.fchmod(output.fileno(), mode)
-        os.fchown(output.fileno(), uid, 988)
+        os.fchown(output.fileno(), uid, __PKT_SERVICE_GID__)
         output.write(data)
         output.flush()
         os.fsync(output.fileno())
@@ -124,7 +124,7 @@ def retain_json(name, value):
 def command(argv, label, report, service_actor=False):
     environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'SYSTEMD_PAGER': 'cat'}
     if service_actor:
-        argv = ['/usr/bin/setpriv', '--reuid=999', '--regid=988', '--init-groups', '--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '/usr/bin/env', '-i', 'HOME=' + str(STATE), 'PATH=/opt/himawari/node/bin:/usr/bin:/bin', 'LANG=C.UTF-8', 'HIMAWARI_RUNTIME_PROTECTION_FILE=' + str(OPS / 'runtime-protection.json'), *argv]
+        argv = ['/usr/bin/setpriv', '--reuid=__PKT_SERVICE_UID__', '--regid=__PKT_SERVICE_GID__', '--init-groups', '--no-new-privs', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '/usr/bin/env', '-i', 'HOME=' + str(STATE), 'PATH=/opt/himawari/node/bin:/usr/bin:/bin', 'LANG=C.UTF-8', 'HIMAWARI_RUNTIME_PROTECTION_FILE=' + str(OPS / 'runtime-protection.json'), *argv]
     result = subprocess.run(list(map(str, argv)), stdin=subprocess.DEVNULL, capture_output=True, env=environment, cwd='/', timeout=180, preexec_fn=lambda: os.umask(0o022 if service_actor else 0o077))
     report['commands'].append({'command': list(map(str, argv)), 'exitCode': result.returncode, 'stdout': retain(label + '.stdout', result.stdout), 'stderr': retain(label + '.stderr', result.stderr)})
     require(result.returncode == 0, '__PKT_LABEL_UPPER___S9_COMMAND_FAILED')
@@ -200,14 +200,14 @@ def independent_data_tree(binding, restored):
     point = EVIDENCE / recovery_id
     require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,127}', recovery_id) and result['pointPath'] == str(point) and result['manifest']['path'] == str(point / 'manifest.json'), '__PKT_LABEL_UPPER___S9_RECOVERY_POINT_PATH_CHANGED')
     info = point.lstat()
-    require(point.resolve(strict=True) == point and stat.S_ISDIR(info.st_mode) and info.st_uid == 999 and stat.S_IMODE(info.st_mode) == 0o700 and sorted(entry.name for entry in point.iterdir()) == ['data', 'manifest.json'], '__PKT_LABEL_UPPER___S9_RECOVERY_POINT_UNSAFE')
-    manifest_bytes = safe_file(point / 'manifest.json', 999, 0o600)
+    require(point.resolve(strict=True) == point and stat.S_ISDIR(info.st_mode) and info.st_uid == __PKT_SERVICE_UID__ and stat.S_IMODE(info.st_mode) == 0o700 and sorted(entry.name for entry in point.iterdir()) == ['data', 'manifest.json'], '__PKT_LABEL_UPPER___S9_RECOVERY_POINT_UNSAFE')
+    manifest_bytes = safe_file(point / 'manifest.json', __PKT_SERVICE_UID__, 0o600)
     digest = sha(manifest_bytes)
     require(result['digest'] == 'sha256:' + digest and result['manifest']['sha256'] == digest and result['manifest']['bytes'] == len(manifest_bytes), '__PKT_LABEL_UPPER___S9_RECOVERY_MANIFEST_CHANGED')
     manifest = json.loads(manifest_bytes)
     require(manifest['schemaVersion'] == 'himawari.stopped-raw-copy.v1' and manifest['method'] == binding['maintenance']['recoveryMethod'] and manifest['recoveryId'] == recovery_id and manifest['schema'] == int(result['schemaVersion']) and manifest['identity'] == {key: binding['identity'][key] for key in ('ownerId', 'agentId', 'deploymentId')}, '__PKT_LABEL_UPPER___S9_RECOVERY_MANIFEST_BINDING_CHANGED')
-    copied = read_data_members(point / 'data', 999)
-    current = read_data_members(STATE / 'data', 999)
+    copied = read_data_members(point / 'data', __PKT_SERVICE_UID__)
+    current = read_data_members(STATE / 'data', __PKT_SERVICE_UID__)
     require(copied == manifest['members'] and current == copied and restored['restoredDataReadback']['members'] == current, '__PKT_LABEL_UPPER___S9_WHOLE_DATA_TREE_CHANGED')
     require(manifest['sourceDatabaseBeforeSha256'] == manifest['sourceDatabaseAfterSha256'] == next(item['sha256'] for item in current if item['path'] == 'product.sqlite'), '__PKT_LABEL_UPPER___S9_DATABASE_BYTES_CHANGED')
     return {'manifestSha256': digest, 'fileCount': sum(item['kind'] == 'file' for item in current), 'payloadCount': sum(item['kind'] == 'file' and item['path'].startswith('payload-ciphertext/') for item in current), 'wholeTreeBytesAndDigestsMatch': True}
@@ -216,14 +216,14 @@ def independent_data_tree(binding, restored):
 def independent_database(binding, schema, restored):
     after_path = EVIDENCE / (restored['action'].lower() + '-after.json')
     require(restored['after']['path'] == str(after_path), '__PKT_LABEL_UPPER___S9_AFTER_PATH_CHANGED')
-    after_bytes = safe_file(after_path, 999, 0o600)
+    after_bytes = safe_file(after_path, __PKT_SERVICE_UID__, 0o600)
     require(sha(after_bytes) == restored['after']['sha256'], '__PKT_LABEL_UPPER___S9_AFTER_READBACK_CHANGED')
     after = json.loads(after_bytes)
     plan = workspace_plan(binding)
     s0_bytes = safe_file(OPS / 'inputs/s0-db-readback.json')
     require(sha(s0_bytes) == binding['inputReadbacks']['inputs/s0-db-readback.json'], '__PKT_LABEL_UPPER___S9_S0_AUTHORIZATION_CHANGED')
     frozen_authorization = json.loads(s0_bytes)['authorization']
-    safe_path(STATE / 'data/product.sqlite', 999, 0o600)
+    safe_path(STATE / 'data/product.sqlite', __PKT_SERVICE_UID__, 0o600)
     tree_proof = independent_data_tree(binding, restored)
     db = sqlite3.connect('file:' + str(STATE / 'data/product.sqlite') + '?mode=ro&immutable=1', uri=True)
     try:
@@ -247,7 +247,7 @@ def independent_database(binding, schema, restored):
                 capability_rows[row[0]] = dict(zip(('id', 'version', 'status', 'revision', 'integrity', 'record_json'), row))
         grant_boundary = validate_restored_catalog(binding, frozen_authorization, dict(zip(('revision', 'value_json'), grant_rows[0])), capability_rows)
         db.execute('COMMIT')
-        mirror = load(STATE / 'authority.json', 999, 0o600)
+        mirror = load(STATE / 'authority.json', __PKT_SERVICE_UID__, 0o600)
         authority_rows = db.execute('SELECT id,owner_id,agent_id,revision,status,authority_epoch,fencing_token,transfer_id FROM deployments WHERE id=?', [identity['deploymentId']]).fetchall()
         require(len(authority_rows) == 1 and all(mirror.get(key) == value for key, value in zip(('id', 'ownerId', 'agentId', 'revision', 'status', 'authorityEpoch', 'fencingToken', 'transferId'), authority_rows[0])), '__PKT_LABEL_UPPER___S9_RESTORED_AUTHORITY_MIRROR_INCOMPATIBLE')
         require(independent_data_tree(binding, restored) == tree_proof, '__PKT_LABEL_UPPER___S9_DATA_TREE_CHANGED_DURING_READBACK')
@@ -262,7 +262,7 @@ def replace_exact(filename, data, uid, mode, suffix):
     require(not os.path.lexists(next_file), '__PKT_LABEL_UPPER___S9_ATOMIC_DESTINATION_EXISTS')
     with next_file.open('xb') as output:
         os.fchmod(output.fileno(), mode)
-        os.fchown(output.fileno(), uid, 988 if uid == 999 else 0)
+        os.fchown(output.fileno(), uid, __PKT_SERVICE_GID__ if uid == __PKT_SERVICE_UID__ else 0)
         output.write(data)
         output.flush()
         os.fsync(output.fileno())
@@ -280,7 +280,7 @@ def clear_prepare_leftovers(suffix):
     for filename in (CONFIG.with_name(CONFIG.name + '.next'), SNAPSHOT.with_name(SNAPSHOT.name + '.next')):
         if not os.path.lexists(filename):
             continue
-        entry = retain('s9-control-leftover-' + suffix + '-' + filename.name, safe_file(filename, 999, 0o600), 999)
+        entry = retain('s9-control-leftover-' + suffix + '-' + filename.name, safe_file(filename, __PKT_SERVICE_UID__, 0o600), __PKT_SERVICE_UID__)
         os.unlink(filename)
         directory_fd = os.open(filename.parent, os.O_DIRECTORY | os.O_RDONLY)
         try:
@@ -296,24 +296,24 @@ def main():
     require(len(sys.argv) == 2 and sys.argv[1] == 'S9_RAW_RESTORE51' and sys.executable == '/usr/bin/python3' and sys.flags.isolated == 1 and sys.platform == 'linux' and os.geteuid() == 0 and socket.gethostname() == '__PKT_HOSTNAME__', '__PKT_LABEL_UPPER___S9_EXPLICIT_ROOT_TARGET_REQUIRED')
     require(Path(__file__).resolve() == OPS / 'maintenance/S9-control-files.py', '__PKT_LABEL_UPPER___S9_EXECUTION_PATH_CHANGED')
     account = pwd.getpwnam('himawari-prod')
-    require((account.pw_uid, account.pw_gid) == (999, 988), '__PKT_LABEL_UPPER___S9_SERVICE_ACCOUNT_CHANGED')
+    require((account.pw_uid, account.pw_gid) == (__PKT_SERVICE_UID__, __PKT_SERVICE_GID__), '__PKT_LABEL_UPPER___S9_SERVICE_ACCOUNT_CHANGED')
     info = EVIDENCE.lstat()
-    require(stat.S_ISDIR(info.st_mode) and EVIDENCE.resolve() == EVIDENCE and info.st_uid == 999 and info.st_gid == 988 and stat.S_IMODE(info.st_mode) == 0o700, '__PKT_LABEL_UPPER___S9_EVIDENCE_UNSAFE')
+    require(stat.S_ISDIR(info.st_mode) and EVIDENCE.resolve() == EVIDENCE and info.st_uid == __PKT_SERVICE_UID__ and info.st_gid == __PKT_SERVICE_GID__ and stat.S_IMODE(info.st_mode) == 0o700, '__PKT_LABEL_UPPER___S9_EVIDENCE_UNSAFE')
     suffix = str(time.time_ns())
     action = sys.argv[1]
     report = {'schemaVersion': 'himawari.__PKT_LABEL__-change-control-restore.v1', 'action': action, 'startedAt': utc(), 'passed': False, 'commands': [], 'serviceStartAuthorized': False, 'accountRecoveryRequired': True}
     retain_json('s9-control-started-' + suffix + '.json', report)
     try:
-        require(sha(safe_file(NODE)) == 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2', '__PKT_LABEL_UPPER___S9_NODE_CHANGED')
+        require(sha(safe_file(NODE)) == '__PKT_NODE_SHA256__', '__PKT_LABEL_UPPER___S9_NODE_CHANGED')
         for line in safe_file(OPS / 'maintenance/OWNED-SHA256SUMS').decode().splitlines():
             expected, relative = line.split('  ', 1)
             require(re.fullmatch('[a-f0-9]{64}', expected) and not Path(relative).is_absolute() and '..' not in Path(relative).parts and sha(safe_file(OPS / relative)) == expected, '__PKT_LABEL_UPPER___S9_APPROVED_HELPER_CHANGED')
         binding = load(OPS / 'inputs/bindings.json')
         require(binding['status'] == 'frozen-approved' and binding['approvals']['packageRef'], '__PKT_LABEL_UPPER___S9_FROZEN_BINDING_REQUIRED')
         approval_bytes = safe_file(EVIDENCE / 'rollback-approval.json', 0, 0o640)
-        require((EVIDENCE / 'rollback-approval.json').stat().st_gid == 988, '__PKT_LABEL_UPPER___S9_APPROVAL_GID_CHANGED')
+        require((EVIDENCE / 'rollback-approval.json').stat().st_gid == __PKT_SERVICE_GID__, '__PKT_LABEL_UPPER___S9_APPROVAL_GID_CHANGED')
         approval = json.loads(approval_bytes)
-        restored = load(EVIDENCE / (action.lower() + '-result.json'), 999, 0o600)
+        restored = load(EVIDENCE / (action.lower() + '-result.json'), __PKT_SERVICE_UID__, 0o600)
         schema = validate_restore_proof(action, binding, approval, sha(approval_bytes), restored)
         report['approvalSha256'] = sha(approval_bytes)
         report['databaseProof'] = independent_database(binding, schema, restored)
@@ -332,18 +332,18 @@ def main():
             require(sha(safe_file(filename)) == preserved[str(filename)]['sha256'], '__PKT_LABEL_UPPER___S9_SECOND_ROOT_PROTECTION_CHANGED')
         for entry in original['preservedQualification']:
             require(sha(safe_file(entry['source'])) == entry['sha256'], '__PKT_LABEL_UPPER___S9_SECOND_QUALIFICATION_CHANGED')
-        original_config = safe_file(EVIDENCE / 'original-config.json', 999, 0o600)
+        original_config = safe_file(EVIDENCE / 'original-config.json', __PKT_SERVICE_UID__, 0o600)
         original_unit = safe_file(EVIDENCE / 'original-unit.service', 0, 0o600)
         require(sha(original_config) == OLD_CONFIG_SHA and sha(original_unit) == original_unit_sha, '__PKT_LABEL_UPPER___S9_ORIGINAL_CONTROL_BYTES_CHANGED')
         require(json.loads(original_config).get('runPolicy', {}).get('coding', {}).get('grantId') == workspace_plan(binding)['grantId'], '__PKT_LABEL_UPPER___S9_ORIGINAL_GRANT_CHANGED')
-        report['preservedCurrentControlFiles'] = [retain('s9-control-current-' + suffix + '-' + name, safe_file(filename, uid), uid) for filename, name, uid in ((CONFIG, 'config.json', 999), (UNIT, 'unit.service', 0), (SNAPSHOT, 'capability-deployment.json', 999), (ATTESTATION, 'startup-attestation.json', 999))]
+        report['preservedCurrentControlFiles'] = [retain('s9-control-current-' + suffix + '-' + name, safe_file(filename, uid), uid) for filename, name, uid in ((CONFIG, 'config.json', __PKT_SERVICE_UID__), (UNIT, 'unit.service', 0), (SNAPSHOT, 'capability-deployment.json', __PKT_SERVICE_UID__), (ATTESTATION, 'startup-attestation.json', __PKT_SERVICE_UID__))]
         retain_json('s9-control-before-change-' + suffix + '.json', report)
         service()
-        snapshot_bytes = safe_file(EVIDENCE / 'original-capability-deployment.json', 999, 0o600)
+        snapshot_bytes = safe_file(EVIDENCE / 'original-capability-deployment.json', __PKT_SERVICE_UID__, 0o600)
         require(json.loads(original_config)['capabilityDeployment'] == {'snapshotPath': str(SNAPSHOT), 'sha256': 'sha256:' + sha(snapshot_bytes)}, '__PKT_LABEL_UPPER___S9_SECOND_SNAPSHOT_BINDING_CHANGED')
-        replace_exact(SNAPSHOT, snapshot_bytes, 999, 0o600, suffix)
-        replace_exact(ATTESTATION, safe_file(EVIDENCE / 'original-startup-attestation.json', 999, 0o600), 999, 0o600, suffix)
-        replace_exact(CONFIG, original_config, 999, 0o600, suffix)
+        replace_exact(SNAPSHOT, snapshot_bytes, __PKT_SERVICE_UID__, 0o600, suffix)
+        replace_exact(ATTESTATION, safe_file(EVIDENCE / 'original-startup-attestation.json', __PKT_SERVICE_UID__, 0o600), __PKT_SERVICE_UID__, 0o600, suffix)
+        replace_exact(CONFIG, original_config, __PKT_SERVICE_UID__, 0o600, suffix)
         replace_exact(UNIT, original_unit, 0, 0o644, suffix)
         report['clearedPrepareLeftovers'] = clear_prepare_leftovers(suffix)
         report['targetPrefix'] = str(OLD_PREFIX)
@@ -358,7 +358,7 @@ def main():
         report['databaseAfterControlRestore'] = independent_database(binding, schema, restored)
         report['capabilityUpgradeDiscarded'] = report['databaseAfterControlRestore']['capabilityUpgradeDiscarded']
         report['grantRecordUnchanged'] = report['databaseAfterControlRestore']['grantRecordUnchanged']
-        report['controlReadback'] = [{'path': str(filename), 'sha256': sha(safe_file(filename, uid))} for filename, uid in ((CONFIG, 999), (UNIT, 0), (SNAPSHOT, 999), (ATTESTATION, 999))]
+        report['controlReadback'] = [{'path': str(filename), 'sha256': sha(safe_file(filename, uid))} for filename, uid in ((CONFIG, __PKT_SERVICE_UID__), (UNIT, 0), (SNAPSHOT, __PKT_SERVICE_UID__), (ATTESTATION, __PKT_SERVICE_UID__))]
         report['passed'] = True
         report['finishedAt'] = utc()
         retained = retain_json('s9-control-result-' + suffix + '.json', report)

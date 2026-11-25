@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0136-soft-line-icons-and-components.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "apps/control-center/src/components/glyphs.tsx, apps/control-center/src/rounded.css, apps/control-center/test/glyphs.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0137：全站图标和组件改用“圆润”造型：双色填充图标，浮起的卡片，胶囊按钮
@@ -23,7 +25,7 @@ date: "2026-10-31"
 
 ## 背景
 
-[ADR 0136](0136-soft-line-icons-and-components.md) 按方案 4“柔线”改了全站，还没合并上线。Andy 随后要看“如果所有组件按方案 1 圆润重新设计，整个界面是什么样”，线程在真实页面上换样式截了全部 13 个页面。2026-10-31 Andy 在[按自有品牌风格重做 iPhone 和 Mac 界面](#references)线程回复：“我很喜欢这一套设计方案。你必须把这一套所有的图标和组件继续完善，画得完美一点，然后把整套 UI 的设计风格应用到整个应用的 UI 里面，任何地方都要保持设计风格一致。包括图标在内，如果哪里需要加新图标，设计时必须以这一套风格为基础。”
+[ADR 0136](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0136-soft-line-icons-and-components.md) 按方案 4“柔线”改了全站，还没合并上线。Andy 随后要看“如果所有组件按方案 1 圆润重新设计，整个界面是什么样”，线程在真实页面上换样式截了全部 13 个页面。2026-10-31 Andy 在[按自有品牌风格重做 iPhone 和 Mac 界面](#references)线程回复：“我很喜欢这一套设计方案。你必须把这一套所有的图标和组件继续完善，画得完美一点，然后把整套 UI 的设计风格应用到整个应用的 UI 里面，任何地方都要保持设计风格一致。包括图标在内，如果哪里需要加新图标，设计时必须以这一套风格为基础。”
 
 [↑ 返回阅读导航](#contents)
 
@@ -59,7 +61,7 @@ date: "2026-10-31"
 
 ## 后果
 
-- ADR 0136 被本 ADR 取代；`soft-line.css` 改名为 `rounded.css` 并重写，`line-icons.tsx` 换成 `glyphs.tsx`。v14 基线作废，只留作历史。
+- ADR 0136 被本 ADR 取代；[soft-line.css](https://github.com/sixianli/himawari-agent/blob/91d9b0896874b0e73c3cfadfc765c957305ab17d/apps/control-center/src/main.tsx) 改名为 `rounded.css` 并重写，line-icons.tsx 换成 `glyphs.tsx`。v14 基线作废，只留作历史。
 - 圆润在 iPhone 和 Mac 真机上都还没看过；上线后需要 Andy 在手机上看一次侧栏、输入框和设置弹窗。
 - 文件预览里 Excel 的工作表标签仍模仿 Excel 本身（规则 27），不按圆润改。
 
@@ -69,7 +71,7 @@ date: "2026-10-31"
 
 ## 关联文档
 
-- [ADR 0136](0136-soft-line-icons-and-components.md)：被本 ADR 取代的柔线方案
+- [ADR 0136](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0136-soft-line-icons-and-components.md)：被本 ADR 取代的柔线方案
 - [网页设计规范](../ui-ux-design-guide.md)：规则 12、23、41、42
 - 讨论线程：按自有品牌风格重做 iPhone 和 Mac 界面（项目线程）；全站效果图 <https://claude.ai/artifact/Nc3DnUvMVun86kYsvzWDD8>
 

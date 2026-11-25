@@ -46,7 +46,7 @@ public final class ChatStore {
     @ObservationIgnored private var retryFailures = 0
     @ObservationIgnored private var createdRevisions: [String: Int] = [:]
     @ObservationIgnored private var pendingTextRefs: Set<String> = []
-    @ObservationIgnored private var loadingExecutions: Set<String> = []
+    @ObservationIgnored private var executionLoads = ReloadGate<String>()
     @ObservationIgnored private let heartbeatSeconds: @Sendable () -> TimeInterval
     @ObservationIgnored private var watched: (threadId: String, stream: DeviceEventStream, task: Task<Void, Never>)?
     @ObservationIgnored private let answerLocale: AnswerLocale
@@ -120,7 +120,10 @@ public final class ChatStore {
     public func watch(_ threadId: String) {
         guard !frozen else { return }
         wantedThreadId = threadId
-        guard ExecutionStreamPolicy.allowed(streamConnections: streamConnections) else { return }
+        guard ExecutionStreamPolicy.allowed(streamConnections: streamConnections) else {
+            if let streamConnections { StreamDiagnostics.shared.note(.notOpened(path: "threads/\(threadId)/execution-stream", streamConnections: streamConnections)) }
+            return
+        }
         if watched?.threadId == threadId { return }
         closeWatchedStream()
         let stream = DeviceEventStream(http: api.http, path: "threads/\(threadId)/execution-stream", cursors: nil, heartbeat: heartbeatSeconds)
@@ -157,12 +160,6 @@ public final class ChatStore {
 
     public func messages(in threadId: String) -> [ThreadMessage] {
         details[threadId]?.messages ?? []
-    }
-
-    public func lastMessageText(in threadId: String) -> String? {
-        if let queued = queued.last(where: { $0.message.threadId == threadId }) { return MessageAttachments.preview(queued.message.text) }
-        guard let last = details[threadId]?.messages.last(where: { $0.role != .system }) else { return nil }
-        return texts[last.contentRef].map(MessageAttachments.preview)
     }
 
     public func queuedMessages(in threadId: String) -> [OutboxItem] {
@@ -252,13 +249,20 @@ public final class ChatStore {
 
     public func loadExecution(_ runId: String, in threadId: String) async {
         guard !frozen else { return }
-        guard !loadingExecutions.contains(runId) else { return }
-        loadingExecutions.insert(runId)
-        defer { loadingExecutions.remove(runId) }
-        do {
-            executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
-        } catch {
-            await handle(error)
+        guard executionLoads.begin(runId) else { return }
+        while true {
+            do {
+                executions[runId] = try await api.executionRecords(threadId: threadId, runId: runId, known: executions[runId] ?? [])
+            } catch {
+                executionLoads.cancel(runId)
+                await handle(error)
+                return
+            }
+            if frozen {
+                executionLoads.cancel(runId)
+                return
+            }
+            if !executionLoads.finish(runId) { return }
         }
     }
 
@@ -266,10 +270,6 @@ public final class ChatStore {
         guard !frozen else { return }
         guard details[threadId] == nil else { return }
         Task { await load(threadId) }
-    }
-
-    public static func newRequestId() -> String {
-        OutgoingMessage.newId()
     }
 
     public func newThread(requestId: String) async throws -> String {

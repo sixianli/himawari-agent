@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-09-29"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0037：macOS 安装包自带 Pi 工具使用的 Bash
@@ -81,6 +83,6 @@ Himawari 要分发给其他用户使用（见 [ADR 0033](0033-process-sandbox-de
 ## 关联文档
 
 - 现行安装规定：[SOURCE: docs/runbooks/install-start-stop-runbook.md]
-- 受保护的运行时安装：[SOURCE: docs/adr/0028-protected-runtime-installation.md]
+- 受保护的运行时安装：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md]
 - 分发背景与默认执行方式：[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
 - 实现待办：[SOURCE: docs/backlog/BL-20260929-003-macos-安-装-包-自-带-pi-工.md]

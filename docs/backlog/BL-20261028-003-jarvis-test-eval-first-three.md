@@ -23,7 +23,7 @@ superseded_by: ""
 
 ## Origin
 
-- 来自[产品愿景 Jarvis Test](../product-vision.md#jarvis-test)的评审（[ADR 0101](../adr/0101-adopt-product-vision-v2-1.md)，评审网页 <https://claude.ai/artifact/G7qKTu3gw38PFGpWVzohZF>）。Andy 2026-10-28 14:12（日本时间）原话：“了解，那就做我们现在能做的”。
+- 来自[产品愿景 Jarvis Test](../product-vision.md#jarvis-test)的评审（[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)，评审网页 <https://claude.ai/artifact/G7qKTu3gw38PFGpWVzohZF>）。Andy 2026-10-28 14:12（日本时间）原话：“了解，那就做我们现在能做的”。
 
 ## Notes
 

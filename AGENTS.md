@@ -4,7 +4,7 @@
 <a id="delivery-mode"></a>
 ## 交付模式
 
-在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。合并前 PR 最新提交上的 `ci/required` 必须是成功；草稿 PR 不跑 CI、CI 本身坏了时可以不等 CI 合并的长期授权、CI 在哪台机器上跑，见[快速模式](.agents/instructions/delivery-mode.md#fast-mode)。
+在决定一项改动需要哪些测试、文档步骤、合并检查或生产步骤之前，先读仓库根目录的 `DELIVERY_MODE`。只要它写的是 `fast`，[.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) 就替代它在本文件和 `.agents/instructions/` 下各文件中点名的那些规则。只有用户能切换模式。合并前 PR 最新提交上的 `ci/required` 必须是成功；草稿 PR 不跑 CI、CI 没变绿时怎么办、CI 在哪台机器上跑，见[快速模式](.agents/instructions/delivery-mode.md#fast-mode)。
 
 <a id="product-vision"></a>
 ## 产品愿景
@@ -14,7 +14,7 @@
 - 原则之间冲突时按这个顺序裁决：用户主权，其次边界与可逆性，其次记忆可靠性，其次主动性与效率。当一个设计在两条原则之间取舍时，要写明它依据的是哪一条原则。
 - “自有优先、数据自持”（"Owned first, data held by the owner"）取代了早先“本地优先”（"local-first"）的说法：Himawari 在哪里运行、数据存在哪里，由 Andy 控制，可以是 Andy 租用的服务器。不得把 Himawari 描述为本地优先。
 - PRD（产品需求文档）规定一个版本的范围，可以推迟愿景中的部分内容，但不得与愿景矛盾。只有用户能修改愿景正文；新版本替换整份文档，并在附录中记录改动，并新开一份采纳 ADR 取代上一份。
-- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
+- 自 v2.2 起，Andy 定的规则是硬性设定，不是记忆：规则写进程序、必定执行、每条有回归测试；记忆只保存规则的出处和修改历史。护城河是四样资产：记忆图谱、Agent 规则手册、长尾工具库、决策记录。把规则当记忆条目存储或注入的现有设计是已知缺口，列在 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 里，不是目标；现行愿景 v2.3 的采纳记录是 [ADR 0153](docs/adr/0153-adopt-product-vision-v2-3.md)。
 
 <a id="glossary"></a>
 ## 词表
@@ -53,6 +53,8 @@ Andy 的全局指令已复制到 [.claude/rules/owner-global-instructions.md](.c
 <a id="model-review-before-merge"></a>
 <a id="working-with-opencode"></a>
 ## 和 OpenCode 协作：方案讨论和代码复核
+
+**已暂停（Andy 2026-11-25 原话：“把 opencode 的审核给它暂停掉。无论是方案的审核还是 Code Review，都不需要 opencode 来审核了”“我觉得 opencode 的审核太浪费 token 和时间了”）。** 暂停期间方案讨论（`plan`、`plan-review`）、方案说法核对（`plan-claims`）和合并前代码复核（`code-review`）一律不跑，合并只看测试和 CI；合并队列也不再检查复核记录。下面的写法保留到 Andy 说恢复为止，恢复时删掉这一段、把合并队列的复核检查接回来。
 
 方案讨论和合并前的代码复核，都要请 OpenCode（一个能让模型读代码、调用工具的命令行程序）上的模型看：默认只用 `opencode-go/deepseek-v4.1-flash`，只有 Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`（[ADR 0259](docs/adr/0259-review-models-default-to-deepseek.md)）。一律用 `node scripts/model-review/opencode-review.mjs` 跑，不自己拼 `opencode run` 命令。
 

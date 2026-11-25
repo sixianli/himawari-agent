@@ -21,7 +21,7 @@ export const AUDIT_READ_TABLES = Object.freeze([
   "sandbox_workspace_barriers",
   "sandbox_workspace_occupancy",
 ]);
-export const AUDIT_REVIEWED_MIGRATIONS = Object.freeze([]);
+export const AUDIT_REVIEWED_MIGRATIONS = Object.freeze(["20261125110947"]);
 const sections = ["executions", "legacy", "queue", "environments"];
 function assertArgument(condition) {
   if (!condition) throw new Error("WORKSPACE_AUDIT_ARGUMENT_INVALID");

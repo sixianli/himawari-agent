@@ -36,13 +36,13 @@ function processRecord(pid, name) {
   assert(Number.isSafeInteger(pid) && pid > 1, "__PKT_LABEL_UPPER___STARTUP_PID_INVALID");
   const location = `/proc/${pid}`;
   const info = lstatSync(location);
-  assert.equal(info.uid, 999, "__PKT_LABEL_UPPER___STARTUP_PROCESS_UID_CHANGED");
+  assert.equal(info.uid, __PKT_SERVICE_UID__, "__PKT_LABEL_UPPER___STARTUP_PROCESS_UID_CHANGED");
   const stat = readFileSync(location + "/stat", "utf8");
   const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
   assert(!["Z", "X"].includes(fields[0]), "__PKT_LABEL_UPPER___STARTUP_PROCESS_NOT_LIVE");
   const status = Object.fromEntries(readFileSync(location + "/status", "utf8").split("\n").filter((line) => line.includes(":")).map((line) => { const i = line.indexOf(":"); return [line.slice(0, i), line.slice(i + 1).trim()]; }));
-  assert(status.Uid.split(/\s+/).every((value) => value === "999"), "__PKT_LABEL_UPPER___STARTUP_PROCESS_UID_CHANGED");
-  assert(status.Gid.split(/\s+/).every((value) => value === "988"), "__PKT_LABEL_UPPER___STARTUP_PROCESS_GID_CHANGED");
+  assert(status.Uid.split(/\s+/).every((value) => value === "__PKT_SERVICE_UID__"), "__PKT_LABEL_UPPER___STARTUP_PROCESS_UID_CHANGED");
+  assert(status.Gid.split(/\s+/).every((value) => value === "__PKT_SERVICE_GID__"), "__PKT_LABEL_UPPER___STARTUP_PROCESS_GID_CHANGED");
   assert.equal(status.NoNewPrivs, "1", "__PKT_LABEL_UPPER___STARTUP_NO_NEW_PRIVILEGES_CHANGED");
   assert.equal(status.CapEff, "0000000000000000", "__PKT_LABEL_UPPER___STARTUP_EFFECTIVE_CAPABILITIES_CHANGED");
   assert.equal(status.CapBnd, "0000000000000000", "__PKT_LABEL_UPPER___STARTUP_CAPABILITY_BOUND_CHANGED");
@@ -51,7 +51,7 @@ function processRecord(pid, name) {
   assert.equal(args[args.indexOf("--profile") + 1], "production", "__PKT_LABEL_UPPER___STARTUP_PROFILE_CHANGED");
   assert.equal(args[args.indexOf("--config") + 1], configurationPath, "__PKT_LABEL_UPPER___STARTUP_CONFIG_ARGUMENT_CHANGED");
   assert(args.some((arg) => arg.startsWith(runtime + "/")), "__PKT_LABEL_UPPER___STARTUP_RUNTIME_ARGUMENT_CHANGED");
-  return { name, pid, uid: 999, gid: 988, parentPid: Number(fields[1]), startTime: fields[19], executable: realpathSync(location + "/exe") };
+  return { name, pid, uid: __PKT_SERVICE_UID__, gid: __PKT_SERVICE_GID__, parentPid: Number(fields[1]), startTime: fields[19], executable: realpathSync(location + "/exe") };
 }
 
 async function loadCatalogReader() {
@@ -80,15 +80,15 @@ function startupReadiness(journal, budgetMs) {
 async function inspect(mode, invocationId) {
   assert.equal(process.platform, "linux", "__PKT_LABEL_UPPER___STARTUP_LINUX_REQUIRED");
   assert.equal(hostname(), "__PKT_HOSTNAME__", "__PKT_LABEL_UPPER___STARTUP_HOST_CHANGED");
-  assert.equal(process.getuid(), 999, "__PKT_LABEL_UPPER___STARTUP_UID_CHANGED");
-  assert.equal(process.getgid(), 988, "__PKT_LABEL_UPPER___STARTUP_GID_CHANGED");
+  assert.equal(process.getuid(), __PKT_SERVICE_UID__, "__PKT_LABEL_UPPER___STARTUP_UID_CHANGED");
+  assert.equal(process.getgid(), __PKT_SERVICE_GID__, "__PKT_LABEL_UPPER___STARTUP_GID_CHANGED");
   assert.equal(process.umask(), 0o022, "__PKT_LABEL_UPPER___STARTUP_UMASK_CHANGED");
   assert.equal(process.env.HOME, stateRoot, "__PKT_LABEL_UPPER___STARTUP_HOME_CHANGED");
   assert.equal(process.env.PATH, "/opt/himawari/node/bin:/usr/bin:/bin", "__PKT_LABEL_UPPER___STARTUP_PATH_CHANGED");
   assert.equal(process.env.HIMAWARI_RUNTIME_PROTECTION_FILE, protectionPath, "__PKT_LABEL_UPPER___STARTUP_PROTECTION_ENV_CHANGED");
   assert(!Object.hasOwn(process.env, "TMPDIR"), "__PKT_LABEL_UPPER___STARTUP_TMPDIR_PRESENT");
   assert.equal(realpathSync(process.execPath), node, "__PKT_LABEL_UPPER___STARTUP_NODE_CHANGED");
-  assert.equal(hash(file(node, 0)), "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2", "__PKT_LABEL_UPPER___STARTUP_NODE_BYTES_CHANGED");
+  assert.equal(hash(file(node, 0)), "__PKT_NODE_SHA256__", "__PKT_LABEL_UPPER___STARTUP_NODE_BYTES_CHANGED");
   const bindingBytes = file(operations + "/inputs/bindings.json", 0);
   const binding = JSON.parse(bindingBytes);
   assert.equal(binding.schemaVersion, "himawari.__PKT_LABEL__-change-bindings.v1", "__PKT_LABEL_UPPER___STARTUP_BINDING_SCHEMA_CHANGED");
@@ -102,9 +102,9 @@ async function inspect(mode, invocationId) {
   assert.equal(binding.paths.stateRoot, stateRoot, "__PKT_LABEL_UPPER___STARTUP_STATE_ROOT_CHANGED");
   assert.equal(binding.paths.config, configurationPath, "__PKT_LABEL_UPPER___STARTUP_CONFIG_PATH_CHANGED");
   assert.equal(binding.service.pairSupervisor, "__PKT_OLD_OPERATIONS__/pair-supervisor.mjs", "__PKT_LABEL_UPPER___STARTUP_PAIR_PATH_CHANGED");
-  const originalBytes = file(evidenceRoot + "/original-config.json", 999, 0o600);
+  const originalBytes = file(evidenceRoot + "/original-config.json", __PKT_SERVICE_UID__, 0o600);
   assert.equal(hash(originalBytes), binding.service.oldConfigSha256, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_CONFIG_CHANGED");
-  const configurationBytes = file(configurationPath, 999, 0o600);
+  const configurationBytes = file(configurationPath, __PKT_SERVICE_UID__, 0o600);
   const original = JSON.parse(originalBytes);
   const current = JSON.parse(configurationBytes);
   const currentDeployment = current.capabilityDeployment;
@@ -112,7 +112,7 @@ async function inspect(mode, invocationId) {
   const receipt = JSON.parse(receiptBytes);
   const publicKey = createPublicKey(qualifiedFile("host-qualification-public-key.pem"));
   assert(verify(null, receiptBytes, publicKey, qualifiedFile("installation-receipt.sig")), "__PKT_LABEL_UPPER___STARTUP_RECEIPT_SIGNATURE_INVALID");
-  assert.equal(hash(publicKey.export({ type: "spki", format: "der" })), hash(createPublicKey(file("/var/lib/himawari/qualification/first-20261007/host-qualification-public-key.pem", 0)).export({ type: "spki", format: "der" })), "__PKT_LABEL_UPPER___STARTUP_SIGNER_CHANGED");
+  assert.equal(hash(publicKey.export({ type: "spki", format: "der" })), hash(createPublicKey(file("__PKT_FIRST_SIGNER_KEY_PATH__", 0)).export({ type: "spki", format: "der" })), "__PKT_LABEL_UPPER___STARTUP_SIGNER_CHANGED");
   assert.equal(receipt.schema, "himawari-installed-foreground-receipt.v2", "__PKT_LABEL_UPPER___STARTUP_RECEIPT_SCHEMA_CHANGED");
   assert.equal(receipt.host, hostname(), "__PKT_LABEL_UPPER___STARTUP_RECEIPT_HOST_CHANGED");
   assert.equal(receipt.platform, process.platform, "__PKT_LABEL_UPPER___STARTUP_RECEIPT_PLATFORM_CHANGED");
@@ -121,7 +121,7 @@ async function inspect(mode, invocationId) {
   assert.equal(receipt.runtime, runtime, "__PKT_LABEL_UPPER___STARTUP_RECEIPT_RUNTIME_CHANGED");
   assert.equal(receipt.source.revision, "__PKT_COMMIT__", "__PKT_LABEL_UPPER___STARTUP_RECEIPT_REVISION_CHANGED");
   assert.equal(receipt.source.artifactSha256, binding.candidate.archiveSha256, "__PKT_LABEL_UPPER___STARTUP_RECEIPT_ARTIFACT_CHANGED");
-  assert.equal(receipt.bindingInputs.acceptanceUid, 999, "__PKT_LABEL_UPPER___STARTUP_ACCEPTANCE_UID_CHANGED");
+  assert.equal(receipt.bindingInputs.acceptanceUid, __PKT_SERVICE_UID__, "__PKT_LABEL_UPPER___STARTUP_ACCEPTANCE_UID_CHANGED");
   assert.equal(receipt.bindingInputs.deploymentId, binding.identity.deploymentId, "__PKT_LABEL_UPPER___STARTUP_RECEIPT_DEPLOYMENT_CHANGED");
   assert(!Object.hasOwn(binding, "configurationChange"), "__PKT_LABEL_UPPER___STARTUP_CONFIGURATION_CHANGE_NOT_ALLOWED");
   for (const key of ["configurationChange", "grantAuthority"]) assert(!Object.hasOwn(receipt.bindingInputs, key), "__PKT_LABEL_UPPER___STARTUP_FOURTH_ONLY_INPUT_PRESENT:" + key);
@@ -129,10 +129,10 @@ async function inspect(mode, invocationId) {
   assert.equal(receipt.bindingInputs.originalConfigurationSha256, binding.service.oldConfigSha256, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_CONFIGURATION_BINDING_CHANGED");
   const catalogReader = await loadCatalogReader();
   assert.equal(catalogReader.configurationStage(original, current), "prepared", "__PKT_LABEL_UPPER___STARTUP_NEW_SNAPSHOT_REQUIRED");
-  const staticRootAuthorization = JSON.parse(file(evidenceRoot + "/s7-static-root-authorization.json", 999, 0o600));
+  const staticRootAuthorization = JSON.parse(file(evidenceRoot + "/s7-static-root-authorization.json", __PKT_SERVICE_UID__, 0o600));
   assert(staticRootAuthorization.passed === true && staticRootAuthorization.configurationSha256 === catalogReader.staticRootConfigurationSha256(binding), "__PKT_LABEL_UPPER___STARTUP_STATIC_ROOT_CONFIGURATION_NOT_VERIFIED");
   assert.equal(original.runPolicy.coding.grantId, binding.workspace.grantId, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_GRANT_ID_CHANGED");
-  const preupgrade = JSON.parse(file(evidenceRoot + "/s7-preupgrade-authorization.json", 999, 0o600));
+  const preupgrade = JSON.parse(file(evidenceRoot + "/s7-preupgrade-authorization.json", __PKT_SERVICE_UID__, 0o600));
   assert.equal(preupgrade.schemaVersion, "himawari.__PKT_LABEL__-change-preupgrade-authorization.v1", "__PKT_LABEL_UPPER___STARTUP_PREUPGRADE_AUTHORIZATION_SCHEMA_CHANGED");
   assert.equal(preupgrade.passed, true, "__PKT_LABEL_UPPER___STARTUP_PREUPGRADE_AUTHORIZATION_FAILED");
   assert.equal(preupgrade.configurationSha256, hash(originalBytes), "__PKT_LABEL_UPPER___STARTUP_PREUPGRADE_CONFIGURATION_CHANGED");
@@ -169,7 +169,7 @@ async function inspect(mode, invocationId) {
     assert.equal(hash(file(value.apparmorProfile.path, 0)), value.apparmorProfile.sha256, "__PKT_LABEL_UPPER___STARTUP_APPARMOR_CHANGED");
   }
   const protection = JSON.parse(file(protectionPath, 0, 0o644));
-  assert.deepEqual(protection, { schemaVersion: "protected-runtime.v1", runtimeRoot: runtime, runtimeDigest: receipt.runtimeDigest, runtimeUid: 999, deploymentUid: 0 }, "__PKT_LABEL_UPPER___STARTUP_RUNTIME_PROTECTION_CHANGED");
+  assert.deepEqual(protection, { schemaVersion: "protected-runtime.v1", runtimeRoot: runtime, runtimeDigest: receipt.runtimeDigest, runtimeUid: __PKT_SERVICE_UID__, deploymentUid: 0 }, "__PKT_LABEL_UPPER___STARTUP_RUNTIME_PROTECTION_CHANGED");
   const platform = await import(pathToFileURL(runtime + "/node_modules/@himawari-agent/platform-node/dist/index.js").href);
   assert.equal(await platform.digestSandboxRuntime(runtime), receipt.runtimeDigest, "__PKT_LABEL_UPPER___STARTUP_LIVE_RUNTIME_DIGEST_CHANGED");
   const r2l6 = await validateR2l6Installed({ runtime, reportPath: qualification + "/r2l6-installed.json" });
@@ -186,7 +186,7 @@ async function inspect(mode, invocationId) {
     } });
   }
   const snapshotPath = stateRoot + "/deployment/capability-deployment.json";
-  const snapshotBytes = file(snapshotPath, 999, 0o600);
+  const snapshotBytes = file(snapshotPath, __PKT_SERVICE_UID__, 0o600);
   assert.deepEqual(currentDeployment, { snapshotPath, sha256: "sha256:" + hash(snapshotBytes) }, "__PKT_LABEL_UPPER___STARTUP_SNAPSHOT_CONFIG_CHANGED");
   const catalog = catalogReader.readPostSwitchAuthorization(binding);
   assert.equal(catalog.configurationSha256, hash(configurationBytes), "__PKT_LABEL_UPPER___STARTUP_CATALOG_CONFIG_CHANGED");
@@ -225,7 +225,7 @@ async function inspect(mode, invocationId) {
     assert.equal(item.qualification.sandbox.evidenceDigest, hash(receiptBytes), "__PKT_LABEL_UPPER___STARTUP_SNAPSHOT_RECEIPT_CHANGED");
     await platform.verifySandboxHost({ binding: signed.binding, qualification: item.qualification.sandbox, hostId: signed.binding.hostId });
   }
-  const attestation = JSON.parse(file(stateRoot + "/deployment/startup-attestation.json", 999, 0o600));
+  const attestation = JSON.parse(file(stateRoot + "/deployment/startup-attestation.json", __PKT_SERVICE_UID__, 0o600));
   for (const [key, expected] of Object.entries({ receiptDigest: hash(receiptBytes), runtimeDigest: receipt.runtimeDigest, snapshotDigest: hash(snapshotBytes), signatureVerified: true, liveHostVerified: true }))
     assert.equal(attestation[key], expected, "__PKT_LABEL_UPPER___STARTUP_ATTESTATION_CHANGED:" + key);
   assert.deepEqual(attestation.dependencies.errors, [], "__PKT_LABEL_UPPER___STARTUP_SRT_DEPENDENCIES_FAILED");
@@ -288,9 +288,9 @@ async function inspect(mode, invocationId) {
       if (fields[3] === "0A" && parseInt(port, 16) === configuration.http.listenPort)
         listeners.push({ source, address, port: configuration.http.listenPort, uid: Number(fields[7]), inode: fields[9] });
     }
-  assert(listeners.length > 0 && listeners.every((item) => ["0100007F", "00000000000000000000000001000000"].includes(item.address) && item.uid === 999 && socketInodes.has(item.inode)), "__PKT_LABEL_UPPER___STARTUP_LISTENER_NOT_OWNED_LOOPBACK");
+  assert(listeners.length > 0 && listeners.every((item) => ["0100007F", "00000000000000000000000001000000"].includes(item.address) && item.uid === __PKT_SERVICE_UID__ && socketInodes.has(item.inode)), "__PKT_LABEL_UPPER___STARTUP_LISTENER_NOT_OWNED_LOOPBACK");
   const socket = lstatSync(stateRoot + "/runtime/execution.sock");
-  assert(socket.isSocket() && socket.uid === 999 && socket.gid === 988 && (socket.mode & 0o7777) === 0o600, "__PKT_LABEL_UPPER___STARTUP_EXECUTION_SOCKET_CHANGED");
+  assert(socket.isSocket() && socket.uid === __PKT_SERVICE_UID__ && socket.gid === __PKT_SERVICE_GID__ && (socket.mode & 0o7777) === 0o600, "__PKT_LABEL_UPPER___STARTUP_EXECUTION_SOCKET_CHANGED");
   return { schemaVersion: "himawari.__PKT_LABEL__-change-startup-verification.v1", passed: true, checkedAt: new Date().toISOString(), scope: "startup-readback-only-no-paid-request", configurationSha256: hash(configurationBytes), snapshotSha256: hash(snapshotBytes), receiptSha256: hash(receiptBytes), runtimeDigest: receipt.runtimeDigest, signatureVerified: true, liveHostVerified: true, runtimeProtectionVerified: true, invocationId, pairRunId: spawned[0].pairRunId, mainPid, processes, authority: { ...authority, deploymentId: authority.id }, currentEpoch: authority.authorityEpoch, currentFencingToken: authority.fencingToken, agentBinding: agent, workerBinding: worker, agentReady: agentReady[0], workerReady: workerReady[0], ...readiness, listeners, catalogUpgradeSha256: upgrade.sha256, catalog, actualSystemdCrashRestartVerified: false };
 }
 

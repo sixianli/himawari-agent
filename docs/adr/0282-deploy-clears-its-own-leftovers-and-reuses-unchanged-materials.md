@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-15"
+covers: "scripts/delivery-mode/deploy-target-paths.py, scripts/delivery-mode/packet-template/steps/packet-common.py, scripts/delivery-mode/packet-template/steps/verify-steps.py, scripts/delivery-mode/test_collect_dependencies.py, scripts/delivery-mode/test_deploy.py, scripts/delivery-mode/test_release_cleanup.py"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0282：上线自己清掉上次失败的残留，没变的大材料不再上传

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0229-native-apple-clients-and-device-api.md"
 date: "2026-11-12"
+covers: "apps/control-center/src/app/control-center-inventory.ts, packages/gateway-contracts/src/contracts-v2.ts, packages/gateway-contracts/src/contracts.ts, packages/gateway-contracts/src/thread-contracts-v3.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0247：苹果客户端所有页面都用原生界面，不嵌网页；原生页面按客户端能力表走和网页同一份处理程序

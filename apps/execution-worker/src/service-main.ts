@@ -213,7 +213,7 @@ export async function runExecutionWorkerService(
       deploymentId: configuration.deploymentId,
       authorityEpoch: binding.authority.authorityEpoch,
       fencingToken: binding.authority.fencingToken,
-      adapterRegistry: "snapshot-qualified",
+      adapterRegistry: configuration.capabilityDeployment ? "snapshot-qualified" : "tools-disabled",
       capabilityCount: composition.deployment.manifests.length,
     });
     const signal = await waitForTerminationSignal();

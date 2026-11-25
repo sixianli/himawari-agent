@@ -6,6 +6,8 @@ contract_sha256: "sha256:871e1b33c9b353d04ae1cebd100a04b3af82b1d72718a684bc96940
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
+covers: "packages/runtime-pi/src/pi-file-preparation-pool.ts, packages/runtime-sandbox/src/job-host-main.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 同机备份与恢复 Runbook
@@ -161,7 +163,7 @@ date: "2026-08-27"
 
 2026-10-24 联网搜索和读网页改为供应商链（[SOURCE: docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：上一段的“当前固定 Exa 路径”改为“搜索和读网页路由当前配置的供应商列表”。联网搜索设置保存同意时的收件方列表；只配置 Exa 时绑定摘要与原来相同，已开启的设置不用重新同意。恢复或迁移后，目标配置的供应商列表、搜索和读网页路由与保存的收件方列表不一致时，不能沿用开启状态，须由主人重新同意。主机侧的搜索和读网页缓存、供应商熔断状态只在内存里，不进入 Product State，不随备份、恢复或权威迁移带走。本次不新增迁移、数据格式或停机步骤。 2026-10-25 补充：需要密钥的供应商（目前是 DeepSeek）的密钥只放在每台主机自己的密钥源里，执行时由 Worker 在内存里交给网络程序，不进入 Product State、Payload、诊断或备份。恢复或迁移到新主机后，须在目标主机重新放置同名同版本的密钥文件，不能从源主机复制备份来代替；缺少密钥时该供应商报不可用，回退到链上的下一家。
 
-未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
+未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 2026-09-11 合同核查：新增离线初始化、目录 Grant 与能力登记仍属于当前身份的停机管理操作，不修改本 Runbook 的备份/迁移数据格式。恢复必须保留其审计、目录身份与授权；不能在已恢复 state root 再运行首次初始化，不能将原主机安装资格当作目标主机资格。启动后快照按原字节复查，工具每次仍检查当前主机与授权；模型失败展示改进不改变原始记录和费用核算。
 
@@ -251,7 +253,7 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 ## Safety and Preconditions
 
-模型配置遵循[网关迁移设计](../execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
+模型配置遵循[网关迁移设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
 
 Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlite`路径，实体派生索引单独使用同目录的`entities.sqlite`。实体索引由SDK工厂创建，不混入产品记忆主库；产品记忆仍由产品数据库与受保护Payload负责。备份恢复点只包含产品SQLite与受保护Payload文件，不包含Mem0索引；停机权威迁移会打包配置的整个Memory目录，因此也携带entities.sqlite，并检查Memory版本。实体索引本身不能替代产品状态和受保护Payload的验证。Mac对该新版本及网关行为尚未检查；Hermes结果不能证明生产服务器资格。
 
@@ -363,7 +365,7 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 
 执行过程使用现有 Thread 事件游标，新增记忆检索、筛选和上下文阶段的发生记录；这些阶段不向页面公开记忆正文或完整模型上下文。工具请求从模型消息中的调用 ID、名称和参数派生，并与同 ID 的执行及结果关联。恢复后核对阶段、工具参数和结果投影仍可读取，不另建第二套历史或重新执行工具以补齐展示。
 
-启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用；未受保护的安装按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
+启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用；未受保护的安装按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 
 工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
 
@@ -569,7 +571,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 模型结果使用以下说明原文：
 
-> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 [npm run dev > dev.log 2>&1 &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)。
 
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过上限时不再整次失败，而是复用 Pi 的截断函数把交给模型的正文截断到上限内并加说明（`read` 保留 `Use offset=...` 续读；条目 R2-T9，见 [隔离工具执行设计](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)），只有正文清空仍装不下才沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 

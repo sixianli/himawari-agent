@@ -1,6 +1,8 @@
 import {
   archiveThreadV3CommandSchema,
   ContractValidationError,
+  chooseThreadOptionV3CommandSchema,
+  messageOptionsV3Schema,
   deleteThreadPermanentlyV3CommandSchema,
   forkThreadV3CommandSchema,
   resolveThreadTaskV3CommandSchema,
@@ -229,6 +231,43 @@ describe("Thread Gateway v3 contracts", () => {
     ).toMatchObject({ payload: { tokenRefs: ["search-token:001"] } });
   });
 
+  it("[OPTIONS-CONTRACT] carries options under a message and the owner's choice of one", () => {
+    expect(
+      chooseThreadOptionV3CommandSchema.parse({
+        ...envelope,
+        kind: "command",
+        type: "thread.option.choose",
+        idempotencyKey: "device-option-s2",
+        payload: {
+          threadId: "thread-s2",
+          messageId: "message-s2",
+          setId: "set:s2",
+          optionId: "o1",
+        },
+      }),
+    ).toMatchObject({ payload: { setId: "set:s2", optionId: "o1" } });
+    const options = {
+      setId: "set:s2",
+      items: [
+        {
+          optionId: "o1",
+          label: "回复 田中：周四可以",
+          reason: null,
+          action: { tool: "mail_reply", summary: "给田中回邮件：周四可以" },
+          state: "open",
+        },
+        { optionId: "dismiss", label: "不用了", reason: null, action: null, state: "open" },
+      ],
+    };
+    expect(messageOptionsV3Schema.parse(options).items).toHaveLength(2);
+    expect(() =>
+      messageOptionsV3Schema.parse({
+        ...options,
+        items: [{ ...options.items[1], state: "hidden" }],
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
   it("requires explicit task resolution and one-time permanent-delete authorization", () => {
     expect(
       resolveThreadTaskV3CommandSchema.parse({
@@ -331,6 +370,8 @@ describe("Thread Gateway v3 contracts", () => {
               turnId: "turn-s2",
               runId: "run-s2",
               committedAt: "2026-08-28T00:00:30.000Z",
+              options: null,
+              chosenFrom: null,
             },
           ],
           runs: [
@@ -423,6 +464,8 @@ describe("displayable execution records", () => {
     text: "",
     input: "fixture input",
     output: "",
+    activity: "",
+    activityIcon: "",
     occurredAt: "2026-09-14T00:00:00.000Z",
   };
   it("preserves empty and bounded display content without treating it as a machine identifier", () => {
@@ -434,6 +477,15 @@ describe("displayable execution records", () => {
         output: "line one\nline two",
       }).output,
     ).toBe("line one\nline two");
+  });
+  it("[ICON-2] carries the model's activity and icon and rejects a record without them", () => {
+    const step = { ...record, activity: "查东京明天的天气", activityIcon: "cloud" };
+    expect(threadExecutionRecordSchema.parse(step)).toEqual(step);
+    const { activity: _activity, ...withoutActivity } = step;
+    expect(() => threadExecutionRecordSchema.parse(withoutActivity)).toThrow("$.activity");
+    expect(() => threadExecutionRecordSchema.parse({ ...step, activityIcon: 7 })).toThrow(
+      "$.activityIcon",
+    );
   });
   it.each([null, 42, "a".repeat(65537)])(
     "rejects non-text or oversized execution input",

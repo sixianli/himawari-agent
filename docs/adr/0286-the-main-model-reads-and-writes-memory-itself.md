@@ -2,10 +2,12 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0142-keep-background-memory-capture.md
+supersedes: ""
 superseded_by: ""
-amends: "docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md, docs/adr/0193-memory-is-visible-to-the-model.md, docs/adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md, docs/adr/0231-review-past-conversations-to-fix-memory.md"
+amends: "docs/adr/0193-memory-is-visible-to-the-model.md, docs/adr/0196-index-sensitive-memory-after-masking-and-stop-idle-archiving.md"
 date: "2026-11-24"
+covers: "apps/agent-service/src/production-memory-recall.ts, packages/application/src/services/owner-profile-service.ts, packages/prompt-catalog/src/chat.ts, scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0286：主模型自己翻旧对话原话、知道自己记着什么、聊天时自己存记忆
@@ -35,7 +37,7 @@ Himawari 现在由程序和单独的模型调用替主模型（和 Andy 对话�
 2. 主人资料块：`packages/application/src/services/owner-profile-service.ts` 第 20、24 行是 `OWNER_PROFILE_CHARACTER_BUDGET = 2000`、`PROFILE_MINIMUM_IMPORTANCE = 600`。
 3. 召回给的旧对话只有摘要：`apps/agent-service/src/production-memory-recall.ts` 返回 `{ day, source, summary: text }`，text 是每日摘要正文。
 4. 主模型被告知自己不能记：`packages/prompt-catalog/src/chat.ts` 第 17 行“主人告诉你的事，系统会在本轮回答后尝试整理进长期记忆，但整理可能失败，你看不到结果”。
-5. 以前测过主模型自己存：[ADR 0142](0142-keep-background-memory-capture.md) 的表里，主模型调 `memory_remember` 记下 93%、92%，误记 6.7%、5%，密钥被记下 2、1 条；那个工具没接后台抽取那条路上的校验。
+5. 以前测过主模型自己存：[ADR 0142](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0142-keep-background-memory-capture.md) 的表里，主模型调 `memory_remember` 记下 93%、92%，误记 6.7%、5%，密钥被记下 2、1 条；那个工具没接后台抽取那条路上的校验。
 6. 发给模型的内容只追加，系统提示和工具按对话冻结：`.agents/instructions/prompt-prefix.md` 第 36 行“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加”，第 42 行“系统提示和工具按对话冻结”。
 7. 生产对话模型 DeepSeek V4.1 Flash 的上下文窗口：同一配置模板第 87 行 `"contextWindow": 1000000`。
 

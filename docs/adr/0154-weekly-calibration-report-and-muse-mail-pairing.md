@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
+covers: "packages/persistence-sqlite/test/decision-ledger-migration.contract.test.ts, test/integration/calibration-report.test.ts, test/integration/decision-ledger.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0154：每周校准周报，并让 Muse 对照条目指向具体的一封邮件
@@ -31,7 +33,7 @@ Muse 对照条目表只有一个指向「一次 Gmail 检查」的 `paired_decis
 
 ## 决定
 
-1. **一条命令生成校准周报：** `npm run report:calibration -- --db=<product.sqlite>`。只读打开数据库，输出一页 Markdown，写入 `evals/calibration/reports/<结束日期>.md`，并把结果追加一行到 `evals/calibration/history.jsonl`。窗口默认是最近 7 天，以日本时间当天 0 点为界（结束日不含）。
+1. **一条命令生成校准周报：** `npm run report:calibration -- --db=<product.sqlite>`。只读打开数据库，输出一页 Markdown，写入 `evals/calibration/reports/<结束日期>.md`，并把结果追加一行到 evals/calibration/history.jsonl。窗口默认是最近 7 天，以日本时间当天 0 点为界（结束日不含）。
 2. **指标定义：** 样本 n = 窗口内做出的、你评过价的某一类决策的条数。命中率 = 做对了 ÷ n；误扰率 = 不该做 ÷ n；已审漏报率 = 该做没做 ÷ n。三个数同一个分母，只代表你评过的样本。每个数附 95% Wilson 区间和已评条数。
 3. **样本不足：** n 小于最小样本数（默认 5，参数 `--min-samples` 可改）时写「样本不足（n 条）」，不出百分比，绝不写 0%。决策类型清单从数据里读，不写死。
 4. **历史记录沿用检索评测的做法：** 追加式 JSONL，带 schema 名、提交号、记录时间；下一次运行时与更早的一周比较。同一窗口数据没变就不重复追加。

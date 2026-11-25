@@ -1,0 +1,18 @@
+{
+  "arch": "arm64",
+  "transport": "target-ssh",
+  "sshUser": "himawari-build",
+  "hostname": null,
+  "workRoot": "/home/himawari-build/packet-builder/work",
+  "scriptRoot": "/home/himawari-build/packet-builder/scripts",
+  "lockFile": "/home/himawari-build/packet-builder/builder.lock",
+  "source": "/home/himawari-build/packet-builder/source",
+  "evidenceRoot": "/home/himawari-build/packet-builder/evidence",
+  "tools": "/home/himawari-build/packet-builder/tools",
+  "browsers": "/home/himawari-build/packet-builder/browsers",
+  "piToolBin": "/home/himawari-build/packet-builder/pi-tools-bin",
+  "gitModesCheck": "require-git-modes.sh",
+  "captureTemplate": "capture-build-source-inputs.template.mjs",
+  "installerDependencyCollector": "collect-installer-dependencies.mjs",
+  "pythonMaterial": "/home/himawari-build/packet-builder/materials/python-3.12.10.tar.gz"
+}

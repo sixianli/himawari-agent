@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0232-memory-corrections-flag-derived-memories-and-recheck-rules.md"
 date: "2026-11-11"
+covers: "packages/persistence-sqlite/src/migrations/0069_decision_ledger.sql"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0211：硬规则记着它来自哪条规则类记忆，记忆一变就标“待重审”

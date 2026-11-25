@@ -1,6 +1,6 @@
 # S0：冻结前的三项生产只读读取
 
-固定目标是 `__PKT_ADDRESS__`，主机名 `__PKT_HOSTNAME__`，服务账号 `himawari-prod`（uid 999、gid 988），unit（systemd 服务定义）`himawari-prod.service`。当前运行的旧版本是第九次部署的 `/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__`，Node 是 `/opt/himawari/node/bin/node`。
+固定目标是 `__PKT_ADDRESS__`，主机名 `__PKT_HOSTNAME__`，服务账号 `himawari-prod`（uid __PKT_SERVICE_UID__、gid __PKT_SERVICE_GID__），unit（systemd 服务定义）`himawari-prod.service`。当前运行的旧版本是第九次部署的 `/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__`，Node 是 `/opt/himawari/node/bin/node`。
 
 S0 只读不写：三个本地脚本经 SSH 标准输入送到服务器执行，服务器上不留脚本，不停服务，不改数据库、配置或 unit。它要以 root 连接生产服务器，必须先得到用户对第十次 S0 的批准（G180），并且 [read-s0-db.mjs](../s0-db/read-s0-db.mjs) 已定稿；读取之后读取脚本若再改，要先问用户再重读。在 MacBook 的仓库根目录运行：
 

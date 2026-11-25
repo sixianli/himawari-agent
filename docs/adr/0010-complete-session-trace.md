@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0010: 持久化完整可观察的 Session Trace
@@ -46,4 +48,4 @@ Trace 不尝试保存模型服务商内部不可见计算或隐藏思维过程�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#session-visibility-and-lifecycle]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#session-visibility-and-lifecycle]

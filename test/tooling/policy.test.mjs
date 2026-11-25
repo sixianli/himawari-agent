@@ -1355,7 +1355,7 @@ describe("CI policy contract", () => {
       legacyRunnerLabels.linux;
     return value;
   };
-  it("[ADR-0256] 基准上汇总作业还在 ci-vps 的七作业策略升级成 ci-vps-gate，摘要仍按原始字节算", () => {
+  it("[ADR-0287] 基准上汇总作业还在 ci-vps 的七作业策略升级成 ci-vps-gate，摘要仍按原始字节算", () => {
     const { root, git } = fixtureRepository();
     const accepted = sharedRunnerPolicy();
     expect(() => validatePolicy(toCurrentTests(accepted))).toThrow();
@@ -1371,7 +1371,7 @@ describe("CI policy contract", () => {
       members: 13,
     });
   });
-  it("[ADR-0256] 只升级汇总作业在 ci-vps 的七作业写法，现行策略原样返回，别的写法照样被拒", () => {
+  it("[ADR-0287] 只升级汇总作业在 ci-vps 的七作业写法，现行策略原样返回，别的写法照样被拒", () => {
     expect(upgradeGateRunnerPolicy(policy)).toBe(policy);
     const upgraded = upgradeGateRunnerPolicy(sharedRunnerPolicy());
     expect(upgraded).toEqual(coverageShaped());
@@ -1380,7 +1380,7 @@ describe("CI policy contract", () => {
     expect(upgradeGateRunnerPolicy(hosted)).toBe(hosted);
     expect(() => validatePolicy(upgradeGateRunnerPolicy(hosted))).toThrow();
   });
-  it("[ADR-0256] 检查作业写成 ci-vps-gate、汇总作业写回 ci-vps 的策略都被拒", () => {
+  it("[ADR-0287] 检查作业写成 ci-vps-gate、汇总作业写回 ci-vps 的策略都被拒", () => {
     const checkOnGate = clone();
     checkOnGate.checks.find((check) => check.id === "static").members[0].runner = "ci-vps-gate";
     expect(upgradeGateRunnerPolicy(checkOnGate)).toBe(checkOnGate);
@@ -1391,7 +1391,7 @@ describe("CI policy contract", () => {
       "runner must be equal to one of the allowed values",
     );
   });
-  it("[ADR-0256] 工作流的汇总作业写回 ci-vps、或检查作业写成 ci-vps-gate 时被拒", () => {
+  it("[ADR-0287] 工作流的汇总作业写回 ci-vps、或检查作业写成 ci-vps-gate 时被拒", () => {
     const gateOnShared = workflow();
     gateOnShared.jobs.required["runs-on"] = legacyRunnerLabels.linux;
     expect(() => validateWorkflow(policy, stringify(gateOnShared), lock)).toThrow();
@@ -1589,7 +1589,7 @@ describe("CI policy contract", () => {
     delete member.alternateArch;
     expect(() => validatePolicy(toolingOnVps)).toThrow("Incorrect platform: tooling/default");
   });
-  it("[ADR-0266] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
+  it("[ADR-0287] 基准上三项检查没有 alternateArch 的策略升级成在 ci-arm 上跑，摘要仍按原始字节算", () => {
     expect(legacyArmChecks).toEqual(["policy", "static", "tooling", "security"]);
     expect(armChecks).toEqual(["policy", "tooling", "security"]);
     const { root, git } = fixtureRepository();
@@ -1618,7 +1618,7 @@ describe("CI policy contract", () => {
       members: 13,
     });
   });
-  it("[ADR-0266] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
+  it("[ADR-0287] 三项检查还在共享 runner 上的写法一起升级成 ci-arm，现行策略原样返回，只有部分搬过去的混写照样被拒", () => {
     expect(upgradeArmRunnerPolicy(policy)).toBe(policy);
     expect(upgradeArmRunnerPolicy(armOnSharedRunner(coverageShaped()))).toEqual(coverageShaped());
     const withAlternate = armOnSharedRunner(coverageShaped());
@@ -1643,7 +1643,7 @@ describe("CI policy contract", () => {
     ["static 放到 ARM 机器", "static", { runner: armRunnerLabel }],
     ["tests 放到 ARM 机器", "tests", { runner: armRunnerLabel }],
     ["policy 写成 arm64", "policy", { arch: "arm64" }],
-  ])("[ADR-0266] 策略里%s就被拒", (_label, id, change) => {
+  ])("[ADR-0287] 策略里%s就被拒", (_label, id, change) => {
     const value = clone();
     const member = value.checks.find((check) => check.id === id).members[0];
     for (const [key, entry] of Object.entries(change))
@@ -1658,7 +1658,7 @@ describe("CI policy contract", () => {
     ["tests", "ci-arm"],
     ["tooling", "ci-vps"],
     ["build", "ci-arm"],
-  ])("[ADR-0266] ci.yml 里 %s 的 runs-on 写成 %s 就被拒", (id, label) => {
+  ])("[ADR-0287] ci.yml 里 %s 的 runs-on 写成 %s 就被拒", (id, label) => {
     const value = workflow();
     value.jobs[id]["runs-on"] = label;
     expect(() => validateWorkflow(policy, stringify(value), lock)).toThrow();
@@ -1673,7 +1673,7 @@ describe("CI policy contract", () => {
       "Required must collect digest-checked reports from the run share",
     );
   });
-  it("[ADR-0266] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
+  it("[ADR-0287] 试跑工作流已删除，ci.yml 和 main.yml 里没有它的痕迹", () => {
     const read = (name) =>
       readFileSync(path.join(repositoryRoot, ".github/workflows", name), "utf8");
     expect(existsSync(path.join(repositoryRoot, ".github/workflows/ci-arm-trial.yml"))).toBe(false);

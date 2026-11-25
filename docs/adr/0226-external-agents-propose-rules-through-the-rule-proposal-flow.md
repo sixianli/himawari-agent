@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0242-external-agents-join-the-memory-hub-through-one-entry.md"
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-owner-rules.ts, apps/control-center/test/memory-source.unit.test.ts, packages/application/src/rules/rule-types.ts, packages/application/src/services/proactive-mail-check-service.ts, test/integration/mcp-write.test.ts, test/integration/memory-source-report.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0226：外部 agent 提议新规则，主人在客户端确认后按规则提议流程生效

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0001: 通过产品自有运行时适配层使用 Pi
@@ -45,4 +47,4 @@ Himawari Agent 保持为独立仓库，通过产品自有的 Agent 运行时端�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#scope]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#scope]

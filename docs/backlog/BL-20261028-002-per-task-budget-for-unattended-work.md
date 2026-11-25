@@ -23,7 +23,7 @@ superseded_by: ""
 
 ## Origin
 
-- 来自[产品愿景](../product-vision.md#principles)原则 8 的评审和 [ADR 0101](../adr/0101-adopt-product-vision-v2-1.md#per-task-budget)。Andy 2026-10-28 14:11（日本时间）原话：“我的意思是，这里还是要加一个成本上限，不然的话，一个后台任务如果无限期跑的话，我的那个模型的 token 额度，还有模型 token 的这个费用，我可能接受不了。”
+- 来自[产品愿景](../product-vision.md#principles)原则 8 的评审和 [ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md#per-task-budget)。Andy 2026-10-28 14:11（日本时间）原话：“我的意思是，这里还是要加一个成本上限，不然的话，一个后台任务如果无限期跑的话，我的那个模型的 token 额度，还有模型 token 的这个费用，我可能接受不了。”
 
 ## Notes
 

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-28"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0099：生产机启用主机防火墙，入站只放行 SSH
@@ -78,8 +80,8 @@ Andy 2026-10-28 批准修复（“以上你说的安全动作都做”），并�
 
 - 好处：以后任何程序监听公网地址，外部都连不上；被拦的连接写进内核日志（`journalctl -k | grep "UFW BLOCK"`），启用后几分钟内就有 16 条外部探测被拦。
 - 需要注意：以后真要对外开端口（例如不走隧道的服务），必须先 `ufw allow`；排查“外部连不上”时先看 `ufw status`。
-- 已验证（2026-10-28）：从 Andy 的 Mac 探测 IPv4 的 22 通，80、443、8400、20241、3000、8080 不通；`ufw status verbose` 显示 22/tcp 的 IPv4 和 IPv6 规则；`iptables` 和 `ip6tables` 的 `INPUT` 默认策略都是 `DROP`；`ufw.service` 开机启用、`/etc/ufw/ufw.conf` 为 `ENABLED=yes`；新 `ssh` 连接能登录；`https://himawari.siyi.win/` 照常返回 302（跳转到 Access 登录）；`cloudflared` 就绪连接 4 条；`himawari-prod.service` 重启次数仍为 0。
-- 没有验证：Andy 的 Mac 没有 IPv6 网络，IPv6 只能从服务器上看到规则生效，没有从外部实测；想在服务器临时起一个监听服务证明“新监听也被拦”，被会话的自动权限检查拦下，改用内核日志佐证；没有重启服务器实测开机后规则仍在（依据是 `ufw.service` 已启用和 `ENABLED=yes`）。
+- 已验证（2026-10-28）：从 Andy 的 Mac 探测 IPv4 的 22 通，80、443、8400、20241、3000、8080 不通；`ufw status verbose` 显示 22/tcp 的 IPv4 和 IPv6 规则；`iptables` 和 `ip6tables` 的 `INPUT` 默认策略都是 `DROP`；ufw.service 开机启用、`/etc/ufw/ufw.conf` 为 `ENABLED=yes`；新 `ssh` 连接能登录；`https://himawari.siyi.win/` 照常返回 302（跳转到 Access 登录）；`cloudflared` 就绪连接 4 条；`himawari-prod.service` 重启次数仍为 0。
+- 没有验证：Andy 的 Mac 没有 IPv6 网络，IPv6 只能从服务器上看到规则生效，没有从外部实测；想在服务器临时起一个监听服务证明“新监听也被拦”，被会话的自动权限检查拦下，改用内核日志佐证；没有重启服务器实测开机后规则仍在（依据是 ufw.service 已启用和 `ENABLED=yes`）。
 
 [↑ 返回阅读导航](#contents)
 

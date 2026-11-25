@@ -438,7 +438,7 @@ const keyStat = await lstat(keyPath);
 assert(keyStat.isFile() && !keyStat.isSymbolicLink() && !(keyStat.mode & 0o077) && keyStat.uid === 0);
 const privateKey = createPrivateKey(await readFile(keyPath));
 const publicKey = createPublicKey(privateKey);
-const firstPublicKeyPath = root + "/qualification/first-20261007/host-qualification-public-key.pem";
+const firstPublicKeyPath = "__PKT_FIRST_SIGNER_KEY_PATH__";
 const firstPublicKeyInfo = await lstat(firstPublicKeyPath);
 assert(firstPublicKeyInfo.isFile() && !firstPublicKeyInfo.isSymbolicLink() && firstPublicKeyInfo.uid === 0 && !(firstPublicKeyInfo.mode & 0o022));
 assert.equal(await realpath(firstPublicKeyPath), firstPublicKeyPath);

@@ -47,6 +47,8 @@ async function qualifyRunApproval(browser, baseUrl, output) {
         text: "",
         input: "",
         output: "",
+        activity: "",
+        activityIcon: "",
         occurredAt: new Date(Date.UTC(2026, 9, 29, 15, 8, sequence)).toISOString(),
         ...values,
       };

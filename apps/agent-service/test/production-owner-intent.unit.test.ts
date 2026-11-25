@@ -126,3 +126,29 @@ it("[PR631-R2-1] returns nothing, so the owner is asked, when the triggering mes
   ]);
   expect(await collectOwnerWords(dependencies(messages), source(2))).toEqual([]);
 });
+
+it("counts the owner messages folded into the Run as the owner's own words, and nothing after them", async () => {
+  const messages = [
+    message(1, "帮我看看这个网页"),
+    message(2, "查东京天气"),
+    message(3, "再帮我设个明早 7 点的闹钟"),
+    message(4, "之后才说的话"),
+  ];
+  const folded = [
+    { messageId: "m2", runId: "run:2" },
+    { messageId: "m3", runId: "run:3" },
+  ];
+  const deps = {
+    ...dependencies(messages),
+    threads: {
+      ...dependencies(messages).threads,
+      readFoldedOwnerMessages: async () => folded as never,
+    },
+  };
+  expect(await collectOwnerWords(deps, source(1))).toEqual([
+    "帮我看看这个网页",
+    "查东京天气",
+    "再帮我设个明早 7 点的闹钟",
+  ]);
+  expect(await collectOwnerWords(dependencies(messages), source(1))).toEqual(["帮我看看这个网页"]);
+});

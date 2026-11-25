@@ -3,10 +3,13 @@ import type {
   ClaimMainThreadInput,
   CommitAssistantMessageInput,
   ForkThreadInput,
+  PostAgentMessageInput,
   ProductContextRunState,
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
   RunExecutionSource,
+  FoldedOwnerMessage,
+  FoldQueuedOwnerRunsInput,
   ScheduledJob,
   ThreadCommittedMessagesByIdsQuery,
   ThreadContextSnapshot,
@@ -221,6 +224,20 @@ export class SqliteThreadOperations {
       }
       case "thread.admitOwnerMessage":
         return this.admitOwnerMessage((payload as { input: AdmitOwnerMessageInput }).input);
+      case "thread.readFoldedOwnerMessages": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId; runId: RunId };
+        return this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      }
+      case "thread.unfoldOwnerRun":
+        return this.unfoldOwnerRun(
+          (
+            payload as {
+              input: { ownerId: OwnerId; agentId: AgentId; runId: RunId; foldedRunId: RunId };
+            }
+          ).input,
+        );
+      case "thread.foldQueuedOwnerRuns":
+        return this.foldQueuedOwnerRuns((payload as { input: FoldQueuedOwnerRunsInput }).input);
       case "thread.commitAssistantMessage":
         return this.commitAssistantMessage(
           (payload as { input: CommitAssistantMessageInput }).input,
@@ -310,6 +327,27 @@ export class SqliteThreadOperations {
       }
       case "thread.claimMain":
         return this.claimMain((payload as { input: ClaimMainThreadInput }).input);
+      case "thread.readRunThought": {
+        const input = payload as {
+          ownerId: OwnerId;
+          agentId: AgentId;
+          threadId: ThreadId;
+          runId: RunId;
+        };
+        const row = this.database
+          .prepare(
+            `SELECT content_ref AS contentRef FROM thread_messages
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND run_id = ?
+               AND role = 'agent' AND internal = 1 AND message_status = 'committed'
+             ORDER BY sequence DESC LIMIT 1`,
+          )
+          .get(input.ownerId, input.agentId, input.threadId, input.runId) as
+          | { contentRef: string }
+          | undefined;
+        return row;
+      }
+      case "thread.postAgentMessage":
+        return this.postAgentMessage((payload as { input: PostAgentMessageInput }).input);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Thread operation ${operation}`);
     }
@@ -974,6 +1012,109 @@ export class SqliteThreadOperations {
     };
   }
 
+  private runStartedInternally(ownerId: OwnerId, agentId: AgentId, runId: RunId): boolean {
+    return Boolean(
+      this.database
+        .prepare(
+          `SELECT 1 FROM runs r JOIN triggers t ON t.id = r.trigger_id
+            JOIN thread_messages m ON m.id = t.source_id AND m.run_id = r.id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ? AND m.internal = 1 LIMIT 1`,
+        )
+        .get(runId, ownerId, agentId),
+    );
+  }
+
+  private postAgentMessage(input: PostAgentMessageInput) {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const replay = this.replay(
+        input.ownerId,
+        input.agentId,
+        input.idempotencyKey,
+        "thread.message.commit_assistant",
+        input.semanticFingerprint,
+      );
+      if (replay) {
+        const thread = this.read(input.ownerId, input.agentId, replay.threadId);
+        const message = this.readMessage(
+          input.ownerId,
+          input.agentId,
+          input.threadId,
+          input.messageId,
+        );
+        if (!thread || !message) this.fail("PORT_NOT_FOUND", "Replayed agent message is missing");
+        return { thread, message, receipt: replay };
+      }
+      this.assertAuthority(input.ownerId, input.agentId, input.authority);
+      this.assertPayload(input.ownerId, input.agentId, input.contentRef);
+      this.assertPayload(input.ownerId, input.agentId, input.resultRef);
+      const current = this.read(input.ownerId, input.agentId, input.threadId);
+      if (!current || current.status !== "active")
+        this.fail("PORT_CONFLICT", "Thread is not active");
+      const run = this.database
+        .prepare(
+          `SELECT r.status, u.id AS turnId FROM runs r
+            JOIN turns u ON u.run_id = r.id AND u.thread_id = r.thread_id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ? AND r.thread_id = ?
+           ORDER BY u.turn_index DESC LIMIT 1`,
+        )
+        .get(input.runId, input.ownerId, input.agentId, input.threadId) as
+        | { status: string; turnId: string }
+        | undefined;
+      if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+        this.fail("PORT_INVALID_OPERATION", "An agent message requires an active Run");
+      if (!current || !run) return undefined as never;
+      const sequence = current.messageWatermark + 1;
+      this.database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role,
+            content_ref, classification, committed_at, turn_id, run_id, message_status, internal
+          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed', 0)`,
+        )
+        .run(
+          input.messageId,
+          input.ownerId,
+          input.agentId,
+          input.threadId,
+          sequence,
+          input.contentRef,
+          input.dataClassification,
+          input.committedAt,
+          run.turnId,
+          input.runId,
+        );
+      const nextRevision = current.revision + 1;
+      this.database
+        .prepare(
+          "UPDATE threads SET revision = ?, message_watermark = ?, updated_at = ? WHERE id = ? AND revision = ?",
+        )
+        .run(nextRevision, sequence, input.committedAt, input.threadId, current.revision);
+      const receipt = this.writeReceipt({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+        commandType: "thread.message.commit_assistant",
+        semanticFingerprint: input.semanticFingerprint,
+        threadId: input.threadId,
+        threadRevision: nextRevision,
+        resultRef: input.resultRef,
+        committedAt: input.committedAt,
+        authority: input.authority,
+      });
+      const thread = this.read(input.ownerId, input.agentId, input.threadId);
+      const message = this.readMessage(
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        input.messageId,
+      );
+      if (!thread || !message) this.fail("PORT_NOT_FOUND", "Posted agent message is missing");
+      return { thread, message, receipt };
+    });
+    return transaction.immediate();
+  }
+
   private readMessage(
     ownerId: OwnerId,
     agentId: AgentId,
@@ -1203,7 +1344,7 @@ export class SqliteThreadOperations {
           `INSERT INTO thread_messages (
             id, owner_id, agent_id, thread_id, revision, sequence, role,
             content_ref, classification, committed_at, turn_id, run_id, message_status, internal
-          ) VALUES (?, ?, ?, ?, 1, ?, 'owner', ?, ?, ?, ?, ?, 'committed', ?)`,
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'committed', ?)`,
         )
         .run(
           input.messageId,
@@ -1211,6 +1352,7 @@ export class SqliteThreadOperations {
           input.agentId,
           input.threadId,
           sequence,
+          input.triggerSource === "external_event" ? "system" : "owner",
           input.contentRef,
           input.dataClassification,
           input.occurredAt,
@@ -1245,6 +1387,151 @@ export class SqliteThreadOperations {
       );
       if (!thread || !message) this.fail("PORT_NOT_FOUND", "Committed message state is missing");
       return { thread, message, receipt };
+    });
+    return transaction.immediate();
+  }
+
+  private readFoldedOwnerMessages(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    runId: RunId,
+  ): readonly FoldedOwnerMessage[] {
+    return this.database
+      .prepare(
+        `SELECT f.folded_run_id AS runId, f.message_id AS messageId, f.position AS position,
+          m.content_ref AS contentRef, m.classification AS dataClassification
+         FROM run_message_folds f
+         JOIN thread_messages m ON m.id = f.message_id
+         WHERE f.run_id = ? AND f.owner_id = ? AND f.agent_id = ?
+         ORDER BY f.position`,
+      )
+      .all(runId, ownerId, agentId) as FoldedOwnerMessage[];
+  }
+
+  private unfoldOwnerRun(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+    readonly foldedRunId: RunId;
+  }): boolean {
+    const transaction = this.database.transaction(() => {
+      const removed = this.database
+        .prepare(
+          `DELETE FROM run_message_folds
+           WHERE run_id = ? AND folded_run_id = ? AND owner_id = ? AND agent_id = ?`,
+        )
+        .run(input.runId, input.foldedRunId, input.ownerId, input.agentId).changes;
+      if (removed === 0) return false;
+      this.database
+        .prepare(
+          "UPDATE runs SET status = 'accepted', revision = revision + 1 WHERE id = ? AND status = 'completed'",
+        )
+        .run(input.foldedRunId);
+      this.database
+        .prepare("UPDATE turns SET committed_at = NULL WHERE run_id = ?")
+        .run(input.foldedRunId);
+      return true;
+    });
+    return transaction.immediate();
+  }
+
+  private foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): readonly FoldedOwnerMessage[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0) {
+      this.fail("PORT_INVALID_OPERATION", "Fold limit must be a non-negative integer");
+    }
+    const transaction = this.database.transaction(() => {
+      const existing = this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      if (!input.whileRunning && existing.length > 0) return existing;
+      const alreadyFolded = new Set(existing.map(({ runId }) => runId as string));
+      const head = this.database
+        .prepare(
+          `SELECT r.status AS status, r.thread_id AS threadId, r.model_selection_json AS selection,
+             t.source_type AS sourceType, u.turn_index AS turnIndex
+           FROM runs r
+           JOIN triggers t ON t.id = r.trigger_id
+           JOIN turns u ON u.run_id = r.id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ?`,
+        )
+        .get(input.runId, input.ownerId, input.agentId) as
+        | {
+            status: string;
+            threadId: string | null;
+            selection: string | null;
+            sourceType: string;
+            turnIndex: number;
+          }
+        | undefined;
+      if (
+        !head ||
+        head.threadId === null ||
+        head.status !== (input.whileRunning ? "running" : "accepted") ||
+        head.sourceType !== "user_message" ||
+        input.limit <= existing.length
+      )
+        return input.whileRunning ? [] : existing;
+      const later = this.database
+        .prepare(
+          `SELECT r.id AS runId, r.status AS status, r.model_selection_json AS selection,
+             t.source_type AS sourceType, t.source_id AS messageId,
+             EXISTS (SELECT 1 FROM run_coordination_checkpoints c WHERE c.run_id = r.id) AS started
+           FROM turns u
+           JOIN runs r ON r.id = u.run_id AND r.owner_id = u.owner_id AND r.agent_id = u.agent_id
+           JOIN triggers t ON t.id = r.trigger_id
+           WHERE u.thread_id = ? AND u.owner_id = ? AND u.agent_id = ? AND u.turn_index > ?
+           ORDER BY u.turn_index`,
+        )
+        .all(head.threadId, input.ownerId, input.agentId, head.turnIndex) as {
+        runId: string;
+        status: string;
+        selection: string | null;
+        sourceType: string;
+        messageId: string;
+        started: number;
+      }[];
+      const followers: string[] = [];
+      for (const candidate of later) {
+        if (alreadyFolded.has(candidate.runId)) continue;
+        if (
+          followers.length + existing.length >= input.limit ||
+          candidate.status !== "accepted" ||
+          candidate.started === 1 ||
+          candidate.sourceType !== "user_message" ||
+          candidate.selection !== head.selection
+        )
+          break;
+        followers.push(candidate.runId);
+      }
+      const messageOf = this.database.prepare(
+        `SELECT m.id AS id FROM thread_messages m
+         JOIN triggers t ON t.source_id = m.id
+         JOIN runs r ON r.trigger_id = t.id
+         WHERE r.id = ? AND m.run_id = r.id AND m.role = 'owner' AND m.message_status = 'committed'`,
+      );
+      let position = existing.length;
+      const added: string[] = [];
+      for (const runId of followers) {
+        const message = messageOf.get(runId) as { id: string } | undefined;
+        if (!message) break;
+        position += 1;
+        this.database
+          .prepare(
+            "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'accepted'",
+          )
+          .run(input.now, runId);
+        this.database
+          .prepare("UPDATE turns SET committed_at = ? WHERE run_id = ? AND committed_at IS NULL")
+          .run(input.now, runId);
+        this.database
+          .prepare(
+            `INSERT INTO run_message_folds (
+              owner_id, agent_id, run_id, folded_run_id, message_id, position, folded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(input.ownerId, input.agentId, input.runId, runId, message.id, position, input.now);
+        added.push(runId);
+      }
+      const all = this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      return input.whileRunning ? all.filter(({ runId }) => added.includes(runId)) : all;
     });
     return transaction.immediate();
   }
@@ -1305,8 +1592,8 @@ export class SqliteThreadOperations {
         .prepare(
           `INSERT INTO thread_messages (
             id, owner_id, agent_id, thread_id, revision, sequence, role,
-            content_ref, classification, committed_at, turn_id, run_id, message_status
-          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed')`,
+            content_ref, classification, committed_at, turn_id, run_id, message_status, internal
+          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed', ?)`,
         )
         .run(
           input.messageId,
@@ -1319,6 +1606,7 @@ export class SqliteThreadOperations {
           input.committedAt,
           input.turnId,
           input.runId,
+          this.runStartedInternally(input.ownerId, input.agentId, input.runId) ? 1 : 0,
         );
       this.database
         .prepare("UPDATE turns SET committed_at = ? WHERE id = ?")
@@ -1582,13 +1870,7 @@ export class SqliteThreadOperations {
       SELECT r.owner_id AS ownerId, r.agent_id AS agentId, r.id AS runId,
         r.session_id AS sessionId, r.thread_id AS threadId, r.trigger_id AS triggerId,
         t.source_type AS sourceType, t.source_id AS sourceId, t.payload_ref AS payloadRef,
-        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson,
-        (t.source_type = 'external_event' AND EXISTS (
-          SELECT 1 FROM owner_proposals op
-          WHERE op.owner_id = r.owner_id AND op.agent_id = r.agent_id
-            AND op.type = 'task.run' AND op.status = 'accepted'
-            AND substr(t.source_proof_ref, 1, length(op.id) + 10) = 'proposal:' || op.id || ':'
-        )) AS ownerApprovedTask
+        p.classification AS dataClassification, t.occurred_at AS occurredAt, r.model_selection_json AS modelSelectionJson
       FROM runs r
       JOIN triggers t ON t.id = r.trigger_id AND t.owner_id = r.owner_id
         AND t.agent_id = r.agent_id AND t.thread_id IS r.thread_id
@@ -1609,15 +1891,10 @@ export class SqliteThreadOperations {
         ))
     `)
       .get(input.runId, input.ownerId, input.agentId) as
-      | (Omit<RunExecutionSource, "ownerApprovedTask"> & {
-          modelSelectionJson: string | null;
-          ownerApprovedTask: number;
-        })
+      | (RunExecutionSource & { modelSelectionJson: string | null })
       | undefined;
     if (!row) return undefined;
-    const { modelSelectionJson, ownerApprovedTask, ...rest } = row;
-    const source: RunExecutionSource =
-      ownerApprovedTask === 1 ? { ...rest, ownerApprovedTask: true } : rest;
+    const { modelSelectionJson, ...source } = row;
     return modelSelectionJson
       ? { ...source, modelSelection: JSON.parse(modelSelectionJson) }
       : source;
@@ -1820,6 +2097,10 @@ export class SqliteThreadOperations {
         LEFT JOIN run_background_holds h ON h.run_id = r.id AND h.owner_id = r.owner_id
           AND h.agent_id = r.agent_id AND h.released_at IS NULL
         WHERE r.owner_id = ? AND r.agent_id = ? AND r.thread_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM triggers t JOIN thread_messages m ON m.id = t.source_id AND m.run_id = r.id
+            WHERE t.id = r.trigger_id AND m.internal = 1
+          )
         GROUP BY r.id
         ORDER BY r.created_at, r.id`,
       )

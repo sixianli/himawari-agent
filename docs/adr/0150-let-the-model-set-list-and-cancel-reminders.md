@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
+covers: "apps/agent-service/src/production-reminder-writer.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0150：让对话里的模型能设、查、取消提醒，提醒页和对话共用一个写入入口
@@ -54,7 +56,7 @@ date: "2026-11-02"
 ## 业界做法
 
 - ChatGPT 的定时任务：在对话里让它做事时由模型提议时间，创建后屏幕上有确认；「Scheduled」页同一份任务列表可新建、暂停、编辑、删除（[OpenAI 帮助中心](https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt)，该页本次未能直接打开，依据的是搜索结果对该页的摘要，未逐字核对）。
-- Claude Code：对话里说一句话由模型调用 `CronCreate` / `CronList` / `CronDelete`，「Claude pins the fire time to a specific minute and hour … and confirms when it will fire」（[文档](https://code.claude.com/docs/en/scheduled-tasks)，已逐字读过）。
+- Claude Code：对话里说一句话由模型调用 CronCreate / CronList / CronDelete，「Claude pins the fire time to a specific minute and hour … and confirms when it will fire」（[文档](https://code.claude.com/docs/en/scheduled-tasks)，已逐字读过）。
 
 我们和它们一致：模型有真正的创建工具，把确切时间说给主人，主人能在一个页面看到并取消。
 

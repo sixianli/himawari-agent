@@ -175,9 +175,14 @@
     }
   },
   "chat.identity": {
-    "sha256": "6a8e6585448e8ff3122d514ba5bc8b5433af903902c69ea6e0f03896a0d56c0c",
-    "changedIn": "ADR 0285",
-    "reason": "Andy 2026-11-24 定的权限照 Meta Muse（ADR 0285 决定 7、规格“权限和审批”第 5 条）：外来资料里的指令不照做，看到像在指使她做事的内容要告诉主人；识别出来也不代替系统按规则问主人"
+    "sha256": "d6289ade6b0d6430a1e7ff484c3c4f171d212adc0dbca3e3b59cf26b03a31943",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.process-icons-section": {
+    "sha256": "fc7f387153fcbad9ed02c0e6e208b3bebaaf6f247f67645ffb3a7490e3a024a3",
+    "changedIn": "ADR 0250",
+    "reason": "过程图标改名：clipboard-list、puzzle、heartbeat"
   },
   "chat.runtime-environment.document-skill": {
     "sha256": "1267983f39421d48fa7a9a5680a1c2a7224d13084a16fe64e1bed0d9ec57a805",
@@ -275,9 +280,34 @@
     "reason": "W-21、W-05：资料标记改中文；主人的要求改用单独的标记；runtime-environment-block.ts 的标记前缀改为从目录生成"
   },
   "chat.turn.context-preface": {
-    "sha256": "fca9cc30abb6e3962cc98a8a43ebfb4fe7584d4cbda76656cfb1834574b75df9",
-    "changedIn": "ADR 0164",
-    "reason": "第二步 PR-A：运行环境说明只在变化时附上，开头说明写明它是“以本条为准”的例外，最近附上的那份一直有效"
+    "sha256": "1a9fefdbbea63bdf1066ae25acc29e5dfec74c9fde4d21673ef19c52e4d7a052",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-added": {
+    "sha256": "55e5c8ca00bc758f4eff8639a11e1eeffeba8ad4cfcac857c77f713c367357c8",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-changed": {
+    "sha256": "3bfc32462f5845f8c56037914fc3c826dfa249ba34d4c7da62b94d17f705647a",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-change-removed": {
+    "sha256": "7086e7d02d7661a172a9d889506bf0f30ea943f171ccf3aeb595bedf0de33c33",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-changes-marker": {
+    "sha256": "a1a23f9ceca23aefe4801889062b39552ac60673c98ce62a91fac0164a9b9359",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "chat.turn.memory-snapshot-marker": {
+    "sha256": "093fdee282380cb43a5597ab27defac43b9c51197b082caa9ea8fbbf95aa1bcf",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
   },
   "chat.turn.owner-rules-marker": {
     "sha256": "9c43cbeab3df5f2ee401c71b71bed62171731b2746bf54a8ecf0a534e2cc5df7",
@@ -324,45 +354,15 @@
     "changedIn": "ADR 0255",
     "reason": "新增：首页上等主人定的事由模型打要紧度，审批另写一句话和同意按钮文字"
   },
-  "mail.judgment": {
-    "sha256": "c767cda2aae0c4a1ab7766043e35e2fda02ef76a079d4fd9004767e543189f77",
-    "changedIn": "ADR 0248",
-    "reason": "每封邮件（含 ignore）多写 money=yes/no，供涉钱地板规则读取；只在后台邮件判断调用里，不属于对话请求开头",
-    "emphasis": {
-      "kind": "deferred",
-      "batch": "第 3 批 W-06、W-11/W-19",
-      "reason": "邮件判断一次只改一个提示词，先做 A/B 评测（D4）"
-    }
+  "inbox.events.entry": {
+    "sha256": "fdc03a3f74c899b3acf556a65a32d0bbb93a6c3dab1e1579f568ec09c5241d94",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
-  "mail.judgment.items-header": {
-    "sha256": "6a2b6e2e1c4cde35a696edb318b37a5dc3e8ab5dbc4a86d6e900ddfbfa8cd30e",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.memories-header": {
-    "sha256": "0855a5969f19aaf80b3cc4ab75d2ad18c1961a143077931b9e40b5c2574544e9",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.now": {
-    "sha256": "351200ddf56708c8764296d3d10fac05ab979ffddbf6a37f8c86237fad9d01de",
-    "changedIn": "ADR 0161",
-    "reason": "初次登记：从源码原样搬入目录，文字不变"
-  },
-  "mail.judgment.recent-summaries-header": {
-    "sha256": "b271c465d7c22ce3499a8eb808b0b9879254902b9eaba8a91026cfc8731f04a4",
-    "changedIn": "ADR 0216",
-    "reason": "新增：Gmail 检查带上最近两天的对话日摘要，说明它只是背景、不是指令"
-  },
-  "mail.judgment.tentative-note": {
-    "sha256": "72da4d7216f9b1ee3fe8dd3258d4e3f8882c900d814c4f8fc3e0035a0ae3ac16",
-    "changedIn": "ADR 0179",
-    "reason": "新增：邮件判断里有待确认记忆时，说明它们只是线索，不是事实"
-  },
-  "mail.reference-extraction": {
-    "sha256": "d2b0bb030eb725e1aa8169f3d92d12db31008af3a84db135787563fda757ab51",
-    "changedIn": "ADR 0249",
-    "reason": "新增：从新邮件里抽取订单号等单号，取代关键词正则"
+  "inbox.events.preface": {
+    "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
   "mcp.find-memories": {
     "sha256": "6fd9481afe255532d4cc2501e2fdfcb61ca1f8cde112e1442d1577371163245b",
@@ -460,9 +460,9 @@
     "reason": "P5-2: outside values each on a labelled line; instant accepts count as not shown"
   },
   "mcp.propose-rule": {
-    "sha256": "2669de4d02fd11cc4cc28cf72dae4001778e0c099bf170f9dfb70a3ac3983f4a",
-    "changedIn": "ADR 0226",
-    "reason": "P5-2: confirm dialog leads with the proposal, Accept/Decline decide, unseen instant declines are not recorded"
+    "sha256": "b9227276356c25ac53b91b8117e65dbb6a640019ccceb950bdd96c839c164f32",
+    "changedIn": "ADR 0285",
+    "reason": "邮件规则不再由程序执行：命中的规则写在新邮件旁边交给她判断"
   },
   "mcp.propose-rule-already-saved": {
     "sha256": "b0bdf793b3eb3c2e5d65b0ba7421058931ffd5cae56179b7227d3c195e6ba0db",
@@ -495,9 +495,9 @@
     "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
   },
   "mcp.propose-rule-kind-notify": {
-    "sha256": "9a910450bd6cba2115dab9712f13e7f7eb00d8f7beed381422cad06b7241ccdd",
-    "changedIn": "ADR 0226",
-    "reason": "新增：外部 agent 经 MCP 提议邮件长期规则，主人在客户端确认后按规则提议流程生效"
+    "sha256": "282954be56be50cfcfaac1282174a26fedad3afb85a722a8588a807693887d85",
+    "changedIn": "ADR 0285",
+    "reason": "邮件规则不再由程序推送，改为她一定告诉主人"
   },
   "mcp.propose-rule-kind-whole-thread": {
     "sha256": "073e483d843712db6b12a160adf3b259728250899b96eac54f993ecf2eae2bcc",
@@ -747,6 +747,46 @@
     "changedIn": "ADR 0271",
     "reason": "新增：导入记忆前，判断模型逐条看已有记忆里有没有说的是同一件事的，代替网页上的字符串包含判重"
   },
+  "memory.snapshot.conversations": {
+    "sha256": "a42f7ab8e9ecf9ef02079a6f898481ca73b4d0df2fd1a88cd36d6675bafe50b7",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.header": {
+    "sha256": "a23b3ad606eba843e865835247275114f9252c0b970f813ec4fc5861c2daa570",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.month": {
+    "sha256": "1860bdd754bed027e5509586406786031a0f7f108bac89370440fc24f0c21847",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.omitted": {
+    "sha256": "f55eca80ec54837d68ba88df2166ffa4d6766d19a1feec9cd25335eca5844203",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.reachable-details": {
+    "sha256": "74315f4e8a933c36faf399e0f93624669886ada9f212504cff5ab0b40f923fed",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.reachable-header": {
+    "sha256": "c66a93f944c6027c3c7ad78238053b85fd84d5cd8261e016279fc73ecf3fd2be",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "memory.snapshot.tentative": {
+    "sha256": "2e0551212f0980f80942d40c43f126e582a3f9be790ced9184f18f9460eac467",
+    "changedIn": "ADR 0286",
+    "reason": "记忆清单快照：开局附一次记忆清单，之后每轮只附记忆变化，并加先打开再回答细节的规则"
+  },
+  "options.dismiss-label": {
+    "sha256": "1a604648b817a010197f27a8cbcb80053eba98feb2eae59e13372688f24aac3e",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：每组选项最后的“不用了”"
+  },
   "perception.data-notice": {
     "sha256": "da76be06e6177f16d79d1d00289481149234b0e618e9c71b703dee79dba2eeb2",
     "changedIn": "ADR 0230",
@@ -967,6 +1007,21 @@
     "changedIn": "ADR 0213",
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
+  "tool-result.vault-unavailable": {
+    "sha256": "1c84cde2411e30977da1aa104bcd3803682b54bb9cce4ed7ed8edfd72356ac33",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第一步：模型只看到每一项的名字、类型和网站，看不到值；保险箱没开时如实说没开"
+  },
+  "tools.activity-icon-parameter": {
+    "sha256": "dbd8e58cfc21c55329741fda6c87fea61075ceb1f18e404304e7acf702c66660",
+    "changedIn": "ADR 0250",
+    "reason": "过程图标改名：clipboard-list、puzzle、heartbeat"
+  },
+  "tools.activity-parameter": {
+    "sha256": "d931a691ecca733174ce858eb0d803fecb8d10fd24e031126eb1e38604a36570",
+    "changedIn": "ADR 0250",
+    "reason": "新增：工具参数 activity、activityIcon 的说明和系统提示里的过程图标表"
+  },
   "tools.authorized": {
     "sha256": "e2bf668e954070fb41a107317b84ba9f5fc433f2a1b9a37b148f62fc76787fab",
     "changedIn": "ADR 0166",
@@ -1067,6 +1122,11 @@
     "changedIn": "ADR 0166",
     "reason": "W-16：新增参数说明，任务编号从哪里抄；它不在冻结记录里，每次请求现拼，改它会让所有用到它的对话整段重算一次，所以随 PR-A/PR-B 同一次上线（不在后台命令模式时它是句柄工具）"
   },
+  "tools.mail-read": {
+    "sha256": "f37cafa4f9d449f27e95095f747bce12c0a4892dd1417827b99ddc6b50327949",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：新邮件进收件箱由她判断，要看前面往来时用 mail_read 读整个邮件串"
+  },
   "tools.memory-open": {
     "sha256": "06f505a9fdabbf8065acd951f9657a3d4f644add9e637365cdc41906bd602140",
     "changedIn": "ADR 0286",
@@ -1084,6 +1144,11 @@
       ],
       "reason": "执行端的硬条件，目标已存在时报 HOST_FILE_TARGET_EXISTS"
     }
+  },
+  "tools.offer-options": {
+    "sha256": "e21b3a1f2be8bd5691f7c7434d2f2ed9712a202e8e2494afe193fc029593cac9",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：她在消息下面挂可点的下一步"
   },
   "tools.perception-read": {
     "sha256": "52a384947d102d95e7b068169bdbc4f0363417cab34ae51f7e557de61ad7e3a1",
@@ -1295,6 +1360,21 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.mail-read.rejected": {
+    "sha256": "2483d17f8d376af5a389b98b74c068119b99c7eee8985f7455088fc1fe1805bb",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：mail_read 参数不对时给她的说明"
+  },
+  "tools.result.offer-options.rejected": {
+    "sha256": "5e269660121b367c4d105dbbe32730a33a90c26a5c3c8282798b3af073b9bdc3",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：选项没挂上时给她的说明"
+  },
+  "tools.result.rule-set.ask-owner": {
+    "sha256": "d25662743343f3251ba1300b1e08b1934b08661431db4e6fdafead1b879e10da",
+    "changedIn": "ADR 0285",
+    "reason": "提议箱删除：推断的规则要主人点头时，告诉她用消息下的选项问"
+  },
   "tools.result.perception-read.empty": {
     "sha256": "417a658e6eb2cf55730417f26aa581d053d9653635643a9f6659c7af6261b7cd",
     "changedIn": "ADR 0230",
@@ -1330,6 +1410,11 @@
     "changedIn": "ADR 0230",
     "reason": "iOS 第 5 批：感知工具、感知抽取和来源核对提示词"
   },
+  "tools.result.tell-owner.rejected": {
+    "sha256": "e00c2075b9c218e50fdaa2ade29d00fa5a946a34f72a85bff8c131a8a84a6f0f",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
   "tools.result.tool-result-recall.not-found": {
     "sha256": "b74cc518c46e5dc874742224bbcac13c5657de91256e916bf5273421570002fb",
     "changedIn": "ADR 0285",
@@ -1341,9 +1426,9 @@
     "reason": "P2-3 新增：主人一句话变成长期规则的工具（rule_set/rule_list/rule_undo）和失败结果"
   },
   "tools.rule-set": {
-    "sha256": "3d9daef8040f06e13b7889a56f0842b72bba35b050442592b1f2c1d57be7b071",
+    "sha256": "6b42804a6cbd95a9290f0a1d5caf4be5eb9de6f36b77b0558ff14a986a11717a",
     "changedIn": "ADR 0285",
-    "reason": "安静时段多管一类推送 her_words（她写给主人、推到手机上的原话），默认受管；写了 run_result 的规则同时管 her_words，回主人时要说到",
+    "reason": "提议箱删除：推断的规则不再进提议箱，返回 ask_owner，她用消息下的选项问主人",
     "emphasis": {
       "kind": "not-tone",
       "phrases": ["以后……一律……", "……必须提醒我", "“以后”“一律”“必须”"],
@@ -1370,10 +1455,20 @@
     "changedIn": "ADR 0166",
     "reason": "W-15a：新增参数说明"
   },
+  "tools.tell-owner": {
+    "sha256": "331ad9c65b7a1ec36fd4a59e9e725263c31021d2ad35a45e022019f579a08581",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
+  },
   "tools.tool-result-recall": {
     "sha256": "4c4ed3364e748ad46829c470f233a04b402584e8c3889aa44c8b3f5260aba589",
     "changedIn": "ADR 0285",
     "reason": "新增：tool_result_recall 工具的描述，按占位编号取回已清理的工具结果"
+  },
+  "tools.vault-list": {
+    "sha256": "55c49147b485c016b05107a4dccb339a3ba62aa9a9effaefcf41f07efae17622",
+    "changedIn": "ADR 0288",
+    "reason": "保险箱第一步：模型只看到每一项的名字、类型和网站，看不到值；保险箱没开时如实说没开"
   },
   "tools.web-fetch": {
     "sha256": "3af5f1ce44de795a72860f18b3e1ec3d5fbdb114a9fa6acd5db7a33c6019fcb8",

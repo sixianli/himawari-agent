@@ -146,7 +146,7 @@ describe("data export: the rule book travels with the memories", () => {
   it("[P1-6] exports every stored rule with its full history and imports it byte for byte", async () => {
     const source = await seeded();
     const { files, manifest } = await exportOf(source);
-    expect(manifest.format).toBe("himawari.data-export.v4");
+    expect(manifest.format).toBe("himawari.data-export.v5");
     expect(manifest.counts.rules).toBe(5);
     expect(manifest.counts.ruleHistoryVersions).toBe(7);
     const target = await side("rules-target");

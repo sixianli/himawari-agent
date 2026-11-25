@@ -192,17 +192,6 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
           { code: "standing_rule_change" },
         ],
       }),
-      example(
-        true,
-        {
-          deterministicFacts: [
-            { code: "context_external_content" },
-            { code: "run_source_external_event" },
-            { code: "run_source_owner_approved_task" },
-          ],
-        },
-        "external_event",
-      ),
       example(false, {}),
       example(false, {
         actionKind: "READ",
@@ -300,7 +289,7 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
     revision: 3,
     gate: "action",
     expression:
-      'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts && !("run_source_owner_approved_task" in facts)',
+      'action_kind != "READ" && target_type != "managed-task" && run_source != "user_message" && "context_external_content" in facts',
     outcome: "refuse",
     origin: "built_in",
     source:
@@ -323,17 +312,6 @@ export const BUILT_IN_ACTION_RULES: readonly RuleRecord[] = Object.freeze([
           deterministicFacts: [
             { code: "context_external_content" },
             { code: "run_source_external_event" },
-          ],
-        },
-        "external_event",
-      ),
-      example(
-        false,
-        {
-          deterministicFacts: [
-            { code: "context_external_content" },
-            { code: "run_source_external_event" },
-            { code: "run_source_owner_approved_task" },
           ],
         },
         "external_event",

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "packages/runtime-sandbox/src/job-host.ts, packages/runtime-sandbox/test/job-host.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0094：Job Host 交回最终结果后，调用方停止心跳和租约检查

@@ -41,9 +41,10 @@ TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch node scripts/ci/local.mjs --che
 echo "build-rc=$? end=$(date -Is)" >> "$out/summary"
 cp -r ".ci-output/$run/." "$out/report/"
 rm -rf "$scratch" ".ci-output/$run"
-report=$out/report/build-linux-x64
+arch=$(setting arch)
+report=$out/report/build-linux-$arch
 /usr/bin/python3 -I "$here/layer3-verdict.py" "$out/report/local-summary.json" "$revision" build >> "$out/summary" || fail BUILD_NOT_PASSED 8
-mapfile -t artifacts < <(ls "$report"/linux-x64-abi127-"$revision"-*-1.tar.gz 2>/dev/null)
+mapfile -t artifacts < <(ls "$report"/linux-"$arch"-abi[0-9]*-"$revision"-*-1.tar.gz 2>/dev/null)
 [[ "${#artifacts[@]}" -eq 1 ]] || fail "ARTIFACT_COUNT ${#artifacts[@]}" 8
 artifact=$out/materials/$(basename "${artifacts[0]}")
 cp "${artifacts[0]}" "$artifact"
@@ -61,10 +62,10 @@ print(build["manifest"]["sourceTreeSha256"])
 EOF
 ) || fail BUILD_RECORD_MISMATCH 8
 mkdir -m 700 "$capture"
-sed -e "s/__EXPECTED_DIGEST__/$digest/" -e "s/__REVISION__/$revision/" -e "s|/evidence/sixth-source-inputs-01|/evidence/sixth-source-inputs-$run|g" "$(helper captureTemplate)" > "$capture/capture-build-source-inputs.mjs"
+sed -e "s/__EXPECTED_DIGEST__/$digest/" -e "s/__REVISION__/$revision/" -e "s|/sixth-source-inputs-01|/sixth-source-inputs-$run|g" -e "s|__BUILDER_SOURCE__|$source|g" -e "s|__BUILDER_EVIDENCE_ROOT__|$(setting evidenceRoot)|g" -e "s|__BUILDER_HOME__|$HOME|g" -e "s/__BUILDER_UID__/$(id -u)/g" -e "s/__BUILDER_ARCH__/$arch/g" -e "s/__BUILDER_HOSTNAME__/$(setting hostname)/g" "$(helper captureTemplate)" > "$capture/capture-build-source-inputs.mjs"
 grep -q "const tool = \"$capture/capture-build-source-inputs.mjs\";" "$capture/capture-build-source-inputs.mjs" || fail CAPTURE_TOOL_PATH_MISMATCH 2
-sed "s/__PKT_COMMIT__/$revision/" "$(helper installerDependencyCollector)" > "$out/collect-installer-dependencies.mjs"
-! grep -q "__REVISION__\|__EXPECTED_DIGEST__\|sixth-source-inputs-01" "$capture/capture-build-source-inputs.mjs" "$out/collect-installer-dependencies.mjs" || fail HELPER_PLACEHOLDER_LEFT 2
+sed -e "s/__PKT_COMMIT__/$revision/" -e "s/__PKT_NODE_ARCH__/$arch/" "$(helper installerDependencyCollector)" > "$out/collect-installer-dependencies.mjs"
+! grep -q "__REVISION__\|__EXPECTED_DIGEST__\|__BUILDER_\|__PKT_\|sixth-source-inputs-01" "$capture/capture-build-source-inputs.mjs" "$out/collect-installer-dependencies.mjs" || fail HELPER_PLACEHOLDER_LEFT 2
 (cd / && node "$capture/capture-build-source-inputs.mjs" > "$capture/capture.stdout" 2> "$capture/capture.stderr") || fail CAPTURE_FAILED 3
 cp "$capture/source-build-inputs.json" "$out/materials/source-build-inputs.json"
 node "$out/collect-installer-dependencies.mjs" --source-root "$source" --modules-root "$source/node_modules" --output "$out/installer-dependencies" --npm-cli "$tools/npm/package/bin/npm-cli.js" > "$out/collect.stdout" 2> "$out/collect.stderr" || fail COLLECT_FAILED 4

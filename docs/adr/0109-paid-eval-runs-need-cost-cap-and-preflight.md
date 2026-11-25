@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "test/tooling/jarvis-test-history.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0109：花钱的评测要先定费用上限、先做一次网关试探，Vercel 预算按 key 设

@@ -7,6 +7,8 @@ superseded_by: ""
 amends: "docs/adr/0157-gitleaks-allowlist-for-evidence-digests.md"
 amended_by: "docs/adr/0190-mask-registered-test-values-in-review-records.md"
 date: "2026-11-07"
+covers: "apps/agent-service/test/production-http-composition.unit.test.ts, ci/rules/gitleaks.toml, ci/security-exceptions.json, ci/toolchain-lock.json, scripts/ci/check-security.mjs, scripts/ci/security-exceptions.mjs, test/tooling/gitleaks-allowlist.test.mjs, test/tooling/gitleaks-config.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0177：例外清单收不下的个别误报，用“规则 + 单一路径 + 精确值”的 Gitleaks 白名单放行
@@ -40,10 +42,10 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的 security 检查（`
 - `apps/agent-service/test/production-http-composition.unit.test.ts` 里的幂等键，命中的那一行写的是请求头 `"idempotency-key"`，不符合 `classifiedLiteral` 的写法。
 - `test/tooling/gitleaks-allowlist.test.mjs` 里核对回读文件那一行用的文件摘要，也不符合任何一种写法。
 
-2026-11-05 合并的 PR 248（提交 bd0859a9；Andy 2026-11-04 批准）在 `ci/rules/gitleaks.toml` 里加了八块白名单处理同类误报，但没有写进 ADR。PR 275 之前，ADR 0157 第 1 条和 Spec 都只写着“个别具体的值仍按逐条例外处理”，文档和代码不一致；PR 275 随本 ADR 一起更新了 Spec，ADR 0157 用 `amended_by` 指向本 ADR。2026-11-07 的 PR 275 复核时，GLM 指出了这处不一致。这八块是：
+2026-11-05 合并的 PR 248（提交 bd0859a9；Andy 2026-11-04 批准）在 `ci/rules/gitleaks.toml` 里加了八块白名单处理同类误报，但没有写进 ADR。PR 275 之前，ADR 0157 第 1 条和 Spec 都只写着“个别具体的值仍按逐条例外处理”，文档和代码不一致；PR 275 随本 ADR 一起更新了 Spec，ADR 0157 用 amended_by 指向本 ADR。2026-11-07 的 PR 275 复核时，GLM 指出了这处不一致。这八块是：
 
-- 六块按 `regexTarget = "secret"`（只看 Gitleaks 认出的那个值）放行。其中五块各锚定一个精确值；另一块（已删除的 `apps/agent-service/test/production-reminder-push.unit.test.ts` 里的合成值）写成“固定前缀 + 任意 7 个字符”。git 历史里这个前缀只出现过 `F5u42Bd3HyW8KxkUqo2gRA` 一个值，PR 275 把它收紧成这个精确值。
-- 两块按 `regexTarget = "match"`（看 Gitleaks 命中的那一段文字）放行，都只覆盖一个文件：已删除的 `.agents/tasks/round2-tool-execution/evidence.jsonl` 在 git 历史里的“文件名: 40 位 git 对象号”行（写成形状，因为历史里有许多不同的对象号），和一份资格证据回读文件里那一整段摘要（精确值）。
+- 六块按 `regexTarget = "secret"`（只看 Gitleaks 认出的那个值）放行。其中五块各锚定一个精确值；另一块（已删除的 apps/agent-service/test/production-reminder-push.unit.test.ts 里的合成值）写成“固定前缀 + 任意 7 个字符”。git 历史里这个前缀只出现过 `F5u42Bd3HyW8KxkUqo2gRA` 一个值，PR 275 把它收紧成这个精确值。
+- 两块按 `regexTarget = "match"`（看 Gitleaks 命中的那一段文字）放行，都只覆盖一个文件：已删除的 .agents/tasks/round2-tool-execution/evidence.jsonl 在 git 历史里的“文件名: 40 位 git 对象号”行（写成形状，因为历史里有许多不同的对象号），和一份资格证据回读文件里那一整段摘要（精确值）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -110,7 +112,7 @@ ADR 0157 第 1 条写“个别具体的值（合成 token、示例密码等）�
 ## 关联文档
 
 - [ADR 0157](0157-gitleaks-allowlist-for-evidence-digests.md)：资格证据摘要的形状白名单。
-- [GitHub CI 与质量门禁设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)：例外和白名单的现行规范。
+- [GitHub CI 与质量门禁设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)：例外和白名单的现行规范。
 - `ci/rules/gitleaks.toml`、`ci/security-exceptions.json`、`scripts/ci/security-exceptions.mjs`：实现。
 - `test/tooling/gitleaks-allowlist.test.mjs`、`test/tooling/gitleaks-config.test.mjs`：测试。
 

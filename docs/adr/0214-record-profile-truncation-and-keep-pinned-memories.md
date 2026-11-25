@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "packages/application/src/services/daily-review.ts, packages/application/src/services/owner-profile-service.ts, packages/application/test/owner-profile-service.unit.test.ts, packages/persistence-sqlite/src/migrations/0087_rule_book_memory_link.sql, test/integration/decision-ledger.test.ts, test/integration/memory-source-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0214：档案块放不下时写决策记录，主人打开“每次对话都带上”的记忆永不挤掉

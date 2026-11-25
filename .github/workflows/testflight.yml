@@ -1,0 +1,73 @@
+name: TestFlight
+on:
+  push:
+    branches: [main]
+    paths:
+      - clients/apple/**
+      - .github/workflows/testflight.yml
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - clients/apple/**
+      - .github/workflows/testflight.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: testflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+env:
+  APPLE_TEAM_ID: WS6PVS5YQP
+  HIMAWARI_BUILD_NUMBER: ${{ github.run_number }}
+jobs:
+  archive:
+    name: testflight/archive
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 打 Release 归档并核对权限仍在签名里
+        run: clients/apple/scripts/testflight.sh archive
+  upload:
+    name: testflight/upload
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'sixianli/himawari-agent' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: testflight
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 检查签名密钥是否已填
+        id: keys
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::testflight 环境还缺：$missing，这次不上传"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 归档并上传 TestFlight（苹果云端签名）
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: clients/apple/scripts/testflight.sh upload
+      - name: 写运行摘要
+        if: ${{ steps.keys.outputs.ready == 'true' }}
+        run: echo "已上传 TestFlight，build 号 $HIMAWARI_BUILD_NUMBER（提交 ${GITHUB_SHA::8}）" >> "$GITHUB_STEP_SUMMARY"

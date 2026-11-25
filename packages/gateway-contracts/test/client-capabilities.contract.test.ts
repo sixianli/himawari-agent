@@ -89,6 +89,12 @@ describe("[第11批] 客户端能力表", () => {
     expect(memory?.tightenOpenKeys).toBeUndefined();
     const rule = findClientCapability("v2", "memory.rule.respond");
     expect(rule && requiredClientTier(rule, {})).toBe("change");
+    const takeBack = findClientCapability("v2", "approval.allowance.revoke");
+    expect(takeBack && requiredClientTier(takeBack, { allowanceId: "allowance:a" })).toBe(
+      "tighten",
+    );
+    const give = findClientCapability("v2", "approval.allowance.set");
+    expect(give && requiredClientTier(give, {})).toBe("change");
   });
 
   it("外部记忆整批全是拒绝且不带改写文字才算收紧，有一条留下或改写就算改", () => {
@@ -190,6 +196,24 @@ describe("[第11批] 客户端能力表", () => {
 
   it("任务页的 GitHub 监控开关手机上不做", () => {
     expect(findClientCapability("v2", "github.monitor.set_state")?.tier).toBe("not_on_phone");
+  });
+
+  it("一个主对话以后：审批和建议进主对话，能力和改进这一版手机上不做", () => {
+    const page = (webPage: string) => CLIENT_PAGE_TABLE.find((entry) => entry.webPage === webPage);
+    for (const webPage of ["approvals", "suggestions"]) {
+      const entry = page(webPage);
+      expect(entry && "nativePage" in entry ? entry.nativePage : undefined, webPage).toBe("chat");
+    }
+    for (const webPage of ["capabilities-adapters", "improvements"]) {
+      const entry = page(webPage);
+      expect(entry && "notOnPhone" in entry ? entry.notOnPhone : undefined, webPage).toContain(
+        "这一版手机上不做",
+      );
+    }
+    const pages = CLIENT_PAGE_TABLE.flatMap((entry) =>
+      "nativePage" in entry ? [entry.nativePage] : [],
+    );
+    expect(pages.filter((name) => name.startsWith("today."))).toEqual([]);
   });
 
   it("运维类页面留在网页：三页和它们的消息类型手机上不做，点头和服务器状态不受影响", () => {

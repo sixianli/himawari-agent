@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0005: 将长期记忆作为可替换外部能力
@@ -44,4 +46,4 @@ Himawari Agent 通过产品自有的记忆端口使用长期记忆服务。端�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#memory-and-context]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#memory-and-context]

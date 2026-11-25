@@ -8,6 +8,8 @@ import {
   SERVER_FILLED_PAYLOAD_KEYS,
 } from "../../packages/platform-node/src/device-gateway.ts";
 import {
+  APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
+  APPROVAL_ALLOWANCE_DAYS_MINIMUM,
   CLIENT_CAPABILITY_TABLE,
   CLIENT_GATEWAY_MESSAGE_TYPES,
   CLIENT_GATEWAYS,
@@ -148,6 +150,7 @@ ${capabilities.map(capabilityLine).join("\n")}
 
     public static let referencePlaceholder = ${swiftString(DEVICE_REFERENCE_PLACEHOLDER)}
     public static let serverFilledReferences = [${SERVER_FILLED_PAYLOAD_KEYS.map(swiftString).join(", ")}]
+    public static let allowanceDays: ClosedRange<Int> = ${APPROVAL_ALLOWANCE_DAYS_MINIMUM}...${APPROVAL_ALLOWANCE_DAYS_MAXIMUM}
 
     public static func find(_ gateway: ClientGateway, _ type: String) -> ClientCapability? {
         all.first { $0.gateway == gateway && $0.type == type }

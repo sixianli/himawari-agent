@@ -19,8 +19,8 @@ CONFIG = pathlib.Path('/etc/himawari/config.json')
 OLD_PREFIX = pathlib.Path('__PKT_OLD_PREFIX__')
 OLD_QUALIFICATION = pathlib.Path('__PKT_OLD_QUALIFICATION__')
 OLD_PROTECTION = pathlib.Path('__PKT_OLD_OPERATIONS__/runtime-protection.json')
-SERVICE_UID = 999
-SERVICE_GID = 988
+SERVICE_UID = __PKT_SERVICE_UID__
+SERVICE_GID = __PKT_SERVICE_GID__
 OLD_CONFIG_SHA = 'PENDING:s0.service.configurationSha256'
 
 

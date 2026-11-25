@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0009: 将 Agent 自我改进与生效信任根分离
@@ -44,4 +46,4 @@ Agent 可以分析问题、生成候选补丁、在隔离环境运行测试和�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#agent-topology-and-capabilities]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#agent-topology-and-capabilities]

@@ -6,9 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const source = "/home/andy/himawari-tests/r2-u1/source";
-const evidence = "/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/sixth-source-inputs-01";
-const tool = "/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/sixth-source-inputs-01/capture-build-source-inputs.mjs";
+const source = "__BUILDER_SOURCE__";
+const evidence = "__BUILDER_EVIDENCE_ROOT__/sixth-source-inputs-01";
+const tool = "__BUILDER_EVIDENCE_ROOT__/sixth-source-inputs-01/capture-build-source-inputs.mjs";
 const output = path.join(evidence, "source-build-inputs.json");
 const revision = "__REVISION__";
 const expectedDigest = "__EXPECTED_DIGEST__";
@@ -48,7 +48,7 @@ async function parentChain(filename) {
   let current = path.dirname(filename);
   while (true) {
     const info = await lstat(current, { bigint: true });
-    require(info.isDirectory() && !info.isSymbolicLink() && await realpath(current) === current && [0, 1000].includes(Number(info.uid)), "BUILD_CAPTURE_PARENT_UNSAFE:" + current);
+    require(info.isDirectory() && !info.isSymbolicLink() && await realpath(current) === current && [0, __BUILDER_UID__].includes(Number(info.uid)), "BUILD_CAPTURE_PARENT_UNSAFE:" + current);
     result.push({ path: current, identity: identity(info) });
     if (current === path.parse(current).root) break;
     current = path.dirname(current);
@@ -67,7 +67,7 @@ async function stableRead(filename) {
   require(path.isAbsolute(filename) && path.normalize(filename) === filename && await realpath(filename) === filename, "BUILD_CAPTURE_FILE_PATH_UNSAFE:" + filename);
   const parents = await parentChain(filename);
   const before = await lstat(filename, { bigint: true });
-  require(before.isFile() && !before.isSymbolicLink() && before.nlink === 1n && [0, 1000].includes(Number(before.uid)), "BUILD_CAPTURE_FILE_NOT_ORDINARY:" + filename);
+  require(before.isFile() && !before.isSymbolicLink() && before.nlink === 1n && [0, __BUILDER_UID__].includes(Number(before.uid)), "BUILD_CAPTURE_FILE_NOT_ORDINARY:" + filename);
   const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const opened = await handle.stat({ bigint: true });
@@ -84,7 +84,7 @@ async function stableRead(filename) {
 }
 
 function git(args) {
-  return execFileSync("/usr/bin/git", ["--no-pager", "-C", source, ...args], { encoding: null, maxBuffer: 64 * 1024 * 1024, env: { PATH: "/usr/bin:/bin", HOME: "/home/andy", LANG: "C.UTF-8", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  return execFileSync("/usr/bin/git", ["--no-pager", "-C", source, ...args], { encoding: null, maxBuffer: 64 * 1024 * 1024, env: { PATH: "/usr/bin:/bin", HOME: "__BUILDER_HOME__", LANG: "C.UTF-8", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
 }
 
 function blob(relative) {
@@ -93,7 +93,7 @@ function blob(relative) {
 
 async function matchingGitFile(relative) {
   const value = await stableRead(path.join(source, relativePath(relative)));
-  require(value.proof.before.uid === 1000 && value.bytes.equals(blob(relative)), "BUILD_CAPTURE_GIT_REVISION_BYTES_DIFFERENT:" + relative);
+  require(value.proof.before.uid === __BUILDER_UID__ && value.bytes.equals(blob(relative)), "BUILD_CAPTURE_GIT_REVISION_BYTES_DIFFERENT:" + relative);
   return value;
 }
 
@@ -112,18 +112,18 @@ async function selectedInputs(relativeModuleClosure) {
 }
 
 try {
-  require(process.platform === "linux" && process.arch === "x64" && process.version === "v22.22.3" && process.versions.modules === "127" && os.hostname() === "hermes-home" && process.getuid() === 1000 && process.geteuid() === 1000 && process.argv.length === 2 && fileURLToPath(import.meta.url) === tool, "BUILD_CAPTURE_FIXED_HERMES_ENVIRONMENT_REQUIRED");
+  require(process.platform === "linux" && process.arch === "__BUILDER_ARCH__" && process.version === "v22.22.3" && process.versions.modules === "127" && os.hostname() === "__BUILDER_HOSTNAME__" && process.getuid() === __BUILDER_UID__ && process.geteuid() === __BUILDER_UID__ && process.argv.length === 2 && fileURLToPath(import.meta.url) === tool, "BUILD_CAPTURE_FIXED_HERMES_ENVIRONMENT_REQUIRED");
   process.umask(0o077);
   for (const directory of [source, evidence]) {
     const info = await lstat(directory, { bigint: true });
-    require(info.isDirectory() && !info.isSymbolicLink() && info.uid === 1000n && await realpath(directory) === directory, "BUILD_CAPTURE_FIXED_DIRECTORY_UNSAFE:" + directory);
+    require(info.isDirectory() && !info.isSymbolicLink() && info.uid === __BUILDER_UID__n && await realpath(directory) === directory, "BUILD_CAPTURE_FIXED_DIRECTORY_UNSAFE:" + directory);
     if (directory === evidence) require((info.mode & 0o777n) === 0o700n, "BUILD_CAPTURE_EVIDENCE_MODE_INVALID");
   }
   report.sourceParents = await parentChain(path.join(source, "package.json"));
   report.evidenceParents = await parentChain(output);
   outputHandle = await open(output, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   outputCreated = identity(await outputHandle.stat({ bigint: true }));
-  require(outputCreated.uid === 1000 && outputCreated.mode === 0o600 && outputCreated.nlink === 1 && outputCreated.type === 0o100000, "BUILD_CAPTURE_OUTPUT_UNSAFE");
+  require(outputCreated.uid === __BUILDER_UID__ && outputCreated.mode === 0o600 && outputCreated.nlink === 1 && outputCreated.type === 0o100000, "BUILD_CAPTURE_OUTPUT_UNSAFE");
   report.tool = (await stableRead(tool)).proof;
   report.nodeIdentity = (await stableRead(await realpath(process.execPath))).proof;
   require(git(["rev-parse", "--verify", revision + "^{commit}"]).toString("utf8").trim() === revision, "BUILD_CAPTURE_GIT_REVISION_UNAVAILABLE");

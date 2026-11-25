@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: ".agents/instructions/prompt-prefix.md, packages/application/src/services/proactive-rules.ts, packages/application/test/rule-expression.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0209：规则手册用 CEL 表达式，由一个裁判计算（部分取代 ADR 0163 的决定 4）
@@ -37,7 +39,7 @@ date: "2026-11-10"
 ## 前提
 
 1. 规则是硬性设定：`docs/product-vision.md` 第 59 行，“规则本身写进程序、必定执行，每条都有回归测试守着”。
-2. 每人一个实例，各自一个主人，主人可能不会写代码：`docs/adr/0083-isolated-instance-per-person-with-owner-entry.md` 第 50 行，“每个人一套独立的 stateRoot、数据库文件……每个实例内部仍然只有一个主人”。（ADR 0083 已被 ADR 0234 取代，改为一个程序、每人一个数据库文件；“每人各自一个主人、主人可能不会写代码”这一点不变）
+2. 每人一个实例，各自一个主人，主人可能不会写代码：[0083-isolated-instance-per-person-with-owner-entry.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 第 50 行，“每个人一套独立的 stateRoot、数据库文件……每个实例内部仍然只有一个主人”。（ADR 0083 已被 ADR 0234 取代，改为一个程序、每人一个数据库文件；“每人各自一个主人、主人可能不会写代码”这一点不变）
 3. ADR 0163 决定 4 的原文：“一句话要经过确认卡，Andy 确认后才变成长期规则。”
 4. 现有的邮件检查在 `packages/application/src/services/proactive-rules.ts`（迁移前）里写死了三条“地板规则”（重要发件人、公共机构域名后缀、钱相关词）和静默时段计算；三条地板规则的 id（`floor_important_sender`、`floor_public_domain`、`floor_money_words`）已写进决策记录，所以保持不变。
 5. CEL 的安全性：cel-spec 说明 CEL “evaluates in linear time, is mutation free, and not Turing-complete”；cel.dev 说明 “CEL was designed specifically to be safe for executing user code”。
@@ -115,8 +117,8 @@ date: "2026-11-10"
 ## 关联文档
 
 - [ADR 0163](0163-owner-preferences-as-data-run-by-tested-rule-types.md)：本 ADR 取代其中的决定 4，决定 1、2、3 继续有效。
-- [ADR 0134](0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)：规则是硬性设定。
-- [ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例（已被 [ADR 0234](0234-one-program-per-person-database-file.md) 取代，改为一个程序、每人一个数据库文件；每人各自一个主人这一点不变）。
+- [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)：规则是硬性设定。
+- [ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)：每人一个实例（已被 [ADR 0234](0234-one-program-per-person-database-file.md) 取代，改为一个程序、每人一个数据库文件；每人各自一个主人这一点不变）。
 - [ADR 0204](0204-handle-pi-deviations-d2-d3-d5.md)：“先问我”接现有审批，第 3 步用。
 - [.agents/instructions/prompt-prefix.md](../../.agents/instructions/prompt-prefix.md)：发给模型的内容只追加。
 - [ADR 0233](0233-rule-book-joins-the-data-export.md)：规则手册进入数据导出（后续）。

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-30"
+covers: "apps/agent-service/src/public-search-authorization.ts, scripts/delivery-mode/browser-acceptance-gate.py, test/integration/product-path-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0121：联网搜索默认打开、不再逐次询问；开关只跟搜索服务的地址绑定，换模型不再让它失效

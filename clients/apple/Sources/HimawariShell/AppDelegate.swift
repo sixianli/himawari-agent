@@ -8,6 +8,11 @@ public enum PushBridge {
 }
 
 public final class HimawariAppDelegate: NSObject, UIApplicationDelegate {
+    public func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        NotificationRouter.shared.install()
+        return true
+    }
+
     public func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         guard let sync = PushBridge.sync else { return }
         Task { await sync.tokenArrived(deviceToken) }

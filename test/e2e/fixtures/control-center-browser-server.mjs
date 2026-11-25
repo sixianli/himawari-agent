@@ -92,6 +92,8 @@ const threads = new Map([
           turnId: "turn-01",
           runId: "run-01",
           committedAt: now,
+          options: null,
+          chosenFrom: null,
         },
         {
           messageId: "message-02",
@@ -103,6 +105,8 @@ const threads = new Map([
           turnId: "turn-01",
           runId: "run-01",
           committedAt: now,
+          options: null,
+          chosenFrom: null,
         },
       ],
       runs: [
@@ -145,6 +149,8 @@ const threads = new Map([
           turnId: "turn-research-01",
           runId: null,
           committedAt: now,
+          options: null,
+          chosenFrom: null,
         },
       ],
       runs: [],
@@ -2324,6 +2330,8 @@ function handleThreadCommand(message) {
         turnId: message.payload.turnId,
         runId: message.payload.runId,
         committedAt: message.payload.occurredAt,
+        options: null,
+        chosenFrom: null,
       });
       thread.runs.push({
         runId: message.payload.runId,
@@ -2687,6 +2695,8 @@ async function handleRequest(request, response) {
         turnId: ownerMessage.turnId,
         runId: run.runId,
         committedAt: run.updatedAt,
+        options: null,
+        chosenFrom: null,
       });
     }
     if (!input.silent)

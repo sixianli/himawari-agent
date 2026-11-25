@@ -69,6 +69,15 @@ const TOKENIZER_DIGEST = [
 ].join("");
 const TOKENIZER_DIGEST_LINE = (digest) => `            "tokenizer.json": "${digest}",\n`;
 
+const VAULT_FIXTURE = "clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract.json";
+const VAULT_SIBLING = "clients/apple/Tests/HimawariCoreTests/Fixtures/other-contract.json";
+const VAULT_WRAPPED_KEY = [
+  "OJcMhbm3WDiSpM1vIJuD1qnNNVIJ0hTf75YUIS9f",
+  "/c6Qo98Y9w4CnxSW0UGHkewWlVHlFpwsGvui/nsG",
+].join("");
+const VAULT_PASSWORD = ["tByJMmanrteJYrzRyAz6eC7I+9mY5n5X", "MjMmS01n940gxxayiFeZE/6q"].join("");
+const VAULT_LINE = `    {\n      "wrappedKey": "${VAULT_WRAPPED_KEY}",\n      "password": "${VAULT_PASSWORD}"\n    }\n`;
+
 const FIXTURES = {
   [REVIEW_316_RECORD]: REVIEW_316_LINE,
   [REVIEW_316_SIBLING]: REVIEW_316_LINE,
@@ -98,6 +107,8 @@ const FIXTURES = {
   "scripts/embedding-models/build-artifact.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
   "scripts/embedding-models/other-artifact.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
   "scripts/embedding-models/build-artifact-copy.py": TOKENIZER_DIGEST_LINE(TOKENIZER_DIGEST),
+  [VAULT_FIXTURE]: VAULT_LINE,
+  [VAULT_SIBLING]: VAULT_LINE,
 };
 
 const EXPECTED_WITH_REPOSITORY_CONFIG = [
@@ -118,6 +129,7 @@ const EXPECTED_WITH_REPOSITORY_CONFIG = [
   "test/fixtures/digest-map.json generic-api-key",
   "scripts/embedding-models/other-artifact.py generic-api-key",
   "scripts/embedding-models/build-artifact-copy.py generic-api-key",
+  `${VAULT_SIBLING} generic-api-key`,
 ].sort();
 
 function gitleaksOnPath(version) {
@@ -232,6 +244,7 @@ describe("gitleaks repository configuration", () => {
           `${REVIEW_274} private-key`,
           `${KEY_TAIL_TEST} generic-api-key`,
           "scripts/embedding-models/build-artifact.py generic-api-key",
+          `${VAULT_FIXTURE} generic-api-key`,
         ].sort(),
       );
   }, 120000);
@@ -294,6 +307,11 @@ describe("gitleaks repository configuration", () => {
       "review record same round any file",
       "'''(?:^|/)\\.agents/reviews/(?:pr-312/round-3/judgments\\.md|pr-316/round-1/(?:deepseek-v4\\.1-flash|glm-5\\.3-flash)(?:\\.prompt)?\\.md|pr-319/round-1/glm-5\\.3-flash\\.md)$'''",
       "'''(?:^|/)\\.agents/reviews/(?:pr-312/round-3/judgments\\.md|pr-316/round-1/[^/]+\\.md|pr-319/round-1/glm-5\\.3-flash\\.md)$'''",
+    ],
+    [
+      "vault fixture any path",
+      "'''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/vault-contract\\.json$'''",
+      "'''(?:^|/)clients/apple/Tests/HimawariCoreTests/Fixtures/[^/]+\\.json$'''",
     ],
     [
       "deepseek any value",

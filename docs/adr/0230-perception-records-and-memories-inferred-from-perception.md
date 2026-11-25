@@ -7,6 +7,8 @@ superseded_by: ""
 amended_by: "docs/adr/0285-one-main-thread-subthreads-and-one-inbox.md"
 amends: "docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md, docs/adr/0106-proactive-loop-v1-gmail-read-only.md"
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/ports/proactive-checks.ts, packages/gateway-contracts/src/contracts.ts, packages/persistence-sqlite/src/data-export/schemas.ts, packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql, packages/persistence-sqlite/src/sqlite-governed-deletion.ts, packages/persistence-sqlite/src/sqlite-proactive-operations.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0230：设备感知到的东西存成感知记录，不拼进对话；主人亲口说的才能直接成为记忆和提醒
@@ -65,14 +67,14 @@ date: "2026-11-11"
 6. 待确认记忆不带提醒、不带人物；转正要主人自己的原话。来源 `docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md` 决定第 1 条③原话：“不带提醒、不带人物”；第 6 条原话：“转正必须有主人自己的原话”“必须带在主人本次消息里逐字核对到的原话引用，没有就丢弃”。
 7. 运行来源类型是硬校验的枚举，使用点多。来源 `packages/gateway-contracts/src/contracts.ts:68` 原话：`sourceType: enumeration(["user_message", "schedule", "external_event"]),`。
 8. 系统主动提醒只有 Gmail 一个来源，而且写死在多处。来源 `packages/application/src/ports/proactive-checks.ts:4` `export type ProactiveSource = "gmail";`；`packages/persistence-sqlite/src/sqlite-proactive-operations.ts:29` `const SOURCES = ["gmail"] as const;`；`packages/persistence-sqlite/src/migrations/0062_proactive_checks.sql:15` `CHECK (source IN ('gmail'))`（`0069`、`0087`、`0088`、`0089` 四份迁移里同样）；`packages/persistence-sqlite/src/data-export/schemas.ts:253` `source: enumOf(["gmail"]),`。
-9. 现在已有不推送时段和顺延。来源 `docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md:124-125` 原话：“顺延到时段结束，再合成一条”“Andy 正开着 Himawari 网页时不弹推送”。
+9. 现在已有不推送时段和顺延。来源 [已删除的主动闭环规格第 124–125 行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md#L124-L125) 原话：“顺延到时段结束，再合成一条”“Andy 正开着 Himawari 网页时不弹推送”。
 10. 删掉来源现在只打标记，记忆还在，而且只按编号匹配。来源 `packages/persistence-sqlite/src/sqlite-governed-deletion.ts:762-764` 原话：`UPDATE memory_provenance SET source_deleted = 1 WHERE source_id IN (...)`。
 11. 发给模型的内容只追加；每轮会变的内容只放在最后一条消息里；工具首选一直在列表里。来源 `.agents/instructions/prompt-prefix.md` 第 2、4、7 条原话：“每轮都会变的内容只放在最后一条用户消息里。”“已经发给过模型的内容，不得改动、重排或删除，只能在末尾追加。”“业界的首选是让工具一直在列表里，不能用的时候由执行端拒绝”。
 12. 后台调用也是固定的在前、会变的在后。来源同文件第 15 条原话：“先放固定的指令，再放这次的数据，最后放当前时间这类每次都变的值。”
 13. 界面上每个数字要有可验证的定义。来源 `.claude/rules/owner-standing-rules.md` 原话：“界面上给 Andy 看的每个数字和判断词……都要有可以验证的定义和门槛，没有就不显示”。
 14. 现行决定是界面不显示费用。来源 `docs/adr/0106-proactive-loop-v1-gmail-read-only.md:47` 原话：“每天累计默认 1 美元，在生产配置里改，界面不显示费用（ADR 0105）。”
 15. 禁止按量付费调用贵模型。来源 `.claude/rules/owner-standing-rules.md` 原话：“任何场景……都不得通过按 token 付费的渠道……调用 Claude、OpenAI 或同价位的模型”。
-16. 所有发给模型的内容走统一出口并遮盖敏感信息。来源 `docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md`（标题即决定）；检查是 `npm run check:egress-redaction`。
+16. 所有发给模型的内容走统一出口并遮盖敏感信息。来源 [0146-redact-sensitive-text-before-it-leaves-for-any-model.md](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)（标题即决定）；检查是 `npm run check:egress-redaction`。
 
 未核实、所以本 ADR 不依赖的：日本和中国关于录到旁人的法律规定，线程只有二手来源（`/mnt/project-files/ios-app-eval/report.md` 的 P8 到 P10）。本 ADR 的做法（旁人的话只当线索、每种感官可关、都能删）不以某条法律结论为前提；Andy 把包发给别人之前要单独核实。
 
@@ -106,8 +108,8 @@ date: "2026-11-11"
    - 谁说的记成谁的：主人说自己的事记成主人的；已认出的熟人说他自己的事记到这个人名下；没认出的人不建档。
    - 每周体检列出这一周由感知新增的正式记忆，方便撤销错的。
 6. **听到的约定和待办。** 时间和对象清楚、并且是主人本人说出口或答应了的：直接建提醒或日历事件并告诉主人，可一键撤销；说不清的问一句。来自“其他”的只能生成建议，主人点一下才建。自动建的日历事件不带参与者、不发邀请；邀请别人属于对外发送，必须确认。两种都写决策记录。
-7. **系统主动提醒改成来源登记。** 每个来源登记自己的提示词、解析器、去重键、预算、开关和评测集；写死 Gmail 的地方（前提 8）全部改掉，并立一道检查：每个登记的来源都要能通过表约束、导出导入校验和类型。
-8. **送达时机看主人此刻的状态。** 状态包括是否在日程中、是否在和人说话、是否在睡觉、是否在开车或运动、是否正在看 App、专注模式。每个状态是三态（是、否、不知道）并带“多久之前的”，过了新鲜度就算不知道。紧急的立刻送；非紧急的可以等，但每条都有最晚送达时间；状态不知道时按现有时段规则办（前提 9），不额外延后。每次延后和送达都写决策记录，写明依据的是哪份状态、多新。
+7. **感知进收件箱，由主对话判断。**（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 决定 3、4 改写了这一条：不再按来源各登记一套检查提示和每次、每天的条数上限；每段经历写进收件箱，交给看得到全部上下文的主对话判断要不要开口。Gmail 以外的来源接入照此做。）
+8. **送达时机。**（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 决定 4、6 改写了这一条：程序不替她判断推送要不要延后；她主动说的话推不推由她定，延后只按 Andy 定的安静时段规则（[ADR 0244](0244-hard-rules-step4-unified-push-gate.md)）。）
 9. **每种感官单独开关，默认全开；每个上限都看得见（修改 ADR 0106 第 6 条里的一句话）。**
    - 每个开关旁边写明拿什么、去哪、留多久。
    - 每个上限显示四样：上限是多少、现在用了多少、什么时候清零、到了会怎样。涵盖每种感官每天的时长和条数、感知触发的模型费、手机上的待传队列、耗电。快到时先提醒，到了就把停掉的那一部分标明“今天已停”。
@@ -173,7 +175,7 @@ date: "2026-11-11"
 
 - [SOURCE: docs/adr/0179-keep-low-confidence-memory-candidates-as-tentative.md]
 - [SOURCE: docs/adr/0106-proactive-loop-v1-gmail-read-only.md]
-- [SOURCE: docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md]
 - [SOURCE: docs/adr/0149-append-only-model-requests.md]
 - [SOURCE: docs/adr/0229-native-apple-clients-and-device-api.md]
 - [SOURCE: docs/execution/specs/2026-11-11-apple-device-body-design.md]

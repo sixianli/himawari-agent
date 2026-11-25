@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "apps/agent-service/src/production-memory-capture.ts, packages/application/src/services/owner-profile-service.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0112：“档案”改为“每次对话都会带上的记忆”，由 Andy 决定带不带；记忆页只留“记忆”和“变化记录”两个标签

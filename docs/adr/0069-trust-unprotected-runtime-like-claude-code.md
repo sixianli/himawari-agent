@@ -2,10 +2,12 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0067-runtime-artifacts-by-inode-metadata.md, docs/adr/0034-runtime-verification-by-inode-metadata.md, docs/adr/0028-protected-runtime-installation.md"
+supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0078-authority-check-once-then-version-compare.md"
 date: "2026-10-23"
+covers: "apps/execution-worker/src/production-sandbox-execution-v2.ts, packages/platform-node/test/sandbox-host-verifier.unit.test.ts, packages/platform-node/test/sandbox-runtime-digest-worker.unit.test.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/test/policy.unit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0069：未保护安装信任安装结果，只靠沙箱禁止写入和受保护安装防改动
@@ -28,8 +30,8 @@ date: "2026-10-23"
 
 这部分检查分两种情况：
 
-- **受保护安装**（[ADR 0028](0028-protected-runtime-installation.md)）：Linux 上程序文件归 root（系统管理员账号）所有，服务用另一个不能改这些文件的普通账号运行，root 发布 `protected-runtime.v1` 保护记录。每个进程只完整审计一次。
-- **未保护安装**：Mac 上的安装（一直如此）、Hermes 测试安装，以及生产机做保护步骤之前（例如第六次变更的 S6 验收）。安装文件和服务属于同一个账号。[ADR 0034](0034-runtime-verification-by-inode-metadata.md) 和 [ADR 0067](0067-runtime-artifacts-by-inode-metadata.md) 规定：每个进程第一次读全部字节算摘要，之后每次调用都遍历整个目录比对每个文件的元数据（设备号、inode 编号、权限、所有者、大小、修改时间、状态变更时间）。
+- **受保护安装**（[ADR 0028](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md)）：Linux 上程序文件归 root（系统管理员账号）所有，服务用另一个不能改这些文件的普通账号运行，root 发布 `protected-runtime.v1` 保护记录。每个进程只完整审计一次。
+- **未保护安装**：Mac 上的安装（一直如此）、Hermes 测试安装，以及生产机做保护步骤之前（例如第六次变更的 S6 验收）。安装文件和服务属于同一个账号。[ADR 0034](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md) 和 [ADR 0067](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md) 规定：每个进程第一次读全部字节算摘要，之后每次调用都遍历整个目录比对每个文件的元数据（设备号、inode 编号、权限、所有者、大小、修改时间、状态变更时间）。
 
 这一块反复耗费开发和使用时间：
 
@@ -115,13 +117,13 @@ Claude 方案（`.ci-output/handoff/2026-10-23-r2d25-host-verify-claude-proposal
 
 ## 关联
 
-- [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md]
-- [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]
-- [SOURCE: docs/adr/0028-protected-runtime-installation.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md]
 - [SOURCE: docs/architecture-v0.1.md]
 
 <a id="multi-user-follow-up"></a>
 
 ## 2026-11-11 后续：多人使用
 
-[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人使用时每人一个数据库文件、每人一个专属执行账号。[ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md) 记录的前提“使用者就是可信的主人”对 Andy 自己的那一份仍然成立；对其他受邀的人，沙箱不再只防误改，还要防一个人读到另一个人的数据，所以 [ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条补上了系统账号、目录权限和内存、CPU、磁盘的硬上限。本 ADR 的决定不变。
+[ADR 0234](0234-one-program-per-person-database-file.md) 取代 ADR 0083，多人使用时每人一个数据库文件、每人一个专属执行账号。[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 记录的前提“使用者就是可信的主人”对 Andy 自己的那一份仍然成立；对其他受邀的人，沙箱不再只防误改，还要防一个人读到另一个人的数据，所以 [ADR 0234](0234-one-program-per-person-database-file.md) 第 4 条补上了系统账号、目录权限和内存、CPU、磁盘的硬上限。本 ADR 的决定不变。

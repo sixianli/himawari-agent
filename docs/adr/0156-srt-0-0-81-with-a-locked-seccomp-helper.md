@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
+covers: "apps/agent-service/src/production-task-environments.ts, packages/execution-contracts/src/sandbox-runtime-version.ts, packages/runtime-sandbox/scripts/check-srt-boundary.mjs, packages/runtime-sandbox/src/srt-runtime-identity.ts, scripts/delivery-mode/run-packet-checks.py"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0156：SRT 升级到 0.0.81，启动前必须用上锁定的 seccomp 小程序
@@ -25,7 +27,7 @@ date: "2026-11-04"
 
 Himawari 在 Linux 上用 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，底层是 bubblewrap，一个 Linux 命令行隔离程序）隔离 Agent 跑的命令，原先锁定 0.0.75。0.0.75 有一个真实绕过：沙箱里的命令可以自己建一层用户命名空间（Linux 让普通进程拥有一份私有权限视图的机制），在私有的挂载视图里把只读绑定拿掉，再通过事先打开的目录句柄改写被禁写的文件。上游提交 9a277e5（#588，最早进入 v0.0.80）的说明写的是 “a command that may create one can take the binds out of its own view”。本线程 2026-11-04 在云端容器（Ubuntu 24.04、bubblewrap 0.9.0、普通账号）用上游测试的攻击脚本复现：0.0.75 下被禁写的 `.git/config` 被改写；0.0.81 下命令建命名空间时被拒（有 seccomp 小程序时 `EPERM`，没有时 bubblewrap 的 `--disable-userns` 给 `ENOSPC`）。
 
-0.0.81 的修复要靠两样东西之一：seccomp 小程序（`vendor/seccomp/<arch>/apply-seccomp`，seccomp 是 Linux 按系统调用拦截的过滤器），或者 bubblewrap 0.8.0 以上的 `--disable-userns`。测试服务器 Hermes 的 bubblewrap 是 0.6.1，只能靠小程序。两样都没有时，SRT 只在调试日志里写一行 “no seccomp helper in use, and bubblewrap cannot disable user namespaces”（0.0.81 `dist/sandbox/linux-sandbox-utils.js:1346`），照常运行。另外，SRT 找小程序时，指定的路径不存在就退回到包内目录，再找不到就退回到全局 npm 安装目录（`dist/sandbox/generate-seccomp-filter.js:144-201`），可能用上一份旧小程序；0.0.81 README 对旧小程序的说法是 “imposes no limit, and nothing says so”。上游提交说明里提到的 `SRT_HELPER_FEATURES` 自报能力，在 v0.0.81 的 `vendor/seccomp-src/apply-seccomp.c` 里不存在，不能用来区分新旧小程序。
+0.0.81 的修复要靠两样东西之一：seccomp 小程序（`vendor/seccomp/<arch>/apply-seccomp`，seccomp 是 Linux 按系统调用拦截的过滤器），或者 bubblewrap 0.8.0 以上的 `--disable-userns`。测试服务器 Hermes 的 bubblewrap 是 0.6.1，只能靠小程序。两样都没有时，SRT 只在调试日志里写一行 “no seccomp helper in use, and bubblewrap cannot disable user namespaces”（0.0.81 `dist/sandbox/linux-sandbox-utils.js:1346`），照常运行。另外，SRT 找小程序时，指定的路径不存在就退回到包内目录，再找不到就退回到全局 npm 安装目录（`dist/sandbox/generate-seccomp-filter.js:144-201`），可能用上一份旧小程序；0.0.81 README 对旧小程序的说法是 “imposes no limit, and nothing says so”。上游提交说明里提到的 SRT_HELPER_FEATURES 自报能力，在 v0.0.81 的 vendor/seccomp-src/apply-seccomp.c 里不存在，不能用来区分新旧小程序。
 
 方案经过 OpenCode 两个模型（`opencode-go/deepseek-v4.1-flash`、`opencode-go/glm-5.3-flash`）各一轮独立出方案和一轮审核；Andy 2026-11-04 同意整合方案，并选定真实沙箱检查放进 Hermes 上的上线包检查。
 
@@ -72,7 +74,7 @@ Himawari 在 Linux 上用 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，
 
 ## 关联文档
 
-- [ADR 0024：SRT 统一执行](0024-srt-unified-execution.md)
+- [ADR 0024：SRT 统一执行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0024-srt-unified-execution.md)
 - [ADR 0026：按任务的网络出口](0026-job-scoped-network-egress.md)
 - [架构 v0.1](../architecture-v0.1.md)
 - 上游提交：https://github.com/anthropics/sandbox-runtime/commit/9a277e5

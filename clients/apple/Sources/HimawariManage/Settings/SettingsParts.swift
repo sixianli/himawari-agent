@@ -15,14 +15,9 @@ struct SheetHeader: View {
 
     var body: some View {
         HStack {
-            Button(action: action) {
-                Icon(leading == .close ? .x : .chevronLeft, size: leading == .close ? SL.headerIcon : SL.backIcon)
-                    .foregroundStyle(Color.hmText)
-                    .frame(width: SL.headerButton, height: SL.headerButton)
-                    .background(Color.hmFill, in: Circle())
+            GlassCircleButton(Text(leading == .close ? M.close : M.back), size: SL.headerButton, action: action) {
+                Icon(leading == .close ? .x : .chevronLeft, size: DesignTokens.IconSize.glassButton)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(leading == .close ? M.close : M.back))
             Spacer()
             Text(title).hmType(DesignTokens.TypeScale.sheetTitle).foregroundStyle(Color.hmText)
             Spacer()
@@ -104,5 +99,60 @@ struct SettingsRow: View {
             if !last { RowSeparator() }
         }
         .contentShape(Rectangle())
+    }
+}
+
+struct SettingsPage<Content: View>: View {
+    let gap: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: gap) { content }
+                .padding(.top, DesignTokens.Size.sheetPaddingTop)
+                .padding(.horizontal, DesignTokens.Size.sheetPaddingHorizontal)
+                .padding(.bottom, DesignTokens.Size.sheetPaddingBottom)
+                .containerRelativeFrame(.vertical, alignment: .top)
+        }
+        .scrollIndicators(.hidden)
+        .himawariScreenBackground()
+        #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+        #endif
+    }
+}
+
+struct SegmentPicker<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.0) { value, title in
+                option(value, title)
+            }
+        }
+        .padding(ManageLayout.Segment.inset)
+        .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
+    }
+
+    private func option(_ value: Value, _ title: String) -> some View {
+        Button {
+            selection = value
+        } label: {
+            Text(title)
+                .hmType(selection == value ? DesignTokens.TypeScale.navTitle : DesignTokens.TypeScale.body)
+                .foregroundStyle(Color.hmText)
+                .frame(maxWidth: .infinity, minHeight: DesignTokens.Size.minTapTarget)
+                .background {
+                    if selection == value {
+                        RoundedRectangle(cornerRadius: DesignTokens.Radius.segment - ManageLayout.Segment.inset, style: .continuous)
+                            .fill(Color.hmSurface)
+                            .hmShadow(DesignTokens.Shadows.lift)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == value ? .isSelected : [])
     }
 }

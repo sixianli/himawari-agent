@@ -6,6 +6,8 @@ contract_sha256: "sha256:ea1c1b7ded7a957b60ea8ca4c6c56c1d5b1bdd85f0deefbb858fe63
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
+covers: "scripts/operations/workspace-lifecycle-audit.mjs, test/integration/workspace-lifecycle-audit.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 工作区历史占用只读核查

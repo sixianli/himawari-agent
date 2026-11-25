@@ -6,13 +6,15 @@ contract_sha256: "sha256:7e5bbea067de326bd3907536ae68c3dbd1fdd1f494673ef4475a673
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
+covers: "apps/agent-service/src/production-record-failure.ts, apps/agent-service/src/service-main.ts, apps/execution-worker/src/service-main.ts, ci/toolchain-lock.json, packages/persistence-sqlite/src/product-state-repository.ts, packages/platform-node/src/authenticated-uds-transport.ts, packages/platform-node/src/execution-uds-transport.ts, packages/platform-node/src/state-root-layout.ts, packages/runtime-pi/src/pi-file-preparation-pool.ts, packages/runtime-sandbox/src/job-host-main.ts, packages/runtime-sandbox/src/policy.ts, packages/runtime-sandbox/src/sandbox-sdk-worker.ts, packages/runtime-sandbox/src/sandbox-sdk.ts, packages/runtime-sandbox/test/job-host-main.unit.test.ts, packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts, scripts/ci/artifact-files.mjs, scripts/ci/context.mjs, scripts/ci/install-dependencies.mjs, scripts/ci/install-tools.mjs, scripts/ci/redact-text.mjs, scripts/ci/resources.mjs, scripts/ci/verify-artifact.mjs, scripts/install-node-runtime.mjs, scripts/package-node-runtime.mjs, test/integration/admin-diagnose-run.test.ts, test/integration/sandbox-preparation-control.test.ts, test/integration/sandbox-unconfirmed-purge.test.ts, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md, test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
-当前开发测试遵循 [ADR 0052](../adr/0052-third-production-host-acceptance-exception.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md]
+当前开发测试遵循 [ADR 0052](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md]
 
-G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 2026-10-12 决定的第三次部署必要的[限定主机能力验收](../adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance)。具体流程先在 Hermes 验证，再冻结版本、摘要、普通账号、虚构工作区、自有进程、资源上限、证据和失败处理清单。第二次部署按 G66、第三次部署按 G75：Claude 逐步说明并审阅冻结包、用户批准该冻结包后顺序执行；结果不符就停止并保留现场。S0-DB 和最终付费真实对话由用户执行，Codex 不连接生产。本文不提供云端资格签发命令；静态检查或规则例外不能代替具体安装、签署、验收和服务启动授权。普通测试和构建仍只在Hermes。
+G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 2026-10-12 决定的第三次部署必要的[限定主机能力验收](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md#first-install-acceptance)。具体流程先在 Hermes 验证，再冻结版本、摘要、普通账号、虚构工作区、自有进程、资源上限、证据和失败处理清单。第二次部署按 G66、第三次部署按 G75：Claude 逐步说明并审阅冻结包、用户批准该冻结包后顺序执行；结果不符就停止并保留现场。S0-DB 和最终付费真实对话由用户执行，Codex 不连接生产。本文不提供云端资格签发命令；静态检查或规则例外不能代替具体安装、签署、验收和服务启动授权。普通测试和构建仍只在Hermes。
 
 ## 阅读导航
 
@@ -187,7 +189,7 @@ G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 20
 - scripts/ci/redact-text.mjs
 - scripts/ci/artifact-files.mjs
 - scripts/ci/artifact-archive.py
-- docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md
+- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md
 - scripts/ci/contracts.mjs
 - scripts/ci/context.mjs
 - scripts/ci/check-policy.mjs
@@ -235,7 +237,7 @@ G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 20
 
 2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
 
-未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
+未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 本次 Web 重构追加 schema 30：`runs.model_selection_json` 保存用户提交时选择的模型引用和思考深度。备份、恢复和迁移必须保留此列及原 Trace/Payload；恢复不能用当前输入框的选择改写旧 Run，也不能给旧记录补造选择。目标配置仍须支持原模型、深度、预算与披露，缺失时报告失败而不是静默替换。浏览器的主题、主题色和未发送草稿属于客户端偏好，不随服务数据库恢复。
 
@@ -353,7 +355,7 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 
 该proof只用于本次首次部署的临时验证材料，不新增所有安装或升级的外部输入合同，不提供绕过源校验的参数。临时源码、整份锁定node_modules和Python保留至完整P8及删除前证据capture结束，再按原登记和引用规则清理；正式服务不依赖这些材料。本次composition.installedModules来自原Vite hook的固定10项直接解析，不是全部传递依赖或执行清单；Hermes-only独立控制层仍读固定11项实际安装dist文件，核候选bytes/SHA、只读mode、文件/父链身份，domain只作额外字节证据。原六报告加R2、场景、资源和期限不减，演练不签资格。
 
-- integration 的并发数由[CI 测试资源规则](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)按 CPU、内存和最多 4 个 worker 计算。该测试调度变更不改变安装、归档身份或服务启停合同；旧政策迁移保留原始来源摘要及其他门禁。正式入口同时传入归档和上下文，需要运行时的测试安装校验过的产物；直接开发运行两个变量均缺省时仍可读取 `dist/node-runtime`。测试与构建同时运行时使用 CI 的独立构建输出，避免覆盖开发模式的输入。
+- integration 的并发数由[CI 测试资源规则](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)按 CPU、内存和最多 4 个 worker 计算。该测试调度变更不改变安装、归档身份或服务启停合同；旧政策迁移保留原始来源摘要及其他门禁。正式入口同时传入归档和上下文，需要运行时的测试安装校验过的产物；直接开发运行两个变量均缺省时仍可读取 `dist/node-runtime`。测试与构建同时运行时使用 CI 的独立构建输出，避免覆盖开发模式的输入。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
 
@@ -370,7 +372,7 @@ Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Own
 
 打包会规范普通文件与目录权限，去掉 group/other write 并保留可执行位，避免构建主机 umask 让运行时拒绝实际安装。增加 Pi 工具与公开搜索的请求路由并不创建权限：`runPolicy.coding`/`publicSearch` 必须引用真实目录 Grant 和合格 Capability；搜索使用固定 Exa MCP 出口及受保护结果，不能把查询摘录当作完整网页。工作目录和 Capability 登记使用离线 CLI，要求独占锁、活动身份及明确目标确认。
 
-每次启动检查新鲜资格；同一次启动内复查不可变快照原字节与实时安装摘要，不以五分钟经过自动撤销正常工具，也不接受修改后的配置。快照不能迁移成另一主机的资格。当前 Hermes 操作由 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md] 单独约束。
+每次启动检查新鲜资格；同一次启动内复查不可变快照原字节与实时安装摘要，不以五分钟经过自动撤销正常工具，也不接受修改后的配置。快照不能迁移成另一主机的资格。当前 Hermes 操作由 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md] 单独约束。
 
 <a id="workspace-grant-replacement"></a>
 
@@ -437,7 +439,7 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 ## Safety and Preconditions
 
-模型配置遵循[网关迁移设计](../execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
+模型配置遵循[网关迁移设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
 
 Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlite`路径，实体派生索引单独使用同目录的`entities.sqlite`。实体索引由SDK工厂创建，不混入产品记忆主库；产品记忆仍由产品数据库与受保护Payload负责。备份恢复点只包含产品SQLite与受保护Payload文件，不包含Mem0索引；停机权威迁移会打包配置的整个Memory目录，因此也携带entities.sqlite，并检查Memory版本。实体索引本身不能替代产品状态和受保护Payload的验证。Mac对该新版本及网关行为尚未检查；Hermes结果不能证明生产服务器资格。
 
@@ -608,10 +610,10 @@ apparmor_parser -R /etc/apparmor.d/bwrap-0.11.2 && rm -- /etc/apparmor.d/bwrap-0
 
 Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArmor 行为。部署前须在实际生产机上，以最终运行账号检查实际程序版本、摘要、权限、匹配规则、全局开关和上述启动结果，并继续完成实际产品路径检查。这属于 R2-L2 的生产前提核对。云服务器不用于开发测试；生产部署或服务变更仍须逐次取得用户明确授权。2026-10-01 的旧结果只作历史记录，不能代替此次检查。本次 D10 只补文档，没有登录生产机或修改系统设置，产品启动时的自动检测仍留待第二轮以后。
 
-[SOURCE: docs/adr/0045-short-test-temp-root.md#apparmor]
+[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0045-short-test-temp-root.md#apparmor]
 [SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
-[SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
-[SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md]
+[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0021-platform-capability-runtime-isolation.md]
+[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0052-third-production-host-acceptance-exception.md]
 [SOURCE: docs/assets/others/Anthropic_SRT_AI_Agent_Integration_Guide_2026-09-07.md]
 
 [↑ 返回阅读导航](#阅读导航)
@@ -626,7 +628,7 @@ Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArm
 
 原始解压 tar 的正式上限为 `2 GiB + 256 MiB`，即 `2415919104` 字节，包括 tar 头、PAX 扩展及填充；普通文件逻辑内容总量仍受原有 `2 GiB` 上限约束。两者不是同一限制，也不是整个安装的磁盘占用上限。Hermes 测试按 G54 不设根盘剩余空间下限；每次运行记录运行前后可用空间、采样峰值下界和保留项，运行后归还本次占用。真实部署仍须检查目标容量，不能用 Hermes 的空间记录代替。
 
-解包器先完整读取 gzip，再对 tar 做完整预检，最后才创建解压目的目录及其缺失父目录。gzip 损坏、截断或原始大小超限先于目标创建失败；输入同时有 gzip 或大小错误与 tar 结构错误时，先报告前者。原有 tar 安全检查不放宽。独立 `extract` 的创建边界不表示安装 CLI 从未创建 prefix 或内部暂存根，CLI 会先准备安装目录。机制与错误选择见[归档解包与文件清单](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory)。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory]
+解包器先完整读取 gzip，再对 tar 做完整预检，最后才创建解压目的目录及其缺失父目录。gzip 损坏、截断或原始大小超限先于目标创建失败；输入同时有 gzip 或大小错误与 tar 结构错误时，先报告前者。原有 tar 安全检查不放宽。独立 `extract` 的创建边界不表示安装 CLI 从未创建 prefix 或内部暂存根，CLI 会先准备安装目录。机制与错误选择见[归档解包与文件清单](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory)。[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory]
 
 [↑ 返回阅读导航](#阅读导航)
 
@@ -773,7 +775,7 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 
 安装验收使用合成对话检查自动标题、刷新持久化和费用记录，再核对执行过程的模型请求、工具参数、执行与结果关联。记忆与上下文阶段仅展示发生记录，不公开原始正文；沿用 Thread 游标，不另设重连位置。以上变化不新增数据库 schema、配置字段或历史批量补名步骤，记忆检索不因生成标题而跳过。真实模型验收须使用本次获准的原模型和费用范围；隔离测试通过不等同于真实模型或迁移验收通过。
 
-启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用；未受保护的安装按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
+启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用；未受保护的安装按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 
 工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
 
@@ -855,7 +857,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 | `STATE_ROOT_PATH_UNSAFE` 或权限错误 | 回读规范绝对路径、owner/mode、authority file 和 runtime 目录 | 停止；人工修复已授权目录权限后重新 preflight，不递归清理未知目录 |
 | `SQLITE_STATE_ROOT_LOCKED` | 只读检查 lock owner、PID、token、socket 和进程存活 | 保留活锁；确认 owner 已死亡且符合回收规则后再从完整 preflight 重试 |
 | Worker UDS handshake/authentication failure | 核对 Worker/Agent 配置、boot token reference、deployment epoch/fence 和 socket owner | 停止 Agent；先修复同一运行 Worker，再重新启动，不降级为进程内执行 |
-| `SERVICE_AUTHORITY_MISMATCH` 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
+| SERVICE_AUTHORITY_MISMATCH 或 schema error | 对比 authority.json、SQLite deployment、config 和 bundled migration ledger | 停止；选择匹配的 prefix/state root 或走独立迁移/恢复决策，不手工改 authority |
 | forced stop 后无法恢复 | 保留 lock/socket/SQLite 现场，运行只读 doctor、db status 和进程检查 | 若正式 recovery 未证明安全则停止，转入 backup/restore 或 incident diagnosis 的独立 Runbook |
 | 需要 systemd/launchd 或 Hermes 操作 | 仅确认当前 Runbook scope 不包含服务管理器和远端部署 | 停止；选择经过验证且已授权的对应 Runbook，不猜测命令 |
 
@@ -924,7 +926,7 @@ Run 正常完成前停止其后台资源；SQLite 完成事务拒绝仍有未释
 此流程属于已配置活动主机上的停机管理操作，不建立新的 deployment authority，不自动启用公网入口，不向模型发送数据。账号与配置合同见 [2026-09-10-built-in-account-authentication-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/34de855ff109a53391cfc0d59706bcf44ba7f4a5/docs/archive/specs/2026-09-10-built-in-account-authentication-design.md)、[SOURCE: docs/adr/0027-built-in-owner-authentication.md]。
 
 1. 使用已安装构建并完成本 Runbook 的 Live-State Preflight。核对 `identity.kind` 为 `built-in`、配置中的唯一 Owner/Agent/deployment 与 `authority.json` 及数据库活动权威一致，服务已停止，数据库已按正常迁移流程升级到当前 schema。确认保存密码输入与验证器设置资料的目录归当前用户所有、权限为 0700；所有操作只针对选定 state root。
-2. 在该受保护目录准备 `account-input.json`（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
+2. 在该受保护目录准备 account-input.json（0600），只包含 `username` 与 `password`。用户名为 3–64 位字母、数字、点、下划线或连字符，首位为字母或数字；会统一为小写。密码为 12–128 个字符，不作为命令行参数、环境变量或诊断输出。目标设置文件必须尚不存在。
 3. 首次创建命令为 `himawari account create --config <绝对配置路径> --input <绝对输入文件路径> --output <新的绝对设置文件路径>`。macOS 默认从与服务相同的钥匙串 Payload source 解析配置的加密密钥；其他平台或文件 source 使用 `--secret-dir <受保护密钥目录>`。命令使用 state-root 独占锁并验证活动权威，不通过公网提供初始化入口。
 4. 输出的设置文件为 0600，包含用户名、验证器 `otpUri` 与 10 条一次性恢复码。验证器按 `otpUri` 中的 secret 设置 TOTP（SHA1、6 位、30 秒）；妥善保存恢复码。终端结果只报告设置文件路径和是否撤销旧会话。输入/设置资料按 Owner 的秘密保存策略保管，不进入 Git、普通备份日志、浏览器 localStorage 或模型上下文。
 5. 启动 Worker 与 Agent 后，从配置的同源地址打开控制中心。输入用户名/密码，再输入验证码或恢复码；只有第二步成功才建立产品会话。HTTPS Cookie 使用 Secure；明确配置的 loopback HTTP 仍执行同样的认证。跨设备通过 HTTPS 反向代理访问，listener 仍绑定 loopback，不用放宽 Host/Origin 来解决代理配置错误。
@@ -1062,7 +1064,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 模型结果使用以下说明原文：
 
-> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 [npm run dev > dev.log 2>&1 &](https://github.com/sixianli/himawari-agent/blob/1570949fbf3d02a7f1fed352cae27fdc63479f0c/package-lock.json)。
 
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 

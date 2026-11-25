@@ -32,12 +32,14 @@ describe("read-only tool offer", () => {
     expect([...readOnly].sort()).toEqual([
       "conversation_open",
       "conversation_search",
+      "mail_read",
       "memory_open",
       "perception_read",
       "recall",
       "reminder_list",
       "rule_list",
       "tool_result_recall",
+      "vault_list",
       "web_fetch",
       "web_search",
     ]);

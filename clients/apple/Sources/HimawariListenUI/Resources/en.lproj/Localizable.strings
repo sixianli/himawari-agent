@@ -47,12 +47,6 @@
 "ask.reason.airpods_route_mismatch" = "it didn't come through your AirPods";
 "ask.reason.addressed_unsure" = "I wasn't sure you were talking to me";
 "ask.reason.addressed_budget" = "today's spending limit for checking this was reached";
-"sensing.title" = "Sensing";
-"sensing.pausedTitle" = "Sensing paused";
-"sensing.pauseHour" = "Pause 1 hour";
-"sensing.resume" = "Resume";
-"sensing.today" = "%d noted today";
-"sensing.separator" = ", ";
 "notice.app" = "Himawari";
 "notice.now" = "now";
 "notice.paused.title" = "Listening paused. Tap to continue";

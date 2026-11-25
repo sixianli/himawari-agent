@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: "test/integration/muse-channel-push.test.ts, test/integration/muse-intake-control.test.ts, test/integration/muse-intake-http.test.ts, test/integration/muse-intake-store.test.ts, test/integration/muse-reference-browser.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0162：Muse 的数据用服务令牌加应用密钥推过来，只存系统记录来源的原件
@@ -52,7 +54,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 - **Cloudflare Worker 中转**：多一个要维护的组件和一份密钥，而 Access 服务令牌本来就是为机器调用设计的。
 - **邮件当通道**：延迟大、难判断“没送到”、正文要从邮件里解析，且违背“数据自持”的直接入口。
 - **整条路径绕过 Access，只靠应用密钥**：少一个要配的东西，但边缘层的限流和审计全丢；放弃，代价是 Andy 要多建一个 Access 应用和一个服务令牌。
-- **Muse 只发一个 `Authorization` 头（用 `read_service_tokens_from_header`）**：这会占用我们的应用层 Bearer 头，两层认证就合并成一层。
+- **Muse 只发一个 `Authorization` 头（用 read_service_tokens_from_header）**：这会占用我们的应用层 Bearer 头，两层认证就合并成一层。
 
 <a id="consequences"></a>
 
@@ -68,7 +70,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 ## 关联文档
 
 - [Muse 自动接收运行手册](../runbooks/muse-intake-runbook.md)
-- [ADR 0089：只用网页推送，入口改为公网域名](0089-web-push-only-owner-entry.md)
+- [ADR 0089：只用网页推送，入口改为公网域名](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)
 - [ADR 0143：决策账本](0143-decision-ledger-for-model-gate-decisions.md)
 - Cloudflare：<https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/>
 

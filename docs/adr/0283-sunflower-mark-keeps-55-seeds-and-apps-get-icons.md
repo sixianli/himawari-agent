@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0126-sunflower-mark-grows-233-seeds.md
+supersedes: ""
 superseded_by: ""
 date: "2026-11-15"
+covers: "apps/control-center/test/brand.unit.test.ts, assets/brand/himawari/README.md, assets/brand/himawari/v4/logo-sunflower-disc.svg, clients/apple/README.md, scripts/render-brand-assets.mjs, test/tooling/apple-app-icon.test.mjs, test/tooling/brand-asset.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0283：标志的种子从 233 粒减到 55 粒，所有尺寸同一个点数；苹果三端 App 用它做桌面图标
@@ -25,9 +27,9 @@ date: "2026-11-15"
 
 2026-11-15，Andy 发现装到 iPhone 上的 Himawari App 在桌面上没有图标（显示系统默认的空白图标）。查下来，main 上 iPhone、Mac、手表三个 App 都没有 App 图标资源集（`AppIcon.appiconset`），工程设置里也没有写图标名（`ASSETCATALOG_COMPILER_APPICON_NAME`），所以 Xcode 打包时根本没有图标可放。
 
-同一天 Andy 说现在的标志“圆点数量太多了”，“当 logo 或者是 icon 很小的时候，就看不出来是个什么”。[ADR 0126](0126-sunflower-mark-grows-233-seeds.md) 定的标志在大图用 233 粒种子、小图用 89 粒；24px 以下 233 粒挤成一团，看不出一粒粒种子，也看不出向日葵。
+同一天 Andy 说现在的标志“圆点数量太多了”，“当 logo 或者是 icon 很小的时候，就看不出来是个什么”。[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md) 定的标志在大图用 233 粒种子、小图用 89 粒；24px 以下 233 粒挤成一团，看不出一粒粒种子，也看不出向日葵。
 
-线程先后出了六批全新造型（写实向日葵、扁平花瓣、字母和假名、抽象几何、细线、有体积的图标、家纹），Andy 都没有选，最后定下：“你用之前选定的那一个，然后把点弄少一点”。线程按同一套数学做了 233、89、55、34、21 五档对比（项目共享文件夹 `app-icon/logo-seed-counts-v7.html`，带动效），Andy 选“55 粒”。
+线程先后出了六批全新造型（写实向日葵、扁平花瓣、字母和假名、抽象几何、细线、有体积的图标、家纹），Andy 都没有选，最后定下：“你用之前选定的那一个，然后把点弄少一点”。线程按同一套数学做了 233、89、55、34、21 五档对比（项目共享文件夹 app-icon/logo-seed-counts-v7.html，带动效），Andy 选“55 粒”。
 
 [↑ 返回阅读导航](#contents)
 
@@ -36,7 +38,7 @@ date: "2026-11-15"
 ## 决定
 
 1. **标志的样子不变，只改种子数。** 仍然只由圆点构成；第 n 粒种子（从花心起）距中心 `19.7/√55 × √年龄`，角度 `n × 137.508°`（黄金角）；颜色按年龄从亮白金色（最新）经深褐、琥珀过渡到金色（最老）。种子数是 **55**（斐波那契数，花盘上顺时针 21 条、逆时针 34 条螺旋都还能看出来）。
-2. **所有尺寸同一个点数。** 不再分大图 233 粒、小图 89 粒：网页的 `SunflowerMark` 去掉 `detail` 参数，苹果端的 `SunflowerMark` 去掉 `detail:` 参数和 `SunflowerDetail` 类型。
+2. **所有尺寸同一个点数。** 不再分大图 233 粒、小图 89 粒：网页的 `SunflowerMark` 去掉 `detail` 参数，苹果端的 `SunflowerMark` 去掉 `detail:` 参数和 [SunflowerDetail](https://github.com/sixianli/himawari-agent/blob/c56494f89add7510fb35914ab02db1f4ee414112/apps/control-center/src/components/brand-seeds.ts) 类型。
 3. **种子按比例放大。** 点数少了，每粒放大到让花盘仍然铺满：半径从 `0.43 + 0.72 × √(年龄占比)` 改为 `0.8 + 1.33 × √(年龄占比)`（约为原来的 1.85 倍，即 `√(233/55) × 0.9`）。最老种子的淡出从 6 粒缩到 1.5 粒，免得外圈一大半都是半透明的。
 4. **动效规则不变。** 仍然只有首页大图（每秒 0.35 粒）和正在回答的标志会长新种子，其余静止；系统开启“减少动态效果”时一律静止；全页共用一个逐帧计时器。正在回答时每秒长的粒数从 7 降到 3.4（`7 × √(55/233)`），否则 55 粒每 8 秒就整盘换一遍，看起来像在闪。苹果端 `SunflowerMark(growing:)` 用同一个速度。
 5. **苹果三端的桌面图标。** 新建 `clients/apple/App/Brand.xcassets`，放两套图标：
@@ -75,7 +77,7 @@ date: "2026-11-15"
 
 ## 关联文档
 
-- [ADR 0126：标志换成“生长”的向日葵](0126-sunflower-mark-grows-233-seeds.md)（本 ADR 取代它）
+- [ADR 0126：标志换成“生长”的向日葵](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)（本 ADR 取代它）
 - [界面设计规范](../ui-ux-design-guide.md)
 - [标志资源说明](../../assets/brand/himawari/README.md)
 

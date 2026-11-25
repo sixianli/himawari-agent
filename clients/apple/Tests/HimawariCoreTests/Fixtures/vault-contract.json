@@ -1,0 +1,145 @@
+{
+  "format": "himawari-vault-v1",
+  "itemId": {
+    "accept": ["vi_AbCdEfGhIjKlMnOpQrStUv", "vi_0123456789-_abcdefghij"],
+    "reject": [
+      "vi_short",
+      "vr_AbCdEfGhIjKlMnOpQrStUv",
+      "vi_AbCdEfGhIjKlMnOpQrStU!",
+      "vi_AbCdEfGhIjKlMnOpQrStUvX",
+      ""
+    ]
+  },
+  "requestId": {
+    "accept": ["vr_AbCdEfGhIjKlMnOpQrStUv"],
+    "reject": ["vi_AbCdEfGhIjKlMnOpQrStUv", "vr_abc"]
+  },
+  "nonce": {
+    "accept": [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE"
+    ],
+    "reject": [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    ]
+  },
+  "origin": {
+    "accept": [
+      ["https://bank.example.com", "https://bank.example.com"],
+      ["https://bank.example.com/", "https://bank.example.com"],
+      ["https://m.bank.example.com:8443", "https://m.bank.example.com:8443"],
+      ["https://bank.example.com:443", "https://bank.example.com"]
+    ],
+    "reject": [
+      "http://bank.example.com",
+      "https://bank.example.com/login",
+      "https://user@bank.example.com",
+      "https://bank.example.com?x=1",
+      "https://bank.example.com#a",
+      "bank.example.com",
+      "https://",
+      "ftp://bank.example.com",
+      " https://bank.example.com",
+      "https://bank.example.com/ "
+    ]
+  },
+  "name": {
+    "accept": ["招商银行网银", "GitHub token", "a"],
+    "reject": [
+      "",
+      " leading",
+      "trailing ",
+      "has​zero-width",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
+  },
+  "fields": {
+    "accept": [
+      ["login", ["password"]],
+      ["login", ["password", "username", "totp"]],
+      ["api_key", ["api_key"]]
+    ],
+    "reject": [
+      ["login", ["username"]],
+      ["login", ["password", "password"]],
+      ["api_key", ["password"]],
+      ["login", ["password", "notes"]],
+      ["unknown", ["password"]]
+    ]
+  },
+  "vector": {
+    "masterKey": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+    "itemKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+    "item": {
+      "id": "vi_AbCdEfGhIjKlMnOpQrStUv",
+      "name": "招商银行 网银",
+      "kind": "login",
+      "origins": ["https://bank.example.com", "https://m.bank.example.com:8443"],
+      "fields": ["password", "totp", "username"],
+      "version": 3,
+      "backgroundAllowed": false,
+      "wrappedKey": "OJcMhbm3WDiSpM1vIJuD1qnNNVIJ0hTf75YUIS9f/c6Qo98Y9w4CnxSW0UGHkewWlVHlFpwsGvui/nsG",
+      "ciphertexts": {
+        "password": "tByJMmanrteJYrzRyAz6eC7I+9mY5n5XMjMmS01n940gxxayiFeZE/6q",
+        "username": "1/QeE/xrSy6amceL7zkUkoLJct6dNGeRcqKCR4dVWkY=",
+        "totp": "z1VcpO2rG62Spesipin0N98DIoHXBLFE8H7kQLEalQAs9YZr1c43381Ph5Q="
+      }
+    },
+    "values": {
+      "password": "pässwörd-123",
+      "username": "andy",
+      "totp": "JBSWY3DPEHPK3PXP"
+    },
+    "manifest": {
+      "version": 5,
+      "signature": "WPW5fl8RXwwq3+kHZKXitXfQJk0/zvwwCShCY/C65f4=",
+      "bytes": "himawari-vault-v1 manifest\nversion 5\nvi_AbCdEfGhIjKlMnOpQrStUv\t5oub5ZWG6ZO26KGMIOe9kemTtg==\tlogin\thttps://bank.example.com,https://m.bank.example.com:8443\tpassword,totp,username\t3\t0"
+    }
+  },
+  "totp": {
+    "seed": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    "codes": [
+      [59, "287082"],
+      [1111111109, "081804"],
+      [1111111111, "050471"],
+      [1234567890, "005924"],
+      [2000000000, "279037"],
+      [20000000000, "353130"]
+    ]
+  },
+  "phoneVector": {
+    "ephemeralPrivateKey": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+    "item": {
+      "backgroundAllowed": true,
+      "ciphertexts": {
+        "password": "XGIcgad/HQpwhhB3ypIea5eB2sEm5ufBGncMjFIZKSwR44rKumK8mSkH",
+        "totp": "J0F2hFYYvY61TV3dfDYn3kQiOav1bSzwj3j2BTsLWLKknWLNYFLvi9/9T29jqcHpgyGf+VZMXJ91GAI+",
+        "username": "eHKVqJoWJ16oMXWkkE3EkoqQe/43DYVtq7V5Jc+FIfI="
+      },
+      "fields": ["password", "totp", "username"],
+      "id": "vi_PhoneVectorItem0000001",
+      "kind": "login",
+      "name": "えきねっと JR",
+      "origins": ["https://www.eki-net.com"],
+      "version": 4,
+      "wrappedKey": "uZP0fC70wm4e+scCIDFNsUTSMXyWlwzXpo70DxbK9KJ6kd4XjfSuZN9OQSvjdn9coV0ImLS4JBvMBl2U"
+    },
+    "manifest": {
+      "signature": "zP4JYyVSV274sUJWj8Nd+sUmm672LvP5+1W5uIdR52c=",
+      "version": 9
+    },
+    "masterKey": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
+    "release": {
+      "ciphertext": "znCqbex4pdLLEk0yl6T+J0uk/QM15w5CKTW7VYsha9HryIX2JbpHCh2xHqSNo3dlA0ZM+gtMgh2p/kQTzQKTM8wLAV6q3TYqvsrcoPkJ2yq6dQxTn957aCdRYQB77Jw5YZTyDQp/PdBoEiWCbmslmzk4oSILzMPMsyZMBGbaD4yHVHSEWFFA8GhhLKsOHBCLvS46xrY0U/IjaqASag9FGXqEtrQ=",
+      "enc": "BGXtzSgcChQg69kmF0RTbYusWPUTR1V1se9Iwqa9tWmFC67vZiag4eeLvdIgl9yPfsEurFC2AT726tF/IzGjqHs="
+    },
+    "requestId": "vr_PhoneVectorRequest0001",
+    "totpAt59": "287082",
+    "values": {
+      "password": "ünïcode-pw-7",
+      "username": "andy"
+    }
+  }
+}

@@ -3,6 +3,8 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
+covers: ".agents/instructions/prompt-prefix.md, scripts/check-glossary.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # Himawari 词表

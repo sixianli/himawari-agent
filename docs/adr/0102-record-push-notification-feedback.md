@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-28"
+covers: "AGENTS.md, apps/control-center/public/sw.js"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0102：记录每条推送通知的发出和 Andy 的反应，为打扰校准积累数据
@@ -26,11 +28,11 @@ date: "2026-10-28"
 
 ## 背景
 
-[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 第 10 条要求：“连续 30 天统计主动提醒的命中率与误扰率，命中率上升、误扰率下降，趋势可量化”；护城河第 3 样“主动性的校准数据”也只能靠长期记录积累。评审（[ADR 0101](0101-adopt-product-vision-v2-1.md)）指出系统现在不记录“发了哪条提醒、Andy 怎么反应”。Andy 2026-10-28 14:12（日本时间）对这条建议回复：“同意”。
+[产品愿景](../product-vision.md#jarvis-test) 的 Jarvis Test 第 10 条要求：“连续 30 天统计主动提醒的命中率与误扰率，命中率上升、误扰率下降，趋势可量化”；护城河第 3 样“主动性的校准数据”也只能靠长期记录积累。评审（[ADR 0101](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md)）指出系统现在不记录“发了哪条提醒、Andy 怎么反应”。Andy 2026-10-28 14:12（日本时间）对这条建议回复：“同意”。
 
 现状（读代码确认）：
 
-- 网页推送（[ADR 0089](0089-web-push-only-owner-entry.md)，服务器经浏览器厂商的推送服务把通知送到 Andy 开了通知的设备）有三类：到期记忆提醒（reminder）、等待审批（approval）、任务完成或失败（run）。
+- 网页推送（[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)，服务器经浏览器厂商的推送服务把通知送到 Andy 开了通知的设备）有三类：到期记忆提醒（reminder）、等待审批（approval）、任务完成或失败（run）。
 - 发送队列表 `web_push_outbox` 和每台设备的发送记录表 `web_push_attempts`（迁移 0058）记下了“发给哪台设备、成没成功”，但队列在过期 7 天后连同发送记录一起删掉，所以留不住 30 天。
 - 设备上的后台脚本（`apps/control-center/public/sw.js`，Service Worker：浏览器在页面关着时也能运行的脚本）只在点通知时打开对应页面，不告诉服务器“点了”；划掉通知时什么都不做。
 
@@ -93,7 +95,7 @@ ORDER BY f.first_sent_at;
 
 - Google Analytics 的自动事件表（[GA4 automatically collected events](https://support.google.com/analytics/answer/9234069)）给 Firebase 推送记 `notification_receive`（“when a notification sent by FCM is received by a device when the app is in the background”，仅 Android）、`notification_open`（“when a user opens a notification sent by FCM”）、`notification_dismiss`（“when a user dismisses a notification sent by FCM”，仅 Android）。Himawari 的“送达 / 点开 / 划掉”与这三项对应，也同样接受“划掉只在部分平台能拿到”。
 - MDN 对 `notificationclose` 的说明：“fires when a user closes a displayed notification spawned by ServiceWorkerRegistration.showNotification()”，并标注 “Limited availability”。[MDN notificationclose](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope/notificationclose_event)
-- MDN 浏览器兼容数据（[mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) 的 `api/ServiceWorkerGlobalScope.json`）：`notificationclose` 在 Chrome 50、Firefox 44、macOS Safari 16 起支持，iOS Safari 标为不支持；`notificationclick` 的 iOS Safari 也标为不支持。所以 Andy 主要用的 iPhone 很可能报不出“划掉”，点开能否回报要上线后在 iPhone 上实测一次。
+- MDN 浏览器兼容数据（[mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) 的 api/ServiceWorkerGlobalScope.json）：`notificationclose` 在 Chrome 50、Firefox 44、macOS Safari 16 起支持，iOS Safari 标为不支持；`notificationclick` 的 iOS Safari 也标为不支持。所以 Andy 主要用的 iPhone 很可能报不出“划掉”，点开能否回报要上线后在 iPhone 上实测一次。
 
 <a id="pi-reuse"></a>
 
@@ -115,8 +117,8 @@ ORDER BY f.first_sent_at;
 ## 关联文档
 
 - [SOURCE: docs/product-vision.md#jarvis-test]
-- [SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
-- [SOURCE: docs/adr/0101-adopt-product-vision-v2-1.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0101-adopt-product-vision-v2-1.md]
 - [SOURCE: docs/backlog/BL-20261028-004-proactive-notification-feedback-log.md]
 - 工程案例库：[案例 38](../engineering-casebook.md#case-push-feedback)
 

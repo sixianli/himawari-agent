@@ -7,7 +7,7 @@ import {
 import { PROACTIVE_SOURCE_NAME_PATTERN } from "@himawari-agent/application/proactive-sources";
 import type { JsonSchema } from "./schema.js";
 
-export const FORMAT_VERSION = "himawari.data-export.v4" as const;
+export const FORMAT_VERSION = "himawari.data-export.v5" as const;
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const CATEGORIES = [
@@ -224,63 +224,6 @@ export const EXTERNAL_PROPOSAL_SCHEMA: JsonSchema = objectOf(
   },
   [],
   "其他 agent 通过 MCP 提议的一条记忆和它的处理结果。content 为 null 表示正文已按规则删掉（拒绝满 30 天，或被替换）。content 被扣留时 textSha256 为 null，摘要和原文一起在密封文件里。keys 是各客户端的固定编号现在指向这一条的；unkeyedClients 是不带编号送过这段正文的客户端。",
-);
-
-export const OWNER_PROPOSAL_ORIGINS = [
-  "owner_said",
-  "inferred",
-  "external_agent",
-  "external_content",
-] as const;
-export const OWNER_PROPOSAL_STATUSES = [
-  "pending",
-  "accepted",
-  "rejected",
-  "expired",
-  "superseded",
-  "withdrawn",
-] as const;
-export const OWNER_PROPOSAL_EXECUTIONS = [
-  "not_started",
-  "running",
-  "executed_unverified",
-  "succeeded",
-  "failed",
-  "unknown",
-  "undone",
-] as const;
-
-export const ownerProposalBasisKey = (id: string): string => `ownerProposal/${id}/basis`;
-export const ownerProposalExecutionKey = (id: string): string => `ownerProposal/${id}/execution`;
-
-export const OWNER_PROPOSAL_SCHEMA: JsonSchema = objectOf(
-  {
-    id: text(1, 128),
-    type: text(1, 64),
-    summary: text(1, 200),
-    effect: text(1, 200),
-    origin: enumOf(OWNER_PROPOSAL_ORIGINS),
-    sourceRef: nullable(text(1, 256)),
-    sourceVersion: nullable(text(1, 128)),
-    version: integer(1),
-    fingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" },
-    status: enumOf(OWNER_PROPOSAL_STATUSES),
-    execStatus: enumOf(OWNER_PROPOSAL_EXECUTIONS),
-    proposedAt: timestamp,
-    expiresAt: timestamp,
-    decidedAt: nullable(timestamp),
-    proposedCount: integer(1),
-    rejectCount: integer(0),
-    lastRejectedAt: nullable(timestamp),
-    attempts: integer(0),
-    executedAt: nullable(timestamp),
-    requiresFullRead: { type: "boolean" },
-    requiresPresence: { type: "boolean" },
-    basis: nullableText,
-    execution: nullableText,
-  },
-  [],
-  "一条提给主人的下一步和它的处理结果：主人的决定（status）和执行（execStatus）分开记。basis 是主人看到的依据和处理方的数据（JSON 文字），execution 是执行改了什么（撤销用）；两者为 null 表示载荷已按规则清掉。导入时执行中和已执行待核实的记成结果不明，租约不导出。",
 );
 
 const exportedPayload = nullable({ type: "object" });
@@ -694,7 +637,6 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       rules: integer(0),
       enforcedRules: integer(0),
       externalProposals: integer(0),
-      ownerProposals: integer(0),
       ruleHistoryVersions: integer(0),
       sealedOriginals: integer(0),
       sealedEvidenceRows: integer(0),
@@ -723,7 +665,6 @@ export const MANIFEST_SCHEMA: JsonSchema = objectOf({
       "rules",
       "enforcedRules",
       "externalProposals",
-      "ownerProposals",
       "ruleHistoryVersions",
       "sealedOriginals",
       "sealedEvidenceRows",
@@ -760,7 +701,6 @@ export const SCHEMA_FILES: readonly { readonly path: string; readonly schema: Js
     { path: "schema/limit-usage.schema.json", schema: LIMIT_USAGE_SCHEMA },
     { path: "schema/manifest.schema.json", schema: MANIFEST_SCHEMA },
     { path: "schema/memories.schema.json", schema: MEMORY_SCHEMA },
-    { path: "schema/owner-proposals.schema.json", schema: OWNER_PROPOSAL_SCHEMA },
     { path: "schema/paired-devices.schema.json", schema: PAIRED_DEVICE_SCHEMA },
     { path: "schema/people.schema.json", schema: PERSON_SCHEMA },
     { path: "schema/perception-episodes.schema.json", schema: PERCEPTION_EPISODE_SCHEMA },
@@ -788,7 +728,6 @@ export const DATA_FILES = Object.freeze({
   decisions: "data/decisions.jsonl",
   rules: "data/rules.jsonl",
   externalProposals: "data/external-memory-proposals.jsonl",
-  ownerProposals: "data/owner-proposals.jsonl",
 } as const);
 
 export const PERCEPTION_FILE_KEYS = [

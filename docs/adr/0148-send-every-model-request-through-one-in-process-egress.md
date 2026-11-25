@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md
+supersedes: ""
 superseded_by: ""
 date: "2026-11-01"
+covers: "packages/application/src/services/model-egress.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0148：所有模型和嵌入请求只走一个进程内出口，在这里统一遮盖，回复里的占位符显示时还原
@@ -24,7 +26,7 @@ date: "2026-11-01"
 
 ## 背景
 
-[ADR 0146](0146-redact-sensitive-text-before-it-leaves-for-any-model.md) 在三个发送点（主对话、辅助调用、嵌入）各自调用脱敏函数，并用一道自动检查登记这三个点。2026-11-01，Andy 提出：所有模型请求出系统之前应统一过一个自己的出口，脱敏只在那里做，而不是每接入一个厂商就把请求和脱敏逻辑重写一遍；回复显示给用户时要把占位符还原成原文；并要求参考主流开源模型网关和 Magpie 的源码。方案全文和前提来源见项目文件 `redaction/gateway-plan.md`，Andy 当天回复“同意”。
+[ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md) 在三个发送点（主对话、辅助调用、嵌入）各自调用脱敏函数，并用一道自动检查登记这三个点。2026-11-01，Andy 提出：所有模型请求出系统之前应统一过一个自己的出口，脱敏只在那里做，而不是每接入一个厂商就把请求和脱敏逻辑重写一遍；回复显示给用户时要把占位符还原成原文；并要求参考主流开源模型网关和 Magpie 的源码。方案全文和前提来源见项目文件 redaction/gateway-plan.md，Andy 当天回复“同意”。
 
 0146 的三个缺口：
 
@@ -65,7 +67,7 @@ date: "2026-11-01"
 - LiteLLM（提交 `60fc121`）：每种接口一个翻译处理器，只取消息内容和工具调用，没取到的位置不管；嵌入输入不是字符串就跳过；对照表放在本次请求里。
 - Portkey 开源网关（`669825c`）：只检查最后一条消息，嵌入判定为通过。
 - Bifrost（`496693a`）：开源仓库没有脱敏插件。
-- Magpie（`9d08993`）：占位符是值的带密钥哈希；对照表只在内存；流式还原要缓冲；遍历所有字符串，按键名加位置排除；`LESSONS.md` 记录了由键名排除造成的漏遮和结构字段被遮造成的 400。
+- Magpie（`9d08993`）：占位符是值的带密钥哈希；对照表只在内存；流式还原要缓冲；遍历所有字符串，按键名加位置排除；LESSONS.md 记录了由键名排除造成的漏遮和结构字段被遮造成的 400。
 - Presidio、Google DLP：默认替换成类型名，只有加密类变换可逆。
 
 <a id="consequences"></a>
@@ -83,4 +85,4 @@ date: "2026-11-01"
 
 ## 关联文档
 
-[ADR 0146](0146-redact-sensitive-text-before-it-leaves-for-any-model.md)、[ADR 0134](0134-adopt-product-vision-v2-2.md)、[产品愿景](../product-vision.md#principles)
+[ADR 0146](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0146-redact-sensitive-text-before-it-leaves-for-any-model.md)、[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)、[产品愿景](../product-vision.md#principles)

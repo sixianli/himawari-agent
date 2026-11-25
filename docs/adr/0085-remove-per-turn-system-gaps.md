@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-10-26"
+covers: "apps/agent-service/src/production-titled-runtime.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0085：去掉每轮回答里 Himawari 自己造成的等待

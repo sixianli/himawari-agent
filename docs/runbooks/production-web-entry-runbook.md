@@ -6,17 +6,19 @@ contract_sha256: "sha256:b68b57aa515784f37a01bd767e2e8df37445dc9e8967675d0d34948
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
+covers: "apps/agent-service/src/service-main.ts, packages/platform-node/src/http-gateway-server.ts, packages/platform-node/src/identity-gateway.ts, scripts/delivery-mode/rollback-remote.py, scripts/operations/prod-read.sh"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 生产网页入口与登录 Runbook
 
 <!-- runbook-contract:
-- docs/adr/0089-web-push-only-owner-entry.md
+- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md
 - docs/backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md
 - packages/platform-node/src/identity-gateway.ts
 -->
 
-本手册记录 2026-10-27 起生产网页怎样从公网打开、怎样登录，以及登录出问题时怎样查、怎样退回。起因是为了让 iPhone 收网页推送（Web Push，浏览器在网页关着时也能弹出的通知），生产入口从“Mac 上开 ssh 隧道访问 `127.0.0.1:8400`”改成了公网域名 `https://himawari.siyi.win`（[ADR 0089](../adr/0089-web-push-only-owner-entry.md)）。切换当天的两次停服见[工程案例 30](../engineering-casebook.md#case-login-switch-outage)。本手册里的时间都是日本时间（JST）。
+本手册记录 2026-10-27 起生产网页怎样从公网打开、怎样登录，以及登录出问题时怎样查、怎样退回。起因是为了让 iPhone 收网页推送（Web Push，浏览器在网页关着时也能弹出的通知），生产入口从“Mac 上开 ssh 隧道访问 `127.0.0.1:8400`”改成了公网域名 `https://himawari.siyi.win`（[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)）。切换当天的两次停服见[工程案例 30](../engineering-casebook.md#case-login-switch-outage)。本手册里的时间都是日本时间（JST）。
 
 ## 阅读导航
 
@@ -36,8 +38,8 @@ date: "2026-10-27"
 ## Scope
 
 - 适用：用户在手机或电脑上打开生产网页、登录、开通知；Claude 排查“打不开”“登不进”“收不到通知”；改 Cloudflare Access（Cloudflare 提供的登录关卡）的登录方式或允许的邮箱；把登录方式退回 Himawari 自带登录。
-- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](production-server-access-runbook.md)）。
-- 目标：生产机 `84.247.157.41` 上的 `/etc/himawari/config.json`、`himawari-prod.service`、数据库里 `owner_identity_bindings`（主人和登录身份的绑定表）那一行、`cloudflared.service`（Cloudflare 隧道程序）；Cloudflare 账号 `341855223c647728540929c55d92ccc8` 下的隧道 `himawari-prod` 和 Access 应用 “Himawari”。
+- 不适用：Hermes 测试机的入口（`https://himawari-test.siyi.win`，见 [Hermes 控制中心升级 Runbook](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/runbooks/hermes-control-center-upgrade-runbook.md)）；程序上线和回滚（按各次上线包执行）；服务器登录和内核（见[生产云服务器访问 Runbook](production-server-access-runbook.md)）。
+- 目标：生产机 `84.247.157.41` 上的 `/etc/himawari/config.json`、`himawari-prod.service`、数据库里 `owner_identity_bindings`（主人和登录身份的绑定表）那一行、cloudflared.service（Cloudflare 隧道程序）；Cloudflare 账号 `341855223c647728540929c55d92ccc8` 下的隧道 `himawari-prod` 和 Access 应用 “Himawari”。
 
 [返回导航](#阅读导航)
 
@@ -45,7 +47,7 @@ date: "2026-10-27"
 
 ## Authoritative Sources
 
-- 只用网页推送、入口改成公网域名并由 Access 认证的决定：[SOURCE: docs/adr/0089-web-push-only-owner-entry.md]
+- 只用网页推送、入口改成公网域名并由 Access 认证的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md]
 - 改配置和改登录方式也要走预检和可验证回滚：[SOURCE: docs/backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md]
 - Access 身份怎样换成 Himawari 的主人：`packages/platform-node/src/identity-gateway.ts`。绑定用的引用是 `sha256:` 加上 `签发方地址 + 空字符 + 用户编号` 的 SHA-256；签发方是 `https://sinimite-work.cloudflareaccess.com`，用户编号是 Access 令牌里的 `sub`，同一 Cloudflare 账号下一个邮箱对应一个编号。每次登录还会带着 `CF_Authorization` cookie 去签发方的 `/cdn-cgi/access/get-identity` 核对编号。
 - 网页端口什么时候打开：`apps/agent-service/src/service-main.ts` 的 `webEnabled`，`publicMode` 为真，或身份方式是 `built-in` 且配了 `http`。
@@ -101,11 +103,11 @@ date: "2026-10-27"
    4. 停服，再把数据库目录和 `authority.json` 一起复制到同一个 `/root/cfaccess-<时间>/snapshot/`。
    5. 装新配置；以 `himawari-prod` 身份执行一条 `UPDATE owner_identity_bindings SET external_subject_ref=<新引用>, bound_at=<现在> WHERE owner_id='owner:first-production' AND external_subject_ref=<旧引用>`，要求正好改 1 行。
    6. 启动，等日志里 `service.ready` 出现并且[结果验证](#verification)全部通过。等 150 秒还没好，按[回退](#rollback)处理。
-   2026-10-27 成功的那次用的就是这套步骤，脚本留在当天 Claude 会话的临时目录（`switch-cfaccess-v2.sh`），没有提交进仓库。
+   2026-10-27 成功的那次用的就是这套步骤，脚本留在当天 Claude 会话的临时目录（switch-cfaccess-v2.sh），没有提交进仓库。
 5. **改域名整域的 TLS 或 HTTPS 设置（最低 TLS 版本、“始终用 HTTPS”）**：
    1. 用户在对话里同意，并建一把只含 `Zone → Zone Settings → Edit`、只限 `siyi.win`、次日过期的 API Token，用 `umask 077; cat > ~/.cloudflare-edit-token` 存在 Mac 上。不要借用别的任务留下的 Cloudflare 凭据。
    2. 改前从外网记一次握手基线，命令见[结果验证](#verification)最后一条。
-   3. 读出当前值存档：`GET https://api.cloudflare.com/client/v4/zones/<zone_id>/settings/<设置名>`，设置名是 `min_tls_version`、`always_use_https`、`tls_1_3`、`ssl`。`siyi.win` 的 zone 编号是 `b94608b666d43ee024b95a21a337fdd8`。
+   3. 读出当前值存档：`GET https://api.cloudflare.com/client/v4/zones/<zone_id>/settings/<设置名>`，设置名是 min_tls_version、always_use_https、tls_1_3、`ssl`。`siyi.win` 的 zone 编号是 `b94608b666d43ee024b95a21a337fdd8`。
    4. 修改：`PATCH` 同一地址，正文是 `{"value":"1.2"}` 或 `{"value":"on"}`；再 `GET` 一次，读回的值要和请求的一致。
    5. 按[结果验证](#verification)最后两条从外网复测，然后删掉 `~/.cloudflare-edit-token`，请用户在控制台删掉这把 Token。
    2026-10-28 15:04 用这套步骤把最低 TLS 从 `1.0` 改成了 `1.2`，15:09 把“始终用 HTTPS”从 `off` 改成了 `on`（[工程案例 40](../engineering-casebook.md#case-min-tls)）。
@@ -132,7 +134,7 @@ date: "2026-10-27"
 - 2026-10-27 切换的备份和快照在生产机：`/root/cfaccess-20261027T035251Z/`（成功那次：`config.before.json`、`config.next.json`、`snapshot/` 里的数据库和 `authority.json`）、`/root/cfaccess-20261027T035109Z/`（因读不到 `/root` 失败那次）、`/root/config-backups/`、`/root/db-backups/`。
 - 每次执行新建 `/root/cfaccess-<UTC 时间>/` 放备份和快照，不复用旧目录；过程结论记进当次的案例或 Backlog，不写进本手册。
 - 不记录隧道令牌、Access 令牌、cookie、推送私钥或 `secrets/` 目录的内容。
-- 2026-10-28 最低 TLS 改动：改前读回 `min_tls_version` 是 `1.0`，`always_use_https` 是 `off`；改前外网实测 TLS 1.0 和 1.1 都能握手，改后三个子域名都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常，6 个公开文件都是 200。15:09 打开“始终用 HTTPS”后，三个子域名的 `http://` 首页都是 301 跳到对应的 https 地址。
+- 2026-10-28 最低 TLS 改动：改前读回 min_tls_version 是 `1.0`，always_use_https 是 `off`；改前外网实测 TLS 1.0 和 1.1 都能握手，改后三个子域名都报 `tlsv1 alert protocol version`，1.2 和 1.3 正常，6 个公开文件都是 200。15:09 打开“始终用 HTTPS”后，三个子域名的 `http://` 首页都是 301 跳到对应的 https 地址。
 
 [返回导航](#阅读导航)
 
@@ -147,7 +149,7 @@ date: "2026-10-27"
 3. 两级都起不来：停服，保留日志，交给 Claude 诊断，不再试第三种改法。
 4. **退回自带登录**（Access 本身坏了、短期修不好时）：旧配置的 `publicMode` 是 `false`、`identity.kind` 是 `built-in`，绑定引用是 `built-in:owner:first-production`，用户名 `andy`。退回后浏览器仍从公网域名进，要过 Access 再登 Himawari 自带登录；若连 Access 也要绕开，还要把 `publicOrigin` 改回 `http://127.0.0.1:8400`，用户改用 Mac 上的 ssh 隧道 `ssh -f -N -L 8400:127.0.0.1:8400 root@84.247.157.41`，手机就收不到推送了。
 
-5. **撤回域名 TLS 设置**：只有出现确实需要旧版本 TLS 的客户端时才做。用[步骤](#procedure)第 5 步的 Token 把 `min_tls_version` 按存档 `PATCH` 回原值（改前是 `1.0`），或把 `always_use_https` 改回 `off`，再读回确认。这一项不用停服，立即生效。
+5. **撤回域名 TLS 设置**：只有出现确实需要旧版本 TLS 的客户端时才做。用[步骤](#procedure)第 5 步的 Token 把 min_tls_version 按存档 `PATCH` 回原值（改前是 `1.0`），或把 always_use_https 改回 `off`，再读回确认。这一项不用停服，立即生效。
 
 回退后按[结果验证](#verification)检查，并读一次 `deployments` 和 `authority.json` 确认编号一致。
 
@@ -175,7 +177,7 @@ date: "2026-10-27"
 | 过了 Access 后网页一直显示“Himawari 暂时连不上”，点“重试”也不行 | 网页自动换取登录被拒，多半是 Access 的用户编号和绑定行对不上（换了邮箱） | 只读查绑定行，按[步骤](#procedure)第 4 步重新绑定 |
 | 网页显示“需要重新验证邮箱” | Access 会话过期，网页的请求被 Access 拦下 | 点“重新验证邮箱”，在 Access 页面重新收验证码 |
 | 批准操作或删除对话时被要求重新认证 | Access 登录超过 5 分钟 | 打开 `/cdn-cgi/access/logout` 退出再登 |
-| 外网打开是 Cloudflare 的 502/1033 错误页 | 隧道或服务没在跑 | 生产机上看 `cloudflared.service` 和 `himawari-prod.service` |
+| 外网打开是 Cloudflare 的 502/1033 错误页 | 隧道或服务没在跑 | 生产机上看 cloudflared.service 和 `himawari-prod.service` |
 | 生产机本机 `curl http://127.0.0.1:8400/` 得到 403 | 没带 `publicOrigin` 的 Host 头，属正常 | 加 `-H 'Host: himawari.siyi.win'` 再试 |
 | 就绪日志没有 `listenPort`，外网打不开 | 身份不是 `built-in` 而 `publicMode` 是 `false`，服务不开网页端口 | 把 `publicMode` 改成 `true`，按[步骤](#procedure)第 4 步走 |
 | 测试通知点了没反应 | 不是从主屏幕图标打开的，或通知权限没给 | 删掉主屏幕图标重新添加，从图标打开再开通知；看 `web_push_subscriptions` 有没有新行 |

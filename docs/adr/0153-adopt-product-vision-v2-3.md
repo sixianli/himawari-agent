@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0134-adopt-product-vision-v2-2.md
+supersedes: ""
 superseded_by: ""
 date: "2026-11-02"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0153：采纳产品愿景 v2.3，「决策账本」改称「决策记录」
@@ -34,7 +36,7 @@ date: "2026-11-02"
 ## 决定
 
 1. 采纳愿景 v2.3：`docs/product-vision.md` 整篇替换，相对 v2.2，正文只有两处文字不同（第 3 章第 4 样护城河的名字、第 4 章“不追求功能广度”一条里的名字，由「决策账本」改为「决策记录」）；另外文档头日期改为 2026-11-02、仓库注指向本 ADR、附录加第 18 条记录。含义、四样资产的构成和其余正文不变。
-2. 本 ADR 取代 [ADR 0134](0134-adopt-product-vision-v2-2.md)。0134 里关于愿景地位的全部决定（愿景是最上层产品文档、正文只由 Andy 修改、新版本整篇替换并由新 ADR 取代旧 ADR、不再称“本地优先”）和 v2.2 新增的 9 条内容决定原样沿用，0134 的“后果”里列出的下游冲突仍是已知缺口，不随本 ADR 改变。
+2. 本 ADR 取代 [ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)。0134 里关于愿景地位的全部决定（愿景是最上层产品文档、正文只由 Andy 修改、新版本整篇替换并由新 ADR 取代旧 ADR、不再称“本地优先”）和 v2.2 新增的 9 条内容决定原样沿用，0134 的“后果”里列出的下游冲突仍是已知缺口，不随本 ADR 改变。
 3. 0134 按治理规则标为 superseded，除顶部加一段“被 0153 取代”的说明（和 0101 被取代时的做法一样）外，正文不改。
 
 <a id="options"></a>
@@ -58,5 +60,5 @@ date: "2026-11-02"
 ## 关联文档
 
 - [SOURCE: docs/product-vision.md]
-- [SOURCE: docs/adr/0134-adopt-product-vision-v2-2.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md]
 - [SOURCE: docs/glossary.md]

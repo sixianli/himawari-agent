@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/agent-service/src/production-mcp-read.ts, packages/persistence-sqlite/src/migrations/0012_sensitive_memory_approvals.sql, packages/sensitive-capture/src/identifiers.ts, packages/sensitive-capture/src/machine-secrets.ts, test/integration/mcp-write.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0228：其他 agent 写进来的记忆先存「待确认」，主人在 Himawari 里确认后才保存（部分取代 ADR 0225 决定 2、3、6）

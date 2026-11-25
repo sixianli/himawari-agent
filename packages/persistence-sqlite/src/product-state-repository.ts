@@ -34,6 +34,7 @@ import type {
   HomeUrgencyStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -51,7 +52,6 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
-  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -611,10 +611,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.ownerRules();
   }
 
-  ownerProposals(): OwnerProposalStorePort {
-    return this.durable.ownerProposals();
-  }
-
   inbox(): InboxStorePort {
     return this.durable.inbox();
   }
@@ -641,6 +637,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   mcpConnections(): McpConnectionStorePort {
     return this.durable.mcpConnections();
+  }
+
+  vault(): VaultStorePort {
+    return this.durable.vault();
   }
 
   mcpMemorySync(): McpMemorySyncStorePort {

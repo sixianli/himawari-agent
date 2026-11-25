@@ -34,6 +34,7 @@ import {
   type VoiceEvidence,
   type VoiceGates,
   type VoiceTrigger,
+  type VaultService,
 } from "@himawari-agent/application";
 import {
   DATA_EXPORT_ID_PATTERN,
@@ -126,6 +127,11 @@ export const DEVICE_API_ROUTES = Object.freeze([
   { method: "POST", path: "actions/undo", signed: true },
   { method: "GET", path: "actions/policy", signed: true },
   { method: "POST", path: "actions/policy", signed: true },
+  { method: "GET", path: "vault", signed: true },
+  { method: "GET", path: "vault/usage", signed: true },
+  { method: "POST", path: "vault/change", signed: true },
+  { method: "POST", path: "vault/approve", signed: true },
+  { method: "POST", path: "vault/deny", signed: true },
 ] as const);
 
 export const DEVICE_UPLOAD_GRANT_HEADER = "himawari-upload-grant" as const;
@@ -275,6 +281,7 @@ export interface DeviceApiRouteOptions {
   readonly configuration: () => DeviceConfiguration;
   readonly authority: DeviceApiAuthority;
   readonly perception?: PerceptionService;
+  readonly vault?: (scope: PairedDeviceScope) => VaultService | undefined;
   readonly actions?: {
     readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
     readonly hub: DeviceActionHub;
@@ -350,6 +357,38 @@ export interface DeviceApiRouteOptions {
 function header(request: FastifyRequest, name: string): string | undefined {
   const value = request.headers[name];
   return typeof value === "string" ? value : undefined;
+}
+
+function presentVaultSnapshot(snapshot: Awaited<ReturnType<VaultService["snapshot"]>>) {
+  return {
+    manifest: snapshot.manifest
+      ? { version: snapshot.manifest.version, signature: snapshot.manifest.signature }
+      : null,
+    items: snapshot.items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      origins: item.origins,
+      fields: item.fields,
+      version: item.version,
+      backgroundAllowed: item.backgroundAllowed,
+      wrappedKey: item.wrappedKey,
+      ciphertexts: item.ciphertexts,
+      updatedAt: item.updatedAt,
+    })),
+    pending: snapshot.pending.map((request) => ({
+      id: request.id,
+      nonce: request.nonce,
+      itemIds: request.itemIds,
+      itemVersions: request.itemVersions,
+      origin: request.origin,
+      pageVersion: request.pageVersion,
+      ephemeralPublicKey: request.ephemeralPublicKey,
+      expiresAt: request.expiresAt,
+      createdAt: request.createdAt,
+      purpose: request.purpose,
+    })),
+  };
 }
 
 function rawQuery(request: FastifyRequest): string {
@@ -1008,6 +1047,50 @@ export function registerDeviceApiRoutes(app: FastifyInstance, options: DeviceApi
         );
         if (!kept) options.rejectBody(400);
         return options.sendJson(reply, 200, { actions: kept });
+      });
+
+      const vault = (authenticated: AuthenticatedDeviceRequest): VaultService =>
+        options.vault?.(scope(authenticated.authentication)) ?? options.rejectNotAllowed();
+
+      device.get("/vault", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const snapshot = await vault(authenticated).snapshot(scope(authenticated.authentication));
+        return options.sendJson(reply, 200, presentVaultSnapshot(snapshot));
+      });
+
+      device.get("/vault/usage", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const itemId = new URLSearchParams(rawQuery(request)).get("itemId");
+        const entries = await vault(authenticated).usage(
+          scope(authenticated.authentication),
+          itemId,
+        );
+        return options.sendJson(reply, 200, { usage: entries });
+      });
+
+      device.post("/vault/change", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        const manifest = await vault(authenticated).applyDeviceChange(
+          scope(authenticated.authentication),
+          json(request),
+        );
+        return options.sendJson(reply, 200, { manifest });
+      });
+
+      device.post("/vault/approve", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        await vault(authenticated).approve(
+          scope(authenticated.authentication),
+          { deviceId: authenticated.device.id, confirmed: authenticated.confirmed },
+          json(request),
+        );
+        return options.sendJson(reply, 200, { approved: true });
+      });
+
+      device.post("/vault/deny", async (request, reply) => {
+        const authenticated = await authenticate(request);
+        await vault(authenticated).deny(scope(authenticated.authentication), json(request));
+        return options.sendJson(reply, 200, { denied: true });
       });
 
       device.get("/actions/policy", async (request, reply) => {

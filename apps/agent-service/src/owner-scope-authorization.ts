@@ -33,31 +33,23 @@ import {
   type ToolActionRegistry,
   type ToolActionRow,
 } from "@himawari-agent/application";
+import { APPROVAL_ALLOWANCE_INTENT_PREFIX } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   type ContextExternalContent,
   type ExternalContentSource,
   externalEventOrigin,
 } from "./context-external-content.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import type { OwnerIntentGate } from "./owner-intent-gate.js";
+import type { ProductionMessageOptions } from "./production-message-options.js";
 import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
+import { parameterFingerprint } from "./parameter-fingerprint.js";
 import { BUILT_IN_CAPABILITY_VERSION, builtInCapabilityFacts } from "./production-tool-actions.js";
 
+export { parameterFingerprint };
+
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-
-function stable(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stable(object[key])}`)
-    .join(",")}}`;
-}
-
-export function parameterFingerprint(input: unknown): string {
-  return createHash("sha256").update(stable(input)).digest("hex");
-}
 
 export interface OwnerScopeDecisionContext {
   readonly tool: string;
@@ -98,6 +90,8 @@ export interface OwnerScopeAuthorizationOptions {
   readonly rules?: readonly RuleRecord[];
   readonly externalContent?: Pick<ContextExternalContent, "read" | "mark">;
   readonly ownerIntent?: Pick<OwnerIntentGate, "confirm">;
+  readonly allowances?: Pick<OwnerAllowances, "match">;
+  readonly optionGrants?: Pick<ProductionMessageOptions, "claimGrant">;
 }
 
 export interface OwnerScopeFreeze {
@@ -172,7 +166,7 @@ export class OwnerScopeAuthorization {
         : Date.parse(now) + this.#options.intentLifetimeMs,
     ).toISOString();
     const inputDigest = digest(invocation.arguments);
-    const id = `owner-scope:${digest([
+    const id = `${APPROVAL_ALLOWANCE_INTENT_PREFIX}${digest([
       invocation.runId,
       invocation.toolCallId,
       invocation.capabilityRef,
@@ -180,7 +174,6 @@ export class OwnerScopeAuthorization {
     ])}`;
     const externalSources = await this.#externalSources(invocation, source);
     const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];
-    if (source.ownerApprovedTask) factCodes.push(POLICY_FACT_CODES.runSourceOwnerApprovedTask);
     if (externalSources.length > 0) factCodes.push(POLICY_FACT_CODES.contextExternalContent);
     if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);
     if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);
@@ -352,6 +345,42 @@ export class OwnerScopeAuthorization {
         auditAction: "authorization.action_rule.preauthorized",
         appendAudit: (record) => appendAuditRecord(this.#options.audit, record),
       });
+    const allowance =
+      standing === undefined ? await this.#options.allowances?.match(intent) : undefined;
+    if (allowance)
+      await applyOwnerPolicyAuthorization({
+        store: this.#options.store,
+        clock,
+        ids: this.#options.ids,
+        intent,
+        key: allowance.key,
+        revision: allowance.revision,
+        auditId: `owner-scope-allowance:${digest([id, allowance.key, allowance.revision])}`,
+        auditAction: "authorization.owner_allowance.used",
+        appendAudit: (record) => appendAuditRecord(this.#options.audit, record),
+      });
+    const chosen =
+      standing === undefined && allowance === undefined && context
+        ? await this.#options.optionGrants?.claimGrant({
+            runId: intent.runId,
+            tool: context.tool,
+            parameterFingerprint: context.parameterFingerprint,
+            intentId: id,
+          })
+        : undefined;
+    if (chosen) {
+      await applyOwnerPolicyAuthorization({
+        store: this.#options.store,
+        clock,
+        ids: this.#options.ids,
+        intent,
+        key: chosen.key,
+        revision: chosen.revision,
+        auditId: `owner-scope-option:${digest([id, chosen.key, chosen.revision])}`,
+        auditAction: "authorization.owner_option.chosen",
+        appendAudit: (record) => appendAuditRecord(this.#options.audit, record),
+      });
+    }
     return this.#policy.evaluate(intent, {
       uiAvailable: true,
       approvalExpiresAt: intent.expiresAt,

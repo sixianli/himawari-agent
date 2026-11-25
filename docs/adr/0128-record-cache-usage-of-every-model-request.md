@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-30"
+covers: "packages/platform-node/test/trusted-model-provider.unit.test.ts, packages/runtime-pi/src/cache-usage-observation.ts, packages/runtime-pi/test/cache-usage-observation.unit.test.ts, packages/runtime-pi/test/pi-model-transport.unit.test.ts, packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts, scripts/operations/cache-hit-report.mjs, test/integration/sqlite-model-usage.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0128：每次模型请求都记下缓存命中，先有尺子再改上下文
@@ -44,7 +46,7 @@ date: "2026-10-30"
 - DeepSeek 上下文硬盘缓存文档：用量里用 `prompt_cache_hit_tokens` 和 `prompt_cache_miss_tokens` 两个字段报告命中和未命中。https://api-docs.deepseek.com/guides/kv_cache
 - Anthropic 提示词缓存文档：用量里用 `cache_read_input_tokens` 和 `cache_creation_input_tokens`，顺序是工具、系统、消息。https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 - Manus 工程博客：“Make your context append-only”，并把 KV 缓存命中率当作 Agent 最重要的单项指标。https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus
-- OpenTelemetry GenAI 语义约定（状态为 Development）：用 `gen_ai.usage.cache_read.input_tokens` 等属性记录缓存读取，总输入 token 含命中部分。https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
+- OpenTelemetry GenAI 语义约定（状态为 Development）：用 gen_ai.usage.cache_read.input_tokens 等属性记录缓存读取，总输入 token 含命中部分。https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
 
 共同点：各家字段名不同，但都在每次响应的用量里给出命中数；业界做法是按请求记录、按用途汇总。
 
@@ -94,7 +96,7 @@ date: "2026-10-30"
 ## 关联文档
 
 - [工程案例库：案例 71](../engineering-casebook.md#case-cache-usage-ruler)
-- [ADR 0104：本轮材料放在最后一条用户消息](0104-turn-material-in-last-user-message.md)
+- [ADR 0104：本轮材料放在最后一条用户消息](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0104-turn-material-in-last-user-message.md)
 - [ADR 0117：Magpie 经自有订阅路由模型](0117-magpie-routes-models-through-owned-subscriptions.md)
 - [架构文档：模型调用与预算](../architecture-v0.1.md)
 

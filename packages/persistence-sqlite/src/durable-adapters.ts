@@ -23,6 +23,7 @@ import type {
   HomeUrgencyStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
+  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -40,7 +41,6 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
-  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -1039,6 +1039,21 @@ export class SqliteDurableAdapters {
     });
   }
 
+  vault(): VaultStorePort {
+    return Object.freeze<VaultStorePort>({
+      listItems: (input) => this.context.read("vault.listItems", input),
+      readManifest: (input) => this.context.read("vault.readManifest", input),
+      applyChange: (input) => this.context.write("vault.applyChange", input),
+      createRequest: (input) => this.context.write("vault.createRequest", input),
+      readRequest: (input) => this.context.read("vault.readRequest", input),
+      listPendingRequests: (input) => this.context.read("vault.listPendingRequests", input),
+      decideRequest: (input) => this.context.write("vault.decideRequest", input),
+      expireOverdue: (input) => this.context.write("vault.expireOverdue", input),
+      recordUsage: (input) => this.context.write("vault.recordUsage", input),
+      listUsage: (input) => this.context.read("vault.listUsage", input),
+    });
+  }
+
   mcpConnections(): McpConnectionStorePort {
     return Object.freeze<McpConnectionStorePort>({
       create: (input) => this.context.write("mcpConnection.create", input),
@@ -1068,20 +1083,6 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.read("ownerRule.read", input),
       create: (input) => this.context.write("ownerRule.create", input),
       setStatus: (input) => this.context.write("ownerRule.setStatus", input),
-    });
-  }
-
-  ownerProposals(): OwnerProposalStorePort {
-    return Object.freeze<OwnerProposalStorePort>({
-      propose: (input) => this.context.write("ownerProposal.propose", input),
-      read: (input) => this.context.write("ownerProposal.read", input),
-      listPending: (input) => this.context.write("ownerProposal.listPending", input),
-      decide: (input) => this.context.write("ownerProposal.decide", input),
-      claim: (input) => this.context.write("ownerProposal.claim", input),
-      moveExecution: (input) => this.context.write("ownerProposal.moveExecution", input),
-      listExpiredLeases: (input) => this.context.write("ownerProposal.listExpiredLeases", input),
-      settledEvidence: (input) => this.context.write("ownerProposal.settledEvidence", input),
-      clearEvidence: (input) => this.context.write("ownerProposal.clearEvidence", input),
     });
   }
 
@@ -1217,6 +1218,7 @@ export class SqliteDurableAdapters {
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
+      recordSpoken: (input) => this.context.write("decisionLedger.recordSpoken", input),
       appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
@@ -1437,6 +1439,7 @@ export class SqliteDurableAdapters {
       search: (input) => this.context.read("conversationTurn.search", input),
       listBehind: (input) => this.context.read("conversationTurn.listBehind", input),
       listUnembedded: (input) => this.context.read("conversationTurn.listUnembedded", input),
+      span: (input) => this.context.read("conversationTurn.span", input),
       attachEmbedding: (input) => this.context.write("conversationTurn.attachEmbedding", input),
     });
   }
@@ -1504,6 +1507,10 @@ export class SqliteDurableAdapters {
       findReceipt: (ownerId, agentId, idempotencyKey) =>
         this.context.read("thread.findReceipt", { ownerId, agentId, idempotencyKey }),
       admitOwnerMessage: (input) => this.context.write("thread.admitOwnerMessage", { input }),
+      readFoldedOwnerMessages: (input) =>
+        this.context.read("thread.readFoldedOwnerMessages", input),
+      unfoldOwnerRun: (input) => this.context.write("thread.unfoldOwnerRun", { input }),
+      foldQueuedOwnerRuns: (input) => this.context.write("thread.foldQueuedOwnerRuns", { input }),
       commitAssistantMessage: (input) =>
         this.context.write("thread.commitAssistantMessage", { input }),
       fork: (input) => this.context.write("thread.fork", { input }),
@@ -1545,6 +1552,8 @@ export class SqliteDurableAdapters {
       requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
       readMain: (ownerId, agentId) => this.context.read("thread.readMain", { ownerId, agentId }),
       claimMain: (input) => this.context.write("thread.claimMain", { input }),
+      postAgentMessage: (input) => this.context.write("thread.postAgentMessage", { input }),
+      readRunThought: (input) => this.context.read("thread.readRunThought", input),
     });
   }
 

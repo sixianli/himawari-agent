@@ -4,13 +4,11 @@ import SwiftUI
 
 public struct ChatView: View {
     private let store: ChatStore
-    private let close: () -> Void
+    private let close: (() -> Void)?
     private let openHerPage: (() -> Void)?
-    @State private var threadId: String?
+    private let threadId: String
     @State private var draft = ""
-    @State private var creating = false
-    @State private var createFailed = false
-    @State private var createRequestId = ChatStore.newRequestId()
+    @State private var uploading = false
     @State private var bannerHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.transcriptScrollsToTopAfter) private var scrollToTopAfter
@@ -18,7 +16,9 @@ public struct ChatView: View {
     @Environment(\.chatOpensAttachSheet) private var opensAttachSheet
     @Environment(\.chatCanAttach) private var canAttach
     @Environment(\.chatStopRun) private var stopRun
+    @Environment(\.chatChooseOption) private var chooseOption
     @Environment(\.chatTalk) private var talk
+    @Environment(\.chatOwnerAwaited) private var ownerAwaited
     @Environment(\.chatOpensTalk) private var opensTalk
     @State private var talking = false
     @State private var talkStartedAfter: String?
@@ -33,17 +33,21 @@ public struct ChatView: View {
     @State private var dictating = false
     @State private var dictationPrefix = ""
 
-    public init(store: ChatStore, threadId: String?, draft: String = "", openHerPage: (() -> Void)? = nil, close: @escaping () -> Void) {
+    public init(store: ChatStore, threadId: String, draft: String = "", openHerPage: (() -> Void)? = nil, close: (() -> Void)? = nil) {
         self.store = store
         self.close = close
         self.openHerPage = openHerPage
-        _threadId = State(initialValue: threadId)
+        self.threadId = threadId
         _draft = State(initialValue: draft)
     }
 
-    private static let headerHeight = DesignTokens.Chat.avatar + DesignTokens.Chat.avatarGap + DesignTokens.Chat.avatarLabelHeight
-    private static let navBottom = DesignTokens.Size.navTop + headerHeight
-    private static let fadeBelowNav: CGFloat = 32
+    private static let headerHeight = HimawariAvatar.height
+
+    private var topFade: (height: CGFloat, solid: CGFloat) {
+        close == nil
+            ? (DesignTokens.Chat.headerFade, DesignTokens.Chat.headerFadeSolid)
+            : (DesignTokens.Size.fadeTop, DesignTokens.Size.fadeTopSolid)
+    }
 
     public var body: some View {
         withTalkFeed
@@ -51,12 +55,8 @@ public struct ChatView: View {
 
     private var layers: some View {
         ZStack {
-            if threadId == nil {
-                NewChatPrompt()
-            } else {
-                transcript
-            }
-            EdgeFade(.top, height: Self.navBottom + Self.fadeBelowNav, solid: Self.navBottom / (Self.navBottom + Self.fadeBelowNav))
+            transcript
+            EdgeFade(.top, height: topFade.height, solid: topFade.solid / topFade.height)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
             chrome
@@ -67,7 +67,7 @@ public struct ChatView: View {
     private var chrome: some View {
         VStack(spacing: 0) {
             header
-            if store.connection != .online, threadId != nil {
+            if store.connection != .online {
                 OfflineBanner()
                     .padding(.top, 2)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
@@ -96,7 +96,7 @@ public struct ChatView: View {
             ChatInputBar(
                 text: $draft,
                 focused: $inputFocused,
-                sending: creating,
+                sending: uploading,
                 hasAttachments: !attachments.isEmpty,
                 voice: voice != nil,
                 hold: hold,
@@ -126,8 +126,8 @@ public struct ChatView: View {
     }
 
     private var avatarBusy: Bool {
+        if ownerAwaited { return true }
         if let activeTalk, activeTalk.phase == .herTurn { return true }
-        guard let threadId else { return creating }
         return store.isBusy(in: threadId)
     }
 
@@ -144,10 +144,8 @@ public struct ChatView: View {
             .animation(.easeInOut(duration: 0.2), value: store.connection)
             .himawariScreenBackground()
             .task(id: threadId) {
-                if let threadId {
-                    store.watch(threadId)
-                    await store.load(threadId)
-                }
+                store.watch(threadId)
+                await store.load(threadId)
             }
             .onDisappear {
                 store.unwatch()
@@ -166,9 +164,6 @@ public struct ChatView: View {
 
     private var withAlerts: some View {
         withLifecycle
-            .alert(L.text("chat.createFailed"), isPresented: $createFailed) {
-                Button(L.text("common.ok"), role: .cancel) {}
-            }
             .alert(attachProblem ?? "", isPresented: problemShown) {
                 Button(L.text("common.ok"), role: .cancel) {}
             }
@@ -195,8 +190,7 @@ public struct ChatView: View {
     #endif
 
     private var streamingNow: String? {
-        guard let threadId else { return nil }
-        return store.streamingText(in: threadId)
+        store.streamingText(in: threadId)
     }
 
     private var attachmentIds: [String] {
@@ -227,14 +221,16 @@ public struct ChatView: View {
 
     private var header: some View {
         ZStack(alignment: .top) {
-            HStack {
-                GlassCircleButton(Text(L.text("chat.back")), action: close) {
-                    Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+            if let close {
+                HStack {
+                    GlassCircleButton(Text(L.text("chat.back")), action: close) {
+                        Icon(.chevronLeft, size: DesignTokens.IconSize.glassButton)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, DesignTokens.Size.pagePaddingX)
+                .frame(height: DesignTokens.Avatar.size)
             }
-            .padding(.horizontal, 16)
-            .frame(height: DesignTokens.Chat.avatar)
             if let openHerPage {
                 Button(action: openHerPage) {
                     HimawariAvatar(busy: avatarBusy)
@@ -254,7 +250,7 @@ public struct ChatView: View {
         ScrollViewReader { proxy in
             transcriptScroll
                 .task {
-                    guard let scrollToTopAfter, let threadId, let first = store.transcript(in: threadId).first else { return }
+                    guard let scrollToTopAfter, let first = store.transcript(in: threadId).first else { return }
                     try? await Task.sleep(for: .seconds(scrollToTopAfter))
                     withAnimation(.easeInOut(duration: 3)) { proxy.scrollTo(first.id, anchor: .top) }
                 }
@@ -264,35 +260,42 @@ public struct ChatView: View {
     private var transcriptScroll: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                if let threadId {
-                    ForEach(store.transcript(in: threadId)) { item in
-                        switch item {
-                        case let .message(message):
-                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
-                        case let .process(runId):
-                            if let line = store.processLine(for: runId, in: threadId) {
-                                ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
-                                    .task(id: runId) { await store.loadExecution(runId, in: threadId) }
+                ForEach(store.transcript(in: threadId)) { item in
+                    switch item {
+                    case let .message(message):
+                        if message.role == .agent, let options = message.options {
+                            VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                                MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                                MessageOptionsView(options: options, choose: choose(for: message))
                             }
+                        } else if message.role == .owner, message.chosenFrom != nil {
+                            ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
+                        } else {
+                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        }
+                    case let .process(runId):
+                        if let line = store.processLine(for: runId, in: threadId) {
+                            ProcessRowView(line: line, failed: store.run(runId, in: threadId)?.status == "failed")
+                                .task(id: runId) { await store.loadExecution(runId, in: threadId) }
                         }
                     }
-                    if let streaming = store.streamingText(in: threadId) {
-                        StreamingAnswer(text: streaming)
-                    }
-                    ForEach(store.queuedMessages(in: threadId)) { item in
-                        QueuedMessageRow(item: item, online: store.connection == .online) {
-                            Task { await store.retry(item.id) }
-                        } discard: {
-                            Task { await store.discard(item.id) }
-                        }
+                }
+                if let streaming = store.streamingText(in: threadId) {
+                    StreamingAnswer(text: streaming)
+                }
+                ForEach(store.queuedMessages(in: threadId)) { item in
+                    QueuedMessageRow(item: item, online: store.connection == .online) {
+                        Task { await store.retry(item.id) }
+                    } discard: {
+                        Task { await store.discard(item.id) }
                     }
                 }
                 if !talkHeard.isEmpty {
                     OwnerBubble(text: talkHeard)
-                        .opacity(DesignTokens.Chat.talkHeardOpacity)
+                        .opacity(DesignTokens.Chat.hearingBubbleOpacity)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, DesignTokens.Size.chatPaddingX)
             .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
             .padding(.bottom, 110)
         }
@@ -303,8 +306,14 @@ public struct ChatView: View {
         .scrollIndicators(.hidden)
     }
 
+    private func choose(for message: ThreadMessage) -> (@MainActor (MessageOptions.Item) async throws -> Void)? {
+        guard let chooseOption else { return nil }
+        let threadId = threadId
+        return { item in try await chooseOption(threadId, message, item) }
+    }
+
     private var stopAction: (() -> Void)? {
-        guard let stopRun, let threadId, !stopping, let run = store.workingRun(in: threadId) else { return nil }
+        guard let stopRun, !stopping, let run = store.workingRun(in: threadId) else { return nil }
         return {
             Haptics.shared.report(.stopPressed)
             stopping = true
@@ -326,7 +335,7 @@ public struct ChatView: View {
     }
 
     private var lastAgentReply: AgentReply? {
-        guard let threadId, let message = store.messages(in: threadId).last(where: { $0.role == .agent }) else { return nil }
+        guard let message = store.messages(in: threadId).last(where: { $0.role == .agent }) else { return nil }
         return AgentReply(id: message.messageId, text: store.texts[message.contentRef] ?? "")
     }
 
@@ -358,30 +367,18 @@ public struct ChatView: View {
 
     private func deliver(_ text: String, clearDraft: Bool) {
         let carried = attachments
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty, !creating else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty, !uploading else { return }
         Haptics.shared.report(.messageSent)
-        if let threadId, carried.isEmpty {
+        if carried.isEmpty {
             if clearDraft { draft = "" }
             Task { await store.send(text, in: threadId) }
             return
         }
-        creating = true
+        uploading = true
         Task {
-            defer { creating = false }
-            let target: String
-            if let threadId {
-                target = threadId
-            } else {
-                do {
-                    target = try await store.newThread(requestId: createRequestId)
-                    threadId = target
-                } catch {
-                    createFailed = true
-                    return
-                }
-            }
+            defer { uploading = false }
             do {
-                try await store.send(text, attachments: carried, requestId: sendRequestId, in: target)
+                try await store.send(text, attachments: carried, requestId: sendRequestId, in: threadId)
                 attachments.removeAll { item in carried.contains { $0.id == item.id } }
                 sendRequestId = OutgoingMessage.newId()
                 if clearDraft { draft = "" }
@@ -535,24 +532,6 @@ struct StreamingAnswer: View {
 
     var body: some View {
         AnswerText(text: text, streaming: true)
-    }
-}
-
-struct NewChatPrompt: View {
-    var body: some View {
-        VStack(spacing: 18) {
-            SunflowerMark()
-                .frame(width: DesignTokens.Size.emptyMarkNewChat, height: DesignTokens.Size.emptyMarkNewChat)
-            Text(L.text("chat.new.prompt"))
-                .hmType(DesignTokens.TypeScale.emptyTitleNewChat)
-                .foregroundStyle(Color.hmText)
-        }
-        .padding(.bottom, DesignTokens.Size.fadeTabBar - 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            RadialGradient(colors: [Color.hmGlow, .clear], center: .center, startRadius: 0, endRadius: DesignTokens.Size.newChatGlowRadius / 2)
-        }
-        .ignoresSafeArea(.container)
     }
 }
 

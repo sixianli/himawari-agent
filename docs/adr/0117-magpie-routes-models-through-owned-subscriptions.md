@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-29"
+covers: "apps/agent-service/src/production-model-composition.ts, packages/platform-node/src/strict-configuration.ts, packages/runtime-pi/src/configured-model-binding.ts, packages/runtime-pi/src/pi-model-transport.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0117：主模型改经生产机本机的 Magpie 网关，优先用 Andy 已订阅套餐里的额度

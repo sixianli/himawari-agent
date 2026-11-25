@@ -24,6 +24,9 @@ export const GATEWAY_V2_SCHEMA_VERSION = "gateway.v2" as const;
 export const GATEWAY_V2_MESSAGE_TYPES = [
   "thread.message.submit",
   "approval.respond",
+  "approval.allowance.set",
+  "approval.allowance.days.set",
+  "approval.allowance.revoke",
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
@@ -66,9 +69,6 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "quiet_hours.read",
   "quiet_hours.snapshot",
   "quiet_hours.set",
-  "proposals.read",
-  "proposals.snapshot",
-  "proposal.respond",
   "sensitive.interceptions.read",
   "sensitive.interceptions.snapshot",
   "sensitive.interceptions.clear",
@@ -258,6 +258,36 @@ export const respondApprovalV2CommandSchema = object({
     semanticSnapshotHash: machineString,
     editedPayloadRef: nullable(machineString),
     recentAuthenticationRef: nullable(machineString),
+  }),
+});
+
+export const APPROVAL_ALLOWANCE_SCOPES = ["this_task", "days", "always"] as const;
+
+export const APPROVAL_ALLOWANCE_INTENT_PREFIX = "owner-scope:";
+export const APPROVAL_ALLOWANCE_DAYS_MINIMUM = 1;
+export const APPROVAL_ALLOWANCE_DAYS_MAXIMUM = 90;
+export const APPROVAL_ALLOWANCE_DAYS_DEFAULT = 7;
+
+export const approvalAllowanceSetCommandSchema = object({
+  ...commandEnvelope("approval.allowance.set"),
+  payload: object({
+    approvalRequestId: machineString,
+    allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+    days: nullable(integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM)),
+  }),
+});
+
+export const approvalAllowanceDaysSetCommandSchema = object({
+  ...commandEnvelope("approval.allowance.days.set"),
+  payload: object({
+    days: integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
+  }),
+});
+
+export const approvalAllowanceRevokeCommandSchema = object({
+  ...commandEnvelope("approval.allowance.revoke"),
+  payload: object({
+    allowanceId: machineString,
   }),
 });
 
@@ -2601,13 +2631,6 @@ export const BUILT_IN_ACTION_RULE_OUTCOMES = [
   "ask_owner",
   "refuse",
 ] as const;
-export const PROPOSAL_ACTIONS = ["adopt", "reject", "undo"] as const;
-export const PROPOSAL_ORIGINS = [
-  "owner_said",
-  "inferred",
-  "external_agent",
-  "external_content",
-] as const;
 const memoryRulesQuerySchema = object({
   ...envelope("query", "memory.rules.read"),
   payload: object({}),
@@ -2642,73 +2665,21 @@ const memoryRulesSnapshotSchema = object({
         askFirst: nullable(booleanValue),
       }),
     ),
-    generatedAt: timestamp,
-  }),
-});
-const proposalsQuerySchema = object({
-  ...envelope("query", "proposals.read"),
-  payload: object({
-    open: nullable(
+    allowances: array(
       object({
-        proposalId: machineString,
-        expectedVersion: integer(1),
-        fingerprint: machineString,
+        allowanceId: machineString,
+        allowFor: enumeration(APPROVAL_ALLOWANCE_SCOPES),
+        title: boundedString(120),
+        operation: machineString,
+        recipients: array(boundedString(512)),
+        threadId: nullable(machineString),
+        threadTitle: nullable(boundedString(120)),
+        expiresAt: nullable(timestamp),
+        createdAt: timestamp,
       }),
     ),
-  }),
-});
-const proposalsSnapshotSchema = object({
-  ...envelope("snapshot", "proposals.snapshot"),
-  payload: object({
-    proposals: array(
-      object({
-        proposalId: machineString,
-        version: integer(1),
-        fingerprint: machineString,
-        type: boundedString(64),
-        summary: boundedString(200),
-        effect: boundedString(200),
-        origin: enumeration(PROPOSAL_ORIGINS),
-        adoptable: booleanValue,
-        requiresFullRead: booleanValue,
-        requiresPresence: booleanValue,
-        evidence: array(
-          object({
-            kind: boundedString(64),
-            text: nullable(boundedString(500)),
-            sources: array(object({ kind: boundedString(64), ref: boundedString(256) })),
-            figures: array(
-              object({
-                name: boundedString(64),
-                value: integer(Number.MIN_SAFE_INTEGER),
-                definition: boundedString(200),
-              }),
-            ),
-          }),
-        ),
-        proposedAt: timestamp,
-        expiresAt: timestamp,
-        refusedBefore: integer(0),
-      }),
-    ),
-    pendingCount: integer(0),
-    limit: integer(1),
-    expiresAfterDays: integer(1),
-    opened: nullable(
-      object({ proposalId: machineString, fullReadToken: machineString, expiresAt: timestamp }),
-    ),
+    allowanceDays: integer(APPROVAL_ALLOWANCE_DAYS_MINIMUM, APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
     generatedAt: timestamp,
-  }),
-});
-const proposalRespondCommandSchema = object({
-  ...commandEnvelope("proposal.respond"),
-  payload: object({
-    proposalId: machineString,
-    expectedVersion: integer(1),
-    fingerprint: machineString,
-    action: enumeration(PROPOSAL_ACTIONS),
-    recentAuthenticationRef: nullable(machineString),
-    fullReadToken: nullable(machineString),
   }),
 });
 const memoryRuleRespondCommandSchema = object({
@@ -3809,6 +3780,9 @@ export const streamEventV2Schema = object({
 const schemasByType = {
   "thread.message.submit": submitThreadMessageCommandSchema,
   "approval.respond": respondApprovalV2CommandSchema,
+  "approval.allowance.set": approvalAllowanceSetCommandSchema,
+  "approval.allowance.days.set": approvalAllowanceDaysSetCommandSchema,
+  "approval.allowance.revoke": approvalAllowanceRevokeCommandSchema,
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
@@ -3851,9 +3825,6 @@ const schemasByType = {
   "quiet_hours.read": quietHoursQuerySchema,
   "quiet_hours.snapshot": quietHoursSnapshotSchema,
   "quiet_hours.set": quietHoursSetCommandSchema,
-  "proposals.read": proposalsQuerySchema,
-  "proposals.snapshot": proposalsSnapshotSchema,
-  "proposal.respond": proposalRespondCommandSchema,
   "device.list.read": deviceListQuerySchema,
   "device.list.snapshot": deviceListSnapshotSchema,
   "device.pairing.start": devicePairingStartCommandSchema,

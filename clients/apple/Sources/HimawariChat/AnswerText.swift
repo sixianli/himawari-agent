@@ -12,7 +12,7 @@ struct AnswerText: View {
 
     var body: some View {
         let blocks = AnswerMarkdown.blocks(text, streaming: streaming)
-        VStack(alignment: .leading, spacing: DesignTokens.Chat.blockGap) {
+        VStack(alignment: .leading, spacing: DesignTokens.Chat.answerBlockGap) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 view(for: block, trailingDot: streaming && index == blocks.count - 1)
             }

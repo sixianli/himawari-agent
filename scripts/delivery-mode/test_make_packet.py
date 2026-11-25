@@ -1,4 +1,5 @@
 import argparse
+import threading
 import ast
 import copy
 import hashlib
@@ -54,6 +55,11 @@ def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400,
     prefix = '/opt/himawari/releases/' + date + '-' + running
     facts = {
         'hostname': 'vmi3618928',
+        'machine': 'x86_64',
+        'serviceUid': 999,
+        'serviceGid': 988,
+        'nodeSha256': 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2',
+        'signerKeys': ['/var/lib/himawari/qualification/first-20261007/host-qualification-public-key.pem'],
         'active': 'active',
         'execStart': ['ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/' + running + '-' + compact + '/pair-supervisor.mjs --prefix ' + prefix + ' --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json'],
         'staticRoot': prefix + '/share/control-center',
@@ -404,7 +410,6 @@ class TemplateTest(RenderedPacket):
 
     def test_discovery_refuses_a_production_state_the_template_does_not_fit(self):
         cases = [
-            ({'hostname': 'hermes-home'}, 'PACKET_HOST_UNEXPECTED'),
             ({'active': 'failed'}, 'PACKET_SERVICE_NOT_ACTIVE'),
             ({'staticRoot': '/opt/himawari/releases/2026-10-20-tenth/share/control-center'}, 'PACKET_STATIC_ROOT_NOT_RUNNING_RELEASE'),
             ({'budgetsPresent': True}, 'PACKET_CONFIG_BUDGETS_PRESENT'),
@@ -412,9 +417,30 @@ class TemplateTest(RenderedPacket):
             ({'newPathsExist': ['/opt/himawari/releases/2026-10-26-twelfth']}, 'PACKET_TARGET_PATHS_EXIST'),
             ({'execStart': ['ExecStart=/usr/bin/node /srv/other.mjs']}, 'PACKET_RUNNING_UNIT_NOT_RECOGNIZED'),
         ]
+        cases += [
+            ({'machine': 'riscv64'}, 'PACKET_ARCHITECTURE_UNSUPPORTED'),
+            ({'serviceUid': None}, 'PACKET_SERVICE_ACCOUNT_NOT_READABLE'),
+            ({'serviceGid': 0}, 'PACKET_SERVICE_ACCOUNT_NOT_READABLE'),
+            ({'nodeSha256': 'abc'}, 'PACKET_NODE_DIGEST_NOT_READABLE'),
+            ({'signerKeys': []}, 'PACKET_FIRST_SIGNER_KEY_NOT_FOUND'),
+            ({'hostname': ''}, 'PACKET_HOSTNAME_NOT_READABLE'),
+        ]
         for changes, code in cases:
             with self.subTest(code=code), self.assertRaisesRegex(packet_maker.PacketError, code):
                 packet_maker.interpret_discovery(production_facts(**changes), INSTANCE)
+
+    def test_machine_facts_come_from_the_target_not_the_instance_file(self):
+        for key in ('serviceUid', 'serviceGid'):
+            self.assertNotIn(key, INSTANCE['fixedByTemplate'])
+        self.assertEqual(set(INSTANCE['host']), {'address'})
+        arm = production_facts(hostname='tokyo-a1', machine='aarch64', serviceUid=1001, serviceGid=1002, nodeSha256='a' * 64, signerKeys=['/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem'])
+        derived = packet_maker.interpret_discovery(arm, INSTANCE)
+        self.assertEqual({key: derived[key] for key in ('HOSTNAME', 'NODE_ARCH', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'FIRST_SIGNER_KEY_PATH')}, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64', 'SERVICE_UID': 1001, 'SERVICE_GID': 1002, 'NODE_SHA256': 'a' * 64, 'FIRST_SIGNER_KEY_PATH': '/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem'})
+
+    def test_an_expected_hostname_pinned_in_the_instance_is_still_enforced(self):
+        pinned = {**INSTANCE, 'host': {**INSTANCE['host'], 'expectedHostname': 'hermes-home'}}
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HOST_UNEXPECTED'):
+            packet_maker.interpret_discovery(production_facts(), pinned)
 
     def test_regenerated_hashes_satisfy_the_packet_consistency_check(self):
         packet = self.render()
@@ -704,6 +730,105 @@ class DerivedExpectationsTest(RenderedPacket):
         self.assertEqual(found, packet_maker.EMBEDDING_PROFILES)
 
 
+class TemplateNeutralityTest(unittest.TestCase):
+    TAG = '[PG-7]'
+
+    def setUp(self):
+        self.neutral = load('check_template_neutral', 'check-template-neutral.py')
+        self.directory = tempfile.TemporaryDirectory()
+        self.template = Path(self.directory.name) / 'packet-template'
+        self.builder = Path(self.directory.name) / 'hermes'
+        shutil.copytree(HERE / 'packet-template', self.template)
+        shutil.copytree(HERE / 'hermes', self.builder)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def test_the_template_and_the_builder_scripts_carry_no_machine_values(self):
+        self.assertEqual(self.neutral.violations(), [])
+
+    def test_each_kind_of_machine_value_put_back_into_the_template_is_refused(self):
+        target = self.template / 'systemd/S2-stop-and-inspect.py'
+        original = target.read_text()
+        cases = {
+            'SERVICE_UID = 999': 'service account number',
+            "'--reuid=1001'": 'service account number in setpriv',
+            "NODE = 'e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2'": 'node binary fingerprint',
+            "KEY = '/var/lib/himawari/qualification/first-20261007/key.pem'": 'qualification directory of the first install',
+            "HOST = 'vmi3618928'": 'target host name',
+            "ADDRESS = '84.247.157.41'": 'target address',
+            "BUILDER = 'hermes-home'": 'builder host name',
+            "MACHINE = 'x86_64'": 'cpu architecture',
+            "PLATFORM = 'linux-x64'": 'cpu architecture',
+            "ABI = 'linux-arm64-abi127'": 'node abi number',
+        }
+        for line, name in cases.items():
+            with self.subTest(name=name, line=line):
+                target.write_text(original + '\n' + line + '\n')
+                found = self.neutral.violations(self.template, self.builder)
+                self.assertTrue(any(item.startswith('systemd/S2-stop-and-inspect.py:') and item.endswith(name) for item in found), found)
+        target.write_text(original)
+        self.assertEqual(self.neutral.violations(self.template, self.builder), [])
+
+    def test_a_builder_script_with_a_fixed_machine_is_refused_too(self):
+        script = self.builder / 'build-candidate.sh'
+        script.write_text(script.read_text() + '\nreport=$out/report/build-linux-x64\n')
+        self.assertTrue(any(item.startswith('hermes/build-candidate.sh:') for item in self.neutral.violations(self.template, self.builder)))
+
+    def test_the_command_exits_non_zero_when_a_value_is_bound(self):
+        clean = subprocess.run([sys.executable, '-I', str(HERE / 'check-template-neutral.py')], capture_output=True, text=True, check=False)
+        self.assertEqual((clean.returncode, clean.stdout.strip()), (0, 'TEMPLATE_NEUTRAL'))
+
+
+class ArmTargetTest(RenderedPacket):
+    TAG = '[PG-6]'
+    ARM = {'SERVICE_UID': 1001, 'SERVICE_GID': 1002, 'NODE_SHA256': 'a' * 64, 'NODE_ARCH': 'arm64', 'HOSTNAME': 'tokyo-a1', 'ADDRESS': '192.0.2.7', 'FIRST_SIGNER_KEY_PATH': '/var/lib/himawari/qualification/zeroth-20261101/host-qualification-public-key.pem', 'PYTHON_SHA256': 'b' * 64, 'PYTHON_BYTES': 123, 'BUILDER_HOSTNAME': 'tokyo-a1', 'REHEARSAL_HOSTNAME': ''}
+
+    def test_a_packet_for_another_machine_carries_none_of_the_old_machine_values(self):
+        packet = self.render(**self.ARM)
+        rehearsal_only = load('check_template_neutral', 'check-template-neutral.py').REHEARSAL_ONLY
+        old = (TWELFTH['HOSTNAME'], TWELFTH['ADDRESS'], TWELFTH['NODE_SHA256'], TWELFTH['PYTHON_SHA256'], 'first-20261007', 'hermes-home')
+        for path in packet.rglob('*'):
+            relative = path.relative_to(packet).as_posix()
+            if path.is_file() and not any(relative == entry or (entry.endswith('/') and relative.startswith(entry)) for entry in rehearsal_only):
+                text = path.read_text()
+                for value in old:
+                    self.assertNotIn(value, text, path.relative_to(packet).as_posix() + ' ' + value)
+        self.assertIn('process.arch === "arm64"', (packet / 'install/twelfth-artifact-install.mjs').read_text())
+        self.assertIn('hostname() === ""', (packet / 'install/twelfth-artifact-install.mjs').read_text())
+        self.assertIn('"nodeSha256": "' + 'a' * 64 + '"', (packet / 'install/p5-materials.json').read_text())
+        self.assertIn('/usr/bin/setpriv --reuid=1001 --regid=1002', (packet / 'signing/prepare-twelfth-snapshot.sh').read_text())
+
+    def test_the_python_archive_digest_is_the_one_the_commit_locks_for_that_architecture(self):
+        lock = {'python': {'version': '3.12.10', 'artifacts': {'linux-x64': {'sha256': 'c' * 64}, 'linux-arm64': {'sha256': 'd' * 64}}}}
+        with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)):
+            self.assertEqual(packet_maker.python_material_sha('e' * 40, 'x64'), 'c' * 64)
+            self.assertEqual(packet_maker.python_material_sha('e' * 40, 'arm64'), 'd' * 64)
+            with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_MATERIAL_NOT_LOCKED'):
+                packet_maker.python_material_sha('e' * 40, 'riscv64')
+        lock['python']['version'] = '3.13.0'
+        with unittest.mock.patch.object(packet_maker, 'git', return_value=json.dumps(lock)), self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_PYTHON_VERSION_UNSUPPORTED'):
+            packet_maker.python_material_sha('e' * 40, 'x64')
+
+    def test_the_arm_builder_is_the_target_itself_and_never_the_rehearsal_host(self):
+        settings = packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7')
+        self.assertEqual((settings['hostname'], settings['transport'], settings['address']), ('tokyo-a1', 'target-ssh', '192.0.2.7'))
+        with unittest.mock.patch.object(packet_maker, 'python_material_sha', return_value='b' * 64):
+            same = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'tokyo-a1', 'NODE_ARCH': 'arm64'}, settings)
+            self.assertEqual((same['BUILDER_HOSTNAME'], same['REHEARSAL_HOSTNAME']), ('tokyo-a1', ''))
+            elsewhere = packet_maker.builder_parameters('e' * 40, {'HOSTNAME': 'vmi3618928', 'NODE_ARCH': 'x64'}, packet_maker.load_builder('x64', 'vmi3618928', '192.0.2.1'))
+            self.assertEqual((elsewhere['BUILDER_HOSTNAME'], elsewhere['REHEARSAL_HOSTNAME']), ('hermes-home', 'hermes-home'))
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_BUILDER_UNKNOWN_ARCHITECTURE'):
+            packet_maker.load_builder('riscv64', 'x', 'y')
+
+    def test_the_arm_builder_reaches_the_target_over_ssh_as_the_build_account(self):
+        hermes = packet_maker.Hermes('thirteenth-1234abcd-20261027t010203', packet_maker.load_builder('arm64', 'tokyo-a1', '192.0.2.7'))
+        command = hermes.ssh_argv('true')
+        self.assertEqual((command[0], command[-2], command[-1]), ('ssh', 'himawari-build@192.0.2.7', 'true'))
+        upload = hermes.upload_argv('/tmp/a', '/remote/b')
+        self.assertEqual((upload[0], upload[-2], upload[-1]), ('scp', '/tmp/a', 'himawari-build@192.0.2.7:/remote/b'))
+
+
 class HermesCommandTest(unittest.TestCase):
     TAG = '[PG-1]'
 
@@ -736,6 +861,20 @@ class HermesCommandTest(unittest.TestCase):
         self.hermes.start('broken', 'echo BUILD_LOG_LINE; exit 7')
         with self.assertRaisesRegex(packet_maker.PacketError, '(?s)PACKET_HERMES_STEP_FAILED broken exit=7.*BUILD_LOG_LINE'):
             self.hermes.wait('broken')
+
+    def test_wait_keeps_polling_while_the_exit_file_is_still_empty(self):
+        self.hermes.install_scripts()
+        log_root = Path(self.hermes.work + '-inputs')
+        log_root.mkdir(parents=True, exist_ok=True)
+        exit_file = log_root / 'late.exit'
+        exit_file.write_text('')
+        (log_root / 'late.log').write_text('')
+        writer = threading.Timer(0.3, lambda: exit_file.write_text('0\n'))
+        writer.start()
+        try:
+            self.hermes.wait('late')
+        finally:
+            writer.join()
 
     def test_a_walkthrough_preflight_failure_refuses_the_packet(self):
         self.hermes.install_scripts()
@@ -924,7 +1063,7 @@ class ReleaseWalkthroughTest(unittest.TestCase):
         (materials / ('linux-x64-abi127-' + revision + '-1-1.tar.gz')).write_bytes(b'x')
         (materials / 'context.json').write_text(json.dumps({'testedSha': revision}))
         hostname = subprocess.run(['hostname'], capture_output=True, text=True, check=True).stdout.strip()
-        (self.scripts / 'builder.json').write_text(json.dumps({'hostname': hostname, 'tools': str(self.tools), 'source': str(source), 'workRoot': str(self.work), 'browsers': str(root / 'browsers'), 'piToolBin': str(self.toolbin)}))
+        (self.scripts / 'builder.json').write_text(json.dumps({'arch': 'x64', 'hostname': hostname, 'tools': str(self.tools), 'source': str(source), 'workRoot': str(self.work), 'browsers': str(root / 'browsers'), 'piToolBin': str(self.toolbin)}))
 
     def tearDown(self):
         self.directory.cleanup()
@@ -1017,12 +1156,14 @@ class HermesCleanupTest(unittest.TestCase):
                 hermes = packet_maker.Hermes('twentieth-e9d30b22-20261030t010000')
                 with unittest.mock.patch.object(packet_maker, 'build_packet', side_effect=SystemExit('PACKET_HERMES_STEP_FAILED')), \
                         unittest.mock.patch.object(packet_maker, 'Hermes', return_value=hermes), \
-                        unittest.mock.patch.object(packet_maker, 'load_instance', return_value={}), \
+                        unittest.mock.patch.object(packet_maker, 'load_instance', return_value={'host': {'address': '192.0.2.1'}}), \
+                        unittest.mock.patch.object(packet_maker, 'load_builder', return_value={'hostname': 'builder'}), \
+                        unittest.mock.patch.object(packet_maker, 'builder_parameters', return_value={}), \
                         unittest.mock.patch.object(packet_maker, 'resolve_commit', return_value='e' * 40), \
                         unittest.mock.patch.object(packet_maker, 'require_current_scripts'), \
                         unittest.mock.patch.object(packet_maker, 'require_claims_proven'), \
                         unittest.mock.patch.object(packet_maker, 'discover', return_value={}), \
-                        unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth'}), \
+                        unittest.mock.patch.object(packet_maker, 'interpret_discovery', return_value={'LABEL': 'twentieth', 'HOSTNAME': 'target', 'NODE_ARCH': 'x64'}), \
                         unittest.mock.patch.object(packet_maker, 'base_parameters', return_value={'LABEL': 'twentieth', 'COMMIT8': 'e' * 8}):
                     with self.assertRaises(SystemExit):
                         packet_maker.prepare(argparse.Namespace(instance='andy-production', commit='HEAD', date='2026-10-30', label='twentieth', since=None, output_root='out'))

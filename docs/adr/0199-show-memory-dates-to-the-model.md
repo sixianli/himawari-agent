@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-10"
+covers: "apps/agent-service/src/production-memory-recall.ts, apps/agent-service/src/production-run-memory.ts, apps/agent-service/test/production-model-composition.unit.test.ts, packages/application/src/ports/memory-dates.ts, packages/application/src/services/owner-profile-service.ts, packages/application/test/owner-profile-service.unit.test.ts, packages/memory-engine/src/consolidation.ts, packages/persistence-sqlite/src/sqlite-memory-operations.ts, packages/prompt-catalog/src/memory.ts, packages/runtime-pi/src/pi-runtime-adapter.ts, packages/runtime-pi/test/prompt-prefix.compat.test.ts, test/integration/context-projection.test.ts, test/integration/memory-model-visible.test.ts, test/integration/production-memory-capture.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0199：自动带入和档案里的记忆带上日期

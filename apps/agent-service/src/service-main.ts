@@ -14,7 +14,6 @@ import {
   createProactiveSeal,
   type DataClassification,
   DEFAULT_HOME_URGENCY,
-  DEFAULT_PROACTIVE_MEMORY_LIMITS,
   DEVICE_CONFIGURATION_DEFAULTS,
   DurableMemoryService,
   defaultDeviceHardLimits,
@@ -22,6 +21,7 @@ import {
   enforceableOwnerRule,
   type HomeUrgencyRunResult,
   type IdGeneratorPort,
+  INBOX_LOOP_DEFAULTS,
   MemoryCheckupService,
   modelUsagePurpose,
   modelVisibleClassifications,
@@ -38,7 +38,9 @@ import {
   recoverSandboxJobsAtStartup,
   reviewCapacity,
   reviewMemoryVisible,
+  ThreadCommandService,
   unreadablePushRule,
+  VaultService,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
 import {
@@ -88,6 +90,7 @@ import {
   MacOsKeychainProviderSecretSource,
   MacOsKeychainSecretSource,
   MUSE_INTAKE_SECRET_PURPOSE,
+  NodeVaultCrypto,
   PayloadUdsServer,
   parseServiceArguments,
   portErrorSite,
@@ -118,6 +121,7 @@ import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./comman
 import { ContextExternalContent } from "./context-external-content.js";
 import { createLocalVectorCatchUp } from "./local-vector-catch-up.js";
 import { MAC_PRESENCE_WINDOW_SECONDS, MacPlacement } from "./mac-placement.js";
+import { OwnerAllowances } from "./owner-allowances.js";
 import { OwnerScopeAuthorization } from "./owner-scope-authorization.js";
 import { ProductionApplePush } from "./production-apple-push.js";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -126,6 +130,7 @@ import { backgroundCommandLimits } from "./production-background-commands.js";
 import { createProductionCapabilityReactivationVerifier } from "./production-capability-reactivation.js";
 import {
   DEFAULT_TOOL_RESULT_SHARE,
+  MEMORY_SNAPSHOT_WINDOW_SHARE,
   ProductionConversationTools,
   toolResultCharacters,
 } from "./production-conversation-tools.js";
@@ -144,7 +149,9 @@ import {
   type ProductionHttpComposition,
   type ProductionHttpCompositionOptions,
 } from "./production-http-composition.js";
+import { InboxRunRegistry } from "./production-inbox-delivery.js";
 import { expandConfigurationWithMagpieModels, priceTiers } from "./production-magpie-models.js";
+import { ProductionMailRead } from "./production-mail-read.js";
 import { ProductionMcpMemoryWriter } from "./production-mcp-memory-writer.js";
 import { ProductionMcpRead } from "./production-mcp-read.js";
 import { ProductionMcpRuleWriter } from "./production-mcp-rule-writer.js";
@@ -170,6 +177,7 @@ import {
 import { ProductionMemoryOpen } from "./production-memory-open.js";
 import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
+import { ProductionMessageOptions } from "./production-message-options.js";
 import {
   createProductionModelCompositionFromConfiguration,
   type ProductionConfiguredModelComposition,
@@ -185,6 +193,7 @@ import { ProductionMuseControl } from "./production-muse-intake-control.js";
 import { ProductionObservation, readServiceRevision } from "./production-observation.js";
 import { productionOwnerIntentGate } from "./production-owner-intent.js";
 import { ProductionOwnerRuleTools, ProductionOwnerRuleWriter } from "./production-owner-rules.js";
+import { ProductionOwnerSteering } from "./production-owner-steering.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { ProductionPerceptionExtraction } from "./production-perception-extraction.js";
 import { ProductionPerceptionTools } from "./production-perception-tools.js";
@@ -197,9 +206,6 @@ import {
   proactiveRedirectUri,
   RULE_REVIEW_MAX_OUTPUT_TOKENS,
 } from "./production-proactive.js";
-import { createProactiveMemoryRecall } from "./production-proactive-memory.js";
-import { createProactiveRecentSummaries } from "./production-proactive-summaries.js";
-import { PENDING_PROPOSAL_CEILING, ProductionProposalBox } from "./production-proposals.js";
 import {
   createProductionRealEval,
   createRealEvalModel,
@@ -221,8 +227,10 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { ProductionTellOwner } from "./production-tell-owner.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
+import { ProductionVaultTools } from "./production-vault-tools.js";
 import { productionVoiceAddressee } from "./production-voice-addressee.js";
 import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -742,6 +750,7 @@ export async function startTenantRuntime(
     nowMilliseconds: () => Date.parse(productionClock().now()),
   });
   let deviceActions: ReturnType<typeof createProductionDeviceActions> | undefined;
+  let vault: VaultService | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
@@ -1591,6 +1600,10 @@ export async function startTenantRuntime(
         primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
         configuration.memory.toolResultShare ?? DEFAULT_TOOL_RESULT_SHARE,
       );
+      const memorySnapshotCharacters = toolResultCharacters(
+        primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
+        MEMORY_SNAPSHOT_WINDOW_SHARE,
+      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
@@ -1665,13 +1678,6 @@ export async function startTenantRuntime(
       const ownerRuleWriter = new ProductionOwnerRuleWriter({
         configuration,
         rules: repository.ownerRules(),
-        box: new ProductionProposalBox({
-          configuration,
-          store: repository.ownerProposals(),
-          payloads,
-          protector: recallProtector,
-          clock: { now: () => clock.now() },
-        }),
         reviews: repository.ruleReviews(),
         memory: durableMemory,
         memories: repository.productMemoryState(),
@@ -1683,7 +1689,9 @@ export async function startTenantRuntime(
         replay: (rule) =>
           proactive ? proactive.replayRule(rule) : Promise.reject(new Error("no mail check")),
       });
-      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter);
+      const ownerRuleTools = new ProductionOwnerRuleTools(ownerRuleWriter, (invocation) =>
+        messageOptions.ownerChose(invocation, "rule_set"),
+      );
       const perceptionScope = {
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1711,9 +1719,26 @@ export async function startTenantRuntime(
         payloads: repository.payloadStore(configuration.ownerId, configuration.agentId),
         protector: recallProtector,
       });
+      const messageOptions = new ProductionMessageOptions({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        state: repository,
+        authority: () => invocationAuthority().lease,
+        registry: toolActions,
+        threads: repository.threadRepository(),
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+      });
       const ownerScope = new OwnerScopeAuthorization({
         configuration,
         externalContent,
+        optionGrants: messageOptions,
         ...(ownerIntent ? { ownerIntent } : {}),
         store: repository.authorizationStore(),
         audit: repository.auditLedger(),
@@ -1733,7 +1758,25 @@ export async function startTenantRuntime(
         clock,
         ids,
         intentLifetimeMs: configuration.deadlines.workerRequestMs,
+        allowances: new OwnerAllowances({
+          configuration,
+          state: repository,
+          store: repository.authorizationStore(),
+          authority: () => invocationAuthority().lease,
+          clock,
+        }),
       });
+      vault = new VaultService({
+        store: repository.vault(),
+        crypto: new NodeVaultCrypto(),
+        notifier: {
+          approvalNeeded: async (input) => {
+            await applePush?.requestVaultApproval(input);
+          },
+        },
+        now: () => new Date(clock.now()),
+      });
+      const activeVault = vault;
       deviceActions = createProductionDeviceActions({
         scope: perceptionScope,
         store: repository.deviceActions(),
@@ -1775,8 +1818,52 @@ export async function startTenantRuntime(
         configuration.ownerId,
         configuration.agentId,
       );
+      const inboxRuns = new InboxRunRegistry();
+      const tellOwner = new ProductionTellOwner({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        registry: inboxRuns,
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        ledger: repository.decisionLedger(),
+        push: { enqueue: (input) => requireValue(repository).webPush().enqueue(input) },
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+      });
+      const steering = new ProductionOwnerSteering({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        threads: repository.threadRepository(),
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+        limit: async () => {
+          const settings = await requireValue(repository)
+            .inbox()
+            .readSettings({ ownerId: configuration.ownerId, agentId: configuration.agentId })
+            .catch(() => undefined);
+          return Math.max(
+            0,
+            (settings?.overrides["eventsPerRun"] ?? INBOX_LOOP_DEFAULTS.eventsPerRun) - 1,
+          );
+        },
+        onFailure: (error) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "owner_follow_up.failed",
+            code: stableErrorCode(error),
+          }),
+      });
       const tools = new ProductionRuntimeTools({
+        steering,
         memoryRecall,
+        tellOwner,
+        mailRead: new ProductionMailRead(() => proactive),
+        messageOptions,
         ...(conversationTools ? { conversations: conversationTools } : {}),
         memoryOpen,
         reminders: reminderTools,
@@ -1785,6 +1872,10 @@ export async function startTenantRuntime(
         ownerScope,
         externalContent,
         perception: perceptionTools,
+        vault: new ProductionVaultTools({
+          scope: perceptionScope,
+          list: (scope) => activeVault.listForModel(scope),
+        }),
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         readOnlyRun: async (runId) => {
           const source = await runSources.read(runId);
@@ -2179,11 +2270,6 @@ export async function startTenantRuntime(
             }),
           );
         };
-        const mailEgress = createProductionModelEgress(
-          configuration,
-          sources,
-          productionSensitiveInterceptionRecorder(repository),
-        );
         const proactiveTimeZone = configuration.runPolicy?.timeZone ?? "UTC";
         const checkupScope = {
           ownerId: configuration.ownerId,
@@ -2237,18 +2323,6 @@ export async function startTenantRuntime(
               event: "proactive.source_limit_reached",
               ...hit,
             }),
-          onMasked: (sightings) =>
-            void mailEgress.reportMasked(
-              {
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-                threadId: null,
-                source: "mail",
-                purpose: "mail-judgment",
-              },
-              "mail",
-              sightings,
-            ),
           scope: proactiveScope,
           configuration: proactiveConfiguration,
           timeZone: configuration.runPolicy?.timeZone ?? "UTC",
@@ -2278,52 +2352,6 @@ export async function startTenantRuntime(
               ? undefined
               : { text, hidden: false, dataClassification: record.dataClassification };
           },
-          ...(memory && durableMemory && protector && repository
-            ? ((recallProtector, recallPayloads) => ({
-                memory: createProactiveMemoryRecall({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  memory: durableMemory,
-                  content: {
-                    readText: async (ref) => {
-                      const payload = await recallPayloads.get(ref);
-                      if (!payload) throw new Error("MEMORY_PAYLOAD_MISSING");
-                      return new TextDecoder("utf-8", { fatal: true }).decode(
-                        await recallProtector.unprotect({
-                          ownerId: configuration.ownerId,
-                          agentId: configuration.agentId,
-                          payload,
-                        }),
-                      );
-                    },
-                  },
-                  embedForMailCheck: memory.embedForMailCheck,
-                  minimumSimilarity:
-                    proactiveConfiguration.memoryMinimumSimilarity ??
-                    memoryComposition.profile.proactiveMinimumSimilarity,
-                  hitsPerMail: DEFAULT_PROACTIVE_MEMORY_LIMITS.perMail,
-                  concurrency: 4,
-                }),
-              }))(protector, repository.payloadStore(configuration.ownerId, configuration.agentId))
-            : {}),
-          ...(memory && memoryEpisodes && repository
-            ? ((book) => ({
-                recentSummaries: createProactiveRecentSummaries({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  episodes: memoryEpisodes,
-                  allowedClassifications: proactiveDescriptor.allowedDataClassifications,
-                  capturePaused: () =>
-                    book
-                      .readSettings({
-                        ownerId: configuration.ownerId,
-                        agentId: configuration.agentId,
-                      })
-                      .then(({ capturePaused }) => capturePaused),
-                  embedForMailCheck: memory.embedForMailCheck,
-                }),
-              }))(repository.memoryBook())
-            : {}),
           model: modelComposition.composition.proactiveModel(proactiveConfiguration.modelRef, {
             maxOutputTokens: PROACTIVE_MAX_OUTPUT_TOKENS,
             requestTimeoutMs: proactiveConfiguration.perCheckMs,
@@ -3018,17 +3046,6 @@ export async function startTenantRuntime(
                 }),
               }
             : {}),
-          proposals: {
-            listReady: async (now) =>
-              (
-                await pushRepository.ownerProposals().listPending({
-                  ownerId: configuration.ownerId,
-                  agentId: configuration.agentId,
-                  now,
-                  limit: PENDING_PROPOSAL_CEILING,
-                })
-              ).proposals.map(({ proposalId, proposedAt }) => ({ id: proposalId, proposedAt })),
-          },
           ...(proactive && proactiveStore && proactiveSeal
             ? {
                 proactive: createProactivePushSource({
@@ -3171,6 +3188,7 @@ export async function startTenantRuntime(
       observation.start();
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
+        memorySnapshotCharacters,
         externalContent,
         ...(configuration.runPolicy?.toolRefusals
           ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }
@@ -3472,6 +3490,7 @@ export async function startTenantRuntime(
         ...(deviceActions
           ? { deviceActions: { service: deviceActions.service, hub: deviceActionHub } }
           : {}),
+        ...(vault ? { vault } : {}),
         deviceNotifications: {
           hub: deviceNotificationHub,
           presence: devicePresence,
@@ -3480,7 +3499,9 @@ export async function startTenantRuntime(
         ...(proactive ? { proactive } : {}),
         threadDeletionDiagnostic: (event: Record<string, string>) =>
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
+        messageOptions,
         inbox: {
+          mainThread: { registry: inboxRuns, externalContent },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         },
@@ -3524,6 +3545,15 @@ export async function startTenantRuntime(
             state: repository,
             authority: () => invocationAuthority().lease,
             clock,
+          }),
+          allowances: new OwnerAllowances({
+            configuration,
+            state: repository,
+            store: repository.authorizationStore(),
+            authority: () => invocationAuthority().lease,
+            clock,
+            threadTitle: async (threadId) =>
+              approvalThreadTitle ? approvalThreadTitle(threadId) : null,
           }),
           ...(memoryClassifier ? { classifier: memoryClassifier } : {}),
           ...(memoryImportDuplicates ? { importDuplicates: memoryImportDuplicates } : {}),

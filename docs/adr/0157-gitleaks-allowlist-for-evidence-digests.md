@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0177-gitleaks-exact-value-allowlist.md"
 date: "2026-11-04"
+covers: "ci/rules/gitleaks.toml, ci/security-exceptions.json, ci/toolchain-lock.json, test/tooling/gitleaks-config.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0157：资格证据里的文件摘要用限定范围的 Gitleaks 白名单放行
@@ -35,7 +37,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的安全检查用 Gitl
 
 默认规则 `generic-api-key`（按“附近有 auth、token、key 之类的词，后面跟一串高随机度的字符”来猜密钥的通用规则）看到路径里的 `authentication`，就把后面的摘要当成密钥。摘要不是密钥，泄露它不会给任何人访问权限。
 
-现行规范 [GitHub CI 与质量门禁设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)规定例外只限“经过审阅的合成测试样例”，每条例外要精确到路径、规则、摘要和次数，最长 30 天到期；还规定“不得降低规则、加大范围排除”。给 480 条摘要逐条登记例外，每 30 天还要整批重新审阅，做不下去；而这批命中本身是规则误判，不是需要豁免的测试密钥。
+现行规范 [GitHub CI 与质量门禁设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions)规定例外只限“经过审阅的合成测试样例”，每条例外要精确到路径、规则、摘要和次数，最长 30 天到期；还规定“不得降低规则、加大范围排除”。给 480 条摘要逐条登记例外，每 30 天还要整批重新审阅，做不下去；而这批命中本身是规则误判，不是需要豁免的测试密钥。
 
 [↑ 返回阅读导航](#contents)
 
@@ -54,7 +56,7 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的安全检查用 Gitl
 
 1. 文件摘要这类“规则把非密钥误认成密钥、而且形状固定”的误报，用 `ci/rules/gitleaks.toml` 里的白名单处理；个别具体的值（合成 token、示例密码等）仍按规范走逐条例外。
 2. 白名单必须同时满足四个限定，缺一个都不行：
-   - `targetRules = ["generic-api-key"]`：只对这一条规则生效。不写这一项的白名单是全局的，Gitleaks 扫当前文件时只要路径对上就跳过整个文件，`condition = "AND"` 不起作用（Gitleaks 8.30.0 源码 `sources/common.go` 的 `shouldSkipPath`）。
+   - `targetRules = ["generic-api-key"]`：只对这一条规则生效。不写这一项的白名单是全局的，Gitleaks 扫当前文件时只要路径对上就跳过整个文件，`condition = "AND"` 不起作用（Gitleaks 8.30.0 源码 `sources/common.go` 的 shouldSkipPath）。
    - `condition = "AND"`：路径和内容两个条件都满足才放行。
    - `paths` 只写出问题的那一个目录，并用 `(?:^|/)` 开头，同时兼容扫当前文件时的绝对路径和扫历史时的仓库相对路径。
    - `regexTarget = "line"`，正则锚定整行，只认 `"带目录和扩展名的路径": "64 位小写十六进制"` 这一种形状。不写 `regexTarget` 时正则只和被认定为密钥的那串值比，永远对不上整行形状。
@@ -93,6 +95,6 @@ CI（每次推送后 GitHub Actions 自动跑的检查）的安全检查用 Gitl
 
 ## 关联文档
 
-- [SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#security-and-exceptions]
 - Gitleaks 8.30.0 官方说明：[README](https://github.com/gitleaks/gitleaks/blob/v8.30.0/README.md)（“The "AND" condition can be used to make sure all criteria match”；`targetRules`：“This will only run on the specified rules, not globally”）
 - Gitleaks 8.30.0 源码：[config/config.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/config/config.go)（带 `targetRules` 的白名单不进全局列表）、[sources/common.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/sources/common.go)（全局白名单按路径跳过文件）、[detect/detect.go](https://github.com/gitleaks/gitleaks/blob/v8.30.0/detect/detect.go)（`regexTarget` 和 AND 条件的判断）

@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-15"
+covers: "scripts/delivery-mode/packet-template/maintenance/P-readback-design.md, scripts/delivery-mode/packet-template/systemd/S7-switch-start-readback.py, scripts/delivery-mode/test_make_packet.py"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0279：上线时历史数据只在服务停着时比较，S8 不再逐行比对
@@ -27,14 +29,14 @@ date: "2026-11-15"
 
 上线的第 8 步 S8（新版本启动之后的读回）原来会把生产库和第 3 步保存的数据库副本逐行比较，规定“上线前已有的行不能删、列不能变”。运行中的服务本来就会改老行，所以它拦过两次上线，两次都是正常写入：第十一次是启动恢复改写 `sandbox_execution_records.recovery_json`，第二十九次（[I-108](../incidents-and-gates.md#incidents)）是服务结算预算改了 `model_budget_accounts`。第二十九次当时给 Andy 的临时办法是为这一次上线关掉整类历史比较，下一个版本会重新被拦。
 
-Andy 2026-11-15 的要求：找根因，不打补丁，也不做一次性豁免。他同意本 ADR 的方案（原话“同意”，项目线程消息 `cmsg_01EE1hey9cboYNfwFnBv5dgrYWwNxFFj8F6VYrAWGtGRVM`）。本决定在产品愿景的裁决顺序里依据“边界与可逆性”：上线前的整库副本一直保留，真出事可以恢复。
+Andy 2026-11-15 的要求：找根因，不打补丁，也不做一次性豁免。他同意本 ADR 的方案（原话“同意”，项目线程消息 cmsg_01EE1hey9cboYNfwFnBv5dgrYWwNxFFj8F6VYrAWGtGRVM）。本决定在产品愿景的裁决顺序里依据“边界与可逆性”：上线前的整库副本一直保留，真出事可以恢复。
 
 <a id="premises"></a>
 
 ## 前提
 
 1. 服务停着时，12 张历史表已经连续按“整表摘要完全相等”比较：`scripts/delivery-mode/packet-template/maintenance/P-readback-design.md` 的“历史不变的比较链”第 1 到 4 条，最后一次是 `scripts/delivery-mode/packet-template/systemd/S7-switch-start-readback.py` 里换服务定义和启动新版本之前的 `if upgraded_state['history'] != state['history']: raise …SWITCH_HISTORY_CHANGED`。出包时迁移改历史表会被 `make-packet.py` 的 `PACKET_MIGRATION_TOUCHES_PRESERVED_TABLES` 拒绝。I-108 里这些检查都通过了。
-2. 运行中的服务合法地改和删这些表的老行：`packages/persistence-sqlite/src` 里对 `runs`、`threads`、预算两张表、模型调用记录、对话检查点、沙箱执行记录都有 UPDATE，`runs`、`threads`、`sandbox_execution_records` 另有 DELETE；[ADR 0277](0277-the-system-deletes-expired-think-threads.md) 的决定 2 还让服务启动后每小时删一次到期的“想一想”对话。12 张表里只有 4 张有 `revision` 列（runs、threads、run_coordination_checkpoints、model_budget_accounts，我把 112 个迁移在内存 SQLite 里跑完后核的）。
+2. 运行中的服务合法地改和删这些表的老行：`packages/persistence-sqlite/src` 里对 `runs`、`threads`、预算两张表、模型调用记录、对话检查点、沙箱执行记录都有 UPDATE，`runs`、`threads`、`sandbox_execution_records` 另有 DELETE；[ADR 0277](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0277-the-system-deletes-expired-think-threads.md) 的决定 2 还让服务启动后每小时删一次到期的“想一想”对话。12 张表里只有 4 张有 `revision` 列（runs、threads、run_coordination_checkpoints、model_budget_accounts，我把 112 个迁移在内存 SQLite 里跑完后核的）。
 3. 旧的 S8 逐行比对只允许两处例外：`sandbox_execution_records.recovery_json`，以及迁移 `thread_origin` 加的 `threads.origin` 列；其余列一变就以 `HISTORY_ROW_CHANGED` 失败（`3cbd7735` 的 `P-readback-design.md` 第 42 行，本 PR 删掉了它）。
 
 <a id="decision"></a>
@@ -42,7 +44,7 @@ Andy 2026-11-15 的要求：找根因，不打补丁，也不做一次性豁免�
 ## 决定
 
 1. 历史数据只在服务停着时比较，规则不变：S3、S7 按表摘要比，迁移前后比，S7 切换脚本在启动新版本之前比较 S7 升级前后两份已保存的停服读回（比的是已保存的证据，不重新读库；此时服务已停，只有 root 能写），出包时拒绝迁移改历史表，S9 恢复后和 S3 读回比。
-2. S8 不再把启动后的生产库和 S3 数据库副本逐行比较，也不再写 `s8-history-preserved.json`。S8 保留其余全部检查：结构、迁移记录、完整性、外键、租约和 fencing token、能力登记、授权、S3 恢复点仍可核验，以及 S3 读回和 S7 读回相同。
+2. S8 不再把启动后的生产库和 S3 数据库副本逐行比较，也不再写 [s8-history-preserved.json](https://github.com/sixianli/himawari-agent/blob/3cbd77356f7f65db72d28ae15ee687fa4dd3e912/scripts/delivery-mode/packet-template/maintenance/run-maintenance.mjs)。S8 保留其余全部检查：结构、迁移记录、完整性、外键、租约和 fencing token、能力登记、授权、S3 恢复点仍可核验，以及 S3 读回和 S7 读回相同。
 3. 删掉第二十九次的一次性开关整套机制（实例文件的 `historyComparison`、出包参数、维护脚本和 S7 切换脚本里的分支）。实例文件再带 `historyComparison`，`make-packet.py` 以 `PACKET_HISTORY_COMPARISON_SWITCH_REMOVED` 拒绝。
 4. “新版本启动后代码是否写对”归产品测试负责，不由上线检查判断。
 

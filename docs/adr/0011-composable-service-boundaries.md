@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0011: 按信任和故障边界拆分可组合服务
@@ -44,4 +46,4 @@ date: "2026-08-25"
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#deployment-and-engineering-quality]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#deployment-and-engineering-quality]

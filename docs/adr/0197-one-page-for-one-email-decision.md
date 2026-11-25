@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-09"
+covers: "apps/control-center/test/weekly-report.unit.test.ts, test/integration/decision-email-browser.test.ts, test/integration/decision-email.test.ts, test/tooling/prod-read.test.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0197：在控制中心用一页展示一封邮件的决策、依据链、本周校准数字和 Muse 对照

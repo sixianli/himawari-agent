@@ -5,9 +5,13 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-04"
+covers: "packages/application/src/services/proactive-mail-check-service.ts, packages/application/test/proactive-mail-body.unit.test.ts, packages/platform-node/src/gmail-body.ts, packages/platform-node/test/gmail-body.unit.test.ts, packages/runtime-pi/src/configured-model-binding.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0159：Gmail 检查读邮件正文，并把主人自己发的邮件也交给模型
+
+> 2026-11-25 补：Gmail 检查不再调用模型逐封判断，新邮件改为进收件箱、由主对话里的她自己决定要不要告诉主人（[ADR 0285](0285-one-main-thread-subthreads-and-one-inbox.md) 第 1 步，PR 648）。本文里关于邮件判断提示词、判断结果和判断前带给模型的内容的部分已不再执行；规则手册、决策记录等其余部分照旧。
 
 <a id="contents"></a>
 
@@ -26,10 +30,10 @@ date: "2026-11-04"
 Andy 2026-11-04 在项目聊天里做了三个决定，原话由协调者附在线程里：
 
 - 只跳过垃圾邮件，其余邮件（包括他自己发出的）都交给模型看。起因是他自己答应别人的事（例如“周五前给你报价”）只写在他发出的邮件里，现在这类邮件在送模型之前就被规则丢掉了（`packages/application/src/services/proactive-mail-check-service.ts` 里原来的 `own_mail` 跳过）。
-- 模型读邮件的全部内容（正文）。这改变了他自己此前保留的决定：[ADR 0134](0134-adopt-product-vision-v2-2.md) 第 98 行“要不要让主动检查读正文，由 Andy 决定”（ADR 0134 现已被 [ADR 0153](0153-adopt-product-vision-v2-3.md) 取代，愿景 `docs/product-vision.md` 第 133 行本来就写着“对退款、预订、付款是否办结，必须读完线程全文并搜后续确认/收据才下结论，绝不只看标题”）。
+- 模型读邮件的全部内容（正文）。这改变了他自己此前保留的决定：[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 第 98 行“要不要让主动检查读正文，由 Andy 决定”（ADR 0134 现已被 [ADR 0153](0153-adopt-product-vision-v2-3.md) 取代，愿景 `docs/product-vision.md` 第 133 行本来就写着“对退款、预订、付款是否办结，必须读完线程全文并搜后续确认/收据才下结论，绝不只看标题”）。
 - 记录里只存遮盖掉密码、卡号后的版本；这次只读新收到的邮件和已发送邮件；“只发给不保留数据的模型厂商”这一条他决定先不关注，所以本次沿用现有模型路由。
 
-方案由线程和 OpenCode 上的两个模型（`deepseek-v4.1-flash`、`glm-5.3-flash`）各自独立出方案、再互相审核后整合。完整比较在项目文件夹 `own-mail-to-model/plan-v2-full-body.md`。
+方案由线程和 OpenCode 上的两个模型（`deepseek-v4.1-flash`、`glm-5.3-flash`）各自独立出方案、再互相审核后整合。完整比较在项目文件夹 own-mail-to-model/plan-v2-full-body.md。
 
 <a id="decision"></a>
 
@@ -72,16 +76,16 @@ Andy 2026-11-04 在项目聊天里做了三个决定，原话由协调者附在�
 - **已知限制。** 一个邮件串只有一条提醒，同串后到的覆盖先到的；“已回复”只看本次取到的邮件，已归档或不在本次窗口里的更晚邮件看不到；退款、预订是否办结需要整个邮件串，留给第二阶段。
 - **“已回复”看已处理邮件的时间。** 已处理记录新增 `received_at`（迁移 0076，旧行为空，空值不挡）。一次检查要把某串的提醒标成已回复时，数据库里该串只要有一封已处理邮件比这封自己发的邮件更晚，就不标；这样积压超过一次取的 300 封、较新来信先处理的情况也不会误关提醒。
 - **没核实的。** Gmail `format=full` 返回的正文是否已统一成 UTF-8（文档没写，现在的解码不依赖这点，但真实 Gmail 响应的样本还没抓）；一次取 300 封全文的耗时和配额；邮件头里的编码词是否已被 Gmail 解码。
-- **旧决定的修订。** [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md) 的决定第 3 条（模型不看正文）和第 7 条（不存正文）、[ADR 0158](0158-bring-related-memories-into-gmail-checks.md) 的决定第 5 条（跳过主人自己发的邮件）、[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md) 后果里“等送模型前统一脱敏完成”的前置条件（[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 已落地），以本 ADR 为准。ADR 0147 决定第 8 条“不自动删除，断开或清除记录时才删”不变。
+- **旧决定的修订。** [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md) 的决定第 3 条（模型不看正文）和第 7 条（不存正文）、[ADR 0158](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md) 的决定第 5 条（跳过主人自己发的邮件）、[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md) 后果里“等送模型前统一脱敏完成”的前置条件（[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 已落地），以本 ADR 为准。ADR 0147 决定第 8 条“不自动删除，断开或清除记录时才删”不变。
 - **缓存。** 固定说明改一次，之后跨检查的缓存照常命中；每批邮件的内容本来就每次不同。
 - **以前被 `own_mail` 跳过的邮件不回溯。**
-- **自动检查。** `test/integration/proactive-mail-check.test.ts` 的 `[OM-1]` 至 `[OM-10]`，`packages/platform-node/test/gmail-body.unit.test.ts`（`[OM-11]`），`packages/application/test/proactive-mail-body.unit.test.ts`（`[OM-12]`）。`[OM-1]` 至 `[OM-9]` 在旧代码上全部失败。
+- **自动检查。** [test/integration/proactive-mail-check.test.ts](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/test/integration/proactive-mail-check.test.ts) 的 `[OM-1]` 至 `[OM-10]`，`packages/platform-node/test/gmail-body.unit.test.ts`（`[OM-11]`），`packages/application/test/proactive-mail-body.unit.test.ts`（`[OM-12]`）。`[OM-1]` 至 `[OM-9]` 在旧代码上全部失败。
 - **界面说明。** 设置页“Himawari 会读什么、发给谁”三种语言同步改写，不再说“不发正文”“不存邮件正文”。
 
 <a id="references"></a>
 
 ## 关联文档
 
-- [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)、[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)、[ADR 0158](0158-bring-related-memories-into-gmail-checks.md)
+- [ADR 0106](0106-proactive-loop-v1-gmail-read-only.md)、[ADR 0147](0147-keep-model-prompt-and-answer-of-each-gmail-check-with-the-ledger.md)、[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md)、[ADR 0153](0153-adopt-product-vision-v2-3.md)、[ADR 0158](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md)
 - 产品愿景：[docs/product-vision.md](../product-vision.md)
-- 规格：[主动闭环 v1 Gmail 设计](../execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)
+- 规格：[主动闭环 v1 Gmail 设计](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/execution/specs/2026-10-29-proactive-loop-v1-gmail-design.md)

@@ -21,6 +21,7 @@ public final class DeviceActionsModel {
     public internal(set) var permissions: [PermissionState] = []
     public internal(set) var sourceNames: [String: String] = [:]
     public internal(set) var approvalsAvailable = true
+    public internal(set) var allowanceDays: Int?
     public internal(set) var busy: Set<String> = []
     public internal(set) var problem: String?
 
@@ -40,7 +41,7 @@ public final class DeviceActionsModel {
         self.store = store
     }
 
-    init(pending: [PendingApproval], handled: [PendingApproval], recent: [DeviceActionView], policy: DevicePolicyView?, permissions: [PermissionState], sourceNames: [String: String] = [:]) {
+    init(pending: [PendingApproval], handled: [PendingApproval], recent: [DeviceActionView], policy: DevicePolicyView?, permissions: [PermissionState], sourceNames: [String: String] = [:], allowanceDays: Int? = nil) {
         api = nil
         executor = nil
         confirm = nil
@@ -51,6 +52,7 @@ public final class DeviceActionsModel {
         self.policy = policy
         self.permissions = permissions
         self.sourceNames = sourceNames
+        self.allowanceDays = allowanceDays
     }
 
     public var waitingCount: Int { pending.count }
@@ -81,6 +83,7 @@ public final class DeviceActionsModel {
             recent = views.sorted { $0.updatedAt > $1.updatedAt }
         }
         if let policy = try? await api.actionPolicy() { self.policy = policy }
+        allowanceDays = try? await api.allowanceDays()
     }
 
     public func loadHandled() async {
@@ -117,15 +120,16 @@ public final class DeviceActionsModel {
         deviceActionsChanged()
     }
 
-    public func respond(_ approval: PendingApproval, approved: Bool) async {
+    public func respond(_ approval: PendingApproval, approved: Bool, allowFor: ApprovalAllowFor = .once) async {
         guard let api, !busy.contains(approval.id) else { return }
         busy.insert(approval.id)
         defer { busy.remove(approval.id) }
         problem = nil
         do {
-            let reply = try await api.respond(to: approval, approved: approved, confirm: confirm, reason: approval.title)
+            let reply = try await api.respond(to: approval, approved: approved, allowFor: allowFor, days: allowanceDays, confirm: confirm, reason: approval.title)
             if approved && approval.recentAuthenticationRequired { Haptics.shared.report(.faceIDSucceeded) }
             if reply == .changed { problem = DeviceActionsText.changed }
+            if reply == .allowanceNotSaved { problem = DeviceActionsText.allowanceNotSaved }
             pending.removeAll { $0.id == approval.id }
         } catch {
             if approved && approval.recentAuthenticationRequired { Haptics.shared.report(.faceIDFailed) }

@@ -41,7 +41,6 @@ public final class AppModel {
     public private(set) var senses: SensesModel?
 
     @ObservationIgnored public let api: DeviceAPI
-    @ObservationIgnored public let home: HomeFeedModel
     public var confirmKey: DeviceKeySigner { keys.signer(.confirm) }
     @ObservationIgnored public let vault: SharedVault
     @ObservationIgnored private let keys: SecureEnclaveKeyStore
@@ -75,6 +74,15 @@ public final class AppModel {
         ServerValueDiagnostics.shared.observe { report in
             logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
         }
+        let streams = Logger(subsystem: subsystem, category: "streams")
+        StreamDiagnostics.shared.observe { problem in
+            switch problem {
+            case let .notOpened(path, connections):
+                streams.error("stream \(path, privacy: .public) not opened: server allows \(connections, privacy: .public) connections, needs \(ExecutionStreamPolicy.streamsNeeded, privacy: .public)")
+            case let .refused(path, status, code):
+                streams.error("stream \(path, privacy: .public) refused: HTTP \(status, privacy: .public) \(code ?? "-", privacy: .public)")
+            }
+        }
         #endif
     }
 
@@ -103,8 +111,8 @@ public final class AppModel {
         )
         #if os(iOS)
         PushBridge.sync = pushSync
+        NotificationRouter.shared.transport = api
         #endif
-        home = HomeFeedModel(source: DeviceHomeSource(api: api, confirmKey: vault.keys.signer(.confirm)))
         if restoring { restore() }
     }
 
@@ -221,8 +229,14 @@ public final class AppModel {
         let model = AppModel(kind: kind, restoring: false)
         model.phase = phase
         model.demoHost = host
+        model.configuration = demoConfiguration
         return model
     }
+
+    private static let demoConfiguration = try? JSONDecoder().decode(DeviceConfiguration.self, from: Data("""
+    {"heartbeatSeconds":25,"connectionMaxSeconds":3600,"signatureToleranceSeconds":300,"limits":[],"streamConnections":4,
+     "attachments":{"textCharacters":200000,"imageCharacters":4000000,"perMessage":4,"messageCharacters":4000000}}
+    """.utf8))
 
     public func useDemoDeviceStore(_ store: FileLocalStore?) {
         self.store = store
@@ -310,7 +324,6 @@ public final class AppModel {
         senses?.suspend()
         senses = nil
         actions = nil
-        home.reset()
         do {
             try (store ?? FileLocalStore.applicationSupport(named: "himawari-device")).retire()
             return true

@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-05"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/production-background-commands.ts, apps/agent-service/test/fixtures/prompt-wording-before-batch-1.json, apps/agent-service/test/prompt-wording.unit.test.ts, packages/platform-node/src/files/pi-host-publication.ts, packages/runtime-pi/src/pi-builtin-tool-text.ts, packages/runtime-pi/test/pi-builtin-tool-text.compat.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0166：提示词措辞第 1 批：系统提示和工具层只写真话，并补上三处代码拦截
@@ -37,7 +39,7 @@ Himawari 发给模型的提示词（系统提示、工具说明、资料标记�
 都是 2026-11-05 在项目聊天里定的，由协调者转达。
 
 1. **第 1 批和 PR-A、PR-B 同一次上线**（D1）。后来补充：缓存失效不再是拆分上线的约束，原话“现在这个 agent 只有我一个人用……失效就失效吧，怎么方便部署怎么来就行”。所以本批不再为了少失效一次而调整措辞或顺序。
-2. **“主人的要求”这块资料先用措辞止血**（D2）：给它单独一种标记，写明回答时照做；[ADR 0134](0134-adopt-product-vision-v2-2.md) 记下的“规则应写进程序”缺口照旧保留。
+2. **“主人的要求”这块资料先用措辞止血**（D2）：给它单独一种标记，写明回答时照做；[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md) 记下的“规则应写进程序”缺口照旧保留。
 3. **回答语言的顺序**（D3）：本轮明确指定 > 主人的要求 > 本轮提问的语言 > 简体中文。
 4. **有钟点的提醒提前 1 小时是有意的**（D8），写成“最多提前 1 小时（离现在不到 1 小时的马上发出）”。
 5. **六条没有理由保留英文的条目改中文**：`chat.turn.context-material-marker`、`chat.turn.runtime-environment-marker`、`chat.turn-aborted`、`chat.turn-aborted.legacy`、`chat.tool-loop-stopped`、`chat.tool-loop-rejected`。向量检索指令和 TypeSafe 问题保持英文。

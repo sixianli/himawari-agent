@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-08-25"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0006: 使用一个主 Agent 和受限工作单元
@@ -39,4 +41,4 @@ date: "2026-08-25"
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#agent-topology-and-capabilities]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#agent-topology-and-capabilities]

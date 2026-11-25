@@ -1,19 +1,13 @@
-"chat.title" = "Chats";
-"chat.untitled" = "New chat";
-"chat.new" = "New chat";
 "chat.back" = "Back";
-"chat.empty" = "No chats yet";
 "chat.input.placeholder" = "Type, or hold to talk";
 "chat.send" = "Send";
 "chat.queued.sending" = "Sending";
 "chat.queued.failed" = "Not sent";
 "chat.queued.retry" = "Retry";
 "chat.queued.discard" = "Discard";
-"chat.createFailed" = "Couldn't start a new chat. Try again later.";
 "common.ok" = "OK";
-"time.yesterday" = "Yesterday";
 "process.thinking" = "Thinking";
-"process.waiting" = "Waiting for your approval";
+"process.waiting" = "Needs your OK";
 "process.seconds" = "%d s";
 "process.expand" = "Show each step";
 "process.didThings" = "Did %d things";
@@ -21,8 +15,6 @@
 "process.stopped" = "Stopped";
 "process.sheet.title" = "What it did";
 "process.sheet.close" = "Close";
-"chat.empty.hint" = "Whatever is on your mind, just say it";
-"chat.new.prompt" = "Go ahead, I’m listening";
 "chat.offline" = "Not connected. What you write will be sent once connected";
 "chat.queued.offline" = "Not sent. Will resend once connected";
 "chat.queued.retryNow" = "Resend now";
@@ -55,3 +47,4 @@
 "chat.talk.herTurn" = "She’s talking · just speak to cut in";
 "chat.talk.muted" = "Muted";
 "chat.talk.failed" = "Couldn’t start talking. Try again";
+"chat.option.chosen" = "You chose";

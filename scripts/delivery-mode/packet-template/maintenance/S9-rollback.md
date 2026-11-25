@@ -8,7 +8,7 @@
 
 ## 批准文件
 
-Claude 根据用户的具体批准，在证据根 `/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence` 内建立 `rollback-approval.json`。文件必须由 root 所有、属组 GID 988、权限 0640：生产账号能读，不能改。恢复点摘要来自 S3 成功报告；`approvalRef` 必须写这次批准的具体引用，不能用下面的占位文本。
+Claude 根据用户的具体批准，在证据根 `/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence` 内建立 `rollback-approval.json`。文件必须由 root 所有、属组 GID __PKT_SERVICE_GID__、权限 0640：生产账号能读，不能改。恢复点摘要来自 S3 成功报告；`approvalRef` 必须写这次批准的具体引用，不能用下面的占位文本。
 
 ```json
 {

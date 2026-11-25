@@ -26,7 +26,8 @@ export interface ProductionOwnerIntentOptions {
   readonly audit: AuditLedgerPort;
   readonly authority: () => AuthorityFence;
   readonly clock: ClockPort;
-  readonly threads: Pick<ThreadRepositoryPort, "listMessages" | "readCommittedMessagesByIds">;
+  readonly threads: Pick<ThreadRepositoryPort, "listMessages" | "readCommittedMessagesByIds"> &
+    Partial<Pick<ThreadRepositoryPort, "readFoldedOwnerMessages">>;
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly protector: PayloadProtectorPort;
   readonly fetch?: typeof globalThis.fetch;
@@ -36,7 +37,8 @@ export interface ProductionOwnerIntentOptions {
 export interface OwnerWordsDependencies {
   readonly ownerId: ProductConfiguration["ownerId"];
   readonly agentId: ProductConfiguration["agentId"];
-  readonly threads: Pick<ThreadRepositoryPort, "listMessages" | "readCommittedMessagesByIds">;
+  readonly threads: Pick<ThreadRepositoryPort, "listMessages" | "readCommittedMessagesByIds"> &
+    Partial<Pick<ThreadRepositoryPort, "readFoldedOwnerMessages">>;
   readonly readText: (ref: string) => Promise<string | undefined>;
 }
 
@@ -77,19 +79,32 @@ export async function collectOwnerWords(
     current.contentRef !== source.payloadRef
   )
     return [];
+  const foldedIds = (
+    (await threads.readFoldedOwnerMessages?.({ ownerId, agentId, runId: source.runId })) ?? []
+  ).map(({ messageId }) => messageId);
+  const folded =
+    foldedIds.length === 0
+      ? []
+      : await threads.readCommittedMessagesByIds({
+          ownerId,
+          agentId,
+          threadId: source.threadId,
+          messageIds: foldedIds,
+        });
+  const lastSequence = Math.max(current.sequence, ...folded.map(({ sequence }) => sequence));
   const window = await threads.listMessages(
     ownerId,
     agentId,
     source.threadId,
-    Math.max(0, current.sequence - WINDOW_MESSAGES),
-    WINDOW_MESSAGES + 1,
+    Math.max(0, lastSequence - WINDOW_MESSAGES - folded.length),
+    WINDOW_MESSAGES + folded.length + 1,
   );
   const messages = window
     .filter(
       (message) =>
         message.role === "owner" &&
         message.status === "committed" &&
-        message.sequence <= current.sequence &&
+        message.sequence <= lastSequence &&
         sendable(message.dataClassification),
     )
     .toSorted((left, right) => left.sequence - right.sequence)

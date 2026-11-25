@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "apps/control-center/test/memory-interactions.unit.test.ts, test/integration/production-memory-capture.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0217：记忆可以恢复到变化记录里的任何一版

@@ -1,7 +1,10 @@
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import { queryMessage } from "./messages.js";
 import { commandMessage } from "./messages.js";
-import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  APPROVAL_ALLOWANCE_INTENT_PREFIX,
+  type GatewayV2Snapshot,
+} from "@himawari-agent/gateway-contracts";
 import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 
 export type RunApproval = Extract<GatewayV2Snapshot, { type: "approval.snapshot" }>;
@@ -134,4 +137,87 @@ export async function listPendingRunApprovals(
     if (afterCursor) seen.add(afterCursor);
   } while (afterCursor);
   return approvals;
+}
+
+export type ApprovalAllowFor = "once" | "this_task" | "days" | "always";
+
+export function approvalAllowanceChoices(snapshot: RunApproval): readonly ApprovalAllowFor[] {
+  const intent = snapshot.payload.intent;
+  if (
+    intent.estimatedCostMicros > 0 ||
+    intent.actionKind === "PURCHASE_OR_FUNDS" ||
+    intent.credentialOrAccessChange ||
+    intent.deterministicFactCodes.includes("owner_presence_required") ||
+    !intent.intentId.startsWith(APPROVAL_ALLOWANCE_INTENT_PREFIX)
+  )
+    return ["once"];
+  return ["once", "this_task", "days", "always"];
+}
+
+export function groupAllowanceChoices(group: readonly RunApproval[]): readonly ApprovalAllowFor[] {
+  const [first, ...rest] = group;
+  if (!first) return ["once"];
+  return rest.reduce<readonly ApprovalAllowFor[]>((shared, approval) => {
+    const offered = approvalAllowanceChoices(approval);
+    return shared.filter((choice) => offered.includes(choice));
+  }, approvalAllowanceChoices(first));
+}
+
+export async function readApprovalAllowanceDays(
+  client: Pick<GatewayClient, "query">,
+  configuration: ControlCenterRuntimeConfiguration,
+): Promise<number> {
+  const result = await client.query(queryMessage(configuration, "memory.rules.read", {}));
+  if (result.type !== "memory.rules.snapshot") throw new Error("RULES_INVALID");
+  return result.payload.allowanceDays;
+}
+
+export async function setApprovalAllowanceDays(input: {
+  client: Pick<GatewayClient, "mutate">;
+  configuration: ControlCenterRuntimeConfiguration;
+  days: number;
+}) {
+  const { client, configuration, days } = input;
+  if (!configuration.authorizationRef) throw new Error("CONTROL_CENTER_AUTHORIZATION_REQUIRED");
+  return client.mutate(
+    commandMessage(
+      configuration,
+      "approval.allowance.days.set",
+      { days },
+      {
+        risk: "medium",
+        authorizationRef: configuration.authorizationRef,
+        idempotencyKey: `governance:${crypto.randomUUID()}`,
+      },
+    ),
+  );
+}
+
+export async function setApprovalAllowance(input: {
+  client: Pick<GatewayClient, "mutate">;
+  configuration: ControlCenterRuntimeConfiguration;
+  snapshot: RunApproval;
+  allowFor: Exclude<ApprovalAllowFor, "once">;
+  days: number | null;
+}) {
+  const { client, configuration, snapshot, allowFor, days } = input;
+  if (!configuration.authorizationRef) throw new Error("CONTROL_CENTER_AUTHORIZATION_REQUIRED");
+  if (!approvalAllowanceChoices(snapshot).includes(allowFor))
+    throw new Error("APPROVAL_ALLOWANCE_NOT_OFFERED");
+  return client.mutate(
+    commandMessage(
+      configuration,
+      "approval.allowance.set",
+      {
+        approvalRequestId: snapshot.payload.approvalRequestId,
+        allowFor,
+        days: allowFor === "days" ? days : null,
+      },
+      {
+        risk: "medium",
+        authorizationRef: configuration.authorizationRef,
+        idempotencyKey: `governance:${crypto.randomUUID()}`,
+      },
+    ),
+  );
 }

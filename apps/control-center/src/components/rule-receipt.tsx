@@ -1,6 +1,11 @@
+import {
+  APPROVAL_ALLOWANCE_DAYS_MAXIMUM,
+  APPROVAL_ALLOWANCE_DAYS_MINIMUM,
+} from "@himawari-agent/gateway-contracts";
 import { useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryModel, OwnerRuleAction, PendingProposal, ProposalAction } from "../memory.js";
+import type { MemoryModel, OwnerRuleAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -87,33 +92,20 @@ export function RuleReceiptCard({
   message,
 }: {
   output: string;
-  memory: Pick<MemoryModel, "proposals" | "respondRule" | "respondProposal" | "busy">;
+  memory: Pick<MemoryModel, "respondRule" | "busy">;
   message: Message;
 }) {
   const receipt = parseRuleReceipt(output);
-  const [done, setDone] = useState<OwnerRuleAction | ProposalAction | null>(null);
+  const [done, setDone] = useState<OwnerRuleAction | null>(null);
   if (!receipt) return null;
   const act = async (target: string, action: OwnerRuleAction) => {
     if (await memory.respondRule(target, action)) setDone(action);
-  };
-  const waiting = memory.proposals?.proposals.find(
-    ({ proposalId }) => proposalId === receipt.proposalId,
-  );
-  const refuse = async (proposal: PendingProposal) => {
-    if (await memory.respondProposal(proposal, "reject")) setDone("reject");
   };
   return (
     <section className="memory-card rule-receipt" aria-label={message("rules.receipt.label")}>
       <span className="memory-tag" data-kind="rule">
         {message("rules.receipt.status", {
-          s:
-            done === "undo"
-              ? "undone"
-              : done === "confirm"
-                ? "active"
-                : done === "reject"
-                  ? "rejected"
-                  : receipt.status,
+          s: done === "undo" ? "undone" : done === "confirm" ? "active" : receipt.status,
         })}
       </span>
       <p className="memory-text">{receipt.summary}</p>
@@ -176,15 +168,6 @@ export function RuleReceiptCard({
               onClick={() => void act(receipt.proposalId ?? "", "confirm")}
             >
               {message("rules.receipt.confirm")}
-            </ActionButton>
-          ) : null}
-          {receipt.status === "proposed" && waiting ? (
-            <ActionButton
-              variant="quiet"
-              disabled={memory.busy}
-              onClick={() => void refuse(waiting)}
-            >
-              {message("proposals.reject")}
             </ActionButton>
           ) : null}
         </div>
@@ -292,6 +275,97 @@ export function BuiltInActionRulesSection({
               </label>
             </div>
           )}
+        </section>
+      ))}
+    </section>
+  );
+}
+
+export function OwnerAllowancesSection({
+  memory,
+  message,
+}: {
+  memory: Pick<
+    MemoryModel,
+    "allowances" | "revokeAllowance" | "busy" | "allowanceDays" | "setAllowanceDays"
+  >;
+  message: Message;
+}) {
+  const { moment } = useLocaleFormat();
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!memory.allowances.length && memory.allowanceDays === null) return null;
+  const title = message("rules.allowances.title", { count: memory.allowances.length });
+  const shown = draft ?? (memory.allowanceDays === null ? "" : String(memory.allowanceDays));
+  const days = Number(shown);
+  const valid =
+    /^\d+$/.test(shown) &&
+    days >= APPROVAL_ALLOWANCE_DAYS_MINIMUM &&
+    days <= APPROVAL_ALLOWANCE_DAYS_MAXIMUM;
+  const changed = valid && days !== memory.allowanceDays;
+  return (
+    <section id="memory-allowances" className="memory-confirm" aria-label={title}>
+      <h4>{title}</h4>
+      <p className="settings-note">{message("rules.allowances.note")}</p>
+      {memory.allowanceDays === null ? null : (
+        <div className="allowance-days">
+          <label className="setting-row">
+            <span>{message("rules.allowances.days")}</span>
+            <input
+              className="setting-input"
+              type="number"
+              inputMode="numeric"
+              min={APPROVAL_ALLOWANCE_DAYS_MINIMUM}
+              max={APPROVAL_ALLOWANCE_DAYS_MAXIMUM}
+              aria-invalid={!valid}
+              value={shown}
+              disabled={memory.busy}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </label>
+          <ActionButton
+            variant="quiet"
+            disabled={memory.busy || !changed}
+            onClick={() =>
+              void memory.setAllowanceDays(days).then((saved) => {
+                if (saved) setDraft(null);
+              })
+            }
+          >
+            {message("rules.allowances.daysSave")}
+          </ActionButton>
+          <small>
+            {message("rules.allowances.daysNote", {
+              minimum: String(APPROVAL_ALLOWANCE_DAYS_MINIMUM),
+              maximum: String(APPROVAL_ALLOWANCE_DAYS_MAXIMUM),
+            })}
+          </small>
+        </div>
+      )}
+      {memory.allowances.map((allowance) => (
+        <section
+          className="memory-card"
+          key={allowance.allowanceId}
+          data-allowance={allowance.allowanceId}
+          data-scope={allowance.allowFor}
+        >
+          <p className="memory-text">{allowance.title}</p>
+          <small>
+            {allowance.allowFor === "this_task" && allowance.threadTitle
+              ? message("rules.allowances.task", { task: allowance.threadTitle })
+              : message("rules.allowances.scope", {
+                  scope: allowance.allowFor,
+                  until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
+                })}
+          </small>
+          <div className="actions">
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.revokeAllowance(allowance.allowanceId)}
+            >
+              {message("rules.allowances.revoke")}
+            </ActionButton>
+          </div>
         </section>
       ))}
     </section>

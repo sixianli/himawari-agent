@@ -3,6 +3,8 @@ status: active
 supersedes: ""
 superseded_by: ""
 date: "2026-11-13"
+covers: "apps/agent-service/src/production-owner-rules.ts, packages/application/src/services/thread-prompt-bundle-service.ts, packages/integration-web/src/untrusted-content.ts, packages/memory-engine/src/segmentation.ts, packages/sensitive-capture/src/external.ts, packages/sensitive-capture/src/identifiers.ts, packages/sensitive-capture/src/machine-secrets.ts, packages/sensitive-capture/src/redaction.ts, packages/sensitive-capture/src/secret-like.ts, scripts/check-meaning-word-lists.mjs, scripts/evals/memory-capture-live.eval.ts, scripts/model-review/opencode-review.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # 词表登记表
@@ -47,13 +49,12 @@ Andy 在 2026-11-12 定的原则（[ADR 0249](adr/0249-the-model-judges-meaning-
 | `packages/sensitive-capture/src/secret-like.ts` | `PLACEHOLDER` | 格式解析 | 同上 | |
 | `packages/sensitive-capture/src/redaction.ts` | `EGRESS_PLACEHOLDER_PATTERN` | 格式解析 | 同上 | |
 | `packages/sensitive-capture/src/redaction.ts` | `LOCATED_PLACEHOLDER` | 格式解析 | 同上 | |
-| `packages/sensitive-capture/src/redaction.ts` | `VERIFICATION_CODE_KEYWORD` | 安全底线 | 发给模型之前遮盖验证码；必须每次得出同样字节（`.claude/rules/prompt-prefix.md` 第 11 条） | |
+| `packages/sensitive-capture/src/redaction.ts` | `VERIFICATION_CODE_KEYWORD` | 安全底线 | 发给模型之前遮盖验证码；必须每次得出同样字节（.claude/rules/prompt-prefix.md 第 11 条） | |
 | `packages/sensitive-capture/src/redaction.ts` | `JP_MY_NUMBER_KEYWORD` | 安全底线 | 同上，日本个人番号 | |
 | `packages/sensitive-capture/src/identifiers.ts` | `SENSITIVE_MENTION` | 安全底线 | 记忆分类时的“至少算敏感”底线，只升不降（[ADR 0260](adr/0260-memory-classification-on-the-server.md) 第 40 行） | |
 | `packages/sensitive-capture/src/machine-secrets.ts` | `POTENTIAL_SECRET_MARKERS` | 安全底线 | 机器密钥的确定性筛查 | |
 | `packages/integration-web/src/untrusted-content.ts` | `INSTRUCTION_PATTERN` | 安全底线 | 网页内容里看到“忽略之前的指令”一类只打 `prompt_injection_observed` 标记，是防御纵深；是否照做仍由模型和授权出口决定 | |
 | `packages/memory-engine/src/segmentation.ts` | `STOPWORDS` | 检索分词 | 检索分词时丢掉“的、了、什么”，只影响召回，和向量检索并用 | |
-| `packages/platform-node/src/gmail-related.ts` | `SUBJECT_PREFIX` | 格式解析 | 去掉邮件标题的 Re:、回复: 前缀来串邮件 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_TEXT_KEYWORDS` | 格式解析 | JSON Schema 的关键字，不是自然语言 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_VALUE_KEYWORDS` | 格式解析 | 同上 | |
 | `packages/application/src/services/thread-prompt-bundle-service.ts` | `SCHEMA_MAP_KEYWORDS` | 格式解析 | 同上 | |

@@ -438,3 +438,16 @@ describe("[PROMPT-CATALOG] every prompt sent to a model lives in the catalog", (
     ).toEqual(["PROMPT_OUTSIDE_CATALOG apps/example/src/new.ts:1 你是"]);
   });
 });
+
+describe("[ICON-1] the icon names the model is told are the names the server accepts", () => {
+  it("lists every accepted icon name once in the system prompt section, and nothing else", () => {
+    const told = [...catalog.CHAT_PROCESS_ICONS_SECTION.text.matchAll(/[，：]([a-z0-9-]+) /g)].map(
+      (match) => match[1],
+    );
+    expect(told).toEqual([...catalog.PROCESS_ACTIVITY_ICONS]);
+    expect(new Set(told).size).toBe(36);
+    expect(catalog.TOOL_ACTIVITY_ICON_PARAMETER.text).toContain(
+      `都不贴近时用 ${catalog.PROCESS_ACTIVITY_FALLBACK_ICON}。`,
+    );
+  });
+});

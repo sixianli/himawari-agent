@@ -14,6 +14,8 @@ import {
   type PairedDeviceScope,
   PORT_ERROR_CODES,
   type RecentAuthenticationGuardPort,
+  VaultError,
+  type VaultService,
   type VoiceGates,
 } from "@himawari-agent/application";
 import type { DeploymentHealthSnapshot } from "@himawari-agent/domain";
@@ -143,6 +145,7 @@ export interface HttpGatewayServerOptions {
     readonly push?: DevicePushPort;
     readonly pairingAccess?: DevicePairingAccess;
     readonly perception?: PerceptionService;
+    readonly vault?: (scope: PairedDeviceScope) => VaultService | undefined;
     readonly actions?: {
       readonly service: (scope: PairedDeviceScope) => DeviceActionService | undefined;
       readonly hub: DeviceActionHub;
@@ -934,6 +937,10 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       sendJson(reply, error.statusCode, { error: { ...error.details, code: error.code } });
       return;
     }
+    if (error instanceof VaultError) {
+      sendJson(reply, error.status, { error: { code: error.code } });
+      return;
+    }
     if (error instanceof DeviceGatewayError || error instanceof DevicePushError) {
       sendJson(reply, error.statusCode, { error: { code: error.code } });
       return;
@@ -1326,6 +1333,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       ...(options.devices.pairingAccess ? { pairingAccess: options.devices.pairingAccess } : {}),
       ...(options.devices.perception ? { perception: options.devices.perception } : {}),
       ...(options.devices.actions ? { actions: options.devices.actions } : {}),
+      ...(options.devices.vault ? { vault: options.devices.vault } : {}),
       ...(options.devices.notifications ? { notifications: options.devices.notifications } : {}),
       ...(options.devices.voiceGates ? { voiceGates: options.devices.voiceGates } : {}),
       ...(options.devices.prefetch ? { prefetch: options.devices.prefetch } : {}),

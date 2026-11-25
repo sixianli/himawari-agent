@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-11-08"
+covers: ".agents/instructions/prompt-prefix.md, apps/agent-service/src/production-memory-capture.ts, apps/agent-service/src/production-thread-titles.ts, packages/sensitive-capture/src/identifiers.ts, packages/sensitive-capture/src/restoration.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0183：只在数据发往外部时遮盖，内部存储和展示用原文
@@ -26,7 +28,7 @@ date: "2026-11-08"
 
 此前 Himawari 在两个地方对敏感信息“整段拦下”：
 
-1. 内部存储这一侧：自动整理记忆、提醒、Muse 收件、沙箱诊断、对话检查点、反思、执行动态、对话标题等写库之前，用 `scanMachineSecrets`、`containsRestrictedIdentifier` 这类检测，命中就整条丢弃或拒绝（审计结果码 `source_secret_excluded`、`candidate_secret_excluded`）。
+1. 内部存储这一侧：自动整理记忆、提醒、Muse 收件、沙箱诊断、对话检查点、反思、执行动态、对话标题等写库之前，用 `scanMachineSecrets`、`containsRestrictedIdentifier` 这类检测，命中就整条丢弃或拒绝（审计结果码 [source_secret_excluded](https://github.com/sixianli/himawari-agent/blob/01873f5c26c536750090ffbc3772ee0cc95bf3fc/packages/application/src/ports/automatic-memory.ts)、`candidate_secret_excluded`）。
 2. 发往模型这一侧：[ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 的出口遮盖已经在做，命中后继续发送，遮盖后仍检出机器密钥才拒绝。
 
 第 1 类让主人说“记住我的密码是……”这样明确要求的事做不成，也让记忆、标题里出现“被拦下”的空洞结果；而这些内容并不发往任何外部方。
@@ -50,7 +52,7 @@ date: "2026-11-08"
    - 提示词目录里 Himawari 自己写的固定文字不算外来内容，建表时按 [ADR 0148](0148-send-every-model-request-through-one-in-process-egress.md) 的规则排除。
    - 还原不了的占位符（模型改写、抄错编号）原样保留，不猜；`[密钥]` 没有编号，同样保留字面量。
 4. **分类仍按检测结果往上提。** 自动整理记忆、模型提的提醒、网页手动添加的记忆和提醒，文字含 18 位证件号或去掉空格和连字符后 16 到 19 位数字时，分类至少是 sensitive（`classificationWithIdentifiers`）。模型自己标 restricted 的候选仍按原规则丢弃。这一条是启发式，不是安全边界。
-5. **审计结果码删掉不再产生的两个。** `source_secret_excluded`、`candidate_secret_excluded` 不再出现在类型里；拦截记录页面不再记“记忆没保存”这一类，历史上已写入的行照常显示。
+5. **审计结果码删掉不再产生的两个。** [source_secret_excluded](https://github.com/sixianli/himawari-agent/blob/01873f5c26c536750090ffbc3772ee0cc95bf3fc/packages/application/src/ports/automatic-memory.ts)、`candidate_secret_excluded` 不再出现在类型里；拦截记录页面不再记“记忆没保存”这一类，历史上已写入的行照常显示。
 6. **搜索说明文案改成与行为一致**：搜索词里像密码或密钥的部分“会先遮盖再发出”，不是“被拦下”。
 
 <a id="options"></a>
@@ -67,10 +69,10 @@ date: "2026-11-08"
 
 - 正面：主人明说要记的事能记住；记忆和标题里不再出现被拦下的空洞结果。
 - 负面：主人的数据库里会有密码、密钥的明文拷贝；`[密钥]` 无法还原；经批准的敏感记忆存成普通分类（[ADR 0166](0166-prompt-wording-batch-1-system-and-tools.md) 之前的设计）后，提醒的推送正文是否显示取决于记忆的数据分级（`dataClassification`）。
-- 已知缺口：自动检测只会在卡号、证件号时把 private 或 public 提到 sensitive，密码、密钥不会；模型自报的 sensitive、restricted 和来源分类仍会提高分类，推送正文是否显示取决于最终的 `dataClassification`，所以没被提高的含密码、密钥的提醒会在推送通知正文里原样显示；推送内容按端到端加密发给主人的浏览器，但会显示在锁屏上。要兑现“推送不显示正文”，需要把密码、密钥检测加进分类提升规则或让推送正文一律不带记忆文字，这是产品取舍，留给 Andy 定。（[ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 已关闭这一条。）
+- 已知缺口：自动检测只会在卡号、证件号时把 private 或 public 提到 sensitive，密码、密钥不会；模型自报的 sensitive、restricted 和来源分类仍会提高分类，推送正文是否显示取决于最终的 `dataClassification`，所以没被提高的含密码、密钥的提醒会在推送通知正文里原样显示；推送内容按端到端加密发给主人的浏览器，但会显示在锁屏上。要兑现“推送不显示正文”，需要把密码、密钥检测加进分类提升规则或让推送正文一律不带记忆文字，这是产品取舍，留给 Andy 定。（[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 已关闭这一条。）
 - 已知缺口（留给敏感信息识别升级）：密码规则取值到空白、逗号、分号为止；服务端“添加记忆”不检查敏感不能置顶；网页编辑和导入不重新判分类；审批门槛依赖模型自报的 `explicit`。
-- 与 PRD 的关系：[PRD v0.2](../prd-v0.2.md) “非目标”和“机器秘密、敏感数据与可观察 Trace”两节原来写着机器秘密不进长期记忆、要在记忆提取之前排除。Andy 2026-11-08 说“改 PRD”，这几句已改成与本决定一致，覆盖清单（`test/fixtures/v0.2/coverage-manifest.json`）和 S0 规格里记录的 PRD 摘要同步更新。
-- 另有两处遗留：2026-08 的基础规格和计划（`2026-08-26-portable-durable-web-agent-design.md`、`2026-08-26-portable-durable-web-agent-plan.md`、`2026-08-26-v0.2-spec-suite-integration-plan.md`）仍写着“machine secret 在提取、嵌入、模型调用前排除，不进入 Memory 或迁移包”，按本决定取代，没有逐条改；网页导入记忆里粘贴文本和 Codex 文本这条路径（`memory-import.ts` 的 `parseMemoryText`）仍会整行丢弃含密码、卡号等字样的行（JSON 导出导入不丢），这是 PR3、PR4 没动的旧行为，留给 Andy 定是否也改成存原文并标敏感。（其中网页导入一项已由 [ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 关闭，旧规格和计划一项仍在。）
+- 与 PRD 的关系：[PRD v0.2](../prd-v0.2.md) “非目标”和“机器秘密、敏感数据与可观察 Trace”两节原来写着机器秘密不进长期记忆、要在记忆提取之前排除。Andy 2026-11-08 说“改 PRD”，这几句已改成与本决定一致，覆盖清单（[test/fixtures/v0.2/coverage-manifest.json](https://github.com/sixianli/himawari-agent/blob/6abd00099bce49f2231aebdea8174e8fb6ff46e8/test/qualification/evidence/workspace-authorization-lifecycle/p1-error-contract-01/input-freeze.json)）和 S0 规格里记录的 PRD 摘要同步更新。
+- 另有两处遗留：2026-08 的基础规格和计划（`2026-08-26-portable-durable-web-agent-design.md`、`2026-08-26-portable-durable-web-agent-plan.md`、`2026-08-26-v0.2-spec-suite-integration-plan.md`）仍写着“machine secret 在提取、嵌入、模型调用前排除，不进入 Memory 或迁移包”，按本决定取代，没有逐条改；网页导入记忆里粘贴文本和 Codex 文本这条路径（`memory-import.ts` 的 `parseMemoryText`）仍会整行丢弃含密码、卡号等字样的行（JSON 导出导入不丢），这是 PR3、PR4 没动的旧行为，留给 Andy 定是否也改成存原文并标敏感。（其中网页导入一项已由 [ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 关闭，旧规格和计划一项仍在。）
 - 后续：本决定部分取代的旧说法在原 ADR 里加了指向本文的说明，决定内容不改：ADR 0166 的 W-07b、ADR 0143 第 12 条里的 `candidate_secret_excluded`、ADR 0167 决定第 2 条“存储宁可多拦”、ADR 0148 第 6 条“还原只在主对话的显示端”。
 
 <a id="references"></a>

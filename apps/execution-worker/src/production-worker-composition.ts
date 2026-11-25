@@ -18,6 +18,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import {
   assertProductionSecretSource,
+  CAPABILITY_DEPLOYMENT_SCHEMA_VERSION,
   CapabilityDeploymentSnapshotLoader,
   type CapabilityDeploymentSnapshotLoaderOptions,
   EphemeralSecretPort,
@@ -301,24 +302,39 @@ function secretSource(configuration: ProductConfiguration, platform: NodeJS.Plat
 }
 
 function loaderOptions(
+  deployment: NonNullable<ProductConfiguration["capabilityDeployment"]>,
   options: ProductionWorkerDeploymentOptions,
   clock: ClockPort,
   platform: NodeJS.Platform,
 ): CapabilityDeploymentSnapshotLoaderOptions {
-  const configuration = options.configuration;
-  if (!configuration.capabilityDeployment) {
-    throw new ProductionWorkerCompositionError(
-      PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.CAPABILITY_DEPLOYMENT_REQUIRED,
-    );
-  }
   return {
-    ...configuration.capabilityDeployment,
+    ...deployment,
     platform,
     now: () => clock.now(),
     ...(options.maximumQualificationAgeMs === undefined
       ? {}
       : { maximumQualificationAgeMs: options.maximumQualificationAgeMs }),
   };
+}
+
+const TOOLS_DISABLED_SNAPSHOT_DIGEST = `sha256:${"0".repeat(64)}`;
+
+function toolsDisabledDeployment(): LoadedCapabilityDeployment {
+  return Object.freeze({
+    snapshotPath: "",
+    snapshotDigest: TOOLS_DISABLED_SNAPSHOT_DIGEST,
+    snapshot: Object.freeze({
+      schemaVersion: CAPABILITY_DEPLOYMENT_SCHEMA_VERSION,
+      capabilities: Object.freeze([]),
+    }),
+    manifests: Object.freeze([]),
+    records: Object.freeze([]),
+    adapters: Object.freeze([]),
+    bindings: Object.freeze({
+      resolveProcess: async () => undefined,
+      resolveEndpoint: async () => undefined,
+    }),
+  });
 }
 
 function isolationBackend(
@@ -415,8 +431,20 @@ export async function qualifyProductionWorkerDeployment(
 ): Promise<QualifiedProductionWorkerDeployment> {
   const platform = supportedPlatform(options);
   const clock = options.clock ?? productionClock();
+  const configured = options.configuration.capabilityDeployment;
+  if (!configured) {
+    const deployment = toolsDisabledDeployment();
+    return Object.freeze({
+      deployment,
+      isolation: new LinuxBubblewrapIsolationBackend({
+        bindings: deployment.bindings,
+        clock,
+        platform,
+      }),
+    });
+  }
   const deployment = await new CapabilityDeploymentSnapshotLoader(
-    loaderOptions(options, clock, platform),
+    loaderOptions(configured, options, clock, platform),
   ).load();
   completeDeployment(deployment);
   const isolation = isolationBackend(deployment, clock, platform);

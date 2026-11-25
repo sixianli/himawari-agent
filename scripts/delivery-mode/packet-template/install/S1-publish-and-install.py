@@ -57,42 +57,42 @@ for target in [stage,operations,evidence,prefix]:
     if os.path.lexists(target):
         raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_TARGET_NOT_FRESH')
 pre_free=shutil.disk_usage('/').free
-stage.mkdir(mode=0o750);os.chown(stage,0,988)
-evidence.mkdir(mode=0o700);os.chown(evidence,999,988)
+stage.mkdir(mode=0o750);os.chown(stage,0,__PKT_SERVICE_GID__)
+evidence.mkdir(mode=0o700);os.chown(evidence,__PKT_SERVICE_UID__,__PKT_SERVICE_GID__)
 stage_identity=stage.lstat()
 owned_directories={'schemaVersion':'himawari.__PKT_LABEL__-change-owned-directories.v1','passed':True,'actor':{'uid':0,'hostname':'__PKT_HOSTNAME__'},'directories':[{'path':str(stage),'device':stage_identity.st_dev,'inode':stage_identity.st_ino,'uid':stage_identity.st_uid,'gid':stage_identity.st_gid,'mode':format(stat.S_IMODE(stage_identity.st_mode),'04o')}]}
 owned_path=evidence/'s1-owned-directories.json'
 owned_bytes=(json.dumps(owned_directories,indent=2)+'\n').encode()
 with owned_path.open('xb') as stream:
-    stream.write(owned_bytes);stream.flush();os.fsync(stream.fileno());os.fchmod(stream.fileno(),0o640);os.fchown(stream.fileno(),0,988)
+    stream.write(owned_bytes);stream.flush();os.fsync(stream.fileno());os.fchmod(stream.fileno(),0o640);os.fchown(stream.fileno(),0,__PKT_SERVICE_GID__)
 if owned_path.read_bytes()!=owned_bytes:raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_OWNED_IDENTITY_READBACK_FAILED')
-acceptance = stage / 'acceptance'; acceptance.mkdir(mode=0o700); os.chown(acceptance,999,988)
+acceptance = stage / 'acceptance'; acceptance.mkdir(mode=0o700); os.chown(acceptance,__PKT_SERVICE_UID__,__PKT_SERVICE_GID__)
 shutil.copytree(packet,stage/'packet',symlinks=False)
 for parent,dirs,files in os.walk(stage/'packet'):
-    os.chown(parent,0,988);os.chmod(parent,0o750)
+    os.chown(parent,0,__PKT_SERVICE_GID__);os.chmod(parent,0o750)
     for name in files:
-        filename=Path(parent)/name;os.chown(filename,0,988);os.chmod(filename,0o640)
-operations.mkdir(mode=0o750);os.chown(operations,0,988)
+        filename=Path(parent)/name;os.chown(filename,0,__PKT_SERVICE_GID__);os.chmod(filename,0o640)
+operations.mkdir(mode=0o750);os.chown(operations,0,__PKT_SERVICE_GID__)
 for name in ['install','systemd','maintenance','s0-db','inputs','signing','measurement','acceptance','steps']:
     shutil.copytree(stage/'packet'/name,operations/name)
 (operations/'materials').mkdir(mode=0o750)
 shutil.copyfile(stage/'packet/materials/source-build-inputs.json',operations/'materials/source-build-inputs.json')
 for parent,dirs,files in os.walk(operations):
-    os.chown(parent,0,988);os.chmod(parent,0o750)
+    os.chown(parent,0,__PKT_SERVICE_GID__);os.chmod(parent,0o750)
     for name in files:
-        filename=Path(parent)/name;os.chown(filename,0,988);os.chmod(filename,0o640)
-inputs=stage/'input';inputs.mkdir(mode=0o750);os.chown(inputs,0,988)
+        filename=Path(parent)/name;os.chown(filename,0,__PKT_SERVICE_GID__);os.chmod(filename,0o640)
+inputs=stage/'input';inputs.mkdir(mode=0o750);os.chown(inputs,0,__PKT_SERVICE_GID__)
 material=json.loads((packet/'install/p5-materials.json').read_text())
 for entry in material['files']:
     source=packet/'materials'/entry.get('sourceName',entry['name'])
     if hashlib.sha256(source.read_bytes()).hexdigest()!=entry['sha256'] or source.stat().st_size!=entry['bytes']:
         raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_MATERIAL_CHANGED')
-    destination=inputs/entry['name'];shutil.copyfile(source,destination);os.chown(destination,0,988);os.chmod(destination,0o640)
-shutil.copyfile(packet/'install/p5-materials.json',inputs/'p5-materials.json');os.chown(inputs/'p5-materials.json',0,988);os.chmod(inputs/'p5-materials.json',0o640)
+    destination=inputs/entry['name'];shutil.copyfile(source,destination);os.chown(destination,0,__PKT_SERVICE_GID__);os.chmod(destination,0o640)
+shutil.copyfile(packet/'install/p5-materials.json',inputs/'p5-materials.json');os.chown(inputs/'p5-materials.json',0,__PKT_SERVICE_GID__);os.chmod(inputs/'p5-materials.json',0o640)
 report={'schemaVersion':'himawari.__PKT_LABEL__-install.v1','passed':False,'rootFreeBeforeBytes':pre_free,'command':[str(node),'--no-global-search-paths',str(operations/'install/__PKT_LABEL__-artifact-install.mjs'),str(inputs),str(stage/'validation'),str(prefix),str(evidence)]}
 try:
     with (evidence/'s1-install.stdout').open('xb') as out,(evidence/'s1-install.stderr').open('xb') as err:
-        for stream in [out,err]: os.fchmod(stream.fileno(),0o600);os.fchown(stream.fileno(),999,988)
+        for stream in [out,err]: os.fchmod(stream.fileno(),0o600);os.fchown(stream.fileno(),__PKT_SERVICE_UID__,__PKT_SERVICE_GID__)
         subprocess.run(report['command'],env={'PATH':'/opt/himawari/node/bin:/usr/bin:/bin','HOME':str(stage),'LANG':'C.UTF-8'},stdout=out,stderr=err,check=True,timeout=900)
     installed=json.loads((evidence/'installed-checker.json').read_text())
     if installed['passed'] is not True or installed['prefix']!=str(prefix):
@@ -105,7 +105,7 @@ try:
             info=(Path(parent)/name).lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1 or info.st_mode&0o022:
                 raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_FILE_UNSAFE')
-    os.chmod(stage/'validation',0o750);os.chown(stage/'validation',0,988)
+    os.chmod(stage/'validation',0o750);os.chown(stage/'validation',0,__PKT_SERVICE_GID__)
     for key in ['config','unitFragmentPath']:
         path=Path(binding['paths'][key] if key=='config' else binding['service'][key])
         expected=binding['service']['oldConfigSha256' if key=='config' else 'oldUnitSha256']
@@ -113,17 +113,17 @@ try:
     report['passed']=True;report['runtimeDigest']=installed['digest']
 finally:
     for parent, directories, filenames in os.walk(evidence):
-        os.chown(parent, 999, 988); os.chmod(parent, 0o700)
+        os.chown(parent, __PKT_SERVICE_UID__, __PKT_SERVICE_GID__); os.chmod(parent, 0o700)
         for name in filenames:
             current = Path(parent) / name
             if current.is_symlink() or not current.is_file():
                 raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_EVIDENCE_UNSAFE')
             if current == owned_path:
-                os.chown(current,0,988);os.chmod(current,0o640)
+                os.chown(current,0,__PKT_SERVICE_GID__);os.chmod(current,0o640)
             else:
-                os.chown(current, 999, 988); os.chmod(current, 0o600)
+                os.chown(current, __PKT_SERVICE_UID__, __PKT_SERVICE_GID__); os.chmod(current, 0o600)
     report['rootFreeAfterBytes']=shutil.disk_usage('/').free
     output=evidence/'s1-result.json';data=(json.dumps(report,indent=2)+'\n').encode()
-    with output.open('xb') as f: f.write(data);f.flush();os.fsync(f.fileno());os.fchmod(f.fileno(),0o600);os.fchown(f.fileno(),999,988)
+    with output.open('xb') as f: f.write(data);f.flush();os.fsync(f.fileno());os.fchmod(f.fileno(),0o600);os.fchown(f.fileno(),__PKT_SERVICE_UID__,__PKT_SERVICE_GID__)
     if output.read_bytes()!=data:raise RuntimeError('__PKT_LABEL_UPPER___INSTALL_EVIDENCE_CHANGED')
 print(json.dumps({'passed':True,'evidence':str(output),'runtimeDigest':report['runtimeDigest']}))

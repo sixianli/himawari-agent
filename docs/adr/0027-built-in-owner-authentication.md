@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0020-public-web-identity-gateway.md
+supersedes: ""
 superseded_by: ""
 date: "2026-09-10"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0027：内置账号与共享产品会话

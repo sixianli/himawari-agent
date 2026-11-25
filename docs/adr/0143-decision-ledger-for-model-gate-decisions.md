@@ -5,6 +5,8 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 date: "2026-10-31"
+covers: "packages/calibration/src/thresholds.ts, packages/persistence-sqlite/test/decision-ledger-migration.contract.test.ts, test/integration/automatic-memory-golden.test.ts, test/integration/context-formation.test.ts, test/integration/decision-ledger.test.ts, test/integration/memory-consolidation.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0143：把只记 Gmail 检查的决策记录扩成全系统决策账本
@@ -35,7 +37,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 
 1. **扩展现有记录，不建第二套。** 迁移 0069 把 `proactive_decisions` 重建成 `decision_ledger`：旧列全部保留、取值不变，Gmail 旧行原样拷入并标成 `kind = 'proactive'`。引用它的两张表（`source_insights`、`proactive_processed_messages`）先暂存、重建后重新装回，外键改指向 `decision_ledger`，数据不丢。直接删旧表会触发级联删除，所以没有这样做。
 2. **每行一个决策类型 `kind`：** `proactive`、`memory_candidate`、`consolidation`、`context_truncation`、`retrieval_degrade`、`external_read`（2026-11-11 起另有 `rule_review`，见 [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md)）。表上的约束保证每个类型只能写自己的结果值，例如记忆候选只能是 `kept`、`discarded`、`pending_approval`，Gmail 行必须有 `verdict` 且不能有 `outcome`。
-3. **每行带：** 结果 `outcome`、短代码 `reason_code`、对象 `subject_ref`、输入 `inputs`（JSON，只放记忆编号 `memoryIds` 和规则编号 `ruleIds`，不放正文；Gmail 检查的 `memoryIds` 只含实际放进提示词的记忆，见 [ADR 0158](0158-bring-related-memories-into-gmail-checks.md)）、理由正文的加密引用 `reason_ref`、候选正文的加密引用 `content_ref`、成本 `cost_micros`、耗时 `duration_ms`、评价 `owner_rating` 和评价时间。评价沿用 `useful`（有用）、`unneeded`（不需要）、`missed`（漏了）三个值，可清除。
+3. **每行带：** 结果 `outcome`、短代码 `reason_code`、对象 `subject_ref`、输入 `inputs`（JSON，只放记忆编号 `memoryIds` 和规则编号 `ruleIds`，不放正文；Gmail 检查的 `memoryIds` 只含实际放进提示词的记忆，见 [ADR 0158](https://github.com/sixianli/himawari-agent/blob/9a395ec730b7c96519309bf1199355a04d8199aa/docs/adr/0158-bring-related-memories-into-gmail-checks.md)）、理由正文的加密引用 `reason_ref`、候选正文的加密引用 `content_ref`、成本 `cost_micros`、耗时 `duration_ms`、评价 `owner_rating` 和评价时间。评价沿用 `useful`（有用）、`unneeded`（不需要）、`missed`（漏了）三个值，可清除。
 4. **`inputs` 的含义：** 这条决策涉及的记忆。记忆候选和整理写被决策的记忆；上下文截断写被截掉的记忆；检索降级和外部读取没有对应记忆时为空。规则编号目前只用于被规则丢弃的候选（写丢弃原因），规则手册落地后再接。
 5. **写入和记忆变更在同一个数据库事务里：**
    - 候选被保留时，账本行随 `saveWithProjection`（记忆记录、投影任务、历史三者的同一个事务）一起写入；账本行写失败，记忆也不会保存。
@@ -86,7 +88,7 @@ Gmail 主动检查的记录在表 `proactive_decisions`（迁移 0062）。它�
 
 ## 关联文档
 
-- [产品愿景 v2.2](../product-vision.md)、[ADR 0134](0134-adopt-product-vision-v2-2.md)
+- [产品愿景 v2.2](../product-vision.md)、[ADR 0134](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0134-adopt-product-vision-v2-2.md)
 - [ADR 0106：主动闭环第一刀（只读 Gmail）](0106-proactive-loop-v1-gmail-read-only.md)（其中的 `proactive_decisions` 现为 `decision_ledger`）
 - [ADR 0140](0140-settle-early-only-without-recoverable-result.md)（本 PR 的基准）
 

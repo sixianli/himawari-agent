@@ -46,10 +46,13 @@ ADAPTATION_MANIFEST = 'acceptance/cloud/adaptation-manifest.json'
 SOURCE_CACHE_NAME = 'source-cache.git'
 PARAMETERS = 'packet-parameters.json'
 CHECKS_RECORD = 'packet-checks.json'
-PYTHON_MATERIAL = ('python-3.12.10.tar.gz', 'f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca')
-MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_MATERIAL[0])
+PYTHON_ARCHIVE = 'python-3.12.10.tar.gz'
+PYTHON_VERSION = '3.12.10'
+TOOLCHAIN_LOCK = 'ci/toolchain-lock.json'
+NODE_ARCHITECTURES = {'x86_64': 'x64', 'aarch64': 'arm64'}
+MATERIAL_FILES = ('context.json', 'source-build-inputs.json', 'node-modules.tar.gz', 'node-modules.json', 'npm-ls.json', PYTHON_ARCHIVE)
 EXECUTION_NOTE = 'G180'
-DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES')
+DISCOVERED_KEYS = ('OLD_PREFIX', 'OLD_OPERATIONS', 'OLD_QUALIFICATION', 'ORIGINAL_CONTEXT_WINDOW', 'ORIGINAL_MAX_TOKENS', 'ORIGINAL_PUBLIC_FETCH_BYTES', 'HOSTNAME', 'SERVICE_UID', 'SERVICE_GID', 'NODE_SHA256', 'NODE_ARCH', 'FIRST_SIGNER_KEY_PATH')
 FAST_MODE_NOTE = 'skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180)'
 
 
@@ -274,8 +277,10 @@ def migration_ledger(commit, current, target, applied_ids=None):
 
 def discovery_script():
     return '\n'.join([
-        'import hashlib, json, os, pathlib, socket, subprocess, sys',
-        'unit_name, unit_path, config_path, model_ref, prefix_new, operations_new, source_cache = sys.argv[1:8]',
+        'import hashlib, json, os, pathlib, platform, pwd, socket, subprocess, sys',
+        'unit_name, unit_path, config_path, model_ref, prefix_new, operations_new, source_cache, account, node_path, qualification_root = sys.argv[1:11]',
+        'service = pwd.getpwnam(account)',
+        "keys = sorted((key.stat().st_mtime, str(key)) for key in pathlib.Path(qualification_root).glob('*/host-qualification-public-key.pem') if key.is_file() and not key.is_symlink())",
         'unit = pathlib.Path(unit_path).read_bytes()',
         'config_bytes = pathlib.Path(config_path).read_bytes()',
         'config = json.loads(config_bytes)',
@@ -283,6 +288,11 @@ def discovery_script():
         "fetch = config.get('runPolicy', {}).get('publicFetch', {})",
         'print(json.dumps({',
         "    'hostname': socket.gethostname(),",
+        "    'machine': platform.machine(),",
+        "    'serviceUid': service.pw_uid,",
+        "    'serviceGid': service.pw_gid,",
+        "    'nodeSha256': hashlib.sha256(pathlib.Path(node_path).read_bytes()).hexdigest(),",
+        "    'signerKeys': [path for mtime, path in keys],",
         "    'active': subprocess.run(['/usr/bin/systemctl', 'is-active', unit_name], capture_output=True, text=True).stdout.strip(),",
         "    'execStart': [line for line in unit.decode().splitlines() if line.startswith('ExecStart=')],",
         "    'staticRoot': config.get('http', {}).get('staticRoot'),",
@@ -316,15 +326,30 @@ def source_cache(instance):
 def discover(instance, label, date):
     fixed = instance['fixedByTemplate']
     compact = date.replace('-', '')
-    arguments = [fixed['unit'], fixed['unitPath'], fixed['config'], instance['configTargets']['modelRef'], fixed['releasesRoot'] + '/' + date + '-' + (label or 'unknown'), fixed['operationsRoot'] + '/' + (label or 'unknown') + '-' + compact, source_cache(instance)]
+    arguments = [fixed['unit'], fixed['unitPath'], fixed['config'], instance['configTargets']['modelRef'], fixed['releasesRoot'] + '/' + date + '-' + (label or 'unknown'), fixed['operationsRoot'] + '/' + (label or 'unknown') + '-' + compact, source_cache(instance), fixed['serviceAccount'], fixed['nodePath'], fixed['qualificationRoot']]
     remote = '/usr/bin/python3 -I - ' + ' '.join(shlex.quote(argument) for argument in arguments)
     return json.loads(run_remote(instance, remote, discovery_script().encode(), timeout=60))
 
 
 def interpret_discovery(facts, instance, label=None):
     fixed = instance['fixedByTemplate']
-    if facts.get('hostname') != instance['host']['hostname']:
-        refuse('PACKET_HOST_UNEXPECTED', facts.get('hostname'))
+    hostname = facts.get('hostname')
+    if not isinstance(hostname, str) or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*', hostname) is None:
+        refuse('PACKET_HOSTNAME_NOT_READABLE', hostname)
+    expected_hostname = instance['host'].get('expectedHostname')
+    if expected_hostname is not None and hostname != expected_hostname:
+        refuse('PACKET_HOST_UNEXPECTED', hostname)
+    machine = NODE_ARCHITECTURES.get(facts.get('machine'))
+    if machine is None:
+        refuse('PACKET_ARCHITECTURE_UNSUPPORTED', facts.get('machine'))
+    for key in ('serviceUid', 'serviceGid'):
+        if type(facts.get(key)) is not int or facts[key] <= 0:
+            refuse('PACKET_SERVICE_ACCOUNT_NOT_READABLE', key + '=' + str(facts.get(key)))
+    if not isinstance(facts.get('nodeSha256'), str) or re.fullmatch(r'[0-9a-f]{64}', facts['nodeSha256']) is None:
+        refuse('PACKET_NODE_DIGEST_NOT_READABLE', facts.get('nodeSha256'))
+    signer_keys = facts.get('signerKeys')
+    if not isinstance(signer_keys, list) or not signer_keys or not all(isinstance(key, str) and re.fullmatch(r'/[A-Za-z0-9._/-]+', key) for key in signer_keys):
+        refuse('PACKET_FIRST_SIGNER_KEY_NOT_FOUND', signer_keys)
     if facts.get('active') != 'active':
         refuse('PACKET_SERVICE_NOT_ACTIVE', facts.get('active'))
     pattern = r'ExecStart=\S+ --no-global-search-paths (' + re.escape(fixed['operationsRoot']) + r'/([a-z]+)-([0-9]{8}))/pair-supervisor\.mjs --prefix (' + re.escape(fixed['releasesRoot']) + r'/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z]+) --config ' + re.escape(fixed['config']) + r' '
@@ -348,6 +373,12 @@ def interpret_discovery(facts, instance, label=None):
     if facts.get('newPathsExist'):
         refuse('PACKET_TARGET_PATHS_EXIST', facts['newPathsExist'])
     return {
+        'HOSTNAME': hostname,
+        'SERVICE_UID': facts['serviceUid'],
+        'SERVICE_GID': facts['serviceGid'],
+        'NODE_SHA256': facts['nodeSha256'],
+        'NODE_ARCH': machine,
+        'FIRST_SIGNER_KEY_PATH': signer_keys[0],
         'LABEL': chosen,
         'OLD_LABEL': running_label,
         'OLD_PREFIX': prefix,
@@ -445,7 +476,6 @@ def base_parameters(instance, commit, date, discovered):
         'LABEL_UPPER': label.upper(),
         'DATE': date,
         'DATE_COMPACT': date.replace('-', ''),
-        'HOSTNAME': instance['host']['hostname'],
         'ADDRESS': instance['host']['address'],
         'COMMIT': commit,
         'COMMIT8': commit[:8],
@@ -515,14 +545,14 @@ def render(target, parameters, only=None):
     return written
 
 
-def describe_materials(materials, commit):
-    artifacts = sorted(materials.glob('linux-x64-abi127-' + commit + '-*-1.tar.gz'))
+def describe_materials(materials, commit, python_sha256):
+    artifacts = sorted(materials.glob('linux-*-abi[0-9]*-' + commit + '-*-1.tar.gz'))
     if len(artifacts) != 1:
         refuse('PACKET_ARTIFACT_COUNT', len(artifacts))
     for name in MATERIAL_FILES + ('source-' + commit[:7] + '.bundle',):
         if not (materials / name).is_file():
             refuse('PACKET_MATERIAL_MISSING', name)
-    if file_sha(materials / PYTHON_MATERIAL[0]) != PYTHON_MATERIAL[1]:
+    if file_sha(materials / PYTHON_ARCHIVE) != python_sha256:
         refuse('PACKET_PYTHON_MATERIAL_CHANGED')
     if json.loads((materials / 'context.json').read_text()).get('testedSha') != commit:
         refuse('PACKET_CONTEXT_OTHER_COMMIT')
@@ -536,6 +566,7 @@ def describe_materials(materials, commit):
     regression = git('show', commit + ':' + REGRESSION_SOURCE, binary=True)
     artifact = artifacts[0]
     return {
+        'PYTHON_BYTES': (materials / PYTHON_ARCHIVE).stat().st_size,
         'ARTIFACT_NAME': artifact.name,
         'ARTIFACT_SHA256': file_sha(artifact),
         'ARTIFACT_BYTES': artifact.stat().st_size,
@@ -559,7 +590,7 @@ def describe_materials(materials, commit):
 def candidate_values(packet, commit, materials):
     proof_path = materials / 'source-build-inputs.json'
     proof = json.loads(proof_path.read_text())
-    archive = next(materials.glob('linux-x64-abi127-' + commit + '-*-1.tar.gz'))
+    archive = next(materials.glob('linux-*-abi[0-9]*-' + commit + '-*-1.tar.gz'))
     context = materials / 'context.json'
     bundle = materials / ('source-' + commit[:7] + '.bundle')
     not_run = 'not-run: Layer 3 and Layer 4 reruns at ' + commit[:8] + ' ' + FAST_MODE_NOTE + '; only a Hermes build was run'
@@ -687,12 +718,12 @@ def set_old_config(packet, value):
         path.write_text(text)
 
 
-def read_s0(instance, scripts, output):
+def read_s0(instance, scripts, output, hostname):
     collector = (scripts / 'signing/collect-system-tools.mjs').read_bytes()
     pinned = re.findall(rb'verifierSha256: "([0-9a-f]{64})"', collector)
     if len(pinned) != 1 or pinned[0].decode() != file_sha(scripts / 'signing/cloud-system-tool-bindings.mjs'):
         refuse('PACKET_S0_VERIFIER_CHANGED')
-    hostname = shlex.quote(instance['host']['hostname'])
+    hostname = shlex.quote(hostname)
     fixed = instance['fixedByTemplate']
     commands = {
         's0-db-readback': ('s0-db/read-s0-db.mjs', 'test "$(hostname)" = ' + hostname + ' && umask 022 && /usr/sbin/runuser -u ' + shlex.quote(fixed['serviceAccount']) + ' -- env -i HOME=' + shlex.quote(fixed['stateRoot']) + ' PATH=/opt/himawari/node/bin:/usr/bin:/bin LANG=C.UTF-8 /opt/himawari/node/bin/node --no-global-search-paths --input-type=module -'),
@@ -726,9 +757,48 @@ def npm_observer_label(scripts):
     return match.group(1)
 
 
+def builder_file(arch):
+    path = BUILDER / ('builder.json' if arch == 'x64' else 'builder-' + arch + '.json')
+    if not path.is_file():
+        refuse('PACKET_BUILDER_UNKNOWN_ARCHITECTURE', arch)
+    return path
+
+
+def load_builder(arch, target_hostname, address):
+    settings = json.loads(builder_file(arch).read_text())
+    settings['address'] = address
+    if settings.get('arch') != arch:
+        refuse('PACKET_BUILDER_ARCHITECTURE_MISMATCH', arch + ' ' + str(settings.get('arch')))
+    if settings.get('transport') == 'target-ssh':
+        settings['hostname'] = target_hostname
+    return settings
+
+
+def python_material_sha(commit, arch):
+    lock = json.loads(git('show', commit + ':' + TOOLCHAIN_LOCK))
+    python = lock['python']
+    if python.get('version') != PYTHON_VERSION:
+        refuse('PACKET_PYTHON_VERSION_UNSUPPORTED', str(python.get('version')))
+    artifact = python['artifacts'].get('linux-' + arch)
+    if not isinstance(artifact, dict) or re.fullmatch(r'[0-9a-f]{64}', str(artifact.get('sha256'))) is None:
+        refuse('PACKET_PYTHON_MATERIAL_NOT_LOCKED', arch)
+    return artifact['sha256']
+
+
+def builder_parameters(commit, discovered, settings):
+    builder_hostname = settings['hostname']
+    separate = builder_hostname != discovered['HOSTNAME']
+    return {
+        'PYTHON_SHA256': python_material_sha(commit, discovered['NODE_ARCH']),
+        'BUILDER_HOSTNAME': builder_hostname,
+        'REHEARSAL_HOSTNAME': builder_hostname if separate else '',
+    }
+
+
 class Hermes:
-    def __init__(self, run):
-        self.settings = json.loads((BUILDER / 'builder.json').read_text())
+    def __init__(self, run, settings=None):
+        self.settings = settings if settings is not None else json.loads((BUILDER / 'builder.json').read_text())
+        self.target_ssh = self.settings.get('transport') == 'target-ssh'
         self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))
         self.upload_wrapper = os.environ.get('HIMAWARI_HERMES_UPLOAD', str(REPO / '.ci-output/handoff/scripts/hermes-upload.sh'))
         self.poll_seconds = float(os.environ.get('HIMAWARI_HERMES_POLL_SECONDS', '15'))
@@ -736,14 +806,24 @@ class Hermes:
         self.work = self.settings['workRoot'] + '/' + run
         self.scripts = self.settings['scriptRoot'] + '/' + run
 
+    def ssh_argv(self, command):
+        if self.target_ssh:
+            return [os.environ.get('HIMAWARI_PACKET_SSH', 'ssh'), *SSH_OPTIONS, self.settings['sshUser'] + '@' + self.settings['address'], command]
+        return [self.ssh_wrapper, command]
+
+    def upload_argv(self, local, remote):
+        if self.target_ssh:
+            return [os.environ.get('HIMAWARI_PACKET_SCP', 'scp'), '-q', *SSH_OPTIONS, str(local), self.settings['sshUser'] + '@' + self.settings['address'] + ':' + remote]
+        return [self.upload_wrapper, str(local), remote]
+
     def ssh(self, command, stdout=None):
-        child = subprocess.run([self.ssh_wrapper, command], stdout=stdout or subprocess.PIPE, stderr=subprocess.PIPE, timeout=320, check=False)
+        child = subprocess.run(self.ssh_argv(command), stdout=stdout or subprocess.PIPE, stderr=subprocess.PIPE, timeout=320, check=False)
         if child.returncode != 0:
             refuse('PACKET_HERMES_COMMAND_FAILED', 'exit=' + str(child.returncode) + ' ' + command[:120] + ' ' + child.stderr.decode(errors='replace').strip()[-400:])
         return b'' if stdout else child.stdout
 
     def upload(self, local, remote, code='PACKET_HERMES_UPLOAD_FAILED'):
-        child = subprocess.run([self.upload_wrapper, str(local), remote], capture_output=True, timeout=320, check=False)
+        child = subprocess.run(self.upload_argv(local, remote), capture_output=True, timeout=320, check=False)
         if child.returncode != 0:
             refuse(code, str(local) + ' -> ' + remote + ' ' + child.stderr.decode(errors='replace').strip()[-400:])
 
@@ -768,27 +848,34 @@ class Hermes:
         self.ssh('rm -f ' + ' '.join(shlex.quote(target) for target in targets))
 
     def preflight(self):
-        child = subprocess.run([self.ssh_wrapper, 'bash ' + shlex.quote(self.scripts + '/run-release-walkthrough.sh') + ' --preflight'], capture_output=True, timeout=320, check=False)
+        child = subprocess.run(self.ssh_argv('bash ' + shlex.quote(self.scripts + '/run-release-walkthrough.sh') + ' --preflight'), capture_output=True, timeout=320, check=False)
         if child.returncode != 0:
             refuse('PACKET_HERMES_PREFLIGHT_FAILED', (child.stdout + child.stderr).decode(errors='replace').strip()[-400:])
 
     def install_scripts(self):
         self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
-        for name in ('build-candidate.sh', 'layer3-verdict.py', 'builder.json', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'install-dependencies-if-changed.sh', 'capture-build-source-inputs.template.mjs'):
+        effective = Path(tempfile.mkdtemp(prefix='packet-builder-')) / 'builder.json'
+        effective.write_text(json.dumps({key: value for key, value in self.settings.items() if key not in ('address', 'sshUser', 'transport')}, indent=2) + '\n')
+        try:
+            self.upload(effective, self.scripts + '/builder.json')
+        finally:
+            shutil.rmtree(effective.parent)
+        for name in ('build-candidate.sh', 'layer3-verdict.py', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'install-dependencies-if-changed.sh', 'capture-build-source-inputs.template.mjs'):
             self.upload(BUILDER / name, self.scripts + '/' + name)
         self.upload(TEMPLATE / 'acceptance/helpers/collect-installer-dependencies.mjs', self.scripts + '/collect-installer-dependencies.mjs')
         self.upload(HERE / 'run-packet-checks.py', self.scripts + '/run-packet-checks.py')
 
     def start(self, name, command):
         log_root = self.work + '-inputs'
-        wrapped = '(' + command + '); echo $? > ' + shlex.quote(log_root + '/' + name + '.exit')
+        exit_file = shlex.quote(log_root + '/' + name + '.exit')
+        wrapped = '(' + command + '); echo $? > ' + exit_file + '.tmp && mv ' + exit_file + '.tmp ' + exit_file
         self.ssh('nohup bash -c ' + shlex.quote(wrapped) + ' > ' + shlex.quote(log_root + '/' + name + '.log') + ' 2>&1 < /dev/null & echo started')
 
     def wait(self, name):
         log_root = self.work + '-inputs'
         while True:
             state = self.ssh('cat ' + shlex.quote(log_root + '/' + name + '.exit') + ' 2>/dev/null || echo running').decode().strip()
-            if state != 'running':
+            if state not in ('running', ''):
                 break
             time.sleep(self.poll_seconds)
         if state != '0':
@@ -797,7 +884,7 @@ class Hermes:
 
     def has_commit(self, commit):
         command = 'git -C ' + shlex.quote(self.settings['source']) + ' cat-file -e ' + shlex.quote(commit + '^{commit}')
-        return subprocess.run([self.ssh_wrapper, command], capture_output=True, timeout=320, check=False).returncode == 0
+        return subprocess.run(self.ssh_argv(command), capture_output=True, timeout=320, check=False).returncode == 0
 
     def build(self, bundle, commit):
         remote_bundle = self.work + '-inputs/' + bundle.name
@@ -810,7 +897,7 @@ class Hermes:
         for name, digest in expected.items():
             if '/' in name or name.startswith('.'):
                 refuse('PACKET_HERMES_MATERIAL_NAME', name)
-            if name == PYTHON_MATERIAL[0] and (materials / name).is_file() and file_sha(materials / name) == digest:
+            if name == PYTHON_ARCHIVE and (materials / name).is_file() and file_sha(materials / name) == digest:
                 continue
             self.fetch(self.work + '/materials/' + name, materials / name, digest)
 
@@ -845,7 +932,7 @@ class Hermes:
         ]))
 
     def cleanup(self):
-        child = subprocess.run([self.ssh_wrapper, hermes_cleanup_command(self.work)], capture_output=True, timeout=320, check=False)
+        child = subprocess.run(self.ssh_argv(hermes_cleanup_command(self.work)), capture_output=True, timeout=320, check=False)
         print(('PACKET_HERMES_CLEANED ' if child.returncode == 0 else 'PACKET_HERMES_CLEANUP_FAILED ') + self.work, flush=True)
 
     def fetch_checks(self, packet, commit):
@@ -975,7 +1062,7 @@ def freeze(packet, instance):
     for name in S0_OUTPUTS:
         (packet / 'inputs' / (name + '.json')).unlink(missing_ok=True)
     set_old_config(packet, None)
-    s0 = read_s0(instance, packet, packet / 'inputs')
+    s0 = read_s0(instance, packet, packet / 'inputs', parameters['HOSTNAME'])
     if s0.get('schema', {}).get('current') != parameters['CURRENT_SCHEMA']:
         refuse('PACKET_PRODUCTION_SCHEMA_CHANGED_SINCE_PREPARE', s0.get('schema'))
     configuration = s0.get('service', {}).get('configurationSha256')
@@ -1046,7 +1133,9 @@ def prepare(arguments):
     if arguments.label is None:
         discovered = interpret_discovery(discover(instance, discovered['LABEL'], date), instance, discovered['LABEL'])
     parameters = base_parameters(instance, commit, date, discovered)
-    hermes = Hermes(run_id(parameters))
+    settings = load_builder(discovered['NODE_ARCH'], discovered['HOSTNAME'], instance['host']['address'])
+    parameters.update(builder_parameters(commit, discovered, settings))
+    hermes = Hermes(run_id(parameters), settings)
     work = Path(tempfile.mkdtemp(prefix='packet-work-'))
     try:
         build_packet(arguments, instance, commit, date, parameters, hermes, work, started)
@@ -1062,7 +1151,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
     step('discover', started)
     packet = packet_directory(Path(arguments.output_root).resolve(), date, parameters['LABEL'])
     render(work / 's0-scripts', parameters, only=set(S0_SCRIPTS))
-    parameters.update(schema_parameters(parameters, read_s0(instance, work / 's0-scripts', work / 's0')))
+    parameters.update(schema_parameters(parameters, read_s0(instance, work / 's0-scripts', work / 's0', parameters['HOSTNAME'])))
     step('s0-schema', started)
     materials = work / 'materials'
     materials.mkdir()
@@ -1079,7 +1168,7 @@ def build_packet(arguments, instance, commit, date, parameters, hermes, work, st
         hermes.start_walkthrough()
         hermes.fetch_materials(materials)
         step('fetch-materials', started)
-    parameters.update(describe_materials(materials, commit))
+    parameters.update(describe_materials(materials, commit, parameters['PYTHON_SHA256']))
     packet.mkdir(parents=True)
     shutil.move(str(materials), str(packet / 'materials'))
     refreshed = assemble(packet, parameters, packet / 'materials')

@@ -2,10 +2,12 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0060-hard-constraint-on-third-repeat.md"
+supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0269-load-instructions-on-demand-at-thread-start.md"
 date: "2026-10-29"
+covers: "apps/control-center/test/release-walkthrough-ui.ts, apps/control-center/test/release-walkthrough.unit.test.ts, scripts/check-incident-gates.mjs, scripts/delivery-mode/instances/andy-production.json, scripts/delivery-mode/make-packet.py, scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0107：每个事故落一道自动检查，同一错误第三次必须有硬门槛
@@ -24,7 +26,7 @@ date: "2026-10-29"
 
 ## 背景
 
-[ADR 0060](0060-hard-constraint-on-third-repeat.md) 规定：编码代理（Claude、Codex、opencode 等替 Andy 写代码和跑测试的程序）同一错误第三次出现时，停下来找根因并加硬约束（代理无法跳过的检查）；一次错误不需要记录。它管的是代理自己的操作失误，不管产品和上线出的事故。
+[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md) 规定：编码代理（Claude、Codex、opencode 等替 Andy 写代码和跑测试的程序）同一错误第三次出现时，停下来找根因并加硬约束（代理无法跳过的检查）；一次错误不需要记录。它管的是代理自己的操作失误，不管产品和上线出的事故。
 
 2026-10-28 晚（日本时间，下同）出了两件事，都是“前面已经吃过亏、却没有任何检查拦住”：
 
@@ -83,7 +85,7 @@ date: "2026-10-29"
 
 ## 后果
 
-- 正面：用 #80 之前的旧定位重现，契约测试三处都失败（开关找成复选框、不先展开折叠的过程、去设置里找记忆）；去掉旧定位后通过。启动读回对 29.35 秒、35 秒、55 秒的启动都报 `STARTUP_READY_TOO_SLOW`，9 秒的启动通过。
+- 正面：用 #80 之前的旧定位重现，契约测试三处都失败（开关找成复选框、不先展开折叠的过程、去设置里找记忆）；去掉旧定位后通过。启动读回对 29.35 秒、35 秒、55 秒的启动都报 [STARTUP_READY_TOO_SLOW](https://github.com/sixianli/himawari-agent/blob/4c01b5c60a69cfaabd1a56dc000524e2a6eb9dbb/scripts/delivery-mode/packet-template/systemd/S7-startup-readback.mjs)，9 秒的启动通过。
 - 负面：worker 等待还是 30 秒的提交出包会被拒绝（30 + 15 > 30），这是有意的；出包线程的修复 PR #89 已把等待改为 45 秒并先合进 main（提交 `d8b893a`）。启动上限 30 秒是按出包线程在生产数据副本上的实测定的，上线后按日志里的真实启动时间再调。
 - 后续：
   - `AGENTS.md` 的 “Repeated Mistakes” 一节改为 “Incidents and Repeated Mistakes”，引用本 ADR；新增 `.claude/rules/incident-gates.md` 让每个云端线程读到。
@@ -96,7 +98,7 @@ date: "2026-10-29"
 
 ## 关联文档
 
-- 被取代的决定：[ADR 0060](0060-hard-constraint-on-third-repeat.md)。
+- 被取代的决定：[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)。
 - 事故与门槛清单：[docs/incidents-and-gates.md](../incidents-and-gates.md)。
 - 代理反复犯的错误：[docs/lessons.md](../lessons.md)。
 - 发布走查上线门槛：[docs/lessons.md 的“上线验收只查了首页 200 没真点网页”](../lessons.md#release-without-browser-walkthrough)。

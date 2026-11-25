@@ -13,7 +13,8 @@ public extension DeviceActionsModel {
             recent: DeviceActionsDemo.recent,
             policy: DeviceActionsDemo.policy,
             permissions: DeviceActionsDemo.permissions,
-            sourceNames: DeviceActionsDemo.sourceNames
+            sourceNames: DeviceActionsDemo.sourceNames,
+            allowanceDays: 7
         )
     }
 
@@ -36,14 +37,16 @@ enum DeviceActionsDemo {
        "recentAuthenticationRequired":false,"requestedAt":"2026-11-13T06:40:00.000Z","expiresAt":"2026-11-13T06:50:00.000Z","decidedAt":null,
        "display":{"displayTitle":"用 Himawari 的闹钟定在明早 7:00","bodyPreview":"标题：去机场","askedBecause":{"kind":"no_rule_allows"},
                   "origin":{"threadId":"thr_demo_osaka","threadTitle":"大阪出差"}},
-       "intent":{"capabilityRef":"device:alarm.set","operation":"alarm.set","threadId":"thr_demo_osaka","runId":"run_demo"},
+       "intent":{"capabilityRef":"device:alarm.set","operation":"alarm.set","threadId":"thr_demo_osaka","runId":"run_demo",
+                 "intentId":"owner-scope:alarm","actionKind":"CREATE_OR_UPDATE","estimatedCostMicros":0,"credentialOrAccessChange":false,"deterministicFactCodes":[]},
        "confirmLabel":{"zh-CN":"定好","en":"Set it","ja":"セットする"}},
       {"approvalRequestId":"apr_demo_delete","revision":1,"status":"pending","semanticSnapshotHash":"h2","finalRisk":"high",
        "recentAuthenticationRequired":true,"requestedAt":"2026-11-13T06:38:00.000Z","expiresAt":"2026-11-13T06:48:00.000Z","decidedAt":null,
        "display":{"displayTitle":"删掉日历里 11 月 14 日 15:00 的“牙医复诊”","bodyPreview":"这一次，不动以后的",
                   "askedBecause":{"kind":"rule","ruleText":"删日历上的事要先问我"},
                   "origin":{"threadId":"thr_demo_dentist","threadTitle":"改牙医时间"}},
-       "intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_demo_dentist","runId":"run_demo2"},
+       "intent":{"capabilityRef":"device:calendar.delete","operation":"calendar.delete","threadId":"thr_demo_dentist","runId":"run_demo2",
+                 "intentId":"owner-scope:calendar-delete","actionKind":"DELETE","estimatedCostMicros":0,"credentialOrAccessChange":false,"deterministicFactCodes":["owner_presence_required"]},
        "confirmLabel":{"zh-CN":"删掉","en":"Delete","ja":"削除"},
        "declineLabel":{"zh-CN":"不删","en":"Keep it","ja":"残す"}}
     ]

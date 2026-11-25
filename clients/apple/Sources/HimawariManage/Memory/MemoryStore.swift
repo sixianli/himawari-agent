@@ -13,6 +13,8 @@ public final class MemoryStore {
     public private(set) var phase: Phase = .loading
     public private(set) var overview: MemoryOverview?
     public private(set) var rules: [RuleSummary] = []
+    public private(set) var allowances: [OwnerAllowance] = []
+    public private(set) var allowanceDays: Int?
 
     @ObservationIgnored private let gateway: ManageGateway
 
@@ -26,7 +28,10 @@ public final class MemoryStore {
             async let rulesData = gateway.read(.v2, "memory.rules.read")
             let decoder = JSONDecoder()
             overview = try decoder.decode(Snapshot<MemoryOverview>.self, from: try await overviewData).payload
-            rules = try decoder.decode(Snapshot<RuleBook>.self, from: try await rulesData).payload.rules
+            let book = try decoder.decode(Snapshot<RuleBook>.self, from: try await rulesData).payload
+            rules = book.rules
+            allowances = book.allowances ?? []
+            allowanceDays = book.allowanceDays
             phase = .loaded
         } catch let ManageGatewayError.rejected(_, code, _) {
             phase = .failed(code)
@@ -84,6 +89,33 @@ public final class MemoryStore {
             options: ManageCommandOptions(confirmReason: reason)
         )
         await load()
+    }
+
+    public func revoke(_ allowance: OwnerAllowance, reason: String) async throws {
+        guard let index = allowances.firstIndex(of: allowance) else { return }
+        allowances.remove(at: index)
+        do {
+            _ = try await gateway.command(
+                .v2,
+                "approval.allowance.revoke",
+                payload: ["allowanceId": .string(allowance.allowanceId)],
+                options: ManageCommandOptions(confirmReason: reason)
+            )
+        } catch {
+            if !allowances.contains(allowance) { allowances.insert(allowance, at: min(index, allowances.count)) }
+            throw error
+        }
+    }
+
+    public func setAllowanceDays(_ days: Int, reason: String) async throws {
+        guard ClientCapabilities.allowanceDays.contains(days) else { return }
+        _ = try await gateway.command(
+            .v2,
+            "approval.allowance.days.set",
+            payload: ["days": .number(Double(days))],
+            options: ManageCommandOptions(risk: "medium", confirmReason: reason)
+        )
+        allowanceDays = days
     }
 
     public func summary(categoryLabel: (String) -> String) -> MemorySummary? {

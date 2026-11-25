@@ -2,9 +2,11 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0083-isolated-instance-per-person-with-owner-entry.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: ""
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0234：一个程序，每人一个数据库文件；模型用 Andy 已有的套餐、不用 Vercel 按量付费，每人上限由 Andy 配置
@@ -24,7 +26,7 @@ date: "2026-11-11"
 
 ## 背景
 
-[ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md) 定的做法是“每人一套独立实例”（每人各有一套程序、系统服务、端口和数据目录，叫 silo）。2026-11-11 Andy 给出两个新前提：生产机只有一台、不想在服务器上多花钱；目标是 10 到 20 人长期用。每人一套完整实例，内存和磁盘要乘以人数，8 GB 的生产机大概率放不下（推断，没有实测），每次上线还要升级 N 份。所以 ADR 0083 的第 2 条（独立实例）和第 5 条（每个别人一把 Vercel key、每月 10 美元）已经站不住。
+[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 定的做法是“每人一套独立实例”（每人各有一套程序、系统服务、端口和数据目录，叫 silo）。2026-11-11 Andy 给出两个新前提：生产机只有一台、不想在服务器上多花钱；目标是 10 到 20 人长期用。每人一套完整实例，内存和磁盘要乘以人数，8 GB 的生产机大概率放不下（推断，没有实测），每次上线还要升级 N 份。所以 ADR 0083 的第 2 条（独立实例）和第 5 条（每个别人一把 Vercel key、每月 10 美元）已经站不住。
 
 线程出了新方案，由 DeepSeek V4.1 Flash 和 GLM 5.3 Flash 各自独立出方案、DeepSeek 审核后整合，全文见 `/mnt/project-files/multi-user-plan/integrated-plan.md`（不入库，下面逐条引用）。2026-11-11T10:27Z Andy 回复：“行吧，我同意你这个一个程序，然后每人一个数据库文件这个方案”。2026-11-11T11:05Z Andy 又说：
 
@@ -64,7 +66,7 @@ date: "2026-11-11"
    - 每人那一份代码看到的“主人”永远是他自己，所以 [ADR 0003](0003-single-logical-agent-authority.md) 和 [ADR 0027](0027-built-in-owner-authentication.md)（已取代 ADR 0020，内置账号与外部身份两类入口）在每人那一份里照旧成立。
 3. **三道防线防止写错代码读到别人的数据**（防的是代码写错，不是防主程序被攻破）：每人那一份代码手里只有自己的数据库对象，“所有人的列表”只在共用层；每个库里记着主人，打开时核对，不是期望的人就拒绝打开；记忆正文用每人自己的密钥加密。
 4. **每个人执行命令时用自己专属的系统账号和沙箱。** 数据库和密钥归主程序账号，别的账号进不去；工作目录归本人的执行账号；执行进程不再直接读整个密钥目录，主程序只把这一次运行要用的密钥交给它；每个执行账号有内存、CPU、进程数的硬上限，每人的目录有磁盘配额，全机另设磁盘警戒线；磁盘配额必须做成硬上限，生产机文件系统做不到时不给别人开通（它能否做到还没核实）；所有在用账号的配额之和（含恢复点、缓存、日志）必须低于可用磁盘并留安全余量，只读测量要同时给出每人和合计的数字。这是对 [ADR 0069](0069-trust-unprotected-runtime-like-claude-code.md) 的补充：多人以后，使用者不再都是主人，所以沙箱不只防误改，还要防一个人读到另一个人的东西。gVisor 作为单独一项实测，能和现有沙箱同用就对所有人开。
-5. **登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。** 名册里没有或已停用的人，程序立即拒绝，不等登录会话过期。只邀请，不开放注册，给谁开、什么时候停都由 Andy 决定。体验者用单独一条 Access 策略、会话设短。Gmail 授权回调所有人共用一个地址，发起授权时记下“这次授权是谁的”，回调时按记录找人，这个记录要从内存挪到共用层。现有 Gmail 设计里的安全约束照旧、并且要加强：`state` 不可猜、一次性、10 分钟有效、只认发起授权的同一台已登录设备，回调时除了查记录还要核对当前登录身份，不能只凭记录里的人名绑定；为此要加自动检查（A 的回调绑不到 B）。Andy 自己的入口沿用 ADR 0083 第 4 条（手机也走 Cloudflare 入口，见 [ADR 0082](0082-mobile-pwa-push-before-native-app.md)、[ADR 0089](0089-web-push-only-owner-entry.md)）。
+5. **登录：一个网址、一个 Cloudflare Access 应用，名单里放所有受邀邮箱。** 名册里没有或已停用的人，程序立即拒绝，不等登录会话过期。只邀请，不开放注册，给谁开、什么时候停都由 Andy 决定。体验者用单独一条 Access 策略、会话设短。Gmail 授权回调所有人共用一个地址，发起授权时记下“这次授权是谁的”，回调时按记录找人，这个记录要从内存挪到共用层。现有 Gmail 设计里的安全约束照旧、并且要加强：`state` 不可猜、一次性、10 分钟有效、只认发起授权的同一台已登录设备，回调时除了查记录还要核对当前登录身份，不能只凭记录里的人名绑定；为此要加自动检查（A 的回调绑不到 B）。Andy 自己的入口沿用 ADR 0083 第 4 条（手机也走 Cloudflare 入口，见 [ADR 0082](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0082-mobile-pwa-push-before-native-app.md)、[ADR 0089](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)）。
 6. **改表结构时：先停服，逐个文件做快照，再逐个迁移，全部做完才接请求。** 某个人的文件迁移失败，只有这个人显示“维护中”，其他人照常，同时告警给 Andy。回滚要把每个已迁移的文件恢复到快照，只换回旧版本程序不行。备份和恢复按人做。
 7. **模型走 Andy 的套餐，不用 Vercel 的按量付费（Andy 2026-11-11 定）。** 这里的意思是不额外付费：对话模型照 ADR 0117 的现有顺序，可能先用排在前面的 CodeBuddy 免费额度，再用 OpenCode Go 套餐。
    - 所有人（包括 Andy）走同一条路：经本机的 Magpie，按 ADR 0117 的现有顺序选。套餐内的用量不额外花钱。
@@ -119,7 +121,7 @@ date: "2026-11-11"
 
 ## 关联文档
 
-- [SOURCE: docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]
 - [SOURCE: docs/adr/0076-no-model-cost-budget-limits.md]
 - [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]
 - [SOURCE: docs/adr/0117-magpie-routes-models-through-owned-subscriptions.md]

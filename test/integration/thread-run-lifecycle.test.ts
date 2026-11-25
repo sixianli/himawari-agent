@@ -47,7 +47,10 @@ import {
   type RunId,
   type ThreadId,
 } from "@himawari-agent/domain";
-import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
+import {
+  threadExecutionRecordSchema,
+  threadGatewayMessageSchema,
+} from "@himawari-agent/gateway-contracts";
 import {
   openQualifiedDatabase,
   SqliteGovernedDeletionAdapter,
@@ -66,6 +69,7 @@ import {
   testModelEgress,
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProductionOwnerSteering } from "../../apps/agent-service/src/production-owner-steering.js";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
@@ -2435,17 +2439,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       policy: changedPolicy,
     }).create({ candidate, lease: held });
     expect(restored).toEqual(original);
-    const frozenBeforeOwnerApprovedTask = await new RunExecutionInputService({
-      ...options,
-      policy: changedPolicy,
-      source: {
-        read: async (runId) => {
-          const live = await options.source.read(runId);
-          return live ? { ...live, ownerApprovedTask: true as const } : live;
-        },
-      },
-    }).create({ candidate, lease: held });
-    expect(frozenBeforeOwnerApprovedTask).toEqual(original);
     const laterClock = { now: () => new Date(Date.parse(clock.now()) + 1000).toISOString() };
     const larger = await new RunExecutionInputService({
       ...options,
@@ -3355,8 +3348,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           return {
             blocks: [
               {
-                kind: "owner-profile" as const,
-                ref: `owner-profile:${agentId}`,
+                kind: "memory-snapshot" as const,
+                ref: `memory-snapshot:${agentId}`,
                 payloadRef: "payload-owner-profile",
                 dataClassification: "private" as const,
                 memoryIds,
@@ -3807,6 +3800,126 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     });
   });
 
+  it("[ICON-2] puts the model's activity and icon on the tool step and keeps them out of its input", async () => {
+    const setup = await executionFixture();
+    const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+      product: authority,
+      lease,
+    });
+    const scope = {
+      ownerId,
+      agentId,
+      sessionId: setup.input.runtime.sessionId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: "activity-test",
+      actorId: "activity-test",
+      dataClassification: "private" as const,
+    };
+    const capture = async (kind: string, value: unknown) => {
+      const ref = `activity:${kind}`;
+      await artifactPort.commit({
+        runId: setup.runId,
+        purpose: "trace",
+        operationKey: `runtime:${setup.runId}:${kind}:${ref}`,
+        payload: await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "application/json",
+          plaintext: new TextEncoder().encode(JSON.stringify(value)),
+          createdAt: clock.now(),
+        }),
+      });
+      return ref;
+    };
+    const calls = [
+      {
+        id: "call-weather",
+        arguments: {
+          query: "东京 明天 天气",
+          activity: "  查东京\n明天的\u202e天气\u0007\u061c  ",
+          activityIcon: "cloud",
+        },
+      },
+      {
+        id: "call-unknown-icon",
+        arguments: {
+          query: "rust",
+          activity: "查资料",
+          activityIcon: "rocket",
+        },
+      },
+      {
+        id: "call-plain",
+        arguments: { query: "plain", activityIcon: "cloud" },
+      },
+    ];
+    const messageRef = await capture("message", {
+      role: "assistant",
+      timestamp: 1,
+      model: "actual-model",
+      stopReason: "toolUse",
+      content: calls.map((call) => ({
+        type: "toolCall",
+        name: "web_search",
+        ...call,
+      })),
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { role: "assistant", phase: "ended", payloadRef: messageRef },
+    });
+    for (const call of calls) {
+      const intentRef = await capture(`intent-${call.id}`, {
+        toolCallId: call.id,
+        toolName: "web_search",
+        arguments: call.arguments,
+      });
+      await setup.trace.record({
+        ...scope,
+        eventType: "runtime.tool_intent",
+        payload: { capabilityRef: "web.search", payloadRef: intentRef },
+      });
+    }
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      trace: setup.repository.traceStore(),
+      payloads: (owner, agent) =>
+        setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector: setup.protector,
+    });
+    const { records } = await projection.read({
+      ownerId,
+      agentId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    const tools = records.filter((record) => record.kind === "tool");
+    expect(tools).toHaveLength(6);
+    expect(tools.map(({ activity, activityIcon }) => [activity, activityIcon])).toEqual([
+      ["查东京 明天的 天气", "cloud"],
+      ["查资料", "puzzle"],
+      ["搜索网页", "cloud"],
+      ["查东京 明天的 天气", "cloud"],
+      ["查资料", "puzzle"],
+      ["搜索网页", "cloud"],
+    ]);
+    for (const tool of tools) {
+      expect(tool.input).not.toContain("activity");
+      expect(JSON.parse(tool.input)).toHaveProperty("query");
+    }
+    for (const record of records)
+      expect(() => threadExecutionRecordSchema.parse(record)).not.toThrow();
+  });
+
   it("persists a generated title and publishes its update without changing Run state", async () => {
     const setup = await executionFixture();
     const { ProductionThreadTitles } = await import(
@@ -4249,7 +4362,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     }
   });
 
-  it("[R2-D3] settles an expired snapshot frozen before ownerApprovedTask existed and still refuses a changed stored source", async () => {
+  it("[R2-D3] settles an expired snapshot whose stored source is unchanged and refuses a changed one", async () => {
     const f = await unknownToolFixture();
     try {
       const { createProductionRunExpiry } = await import(
@@ -4304,11 +4417,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           candidate,
         ),
       ).rejects.toThrow("RUN_EXPIRY_INPUT_INVALID");
-      await expect(
-        expiry(liveSource((source) => ({ ...source, ownerApprovedTask: true as const })))(
-          candidate,
-        ),
-      ).resolves.toBe(true);
+      await expect(expiry(liveSource((source) => source))(candidate)).resolves.toBe(true);
       expect(await f.runs.readRun(target.runId)).toMatchObject({ run: { status: "failed" } });
     } finally {
       await f.dispose();
@@ -5111,6 +5220,332 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     if (!outputRef) throw new Error("missing output ref");
     expect(await setup.repository.payloadStore(ownerId, agentId).get(outputRef)).toMatchObject({
       contentType: "text/plain",
+    });
+  });
+  describe("folding owner messages queued behind a Run", () => {
+    async function foldFixture() {
+      const setup = await fixture();
+      const protector = new EnvelopePayloadProtector({
+        keys: new InMemoryDevelopmentSecretSource({
+          "fold-key@v1": new Uint8Array(32).fill(23),
+        }),
+        activeKey: { keyRef: "fold-key", kekVersion: "v1", dekVersion: "v1" },
+      });
+      const payloads = setup.repository.payloadStore(ownerId, agentId);
+      const put = async (ref: string, text: string, classification = "private" as const) =>
+        payloads.put(
+          await protector.protect({
+            ownerId,
+            agentId,
+            ref,
+            dataClassification: classification,
+            contentType: "text/plain",
+            createdAt: clock.now(),
+            plaintext: new TextEncoder().encode(text),
+          }),
+        );
+      const created = await setup.commands.create({
+        ownerId,
+        agentId,
+        idempotencyKey: "fold-thread",
+        resultRef: "payload-run-lifecycle",
+      });
+      let revision = created.thread.revision;
+      const send = async (
+        name: string,
+        text: string,
+        extra: Partial<Parameters<typeof setup.commands.admitOwnerMessage>[0]> = {},
+      ) => {
+        await put(`fold-${name}`, text);
+        const admitted = await setup.commands.admitOwnerMessage({
+          ownerId,
+          agentId,
+          threadId: created.thread.id,
+          expectedThreadRevision: revision,
+          sessionId: createSessionId(`session-fold-${name}`),
+          idempotencyKey: `fold-${name}`,
+          contentRef: `fold-${name}`,
+          sourceProofRef: `proof:${name}`,
+          dataClassification: "private",
+          resultRef: "payload-run-lifecycle",
+          ...extra,
+        });
+        revision = admitted.thread.revision;
+        return admitted;
+      };
+      const inputFor = async (runId: RunId, folds: { foldLimit?: () => Promise<number> } = {}) => {
+        const dispatch = setup.repository.runDispatch(
+          ownerId,
+          agentId,
+          authority,
+          lease,
+          "thread-run-lifecycle",
+        );
+        const claimed = await dispatch.claim({
+          runId,
+          expectedRunRevision: 1,
+          expectedLeaseRevision: 0,
+          executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
+          claimedAt: clock.now(),
+          expiresAt: "2026-09-05T00:00:00.000Z",
+        });
+        const source = await setup.repository.runExecutionSource(ownerId, agentId).read(runId);
+        if (!source) throw new Error("missing source");
+        const options = {
+          maximumRunDurationMs: 60_000,
+          source: setup.repository.runExecutionSource(ownerId, agentId),
+          artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+            product: authority,
+            lease,
+          }),
+          payloads,
+          protector,
+          clock,
+          ids: createReferenceAdapterSet({ clock }).ids,
+          dispatch,
+          policy: async () => ({
+            modelRef: "primary-fold",
+            systemInstructionRef: "payload-run-lifecycle",
+            policyVersion: "production-policy-v1",
+            policies: [],
+            capabilities: [],
+            capabilityHandleRefs: [],
+            memoryLimit: 10,
+            maxSelectedMemories: 0,
+          }),
+          folds: setup.repository.threadRepository(),
+          ...folds,
+        };
+        const candidate = {
+          ...source,
+          runRevision: 1,
+          runStatus: "accepted" as const,
+          checkpointPhase: null,
+          leaseRevision: 0,
+          action: "start" as const,
+        };
+        const held = await dispatch.assertHeld({
+          runId,
+          expectedLeaseRevision: claimed.revision,
+          executionLeaseId: createRunExecutionLeaseId(`execution-${runId}`),
+          at: clock.now(),
+        });
+        return {
+          source,
+          create: () => new RunExecutionInputService(options).create({ candidate, lease: held }),
+          read: async (ref: string) => {
+            const payload = await payloads.get(ref as never);
+            if (!payload) return undefined;
+            return new TextDecoder().decode(
+              await protector.unprotect({ ownerId, agentId, payload }),
+            );
+          },
+        };
+      };
+      const status = async (runId: RunId | undefined | null) =>
+        runId
+          ? (await setup.repository.runLifecycle(ownerId, agentId, authority).readRun(runId))?.run
+              .status
+          : undefined;
+      return { setup, send, inputFor, status, threadId: created.thread.id };
+    }
+
+    it("answers messages sent while the first was waiting in one Run and completes the others", async () => {
+      const { send, inputFor, status, setup } = await foldFixture();
+      const first = await send("a", "查东京天气");
+      const second = await send("b", "查今天科技新闻");
+      const third = await send("c", "查附近评分高的拉面店");
+      const firstRun = first.message.runId as RunId;
+      const run = await inputFor(firstRun);
+      const input = await run.create();
+      const ref = input.context.trigger.payloadRef;
+      expect(ref).toBe(`fold-prompt:${firstRun}`);
+      const text = await run.read(ref);
+      expect(text).toContain(`<owner-message id="${first.message.id}">\n查东京天气`);
+      expect(text).toContain(`<owner-message id="${second.message.id}">\n查今天科技新闻`);
+      expect(text).toContain(`<owner-message id="${third.message.id}">\n查附近评分高的拉面店`);
+      expect(text?.indexOf("查东京天气")).toBeLessThan(text?.indexOf("查附近评分高的拉面店") ?? 0);
+      expect(input.context.memoryQueryRef).toBe(ref);
+      expect(await status(firstRun)).toBe("accepted");
+      expect(await status(second.message.runId)).toBe("completed");
+      expect(await status(third.message.runId)).toBe("completed");
+      const snapshot = await setup.repository.threadRepository().readContextSnapshot?.({
+        ownerId,
+        agentId,
+        threadId: first.thread.id,
+        runId: firstRun,
+        afterSequence: 0,
+        limit: 100,
+      });
+      expect(snapshot?.messages.map(({ id }) => id) ?? []).toEqual([]);
+      const replay = await run.create();
+      expect(replay).toEqual(input);
+      expect(
+        (
+          await setup.repository
+            .threadRepository()
+            .readFoldedOwnerMessages({ ownerId, agentId, runId: firstRun })
+        ).map(({ messageId, runId }) => [messageId, runId]),
+      ).toEqual([
+        [second.message.id, second.message.runId],
+        [third.message.id, third.message.runId],
+      ]);
+    });
+
+    async function steeringFor(
+      setup: Awaited<ReturnType<typeof fixture>>,
+      runId: RunId,
+      status: string,
+    ) {
+      const database = openQualifiedDatabase(setup.databasePath);
+      try {
+        database.prepare("UPDATE runs SET status = ? WHERE id = ?").run(status, runId);
+      } finally {
+        database.close();
+      }
+      const protector = new EnvelopePayloadProtector({
+        keys: new InMemoryDevelopmentSecretSource({
+          "fold-key@v1": new Uint8Array(32).fill(23),
+        }),
+        activeKey: { keyRef: "fold-key", kekVersion: "v1", dekVersion: "v1" },
+      });
+      return new ProductionOwnerSteering({
+        ownerId,
+        agentId,
+        threads: setup.repository.threadRepository(),
+        payloads: setup.repository.payloadStore(ownerId, agentId),
+        protector,
+        clock,
+        limit: async () => 19,
+        intervalMs: 60_000,
+      });
+    }
+
+    it("steers a message sent while her answer is running into that run, once", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "帮我比较三家牙科诊所");
+      const later = await send("b", "只要周六开门的");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const notes: { ref: string; modelContent: string }[] = [];
+      const stop = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      await steering.poll();
+      stop();
+      expect(notes).toHaveLength(1);
+      expect(notes[0]?.modelContent).toBe(
+        `<owner-message id="${later.message.id}">\n只要周六开门的\n</owner-message>`,
+      );
+      expect(await status(later.message.runId)).toBe("completed");
+      const third = await send("c", "再加一条：要能刷卡");
+      const again = steering.subscribe(firstRun, (note) => {
+        notes.push(note);
+        return true;
+      });
+      await steering.poll();
+      again();
+      expect(notes).toHaveLength(2);
+      expect(notes[1]?.modelContent).toContain("要能刷卡");
+      expect(await status(third.message.runId)).toBe("completed");
+    });
+
+    it("puts the message back in line when the running answer could not take it", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "一");
+      const later = await send("b", "二");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "running");
+      const stop = steering.subscribe(firstRun, () => false);
+      await steering.poll();
+      stop();
+      expect(await status(later.message.runId)).toBe("accepted");
+      expect(
+        await setup.repository
+          .threadRepository()
+          .readFoldedOwnerMessages({ ownerId, agentId, runId: firstRun }),
+      ).toEqual([]);
+    });
+
+    it("does not steer into a run that is waiting on an approval card", async () => {
+      const { send, status, setup } = await foldFixture();
+      const first = await send("a", "一");
+      const later = await send("b", "二");
+      const firstRun = first.message.runId as RunId;
+      const steering = await steeringFor(setup, firstRun, "awaiting_approval");
+      let called = false;
+      const stop = steering.subscribe(firstRun, () => {
+        called = true;
+        return true;
+      });
+      await steering.poll();
+      stop();
+      expect(called).toBe(false);
+      expect(await status(later.message.runId)).toBe("accepted");
+    });
+
+    it("does not fold a message when it is the only one waiting", async () => {
+      const { send, inputFor } = await foldFixture();
+      const only = await send("solo", "你好");
+      const run = await inputFor(only.message.runId as RunId);
+      const input = await run.create();
+      expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
+    });
+
+    it("stops at the per-run limit and leaves the rest queued for their own Run", async () => {
+      const { send, inputFor, status } = await foldFixture();
+      const first = await send("a", "一");
+      const second = await send("b", "二");
+      const third = await send("c", "三");
+      const run = await inputFor(first.message.runId as RunId, { foldLimit: async () => 1 });
+      const input = await run.create();
+      const text = await run.read(input.context.trigger.payloadRef);
+      expect(text).toContain("二");
+      expect(text).not.toContain("三");
+      expect(await status(second.message.runId)).toBe("completed");
+      expect(await status(third.message.runId)).toBe("accepted");
+    });
+
+    it("never folds a message that chose a different model, or anything behind an event", async () => {
+      const { send, inputFor, status } = await foldFixture();
+      const first = await send("a", "一");
+      const other = await send("b", "二", {
+        modelSelection: { modelRef: "other-model", thinkingLevel: "low" },
+      });
+      const run = await inputFor(first.message.runId as RunId);
+      const input = await run.create();
+      expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
+      expect(await status(other.message.runId)).toBe("accepted");
+    });
+
+    it("does not fold an owner message into a Run that an outside event started", async () => {
+      const { send, inputFor, status } = await foldFixture();
+      const event = await send("event", "新邮件", {
+        triggerSource: "external_event",
+        internal: true,
+      });
+      const mine = await send("mine", "帮我设个明早 7 点的闹钟");
+      const run = await inputFor(event.message.runId as RunId);
+      const input = await run.create();
+      expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
+      expect(await status(mine.message.runId)).toBe("accepted");
+    });
+
+    it("never folds past an outside event that was queued between two owner messages", async () => {
+      const { send, inputFor, status } = await foldFixture();
+      const first = await send("a", "一");
+      const event = await send("event", "新邮件", {
+        triggerSource: "external_event",
+        internal: true,
+      });
+      const later = await send("c", "三");
+      const run = await inputFor(first.message.runId as RunId);
+      const input = await run.create();
+      expect(input.context.trigger.payloadRef).toBe(run.source.payloadRef);
+      expect(await status(event.message.runId)).toBe("accepted");
+      expect(await status(later.message.runId)).toBe("accepted");
     });
   });
 });

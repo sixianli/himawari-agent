@@ -7,9 +7,11 @@ import SwiftUI
 
 struct ApprovalCard: View {
     let approval: PendingApproval
+    let allowanceDays: Int?
     let busy: Bool
     let open: () -> Void
-    let respond: (Bool) -> Void
+    let respond: (Bool, ApprovalAllowFor) -> Void
+    @State private var allowFor: ApprovalAllowFor = .once
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -31,10 +33,11 @@ struct ApprovalCard: View {
                 Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                     .foregroundStyle(Color.hmMuted)
             }
+            AllowancePicker(approval: approval, days: allowanceDays, selection: $allowFor)
             HStack(spacing: 8) {
-                Button(ApprovalWords.decline(approval)) { respond(false) }
+                Button(ApprovalWords.decline(approval)) { respond(false, .once) }
                     .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pill))
-                Button(ApprovalWords.confirm(approval)) { respond(true) }
+                Button(ApprovalWords.confirm(approval)) { respond(true, allowFor) }
                     .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pill))
             }
             .disabled(busy)
@@ -47,27 +50,6 @@ struct ApprovalCard: View {
     }
 }
 
-struct ApprovalRow: View {
-    let approval: PendingApproval
-    let busy: Bool
-    let open: () -> Void
-    let respond: (Bool) -> Void
-
-    var body: some View {
-        DecisionRow(
-            title: approval.title,
-            detail: approval.display?.bodyPreview,
-            status: L.text("approval.title"),
-            decline: ApprovalWords.decline(approval),
-            confirm: ApprovalWords.confirm(approval),
-            openLabel: L.text("approval.open"),
-            busy: busy,
-            open: open,
-            respond: respond
-        )
-    }
-}
-
 enum ApprovalWords {
     static func confirm(_ approval: PendingApproval) -> String {
         let label = approval.confirmLabel?.localized() ?? ""
@@ -77,142 +59,6 @@ enum ApprovalWords {
     static func decline(_ approval: PendingApproval) -> String {
         let label = approval.declineLabel?.localized() ?? ""
         return label.isEmpty ? L.text("approval.deny") : label
-    }
-}
-
-struct DeviceActionResultRow: View {
-    let view: DeviceActionView
-    var busy = false
-    var undo: () -> Void = {}
-
-    var body: some View {
-        let kind = DeviceActionResultKind(view)
-        HStack(alignment: .top, spacing: 12) {
-            icon(kind)
-                .frame(width: DesignTokens.IconSize.todayRow, height: DesignTokens.TypeScale.secondary.lineHeight)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L.text(Self.headline(kind)))
-                    .hmType(DesignTokens.TypeScale.rowAction)
-                    .foregroundStyle(Color.hmText)
-                Text(Self.description(view, kind))
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .foregroundStyle(Color.hmMuted)
-                    .multilineTextAlignment(.leading)
-                if view.undo == .failed {
-                    Text(Self.undoFailure(view))
-                        .hmType(DesignTokens.TypeScale.caption)
-                        .foregroundStyle(Color.hmDanger)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            undoControl
-        }
-        .padding(.vertical, 14)
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var undoControl: some View {
-        switch view.undo {
-        case .available:
-            Button(action: undo) {
-                if busy { spinner } else { Text(L.text("result.undo")) }
-            }
-            .buttonStyle(RowPillButtonStyle(filled: true))
-            .disabled(busy)
-        case .pending:
-            Button(action: {}) { spinner }
-                .buttonStyle(RowPillButtonStyle(filled: true))
-                .disabled(true)
-        case .done, .failed, .none:
-            EmptyView()
-        }
-    }
-
-    private var spinner: some View {
-        Text(L.text("result.undo"))
-            .hidden()
-            .overlay { ProgressView().controlSize(.small).tint(Color.hmMuted) }
-    }
-
-    static func undoFailure(_ view: DeviceActionView) -> String {
-        L.text("result.undo.failed")
-    }
-
-    static func description(_ view: DeviceActionView, _ kind: DeviceActionResultKind) -> String {
-        let detail = view.detail.localized()
-        if kind == .other { return detail.isEmpty ? L.text("result.other.update") : detail }
-        guard kind == .notDone, let reason = view.reason, !reason.isEmpty else { return detail }
-        return L.format("result.withReason", detail, reason)
-    }
-
-    static func headline(_ kind: DeviceActionResultKind) -> String {
-        switch kind {
-        case .done: "result.done"
-        case .undone: "result.undone"
-        case .notDone: "result.notDone"
-        case .checking: "result.checking"
-        case .waiting: "result.waiting"
-        case .other: "result.other"
-        }
-    }
-
-    @ViewBuilder
-    private func icon(_ kind: DeviceActionResultKind) -> some View {
-        switch kind {
-        case .done: Icon(.circleCheck, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSuccess)
-        case .undone: Icon(.arrowBackUp, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
-        case .notDone: Icon(.alertCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmDanger)
-        case .checking: ProgressView().tint(Color.hmMuted)
-        case .waiting: Icon(.handStop, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmSun)
-        case .other: Icon(.infoCircle, size: DesignTokens.IconSize.todayRow).foregroundStyle(Color.hmMuted)
-        }
-    }
-}
-
-public struct TodayDeviceActionsCard: View {
-    let model: DeviceActionsModel
-    let openApproval: (PendingApproval) -> Void
-
-    public init(model: DeviceActionsModel, openApproval: @escaping (PendingApproval) -> Void) {
-        self.model = model
-        self.openApproval = openApproval
-    }
-
-    public var body: some View {
-        let results = model.recent.filter { $0.state != .waitingOwner }
-        VStack(spacing: 12) {
-            if !model.pending.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(model.pending.enumerated()), id: \.element.id) { index, approval in
-                        ApprovalRow(approval: approval, busy: model.busy.contains(approval.id), open: { openApproval(approval) }) { approved in
-                            Task { await model.respond(approval, approved: approved) }
-                        }
-                        if index < model.pending.count - 1 { RowSeparator() }
-                    }
-                }
-                .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
-            }
-            if !results.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, view in
-                        DeviceActionResultRow(view: view, busy: model.busy.contains(view.id)) {
-                            Task { await model.undo(view) }
-                        }
-                        if index < results.count - 1 { RowSeparator() }
-                    }
-                }
-                .himawariCard(padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 14))
-            }
-            if let problem = model.problem {
-                Text(problem)
-                    .hmType(DesignTokens.TypeScale.caption)
-                    .foregroundStyle(Color.hmDanger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-            }
-        }
     }
 }
 
@@ -282,8 +128,8 @@ public struct ApprovalsView: View {
                                 .frame(minHeight: DesignTokens.Size.emptyMinHeight)
                         }
                         ForEach(model.pending) { approval in
-                            ApprovalCard(approval: approval, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved in
-                                Task { await model.respond(approval, approved: approved) }
+                            ApprovalCard(approval: approval, allowanceDays: model.allowanceDays, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved, allowFor in
+                                Task { await model.respond(approval, approved: approved, allowFor: allowFor) }
                             }
                         }
                     } else {
@@ -341,6 +187,7 @@ public struct ApprovalDetailView: View {
     let approval: PendingApproval
     let openThread: ((String) -> Void)?
     let back: () -> Void
+    @State private var allowFor: ApprovalAllowFor = .once
 
     public init(model: DeviceActionsModel, approval: PendingApproval, openThread: ((String) -> Void)? = nil, back: @escaping () -> Void) {
         self.model = model
@@ -372,11 +219,14 @@ public struct ApprovalDetailView: View {
             }
             .scrollIndicators(.hidden)
             if approval.status == ApprovalStatus.pending.rawValue && model.pending.contains(where: { $0.id == approval.id }) {
-                HStack(spacing: 8) {
-                    Button(ApprovalWords.decline(approval)) { decide(false) }
-                        .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
-                    Button(ApprovalWords.confirm(approval)) { decide(true) }
-                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                VStack(spacing: DesignTokens.Allowance.actionsGap) {
+                    AllowancePicker(approval: approval, days: model.allowanceDays, selection: $allowFor)
+                    HStack(spacing: 8) {
+                        Button(ApprovalWords.decline(approval)) { decide(false) }
+                            .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
+                        Button(ApprovalWords.confirm(approval)) { decide(true) }
+                            .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                    }
                 }
                 .disabled(model.busy.contains(approval.id))
                 .padding(.horizontal, 16)
@@ -449,33 +299,9 @@ public struct ApprovalDetailView: View {
 
     private func decide(_ approved: Bool) {
         Task {
-            await model.respond(approval, approved: approved)
+            await model.respond(approval, approved: approved, allowFor: approved ? allowFor : .once)
             back()
         }
-    }
-}
-
-struct ApprovalsEntryRow: View {
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Icon(.handStop, size: DesignTokens.IconSize.listRow)
-                .foregroundStyle(Color.hmText)
-            Text(L.text("approval.title"))
-                .hmType(DesignTokens.TypeScale.body)
-                .foregroundStyle(Color.hmText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if count > 0 {
-                Text(count, format: .number)
-                    .hmType(DesignTokens.TypeScale.secondary)
-                    .foregroundStyle(Color.hmMuted)
-            }
-            Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
-                .foregroundStyle(Color.hmMuted)
-        }
-        .frame(minHeight: DesignTokens.Size.rowMinHeight)
-        .contentShape(Rectangle())
     }
 }
 

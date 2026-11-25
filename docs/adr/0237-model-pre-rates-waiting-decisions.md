@@ -6,6 +6,8 @@ supersedes: ""
 amends: ""
 superseded_by: ""
 date: "2026-11-11"
+covers: "packages/application/src/services/review-prereview.ts, packages/application/test/review-prereview.unit.test.ts, packages/calibration/src/prereview.ts, packages/calibration/test/prereview.unit.test.ts, packages/prompt-catalog/src/review.ts, scripts/calibration-report/report.mjs, test/integration/data-export.test.ts, test/integration/review-prereview-browser.test.ts, test/integration/review-prereview-production.test.ts"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0237：模型先给待打分的决策预评，单独存放，一致率够高才减少要 Andy 打分的条数

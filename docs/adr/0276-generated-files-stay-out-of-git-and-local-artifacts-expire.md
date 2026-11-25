@@ -6,6 +6,8 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-15"
+covers: "clients/apple/README.md, clients/apple/scripts/mac-ui-review.sh, clients/apple/scripts/ui-review.sh, clients/apple/ui-review/.gitignore, scripts/delivery-mode/make-packet.py, scripts/disk-hygiene/install-schedule.sh, scripts/disk-hygiene/prune-rebuildable.py, scripts/disk-hygiene/retention.json"
+verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ---
 
 # ADR 0276：截图等生成文件不进 main，开发机上的产物按可改的期限自动回收
@@ -60,7 +62,7 @@ Mac 克隆里的本机产物：
 10. 本 PR 之前，根 `.gitignore` 没有忽略工作副本目录（`git check-ignore .claude/worktrees/x .agents/local/worktrees/x` 无输出，2026-11-15 云端运行）；本 PR 在根 `.gitignore` 加了 `.claude/worktrees/`、`.agents/local/`、`.cb-delegate/`。
 11. 云端线程能取 `refs/heads/` 以外的引用：`git fetch origin refs/pull/1/head` 成功（2026-11-15 云端运行）。
 12. `.ci-output/handoff/scripts` 里是上线工具在用的脚本。`scripts/delivery-mode/make-packet.py:678`：`self.ssh_wrapper = os.environ.get('HIMAWARI_HERMES_SSH', str(REPO / '.ci-output/handoff/scripts/hermes-ssh.sh'))`。
-13. `.ci-output/worktrees` 被模型目录工具使用。`.agents/opencode-models.py:131`：`base = root / ".ci-output" / "worktrees"`。
+13. `.ci-output/worktrees` 被模型目录工具使用。[已删除的 `opencode-models.py` 第 131 行](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/opencode-models.py#L131)：`base = root / ".ci-output" / "worktrees"`。
 14. 定时任务跑的是脚本的副本，不是仓库里的脚本。`scripts/disk-hygiene/install-schedule.sh:12`：`copy="$share/prune-rebuildable.py"`；第 64 行：`install -m 0644 "$here/prune-rebuildable.py" "$copy"`。
 15. 现有“忙时跳过”的进程名单里没有 Xcode。`scripts/disk-hygiene/prune-rebuildable.py:16`：`BUSY_PATTERN = r'vitest|playwright|scripts/ci/(run|local|test|build|execute)\.mjs|npm (test|run (build|check|test))'`。
 
@@ -143,7 +145,7 @@ Mac 克隆里的本机产物：
 
 ## 验证
 
-- `check:repo-hygiene`：在临时仓库里加一个超过上限的文件必须失败、删掉后通过；跟踪 `ui-review/latest/a.png` 必须失败；`.claude/worktrees/` 没被忽略必须失败。
+- `check:repo-hygiene`：在临时仓库里加一个超过上限的文件必须失败、删掉后通过；跟踪 ui-review/latest/a.png 必须失败；`.claude/worktrees/` 没被忽略必须失败。
 - `check:repo-hygiene` 还要：一次改动总量超限失败；白名单写整目录通配失败；拿不到比较基准失败。
 - 工作副本回收：有改动、有未合并提交、加了锁、有进程在里面、有 `node_modules` 以外的被忽略文件、在保留清单里的各一个必须留下；已合并、干净、过期的必须删掉；去掉任一保护条件，对应用例必须失败。
 - 定时任务：`install-schedule.sh` 装好后副本里有新脚本和配置；配置缺失时拒绝安装。
