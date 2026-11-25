@@ -74,6 +74,15 @@ public final class AppModel {
         ServerValueDiagnostics.shared.observe { report in
             logger.notice("unknown \(report.type, privacy: .public) from server: \(report.raw, privacy: .public); shown as its fallback value")
         }
+        let streams = Logger(subsystem: subsystem, category: "streams")
+        StreamDiagnostics.shared.observe { problem in
+            switch problem {
+            case let .notOpened(path, connections):
+                streams.error("stream \(path, privacy: .public) not opened: server allows \(connections, privacy: .public) connections, needs \(ExecutionStreamPolicy.streamsNeeded, privacy: .public)")
+            case let .refused(path, status, code):
+                streams.error("stream \(path, privacy: .public) refused: HTTP \(status, privacy: .public) \(code ?? "-", privacy: .public)")
+            }
+        }
         #endif
     }
 
