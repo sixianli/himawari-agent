@@ -50,8 +50,6 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
           missing=""
           for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
@@ -63,14 +61,12 @@ jobs:
             echo "::warning::testflight 环境还缺：$missing，这次不上传"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 签名归档并上传 TestFlight
+      - name: 归档并上传 TestFlight（苹果云端签名）
         if: ${{ steps.keys.outputs.ready == 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: clients/apple/scripts/testflight.sh upload
       - name: 写运行摘要
         if: ${{ steps.keys.outputs.ready == 'true' }}
