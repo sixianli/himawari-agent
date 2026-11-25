@@ -1,6 +1,8 @@
 <a id="model-review"></a>
 # 和 OpenCode 协作：方案讨论和代码复核
 
+**已暂停（Andy 2026-11-25 原话：“把 opencode 的审核给它暂停掉。无论是方案的审核还是 Code Review，都不需要 opencode 来审核了”“我觉得 opencode 的审核太浪费 token 和时间了”）。** 暂停期间本文件写的方案讨论、核对代码说法和代码复核都不跑，合并只看测试和 CI（见 [AGENTS.md](../../AGENTS.md#working-with-opencode)）。下面的内容留到 Andy 说恢复为止。
+
 默认只用 `opencode-go/deepseek-v4.1-flash` 一个模型，推理强度设为高；方案讨论、核对代码说法和代码复核的每一轮都是这样（Andy 2026-11-12 定，原话“除非我特别指明，否则现在默认只让 DeepSeek 去审”，[ADR 0259](../../docs/adr/0259-review-models-default-to-deepseek.md)）。Andy 特别指明时才加上 `opencode-go/glm-5.3-flash`：传 `--models deepseek-v4.1-flash,glm-5.3-flash`。能用的只有这两个模型（Andy 在项目指令第 17 条规定）。能用哪些、默认跑哪些、谁替补谁，都写在 `scripts/model-review/review-models.json`（`allowed`、`default`、`substitutes`），脚本启动时读它并校验（默认和替补都必须在能用的清单里，否则以 `REVIEW_MODELS_CONFIG_INVALID` 停下）；要改默认，改这个文件的 `default`，不改脚本，同时把测试里按现在的默认值（只有 DeepSeek）写的断言一起改（`test/tooling/opencode-review.test.mjs`、`test/tooling/opencode-review-merge-gate.test.mjs` 里对 `DEFAULT_REVIEW_MODELS` 的断言，和 `test/tooling/plan-claims-gate.test.mjs` 里默认只跑 DeepSeek 的断言，改了默认它们会失败，提醒你核对）；改 `substitutes` 会让旧账本里的替补轮次按新的对应关系重新判断，只会更严；`allowed` 里的每个模型还要在脚本里有固定侧重（`MODEL_LENSES`）和输出上限（`MODEL_OUTPUT_LIMITS`），在 `gateway.json` 里有条目，所以往 `allowed` 加模型不是只改这个文件就行（有测试核对现有的每个模型三样都有）。下文说“模型”指这一次跑的模型：默认是 DeepSeek 一个，指明两个时是两个。一律用 `node scripts/model-review/opencode-review.mjs` 跑（见[怎么跑](#how-to-run)）。交给它们的材料只讲问题、目标、约束和已核对的事实，不预设结论，脚本会自动加上项目指令第 16 条的原话：列出的方案只是参考，请从问题本身出发，提出你认为更好的方案。
 
 跑代码复核时先读一页的[代码复核流程卡](model-review-card.md)，这份文件只在卡上指到的那一节读（[ADR 0263](../../docs/adr/0263-cheaper-claude-side-of-code-review.md)）。
