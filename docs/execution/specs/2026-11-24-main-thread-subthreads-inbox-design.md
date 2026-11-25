@@ -122,7 +122,7 @@ date: "2026-11-24"
 10. 后台命令的结果已经以一条追加消息送回原对话。`packages/prompt-catalog/src/background.ts:14-20`：`id: "background.notice",`，“【系统通知，不是用户发的消息】你在这个对话里早些时候转入后台的命令有了结果。”
 11. Pi（Himawari 用的 Agent 运行库）官方有“运行中插一条消息”的写法。`docs/pi-development-guide.md:285`：“`deliverAs: "steer"` 在当前这轮工具跑完、下一次请求模型之前送达……用户消息用 `session.steer()` / `session.followUp()`”。
 12. 运行容量、时限、上下文。`scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json:151-157`：`"totalRuns": 3,`、`"foregroundReserved": 1,`、`"runMs": 300000,`；同文件 `:87`：`"contextWindow": 1000000,`；`packages/runtime-pi/src/compaction-prefix.ts:75`：`export const COMPACTION_TRIGGER_CAP_TOKENS = 200_000;`（写方案时的值；按定的第 6 件事已改成 `150_000`）。
-13. 同意过的任务的写操作规则。`docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md:48`：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
+13. 同意过的任务的写操作规则。[ADR 0278 第 48 行](https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee93f37d1f1de630ff6c7c1/docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md#L48)（已删）：“同意过的任务读到外部内容后，写操作由 `askAfterExternalContent` 接手，每一个都要主人批准”。
 14. 发给模型的内容只追加；压缩要集中、少做、写进 ADR。`AGENTS.md:43`：“已经发出去的内容不得改动、重排或删除，只能在末尾追加；每轮会变的内容只放在最后一条消息里；系统提示和工具按对话冻结。”`.agents/instructions/prompt-prefix.md:61`：“必须缩短历史时，集中做、少做，并在 ADR 里写明。不得每轮都做。”同文件 `:64`：“清理旧的工具结果要成批、少做、能恢复。一次清理足够多，才值得付一次缓存失效的代价；被清理的内容要能找回”；同文件 `:36` 把“将来按 ADR 实施的第 14 条清理”列为“只追加”的例外之一。
 15. 理解你的意思交给模型，不写词表。`.claude/rules/owner-standing-rules.md` “理解用户的意思交给模型”一节：“判断用户一句话的意图……一律交给模型，程序只做校验”。
 16. 愿景。`docs/product-vision.md:55`：“原则冲突时，按序优先：用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率。”`:60`：“预判必须建立在已有记忆与明确偏好之上，且预判的收益必须大于打扰我的成本。”`:64`：“推进受成本、资源与时间预算约束，超限即停下等待。”`:156`：“任意一次开口或沉默，系统能答出「为什么」”。

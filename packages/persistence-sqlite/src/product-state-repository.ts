@@ -51,7 +51,6 @@ import type {
   MuseIntakePort,
   OwnerIdentityStatePort,
   OwnerPreferencesStorePort,
-  OwnerProposalStorePort,
   OwnerRuleStorePort,
   PairedDeviceStorePort,
   PayloadStorePort,
@@ -609,10 +608,6 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   ownerRules(): OwnerRuleStorePort {
     return this.durable.ownerRules();
-  }
-
-  ownerProposals(): OwnerProposalStorePort {
-    return this.durable.ownerProposals();
   }
 
   inbox(): InboxStorePort {

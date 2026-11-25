@@ -174,7 +174,6 @@ export class OwnerScopeAuthorization {
     ])}`;
     const externalSources = await this.#externalSources(invocation, source);
     const factCodes: PolicyFactCode[] = [RUN_SOURCE_FACT[source.sourceType]];
-    if (source.ownerApprovedTask) factCodes.push(POLICY_FACT_CODES.runSourceOwnerApprovedTask);
     if (externalSources.length > 0) factCodes.push(POLICY_FACT_CODES.contextExternalContent);
     if (row.ownerPresenceRequired) factCodes.push(POLICY_FACT_CODES.ownerPresenceRequired);
     if (row.standingRuleChange) factCodes.push(POLICY_FACT_CODES.standingRuleChange);

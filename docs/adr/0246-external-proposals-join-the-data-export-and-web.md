@@ -4,7 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
-amended_by: "docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md, docs/adr/0272-owner-proposals-join-the-data-export-format-v4.md"
+amended_by: "docs/adr/0261-external-proposals-follow-restricted-deletion-and-expiry.md, docs/adr/0289-data-export-v5-drops-owner-proposals.md"
 date: "2026-11-12"
 ---
 

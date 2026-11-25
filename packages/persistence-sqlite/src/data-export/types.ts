@@ -35,7 +35,6 @@ export interface PortableCounts {
   rules: number;
   enforcedRules: number;
   externalProposals: number;
-  ownerProposals: number;
   ruleHistoryVersions: number;
   sealedOriginals: number;
   sealedEvidenceRows: number;

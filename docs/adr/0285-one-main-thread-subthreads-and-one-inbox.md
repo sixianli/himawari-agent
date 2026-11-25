@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0184-back-off-ignored-proactive-pushes.md, docs/adr/0210-cap-compaction-trigger-at-200k-per-model.md, docs/adr/0255-model-scores-urgency-of-home-items.md, docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md, docs/adr/0273-a-decision-model-holds-push-notifications-while-the-owner-is-busy.md, docs/adr/0274-new-things-go-through-one-think-entrance.md, docs/adr/0277-the-system-deletes-expired-think-threads.md, docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md"
+supersedes: "docs/adr/0184-back-off-ignored-proactive-pushes.md, docs/adr/0210-cap-compaction-trigger-at-200k-per-model.md, docs/adr/0255-model-scores-urgency-of-home-items.md, docs/adr/0264-a-decision-model-decides-whether-a-name-call-is-meant-for-himawari.md, docs/adr/0273-a-decision-model-holds-push-notifications-while-the-owner-is-busy.md, docs/adr/0274-new-things-go-through-one-think-entrance.md, docs/adr/0277-the-system-deletes-expired-think-threads.md, https://github.com/sixianli/himawari-agent/blob/193794f098a53fdd0ee93f37d1f1de630ff6c7c1/docs/adr/0278-tasks-the-owner-agreed-to-ask-before-writing-after-external-content.md"
 superseded_by: ""
 amends: "docs/adr/0230-perception-records-and-memories-inferred-from-perception.md, docs/adr/0244-hard-rules-step4-unified-push-gate.md, docs/adr/0257-consequential-tool-calls-go-through-one-authorization-exit.md"
 date: "2026-11-24"

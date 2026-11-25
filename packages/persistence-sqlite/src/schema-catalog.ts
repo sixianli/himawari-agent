@@ -846,13 +846,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its review or its Memory record",
   ),
   entry(
-    "owner_proposals",
-    "OwnerProposalStorePort",
-    "one row per next step proposed to the owner, of any kind: the owner's decision (pending until adopted, refused, expired, superseded or withdrawn) and the execution of a fixed action (not started, running under a lease, done and awaiting read-back, succeeded, failed, unknown or undone, undone being final) kept in separate columns, with an uninterpreted type, what it proposes, what adopting it does, who proposed it (the owner's own words, Himawari's inference or an outside agent), the day it expires, and how many times it was proposed or refused; the basis shown to the owner, the data its handler needs and what an execution changed (for undo) stay in protected payloads the row points to",
-    "payload_reference",
-    "cascade with Owner or Agent deletion; the source thread link clears with the thread",
-  ),
-  entry(
     "main_threads",
     "ThreadRepositoryPort",
     "one row per owner and agent naming the conversation that is the main conversation; written once when the service first starts and never moved; the main conversation cannot be archived, trashed or deleted while this row points at it",
