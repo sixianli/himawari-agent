@@ -35,7 +35,7 @@ superseded_by: ""
 - 2026-11-09 复查时先看开工条件是否满足；不满足就把复查日期往后推。
 - 2026-11-09 复查结果（读 main 的 `71d986b8`）：
   - 第十一版事故已修好、新版用真实网页验收通过：满足。依据：[教训记录](../lessons.md)里第十一次上线那条写明修好的 `470b6d30` 在真实浏览器里六项全部通过；之后每次上线，`deploy.sh` 都要先过 `scripts/delivery-mode/browser-acceptance-gate.py`，它的必过场景 `REQUIRED_SCENARIOS` 包含首页登录、搜索审批、设置里的联网搜索开关、新闻搜索、长回答、记忆页等；生产此后已经跑到第二十六版（I-84）。
-  - 上线脚本能按参数自动生成：满足，上线包由 `scripts/delivery-mode/make-packet.py` 按 `scripts/delivery-mode/instances/andy-production.json` 这类实例参数文件生成（[ADR 0086](../adr/0086-generate-release-packets-from-parameters.md)）。
+  - 上线脚本能按参数自动生成：满足，上线包由 `scripts/delivery-mode/make-packet.py` 按 `scripts/delivery-mode/instances/andy-production.json` 这类实例参数文件生成（[ADR 0293](../adr/0293-how-production-deploys-work.md)）。
   - 生产连续 7 天没有“用不了”级别的事故：不满足。[事故清单](../incidents-and-gates.md#incidents)没有单独的严重度列，这里按 ADR 0083 的“用不了”口径，把下面三条都算进去：I-72（11-02，回滚卡住，生产停了约 3 小时）、I-73（11-02，消息发不出去）、I-84（11-07，一轮对话页面显示“结果未确认 4 分 4 秒”，停止按钮一直转，要到开始后约 31 分钟的原始期限才收尾）。I-84 的修复（PR #282、#312）已合进 main，但还没上线：按仓库里最新的上线记录 I-81，11-07 上线 `f0478c4d` 时在生产验收步骤被拦下，生产仍是旧版本 `bc380a6e`；仓库里没有之后的上线记录，这次复查按要求不碰生产机，没有现场核实。
   - 复查日期推到 2026-11-16。到时看：包含 #282、#312 的新版本是否已上线，上线后是否连续 7 天没有“用不了”级别的事故。
 - 2026-11-16 复查结果（读 main 的 `56545603a`）：

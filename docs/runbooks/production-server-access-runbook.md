@@ -15,7 +15,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 <!-- runbook-contract:
 - https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md
 - docs/backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md
-- docs/adr/0099-production-host-firewall-ssh-only.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0099-production-host-firewall-ssh-only.md
 -->
 
 本手册记录用户怎样登录生产云服务器 `84.247.157.41`（主机商 Contabo 的虚拟服务器，主机名 `vmi3618928`，Ubuntu 24.04），以及服务器上为保护生产服务而锁定的内核和系统程序。起因是 2026-10-19 服务器重启进入自动安装的新内核后，生产服务的启动前检查因内核版本与安装回执不符而连续失败约 51 小时（[BL-20261021-009](../backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md)）。测试账号 `himawari-ci` 的用法不在这里，见[测试主机操作 Runbook](test-host-operations-runbook.md)。
@@ -144,7 +144,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 防火墙
 
-2026-10-28 起生产机启用了 `ufw`（Ubuntu 自带的防火墙管理工具），决定见 [ADR 0099](../adr/0099-production-host-firewall-ssh-only.md)：入站默认拒绝，只放行 `22/tcp`（IPv4 和 IPv6），出站不限。网页流量走 Cloudflare 隧道（`cloudflared` 从服务器主动连出），不需要开 80、443 或 8400。
+2026-10-28 起生产机启用了 `ufw`（Ubuntu 自带的防火墙管理工具），决定见 [ADR 0099](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0099-production-host-firewall-ssh-only.md)：入站默认拒绝，只放行 `22/tcp`（IPv4 和 IPv6），出站不限。网页流量走 Cloudflare 隧道（`cloudflared` 从服务器主动连出），不需要开 80、443 或 8400。
 
 - **查看**：`ufw status verbose` 应显示 `Default: deny (incoming), allow (outgoing)`，规则只有 `22/tcp` 和 `22/tcp (v6)`；`systemctl is-enabled ufw.service` 为 `enabled`，`grep ENABLED /etc/ufw/ufw.conf` 为 `ENABLED=yes`（开机自动生效）。
 - **被拦的连接**：`journalctl -k --since "-1h" --no-pager | grep "UFW BLOCK"`。

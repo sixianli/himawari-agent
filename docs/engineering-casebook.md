@@ -1688,7 +1688,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **相关 ADR/PR**
 
-[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+[ADR 0086](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)、[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
 
 **面试 30 秒版**
 
@@ -2363,7 +2363,7 @@ Andy 定后台命令最长 30 分钟（原话“30 分钟”），随后要求�
 
 **相关 ADR/PR**
 
-[ADR 0099](adr/0099-production-host-firewall-ssh-only.md)、[生产云服务器访问 Runbook 的防火墙一节](runbooks/production-server-access-runbook.md#firewall)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；PR 见分支 `claude/prod-firewall`。
+[ADR 0099](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0099-production-host-firewall-ssh-only.md)、[生产云服务器访问 Runbook 的防火墙一节](runbooks/production-server-access-runbook.md#firewall)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；PR 见分支 `claude/prod-firewall`。
 
 **面试 30 秒版**
 
@@ -4330,15 +4330,15 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 - 清理规则测试 `scripts/delivery-mode/test_release_cleanup.py` 11 条通过；`test_deploy.py` 新增的 10 条（三种结束路径都清、自动回退失败不清、按实测预估空间）在去掉本次 `deploy.sh` 和 `deploy-preflight.py` 修改时 7 条失败、2 条报错。
 - 生产机上的实际释放量和每版 4 GB 的构成：未测量，只读分账脚本已备好（`/mnt/project-files/disk-accounting/run-on-production.sh`），等第二十版上线后运行；清理在生产机的第一次实际运行等下一次上线。
-- 2026-10-30 后续，第一次在生产机实跑（第二十版上线，10:30–10:56 JST，main `e9d30b2`）：上线前那次清理删掉 44 项（旧版本、`/var/tmp` 副本、失败的操作目录），并修剪了旧证据里的 221 个大文件，根分区空闲从 21.2 GB 升到 60.2 GB，释放 38.99 GB。修剪掉的大文件中，32 份是各版升级前的数据库副本（3.81 GiB），约 8 GiB 是可重建的依赖包、源码包和 Python 包副本。上线后那次清理又释放 3.14 GB，结束时空闲 59.6 GB。`/var/tmp` 最后只剩 `himawari-twentieth-20261030/packet`。上线后清理一行行列出的删除项，拆开了“每版约 4 GB”的构成：验证源码检出 1.60 GB、安装材料 0.41 GB、上传包 0.42 GB、操作包副本 0.42 GB、验收临时文件 0.02 GB，新版本目录约 0.5 GB，升级前数据库副本 0.27 GB。也就是说，大头是上线时留下的临时副本，不是装好的版本本身。有 7 个旧版本因为被数据库或 `/etc/himawari` 提到而按规则留下，正在只读核查这些引用是不是已经过时。Andy 选择保留最近 3 份数据库副本，因为正式备份还没做（[ADR 0120 补充决定](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#database-copies)）。不过他选择时这次清理已经执行完，当时生产机上的 33 份副本已全部删除，新规则从下一次上线开始生效。
+- 2026-10-30 后续，第一次在生产机实跑（第二十版上线，10:30–10:56 JST，main `e9d30b2`）：上线前那次清理删掉 44 项（旧版本、`/var/tmp` 副本、失败的操作目录），并修剪了旧证据里的 221 个大文件，根分区空闲从 21.2 GB 升到 60.2 GB，释放 38.99 GB。修剪掉的大文件中，32 份是各版升级前的数据库副本（3.81 GiB），约 8 GiB 是可重建的依赖包、源码包和 Python 包副本。上线后那次清理又释放 3.14 GB，结束时空闲 59.6 GB。`/var/tmp` 最后只剩 `himawari-twentieth-20261030/packet`。上线后清理一行行列出的删除项，拆开了“每版约 4 GB”的构成：验证源码检出 1.60 GB、安装材料 0.41 GB、上传包 0.42 GB、操作包副本 0.42 GB、验收临时文件 0.02 GB，新版本目录约 0.5 GB，升级前数据库副本 0.27 GB。也就是说，大头是上线时留下的临时副本，不是装好的版本本身。有 7 个旧版本因为被数据库或 `/etc/himawari` 提到而按规则留下，正在只读核查这些引用是不是已经过时。Andy 选择保留最近 3 份数据库副本，因为正式备份还没做（[ADR 0120 补充决定](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#database-copies)）。不过他选择时这次清理已经执行完，当时生产机上的 33 份副本已全部删除，新规则从下一次上线开始生效。
 - 2026-10-30 后续，核查“被提到就不删”留下的 7 个旧版本：第一、八、十版只出现在 `/etc/himawari` 里 4 份旧配置备份中；用 SQL 查数据库现有的行，没有一行提到第五、七、十一、十八版。原来按字节扫整个数据库文件，扫到了已删除的行留在空闲页里的旧内容，属于误判。现在改成只看现行配置，数据库按 SQL 查现有的行，并把查到的表和列写进保留原因。同一个 PR 里，出包结束时（不论成功失败）会删掉 Hermes 上这次出包的可重建副本，以及 Mac 临时目录里的 `packet-work-*`。教训：只按字节扫描来判断“还在用”，会把已删除的旧内容也算进去；判断是否在用，要用数据本身的读取方式（SQL）去查。
-- 2026-10-30 后续：清理写在上线脚本里，只有运行的脚本是新的才会生效。Mac 上的主工作区停在旧分支，从那里运行就会用没有清理的旧脚本，而且什么提示都没有。现在 `make-packet.py` 和 `deploy.sh` 启动时都会检查：自己所在的检出是否包含要上线的提交，不包含就停下，生产机一点不碰（[ADR 0120](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#current-scripts)）。建议 Andy 把 Mac 主工作区切回 `main`，或者以后只从 `origin/main` 的临时检出运行；选哪种由他定。教训：修复要生效，前提是运行的就是修好的代码；这一点要交给脚本自己检查，不能靠人记得。
+- 2026-10-30 后续：清理写在上线脚本里，只有运行的脚本是新的才会生效。Mac 上的主工作区停在旧分支，从那里运行就会用没有清理的旧脚本，而且什么提示都没有。现在 `make-packet.py` 和 `deploy.sh` 启动时都会检查：自己所在的检出是否包含要上线的提交，不包含就停下，生产机一点不碰（[ADR 0120](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md#current-scripts)）。建议 Andy 把 Mac 主工作区切回 `main`，或者以后只从 `origin/main` 的临时检出运行；选哪种由他定。教训：修复要生效，前提是运行的就是修好的代码；这一点要交给脚本自己检查，不能靠人记得。
 - 2026-10-31 后续，第二十二版上线后核对（数据来自 `/mnt/project-files/r22-cleanup-report-before.json`、r22-cleanup-report-after.json、`r22-db-copies.txt`）：上线前清理可回收 0 字节，说明 7 个误留旧版在第二十一版上线时已清掉；上线后清理删 6 项、修剪 1 项，释放 3,409,551,360 字节，根盘空闲从 57.0 GB 回到 60.4 GB；证据目录里的数据库副本正好 3 份。同时发现清理没碰 `state/data/pre-migration-*`（11 份，约 2.0 GB，由 `apps/admin-cli/src/index.ts` 升级时创建）和 `state/.raw-restore-*-original`（5 份，约 1.0 GB，由 `raw-copy-recovery.mjs` 恢复时创建），仓库里没有任何代码在创建之后读它们。Andy 选“各留最近 3 份”，ADR 0120 加了补充决定；按当时清单可再释放约 1.25 GB（该数字由清单估算，未实测）。
-- 2026-10-31 后续：清理没看 `/tmp`。S6 验收的草稿目录 `/tmp/h` 加 4 个字符，通过时删、失败时按设计保留，I-33 的清理只看 `/opt/himawari/releases` 和 `/var/tmp`，失败现场没有上限，生产机 `/tmp` 里累积了 23 个、约 5.4 GB（数字来自 Mac 线程导出的 `/tmp` 列表和协调者转述，未逐个相加）。改为上线脚本清理 `/tmp` 下这类目录只留最新 N 份（成功后 0，其余 1），预检超过 1 个就在停服前停下，见 [ADR 0135](adr/0135-failure-scenes-in-tmp-capped-at-one.md) 和 [事故 I-47](incidents-and-gates.md#incidents)。
+- 2026-10-31 后续：清理没看 `/tmp`。S6 验收的草稿目录 `/tmp/h` 加 4 个字符，通过时删、失败时按设计保留，I-33 的清理只看 `/opt/himawari/releases` 和 `/var/tmp`，失败现场没有上限，生产机 `/tmp` 里累积了 23 个、约 5.4 GB（数字来自 Mac 线程导出的 `/tmp` 列表和协调者转述，未逐个相加）。改为上线脚本清理 `/tmp` 下这类目录只留最新 N 份（成功后 0，其余 1），预检超过 1 个就在停服前停下，见 [ADR 0135](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0135-failure-scenes-in-tmp-capped-at-one.md) 和 [事故 I-47](incidents-and-gates.md#incidents)。
 
 **相关 ADR/PR**
 
-[ADR 0120](adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md)；[事故 I-33](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-0ah1su`。
+[ADR 0120](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0120-release-cleanup-on-every-deploy-and-space-preflight.md)；[事故 I-33](incidents-and-gates.md#incidents)；本案例的 PR 在分支 `claude/project-thread-0ah1su`。
 
 **面试 30 秒版**
 
