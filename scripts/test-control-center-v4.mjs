@@ -197,11 +197,11 @@ export async function qualifyControlCenterV4(browser, baseUrl, out) {
     await expect(textarea).toHaveCount(0);
     if (out) await page.screenshot({ path: out + "/startup-entry.png" });
     release();
-    await page.getByRole("button", { name: "新建对话", exact: true }).first().click();
     await expect(textarea).toBeVisible();
+    await expect(page.getByRole("link", { name: "主对话", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "新建对话", exact: true })).toHaveCount(0);
     await textarea.fill("初始化期间的草稿");
     await expect(page.locator(".composer-readiness")).toHaveCount(0);
-    await page.getByRole("button", { name: "新建对话", exact: true }).first().click();
     await expect(textarea).toHaveValue("初始化期间的草稿");
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();

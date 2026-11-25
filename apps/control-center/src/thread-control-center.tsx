@@ -36,7 +36,6 @@ import { OPEN_MEMORY_PAGE } from "./components/memory-panel.js";
 import { defaultThinkingLevel } from "./components/model-picker.js";
 import { MoreButton, MorePanel, type MoreTab } from "./components/more-panel.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
-import { SidebarIcon } from "./components/sidebar-icon.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { type DeliveredFile, deliveredFileGroups } from "./delivered-files.js";
@@ -72,12 +71,7 @@ type ThreadIntent =
   | { readonly kind: "pin"; readonly pinOrder: number | null }
   | { readonly kind: "archive" }
   | { readonly kind: "restore" }
-  | { readonly kind: "trash" }
-  | {
-      readonly kind: "fork";
-      readonly sourceTurnId: string;
-      readonly sourceWatermark: number;
-    };
+  | { readonly kind: "trash" };
 
 interface InheritedMessages {
   readonly forkThreadId: string;
@@ -353,6 +347,31 @@ export function useThreadControlCenter(
   const detailRef = useRef<ThreadDetailSnapshot | undefined>(undefined);
   const refreshTimer = useRef<number | undefined>(undefined);
   const selectedThreadId = route.objectId ?? null;
+  const [mainThreadId, setMainThreadId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active || !client || !configuration) return;
+    const controller = new AbortController();
+    client
+      .queryThread(threadQueryMessage(configuration, "thread.main", {}), controller.signal)
+      .then((snapshot) => {
+        if (snapshot.type === "thread.main_snapshot")
+          setMainThreadId(snapshot.payload.thread.threadId);
+      })
+      .catch((caught: unknown) => {
+        if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
+      });
+    return () => controller.abort();
+  }, [active, client, configuration, onUnauthorized]);
+  useEffect(() => {
+    if (!mainThreadId || selectedThreadId || page || route.status) return;
+    navigate({
+      ...route,
+      objectId: mainThreadId,
+      status: null,
+      afterCursor: null,
+      view: "content",
+    });
+  }, [mainThreadId, selectedThreadId, page, route, navigate]);
   const selectedIdRef = useRef(selectedThreadId);
   selectedIdRef.current = selectedThreadId;
   const shownThreadId = useRef<string | null>(null);
@@ -1041,8 +1060,7 @@ export function useThreadControlCenter(
           | "thread.pin"
           | "thread.archive"
           | "thread.restore"
-          | "thread.trash"
-          | "thread.fork";
+          | "thread.trash";
         switch (intent.kind) {
           case "submit": {
             const contentRef = await contentRefRequest;
@@ -1114,18 +1132,6 @@ export function useThreadControlCenter(
               resultRef,
             };
             break;
-          case "fork":
-            type = "thread.fork";
-            payload = {
-              sourceThreadId: thread.threadId,
-              sourceTurnId: intent.sourceTurnId,
-              sourceWatermark: intent.sourceWatermark,
-              targetThreadId: `thread-fork:${stableSuffix}`,
-              summaryRefs: [],
-              policyRefs: [],
-              resultRef,
-            };
-            break;
         }
         const result = await client.mutateThread(
           threadCommandMessage(configuration, type, payload, identity.idempotencyKey),
@@ -1136,9 +1142,6 @@ export function useThreadControlCenter(
             if (selectedIdRef.current === thread.threadId) setDraft("");
           }
         }
-        if (intent.kind === "fork" && result.kind === "result") {
-          navigate({ ...route, objectId: result.payload.threadId, view: "content" });
-        }
         if (intent.kind === "submit") storage.clearPendingThreadSubmission(thread.threadId);
         await settleMutation(identity, result, intent, origin);
         return result;
@@ -1148,21 +1151,8 @@ export function useThreadControlCenter(
         setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
       }
     },
-    [client, configuration, connection, detail, navigate, route, settleMutation, storage],
+    [client, configuration, connection, detail, settleMutation, storage],
   );
-
-  const createThread = () => {
-    refreshSequence.current++;
-    executionEpoch.current++;
-    readController.current?.abort();
-    navigate({ ...route, objectId: null, status: null, afterCursor: null, view: "content" });
-    setDetail(undefined);
-    setDraft(storage.readDraft("new"));
-    setError(null);
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(),
-    );
-  };
 
   const submitDraft = async () => {
     if (
@@ -1217,36 +1207,13 @@ export function useThreadControlCenter(
         origin && detail?.payload.thread.threadId === origin ? detail.payload.thread : undefined;
       if (!origin) {
         setMutationStatus("pending");
-        const existing = storage.readPendingThreadMutation("new-draft-create");
-        const identity = mutationIdentity(storage, {
-          operationKey: "new-draft-create",
-          commandType: "thread.create",
-          threadId: existing?.threadId ?? `thread:${crypto.randomUUID()}`,
-        });
-        const resultRef = await client.protectText(
-          "thread-action:create",
-          "private",
-          `payload-create:${identity.threadId.slice(-36)}`,
-        );
-        const result = await client.mutateThread(
-          threadCommandMessage(
-            configuration,
-            "thread.create",
-            { threadId: identity.threadId, answerLocale: "zh-CN", resultRef },
-            identity.idempotencyKey,
-          ),
-        );
-        if (result.kind !== "result") throw new Error("CONTROL_CENTER_REQUEST_REJECTED");
         const snapshot = await client.queryThread(
-          threadQueryMessage(configuration, "thread.detail", {
-            threadId: result.payload.threadId,
-            afterSequence: 0,
-            limit: 1,
-          }),
+          threadQueryMessage(configuration, "thread.main", {}),
         );
-        if (snapshot.type !== "thread.detail_snapshot")
+        if (snapshot.type !== "thread.main_snapshot")
           throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
         target = snapshot.payload.thread;
+        setMainThreadId(target.threadId);
       }
       if (!target) {
         settleOutgoing(null);
@@ -1348,9 +1315,6 @@ export function useThreadControlCenter(
       : pendingThreadIds;
 
   const threadItems = collection?.payload.threads ?? [];
-  const startNewThread = () => {
-    void createThread();
-  };
   const renameThread = (thread: ThreadSummary) => {
     setRenameTarget(thread);
     const current = thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "";
@@ -1456,7 +1420,7 @@ export function useThreadControlCenter(
       selectedThreadId={selectedThreadId}
       onSearchTextChange={setSearchText}
       onSearch={() => void search()}
-      onCreate={startNewThread}
+      mainThreadId={mainThreadId}
       onOpenFiles={configuration?.filesAvailable ? () => openLibrary() : undefined}
       onOpenMemory={renderPage ? () => openSidePage("memory") : undefined}
       onOpenReminders={renderPage ? () => openSidePage("reminders") : undefined}
@@ -1745,16 +1709,7 @@ export function useThreadControlCenter(
       ) : null}
     </>
   ) : null;
-  const start = (
-    <ActionButton
-      className="topbar-new"
-      variant="quiet"
-      aria-label={message("threads.new")}
-      onClick={startNewThread}
-    >
-      <SidebarIcon name="compose" />
-    </ActionButton>
-  );
+  const start = null;
 
   const forkedThread = detail?.payload.thread.sourceThreadId ? detail.payload.thread : undefined;
   const shownInherited: InheritedConversation | undefined =
@@ -1851,13 +1806,6 @@ export function useThreadControlCenter(
                 backgroundCommands={commands}
                 stoppingRunIds={stoppingRunIds}
                 onOpenCommand={(key) => openMore("commands", key)}
-                onFork={(turnId, sequence) =>
-                  void performIntent({
-                    kind: "fork",
-                    sourceTurnId: turnId,
-                    sourceWatermark: sequence,
-                  })
-                }
               />
             </>
           )}
@@ -1999,7 +1947,9 @@ export function useThreadControlCenter(
         )
       : selectedSummary?.titleRef
         ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
-        : message("chat.untitled"),
+        : selectedThreadId !== null && selectedThreadId === mainThreadId
+          ? message("chat.main")
+          : message("chat.untitled"),
   });
 }
 

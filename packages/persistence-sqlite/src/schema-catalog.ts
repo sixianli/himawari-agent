@@ -839,6 +839,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner or Agent deletion; the source thread link clears with the thread",
   ),
   entry(
+    "main_threads",
+    "ThreadRepositoryPort",
+    "one row per owner and agent naming the conversation that is the main conversation; written once when the service first starts and never moved; the main conversation cannot be archived, trashed or deleted while this row points at it",
+    "metadata_only",
+    "cascade with Owner or Agent; restricts deleting its conversation",
+  ),
+  entry(
     "inbox_events",
     "InboxStorePort",
     "one row per new thing that reached Himawari's inbox (an owner message, an email, a reminder, a message between conversations): the source and its version, whether it is outside content, whether it came from the owner, its priority, the conversation it goes to (empty means the main conversation), the queue state (queued, running, done or failed), what she did with it, why it ended, the run that handled it and how many times it was tried; the short summary the conversation reads stays in a protected payload the row points to and is swept in batches by the inbox maintenance after the event settles; a transient queue, not exported",
