@@ -107,7 +107,6 @@ function configuration(
       version: "workspace-auto-v1",
       systemInstruction: "fixture",
       memoryLimit: 1,
-      maxSelectedMemories: 0,
       coding: codingRoute(approval),
     },
   };

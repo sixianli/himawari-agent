@@ -97,3 +97,21 @@ export const TOOL_RESULT_RULE_ASK_OWNER = fixedPrompt({
   output: "free-text",
   text: "这条规则还没生效：它不是主人原话里明说的一直有效的要求。要立的话，在你这次回主人的话里问一句，并用 offer_options 给一个带动作的选项，action 的 tool 写 rule_set，arguments 和这次调用完全相同；主人点了，你再用同样的参数调用一次 rule_set 就生效。",
 });
+
+export const REMINDER_DUE_EVENT = templatePrompt({
+  id: "inbox.reminder-due",
+  purpose:
+    "主人定的提醒到点时送进主对话的那件事的正文：提醒原文、定的时间，以及这一条要单独用 tell_owner 说",
+  usedBy: ["apps/agent-service/src/production-reminder-inbox.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [
+    text("主人定的提醒到点了："),
+    slot("text"),
+    text("（定的时间："),
+    slot("due"),
+    text(
+      "）。这是主人自己要的提醒，请用 tell_owner 单独说这一条（about 只写这件事的编号），在主对话里留一句：照原话提醒，或者补一句你知道的、对他有用的信息。推不推到手机看情况，例如主人已经说过这件事办完了，就只留在主对话里不推，并在 reason 里写明为什么。",
+    ),
+  ],
+});

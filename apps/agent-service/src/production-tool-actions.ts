@@ -394,6 +394,23 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     }),
   },
   {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "schedule_task",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}schedule_task`,
+    operation: "schedule",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail(
+      {
+        zh: "定一个跟进或周期任务",
+        en: "Schedule a follow-up or recurring task",
+        ja: "フォローアップや定期タスクを設定する",
+      },
+      "task",
+    ),
+  },
+  {
     ...READ_DEFAULTS,
     tool: "view_subthread",
     family: "builtin",

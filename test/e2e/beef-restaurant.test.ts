@@ -2,11 +2,11 @@ import {
   AgentGatewayService,
   CapabilityRegistryService,
   ContextFormationService,
+  type GatewayAuthenticationContext,
   ModelRouterService,
+  type PermissionAllowDecision,
   PermissionService,
   SessionTraceRecorder,
-  type GatewayAuthenticationContext,
-  type PermissionAllowDecision,
 } from "@himawari-agent/application";
 import {
   createAgentAuthorityLease,
@@ -14,19 +14,19 @@ import {
   createAuthorityLeaseId,
 } from "@himawari-agent/domain";
 import type { ExecuteWorkRequest, ReconcileWorkRequest } from "@himawari-agent/execution-contracts";
+import { createLocalExecutionWorkerProcess } from "@himawari-agent/execution-worker";
 import type { EventSubscription } from "@himawari-agent/gateway-contracts";
 import {
+  createBeefRestaurantFixture,
+  createReferenceAdapterSet,
   DeterministicRestaurantCapabilityPort,
   InMemoryGatewayAccessPolicy,
   InMemoryGatewayControlPlane,
   InMemoryGatewayReadModel,
   ManualClock,
-  ScriptedModelPort,
   ScriptedExternalActionReconciliationPort,
-  createBeefRestaurantFixture,
-  createReferenceAdapterSet,
+  ScriptedModelPort,
 } from "@himawari-agent/testing";
-import { createLocalExecutionWorkerProcess } from "@himawari-agent/execution-worker";
 import { beforeAll, describe, expect, it } from "vitest";
 
 async function collect<T>(events: AsyncIterable<T>): Promise<readonly T[]> {
@@ -167,7 +167,6 @@ async function runJourney() {
     memoryQueryRef: fixture.payloads.memoryQuery,
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
     memoryLimit: 5,
-    maxSelectedMemories: 2,
     capabilities: [
       {
         ref: "restaurant-search",
@@ -275,7 +274,6 @@ async function runJourney() {
     memoryQueryRef: fixture.payloads.memoryQuery,
     memoryQueryTerms: ["beef", "restaurant", "tokyo"],
     memoryLimit: 5,
-    maxSelectedMemories: 2,
     capabilities: [
       {
         ref: "restaurant-search",

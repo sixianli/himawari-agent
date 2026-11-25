@@ -17,6 +17,7 @@ import {
   type InboxRunRegistry,
   spokenDecisionId,
 } from "./production-inbox-delivery.js";
+import { isReminderEvent, reminderMessageId } from "./production-reminder-inbox.js";
 
 type Post = Parameters<ThreadCommandService["postAgentMessage"]>[0];
 
@@ -70,6 +71,7 @@ export interface ProductionTellOwnerOptions {
   readonly payloads: PayloadStorePort;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly messageExists?: (threadId: string, messageId: string) => Promise<boolean>;
 }
 
 export class ProductionTellOwner {
@@ -109,12 +111,18 @@ export class ProductionTellOwner {
       : run.events;
     if (named && targets.length !== named.length)
       throw new TellOwnerInputError("TELL_OWNER_INPUT_INVALID");
+    const reminder = targets.find(isReminderEvent);
+    if (reminder && targets.length !== 1) throw new TellOwnerInputError("TELL_OWNER_INPUT_INVALID");
     const { ownerId, agentId, clock, commands, ledger } = this.#options;
     const key = createHash("sha256")
       .update(JSON.stringify([invocation.runId, invocation.toolCallId]))
       .digest("hex")
       .slice(0, 32);
-    const messageId = `message:said:${key}`;
+    const messageId = reminder
+      ? reminderMessageId(reminder.sourceRef, reminder.sourceVersion)
+      : `message:said:${key}`;
+    if (reminder && (await this.#options.messageExists?.(run.threadId, messageId)))
+      return { said: false, messageId, pushed: false, alreadyTold: true };
     const contentRef = `said:${key}`;
     const dataClassification = await this.#write(contentRef, text.trim());
     await commands.postAgentMessage({

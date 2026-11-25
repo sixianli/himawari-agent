@@ -9,16 +9,16 @@ import type {
   RealEvalStorePort,
   RealEvalTrigger,
 } from "../ports/real-eval.js";
+import { highestClassification } from "./model-visibility.js";
 import {
   answerPrompt,
   type DecisionEvalGroup,
-  summarizeDecisionEval,
   fastPathVerdict,
   judgePrompt,
   leakJudgePrompt,
   parseGeneratedQuestion,
-  parseLeakVerdict,
   parseJudgeVerdict,
+  parseLeakVerdict,
   pickNewMemories,
   questionPrompt,
   RealEvalBudget,
@@ -27,8 +27,8 @@ import {
   retireReason,
   type ScoredItem,
   scoreItems,
+  summarizeDecisionEval,
 } from "./real-memory-eval.js";
-import { highestClassification } from "./model-visibility.js";
 
 export interface RealEvalModelCall {
   readonly output: string;
@@ -70,7 +70,6 @@ export interface RealMemoryEvalDependencies {
   readonly now: () => string;
   readonly newId: () => string;
   readonly promptSha256: string;
-  readonly maxSelectedMemories: number;
   readonly recallEstimateMicros: number;
   readonly listMemories: () => Promise<readonly ProductMemoryRecord[]>;
   readonly readMemoryText: (record: ProductMemoryRecord) => Promise<string | undefined>;
@@ -410,9 +409,7 @@ export class RealMemoryEvalService {
         }
         budget.record(recall.costMicros);
         const inProfile = new Set(profile.memoryIds);
-        const recalled = recall.memories
-          .filter(({ id }) => !inProfile.has(id))
-          .slice(0, deps.maxSelectedMemories);
+        const recalled = recall.memories.filter(({ id }) => !inProfile.has(id));
         const classification = highestClassification(memory.dataClassification, [
           profile.dataClassification,
           ...recalled.map(({ dataClassification }) => dataClassification),

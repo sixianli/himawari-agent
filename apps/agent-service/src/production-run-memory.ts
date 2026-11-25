@@ -122,6 +122,7 @@ export function createProductionRunMemory(options: {
     }
   };
   const leaseLost = new WeakSet<object>();
+  const skippedSearches = new WeakSet<object>();
   const whileHeld = async <T>(step: Promise<T>): Promise<T> => {
     try {
       return await step;
@@ -399,6 +400,16 @@ export function createProductionRunMemory(options: {
         return await embedOnce(request, send, 1, FIRST_EMBEDDING_ATTEMPT_MS);
       } catch (error) {
         if (!(error instanceof Error) || error.message !== EMBEDDING_ATTEMPT_TIMED_OUT) throw error;
+        const search = scope.getStore();
+        if (search && search.embeddingSlot === undefined) {
+          skippedSearches.add(search);
+          diagnose({
+            component: "agent-service",
+            event: "memory.embedding_skipped",
+            afterMs: String(FIRST_EMBEDDING_ATTEMPT_MS),
+          });
+          throw error;
+        }
         diagnose({
           component: "agent-service",
           event: "memory.embedding_retried",
@@ -457,6 +468,7 @@ export function createProductionRunMemory(options: {
             allowedClassifications: modelVisibleClassifications(),
           },
         });
+        if (skippedSearches.has(request)) return [];
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,

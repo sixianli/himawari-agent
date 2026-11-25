@@ -1061,7 +1061,10 @@ export class SqliteThreadOperations {
         .get(input.runId, input.ownerId, input.agentId, input.threadId) as
         | { status: string; turnId: string }
         | undefined;
-      if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+      if (
+        !run ||
+        (input.afterRunEnded !== true && ["completed", "failed", "cancelled"].includes(run.status))
+      )
         this.fail("PORT_INVALID_OPERATION", "An agent message requires an active Run");
       if (!current || !run) return undefined as never;
       const sequence = current.messageWatermark + 1;

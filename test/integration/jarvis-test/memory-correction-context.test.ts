@@ -9,7 +9,7 @@ import { createProductionRunPolicy } from "../../../apps/agent-service/src/produ
 import { createAiGatewayLiveConfiguration } from "../fixtures/openrouter-live-configuration.ts";
 import { useSqliteContractExecution } from "../sqlite-contract-execution.fixture.ts";
 import { loadDataset } from "./cases.ts";
-import { assembleContext, MAX_SELECTED_MEMORIES, MEMORY_LIMIT } from "./context.ts";
+import { assembleContext, MEMORY_LIMIT } from "./context.ts";
 
 const dataset = loadDataset();
 const memoryCases = dataset.cases.filter(({ scenario }) => scenario === "memory_correction");
@@ -91,7 +91,6 @@ describe("Jarvis Test fixed today", () => {
           timeZone: dataset.timeZone,
           systemInstruction: "可信系统指令",
           memoryLimit: MEMORY_LIMIT,
-          maxSelectedMemories: MAX_SELECTED_MEMORIES,
         },
       };
       const protect = vi.spyOn(adapters.payloadProtector, "protect");
