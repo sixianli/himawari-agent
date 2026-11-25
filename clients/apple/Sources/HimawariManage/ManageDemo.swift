@@ -21,6 +21,7 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herAllowanceDays = "next-3-her-allowance-days"
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
+    case herAbout = "next-6-her-about"
 }
 
 public struct ManageDemoView: View {
@@ -56,6 +57,8 @@ public struct ManageDemoView: View {
             her([.notifications])
         case .herAllowances:
             her([.allowances])
+        case .herAbout:
+            her([.about])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
         case .memoryVersions:

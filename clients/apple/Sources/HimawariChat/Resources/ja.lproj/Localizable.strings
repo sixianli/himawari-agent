@@ -48,3 +48,14 @@
 "chat.talk.muted" = "ミュート中";
 "chat.talk.failed" = "音声で話せませんでした。もう一度お試しください";
 "chat.option.chosen" = "選んだ";
+"chat.copyCode" = "コードをコピー";
+"chat.menu.reply" = "返信";
+"chat.menu.copy" = "コピー";
+"chat.menu.select" = "テキストを選択";
+"chat.reply.toAgent" = "彼女への返信";
+"chat.reply.toOwner" = "自分への返信";
+"chat.reply.missing" = "元のメッセージはありません";
+"chat.reply.cancel" = "返信をやめる";
+"chat.copied" = "コピーしました";
+"chat.select.title" = "テキストを選択";
+"chat.select.done" = "完了";

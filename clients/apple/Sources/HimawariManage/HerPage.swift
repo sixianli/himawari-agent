@@ -23,6 +23,7 @@ public struct HerPage: View {
         case device(String)
         case approvals
         case allowances
+        case about
     }
 
     @State private var settings: SettingsStore
@@ -42,6 +43,7 @@ public struct HerPage: View {
     private let removedThisDevice: () -> Void
     private let countVault: () async -> HerVaultCount
     private let vault: ((@escaping () -> Void) -> AnyView)?
+    private let server: String?
 
     public init(
         api: DeviceAPI,
@@ -59,6 +61,7 @@ public struct HerPage: View {
         let identity = api.http.currentCredentials.map {
             DeviceIdentity(deviceId: $0.deviceId, origin: $0.origin, access: $0.access)
         }
+        server = identity?.origin.absoluteString
         _settings = State(initialValue: SettingsStore(gateway: gateway, identity: identity))
         _memory = State(initialValue: MemoryStore(gateway: gateway))
         _quietHours = State(initialValue: QuietHoursStore(gateway: gateway))
@@ -101,6 +104,7 @@ public struct HerPage: View {
         removedThisDevice = {}
         let shown = vaultItems
         countVault = { shown }
+        server = "https://himawari.example"
         vault = nil
     }
 
@@ -151,6 +155,12 @@ public struct HerPage: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    SettingsGroup(label: nil) {
+                        Button { path.append(.about) } label: {
+                            HerRow(icon: .infoCircle, title: M.aboutTitle, subtitle: AboutPage.versionLine, last: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.top, DesignTokens.Her.pagePaddingTop)
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
@@ -192,6 +202,8 @@ public struct HerPage: View {
                     DevicePage(store: settings, deviceId: id, actions: actions, removedThisDevice: removedThisDevice) { path.removeLast() }
                 case .allowances:
                     HerAllowancesPage(memory: memory) { path.removeLast() }
+                case .about:
+                    AboutPage(server: server) { path.removeLast() }
                 case .approvals:
                     if let actions {
                         ApprovalsView(model: actions, openThread: { _ in close() }) { path.removeLast() }

@@ -28,6 +28,8 @@ enum DemoScene: String, CaseIterable {
     case herAllowanceDays = "next-3-her-allowance-days"
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
+    case herAbout = "next-6-her-about"
+    case chatEmptyFlower = "next-6-chat-empty"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -42,6 +44,11 @@ enum DemoScene: String, CaseIterable {
     case chatSteps = "16-chat-states-6-steps"
     case chatFormat = "next-2-chat-format"
     case chatFormatStreaming = "next-2-chat-format-streaming"
+    case chatRich = "next-5-chat-rich"
+    case chatSelectText = "next-5-chat-select-text"
+    case chatCopied = "next-5-chat-copied"
+    case chatReplied = "next-5-chat-replied"
+    case chatReplying = "next-5-chat-replying"
     case chatOptions = "next-2-chat-options"
     case chatOptionChosen = "next-2-chat-options-chosen"
     case chatAttach = "next-2-chat-attach"
@@ -151,6 +158,21 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.formatted())
         case .chatFormatStreaming:
             chat(DemoChatFixtures.formattedStreaming())
+        case .chatRich:
+            chat(DemoChatFixtures.rich())
+        case .chatSelectText:
+            chat(DemoChatFixtures.rich())
+                .environment(\.chatOpensSelectText, "m2")
+        case .chatCopied:
+            chat(DemoChatFixtures.rich())
+                .environment(\.chatShowsCopied, true)
+        case .chatEmptyFlower:
+            chat(DemoChatFixtures.empty())
+        case .chatReplied:
+            chat(DemoChatFixtures.replied())
+        case .chatReplying:
+            chat(DemoChatFixtures.answered())
+                .environment(\.chatStartsReplyTo, "m2")
         case .chatOptions:
             chat(DemoChatFixtures.withOptions())
                 .environment(\.chatChooseOption, { _, _, _ in })
@@ -221,7 +243,7 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout:
             EmptyView()
         }
     }

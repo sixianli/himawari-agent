@@ -389,6 +389,41 @@ describe("ContextProjectionService", () => {
     expect(projection.ownerAttachments).toBe(4);
   });
 
+  it("[REPLY] puts the message being replied to in front of the reply and drops a tag whose message is gone", async () => {
+    const fixture = createFixture();
+    const contextRef = await createContext(fixture, {
+      previous:
+        '<reply to="message-deleted"/>\n明天去大阪\n\n<file name="行程.md" ref="payload-attachment-trip" bytes="9"/>',
+      current: '<reply to="message-context-owner"/>\n几点出发合适？',
+      runState: undefined,
+    });
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    expect(projection.prompt.content).toBe(
+      '<reply-to role="user">\n明天去大阪\n\n[附件 行程.md]\n</reply-to>\n\n几点出发合适？',
+    );
+    expect(JSON.stringify(projection.history[0]?.content)).not.toContain("reply");
+    expect(
+      await new ContextProjectionService(fixture.dependencies).resolveProjection(
+        request(contextRef),
+      ),
+    ).toEqual(projection);
+  });
+
+  it.each([
+    ["a message that no longer exists", "message-gone"],
+    ["a system message", "message-context-system"],
+  ])("[REPLY] quotes nothing when the reply points at %s", async (_case, messageId) => {
+    const fixture = createFixture();
+    const contextRef = await createContext(fixture, {
+      previous: "之前的用户问题",
+      current: `<reply to="${messageId}"/>\n几点出发合适？`,
+      runState: undefined,
+    });
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    expect(projection.prompt.content).toBe("几点出发合适？");
+    expect(JSON.stringify(projection)).not.toContain("历史系统材料\\n</reply-to>");
+  });
+
   it("[UI-17] hands the images of the current message to the model and leaves older images as names", async () => {
     const fixture = createFixture();
     const contextRef = await createContext(fixture, {

@@ -59,3 +59,12 @@ export function splitDraft(draft: string): { text: string; files: DraftAttachmen
   }
   return { text: rest, files };
 }
+
+const REPLY = /^<reply to="([A-Za-z0-9_.:-]+)"\/>\n?/;
+
+export function splitReply(content: string): { replyTo: string | null; text: string } {
+  const tag = REPLY.exec(content);
+  return tag
+    ? { replyTo: tag[1] ?? null, text: content.slice(tag[0].length) }
+    : { replyTo: null, text: content };
+}
