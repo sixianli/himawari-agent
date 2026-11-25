@@ -8,6 +8,7 @@ import type {
   MemoryEpisodeSearchResult,
   MemoryEpisodeThreadWatermark,
   MemoryHistoryEvent,
+  MemoryNumber,
   MemoryHistoryNote,
   MemoryIndexCandidate,
   MemoryIndexDocument,
@@ -367,6 +368,12 @@ export class SqliteMemoryOperations {
         );
       case "memory.readHistory":
         return this.readHistory(payload as { ownerId: OwnerId; agentId: AgentId; id: number });
+      case "memory.numbers":
+        return this.numbers(
+          payload as { ownerId: OwnerId; agentId: AgentId; memoryIds: readonly MemoryId[] },
+        );
+      case "memory.byNumber":
+        return this.byNumber(payload as { ownerId: OwnerId; agentId: AgentId; number: number });
       case "memory.listInactive":
         return this.listInactive(
           payload as { ownerId: OwnerId; agentId: AgentId; trashedAfter: string; limit: number },
@@ -1001,6 +1008,45 @@ export class SqliteMemoryOperations {
       )
       .all(input.ownerId, input.agentId, ...unique) as MemoryHistoryRow[];
     return rows.map(memoryHistoryEvent);
+  }
+
+  private numbers(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    memoryIds: readonly MemoryId[];
+  }): readonly MemoryNumber[] {
+    if (input.memoryIds.length > 10_000)
+      this.fail("PORT_INVALID_OPERATION", "Memory number lookup is too large");
+    if (input.memoryIds.length === 0) return [];
+    const rows = this.database
+      .prepare(
+        `SELECT memory_id AS memoryId, number FROM memory_numbers
+        WHERE owner_id = ? AND agent_id = ?
+          AND memory_id IN (SELECT value FROM json_each(?))
+        ORDER BY number`,
+      )
+      .all(input.ownerId, input.agentId, JSON.stringify([...new Set(input.memoryIds)])) as {
+      memoryId: string;
+      number: number;
+    }[];
+    return rows.map(({ memoryId, number }) =>
+      Object.freeze({ memoryId: memoryId as MemoryId, number }),
+    );
+  }
+
+  private byNumber(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    number: number;
+  }): MemoryId | undefined {
+    if (!Number.isSafeInteger(input.number) || input.number < 1) return undefined;
+    const found = this.database
+      .prepare(
+        "SELECT memory_id FROM memory_numbers WHERE owner_id = ? AND agent_id = ? AND number = ?",
+      )
+      .pluck()
+      .get(input.ownerId, input.agentId, input.number) as string | undefined;
+    return found === undefined ? undefined : (found as MemoryId);
   }
 
   private readHistory(input: {

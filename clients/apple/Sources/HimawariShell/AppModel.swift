@@ -28,6 +28,12 @@ public enum AppPhase: Equatable {
 @MainActor
 @Observable
 public final class AppModel {
+    #if canImport(UIKit)
+    static let imageFitter: ImageFitting? = UIKitImageFitter()
+    #else
+    static let imageFitter: ImageFitting? = nil
+    #endif
+
     public private(set) var phase: AppPhase = .unpaired(nil)
     public private(set) var chat: ChatStore?
     public private(set) var actions: DeviceActionsModel?
@@ -415,7 +421,8 @@ public final class AppModel {
                 store: store,
                 heartbeatSeconds: { heartbeat.seconds },
                 onSessionInvalid: { [weak self] in self?.checkRevoked() },
-                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() }
+                onDeviceActions: { [weak actions] in actions?.deviceActionsChanged() },
+                images: Self.imageFitter
             )
             chat.onNotification = onDeviceNotification
             self.chat = chat

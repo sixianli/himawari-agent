@@ -53,6 +53,8 @@ import {
   TOOL_RESULT_CONVERSATION_INPUT_INVALID,
   TOOL_RESULT_CONVERSATION_UNAVAILABLE,
   TOOL_RESULT_DEVICE_ACTION_UNAVAILABLE,
+  TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID,
+  TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE,
   TOOL_RESULT_RECALL_INPUT_INVALID,
   TOOL_RESULT_RECALL_UNAVAILABLE,
   TOOL_RESULT_REMINDER_MEMORY_NOT_READY,
@@ -104,6 +106,11 @@ import {
   managedTaskDescriptors,
   type ProductionManagedTasks,
 } from "./production-managed-tasks.js";
+import {
+  MemoryOpenInputError,
+  memoryOpenDescriptor,
+  type ProductionMemoryOpen,
+} from "./production-memory-open.js";
 import { memoryRecallDescriptor, type ProductionMemoryRecall } from "./production-memory-recall.js";
 import {
   OwnerRuleError,
@@ -155,6 +162,7 @@ const BUILTIN_PREFLIGHT: Readonly<
 > = Object.freeze({
   "owner-memory": { prefix: "memory-recall", reasonCode: "MEMORY_RECALL_OWNER_SCOPE" },
   "owner-conversation": { prefix: "conversation", reasonCode: "CONVERSATION_OWNER_SCOPE" },
+  "owner-memory-record": { prefix: "memory-open", reasonCode: "MEMORY_OPEN_OWNER_SCOPE" },
   "owner-reminder": { prefix: "reminder", reasonCode: "REMINDER_OWNER_SCOPE" },
   "owner-rule": { prefix: "owner-rule", reasonCode: "OWNER_RULE_OWNER_SCOPE" },
   "owner-perception": { prefix: "perception", reasonCode: "PERCEPTION_OWNER_SCOPE" },
@@ -361,6 +369,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly backgroundCommands?: BackgroundCommandLimits;
   readonly memoryRecall?: Pick<ProductionMemoryRecall, "recallWithClassification">;
   readonly conversations?: Pick<ProductionConversationTools, "run">;
+  readonly memoryOpen?: Pick<ProductionMemoryOpen, "open">;
   readonly reminders?: Pick<ProductionReminderTools, "run">;
   readonly ownerRules?: Pick<ProductionOwnerRuleTools, "run">;
   readonly perception?: Pick<ProductionPerceptionTools, "run">;
@@ -619,7 +628,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     this.#exposed.set(runId, new Set(refs));
     const readOnly = (await this.#options.readOnlyRun?.(runId)) === true;
     const offered = this.#registry.offer(descriptors, { readOnly });
-    const conversations = this.#options.conversations ? conversationToolDescriptors() : [];
+    const conversations = [
+      ...(this.#options.conversations ? conversationToolDescriptors() : []),
+      ...(this.#options.memoryOpen ? [memoryOpenDescriptor()] : []),
+    ];
     return offered.length === 0 && conversations.length === 0
       ? offered
       : this.#registry.offer([...offered, toolResultRecallDescriptor(), ...conversations], {
@@ -696,6 +708,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       return (invocation, gate) => this.#recall(invocation, gate);
     if (row.targetType === "owner-conversation" && this.#options.conversations)
       return (invocation, gate) => this.#conversation(invocation, gate);
+    if (row.targetType === "owner-memory-record" && this.#options.memoryOpen)
+      return (invocation, gate) => this.#memoryOpen(invocation, gate);
     if (row.targetType === "owner-reminder" && this.#options.reminders)
       return (invocation, gate) => this.#reminder(invocation, gate);
     if (row.targetType === "owner-rule" && this.#options.ownerRules)
@@ -875,6 +889,38 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             },
     );
   }
+  async #memoryOpen(
+    invocation: RuntimeToolInvocation,
+    gate: OwnerScopeGate,
+  ): Promise<RuntimeToolExecutionResult> {
+    const memoryOpen = this.#options.memoryOpen;
+    return this.#ownerScoped(
+      invocation,
+      "memory",
+      gate,
+      memoryOpen
+        ? async (call) => {
+            const { output, contentClassification, externalContent } = await memoryOpen.open(call);
+            if (externalContent)
+              await this.#options.externalContent?.mark(
+                call.runId,
+                RECALLED_EXTERNAL_RECORD_ORIGIN,
+              );
+            return { value: output, contentClassification };
+          }
+        : undefined,
+      (error) =>
+        error instanceof MemoryOpenInputError
+          ? {
+              errorCode: "MEMORY_OPEN_INPUT_INVALID",
+              note: TOOL_RESULT_MEMORY_OPEN_INPUT_INVALID.text,
+            }
+          : {
+              errorCode: "MEMORY_OPEN_UNAVAILABLE",
+              note: TOOL_RESULT_MEMORY_OPEN_UNAVAILABLE.text,
+            },
+    );
+  }
   async #reminder(
     invocation: RuntimeToolInvocation,
     gate: OwnerScopeGate,
@@ -903,7 +949,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScoped(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "reminder" | "rule" | "perception",
+    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run:
       | ((call: RuntimeToolInvocation) => Promise<{
@@ -930,7 +976,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   }
   async #ownerScopedOnce(
     invocation: RuntimeToolInvocation,
-    marker: "recall" | "conversation" | "reminder" | "rule" | "perception",
+    marker: "recall" | "conversation" | "memory" | "reminder" | "rule" | "perception",
     gate: OwnerScopeGate,
     run: (call: RuntimeToolInvocation) => Promise<{
       readonly value: unknown;
