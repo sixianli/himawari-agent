@@ -27,7 +27,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 背景
 
-[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 定的数据导出（把记忆和决策记录打包带走、还能再导入的功能）不含规则手册（Andy 定的、由程序必定执行的规则，[ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)）。愿景说规则手册是四样护城河资产之一，[ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md#consequences)、[ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md#consequences)、[ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md#consequences) 都把“规则手册一并导出”记成以后要做的事。
+[ADR 0200](0200-portable-export-of-memories-and-decisions.md) 定的数据导出（把记忆和决策记录打包带走、还能再导入的功能）不含规则手册（Andy 定的、由程序必定执行的规则，[ADR 0209](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md)）。愿景说规则手册是四样护城河资产之一，[ADR 0209](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md#consequences)、[ADR 0211](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0211-hard-rule-points-back-to-its-rule-memory.md#consequences)、[ADR 0213](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0213-owner-sentence-becomes-a-standing-rule.md#consequences) 都把“规则手册一并导出”记成以后要做的事。
 
 任务 P2-4 原本要把规则手册导出成 Agent Skills 标准的 `SKILL.md`。线程评估后认为：规则在别的 Agent 里只是文字，没有 Himawari 的程序就不会“必定执行”，所以 SKILL.md 的价值低；真正缺的是 Andy 的数据带不走规则。Andy 2026-11-11 在决定卡上选了“搁置，先补数据导出”，随后对改动清单 `/mnt/project-files/p2-4-rulebook-skill/change-list-data-export.md` 说“按照你的建议来”（同时同意跳过两模型方案讨论）。
 
@@ -91,9 +91,9 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0200](0200-portable-export-of-memories-and-decisions.md)：数据导出 v1，本 ADR 在它的格式上加规则手册。
-- [ADR 0209](0209-rule-book-with-cel-expressions-and-judge.md)：规则手册和裁判。
-- [ADR 0211](0211-hard-rule-points-back-to-its-rule-memory.md)：规则记着来源记忆、待重审。
-- [ADR 0213](0213-owner-sentence-becomes-a-standing-rule.md)：一句话变规则。
+- [ADR 0209](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0209-rule-book-with-cel-expressions-and-judge.md)：规则手册和裁判。
+- [ADR 0211](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0211-hard-rule-points-back-to-its-rule-memory.md)：规则记着来源记忆、待重审。
+- [ADR 0213](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0213-owner-sentence-becomes-a-standing-rule.md)：一句话变规则。
 - 代码：`packages/persistence-sqlite/src/data-export/rules.ts`、`export.ts`、`verify.ts`、`import.ts`。
 - [ADR 0246](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0246-external-proposals-join-the-data-export-and-web.md)：其他 agent 的提议进入导出，格式升到 v3（后续）。
 

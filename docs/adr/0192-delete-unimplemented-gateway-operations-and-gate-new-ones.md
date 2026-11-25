@@ -101,5 +101,5 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 ## 关联文档
 
 - [ADR 0194](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0194-record-the-whole-basis-chain-of-a-memory-tidy-up.md)：`memory.basis.read` 的来源。
-- [ADR 0143](0143-decision-ledger-for-model-gate-decisions.md)：决策记录（原“决策账本”）。
+- [ADR 0143](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md)：决策记录（原“决策账本”）。
 - [产品愿景](../product-vision.md)：边界与可逆性优先于效率。

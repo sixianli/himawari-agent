@@ -13,7 +13,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 # 决策记录观察期 Runbook
 
 <!-- runbook-contract:
-- docs/adr/0155-decision-record-observation-and-weekly-report-page.md
+- https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0155-decision-record-observation-and-weekly-report-page.md
 - apps/agent-service/src/production-observation.ts
 - packages/application/src/services/ledger-observation.ts
 - packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql
@@ -21,7 +21,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - scripts/delivery-mode/packet-template/s0-db/read-s0-db.mjs
 -->
 
-本手册说明 P0-8 的“连续运行验收”怎样做：带观察功能的版本上线以后，Andy 在网页上选数据起点，服务每天自己检查决策记录（数据库表 `decision_ledger`，记录 Himawari 每次拿主意的那张表）有没有正常写入，第 8 天出首份校准周报。决定和检查规则见 [ADR 0155](../adr/0155-decision-record-observation-and-weekly-report-page.md)。本手册里的时间都是日本时间（JST）。
+本手册说明 P0-8 的“连续运行验收”怎样做：带观察功能的版本上线以后，Andy 在网页上选数据起点，服务每天自己检查决策记录（数据库表 `decision_ledger`，记录 Himawari 每次拿主意的那张表）有没有正常写入，第 8 天出首份校准周报。决定和检查规则见 [ADR 0302](../adr/0302-decision-records-and-calibration.md)。本手册里的时间都是日本时间（JST）。
 
 <a id="contents"></a>
 
@@ -53,7 +53,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## Authoritative Sources
 
-- 决定、检查项和门槛：[ADR 0155](../adr/0155-decision-record-observation-and-weekly-report-page.md)。
+- 决定、检查项和门槛：[ADR 0302](../adr/0302-decision-records-and-calibration.md)。
 - 检查规则代码：`packages/application/src/services/ledger-observation.ts`；服务定时任务：`apps/agent-service/src/production-observation.ts`；表结构：`packages/persistence-sqlite/src/migrations/0074_ledger_observation.sql`。
 - 生产访问规则：[交付模式](../../.agents/instructions/delivery-mode.md)第 29 行（可以以 `root` 或 `himawari-prod` 登录读 `/var/lib/himawari`，不打印、不带出机密，不以生产账号跑测试）。
 - 事故和门槛：`.claude/rules/incident-gates.md`、`docs/incidents-and-gates.md`。
@@ -100,7 +100,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
    2. 按“修 bug 先查根因”处理：先写一个能复现的测试并证明它失败，修好，证明通过，按交付模式上线，在 `docs/incidents-and-gates.md` 加一行。
    3. 起点不动，失败那天的结果不删不改。修好后从下一天起重新数连续通过天数。
 5. 某天是“受阻”：告诉 Andy 是哪个开关（Gmail 关掉、断开、记忆暂停、没配置 Gmail 提醒），由他决定是否打开。受阻不是故障，但会让连续通过天数归零。
-6. 起点后第 8 天 0 点以后，网页上的校准周报出现比例，即“首份校准周报可生成”。把网页显示的窗口、各类决策的条数和比例记进交付报告。网页上另有“观察信号 · 不是打分”一节（提醒被点开、撤销、回复，见 [ADR 0182](../adr/0182-record-proactive-implicit-signals.md)），它只是观察，不进验收判断，交付报告里单独写，不和打分比例合并。
+6. 起点后第 8 天 0 点以后，网页上的校准周报出现比例，即“首份校准周报可生成”。把网页显示的窗口、各类决策的条数和比例记进交付报告。网页上另有“观察信号 · 不是打分”一节（提醒被点开、撤销、回复，见 [ADR 0302](../adr/0302-decision-records-and-calibration.md)），它只是观察，不进验收判断，交付报告里单独写，不和打分比例合并。
 7. P0-8 验收通过 = 首份校准周报可生成，且网页显示“连续通过”达到 7 天。没达到时继续每天查看，直到达到。
 
 [↑ 回到阅读导航](#contents)

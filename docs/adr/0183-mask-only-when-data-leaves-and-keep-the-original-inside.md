@@ -82,7 +82,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 - [ADR 0148：所有模型请求走同一个进程内出口](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0148-send-every-model-request-through-one-in-process-egress.md)
 - [ADR 0167：敏感信息识别包](0167-sensitive-capture-package.md)
 - [ADR 0166：提示词措辞第 1 批](0166-prompt-wording-batch-1-system-and-tools.md)
-- [ADR 0143：模型门槛决定的账本](0143-decision-ledger-for-model-gate-decisions.md)
+- [ADR 0143：模型门槛决定的账本](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md)
 - [产品愿景 v2.3：自有优先、数据自持](../product-vision.md)
 - 代码：`packages/sensitive-capture/src/restoration.ts`、`packages/sensitive-capture/src/identifiers.ts`、`apps/agent-service/src/production-memory-capture.ts`、`apps/agent-service/src/production-thread-titles.ts`
 

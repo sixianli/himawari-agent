@@ -45,7 +45,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 5. **幂等和乱序。** 按 `batch_seq` 唯一，整批重发回“重放”；迟到的批照收但不改期望序号；同一自然键、内容不同进冲突表，不覆盖。
 6. **通道中断提醒。** 距上一批 ≥3 小时就推一次“Muse 通道中断”（≥2.5 小时界面标“可能中断”），复用现有“提醒”类别和开关；一次中断只推一次。
 7. **评价与清除。** 评价写入 `muse_reference_entries`（带 `intake_item_key`），时机和内容必须两项都给；“清除 Muse 数据”只删自动收到的条目及其评价，手工记的保留。
-8. **按邮件编号自动配对（2026-11-07 补充，迁移 0079）。** Andy 定配对不要他介入。Muse 已实测能读到 Gmail 邮件编号（Gmail 接口返回的 `id`），和 Himawari 检查邮件时存的编号（`proactive_processed_messages.message_id`）是同一个值。所以提醒条目可以带可选字段 `gmail_message_id`（只允许字母、数字、`_`、`-`，最长 256），存进 `muse_intake_items.gmail_message_id`；评价时自动写进对照条目的 `paired_message_id`，周报就按同一封邮件比较（[ADR 0154](0154-weekly-calibration-report-and-muse-mail-pairing.md)）。没带编号的条目照收，只是不配对。编号不进内容摘要：Muse 之后用新批次重发同一条目并带上编号时，按“重复”处理，并把还空着的编号补上（已评价的对照条目一并补上配对）；已有编号不会被覆盖。带了编号但格式不对（含其他字符或超过 256 个字符）的提醒整条拒收，按非法条目计数，宁可不收也不存一个可疑的配对键。编号写错时没有纠正入口：对不上任何邮件的落进周报“无 Himawari 记录”一栏；万一恰好等于另一封 Himawari 检查过的邮件，会配错，这一点按 Muse 持令牌、数据可信处理。字符限制同时写在存储接口和数据库约束里。只有提醒条目（`muse_proactive_item`）收这个字段，定时运行条目带了会作为多余字段丢弃。本条取代 ADR 0154 第 7 条“自动配对不在本次范围”。
+8. **按邮件编号自动配对（2026-11-07 补充，迁移 0079）。** Andy 定配对不要他介入。Muse 已实测能读到 Gmail 邮件编号（Gmail 接口返回的 `id`），和 Himawari 检查邮件时存的编号（`proactive_processed_messages.message_id`）是同一个值。所以提醒条目可以带可选字段 `gmail_message_id`（只允许字母、数字、`_`、`-`，最长 256），存进 `muse_intake_items.gmail_message_id`；评价时自动写进对照条目的 `paired_message_id`，周报就按同一封邮件比较（[ADR 0154](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0154-weekly-calibration-report-and-muse-mail-pairing.md)）。没带编号的条目照收，只是不配对。编号不进内容摘要：Muse 之后用新批次重发同一条目并带上编号时，按“重复”处理，并把还空着的编号补上（已评价的对照条目一并补上配对）；已有编号不会被覆盖。带了编号但格式不对（含其他字符或超过 256 个字符）的提醒整条拒收，按非法条目计数，宁可不收也不存一个可疑的配对键。编号写错时没有纠正入口：对不上任何邮件的落进周报“无 Himawari 记录”一栏；万一恰好等于另一封 Himawari 检查过的邮件，会配错，这一点按 Muse 持令牌、数据可信处理。字符限制同时写在存储接口和数据库约束里。只有提醒条目（`muse_proactive_item`）收这个字段，定时运行条目带了会作为多余字段丢弃。本条取代 ADR 0154 第 7 条“自动配对不在本次范围”。
 
 <a id="options"></a>
 
@@ -71,7 +71,7 @@ Muse 是 Andy 的另一个 Agent。Andy 要对照“Muse 该提醒的有没有�
 
 - [Muse 自动接收运行手册](../runbooks/muse-intake-runbook.md)
 - [ADR 0089：只用网页推送，入口改为公网域名](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0089-web-push-only-owner-entry.md)
-- [ADR 0143：决策账本](0143-decision-ledger-for-model-gate-decisions.md)
+- [ADR 0143：决策账本](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0143-decision-ledger-for-model-gate-decisions.md)
 - Cloudflare：<https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/>
 
 [返回目录](#contents)
