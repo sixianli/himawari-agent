@@ -5,6 +5,7 @@ import type {
   DecisionLedgerPort,
   PayloadProtectorPort,
   PayloadStorePort,
+  RunCheckpointStore,
   RunLifecyclePort,
   ThreadCommandService,
   ThreadRepositoryPort,
@@ -119,7 +120,11 @@ export interface InboxDeliveryOptions {
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
-  readonly subthreads?: Pick<ProductionSubthreads, "open" | "subthreadMessage">;
+  readonly subthreads?: Pick<
+    ProductionSubthreads,
+    "open" | "subthreadMessage" | "overBudget" | "afterRun"
+  >;
+  readonly checkpoints?: Pick<RunCheckpointStore, "read">;
   readonly pollMs?: number;
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -218,20 +223,43 @@ export class ProductionInboxDelivery implements InboxDelivery {
       threadId,
     );
     if (busy.some((run) => !TERMINAL.has(run.status))) return { status: "yield" };
+    if (await subthreads.overBudget(threadId))
+      return {
+        status: "handled",
+        outcome: "over_budget",
+        reasonCode: "subthread_over_budget",
+        runId: null,
+      };
     const key = batchKey(events);
     const runId = `run:inbox:${key}` as RunId;
     const contentRef = `inbox-message:${key}`;
     const classification = await this.#writeMessage(
       contentRef,
       subthreads.subthreadMessage(
-        events.map(({ entry, summary }) => ({ sourceRef: entry.sourceRef, text: summary })),
+        events.map(({ entry, summary }) => ({
+          sourceKind: entry.sourceKind,
+          sourceRef: entry.sourceRef,
+          text: summary,
+        })),
       ),
     );
     await this.#admit(threadId, key, events, runId, contentRef, classification, false);
     await this.#markOutside(runId, events);
     const status = await this.#await(threadId, runId, contentRef, signal, false);
-    if (status !== "completed") return { status: "retry", reasonCode: `run_${status}` };
-    return { status: "handled", outcome: "delivered", reasonCode: "subthread_ran", runId };
+    const cutOff = status === "failed" && (await this.#cutOff(runId));
+    if (status !== "completed" && !cutOff) return { status: "retry", reasonCode: `run_${status}` };
+    const ending = await subthreads.afterRun({ threadId, runId, cutOff });
+    return {
+      status: "handled",
+      outcome: ending === "settled" ? "delivered" : ending,
+      reasonCode: cutOff ? "subthread_cut_off" : "subthread_ran",
+      runId,
+    };
+  }
+
+  async #cutOff(runId: RunId): Promise<boolean> {
+    const stored = await this.#options.checkpoints?.read(runId);
+    return stored?.checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED";
   }
 
   async #markOutside(runId: RunId, events: readonly InboxDeliveryEvent[]): Promise<void> {

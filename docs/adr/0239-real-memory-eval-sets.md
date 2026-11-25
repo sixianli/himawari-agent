@@ -59,7 +59,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 5. **决策评测这次只计数。**从决策记录取最近 365 天主人评价过的决策，用 `summarizeDecisions` 分成五组（提醒了、没提醒、记下了、没记、整理），主人评“有用”算做对，其余算做错，记进同一次运行的结果。重放当时的输入要用到不在决策记录里的证据，等某组评价满 5 条再另开 PR。
 6. **费用防线在代码里。**上限按最近 7 天所有运行（包括失败的）实际花的钱累计，这次运行只能用剩下的部分，剩下为零就不跑。每次调用前按模型描述里的单价预估费用（输入按 UTF-8 字节数算，token 数不会超过字节数；输出按最大 token 数的两倍算，给推理留余量），所以服务方按标价收费时，实际费用通常不超过预估（发出前的遮盖把敏感值换成占位符，可能让发出的内容比预估时略长，余量由“输入按字节算”承担），加上已花的超过上限就不调用；调用后按实际费用记账，实际费用让累计超过上限时立刻停，所以最多超出一次调用的预估误差；调用失败、拿不到实际费用或服务方报的费用不是非负整数时，按预估记账。作答前的检索用题目所出自那条记忆的数据分级去调向量模型（向量模型不允许这一级时拒绝），按向量模型的单价预估（输入按 16384 个 token 算）先查额度，不够就不检索，检索后按实际费用记账。停下的运行记为 `budget_exceeded`，没来得及作答的题数记在 `unanswered`。配置 `runPolicy.realEval.weeklyCapMicros` 最大 500000 微美元（0.5 美元），超过启动时拒绝；`modelRef` 必须是走 openai-completions 接口、允许 private 和 sensitive 两级数据的生成模型，评测开着时向量模型也必须允许 sensitive，否则启动时拒绝（敏感记忆也会出题、检索和作答）。每次运行开始前在状态目录写一个只属于这次运行的“进行中”标记（先写临时文件再改名，写到一半不会留下半个文件），正常写完运行记录后删掉；进程崩溃或运行记录写不进去时标记留下，按“这次花光了本次可用额度”计入 7 天累计和 24 小时规则，满 7 天后删掉。读不懂的标记（包括额度不是正整数的），以及开始时间晚于当前时间的标记，按“花光了整周上限”算，开始时间取文件的修改时间（修改时间也在将来时，先把它改成当前时间，保证 7 天后能删掉；改不了就删掉，删不掉就按今天开始、花光整周上限计）。某个标记文件读不了（例如权限不对）时，按它的修改时间算作花光整周上限，满 7 天后不再计入，其余标记照常读。抽查样本的修改时间在将来时同样先改成当前时间，改不了就直接删掉。后面的运行另写自己的标记，不覆盖前面留下的。标记里记着这次运行的编号，数据库里已经有这个编号的运行记录时（写完记录、删标记前进程崩溃），只按数据库记录算，标记删掉。评测关着时，每小时的清理也删掉满 7 天的标记。模型调用走统一出口（`proactiveModel`，用途记为 `other`），不占生产的模型预算。
 7. **运行方式。**`runPolicy.realEval.mode`：不配或 `off` 不跑；`once` 跑一轮手动评测，跑完把约 30 道题、回答、判分和对应的记忆正文、原话（按统一出口的默认遮盖规则遮掉银行卡号、密码这类敏感值，其余正文照原样，主人才能判断判分对不对）写到状态目录下的 real-eval/latest-sample.json（权限 0600）给主人抽查，样本写不出来时这次运行记为失败，隔一天重跑；`weekly` 每周跑一次（每小时检查一次，最近 7 天没有跑完或花到上限的运行就跑）。两种模式下，24 小时内跑过就不再跑，所以失败的运行隔一天才重试。作答时先答本周新题，再答固定面板，额度不够时新题先有分数。主人抽查确认后才改成 `weekly`。
-8. **合成集降为对照。**四个合成集和它们的脚本不改，继续做回归和对照；判断记忆系统好坏，以真实评测为主。[ADR 0115](0115-memory-search-relevance-threshold-and-retrieval-eval.md) 的检索评测仍然有效，它的地位由本 ADR 改为对照。
+8. **合成集降为对照。**四个合成集和它们的脚本不改，继续做回归和对照；判断记忆系统好坏，以真实评测为主。[ADR 0115](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md) 的检索评测仍然有效，它的地位由本 ADR 改为对照。
 9. **数据导出不含题库。**题库和分数是派生数据：导入后下一次评测会从导入的记忆重新出题。导出清单的“未导出”里写明这一项。
 10. **报告。**`node scripts/operations/real-eval-report.mjs <product.sqlite>` 只读打开数据库，按时间倒序列出每次运行的分数和费用。
 
@@ -69,7 +69,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 
 ## 业界怎么做
 
-LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://arxiv.org/abs/2504.19413>）都用“问答加模型判对错”量长期记忆，标准答案是一句参考答案，换说法也算对，并单独统计拒答题。本 ADR 照这个做法，把数据换成主人的真实记忆，判分模型换成低价模型（项目禁用 GPT-4o 这类贵模型，见 [ADR 0111](0111-no-expensive-models-anywhere.md)），所以分数只能和自己的历史比，不能和论文里的数字直接比。
+LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://arxiv.org/abs/2504.19413>）都用“问答加模型判对错”量长期记忆，标准答案是一句参考答案，换说法也算对，并单独统计拒答题。本 ADR 照这个做法，把数据换成主人的真实记忆，判分模型换成低价模型（项目禁用 GPT-4o 这类贵模型，见 [ADR 0111](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)），所以分数只能和自己的历史比，不能和论文里的数字直接比。
 
 [返回阅读导航](#contents)
 
@@ -99,8 +99,8 @@ LongMemEval（论文 <https://arxiv.org/abs/2410.10813>）和 Mem0（<https://ar
 
 ## 关联文档
 
-- [ADR 0115：记忆检索的相关度门槛和检索评测](0115-memory-search-relevance-threshold-and-retrieval-eval.md)
-- [ADR 0111：任何场景都不用贵模型](0111-no-expensive-models-anywhere.md)
+- [ADR 0115：记忆检索的相关度门槛和检索评测](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0115-memory-search-relevance-threshold-and-retrieval-eval.md)
+- [ADR 0111：任何场景都不用贵模型](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0111-no-expensive-models-anywhere.md)
 - 代码：`packages/application/src/services/real-memory-eval.ts`、`packages/application/src/services/real-memory-eval-service.ts`、`apps/agent-service/src/production-real-eval.ts`、`packages/prompt-catalog/src/eval.ts`
 - 测试：`test/integration/real-memory-eval.test.ts`、`packages/application/test/real-memory-eval*.unit.test.ts`、`apps/agent-service/test/production-real-eval.unit.test.ts`
 

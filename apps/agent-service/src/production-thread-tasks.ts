@@ -39,10 +39,16 @@ export class SubthreadToolError extends Error {
     | "NOT_HERE"
     | "UNKNOWN_SUBTHREAD"
     | "SUBTHREAD_CLOSED"
+    | "OVER_BUDGET"
+    | "BUDGET_TOO_LOW"
     | "UNKNOWN_TASK"
     | "TASK_CHANGED"
     | "TASK_CYCLE"
-    | "TASKS_OPEN";
+    | "TASKS_OPEN"
+    | "UNKNOWN_RESULT"
+    | "OTHER_MATTER"
+    | "WAIT_CYCLE"
+    | "RESULT_LIMIT";
 
   constructor(code: SubthreadToolError["code"]) {
     super(code);

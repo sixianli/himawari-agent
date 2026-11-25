@@ -21,9 +21,63 @@ export interface SubthreadRecord {
   readonly resultRef: string | null;
   readonly classification: string;
   readonly status: SubthreadStatus;
+  readonly stuckAt: string | null;
+  readonly progressRef: string | null;
+  readonly progressAt: string | null;
+  readonly askedAt: string | null;
+  readonly budgetMicros: number | null;
+  readonly budgetHitAt: string | null;
+  readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+
+export interface SubthreadExchangeRecord {
+  readonly id: string;
+  readonly threadId: string;
+  readonly direction: string;
+  readonly kind: string;
+  readonly textRef: string;
+  readonly createdAt: string;
+}
+
+export type ResultGoneReason = "stopped" | "returned" | "stuck";
+
+export interface ResultEntryRecord {
+  readonly writerThreadId: string;
+  readonly name: string;
+  readonly version: number;
+  readonly summaryRef: string;
+  readonly bodyRef: string;
+  readonly classification: string;
+  readonly externalContent: boolean;
+  readonly createdAt: string;
+}
+
+export interface ResultNoticeRecord {
+  readonly id: string;
+  readonly receiverThreadId: string;
+  readonly kind: "ready" | "gone" | "changed";
+  readonly writerThreadId: string;
+  readonly name: string;
+  readonly version: number | null;
+  readonly reason: ResultGoneReason | null;
+  readonly externalContent: boolean;
+  readonly createdAt: string;
+}
+
+export type ResultRecordOutcome =
+  | { readonly outcome: "recorded"; readonly entry: ResultEntryRecord }
+  | { readonly outcome: "closed" }
+  | { readonly outcome: "too_many_names" }
+  | { readonly outcome: "too_many_versions" };
+
+export type ResultWaitOutcome =
+  | { readonly outcome: "available"; readonly version: number }
+  | { readonly outcome: "gone"; readonly reason: ResultGoneReason }
+  | { readonly outcome: "waiting" }
+  | { readonly outcome: "other_matter" }
+  | { readonly outcome: "cycle" };
 
 export interface ThreadTaskRecord {
   readonly threadId: string;
@@ -69,6 +123,7 @@ export interface SubthreadStorePort {
       readonly threadId: string;
       readonly parentThreadId: string;
       readonly matter: string;
+      readonly title?: string;
       readonly openKey: string;
       readonly openedByRunId: string;
       readonly briefRef: string;
@@ -116,4 +171,82 @@ export interface SubthreadStorePort {
   listTaskChanges(
     input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
   ): Promise<readonly ThreadTaskChangeRecord[]>;
+  noteActivity(
+    input: OwnerRuleScope & {
+      readonly threadId: string;
+      readonly progressRef?: string;
+      readonly asked?: boolean;
+      readonly budgetMicros?: number;
+      readonly budgetHit?: boolean;
+      readonly now: string;
+    },
+  ): Promise<SubthreadRecord | undefined>;
+  listWaiting(
+    input: OwnerRuleScope & { readonly parentThreadId: string },
+  ): Promise<readonly string[]>;
+  listQueued(
+    input: OwnerRuleScope & { readonly parentThreadId: string },
+  ): Promise<readonly string[]>;
+  spentMicros(input: OwnerRuleScope & { readonly threadId: string }): Promise<number>;
+  recordExchange(
+    input: OwnerRuleScope & {
+      readonly id: string;
+      readonly threadId: string;
+      readonly direction: string;
+      readonly kind: string;
+      readonly textRef: string;
+      readonly now: string;
+    },
+  ): Promise<void>;
+  listExchanges(
+    input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
+  ): Promise<readonly SubthreadExchangeRecord[]>;
+  markStuck(
+    input: OwnerRuleScope & {
+      readonly threadId: string;
+      readonly stuck: boolean;
+      readonly now: string;
+    },
+  ): Promise<SubthreadRecord | undefined>;
+  recordResult(
+    input: OwnerRuleScope & {
+      readonly writerThreadId: string;
+      readonly name: string;
+      readonly summaryRef: string;
+      readonly bodyRef: string;
+      readonly classification: string;
+      readonly externalContent: boolean;
+      readonly maxNames: number;
+      readonly maxVersions: number;
+      readonly now: string;
+    },
+  ): Promise<ResultRecordOutcome>;
+  listResults(
+    input: OwnerRuleScope & {
+      readonly parentThreadId: string;
+      readonly matter: string;
+      readonly writerThreadId: string | null;
+    },
+  ): Promise<readonly ResultEntryRecord[]>;
+  readResult(
+    input: OwnerRuleScope & {
+      readonly readerThreadId: string;
+      readonly writerThreadId: string;
+      readonly name: string;
+      readonly now: string;
+    },
+  ): Promise<ResultEntryRecord | undefined>;
+  waitResult(
+    input: OwnerRuleScope & {
+      readonly waitId: string;
+      readonly waiterThreadId: string;
+      readonly writerThreadId: string;
+      readonly name: string;
+      readonly now: string;
+    },
+  ): Promise<ResultWaitOutcome>;
+  listResultNotices(
+    input: OwnerRuleScope & { readonly limit: number },
+  ): Promise<readonly ResultNoticeRecord[]>;
+  deleteResultNotice(input: OwnerRuleScope & { readonly id: string }): Promise<void>;
 }
