@@ -6,9 +6,10 @@ struct AnswerText: View {
     let text: String
     var streaming = false
     var muted = false
+    var copyCode: (String) -> Void = { _ in }
+    var codeMenu: (String) -> MessageMenuActions? = { _ in nil }
 
     private static let voice = DesignTokens.TypeScale.answer.with(face: .himawari)
-    private static let small = DesignTokens.TypeScale.secondary
 
     var body: some View {
         let blocks = AnswerMarkdown.blocks(text, streaming: streaming)
@@ -21,8 +22,12 @@ struct AnswerText: View {
             }
         }
         .foregroundStyle(muted ? Color.hmMuted : Color.hmText)
+        .tint(Color.hmLink)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .textRenderer(InlineCodeRenderer())
+        #if os(macOS)
         .textSelection(.enabled)
+        #endif
     }
 
     private static func carriesDot(_ block: AnswerBlock?) -> Bool {
@@ -34,11 +39,30 @@ struct AnswerText: View {
 
     static func inline(_ source: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
-        return (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
+        let parsed = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
+        var linked = AnswerLinks.linkingBareURLs(parsed)
+        for run in linked.runs where run.link != nil {
+            linked[run.range].underlineStyle = .single
+        }
+        return linked
+    }
+
+    static func styled(_ source: String) -> Text {
+        let attributed = inline(source)
+        var pieces: [Text] = []
+        for run in attributed.runs {
+            let piece = Text(AttributedString(attributed[run.range]))
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                pieces.append(Text("\u{2009}\(piece.customAttribute(InlineCodeMark()))\u{2009}"))
+            } else {
+                pieces.append(piece)
+            }
+        }
+        return pieces.reduce(Text(verbatim: "")) { Text("\($0)\($1)") }
     }
 
     private func line(_ source: String, dot: Bool) -> Text {
-        let body = Text(Self.inline(source))
+        let body = Self.styled(source)
         return dot ? Text("\(body) \(StreamingDot.text)") : body
     }
 
@@ -62,19 +86,14 @@ struct AnswerText: View {
                 Capsule()
                     .fill(Color.hmSeparator)
                     .frame(width: DesignTokens.Chat.quoteBar)
-                Text(Self.inline(source))
+                Self.styled(source)
                     .hmType(Self.voice)
                     .foregroundStyle(Color.hmMuted)
             }
             .fixedSize(horizontal: false, vertical: true)
-        case let .code(_, source):
-            ScrollView(.horizontal) {
-                Text(verbatim: source)
-                    .hmType(Self.small, design: .monospaced)
-                    .padding(DesignTokens.Chat.codePadding)
-            }
-            .scrollIndicators(.hidden)
-            .background(Color.hmFill, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.segment, style: .continuous))
+        case let .code(language, source):
+            AnswerCodeBlock(language: language, code: source, copy: copyCode)
+                .messageMenu(codeMenu(source))
         case let .table(header, rows):
             AnswerTable(header: header, rows: rows)
         case .rule:
@@ -89,7 +108,7 @@ struct AnswerText: View {
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Chat.listMarkerGap) {
                     Text(verbatim: item.0)
                         .hmType(Self.voice)
-                    Text(Self.inline(item.1))
+                    Self.styled(item.1)
                         .hmType(Self.voice)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -134,11 +153,30 @@ struct AnswerTable: View {
     }
 
     private func cellView(_ source: String) -> some View {
-        Text(AnswerText.inline(source))
+        AnswerText.styled(source)
             .hmType(DesignTokens.TypeScale.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, DesignTokens.Chat.tableCellPaddingVertical)
             .padding(.horizontal, DesignTokens.Chat.tableCellPaddingHorizontal)
+    }
+}
+
+struct InlineCodeMark: TextAttribute {}
+
+struct InlineCodeRenderer: TextRenderer {
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        for line in layout {
+            for run in line where run[InlineCodeMark.self] != nil {
+                let bounds = run.typographicBounds.rect.insetBy(dx: -DesignTokens.Chat.inlineCodePadding, dy: 0)
+                context.fill(
+                    Path(roundedRect: bounds, cornerRadius: DesignTokens.Chat.inlineCodeRadius, style: .continuous),
+                    with: .color(Color.hmFill)
+                )
+            }
+            for run in line {
+                context.draw(run)
+            }
+        }
     }
 }
 

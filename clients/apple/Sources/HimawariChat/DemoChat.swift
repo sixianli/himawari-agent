@@ -111,6 +111,29 @@ public enum DemoChatFixtures {
     | 9:30 | 12:03 | 还有 |
     | 11:00 | 13:33 | 只剩靠过道 |
     """
+    static let richQuestion = "写个 Swift 函数算两站之间的车程，顺便给我官网链接"
+    static let richAnswer = """
+    可以用 `TimeInterval` 算差值，[JR 东海官网](https://jr-central.co.jp) 有时刻表，也可以直接看 https://www.jr-central.co.jp/timetable 。
+
+    ```swift
+    func ride(from start: Date, to end: Date) -> Int {
+        let minutes = end.timeIntervalSince(start) / 60
+        return Int(minutes.rounded())
+    }
+    ```
+
+    没写语言的代码块不上色：
+
+    ```
+    9:30 -> 12:03
+    ```
+
+    | 出发 | 到达 | 车程 |
+    | --- | --- | --- |
+    | 9:30 | 12:03 | 153 分钟 |
+
+    另外 5*3 是 15，a.b 只是字段名。
+    """
     static let answerFormattedStreaming = "三班里 **9:30 那班最合适**：\n\n- 7:00：太早，到了要等 4 个小时\n- **9:30**：12:0"
 
     private static func todayAt(_ hour: Int, _ minute: Int, daysAgo: Int = 0) -> Date {
@@ -166,6 +189,44 @@ public enum DemoChatFixtures {
             ],
             runs: [],
             texts: ["text:m1": question, "text:m2": answerFormatted]
+        )
+    }
+
+    public static func rich() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(13)),
+            ],
+            runs: [],
+            texts: ["text:m1": richQuestion, "text:m2": richAnswer]
+        )
+    }
+
+    static let replyAnswer = "周五大阪晴转多云，最高 18 度，傍晚降温明显。"
+    static let replyQuestion = "那要带外套吗？"
+    static let replyAnswerTwo = "要带。傍晚会降到 9 度左右，一件薄外套就够。"
+    static let replyToGone = "这条也帮我记一下"
+
+    public static func replied() -> DemoChatState {
+        let start = todayAt(14, 48)
+        return osaka(
+            messages: [
+                message("m1", 1, role: "owner", at: start),
+                message("m2", 2, role: "agent", at: start.addingTimeInterval(13)),
+                message("m3", 3, role: "owner", at: start.addingTimeInterval(60)),
+                message("m4", 4, role: "agent", at: start.addingTimeInterval(70)),
+                message("m5", 5, role: "owner", at: start.addingTimeInterval(120)),
+            ],
+            runs: [],
+            texts: [
+                "text:m1": question,
+                "text:m2": replyAnswer,
+                "text:m3": MessageReply.compose(replyingTo: "m2", text: replyQuestion),
+                "text:m4": replyAnswerTwo,
+                "text:m5": MessageReply.compose(replyingTo: "m0", text: replyToGone),
+            ]
         )
     }
 

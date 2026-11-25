@@ -42,6 +42,11 @@ enum DemoScene: String, CaseIterable {
     case chatSteps = "16-chat-states-6-steps"
     case chatFormat = "next-2-chat-format"
     case chatFormatStreaming = "next-2-chat-format-streaming"
+    case chatRich = "next-5-chat-rich"
+    case chatSelectText = "next-5-chat-select-text"
+    case chatCopied = "next-5-chat-copied"
+    case chatReplied = "next-5-chat-replied"
+    case chatReplying = "next-5-chat-replying"
     case chatOptions = "next-2-chat-options"
     case chatOptionChosen = "next-2-chat-options-chosen"
     case chatAttach = "next-2-chat-attach"
@@ -151,6 +156,19 @@ struct DemoSceneView: View {
             chat(DemoChatFixtures.formatted())
         case .chatFormatStreaming:
             chat(DemoChatFixtures.formattedStreaming())
+        case .chatRich:
+            chat(DemoChatFixtures.rich())
+        case .chatSelectText:
+            chat(DemoChatFixtures.rich())
+                .environment(\.chatOpensSelectText, "m2")
+        case .chatCopied:
+            chat(DemoChatFixtures.rich())
+                .environment(\.chatShowsCopied, true)
+        case .chatReplied:
+            chat(DemoChatFixtures.replied())
+        case .chatReplying:
+            chat(DemoChatFixtures.answered())
+                .environment(\.chatStartsReplyTo, "m2")
         case .chatOptions:
             chat(DemoChatFixtures.withOptions())
                 .environment(\.chatChooseOption, { _, _, _ in })
