@@ -46,3 +46,12 @@
 "result.undo" = "Undo";
 "result.undone" = "Undone";
 "result.undo.failed" = "Couldn't undo";
+"allowance.once" = "Just once";
+"allowance.thisTask" = "This task";
+"allowance.days" = "%d days";
+"allowance.always" = "Always";
+"allowance.locked.spending" = "Spending is always just once";
+"allowance.locked.credential" = "Key and permission changes are always just once";
+"allowance.locked.ownerPresence" = "Things that need you there are always just once";
+"allowance.locked.asksEveryTime" = "She asks every time for this kind of thing, so it's just once";
+"allowance.notSaved" = "This one is approved, but how long it lasts wasn't saved, so she'll ask again next time";
