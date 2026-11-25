@@ -6,7 +6,6 @@ out="$root/ui-review/watch-latest"
 derived="$root/ui-review/DerivedDataWatch"
 device_name="Himawari Watch"
 lang="zh-Hans"
-bundle="win.siyi.himawari.watchkitapp"
 
 usage() {
   echo "usage: clients/apple/scripts/watch-ui-review.sh [--out DIR] [--lang zh-Hans|en|ja]" >&2
@@ -50,6 +49,7 @@ taskpolicy -b xcodebuild -project "$root/App/Himawari.xcodeproj" -scheme Himawar
   COMPILER_INDEX_STORE_ENABLE=NO build -quiet
 app="$derived/Build/Products/Debug-watchsimulator/HimawariWatch.app"
 [ -d "$app" ] || { echo "WATCH_UI_REVIEW_FAILED built app not found at $app" >&2; exit 1; }
+bundle="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
 
 if ! xcrun simctl list devices booted | grep -qF "$udid"; then
   trap 'xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true' EXIT
