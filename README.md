@@ -98,7 +98,7 @@ npm run test:tooling   # 脚本和 CI 工具的测试
 
 iPhone App 在 Mac 上用 Xcode 构建；`HimawariCore` 的单元测试在 Linux 上也能跑（见 [clients/apple/README.md](clients/apple/README.md)）。
 
-CI 跑在 GitHub 的标准托管机器上（[ADR 0287](docs/adr/0287-ci-runs-on-github-hosted-runners.md)），检查清单在 `ci/policy.json`。
+CI 跑在 GitHub 的标准托管机器上（[ADR 0292](docs/adr/0292-how-ci-runs-now.md)），检查清单在 `ci/policy.json`。
 
 <a id="deploy"></a>
 ## 上线
