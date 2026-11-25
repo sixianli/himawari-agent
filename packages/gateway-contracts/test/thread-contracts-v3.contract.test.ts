@@ -1,6 +1,8 @@
 import {
   archiveThreadV3CommandSchema,
   ContractValidationError,
+  chooseThreadOptionV3CommandSchema,
+  messageOptionsV3Schema,
   deleteThreadPermanentlyV3CommandSchema,
   forkThreadV3CommandSchema,
   resolveThreadTaskV3CommandSchema,
@@ -229,6 +231,43 @@ describe("Thread Gateway v3 contracts", () => {
     ).toMatchObject({ payload: { tokenRefs: ["search-token:001"] } });
   });
 
+  it("[OPTIONS-CONTRACT] carries options under a message and the owner's choice of one", () => {
+    expect(
+      chooseThreadOptionV3CommandSchema.parse({
+        ...envelope,
+        kind: "command",
+        type: "thread.option.choose",
+        idempotencyKey: "device-option-s2",
+        payload: {
+          threadId: "thread-s2",
+          messageId: "message-s2",
+          setId: "set:s2",
+          optionId: "o1",
+        },
+      }),
+    ).toMatchObject({ payload: { setId: "set:s2", optionId: "o1" } });
+    const options = {
+      setId: "set:s2",
+      items: [
+        {
+          optionId: "o1",
+          label: "回复 田中：周四可以",
+          reason: null,
+          action: { tool: "mail_reply", summary: "给田中回邮件：周四可以" },
+          state: "open",
+        },
+        { optionId: "dismiss", label: "不用了", reason: null, action: null, state: "open" },
+      ],
+    };
+    expect(messageOptionsV3Schema.parse(options).items).toHaveLength(2);
+    expect(() =>
+      messageOptionsV3Schema.parse({
+        ...options,
+        items: [{ ...options.items[1], state: "hidden" }],
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
   it("requires explicit task resolution and one-time permanent-delete authorization", () => {
     expect(
       resolveThreadTaskV3CommandSchema.parse({
@@ -331,6 +370,8 @@ describe("Thread Gateway v3 contracts", () => {
               turnId: "turn-s2",
               runId: "run-s2",
               committedAt: "2026-08-28T00:00:30.000Z",
+              options: null,
+              chosenFrom: null,
             },
           ],
           runs: [
