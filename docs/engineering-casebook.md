@@ -569,7 +569,7 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 **相关 ADR/PR**
 
-[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[PR #7](https://github.com/sixianli/himawari-agent/pull/7)、[PR #8](https://github.com/sixianli/himawari-agent/pull/8)。
+[ADR 0071](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md)；[PR #7](https://github.com/sixianli/himawari-agent/pull/7)、[PR #8](https://github.com/sixianli/himawari-agent/pull/8)。
 
 **面试 30 秒版**
 
@@ -1278,7 +1278,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 第十一版用不了，有两个原因，都在 Hermes 测试机上用真实浏览器复现过：
 
 1. **页面带着过期的授权编号。** 网页打开时读一次服务配置，之后每次查询都带上授权编号（fencing token：服务每次启动都会加一，用来拒绝旧实例发来的请求）。服务重启后编号从 29 变成 30，已经打开的页面还带着 29 去查，被服务以 HTTP 403 `PORT_NOT_AUTHORITATIVE` 拒绝，审批卡和搜索开关都拿不到状态。对话本身用的另一组接口不核对编号，所以页面看上去还能聊天。
-2. **搜索许可绑得太宽。** 存下的联网搜索许可是整段搜索和读网页配置的摘要。第十一次把读网页的大小上限从 32768 调到 102400，摘要变了，许可就悄悄失效。按 [ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)，许可只应该针对“数据发给哪个模型、哪个服务”。
+2. **搜索许可绑得太宽。** 存下的联网搜索许可是整段搜索和读网页配置的摘要。第十一次把读网页的大小上限从 32768 调到 102400，摘要变了，许可就悄悄失效。按 [ADR 0071](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md)，许可只应该针对“数据发给哪个模型、哪个服务”。
 
 验收没发现，是因为它只读回服务端状态，没人在浏览器里按 Andy 的用法走一遍。这已经是第四次“只有在网页里用才看得出”的上线问题。
 
@@ -1328,7 +1328,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
+[ADR 0071](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
 
 **面试 30 秒版**
 
@@ -1598,7 +1598,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **相关 ADR/PR**
 
-[ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+[ADR 0085](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
@@ -1606,7 +1606,7 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 
 **后续（2026-10-26）：过程记录不再等硬盘确认**
 
-Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过。生产效果（第十三版上线后同一轮查新闻的 `run.timing`）：数据库提交 283 次累计 2002 毫秒，平均约 7 毫秒一次，低于原来每次等硬盘确认的 11.5–18.7 毫秒；这一项没有逐次区分哪些提交等了硬盘。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
+Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过。生产效果（第十三版上线后同一轮查新闻的 `run.timing`）：数据库提交 283 次累计 2002 毫秒，平均约 7 毫秒一次，低于原来每次等硬盘确认的 11.5–18.7 毫秒；这一项没有逐次区分哪些提交等了硬盘。决定记在 [ADR 0088](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0088-process-records-skip-disk-sync.md)。
 
 [返回目录](#contents)
 
@@ -4135,12 +4135,12 @@ Andy 先要一个“隐私最好、价格最低”的方案。调研比较了 12
 
 - **背景与现象：** 修完两张卡片后，Andy 问“多个网页搜索这里，大厂的最佳实践是？”，接着又发现自己一直开着的“允许联网搜索”在手机上是关的。
 - **根因：** 开关存在服务端，手机和电脑本来就读同一份；但存下时记了一个摘要，里面有每个能读私人数据的模型的完整配置。第十九版换了主模型（推断，生产记录没读），摘要对不上，开关在所有设备上一起变成“关”，页面不说原因，于是问天气又弹卡。
-- **我们的方案：** Andy 在选择卡上选了“默认打开，从不问”（[ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)）。开关默认开，只跟搜索服务的地址列表绑定；第一次用到时把“默认打开”写进开关记录，这样每次搜索派生的一次性授权仍有来源版本，主人关掉后一起作废。地址列表变了才关，并在设置里写明“搜索服务换了地址，你还没同意过”。
+- **我们的方案：** Andy 在选择卡上选了“默认打开，从不问”（[ADR 0121](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0121-web-search-on-by-default-bound-to-search-services-only.md)）。开关默认开，只跟搜索服务的地址列表绑定；第一次用到时把“默认打开”写进开关记录，这样每次搜索派生的一次性授权仍有来源版本，主人关掉后一起作废。地址列表变了才关，并在设置里写明“搜索服务换了地址，你还没同意过”。
 - **讨论过的方案和放弃的东西：** 继续绑模型但换模型时提示（模型配置会随路由和版本号频繁变，每次都要重开）；换搜索服务也自动沿用（查询词会悄悄发到主人没见过的地址）；每轮问一次（最打断）。放弃的是“新安装第一次搜索前主人一定看过发往哪里”，换成设置里写明地址、随时可关。
 - **业界做法（只读官方文档，图例见[业界资料的核对情况](#source-status)）：** ✅ [Gemini API 文档](https://ai.google.dev/gemini-api/docs/generate-content/google-search)：模型“automatically generates one or multiple search queries and executes them”；✅ [Claude Code 权限文档](https://code.claude.com/docs/en/permissions)：默认要批准，“以后不再问”在项目里永久生效；⚠ [Claude 帮助中心](https://support.claude.com/en/articles/10684626-enable-and-use-web-search)：“Claude searches the web when it helps”（引文出自搜索摘录）；⚠ [ChatGPT 帮助中心](https://help.openai.com/en/articles/9237897-searching-the-web-with-chatgpt)：需要最新信息时自动搜索（原页面打不开，引文出自搜索摘录）。
 - **对比与取舍：** Himawari 和聊天产品一致（默认搜、不逐次问），比它们多一条：数据要发往的地址一变就停下等主人看过，这是“用户主权”优先于“主动效率”的地方。
 - **实测结果：** 门槛测试在未修代码上失败（先打开开关、再换主模型，读回为关），修后通过；体验改善未测量，等上线后 Andy 在 iPhone 问天气验收。
-- **相关 ADR 和 PR：** [ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-34](incidents-and-gates.md#incidents)。
+- **相关 ADR 和 PR：** [ADR 0121](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0121-web-search-on-by-default-bound-to-search-services-only.md)、[ADR 0071](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md)；[事故 I-34](incidents-and-gates.md#incidents)。
 - **30 秒面试版：** 用户说“我明明开了搜索，怎么又问我”。查下来开关绑了模型配置的哈希，换模型就悄悄失效。我们参考 ChatGPT、Claude、Gemini 的做法改成默认开、只跟搜索服务地址绑定，地址变了才停下并说明原因，再用一条“换模型后开关还在”的测试把它钉住。
 
 **后续（2026-10-30，第三次）：第一次没查清的“批准后服务器不回”有了线索**
@@ -4724,7 +4724,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0130](adr/0130-search-index-built-in-background.md)；[事故 I-43](incidents-and-gates.md)；相关：I-29、I-36（同一条数据库队列）。
+[ADR 0130](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0130-search-index-built-in-background.md)；[事故 I-43](incidents-and-gates.md)；相关：I-29、I-36（同一条数据库队列）。
 
 **面试 30 秒版**
 
@@ -4749,7 +4749,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **我们的方案**
 
-见 [ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)。
+见 [ADR 0131](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0131-read-lane-separate-readonly-connection.md)。
 
 1. 新开 1 个只读工作线程，读请求走它，写继续走唯一的写连接。
 2. 只读连接发出写语句会报错，用它找出标错的操作：`memoryJob.listPending` 标成读，其实会改过期认领，改成写。
@@ -4779,7 +4779,7 @@ OpenAI 的“流式”Himawari 早已做到，但第一个字本身就要 5 秒�
 
 **相关 ADR/PR**
 
-[ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)；[事故 I-45](incidents-and-gates.md#incidents)；[案例 63](#case-conversation-speed)。
+[ADR 0131](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0131-read-lane-separate-readonly-connection.md)；[事故 I-45](incidents-and-gates.md#incidents)；[案例 63](#case-conversation-speed)。
 
 **面试 30 秒版**
 
@@ -5133,7 +5133,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 - ✅ BullMQ（https://docs.bullmq.io/guide/workers/concurrency ，2026-11-01 打开）：“This means that the same worker is able to process several jobs at the same time.”，并说明 “the concurrency is only possible when workers perform asynchronous operations.”
 - ✅ SQLite WAL（https://www.sqlite.org/wal.html ，2026-11-01 打开）：“readers do not block writers and a writer does not block readers”，同时 “there can only be one writer at a time.” 所以并发提高后写入仍排在一个写线程上，过程记录批量写是下一步。
 
-**我们的方案**（[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)）
+**我们的方案**（[ADR 0145](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0145-run-conversations-concurrently-with-a-sliding-window.md)）
 
 调度器新增 `fill()`，按空位数取出并申领、启动后不等；同一对话的后续轮次仍由数据库查询排除。模板默认改为 3，加测试要求不低于 2。页面对“已接受但无记录超过 3 秒”的轮次显示“排队等待执行”和已排队时间。
 
@@ -5148,7 +5148,7 @@ Andy 看到“崩溃已有处理、生产没有卡住证据”后选了“只记
 
 **相关 ADR/PR**
 
-[ADR 0145](adr/0145-run-conversations-concurrently-with-a-sliding-window.md)、[ADR 0131](adr/0131-read-lane-separate-readonly-connection.md)、PR #172。
+[ADR 0145](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0145-run-conversations-concurrently-with-a-sliding-window.md)、[ADR 0131](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0131-read-lane-separate-readonly-connection.md)、PR #172。
 
 **面试 30 秒版**
 

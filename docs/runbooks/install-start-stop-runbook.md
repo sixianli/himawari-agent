@@ -1013,7 +1013,7 @@ Schema 38 为 `sandbox-scope.v2` 和 `network_only` 合同建立 writer 屏障�
 
 验证分别检查无目录 Grant 的搜索准入、零共享文件占用、原网络授权撤销、私有工作目录及真实沙箱越界拒绝。Schema 37 或更旧 writer/Worker 不得处理新合同；回退须停机并恢复与旧版本匹配的完整恢复点，不能删 migration ledger 降级。本批源码和受控测试不构成部署授权，也不替代目标平台与实际安装资格。
 
-2026-10-25 联网搜索和读网页改为供应商链（[SOURCE: docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：`runPolicy.publicSearch` 和新增的 `runPolicy.publicFetch` 可带有序的 `providers` 列表，不写时只用 `exa-public`，现有部署配置不变。开启读网页需要在配置加 `runPolicy.publicFetch`，并为 `web-fetch-main.js` 建与搜索相同的 `private_temp` / `network_only` 安装绑定。启用需要密钥的供应商（目前是 DeepSeek）还需要：主机密钥文件（Linux 为 `<stateRoot>/secrets/<引用>.<版本>`，目录 `0700`、文件 `0600`、属于服务账号）、路由的 `providerSecrets` 与 `secretReferences` 中用途为 `web-provider` 的对应项、能力清单 `scopes.secrets` 列出该引用，以及 `api.deepseek.com:443` 出口；任一项缺失时启动配置被拒绝或该供应商报不可用并回退到下一家。供应商列表一变，联网搜索开关须由主人重新同意。主机侧缓存和熔断状态只在内存里，重启后清空。以上每项生产改动都要主人单独批准；不配置时安装、启动、停止和升级步骤不变。
+2026-10-25 联网搜索和读网页改为供应商链（[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：`runPolicy.publicSearch` 和新增的 `runPolicy.publicFetch` 可带有序的 `providers` 列表，不写时只用 `exa-public`，现有部署配置不变。开启读网页需要在配置加 `runPolicy.publicFetch`，并为 `web-fetch-main.js` 建与搜索相同的 `private_temp` / `network_only` 安装绑定。启用需要密钥的供应商（目前是 DeepSeek）还需要：主机密钥文件（Linux 为 `<stateRoot>/secrets/<引用>.<版本>`，目录 `0700`、文件 `0600`、属于服务账号）、路由的 `providerSecrets` 与 `secretReferences` 中用途为 `web-provider` 的对应项、能力清单 `scopes.secrets` 列出该引用，以及 `api.deepseek.com:443` 出口；任一项缺失时启动配置被拒绝或该供应商报不可用并回退到下一家。供应商列表一变，联网搜索开关须由主人重新同意。主机侧缓存和熔断状态只在内存里，重启后清空。以上每项生产改动都要主人单独批准；不配置时安装、启动、停止和升级步骤不变。
 
 ### Schema 39 自动审查记录
 

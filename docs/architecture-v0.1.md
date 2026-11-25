@@ -299,7 +299,7 @@ HealthState         GatewayV2ControlPlane/ReadModel          ExecutionTransport
 
 迁移 ledger 持久化连续 `sequence`、`name`、`phase`、SQL SHA-256 与应用时间。loader 验证定义连续性和 digest；启动会拒绝历史内容不匹配、ledger 空洞、未知已应用 migration、未来 schema 及过旧 writer。`expand → backfill → verify → contract` 是受检查的单向 change-set 阶段，系统不提供自动数据库 downgrade。
 
-真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`（只有过程记录的写入在提交时临时切到 `NORMAL`，见 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)）、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。`SqliteProductStateRepository.open()` 在取得 state-root lock 后调用该引擎，再把 current schema 交给专用 execution context。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
+真实文件连接固定 `foreign_keys=ON`、本地 WAL、`synchronous=FULL`（只有过程记录的写入在提交时临时切到 `NORMAL`，见 [ADR 0306](adr/0306-database-access-and-concurrent-conversations.md)）、5000 ms busy timeout 和 1000 页自动 checkpoint，并要求 SQLite 至少为 `3.51.3` 且 `quick_check` 成功。已有 schema 执行下一 migration 前必须提供由 SQLite backup API 创建、完整性检查通过、绑定当前主机、源路径、schema sequence 和文件 digest 的同机 snapshot；fresh create、连续升级、重复运行、并发 contention、损坏 ledger、未来 schema 与旧 writer 已由真实 SQLite 文件契约测试覆盖。`SqliteProductStateRepository.open()` 在取得 state-root lock 后调用该引擎，再把 current schema 交给专用 execution context。[SOURCE: https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0018-sqlite-product-state-authority.md]
 
 ### Encrypted same-host recovery points
 
@@ -722,7 +722,7 @@ Pi 1.5.0 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适�
 
 ### 已授权公开搜索与聊天执行反馈
 
-联网搜索披露授权默认打开，用户可在设置里撤销或重新开启（2026-10-30 起，[ADR 0121](adr/0121-web-search-on-by-default-bound-to-search-services-only.md)）。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费时重新检查设置 revision。2026-10-26 起搜索和读网页授权通过后在服务进程执行，不再经过 Sandbox 准入，出口只允许配置里供应商的固定主机和公网地址，见 [ADR 0299](adr/0299-tool-calls-and-command-lifecycle.md)。它不扩大文件、命令或任意网络权限，也不伪造人工点击。设置只绑定同意时的搜索服务地址列表，模型配置变化不影响它；地址列表变化使设置失效，读接口以 `providersChanged` 告诉网页说明原因。第一次按默认值放行时写入一条 `actorId` 为 `default` 的设置记录，使派生授权有可撤销的来源版本。
+联网搜索披露授权默认打开，用户可在设置里撤销或重新开启（2026-10-30 起，[ADR 0299](adr/0299-tool-calls-and-command-lifecycle.md)）。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费时重新检查设置 revision。2026-10-26 起搜索和读网页授权通过后在服务进程执行，不再经过 Sandbox 准入，出口只允许配置里供应商的固定主机和公网地址，见 [ADR 0299](adr/0299-tool-calls-and-command-lifecycle.md)。它不扩大文件、命令或任意网络权限，也不伪造人工点击。设置只绑定同意时的搜索服务地址列表，模型配置变化不影响它；地址列表变化使设置失效，读接口以 `providersChanged` 告诉网页说明原因。第一次按默认值放行时写入一条 `actorId` 为 `default` 的设置记录，使派生授权有可撤销的来源版本。
 
 Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚未交付的连续更新；生命周期和工具边界始终保留，持久化消费提供背压。浏览器从真实事件显示思考活动、当前工具与最后进度时间；未获披露许可的原始 reasoning 和 Provider 元数据不作为思考摘要展示。审批使用原批准合同在当前 Run 的聊天卡片操作，保留披露 hash、revision、近期认证和重试身份。受保护安装的首次完整校验使用独立线程逐字节扫描，避免大量异步小文件调度拖慢工具过程；未受保护的安装按 ADR 0069 信任安装结果，不读取、不计算摘要。
 
