@@ -766,13 +766,13 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
     expect(text).toMatch(/group: merge-queue\n\s+cancel-in-progress: false/u);
   });
 
-  it("合并队列暂停期间只能手动触发，不随 CI 结束或定时自动跑", () => {
+  it("CI 门禁临时例外期间合并队列只能手动触发，不随 CI 结束或定时自动跑", () => {
     const text = readFileSync(".github/workflows/merge-queue.yml", "utf8");
     const triggers = text.slice(text.indexOf("on:"), text.indexOf("permissions:"));
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).not.toMatch(/workflow_run:|schedule:|cron:/u);
-    expect(readFileSync(".agents/instructions/delivery-mode.md", "utf8")).toContain(
-      "`.github/workflows/merge-queue.yml` 只保留手动触发",
+    expect(readFileSync("docs/adr/0292-how-ci-runs-now.md", "utf8")).toContain(
+      "工作流现在只能手动触发（`workflow_dispatch`），不再跟着 CI 跑完或定时触发",
     );
   });
 });
