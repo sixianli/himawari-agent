@@ -1,6 +1,6 @@
 # Himawari Agent Logo
 
-当前界面使用 `v4/` 的 55 粒“生长”葵盘标志（2026-11-15 用户选定，[ADR 0283](../../../docs/adr/0283-sunflower-mark-keeps-55-seeds-and-apps-get-icons.md)）；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
+当前界面使用 `v4/` 的“生长”葵盘标志，种子数按显示大小取 21、34、55、89 或 144 粒（2026-11-25 Andy 定，[ADR 0291](../../../docs/adr/0291-sunflower-mark-seed-count-follows-its-size.md)）；`v4/` 的 SVG 文件是 55 粒那一档；`v3/` 是 2026-10-30 选定的 233 粒版本（[ADR 0126](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0126-sunflower-mark-grows-233-seeds.md)），保留作历史参照；`v2/` 是 2026-10-26 选定的 96 粒葵盘，保留作历史参照；`v1/` 是 2026-09-10 确认的原始 PNG，保留作历史参照，不再被界面引用。
 
 ## v4 生长葵盘（当前）
 
@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | [logo-sunflower-disc.svg](v4/logo-sunflower-disc.svg) | 独立图标，透明底 | 矢量 SVG，55 粒种子按 137.508° 黄金角排布，画布 48×48；第 n 粒距中心 `19.7/√55 × √年龄`，半径 `0.8 + 1.33 × √(年龄占比)`，颜色从最新的亮白金色经深褐、琥珀过渡到金色 |
 
-界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；所有尺寸都是 55 粒。`v4` 的 SVG、4 张网页应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）和苹果三端的桌面图标（`clients/apple/App/Brand.xcassets` 里的 `AppIcon`、`WatchAppIcon`）都由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`npm run check:brand` 检查 SVG 和代码一致。
+界面里的标志由 `apps/control-center/src/components/brand-seeds.ts` 里的 `seedsAt` 画出，`brand.tsx` 只负责显示和动画；种子数由 `seedCountFor` 按标志量出的实际大小选（苹果端是 `SunflowerSeeds.seedCount(forDiameter:)`），网页标签页图标 `apps/control-center/public/favicon.svg` 用 21 粒。`v4` 的 SVG、4 张网页应用图标（`apps/control-center/public/icons/` 下 3 张 PWA 图标和 `public/apple-touch-icon.png`）和苹果三端的桌面图标（`clients/apple/App/Brand.xcassets` 里的 `AppIcon`、`WatchAppIcon`）都由 `node scripts/render-brand-assets.mjs` 生成（需要 Chromium，可用环境变量 `CHROMIUM_PATH` 指定）；`node scripts/render-brand-assets.mjs --svg-only` 只重新生成两个 SVG；`npm run check:brand` 检查两个 SVG 和代码一致。
 
 ## v3 生长葵盘（历史参照）
 

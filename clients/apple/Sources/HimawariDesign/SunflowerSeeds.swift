@@ -26,14 +26,39 @@ public enum SunflowerSeeds {
     static let amber = (214.0, 128.0, 20.0)
     static let gold = (245.0, 178.0, 48.0)
 
-    public static let reach = discRadius + smallestSeed + seedGrowth
-    public static let resting = Double(seedCount + 8)
+    static let tiers: [(diameter: Double, seeds: Int)] = [(28, 21), (46, 34), (56, 55), (72, 89)]
+    static let largestTier = 144
+    public static let fullGrowthSeconds = 16.0
 
-    public static func at(growth: Double) -> [SunflowerSeed] {
-        let count = Double(seedCount)
+    public static func seedCount(forDiameter diameter: Double) -> Int {
+        tiers.first { diameter <= $0.diameter }?.seeds ?? largestTier
+    }
+
+    static func seedScale(_ seeds: Int) -> Double {
+        (Double(seedCount) / Double(seeds)).squareRoot()
+    }
+
+    public static func reach(seeds: Int = seedCount) -> Double {
+        discRadius + (smallestSeed + seedGrowth) * seedScale(seeds)
+    }
+
+    public static func resting(seeds: Int = seedCount) -> Double {
+        Double(seeds + 8)
+    }
+
+    public static func growthPerSecond(seeds: Int) -> Double {
+        Double(seeds) / fullGrowthSeconds
+    }
+
+    public static var reach: Double { reach() }
+    public static var resting: Double { resting() }
+
+    public static func at(growth: Double, seeds: Int = seedCount) -> [SunflowerSeed] {
+        let count = Double(seeds)
         let spacing = discRadius / count.squareRoot()
+        let seedScale = seedScale(seeds)
         let newest = growth.rounded(.down)
-        return (0..<(seedCount + 2)).compactMap { (slot: Int) -> SunflowerSeed? in
+        return (0..<(seeds + 2)).compactMap { (slot: Int) -> SunflowerSeed? in
             let order = newest - Double(slot)
             let age = growth - order
             guard age >= 0, age <= count else { return nil }
@@ -52,7 +77,7 @@ public enum SunflowerSeeds {
             return SunflowerSeed(
                 x: center + distance * cos(angle),
                 y: center + distance * sin(angle),
-                radius: (smallestSeed + seedGrowth * share.squareRoot()) * born,
+                radius: (smallestSeed + seedGrowth * share.squareRoot()) * seedScale * born,
                 red: color.0 / 255,
                 green: color.1 / 255,
                 blue: color.2 / 255,

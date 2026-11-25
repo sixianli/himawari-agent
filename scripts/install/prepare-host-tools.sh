@@ -97,4 +97,29 @@ if [[ ! -f "$python_material" || "$(sha256sum "$python_material" | cut -d ' ' -f
   chown "$build_user:$build_user" "$python_material"
 fi
 echo "PREPARE_HOST_PYTHON sha256=$python_sha"
+
+step signing-key
+qualification_root=/var/lib/himawari/qualification
+signing_dir=$qualification_root/signing
+signing_key=$signing_dir/host-qualification-signing-key.pem
+first_dir=$qualification_root/first-install
+first_public=$first_dir/host-qualification-public-key.pem
+install -d -m 0755 -o root -g root "$qualification_root"
+install -d -m 0700 -o root -g root "$signing_dir"
+install -d -m 0755 -o root -g root "$first_dir"
+if [[ ! -f "$signing_key" ]]; then
+  (umask 077 && openssl genpkey -algorithm ed25519 -out "$signing_key")
+  chown root:root "$signing_key"
+  chmod 0600 "$signing_key"
+fi
+openssl pkey -in "$signing_key" -pubout -out "$first_public.part"
+if [[ -f "$first_public" ]] && ! cmp -s "$first_public.part" "$first_public"; then
+  rm -f "$first_public.part"
+  echo "PREPARE_HOST_SIGNING_KEY_PUBLIC_MISMATCH $first_public" >&2
+  exit 1
+fi
+mv -f "$first_public.part" "$first_public"
+chown root:root "$first_public"
+chmod 0644 "$first_public"
+echo "PREPARE_HOST_SIGNING_KEY public=$first_public sha256=$(openssl pkey -in "$signing_key" -pubout -outform DER | sha256sum | cut -d ' ' -f 1)"
 echo "PREPARE_HOST_OK platform=$platform"

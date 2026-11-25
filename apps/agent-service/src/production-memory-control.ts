@@ -42,6 +42,7 @@ import {
   type GatewayV2Snapshot,
   MEMORY_SENSITIVE_CATEGORY_NAMES,
   MEMORY_SOURCE_REF_MAX_LENGTH,
+  MEMORY_TRASH_RETENTION_DAYS,
   RULE_CONDITION_FIELDS,
 } from "@himawari-agent/gateway-contracts";
 import { isConsolidationUndoable } from "@himawari-agent/memory-engine";
@@ -129,7 +130,7 @@ const CANCELLED_SHOWN = 20;
 const INACTIVE_SHOWN = 500;
 const HISTORY_BATCH = 1000;
 const IMPORTS_SHOWN = 20;
-const TRASH_RETENTION_MS = 7 * 24 * 3_600_000;
+const TRASH_RETENTION_MS = MEMORY_TRASH_RETENTION_DAYS * 24 * 3_600_000;
 const SNOOZE_MS = 3_600_000;
 const OWNER_POLICY_VERSION = "memory-owner:v1";
 const OWNER_RULE_IMPORTANCE = 800;

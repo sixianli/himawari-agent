@@ -19,6 +19,8 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herAllowances = "next-3-her-allowances"
     case herAllowancesEmpty = "next-3-her-allowances-empty"
     case herAllowanceDays = "next-3-her-allowance-days"
+    case memoryVersions = "next-4-memory-versions"
+    case memoryTrash = "next-4-memory-trash"
 }
 
 public struct ManageDemoView: View {
@@ -56,6 +58,12 @@ public struct ManageDemoView: View {
             her([.allowances])
         case .herAllowancesEmpty:
             her([.allowances], allowances: false)
+        case .memoryVersions:
+            MemoryRootView(store: ManageDemo.memoryStore(), opening: .memory("m5"))
+        case .memoryTrash:
+            NavigationStack {
+                MemoryTrashPage(store: ManageDemo.loadedMemoryStore()) {}
+            }
         case .herAllowanceDays:
             AllowanceDaysSheet(days: 7) { _ in }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,6 +96,12 @@ enum ManageDemo {
         MemoryStore(gateway: gateway(allowances: allowances))
     }
 
+    @MainActor static func loadedMemoryStore() -> MemoryStore {
+        let store = memoryStore()
+        Task { await store.load() }
+        return store
+    }
+
     @MainActor static func settingsStore() -> SettingsStore {
         SettingsStore(
             gateway: gateway(),
@@ -110,22 +124,25 @@ enum ManageDemo {
     }
 
     private static func memory(
-        _ id: String, _ group: String, _ text: String, inference: Bool, recordedAt: String, lastUsedAt: String?, quote: String?
+        _ id: String, _ group: String, _ text: String, inference: Bool, recordedAt: String, lastUsedAt: String?, quote: String?,
+        status: String = "active", updatedAt: String? = nil, earlier: (text: String, at: String)? = nil
     ) -> String {
         let used = lastUsedAt.map { #""\#($0)""# } ?? "null"
         let quoted = quote.map { #""\#($0)""# } ?? "null"
+        let older = earlier.map { #"{"historyId":2,"kind":"created","text":"\#($0.text)","quote":null,"sourceThreadId":null,"sourceDeleted":false,"at":"\#($0.at)"},"# } ?? ""
         return #"""
-        {"memoryId":"\#(id)","revision":1,"text":"\#(text)","inference":\#(inference),"sourceThreadId":null,"sourceRefs":[],"category":"other","subCategory":"\#(group)","status":"active","recordedAt":"\#(recordedAt)","lastUsedAt":\#(used),"importBatchId":null,"history":[{"historyId":1,"kind":"created","text":"\#(text)","quote":\#(quoted),"sourceThreadId":null,"sourceDeleted":false,"at":"\#(recordedAt)"}]}
+        {"memoryId":"\#(id)","revision":1,"text":"\#(text)","inference":\#(inference),"sourceThreadId":null,"sourceRefs":[],"category":"other","subCategory":"\#(group)","status":"\#(status)","recordedAt":"\#(recordedAt)","updatedAt":"\#(updatedAt ?? recordedAt)","lastUsedAt":\#(used),"importBatchId":null,"history":[\#(older){"historyId":1,"kind":"created","text":"\#(text)","quote":\#(quoted),"sourceThreadId":null,"sourceDeleted":false,"at":"\#(recordedAt)"}]}
         """#
     }
 
     private static var memories: String {
         let items = [
             memory("m1", "出行", "从家走到车站约 18 分钟", inference: true, recordedAt: "2026-11-10T01:00:00Z", lastUsedAt: "2026-11-12T01:20:00Z", quote: nil),
-            memory("m5", "出行", "坐新干线喜欢靠窗", inference: false, recordedAt: "2026-10-30T03:00:00Z", lastUsedAt: nil, quote: "以后都帮我订靠窗的"),
+            memory("m5", "出行", "坐新干线喜欢靠窗", inference: false, recordedAt: "2026-10-30T03:00:00Z", lastUsedAt: nil, quote: "以后都帮我订靠窗的", earlier: ("坐新干线喜欢靠过道", "2026-09-12T03:00:00Z")),
             memory("m2", "工作", "每周五下午和田中有例会", inference: false, recordedAt: "2026-11-03T03:00:00Z", lastUsedAt: "2026-11-07T00:00:00Z", quote: "以后每周五下午都和田中开会"),
             memory("m6", "工作", "第一次给外面的人发邮件先让我看，同事不用", inference: false, recordedAt: "2026-11-08T03:00:00Z", lastUsedAt: nil, quote: "同事就不用问我了"),
             memory("m3", "身体", "对花生过敏", inference: false, recordedAt: "2026-10-21T03:00:00Z", lastUsedAt: "2026-11-05T03:00:00Z", quote: "我花生过敏"),
+            memory("m7", "工作", "周三早上去健身房", inference: true, recordedAt: "2026-10-02T03:00:00Z", lastUsedAt: nil, quote: nil, status: "trashed", updatedAt: "2026-11-24T03:00:00Z"),
         ]
         return #"{"payload":{"memories":[\#(items.joined(separator: ","))],"imports":[],"capturePaused":false}}"#
     }

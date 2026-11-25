@@ -20,6 +20,15 @@ import Testing
         )
     }
 
+    @Test func aFinishedAnswerThatDidNothingShowsNoProcessRow() {
+        #expect(ProcessLine.make(records: [], runStatus: "completed").hasNothingToShow)
+        #expect(ProcessLine.make(records: [record(1, "s", .started, at: 0, kind: .message)], runStatus: "completed").hasNothingToShow)
+        #expect(!ProcessLine.make(records: [record(1, "a", .completed, at: 0)], runStatus: "completed").hasNothingToShow)
+        #expect(!ProcessLine.make(records: [], runStatus: "failed").hasNothingToShow)
+        #expect(!ProcessLine.make(records: [], runStatus: "cancelled").hasNothingToShow)
+        #expect(!ProcessLine.make(records: [], runStatus: "running").hasNothingToShow)
+    }
+
     @Test func noToolStepYetIsThinking() {
         #expect(ProcessLine.make(records: [record(1, "m", .started, at: 0, kind: .message)], runStatus: "running") == .thinking)
     }

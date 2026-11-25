@@ -306,6 +306,9 @@ def permanent_readback(binding, phases):
     require(receipt.get('schema') == 'himawari-installed-foreground-receipt.v2' and receipt.get('runtime') == binding['paths']['newPrefix'] + '/lib/himawari-agent' and receipt.get('runtimeDigest') == startup['runtimeDigest'] and isinstance(receipt.get('bindings'), list), '__PKT_LABEL_UPPER___TRANSPORT_SIGNED_RECEIPT_BINDING_INVALID')
     validate_no_stage_dependency(configuration, STAGE)
     validate_no_stage_dependency(json.loads(snapshot_bytes), STAGE, receipt['bindings'])
+__PKT_WHEN_FIRST_TOOLS__
+    require(sorted(entry['manifest']['ref'] for entry in json.loads(snapshot_bytes)['capabilities']) == sorted(__PKT_NEW_CAPABILITY_REFS_JSON__), '__PKT_LABEL_UPPER___TRANSPORT_FIRST_TOOLS_SET_CHANGED')
+__PKT_END_WHEN__
     validate_no_stage_dependency(json.loads(protection_bytes), STAGE)
     validate_no_stage_dependency(unit_bytes.decode(), STAGE)
     require(sha(unit_bytes) == phases['s7-orchestration-result.json']['value']['newUnitSha256'], '__PKT_LABEL_UPPER___TRANSPORT_CURRENT_UNIT_CHANGED')

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { GROWTH_RATES, restingGrowth, SEED_COUNT, seedsAt } from "./brand-seeds.js";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { growthRate, restingGrowth, SEED_COUNT, seedCountFor, seedsAt } from "./brand-seeds.js";
 
-export { GROWTH_RATES, restingGrowth, SEED_COUNT, seedsAt };
+export { growthRate, restingGrowth, SEED_COUNT, seedCountFor, seedsAt };
 export type { Seed } from "./brand-seeds.js";
 
 const MAX_FRAME_SECONDS = 0.05;
@@ -53,6 +53,28 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
+const SMALLEST_MARK = 24;
+const useBrowserLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+function useSeedCount(mark: RefObject<SVGSVGElement | null>) {
+  const [seeds, setSeeds] = useState(() => seedCountFor(SMALLEST_MARK));
+  useBrowserLayoutEffect(() => {
+    const element = mark.current;
+    if (!element) return;
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect();
+      const side = Math.min(width, height);
+      if (side > 0) setSeeds(seedCountFor(side));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [mark]);
+  return seeds;
+}
+
 export function SunflowerMark({
   busy = false,
   growing = false,
@@ -60,11 +82,17 @@ export function SunflowerMark({
   readonly busy?: boolean;
   readonly growing?: boolean;
 }) {
+  const markRef = useRef<SVGSVGElement>(null);
   const seedsRef = useRef<SVGGElement>(null);
+  const seeds = useSeedCount(markRef);
   const reducedMotion = usePrefersReducedMotion();
-  const rate = busy ? GROWTH_RATES.busy : growing ? GROWTH_RATES.idle : 0;
+  const rate = busy ? growthRate(seeds, "busy") : growing ? growthRate(seeds, "idle") : 0;
   const animated = rate > 0 && !reducedMotion;
-  const growthRef = useRef(restingGrowth());
+  const growthRef = useRef(restingGrowth(seeds));
+
+  useEffect(() => {
+    growthRef.current = restingGrowth(seeds);
+  }, [seeds]);
 
   useEffect(() => {
     if (!animated) return;
@@ -72,7 +100,7 @@ export function SunflowerMark({
     if (!circles) return;
     return joinGrowth((seconds) => {
       growthRef.current += seconds * rate;
-      seedsAt(growthRef.current).forEach((seed, index) => {
+      seedsAt(growthRef.current, seeds).forEach((seed, index) => {
         const circle = circles[index];
         if (!circle) return;
         circle.setAttribute("cx", String(seed.cx));
@@ -83,11 +111,13 @@ export function SunflowerMark({
         circle.setAttribute("class", seed.fresh ? "seed-new" : "");
       });
     });
-  }, [animated, rate]);
+  }, [animated, rate, seeds]);
 
-  const resting = seedsAt(restingGrowth());
+  const resting = seedsAt(restingGrowth(seeds), seeds);
   return (
     <svg
+      ref={markRef}
+      data-seeds={seeds}
       className={busy ? "himawari-mark is-busy" : "himawari-mark"}
       viewBox="0 0 48 48"
       aria-hidden="true"

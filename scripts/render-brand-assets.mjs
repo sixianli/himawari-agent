@@ -1,12 +1,18 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
-import { restingGrowth, seedsAt } from "../apps/control-center/src/components/brand-seeds.ts";
+import {
+  restingGrowth,
+  seedCountFor,
+  seedsAt,
+} from "../apps/control-center/src/components/brand-seeds.ts";
 
 const BACKGROUND = "#1e1d1d";
 const LIGHT_BACKGROUND = "#fbf8f1";
 const LIGHT_NEW_SEED = "#b8741a";
 const APP_ICON_DIR = "clients/apple/App/Brand.xcassets";
 const MAC_SIZES = [16, 32, 128, 256, 512];
+const FAVICON_PATH = "apps/control-center/public/favicon.svg";
+const FAVICON_DIAMETER = 16;
 
 function seedCircles({ newSeed, gray = false } = {}) {
   return seedsAt(restingGrowth())
@@ -34,6 +40,20 @@ export function sunflowerSvg({ background, scale = 1 } = {}) {
 export function renderBrandSvg() {
   return sunflowerSvg();
 }
+
+export function renderFaviconSvg() {
+  const seeds = seedCountFor(FAVICON_DIAMETER);
+  const circles = seedsAt(restingGrowth(seeds), seeds)
+    .filter((seed) => seed.r > 0)
+    .map(
+      (seed) =>
+        `  <circle${seed.fresh ? ' class="n"' : ""} cx="${seed.cx}" cy="${seed.cy}" r="${seed.r}" fill="${seed.fill}"/>`,
+    )
+    .join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">\n  <style>@media (prefers-color-scheme: light) { .n { fill: ${LIGHT_NEW_SEED}; } }</style>\n${circles}\n</svg>\n`;
+}
+
+export { FAVICON_PATH };
 
 function appIconSvg({ background, newSeed, gray = false, scale, mac = false }) {
   const disc = `<g transform="translate(24 24) scale(${scale}) translate(-24 -24)">\n${seedCircles({ newSeed, gray })}\n</g>`;
@@ -107,6 +127,8 @@ async function shoot(page, svg, size, path, transparent = false) {
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   mkdirSync("assets/brand/himawari/v4", { recursive: true });
   writeFileSync("assets/brand/himawari/v4/logo-sunflower-disc.svg", renderBrandSvg());
+  writeFileSync(FAVICON_PATH, renderFaviconSvg());
+  if (process.argv.includes("--svg-only")) process.exit(0);
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
   });

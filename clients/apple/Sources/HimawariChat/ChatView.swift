@@ -67,7 +67,7 @@ public struct ChatView: View {
     private var chrome: some View {
         VStack(spacing: 0) {
             header
-            if store.connection != .online {
+            if store.offlineShown {
                 OfflineBanner()
                     .padding(.top, 2)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
@@ -141,7 +141,7 @@ public struct ChatView: View {
 
     private var withLifecycle: some View {
         layers
-            .animation(.easeInOut(duration: 0.2), value: store.connection)
+            .animation(.easeInOut(duration: 0.2), value: store.offlineShown)
             .himawariScreenBackground()
             .task(id: threadId) {
                 store.watch(threadId)
@@ -263,15 +263,20 @@ public struct ChatView: View {
                 ForEach(store.transcript(in: threadId)) { item in
                     switch item {
                     case let .message(message):
-                        if message.role == .agent, let options = message.options {
-                            VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                        Group {
+                            if message.role == .agent, let options = message.options {
+                                VStack(alignment: .leading, spacing: DesignTokens.Options.afterMessage) {
+                                    MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                                    MessageOptionsView(options: options, choose: choose(for: message))
+                                }
+                            } else if message.role == .owner, message.chosenFrom != nil {
+                                ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
+                            } else {
                                 MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
-                                MessageOptionsView(options: options, choose: choose(for: message))
                             }
-                        } else if message.role == .owner, message.chosenFrom != nil {
-                            ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
-                        } else {
-                            MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
+                        }
+                        .task(id: message.messageId) {
+                            if message.role == .agent, let runId = message.runId { await store.loadExecution(runId, in: threadId) }
                         }
                     case let .process(runId):
                         if let line = store.processLine(for: runId, in: threadId) {
@@ -296,7 +301,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.chatPaddingX)
-            .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
+            .padding(.top, store.offlineShown ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.bottom, for: .alignment)

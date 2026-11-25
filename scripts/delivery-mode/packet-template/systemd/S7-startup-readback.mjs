@@ -129,6 +129,10 @@ async function inspect(mode, invocationId) {
   assert.equal(receipt.bindingInputs.originalConfigurationSha256, binding.service.oldConfigSha256, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_CONFIGURATION_BINDING_CHANGED");
   const catalogReader = await loadCatalogReader();
   assert.equal(catalogReader.configurationStage(original, current), "prepared", "__PKT_LABEL_UPPER___STARTUP_NEW_SNAPSHOT_REQUIRED");
+__PKT_WHEN_FIRST_TOOLS__
+  assert(!Object.hasOwn(original, "capabilityDeployment"), "__PKT_LABEL_UPPER___STARTUP_FIRST_TOOLS_ORIGINAL_HAS_TOOLS");
+  assert.deepEqual(receipt.bindingInputs.persistentCapabilityObservations, [], "__PKT_LABEL_UPPER___STARTUP_FIRST_TOOLS_OBSERVATIONS_NOT_EMPTY");
+__PKT_END_WHEN__
   const staticRootAuthorization = JSON.parse(file(evidenceRoot + "/s7-static-root-authorization.json", __PKT_SERVICE_UID__, 0o600));
   assert(staticRootAuthorization.passed === true && staticRootAuthorization.configurationSha256 === catalogReader.staticRootConfigurationSha256(binding), "__PKT_LABEL_UPPER___STARTUP_STATIC_ROOT_CONFIGURATION_NOT_VERIFIED");
   assert.equal(original.runPolicy.coding.grantId, binding.workspace.grantId, "__PKT_LABEL_UPPER___STARTUP_ORIGINAL_GRANT_ID_CHANGED");
@@ -218,6 +222,9 @@ async function inspect(mode, invocationId) {
   const loaded = await new platform.CapabilityDeploymentSnapshotLoader(currentDeployment).load();
   const snapshot = loaded.snapshot;
   assert.equal(snapshot.capabilities.length, receipt.bindings.length, "__PKT_LABEL_UPPER___STARTUP_SNAPSHOT_CAPABILITY_SET_CHANGED");
+__PKT_WHEN_FIRST_TOOLS__
+  assert.deepEqual(snapshot.capabilities.map((item) => item.manifest.ref).sort(), [...__PKT_NEW_CAPABILITY_REFS_JSON__].sort(), "__PKT_LABEL_UPPER___STARTUP_FIRST_TOOLS_SET_CHANGED");
+__PKT_END_WHEN__
   for (const item of snapshot.capabilities) {
     const signed = receipt.bindings.find((value) => value.binding.capabilityRef === item.manifest.ref);
     assert(signed, "__PKT_LABEL_UPPER___STARTUP_UNSIGNED_CAPABILITY");

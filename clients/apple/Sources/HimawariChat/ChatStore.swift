@@ -28,7 +28,10 @@ public final class ChatStore {
     public internal(set) var details: [String: ThreadDetail] = [:]
     public internal(set) var queued: [OutboxItem] = []
     public internal(set) var streaming: [String: StreamingReply] = [:]
-    public internal(set) var connection: ChatConnection = .offline
+    public internal(set) var connection: ChatConnection = .offline {
+        didSet { notice?.connectionChanged(online: connection == .online) }
+    }
+    public internal(set) var offlineShown = false
     public private(set) var loadingThreads = false
     public internal(set) var executions: [String: [ExecutionRecord]] = [:]
 
@@ -53,6 +56,8 @@ public final class ChatStore {
     @ObservationIgnored private let images: ImageFitting?
     @ObservationIgnored private var wantedThreadId: String?
     @ObservationIgnored private var streamConnections: Int?
+    @ObservationIgnored private var notice: OfflineNotice?
+    @ObservationIgnored private var networkWatch: NetworkChangeWatch?
     @ObservationIgnored public var onNotification: (@MainActor (DeviceStreamEvent) -> Void)?
 
     public init(
@@ -77,6 +82,7 @@ public final class ChatStore {
         threads = snapshot.threads
         texts = snapshot.texts
         details = snapshot.details
+        notice = OfflineNotice { [weak self] shown in self?.offlineShown = shown }
     }
 
     public func start() {
@@ -96,10 +102,12 @@ public final class ChatStore {
             }
             connection = .offline
         })
+        networkWatch = NetworkChangeWatch { [weak self] in self?.restartConnections() }
         Task { await refreshThreads() }
     }
 
     public func stop() {
+        networkWatch = nil
         retryTask?.cancel()
         retryTask = nil
         tasks.forEach { $0.cancel() }
@@ -149,9 +157,13 @@ public final class ChatStore {
 
     public func reconnect() {
         guard !frozen else { return }
-        events.reconnectNow()
-        watched?.stream.reconnectNow()
+        restartConnections()
         Task { await flush() }
+    }
+
+    private func restartConnections() {
+        events.restartConnection()
+        watched?.stream.restartConnection()
     }
 
     public func title(for thread: ThreadSummary) -> String? {
@@ -167,7 +179,7 @@ public final class ChatStore {
     }
 
     public func isBusy(in threadId: String) -> Bool {
-        streaming[threadId] != nil || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
+        streaming[threadId].map { !$0.isSettled(in: details[threadId]) } ?? false || (details[threadId]?.runs ?? []).contains(where: \.isWorking)
     }
 
     public func workingRun(in threadId: String) -> ThreadRunSummary? {
@@ -175,7 +187,7 @@ public final class ChatStore {
     }
 
     public func streamingText(in threadId: String) -> String? {
-        guard let reply = streaming[threadId] else { return nil }
+        guard let reply = streaming[threadId], !reply.isSettled(in: details[threadId]) else { return nil }
         let text = reply.text
         return text.isEmpty ? nil : text
     }
@@ -211,7 +223,7 @@ public final class ChatStore {
                 threads[index] = detail.thread
             }
             await loadTexts(detail.messages.map(\.contentRef) + [detail.thread.titleRef].compactMap { $0 })
-            if detail.runs.allSatisfy({ ["completed", "failed", "cancelled"].contains($0.status) }) {
+            if let reply = streaming[threadId], reply.isSettled(in: detail) || detail.runs.allSatisfy({ ProcessLine.terminalRunStatuses.contains($0.status) }) {
                 streaming[threadId] = nil
             }
             persist()
@@ -226,7 +238,10 @@ public final class ChatStore {
 
     public func processLine(for runId: String, in threadId: String) -> ProcessLine? {
         guard let run = run(runId, in: threadId) else { return nil }
-        return ProcessLine.make(records: executions[runId] ?? [], runStatus: run.status)
+        let records = executions[runId]
+        let line = ProcessLine.make(records: records ?? [], runStatus: run.status)
+        if ProcessLine.terminalRunStatuses.contains(run.status) && records == nil { return nil }
+        return line.hasNothingToShow ? nil : line
     }
 
     public func transcript(in threadId: String) -> [TranscriptItem] {
@@ -381,6 +396,7 @@ public final class ChatStore {
             }
             await refreshThreads()
         case let .executionText(chunk):
+            guard !StreamingReply(runId: chunk.runId).isSettled(in: details[chunk.threadId]) else { break }
             var reply = streaming[chunk.threadId].flatMap { $0.runId == chunk.runId ? $0 : nil } ?? StreamingReply(runId: chunk.runId)
             reply.apply(chunk)
             streaming[chunk.threadId] = reply

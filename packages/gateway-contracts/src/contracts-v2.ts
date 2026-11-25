@@ -169,6 +169,10 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "perception.usage.read",
   "perception.usage.snapshot",
   "perception.settings.change",
+  "perception.deletion.plan",
+  "perception.deletion.read",
+  "perception.deletion.snapshot",
+  "perception.records.delete",
   "think.settings.read",
   "think.settings.snapshot",
   "think.settings.change",
@@ -920,6 +924,46 @@ const perceptionSettingsChangeCommandSchema = object({
     key: nullable(machineString),
     value: nullable(integer(0)),
   }),
+});
+export const PERCEPTION_DELETION_STATUSES = ["planned", "running", "verified"] as const;
+export const PERCEPTION_DELETION_TARGET_KINDS = ["records", "episode", "day", "types"] as const;
+const perceptionDeletionCountsSchema = object({
+  records: integer(0),
+  trackPoints: integer(0),
+  media: integer(0),
+});
+const perceptionDeletionPlanQuerySchema = object({
+  ...envelope("query", "perception.deletion.plan"),
+  payload: object({
+    kind: enumeration(PERCEPTION_DELETION_TARGET_KINDS),
+    ids: array(machineString),
+    episodeId: nullable(machineString),
+    day: nullable(perceptionDaySchema),
+    deviceId: nullable(machineString),
+    types: array(machineString),
+  }),
+});
+const perceptionDeletionReadQuerySchema = object({
+  ...envelope("query", "perception.deletion.read"),
+  payload: object({ planId: machineString }),
+});
+const perceptionDeletionSnapshotSchema = object({
+  ...envelope("snapshot", "perception.deletion.snapshot"),
+  payload: object({
+    planId: nullable(machineString),
+    status: nullable(enumeration(PERCEPTION_DELETION_STATUSES)),
+    plan: nullable(perceptionDeletionCountsSchema),
+    deleted: nullable(perceptionDeletionCountsSchema),
+    expiresAt: nullable(timestamp),
+    pendingPayloads: integer(0),
+    deletionRevision: integer(0),
+    keptElsewhere: array(machineString),
+    generatedAt: timestamp,
+  }),
+});
+const perceptionRecordsDeleteCommandSchema = object({
+  ...commandEnvelope("perception.records.delete"),
+  payload: object({ planId: machineString }),
 });
 const thinkSettingsQuerySchema = object({
   ...envelope("query", "think.settings.read"),
@@ -2040,6 +2084,7 @@ export const MEMORY_EXTERNAL_CATEGORY_NAMES = MEMORY_CATEGORY_NAMES.filter(
 );
 export const MEMORY_EXTERNAL_RESPOND_MAXIMUM = 500;
 export const MCP_SYNC_NOTE_TEXT_MAXIMUM = 60_000;
+export const MEMORY_TRASH_RETENTION_DAYS = 7;
 export const MEMORY_HISTORY_KIND_NAMES = [
   "created",
   "updated",
@@ -3796,6 +3841,10 @@ const schemasByType = {
   "perception.usage.read": perceptionUsageQuerySchema,
   "perception.usage.snapshot": perceptionUsageSnapshotSchema,
   "perception.settings.change": perceptionSettingsChangeCommandSchema,
+  "perception.deletion.plan": perceptionDeletionPlanQuerySchema,
+  "perception.deletion.read": perceptionDeletionReadQuerySchema,
+  "perception.deletion.snapshot": perceptionDeletionSnapshotSchema,
+  "perception.records.delete": perceptionRecordsDeleteCommandSchema,
   "think.settings.read": thinkSettingsQuerySchema,
   "think.settings.snapshot": thinkSettingsSnapshotSchema,
   "think.settings.change": thinkSettingsChangeCommandSchema,
