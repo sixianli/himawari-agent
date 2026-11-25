@@ -8,7 +8,23 @@ const SMALLEST_SEED = 0.8;
 const SEED_GROWTH = 1.33;
 
 export const SEED_COUNT = 55;
-export const GROWTH_RATES = { idle: 0.35, busy: 3.4 } as const;
+export const FULL_GROWTH_SECONDS = 16;
+const IDLE_SHARE = 0.1;
+const SEED_TIERS: readonly (readonly [number, number])[] = [
+  [28, 21],
+  [46, 34],
+  [56, 55],
+  [72, 89],
+];
+const LARGEST_TIER = 144;
+
+export function seedCountFor(diameter: number) {
+  return SEED_TIERS.find(([largest]) => diameter <= largest)?.[1] ?? LARGEST_TIER;
+}
+
+export function growthRate(seeds: number, mode: "idle" | "busy") {
+  return (seeds / FULL_GROWTH_SECONDS) * (mode === "busy" ? 1 : IDLE_SHARE);
+}
 
 type Rgb = readonly [number, number, number];
 const NEW_SEED: Rgb = [255, 236, 170];
@@ -31,13 +47,14 @@ export interface Seed {
   readonly fresh: boolean;
 }
 
-export function restingGrowth() {
-  return SEED_COUNT + 8;
+export function restingGrowth(seeds = SEED_COUNT) {
+  return seeds + 8;
 }
 
-export function seedsAt(growth: number): Seed[] {
-  const count = SEED_COUNT;
+export function seedsAt(growth: number, seeds = SEED_COUNT): Seed[] {
+  const count = seeds;
   const spacing = DISC_RADIUS / Math.sqrt(count);
+  const seedScale = Math.sqrt(SEED_COUNT / count);
   const newest = Math.floor(growth);
   return Array.from({ length: count + 2 }, (_, slot) => {
     const order = newest - slot;
@@ -52,7 +69,7 @@ export function seedsAt(growth: number): Seed[] {
       slot,
       cx: round(CENTER + distance * Math.cos(angle)),
       cy: round(CENTER + distance * Math.sin(angle)),
-      r: round((SMALLEST_SEED + SEED_GROWTH * Math.sqrt(share)) * born),
+      r: round((SMALLEST_SEED + SEED_GROWTH * Math.sqrt(share)) * seedScale * born),
       fill:
         share < NEWEST_SHARE
           ? blend(NEW_SEED, NEW_SEED, 0)

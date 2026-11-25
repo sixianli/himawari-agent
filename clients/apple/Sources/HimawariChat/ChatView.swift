@@ -67,7 +67,7 @@ public struct ChatView: View {
     private var chrome: some View {
         VStack(spacing: 0) {
             header
-            if store.connection != .online {
+            if store.offlineShown {
                 OfflineBanner()
                     .padding(.top, 2)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
@@ -141,7 +141,7 @@ public struct ChatView: View {
 
     private var withLifecycle: some View {
         layers
-            .animation(.easeInOut(duration: 0.2), value: store.connection)
+            .animation(.easeInOut(duration: 0.2), value: store.offlineShown)
             .himawariScreenBackground()
             .task(id: threadId) {
                 store.watch(threadId)
@@ -301,7 +301,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.chatPaddingX)
-            .padding(.top, store.connection != .online ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
+            .padding(.top, store.offlineShown ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.bottom, for: .alignment)

@@ -26,6 +26,7 @@ public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
     public let subCategory: String?
     public let status: String
     public let recordedAt: String
+    public var updatedAt: String? = nil
     public let lastUsedAt: String?
     public let importBatchId: String?
     public let history: [History]
@@ -35,7 +36,6 @@ public struct MemoryItem: Decodable, Sendable, Identifiable, Hashable {
 
 public struct MemorySummary: Equatable, Sendable {
     public let memories: Int
-    public let topics: Int
     public let rules: Int
 }
 

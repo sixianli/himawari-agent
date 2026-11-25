@@ -70,6 +70,7 @@ public final class DeviceEventStream: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
     private var wake: CheckedContinuation<Void, Never>?
+    private var restartRequested = false
     private var continuation: AsyncStream<DeviceStreamEvent>.Continuation?
 
     public init(http: DeviceHTTPClient, path: String = "stream", cursors: CursorStore?, heartbeat: @escaping @Sendable () -> TimeInterval) {
@@ -104,6 +105,13 @@ public final class DeviceEventStream: @unchecked Sendable {
         continuation?.finish()
     }
 
+    public func restartConnection() {
+        lock.withLock { restartRequested = true }
+        reconnectNow()
+    }
+
+    static let silenceAllowance: TimeInterval = 5
+
     public func reconnectNow() {
         let pending = lock.withLock { () -> CheckedContinuation<Void, Never>? in
             defer { wake = nil }
@@ -114,61 +122,98 @@ public final class DeviceEventStream: @unchecked Sendable {
 
     private func run(continuation: AsyncStream<DeviceStreamEvent>.Continuation) async {
         var failures = 0
+        var droppedAt: Date?
         while !Task.isCancelled {
             var query: [URLQueryItem] = []
             if let cursor = cursors?.load() { query.append(URLQueryItem(name: "after", value: cursor)) }
-            var stop = false
+            var ending: StreamEnding
+            lock.withLock { restartRequested = false }
             do {
                 let chunks = try await http.openStream(DeviceRequest(method: "GET", path: path, query: query))
                 continuation.yield(.connected)
-                let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + 5 })
-                stop = try await consume(chunks, deadline: deadline, continuation: continuation)
+                let openedAt = Date()
+                if let droppedAt {
+                    StreamDiagnostics.shared.note(.recovered(path: path, offlineSeconds: openedAt.timeIntervalSince(droppedAt)))
+                }
+                droppedAt = nil
+                let deadline = LivenessDeadline(window: { [heartbeat] in heartbeat() * 2 + Self.silenceAllowance })
+                ending = try await consume(chunks, deadline: deadline, continuation: continuation)
                 failures = deadline.heard ? 0 : failures + 1
+                if case let .reconnect(reason) = ending {
+                    StreamDiagnostics.shared.note(.dropped(path: path, reason: reason, connectedSeconds: Date().timeIntervalSince(openedAt)))
+                }
             } catch let error as DeviceAPIError where error.isRevoked {
                 continuation.yield(.sessionInvalid)
-                stop = true
+                ending = .stop
             } catch let DeviceAPIError.server(status, code, _, _) {
                 StreamDiagnostics.shared.note(.refused(path: path, status: status, code: code))
                 failures += 1
+                ending = .reconnect(.failed)
             } catch {
                 failures += 1
+                ending = .reconnect(.failed)
             }
-            if stop || Task.isCancelled { break }
+            if Task.isCancelled { break }
+            guard case let .reconnect(reason) = ending else { break }
+            if reason.planned {
+                continue
+            }
+            if droppedAt == nil { droppedAt = Date() }
             continuation.yield(.disconnected)
             await pause(seconds: Self.backoff(failures: failures))
         }
         continuation.finish()
     }
 
-    private func consume(_ chunks: AsyncThrowingStream<String, Error>, deadline: LivenessDeadline, continuation: AsyncStream<DeviceStreamEvent>.Continuation) async throws -> Bool {
-        return try await withThrowingTaskGroup(of: Bool.self) { group in
+    private enum StreamEnding: Sendable {
+        case stop
+        case reconnect(StreamDropReason)
+    }
+
+    private func takeRestart() -> Bool {
+        lock.withLock {
+            defer { restartRequested = false }
+            return restartRequested
+        }
+    }
+
+    private func consume(_ chunks: AsyncThrowingStream<String, Error>, deadline: LivenessDeadline, continuation: AsyncStream<DeviceStreamEvent>.Continuation) async throws -> StreamEnding {
+        return try await withThrowingTaskGroup(of: StreamEnding.self) { group in
             group.addTask {
                 var parser = ServerSentEventParser()
                 for try await chunk in chunks {
                     deadline.touch()
                     for event in parser.feed(chunk) {
                         if let id = event.id, !id.isEmpty, !DeviceEventDecoder.notificationEvents.contains(event.event) { self.cursors?.save(id) }
-                        if event.event == "device.reconnect" { return false }
+                        if event.event == "device.reconnect" { return .reconnect(.serverRotated) }
                         guard let decoded = DeviceEventDecoder.decode(event) else { continue }
                         if decoded == .resyncRequired { self.cursors?.save(nil) }
                         continuation.yield(decoded)
-                        if decoded == .sessionInvalid || decoded == .unavailable { return true }
+                        if decoded == .sessionInvalid || decoded == .unavailable { return .stop }
                     }
                 }
-                return false
+                return .reconnect(.closed)
             }
             group.addTask {
                 while !Task.isCancelled {
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
-                    if deadline.expired() { return false }
+                    try await Task.sleep(nanoseconds: Self.checkNanoseconds)
+                    if self.takeRestart() { return .reconnect(.restarted) }
+                    if deadline.expired() { return .reconnect(.silent) }
                 }
-                return false
+                return .reconnect(.closed)
             }
-            let result = try await group.next() ?? false
-            group.cancelAll()
-            return result
+            do {
+                let result = try await group.next() ?? .reconnect(.closed)
+                group.cancelAll()
+                return result
+            } catch {
+                group.cancelAll()
+                return .reconnect(.failed)
+            }
         }
     }
+
+    static let checkNanoseconds: UInt64 = 250_000_000
 
     private func pause(seconds: TimeInterval) async {
         await withCheckedContinuation { (wakeUp: CheckedContinuation<Void, Never>) in
@@ -211,4 +256,5 @@ final class LivenessDeadline: @unchecked Sendable {
     func expired() -> Bool {
         lock.withLock { Date().timeIntervalSince(last) > window() }
     }
+
 }
