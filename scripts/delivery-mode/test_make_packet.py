@@ -34,6 +34,7 @@ INTENDED_CHANGES = {
     'acceptance/helpers/test-resource-retention.py', 'acceptance/helpers/check-p5-scratch-cleanup.py', 'measurement/probe/run-service-probe.py', 'install/S9-clean-transport.py', 'signing/finalize-binding-inputs.py',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 'measurement/OWNED-SHA256SUMS', 'measurement/S6-service-read.py', 'measurement/probe/bootstrap.mjs', 's0-db/read-s0-db.mjs',
     'signing/cloud-protected-prepare.mjs', 'signing/cloud-seal.mjs', 'signing/publish-runtime-protection.mjs', 'steps/README.md', 'steps/run-local-step.py', 'steps/run-step.py', 'steps/verify-steps.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
+    's0-db/verify-catalog-runtime-switch.mjs', 'signing/cloud-capability-manifest.mjs', 'signing/verify-capability-manifest.mjs',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-startup-readback.mjs', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
 }
 INSTANCE = json.loads((HERE / 'instances' / 'andy-production.json').read_text())

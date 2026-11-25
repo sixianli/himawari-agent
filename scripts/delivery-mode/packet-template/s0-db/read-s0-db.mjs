@@ -179,6 +179,21 @@ export function capabilityManifestInvariant(manifest, runtimeRoot) {
   return invariant;
 }
 
+export function readGrantsWithoutSnapshot(database, configuration, workspace) {
+  const directoryGrants = [];
+  for (const [routeKey, route] of Object.entries(configuration.runPolicy ?? {})) {
+    if (!route || typeof route !== "object" || typeof route.capabilityRef !== "string" || typeof route.grantId !== "string") continue;
+    assert(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(route.grantId), "__PKT_LABEL_UPPER___DB_GRANT_ID_INVALID");
+    const stored = one(database, "SELECT revision,value_json FROM product_state_records WHERE key=? AND owner_id=? AND agent_id=?", [`host-workspace:directory-grant:${route.grantId}`, configuration.ownerId, configuration.agentId]);
+    const grant = JSON.parse(stored.value_json);
+    assert.equal(grant.id, route.grantId, "__PKT_LABEL_UPPER___DB_GRANT_ID_MISMATCH");
+    assert(typeof workspace?.device === "string" && typeof workspace.inode === "string" && grant.canonicalRootId === `${workspace.device}:${workspace.inode}`, "__PKT_LABEL_UPPER___DB_GRANT_ROOT_NOT_BOUND");
+    directoryGrants.push({ routeKey, grantId: grant.id, capabilityRef: route.capabilityRef, capabilityVersion: route.capabilityVersion, revision: grant.revision, stateRevision: stored.revision, hostId: grant.hostId, canonicalRootId: grant.canonicalRootId, displayPath: grant.displayPath, device: workspace.device, inode: workspace.inode, pathPolicy: grant.pathPolicy, mountPolicy: grant.mountPolicy, expiresAt: grant.expiresAt, revokedAt: grant.revokedAt, readAllowed: Array.isArray(grant.operations) && grant.operations.includes("read"), hostMatchesRoute: grant.hostId === route.hostId, rootMatchesSnapshot: workspace.path === grant.displayPath, currentlyUsable: grant.revokedAt === null && Date.parse(grant.expiresAt) > Date.now(), metadataSha256: createHash("sha256").update(stored.value_json).digest("hex") });
+  }
+  assert.equal(directoryGrants.length, 1, "__PKT_LABEL_UPPER___DB_GRANT_ROUTE_SET_CHANGED");
+  return directoryGrants;
+}
+
 export function productionS0() {
   assert.equal(process.argv.length, 2, "__PKT_LABEL_UPPER___DB_ARGUMENT_INVALID");
   assert.equal(process.getuid(), fixed.uid, "__PKT_LABEL_UPPER___DB_ACTOR_INVALID");
@@ -195,17 +210,23 @@ export function productionS0() {
     database.exec("BEGIN");
     const result = readS0State(database, fixed);
     assert.equal(result.authority.deploymentId, configuration.deploymentId, "__PKT_LABEL_UPPER___DB_CONFIG_DEPLOYMENT_MISMATCH");
-    const snapshotPath = configuration.capabilityDeployment?.snapshotPath;
-    assert.equal(snapshotPath, `${fixed.stateRoot}/deployment/capability-deployment.json`, "__PKT_LABEL_UPPER___DB_SNAPSHOT_PATH_CHANGED");
-    const snapshotBytes = readFileSync(snapshotPath);
-    assert.equal(configuration.capabilityDeployment.sha256, `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`, "__PKT_LABEL_UPPER___DB_SNAPSHOT_DIGEST_CHANGED");
-    result.authorization = readRouteAuthorization(database, configuration, JSON.parse(snapshotBytes), (filename) => {
-      assert(filename.startsWith(`${fixed.runtimeRoot}/`), "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNAPPROVED");
-      assert.equal(realpathSync(filename), filename, "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNSAFE");
-      const info = lstatSync(filename);
-      assert(info.isFile() && info.uid === 0 && !(info.mode & 0o022), "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNSAFE");
-      return createHash("sha256").update(readFileSync(filename)).digest("hex");
-    }, `${catalogRegistrationPrefix}/lib/himawari-agent`);
+    const firstTools = configuration.capabilityDeployment === undefined;
+    if (firstTools) {
+      assert.equal(one(database, "SELECT count(*) AS count FROM capability_declarations WHERE owner_id=? AND agent_id=?", [configuration.ownerId, configuration.agentId]).count, 0, "__PKT_LABEL_UPPER___DB_CAPABILITIES_REGISTERED_WITHOUT_SNAPSHOT");
+      result.authorization = { directoryGrants: readGrantsWithoutSnapshot(database, configuration, readExistingWorkspace()), capabilities: [] };
+    } else {
+      const snapshotPath = configuration.capabilityDeployment?.snapshotPath;
+      assert.equal(snapshotPath, `${fixed.stateRoot}/deployment/capability-deployment.json`, "__PKT_LABEL_UPPER___DB_SNAPSHOT_PATH_CHANGED");
+      const snapshotBytes = readFileSync(snapshotPath);
+      assert.equal(configuration.capabilityDeployment.sha256, `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`, "__PKT_LABEL_UPPER___DB_SNAPSHOT_DIGEST_CHANGED");
+      result.authorization = readRouteAuthorization(database, configuration, JSON.parse(snapshotBytes), (filename) => {
+        assert(filename.startsWith(`${fixed.runtimeRoot}/`), "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNAPPROVED");
+        assert.equal(realpathSync(filename), filename, "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNSAFE");
+        const info = lstatSync(filename);
+        assert(info.isFile() && info.uid === 0 && !(info.mode & 0o022), "__PKT_LABEL_UPPER___DB_RUNNER_PATH_UNSAFE");
+        return createHash("sha256").update(readFileSync(filename)).digest("hex");
+      }, `${catalogRegistrationPrefix}/lib/himawari-agent`);
+    }
     database.exec("COMMIT");
     result.service = readServiceFiles(bytes);
     result.workspace = readExistingWorkspace();
