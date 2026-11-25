@@ -165,7 +165,6 @@ async function fixture(
       memoryQueryRef: `payload-query-${suffix}`,
       memoryQueryTerms: ["dinner"],
       memoryLimit: 5,
-      maxSelectedMemories: 2,
       capabilities: [],
       correlationId: `correlation-${suffix}`,
       causationId: `trigger-event-${suffix}`,

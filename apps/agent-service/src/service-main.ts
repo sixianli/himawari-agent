@@ -131,8 +131,6 @@ import { createProductionCapabilityReactivationVerifier } from "./production-cap
 import {
   DEFAULT_TOOL_RESULT_SHARE,
   MEMORY_SNAPSHOT_WINDOW_SHARE,
-  RELATED_MEMORY_MAXIMUM_CHARACTERS,
-  RELATED_MEMORY_WINDOW_SHARE,
   ProductionConversationTools,
   toolResultCharacters,
 } from "./production-conversation-tools.js";
@@ -1606,13 +1604,6 @@ export async function startTenantRuntime(
         primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
         MEMORY_SNAPSHOT_WINDOW_SHARE,
       );
-      const relatedMemoryCharacters = Math.min(
-        RELATED_MEMORY_MAXIMUM_CHARACTERS,
-        toolResultCharacters(
-          primaryModel && "contextWindow" in primaryModel ? primaryModel.contextWindow : undefined,
-          RELATED_MEMORY_WINDOW_SHARE,
-        ),
-      );
       const conversationTools = conversationTurns
         ? new ProductionConversationTools({
             ownerId: configuration.ownerId,
@@ -2536,7 +2527,6 @@ export async function startTenantRuntime(
           configuration: realEvalConfiguration,
           scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
           memoryLimit: configuration.runPolicy?.memoryLimit ?? 1,
-          maxSelectedMemories: configuration.runPolicy?.maxSelectedMemories ?? 0,
           recallEstimateMicros: configuration.modelDescriptors.some(
             ({ role }) => role === "embedding",
           )
@@ -3198,7 +3188,6 @@ export async function startTenantRuntime(
       const live = new ExecutionLiveFeed();
       runs = createProductionRunComposition({
         memorySnapshotCharacters,
-        relatedMemoryCharacters,
         externalContent,
         ...(configuration.runPolicy?.toolRefusals
           ? { toolRefusalLimits: configuration.runPolicy.toolRefusals }

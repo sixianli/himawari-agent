@@ -458,12 +458,11 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 {
   "version": "owner-policy-v1",
   "systemInstruction": "按用户请求执行已授权任务。",
-  "memoryLimit": 20,
-  "maxSelectedMemories": 5
+  "memoryLimit": 20
 }
 ~~~
 
-系统指令不得包含凭据。Memory 选取数不得超过检索数；模型能看到的记忆分类上限固定为 sensitive，restricted 不给模型，旧配置项 `maxMemoryClassification` 已退役，写了也不生效（[ADR 0193](../adr/0193-memory-is-visible-to-the-model.md)）。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
+系统指令不得包含凭据。每轮带给模型的相关记忆不设条数，过了相关门槛的都带，旧配置项 `maxSelectedMemories` 已退役，写了也不生效（[ADR 0286](../adr/0286-the-main-model-reads-and-writes-memory-itself.md)）；模型能看到的记忆分类上限固定为 sensitive，restricted 不给模型，旧配置项 `maxMemoryClassification` 已退役，写了也不生效（[ADR 0193](../adr/0193-memory-is-visible-to-the-model.md)）。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
 
 启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
 

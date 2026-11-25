@@ -469,7 +469,6 @@ export interface RunPolicyConfiguration {
   readonly systemInstruction: string;
   readonly freezeThreadPrompts?: boolean;
   readonly memoryLimit: number;
-  readonly maxSelectedMemories: number;
   readonly retiredKeys?: readonly string[];
 }
 

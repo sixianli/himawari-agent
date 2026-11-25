@@ -1841,17 +1841,15 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
           ),
         }),
     memoryLimit,
-    maxSelectedMemories: integer(
-      input["maxSelectedMemories"],
-      "configuration.runPolicy.maxSelectedMemories",
-      0,
-      memoryLimit,
-    ),
     ...retiredRunPolicyKeys(input),
   });
 }
 
-const RETIRED_RUN_POLICY_KEYS = ["maxMemoryClassification", "deliveryTiming"] as const;
+const RETIRED_RUN_POLICY_KEYS = [
+  "maxMemoryClassification",
+  "deliveryTiming",
+  "maxSelectedMemories",
+] as const;
 
 function retiredRunPolicyKeys(input: JsonRecord): {
   readonly retiredKeys?: readonly string[];

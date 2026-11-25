@@ -81,49 +81,6 @@ function createService(
   };
 }
 
-function createBudgetedService(relatedMemoryCharacters: number) {
-  const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
-  const trace = new SessionTraceRecorder({
-    trace: adapters.trace,
-    artifacts: adapters.runPayloadArtifacts,
-    protector: adapters.payloadProtector,
-    audit: adapters.audit,
-    clock: adapters.clock,
-    ids: adapters.ids,
-  });
-  return {
-    adapters,
-    service: new ContextFormationService({
-      memory: adapters.memory,
-      trace,
-      artifacts: adapters.runPayloadArtifacts,
-      payloads: adapters.payload,
-      protector: adapters.payloadProtector,
-      clock: adapters.clock,
-      ids: adapters.ids,
-      relatedMemoryCharacters,
-    }),
-  };
-}
-
-async function storeText(
-  adapters: ReturnType<typeof createReferenceAdapterSet>,
-  ref: string,
-  text: string,
-): Promise<void> {
-  await adapters.payload.put(
-    await adapters.payloadProtector.protect({
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      ref,
-      contentType: "text/plain",
-      dataClassification: "private",
-      plaintext: new TextEncoder().encode(text),
-      createdAt: T0,
-    }),
-  );
-}
-
 function request(sourceType: "user_message" | "schedule" | "external_event") {
   return {
     ownerId: OWNER_ID,
@@ -151,7 +108,6 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
     memoryQueryRef: "payload-memory-query-01",
     memoryQueryTerms: ["beef", "dinner"],
     memoryLimit: 10,
-    maxSelectedMemories: 2,
     capabilities: [
       {
         ref: "restaurant-search",
@@ -496,65 +452,25 @@ describe("Task 9 Memory and context formation", () => {
     });
   });
 
-  it("[ADR-0286] puts related memories in by relevance until the character budget is used, then stops", async () => {
-    const formedWith = async (budget: number) => {
-      const { adapters, service } = createBudgetedService(budget);
-      await seedMemory(adapters.memory, {
-        id: "memory-beef",
-        contentRef: "payload-memory-beef",
-        sourceRef: "trace-user-preference-beef",
-        searchTerms: ["beef", "restaurant"],
-        dataClassification: "private",
-      });
-      await seedMemory(adapters.memory, {
-        id: "memory-dinner",
-        contentRef: "payload-memory-dinner",
-        sourceRef: "trace-user-dinner",
-        searchTerms: ["dinner"],
-        dataClassification: "private",
-      });
-      await storeText(adapters, "payload-memory-beef", "主人喜欢吃牛肉，常去银座那家店。");
-      await storeText(adapters, "payload-memory-dinner", "主人每周五晚上和家人一起吃饭。");
-      return service.form(request("user_message"));
-    };
-    const tight = await formedWith(20);
-    expect(tight.candidates.map(({ id }) => id)).toEqual(["memory-beef", "memory-dinner"]);
-    expect(tight.selected.map(({ id }) => id)).toEqual(["memory-beef"]);
-    const roomy = await formedWith(40);
-    expect(roomy.selected.map(({ id }) => id)).toEqual(["memory-beef", "memory-dinner"]);
-    const none = await formedWith(5);
-    expect(none.selected).toEqual([]);
-  });
-
-  it("writes one ledger row naming the memories cut by the selection limit", async () => {
+  it("[ADR-0286] brings every memory that clears the relevance threshold, with no count cap, and leaves out unrelated ones", async () => {
     const written: DecisionLedgerWrite[] = [];
     const { adapters, service } = createService(undefined, {
       append: async (write) => {
         written.push(write);
       },
     });
-    for (const id of ["memory-a", "memory-b", "memory-c"])
+    const related = Array.from({ length: 7 }, (_, index) => `memory-beef-${index}`);
+    for (const id of [...related, "memory-piano"])
       await seedMemory(adapters.memory, {
         id,
         contentRef: `payload-${id}`,
         sourceRef: `trace-${id}`,
-        searchTerms: ["beef"],
+        searchTerms: [id === "memory-piano" ? "piano" : "beef"],
         dataClassification: "private",
       });
     const formed = await service.form(request("user_message"));
-    const cut = formed.candidates
-      .map(({ id }) => id)
-      .filter((id) => !formed.selected.some((memory) => memory.id === id));
-    expect(cut).toHaveLength(1);
-    expect(written).toHaveLength(1);
-    expect(written[0]).toMatchObject({
-      kind: "context_truncation",
-      outcome: "truncated",
-      reasonCode: "selection_limit_reached",
-      subjectRef: RUN_ID,
-      inputs: { memoryIds: cut, ruleIds: [] },
-      contentRef: null,
-    });
+    expect(formed.selected.map(({ id }) => id).sort()).toEqual([...related].sort());
+    expect(written).toEqual([]);
   });
 
   it("writes no ledger row when nothing was cut or only classification excluded a memory", async () => {

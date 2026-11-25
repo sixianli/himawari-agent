@@ -1243,7 +1243,6 @@ async function openInstalledMain(
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     ...(options.coding
       ? {
           coding: {

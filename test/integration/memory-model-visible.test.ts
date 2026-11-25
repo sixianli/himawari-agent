@@ -187,7 +187,6 @@ async function formedRun(
     memoryQueryRef: "payload-trigger",
     memoryQueryTerms: ["阿莫西林", "wifi"],
     memoryLimit: 10,
-    maxSelectedMemories: 5,
     capabilities: [],
     correlationId: "correlation-visible",
     causationId: "trigger-visible",

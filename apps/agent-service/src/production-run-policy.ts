@@ -153,7 +153,6 @@ export function createProductionRunPolicy(options: {
       runtimeEnvironmentRef: environmentArtifact.payloadRef,
       capabilityHandleRefs: handles.map(({ ref }) => ref),
       memoryLimit: policy.memoryLimit,
-      maxSelectedMemories: policy.maxSelectedMemories,
     });
   };
 }

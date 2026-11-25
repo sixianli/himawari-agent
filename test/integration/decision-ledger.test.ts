@@ -142,7 +142,6 @@ function formationRequest(round: number) {
     memoryQueryRef: `payload-memory-query-${round}`,
     memoryQueryTerms: ["tea"],
     memoryLimit: 5,
-    maxSelectedMemories: 5,
     capabilities: [],
     correlationId: `correlation-${round}`,
     causationId: `cause-${round}`,
