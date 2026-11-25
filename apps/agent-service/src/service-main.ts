@@ -113,6 +113,7 @@ import {
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import { OwnerAllowances } from "./owner-allowances.js";
 import { monitorFollowUpCacheHits } from "./cache-hit-monitor.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import { COMMAND_SILENCE_CHECK_INTERVAL_MS, CommandSilenceWatch } from "./command-silence-watch.js";
@@ -1741,6 +1742,13 @@ export async function startTenantRuntime(
         clock,
         ids,
         intentLifetimeMs: configuration.deadlines.workerRequestMs,
+        allowances: new OwnerAllowances({
+          configuration,
+          state: repository,
+          store: repository.authorizationStore(),
+          authority: () => invocationAuthority().lease,
+          clock,
+        }),
       });
       deviceActions = createProductionDeviceActions({
         scope: perceptionScope,
@@ -3549,6 +3557,13 @@ export async function startTenantRuntime(
           actionRules: new BuiltInActionRuleSwitches({
             configuration,
             state: repository,
+            authority: () => invocationAuthority().lease,
+            clock,
+          }),
+          allowances: new OwnerAllowances({
+            configuration,
+            state: repository,
+            store: repository.authorizationStore(),
             authority: () => invocationAuthority().lease,
             clock,
           }),

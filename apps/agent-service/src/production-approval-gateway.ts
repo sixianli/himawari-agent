@@ -94,12 +94,14 @@ import {
   type ProductionWebPushControl,
 } from "./production-web-push-control.js";
 import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
+import { OwnerAllowances } from "./owner-allowances.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
 export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.list",
   "approval.detail",
   "approval.respond",
+  "approval.allowance.set",
   "search.authorization.read",
   "search.authorization.set",
 ] as const);
@@ -308,6 +310,14 @@ export function createProductionApprovalGateway(options: {
           authentication.subjectId !== command.actor.actorId
         )
           return unsupported();
+        const allowances = new OwnerAllowances({
+          configuration: options.configuration,
+          state: repository,
+          store: authorization,
+          authority: options.executionAuthority,
+          clock,
+        });
+        if (allowances.handles(command)) return allowances.execute(command);
         if (command.type.startsWith("memory.") && options.memoryControl)
           return options.memoryControl.execute(command);
         if (command.type.startsWith("login.") && options.loginDevicesControl)

@@ -7,10 +7,14 @@ import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../gatewa
 import type { MessageId } from "../i18n/message-ids.js";
 import { queryMessage } from "../messages.js";
 import {
+  APPROVAL_ALLOWANCE_DAYS,
+  type ApprovalAllowFor,
+  approvalAllowanceChoices,
   approvalsDecidedTogether,
   findPendingRunApprovals,
   type RunApproval,
   respondToRunApproval,
+  setApprovalAllowance,
 } from "../run-approval.js";
 import { setSearchAuthorization } from "../search-authorization.js";
 import { ActionButton } from "./primitives.js";
@@ -46,10 +50,14 @@ export function RunApprovalCard({
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rememberSearch, setRememberSearch] = useState(true);
+  const [allowFor, setAllowFor] = useState<ApprovalAllowFor>("once");
   const isSearch =
     (snapshot?.payload.intent.operation === "web_search" ||
       snapshot?.payload.intent.operation === "web_fetch") &&
     snapshot.payload.intent.sideEffect === "none";
+  const choices: readonly ApprovalAllowFor[] =
+    snapshot && !isSearch ? approvalAllowanceChoices(snapshot) : ["once"];
+  const chosen = choices.includes(allowFor) ? allowFor : "once";
   const responseLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -121,9 +129,23 @@ export function RunApprovalCard({
         if (result.status !== "accepted" && result.status !== "replayed")
           throw new Error(message("mutation.rejected"));
       }
+      let allowanceSaved = true;
+      if (decision === "approved" && chosen !== "once")
+        for (const approval of group) {
+          const result = await setApprovalAllowance({
+            client,
+            configuration,
+            snapshot: approval,
+            allowFor: chosen,
+          }).catch(() => null);
+          if (result?.status !== "accepted" && result?.status !== "replayed")
+            allowanceSaved = false;
+        }
+      setAllowFor("once");
       setGroup([]);
       setContinuing(true);
       await onSettled();
+      if (!allowanceSaved) setError(message("chat.allowance.failed"));
     } catch (caught) {
       if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
         onUnauthorized();
@@ -220,6 +242,27 @@ export function RunApprovalCard({
               </label>
             </>
           ) : null}
+          {choices.length > 1 ? (
+            <fieldset className="approval-scope">
+              <legend>{message("chat.allowance.legend")}</legend>
+              {choices.map((choice) => (
+                <label key={choice}>
+                  <input
+                    type="radio"
+                    name={`approval-scope-${runId}`}
+                    value={choice}
+                    checked={chosen === choice}
+                    disabled={busy}
+                    onChange={() => setAllowFor(choice)}
+                  />
+                  {message("chat.allowance.option", {
+                    scope: choice,
+                    days: String(APPROVAL_ALLOWANCE_DAYS),
+                  })}
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
           <div className="actions">
             <ActionButton
               disabled={busy || connection !== "connected"}
@@ -227,9 +270,11 @@ export function RunApprovalCard({
             >
               {isSearch
                 ? message("chat.search.enable")
-                : group.length > 1
-                  ? message("chat.allowAll", { count: String(group.length) })
-                  : message("chat.allowOnce")}
+                : chosen !== "once"
+                  ? message("chat.allowance.allow")
+                  : group.length > 1
+                    ? message("chat.allowAll", { count: String(group.length) })
+                    : message("chat.allowOnce")}
             </ActionButton>
             {draft && onPreview ? (
               <ActionButton variant="quiet" onClick={() => draft && onPreview(draft)}>

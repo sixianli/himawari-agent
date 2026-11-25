@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocaleFormat } from "../i18n/locale-format.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, OwnerRuleAction, PendingProposal, ProposalAction } from "../memory.js";
 import { ActionButton } from "./primitives.js";
@@ -292,6 +293,49 @@ export function BuiltInActionRulesSection({
               </label>
             </div>
           )}
+        </section>
+      ))}
+    </section>
+  );
+}
+
+export function OwnerAllowancesSection({
+  memory,
+  message,
+}: {
+  memory: Pick<MemoryModel, "allowances" | "respondRule" | "busy">;
+  message: Message;
+}) {
+  const { moment } = useLocaleFormat();
+  if (!memory.allowances.length) return null;
+  const title = message("rules.allowances.title", { count: memory.allowances.length });
+  return (
+    <section id="memory-allowances" className="memory-confirm" aria-label={title}>
+      <h4>{title}</h4>
+      <p className="settings-note">{message("rules.allowances.note")}</p>
+      {memory.allowances.map((allowance) => (
+        <section
+          className="memory-card"
+          key={allowance.allowanceId}
+          data-allowance={allowance.allowanceId}
+          data-scope={allowance.allowFor}
+        >
+          <p className="memory-text">{allowance.title}</p>
+          <small>
+            {message("rules.allowances.scope", {
+              scope: allowance.allowFor,
+              until: allowance.expiresAt ? moment(allowance.expiresAt) : "",
+            })}
+          </small>
+          <div className="actions">
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.respondRule(allowance.allowanceId, "revoke")}
+            >
+              {message("rules.allowances.revoke")}
+            </ActionButton>
+          </div>
         </section>
       ))}
     </section>

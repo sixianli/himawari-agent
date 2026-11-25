@@ -173,6 +173,11 @@ export const messages = {
   "chat.search.enable": "允许联网搜索",
   "chat.search.revoke": "撤销联网搜索授权",
   "chat.allowOnce": "允许这一次",
+  "chat.allowance.legend": "这次同意管多久",
+  "chat.allowance.option":
+    "{scope, select, once {只这一次} this_task {这件事里都行} days {{days} 天内都行} other {以后都行}}",
+  "chat.allowance.allow": "同意",
+  "chat.allowance.failed": "这次已经同意了，但没能记下同意的范围，下次同样的事还会问你",
   "chat.allowAll": "允许这 {count} 次",
   "chat.approval.batch": "这一步有 {count} 个同样的操作，一次允许就都放行。",
   "chat.approval.searchBatch": "这一步要搜索 {count} 次，一次允许就都放行。",
@@ -878,6 +883,12 @@ export const messages = {
   "rules.reconfirm": "重新确认",
   "rules.undo": "撤销",
   "rules.builtIn.title": "内置规则 · {count} 条",
+  "rules.allowances.title": "你给过的同意 · {count} 条",
+  "rules.allowances.note":
+    "同样的事在范围内不再问你。读过邮件、网页这类外来内容后，“几天内”和“以后都行”不算数，照样问你。",
+  "rules.allowances.scope":
+    "{scope, select, this_task {只在那件事里} days {到 {until}} other {以后都行}}",
+  "rules.allowances.revoke": "收回",
   "rules.builtIn.note":
     "这几条写在程序里，决定 Himawari 自己动手做事之前要不要先问你。每条都带该命中和不该命中的例子，每次构建都会逐条跑一遍。“直接做”的那几条可以改成每次都先问你；“先问你”和“不做”的是安全底线，不能放松。",
   "rules.builtIn.name":
