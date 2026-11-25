@@ -47,3 +47,4 @@
 "chat.talk.herTurn" = "她在说 · 开口就能打断";
 "chat.talk.muted" = "静音了";
 "chat.talk.failed" = "没能开始语音对话，再试一次";
+"chat.option.chosen" = "选了";

@@ -68,3 +68,18 @@ struct MessageOptionsView: View {
         }
     }
 }
+
+struct ChosenOptionBubble: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: DesignTokens.Options.chosenCaptionGap) {
+            Text(L.text("chat.option.chosen"))
+                .hmType(DesignTokens.TypeScale.caption)
+                .foregroundStyle(Color.hmMuted)
+                .padding(.trailing, DesignTokens.Options.chosenCaptionInset)
+            OwnerBubble(text: text)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}

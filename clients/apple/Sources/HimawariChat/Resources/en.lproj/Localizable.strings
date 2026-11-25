@@ -47,3 +47,4 @@
 "chat.talk.herTurn" = "She’s talking · just speak to cut in";
 "chat.talk.muted" = "Muted";
 "chat.talk.failed" = "Couldn’t start talking. Try again";
+"chat.option.chosen" = "You chose";

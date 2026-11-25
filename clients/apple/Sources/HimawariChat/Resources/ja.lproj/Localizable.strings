@@ -47,3 +47,4 @@
 "chat.talk.herTurn" = "話しています · 話しかければ止まります";
 "chat.talk.muted" = "ミュート中";
 "chat.talk.failed" = "音声で話せませんでした。もう一度お試しください";
+"chat.option.chosen" = "選んだ";

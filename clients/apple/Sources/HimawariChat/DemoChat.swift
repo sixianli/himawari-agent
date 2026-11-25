@@ -62,13 +62,14 @@ public enum DemoChatFixtures {
         ]
     }
 
-    private static func message(_ id: String, _ sequence: Int, role: String, runId: String? = nil, at date: Date, options: [String: Any]? = nil) -> [String: Any] {
+    private static func message(_ id: String, _ sequence: Int, role: String, runId: String? = nil, at date: Date, options: [String: Any]? = nil, chosenFrom: [String: String]? = nil) -> [String: Any] {
         var object: [String: Any] = [
             "messageId": id, "sequence": sequence, "role": role, "contentRef": "text:\(id)",
             "status": "committed", "committedAt": iso(date),
         ]
         if let runId { object["runId"] = runId }
         if let options { object["options"] = options }
+        if let chosenFrom { object["chosenFrom"] = chosenFrom }
         return object
     }
 
@@ -200,7 +201,7 @@ public enum DemoChatFixtures {
                     ("o2", "回复 田中：改到周五", "给田中回邮件：改到周五"),
                     ("o3", "先记进日历", nil),
                 ])),
-                message("m2", 2, role: "owner", at: start.addingTimeInterval(40)),
+                message("m2", 2, role: "owner", at: start.addingTimeInterval(40), chosenFrom: ["setId": "set-2", "optionId": "o1"]),
                 message("m3", 3, role: "agent", at: start.addingTimeInterval(52)),
             ],
             runs: [],

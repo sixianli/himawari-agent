@@ -38,6 +38,14 @@ import Testing
     }
 
     @Test func aMessageWithoutOptionsStillDecodes() throws {
-        #expect(try decode("{\(base)}").options == nil)
+        let message = try decode("{\(base)}")
+        #expect(message.options == nil)
+        #expect(message.chosenFrom == nil)
+    }
+
+    @Test func theOwnersPickPointsBackToItsOption() throws {
+        let owner = base.replacingOccurrences(of: #""role":"agent""#, with: #""role":"owner""#)
+        let message = try decode(#"{\#(owner),"chosenFrom":{"setId":"s1","optionId":"o1"}}"#)
+        #expect(message.chosenFrom == ChosenOption(setId: "s1", optionId: "o1"))
     }
 }

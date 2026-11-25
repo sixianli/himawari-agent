@@ -147,7 +147,13 @@ public struct ThreadMessage: Codable, Sendable, Equatable, Identifiable {
     public let runId: String?
     public let committedAt: String
     public var options: MessageOptions? = nil
+    public var chosenFrom: ChosenOption? = nil
     public var id: String { messageId }
+}
+
+public struct ChosenOption: Codable, Sendable, Equatable {
+    public let setId: String
+    public let optionId: String
 }
 
 public struct MessageOptions: Codable, Sendable, Equatable {

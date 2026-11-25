@@ -360,6 +360,8 @@ public enum DesignTokens {
 
     public enum Options {
         public static let afterMessage: CGFloat = 14
+        public static let chosenCaptionGap: CGFloat = 4
+        public static let chosenCaptionInset: CGFloat = 8
         public static let gap: CGFloat = 8
         public static let height: CGFloat = 44
         public static let icon: CGFloat = 16

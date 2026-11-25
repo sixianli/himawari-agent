@@ -268,6 +268,8 @@ public struct ChatView: View {
                                 MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
                                 MessageOptionsView(options: options, choose: choose(for: message))
                             }
+                        } else if message.role == .owner, message.chosenFrom != nil {
+                            ChosenOptionBubble(text: store.texts[message.contentRef] ?? "")
                         } else {
                             MessageRow(role: message.role, text: store.texts[message.contentRef], failed: message.status == .failed)
                         }
