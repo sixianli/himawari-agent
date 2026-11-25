@@ -83,13 +83,14 @@ for directory in work scripts source evidence tools browsers pi-tools-bin materi
 done
 
 step builder-python
-read -r python_url python_sha < <(python3 -I - "$lock" "$platform" <<'PYTHON'
+read -r python_url python_sha python_version < <(python3 -I - "$lock" "$platform" <<'PYTHON'
 import json, sys
-artifact = json.load(open(sys.argv[1]))['python']['artifacts'][sys.argv[2]]
-print(artifact['url'], artifact['sha256'])
+lock = json.load(open(sys.argv[1]))['python']
+artifact = lock['artifacts'][sys.argv[2]]
+print(artifact['url'], artifact['sha256'], lock['version'])
 PYTHON
 )
-python_material=$builder_root/materials/python-3.12.10.tar.gz
+python_material=$builder_root/materials/python-$python_version.tar.gz
 if [[ ! -f "$python_material" || "$(sha256sum "$python_material" | cut -d ' ' -f 1)" != "$python_sha" ]]; then
   curl -fsSL "$python_url" -o "$python_material.part"
   [[ "$(sha256sum "$python_material.part" | cut -d ' ' -f 1)" == "$python_sha" ]] || { rm -f "$python_material.part"; echo "PREPARE_HOST_PYTHON_DIGEST_MISMATCH" >&2; exit 1; }
@@ -97,6 +98,64 @@ if [[ ! -f "$python_material" || "$(sha256sum "$python_material" | cut -d ' ' -f
   chown "$build_user:$build_user" "$python_material"
 fi
 echo "PREPARE_HOST_PYTHON sha256=$python_sha"
+
+step builder-tools
+tools_dir=$builder_root/tools
+if [[ ! -x "$tools_dir/bin/node" ]]; then
+  read -r node_url node_sha node_version < <(python3 -I - "$lock" "$platform" <<'PYTHON'
+import json, sys
+node = json.load(open(sys.argv[1]))['node']
+version = node['baseline']
+artifact = node['releases'][version]['artifacts'][sys.argv[2]]
+print(artifact['url'], artifact['sha256'], version)
+PYTHON
+)
+  bootstrap=$(mktemp -d)
+  curl -fsSL "$node_url" -o "$bootstrap/node.tar.gz"
+  [[ "$(sha256sum "$bootstrap/node.tar.gz" | cut -d ' ' -f 1)" == "$node_sha" ]] || { rm -rf "$bootstrap"; echo "PREPARE_HOST_NODE_DIGEST_MISMATCH" >&2; exit 1; }
+  tar -xzf "$bootstrap/node.tar.gz" -C "$bootstrap" --no-same-owner
+  chmod -R a+rX "$bootstrap"
+  bootstrap_node=$(echo "$bootstrap"/node-v*/bin/node)
+  rm -rf "$tools_dir"
+  runuser -u "$build_user" -- env -i HOME="$build_home" PATH=/usr/bin:/bin bash -c 'cd "$1" && "$2" scripts/ci/install-tools.mjs --directory "$3"' _ "$source_dir" "$bootstrap_node" "$tools_dir" >/dev/null
+  rm -rf "$bootstrap"
+fi
+tools_node_version=$("$tools_dir/bin/node" --version)
+echo "PREPARE_HOST_TOOLS node=$tools_node_version"
+
+step builder-fd
+toolbin=$builder_root/pi-tools-bin
+python3 -I - "$source_dir/scripts/delivery-mode/fd-pins.json" "$platform" "$toolbin" <<'PYTHON'
+import hashlib, io, json, os, shutil, sys, tarfile, urllib.request
+pins = json.load(open(sys.argv[1]))
+arch = sys.argv[2].split('-', 1)[1]
+pin = pins['platforms'][arch]
+target = os.path.join(sys.argv[3], 'fd')
+def sha(data): return hashlib.sha256(data).hexdigest()
+if os.path.isfile(target) and sha(open(target, 'rb').read()) == pin['binarySha256']:
+    print('PREPARE_HOST_FD already=' + pin['binarySha256'])
+    raise SystemExit(0)
+name = 'fd-v%s-%s' % (pins['version'], pin['triple'])
+archive = urllib.request.urlopen(pins['source'] + name + '.tar.gz', timeout=120).read()
+if sha(archive) != pin['archiveSha256']:
+    sys.exit('PREPARE_HOST_FD_ARCHIVE_DIGEST_MISMATCH')
+with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+    binary = bundle.extractfile(name + '/fd').read()
+if sha(binary) != pin['binarySha256']:
+    sys.exit('PREPARE_HOST_FD_BINARY_DIGEST_MISMATCH')
+with open(target + '.part', 'wb') as out:
+    out.write(binary)
+os.chmod(target + '.part', 0o755)
+os.replace(target + '.part', target)
+print('PREPARE_HOST_FD sha256=' + pin['binarySha256'])
+PYTHON
+chown "$build_user:$build_user" "$toolbin/fd"
+
+step builder-browsers
+runuser -u "$build_user" -- env -i HOME="$build_home" PATH="$tools_dir/bin:/usr/bin:/bin" bash -c 'cd "$1" && bash scripts/delivery-mode/hermes/install-dependencies-if-changed.sh "$1" "$2" "$3/prepare-dependencies-$4"' _ "$source_dir" "$tools_dir" "$builder_root/evidence" "$(date +%s)"
+"$tools_dir/bin/node" "$source_dir/node_modules/playwright/cli.js" install-deps chromium >/dev/null
+runuser -u "$build_user" -- env -i HOME="$build_home" PATH="$tools_dir/bin:/usr/bin:/bin" PLAYWRIGHT_BROWSERS_PATH="$builder_root/browsers" "$tools_dir/bin/node" "$source_dir/node_modules/playwright/cli.js" install chromium >/dev/null
+echo "PREPARE_HOST_BROWSERS chromium=$(ls "$builder_root/browsers" | grep -c '^chromium')"
 
 step signing-key
 qualification_root=/var/lib/himawari/qualification
