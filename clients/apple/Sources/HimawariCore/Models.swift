@@ -198,12 +198,11 @@ public struct MessageOptions: Codable, Sendable, Equatable {
         public let state: State
         public var id: String { optionId }
         public var isDismiss: Bool { optionId == MessageOptions.dismissId }
+        public var isOpen: Bool { state == .open }
     }
 
     public let setId: String
     public let items: [Item]
-
-    public var isOpen: Bool { items.allSatisfy { $0.state == .open } }
 
     public func choiceKey(threadId: String, messageId: String, item: Item) -> String? {
         guard item.action != nil else { return nil }

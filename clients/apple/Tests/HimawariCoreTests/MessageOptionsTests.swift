@@ -23,17 +23,17 @@ import Testing
         #expect(options.items.map { $0.action != nil } == [true, false, false])
         #expect(options.items.map(\.isDismiss) == [false, false, true])
         #expect(options.items[1].reason == "你周四下午空着")
-        #expect(options.isOpen)
+        #expect(options.items.map(\.isOpen) == [true, true, true])
     }
 
-    @Test func aChosenOrStaleSetIsNoLongerOpen() throws {
+    @Test func onlyTheChosenOrStaleOptionStopsBeingTappable() throws {
         for state in ["chosen", "stale", "something-new"] {
             let message = try decode("""
             {\(base),"options":{"setId":"s1","items":[
               {"optionId":"o1","label":"查哪家最便宜","reason":null,"action":null,"state":"\(state)"},
               {"optionId":"dismiss","label":"不用了","reason":null,"action":null,"state":"open"}]}}
             """)
-            #expect(message.options?.isOpen == false)
+            #expect(message.options?.items.map(\.isOpen) == [false, true])
         }
     }
 
