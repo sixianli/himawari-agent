@@ -27,8 +27,18 @@ export interface SubthreadRecord {
   readonly askedAt: string | null;
   readonly budgetMicros: number | null;
   readonly budgetHitAt: string | null;
+  readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface SubthreadExchangeRecord {
+  readonly id: string;
+  readonly threadId: string;
+  readonly direction: string;
+  readonly kind: string;
+  readonly textRef: string;
+  readonly createdAt: string;
 }
 
 export type ResultGoneReason = "stopped" | "returned" | "stuck";
@@ -113,6 +123,7 @@ export interface SubthreadStorePort {
       readonly threadId: string;
       readonly parentThreadId: string;
       readonly matter: string;
+      readonly title?: string;
       readonly openKey: string;
       readonly openedByRunId: string;
       readonly briefRef: string;
@@ -177,6 +188,19 @@ export interface SubthreadStorePort {
     input: OwnerRuleScope & { readonly parentThreadId: string },
   ): Promise<readonly string[]>;
   spentMicros(input: OwnerRuleScope & { readonly threadId: string }): Promise<number>;
+  recordExchange(
+    input: OwnerRuleScope & {
+      readonly id: string;
+      readonly threadId: string;
+      readonly direction: string;
+      readonly kind: string;
+      readonly textRef: string;
+      readonly now: string;
+    },
+  ): Promise<void>;
+  listExchanges(
+    input: OwnerRuleScope & { readonly threadId: string; readonly limit: number },
+  ): Promise<readonly SubthreadExchangeRecord[]>;
   markStuck(
     input: OwnerRuleScope & {
       readonly threadId: string;

@@ -1103,6 +1103,8 @@ export class SqliteDurableAdapters {
       listWaiting: (input) => this.context.read("subthread.listWaiting", input),
       listQueued: (input) => this.context.read("subthread.listQueued", input),
       spentMicros: (input) => this.context.read("subthread.spentMicros", input),
+      listExchanges: (input) => this.context.read("subthread.listExchanges", input),
+      recordExchange: (input) => this.context.write("subthread.recordExchange", input),
       recordResult: (input) => this.context.write("subthread.recordResult", input),
       listResults: (input) => this.context.read("subthread.listResults", input),
       readResult: (input) => this.context.write("subthread.readResult", input),

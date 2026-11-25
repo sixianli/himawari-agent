@@ -5,6 +5,7 @@ import type {
   ResultNoticeRecord,
   ResultRecordOutcome,
   ResultWaitOutcome,
+  SubthreadExchangeRecord,
   SubthreadRecord,
   SubthreadStorePort,
   ThreadTaskChangeOutcome,
@@ -26,7 +27,7 @@ const subthreadColumns = `thread_id AS threadId, parent_thread_id AS parentThrea
   open_key AS openKey, opened_by_run_id AS openedByRunId, brief_ref AS briefRef,
   result_ref AS resultRef, classification, status, stuck_at AS stuckAt,
   progress_ref AS progressRef, progress_at AS progressAt, asked_at AS askedAt,
-  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt,
+  budget_micros AS budgetMicros, budget_hit_at AS budgetHitAt, title,
   created_at AS createdAt, updated_at AS updatedAt`;
 
 const entryColumns = `e.writer_thread_id AS writerThreadId, e.name, e.version,
@@ -125,6 +126,10 @@ export class SqliteSubthreadOperations {
         return this.listQueued(payload as Input<"listQueued">);
       case "subthread.spentMicros":
         return this.spentMicros(payload as Input<"spentMicros">);
+      case "subthread.recordExchange":
+        return this.recordExchange(payload as Input<"recordExchange">);
+      case "subthread.listExchanges":
+        return this.listExchanges(payload as Input<"listExchanges">);
       case "subthread.markStuck":
         return this.markStuck(payload as Input<"markStuck">);
       case "subthread.recordResult":
@@ -153,6 +158,7 @@ export class SqliteSubthreadOperations {
       !text(input.threadId, 256) ||
       !text(input.parentThreadId, 256) ||
       !text(input.matter, 128) ||
+      (input.title !== undefined && (!text(input.title, 80) || [...input.title].length > 20)) ||
       !text(input.openKey, 128) ||
       !text(input.openedByRunId, 256) ||
       !text(input.briefRef, 256) ||
@@ -175,8 +181,8 @@ export class SqliteSubthreadOperations {
         .prepare(
           `INSERT INTO subthreads (
             thread_id, owner_id, agent_id, parent_thread_id, matter, open_key, opened_by_run_id,
-            brief_ref, result_ref, classification, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, ?)`,
+            brief_ref, result_ref, classification, status, title, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, ?, ?)`,
         )
         .run(
           input.threadId,
@@ -188,6 +194,7 @@ export class SqliteSubthreadOperations {
           input.openedByRunId,
           input.briefRef,
           input.classification,
+          input.title ?? null,
           input.now,
           input.now,
         );
@@ -416,6 +423,65 @@ export class SqliteSubthreadOperations {
           )
           .all(input.ownerId, input.agentId, input.parentThreadId) as { threadId: string }[]
       ).map(({ threadId }) => threadId),
+    );
+  }
+
+  private recordExchange(input: Input<"recordExchange">): void {
+    if (
+      !text(input.id, 128) ||
+      !text(input.threadId, 256) ||
+      !text(input.direction, 32) ||
+      !text(input.kind, 32) ||
+      !text(input.textRef, 256) ||
+      !validTime(input.now)
+    )
+      this.invalid("Subthread exchange is invalid");
+    this.assertDiskHeadroom();
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO subthread_exchanges
+          (id, owner_id, agent_id, thread_id, direction, kind, text_ref, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        input.direction,
+        input.kind,
+        input.textRef,
+        input.now,
+      );
+  }
+
+  private listExchanges(input: Input<"listExchanges">): readonly SubthreadExchangeRecord[] {
+    if (
+      !text(input.threadId, 256) ||
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 200
+    )
+      this.invalid("Subthread exchange query is invalid");
+    return Object.freeze(
+      (
+        this.database
+          .prepare(
+            `SELECT id, threadId, direction, kind, textRef, createdAt FROM (
+               SELECT id, thread_id AS threadId, direction, kind, text_ref AS textRef,
+                 created_at AS createdAt, rowid AS seq
+               FROM subthread_exchanges
+               WHERE owner_id = ? AND agent_id = ? AND thread_id = ?
+               ORDER BY created_at DESC, rowid DESC LIMIT ?
+             ) ORDER BY createdAt, seq`,
+          )
+          .all(
+            input.ownerId,
+            input.agentId,
+            input.threadId,
+            input.limit,
+          ) as SubthreadExchangeRecord[]
+      ).map((row) => Object.freeze({ ...row })),
     );
   }
 

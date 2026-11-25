@@ -97,6 +97,23 @@ const BOARD_TASKS = 30;
 const BOARD_PROGRESS = 300;
 const FINISHED_RUNS = new Set(["completed", "failed", "cancelled"]);
 const BACKGROUND_SUBTHREADS = 50;
+const BACKGROUND_RUNS = 20;
+const BACKGROUND_EXCHANGES = 50;
+const BACKGROUND_EXCHANGE_TEXT = 2000;
+const EXCHANGE_DIRECTIONS = ["to_subthread", "to_main"] as const;
+const EXCHANGE_KINDS = [
+  "brief",
+  "message",
+  "result_board",
+  "progress",
+  "question",
+  "stuck",
+  "result",
+  "budget",
+] as const;
+type ExchangeDirection = (typeof EXCHANGE_DIRECTIONS)[number];
+type ExchangeKind = (typeof EXCHANGE_KINDS)[number];
+const SUBTHREAD_TITLE_LIMIT = 20;
 const MAX_BUDGET_DOLLARS = 1000;
 const MICROS = 1_000_000;
 
@@ -177,6 +194,7 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
           uniqueItems: true,
         },
         matter: field(MATTER_LIMIT),
+        title: field(SUBTHREAD_TITLE_LIMIT),
         budget: budgetField,
       },
       required: [
@@ -187,6 +205,7 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
         "deliver",
         "owner_messages",
         "matter",
+        "title",
       ],
       additionalProperties: false,
     }),
@@ -461,6 +480,14 @@ export class ProductionSubthreads {
           threadId: notice.receiverThreadId === main ? null : notice.receiverThreadId,
         });
         if (!submitted.accepted) throw new Error(`RESULT_NOTICE_REJECTED:${submitted.reason}`);
+        if (notice.receiverThreadId !== main && (await this.open(notice.receiverThreadId)))
+          await this.#exchange({
+            threadId: notice.receiverThreadId,
+            direction: "to_subthread",
+            kind: "result_board",
+            text: this.#noticeText(notice),
+            key: notice.id,
+          });
         await this.#options.store.deleteResultNotice({ ...this.#scope, id: notice.id });
       }
       if (notices.length < NOTICE_BATCH) return;
@@ -542,19 +569,23 @@ export class ProductionSubthreads {
       const tasks = (await this.#options.tasks.tasks(threadId)).filter(
         (task) => task.status !== "deleted",
       );
+      const reached = renderPrompt(SUBTHREAD_BUDGET_REACHED, {
+        spent: dollars(spent),
+        budget: dollars(budget),
+        total: String(tasks.length),
+        done: String(tasks.filter((task) => task.status === "completed").length),
+      });
+      await this.#exchange({
+        threadId,
+        direction: "to_main",
+        kind: "budget",
+        text: reached,
+        key: budget,
+      });
       await this.#submit({
         kind: SUBTHREAD_EVENT_KIND,
-        sourceRef: `budget:${digest([threadId, budget])}`,
-        text: this.#event(
-          subthread,
-          "budget",
-          renderPrompt(SUBTHREAD_BUDGET_REACHED, {
-            spent: dollars(spent),
-            budget: dollars(budget),
-            total: String(tasks.length),
-            done: String(tasks.filter((task) => task.status === "completed").length),
-          }),
-        ),
+        sourceRef: `budget:${threadId}:${digest([threadId, budget])}`,
+        text: this.#event(subthread, "budget", reached),
         threadId: null,
         externalContent: await this.#marked(threadId),
       });
@@ -648,7 +679,11 @@ export class ProductionSubthreads {
   async #activity(
     subthread: SubthreadRecord,
     queues: { readonly waiting: ReadonlySet<string>; readonly queued: ReadonlySet<string> },
-  ): Promise<{ readonly activity: BackgroundActivity; readonly runCount: number }> {
+  ): Promise<{
+    readonly activity: BackgroundActivity;
+    readonly runCount: number;
+    readonly runs: Awaited<ReturnType<ThreadRepositoryPort["listRuns"]>>;
+  }> {
     const runs = await this.#options.threads.listRuns(
       this.#options.ownerId as never,
       this.#options.agentId as never,
@@ -669,7 +704,7 @@ export class ProductionSubthreads {
                 : active.length > 0 || queues.queued.has(subthread.threadId)
                   ? "queued"
                   : "idle";
-    return { activity, runCount: runs.length };
+    return { activity, runCount: runs.length, runs };
   }
 
   async backgroundWork(): Promise<ThreadBackgroundWork> {
@@ -684,7 +719,7 @@ export class ProductionSubthreads {
       ThreadBackgroundWork["matters"][number]["subthreads"][number][]
     >();
     for (const subthread of all) {
-      const { activity, runCount } = await this.#activity(subthread, queues);
+      const { activity, runCount, runs } = await this.#activity(subthread, queues);
       const tasks = [];
       for (const task of await this.#options.tasks.tasks(subthread.threadId)) {
         if (task.status === "deleted") continue;
@@ -709,6 +744,14 @@ export class ProductionSubthreads {
         runCount,
         spentMicros: await this.#spent(subthread),
         budgetMicros: this.#budget(subthread),
+        title: subthread.title,
+        runs: runs.slice(-BACKGROUND_RUNS).map((run) => ({
+          runId: run.runId,
+          status: run.status,
+          startedAt: run.createdAt,
+          updatedAt: run.updatedAt,
+        })),
+        exchanges: await this.#exchanges(subthread.threadId),
         tasks,
       };
       matters.set(subthread.matter, [...(matters.get(subthread.matter) ?? []), row]);
@@ -716,6 +759,51 @@ export class ProductionSubthreads {
     return {
       matters: [...matters].map(([matter, subthreads]) => ({ matter, subthreads })),
     };
+  }
+
+  async #exchange(input: {
+    readonly threadId: string;
+    readonly direction: ExchangeDirection;
+    readonly kind: ExchangeKind;
+    readonly text: string;
+    readonly key: unknown;
+  }): Promise<void> {
+    const id = `exchange:${digest([input.threadId, input.direction, input.kind, input.key], 48)}`;
+    const textRef = `subthread-${id}`;
+    await this.#put(textRef, input.text);
+    await this.#options.store.recordExchange({
+      ...this.#scope,
+      id,
+      threadId: input.threadId,
+      direction: input.direction,
+      kind: input.kind,
+      textRef,
+      now: this.#options.clock.now(),
+    });
+  }
+
+  async #exchanges(threadId: string) {
+    const rows = [];
+    for (const exchange of await this.#options.store.listExchanges({
+      ...this.#scope,
+      threadId,
+      limit: BACKGROUND_EXCHANGES,
+    })) {
+      const text = await this.#text(exchange.textRef);
+      if (
+        text === undefined ||
+        !(EXCHANGE_DIRECTIONS as readonly string[]).includes(exchange.direction) ||
+        !(EXCHANGE_KINDS as readonly string[]).includes(exchange.kind)
+      )
+        continue;
+      rows.push({
+        direction: exchange.direction as ExchangeDirection,
+        kind: exchange.kind as ExchangeKind,
+        text: [...text].slice(0, BACKGROUND_EXCHANGE_TEXT).join(""),
+        at: exchange.createdAt,
+      });
+    }
+    return rows;
   }
 
   async #text(ref: string): Promise<string | undefined> {
@@ -809,8 +897,12 @@ export class ProductionSubthreads {
       "owner_messages",
       "matter",
       "budget",
+      "title",
     ]);
     const budgetMicros = budgetArgument(args["budget"]);
+    const title = oneLine(textArgument(args["title"], SUBTHREAD_TITLE_LIMIT * 4));
+    if (title.length === 0 || [...title].length > SUBTHREAD_TITLE_LIMIT)
+      throw new SubthreadToolError("INPUT_INVALID");
     const brief = {
       objective: textArgument(args["objective"], FIELD_LIMIT),
       background: textArgument(args["background"], FIELD_LIMIT),
@@ -851,6 +943,7 @@ export class ProductionSubthreads {
       threadId,
       parentThreadId: main,
       matter,
+      title,
       openKey,
       openedByRunId: invocation.runId,
       briefRef,
@@ -864,6 +957,13 @@ export class ProductionSubthreads {
         budgetMicros,
         now: this.#options.clock.now(),
       });
+    await this.#exchange({
+      threadId,
+      direction: "to_subthread",
+      kind: "brief",
+      text: briefText,
+      key: "brief",
+    });
     await this.#submit({
       kind: MAIN_NOTE_EVENT_KIND,
       sourceRef: `brief:${threadId}`,
@@ -908,6 +1008,13 @@ export class ProductionSubthreads {
         stuck: false,
         now: this.#options.clock.now(),
       });
+    await this.#exchange({
+      threadId: subthread.threadId,
+      direction: "to_subthread",
+      kind: "message",
+      text,
+      key: [invocation.runId, invocation.toolCallId],
+    });
     await this.#submit({
       kind: MAIN_NOTE_EVENT_KIND,
       sourceRef: `relay:${digest([invocation.runId, invocation.toolCallId])}`,
@@ -1059,10 +1166,17 @@ export class ProductionSubthreads {
       });
       await this.drainNotices();
     }
+    await this.#exchange({
+      threadId,
+      direction: "to_main",
+      kind: kind as ExchangeKind,
+      text,
+      key: [invocation.runId, invocation.toolCallId],
+    });
     if (wake)
       await this.#submit({
         kind: SUBTHREAD_EVENT_KIND,
-        sourceRef: `${kind as string}:${digest([invocation.runId, invocation.toolCallId])}`,
+        sourceRef: `${kind as string}:${threadId}:${digest([invocation.runId, invocation.toolCallId])}`,
         text: this.#event(subthread, kind as string, text),
         threadId: null,
         externalContent: await this.#marked(threadId),
@@ -1115,9 +1229,16 @@ export class ProductionSubthreads {
     );
     const resultRef = `subthread-result:${digest([invocation.runId, invocation.toolCallId])}`;
     await this.#put(resultRef, body);
+    await this.#exchange({
+      threadId,
+      direction: "to_main",
+      kind: "result",
+      text: conclusion,
+      key: "result",
+    });
     await this.#submit({
       kind: SUBTHREAD_EVENT_KIND,
-      sourceRef: `result:${threadId}`,
+      sourceRef: `result:${threadId}:`,
       text: this.#event(subthread, "result", body),
       threadId: null,
       externalContent: await this.#marked(threadId),

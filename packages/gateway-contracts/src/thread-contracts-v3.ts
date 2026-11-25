@@ -787,6 +787,41 @@ export const threadBackgroundWorkSchema = object({
           runCount: integer(0),
           spentMicros: integer(0),
           budgetMicros: integer(1),
+          title: nullable(boundedString(20)),
+          runs: array(
+            object({
+              runId: machineString,
+              status: enumeration([
+                "accepted",
+                "building_context",
+                "running",
+                "awaiting_approval",
+                "reconciling_external_result",
+                "completed",
+                "failed",
+                "cancelled",
+              ]),
+              startedAt: timestamp,
+              updatedAt: timestamp,
+            }),
+          ),
+          exchanges: array(
+            object({
+              direction: enumeration(["to_subthread", "to_main"]),
+              kind: enumeration([
+                "brief",
+                "message",
+                "result_board",
+                "progress",
+                "question",
+                "stuck",
+                "result",
+                "budget",
+              ]),
+              text: boundedString(2000),
+              at: timestamp,
+            }),
+          ),
           tasks: array(
             object({
               number: integer(1),

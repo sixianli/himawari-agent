@@ -137,6 +137,23 @@ describe("Thread Gateway v3 contracts", () => {
       runCount: 2,
       spentMicros: 120_000,
       budgetMicros: 500_000,
+      title: "查航班",
+      runs: [
+        {
+          runId: "run:inbox:abc",
+          status: "completed",
+          startedAt: "2026-11-25T00:00:00.000Z",
+          updatedAt: "2026-11-25T00:01:00.000Z",
+        },
+      ],
+      exchanges: [
+        {
+          direction: "to_main",
+          kind: "progress",
+          text: "查到三个选项",
+          at: "2026-11-25T00:01:00.000Z",
+        },
+      ],
       tasks: [{ number: 1, status: "in_progress", subject: "查航班", activeForm: "正在查航班" }],
     };
     const work = { matters: [{ matter: "大阪出差", subthreads: [subthread] }] };
@@ -155,6 +172,12 @@ describe("Thread Gateway v3 contracts", () => {
       { runCount: -1 },
       { spentMicros: -1 },
       { budgetMicros: 0 },
+      { title: "一二三四五六七八九十一二三四五六七八九十一" },
+      {
+        exchanges: [
+          { direction: "sideways", kind: "progress", text: "x", at: "2026-11-25T00:01:00.000Z" },
+        ],
+      },
       { brief: "任务说明原文" },
     ])
       expect(() =>

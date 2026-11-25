@@ -51,6 +51,7 @@ const BRIEF = {
   avoid: "不替主人预约",
   deliver: "一张三行的对比",
   matter: "找牙医",
+  title: "比牙医",
 };
 
 describe("subthreads opened by the main conversation", () => {
@@ -949,6 +950,8 @@ describe("subthreads opened by the main conversation", () => {
       runCount: 1,
       spentMicros: 0,
       budgetMicros: 500_000,
+      title: "比牙医",
+      runs: [{ runId: run(flight.subthread), status: "completed" }],
       tasks: [
         {
           number: 1,
@@ -959,6 +962,22 @@ describe("subthreads opened by the main conversation", () => {
         { number: 2, status: "pending", subject: "订票", activeForm: "正在订票" },
       ],
     });
+    const flightRow = work.matters[0]?.subthreads.find(
+      ({ subthreadId }) => subthreadId === flight.subthread,
+    );
+    expect(flightRow?.exchanges.map(({ direction, kind }) => [direction, kind])).toEqual([
+      ["to_subthread", "brief"],
+      ["to_main", "progress"],
+    ]);
+    expect(flightRow?.exchanges[1]?.text).toBe("查到三个选项，正在比价");
+    const dentistRow = work.matters[1]?.subthreads[0];
+    expect(dentistRow?.exchanges.map(({ direction, kind }) => [direction, kind])).toEqual([
+      ["to_subthread", "brief"],
+      ["to_main", "question"],
+      ["to_subthread", "message"],
+    ]);
+    expect(dentistRow?.exchanges[1]?.text).toContain("要周日开门的吗");
+    expect(dentistRow?.exchanges[2]?.text).toBe("要");
     expect(work.matters[1]?.subthreads[0]).toMatchObject({
       subthreadId: dentist.subthread,
       status: "stopped",

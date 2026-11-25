@@ -1506,9 +1506,9 @@
     "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
   },
   "tools.open-subthread": {
-    "sha256": "3215d7afb966b7a13923ef16d2e17cb9b7663550d923488cc3d1571c321efeed",
+    "sha256": "f158e658507266c58f612a62c8ecd0bddf31616f2c8f0f876bb986a0cf030c58",
     "changedIn": "ADR 0285",
-    "reason": "Always On 第 3 步：开子线程时可给一笔预算（美元），不给用默认值，花到了子线程停下并告诉主对话"
+    "reason": "Always On 第 3 步：开子线程时可给一笔预算（美元），并给子线程起一个 20 字以内的短名字，主人在“后台在办”里看到的就是它"
   },
   "tools.result.subthread.rejected": {
     "sha256": "d5f4faec0854387c47bf21103455845ab763c923275e5dc68a759cd81a476817",
