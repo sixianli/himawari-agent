@@ -49,7 +49,7 @@ function migratedDatabase() {
   return { file, database };
 }
 
-function run(...args) {
+function runWith(environment, ...args) {
   const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-"));
   directories.push(directory);
   const calls = path.join(directory, "calls");
@@ -61,7 +61,7 @@ function run(...args) {
   chmodSync(path.join(directory, "ssh"), 0o755);
   const child = spawnSync("bash", [script, ...args], {
     encoding: "utf8",
-    env: { PATH: `${directory}:/usr/bin:/bin` },
+    env: { PATH: `${directory}:/usr/bin:/bin`, ...environment },
   });
   const read = (file) => {
     try {
@@ -73,12 +73,35 @@ function run(...args) {
   return { code: child.status, stderr: child.stderr, calls: read(calls), input: read(input) };
 }
 
+function run(...args) {
+  return runWith({ HIMAWARI_PROD_HOST: "198.51.100.9" }, ...args);
+}
+
 describe("prod-read.sh", () => {
+  it("refuses to connect when no production host is given", () => {
+    const result = runWith({}, "status");
+    expect(result.code).toBe(65);
+    expect(result.stderr).toContain("PROD_READ_REFUSED");
+    expect(result.calls).toBe("");
+  });
+
+  it("refuses an unsafe production host before any connection", () => {
+    const result = runWith({ HIMAWARI_PROD_HOST: "a;id" }, "status");
+    expect(result.code).toBe(65);
+    expect(result.calls).toBe("");
+  });
+
+  it("takes the production host from HIMAWARI_PACKET_HOST when HIMAWARI_PROD_HOST is not set", () => {
+    const result = runWith({ HIMAWARI_PACKET_HOST: "203.0.113.5" }, "status");
+    expect(result.code).toBe(0);
+    expect(result.calls).toContain("root@203.0.113.5 ");
+  });
+
   it("reads the service state with one fixed remote command", () => {
     const result = run("status");
     expect(result.code).toBe(0);
     expect(result.calls).toBe(
-      "-o BatchMode=yes -o ConnectTimeout=20 root@84.247.157.41 /usr/bin/systemctl show himawari-prod.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp\n",
+      "-o BatchMode=yes -o ConnectTimeout=20 root@198.51.100.9 /usr/bin/systemctl show himawari-prod.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp\n",
     );
   });
 
@@ -131,7 +154,7 @@ describe("prod-read.sh", () => {
     const result = run("rows", "runs", runId);
     expect(result.code).toBe(0);
     expect(result.calls).toBe(
-      `-o BatchMode=yes -o ConnectTimeout=20 root@84.247.157.41 cd /tmp && /opt/himawari/node/bin/node --no-warnings - rows runs ${runId}\n`,
+      `-o BatchMode=yes -o ConnectTimeout=20 root@198.51.100.9 cd /tmp && /opt/himawari/node/bin/node --no-warnings - rows runs ${runId}\n`,
     );
     expect(result.input).toContain("{ readOnly: true }");
     expect(result.input).toContain("/var/lib/himawari/state/data/product.sqlite");
@@ -303,7 +326,7 @@ describe("prod-read.sh", () => {
   it("prints only the system instruction text of the production configuration", () => {
     const result = run("system-instruction");
     expect(result.code).toBe(0);
-    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json 999");
+    expect(result.calls).toContain("--no-warnings - /etc/himawari/config.json $(id -u himawari-prod)");
     const directory = mkdtempSync(path.join(os.tmpdir(), "prod-read-cfg-"));
     directories.push(directory);
     const file = path.join(directory, "config.json");
