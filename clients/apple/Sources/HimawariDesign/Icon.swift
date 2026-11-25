@@ -18,7 +18,6 @@ public enum IconName: String, CaseIterable, Sendable {
     case bulb
     case calculator
     case calendar
-    case calendarFrame = "calendar-frame"
     case calendarLarge = "calendar-large"
     case camera
     case car
@@ -85,6 +84,7 @@ public enum IconName: String, CaseIterable, Sendable {
     case refresh
     case scan
     case search
+    case send
     case server
     case serverLarge = "server-large"
     case share2 = "share-2"
@@ -144,38 +144,5 @@ public struct ThirdPartyLicense: Identifiable, Sendable {
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return ThirdPartyLicense(id: id, name: name, version: version, text: text)
-    }
-}
-
-public enum ChromeIcon {
-    public static let newChat: IconName = .messagePlus
-}
-
-public struct TodayTabIcon: View {
-    private static let grid: CGFloat = 24
-    private static let baseline: CGFloat = 17.7
-    private static let numberSize: CGFloat = 9.5
-
-    private let day: Int
-    private let size: CGFloat
-
-    public init(day: Int, size: CGFloat = 26) {
-        self.day = day
-        self.size = size
-    }
-
-    public var body: some View {
-        let scale = size / Self.grid
-        let baselineOffset = Self.baseline * scale
-        ZStack(alignment: Alignment(horizontal: .center, vertical: .firstTextBaseline)) {
-            Icon(.calendarFrame, size: size)
-                .alignmentGuide(.firstTextBaseline) { _ in baselineOffset }
-            Text(String(day))
-                .font(.system(size: Self.numberSize * scale, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .fixedSize()
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
     }
 }

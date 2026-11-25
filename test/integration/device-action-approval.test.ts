@@ -10,6 +10,7 @@ import {
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { expect, it } from "vitest";
 import { ContextExternalContent } from "../../apps/agent-service/src/context-external-content.js";
+import { OwnerAllowances } from "../../apps/agent-service/src/owner-allowances.js";
 import { OwnerScopeAuthorization } from "../../apps/agent-service/src/owner-scope-authorization.js";
 import { productionDeviceActionAuthorization } from "../../apps/agent-service/src/production-device-action-authorization.js";
 import { productionToolActionRegistry } from "../../apps/agent-service/src/production-tool-actions.js";
@@ -51,8 +52,16 @@ async function setup() {
     authority: () => SERVICE_AUTHORITY.lease,
     clock,
   });
+  const allowances = new OwnerAllowances({
+    configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
+    state: repository,
+    store,
+    authority: () => SERVICE_AUTHORITY.lease,
+    clock,
+  });
   const ownerScope = new OwnerScopeAuthorization({
     externalContent,
+    allowances,
     configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
     store,
     audit: repository.auditLedger(),
@@ -126,6 +135,7 @@ async function setup() {
   };
   return {
     authorization,
+    allowances,
     externalContent,
     setRunStatus,
     startedByOutsideEvent,
@@ -306,6 +316,42 @@ it("[ADR-0257] records an irreversible device action as irreversible in the appr
       sideEffect: "irreversible",
       reversible: false,
     });
+  } finally {
+    await s.close();
+  }
+});
+
+it("[ADR-0285] after an outside email, a yes for this task lets the next calendar write in the same conversation go ahead, but a yes from now on does not", async () => {
+  const s = await setup();
+  try {
+    s.startedByOutsideEvent();
+    await s.authorization.authorize(intent({ toolCallId: "call:device-a" }));
+    const [first] = await s.approvals();
+    if (!first) throw new Error("approval expected");
+    await s.respond(first, "approved");
+    await s.allowances.set({ approvalRequestId: first.id, allowFor: "always", days: null });
+    expect(
+      await s.authorization.authorize(
+        intent({ toolCallId: "call:device-b", arguments: { title: "交月报" } }),
+      ),
+    ).toMatchObject({ decision: "approval" });
+    const second = (await s.approvals()).find(
+      ({ id, status }) => id !== first.id && status === "pending",
+    );
+    if (!second) throw new Error("approval expected");
+    await s.respond(second, "approved");
+    await s.allowances.set({ approvalRequestId: second.id, allowFor: "this_task", days: null });
+    const allowed = await s.authorization.authorize(
+      intent({ toolCallId: "call:device-c", arguments: { title: "交年报" } }),
+    );
+    expect(allowed).toMatchObject({ decision: "allow" });
+    expect((await s.approvals()).filter(({ status }) => status === "pending")).toEqual([]);
+    expect((await s.allowances.list()).map(({ allowFor, title }) => [allowFor, title])).toEqual(
+      expect.arrayContaining([
+        ["always", "添加日程"],
+        ["this_task", "添加日程"],
+      ]),
+    );
   } finally {
     await s.close();
   }

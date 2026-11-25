@@ -47,12 +47,6 @@
 "ask.reason.airpods_route_mismatch" = "AirPods からの声ではありませんでした";
 "ask.reason.addressed_unsure" = "私に話しかけたのかはっきりしませんでした";
 "ask.reason.addressed_budget" = "今日の判断に使える費用が上限に達していました";
-"sensing.title" = "感知中";
-"sensing.pausedTitle" = "感知を一時停止中";
-"sensing.pauseHour" = "1 時間止める";
-"sensing.resume" = "再開";
-"sensing.today" = "今日 %d 件";
-"sensing.separator" = "、";
 "notice.app" = "Himawari";
 "notice.now" = "今";
 "notice.paused.title" = "聞き取りが止まりました。タップで再開";

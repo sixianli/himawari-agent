@@ -116,6 +116,7 @@ import {
 } from "@himawari-agent/platform-node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BuiltInActionRuleSwitches } from "./action-rule-switches.js";
+import type { OwnerAllowances } from "./owner-allowances.js";
 import { classifiedThreadTitleReader } from "./classified-thread-title.js";
 import type { ContextExternalContent } from "./context-external-content.js";
 import type { ProductionApplePush } from "./production-apple-push.js";
@@ -329,6 +330,7 @@ export interface ProductionHttpCompositionOptions {
     readonly externalProposals?: ProductionMcpMemoryWriter;
     readonly mcpSync?: McpMemorySyncStorePort;
     readonly actionRules?: Pick<BuiltInActionRuleSwitches, "list" | "setAskFirst">;
+    readonly allowances?: Pick<OwnerAllowances, "list" | "revoke">;
     readonly classifier?: Pick<ProductionMemoryClassifier, "classify">;
     readonly importDuplicates?: NonNullable<
       ConstructorParameters<typeof ProductionMemoryControl>[0]["importDuplicates"]
@@ -1426,6 +1428,7 @@ export async function createProductionHttpComposition(
         book: repository.memoryBook(),
         ledger: repository.decisionLedger(),
         ...(options.memory.actionRules ? { actionRules: options.memory.actionRules } : {}),
+        ...(options.memory.allowances ? { allowances: options.memory.allowances } : {}),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },

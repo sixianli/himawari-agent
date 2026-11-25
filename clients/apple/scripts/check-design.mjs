@@ -17,7 +17,7 @@ export const PAGE_DIRECTORIES = [
   "App",
 ];
 
-export const TOKENS_SOURCE = "docs/assets/apple-clients/2026-11-12-v2/tokens.json";
+export const TOKENS_SOURCE = "docs/assets/apple-clients/2026-11-25-v4/tokens.json";
 export const TOKENS_OUTPUT = "Sources/HimawariDesign/Generated/DesignTokens.swift";
 export const WEB_DIRECTORY = "App/SafariExtension/Resources";
 export const CSS_OUTPUT = `${WEB_DIRECTORY}/tokens.css`;

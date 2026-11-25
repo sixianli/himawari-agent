@@ -1,7 +1,10 @@
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
 import { queryMessage } from "./messages.js";
 import { commandMessage } from "./messages.js";
-import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import {
+  APPROVAL_ALLOWANCE_INTENT_PREFIX,
+  type GatewayV2Snapshot,
+} from "@himawari-agent/gateway-contracts";
 import type { ControlCenterBrowserStorage } from "./browser-storage.js";
 
 export type RunApproval = Extract<GatewayV2Snapshot, { type: "approval.snapshot" }>;
@@ -134,4 +137,49 @@ export async function listPendingRunApprovals(
     if (afterCursor) seen.add(afterCursor);
   } while (afterCursor);
   return approvals;
+}
+
+export type ApprovalAllowFor = "once" | "this_task" | "days" | "always";
+
+export const APPROVAL_ALLOWANCE_DAYS = 7;
+
+export function approvalAllowanceChoices(snapshot: RunApproval): readonly ApprovalAllowFor[] {
+  const intent = snapshot.payload.intent;
+  if (
+    intent.estimatedCostMicros > 0 ||
+    intent.actionKind === "PURCHASE_OR_FUNDS" ||
+    intent.credentialOrAccessChange ||
+    intent.deterministicFactCodes.includes("owner_presence_required") ||
+    !intent.intentId.startsWith(APPROVAL_ALLOWANCE_INTENT_PREFIX)
+  )
+    return ["once"];
+  return ["once", "this_task", "days", "always"];
+}
+
+export async function setApprovalAllowance(input: {
+  client: Pick<GatewayClient, "mutate">;
+  configuration: ControlCenterRuntimeConfiguration;
+  snapshot: RunApproval;
+  allowFor: Exclude<ApprovalAllowFor, "once">;
+}) {
+  const { client, configuration, snapshot, allowFor } = input;
+  if (!configuration.authorizationRef) throw new Error("CONTROL_CENTER_AUTHORIZATION_REQUIRED");
+  if (!approvalAllowanceChoices(snapshot).includes(allowFor))
+    throw new Error("APPROVAL_ALLOWANCE_NOT_OFFERED");
+  return client.mutate(
+    commandMessage(
+      configuration,
+      "approval.allowance.set",
+      {
+        approvalRequestId: snapshot.payload.approvalRequestId,
+        allowFor,
+        days: allowFor === "days" ? APPROVAL_ALLOWANCE_DAYS : null,
+      },
+      {
+        risk: "medium",
+        authorizationRef: configuration.authorizationRef,
+        idempotencyKey: `governance:${crypto.randomUUID()}`,
+      },
+    ),
+  );
 }

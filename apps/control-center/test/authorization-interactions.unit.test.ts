@@ -253,6 +253,80 @@ describe("inline run approval", () => {
       expect(container.querySelector("button")).toBeNull();
     },
   );
+  const ownerScoped = () => {
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: { ...approvalSnapshot.payload.intent, intentId: "owner-scope:target" },
+      },
+    };
+  };
+  it("[ADR-0285] approves and then records the chosen scope, so the same action is not asked again", async () => {
+    ownerScoped();
+    await render(RunApprovalCard, approvalProps());
+    const scopes = [
+      ...container.querySelectorAll<HTMLInputElement>(".approval-scope input[type=radio]"),
+    ];
+    expect(scopes.map(({ value }) => value)).toEqual(["once", "this_task", "days", "always"]);
+    expect(scopes[0]?.checked).toBe(true);
+    await act(async () => scopes[2]?.click());
+    await click("chat.allowance.allow");
+    expect(mutate.mock.calls.map(([request]) => request.type)).toEqual([
+      "approval.respond",
+      "approval.allowance.set",
+    ]);
+    expect(mutate.mock.calls[1]?.[0]).toMatchObject({
+      payload: { approvalRequestId: "approval-target", allowFor: "days", days: 7 },
+    });
+    expect(settled).toHaveBeenCalledOnce();
+  });
+  it("[ADR-0285] REVERSE: a coding or file approval, whose yes is never looked up again, offers only this once", async () => {
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: { ...approvalSnapshot.payload.intent, intentId: "coding:bash-target" },
+      },
+    };
+    await render(RunApprovalCard, approvalProps());
+    expect(container.querySelector(".approval-scope")).toBeNull();
+    await click("chat.allowOnce");
+    expect(mutate.mock.calls.map(([request]) => request.type)).toEqual(["approval.respond"]);
+  });
+  it("[ADR-0285] REVERSE: spending money offers only this once and never records a scope", async () => {
+    ownerScoped();
+    approvalSnapshot = {
+      ...approvalSnapshot,
+      payload: {
+        ...approvalSnapshot.payload,
+        intent: { ...approvalSnapshot.payload.intent, estimatedCostMicros: 12_800_000 },
+      },
+    };
+    await render(RunApprovalCard, approvalProps());
+    expect(container.querySelector(".approval-scope")).toBeNull();
+    await click("chat.allowOnce");
+    expect(mutate.mock.calls.map(([request]) => request.type)).toEqual(["approval.respond"]);
+  });
+  it("[ADR-0285] says the yes went through but the scope was not saved when recording it fails", async () => {
+    mutate.mockImplementation(async (request) => {
+      if (request.type === "approval.allowance.set") return { status: "rejected" };
+      approvalSnapshot = {
+        ...approvalSnapshot,
+        payload: { ...approvalSnapshot.payload, status: "approved" },
+      };
+      return { status: "accepted" };
+    });
+    ownerScoped();
+    await render(RunApprovalCard, approvalProps());
+    const always = container.querySelector<HTMLInputElement>(".approval-scope input[value=always]");
+    await act(async () => always?.click());
+    await click("chat.allowance.allow");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      message("chat.allowance.failed"),
+    );
+    expect(settled).toHaveBeenCalledOnce();
+  });
   it("shows required reauthentication and prevents approval without its reference", async () => {
     approvalSnapshot = {
       ...approvalSnapshot,

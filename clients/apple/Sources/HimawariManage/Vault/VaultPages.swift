@@ -574,7 +574,6 @@ struct VaultSecurityPage: View {
         Task {
             do {
                 try await settings.revoke(device, reason: M.vaultRevokeReason(device.name))
-            } catch where SettingsStore.isDeclined(error) {
             } catch {
                 note = M.vaultSaveFailed
             }
