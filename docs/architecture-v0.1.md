@@ -655,7 +655,7 @@ Ubuntu coverage 作业通过显式 `initial-only` 选项，在合法初始化且
 
 ## 生产主入口与 Memory 调用预算
 
-公开模式要求同时提供 `http`、`identity`、`runPolicy` 和实际模型配置。`runPolicy` 固定版本、系统指令、Memory 检索数量、选取数量与分类上限；产品代码固定把 Himawari 身份说明放在配置的系统指令之前，Pi 适配层不再使用 Pi 默认的编程助手开头（[ADR 0084](adr/0084-himawari-identity-system-prompt.md)）；模型由配置中的 primary descriptor 决定，工具只来自该 Run 下未撤销、未过期、当前权威且 Capability 仍活动的持久 Handle。Memory 返回与选取的分类均不能超过 Run 分类。输入快照持久化后，重启不从最新消息或最新配置重建已冻结输入。
+公开模式要求同时提供 `http`、`identity`、`runPolicy` 和实际模型配置。`runPolicy` 固定版本、系统指令和 Memory 检索数量（每轮带多少条相关记忆不设上限，只看相关门槛，[ADR 0286](adr/0286-the-main-model-reads-and-writes-memory-itself.md)）；产品代码固定把 Himawari 身份说明放在配置的系统指令之前，Pi 适配层不再使用 Pi 默认的编程助手开头（[ADR 0084](adr/0084-himawari-identity-system-prompt.md)）；模型由配置中的 primary descriptor 决定，工具只来自该 Run 下未撤销、未过期、当前权威且 Capability 仍活动的持久 Handle。Memory 返回与选取的分类均不能超过 Run 分类。输入快照持久化后，重启不从最新消息或最新配置重建已冻结输入。
 
 HTTP 身份 Session ID 可以包含冒号；Pi SessionManager 只接受受限字符。适配层对版本化 Owner/Agent/Session/Thread 元组计算 SHA-256，生成稳定 Pi 内部 ID；数据库中的产品身份保持原值，重建仍由产品检查点负责。
 

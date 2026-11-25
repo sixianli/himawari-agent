@@ -50,7 +50,7 @@ verified_at: "1f73e976913bbac15088d045988be291fd60d8dd"
 1. **置顶的先占字数，永不因字数被挤掉。**这里的“置顶”指档案块本来就会带上的分类（规则、身份、偏好、人际、长期目标、进行中的事）里打开了开关的记忆。打开开关后被改成事件、健康、财务、其他等分类的记忆，开关会保留，但按 [ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 不进档案块，也不算进 `pinned`；改回原来的分类后又会带上。这是原有的设计，本 ADR 不改。`#select` 先读出全部候选条目（规则类，以及置顶或重要度够高的档案条目），把置顶条目的字数全部算进去，剩下的字数再按原来的顺序（规则在前，同组按重要度）分给没置顶的条目，放不下的才挤掉。置顶的条目本身就超过上限时，照样全部放进去，允许超出上限，这时没置顶的条目全部挤掉。
 2. **`compose()` 带回用量。**`OwnerProfile.usage` 有四项：`limit`（上限）、`used`（实际用掉的字数，可能大于上限）、`pinned`（置顶条目占的字数）、`queued`（被挤掉的记忆编号）。网关里的 `profileUsage` 也加上 `pinned`。
 3. **写决策记录。**对话流程（`ContextFormationService`）拿到用量后，只要有条目被挤掉，或者置顶条目超出了上限，就写一条 `context_truncation` / `truncated` 记录：
-   - 原因码：置顶条目超出上限时用 `profile_pinned_over_budget`，其他情况用 `profile_budget_exceeded`，和“相关记忆选太多”用的 `selection_limit_reached` 分开。
+   - 原因码：置顶条目超出上限时用 `profile_pinned_over_budget`，其他情况用 `profile_budget_exceeded`，和过去“相关记忆选太多”用的 `selection_limit_reached` 分开（ADR 0286 起相关记忆不再按条数截，这个原因码已不再写）。
    - 输入：`memoryIds` 是被挤掉的编号，排序后最多 200 个；`profileBudget` 是 `{limit, used, pinned}`。只写编号，不写记忆正文，这样敏感内容不会被复制到决策记录这张表里。
    - 写入失败时，和原来的截断记录一样忽略，不影响这一轮对话。
 4. **同一组只记一次。**新的存储操作 `appendIfChanged` 在一个事务里，先读出这个主人最后写入的（按 `rowid` 取最大）、原因码属于上面两种的那条记录。如果它的原因码相同、编号集合也相同，就不写，否则写入。判断以数据库里的记录为准，所以服务重启后也不会多记一条。几点细节：
