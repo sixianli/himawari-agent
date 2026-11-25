@@ -1158,6 +1158,15 @@ export class SqliteGovernedDeletionAdapter {
         "SELECT system_prompt_ref FROM thread_prompt_bundles WHERE thread_id = ?",
         [threadId],
       ),
+      ...this.#values(database, "SELECT brief_ref FROM subthreads WHERE thread_id = ?", [threadId]),
+      ...this.#values(
+        database,
+        "SELECT result_ref FROM subthreads WHERE thread_id = ? AND result_ref IS NOT NULL",
+        [threadId],
+      ),
+      ...this.#values(database, "SELECT content_ref FROM thread_task_changes WHERE thread_id = ?", [
+        threadId,
+      ]),
       ...this.#values(database, "SELECT tools_ref FROM thread_prompt_bundles WHERE thread_id = ?", [
         threadId,
       ]),

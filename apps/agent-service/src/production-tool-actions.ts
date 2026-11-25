@@ -16,9 +16,9 @@ import {
 } from "./production-conversation-tools.js";
 import { MAIL_READ_CAPABILITY_REF } from "./production-mail-read.js";
 import { MANAGED_TASK_ACTIONS } from "./production-managed-tasks.js";
-import { OFFER_OPTIONS_CAPABILITY_REF } from "./production-message-options.js";
 import { MEMORY_OPEN_CAPABILITY_REF } from "./production-memory-open.js";
 import { MEMORY_RECALL_CAPABILITY_REF } from "./production-memory-recall.js";
+import { OFFER_OPTIONS_CAPABILITY_REF } from "./production-message-options.js";
 import {
   RULE_LIST_CAPABILITY_REF,
   RULE_SET_CAPABILITY_REF,
@@ -33,7 +33,9 @@ import {
   REMINDER_LIST_CAPABILITY_REF,
   REMINDER_SET_CAPABILITY_REF,
 } from "./production-reminder-writer.js";
+import { SUBTHREAD_CAPABILITY_PREFIX } from "./production-subthreads.js";
 import { TELL_OWNER_CAPABILITY_REF } from "./production-tell-owner.js";
+import { THREAD_TASK_CAPABILITY_PREFIX } from "./production-thread-tasks.js";
 import { VAULT_LIST_CAPABILITY_REF } from "./production-vault-tools.js";
 
 export const BUILT_IN_CAPABILITY_VERSION = "1.0.0";
@@ -345,6 +347,134 @@ export const PRODUCTION_TOOL_ACTION_ROWS: readonly ToolActionRow[] = Object.free
     targetType: "owner-options",
     standingRuleChange: false,
     detail: detail({ zh: "给你选项", en: "Offer you choices", ja: "選択肢を出す" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "open_subthread",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}open_subthread`,
+    operation: "open",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail(
+      {
+        zh: "在后台开始办一件事",
+        en: "Start background work",
+        ja: "バックグラウンドで作業を始める",
+      },
+      "objective",
+    ),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "send_to_subthread",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}send_to_subthread`,
+    operation: "send",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail({
+      zh: "给后台的事补充要求",
+      en: "Update background work",
+      ja: "バックグラウンド作業に指示を追加",
+    }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "stop_subthread",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}stop_subthread`,
+    operation: "stop",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail({
+      zh: "停下后台的事",
+      en: "Stop background work",
+      ja: "バックグラウンド作業を止める",
+    }),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "view_subthread",
+    family: "builtin",
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}view_subthread`,
+    operation: "view",
+    targetType: "owner-subthread",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({
+      zh: "看后台的事",
+      en: "View background work",
+      ja: "バックグラウンド作業を見る",
+    }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "tell_main",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}tell_main`,
+    operation: "tell",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail({ zh: "向主对话报告", en: "Report to the main chat", ja: "メインの会話に報告" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "return_result",
+    himawariSideOnly: true,
+    capabilityRef: `${SUBTHREAD_CAPABILITY_PREFIX}return_result`,
+    operation: "return",
+    targetType: "owner-subthread",
+    standingRuleChange: false,
+    detail: detail({ zh: "交回结果", en: "Hand back the result", ja: "結果を返す" }),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "task_create",
+    himawariSideOnly: true,
+    capabilityRef: `${THREAD_TASK_CAPABILITY_PREFIX}task_create`,
+    operation: "create",
+    targetType: "owner-plan",
+    standingRuleChange: false,
+    detail: detail({ zh: "建待办", en: "Add to-do", ja: "ToDo を追加" }, "subject"),
+  },
+  {
+    ...OWNER_WRITE_DEFAULTS,
+    tool: "task_update",
+    himawariSideOnly: true,
+    capabilityRef: `${THREAD_TASK_CAPABILITY_PREFIX}task_update`,
+    operation: "update",
+    targetType: "owner-plan",
+    standingRuleChange: false,
+    detail: detail({ zh: "改待办", en: "Update to-do", ja: "ToDo を更新" }),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "task_list",
+    family: "builtin",
+    capabilityRef: `${THREAD_TASK_CAPABILITY_PREFIX}task_list`,
+    operation: "list",
+    targetType: "owner-plan",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "列出待办", en: "List to-dos", ja: "ToDo を一覧" }),
+  },
+  {
+    ...READ_DEFAULTS,
+    tool: "task_get",
+    family: "builtin",
+    capabilityRef: `${THREAD_TASK_CAPABILITY_PREFIX}task_get`,
+    operation: "get",
+    targetType: "owner-plan",
+    resultOrigin: "owner_data",
+    authorization: "read",
+    executor: "owner_scoped",
+    deduplication: "run_and_tool_call",
+    detail: detail({ zh: "看待办", en: "View to-do", ja: "ToDo を見る" }),
   },
   {
     ...OWNER_WRITE_DEFAULTS,

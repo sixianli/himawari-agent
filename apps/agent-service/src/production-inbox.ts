@@ -26,6 +26,7 @@ export interface InboxSource {
   readonly externalContent: boolean;
   readonly fromOwner: boolean;
   readonly priority: number;
+  readonly verbatim?: true;
 }
 
 export interface InboxOptions {
@@ -49,6 +50,13 @@ export type InboxSubmitResult =
       readonly duplicate: boolean;
     }
   | { readonly accepted: false; readonly reason: string };
+
+const VERBATIM_LIMIT = 100_000;
+
+function verbatim(text: string): string | undefined {
+  const trimmed = text.trim();
+  return [...trimmed].length <= VERBATIM_LIMIT ? trimmed : undefined;
+}
 
 function clip(text: string, maximum: number): string {
   const characters = [...text.replace(/\s+/gu, " ").trim()];
@@ -161,7 +169,10 @@ export class ProductionInbox {
     if (source.fromOwner && input.externalContent === true)
       return { accepted: false, reason: "INBOX_OWNER_SOURCE_CANNOT_BE_OUTSIDE" };
     const limits = await this.currentLimits();
-    const summary = clip(input.summary, limits.summaryCharacters);
+    const summary = source.verbatim
+      ? verbatim(input.summary)
+      : clip(input.summary, limits.summaryCharacters);
+    if (summary === undefined) return { accepted: false, reason: "INBOX_SUMMARY_TOO_LONG" };
     if (summary.length === 0) return { accepted: false, reason: "INBOX_SUMMARY_EMPTY" };
     const now = this.#options.clock.now();
     const key = entryKey(

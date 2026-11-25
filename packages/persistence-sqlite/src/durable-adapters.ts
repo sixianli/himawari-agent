@@ -21,9 +21,9 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
+  InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
-  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -71,12 +71,13 @@ import type {
   SensitiveMemoryApprovalStatePort,
   SessionDeletionStatePort,
   SessionDeviceStatePort,
-  InboxStorePort,
+  SubthreadStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
   ThreadRepositoryPort,
   TraceStorePort,
+  VaultStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
 import type { AgentId, OwnerId, ProductAuthorityFence } from "@himawari-agent/domain";
@@ -1083,6 +1084,20 @@ export class SqliteDurableAdapters {
       read: (input) => this.context.read("ownerRule.read", input),
       create: (input) => this.context.write("ownerRule.create", input),
       setStatus: (input) => this.context.write("ownerRule.setStatus", input),
+    });
+  }
+
+  subthreads(): SubthreadStorePort {
+    return Object.freeze<SubthreadStorePort>({
+      open: (input) => this.context.write("subthread.open", input),
+      read: (input) => this.context.read("subthread.read", input),
+      readByOpenKey: (input) => this.context.read("subthread.readByOpenKey", input),
+      list: (input) => this.context.read("subthread.list", input),
+      settle: (input) => this.context.write("subthread.settle", input),
+      createTask: (input) => this.context.write("subthread.createTask", input),
+      updateTask: (input) => this.context.write("subthread.updateTask", input),
+      listTasks: (input) => this.context.read("subthread.listTasks", input),
+      listTaskChanges: (input) => this.context.read("subthread.listTaskChanges", input),
     });
   }
 

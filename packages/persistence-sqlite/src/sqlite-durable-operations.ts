@@ -75,6 +75,10 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import type Database from "better-sqlite3";
 import {
+  disablePushForRevokedDevices,
+  SqliteApplePushOperations,
+} from "./sqlite-apple-push-operations.ts";
+import {
   SqliteAuthorizationReservations,
   terminalRunStatuses,
 } from "./sqlite-authorization-reservations.ts";
@@ -82,25 +86,20 @@ import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts
 import { SqliteBuiltInIdentityOperations } from "./sqlite-built-in-identity.ts";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
+import { SqliteConversationTurnOperations } from "./sqlite-conversation-turn-operations.ts";
 import { SqliteCorrectionReviewOperations } from "./sqlite-correction-review-operations.ts";
 import { SqliteDecisionLedgerOperations } from "./sqlite-decision-ledger-operations.ts";
+import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.ts";
 import { SqliteExternalMemoryProposalOperations } from "./sqlite-external-memory-proposal-operations.ts";
+import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
+import { SqliteInboxOperations } from "./sqlite-inbox-operations.ts";
 import { SqliteMcpConnectionOperations } from "./sqlite-mcp-connection-operations.ts";
-import { SqliteVaultOperations } from "./sqlite-vault-operations.ts";
 import { SqliteMcpMemorySyncOperations } from "./sqlite-mcp-memory-sync-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryCaptureBacklogOperations } from "./sqlite-memory-capture-backlog-operations.ts";
 import { SqliteMemoryCheckupOperations } from "./sqlite-memory-checkup-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
-import { SqliteDeviceActionOperations } from "./sqlite-device-action-operations.ts";
-import {
-  disablePushForRevokedDevices,
-  SqliteApplePushOperations,
-} from "./sqlite-apple-push-operations.ts";
-import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
-import { SqliteConversationTurnOperations } from "./sqlite-conversation-turn-operations.ts";
 import { SqliteMemoryConversationReviewOperations } from "./sqlite-memory-conversation-review-operations.ts";
-import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -109,23 +108,25 @@ import { SqliteModelUsageOperations } from "./sqlite-model-usage-operations.ts";
 import { SqliteMuseIntakeOperations } from "./sqlite-muse-intake-operations.ts";
 import { SqliteLedgerObservationOperations } from "./sqlite-observation-operations.ts";
 import { SqliteOwnerPreferencesOperations } from "./sqlite-owner-preferences-operations.ts";
-import { SqliteInboxOperations } from "./sqlite-inbox-operations.ts";
 import { SqliteOwnerRuleOperations } from "./sqlite-owner-rule-operations.ts";
+import { SqlitePairedDeviceOperations } from "./sqlite-paired-device-operations.ts";
+import { SqlitePerceptionOperations } from "./sqlite-perception-operations.ts";
 import {
-  type SqliteProactiveSource,
   SqliteProactiveOperations,
+  type SqliteProactiveSource,
 } from "./sqlite-proactive-operations.ts";
 import { SqliteRealEvalOperations } from "./sqlite-real-eval-operations.ts";
 import { SqliteReviewPrereviewOperations } from "./sqlite-review-prereview-operations.ts";
-import { SqliteHomeUrgencyOperations } from "./sqlite-home-urgency-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
 import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts";
 import { SqliteRunLifecycleOperations } from "./sqlite-run-lifecycle-operations.ts";
 import { SqliteRunPayloadArtifactOperations } from "./sqlite-run-payload-artifact-operations.ts";
 import { SqliteSensitiveInterceptionOperations } from "./sqlite-sensitive-interception-operations.ts";
+import { SqliteSubthreadOperations } from "./sqlite-subthread-operations.ts";
 import { SqliteThreadArtifactOperations } from "./sqlite-thread-artifact-operations.ts";
 import { SqliteThreadOperations } from "./sqlite-thread-operations.ts";
 import { SqliteThreadPromptBundleOperations } from "./sqlite-thread-prompt-bundle-operations.ts";
+import { SqliteVaultOperations } from "./sqlite-vault-operations.ts";
 import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 
 export type SqliteApplicationFailure = (
@@ -388,6 +389,7 @@ export class SqliteDurableOperations {
   private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly ownerRules: SqliteOwnerRuleOperations;
   private readonly inbox: SqliteInboxOperations;
+  private readonly subthreads: SqliteSubthreadOperations;
   private readonly correctionReview: SqliteCorrectionReviewOperations;
   private readonly memoryCaptureBacklog: SqliteMemoryCaptureBacklogOperations;
   private readonly memoryCheckup: SqliteMemoryCheckupOperations;
@@ -490,6 +492,7 @@ export class SqliteDurableOperations {
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.ownerRules = new SqliteOwnerRuleOperations(database, fail, assertDiskHeadroom);
     this.inbox = new SqliteInboxOperations(database, fail, assertDiskHeadroom);
+    this.subthreads = new SqliteSubthreadOperations(database, fail, assertDiskHeadroom);
     this.correctionReview = new SqliteCorrectionReviewOperations(
       database,
       fail,
@@ -719,6 +722,7 @@ export class SqliteDurableOperations {
     if (operation.startsWith("proactive.")) return this.proactive.execute(operation, payload);
     if (operation.startsWith("ownerRule.")) return this.ownerRules.execute(operation, payload);
     if (operation.startsWith("inbox.")) return this.inbox.execute(operation, payload);
+    if (operation.startsWith("subthread.")) return this.subthreads.execute(operation, payload);
     if (operation.startsWith("ruleReview.") || operation.startsWith("memoryReview."))
       return this.correctionReview.execute(operation, payload);
     if (operation.startsWith("decisionLedger."))
