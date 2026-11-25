@@ -7,7 +7,7 @@
 "chat.queued.discard" = "不发了";
 "common.ok" = "好";
 "process.thinking" = "在想";
-"process.waiting" = "等你点头";
+"process.waiting" = "等你同意";
 "process.seconds" = "%d 秒";
 "process.expand" = "点开看每一步";
 "process.didThings" = "做了 %d 件事";

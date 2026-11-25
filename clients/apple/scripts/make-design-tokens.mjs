@@ -126,6 +126,7 @@ export function generate(tokens) {
   scalars("Her", tokens.her ?? {});
   scalars("Avatar", tokens.avatar ?? {});
   scalars("Options", tokens.options ?? {});
+  scalars("Allowance", tokens.allowance ?? {});
   lines.push("    public enum TypeScale {");
   for (const name of Object.keys(tokens.type).sort()) {
     const value = tokens.type[name];

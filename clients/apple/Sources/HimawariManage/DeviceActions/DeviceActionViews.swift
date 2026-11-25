@@ -9,7 +9,8 @@ struct ApprovalCard: View {
     let approval: PendingApproval
     let busy: Bool
     let open: () -> Void
-    let respond: (Bool) -> Void
+    let respond: (Bool, ApprovalAllowFor) -> Void
+    @State private var allowFor: ApprovalAllowFor = .once
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -31,10 +32,11 @@ struct ApprovalCard: View {
                 Icon(.chevronRight, size: DesignTokens.IconSize.chevron)
                     .foregroundStyle(Color.hmMuted)
             }
+            AllowancePicker(approval: approval, selection: $allowFor)
             HStack(spacing: 8) {
-                Button(ApprovalWords.decline(approval)) { respond(false) }
+                Button(ApprovalWords.decline(approval)) { respond(false, .once) }
                     .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pill))
-                Button(ApprovalWords.confirm(approval)) { respond(true) }
+                Button(ApprovalWords.confirm(approval)) { respond(true, allowFor) }
                     .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pill))
             }
             .disabled(busy)
@@ -125,8 +127,8 @@ public struct ApprovalsView: View {
                                 .frame(minHeight: DesignTokens.Size.emptyMinHeight)
                         }
                         ForEach(model.pending) { approval in
-                            ApprovalCard(approval: approval, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved in
-                                Task { await model.respond(approval, approved: approved) }
+                            ApprovalCard(approval: approval, busy: model.busy.contains(approval.id), open: { open(approval) }) { approved, allowFor in
+                                Task { await model.respond(approval, approved: approved, allowFor: allowFor) }
                             }
                         }
                     } else {
@@ -184,6 +186,7 @@ public struct ApprovalDetailView: View {
     let approval: PendingApproval
     let openThread: ((String) -> Void)?
     let back: () -> Void
+    @State private var allowFor: ApprovalAllowFor = .once
 
     public init(model: DeviceActionsModel, approval: PendingApproval, openThread: ((String) -> Void)? = nil, back: @escaping () -> Void) {
         self.model = model
@@ -215,11 +218,14 @@ public struct ApprovalDetailView: View {
             }
             .scrollIndicators(.hidden)
             if approval.status == ApprovalStatus.pending.rawValue && model.pending.contains(where: { $0.id == approval.id }) {
-                HStack(spacing: 8) {
-                    Button(ApprovalWords.decline(approval)) { decide(false) }
-                        .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
-                    Button(ApprovalWords.confirm(approval)) { decide(true) }
-                        .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                VStack(spacing: DesignTokens.Allowance.actionsGap) {
+                    AllowancePicker(approval: approval, selection: $allowFor)
+                    HStack(spacing: 8) {
+                        Button(ApprovalWords.decline(approval)) { decide(false) }
+                            .buttonStyle(CapsuleButtonStyle(.secondary, height: DesignTokens.Size.pillBig))
+                        Button(ApprovalWords.confirm(approval)) { decide(true) }
+                            .buttonStyle(CapsuleButtonStyle(.primary, height: DesignTokens.Size.pillBig))
+                    }
                 }
                 .disabled(model.busy.contains(approval.id))
                 .padding(.horizontal, 16)
@@ -292,7 +298,7 @@ public struct ApprovalDetailView: View {
 
     private func decide(_ approved: Bool) {
         Task {
-            await model.respond(approval, approved: approved)
+            await model.respond(approval, approved: approved, allowFor: approved ? allowFor : .once)
             back()
         }
     }

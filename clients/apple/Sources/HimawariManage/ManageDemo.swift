@@ -16,6 +16,7 @@ public enum ManageDemoScreen: String, CaseIterable, Sendable {
     case herPrivacy = "next-3-her-privacy"
     case herDevices = "next-3-her-devices"
     case herNotifications = "next-3-her-notifications"
+    case herAllowances = "next-3-her-allowances"
 }
 
 public struct ManageDemoView: View {
@@ -49,6 +50,8 @@ public struct ManageDemoView: View {
             her([.devices])
         case .herNotifications:
             her([.notifications])
+        case .herAllowances:
+            her([.allowances])
         }
     }
 
@@ -123,6 +126,9 @@ enum ManageDemo {
     {"payload":{"rules":[
       {"ruleId":"r1","type":"quiet_hours","summary":"给没发过邮件的人发信，先问我","status":"active","enforced":true,"updatedAt":"2026-10-20T03:00:00Z","quote":"第一次给谁发邮件都先让我看一眼","changes":1,"lastUsed":{"at":"2026-11-12T01:02:00Z","kind":"email","decisionId":"decision-1"},"quoteSuperseded":true,"quoteLatestMemoryId":"m6"},
       {"ruleId":"r2","type":"spend_limit","summary":"花钱超过 5000 日元先问我","status":"active","enforced":true,"updatedAt":"2026-10-28T03:00:00Z","quote":null,"changes":0,"lastUsed":null,"quoteSuperseded":false,"quoteLatestMemoryId":null}
+    ],"allowances":[
+      {"allowanceId":"allowance:a1","allowFor":"always","title":"给 田中 发邮件","operation":"mail.send","recipients":["tanaka@example.co.jp"],"threadId":null,"expiresAt":null,"createdAt":"2026-11-24T03:00:00Z"},
+      {"allowanceId":"allowance:a2","allowFor":"days","title":"改日历里的工作日程","operation":"calendar.update","recipients":[],"threadId":null,"expiresAt":"2026-12-02T03:00:00Z","createdAt":"2026-11-25T03:00:00Z"}
     ]}}
     """#
 

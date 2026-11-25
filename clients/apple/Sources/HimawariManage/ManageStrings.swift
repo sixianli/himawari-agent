@@ -49,6 +49,38 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
+    static func allowancesSummary(_ count: Int) -> String {
+        text("\(count) 条“不用再问”", ja: "\(count) 件「もう聞かない」", en: "\(count) she won't ask again")
+    }
+    static var revoke: String { text("撤销", ja: "取り消す", en: "Revoke") }
+    static var revokeFailed: String { text("没撤掉，再试一次", ja: "取り消せませんでした。もう一度試してください", en: "Couldn't revoke. Try again") }
+    static var allowancesFoot: String {
+        text(
+            "她读过网页、邮件之后，这些都不算数，照样先问你。花钱每次都问，不会出现在这里。",
+            ja: "ウェブページやメールを読んだあとは、これらは無効になり、いつも通りあなたに確認します。お金を使うことは毎回確認するので、ここには出てきません。",
+            en: "After she reads a web page or email, none of these count and she asks you first. Spending is asked every time and never shows up here."
+        )
+    }
+    static func allowanceScope(_ allowance: OwnerAllowance) -> String {
+        let created = Timestamp.parse(allowance.createdAt)
+        let chose = created.map(pairedDay) ?? ""
+        switch allowance.allowFor {
+        case "always":
+            return text("以后都行 · \(chose)你点的", ja: "今後ずっと · \(chose)に選択", en: "Always · you chose on \(chose)")
+        case "days":
+            guard let created, let expires = allowance.expiresAt.flatMap(Timestamp.parse) else { break }
+            let days = Int((expires.timeIntervalSince(created) / 86_400).rounded())
+            let until = pairedDay(expires)
+            return text("\(days) 天内都行 · 到 \(until)", ja: "\(days)日間 · \(until)まで", en: "\(days) days · until \(until)")
+        case "this_task":
+            return text("这件事里都行 · \(chose)你点的", ja: "この件の間 · \(chose)に選択", en: "This task · you chose on \(chose)")
+        default:
+            break
+        }
+        return text("\(chose)你点的", ja: "\(chose)に選択", en: "You chose on \(chose)")
+    }
+
     static func approvalsWaiting(_ count: Int) -> String {
         text("等你同意 · \(count) 件", ja: "あなたの同意待ち · \(count) 件", en: "Waiting for you · \(count)")
     }

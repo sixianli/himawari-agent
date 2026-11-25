@@ -10,6 +10,7 @@ public enum ApprovalStatus: String, Codable, Sendable {
 public enum ApprovalResponse: Sendable, Equatable {
     case recorded(status: String)
     case changed
+    case allowanceNotSaved
 }
 
 public struct PendingApproval: Codable, Sendable, Equatable, Identifiable {
@@ -36,6 +37,11 @@ public struct PendingApproval: Codable, Sendable, Equatable, Identifiable {
         public let operation: String
         public let threadId: String
         public let runId: String
+        public var intentId: String? = nil
+        public var actionKind: String? = nil
+        public var estimatedCostMicros: Int? = nil
+        public var credentialOrAccessChange: Bool? = nil
+        public var deterministicFactCodes: [String]? = nil
     }
 
     public let approvalRequestId: String
@@ -97,5 +103,39 @@ public extension PendingApproval.Display {
             askedBecause: .init(kind: ruleText == nil ? "no_rule_allows" : "rule", ruleId: nil, ruleText: ruleText),
             origin: threadId.map { .init(threadId: $0, threadTitle: threadTitle) }
         )
+    }
+}
+
+public enum ApprovalAllowFor: String, CaseIterable, Sendable {
+    case once
+    case thisTask = "this_task"
+    case days
+    case always
+
+    public static let defaultDays = 7
+
+    public var days: Int? { self == .days ? Self.defaultDays : nil }
+}
+
+public enum ApprovalAllowanceLimit: Sendable, Equatable {
+    case spending
+    case credential
+    case ownerPresence
+    case asksEveryTime
+}
+
+public extension PendingApproval {
+    static let allowanceIntentPrefix = "owner-scope:"
+
+    var allowanceLimit: ApprovalAllowanceLimit? {
+        if (intent.estimatedCostMicros ?? 0) > 0 || intent.actionKind == "PURCHASE_OR_FUNDS" { return .spending }
+        if intent.credentialOrAccessChange ?? false { return .credential }
+        if (intent.deterministicFactCodes ?? []).contains("owner_presence_required") { return .ownerPresence }
+        guard intent.intentId?.hasPrefix(Self.allowanceIntentPrefix) == true else { return .asksEveryTime }
+        return nil
+    }
+
+    var allowanceChoices: [ApprovalAllowFor] {
+        allowanceLimit == nil ? ApprovalAllowFor.allCases : [.once]
     }
 }
