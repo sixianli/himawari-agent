@@ -536,15 +536,64 @@ describe("subthreads opened by the main conversation", () => {
         task: "查东京明天会不会下雨",
         schedule: { daily_at: "21:00" },
         created_by: "owner",
+        owner_messages: [said.messageId],
         matter: "带伞",
         title: "查明天带伞",
-      })) as { value: { timer: string } }
+      })) as { value: { timer: string; subthread: string } }
     ).value;
+    const rent = {
+      id: "reminder:memory-rent",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      memoryId: "memory-rent",
+      status: "scheduled",
+      dueAt: "2026-11-27T23:00:00.000Z",
+      remindAt: "2026-11-27T23:00:00.000Z",
+      repeat: "none",
+      dismissedAt: null,
+      createdAt: START,
+      updatedAt: START,
+    } as const;
+    const reminderRows = new Map<string, typeof rent | (typeof rent & { status: "cancelled" })>([
+      [rent.id, rent],
+    ]);
     const control = new ProductionTimerControl({
       subthreads: f.subthreads,
       scope,
       clock: { now: () => START },
+      reminders: {
+        writer: {
+          list: async () => ({
+            reminders: [...reminderRows.values()]
+              .filter((row) => row.status === "scheduled")
+              .map((row) => ({
+                reminderId: row.id,
+                memoryId: row.memoryId,
+                text: "交房租",
+                dueAt: row.dueAt,
+                remindAt: row.remindAt,
+                repeat: row.repeat,
+              })),
+            more: false,
+          }),
+          cancel: async (id: string) => {
+            const row = reminderRows.get(id);
+            if (!row) throw new Error("REMINDER_NOT_FOUND");
+            reminderRows.set(id, { ...row, status: "cancelled" as never });
+            return row as never;
+          },
+        },
+        read: async (id: string) => reminderRows.get(id) as never,
+      },
     });
+    const change = (action: string, actorType = "owner", timerId = scheduled.timer) =>
+      control.execute({
+        kind: "command",
+        type: "timers.change",
+        actor: { actorType, actorId: "owner" },
+        scope,
+        payload: { timerId, action },
+      } as never);
     const read = async () =>
       (
         (await control.query({
@@ -558,8 +607,10 @@ describe("subthreads opened by the main conversation", () => {
     expect(await read()).toEqual([
       {
         timerId: scheduled.timer,
+        kind: "recurring",
         title: "查明天带伞",
         task: "查东京明天会不会下雨",
+        ownerWords: "- 每晚九点查一下明天要不要带伞",
         schedule: "每天 21:00（Asia/Tokyo）",
         createdBy: "owner",
         status: "active",
@@ -568,17 +619,40 @@ describe("subthreads opened by the main conversation", () => {
         runCount: 0,
         spentMicros: 0,
         runBudgetMicros: 500_000,
+        lastResult: null,
+        createdAt: START,
+      },
+      {
+        timerId: rent.id,
+        kind: "reminder",
+        title: null,
+        task: "交房租",
+        ownerWords: null,
+        schedule: "一次，2026-11-28 08:00（Asia/Tokyo）",
+        createdBy: "owner",
+        status: "active",
+        nextAt: rent.remindAt,
+        lastAt: null,
+        runCount: 0,
+        spentMicros: 0,
+        runBudgetMicros: null,
+        lastResult: null,
         createdAt: START,
       },
     ]);
-    const change = (action: string, actorType = "owner", timerId = scheduled.timer) =>
-      control.execute({
-        kind: "command",
-        type: "timers.change",
-        actor: { actorType, actorId: "owner" },
-        scope,
-        payload: { timerId, action },
-      } as never);
+    await expect(change("pause", "owner", rent.id)).rejects.toThrow("TIMER_ACTION_NOT_SUPPORTED");
+    await change("cancel", "owner", rent.id);
+    expect((await read()).map((row) => row["kind"])).toEqual(["recurring"]);
+    f.setNow("2026-11-25T12:00:05.000Z");
+    await f.subthreads.tickTimers();
+    const wake = await f.started(scheduled.subthread);
+    await f.call(wake.runId, "tell_main", { kind: "progress", text: "明天不下雨，不用带伞" });
+    await f.settle(wake);
+    expect((await read())[0]).toMatchObject({
+      lastAt: "2026-11-25T12:00:00.000Z",
+      runCount: 1,
+      lastResult: { text: "明天不下雨，不用带伞", at: "2026-11-25T12:00:05.000Z" },
+    });
     await change("pause");
     expect((await read())[0]).toMatchObject({ status: "paused" });
     await change("pause");
@@ -586,7 +660,7 @@ describe("subthreads opened by the main conversation", () => {
     await change("resume");
     expect((await read())[0]).toMatchObject({
       status: "active",
-      nextAt: "2026-11-25T12:00:00.000Z",
+      nextAt: "2026-11-26T12:00:00.000Z",
     });
     await expect(change("cancel", "client")).rejects.toThrow("TIMER_OWNER_REQUIRED");
     await expect(change("cancel", "owner", "timer:missing")).rejects.toThrow("TIMER_NOT_FOUND");
@@ -595,9 +669,9 @@ describe("subthreads opened by the main conversation", () => {
     expect((await read())[0]).toMatchObject({ status: "cancelled", nextAt: null });
     await expect(change("resume")).rejects.toThrow("TIMER_STATE_CHANGED");
     expect(f.query("SELECT status FROM subthreads")).toEqual([{ status: "stopped" }]);
-    f.setNow("2026-11-25T12:00:05.000Z");
+    f.setNow("2026-11-26T12:00:05.000Z");
     await f.subthreads.tickTimers();
-    expect(timerEvents(f)).toEqual([]);
+    expect(timerEvents(f)).toHaveLength(1);
   });
 
   it("REVERSE: refuses a schedule that is not exactly one of the three kinds and stores nothing", async () => {

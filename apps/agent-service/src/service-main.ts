@@ -3630,6 +3630,11 @@ export async function startTenantRuntime(
             externalContent,
             subthreads,
             ...(reminderInbox ? { reminders: reminderInbox } : {}),
+            timerReminders: {
+              writer: reminderWriter,
+              read: (id: string) => requireValue(repository).memoryReminders().read(id),
+            },
+            ...(reminderTimeZone ? { timeZone: reminderTimeZone } : {}),
           },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),

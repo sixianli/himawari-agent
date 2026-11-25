@@ -692,8 +692,10 @@ export const governanceMessages = [
     timers: [
       {
         timerId: "timer:0123456789abcdef0123456789abcdef",
+        kind: "recurring",
         title: "查明天带伞",
         task: "查东京明天会不会下雨",
+        ownerWords: "- 每晚九点查一下明天要不要带伞",
         schedule: "每天 21:00（Asia/Tokyo）",
         createdBy: "owner",
         status: "active",
@@ -702,6 +704,7 @@ export const governanceMessages = [
         runCount: 1,
         spentMicros: 12000,
         runBudgetMicros: 500000,
+        lastResult: { text: "明天不下雨，不用带伞", at: "2026-11-25T12:01:00.000Z" },
         createdAt: "2026-11-25T00:00:00.000Z",
       },
     ],

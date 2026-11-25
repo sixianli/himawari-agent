@@ -41,6 +41,7 @@ export interface SubthreadTimerRecord {
   readonly threadId: string;
   readonly schedule: Readonly<Record<string, unknown>>;
   readonly taskRef: string;
+  readonly ownerWordsRef: string | null;
   readonly createdBy: SubthreadTimerCreator;
   readonly status: SubthreadTimerStatus;
   readonly nextAt: string | null;
@@ -228,6 +229,7 @@ export interface SubthreadStorePort {
       readonly threadId: string;
       readonly schedule: Readonly<Record<string, unknown>>;
       readonly taskRef: string;
+      readonly ownerWordsRef: string | null;
       readonly createdBy: SubthreadTimerCreator;
       readonly nextAt: string | null;
       readonly runBudgetMicros: number;

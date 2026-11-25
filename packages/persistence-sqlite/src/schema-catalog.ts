@@ -911,7 +911,7 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
     "subthread_timers",
     "SubthreadStorePort",
-    "one row per follow-up or recurring task: the hidden conversation it wakes, its schedule (once, daily or every few minutes, with the time zone), who set it up (the owner, an agreed proposal or Himawari herself), whether it is active, paused, cancelled or finished, the next and last due times, how many times it ran and the spending allowed per run; the task text stays in a protected payload the row points to",
+    "one row per follow-up or recurring task: the hidden conversation it wakes, its schedule (once, daily or every few minutes, with the time zone), who set it up (the owner, an agreed proposal or Himawari herself), whether it is active, paused, cancelled or finished, the next and last due times, how many times it ran and the spending allowed per run; the task text and the owner's own words it came from stay in protected payloads the row points to",
     "payload_reference",
     "cascade with Owner, Agent or the hidden conversation",
   ),

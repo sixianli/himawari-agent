@@ -341,7 +341,7 @@ export const TOOL_SCHEDULE_TASK = fixedPrompt({
   usedBy: ["apps/agent-service/src/production-subthreads.ts"],
   layer: "tools",
   output: "free-text",
-  text: "定一个跟进或周期任务：到点叫醒一个专门的子线程去做一次，它做完用 tell_main 告诉你，你再决定怎么告诉主人。例如主人说“每晚九点查一下明天要不要带伞”“下周一帮我看看那封信有没有回”。只是到点提醒主人一句话的，用提醒工具，不用这个。schedule 三选一：once_at 填一次性的时刻，带时区偏移，例如 2026-11-26T21:00:00+09:00；daily_at 填每天的几点几分，例如 21:00，按主人的时区；every_minutes 填每隔多少分钟一次，最少 5。task 写每次到点要做什么、查到什么值得告诉你；title 给它起一个 20 字以内的短名字，主人在定时清单里看到的就是它；matter 给这件事起一个短名字；created_by 填这件事是谁要的：owner 是主人亲口说的，agreed 是你提议过、主人同意了的，self 是你自己想到的；budget 是每次到点最多能花多少美元，不填用默认值。错过的时刻：一次性的晚到也做一次，周期的只做最近一次。主人在 App 的定时清单里能暂停、撤销；不要了就用 stop_subthread 停掉这个子线程，定时也一起停。回主人的话里只说你会按时去做，不说开了子线程这类内部过程。",
+  text: "定一个跟进或周期任务：到点叫醒一个专门的子线程去做一次，它做完用 tell_main 告诉你，你再决定怎么告诉主人。例如主人说“每晚九点查一下明天要不要带伞”“下周一帮我看看那封信有没有回”。只是到点提醒主人一句话的，用提醒工具，不用这个。schedule 三选一：once_at 填一次性的时刻，带时区偏移，例如 2026-11-26T21:00:00+09:00；daily_at 填每天的几点几分，例如 21:00，按主人的时区；every_minutes 填每隔多少分钟一次，最少 5。task 写每次到点要做什么、查到什么值得告诉你；title 给它起一个 20 字以内的短名字，主人在定时清单里看到的就是它；matter 给这件事起一个短名字；created_by 填这件事是谁要的：owner 是主人亲口说的，agreed 是你提议过、主人同意了的，self 是你自己想到的；owner_messages 填这件事出自主人哪几条消息的编号，主人在定时清单里会看到这几句原话，你自己想到的可以不填；budget 是每次到点最多能花多少美元，不填用默认值。错过的时刻：一次性的晚到也做一次，周期的只做最近一次。主人在 App 的定时清单里能暂停、撤销；不要了就用 stop_subthread 停掉这个子线程，定时也一起停。回主人的话里只说你会按时去做，不说开了子线程这类内部过程。",
 });
 
 export const TIMER_BRIEF = templatePrompt({
@@ -400,4 +400,13 @@ export const TIMER_SCHEDULE_EVERY = templatePrompt({
   layer: "last-user-message",
   output: "free-text",
   segments: [text("每隔 "), slot("minutes"), text(" 分钟一次")],
+});
+
+export const TIMER_SCHEDULE_YEARLY = templatePrompt({
+  id: "subthreads.timer-schedule.yearly",
+  purpose: "定时清单里每年一次的提醒的时间说明",
+  usedBy: ["apps/agent-service/src/production-timer-control.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  segments: [text("每年 "), slot("at")],
 });

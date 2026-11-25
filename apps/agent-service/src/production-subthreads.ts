@@ -279,6 +279,12 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
           additionalProperties: false,
         },
         created_by: { type: "string", enum: [...TIMER_CREATORS] },
+        owner_messages: {
+          type: "array",
+          items: field(256),
+          maxItems: OWNER_MESSAGES_LIMIT,
+          uniqueItems: true,
+        },
         matter: field(MATTER_LIMIT),
         title: field(SUBTHREAD_TITLE_LIMIT),
         budget: budgetField,
@@ -291,7 +297,7 @@ export function mainSubthreadDescriptors(): readonly RuntimeToolDescriptor[] {
 
 type TimerSchedule = DurableSchedule & { readonly timeZone: string };
 
-function localTime(iso: string, timeZone: string): string {
+export function localTime(iso: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -323,6 +329,8 @@ export interface SubthreadTimerView {
   readonly timer: SubthreadTimerRecord;
   readonly title: string | null;
   readonly task: string;
+  readonly ownerWords: string | null;
+  readonly lastResult: { readonly text: string; readonly at: string } | null;
   readonly schedule: string;
   readonly spentMicros: number;
 }
@@ -1253,7 +1261,23 @@ export class ProductionSubthreads {
     main: string,
     args: Readonly<Record<string, unknown>>,
   ): Promise<Result> {
-    onlyArguments(args, ["task", "schedule", "created_by", "matter", "title", "budget"]);
+    onlyArguments(args, [
+      "task",
+      "schedule",
+      "created_by",
+      "owner_messages",
+      "matter",
+      "title",
+      "budget",
+    ]);
+    const ids = args["owner_messages"] ?? [];
+    if (
+      !Array.isArray(ids) ||
+      ids.length > OWNER_MESSAGES_LIMIT ||
+      !ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 256) ||
+      new Set(ids).size !== ids.length
+    )
+      throw new SubthreadToolError("INPUT_INVALID");
     const runBudgetMicros =
       budgetArgument(args["budget"]) ??
       this.#options.defaultBudgetMicros ??
@@ -1281,6 +1305,9 @@ export class ProductionSubthreads {
     const classification = await this.#put(briefRef, briefText);
     const taskRef = `timer-task:${openKey}`;
     await this.#put(taskRef, task);
+    const ownerWordsRef = ids.length > 0 ? `timer-owner-words:${openKey}` : null;
+    if (ownerWordsRef)
+      await this.#put(ownerWordsRef, await this.#ownerWords(main, ids as string[]));
     await this.#options.commands.create({
       ownerId: this.#options.ownerId as Create["ownerId"],
       agentId: this.#options.agentId as Create["agentId"],
@@ -1316,6 +1343,7 @@ export class ProductionSubthreads {
       threadId,
       schedule: schedule as unknown as Readonly<Record<string, unknown>>,
       taskRef,
+      ownerWordsRef,
       createdBy: createdBy as SubthreadTimerCreator,
       nextAt: nextFrom(schedule, now),
       runBudgetMicros,
@@ -1460,6 +1488,8 @@ export class ProductionSubthreads {
         timer,
         title: subthread?.title ?? null,
         task: (await this.#text(timer.taskRef)) ?? "",
+        ownerWords: timer.ownerWordsRef ? ((await this.#text(timer.ownerWordsRef)) ?? null) : null,
+        lastResult: await this.#lastResult(timer),
         schedule: scheduleText(storedSchedule(timer.schedule)),
         spentMicros: await this.#options.store.spentMicros({
           ...this.#scope,
@@ -1468,6 +1498,29 @@ export class ProductionSubthreads {
       });
     }
     return views;
+  }
+
+  async #lastResult(
+    timer: SubthreadTimerRecord,
+  ): Promise<{ readonly text: string; readonly at: string } | null> {
+    if (timer.lastScheduledAt === null) return null;
+    const exchanges = await this.#options.store.listExchanges({
+      ...this.#scope,
+      threadId: timer.threadId,
+      limit: BACKGROUND_EXCHANGES,
+    });
+    const last = [...exchanges]
+      .filter(
+        (exchange) =>
+          exchange.direction === "to_main" &&
+          exchange.kind !== "budget" &&
+          exchange.createdAt >= (timer.lastScheduledAt ?? ""),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .at(-1);
+    if (!last) return null;
+    const text = await this.#text(last.textRef);
+    return text === undefined ? null : { text, at: last.createdAt };
   }
 
   async pauseTimer(id: string): Promise<SubthreadTimerRecord | undefined> {

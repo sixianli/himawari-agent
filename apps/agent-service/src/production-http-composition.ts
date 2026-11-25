@@ -157,7 +157,11 @@ import {
   ProductionInboxControl,
   ProductionInboxSettings,
 } from "./production-inbox-settings.js";
-import { PRODUCTION_TIMER_OPERATIONS, ProductionTimerControl } from "./production-timer-control.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  ProductionTimerControl,
+  type TimerReminders,
+} from "./production-timer-control.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -350,6 +354,8 @@ export interface ProductionHttpCompositionOptions {
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
       readonly reminders?: ProductionReminderInbox;
+      readonly timerReminders?: TimerReminders;
+      readonly timeZone?: string;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
@@ -1748,6 +1754,12 @@ export async function createProductionHttpComposition(
       ? {
           timerControl: new ProductionTimerControl({
             subthreads: options.inbox.mainThread.subthreads,
+            ...(options.inbox.mainThread.timerReminders
+              ? { reminders: options.inbox.mainThread.timerReminders }
+              : {}),
+            ...(options.inbox.mainThread.timeZone
+              ? { timeZone: options.inbox.mainThread.timeZone }
+              : {}),
             scope: { ownerId, agentId },
             clock: { now: clock },
           }),

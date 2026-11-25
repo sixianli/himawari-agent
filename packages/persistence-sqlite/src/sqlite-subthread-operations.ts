@@ -32,6 +32,7 @@ const subthreadColumns = `thread_id AS threadId, parent_thread_id AS parentThrea
   created_at AS createdAt, updated_at AS updatedAt`;
 
 const timerColumns = `id, thread_id AS threadId, schedule, task_ref AS taskRef,
+  owner_words_ref AS ownerWordsRef,
   created_by AS createdBy, status, next_at AS nextAt, last_scheduled_at AS lastScheduledAt,
   run_count AS runCount, run_budget_micros AS runBudgetMicros, created_at AS createdAt,
   updated_at AS updatedAt`;
@@ -551,6 +552,7 @@ export class SqliteSubthreadOperations {
       Array.isArray(input.schedule) ||
       schedule.length > 1000 ||
       !text(input.taskRef, 256) ||
+      (input.ownerWordsRef !== null && !text(input.ownerWordsRef, 256)) ||
       !TIMER_CREATORS.includes(input.createdBy) ||
       (input.nextAt !== null && !validTime(input.nextAt)) ||
       !Number.isSafeInteger(input.runBudgetMicros) ||
@@ -563,9 +565,9 @@ export class SqliteSubthreadOperations {
     this.database
       .prepare(
         `INSERT OR IGNORE INTO subthread_timers
-          (id, owner_id, agent_id, thread_id, schedule, task_ref, created_by, status, next_at,
-           last_scheduled_at, run_count, run_budget_micros, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?)`,
+          (id, owner_id, agent_id, thread_id, schedule, task_ref, owner_words_ref, created_by,
+           status, next_at, last_scheduled_at, run_count, run_budget_micros, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -574,6 +576,7 @@ export class SqliteSubthreadOperations {
         input.threadId,
         schedule,
         input.taskRef,
+        input.ownerWordsRef,
         input.createdBy,
         input.nextAt,
         input.runBudgetMicros,

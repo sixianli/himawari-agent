@@ -5,6 +5,7 @@ CREATE TABLE subthread_timers (
   thread_id TEXT NOT NULL REFERENCES subthreads(thread_id) ON DELETE CASCADE,
   schedule TEXT NOT NULL CHECK (json_valid(schedule) AND json_type(schedule) = 'object'),
   task_ref TEXT NOT NULL CHECK (length(task_ref) BETWEEN 1 AND 256),
+  owner_words_ref TEXT CHECK (owner_words_ref IS NULL OR length(owner_words_ref) BETWEEN 1 AND 256),
   created_by TEXT NOT NULL CHECK (created_by IN ('owner', 'agreed', 'self')),
   status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'cancelled', 'finished')),
   next_at TEXT CHECK (next_at IS NULL OR next_at GLOB '????-??-??T??:??:??.???Z'),

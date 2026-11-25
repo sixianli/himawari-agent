@@ -1019,8 +1019,10 @@ const timersSnapshotSchema = object({
     timers: array(
       object({
         timerId: machineString,
+        kind: enumeration(["reminder", "follow_up", "recurring"]),
         title: nullable(boundedString(20)),
         task: boundedString(4000),
+        ownerWords: nullable(boundedString(4000)),
         schedule: boundedString(200),
         createdBy: enumeration(["owner", "agreed", "self"]),
         status: enumeration(["active", "paused", "cancelled", "finished"]),
@@ -1028,7 +1030,8 @@ const timersSnapshotSchema = object({
         lastAt: nullable(timestamp),
         runCount: integer(0),
         spentMicros: integer(0),
-        runBudgetMicros: integer(1),
+        runBudgetMicros: nullable(integer(1)),
+        lastResult: nullable(object({ text: boundedString(2000), at: timestamp })),
         createdAt: timestamp,
       }),
     ),
