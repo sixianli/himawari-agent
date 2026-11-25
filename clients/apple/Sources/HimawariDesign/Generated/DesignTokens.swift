@@ -39,6 +39,7 @@ public enum DesignTokens {
     public enum Shadows {
         public static let lift = ShadowToken(x: 0, y: 2, blur: 10, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.07), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.35)))
         public static let liftBig = ShadowToken(x: 0, y: 8, blur: 28, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.13), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.5)))
+        public static let puck = ShadowToken(x: 0, y: 4, blur: 14, color: PaletteToken(light: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25), dark: RGBA(red: 0 / 255, green: 0 / 255, blue: 0 / 255, alpha: 0.25)))
     }
 
     public enum Glass {
@@ -303,6 +304,10 @@ public enum DesignTokens {
         public static let copiedToastPaddingHorizontal: CGFloat = 14
         public static let copiedToastPaddingVertical: CGFloat = 7
         public static let copiedToastSeconds: CGFloat = 1.2
+        public static let emptyFadeSeconds: CGFloat = 0.4
+        public static let emptyMark: CGFloat = 120
+        public static let emptyWordmarkGap: CGFloat = 14
+        public static let emptyWordmarkSize: CGFloat = 22
         public static let headerFade: CGFloat = 140
         public static let headerFadeSolid: CGFloat = 110
         public static let headerFadeWithBackground: CGFloat = 186
@@ -313,6 +318,13 @@ public enum DesignTokens {
         public static let listGap: CGFloat = 4
         public static let listIndent: CGFloat = 4
         public static let listMarkerGap: CGFloat = 6
+        public static let puckBannerGap: CGFloat = 8
+        public static let puckBusyLow: CGFloat = 0.7
+        public static let puckContentGap: CGFloat = 12
+        public static let puckLine: CGFloat = 0.5
+        public static let puckMark: CGFloat = 46
+        public static let puckSize: CGFloat = 56
+        public static let puckTop: CGFloat = 6
         public static let quoteBar: CGFloat = 3
         public static let quoteGap: CGFloat = 10
         public static let replyBarWidth: CGFloat = 3

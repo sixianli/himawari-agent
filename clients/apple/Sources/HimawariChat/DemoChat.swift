@@ -209,6 +209,10 @@ public enum DemoChatFixtures {
     static let replyAnswerTwo = "要带。傍晚会降到 9 度左右，一件薄外套就够。"
     static let replyToGone = "这条也帮我记一下"
 
+    public static func empty() -> DemoChatState {
+        osaka(messages: [], runs: [], texts: [:])
+    }
+
     public static func replied() -> DemoChatState {
         let start = todayAt(14, 48)
         return osaka(

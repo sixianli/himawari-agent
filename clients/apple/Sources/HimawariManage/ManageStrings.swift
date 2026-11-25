@@ -49,6 +49,11 @@ enum M {
     }
     static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
     static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static var aboutTitle: String { text("关于", ja: "このアプリについて", en: "About") }
+    static var aboutVersion: String { text("版本", ja: "バージョン", en: "Version") }
+    static var aboutServer: String { text("服务器", ja: "サーバー", en: "Server") }
+    static var aboutLicenses: String { text("开源许可", ja: "オープンソースライセンス", en: "Open source licenses") }
+    static var aboutNotConnected: String { text("没有连着", ja: "未接続", en: "Not connected") }
     static var allowancesTitle: String { text("同意过的事", ja: "承認したこと", en: "What you've allowed") }
     static func allowancesSummary(_ count: Int) -> String {
         if count == 0 { return text("还没有“不用再问”的事", ja: "「もう聞かない」ことはまだありません", en: "Nothing she skips asking yet") }

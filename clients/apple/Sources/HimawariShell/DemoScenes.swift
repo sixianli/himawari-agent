@@ -28,6 +28,8 @@ enum DemoScene: String, CaseIterable {
     case herAllowanceDays = "next-3-her-allowance-days"
     case memoryVersions = "next-4-memory-versions"
     case memoryTrash = "next-4-memory-trash"
+    case herAbout = "next-6-her-about"
+    case chatEmpty = "next-6-chat-empty"
     case pairing = "11-pairing"
     case pairingScan = "15-pairing-flow-1-scan"
     case pairingConfirmServer = "15-pairing-flow-1b-confirm-server"
@@ -164,6 +166,8 @@ struct DemoSceneView: View {
         case .chatCopied:
             chat(DemoChatFixtures.rich())
                 .environment(\.chatShowsCopied, true)
+        case .chatEmpty:
+            chat(DemoChatFixtures.empty())
         case .chatReplied:
             chat(DemoChatFixtures.replied())
         case .chatReplying:
@@ -239,7 +243,7 @@ struct DemoSceneView: View {
             DemoSensesHost(scene: .denied)
         case .listenIntro, .listenEnroll, .listenLive, .listenInterrupted, .listenCalling, .listenAsking, .listenStopped:
             ListenDemoScene(scene: scene)
-        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash:
+        case .memory, .memoryDetail, .memoryEdit, .rules, .ruleDetail, .deviceAbilities, .her, .herApprovals, .herPrivacy, .herDevices, .herNotifications, .herAllowances, .herAllowancesEmpty, .herAllowanceDays, .memoryVersions, .memoryTrash, .herAbout:
             EmptyView()
         }
     }

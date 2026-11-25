@@ -53,13 +53,7 @@ public struct ChatView: View {
         _draft = State(initialValue: draft)
     }
 
-    private static let headerHeight = HimawariAvatar.height
-
-    private var topFade: (height: CGFloat, solid: CGFloat) {
-        close == nil
-            ? (DesignTokens.Chat.headerFade, DesignTokens.Chat.headerFadeSolid)
-            : (DesignTokens.Size.fadeTop, DesignTokens.Size.fadeTopSolid)
-    }
+    private static let headerHeight = DesignTokens.Chat.puckTop + DesignTokens.Chat.puckSize
 
     public var body: some View {
         withTalkFeed
@@ -68,12 +62,30 @@ public struct ChatView: View {
     private var layers: some View {
         ZStack {
             transcript
-            EdgeFade(.top, height: topFade.height, solid: topFade.solid / topFade.height)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .ignoresSafeArea()
+            if showsEmptyFlower {
+                EmptyChatFlower()
+                    .transition(.opacity.animation(reduceMotion ? nil : .easeOut(duration: DesignTokens.Chat.emptyFadeSeconds)))
+            }
+            statusBarFade
             chrome
                 .ignoresSafeArea(.container, edges: .bottom)
         }
+    }
+
+    private var showsEmptyFlower: Bool {
+        close == nil
+            && store.transcript(in: threadId).isEmpty
+            && store.queuedMessages(in: threadId).isEmpty
+            && store.streamingText(in: threadId) == nil
+            && talkHeard.isEmpty
+    }
+
+    private var statusBarFade: some View {
+        GeometryReader { proxy in
+            EdgeFade(.top, height: proxy.safeAreaInsets.top, solid: 0)
+                .offset(y: -proxy.safeAreaInsets.top)
+        }
+        .allowsHitTesting(false)
     }
 
     private var chrome: some View {
@@ -81,7 +93,7 @@ public struct ChatView: View {
             header
             if store.offlineShown {
                 OfflineBanner()
-                    .padding(.top, 2)
+                    .padding(.top, DesignTokens.Chat.puckBannerGap)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bannerHeight = $0 }
                     .transition(.opacity)
             }
@@ -324,20 +336,11 @@ public struct ChatView: View {
                     Spacer()
                 }
                 .padding(.horizontal, DesignTokens.Size.pagePaddingX)
-                .frame(height: DesignTokens.Avatar.size)
+                .frame(height: DesignTokens.Chat.puckSize)
             }
-            if let openHerPage {
-                Button(action: openHerPage) {
-                    HimawariAvatar(busy: avatarBusy)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(L.text("chat.herPage")))
-                .accessibilityAddTraits(.isHeader)
-            } else {
-                HimawariAvatar(busy: avatarBusy)
-                    .accessibilityAddTraits(.isHeader)
-            }
+            ChatPuck(busy: avatarBusy, open: openHerPage)
         }
+        .padding(.top, DesignTokens.Chat.puckTop)
         .frame(maxWidth: .infinity)
     }
 
@@ -416,7 +419,7 @@ public struct ChatView: View {
                 }
             }
             .padding(.horizontal, DesignTokens.Size.chatPaddingX)
-            .padding(.top, store.offlineShown ? Self.headerHeight + 39 + bannerHeight : Self.headerHeight + 18)
+            .padding(.top, Self.headerHeight + DesignTokens.Chat.puckContentGap + (store.offlineShown ? DesignTokens.Chat.puckBannerGap + bannerHeight : 0))
             .padding(.bottom, 110)
         }
         .defaultScrollAnchor(.bottom, for: .alignment)
