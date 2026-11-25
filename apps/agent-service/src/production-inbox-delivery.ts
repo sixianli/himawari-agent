@@ -224,7 +224,11 @@ export class ProductionInboxDelivery implements InboxDelivery {
     const classification = await this.#writeMessage(
       contentRef,
       subthreads.subthreadMessage(
-        events.map(({ entry, summary }) => ({ sourceRef: entry.sourceRef, text: summary })),
+        events.map(({ entry, summary }) => ({
+          sourceKind: entry.sourceKind,
+          sourceRef: entry.sourceRef,
+          text: summary,
+        })),
       ),
     );
     await this.#admit(threadId, key, events, runId, contentRef, classification, false);
