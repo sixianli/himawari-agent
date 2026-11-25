@@ -11,6 +11,7 @@ import type {
   RunExecutionSource,
   RunExecutionSourcePort,
   RunPayloadArtifactPort,
+  ThreadRepositoryPort,
 } from "../ports/index.js";
 import {
   ApplicationPortError,
@@ -40,6 +41,17 @@ interface FrozenRunInput {
   readonly deadlineAt: string;
   readonly source: RunExecutionSource;
   readonly policy: RunExecutionPolicy;
+  readonly foldedPrompt?: {
+    readonly ref: string;
+    readonly dataClassification: RunExecutionSource["dataClassification"];
+  };
+}
+
+const CLASSIFICATION_ORDER = ["public", "private", "sensitive", "restricted"] as const;
+const DEFAULT_FOLD_LIMIT = 19;
+
+function neutralized(text: string): string {
+  return text.replaceAll("</owner-message>", "‹/owner-message›");
 }
 
 const OPERATION_KEY = "run-execution-input:v1";
@@ -48,8 +60,10 @@ export interface RunExecutionInputServiceOptions {
   readonly maximumRunDurationMs: number;
   readonly source: RunExecutionSourcePort;
   readonly artifacts: RunPayloadArtifactPort;
-  readonly payloads: Pick<PayloadStorePort, "get">;
+  readonly payloads: Pick<PayloadStorePort, "get"> & Partial<Pick<PayloadStorePort, "put">>;
   readonly protector: PayloadProtectorPort;
+  readonly folds?: Pick<ThreadRepositoryPort, "foldQueuedOwnerRuns">;
+  readonly foldLimit?: () => Promise<number>;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly dispatch: Pick<RunDispatchPort, "assertHeld">;
@@ -131,6 +145,8 @@ export class RunExecutionInputService {
     }
     const frozen = await this.#freeze(source, candidate.action !== "deliver_completed");
     const { policy } = frozen;
+    const promptRef = (frozen.foldedPrompt?.ref ?? source.payloadRef) as typeof source.payloadRef;
+    const dataClassification = frozen.foldedPrompt?.dataClassification ?? source.dataClassification;
     const scope = {
       ownerId: source.ownerId,
       agentId: source.agentId,
@@ -146,7 +162,7 @@ export class RunExecutionInputService {
     const transition = (phase: keyof RunCoordinatorCommands) => ({
       idempotencyKey: createIdempotencyKey(`run-execution:${source.runId}:${phase}`),
       commandFingerprint: threadCommandFingerprint({ runId: source.runId, phase, version: 1 }),
-      payloadRef: source.payloadRef,
+      payloadRef: promptRef,
     });
     const commands: RunCoordinatorCommands = {
       buildingContext: transition("buildingContext"),
@@ -172,7 +188,7 @@ export class RunExecutionInputService {
         trigger: {
           id: source.triggerId,
           sourceType: source.sourceType,
-          payloadRef: source.payloadRef,
+          payloadRef: promptRef,
           occurredAt: source.occurredAt,
         },
         threadMessages: [],
@@ -180,7 +196,7 @@ export class RunExecutionInputService {
         policyVersion: policy.policyVersion,
         policies: policy.policies,
         ...(policy.answerLocalePolicy ? { answerLocalePolicy: policy.answerLocalePolicy } : {}),
-        memoryQueryRef: source.payloadRef,
+        memoryQueryRef: promptRef,
         memoryQueryTerms: [],
         memoryLimit: policy.memoryLimit,
         maxSelectedMemories: policy.maxSelectedMemories,
@@ -192,7 +208,7 @@ export class RunExecutionInputService {
         causationId: source.triggerId,
         parentEventId: null,
         actorId: "agent-service",
-        dataClassification: source.dataClassification,
+        dataClassification,
       },
       runtime: {
         ...scope,
@@ -202,7 +218,7 @@ export class RunExecutionInputService {
         capabilityHandleRefs: policy.capabilityHandleRefs,
         budget: {},
         correlationId,
-        dataClassification: source.dataClassification,
+        dataClassification,
       },
       workers: [],
       delegableCapabilityHandleRefs: policy.capabilityHandleRefs,
@@ -247,12 +263,14 @@ export class RunExecutionInputService {
     ).toISOString();
     const policy = await this.#options.policy(source);
     assertPolicy(policy);
+    const foldedPrompt = await this.#foldQueuedMessages(source);
     const frozen: FrozenRunInput = {
       version: "run-execution-input.v2",
       startedAt,
       deadlineAt,
       source,
       policy,
+      ...(foldedPrompt ? { foldedPrompt } : {}),
     };
     const payload = await this.#options.protector.protect({
       ownerId: source.ownerId,
@@ -265,5 +283,57 @@ export class RunExecutionInputService {
     });
     await this.#options.artifacts.commit({ ...key, payload });
     return this.#freeze(source);
+  }
+
+  async #foldQueuedMessages(
+    source: RunExecutionSource,
+  ): Promise<FrozenRunInput["foldedPrompt"] | undefined> {
+    const { folds, payloads, protector, clock } = this.#options;
+    if (!folds || !payloads.put || source.sourceType !== "user_message" || !source.threadId)
+      return undefined;
+    const limit = (await this.#options.foldLimit?.()) ?? DEFAULT_FOLD_LIMIT;
+    const folded = await folds.foldQueuedOwnerRuns({
+      ownerId: source.ownerId,
+      agentId: source.agentId,
+      runId: source.runId,
+      limit,
+      now: clock.now(),
+    });
+    if (folded.length === 0) return undefined;
+    const read = async (ref: string) => {
+      const payload = await payloads.get(ref as never);
+      if (!payload) invalid("Folded owner message is unavailable");
+      return new TextDecoder("utf-8", { fatal: false }).decode(
+        await protector.unprotect({ ownerId: source.ownerId, agentId: source.agentId, payload }),
+      );
+    };
+    const parts = [{ id: source.sourceId, text: await read(source.payloadRef) }];
+    for (const message of folded)
+      parts.push({ id: message.messageId, text: await read(message.contentRef) });
+    const text = parts
+      .map(
+        ({ id, text: body }) =>
+          `<owner-message id="${id}">\n${neutralized(body)}\n</owner-message>`,
+      )
+      .join("\n\n");
+    const rank = Math.max(
+      CLASSIFICATION_ORDER.indexOf(source.dataClassification),
+      ...folded.map(({ dataClassification }) => CLASSIFICATION_ORDER.indexOf(dataClassification)),
+    );
+    const dataClassification = CLASSIFICATION_ORDER[rank] ?? "restricted";
+    const ref = `fold-prompt:${source.runId}`;
+    if (!(await payloads.get(ref as never)))
+      await payloads.put(
+        await protector.protect({
+          ownerId: source.ownerId,
+          agentId: source.agentId,
+          ref: ref as never,
+          contentType: "text/plain",
+          dataClassification,
+          plaintext: new TextEncoder().encode(text),
+          createdAt: clock.now(),
+        }),
+      );
+    return { ref, dataClassification };
   }
 }

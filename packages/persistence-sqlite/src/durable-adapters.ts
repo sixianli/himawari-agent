@@ -1501,6 +1501,9 @@ export class SqliteDurableAdapters {
       findReceipt: (ownerId, agentId, idempotencyKey) =>
         this.context.read("thread.findReceipt", { ownerId, agentId, idempotencyKey }),
       admitOwnerMessage: (input) => this.context.write("thread.admitOwnerMessage", { input }),
+      readFoldedOwnerMessages: (input) =>
+        this.context.read("thread.readFoldedOwnerMessages", input),
+      foldQueuedOwnerRuns: (input) => this.context.write("thread.foldQueuedOwnerRuns", { input }),
       commitAssistantMessage: (input) =>
         this.context.write("thread.commitAssistantMessage", { input }),
       fork: (input) => this.context.write("thread.fork", { input }),

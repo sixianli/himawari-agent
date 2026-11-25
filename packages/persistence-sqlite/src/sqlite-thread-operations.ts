@@ -8,6 +8,8 @@ import type {
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
   RunExecutionSource,
+  FoldedOwnerMessage,
+  FoldQueuedOwnerRunsInput,
   ScheduledJob,
   ThreadCommittedMessagesByIdsQuery,
   ThreadContextSnapshot,
@@ -222,6 +224,12 @@ export class SqliteThreadOperations {
       }
       case "thread.admitOwnerMessage":
         return this.admitOwnerMessage((payload as { input: AdmitOwnerMessageInput }).input);
+      case "thread.readFoldedOwnerMessages": {
+        const input = payload as { ownerId: OwnerId; agentId: AgentId; runId: RunId };
+        return this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      }
+      case "thread.foldQueuedOwnerRuns":
+        return this.foldQueuedOwnerRuns((payload as { input: FoldQueuedOwnerRunsInput }).input);
       case "thread.commitAssistantMessage":
         return this.commitAssistantMessage(
           (payload as { input: CommitAssistantMessageInput }).input,
@@ -1371,6 +1379,119 @@ export class SqliteThreadOperations {
       );
       if (!thread || !message) this.fail("PORT_NOT_FOUND", "Committed message state is missing");
       return { thread, message, receipt };
+    });
+    return transaction.immediate();
+  }
+
+  private readFoldedOwnerMessages(
+    ownerId: OwnerId,
+    agentId: AgentId,
+    runId: RunId,
+  ): readonly FoldedOwnerMessage[] {
+    return this.database
+      .prepare(
+        `SELECT f.folded_run_id AS runId, f.message_id AS messageId, f.position AS position,
+          m.content_ref AS contentRef, m.classification AS dataClassification
+         FROM run_message_folds f
+         JOIN thread_messages m ON m.id = f.message_id
+         WHERE f.run_id = ? AND f.owner_id = ? AND f.agent_id = ?
+         ORDER BY f.position`,
+      )
+      .all(runId, ownerId, agentId) as FoldedOwnerMessage[];
+  }
+
+  private foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): readonly FoldedOwnerMessage[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0) {
+      this.fail("PORT_INVALID_OPERATION", "Fold limit must be a non-negative integer");
+    }
+    const transaction = this.database.transaction(() => {
+      const existing = this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
+      if (existing.length > 0) return existing;
+      const head = this.database
+        .prepare(
+          `SELECT r.status AS status, r.thread_id AS threadId, r.model_selection_json AS selection,
+             t.source_type AS sourceType, u.turn_index AS turnIndex
+           FROM runs r
+           JOIN triggers t ON t.id = r.trigger_id
+           JOIN turns u ON u.run_id = r.id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ?`,
+        )
+        .get(input.runId, input.ownerId, input.agentId) as
+        | {
+            status: string;
+            threadId: string | null;
+            selection: string | null;
+            sourceType: string;
+            turnIndex: number;
+          }
+        | undefined;
+      if (
+        !head ||
+        head.threadId === null ||
+        head.status !== "accepted" ||
+        head.sourceType !== "user_message" ||
+        input.limit === 0
+      )
+        return [];
+      const later = this.database
+        .prepare(
+          `SELECT r.id AS runId, r.status AS status, r.model_selection_json AS selection,
+             t.source_type AS sourceType, t.source_id AS messageId,
+             EXISTS (SELECT 1 FROM run_coordination_checkpoints c WHERE c.run_id = r.id) AS started
+           FROM turns u
+           JOIN runs r ON r.id = u.run_id AND r.owner_id = u.owner_id AND r.agent_id = u.agent_id
+           JOIN triggers t ON t.id = r.trigger_id
+           WHERE u.thread_id = ? AND u.owner_id = ? AND u.agent_id = ? AND u.turn_index > ?
+           ORDER BY u.turn_index`,
+        )
+        .all(head.threadId, input.ownerId, input.agentId, head.turnIndex) as {
+        runId: string;
+        status: string;
+        selection: string | null;
+        sourceType: string;
+        messageId: string;
+        started: number;
+      }[];
+      const followers: string[] = [];
+      for (const candidate of later) {
+        if (
+          followers.length >= input.limit ||
+          candidate.status !== "accepted" ||
+          candidate.started === 1 ||
+          candidate.sourceType !== "user_message" ||
+          candidate.selection !== head.selection
+        )
+          break;
+        followers.push(candidate.runId);
+      }
+      const messageOf = this.database.prepare(
+        `SELECT m.id AS id FROM thread_messages m
+         JOIN triggers t ON t.source_id = m.id
+         JOIN runs r ON r.trigger_id = t.id
+         WHERE r.id = ? AND m.run_id = r.id AND m.role = 'owner' AND m.message_status = 'committed'`,
+      );
+      let position = 0;
+      for (const runId of followers) {
+        const message = messageOf.get(runId) as { id: string } | undefined;
+        if (!message) break;
+        position += 1;
+        this.database
+          .prepare(
+            "UPDATE runs SET status = 'completed', revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'accepted'",
+          )
+          .run(input.now, runId);
+        this.database
+          .prepare("UPDATE turns SET committed_at = ? WHERE run_id = ? AND committed_at IS NULL")
+          .run(input.now, runId);
+        this.database
+          .prepare(
+            `INSERT INTO run_message_folds (
+              owner_id, agent_id, run_id, folded_run_id, message_id, position, folded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(input.ownerId, input.agentId, input.runId, runId, message.id, position, input.now);
+      }
+      return this.readFoldedOwnerMessages(input.ownerId, input.agentId, input.runId);
     });
     return transaction.immediate();
   }

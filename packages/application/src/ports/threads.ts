@@ -47,6 +47,22 @@ export interface ThreadUpdateInput {
   readonly authority: ProductAuthorityFence;
 }
 
+export interface FoldQueuedOwnerRunsInput {
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly runId: RunId;
+  readonly limit: number;
+  readonly now: string;
+}
+
+export interface FoldedOwnerMessage {
+  readonly runId: RunId;
+  readonly messageId: MessageId;
+  readonly contentRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly position: number;
+}
+
 export interface AdmitOwnerMessageInput {
   readonly triggerSource?: "user_message" | "external_event";
   readonly modelSelection?: import("./run-execution-source.js").RunModelSelection;
@@ -320,6 +336,12 @@ export interface ThreadRepositoryPort {
     message: ProductThreadMessage;
     receipt: ThreadMutationReceipt;
   }>;
+  foldQueuedOwnerRuns(input: FoldQueuedOwnerRunsInput): Promise<readonly FoldedOwnerMessage[]>;
+  readFoldedOwnerMessages(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly runId: RunId;
+  }): Promise<readonly FoldedOwnerMessage[]>;
   commitAssistantMessage(input: CommitAssistantMessageInput): Promise<{
     thread: ProductThread;
     message: ProductThreadMessage;

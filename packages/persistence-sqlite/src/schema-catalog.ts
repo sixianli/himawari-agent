@@ -874,6 +874,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its review or its Memory record",
   ),
   entry(
+    "run_message_folds",
+    "ThreadRepositoryPort",
+    "one row per owner message that was folded into an earlier message's run because it was sent while that run was still waiting to start: the run that answers them all, the run the folded message first had, its message and its place in the batch; ids and positions only, the message text stays in the conversation",
+    "metadata_only",
+    "cascade with Owner, Agent, either run or the folded message",
+  ),
+  entry(
     "main_threads",
     "ThreadRepositoryPort",
     "one row per owner and agent naming the conversation that is the main conversation; written once when the service first starts and never moved; the main conversation cannot be archived, trashed or deleted while this row points at it",
