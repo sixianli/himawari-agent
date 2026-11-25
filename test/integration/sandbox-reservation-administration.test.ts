@@ -1597,116 +1597,116 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
   });
 });
 
-describe.each([
-  "docs/runbooks/install-start-stop-runbook.md",
-  "docs/runbooks/hermes-control-center-upgrade-runbook.md",
-])("[R2-L4][prod-sandbox-upgrade-gate] %s", (runbook) => {
-  it("allows the original Schema 49 reservation only after migration and administrator disposition", async () => {
-    const f = await fixture({ schemaSequence: 49 });
-    const before = snapshot(f);
-    const original = await runbookUpgradeGate(f, runbook);
-    expect(original.status).toBe(1);
-    expect(original.stdout).toContain("尚未启动的 SRT 预约数： 1");
-    expect(snapshot(f)).toEqual(before);
-    const migration = await cli([
-      "db",
-      "migrate",
-      "--config",
-      f.configurationPath,
-      "--confirm",
-      "APPLY_MIGRATIONS",
-    ]);
-    expect(migration).toMatchObject({ code: 0, error: "" });
-    const migrated = await runbookUpgradeGate(f, runbook);
-    expect(migrated.status).toBe(1);
-    expect(migrated.stdout).toContain("尚未启动的 SRT 预约数： 1");
-    const listed = await inspect(f);
-    expect((await cli(confirmArgs(f, listed.digest))).code).toBe(0);
-    const disposed = snapshot(f);
-    expect(disposed["sandbox_execution_records"]?.[0]).toMatchObject({
-      preparation_state: "reserved",
-      started_at: null,
-      reservation_stopped_at: T1,
-    });
-    expect(disposed["sandbox_reservation_release_receipts"]).toHaveLength(1);
-    const result = await runbookUpgradeGate(f, runbook);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
-    expect(snapshot(f)).toEqual(disposed);
-  });
-
-  it.each(SUPPORTED_ADMIN_SCHEMAS)(
-    "allows a permanently accepted automatic release in Schema %s without changing history",
-    async (schemaSequence) => {
-      const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
-      expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+describe.each(["docs/runbooks/install-start-stop-runbook.md"])(
+  "[R2-L4][prod-sandbox-upgrade-gate] %s",
+  (runbook) => {
+    it("allows the original Schema 49 reservation only after migration and administrator disposition", async () => {
+      const f = await fixture({ schemaSequence: 49 });
       const before = snapshot(f);
-      expect(before["sandbox_execution_records"]?.[0]).toMatchObject({
+      const original = await runbookUpgradeGate(f, runbook);
+      expect(original.status).toBe(1);
+      expect(original.stdout).toContain("尚未启动的 SRT 预约数： 1");
+      expect(snapshot(f)).toEqual(before);
+      const migration = await cli([
+        "db",
+        "migrate",
+        "--config",
+        f.configurationPath,
+        "--confirm",
+        "APPLY_MIGRATIONS",
+      ]);
+      expect(migration).toMatchObject({ code: 0, error: "" });
+      const migrated = await runbookUpgradeGate(f, runbook);
+      expect(migrated.status).toBe(1);
+      expect(migrated.stdout).toContain("尚未启动的 SRT 预约数： 1");
+      const listed = await inspect(f);
+      expect((await cli(confirmArgs(f, listed.digest))).code).toBe(0);
+      const disposed = snapshot(f);
+      expect(disposed["sandbox_execution_records"]?.[0]).toMatchObject({
         preparation_state: "reserved",
         started_at: null,
+        reservation_stopped_at: T1,
       });
+      expect(disposed["sandbox_reservation_release_receipts"]).toHaveLength(1);
       const result = await runbookUpgradeGate(f, runbook);
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
-      expect(snapshot(f)).toEqual(before);
-    },
-  );
+      expect(snapshot(f)).toEqual(disposed);
+    });
 
-  it.each(SUPPORTED_ADMIN_SCHEMAS)(
-    "still blocks a mixed released and unresolved reservation set in Schema %s",
-    async (schemaSequence) => {
-      const f = await fixture({
-        additionalReservation: true,
-        ...(schemaSequence === 49 ? { schemaSequence } : {}),
-      });
-      expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+    it.each(SUPPORTED_ADMIN_SCHEMAS)(
+      "allows a permanently accepted automatic release in Schema %s without changing history",
+      async (schemaSequence) => {
+        const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
+        expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+        const before = snapshot(f);
+        expect(before["sandbox_execution_records"]?.[0]).toMatchObject({
+          preparation_state: "reserved",
+          started_at: null,
+        });
+        const result = await runbookUpgradeGate(f, runbook);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
+        expect(snapshot(f)).toEqual(before);
+      },
+    );
+
+    it.each(SUPPORTED_ADMIN_SCHEMAS)(
+      "still blocks a mixed released and unresolved reservation set in Schema %s",
+      async (schemaSequence) => {
+        const f = await fixture({
+          additionalReservation: true,
+          ...(schemaSequence === 49 ? { schemaSequence } : {}),
+        });
+        expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+        const before = snapshot(f);
+        expect(before["sandbox_execution_records"]).toHaveLength(2);
+        expect(before["sandbox_reservation_release_receipts"]).toHaveLength(1);
+        const result = await runbookUpgradeGate(f, runbook);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain("尚未启动的 SRT 预约数： 1");
+        expect(snapshot(f)).toEqual(before);
+      },
+    );
+
+    it.each([
+      ["identity", { identity: { jobId: "job-other-upgrade-gate" } }],
+      ["environment", { environmentId: "environment-other-upgrade-gate" }],
+      ["stop marker", { stopRequestedAt: T2 }],
+    ])("keeps a reservation blocked when its %s proof is rejected", async (_name, change) => {
+      const f = await fixture();
       const before = snapshot(f);
-      expect(before["sandbox_execution_records"]).toHaveLength(2);
-      expect(before["sandbox_reservation_release_receipts"]).toHaveLength(1);
+      expect(() => acceptHostReservationRelease(f, change as Record<string, unknown>)).toThrow(
+        "Invalid reservation release verification",
+      );
+      expect(snapshot(f)).toEqual(before);
       const result = await runbookUpgradeGate(f, runbook);
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("尚未启动的 SRT 预约数： 1");
       expect(snapshot(f)).toEqual(before);
-    },
-  );
+    });
 
-  it.each([
-    ["identity", { identity: { jobId: "job-other-upgrade-gate" } }],
-    ["environment", { environmentId: "environment-other-upgrade-gate" }],
-    ["stop marker", { stopRequestedAt: T2 }],
-  ])("keeps a reservation blocked when its %s proof is rejected", async (_name, change) => {
-    const f = await fixture();
-    const before = snapshot(f);
-    expect(() => acceptHostReservationRelease(f, change as Record<string, unknown>)).toThrow(
-      "Invalid reservation release verification",
+    it.each(["sandbox_reservation_release_receipts", "sandbox_release_receipts"])(
+      "refuses a Schema 49 database missing %s rather than treating its receipts as absent",
+      async (table) => {
+        const f = await fixture({ schemaSequence: 49 });
+        withDatabase(f, (database) => database.exec(`DROP TABLE ${table}`));
+        const before = snapshot(f);
+        const result = await runbookUpgradeGate(f, runbook);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(`no such table: ${table}`);
+        expect(result.stdout).toBe("");
+        expect(snapshot(f)).toEqual(before);
+      },
     );
-    expect(snapshot(f)).toEqual(before);
-    const result = await runbookUpgradeGate(f, runbook);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 1");
-    expect(snapshot(f)).toEqual(before);
-  });
 
-  it.each(["sandbox_reservation_release_receipts", "sandbox_release_receipts"])(
-    "refuses a Schema 49 database missing %s rather than treating its receipts as absent",
-    async (table) => {
-      const f = await fixture({ schemaSequence: 49 });
-      withDatabase(f, (database) => database.exec(`DROP TABLE ${table}`));
+    it("preserves the existing count scope for already bound executions", async () => {
+      const f = await fixture({ bound: true });
       const before = snapshot(f);
       const result = await runbookUpgradeGate(f, runbook);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`no such table: ${table}`);
-      expect(result.stdout).toBe("");
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
       expect(snapshot(f)).toEqual(before);
-    },
-  );
-
-  it("preserves the existing count scope for already bound executions", async () => {
-    const f = await fixture({ bound: true });
-    const before = snapshot(f);
-    const result = await runbookUpgradeGate(f, runbook);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
-    expect(snapshot(f)).toEqual(before);
-  });
-});
+    });
+  },
+);

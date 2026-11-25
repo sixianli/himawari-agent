@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0021-platform-capability-runtime-isolation.md, docs/adr/0022-mac-tiered-command-sandbox.md, docs/adr/0024-srt-unified-execution.md"
+supersedes: ""
 superseded_by: ""
 amended_by: "docs/adr/0031-isolated-tool-execution.md"
 date: "2026-09-09"
@@ -70,9 +70,9 @@ Pi 提供工具定义、执行算法及 Operations 注入点，并提供 SRT、S
 
 ## 关联资料
 
-- [SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
-- [SOURCE: docs/adr/0022-mac-tiered-command-sandbox.md]
-- [SOURCE: docs/adr/0024-srt-unified-execution.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0021-platform-capability-runtime-isolation.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0022-mac-tiered-command-sandbox.md]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0024-srt-unified-execution.md]
 - [SOURCE: docs/adr/0023-durable-hitl-execution.md]
 - [SOURCE: docs/architecture-v0.1.md]
 - [2026-09-07-srt-unified-execution-design.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/specs/2026-09-07-srt-unified-execution-design.md)

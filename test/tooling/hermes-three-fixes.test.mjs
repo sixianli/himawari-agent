@@ -240,5 +240,5 @@ it.each(retiredProviderProbes)("[R2-L5] retires the paid historical CLI %s", (fi
   expect(result.status).toBe(1);
   expect(result.stdout).toBe("");
   expect(result.stderr).toContain("HISTORICAL_PROVIDER_PROBE_RETIRED");
-  expect(result.stderr).toContain("2026-10-06-vercel-gateway-migration-design.md");
+  expect(result.stderr).toContain("0048-vercel-ai-gateway-replaces-openrouter.md");
 });

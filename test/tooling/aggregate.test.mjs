@@ -521,7 +521,7 @@ describe("complete-attempt gate", () => {
     expect(result.status).toBe("failed");
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
-  it("[ADR-0266] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
+  it("[ADR-0287] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
     for (const id of ["policy", "tooling", "security"]) {
       const input = positive();
       selected(input, id).result.toolchain.arch = "arm64";

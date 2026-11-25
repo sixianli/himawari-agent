@@ -67,10 +67,10 @@ date: "2026-11-08"
 
 - 正面：主人明说要记的事能记住；记忆和标题里不再出现被拦下的空洞结果。
 - 负面：主人的数据库里会有密码、密钥的明文拷贝；`[密钥]` 无法还原；经批准的敏感记忆存成普通分类（[ADR 0166](0166-prompt-wording-batch-1-system-and-tools.md) 之前的设计）后，提醒的推送正文是否显示取决于记忆的数据分级（`dataClassification`）。
-- 已知缺口：自动检测只会在卡号、证件号时把 private 或 public 提到 sensitive，密码、密钥不会；模型自报的 sensitive、restricted 和来源分类仍会提高分类，推送正文是否显示取决于最终的 `dataClassification`，所以没被提高的含密码、密钥的提醒会在推送通知正文里原样显示；推送内容按端到端加密发给主人的浏览器，但会显示在锁屏上。要兑现“推送不显示正文”，需要把密码、密钥检测加进分类提升规则或让推送正文一律不带记忆文字，这是产品取舍，留给 Andy 定。（[ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 已关闭这一条。）
+- 已知缺口：自动检测只会在卡号、证件号时把 private 或 public 提到 sensitive，密码、密钥不会；模型自报的 sensitive、restricted 和来源分类仍会提高分类，推送正文是否显示取决于最终的 `dataClassification`，所以没被提高的含密码、密钥的提醒会在推送通知正文里原样显示；推送内容按端到端加密发给主人的浏览器，但会显示在锁屏上。要兑现“推送不显示正文”，需要把密码、密钥检测加进分类提升规则或让推送正文一律不带记忆文字，这是产品取舍，留给 Andy 定。（[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 已关闭这一条。）
 - 已知缺口（留给敏感信息识别升级）：密码规则取值到空白、逗号、分号为止；服务端“添加记忆”不检查敏感不能置顶；网页编辑和导入不重新判分类；审批门槛依赖模型自报的 `explicit`。
 - 与 PRD 的关系：[PRD v0.2](../prd-v0.2.md) “非目标”和“机器秘密、敏感数据与可观察 Trace”两节原来写着机器秘密不进长期记忆、要在记忆提取之前排除。Andy 2026-11-08 说“改 PRD”，这几句已改成与本决定一致，覆盖清单（`test/fixtures/v0.2/coverage-manifest.json`）和 S0 规格里记录的 PRD 摘要同步更新。
-- 另有两处遗留：2026-08 的基础规格和计划（`2026-08-26-portable-durable-web-agent-design.md`、`2026-08-26-portable-durable-web-agent-plan.md`、`2026-08-26-v0.2-spec-suite-integration-plan.md`）仍写着“machine secret 在提取、嵌入、模型调用前排除，不进入 Memory 或迁移包”，按本决定取代，没有逐条改；网页导入记忆里粘贴文本和 Codex 文本这条路径（`memory-import.ts` 的 `parseMemoryText`）仍会整行丢弃含密码、卡号等字样的行（JSON 导出导入不丢），这是 PR3、PR4 没动的旧行为，留给 Andy 定是否也改成存原文并标敏感。（其中网页导入一项已由 [ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 关闭，旧规格和计划一项仍在。）
+- 另有两处遗留：2026-08 的基础规格和计划（`2026-08-26-portable-durable-web-agent-design.md`、`2026-08-26-portable-durable-web-agent-plan.md`、`2026-08-26-v0.2-spec-suite-integration-plan.md`）仍写着“machine secret 在提取、嵌入、模型调用前排除，不进入 Memory 或迁移包”，按本决定取代，没有逐条改；网页导入记忆里粘贴文本和 Codex 文本这条路径（`memory-import.ts` 的 `parseMemoryText`）仍会整行丢弃含密码、卡号等字样的行（JSON 导出导入不丢），这是 PR3、PR4 没动的旧行为，留给 Andy 定是否也改成存原文并标敏感。（其中网页导入一项已由 [ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 关闭，旧规格和计划一项仍在。）
 - 后续：本决定部分取代的旧说法在原 ADR 里加了指向本文的说明，决定内容不改：ADR 0166 的 W-07b、ADR 0143 第 12 条里的 `candidate_secret_excluded`、ADR 0167 决定第 2 条“存储宁可多拦”、ADR 0148 第 6 条“还原只在主对话的显示端”。
 
 <a id="references"></a>

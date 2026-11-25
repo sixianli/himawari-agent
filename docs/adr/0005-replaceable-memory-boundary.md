@@ -44,4 +44,4 @@ Himawari Agent 通过产品自有的记忆端口使用长期记忆服务。端�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#memory-and-context]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#memory-and-context]

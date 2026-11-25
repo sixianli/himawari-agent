@@ -29,8 +29,8 @@ superseded_by: ""
 
 ## Notes
 
-- 现行决定：[SOURCE: docs/adr/0234-one-program-per-person-database-file.md]，取代 [SOURCE: docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]（Andy 2026-11-11T10:27Z 同意一个程序、每人一个数据库文件；11:05Z 要求只用 OpenCode Go 套餐、上限由他配置）。
-- ADR 0083 时代的决定：[SOURCE: docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]，取代 [SOURCE: docs/adr/0081-isolated-instance-per-person.md]（Andy 2026-10-26T11:12Z 同意按推荐方案做；2026-10-26T13:05Z 同意 Andy 的手机也走 Cloudflare 入口，见 ADR 0082）。
+- 现行决定：[SOURCE: docs/adr/0234-one-program-per-person-database-file.md]，取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]（Andy 2026-11-11T10:27Z 同意一个程序、每人一个数据库文件；11:05Z 要求只用 OpenCode Go 套餐、上限由他配置）。
+- ADR 0083 时代的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md]，取代 [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0081-isolated-instance-per-person.md]（Andy 2026-10-26T11:12Z 同意按推荐方案做；2026-10-26T13:05Z 同意 Andy 的手机也走 Cloudflare 入口，见 ADR 0082）。
 - 评估文档：<https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>。
 - 2026-11-09 复查时先看开工条件是否满足；不满足就把复查日期往后推。
 - 2026-11-09 复查结果（读 main 的 `71d986b8`）：

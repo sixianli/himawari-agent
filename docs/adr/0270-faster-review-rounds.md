@@ -10,6 +10,8 @@ date: "2026-11-14"
 
 # ADR 0270：让复核每一轮更快、更少无谓重跑
 
+> **2026-11-25 起暂停。** Andy 叫停了全部 OpenCode 复核：方案讨论、方案说法核对和合并前代码复核都不跑，合并只看测试和 CI（见 [AGENTS.md](../../AGENTS.md#working-with-opencode)）。Andy 说恢复之前，本文的决定不适用。
+
 <a id="contents"></a>
 
 ## 阅读导航

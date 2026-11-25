@@ -53,7 +53,7 @@ date: "2026-10-26"
 5. **上线脚本只接受生成器出的包。** `deploy.sh` 先运行 `generated-packet-gate.py`：操作包里没有 `packet-parameters.json`，或 `packet-checks.json` 没记全部检查通过、提交对不上，就以退出码 6 停下，结果为 `not-generated`，生产机上什么都不动。`rollback.sh` 不受这道检查限制，因为回退要先恢复服务。
 6. **冻结紧挨着上线。** `make-packet.py prepare` 出包的最后一步冻结；离上线时间长了，先运行 `make-packet.py freeze <操作包目录>` 重新冻结（只重新读 S0 并重算绑定，约一分钟，未测量）。`deploy-preflight.py` 在停服前对比生产机现在的配置摘要、服务单元摘要和 `authority.json` 里的授权轮次与编号是否和冻结时一样；不一样（例如冻结后服务重启过）就不停服，并提示重新冻结（`PREFLIGHT_REFREEZE`）。
 7. **生产机上的验收挪到停服之前。** `deploy.sh` 的步骤顺序改为 `S1_TRANSPORT S1_INSTALL S6_ACCEPTANCE S2_STOP …`，验收失败时旧版本照常服务。环境变量 `HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP=1` 恢复旧顺序，只在新顺序出问题时临时使用。
-8. **给以后每人一个实例留好位置。** 实例的主机和固定值都在实例文件里，生成器按 `--instance` 选，[ADR 0083](0083-isolated-instance-per-person-with-owner-entry.md) 的每人一个实例以后只需多写一个实例文件。
+8. **给以后每人一个实例留好位置。** 实例的主机和固定值都在实例文件里，生成器按 `--instance` 选，[ADR 0083](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md) 的每人一个实例以后只需多写一个实例文件。
 
 [↑ 返回阅读导航](#contents)
 
@@ -64,7 +64,7 @@ date: "2026-10-26"
 ### 方案 A：继续复制上一次的操作包，加检查清单
 
 - 好处：不用改工具。
-- 代价：同一种错误已经出现三次以上，每次之后都加了检查，下一次又有检查没覆盖的旧值；按 [ADR 0060](0060-hard-constraint-on-third-repeat.md) 不能再只靠书面提醒。出包时间也降不下来。
+- 代价：同一种错误已经出现三次以上，每次之后都加了检查，下一次又有检查没覆盖的旧值；按 [ADR 0060](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md) 不能再只靠书面提醒。出包时间也降不下来。
 
 ### 方案 B：模板加参数生成，出包时跑全部检查（选这个）
 
@@ -79,7 +79,7 @@ date: "2026-10-26"
 ### 方案 D：升库时只靠 Hermes 上的整套演练
 
 - 好处：最接近真实。
-- 代价：快速模式下不跑演练（[ADR 0073](0073-fast-delivery-mode.md)）；一次演练要几十分钟。改为出包时用真实命令升一个真实的旧版本数据库，几十秒内跑完。
+- 代价：快速模式下不跑演练（[ADR 0073](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)）；一次演练要几十分钟。改为出包时用真实命令升一个真实的旧版本数据库，几十秒内跑完。
 
 [↑ 返回阅读导航](#contents)
 
@@ -110,10 +110,10 @@ date: "2026-10-26"
 - [SOURCE: docs/engineering-casebook.md#case-packet-generator]
 - [SOURCE: docs/engineering-casebook.md#case-eleventh-twelfth-deploy]
 - [交付模式规则：快速模式](../../.agents/instructions/delivery-mode.md#fast-mode)
-- [ADR 0060：同一错误第三次就加硬约束](0060-hard-constraint-on-third-repeat.md)
-- [ADR 0073：快速交付模式](0073-fast-delivery-mode.md)
+- [ADR 0060：同一错误第三次就加硬约束](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0060-hard-constraint-on-third-repeat.md)
+- [ADR 0073：快速交付模式](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0073-fast-delivery-mode.md)
 - [ADR 0074：Claude 自己执行生产上线](0074-claude-runs-production-deployments.md)
-- [ADR 0083：每人一个独立实例，主人也走 Cloudflare 入口](0083-isolated-instance-per-person-with-owner-entry.md)
+- [ADR 0083：每人一个独立实例，主人也走 Cloudflare 入口](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0083-isolated-instance-per-person-with-owner-entry.md)
 
 [↑ 返回阅读导航](#contents)
 

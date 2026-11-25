@@ -44,4 +44,4 @@ Himawari Agent 会读取私人数据、运行工具并产生外部副作用。�
 
 ## Links
 
-- [SOURCE: docs/prd-v0.1.md#proactivity-and-authorization]
+- [SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/prd-v0.1.md#proactivity-and-authorization]

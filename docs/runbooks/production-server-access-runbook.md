@@ -11,7 +11,7 @@ date: "2026-10-28"
 # 生产云服务器访问与系统更新 Runbook
 
 <!-- runbook-contract:
-- docs/adr/0056-cloud-server-also-test-host.md
+- https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md
 - docs/backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md
 - docs/adr/0099-production-host-firewall-ssh-only.md
 -->
@@ -48,7 +48,7 @@ date: "2026-10-28"
 
 ## Authoritative Sources
 
-- 云服务器同时是生产主机和测试主机，测试账号的边界：[SOURCE: docs/adr/0056-cloud-server-also-test-host.md]
+- 云服务器同时是生产主机和测试主机，测试账号的边界：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0056-cloud-server-also-test-host.md]
 - 启动前检查绑定内核版本导致的停摆、根因确认和恢复记录：[SOURCE: docs/backlog/BL-20261021-009-生-产-启-动-绑-定-精-确.md]
 - 启动前检查脚本 `cloud-protected-prepare.mjs` 和封存脚本 `cloud-seal.mjs` 在各次操作包的 `signing/` 目录（本地未提交的 `.ci-output/production/`）；第五次版本安装在服务器的 `/opt/himawari/operations/fifth-20261017/`。
 
@@ -182,7 +182,7 @@ Magpie（装在生产机上的模型路由程序，Himawari 经它调用模型�
 注意：
 
 - 在管理页里改的路由组、账号或密钥立即影响线上对话，算生产配置变更，按[授权、上线和合并](../../.claude/rules/owner-standing-rules.md#authorization-deploys-and-merges)处理。路由组 `group/himawari-main` 改动的历史见 [ADR 0117](../adr/0117-magpie-routes-models-through-owned-subscriptions.md)，当前顺序以管理页显示的为准。
-- Hermes 测试环境的 Magpie 管理页也用 3430：2026-11-01 在 Hermes 装了测试容器 `magpie-test`，只绑 `127.0.0.1:3425` 和 `127.0.0.1:3430`（Hermes 端口快照 `.agents/tasks/hermes-runner/artifacts/hr4-after.txt` 里同时有这个容器和 `127.0.0.1:3430`）；[ADR 0142](../adr/0142-keep-background-memory-capture.md) 写于 2026-10-31，说「Hermes 上没有 Magpie」是安装之前的情况。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。Hermes 的管理页在平时用的浏览器里打开，不要在登过生产管理页的那个浏览器里打开，原因见上面的登录一段。
+- Hermes 测试环境的 Magpie 管理页也用 3430：2026-11-01 在 Hermes 装了测试容器 `magpie-test`，只绑 `127.0.0.1:3425` 和 `127.0.0.1:3430`（Hermes 端口快照 [`hr4-after.txt`](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/.agents/tasks/hermes-runner/artifacts/hr4-after.txt) 里同时有这个容器和 `127.0.0.1:3430`）；[ADR 0142](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0142-keep-background-memory-capture.md) 写于 2026-10-31，说「Hermes 上没有 Magpie」是安装之前的情况。要连 Hermes 时先 `launchctl unload` 生产隧道，否则两条转发抢同一个本机端口，后开的那条会因 `ExitOnForwardFailure` 直接退出。Hermes 的管理页在平时用的浏览器里打开，不要在登过生产管理页的那个浏览器里打开，原因见上面的登录一段。
 - SSH 密钥设了口令时，后台的 `ssh` 无法弹窗输入，会每 15 秒重试一次、一直连不上；先运行一次 `ssh-add --apple-use-keychain <私钥文件>` 把口令存进钥匙串。
 
 [返回导航](#阅读导航)

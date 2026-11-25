@@ -23,7 +23,7 @@ date: "2026-10-31"
 
 ## 背景
 
-2026-10-26 起，仓库在 `.claude/skills/` 下放了 Andy 的 16 个技能（skill，给 Claude 的一套做事说明，入口是 `SKILL.md`）的快照，`.claude/rules/owner-skills.md` 让云端线程在任务对得上时用读文件的方式照做（[ADR 0080](0080-document-governance-in-fast-mode.md) 记了 `document-governance` 这一份）。
+2026-10-26 起，仓库在 `.claude/skills/` 下放了 Andy 的 16 个技能（skill，给 Claude 的一套做事说明，入口是 `SKILL.md`）的快照，`.claude/rules/owner-skills.md` 让云端线程在任务对得上时用读文件的方式照做（[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md) 记了 `document-governance` 这一份）。
 
 2026-10-30 线程“让仓库规则文件被可靠读到”核对后发现：
 
@@ -64,7 +64,7 @@ date: "2026-10-31"
 - 云端线程能不能用某个技能，取决于 Andy 有没有把它上传到账号；仓库里读不到副本了。Andy 上传过哪些，以 claude.ai 设置页为准。
 - `readable-output` 原件以插件方式带着检查中文回复的钩子；claude.ai 的技能包不接受插件清单文件（2026-10-30 上传报错“A skill cannot contain a plugin manifest”），所以上传的版本只有写作规则，钩子不在云端生效。
 - 仓库里不再有能跑的文档校验程序，`npm run check:docs`、`scripts/check-docs-governance.mjs` 和它的测试一起删除（[ADR 0133](0133-docs-check-removed-from-npm-run-check.md)）。要校验文档只能通过技能工具加载 `document-governance` 后手动跑。
-- 历史文档（[ADR 0080](0080-document-governance-in-fast-mode.md)、案例库、lessons）里出现的 `.claude/skills/` 是当时的事实，不改。
+- 历史文档（[ADR 0080](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)、案例库、lessons）里出现的 `.claude/skills/` 是当时的事实，不改。
 
 [↑ 返回阅读导航](#contents)
 
@@ -72,7 +72,7 @@ date: "2026-10-31"
 
 ## 关联文档
 
-- [ADR 0080：快速模式下的文档治理](0080-document-governance-in-fast-mode.md)
+- [ADR 0080：快速模式下的文档治理](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0080-document-governance-in-fast-mode.md)
 - 规则文件（`.claude/rules/owner-skills.md`，现已不在仓库里）
 - 规则文件（`.claude/rules/document-governance.md`，现已不在仓库里）
 - [案例 74：仓库里的规则和技能，云端线程到底读到了哪些](../engineering-casebook.md#case-cloud-thread-loading)

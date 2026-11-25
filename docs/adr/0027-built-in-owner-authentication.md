@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: docs/adr/0020-public-web-identity-gateway.md
+supersedes: ""
 superseded_by: ""
 date: "2026-09-10"
 ---

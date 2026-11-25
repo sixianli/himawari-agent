@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "docs/adr/0039-bash-exits-while-background-output-open.md"
+supersedes: ""
 superseded_by: ""
 date: "2026-09-29"
 ---
@@ -23,7 +23,7 @@ date: "2026-09-29"
 
 ## 背景
 
-[ADR 0039](0039-bash-exits-while-background-output-open.md) 决定：Bash 主进程退出、但后台程序仍占着输出通道（stdout/stderr，程序写出文字的管道）时，照上游 Pi（本项目依赖的开源编程助手框架，固定版本 0.84.2）的做法，输出连续安静 100 毫秒就正常结束这次调用。ADR 0039 决定第 2 条同时写了“后台程序继续运行”。
+[ADR 0039](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0039-bash-exits-while-background-output-open.md) 决定：Bash 主进程退出、但后台程序仍占着输出通道（stdout/stderr，程序写出文字的管道）时，照上游 Pi（本项目依赖的开源编程助手框架，固定版本 0.84.2）的做法，输出连续安静 100 毫秒就正常结束这次调用。ADR 0039 决定第 2 条同时写了“后台程序继续运行”。
 
 2026-09-29 工具执行排查第二轮实测发现，这两点不能同时成立。调用结束时，Himawari 和 Pi 一样会关掉读取这次输出的一端。之后后台程序如果还往这条通道里写输出，操作系统就会结束它：
 
@@ -83,6 +83,6 @@ date: "2026-09-29"
 
 ## 关联文档
 
-- 被取代的决定：[SOURCE: docs/adr/0039-bash-exits-while-background-output-open.md]
+- 被取代的决定：[SOURCE: https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0039-bash-exits-while-background-output-open.md]
 - SRT 模式的停止、释放和后台任务规则：[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
 - 进行中的工具执行排查：[2026-09-28-tool-execution-audit-plan.md（已删除，链接指向删除前的版本）](https://github.com/sixianli/himawari-agent/blob/208007462f99e16c5c8cd4daac2acc10fa9f5f36/docs/execution/plans/2026-09-28-tool-execution-audit-plan.md)

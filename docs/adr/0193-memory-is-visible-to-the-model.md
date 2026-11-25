@@ -33,7 +33,7 @@ Andy 2026-11-09 定的产品原则：“存入记忆的内容必须能被模型�
 1. 这次运行能用哪些记忆、历史和资料。配置项 `maxMemoryClassification` 生产上是 `private`，所以 sensitive 记忆一律被挡在模型外面。
 2. 这次运行的工具调用、推送和日志按什么级别处理。
 
-结果是：[ADR 0185](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 把密码、密钥改成存原文并标 sensitive 之后，记忆页能看到它们，模型在对话里检索不到、档案块不带、整理和每日复盘看不到、Gmail 检查也不用。存进去的记忆模型用不上，违反上面的原则。
+结果是：[ADR 0185](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md) 把密码、密钥改成存原文并标 sensitive 之后，记忆页能看到它们，模型在对话里检索不到、档案块不带、整理和每日复盘看不到、Gmail 检查也不用。存进去的记忆模型用不上，违反上面的原则。
 
 Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 
@@ -48,19 +48,19 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 1. 原则冲突时的顺序：`docs/product-vision.md:55`，“原则冲突时，按序优先：用户主权 > 边界与可逆性 > 记忆可靠性 > 主动性与效率。”本决定按“用户主权”（Andy 明说存的要给模型看）和“记忆可靠性”（存了就能用）裁决；“边界”由服务方允许名单守住，见前提 3。
 2. 原来的上限来自配置：main `fd283e43` 的 `packages/application/src/services/context-formation-service.ts:92` 是 `readonly maxMemoryClassification: DataClassification;`，第 151、183 行用它比较候选记忆的分级。
 3. 真正的边界是服务方描述里的允许名单：`packages/application/src/services/model-invocation-admission-service.ts:482`，`if (!bound.descriptor.allowedDataClassifications.includes(dataClassification)) {`。名单里没有 sensitive 的服务方，不会收到 sensitive 的请求。
-4. 密码不能被模型检索到是 ADR 0185 记下的代价：`docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md:61`，“所以存下来的密码在记忆页能看到，但模型在对话里检索不到它……要让模型能用，需要另做经主人确认的敏感记忆读取路径。”
+4. 密码不能被模型检索到是 ADR 0185 记下的代价：[`0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md` 第 61 行（已删除）](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md#L61)，“所以存下来的密码在记忆页能看到，但模型在对话里检索不到它……要让模型能用，需要另做经主人确认的敏感记忆读取路径。”
 5. 生产名单原本只到 private：本次之前 `scripts/delivery-mode/packet-template/maintenance/production-shape-config-template.json` 的两个 `allowedDataClassifications` 都不含 `sensitive`，本次在第 65、107 行加上。
 
 <a id="decision"></a>
 
 ## 决定
 
-1. **两套分级分开。**“模型能看到什么”由固定的模型可见上限决定，上限是 sensitive，写在代码里（`packages/application/src/services/model-visibility.ts` 的 `modelVisibleCeiling()`），不再可配置；restricted 永远不给模型。运行分级（run 的 `dataClassification`）仍只管工具、推送和日志，聊天运行照旧是 private。
+1. **两套分级分开。**“模型能看到什么”由固定的模型可见上限决定，上限是 sensitive，写在代码里（`packages/application/src/services/model-visibility.ts` 的 `modelVisibleCeiling()`），不再可配置；restricted 永远不给模型。[ADR 0286](0286-the-main-model-reads-and-writes-memory-itself.md) 决定 4 起，记忆不再标 sensitive：除密码、密钥（程序拒存）外，什么都原样记、原样给模型，本条的分级上限随之只剩“密码、密钥不进记忆”。运行分级（run 的 `dataClassification`）仍只管工具、推送和日志，聊天运行照旧是 private。
 2. **配置项 `maxMemoryClassification` 退役。**配置里写了也接受但不生效，服务启动时记一行 `configuration.key_retired`。生产配置模板删掉这一项。
 3. **按实际送出的内容定请求的分级。**同一次运行里，发给模型的请求分级取这三者的最高值：运行分级、本轮上下文投影实际含有的最高分级（`RuntimeProjection.contentClassification`）、本轮工具结果报告的最高分级（`RuntimeToolSettledResult.contentClassification`，例如记忆检索工具返回了敏感记忆）。这个分级同时用于准入检查、存历史、存最终回答、存压缩摘要和运行记录（模型请求、回答、工具结果的留档），所以只含 private 内容的对话仍按 private 发送，能继续用名单只到 private 的服务方；含敏感内容的那一刻起按 sensitive 发送，名单不含 sensitive 的服务方会被拒绝，请求不发出。
 4. **派生内容取来源的最高分级。**记忆整理的推断、事件段和它的摘要、Gmail 检查带入的记忆、记忆检索工具的输出、档案块，都按它们所用记忆的最高分级标注和发送。主人消息里的附件（文件、图片）同样最多读到 sensitive，附件的分级算进这一轮的内容分级，不再因为高于运行分级显示成“读不出来”。Gmail 检查根据敏感记忆写出的提醒，按这次判断的分级存档。事件段补算向量时，每一段按它自己的分级发给嵌入模型，restricted 的不算向量。取几个分级中的最高值时（`highestClassification`），遇到不认识的分级值直接报错，不当作低分级处理；判断模型能不能看（`isModelVisible`）时，不认识的值按看不到处理。
 5. **固定显示（置顶）只看类别。**敏感记忆不再因为敏感而不能置顶；健康、财务、事件、其他四类仍不能置顶（[ADR 0112](0112-memory-page-carried-memories-and-topic-browsing.md) 的类别规则不变）。
-6. **生产的对话模型和嵌入模型名单加 sensitive**（Andy 的 A）。发出前的出口遮盖不变：密码、验证码等仍按 [ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) 遮盖后再发。
+6. **生产的对话模型和嵌入模型名单加 sensitive**（Andy 的 A）。发出前的出口遮盖不变（[ADR 0286](0286-the-main-model-reads-and-writes-memory-itself.md) 决定 4 同样保留）：密码、验证码等仍按 [ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md) 遮盖后再发。
 
 <a id="options"></a>
 
@@ -93,7 +93,7 @@ Andy 在方案 v3 上对三件事拍板“A、B、C 我都同意”：
 - [ADR 0112：记忆页的固定显示](0112-memory-page-carried-memories-and-topic-browsing.md)
 - [ADR 0158：Gmail 检查带入相关记忆](0158-bring-related-memories-into-gmail-checks.md)
 - [ADR 0183：只在数据离开时遮盖](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)
-- [ADR 0185：密码、密钥标敏感而不是丢弃](0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
+- [ADR 0185：密码、密钥标敏感而不是丢弃](https://github.com/sixianli/himawari-agent/blob/baf02ebc4f376a27aa2a8d2871cc4a897a42c7e2/docs/adr/0185-mark-passwords-and-keys-sensitive-instead-of-dropping-them.md)
 - 代码：`packages/application/src/services/model-visibility.ts`、`packages/runtime-pi/src/pi-runtime-adapter.ts`、`packages/application/src/services/context-formation-service.ts`
 
 [返回目录](#contents)
