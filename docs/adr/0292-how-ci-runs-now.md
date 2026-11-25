@@ -2,7 +2,7 @@
 status: active
 document_type: adr
 decision_status: accepted
-supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0243-ci-uses-no-github-artifacts.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0267-ci-tests-without-coverage-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0268-merge-queue-and-related-tests-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0275-tests-job-runs-on-three-runners.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0287-ci-runs-on-github-hosted-runners.md"
+supersedes: "https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0157-gitleaks-allowlist-for-evidence-digests.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0177-gitleaks-exact-value-allowlist.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0189-drop-node-floor-and-fold-test-into-coverage.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0241-draft-prs-skip-ci-and-merge-waits-for-green.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0243-ci-uses-no-github-artifacts.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0267-ci-tests-without-coverage-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0268-merge-queue-and-related-tests-on-prs.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0275-tests-job-runs-on-three-runners.md, https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 superseded_by: ""
 date: "2026-11-26"
 covers: ".github/workflows/ci.yml, .github/workflows/main.yml, .github/workflows/merge-queue.yml, .github/workflows/apple.yml, ci/policy.json, scripts/ci/check-policy.mjs, scripts/ci/run.mjs, scripts/ci/test-scope.mjs, scripts/ci/aggregate.mjs, scripts/ci/required.mjs, scripts/ci/gate-log.mjs, scripts/ci/ci-summary.mjs, scripts/ci/main-evidence.mjs, scripts/ci/merge-queue.mjs, scripts/ci/prepare-hosted.sh"
@@ -24,6 +24,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
   - [作业之间传文件、结果放哪里](#results)
   - [合并和 main 上的确认](#merging)
   - [合并队列（暂停）](#merge-queue)
+  - [密钥扫描的误报怎样放行](#gitleaks)
 - [还没做到的](#not-yet)
 - [放弃的做法](#rejected)
 - [后果](#consequences)
@@ -101,6 +102,17 @@ CI（持续集成，每次推送和开 PR 时自动跑检查和测试的那套�
 
 - `.github/workflows/merge-queue.yml` 和 `scripts/ci/merge-queue.mjs` 还在仓库里，但工作流现在只能手动触发（`workflow_dispatch`），不再跟着 CI 跑完或定时触发；线程不给 PR 加 `merge-queue` 标签，CI 变绿后直接合并（[交付模式](../../.agents/instructions/delivery-mode.md#fast-mode)）。
 - 手动触发时它的做法：从带 `merge-queue` 标签、PR 头上 `ci/required` 成功的 PR 里取最多 5 个，以当前 main 为底逐个 `git merge --no-ff`，推到 `mq/<运行号>-<尝试次数>` 分支跑完整 CI；过了就逐个合并并核对 main 的树和候选一致，失败就对半拆开重测，最终把出错的那个 PR 移出队列。队列状态存在 `merge-queue-state` 分支的 `state.json`。它只检出 main、只运行 main 上的脚本，不执行 PR 的代码；改了 `.github`、`ci`、`scripts/ci` 的 PR 不进队列；只在 `DELIVERY_MODE` 为 `fast` 时工作。
+
+<a id="gitleaks"></a>
+
+### 密钥扫描的误报怎样放行
+
+Gitleaks 是 CI 里扫描仓库有没有误提交密钥的工具。它把不是密钥的东西认成密钥时：
+
+- 先按逐条例外登记进 `ci/security-exceptions.json`。
+- 例外清单收不下（命中在测试目录之外，或那一行不能登记）时，才在 `ci/rules/gitleaks.toml` 加白名单。每块白名单只对一条规则生效（`targetRules`）、`condition = "AND"`、路径锚定到具体文件或那一个目录，并且只认一种固定形状：资格证据里“路径加 64 位十六进制摘要”的整行，或用 `^…$` 锚定的那一个精确值。不得按整个目录或整条规则放行，不得写成字符类。
+- 每块白名单都要有测试（`test/tooling/gitleaks-config.test.mjs`、`test/tooling/gitleaks-allowlist.test.mjs`），用锁定版本的真实 Gitleaks 核对误报不报、真格式的密钥照报、改一个字符就不放行。
+- 只放行已经核实不是密钥的值；真密钥误入仓库时轮换，不加白名单。
 
 <a id="not-yet"></a>
 

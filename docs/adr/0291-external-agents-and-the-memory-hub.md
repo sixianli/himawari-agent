@@ -149,7 +149,7 @@ Andy 要 Himawari 当他的记忆中心：别的 AI agent（Claude Code、Codex�
 
 ### 数据导出和删除
 
-38. 待确认表随数据导出一起导出（全部状态），文件 `data/external-memory-proposals.jsonl` 和对应的结构文件，清单 `counts.externalProposals`。像机密的正文明文层只放遮盖后的样子，原文和摘要进封存文件。和任何一条受限记忆（含历史版本）正文相同的提议整条不导出，计入 `omitted`。没有正文的提议 `batchId` 置空。导入时目标库的这张表必须为空，按提议的规范化方式重算摘要，对不上整份拒绝（`DATA_IMPORT_SEAL_MISMATCH`）。现行导出格式见 [ADR 0289](0289-data-export-v5-drops-owner-proposals.md)。
+38. 待确认表随数据导出一起导出（全部状态），文件 `data/external-memory-proposals.jsonl` 和对应的结构文件，清单 `counts.externalProposals`。像机密的正文明文层只放遮盖后的样子，原文和摘要进封存文件。和任何一条受限记忆（含历史版本）正文相同的提议整条不导出，计入 `omitted`。没有正文的提议 `batchId` 置空。导入时目标库的这张表必须为空，按提议的规范化方式重算摘要，对不上整份拒绝（`DATA_IMPORT_SEAL_MISMATCH`）。现行导出格式见 [ADR 0289](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0289-data-export-v5-drops-owner-proposals.md)。
 
 <a id="not-yet"></a>
 

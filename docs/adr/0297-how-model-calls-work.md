@@ -77,7 +77,7 @@ verified_at: "7d0ffcd52cbb69d4941871cf9bf08d93f3843da8"
 
 - 主对话、辅助调用和嵌入都只用 `model-egress.ts` 的 `ModelEgress` 包过的 `fetch` 发请求，不接外部网关。出口识别请求路径，解析 JSON 后逐段遮盖字符串；推理块、图片、工具定义、结构标识这些位置不碰，工具参数一律检查。
 - 拒绝发送而不是放行：路径不认识、请求体不是 JSON、嵌入输入是 token 编号数组、遮盖后仍检出机器密钥，都抛 `ModelEgressRefusedError`。
-- 占位符形如 `[验证码#kqzmdwrp]`，编号由 HMAC 取得、按值稳定，所以前缀不变；机器密钥固定写 `[密钥]`，不可还原。只在主对话的显示端把占位符换回原文（`restoreModelStream`），什么时候遮、内部存原文的做法见 [ADR 0183](0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)。
+- 占位符形如 `[验证码#kqzmdwrp]`，编号由 HMAC 取得、按值稳定，所以前缀不变；机器密钥固定写 `[密钥]`，不可还原。只在主对话的显示端把占位符换回原文（`restoreModelStream`），什么时候遮、内部存原文的做法见 [ADR 0183](https://github.com/sixianli/himawari-agent/blob/7d0ffcd52cbb69d4941871cf9bf08d93f3843da8/docs/adr/0183-mask-only-when-data-leaves-and-keep-the-original-inside.md)。
 - `npm run check:egress-redaction` 要求三个发送点都用 `exchange.wrapFetch(`，并拒绝出口模块之外直接遮盖或另开模型请求出口。
 
 <a id="retry"></a>
