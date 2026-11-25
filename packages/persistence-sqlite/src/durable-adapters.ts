@@ -1217,6 +1217,7 @@ export class SqliteDurableAdapters {
   decisionLedger(): DecisionLedgerPort {
     return Object.freeze<DecisionLedgerPort>({
       append: (input) => this.context.write("decisionLedger.append", input),
+      recordSpoken: (input) => this.context.write("decisionLedger.recordSpoken", input),
       appendIfChanged: (input) => this.context.write("decisionLedger.appendIfChanged", input),
       list: (input) => this.context.read("decisionLedger.list", input),
       read: (input) => this.context.read("decisionLedger.read", input),
@@ -1539,6 +1540,8 @@ export class SqliteDurableAdapters {
       requestDeletion: (input) => this.context.write("thread.requestDeletion", { input }),
       readMain: (ownerId, agentId) => this.context.read("thread.readMain", { ownerId, agentId }),
       claimMain: (input) => this.context.write("thread.claimMain", { input }),
+      postAgentMessage: (input) => this.context.write("thread.postAgentMessage", { input }),
+      readRunThought: (input) => this.context.read("thread.readRunThought", input),
     });
   }
 

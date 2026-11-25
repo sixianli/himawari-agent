@@ -345,8 +345,30 @@ export interface DecisionLedgerScope {
   readonly agentId: AgentId;
 }
 
+export const SPOKEN_VERDICTS = ["pushed", "silent"] as const;
+
+export type SpokenVerdict = (typeof SPOKEN_VERDICTS)[number];
+
+export interface SpokenDecisionWrite {
+  readonly id: string;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly scenario: string;
+  readonly decidedAt: string;
+  readonly verdict: SpokenVerdict;
+  readonly reasonCode: string;
+  readonly subjectRef: string;
+  readonly runId: string;
+  readonly messageId: string | null;
+  readonly reasonRef: string | null;
+  readonly pushSourceKey: string | null;
+  readonly sourceIds: readonly string[];
+  readonly durationMs: number;
+}
+
 export interface DecisionLedgerPort {
   append(write: DecisionLedgerWrite): Promise<void>;
+  recordSpoken(write: SpokenDecisionWrite): Promise<boolean>;
   appendIfChanged(input: {
     readonly write: DecisionLedgerWrite;
     readonly reasonCodes: readonly string[];

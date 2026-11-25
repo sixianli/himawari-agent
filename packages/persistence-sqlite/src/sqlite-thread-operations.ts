@@ -3,6 +3,7 @@ import type {
   ClaimMainThreadInput,
   CommitAssistantMessageInput,
   ForkThreadInput,
+  PostAgentMessageInput,
   ProductContextRunState,
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
@@ -310,6 +311,27 @@ export class SqliteThreadOperations {
       }
       case "thread.claimMain":
         return this.claimMain((payload as { input: ClaimMainThreadInput }).input);
+      case "thread.readRunThought": {
+        const input = payload as {
+          ownerId: OwnerId;
+          agentId: AgentId;
+          threadId: ThreadId;
+          runId: RunId;
+        };
+        const row = this.database
+          .prepare(
+            `SELECT content_ref AS contentRef FROM thread_messages
+             WHERE owner_id = ? AND agent_id = ? AND thread_id = ? AND run_id = ?
+               AND role = 'agent' AND internal = 1 AND message_status = 'committed'
+             ORDER BY sequence DESC LIMIT 1`,
+          )
+          .get(input.ownerId, input.agentId, input.threadId, input.runId) as
+          | { contentRef: string }
+          | undefined;
+        return row;
+      }
+      case "thread.postAgentMessage":
+        return this.postAgentMessage((payload as { input: PostAgentMessageInput }).input);
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Thread operation ${operation}`);
     }
@@ -974,6 +996,109 @@ export class SqliteThreadOperations {
     };
   }
 
+  private runStartedInternally(ownerId: OwnerId, agentId: AgentId, runId: RunId): boolean {
+    return Boolean(
+      this.database
+        .prepare(
+          `SELECT 1 FROM runs r JOIN triggers t ON t.id = r.trigger_id
+            JOIN thread_messages m ON m.id = t.source_id AND m.run_id = r.id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ? AND m.internal = 1 LIMIT 1`,
+        )
+        .get(runId, ownerId, agentId),
+    );
+  }
+
+  private postAgentMessage(input: PostAgentMessageInput) {
+    this.assertDiskHeadroom();
+    const transaction = this.database.transaction(() => {
+      const replay = this.replay(
+        input.ownerId,
+        input.agentId,
+        input.idempotencyKey,
+        "thread.message.commit_assistant",
+        input.semanticFingerprint,
+      );
+      if (replay) {
+        const thread = this.read(input.ownerId, input.agentId, replay.threadId);
+        const message = this.readMessage(
+          input.ownerId,
+          input.agentId,
+          input.threadId,
+          input.messageId,
+        );
+        if (!thread || !message) this.fail("PORT_NOT_FOUND", "Replayed agent message is missing");
+        return { thread, message, receipt: replay };
+      }
+      this.assertAuthority(input.ownerId, input.agentId, input.authority);
+      this.assertPayload(input.ownerId, input.agentId, input.contentRef);
+      this.assertPayload(input.ownerId, input.agentId, input.resultRef);
+      const current = this.read(input.ownerId, input.agentId, input.threadId);
+      if (!current || current.status !== "active")
+        this.fail("PORT_CONFLICT", "Thread is not active");
+      const run = this.database
+        .prepare(
+          `SELECT r.status, u.id AS turnId FROM runs r
+            JOIN turns u ON u.run_id = r.id AND u.thread_id = r.thread_id
+           WHERE r.id = ? AND r.owner_id = ? AND r.agent_id = ? AND r.thread_id = ?
+           ORDER BY u.turn_index DESC LIMIT 1`,
+        )
+        .get(input.runId, input.ownerId, input.agentId, input.threadId) as
+        | { status: string; turnId: string }
+        | undefined;
+      if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+        this.fail("PORT_INVALID_OPERATION", "An agent message requires an active Run");
+      if (!current || !run) return undefined as never;
+      const sequence = current.messageWatermark + 1;
+      this.database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role,
+            content_ref, classification, committed_at, turn_id, run_id, message_status, internal
+          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed', 0)`,
+        )
+        .run(
+          input.messageId,
+          input.ownerId,
+          input.agentId,
+          input.threadId,
+          sequence,
+          input.contentRef,
+          input.dataClassification,
+          input.committedAt,
+          run.turnId,
+          input.runId,
+        );
+      const nextRevision = current.revision + 1;
+      this.database
+        .prepare(
+          "UPDATE threads SET revision = ?, message_watermark = ?, updated_at = ? WHERE id = ? AND revision = ?",
+        )
+        .run(nextRevision, sequence, input.committedAt, input.threadId, current.revision);
+      const receipt = this.writeReceipt({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+        commandType: "thread.message.commit_assistant",
+        semanticFingerprint: input.semanticFingerprint,
+        threadId: input.threadId,
+        threadRevision: nextRevision,
+        resultRef: input.resultRef,
+        committedAt: input.committedAt,
+        authority: input.authority,
+      });
+      const thread = this.read(input.ownerId, input.agentId, input.threadId);
+      const message = this.readMessage(
+        input.ownerId,
+        input.agentId,
+        input.threadId,
+        input.messageId,
+      );
+      if (!thread || !message) this.fail("PORT_NOT_FOUND", "Posted agent message is missing");
+      return { thread, message, receipt };
+    });
+    return transaction.immediate();
+  }
+
   private readMessage(
     ownerId: OwnerId,
     agentId: AgentId,
@@ -1203,7 +1328,7 @@ export class SqliteThreadOperations {
           `INSERT INTO thread_messages (
             id, owner_id, agent_id, thread_id, revision, sequence, role,
             content_ref, classification, committed_at, turn_id, run_id, message_status, internal
-          ) VALUES (?, ?, ?, ?, 1, ?, 'owner', ?, ?, ?, ?, ?, 'committed', ?)`,
+          ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'committed', ?)`,
         )
         .run(
           input.messageId,
@@ -1211,6 +1336,7 @@ export class SqliteThreadOperations {
           input.agentId,
           input.threadId,
           sequence,
+          input.triggerSource === "external_event" ? "system" : "owner",
           input.contentRef,
           input.dataClassification,
           input.occurredAt,
@@ -1305,8 +1431,8 @@ export class SqliteThreadOperations {
         .prepare(
           `INSERT INTO thread_messages (
             id, owner_id, agent_id, thread_id, revision, sequence, role,
-            content_ref, classification, committed_at, turn_id, run_id, message_status
-          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed')`,
+            content_ref, classification, committed_at, turn_id, run_id, message_status, internal
+          ) VALUES (?, ?, ?, ?, 1, ?, 'agent', ?, ?, ?, ?, ?, 'committed', ?)`,
         )
         .run(
           input.messageId,
@@ -1319,6 +1445,7 @@ export class SqliteThreadOperations {
           input.committedAt,
           input.turnId,
           input.runId,
+          this.runStartedInternally(input.ownerId, input.agentId, input.runId) ? 1 : 0,
         );
       this.database
         .prepare("UPDATE turns SET committed_at = ? WHERE id = ?")
@@ -1820,6 +1947,10 @@ export class SqliteThreadOperations {
         LEFT JOIN run_background_holds h ON h.run_id = r.id AND h.owner_id = r.owner_id
           AND h.agent_id = r.agent_id AND h.released_at IS NULL
         WHERE r.owner_id = ? AND r.agent_id = ? AND r.thread_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM triggers t JOIN thread_messages m ON m.id = t.source_id AND m.run_id = r.id
+            WHERE t.id = r.trigger_id AND m.internal = 1
+          )
         GROUP BY r.id
         ORDER BY r.created_at, r.id`,
       )

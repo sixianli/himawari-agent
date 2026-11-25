@@ -665,9 +665,9 @@ function turnPrompt(projection: RuntimeProjection, timeZone: string): string {
     ...(environment ? [contextBlockContent(environment, timeZone)] : []),
     "</himawari-context>",
     "",
-    "<owner-message>",
-    projection.prompt.content,
-    "</owner-message>",
+    ...(projection.prompt.from === "outside"
+      ? ["<outside-events>", projection.prompt.content, "</outside-events>"]
+      : ["<owner-message>", projection.prompt.content, "</owner-message>"]),
   ].join("\n");
 }
 

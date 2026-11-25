@@ -81,11 +81,20 @@ export function originsOf(
 }
 
 export const EXTERNAL_EVENT_ORIGIN_PREFIX = "external_event:";
+export const INBOX_EVENT_MESSAGE_PREFIX = "message:inbox:";
+
+export function inboxEventOrigin(sourceKind: string): string {
+  return `${EXTERNAL_EVENT_ORIGIN_PREFIX}${sourceKind}`;
+}
 
 export function externalEventOrigin(
   source: Pick<RunExecutionSource, "sourceType" | "sourceId" | "ownerApprovedTask"> | undefined,
 ): string | null {
   if (source?.sourceType !== "external_event" || source.ownerApprovedTask) return null;
+  if (source.sourceId.startsWith(INBOX_EVENT_MESSAGE_PREFIX)) {
+    const kind = source.sourceId.slice(INBOX_EVENT_MESSAGE_PREFIX.length).split(":", 1)[0];
+    if (kind) return inboxEventOrigin(kind);
+  }
   return `${EXTERNAL_EVENT_ORIGIN_PREFIX}${source.sourceId}`;
 }
 
