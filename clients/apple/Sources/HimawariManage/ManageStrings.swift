@@ -36,6 +36,82 @@ enum M {
     static var ruleNeedsReview: String { text("等你看", ja: "確認待ち", en: "Needs your look") }
 
     static var back: String { text("返回", ja: "戻る", en: "Back") }
+    static var stopRun: String { text("停下这次回答", ja: "この返事を止める", en: "Stop this answer") }
+    static var collapse: String { text("收起", ja: "閉じる", en: "Close") }
+    static var herMemory: String { text("她记得的", ja: "覚えていること", en: "What she remembers") }
+    static func memorySummary(_ summary: MemorySummary) -> String {
+        text(
+            "\(summary.memories) 条记忆 · \(summary.topics) 个主题 · \(summary.rules) 条规则",
+            ja: "記憶 \(summary.memories) 件 · テーマ \(summary.topics) 個 · ルール \(summary.rules) 件",
+            en: "\(summary.memories) memories · \(summary.topics) topics · \(summary.rules) rules"
+        )
+    }
+    static var privacy: String { text("隐私", ja: "プライバシー", en: "Privacy") }
+    static var devicesTitle: String { text("设备", ja: "デバイス", en: "Devices") }
+    static func phoneLine(_ name: String, _ presence: String) -> String { "\(name) · \(presence)" }
+    static func pairedSince(_ date: Date) -> String {
+        text("\(pairedDay(date))配对", ja: "\(pairedDay(date))にペアリング", en: "Paired \(pairedDay(date))")
+    }
+    static var disconnectThisIPhone: String { text("断开这台 iPhone", ja: "この iPhone の接続を解除", en: "Disconnect this iPhone") }
+    static var quietWhen: String { text("什么时候不响", ja: "鳴らさない時間", en: "When to stay quiet") }
+    static var quietAtNight: String { text("晚上不响", ja: "夜は鳴らさない", en: "Quiet at night") }
+    static var quietOff: String { text("不设不响的时段", ja: "鳴らさない時間を設けない", en: "No quiet hours") }
+    static var quietFrom: String { text("从", ja: "開始", en: "From") }
+    static var quietTo: String { text("到", ja: "終了", en: "Until") }
+    static func quietNote(end: String) -> String {
+        text(
+            "这段时间里她的话不响，到 \(end) 再响。要你同意的事照样响，不然那件事会一直卡着。",
+            ja: "この間は彼女からの通知を鳴らさず、\(end) に鳴らします。あなたの同意が要ることは鳴ります。止まったままになるからです。",
+            en: "During this time her messages stay silent until \(end). Things that need your OK still ring, or they would stay stuck."
+        )
+    }
+    static var quietSayIt: String {
+        text(
+            "在主对话里说“晚上 11 点以后别推”也一样，会改到这里。别的什么时候推，由她看事情定。",
+            ja: "会話で「夜 11 時以降は通知しないで」と言っても同じで、ここに反映されます。それ以外にいつ通知するかは、彼女が内容を見て決めます。",
+            en: "Saying \"don't notify me after 11 pm\" in the chat does the same and shows up here. When else to notify, she decides from what's going on."
+        )
+    }
+    static var quietReadOnly: String {
+        text(
+            "这是在主对话里定的，不止一段，要改就在主对话里说。",
+            ja: "会話で決めた複数の時間帯です。変えるときは会話で伝えてください。",
+            en: "These were set in the chat and have more than one window. Say it in the chat to change them."
+        )
+    }
+    static func quietSummary(_ hours: QuietHours) -> String {
+        guard hours.enabled else { return text("没设不响的时段", ja: "鳴らさない時間なし", en: "No quiet hours") }
+        guard hours.editable, let start = ClockTime(hours.start), let end = ClockTime(hours.end) else {
+            return text("按主对话里说的时段不响", ja: "会話で決めた時間は鳴らさない", en: "Quiet at the times you set in chat")
+        }
+        return text(
+            "\(start.shortText)–\(end.shortText) 不响",
+            ja: "\(start.shortText)–\(end.shortText) は鳴らさない",
+            en: "Quiet \(start.shortText)–\(end.shortText)"
+        )
+    }
+    static var letHerSense: String { text("让她感知", ja: "彼女に感じ取らせる", en: "Let Her Sense") }
+    static func sensesOn(_ count: Int) -> String { text("\(count) 项开着", ja: "\(count) 項目オン", en: "\(count) on") }
+    static var pauseMemory: String { text("暂停记忆", ja: "記憶を一時停止", en: "Pause memory") }
+    static var resumeMemory: String { text("恢复记忆", ja: "記憶を再開", en: "Resume memory") }
+    static var pauseMemoryDetail: String {
+        text("她照常回答，但不记新的", ja: "返事はいつもどおり。新しいことは覚えません", en: "She still answers, but won't remember anything new")
+    }
+    static var voiceprint: String { text("我的声纹", ja: "自分の声紋", en: "My voiceprint") }
+    static var voiceprintDetail: String {
+        text("只用来认出是你在说话", ja: "あなたの声だと聞き分けるためだけに使います", en: "Only used to tell that it's you speaking")
+    }
+    static var voiceprintKept: String { text("已录", ja: "登録済み", en: "Recorded") }
+    static var voiceprintNone: String { text("没录", ja: "未登録", en: "Not recorded") }
+    static var forgetVoiceprint: String { text("删掉我的声纹？", ja: "声紋を削除しますか？", en: "Delete your voiceprint?") }
+    static var forgetVoiceprintConfirm: String { text("删掉", ja: "削除", en: "Delete") }
+    static var forgetVoiceprintDetail: String {
+        text(
+            "删掉后她认不出哪句是你说的，要用时再录一次",
+            ja: "削除すると、どれがあなたの声か分からなくなります。必要なときにまた登録してください",
+            en: "She won't be able to tell which words are yours until you record it again"
+        )
+    }
     static var settings: String { text("设置", ja: "設定", en: "Settings") }
     static var runsOnYourServer: String {
         text("跑在你自己的服务器上", ja: "あなた自身のサーバーで動いています", en: "Running on your own server")

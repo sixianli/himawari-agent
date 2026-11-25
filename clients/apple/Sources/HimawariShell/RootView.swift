@@ -15,15 +15,19 @@ public struct HimawariRootView: View {
     public init() {}
 
     public var body: some View {
-        #if DEBUG
-        if let scene = DemoScene.requested {
-            DemoSceneView(scene: scene)
-        } else {
+        Group {
+            #if DEBUG
+            if let scene = DemoScene.requested {
+                DemoSceneView(scene: scene)
+            } else {
+                app
+            }
+            #else
             app
+            #endif
         }
-        #else
-        app
-        #endif
+        .dismissesKeyboardOnOutsideTap()
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     @State private var handoverEntry: HandoverEntryLink?
@@ -83,6 +87,12 @@ struct MainTabsView: View {
     @State private var settingsOpen: Bool
     @State private var listening: ListeningController?
     @State private var listenOpen = false
+    @State private var herOpen = false
+    @State private var herListenOpen = false
+    #if os(iOS)
+    @State private var dictation = ChatDictation()
+    @State private var talkSession = ChatTalkSession()
+    #endif
     @Environment(\.tabsCycleEvery) private var cycleEvery
     private let memoryOverride: AnyView?
     private let settingsOverride: AnyView?
@@ -110,11 +120,17 @@ struct MainTabsView: View {
     var body: some View {
         ZStack {
             if let openThread {
-                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft) {
+                ChatView(store: chat, threadId: openThread.threadId, draft: openThread.draft, openHerPage: { herOpen = true }) {
                     withAnimation(.snappy) { self.openThread = nil }
                 }
                 .id(openThread.nonce)
                 .transition(.move(edge: .trailing))
+                .environment(\.chatStopRun, stopRun)
+                .environment(\.chatCanAttach, model.configuration?.acceptsChatAttachments == true)
+                #if os(iOS)
+                .environment(\.chatVoice, dictation)
+                .environment(\.chatTalk, talkSession)
+                #endif
             } else {
                 content
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: DesignTokens.Size.tabBarReserve) }
@@ -160,6 +176,9 @@ struct MainTabsView: View {
                 }
             }
         }
+        .hmCover(isPresented: $herOpen) {
+            herPage
+        }
         .sheet(isPresented: $listenOpen) {
             if let listening {
                 ListenEntrySheet(controller: listening) { listenOpen = false }
@@ -203,6 +222,39 @@ struct MainTabsView: View {
         }
     }
 
+    private var stopRun: @MainActor @Sendable (String, ThreadRunSummary) async throws -> Void {
+        let stopper = ThreadRunStopper(api: model.api, confirmKey: model.confirmKey)
+        return { threadId, run in try await stopper.stop(threadId: threadId, run: run) }
+    }
+
+    private var herPage: some View {
+        HerPage(
+            api: model.api,
+            confirmKey: model.confirmKey,
+            listening: listening,
+            openListening: { herListenOpen = true },
+            senses: model.senses.map { senses in
+                AnyView(SensesView(model: senses) { HandoverEntryRows() })
+            },
+            sensesOn: { model.senses?.status?.senses.count },
+            talk: { draft in
+                herOpen = false
+                withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
+            },
+            close: { herOpen = false },
+            removedThisDevice: {
+                herOpen = false
+                model.removedThisDevice()
+            }
+        )
+        .sheet(isPresented: $herListenOpen) {
+            if let listening {
+                ListenEntrySheet(controller: listening) { herListenOpen = false }
+                    .presentationCornerRadius(DesignTokens.Radius.sheetTop)
+            }
+        }
+    }
+
     private var memoryView: some View {
         MemoryRootView(api: model.api, confirmKey: model.confirmKey) { draft in
             withAnimation(.snappy) { openThread = OpenThread(threadId: nil, draft: draft) }
@@ -235,6 +287,8 @@ struct MainTabsView: View {
         .ignoresSafeArea(.container, edges: .bottom)
     }
 }
+
+extension ListeningController: HerListening {}
 
 extension EnvironmentValues {
     @Entry var tabsCycleEvery: Double? = nil
