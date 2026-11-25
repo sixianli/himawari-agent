@@ -12,7 +12,7 @@ export const hostPlatform = () => `${hostOs()}-${hostArch()}`;
 
 export const supportedPlatforms = () => Object.keys(BUILD_PLATFORM_KEYS);
 
-const ARTIFACT_PLATFORM_KEYS = Object.freeze(["macos-arm64", "linux-x64", "linux-arm64"]);
+const ARTIFACT_PLATFORM_KEYS = Object.freeze(["macos-arm64", "linux-x64"]);
 
 export function artifactPlatformKey(os = hostOs(), arch = hostArch()) {
   const key = buildPlatformKey(os, arch);

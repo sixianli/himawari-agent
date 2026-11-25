@@ -24,11 +24,12 @@ describe("toolchain platforms", () => {
       expect(() => buildPlatformKey(os, arch)).toThrow("CI_PLATFORM_UNSUPPORTED");
   });
 
-  it("lets macOS, linux-x64 and linux-arm64 produce or consume build artifacts", () => {
+  it("lets only macOS and linux-x64 produce or consume build artifacts", () => {
     expect(artifactPlatformKey("darwin", "arm64")).toBe("macos-arm64");
     expect(artifactPlatformKey("linux", "x64")).toBe("linux-x64");
-    expect(artifactPlatformKey("linux", "arm64")).toBe("linux-arm64");
-    expect(() => artifactPlatformKey("linux", "riscv64")).toThrow("CI_PLATFORM_UNSUPPORTED");
+    expect(() => artifactPlatformKey("linux", "arm64")).toThrow(
+      "CI_ARTIFACT_PLATFORM_UNSUPPORTED: linux-arm64",
+    );
     expect(() => artifactPlatformKey("win32", "x64")).toThrow("CI_PLATFORM_UNSUPPORTED");
   });
 
