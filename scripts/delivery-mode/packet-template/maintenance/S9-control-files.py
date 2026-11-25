@@ -91,18 +91,45 @@ def old_unit_sha(binding):
     return value
 
 
-def validate_restored_catalog(binding, frozen_authorization, grant_row, capability_rows):
+def validate_restored_catalog(binding, frozen_authorization, grant_row, capability_rows, first_tools=False, registered_count=None):
     plan = workspace_plan(binding)
     grants = [grant for grant in frozen_authorization.get('directoryGrants', []) if grant.get('routeKey') == plan['routeKey']]
     require(len(grants) == 1 and grants[0].get('grantId') == plan['grantId'] and type(grants[0].get('stateRevision')) is int and grants[0]['stateRevision'] > 0 and re.fullmatch('[a-f0-9]{64}', grants[0].get('metadataSha256', '')) is not None, '__PKT_LABEL_UPPER___S9_FROZEN_GRANT_INVALID')
     require(isinstance(grant_row, dict) and type(grant_row.get('revision')) is int and grant_row['revision'] == grants[0]['stateRevision'] and isinstance(grant_row.get('value_json'), str) and sha(grant_row['value_json'].encode()) == grants[0]['metadataSha256'], '__PKT_LABEL_UPPER___S9_RESTORED_GRANT_CHANGED')
     capabilities = frozen_authorization.get('capabilities')
+    if first_tools:
+        require(capabilities == [] and capability_rows == {} and registered_count == 0, '__PKT_LABEL_UPPER___S9_RESTORED_CATALOG_NOT_AT_S0')
+        return {'capabilityUpgradeDiscarded': True, 'grantRecordUnchanged': True, 'accountRecoveryRequired': True, 'serviceStartAuthorized': False}
     require(isinstance(capabilities, list) and len(capabilities) > 0 and len({capability.get('capabilityRef') for capability in capabilities}) == len(capabilities) and all(re.fullmatch('[a-f0-9]{64}', capability.get('registryRecordSha256', '')) is not None and type(capability.get('revision')) is int for capability in capabilities), '__PKT_LABEL_UPPER___S9_FROZEN_CATALOG_INVALID')
     require(isinstance(capability_rows, dict) and sorted(capability_rows) == sorted(capability['capabilityRef'] for capability in capabilities), '__PKT_LABEL_UPPER___S9_RESTORED_CATALOG_NOT_AT_S0')
     for capability in capabilities:
         row = capability_rows[capability['capabilityRef']]
         require(isinstance(row, dict) and row.get('id') == capability['capabilityRef'] and row.get('version') == capability['version'] and row.get('status') == capability['status'] and row.get('revision') == capability['revision'] and row.get('integrity') == capability['storedIntegrity'] and isinstance(row.get('record_json'), str) and sha(row['record_json'].encode()) == capability['registryRecordSha256'], '__PKT_LABEL_UPPER___S9_RESTORED_CATALOG_NOT_AT_S0')
     return {'capabilityUpgradeDiscarded': True, 'grantRecordUnchanged': True, 'accountRecoveryRequired': True, 'serviceStartAuthorized': False}
+
+
+def first_tools_restore(frozen_authorization):
+    original = safe_file(EVIDENCE / 'original-config.json', __PKT_SERVICE_UID__, 0o600)
+    require(sha(original) == OLD_CONFIG_SHA, '__PKT_LABEL_UPPER___S9_ORIGINAL_CONTROL_BYTES_CHANGED')
+    first = 'capabilityDeployment' not in json.loads(original)
+    require(first == (len(frozen_authorization.get('capabilities', [])) == 0), '__PKT_LABEL_UPPER___S9_FIRST_TOOLS_STATE_INCONSISTENT')
+    return first
+
+
+def control_files(first_tools):
+    entries = [(CONFIG, 'config.json', __PKT_SERVICE_UID__), (UNIT, 'unit.service', 0), (SNAPSHOT, 'capability-deployment.json', __PKT_SERVICE_UID__), (ATTESTATION, 'startup-attestation.json', __PKT_SERVICE_UID__)]
+    return [entry for entry in entries if not first_tools or os.path.lexists(entry[0])]
+
+
+def remove_exact(filename, uid):
+    safe_file(filename, uid)
+    os.unlink(filename)
+    directory_fd = os.open(filename.parent, os.O_DIRECTORY | os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+    require(not os.path.lexists(filename), '__PKT_LABEL_UPPER___S9_REMOVED_FILE_REMAINS')
 
 
 def retain(name, data, uid=0, mode=0o600):
@@ -223,6 +250,7 @@ def independent_database(binding, schema, restored):
     s0_bytes = safe_file(OPS / 'inputs/s0-db-readback.json')
     require(sha(s0_bytes) == binding['inputReadbacks']['inputs/s0-db-readback.json'], '__PKT_LABEL_UPPER___S9_S0_AUTHORIZATION_CHANGED')
     frozen_authorization = json.loads(s0_bytes)['authorization']
+    first_tools = first_tools_restore(frozen_authorization)
     safe_path(STATE / 'data/product.sqlite', __PKT_SERVICE_UID__, 0o600)
     tree_proof = independent_data_tree(binding, restored)
     db = sqlite3.connect('file:' + str(STATE / 'data/product.sqlite') + '?mode=ro&immutable=1', uri=True)
@@ -245,7 +273,8 @@ def independent_database(binding, schema, restored):
             for row in db.execute('SELECT id,version,status,revision,integrity,record_json FROM capability_declarations WHERE id=? AND owner_id=? AND agent_id=?', [capability['capabilityRef'], identity['ownerId'], identity['agentId']]).fetchall():
                 require(row[0] not in capability_rows, '__PKT_LABEL_UPPER___S9_RESTORED_CATALOG_NOT_AT_S0')
                 capability_rows[row[0]] = dict(zip(('id', 'version', 'status', 'revision', 'integrity', 'record_json'), row))
-        grant_boundary = validate_restored_catalog(binding, frozen_authorization, dict(zip(('revision', 'value_json'), grant_rows[0])), capability_rows)
+        registered_count = db.execute('SELECT count(*) FROM capability_declarations WHERE owner_id=? AND agent_id=?', [identity['ownerId'], identity['agentId']]).fetchone()[0]
+        grant_boundary = validate_restored_catalog(binding, frozen_authorization, dict(zip(('revision', 'value_json'), grant_rows[0])), capability_rows, first_tools, registered_count)
         db.execute('COMMIT')
         mirror = load(STATE / 'authority.json', __PKT_SERVICE_UID__, 0o600)
         authority_rows = db.execute('SELECT id,owner_id,agent_id,revision,status,authority_epoch,fencing_token,transfer_id FROM deployments WHERE id=?', [identity['deploymentId']]).fetchall()
@@ -336,13 +365,19 @@ def main():
         original_unit = safe_file(EVIDENCE / 'original-unit.service', 0, 0o600)
         require(sha(original_config) == OLD_CONFIG_SHA and sha(original_unit) == original_unit_sha, '__PKT_LABEL_UPPER___S9_ORIGINAL_CONTROL_BYTES_CHANGED')
         require(json.loads(original_config).get('runPolicy', {}).get('coding', {}).get('grantId') == workspace_plan(binding)['grantId'], '__PKT_LABEL_UPPER___S9_ORIGINAL_GRANT_CHANGED')
-        report['preservedCurrentControlFiles'] = [retain('s9-control-current-' + suffix + '-' + name, safe_file(filename, uid), uid) for filename, name, uid in ((CONFIG, 'config.json', __PKT_SERVICE_UID__), (UNIT, 'unit.service', 0), (SNAPSHOT, 'capability-deployment.json', __PKT_SERVICE_UID__), (ATTESTATION, 'startup-attestation.json', __PKT_SERVICE_UID__))]
+        first_tools = first_tools_restore(json.loads(safe_file(OPS / 'inputs/s0-db-readback.json'))['authorization'])
+        report['preservedCurrentControlFiles'] = [retain('s9-control-current-' + suffix + '-' + name, safe_file(filename, uid), uid) for filename, name, uid in control_files(first_tools)]
         retain_json('s9-control-before-change-' + suffix + '.json', report)
         service()
-        snapshot_bytes = safe_file(EVIDENCE / 'original-capability-deployment.json', __PKT_SERVICE_UID__, 0o600)
-        require(json.loads(original_config)['capabilityDeployment'] == {'snapshotPath': str(SNAPSHOT), 'sha256': 'sha256:' + sha(snapshot_bytes)}, '__PKT_LABEL_UPPER___S9_SECOND_SNAPSHOT_BINDING_CHANGED')
-        replace_exact(SNAPSHOT, snapshot_bytes, __PKT_SERVICE_UID__, 0o600, suffix)
-        replace_exact(ATTESTATION, safe_file(EVIDENCE / 'original-startup-attestation.json', __PKT_SERVICE_UID__, 0o600), __PKT_SERVICE_UID__, 0o600, suffix)
+        if first_tools:
+            for filename in (SNAPSHOT, ATTESTATION):
+                if os.path.lexists(filename):
+                    remove_exact(filename, __PKT_SERVICE_UID__)
+        else:
+            snapshot_bytes = safe_file(EVIDENCE / 'original-capability-deployment.json', __PKT_SERVICE_UID__, 0o600)
+            require(json.loads(original_config)['capabilityDeployment'] == {'snapshotPath': str(SNAPSHOT), 'sha256': 'sha256:' + sha(snapshot_bytes)}, '__PKT_LABEL_UPPER___S9_SECOND_SNAPSHOT_BINDING_CHANGED')
+            replace_exact(SNAPSHOT, snapshot_bytes, __PKT_SERVICE_UID__, 0o600, suffix)
+            replace_exact(ATTESTATION, safe_file(EVIDENCE / 'original-startup-attestation.json', __PKT_SERVICE_UID__, 0o600), __PKT_SERVICE_UID__, 0o600, suffix)
         replace_exact(CONFIG, original_config, __PKT_SERVICE_UID__, 0o600, suffix)
         replace_exact(UNIT, original_unit, 0, 0o644, suffix)
         report['clearedPrepareLeftovers'] = clear_prepare_leftovers(suffix)
@@ -358,7 +393,8 @@ def main():
         report['databaseAfterControlRestore'] = independent_database(binding, schema, restored)
         report['capabilityUpgradeDiscarded'] = report['databaseAfterControlRestore']['capabilityUpgradeDiscarded']
         report['grantRecordUnchanged'] = report['databaseAfterControlRestore']['grantRecordUnchanged']
-        report['controlReadback'] = [{'path': str(filename), 'sha256': sha(safe_file(filename, uid))} for filename, uid in ((CONFIG, __PKT_SERVICE_UID__), (UNIT, 0), (SNAPSHOT, __PKT_SERVICE_UID__), (ATTESTATION, __PKT_SERVICE_UID__))]
+        require(not first_tools or not any(os.path.lexists(filename) for filename in (SNAPSHOT, ATTESTATION)), '__PKT_LABEL_UPPER___S9_REMOVED_FILE_REMAINS')
+        report['controlReadback'] = [{'path': str(filename), 'sha256': sha(safe_file(filename, uid))} for filename, name, uid in control_files(False) if not first_tools or filename in (CONFIG, UNIT)]
         report['passed'] = True
         report['finishedAt'] = utc()
         retained = retain_json('s9-control-result-' + suffix + '.json', report)
