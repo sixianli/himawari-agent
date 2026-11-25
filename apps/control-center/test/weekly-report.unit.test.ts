@@ -58,6 +58,7 @@ const memory = {
   conversationReviews: [],
   reminders: [],
   upcoming: [],
+  cancelled: [],
   people: [],
   imports: [],
   externalProposals: { total: 0, items: [], batches: [] },

@@ -6,6 +6,7 @@ supersedes: ""
 superseded_by: ""
 amends: ""
 date: "2026-11-06"
+amended_by: "docs/adr/0287-ci-runs-on-github-hosted-runners.md"
 ---
 
 # ADR 0174：CI 不用 GitHub 缓存，artifact 只保存 1 天

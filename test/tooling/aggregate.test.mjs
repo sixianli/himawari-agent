@@ -522,7 +522,7 @@ describe("complete-attempt gate", () => {
     expect(result.failures.some((failure) => failure.reason.includes(field))).toBe(true);
   });
   it("[ADR-0266] 三项检查的 arm64 报告被接受，其余检查和其他架构被拒", () => {
-    for (const id of ["policy", "static", "tooling", "security"]) {
+    for (const id of ["policy", "tooling", "security"]) {
       const input = positive();
       selected(input, id).result.toolchain.arch = "arm64";
       expect(aggregate(input).status).toBe("passed");
@@ -532,11 +532,16 @@ describe("complete-attempt gate", () => {
       expect(failed.status).toBe("failed");
       expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
     }
-    const build = positive();
-    selected(build, "build", "linux-x64").result.toolchain.arch = "arm64";
-    const failed = aggregate(build);
-    expect(failed.status).toBe("failed");
-    expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
+    for (const [id, key] of [
+      ["build", "linux-x64"],
+      ["static", "default"],
+    ]) {
+      const input = positive();
+      selected(input, id, key).result.toolchain.arch = "arm64";
+      const failed = aggregate(input);
+      expect(failed.status).toBe("failed");
+      expect(failed.failures.some((failure) => failure.reason.includes("arch"))).toBe(true);
+    }
   });
   it("requires a complete rerun and rejects mixed attempts", () => {
     const input = positive();

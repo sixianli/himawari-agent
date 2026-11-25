@@ -332,10 +332,12 @@ describe("[IOS-4] push channels", () => {
       listApprovals: async () => approvals,
       runThread: async () => "thread-1",
       threadTitle: async () => ({ title: "查下周东京天气" }),
-      readMessage: async (threadId, messageId) =>
-        threadId === "thread-1" && messageId === "assistant:said"
-          ? { dataClassification: "private", readText: async () => "明早 9 点那班改好了。" }
-          : undefined,
+      readMessage:
+        pushOptions.readMessage ??
+        (async (threadId, messageId) =>
+          threadId === "thread-1" && messageId === "assistant:said"
+            ? { dataClassification: "private", readText: async () => "明早 9 点那班改好了。" }
+            : undefined),
       publicOrigin: ORIGIN,
       timeZone: "Asia/Shanghai",
       now: () => clock,
@@ -551,6 +553,57 @@ describe("[IOS-4] push channels", () => {
       ),
     ).toEqual([{ status: "sent", kind: "reminder" }]);
     expect(context.failures).toEqual([]);
+  });
+
+  it("[SAID-1] REVERSE: her words that fail to read are retried on the iPhone and do not hold back the pushes behind them", async () => {
+    let brokenReads = 0;
+    const unreadable = new Error("payload cannot be decrypted");
+    const context = await setup(
+      {},
+      {
+        readMessage: async (threadId, messageId) => {
+          if (threadId !== "thread-1") return undefined;
+          if (messageId === "assistant:broken")
+            return {
+              dataClassification: "private",
+              readText: async () => {
+                brokenReads += 1;
+                if (brokenReads === 1) throw unreadable;
+                return "这一条第二次才读出来。";
+              },
+            };
+          if (messageId === "assistant:said")
+            return { dataClassification: "private", readText: async () => "这一条照常推。" };
+          return undefined;
+        },
+      },
+    );
+    context.device(IPHONE, "iphone");
+    await context.register(IPHONE, "alert");
+    context.setClock(T0);
+    const items = [];
+    for (const messageId of ["assistant:broken", "assistant:said"])
+      items.push({
+        ...scope,
+        sourceKey: await herWordsPushKey({ messageId }),
+        kind: "reminder" as const,
+        sourceRef: messageId,
+        threadId: "thread-1",
+        createdAt: T0,
+        expiresAt: at(T0, 3_600),
+      });
+    await context.store.enqueue({ ...scope, items, cursor: null, now: T0 });
+    await context.push.tick();
+    await context.push.tick();
+    const bodies = () =>
+      context.apns
+        .ofType("alert")
+        .map((alert) => (alert.json["aps"] as { alert: { body: string } }).alert.body);
+    expect(bodies()).toEqual(["这一条照常推。"]);
+    expect(context.failures).toContain(unreadable);
+    context.setClock(at(T0, 61));
+    await context.push.tick();
+    expect(bodies()).toEqual(["这一条照常推。", "这一条第二次才读出来。"]);
   });
 
   it("[IOS-4] gives each approval button its own one-time token and marks the presence-required approve button", async () => {

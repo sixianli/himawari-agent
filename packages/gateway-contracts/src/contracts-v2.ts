@@ -2429,6 +2429,14 @@ const memoryOverviewSnapshotSchema = object({
         sourceThreadId: nullable(machineString),
       }),
     ),
+    cancelled: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+      }),
+    ),
     people: array(
       object({
         personId: machineString,
@@ -2563,7 +2571,7 @@ const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
   payload: object({
     reminderId: machineString,
-    action: enumeration(["dismiss", "snooze", "cancel"]),
+    action: enumeration(["dismiss", "snooze", "cancel", "restore"]),
   }),
 });
 const memoryReminderCreateCommandSchema = object({
