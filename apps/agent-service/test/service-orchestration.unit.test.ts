@@ -792,6 +792,7 @@ function web() {
     "pairedDevices",
     "deviceActions",
     "vault",
+    "subthreads",
   ])
     repository[key] = vi.fn(() => port);
   const memory = {

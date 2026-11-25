@@ -881,6 +881,27 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with Owner, Agent, either run or the folded message",
   ),
   entry(
+    "subthreads",
+    "SubthreadStorePort",
+    "one row per hidden conversation the main conversation opened to do a piece of work in the background: the conversation it belongs to, the bigger matter it is part of, the tool call that opened it (so a retry opens it only once), the task brief and the returned result as protected payload links, their data classification and whether it is still open, returned or stopped",
+    "payload_reference",
+    "cascade with Owner, Agent, its own conversation or the main conversation",
+  ),
+  entry(
+    "thread_tasks",
+    "SubthreadStorePort",
+    "one row per to-do item a conversation keeps for its plan (Claude Code style tasks): its number, status (pending, in progress, completed or deleted), which items it waits for, which hidden conversation it is handed to, and a protected payload link to its title, description and in-progress wording",
+    "payload_reference",
+    "cascade with Owner, Agent or its conversation",
+  ),
+  entry(
+    "thread_task_changes",
+    "SubthreadStorePort",
+    "append-only history of every create, change or delete of a to-do item: the revision, the run that made it, when, and a protected payload link to the item as it was after the change",
+    "payload_reference",
+    "cascade with Owner, Agent or its to-do item",
+  ),
+  entry(
     "main_threads",
     "ThreadRepositoryPort",
     "one row per owner and agent naming the conversation that is the main conversation; written once when the service first starts and never moved; the main conversation cannot be archived, trashed or deleted while this row points at it",

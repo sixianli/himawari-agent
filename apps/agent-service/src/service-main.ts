@@ -227,7 +227,9 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { ProductionSubthreads } from "./production-subthreads.js";
 import { ProductionTellOwner } from "./production-tell-owner.js";
+import { ProductionThreadTasks } from "./production-thread-tasks.js";
 import { productionToolActionRegistry } from "./production-tool-actions.js";
 import { toolCallSandboxPrewarm } from "./production-tool-call-prewarm.js";
 import { ProductionVaultTools } from "./production-vault-tools.js";
@@ -1834,6 +1836,39 @@ export async function startTenantRuntime(
         protector,
         clock: { now: () => clock.now() },
       });
+      const subthreadStore = repository.subthreads();
+      const threadTasks: ProductionThreadTasks = new ProductionThreadTasks({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        store: subthreadStore,
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+        conversation: async (runId) => subthreads.conversation(runId),
+      });
+      const subthreads: ProductionSubthreads = new ProductionSubthreads({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        mainThread: {
+          read: () =>
+            requireValue(repository)
+              .threadRepository()
+              .readMain(configuration.ownerId, configuration.agentId),
+        },
+        threads: repository.threadRepository(),
+        commands: new ThreadCommandService({
+          repository: repository.threadRepository(),
+          clock: { now: () => clock.now() },
+          authority: () => activeAuthority.authorityFence(),
+        }),
+        store: subthreadStore,
+        tasks: threadTasks,
+        externalContent,
+        threadOf: async (runId) => (await runSources.read(runId as never))?.threadId,
+        payloads,
+        protector,
+        clock: { now: () => clock.now() },
+      });
       const steering = new ProductionOwnerSteering({
         ownerId: configuration.ownerId,
         agentId: configuration.agentId,
@@ -1862,6 +1897,8 @@ export async function startTenantRuntime(
         steering,
         memoryRecall,
         tellOwner,
+        subthreads,
+        threadTasks,
         mailRead: new ProductionMailRead(() => proactive),
         messageOptions,
         ...(conversationTools ? { conversations: conversationTools } : {}),
@@ -3501,7 +3538,11 @@ export async function startTenantRuntime(
           writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         messageOptions,
         inbox: {
-          mainThread: { registry: inboxRuns, externalContent },
+          mainThread: {
+            registry: inboxRuns,
+            externalContent,
+            subthreads,
+          },
           onDiagnostic: (event: Record<string, string>) =>
             writeServiceDiagnostic(errorOutput, { component: "agent-service", ...event }),
         },

@@ -2,14 +2,14 @@ import type {
   AdmitOwnerMessageInput,
   ClaimMainThreadInput,
   CommitAssistantMessageInput,
+  FoldedOwnerMessage,
+  FoldQueuedOwnerRunsInput,
   ForkThreadInput,
   PostAgentMessageInput,
   ProductContextRunState,
   RequestThreadDeletionInput,
   ResolveThreadTaskInput,
   RunExecutionSource,
-  FoldedOwnerMessage,
-  FoldQueuedOwnerRunsInput,
   ScheduledJob,
   ThreadCommittedMessagesByIdsQuery,
   ThreadContextSnapshot,
@@ -1352,7 +1352,7 @@ export class SqliteThreadOperations {
           input.agentId,
           input.threadId,
           sequence,
-          input.triggerSource === "external_event" ? "system" : "owner",
+          (input.triggerSource ?? "user_message") === "user_message" ? "owner" : "system",
           input.contentRef,
           input.dataClassification,
           input.occurredAt,
@@ -1929,7 +1929,9 @@ export class SqliteThreadOperations {
         | undefined;
       if (!trigger) return undefined;
       const sourceMessage =
-        trigger.sourceType === "user_message" || trigger.sourceType === "external_event"
+        trigger.sourceType === "user_message" ||
+        trigger.sourceType === "external_event" ||
+        trigger.sourceType === "schedule"
           ? (this.database
               .prepare(
                 `SELECT sequence FROM thread_messages

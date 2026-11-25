@@ -32,9 +32,9 @@ import type {
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   HomeUrgencyStorePort,
+  InboxStorePort,
   LedgerObservationPort,
   McpConnectionStorePort,
-  VaultStorePort,
   McpMemorySyncStorePort,
   MemoryBookStorePort,
   MemoryCaptureBacklogPort,
@@ -81,13 +81,14 @@ import type {
   SessionDeletionStatePort,
   SessionDeviceStatePort,
   StateRecord,
-  InboxStorePort,
+  SubthreadStorePort,
   ThreadArtifactStorePort,
   ThreadDistillationStatePort,
   ThreadPromptBundleStorePort,
   ThreadRepositoryPort,
   ThreadSearchProjectionSourcePort,
   TraceStorePort,
+  VaultStorePort,
   WebPushStorePort,
 } from "@himawari-agent/application";
 import {
@@ -613,6 +614,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   inbox(): InboxStorePort {
     return this.durable.inbox();
+  }
+
+  subthreads(): SubthreadStorePort {
+    return this.durable.subthreads();
   }
 
   memoryReminders(): MemoryReminderStorePort {
