@@ -1962,6 +1962,36 @@ describe("thread control center interactions", () => {
     expect(container.querySelector("textarea")?.value).toBe("开始新对话");
     expect(options.storage.readDraft("new")).toBe("开始新对话");
   });
+  it("[PR634-R3-1] brings the composer back when the main conversation lookup never answers", async () => {
+    options = { ...options, route: routeForSurface("threads") };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal: AbortSignal | undefined) => {
+      if (request.type === "thread.main")
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector("textarea")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(container.querySelector("textarea")).not.toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("[PR634-R3-3] waits for the settings dialog to close before opening the main conversation", async () => {
+    options = { ...options, route: { ...routeForSurface("threads"), page: "settings" } };
+    await render();
+    await refresh();
+    expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: "thread-main" }));
+    options = { ...options, route: routeForSurface("threads") };
+    await render();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: "thread-main", view: "content" }),
+    );
+  });
   it.each(["archive", "restore", "pin"])(
     "preserves a refused %s operation without falsely reporting acceptance",
     async (operation) => {

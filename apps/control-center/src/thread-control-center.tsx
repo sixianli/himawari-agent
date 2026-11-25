@@ -352,6 +352,11 @@ export function useThreadControlCenter(
   useEffect(() => {
     if (!active || !client || !configuration) return;
     const controller = new AbortController();
+    let disposed = false;
+    const deadline = window.setTimeout(
+      () => controller.abort(READ_DEADLINE_EXCEEDED),
+      READ_DEADLINE_MILLISECONDS,
+    );
     client
       .queryThread(threadQueryMessage(configuration, "thread.main", {}), controller.signal)
       .then((snapshot) => {
@@ -362,9 +367,14 @@ export function useThreadControlCenter(
         if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
       })
       .finally(() => {
-        if (!controller.signal.aborted) setMainLookupSettled(true);
+        window.clearTimeout(deadline);
+        if (!disposed) setMainLookupSettled(true);
       });
-    return () => controller.abort();
+    return () => {
+      disposed = true;
+      window.clearTimeout(deadline);
+      controller.abort();
+    };
   }, [active, client, configuration, onUnauthorized]);
   const openingMain =
     !selectedThreadId &&
