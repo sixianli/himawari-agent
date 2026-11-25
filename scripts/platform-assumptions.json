@@ -73,6 +73,7 @@
     "scripts/delivery-mode/run-packet-checks.py": 1,
     "scripts/delivery-mode/test_make_packet.py": 5,
     "scripts/disk-hygiene/test_prune_rebuildable.py": 2,
+    "scripts/install/first-install.sh": 1,
     "scripts/model-review/opencode-lock/package-lock.json": 16,
     "test/integration/qualification/evidence/s1-task16-mem0-compatibility.json": 4,
     "test/integration/qualification/evidence/s1-task2-dependency-matrix.json": 1,
@@ -118,6 +119,7 @@
     "scripts/delivery-mode/packet-template/acceptance/cloud/download-question-12.py": 3,
     "scripts/delivery-mode/packet-template/acceptance/cloud/question-12-inputs.json": 1,
     "scripts/delivery-mode/packet-template/acceptance/cloud/run-question12-downloads.sh": 1,
+    "scripts/install/first-install.sh": 1,
     "test/integration/qualification/evidence/s1-task2-dependency-matrix.json": 1,
     "test/integration/qualification/evidence/s1-task2-dependency-preflight.json": 1,
     "test/integration/qualification/evidence/s1-task28-scale.json": 3,
@@ -127,6 +129,7 @@
   "amd64": {
     "ci/toolchain-lock.json": 2,
     "scripts/ci/install-tools.mjs": 1,
+    "scripts/install/first-install.sh": 1,
     "scripts/model-review/gateway-lock.json": 4,
     "scripts/model-review/gateway.mjs": 3,
     "test/tooling/review-gateway.test.mjs": 7,
