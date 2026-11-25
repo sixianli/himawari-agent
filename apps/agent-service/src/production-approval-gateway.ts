@@ -29,6 +29,10 @@ type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { createProductionCapabilityLifecycle } from "./production-capability-lifecycle.js";
 import {
+  PRODUCTION_TIMER_OPERATIONS,
+  type ProductionTimerControl,
+} from "./production-timer-control.js";
+import {
   PRODUCTION_DATA_EXPORT_OPERATIONS,
   type ProductionDataExportControl,
 } from "./production-data-export.js";
@@ -144,6 +148,7 @@ export function createProductionApprovalGateway(options: {
   readonly mcpConnectionsControl?: ProductionMcpConnectionsControl;
   readonly perceptionControl?: Pick<ProductionPerceptionControl, "query" | "execute">;
   readonly inboxControl?: Pick<ProductionInboxControl, "query" | "execute">;
+  readonly timerControl?: Pick<ProductionTimerControl, "query" | "execute">;
   readonly onApprovalResolved?: (approval: ApprovalRequest) => Promise<void>;
   readonly approvalOrigin?: (threadId: string) => Promise<ApprovalDisplayOrigin | null>;
 }) {
@@ -216,7 +221,10 @@ export function createProductionApprovalGateway(options: {
                                           ? options.perceptionControl.query(query)
                                           : query.type.startsWith("think.") && options.inboxControl
                                             ? options.inboxControl.query(query)
-                                            : searchAuthorization.query(query),
+                                            : query.type.startsWith("timers.") &&
+                                                options.timerControl
+                                              ? options.timerControl.query(query)
+                                              : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -359,6 +367,8 @@ export function createProductionApprovalGateway(options: {
           return options.perceptionControl.execute(command);
         if (command.type.startsWith("think.") && options.inboxControl)
           return options.inboxControl.execute(command);
+        if (command.type.startsWith("timers.") && options.timerControl)
+          return options.timerControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -407,6 +417,7 @@ export function createProductionApprovalGateway(options: {
       ...(options.mcpConnectionsControl ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
       ...(options.perceptionControl ? PRODUCTION_PERCEPTION_OPERATIONS : []),
       ...(options.inboxControl ? PRODUCTION_INBOX_OPERATIONS : []),
+      ...(options.timerControl ? PRODUCTION_TIMER_OPERATIONS : []),
     ],
     reads,
     controlPlane,

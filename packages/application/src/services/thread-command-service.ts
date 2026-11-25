@@ -287,6 +287,7 @@ export class ThreadCommandService {
     readonly contentRef: PayloadRef;
     readonly dataClassification: DataClassification;
     readonly resultRef: PayloadRef;
+    readonly afterRunEnded?: true;
   }) {
     const idempotencyKey = createIdempotencyKey(input.idempotencyKey);
     return this.dependencies.repository.postAgentMessage({

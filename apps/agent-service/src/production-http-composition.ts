@@ -157,6 +157,11 @@ import {
   ProductionInboxControl,
   ProductionInboxSettings,
 } from "./production-inbox-settings.js";
+import {
+  PRODUCTION_TIMER_OPERATIONS,
+  ProductionTimerControl,
+  type TimerReminders,
+} from "./production-timer-control.js";
 import type { InboxDelivery } from "./production-inbox-worker.js";
 import {
   PRODUCTION_LOGIN_DEVICE_OPERATIONS,
@@ -219,6 +224,7 @@ import {
   PRODUCTION_SERVER_STATUS_OPERATIONS,
   ProductionServerStatusControl,
 } from "./production-server-status-control.js";
+import type { ProductionReminderInbox } from "./production-reminder-inbox.js";
 import type { ProductionSubthreads } from "./production-subthreads.js";
 import { ThreadDeletionRetry } from "./production-thread-deletion-retry.js";
 import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
@@ -347,6 +353,9 @@ export interface ProductionHttpCompositionOptions {
       readonly registry: InboxRunRegistry;
       readonly externalContent: Pick<ContextExternalContent, "mark">;
       readonly subthreads?: ProductionSubthreads;
+      readonly reminders?: ProductionReminderInbox;
+      readonly timerReminders?: TimerReminders;
+      readonly timeZone?: string;
     };
     readonly onDiagnostic?: (event: Record<string, string>) => void;
   };
@@ -818,6 +827,7 @@ function routeOptions(
   mcpConnectionsAvailable: boolean,
   searchAvailable: boolean,
   capabilityReactivationAvailable: boolean,
+  timersAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -867,6 +877,7 @@ function routeOptions(
         ...(mcpConnectionsAvailable ? PRODUCTION_MCP_CONNECTION_OPERATIONS : []),
         ...PRODUCTION_PERCEPTION_OPERATIONS,
         ...PRODUCTION_INBOX_OPERATIONS,
+        ...(timersAvailable ? PRODUCTION_TIMER_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -1312,6 +1323,7 @@ export async function createProductionHttpComposition(
           ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
           ...(mainThreadInbox.subthreads ? { subthreads: mainThreadInbox.subthreads } : {}),
           checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+          ...(mainThreadInbox.reminders ? { reminders: mainThreadInbox.reminders } : {}),
         })
       : undefined);
   const inbox = productionInbox({
@@ -1324,6 +1336,12 @@ export async function createProductionHttpComposition(
     ...(inboxDelivery ? { delivery: inboxDelivery } : {}),
     ...(options.inbox?.onDiagnostic ? { onDiagnostic: options.inbox.onDiagnostic } : {}),
   });
+  const reminderInbox = mainThreadInbox?.reminders;
+  if (reminderInbox) {
+    reminderInbox.registerSource(inbox.inbox.sources);
+    reminderInbox.attach(inbox.inbox);
+    reminderInbox.start();
+  }
   const subthreads = mainThreadInbox?.subthreads;
   if (subthreads) {
     subthreads.registerSources(inbox.inbox.sources);
@@ -1351,6 +1369,7 @@ export async function createProductionHttpComposition(
           }
         : {}),
     });
+    subthreads.startTimers();
   }
   if (options.proactive) {
     inbox.inbox.sources.register({
@@ -1731,6 +1750,21 @@ export async function createProductionHttpComposition(
       scope: { ownerId, agentId },
       clock: { now: clock },
     }),
+    ...(options.inbox?.mainThread?.subthreads
+      ? {
+          timerControl: new ProductionTimerControl({
+            subthreads: options.inbox.mainThread.subthreads,
+            ...(options.inbox.mainThread.timerReminders
+              ? { reminders: options.inbox.mainThread.timerReminders }
+              : {}),
+            ...(options.inbox.mainThread.timeZone
+              ? { timeZone: options.inbox.mainThread.timeZone }
+              : {}),
+            scope: { ownerId, agentId },
+            clock: { now: clock },
+          }),
+        }
+      : {}),
     perceptionControl: new ProductionPerceptionControl({
       configuration,
       perception,
@@ -1812,6 +1846,7 @@ export async function createProductionHttpComposition(
       Boolean(options.mcpRead),
       Boolean(searchControl),
       options.capabilityReactivation !== undefined,
+      Boolean(options.inbox?.mainThread?.subthreads),
     ),
     gatewayV2,
     threadSearch,

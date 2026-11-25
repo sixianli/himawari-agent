@@ -359,6 +359,11 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 1 步：外来的事进主对话（内部的系统消息、最后写的话主人看不到），她用 tell_owner 开口并自己决定推不推"
   },
+  "inbox.reminder-due": {
+    "sha256": "09aefd73ed2483202fc34b726c46f9cf05d41dd9a569ba8d5ecab1c3b5e9a7cc",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：主人定的提醒到点时进收件箱叫醒她，由她在主对话里提醒、决定推不推；她那一趟失败或太慢时程序按原话写进主对话并推送"
+  },
   "inbox.events.preface": {
     "sha256": "94d617cdfb83e5870cf7edc6eff624e1a998625223432e255462ea6c8dbc16fd",
     "changedIn": "ADR 0285",
@@ -1530,6 +1535,11 @@
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：主对话开子线程在后台办事，子线程照 Claude Code 的待办工具列计划，做完交回结果、主对话验收"
   },
+  "tools.schedule-task": {
+    "sha256": "1bcddffb969ccb77576e39935e200bb17270a2fd11ac7a900f9350f7ffdbe88e",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：主对话定一个跟进或周期任务，到点叫醒一个专门的子线程去做，做完告诉主对话"
+  },
   "tools.task-create": {
     "sha256": "c0ac94cbaaefe81bbd667b9d67f7e3b8466ad4c1810d97e6c462cb70bb2d5474",
     "changedIn": "ADR 0285",
@@ -1619,6 +1629,36 @@
     "sha256": "562c492000bd45e22dae45e8d3ee1fa118f667cd2fae047bbb7d88c2e6e3053b",
     "changedIn": "ADR 0285",
     "reason": "Always On 第 3 步：子线程要做的事在等主人同意时告诉主对话，同意卡片由程序按真实动作生成"
+  },
+  "subthreads.timer-brief": {
+    "sha256": "fdb577e2144ec4b9688b40ca8e792c5342a4316238b55666be82b3c70b5028e6",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的子线程第一次到点时收到的身份、做法和任务"
+  },
+  "subthreads.timer-due": {
+    "sha256": "1e6f2ef7fae86ba18f55270d5b744125417b96dfdd2f31a4e85df8d093c10208",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务每次到点送进子线程的一行"
+  },
+  "subthreads.timer-schedule.once": {
+    "sha256": "9d57d14a1693a38b83a49a41a95170c36a2ee985c4c7aa5e9c2f8194d4aea1a9",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，一次性"
+  },
+  "subthreads.timer-schedule.daily": {
+    "sha256": "4ac5990450dd153378be5686e40e230f87ab6f3d132ac89eee87331e683b8544",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，每天几点"
+  },
+  "subthreads.timer-schedule.every": {
+    "sha256": "8e585173e8ec8601e9af73fd0007cec78cfe7861ff28ab04d97094793146694d",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时任务的时间说明，每隔几分钟"
+  },
+  "subthreads.timer-schedule.yearly": {
+    "sha256": "1d9fb95be75a5b9cb581f23435e698051504f6656b45ee9793a5f40b42d119a1",
+    "changedIn": "ADR 0285",
+    "reason": "Always On 第 4 步：定时清单里每年一次的提醒的时间说明"
   },
   "subthreads.continue": {
     "sha256": "b4280ed0d7c94fb809c2d0a8b7b0bca425c48b67f39964987356a937a1b246c1",
