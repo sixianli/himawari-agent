@@ -357,7 +357,6 @@ public enum DemoChatFixtures {
         return state
     }
 }
-#endif
 
 public extension DemoChatFixtures {
     static let backgroundFlightsId = "thread-sub-0000000000000000000000000000000b"
@@ -439,3 +438,4 @@ public extension DemoChatFixtures {
         return state
     }
 }
+#endif
