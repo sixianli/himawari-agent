@@ -61,3 +61,30 @@ export const TOOL_RESULT_MAIL_READ_REJECTED = fixedPrompt({
   output: "free-text",
   text: "没有读到这个邮件串：threadId 要照抄新邮件事件里写的邮件串编号。",
 });
+
+export const TOOL_OFFER_OPTIONS = fixedPrompt({
+  id: "tools.offer-options",
+  purpose: "offer_options 工具的描述：在她这次对主人说的话下面挂几个可点的下一步",
+  usedBy: ["apps/agent-service/src/production-message-options.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "在你这次对主人说的话下面挂几个可点的选项，主人点一下就行，不用打字。把主人当成想少打字的人：答完想一想下一步，要主人拿主意的一定给，你想得到下一步能帮他做什么的也给；他一句话说完、没有下一步的（例如“好的谢谢”）就不给。给几个、给什么由你判断，不按事情种类套模板。options 是选项列表，每项写 label（按钮上的一句话，像主人自己会说的，例如“查哪家最便宜”“发售前一天提醒我”）、可选的 reason（一句为什么）和可选的 action。不带 action 的选项，主人点了就等于他把 label 这句话发给你，你接着办。带 action 的选项是一个有后果的具体动作：tool 写要调用的工具名，arguments 写调用时的完整参数；按钮上的字由系统按这些参数生成，不用你写的 label；主人点了就算同意这一次，你接着用完全相同的工具和参数调用它，参数一变就要重新问主人。程序会在最后自动加一个“不用了”。同一轮再调用一次，会替换这一轮之前给的选项。",
+});
+
+export const TOOL_RESULT_OFFER_OPTIONS_REJECTED = fixedPrompt({
+  id: "tools.result.offer-options.rejected",
+  purpose: "offer_options 被拒绝时给模型的说明",
+  usedBy: ["apps/agent-service/src/production-message-options.ts"],
+  layer: "tools",
+  output: "free-text",
+  text: "选项没有挂上：每项要有 label；带 action 的，tool 要是这一轮能用、有后果的工具，arguments 要是对象。改好再调用一次，或者不给选项。",
+});
+
+export const OPTION_DISMISS_LABEL = fixedPrompt({
+  id: "options.dismiss-label",
+  purpose: "每组选项最后程序加的“不用了”按钮上的字，主人点了也作为他的一句话发给她",
+  usedBy: ["apps/agent-service/src/production-message-options.ts"],
+  layer: "last-user-message",
+  output: "free-text",
+  text: "不用了",
+});

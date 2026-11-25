@@ -269,6 +269,7 @@ export const CLIENT_CAPABILITY_TABLE: readonly ClientCapabilityEntry[] = Object.
   routine("thread-v3", "thread.trash"),
   change("thread-v3", "thread.delete_permanently"),
   routine("thread-v3", "thread.task.resolve"),
+  change("thread-v3", "thread.option.choose"),
   query("thread-v3", "thread.deletion_impact"),
   query("thread-v3", "thread.list"),
   query("thread-v3", "thread.detail"),
