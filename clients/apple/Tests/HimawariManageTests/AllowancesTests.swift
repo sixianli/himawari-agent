@@ -81,7 +81,8 @@ final class AllowancesTests: XCTestCase {
         XCTAssertEqual(command?["risk"], .string("low"))
         let confirmed = await server.confirmed
         XCTAssertFalse(confirmed.contains("approval.allowance.revoke"))
-        XCTAssertFalse(await server.sent.contains { $0["type"] == .string("memory.rule.respond") })
+        let sent = await server.sent
+        XCTAssertFalse(sent.contains { $0["type"] == .string("memory.rule.respond") })
     }
 
     func testTheDayCountComesWithTheRuleBook() async throws {
@@ -115,7 +116,8 @@ final class AllowancesTests: XCTestCase {
         let store = await store(server)
         try await store.setAllowanceDays(ClientCapabilities.allowanceDays.upperBound + 1, reason: "r")
         XCTAssertEqual(store.allowanceDays, 7)
-        XCTAssertFalse(await server.sent.contains { $0["type"] == .string("approval.allowance.days.set") })
+        let sent = await server.sent
+        XCTAssertFalse(sent.contains { $0["type"] == .string("approval.allowance.days.set") })
     }
 
     func testAFailedRevokePutsTheRowBackWhereItWas() async throws {
