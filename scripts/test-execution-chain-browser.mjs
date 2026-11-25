@@ -450,6 +450,8 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
               text: "",
               input: "",
               output: "Saved result remains available",
+              activity: "",
+              activityIcon: "",
               occurredAt: at,
             },
             {
