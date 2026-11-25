@@ -772,7 +772,7 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
           item["kind"] === "owner-rules" ||
-          item["kind"] === "owner-profile" ||
+          item["kind"] === "memory-snapshot" ||
           item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary" ||
           item["kind"] === "runtime-environment") &&

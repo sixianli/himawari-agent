@@ -57,7 +57,8 @@ export interface ProductContextSystemPolicyRef {
 export type ProductContextBlockKind =
   | "thread-summary"
   | "owner-rules"
-  | "owner-profile"
+  | "memory-snapshot"
+  | "memory-changes"
   | "owner-agenda"
   | "memory"
   | "capability-summary"

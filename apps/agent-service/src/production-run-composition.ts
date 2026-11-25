@@ -186,6 +186,7 @@ export interface ProductionRunCompositionOptions {
   readonly cwd: string;
   readonly agentDir: string;
   readonly timeZone?: string;
+  readonly memorySnapshotCharacters?: number;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
   readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
   readonly onBackgroundFailure?: (runId: string, error: unknown) => void;
@@ -320,6 +321,10 @@ export function createProductionRunComposition(options: ProductionRunComposition
     },
     digest: (text) => createHash("sha256").update(text).digest("hex"),
     reminders: repository.memoryReminders(),
+    conversations: repository.conversationTurns(),
+    ...(options.memorySnapshotCharacters
+      ? { snapshotCharacterBudget: options.memorySnapshotCharacters }
+      : {}),
     ...(options.timeZone ? { timeZone: options.timeZone } : {}),
   });
   const context = timings.methods(

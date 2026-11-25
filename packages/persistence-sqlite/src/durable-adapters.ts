@@ -1440,6 +1440,7 @@ export class SqliteDurableAdapters {
       search: (input) => this.context.read("conversationTurn.search", input),
       listBehind: (input) => this.context.read("conversationTurn.listBehind", input),
       listUnembedded: (input) => this.context.read("conversationTurn.listUnembedded", input),
+      span: (input) => this.context.read("conversationTurn.span", input),
       attachEmbedding: (input) => this.context.write("conversationTurn.attachEmbedding", input),
     });
   }

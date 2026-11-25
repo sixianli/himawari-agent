@@ -38,6 +38,13 @@ export interface ConversationTurnWatermark {
   readonly lastSequence: number;
 }
 
+export interface ConversationSpan {
+  readonly firstDay: string;
+  readonly lastDay: string;
+  readonly days: number;
+  readonly months: readonly { readonly month: string; readonly days: number }[];
+}
+
 export interface ConversationTurnStorePort {
   upsert(document: ConversationTurnDocument): Promise<void>;
   search(input: {
@@ -64,6 +71,11 @@ export interface ConversationTurnStorePort {
     readonly classifications: readonly DataClassification[];
     readonly limit: number;
   }): Promise<readonly ConversationTurn[]>;
+  span(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly allowedClassifications: readonly DataClassification[];
+  }): Promise<ConversationSpan | undefined>;
   attachEmbedding(input: {
     readonly turnId: string;
     readonly lastSequence: number;

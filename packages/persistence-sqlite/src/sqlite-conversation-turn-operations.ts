@@ -1,4 +1,5 @@
 import type {
+  ConversationSpan,
   ConversationTurn,
   ConversationTurnCandidate,
   ConversationTurnDocument,
@@ -99,6 +100,14 @@ export class SqliteConversationTurnOperations {
         );
       case "conversationTurn.listBehind":
         return this.listBehind(payload as { ownerId: OwnerId; agentId: AgentId; limit: number });
+      case "conversationTurn.span":
+        return this.span(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            allowedClassifications: readonly string[];
+          },
+        );
       case "conversationTurn.listUnembedded":
         return this.listUnembedded(
           payload as {
@@ -325,6 +334,36 @@ export class SqliteConversationTurnOperations {
         ORDER BY m.last_at, t.id LIMIT @limit`,
       )
       .all(input) as ConversationTurnWatermark[];
+  }
+
+  private span(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    allowedClassifications: readonly string[];
+  }): ConversationSpan | undefined {
+    const months = this.database
+      .prepare(
+        `SELECT substr(day, 1, 7) AS month, count(DISTINCT day) AS days,
+          min(day) AS firstDay, max(day) AS lastDay
+        FROM conversation_turns
+        WHERE owner_id = @ownerId AND agent_id = @agentId
+          AND classification IN (SELECT value FROM json_each(@allowed))
+        GROUP BY month ORDER BY month`,
+      )
+      .all({
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        allowed: JSON.stringify(input.allowedClassifications),
+      }) as { month: string; days: number; firstDay: string; lastDay: string }[];
+    const [first] = months;
+    const last = months.at(-1);
+    if (!first || !last) return undefined;
+    return Object.freeze({
+      firstDay: first.firstDay,
+      lastDay: last.lastDay,
+      days: months.reduce((sum, { days }) => sum + days, 0),
+      months: Object.freeze(months.map(({ month, days }) => Object.freeze({ month, days }))),
+    });
   }
 
   private listUnembedded(input: {

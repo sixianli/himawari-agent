@@ -1,4 +1,9 @@
-import { createAgentId, createMemoryId, createOwnerId } from "@himawari-agent/domain";
+import {
+  type MemoryId,
+  createAgentId,
+  createMemoryId,
+  createOwnerId,
+} from "@himawari-agent/domain";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMORY_ATTRIBUTES,
@@ -56,6 +61,14 @@ const TEXT: Record<string, string> = {
   "memory-sister": "主人的妹妹在大阪做护士",
 };
 
+function numbersOf(records: readonly ProductMemoryRecord[]) {
+  return async ({ memoryIds }: { readonly memoryIds: readonly MemoryId[] }) =>
+    memoryIds.flatMap((memoryId) => {
+      const index = records.findIndex(({ id }) => id === memoryId);
+      return index < 0 ? [] : [{ memoryId, number: index + 1 }];
+    });
+}
+
 function service(
   records: readonly ProductMemoryRecord[],
   characterBudget?: number,
@@ -63,7 +76,7 @@ function service(
 ) {
   const stored: { ref: string; text: string; dataClassification: string }[] = [];
   const profile = new OwnerProfileService({
-    state: { listActive: async () => records },
+    state: { listActive: async () => records, numbers: numbersOf(records) },
     pins: {
       listProfilePins: async () =>
         pins.map(([memoryId, pinned]) => ({
@@ -86,7 +99,7 @@ describe("owner name from settings", () => {
   const named = (name: string | null, records: readonly ProductMemoryRecord[] = []) => {
     const stored: { text: string; dataClassification: string }[] = [];
     const profile = new OwnerProfileService({
-      state: { listActive: async () => records },
+      state: { listActive: async () => records, numbers: numbersOf(records) },
       readText: async (record) => TEXT[record.id],
       storeText: async ({ text, dataClassification }) => {
         stored.push({ text, dataClassification });
@@ -145,7 +158,7 @@ describe("owner profile composition", () => {
     memory("memory-allergy", "health", 950, { dataClassification: "sensitive" }),
   ];
 
-  it("puts rules first and groups important facts by section", async () => {
+  it("[ADR-0286] puts rules first and lists every current memory by category with its number", async () => {
     const { profile, stored } = service(records);
     const result = await profile.compose({
       ownerId: OWNER_ID,
@@ -153,37 +166,105 @@ describe("owner profile composition", () => {
       maxClassification: "sensitive",
       now: NOW,
     });
-    expect(result.blocks.map(({ kind, ref }) => [kind, ref])).toEqual([
-      ["owner-rules", "owner-rules:agent-profile"],
-      ["owner-profile", "owner-profile:agent-profile"],
+    expect(
+      result.blocks.map(({ kind, ref, dataClassification }) => [kind, ref, dataClassification]),
+    ).toEqual([
+      ["owner-rules", "owner-rules:agent-profile", "private"],
+      ["memory-snapshot", "memory-snapshot:agent-profile", "sensitive"],
     ]);
     expect(stored.map(({ text }) => text)).toEqual([
       "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：\n- 回答一律用简体中文",
       [
-        "主人档案（由已确认的长期记忆整理）：",
-        "身份：",
-        "- 主人叫 Andy（记于 2026-10-25）",
-        "偏好：",
-        "- 主人早上喝美式咖啡（记于 2026-10-25）",
-        "人际关系：",
-        "- 主人的女儿叫小葵（记于 2026-10-25）",
+        "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：",
+        "身份",
+        "2主人叫 Andy",
+        "偏好",
+        "4主人早上喝美式咖啡",
+        "5主人偶尔吃薯片",
+        "人际关系",
+        "3主人的女儿叫小葵",
+        "健康",
+        "7主人对青霉素过敏",
+        "你还能查到的：",
+        "- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
       ].join("\n"),
     ]);
     expect(result.memoryIds).toEqual([
       "memory-language",
       "memory-name",
-      "memory-coffee",
       "memory-daughter",
+      "memory-coffee",
+      "memory-snack",
+      "memory-allergy",
     ]);
-    expect(result.blocks.every(({ dataClassification }) => dataClassification === "private")).toBe(
-      true,
-    );
   });
 
-  it("[MEMORY-DATE] dates every profile line in the configured time zone and leaves the rules undated", async () => {
+  it("[ADR-0286] puts a space after the number only when the memory starts with a digit, and says how far old conversations go", async () => {
+    const stored: string[] = [];
+    const records = [
+      memory("memory-born", "identity", 500),
+      memory("memory-name", "identity", 500),
+      memory("memory-milk", "preference", 500, {
+        attributes: { ...DEFAULT_MEMORY_ATTRIBUTES, category: "preference", tentative: true },
+      }),
+    ];
+    const texts: Record<string, string> = {
+      "memory-born": "1998年出生",
+      "memory-name": "主人叫 Andy",
+      "memory-milk": "主人偏好明治乳制品",
+    };
+    const spans: unknown[] = [];
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => records, numbers: numbersOf(records) },
+      conversations: {
+        span: async (input) => {
+          spans.push(input);
+          return {
+            firstDay: "2026-09-30",
+            lastDay: "2026-10-25",
+            days: 12,
+            months: [
+              { month: "2026-09", days: 1 },
+              { month: "2026-10", days: 11 },
+            ],
+          };
+        },
+      },
+      readText: async (record) => texts[record.id],
+      storeText: async ({ text }) => {
+        stored.push(text);
+      },
+      digest: (text) => `digest-${text.length}`,
+    });
+    await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "private",
+      now: NOW,
+    });
+    expect(stored).toEqual([
+      [
+        "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：",
+        "身份",
+        "1 1998年出生",
+        "2主人叫 Andy",
+        "待确认（主人还没确认过）",
+        "3主人偏好明治乳制品",
+        "你还能查到的：",
+        "- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
+        "- 旧对话：从 2026-09-30 到 2026-10-25，共 12 天有对话（2026-09 1 天，2026-10 11 天），都能用 conversation_search 搜当时的原话。",
+      ].join("\n"),
+    ]);
+    expect(spans).toEqual([
+      { ownerId: OWNER_ID, agentId: AGENT_ID, allowedClassifications: ["public", "private"] },
+    ]);
+  });
+  it("[MEMORY-DATE] leaves dates out of the rules and the memory list", async () => {
     const stored: string[] = [];
     const profile = new OwnerProfileService({
       state: {
+        numbers: async ({ memoryIds }) =>
+          memoryIds.map((memoryId, index) => ({ memoryId, number: index + 1 })),
         listActive: async () => [
           memory("memory-language", "rule", 900),
           memory("memory-name", "identity", 900, { recordedAt: "2026-10-25T16:30:00.000Z" }),
@@ -213,10 +294,12 @@ describe("owner profile composition", () => {
     expect(stored).toEqual([
       "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：\n- 回答一律用简体中文",
       [
-        "主人档案（由已确认的长期记忆整理）：",
-        "身份：",
-        "- 主人叫 Andy（记于 2026-10-26）",
-        "- 主人这周在东京出差（2026-10-20 至今）",
+        "记忆清单（每条前面是编号；要看日期、原话和旧版本，用 memory_open 按编号打开）：",
+        "身份",
+        "1主人叫 Andy",
+        "2主人这周在东京出差",
+        "你还能查到的：",
+        "- 清单里每条只有一句话，日期、原话和旧版本没有放进来，用 memory_open 按编号打开。",
       ].join("\n"),
     ]);
     const recordedAt = "2026-11-08T15:30:00.000Z";
@@ -233,8 +316,7 @@ describe("owner profile composition", () => {
     expect(memoryDatesOf(broken)).toEqual({ recordedAt: NOW, validFrom: null, validTo: null });
     expect(memoryDateNote(memoryDatesOf(broken), "Asia/Tokyo")).toBe("（记于 2026-10-25）");
   });
-
-  it("[RULE-memory-visible] lets a sensitive relationship memory into the profile and marks the block sensitive", async () => {
+  it("[RULE-memory-visible] lets a sensitive relationship memory into the memory list and marks the block sensitive", async () => {
     const { profile, stored } = service([
       ...records,
       memory("memory-sister", "relationship", 900, { dataClassification: "sensitive" }),
@@ -245,10 +327,10 @@ describe("owner profile composition", () => {
       maxClassification: "sensitive",
       now: NOW,
     });
-    const block = result.blocks.find(({ kind }) => kind === "owner-profile");
+    const block = result.blocks.find(({ kind }) => kind === "memory-snapshot");
     expect(block?.memoryIds).toContain("memory-sister");
     expect(block?.dataClassification).toBe("sensitive");
-    expect(stored.map(({ text }) => text).join("\n")).toContain("- 主人的妹妹在大阪做护士");
+    expect(stored.map(({ text }) => text).join("\n")).toContain("8主人的妹妹在大阪做护士");
     const capped = await profile.compose({
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -257,8 +339,7 @@ describe("owner profile composition", () => {
     });
     expect(capped.memoryIds).not.toContain("memory-sister");
   });
-
-  it("[PA-2] never puts a tentative memory into the profile block, even an important one", async () => {
+  it("[PA-2] lists a tentative memory only under the to-be-confirmed heading of the memory list", async () => {
     const tentative = memory("memory-milk", "preference", 999);
     const { profile, stored } = service([
       ...records,
@@ -274,8 +355,16 @@ describe("owner profile composition", () => {
       maxClassification: "sensitive",
       now: NOW,
     });
-    expect(result.memoryIds).not.toContain("memory-milk");
-    expect(stored.map(({ text }) => text).join("\n")).not.toContain("明治");
+    expect(result.memoryIds).toContain("memory-milk");
+    expect(stored.map(({ text }) => text).join("\n")).toContain(
+      "待确认（主人还没确认过）\n8主人偏好明治乳制品",
+    );
+    expect(
+      stored
+        .map(({ text }) => text)
+        .join("\n")
+        .match(/明治/gu),
+    ).toHaveLength(1);
   });
 
   it("[PA-2b] keeps a rule memory out of the block when it is superseded, expired or no longer active", async () => {
@@ -343,17 +432,27 @@ describe("owner profile composition", () => {
     expect(result.blocks.map(({ dataClassification }) => dataClassification)).toEqual(["public"]);
   });
 
-  it("stays within the character budget, keeping the most important lines", async () => {
-    const { profile } = service(records, 45);
+  it("[ADR-0286] keeps the memory list within its budget, most important first, and says what was left out", async () => {
+    const stored: string[] = [];
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => records, numbers: numbersOf(records) },
+      readText: async (record) => TEXT[record.id],
+      storeText: async ({ text }) => {
+        stored.push(text);
+      },
+      digest: (text) => `digest-${text.length}`,
+      snapshotCharacterBudget: 20,
+    });
     const result = await profile.compose({
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
       maxClassification: "private",
       now: NOW,
     });
-    expect(result.memoryIds).toEqual(["memory-language", "memory-name"]);
+    expect(result.memoryIds).toEqual(["memory-language", "memory-name", "memory-daughter"]);
+    expect(stored.at(-1)).toContain("- 偏好另有 2 条因篇幅没有列出，可以用 recall 搜。");
+    expect(stored.at(-1)).not.toContain("身份另有");
   });
-
   it("[P2-2] a profile block that is too long drops the rule memory text but never a hard rule", async () => {
     const { profile } = service(records, 5);
     const result = await profile.compose({
@@ -381,7 +480,7 @@ describe("owner profile composition", () => {
     ).toEqual([{ id: hardRule.id, revision: 3, outcome: "raise_floor" }]);
   });
 
-  it("[MEM-PIN] brings what the Owner switched on and drops what the Owner switched off", async () => {
+  it("[MEM-PIN] leaves what the Owner switched off out of the memory list and keeps the picks in the outline", async () => {
     const { profile } = service(records, undefined, [
       ["memory-snack", true],
       ["memory-coffee", false],
@@ -397,8 +496,8 @@ describe("owner profile composition", () => {
     expect(result.memoryIds).toEqual([
       "memory-language",
       "memory-name",
-      "memory-snack",
       "memory-daughter",
+      "memory-snack",
     ]);
     const outline = await profile.outline(request);
     expect(outline.sections.map(({ category }) => category)).toEqual([
@@ -489,8 +588,7 @@ describe("owner profile composition", () => {
       maxClassification: "private",
       now: NOW,
     });
-    expect(composed.memoryIds).toEqual(expect.arrayContaining(["memory-snack", "memory-allergy"]));
-    expect(composed.memoryIds).not.toContain("memory-name");
+    expect(composed.memoryIds).toEqual(["memory-name", "memory-snack", "memory-allergy"]);
     expect(composed.usage?.pinned).toBeGreaterThan(10);
     expect(composed.usage?.used).toBe(composed.usage?.pinned);
     expect(composed.usage?.queued).toEqual(["memory-name"]);
@@ -508,8 +606,19 @@ describe("owner profile composition", () => {
     expect(composed.usage?.used).toBeLessThanOrEqual(composed.usage?.limit ?? 0);
   });
 
-  it("returns no blocks when nothing qualifies", async () => {
-    const { profile, stored } = service([memory("memory-snack", "preference", 400)]);
+  it("[ADR-0286] lists a low-importance memory too, and returns no blocks when there is nothing to list", async () => {
+    const listed = service([memory("memory-snack", "preference", 400)]);
+    expect(
+      (
+        await listed.profile.compose({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          maxClassification: "private",
+          now: NOW,
+        })
+      ).memoryIds,
+    ).toEqual(["memory-snack"]);
+    const { profile, stored } = service([]);
     expect(
       await profile.compose({
         ownerId: OWNER_ID,
@@ -531,7 +640,7 @@ describe("owner agenda", () => {
     const stored: { ref: string; text: string }[] = [];
     const windows: { from: string; to: string }[] = [];
     const profile = new OwnerProfileService({
-      state: { listActive: async () => records },
+      state: { listActive: async () => records, numbers: numbersOf(records) },
       readText: async (record) => TEXT[record.id],
       storeText: async ({ ref, text }) => {
         stored.push({ ref, text });
@@ -610,7 +719,7 @@ describe("owner agenda", () => {
   ) => {
     const stored: { ref: string; text: string }[] = [];
     const profile = new OwnerProfileService({
-      state: { listActive: async () => records },
+      state: { listActive: async () => records, numbers: numbersOf(records) },
       readText: async (record) => AGENDA_TEXT[record.id] ?? TEXT[record.id],
       storeText: async ({ ref, text }) => {
         stored.push({ ref, text });

@@ -675,6 +675,32 @@ describe.each(["worker", "direct"] as const)("conversation turns through %s", (e
     }
   });
 
+  it("[ADR-0286] reports the span of days with conversation for the memory list, only at levels the reader may see", async () => {
+    const resource = await fixture();
+    try {
+      const store = resource.repository.conversationTurns();
+      const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+      expect(await store.span({ ...scope, allowedClassifications: ALL })).toBeUndefined();
+      await resource.service.indexDue({ ...resource.scope, limit: 50 });
+      expect(await store.span({ ...scope, allowedClassifications: ALL })).toEqual({
+        firstDay: "2026-11-20",
+        lastDay: "2026-11-22",
+        days: 3,
+        months: [{ month: "2026-11", days: 3 }],
+      });
+      expect(await store.span({ ...scope, allowedClassifications: ["public"] })).toBeUndefined();
+      expect(
+        await store.span({
+          ownerId: OWNER_ID,
+          agentId: createAgentId("agent-conversation-turns-other"),
+          allowedClassifications: ALL,
+        }),
+      ).toBeUndefined();
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
   it("[ADR-0286] leaves turns of a trashed conversation out of the vector backfill so others still get vectors", async () => {
     const resource = await fixture();
     try {
