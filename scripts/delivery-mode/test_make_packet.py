@@ -449,6 +449,21 @@ class TemplateTest(RenderedPacket):
             with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HOST_UNKNOWN'):
                 packet_maker.load_instance('andy-production', 'root@host; rm -rf /')
 
+    def test_fd_pins_follow_the_target_architecture(self):
+        x64, arm = packet_maker.fd_parameters('x64'), packet_maker.fd_parameters('arm64')
+        self.assertEqual(x64, {key: TWELFTH[key] for key in ('FD_TRIPLE', 'FD_ARCHIVE_SHA256', 'FD_BINARY_SHA256')})
+        self.assertEqual(arm['FD_TRIPLE'], 'aarch64-unknown-linux-musl')
+        self.assertNotEqual(arm['FD_ARCHIVE_SHA256'], x64['FD_ARCHIVE_SHA256'])
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_FD_NOT_PINNED'):
+            packet_maker.fd_parameters('riscv64')
+
+    def test_first_tools_mode_follows_the_missing_capability_deployment(self):
+        installed = packet_maker.interpret_discovery(production_facts(capabilityDeploymentPresent=True), INSTANCE)
+        self.assertEqual((installed['FIRST_TOOLS'], installed['NEW_CAPABILITY_REFS_JSON']), ('0', '[]'))
+        fresh = packet_maker.interpret_discovery(production_facts(capabilityDeploymentPresent=False), INSTANCE)
+        self.assertEqual(fresh['FIRST_TOOLS'], '1')
+        self.assertEqual(json.loads(fresh['NEW_CAPABILITY_REFS_JSON']), ['himawari.pi-coding', 'himawari.public-search', 'himawari.public-fetch'])
+
     def test_a_unit_written_by_first_install_is_recognized(self):
         prefix = '/opt/himawari/releases/2026-11-25-0a1b2c3d'
         facts = production_facts(
