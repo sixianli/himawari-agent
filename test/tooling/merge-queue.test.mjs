@@ -771,8 +771,8 @@ describe("合并队列的辅助逻辑 [ADR-0268]", () => {
     const triggers = text.slice(text.indexOf("on:"), text.indexOf("permissions:"));
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).not.toMatch(/workflow_run:|schedule:|cron:/u);
-    expect(readFileSync(".agents/instructions/delivery-mode.md", "utf8")).toContain(
-      "重新打开 CI 门禁时把这两个触发加回 `.github/workflows/merge-queue.yml`",
+    expect(readFileSync("docs/adr/0292-how-ci-runs-now.md", "utf8")).toContain(
+      "工作流现在只能手动触发（`workflow_dispatch`），不再跟着 CI 跑完或定时触发",
     );
   });
 });
